@@ -1,5 +1,5 @@
 """
-RFC5322 email composer using the Python stdlib email package.
+RFC 5322 email composer using the Python stdlib email package.
 
 Composer is strict by design: it produces RFC 5322 / 5321 / 2047 / 2231
 compliant output from caller-controlled JMAP data. Lenient parsing of
@@ -21,26 +21,37 @@ from email.message import MIMEPart
 from email.policy import SMTP as email_policy_smtp
 from email.utils import format_datetime, parsedate_to_datetime
 from io import BytesIO
-from typing import Any, Dict, List, Optional
-
-from django.utils import timezone
+from typing import Any
 
 logger = logging.getLogger(__name__)
+
+
+def _attach_utc_if_naive(dt: datetime.datetime) -> datetime.datetime:
+    """Ensure ``dt`` is timezone-aware, defaulting to UTC.
+
+    Replaces the Django ``timezone.make_aware`` we used to call. Naive
+    datetimes are treated as UTC; aware datetimes pass through unchanged.
+    """
+    if dt.tzinfo is None or dt.tzinfo.utcoffset(dt) is None:
+        return dt.replace(tzinfo=datetime.timezone.utc)
+    return dt
 
 # Python 3.14 routes In-Reply-To and References through MsgIDListHeader, which
 # parses the value as a list of strict RFC 5322 msg-ids and re-emits them on
 # fold. Real-world Outlook/MAPI mail carries obs-id-left ids with multiple
 # '@' (e.g. <foo$@local@domain>); MsgIDListHeader truncates these at the first
-# '@' on serialize ⇒ silent thread corruption. The pre-stdlib flanker composer
-# used to write the raw header bytes through unchanged, preserving threading
-# on any payload — we match that contract by routing both headers to
-# UnstructuredHeader instead. The registry must be a dedicated instance:
-# policy.clone() shares header_factory by reference with policy.SMTP and
-# policy.default, so mutating it in place would silently change parsing
-# behavior process-wide.
+# '@' on serialize ⇒ silent thread corruption. We route both headers to
+# UnstructuredHeader instead, which emits the raw header bytes verbatim and
+# preserves threading on any payload. The registry must be a dedicated
+# instance: policy.clone() shares header_factory by reference with
+# policy.SMTP and policy.default, so mutating it in place would silently
+# change parsing behavior process-wide.
 _HEADER_FACTORY = HeaderRegistry()
-_HEADER_FACTORY.map_to_type("in-reply-to", UnstructuredHeader)
-_HEADER_FACTORY.map_to_type("references", UnstructuredHeader)
+# ``UnstructuredHeader`` is a ``BaseHeader`` subclass at runtime but
+# the stdlib stubs annotate it as a stand-alone helper class; the
+# ``map_to_type(name, cls)`` registration is the canonical use.
+_HEADER_FACTORY.map_to_type("in-reply-to", UnstructuredHeader)  # ty: ignore[invalid-argument-type]
+_HEADER_FACTORY.map_to_type("references", UnstructuredHeader)  # ty: ignore[invalid-argument-type]
 
 # Stdlib's SMTP policy folds headers at 78 octets (RFC 5322 §2.1.1 SHOULD)
 # and uses CRLF line separators. We override cte_type from the stdlib default
@@ -52,20 +63,82 @@ _HEADER_FACTORY.map_to_type("references", UnstructuredHeader)
 _POLICY = email_policy_smtp.clone(cte_type="7bit", header_factory=_HEADER_FACTORY)
 
 
-class EmailComposeError(Exception):
-    """Exception raised for errors during email composition."""
+class ComposeError(Exception):
+    """Base class for all composer errors.
+
+    Catch ``ComposeError`` to handle any composition failure; catch one of
+    the subclasses below to handle a specific category. The subclasses
+    exist so callers can distinguish *why* a compose attempt failed
+    (input-shape problem vs. caller-supplied bad data) without parsing
+    error strings.
+    """
 
 
-# Headers that set_basic_headers owns. Custom headers in jmap_data["headers"]
-# and entries in prepend_headers must not be allowed to shadow these — both to
-# preserve our envelope identity and to defeat header-injection-via-display.
+class InvalidAddressError(ComposeError):
+    """A ``from`` / ``sender`` / ``to`` / etc. address-list is missing,
+    malformed, or has no entry with a usable ``email`` field."""
+
+
+class InvalidMessageIdError(ComposeError):
+    """A Message-ID / In-Reply-To / References / Content-ID entry does not
+    match RFC 5322 ``msg-id`` shape (no ``<local@domain>``, embedded
+    whitespace, or beyond the ``_MSG_ID_MAX_OCTETS`` length ceiling)."""
+
+
+class InvalidDateError(ComposeError):
+    """``sentAt`` is missing, of an unsupported type, or unparseable as
+    ISO-8601 / RFC 2822."""
+
+
+class AttachmentError(ComposeError):
+    """An attachment dict is missing required fields or its content fails
+    to decode (e.g. malformed base64)."""
+
+
+class HeaderInjectionError(ComposeError):
+    """A custom header attempts to shadow a reserved name, or its field
+    name is not RFC 5322 ftext."""
+
+
+# Headers that _set_basic_headers and the MIME-tree builder own. Custom
+# headers in jmap_data["headers"] and entries in prepend_headers must not
+# be allowed to shadow these. Two classes:
+#
+# - Identity / envelope: From, To, Cc, Bcc, Subject, Date, Message-ID. A
+#   shadowed copy lets a caller spoof identity — many MUAs render the
+#   FIRST occurrence and the originals end up below the fold.
+# - MIME structural: MIME-Version, Content-Type, Content-Transfer-Encoding,
+#   Content-ID, Content-Disposition. ``compose_email(parse_email(raw))``
+#   round-trip would otherwise emit a second MIME-Version (RFC 2045 §4 SHOULD
+#   appear once) and re-declare the body Content-Type at the envelope
+#   level, breaking the structure.
 _RESERVED_HEADER_NAMES = frozenset(
-    {"from", "to", "cc", "bcc", "subject", "date", "message-id"}
+    {
+        "from",
+        "to",
+        "cc",
+        "bcc",
+        "subject",
+        "date",
+        "message-id",
+        "mime-version",
+        "content-type",
+        "content-transfer-encoding",
+        "content-id",
+        "content-disposition",
+    }
 )
 
 
 def format_address(name: str, email: str) -> str:
-    """Format a name and email address according to RFC5322.
+    """Format a name and email address according to RFC 5322.
+
+    Both ``name`` and ``email`` are run through ``_sanitize_header_value``
+    so callers reusing this helper outside the composer (e.g. for
+    envelope construction or quoted-block headers) inherit the
+    header-injection defense — defends the CVE-2024-6923 /
+    CVE-2025-7962 / Apache James CVE-2024-21742 class even when the
+    return value bypasses the composer's downstream sanitizer.
 
     Examples:
         >>> format_address('', 'user@example.com')
@@ -73,19 +146,25 @@ def format_address(name: str, email: str) -> str:
         >>> format_address('John Doe', 'john@example.com')
         'John Doe <john@example.com>'
     """
+    email = _sanitize_header_value(email or "")
     if not email:
         return ""
+    name = _sanitize_header_value(name or "")
     if not name:
         return email.strip()
 
     needs_quoting = any(c in name for c in ',.;:@<>()[]"\\')
     if needs_quoting and not (name.startswith('"') and name.endswith('"')):
-        name = '"' + name.replace('"', '\\"') + '"'
+        # RFC 5322 §3.2.4: quoted-pair escapes the next character, so the
+        # backslash must be doubled before any embedded ``"`` is escaped —
+        # otherwise ``a\"`` round-trips as ``a"`` and quoted-pair sequences
+        # leak through unescaped.
+        name = '"' + name.replace("\\", "\\\\").replace('"', '\\"') + '"'
 
     return f"{name} <{email.strip()}>"
 
 
-def format_address_list(addresses: List[Dict[str, str]]) -> str:
+def format_address_list(addresses: list[dict[str, str]]) -> str:
     """Format a list of address dicts as a comma-separated RFC 5322 mailbox-list."""
     formatted = []
     for addr in addresses:
@@ -96,7 +175,7 @@ def format_address_list(addresses: List[Dict[str, str]]) -> str:
     return ", ".join(formatted)
 
 
-def make_reply_subject(subject: str) -> str:
+def reply_subject(subject: str) -> str:
     """Add 'Re: ' prefix to a subject, avoiding duplication."""
     if subject.lower().startswith("re:"):
         return subject
@@ -136,10 +215,18 @@ def _sanitize_header_value(value: str) -> str:
 # like <foo$@local@domain>. We can't route those through stdlib's
 # _MessageIDHeader (it truncates them at the first '@' on 3.14), so the
 # composer policy maps In-Reply-To/References to UnstructuredHeader —
-# which just emits the value verbatim, the way flanker used to. The
-# whitespace ban stays critical: UnstructuredHeader would fold at a
-# space mid-id, and downstream MID parsers truncate folded ids.
+# which just emits the value verbatim. The whitespace ban stays
+# critical: UnstructuredHeader would fold at a space mid-id, and
+# downstream MID parsers truncate folded ids.
 _MSG_ID_RE = re.compile(r"^<[^\s<>]+@[^\s<>]+>$")
+
+# Hard ceiling on the serialized ``<local@domain>``. RFC 5321 \u00a74.5.3.1.6 caps
+# a path at 254 octets and RFC 2822 \u00a72.1.1 caps a line at 998 octets; we sit
+# below the line cap so an id can travel as an unfolded threading header. Any
+# value beyond this is rejected outright \u2014 real msg-ids are < 256 octets, so
+# 900 is generous slack while still defending the parser against a maliciously
+# long Message-ID / In-Reply-To / References entry.
+_MSG_ID_MAX_OCTETS = 900
 
 
 def _validate_msg_id(value: str, *, field: str) -> str:
@@ -149,13 +236,17 @@ def _validate_msg_id(value: str, *, field: str) -> str:
     like `<foo bar>` it silently *drops* everything after the space \u2014 the
     serialized header becomes `<foo` and the rest of the supposed id is
     lost. That is data loss, not just ugliness, so we reject upfront with an
-    EmailComposeError rather than letting malformed input through.
+    ComposeError rather than letting malformed input through.
 
     field: the header name, used in the error message.
     """
     cleaned = _ensure_angle_brackets(_sanitize_header_value(value))
+    if len(cleaned.encode("utf-8", errors="replace")) > _MSG_ID_MAX_OCTETS:
+        raise InvalidMessageIdError(
+            f"Invalid {field} value: exceeds {_MSG_ID_MAX_OCTETS}-octet ceiling"
+        )
     if not _MSG_ID_RE.match(cleaned):
-        raise EmailComposeError(
+        raise InvalidMessageIdError(
             f"Invalid {field} value: {value!r} is not a valid <local@domain>"
         )
     return cleaned
@@ -177,49 +268,48 @@ def _ensure_angle_brackets(value: str) -> str:
 
 
 def _normalize_date(date) -> datetime.datetime:
-    """Coerce a JMAP date (str | datetime | None | int | float) to a tz-aware datetime.
+    """Coerce a JMAP ``sentAt`` (str | datetime | int | float) to a tz-aware datetime.
 
-    Falls back to current UTC time on unrecognized input, with a warning so
-    upstream bugs aren't silent.
+    Strict by design: ``None`` raises ``ComposeError`` and an unparseable
+    value also raises ``ComposeError``. RFC 5322 §3.6.1 makes ``Date`` a
+    mandatory header, and silently substituting ``now()`` would let a caller
+    ship messages with a fabricated send time that drifts arbitrarily from
+    the intended one. Callers who genuinely want "now" can pass
+    ``datetime.now(timezone.utc)`` explicitly.
     """
     if date is None:
-        return datetime.datetime.now(datetime.timezone.utc)
+        raise InvalidDateError(
+            "'sentAt' is required by RFC 5322 §3.6.1; pass a datetime or ISO string"
+        )
 
     if isinstance(date, datetime.datetime):
-        if date.tzinfo is None or date.tzinfo.utcoffset(date) is None:
-            date = timezone.make_aware(date, datetime.timezone.utc)
-        return date
+        return _attach_utc_if_naive(date)
 
     if isinstance(date, (int, float)) and not isinstance(date, bool):
         # Treat as POSIX epoch seconds.
         try:
             return datetime.datetime.fromtimestamp(date, datetime.timezone.utc)
-        except (ValueError, OSError, OverflowError):
-            pass  # fall through to logged fallback
+        except (ValueError, OSError, OverflowError) as e:
+            raise InvalidDateError(
+                f"'sentAt' epoch value out of range: {date!r}"
+            ) from e
 
     if isinstance(date, str):
         try:
-            parsed = datetime.datetime.fromisoformat(date)
-            if parsed.tzinfo is None or parsed.tzinfo.utcoffset(parsed) is None:
-                parsed = timezone.make_aware(parsed, datetime.timezone.utc)
-            return parsed
+            return _attach_utc_if_naive(datetime.datetime.fromisoformat(date))
         except (ValueError, TypeError):
             pass
         try:
-            parsed = parsedate_to_datetime(date)
-            if parsed.tzinfo is None or parsed.tzinfo.utcoffset(parsed) is None:
-                parsed = timezone.make_aware(parsed, datetime.timezone.utc)
-            return parsed
+            return _attach_utc_if_naive(parsedate_to_datetime(date))
         except (ValueError, TypeError, IndexError):
             pass
+        raise InvalidDateError(
+            f"'sentAt' string is neither ISO-8601 nor RFC 2822: {date!r}"
+        )
 
-    # Log the type only — the raw value can be a user-supplied string that
-    # might contain PII (e.g. an email address embedded in a malformed Date).
-    logger.warning(
-        "Could not parse date (type %s); falling back to current UTC",
-        type(date).__name__,
+    raise InvalidDateError(
+        f"'sentAt' must be datetime | str | int | float, got {type(date).__name__}"
     )
-    return datetime.datetime.now(datetime.timezone.utc)
 
 
 # RFC 5322 §3.6.8 ftext: printable ASCII except colon and whitespace.
@@ -231,46 +321,153 @@ _FIELD_NAME_RE = re.compile(r"^[!-9;-~]+$")
 
 def _validate_field_name(name: str) -> str:
     if not isinstance(name, str) or not _FIELD_NAME_RE.match(name):
-        raise EmailComposeError(
+        raise HeaderInjectionError(
             f"Invalid header field name: {name!r} (must be RFC 5322 ftext)"
         )
     return name
 
 
-def _extract_threading_header(jmap_data: Dict[str, Any], header_name: str) -> str:
-    """Read a threading header (In-Reply-To / References) from
-    jmap_data["headers"] case-insensitively. References additionally falls
-    back to jmap_data["references"] (snake_case alias used by
-    create_reply_message and a few legacy paths). Returns "" if absent.
+def _first_address(addrs: list[dict[str, str]] | None) -> dict[str, str] | None:
+    """Pick the first ``EmailAddress`` from a JMAP ``EmailAddress[]``."""
+    if not addrs:
+        return None
+    for entry in addrs:
+        if isinstance(entry, dict) and entry.get("email"):
+            return entry
+    return None
+
+
+def _first_msgid(value: list[str] | None) -> str | None:
+    """Pick the first non-empty entry from a JMAP ``String[]`` of msg-ids.
+
+    Strict-typed: a scalar string is rejected even though it would
+    iterate at the Python level (as characters), because the JMAP
+    spec is unambiguous — ``messageId`` is ``String[]``.
+    """
+    if not isinstance(value, list) or not value:
+        return None
+    for v in value:
+        if isinstance(v, str) and v:
+            return v
+    return None
+
+
+def _collect_msgids(value: list[str] | None) -> str:
+    """Join a JMAP ``MessageIds`` ``String[]`` into a single
+    space-separated chain (angle-bracket form) for the wire.
+
+    Strict-typed: see :func:`_first_msgid` — only accepts a list.
+    """
+    if not isinstance(value, list) or not value:
+        return ""
+    chain: list[str] = []
+    for v in value:
+        if not isinstance(v, str) or not v:
+            continue
+        v = v.strip()
+        if not (v.startswith("<") and v.endswith(">")):
+            v = f"<{v}>"
+        chain.append(v)
+    return " ".join(chain)
+
+
+def _iter_custom_headers(
+    jmap_headers: list[dict[str, str]] | None,
+) -> list[tuple[str, str]]:
+    """Iterate over a JMAP ``EmailHeader[]`` as ``(name, value)`` tuples."""
+    if not jmap_headers:
+        return []
+    out: list[tuple[str, str]] = []
+    for entry in jmap_headers:
+        if not isinstance(entry, dict):
+            continue
+        name = entry.get("name")
+        if name:
+            out.append((str(name), str(entry.get("value") or "")))
+    return out
+
+
+def _extract_threading_header(jmap_data: dict[str, Any], header_name: str) -> str:
+    """Read a threading header (In-Reply-To / References) from the JMAP
+    input — ``headers`` fallback only.
+
+    Callers should prefer the dedicated JMAP fields (``inReplyTo`` /
+    ``references``) via the list-aware ``_validate_msgid_list``; this
+    helper exists for the legacy path where the value is carried inside
+    ``jmap_data["headers"]`` in wire form (one or more space-separated
+    angle-bracketed ids).
     """
     target = header_name.lower()
-    for key, value in (jmap_data.get("headers") or {}).items():
-        if isinstance(key, str) and key.lower() == target:
-            return str(value or "")
-    if target == "references":
-        return str(jmap_data.get("references", "") or "")
+    for name, value in _iter_custom_headers(jmap_data.get("headers")):
+        if name.lower() == target:
+            return value or ""
     return ""
 
 
-def _validate_references_chain(raw_refs: str, *, append: Optional[str] = None) -> str:
-    """Split a whitespace-separated References chain, validate each id
-    individually, drop the malformed ones (with a warning), and optionally
-    append a trailing id. Returns the space-joined chain or "".
+def _validate_msgid_list(value: list[str] | None, *, field: str) -> str:
+    """Validate a JMAP ``MessageIds`` (``String[]``) entry by entry.
 
-    Per-id validation is mandatory: References rides UnstructuredHeader (see
-    _HEADER_FACTORY) which folds at whitespace, so a single id containing an
-    internal space would corrupt the entire chain on the receiver side.
+    Each list entry is treated as an independent msg-id (the JMAP spec
+    contract); malformed entries are dropped with a warning and the
+    valid ones are joined into the angle-bracketed space-separated wire
+    form. Returns ``""`` when the list is empty or every entry is
+    malformed.
 
-    `append` is skipped when the chain already ends with that id. Callers
-    reconstructing existing wire bytes (PST import, replay of an inbound
-    EML) hand us a References that already includes the parent Message-ID;
-    blind-appending In-Reply-To would duplicate the tail.
+    This is distinct from :func:`_validate_references_chain`, which
+    splits a wire-form *string* on whitespace and re-validates each
+    piece — that's the right behavior when the value already arrived as
+    a chain (e.g. from a legacy ``headers`` entry), but it is the wrong
+    behavior for a JMAP list where ``["foo bar@example.com"]`` is a
+    single (malformed) id, not two.
     """
-    validated: List[str] = []
-    for candidate in raw_refs.split():
+    if not isinstance(value, list) or not value:
+        return ""
+    validated: list[str] = []
+    for entry in value:
+        if not isinstance(entry, str) or not entry.strip():
+            continue
+        try:
+            validated.append(_validate_msg_id(entry, field=field))
+        except InvalidMessageIdError:
+            logger.warning(
+                "Dropping malformed %s entry (length=%d)", field, len(entry)
+            )
+    return " ".join(validated)
+
+
+# Match one ``<...>`` token in a wire-form References / In-Reply-To
+# chain — the angle-bracket pair owns its contents (including any
+# whitespace, which then fails per-id validation). Splitting on
+# whitespace would salvage half-valid pieces of a single malformed id
+# (``<bad id@x>`` → ``<id@x>``); the bracket-aware tokenizer keeps each
+# bracket pair as one candidate.
+_MSGID_TOKEN_RE = re.compile(r"<[^<>]*>")
+
+
+def _validate_references_chain(raw_refs: str, *, append: str | None = None) -> str:
+    """Tokenize a wire-form References / In-Reply-To chain by angle-
+    bracket pairs, validate each candidate individually, drop the
+    malformed ones with a warning, and optionally append a trailing id.
+    Returns the space-joined chain or "".
+
+    Per-id validation is mandatory: the headers ride
+    ``UnstructuredHeader`` (see ``_HEADER_FACTORY``) which folds at
+    whitespace, so a single id containing internal whitespace would
+    corrupt the entire chain on the receiver side. We deliberately do
+    NOT split on whitespace — that would slice a malformed
+    ``<bad id@x>`` into ``["<bad", "id@x>"]`` and the second token would
+    survive as ``<id@x>``, silently rewriting the original id.
+
+    ``append`` is skipped when the chain already ends with that id.
+    Callers reconstructing existing wire bytes (PST import, replay of an
+    inbound EML) hand us a References that already includes the parent
+    Message-ID; blind-appending In-Reply-To would duplicate the tail.
+    """
+    validated: list[str] = []
+    for candidate in _MSGID_TOKEN_RE.findall(raw_refs):
         try:
             validated.append(_validate_msg_id(candidate, field="References"))
-        except EmailComposeError:
+        except InvalidMessageIdError:
             logger.warning(
                 "Dropping malformed References entry (length=%d)", len(candidate)
             )
@@ -284,17 +481,17 @@ def _filter_user_headers(items, *, source: str, also_skip: tuple = ()):
     safety checks.
 
     Reserved names — From/To/Cc/Bcc/Subject/Date/Message-ID — are skipped
-    with a warning; they're owned by set_basic_headers, and silently
+    with a warning; they're owned by _set_basic_headers, and silently
     shadowing them would let a caller spoof identity. Names listed in
     `also_skip` are dropped silently (used to elide In-Reply-To/References:
-    set_basic_headers owns those headers and validates them through
+    _set_basic_headers owns those headers and validates them through
     _validate_msg_id / _validate_references_chain regardless of whether the
     value comes from the in_reply_to= parameter or jmap_data["headers"]).
-    Invalid field names raise EmailComposeError.
+    Invalid field names raise ComposeError.
     """
     for k, v in items:
         if not isinstance(k, str):
-            raise EmailComposeError(
+            raise HeaderInjectionError(
                 f"{source} header name must be str, got {type(k).__name__}"
             )
         lower = k.lower()
@@ -307,10 +504,10 @@ def _filter_user_headers(items, *, source: str, also_skip: tuple = ()):
         yield k, _sanitize_header_value(str(v))
 
 
-def set_basic_headers(  # pylint: disable=too-many-branches
+def _set_basic_headers(  # pylint: disable=too-many-branches
     message_part: MIMEPart,
-    jmap_data: Dict[str, Any],
-    in_reply_to: Optional[str] = None,
+    jmap_data: dict[str, Any],
+    in_reply_to: str | None = None,
     keep_bcc: bool = False,
 ) -> None:
     """Set the basic email headers on a message part.
@@ -326,39 +523,58 @@ def set_basic_headers(  # pylint: disable=too-many-branches
     # near the top of the serialized output.
     message_part["MIME-Version"] = "1.0"
 
-    subject = jmap_data.get("subject", "")
+    subject = jmap_data.get("subject")
     if subject:
         message_part["Subject"] = _sanitize_header_value(subject)
 
-    from_data = jmap_data.get("from", {})
-    if isinstance(from_data, list) and from_data:
-        from_data = from_data[0]
-    from_name = from_data.get("name", "") if isinstance(from_data, dict) else ""
-    from_email = from_data.get("email", "") if isinstance(from_data, dict) else ""
-    if from_email:
+    # ``from``: JMAP ``EmailAddress[]``. Emit the first author as
+    # the ``From:`` header (multi-author mailbox-lists are rare and
+    # most receivers reject them anyway).
+    from_data = jmap_data.get("from")
+    first_from = _first_address(from_data)
+    if first_from:
         message_part["From"] = _sanitize_header_value(
-            format_address(from_name, from_email)
+            format_address(first_from.get("name") or "", first_from.get("email") or "")
         )
 
-    # For To/Cc/Bcc, only emit the header when the formatted result is non-empty.
-    # An input list may contain entries with no email (e.g. a draft contact still
-    # being typed); format_address_list drops those, and an empty list of valid
-    # addresses must NOT produce an empty To: header (most receivers reject).
+    # ``sender``: optional JMAP ``EmailAddress[]``. RFC 5322 §3.6.2
+    # uses Sender for the actual sender when From has multiple
+    # authors or is a group.
+    sender_data = jmap_data.get("sender")
+    first_sender = _first_address(sender_data)
+    if first_sender:
+        message_part["Sender"] = _sanitize_header_value(
+            format_address(
+                first_sender.get("name") or "", first_sender.get("email") or ""
+            )
+        )
+
+    # ``replyTo``: JMAP ``EmailAddress[]``. RFC 5322 §3.6.2.
+    reply_to_data = jmap_data.get("replyTo")
+    if reply_to_data:
+        formatted = format_address_list(reply_to_data)
+        if formatted:
+            message_part["Reply-To"] = _sanitize_header_value(formatted)
+
+    # For To/Cc/Bcc, only emit the header when the formatted result
+    # is non-empty. An empty list of valid addresses must NOT produce
+    # an empty To: header (most receivers reject).
     recipient_fields = [("to", "To"), ("cc", "Cc")]
     if keep_bcc:
         recipient_fields.append(("bcc", "Bcc"))
     for jmap_key, header_name in recipient_fields:
-        raw = jmap_data.get(jmap_key)
-        if not raw:
+        addr_list = jmap_data.get(jmap_key)
+        if not addr_list:
             continue
-        addr_list = raw if isinstance(raw, list) else [raw]
         formatted = format_address_list(addr_list)
         if formatted:
             message_part[header_name] = _sanitize_header_value(formatted)
 
-    message_part["Date"] = format_datetime(_normalize_date(jmap_data.get("date")))
+    message_part["Date"] = format_datetime(_normalize_date(jmap_data.get("sentAt")))
 
-    message_id = jmap_data.get("messageId", jmap_data.get("message_id"))
+    # ``messageId``: JMAP ``String[]`` (no <>). RFC 5322 §3.6.4 allows
+    # only one Message-ID on the wire, so the first entry wins.
+    message_id = _first_msgid(jmap_data.get("messageId"))
     if message_id:
         message_part["Message-ID"] = _validate_msg_id(message_id, field="Message-ID")
 
@@ -372,49 +588,74 @@ def set_basic_headers(  # pylint: disable=too-many-branches
     # malformed id we drop the threading headers instead of raising — the
     # parent message we did not write is the typical source of malformed
     # ids, and failing the whole send would make replies impossible
-    # (create_reply_message already follows the same contract).
-    raw_in_reply_to = in_reply_to or _extract_threading_header(jmap_data, "In-Reply-To")
-    validated_in_reply_to: Optional[str] = None
-    if raw_in_reply_to:
+    # (make_reply already follows the same contract).
+    # In-Reply-To: three input shapes, validated each in their idiom.
+    #
+    # 1. ``in_reply_to=`` parameter — a single id; single-id validation.
+    # 2. ``jmap_data["inReplyTo"]`` — JMAP ``String[]``; per-entry
+    #    validation via ``_validate_msgid_list`` (a malformed entry is
+    #    dropped, the rest survive). RFC 5322 §3.6.4 allows
+    #    ``msg-id [SP msg-id]*`` so a multi-id chain is wire-legal.
+    # 3. ``jmap_data["headers"]`` In-Reply-To entry — wire-form string;
+    #    chain-validate via ``_validate_references_chain``.
+    in_reply_to_chain: str = ""
+    if in_reply_to:
         try:
-            validated_in_reply_to = _validate_msg_id(
-                raw_in_reply_to, field="In-Reply-To"
-            )
-        except EmailComposeError:
+            in_reply_to_chain = _validate_msg_id(in_reply_to, field="In-Reply-To")
+        except InvalidMessageIdError:
             logger.warning(
-                "Dropping malformed In-Reply-To (length=%d); threading will be lost",
-                len(raw_in_reply_to),
+                "Dropping malformed In-Reply-To parameter (length=%d); "
+                "threading will be lost",
+                len(in_reply_to),
             )
+    elif jmap_data.get("inReplyTo"):
+        in_reply_to_chain = _validate_msgid_list(
+            jmap_data.get("inReplyTo"), field="In-Reply-To"
+        )
+    else:
+        raw = _extract_threading_header(jmap_data, "In-Reply-To")
+        if raw:
+            in_reply_to_chain = _validate_references_chain(raw)
 
-    if validated_in_reply_to:
-        message_part["In-Reply-To"] = validated_in_reply_to
+    if in_reply_to_chain:
+        message_part["In-Reply-To"] = _sanitize_header_value(in_reply_to_chain)
 
-    # Rebuild References from the validated chain even when In-Reply-To was
-    # dropped or absent — a clean References history can still travel without
-    # an immediate parent reference.
-    raw_references = _extract_threading_header(jmap_data, "References")
-    references_chain = _validate_references_chain(
-        raw_references, append=validated_in_reply_to
-    )
+    # References: prefer JMAP ``references`` (list form) then fall back to
+    # the ``headers`` wire form. Same multi-id idiom as In-Reply-To.
+    if jmap_data.get("references"):
+        references_chain = _validate_msgid_list(
+            jmap_data.get("references"), field="References"
+        )
+    else:
+        raw_references = _extract_threading_header(jmap_data, "References")
+        references_chain = _validate_references_chain(raw_references)
+
+    # Per RFC 5322 §3.6.4 convention the parent's id (LAST In-Reply-To
+    # entry, the closest parent) should be the tail of the References
+    # chain. Append it if not already present.
+    in_reply_to_tail = in_reply_to_chain.split()[-1] if in_reply_to_chain else None
+    if in_reply_to_tail and (
+        not references_chain or references_chain.split()[-1] != in_reply_to_tail
+    ):
+        references_chain = (references_chain + " " + in_reply_to_tail).strip()
+
     if references_chain:
         message_part["References"] = _sanitize_header_value(references_chain)
 
     # In-Reply-To/References are owned above; always skip them in
     # jmap_data["headers"] so they never sneak past validation.
-    custom_headers = jmap_data.get("headers", {})
+    custom_headers_iter = _iter_custom_headers(jmap_data.get("headers"))
     for name, value in _filter_user_headers(
-        custom_headers.items(),
+        custom_headers_iter,
         source="jmap_data['headers']",
         also_skip=("in-reply-to", "references"),
     ):
         message_part[name] = value
 
 
-def _content_or_str(part_data) -> str:
-    """Accept either a {'content': '...'} dict or a raw string body."""
-    if isinstance(part_data, dict):
-        return part_data.get("content", "")
-    return part_data or ""
+def _body_content(part: dict[str, Any]) -> str:
+    """Read the ``content`` of a JMAP ``EmailBodyPart``."""
+    return part.get("content", "") if isinstance(part, dict) else ""
 
 
 def _split_content_type(content_type: str) -> tuple[str, str]:
@@ -432,12 +673,28 @@ def _split_content_type(content_type: str) -> tuple[str, str]:
 def _normalize_cid(cid: str) -> str:
     # Sanitize before wrapping in angle brackets — an attacker-controlled cid
     # could otherwise carry CR/LF, U+2028 etc. into the Content-ID header.
-    return _ensure_angle_brackets(_sanitize_header_value(cid))
+    # After wrapping, re-validate against a relaxed structural pattern:
+    # RFC 2045 §6.7 ties Content-ID to ``msg-id`` (``<local@domain>``) but
+    # many real-world MUAs emit ``cid:`` references without an ``@``
+    # (Outlook ``image001.png@01CD…``, sometimes ``<part1.abc>`` etc.).
+    # Enforcing strict msg-id shape would break that interop. The risks we
+    # do block are the security ones — embedded ``<`` ``>`` (would smuggle
+    # a second header field or break ``cid:`` resolution) and whitespace
+    # (would fold mid-id through ``UnstructuredHeader``).
+    cleaned = _ensure_angle_brackets(_sanitize_header_value(cid))
+    if not _CID_STRUCTURAL_RE.match(cleaned):
+        raise InvalidMessageIdError(
+            f"Invalid Content-ID value: {cid!r} contains structural characters"
+        )
+    return cleaned
 
 
-def create_attachment_part(  # pylint: disable=too-many-return-statements
-    attachment: Dict[str, Any],
-) -> Optional[MIMEPart]:
+_CID_STRUCTURAL_RE = re.compile(r"^<[^\s<>]+>$")
+
+
+def _create_attachment_part(  # pylint: disable=too-many-return-statements
+    attachment: dict[str, Any],
+) -> MIMEPart | None:
     """Create a MIME part for an attachment from JMAP data.
 
     Args:
@@ -493,7 +750,7 @@ def create_attachment_part(  # pylint: disable=too-many-return-statements
 
     try:
         part = MIMEPart(policy=_POLICY)
-        kwargs: Dict[str, Any] = {
+        kwargs: dict[str, Any] = {
             "maintype": maintype,
             "subtype": subtype,
             "disposition": disposition,
@@ -509,20 +766,18 @@ def create_attachment_part(  # pylint: disable=too-many-return-statements
         return None
 
 
-def _first_body(jmap_data: Dict[str, Any], key: str) -> Optional[str]:
-    """Return the content of the first textBody/htmlBody entry, or None.
-
-    JMAP allows multiple body parts but our callers always produce a single
-    text + single html alternative; extras are dropped. Each entry can be a
-    raw string or {'content': '...'} dict.
+def _first_body(jmap_data: dict[str, Any], key: str) -> str | None:
+    """Return the ``content`` of the first ``textBody``/``htmlBody`` entry,
+    or ``None``. JMAP allows multiple body parts but our callers always
+    produce a single text + single html alternative; extras are dropped.
     """
     parts = jmap_data.get(key) or []
     if not parts:
         return None
-    return _content_or_str(parts[0])
+    return _body_content(parts[0])
 
 
-def _build_body(msg: MIMEPart, jmap_data: Dict[str, Any]) -> None:
+def _build_body(msg: MIMEPart, jmap_data: dict[str, Any]) -> None:
     """Populate `msg` with the body subtree.
 
     Three shapes:
@@ -542,9 +797,9 @@ def _build_body(msg: MIMEPart, jmap_data: Dict[str, Any]) -> None:
     text_body = _first_body(jmap_data, "textBody")
     html_body = _first_body(jmap_data, "htmlBody")
     if html_body is not None:
-        # Legacy rewrite: the application's HTML pipeline produces &rsquo;
-        # where a literal ' is wanted. Preserved here for compatibility;
-        # remove if/when the upstream pipeline stops emitting it.
+        # Caller-supplied HTML pipelines sometimes emit ``&rsquo;`` where a
+        # literal ``'`` is wanted; normalise so the rendered output reads
+        # cleanly regardless of upstream encoder choices.
         html_body = html_body.replace("&rsquo;", "'")
 
     if text_body is not None and html_body is not None:
@@ -559,7 +814,7 @@ def _build_body(msg: MIMEPart, jmap_data: Dict[str, Any]) -> None:
 
 
 def _wrap_with_inline_images(
-    body_part: MIMEPart, inline_attachments: List[Dict[str, Any]]
+    body_part: MIMEPart, inline_attachments: list[dict[str, Any]]
 ) -> MIMEPart:
     """Wrap a body part with multipart/related to attach inline images by cid.
 
@@ -572,11 +827,16 @@ def _wrap_with_inline_images(
     unwrapped: a single-child multipart/related is wasteful and confuses
     some receivers.
     """
-    built = [p for p in (create_attachment_part(a) for a in inline_attachments) if p]
+    built = [p for p in (_create_attachment_part(a) for a in inline_attachments) if p]
     if not built:
         return body_part
     related = MIMEPart(policy=_POLICY)
     related.make_related()
+    # RFC 2387 §3.1 requires the multipart/related Content-Type to carry a
+    # ``type=`` parameter naming the root part's media type. Without it,
+    # downstream MUAs that follow the spec fall back to alternate rendering
+    # paths or refuse to inline the related parts at all.
+    related.set_param("type", body_part.get_content_type())
     related.attach(body_part)
     for att_part in built:
         related.attach(att_part)
@@ -584,14 +844,14 @@ def _wrap_with_inline_images(
 
 
 def _wrap_with_attachments(
-    body_part: MIMEPart, regular_attachments: List[Dict[str, Any]]
+    body_part: MIMEPart, regular_attachments: list[dict[str, Any]]
 ) -> MIMEPart:
     """Wrap a body part with multipart/mixed and append regular attachments.
 
     Same fresh-wrapper pattern as _wrap_with_inline_images; if every
     attachment fails to build, the body is returned unwrapped.
     """
-    built = [p for p in (create_attachment_part(a) for a in regular_attachments) if p]
+    built = [p for p in (_create_attachment_part(a) for a in regular_attachments) if p]
     if not built:
         return body_part
     mixed = MIMEPart(policy=_POLICY)
@@ -602,9 +862,9 @@ def _wrap_with_attachments(
     return mixed
 
 
-def create_multipart_message(
-    jmap_data: Dict[str, Any],
-    in_reply_to: Optional[str] = None,
+def _create_multipart_message(
+    jmap_data: dict[str, Any],
+    in_reply_to: str | None = None,
     keep_bcc: bool = False,
 ) -> MIMEPart:
     """Create the top-level MIMEPart from JMAP data.
@@ -631,10 +891,10 @@ def create_multipart_message(
     tree manually as we do) or sprinkle it onto every subpart (if you use
     add_alternative/add_related/add_attachment, since those preserve type).
     Sticking with MIMEPart and setting MIME-Version once explicitly in
-    set_basic_headers gives the cleanest output.
+    _set_basic_headers gives the cleanest output.
     """
-    inline_attachments: List[Dict[str, Any]] = []
-    regular_attachments: List[Dict[str, Any]] = []
+    inline_attachments: list[dict[str, Any]] = []
+    regular_attachments: list[dict[str, Any]] = []
     for a in jmap_data.get("attachments", []) or []:
         if a.get("disposition") == "inline" and a.get("cid"):
             inline_attachments.append(a)
@@ -648,56 +908,75 @@ def create_multipart_message(
     if regular_attachments:
         msg = _wrap_with_attachments(msg, regular_attachments)
 
-    set_basic_headers(msg, jmap_data, in_reply_to, keep_bcc=keep_bcc)
+    _set_basic_headers(msg, jmap_data, in_reply_to, keep_bcc=keep_bcc)
     return msg
 
 
 def compose_email(
-    jmap_data: Dict[str, Any],
-    in_reply_to: Optional[str] = None,
-    prepend_headers: Optional[List[tuple[str, str]]] = None,
+    jmap_data: dict[str, Any],
+    *,
+    in_reply_to: str | None = None,
+    prepend_headers: list[tuple[str, str]] | None = None,
     keep_bcc: bool = False,
+    allow_extensions: bool = True,
 ) -> bytes:
-    """Convert a JMAP email object to RFC 5322 bytes.
+    """Compose a JMAP Email object dict into RFC 5322 bytes.
 
-    keep_bcc: defaults to False — Bcc in jmap_data is silently dropped, since
-    the entire point of Bcc is that the header must NOT be transmitted to
-    recipients. Set True only for archive-reconstruction use cases (e.g. PST
-    import, where the Bcc list was already in the source file and the bytes
-    are stored, not retransmitted).
+    Strict by design: the input shape is RFC 8621 §4 Email object. Server-
+    set / metadata properties (``id``, ``blobId``, ``threadId``,
+    ``mailboxIds``, ``keywords``, ``size``, ``hasAttachment``, ``preview``)
+    are ignored.
 
-    Note on dot-stuffing: this function produces RFC 5322 bytes; it does NOT
-    apply RFC 5321 §4.5.2 dot-stuffing. Callers that hand the bytes to
-    smtplib.SMTP.sendmail (our outbound path) get dot-stuffing for free.
-    Any non-smtplib SMTP client must dot-stuff itself.
+    Parameters
+    ----------
+    jmap_data : dict
+        The JMAP Email object to compose.
+    in_reply_to : str, optional
+        Override the In-Reply-To header (takes precedence over
+        ``jmap_data["inReplyTo"]``). Mostly used by ``make_reply``.
+    prepend_headers : list of (name, value), optional
+        Extra headers to inject at the top of the output (e.g.
+        ``Received:`` set by an MTA-out pipeline).
+    keep_bcc : bool, default False
+        When False, the ``Bcc:`` header is silently dropped — the
+        entire point of Bcc is that it must NOT be transmitted to
+        recipients. Set True only for archive-reconstruction use
+        cases (e.g. PST import).
+    allow_extensions : bool, default True
+        When False, any ``ext`` key in ``jmap_data`` raises
+        ``ComposeError`` — a strict-JMAP signal that the caller is
+        not silently relying on project extensions.
 
-    Raises:
-        EmailComposeError: If composition fails.
+    Note on dot-stuffing: this function produces RFC 5322 bytes; it
+    does NOT apply RFC 5321 §4.5.2 dot-stuffing. Callers that hand the
+    bytes to smtplib.SMTP.sendmail (our outbound path) get dot-stuffing
+    for free. Any non-smtplib SMTP client must dot-stuff itself.
+
+    Raises
+    ------
+    ComposeError
+        If composition fails.
     """
     try:
         if not jmap_data:
-            raise EmailComposeError("Empty JMAP data provided")
+            raise ComposeError("Empty JMAP data provided")
 
-        # Shallow-copy so normalisation (from-list flatten, body-list wrap) does
-        # not mutate the caller's dict; callers reusing the same payload would
-        # otherwise see different output between calls.
-        jmap_data = dict(jmap_data)
+        if not allow_extensions and "ext" in jmap_data:
+            raise ComposeError(
+                "Strict-JMAP input rejects ``ext`` key "
+                "(pass allow_extensions=True to accept project extensions)"
+            )
 
-        from_data = jmap_data.get("from", {})
-        if isinstance(from_data, list):
-            if not from_data:
-                raise EmailComposeError("Empty 'from' list in JMAP data")
-            from_data = from_data[0]
-            jmap_data["from"] = from_data
-        if not isinstance(from_data, dict) or not from_data.get("email"):
-            raise EmailComposeError("Missing or invalid 'from' field in JMAP data")
+        # ``from`` must be a non-empty ``EmailAddress[]`` (RFC 8621 §4.1.2)
+        # with at least one entry carrying a non-empty ``email``.
+        from_data = jmap_data.get("from")
+        if not isinstance(from_data, list) or not from_data:
+            raise InvalidAddressError("Missing or invalid 'from' field in JMAP data")
+        first_from = _first_address(from_data)
+        if not first_from or not first_from.get("email"):
+            raise InvalidAddressError("Missing or invalid 'from' field in JMAP data")
 
-        if "textBody" in jmap_data and not isinstance(jmap_data["textBody"], list):
-            jmap_data["textBody"] = [jmap_data["textBody"]]
-        if "htmlBody" in jmap_data and not isinstance(jmap_data["htmlBody"], list):
-            jmap_data["htmlBody"] = [jmap_data["htmlBody"]]
-
-        msg = create_multipart_message(jmap_data, in_reply_to, keep_bcc=keep_bcc)
+        msg = _create_multipart_message(jmap_data, in_reply_to, keep_bcc=keep_bcc)
 
         if prepend_headers:
             # Insert at the top of the header block so they appear before
@@ -707,12 +986,12 @@ def compose_email(
             # would have produced — but at index 0 instead of the end.
             #
             # Reserved-name guard: never let prepend_headers shadow the
-            # envelope/identity headers that set_basic_headers owns. Without
+            # envelope/identity headers that _set_basic_headers owns. Without
             # this, an attacker who controlled prepend_headers (no caller
             # does today, but defense-in-depth) could prepend a duplicate
             # Subject / From / To / etc., and many MUAs render the FIRST
             # occurrence — visually masquerading as a different sender.
-            # In-Reply-To / References are also skipped here: set_basic_headers
+            # In-Reply-To / References are also skipped here: _set_basic_headers
             # validates them through _validate_msg_id /
             # _validate_references_chain, and an unvalidated value containing
             # whitespace would fold mid-id on UnstructuredHeader ⇒ silent
@@ -726,13 +1005,15 @@ def compose_email(
                     also_skip=("in-reply-to", "references"),
                 )
             ]
-            msg._headers[0:0] = new_entries  # noqa: SLF001  # pylint: disable=protected-access
+            msg._headers[0:0] = new_entries  # type: ignore[union-attr]  # noqa: SLF001  # pylint: disable=protected-access  # ty: ignore[unresolved-attribute]
 
         out = BytesIO()
-        BytesGenerator(out, policy=_POLICY).flatten(msg)
+        # ``BytesGenerator.flatten`` accepts any ``Message`` subclass at
+        # runtime; the stub narrows to ``EmailMessage``.
+        BytesGenerator(out, policy=_POLICY).flatten(msg)  # ty: ignore[invalid-argument-type]
         return out.getvalue()
 
-    except EmailComposeError:  # pylint: disable=try-except-raise
+    except ComposeError:  # pylint: disable=try-except-raise
         # Re-raise our own structured errors unchanged so the caller sees them
         # as-is (the broad except below would otherwise re-wrap and lose info).
         raise
@@ -760,17 +1041,17 @@ def compose_email(
         #   - email.errors.MessageError (covers HeaderWriteError): Python
         #     3.13+ verify_generated_headers refuses to emit headers with
         #     embedded newlines; that's a *defense*, but to the caller it's
-        #     a compose failure that should surface as EmailComposeError.
+        #     a compose failure that should surface as ComposeError.
         # We do NOT catch LookupError or OSError — those only fire on
         # programmer errors in this module or genuinely unexpected I/O.
         logger.exception("Unexpected error during email composition: %s", str(e))
-        raise EmailComposeError(f"Failed to compose email: {str(e)}") from e
+        raise ComposeError(f"Failed to compose email: {str(e)}") from e
 
 
 def _embed_original_message(
-    original_message: Dict[str, Any],
+    original_message: dict[str, Any],
     new_text: str = "",
-    new_html: Optional[str] = None,
+    new_html: str | None = None,
     include_original: bool = True,
     is_forward: bool = False,
 ) -> tuple[str, str]:
@@ -791,20 +1072,19 @@ def _embed_original_message(
     # source message has no Subject header, and downstream str.lower() etc.
     # crash on None.
     orig_subject = original_message.get("subject") or ""
-    orig_from = original_message.get("from", {})
-    orig_to = original_message.get("to", [])
-    orig_cc = original_message.get("cc", [])
-    orig_date = original_message.get("date", "")
+    orig_from_list = original_message.get("from") or []
+    orig_from = orig_from_list[0] if orig_from_list else {}
+    orig_to = original_message.get("to") or []
+    orig_cc = original_message.get("cc") or []
+    # ``sentAt`` is the JMAP ISO-8601 string shape. The composer also
+    # accepts a tz-aware ``datetime`` here for ergonomics: ``make_reply``
+    # / ``make_forward`` are typically invoked off a freshly-parsed
+    # ``Message`` model where ``sent_at`` is already a ``datetime``.
+    orig_date = original_message.get("sentAt") or ""
 
     date_str = ""
     if isinstance(orig_date, datetime.datetime):
-        if orig_date.tzinfo is None or orig_date.tzinfo.utcoffset(orig_date) is None:
-            orig_date = (
-                timezone.make_aware(orig_date, datetime.timezone.utc)
-                if hasattr(timezone, "make_aware")
-                else orig_date.replace(tzinfo=datetime.timezone.utc)
-            )
-        date_str = format_datetime(orig_date)
+        date_str = format_datetime(_attach_utc_if_naive(orig_date))
     elif isinstance(orig_date, str) and orig_date:
         # parsedate_to_datetime can raise ValueError/IndexError/TypeError on
         # malformed RFC 2822 input from real-world inbound. Fall back to the
@@ -851,14 +1131,8 @@ def _embed_original_message(
 
     if original_message.get("textBody"):
         text_body_list = original_message["textBody"]
-        if not isinstance(text_body_list, list):
-            text_body_list = [text_body_list]
         first_text = text_body_list[0] if text_body_list else None
-        orig_text = ""
-        if isinstance(first_text, str):
-            orig_text = first_text
-        elif isinstance(first_text, dict):
-            orig_text = first_text.get("content", "")
+        orig_text = _body_content(first_text) if first_text else ""
         if orig_text:
             if is_forward:
                 text_body += orig_text
@@ -898,13 +1172,8 @@ def _embed_original_message(
         orig_html = ""
         if original_message.get("htmlBody"):
             html_body_list = original_message["htmlBody"]
-            if not isinstance(html_body_list, list):
-                html_body_list = [html_body_list]
             first_html = html_body_list[0] if html_body_list else None
-            if isinstance(first_html, str):
-                orig_html = first_html
-            elif isinstance(first_html, dict):
-                orig_html = first_html.get("content", "")
+            orig_html = _body_content(first_html) if first_html else ""
 
         nested_html = f"""
         <blockquote data-type="quote-separator">
@@ -917,116 +1186,126 @@ def _embed_original_message(
     return text_body, html_body
 
 
-def create_reply_message(
-    original_message: Dict[str, Any],
-    reply_text: str = "",
-    reply_html: Optional[str] = None,
-    include_quote: bool = True,
-) -> Dict[str, Any]:
-    """Create a JMAP reply message to an existing email.
+def make_reply(
+    original_message: dict[str, Any],
+    body_text: str = "",
+    body_html: str | None = None,
+    include_original: bool = True,
+) -> dict[str, Any]:
+    """Create a JMAP Email object pre-filled as a reply to ``original_message``.
 
-    Threading contract: emits In-Reply-To and a per-id-validated References
-    chain when the parent Message-ID parses cleanly; emits neither when the
-    parent id is malformed (better to lose threading than relay corruption).
-    The inherited References chain is filtered per-id before the parent is
-    appended — same rules as set_basic_headers.
+    Returns a new Email dict (not bytes). The caller is expected to set
+    the ``from`` address before passing it to ``compose_email``.
+
+    Threading contract: emits ``inReplyTo`` and a per-id-validated
+    ``references`` chain when the parent Message-ID parses cleanly;
+    emits neither when the parent id is malformed (better to lose
+    threading than relay corruption).
     """
     orig_subject = original_message.get("subject") or ""
-    orig_from = original_message.get("from", {})
-    orig_message_id = original_message.get(
-        "messageId", original_message.get("message_id", "")
-    )
-    orig_references = original_message.get("references", "")
+    orig_from_list = original_message.get("from") or []
+    orig_from = orig_from_list[0] if orig_from_list else None
 
-    if reply_text is None:
-        reply_text = ""
+    # First ``messageId`` entry is the parent-message threading anchor.
+    orig_message_id = _first_msgid(original_message.get("messageId"))
+    # Reassemble the wire form for ``_validate_references_chain``.
+    orig_references = _collect_msgids(original_message.get("references"))
 
-    reply_subject = make_reply_subject(orig_subject)
+    if body_text is None:
+        body_text = ""
+
+    new_subject = reply_subject(orig_subject)
 
     text_body, html_body = _embed_original_message(
-        original_message, reply_text, reply_html, include_quote, is_forward=False
+        original_message, body_text, body_html, include_original, is_forward=False
     )
 
-    # Threading headers are gated on a parseable parent Message-ID. Real-world
-    # inbound mail occasionally carries unparseable ids (whitespace inside <>,
-    # missing '@'); propagating one produces wire bytes that downstream
-    # parsers truncate on parse ⇒ silent thread corruption. When the parent
-    # is malformed we drop both In-Reply-To and References. When it's clean
-    # we still filter the inherited References per-id via
-    # _validate_references_chain, because the chain itself may carry bad
-    # entries that would re-corrupt the reply.
-    reply_headers: Dict[str, str] = {}
+    # Threading headers gated on a parseable parent Message-ID.
+    reply_in_reply_to: list[str] | None = None
+    reply_refs: list[str] | None = None
     if orig_message_id:
         try:
             orig_message_id_formatted = _validate_msg_id(
                 orig_message_id, field="In-Reply-To"
             )
-        except EmailComposeError:
+        except ComposeError:
             logger.warning(
                 "Dropping malformed inbound Message-ID %r from reply threading",
                 orig_message_id,
             )
         else:
-            reply_headers["In-Reply-To"] = orig_message_id_formatted
+            # The validated formatted id is angle-bracketed; strip for
+            # the JMAP ``String[]`` shape.
+            stripped = orig_message_id_formatted.strip("<>")
+            reply_in_reply_to = [stripped]
             references_chain = _validate_references_chain(
                 orig_references, append=orig_message_id_formatted
             )
             if references_chain:
-                reply_headers["References"] = references_chain
+                reply_refs = [
+                    tok.strip("<>")
+                    for tok in references_chain.split()
+                    if tok.strip()
+                ]
 
-    reply: Dict[str, Any] = {
-        "subject": reply_subject,
+    reply: dict[str, Any] = {
+        "subject": new_subject,
         "textBody": [
-            {"partId": "text-part", "type": "text/plain", "content": text_body}
+            {"partId": "1", "type": "text/plain", "content": text_body}
         ],
-        "from": {},
-        "to": [orig_from] if orig_from and orig_from.get("email") else [],
-        "cc": original_message.get("cc", []),
-        "headers": reply_headers,
+        "from": None,
+        "to": [orig_from] if orig_from and orig_from.get("email") else None,
+        "cc": original_message.get("cc"),
     }
-
-    if html_body != (reply_html or f"<p>{html.escape(reply_text)}</p>"):
+    if reply_in_reply_to:
+        reply["inReplyTo"] = reply_in_reply_to
+    if reply_refs:
+        reply["references"] = reply_refs
+    if html_body != (body_html or f"<p>{html.escape(body_text)}</p>"):
         reply["htmlBody"] = [
-            {"partId": "html-part", "type": "text/html", "content": html_body}
+            {"partId": "2", "type": "text/html", "content": html_body}
         ]
 
     return reply
 
 
-def create_forward_message(
-    original_message: Dict[str, Any],
-    forward_text: str,
-    forward_html: Optional[str] = None,
+def make_forward(
+    original_message: dict[str, Any],
+    body_text: str = "",
+    body_html: str | None = None,
     include_original: bool = True,
-) -> Dict[str, Any]:
-    """Create a JMAP forward message from an existing email."""
+) -> dict[str, Any]:
+    """Create a JMAP Email object pre-filled as a forward of ``original_message``.
+
+    Returns a new Email dict (not bytes). The caller is expected to set
+    ``from`` and ``to`` before passing it to ``compose_email``.
+    """
     orig_subject = original_message.get("subject") or ""
     if orig_subject.lower().startswith("fwd:"):
         forward_subject = orig_subject
     else:
         forward_subject = f"Fwd: {orig_subject}"
 
-    if forward_text is None:
-        forward_text = ""
+    if body_text is None:
+        body_text = ""
 
     text_body, html_body = _embed_original_message(
-        original_message, forward_text, forward_html, include_original, is_forward=True
+        original_message, body_text, body_html, include_original, is_forward=True
     )
 
-    forward: Dict[str, Any] = {
+    forward: dict[str, Any] = {
         "subject": forward_subject,
         "textBody": [
-            {"partId": "text-part", "type": "text/plain", "content": text_body}
+            {"partId": "1", "type": "text/plain", "content": text_body}
         ],
-        "from": {},
-        "to": [],
-        "cc": [],
-        "headers": {},
+        "from": None,
+        "to": None,
+        "cc": None,
     }
 
-    if html_body != (forward_html or f"<p>{html.escape(forward_text)}</p>"):
+    if html_body != (body_html or f"<p>{html.escape(body_text)}</p>"):
         forward["htmlBody"] = [
-            {"partId": "html-part", "type": "text/html", "content": html_body}
+            {"partId": "2", "type": "text/html", "content": html_body}
         ]
 
     return forward

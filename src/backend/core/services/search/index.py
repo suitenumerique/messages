@@ -12,7 +12,8 @@ from opensearchpy.exceptions import NotFoundError, TransportError
 from opensearchpy.helpers import bulk
 
 from core import enums, models
-from core.mda.rfc5322 import parse_email_message
+from core.mda.jmap_utils import body_text_joined
+from jmap_email import parse_email
 from core.services.search.exceptions import (
     RETRYABLE_EXCEPTIONS,
     RETRYABLE_TRANSPORT_STATUS,
@@ -211,7 +212,7 @@ def _build_message_doc(message, mailbox_ids, recipients=None):
     parsed_data = {}
     try:
         if message.blob:
-            parsed_data = parse_email_message(message.blob.get_content())
+            parsed_data = parse_email(message.blob.get_content())
     except models.Blob.DoesNotExist:
         pass
     # pylint: disable=broad-exception-caught
@@ -222,18 +223,8 @@ def _build_message_doc(message, mailbox_ids, recipients=None):
     if recipients is None:
         recipients = list(message.recipients.select_related("contact").all())
 
-    text_body = ""
-    html_body = ""
-
-    if parsed_data.get("textBody"):
-        text_body = " ".join(
-            item.get("content", "") for item in parsed_data["textBody"]
-        )
-
-    if parsed_data.get("htmlBody"):
-        html_body = " ".join(
-            item.get("content", "") for item in parsed_data["htmlBody"]
-        )
+    text_body = body_text_joined(parsed_data, "textBody")
+    html_body = body_text_joined(parsed_data, "htmlBody")
 
     return {
         "relation": {"name": "message", "parent": str(message.thread_id)},

@@ -11,7 +11,7 @@ from celery.utils.log import get_task_logger
 from sentry_sdk import capture_exception
 
 from core.mda.inbound import deliver_inbound_message
-from core.mda.rfc5322 import parse_email_message
+from jmap_email import parse_email
 from core.models import Mailbox
 from core.utils import ThreadReindexDeferrer, ThreadStatsUpdateDeferrer
 
@@ -177,7 +177,7 @@ def process_pst_file_task(self, file_key: str, recipient_id: str) -> Dict[str, A
                                 failure_count += 1
                                 continue
 
-                            parsed_email = parse_email_message(eml_bytes)
+                            parsed_email = parse_email(eml_bytes)
 
                             # Compute IMAP-compatible flags from PST message flags
                             imap_flags = []

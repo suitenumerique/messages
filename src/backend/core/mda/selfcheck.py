@@ -12,6 +12,7 @@ from django.utils import timezone
 
 from core import models
 from core.mda.draft import create_draft
+from core.mda.jmap_utils import body_text_joined
 from core.mda.outbound import prepare_outbound_message, send_message
 from core.mda.selfcheck_reporting import (
     SelfCheckResult,
@@ -168,8 +169,8 @@ def _wait_for_message_reception(
         for message in messages:
             # Check if the message contains our secret
             parsed_data = message.get_parsed_data()
-            text_body = parsed_data.get("textBody", [{}])[0].get("content", "")
-            html_body = parsed_data.get("htmlBody", [{}])[0].get("content", "")
+            text_body = body_text_joined(parsed_data, "textBody")
+            html_body = body_text_joined(parsed_data, "htmlBody")
 
             if secret in text_body or secret in html_body:
                 logger.info("Found received message with secret: %s", message.id)
@@ -191,8 +192,8 @@ def _verify_message_integrity(message: models.Message, original_secret: str) -> 
         return False
 
     # Check that the secret is present in the message body
-    text_body = parsed_data.get("textBody", [{}])[0].get("content", "")
-    html_body = parsed_data.get("htmlBody", [{}])[0].get("content", "")
+    text_body = body_text_joined(parsed_data, "textBody")
+    html_body = body_text_joined(parsed_data, "htmlBody")
 
     if original_secret not in text_body or original_secret not in html_body:
         logger.error("Secret not found in message body")

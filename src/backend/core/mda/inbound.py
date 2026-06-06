@@ -11,6 +11,7 @@ from django.db.utils import Error as DjangoDbError
 
 from core import models
 from core.mda.inbound_tasks import process_inbound_message_task
+from core.mda.jmap_utils import first_msgid
 from core.services.importer.labels import (
     handle_duplicate_message,
 )
@@ -160,9 +161,10 @@ def deliver_inbound_message(
         return False
 
     # --- 2. Check for Duplicate Message --- #
-    mime_id = parsed_email.get("messageId", parsed_email.get("message_id"))
+    mime_id = first_msgid(parsed_email.get("messageId"))
     if mime_id:
-        # Remove angle brackets if present
+        # JMAP ``String[]`` is already bracket-stripped, but defensively
+        # strip a stray pair in case an importer passed the wire form.
         if mime_id.startswith("<") and mime_id.endswith(">"):
             mime_id = mime_id[1:-1]
 

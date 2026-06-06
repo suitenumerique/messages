@@ -24,6 +24,17 @@ jobs:
         run: make lint-back
 
 
+  typecheck-jmap-email:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v6
+      - name: Create env files
+        run: make create-env-files
+      - name: Run pyright (strict) on the jmap-email library
+        run: make typecheck-jmap-email
+
+
   test-back:
     runs-on: ubuntu-latest
     env:

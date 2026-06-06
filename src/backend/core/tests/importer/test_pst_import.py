@@ -12,7 +12,7 @@ from django.core.files.storage import storages
 
 import pytest
 
-from core.mda.rfc5322 import parse_email_message
+from jmap_email import parse_email
 from core.models import Mailbox, MailDomain, Message
 from core.services.importer.pst import (
     FLAG_STATUS_FOLLOWUP,
@@ -299,7 +299,7 @@ class TestReconstructEml:
         assert "Hello world" in text_parts[0].get_payload(decode=True).decode()
 
     def test_reconstruct_preserves_rfc5322_date(self):
-        """Test that RFC5322 date from transport headers is preserved correctly."""
+        """Test that RFC 5322 date from transport headers is preserved correctly."""
         transport = (
             "From: sender@example.com\r\nDate: Mon, 26 May 2025 10:00:00 +0000\r\n"
         )
@@ -657,10 +657,11 @@ class TestReconstructEml:
     def test_reconstruct_rfc822_headers_attachment_is_displayable(self):
         """text/rfc822-headers is relabelled so it doesn't show as 0 bytes.
 
-        Regression: the original-headers part of a DSN composes fine, but the
-        display parser (flanker) silently drops the body of text/rfc822-headers
-        on re-parse, so the UI showed a 0-byte attachment. The importer
-        normalizes it to text/plain, which round-trips with its content intact.
+        Regression: the original-headers part of a DSN composes fine, but
+        on re-parse the display parser previously dropped the body of
+        text/rfc822-headers, so the UI showed a 0-byte attachment. The
+        importer normalizes the label to text/plain, which round-trips
+        with its content intact.
         """
 
         headers = (
@@ -683,7 +684,7 @@ class TestReconstructEml:
         eml_bytes = reconstruct_eml(msg)
 
         # Re-parse the stored .eml the way the message view does.
-        parsed = parse_email_message(eml_bytes)
+        parsed = parse_email(eml_bytes)
         headers_att = next(
             a for a in parsed["attachments"] if a["name"] == "Message Headers.txt"
         )
@@ -1043,11 +1044,11 @@ class TestDisplayRecipients:
         assert not _parse_display_recipients("   ")
 
     def test_parse_recovers_bare_email_when_parser_returns_empty_addr(self):
-        """If parse_email_address returns no usable address but the original
+        """If parse_address returns no usable address but the original
         token contains '@', the token itself is salvaged as the email — guards
-        against flanker quirks where the address ends up in the name slot."""
+        against parser quirks where the address ends up in the name slot."""
         with patch(
-            "core.services.importer.pst.parse_email_address",
+            "core.services.importer.pst.parse_address",
             return_value=("", ""),
         ):
             result = _parse_display_recipients("salvage@example.com")

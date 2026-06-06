@@ -21,7 +21,8 @@ from django.conf import settings
 from celery.utils.log import get_task_logger
 
 from core.mda.inbound import deliver_inbound_message
-from core.mda.rfc5322 import parse_email_message
+from core.mda.jmap_utils import first_address_email
+from jmap_email import parse_email
 from core.services.ssrf import SSRFValidationError, validate_hostname
 
 logger = get_task_logger(__name__)
@@ -515,10 +516,13 @@ def process_folder_messages(  # pylint: disable=too-many-arguments
                 failure_count += 1
             else:
                 # Parse message
-                parsed_email = parse_email_message(raw_email)
+                parsed_email = parse_email(raw_email)
 
                 # TODO: better heuristic to determine if the message is from the sender
-                is_sender = parsed_email["from"]["email"].lower() == username.lower()
+                is_sender = (
+                    first_address_email(parsed_email.get("from")).lower()
+                    == username.lower()
+                )
 
                 # Deliver message
                 if deliver_inbound_message(

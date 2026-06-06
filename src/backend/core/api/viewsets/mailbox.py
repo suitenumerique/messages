@@ -24,7 +24,7 @@ class MailboxViewSet(
     def get_queryset(self):
         """Restrict results to the current user's mailboxes."""
         user = self.request.user
-        # For regular users, annotate with their actual role
+
         return (
             models.Mailbox.objects.filter(accesses__user=user)
             .prefetch_related("accesses__user", "domain")

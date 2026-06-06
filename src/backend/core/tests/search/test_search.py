@@ -425,7 +425,7 @@ class TestSearchIndexBuildMessageDoc:
         message.save()
 
         with mock.patch(
-            "core.services.search.index.parse_email_message",
+            "core.services.search.index.parse_email",
             side_effect=RuntimeError("parse error"),
         ):
             doc = _build_message_doc(message, ["mb-1"])

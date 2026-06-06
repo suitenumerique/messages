@@ -4,6 +4,7 @@ import logging
 from typing import Any, Dict, List, Optional, Set, Tuple
 
 from core import models
+from core.mda.jmap_utils import gmail_labels
 
 logger = logging.getLogger(__name__)
 
@@ -68,10 +69,9 @@ def compute_labels_and_flags(
     """Compute labels and flags for a parsed email."""
 
     # Combine both imap_labels and gmail_labels from parsed email
-    gmail_labels = parsed_email.get("gmail_labels", [])
     imap_labels = imap_labels or []
     imap_flags = imap_flags or []
-    all_labels = list(imap_labels) + list(gmail_labels)
+    all_labels = list(imap_labels) + gmail_labels(parsed_email)
 
     message_flags = {}
     labels_to_add = set()

@@ -73,6 +73,11 @@ jobs:
       image_name: "backend"
       context: "src/backend"
       target: runtime-prod
+      # Sibling jmap-email package plumbed in as a BuildKit named context.
+      # The Dockerfile pulls it in via ``COPY --from=jmap-email``; keeping
+      # the primary context narrow at ``src/backend`` preserves cache locality.
+      build_contexts: |
+        jmap-email=src/jmap-email
 
   docker-publish-keycloak:
     uses: ./.github/workflows/docker-publish.yml

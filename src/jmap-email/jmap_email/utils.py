@@ -1,4 +1,4 @@
-"""Utility functions for RFC5322 email processing."""
+"""Utility functions for RFC 5322 email processing."""
 
 import base64
 import hashlib
@@ -55,7 +55,11 @@ def _resolve_image(
         {
             "cid": cid,
             "content": content,
-            "content_type": content_type,
+            # Use the JMAP / composer key name (``type``) so this dict is
+            # directly feedable into ``compose_email(attachments=[…])``.
+            # Older callers that read ``content_type`` should rename to
+            # match this output shape.
+            "type": content_type,
             "name": filename,
             "size": len(content),
         }
@@ -92,7 +96,7 @@ def _make_replacer(
     return _replace
 
 
-def extract_base64_images_from_text(
+def extract_inline_images_text(
     text: str,
     known_images: dict[str, str] | None = None,
 ) -> tuple[str, list[dict]]:
@@ -109,8 +113,10 @@ def extract_base64_images_from_text(
 
     Returns:
         A tuple of (stripped_text, images) where *images* is a list of dicts
-        with keys `cid`, `content` (bytes), `content_type`, `name`,
-        and `size`.
+        with keys `cid`, `content` (bytes), `type`, `name`, and `size`.
+        The shape is directly feedable into
+        ``compose_email(attachments=[…])`` (set ``disposition="inline"``
+        on each entry before passing).
     """
     images: list[dict] = []
     replace = _make_replacer(images, known_images)
@@ -180,7 +186,7 @@ def remove_mime_headers(
     return cleaned + body
 
 
-def extract_base64_images_from_html(
+def extract_inline_images_html(
     html: str,
     known_images: dict[str, str] | None = None,
 ) -> tuple[str, list[dict]]:
@@ -198,7 +204,10 @@ def extract_base64_images_from_html(
 
     Returns:
         A tuple of (stripped_html, images) where *images* is a list of dicts
-        with keys `cid`, `content` (bytes), `content_type`, and `name` and `size`.
+        with keys `cid`, `content` (bytes), `type`, `name`, and `size`.
+        The shape is directly feedable into
+        ``compose_email(attachments=[…])`` (set ``disposition="inline"``
+        on each entry before passing).
     """
     images: list[dict] = []
     stripped_html = _HTML_BASE64_IMG_RE.sub(_make_replacer(images, known_images), html)

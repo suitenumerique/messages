@@ -7,14 +7,21 @@ are NOT added to attachments (unlike the spec example).
 """
 
 import base64
+import email
+from email import policy as email_policy
 
 import pytest
-from flanker.mime import create
 
-from core.mda.rfc5322.parser import (
+from jmap_email.parser import (
     _is_inline_media_type,
-    parse_message_content,
+    _parse_message_content,
 )
+
+
+def _stdlib_message(raw_bytes: bytes):
+    """Parse raw email bytes into a stdlib ``email.message.Message`` —
+    same lenient ``compat32`` policy the parser uses internally."""
+    return email.message_from_bytes(raw_bytes, policy=email_policy.compat32)
 
 
 class TestIsInlineMediaType:
@@ -62,8 +69,8 @@ Subject: Simple Text
 Content-Type: text/plain
 
 Hello, world!"""
-        message = create.from_string(raw_email)
-        content = parse_message_content(message)
+        message = _stdlib_message(raw_email)
+        content = _parse_message_content(message)
 
         assert len(content["textBody"]) == 1
         assert content["textBody"][0]["type"] == "text/plain"
@@ -79,8 +86,8 @@ Subject: Simple HTML
 Content-Type: text/html
 
 <html><body><p>Hello, world!</p></body></html>"""
-        message = create.from_string(raw_email)
-        content = parse_message_content(message)
+        message = _stdlib_message(raw_email)
+        content = _parse_message_content(message)
 
         assert len(content["htmlBody"]) == 1
         assert content["htmlBody"][0]["type"] == "text/html"
@@ -110,8 +117,8 @@ Content-Type: text/html
 <p>HTML version.</p>
 
 --boundary--"""
-        message = create.from_string(raw_email)
-        content = parse_message_content(message)
+        message = _stdlib_message(raw_email)
+        content = _parse_message_content(message)
 
         assert len(content["textBody"]) == 1
         assert content["textBody"][0]["type"] == "text/plain"
@@ -136,8 +143,8 @@ Content-Type: text/plain
 Only plain text here.
 
 --boundary--"""
-        message = create.from_string(raw_email)
-        content = parse_message_content(message)
+        message = _stdlib_message(raw_email)
+        content = _parse_message_content(message)
 
         assert len(content["textBody"]) == 1
         assert len(content["htmlBody"]) == 1
@@ -156,8 +163,8 @@ Content-Type: text/html
 <p>Only HTML here.</p>
 
 --boundary--"""
-        message = create.from_string(raw_email)
-        content = parse_message_content(message)
+        message = _stdlib_message(raw_email)
+        content = _parse_message_content(message)
 
         assert len(content["textBody"]) == 1
         assert len(content["htmlBody"]) == 1
@@ -186,8 +193,8 @@ Content-Disposition: attachment; filename="doc.pdf"
 PDF content here
 
 --boundary--"""
-        message = create.from_string(raw_email)
-        content = parse_message_content(message)
+        message = _stdlib_message(raw_email)
+        content = _parse_message_content(message)
 
         assert len(content["textBody"]) == 1
         assert "Body text" in content["textBody"][0]["content"]
@@ -216,8 +223,8 @@ Content-Disposition: attachment; filename="image.png"
 PNG data
 
 --boundary--"""
-        message = create.from_string(raw_email)
-        content = parse_message_content(message)
+        message = _stdlib_message(raw_email)
+        content = _parse_message_content(message)
 
         assert len(content["attachments"]) == 1
         assert content["attachments"][0]["type"] == "image/png"
@@ -246,8 +253,8 @@ Content-ID: <image1>
 PNG data
 
 --boundary--"""
-        message = create.from_string(raw_email)
-        content = parse_message_content(message)
+        message = _stdlib_message(raw_email)
+        content = _parse_message_content(message)
 
         assert len(content["htmlBody"]) == 1
         assert '<img src="cid:image1">' in content["htmlBody"][0]["content"]
@@ -271,8 +278,8 @@ Content-ID: <image1>
 PNG data
 
 --boundary--"""
-        message = create.from_string(raw_email)
-        content = parse_message_content(message)
+        message = _stdlib_message(raw_email)
+        content = _parse_message_content(message)
 
         # The image at position > 0 in related should be an attachment
         assert len(content["attachments"]) == 1
@@ -316,8 +323,8 @@ Content-Type: text/plain
 Text after image.
 
 --boundary--"""
-        message = create.from_string(raw_email)
-        content = parse_message_content(message)
+        message = _stdlib_message(raw_email)
+        content = _parse_message_content(message)
 
         # All three parts should be in textBody (mixed context)
         assert len(content["textBody"]) == 3
@@ -348,8 +355,8 @@ Content-Disposition: inline
 PNG data
 
 --boundary--"""
-        message = create.from_string(raw_email)
-        content = parse_message_content(message)
+        message = _stdlib_message(raw_email)
+        content = _parse_message_content(message)
 
         # The image should be in htmlBody, not attachments
         # (it's at position > 0 but in mixed, not related, so it's inline)
@@ -479,8 +486,8 @@ K: Last text part
 
     def test_complex_structure_textbody(self, complex_email):
         """textBody should contain A, B, C, D, K."""
-        message = create.from_string(complex_email)
-        content = parse_message_content(message)
+        message = _stdlib_message(complex_email)
+        content = _parse_message_content(message)
 
         # Find text parts by their content markers
         text_parts = content["textBody"]
@@ -499,8 +506,8 @@ K: Last text part
 
     def test_complex_structure_htmlbody(self, complex_email):
         """htmlBody should contain A, E, K."""
-        message = create.from_string(complex_email)
-        content = parse_message_content(message)
+        message = _stdlib_message(complex_email)
+        content = _parse_message_content(message)
 
         html_contents = [p["content"] for p in content["htmlBody"]]
 
@@ -510,8 +517,8 @@ K: Last text part
 
     def test_complex_structure_attachments(self, complex_email):
         """attachments should contain F, G, H, J but NOT C."""
-        message = create.from_string(complex_email)
-        content = parse_message_content(message)
+        message = _stdlib_message(complex_email)
+        content = _parse_message_content(message)
 
         # Get all attachment content as strings for checking
         attachment_contents = []
@@ -541,8 +548,8 @@ K: Last text part
 
     def test_complex_structure_attachment_count(self, complex_email):
         """Should have exactly 4 attachments: F, G, H, J."""
-        message = create.from_string(complex_email)
-        content = parse_message_content(message)
+        message = _stdlib_message(complex_email)
+        content = _parse_message_content(message)
 
         assert len(content["attachments"]) == 4
 
@@ -568,8 +575,8 @@ Content-Type: text/plain; name="readme.txt"
 This is a text file attachment.
 
 --boundary--"""
-        message = create.from_string(raw_email)
-        content = parse_message_content(message)
+        message = _stdlib_message(raw_email)
+        content = _parse_message_content(message)
 
         # First text/plain is body
         assert len(content["textBody"]) >= 1
@@ -592,8 +599,8 @@ Content-Type: text/plain; name="body.txt"
 This is the body.
 
 --boundary--"""
-        message = create.from_string(raw_email)
-        content = parse_message_content(message)
+        message = _stdlib_message(raw_email)
+        content = _parse_message_content(message)
 
         # First part should be body even with filename
         assert len(content["textBody"]) == 1
@@ -611,8 +618,8 @@ To: recipient@example.com
 Subject: Empty
 
 """
-        message = create.from_string(raw_email)
-        content = parse_message_content(message)
+        message = _stdlib_message(raw_email)
+        content = _parse_message_content(message)
 
         # Should have some structure but may be empty
         assert "textBody" in content
@@ -642,8 +649,8 @@ Deep nested text.
 --l2--
 
 --l1--"""
-        message = create.from_string(raw_email)
-        content = parse_message_content(message)
+        message = _stdlib_message(raw_email)
+        content = _parse_message_content(message)
 
         assert len(content["textBody"]) >= 1
         assert "Deep nested text" in content["textBody"][0]["content"]
@@ -666,8 +673,8 @@ Content-Type: application/x-custom-type
 Custom data.
 
 --boundary--"""
-        message = create.from_string(raw_email)
-        content = parse_message_content(message)
+        message = _stdlib_message(raw_email)
+        content = _parse_message_content(message)
 
         assert len(content["attachments"]) == 1
         assert content["attachments"][0]["type"] == "application/x-custom-type"

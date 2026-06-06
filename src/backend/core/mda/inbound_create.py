@@ -19,6 +19,12 @@ from core.ai.utils import (
     is_ai_summary_enabled,
     is_auto_labels_enabled,
 )
+from core.mda.jmap_utils import (
+    first_address_email,
+    first_address_name,
+    first_msgid,
+    sent_at_to_datetime,
+)
 from core.services.importer.labels import (
     compute_labels_and_flags,
 )
@@ -26,11 +32,18 @@ from core.utils import extract_snippet
 
 logger = logging.getLogger(__name__)
 
-# Helper function to extract Message-IDs
-MESSAGE_ID_RE = re.compile(r"<([^<>]+)>")
-
 TOKEN_THRESHOLD_FOR_SUMMARY = 200  # Minimum token count to trigger summarization
 MINIMUM_MESSAGES_FOR_SUMMARY = 3  # Minimum number of messages to trigger summarization
+
+
+def _canonicalize_subject(subject: Optional[str]) -> str:
+    """Strip leading ``Re:`` / ``Fwd:`` (and i18n variants) for thread match."""
+    return re.sub(
+        r"^((re|fwd|fw|rep|tr|rép)\s*:\s+)+",
+        "",
+        (subject or "").lower(),
+        flags=re.IGNORECASE,
+    ).strip()
 
 
 def find_thread_for_inbound_message(
@@ -41,54 +54,33 @@ def find_thread_for_inbound_message(
     Follows JMAP spec recommendations:
     https://www.ietf.org/rfc/rfc8621.html#section-3
     """
+    in_reply_to = first_msgid(parsed_email.get("inReplyTo"))
+    references = parsed_email.get("references") or []
 
-    def find_message_ids(txt):
-        # Extract all unique message IDs from a header string
-        return set(MESSAGE_ID_RE.findall(txt or ""))
-
-    def canonicalize_subject(subject):
-        return re.sub(
-            r"^((re|fwd|fw|rep|tr|rép)\s*:\s+)+",
-            "",
-            subject.lower(),
-            flags=re.IGNORECASE,
-        ).strip()
-
-    # --- Logic --- #
-    in_reply_to_ids = (
-        {parsed_email.get("in_reply_to")} if parsed_email.get("in_reply_to") else set()
-    )
-    references_ids = find_message_ids(parsed_email.get("headers", {}).get("references"))
-    all_referenced_ids = in_reply_to_ids.union(references_ids)
-
-    # logger.info("All referenced IDs: %s %s", all_referenced_ids, parsed_email)
+    all_referenced_ids = set(references)
+    if in_reply_to:
+        all_referenced_ids.add(in_reply_to)
 
     if not all_referenced_ids:
         return None  # No headers to match on
 
-    # Prepare a list of IDs without angle brackets for DB query
-    db_query_ids = list(all_referenced_ids)
-
     # Find potential parent messages in the target mailbox based on references
     potential_parents = list(
         models.Message.objects.filter(
-            # Query only for the bracketless IDs
-            mime_id__in=db_query_ids,
+            mime_id__in=list(all_referenced_ids),
             thread__accesses__mailbox=mailbox,
         )
         .select_related("thread")
         .order_by("-created_at")  # Prefer newer matches if multiple found
     )
 
-    # logger.info("Potential parents: %s", potential_parents)
-
     if len(potential_parents) == 0:
         return None  # No matching messages found by ID in this mailbox
 
     # Strategy 1: Match by reference AND canonical subject
-    incoming_subject_canonical = canonicalize_subject(parsed_email.get("subject"))
+    incoming_subject_canonical = _canonicalize_subject(parsed_email.get("subject"))
     for parent in potential_parents:
-        parent_subject_canonical = canonicalize_subject(parent.subject)
+        parent_subject_canonical = _canonicalize_subject(parent.subject)
         if incoming_subject_canonical == parent_subject_canonical:
             return parent.thread  # Found a match!
 
@@ -106,8 +98,8 @@ def find_thread_for_import(
     """
 
     subject = parsed_email.get("subject", "")
-    in_reply_to = parsed_email.get("in_reply_to")
-    references = parsed_email.get("headers", {}).get("references", "")
+    in_reply_to = first_msgid(parsed_email.get("inReplyTo"))
+    references = parsed_email.get("references") or []
 
     # First try to find a thread by message IDs
     thread = _find_thread_by_message_ids(in_reply_to, references, mailbox)
@@ -115,12 +107,7 @@ def find_thread_for_import(
     # If no thread found by message IDs, try by subject
     if not thread and subject:
         # Look for threads with similar subjects
-        canonical_subject = re.sub(
-            r"^((re|fwd|fw|rep|tr|rép)\s*:\s+)+",
-            "",
-            subject.lower(),
-            flags=re.IGNORECASE,
-        ).strip()
+        canonical_subject = _canonicalize_subject(subject)
         thread = models.Thread.objects.filter(
             subject__iregex=rf"^(re|fwd|fw|rep|tr|rép)\s*:\s*{re.escape(canonical_subject)}$",
             accesses__mailbox=mailbox,
@@ -159,23 +146,19 @@ def _create_thread(
 
 
 def _find_thread_by_message_ids(
-    in_reply_to: str, references: str, mailbox: models.Mailbox
+    in_reply_to: str, references: List[str], mailbox: models.Mailbox
 ) -> Optional[models.Thread]:
-    """Find thread by message IDs (in_reply_to and references)."""
-    # First try to find a thread by message IDs
+    """Find thread by message IDs (``inReplyTo`` and ``references``)."""
     if in_reply_to or references:
         thread = models.Thread.objects.filter(
             messages__mime_id__in=[in_reply_to] if in_reply_to else [],
             accesses__mailbox=mailbox,
         ).first()
         if not thread and references:
-            # Extract message IDs from references
-            ref_ids = MESSAGE_ID_RE.findall(references)
-            if ref_ids:
-                thread = models.Thread.objects.filter(
-                    messages__mime_id__in=ref_ids,
-                    accesses__mailbox=mailbox,
-                ).first()
+            thread = models.Thread.objects.filter(
+                messages__mime_id__in=references,
+                accesses__mailbox=mailbox,
+            ).first()
         return thread
     return None
 
@@ -264,9 +247,8 @@ def _create_message_from_inbound(  # pylint: disable=too-many-arguments
                 logger.exception("Error adding label %s from channel: %s", tag_id, e)
 
     # --- 4. Get or Create Sender Contact --- #
-    sender_info = parsed_email.get("from", {})
-    sender_email = sender_info.get("email")
-    sender_name = sender_info.get("name")
+    sender_email = first_address_email(parsed_email.get("from"))
+    sender_name = first_address_name(parsed_email.get("from"))
 
     if not sender_email:
         logger.warning(
@@ -332,9 +314,10 @@ def _create_message_from_inbound(  # pylint: disable=too-many-arguments
         # Can we get a parent message for reference?
         # TODO: validate this doesn't create security issues
         parent_message = None
-        if parsed_email.get("in_reply_to"):
+        parent_msg_id = first_msgid(parsed_email.get("inReplyTo"))
+        if parent_msg_id:
             parent_message = models.Message.objects.filter(
-                mime_id=parsed_email.get("in_reply_to"), thread=thread
+                mime_id=parent_msg_id, thread=thread
             ).first()
 
         # Truncate subject to 255 characters if it exceeds max_length
@@ -343,6 +326,7 @@ def _create_message_from_inbound(  # pylint: disable=too-many-arguments
             subject = subject[:255]
 
         is_sender = is_outbound or (is_import and is_import_sender)
+        sent_at = sent_at_to_datetime(parsed_email.get("sentAt"))
 
         # The Blob INSERT and the Message INSERT must commit together
         # so the GC sweep never sees the Blob row without its
@@ -361,13 +345,12 @@ def _create_message_from_inbound(  # pylint: disable=too-many-arguments
                 sender=sender_contact,
                 subject=subject,
                 blob=blob,
-                mime_id=parsed_email.get("messageId", parsed_email.get("message_id"))
-                or None,
+                mime_id=first_msgid(parsed_email.get("messageId")) or None,
                 parent=parent_message,
                 sent_at=(
                     None
                     if is_outbound
-                    else (parsed_email.get("date") or timezone.now())
+                    else (sent_at or timezone.now())
                 ),
                 is_draft=is_outbound,  # Outbound: draft until prepare_outbound_message finalizes
                 is_sender=is_sender,
@@ -379,7 +362,7 @@ def _create_message_from_inbound(  # pylint: disable=too-many-arguments
         if is_import:
             # We need to set the created_at field to the date of the message
             # because the inbound message is not created at the same time as the message is received
-            message.created_at = parsed_email.get("date") or timezone.now()
+            message.created_at = sent_at or timezone.now()
             # Extract flags handled via ThreadAccess (not Message fields)
             import_is_unread = message_flags.pop("is_unread", True)
             import_is_starred = message_flags.pop("_starred", False)
@@ -439,7 +422,7 @@ def _create_message_from_inbound(  # pylint: disable=too-many-arguments
         recipients = list(
             {
                 frozenset(recipient.items())
-                for recipient in parsed_email.get(type_name, [])
+                for recipient in (parsed_email.get(type_name) or [])
             }
         )
         recipient_types_to_process.append(

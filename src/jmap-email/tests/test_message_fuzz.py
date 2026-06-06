@@ -1,5 +1,5 @@
 """
-Fuzzing tests for RFC5322 email message parsing.
+Fuzzing tests for RFC 5322 email message parsing.
 
 These tests use hypothesis for property-based testing to find edge cases
 and potential crashes in the complete email message parsing code.
@@ -14,7 +14,7 @@ import pytest
 from hypothesis import HealthCheck, Phase, given, settings
 from hypothesis import strategies as st
 
-from core.mda.rfc5322.parser import EmailParseError, parse_email_message
+from jmap_email.parser import ParseError, parse_email
 
 # Intensive fuzzing settings
 FUZZ_SETTINGS = {
@@ -273,7 +273,7 @@ class TestSimpleMessageFuzzing:
     )
     @settings(**FUZZ_SETTINGS)
     def test_parse_email_message_structured(self, from_addr, to_addr, subject, body):
-        """parse_email_message should handle structured but fuzzy emails."""
+        """parse_email should handle structured but fuzzy emails."""
         raw_email = f"""From: {from_addr}
 To: {to_addr}
 Subject: {subject}
@@ -283,7 +283,7 @@ Message-ID: <test@example.com>
 {body}
 """.encode("utf-8", errors="replace")
 
-        result = parse_email_message(raw_email)
+        result = parse_email(raw_email)
         if result is not None:
             assert "from" in result
             assert "to" in result
@@ -295,11 +295,11 @@ Message-ID: <test@example.com>
     @given(data=st.binary(max_size=50000))
     @settings(**FUZZ_SETTINGS)
     def test_parse_email_message_random_bytes(self, data):
-        """parse_email_message should not crash on random bytes."""
+        """parse_email should not crash on random bytes."""
         try:
-            result = parse_email_message(data)
+            result = parse_email(data)
             assert result is None or isinstance(result, dict)
-        except EmailParseError:
+        except ParseError:
             pass  # Expected for malformed input
 
     @given(
@@ -310,7 +310,7 @@ Message-ID: <test@example.com>
     )
     @settings(**FUZZ_SETTINGS)
     def test_parse_email_message_evil_headers(self, from_addr, to_addr, subject, body):
-        """parse_email_message should handle evil header values."""
+        """parse_email should handle evil header values."""
         raw_email = f"""From: {from_addr}
 To: {to_addr}
 Subject: {subject}
@@ -319,7 +319,7 @@ Date: Mon, 1 Jan 2024 12:00:00 +0000
 {body}
 """.encode("utf-8", errors="replace")
 
-        result = parse_email_message(raw_email)
+        result = parse_email(raw_email)
         assert result is None or isinstance(result, dict)
 
 
@@ -380,9 +380,9 @@ Content-Transfer-Encoding: {transfer_encoding}
 """.encode("utf-8", errors="replace")
 
         try:
-            result = parse_email_message(raw_email)
+            result = parse_email(raw_email)
             assert result is None or isinstance(result, dict)
-        except EmailParseError:
+        except ParseError:
             pass  # Expected for malformed input
 
     @given(
@@ -418,7 +418,7 @@ Content-Transfer-Encoding: {encoding2}
 --{boundary1}--
 """.encode("utf-8", errors="replace")
 
-        result = parse_email_message(raw_email)
+        result = parse_email(raw_email)
         assert result is None or isinstance(result, dict)
 
     @given(
@@ -455,9 +455,9 @@ Content-Transfer-Encoding: base64
 """.encode("utf-8", errors="replace")
 
         try:
-            result = parse_email_message(raw_email)
+            result = parse_email(raw_email)
             assert result is None or isinstance(result, dict)
-        except EmailParseError:
+        except ParseError:
             pass  # Expected for malformed input
 
     @given(
@@ -500,7 +500,7 @@ Content-Type: multipart/mixed; boundary="{boundaries[0]}"
 {"".join(parts)}
 """.encode("utf-8", errors="replace")
 
-        result = parse_email_message(raw_email)
+        result = parse_email(raw_email)
         assert result is None or isinstance(result, dict)
 
     @given(
@@ -525,9 +525,9 @@ Content-Type: text/plain
 """.encode("utf-8", errors="replace")
 
         try:
-            result = parse_email_message(raw_email)
+            result = parse_email(raw_email)
             assert result is None or isinstance(result, dict)
-        except EmailParseError:
+        except ParseError:
             pass  # Expected for malformed input
 
     @given(
@@ -554,7 +554,7 @@ Content-Type: multipart/mixed; boundary="{boundary_str}"
 {"".join(parts)}--{boundary_str}--
 """.encode("utf-8", errors="replace")
 
-        result = parse_email_message(raw_email)
+        result = parse_email(raw_email)
         assert result is None or isinstance(result, dict)
 
     @given(
@@ -576,9 +576,9 @@ Content-Transfer-Encoding: {declared_encoding}
         raw_email = header + body
 
         try:
-            result = parse_email_message(raw_email)
+            result = parse_email(raw_email)
             assert result is None or isinstance(result, dict)
-        except EmailParseError:
+        except ParseError:
             pass  # Expected for malformed input
 
     @given(
@@ -611,7 +611,7 @@ Content-Disposition: inline
 --related-boundary--
 """.encode("utf-8", errors="replace")
 
-        result = parse_email_message(raw_email)
+        result = parse_email(raw_email)
         assert result is None or isinstance(result, dict)
 
     @given(
@@ -638,7 +638,7 @@ Subject: Many Headers
 Body
 """.encode("utf-8", errors="replace")
 
-        result = parse_email_message(raw_email)
+        result = parse_email(raw_email)
         assert result is None or isinstance(result, dict)
 
     @given(
@@ -656,7 +656,7 @@ Subject: {long_subject}
 Body
 """.encode("utf-8", errors="replace")
 
-        result = parse_email_message(raw_email)
+        result = parse_email(raw_email)
         assert result is None or isinstance(result, dict)
 
     @given(
@@ -676,7 +676,7 @@ Subject: {folded_subject}
 Body
 """.encode("utf-8", errors="replace")
 
-        result = parse_email_message(raw_email)
+        result = parse_email(raw_email)
         assert result is None or isinstance(result, dict)
 
     @given(data=st.binary(max_size=100000))
@@ -684,9 +684,9 @@ Body
     def test_completely_random_binary(self, data):
         """Test completely random binary data as email."""
         try:
-            result = parse_email_message(data)
+            result = parse_email(data)
             assert result is None or isinstance(result, dict)
-        except EmailParseError:
+        except ParseError:
             pass  # Expected for malformed input
 
     @given(
@@ -705,9 +705,9 @@ Body content here.
         raw_email = prefix + valid_email + suffix
 
         try:
-            result = parse_email_message(raw_email)
+            result = parse_email(raw_email)
             assert result is None or isinstance(result, dict)
-        except EmailParseError:
+        except ParseError:
             pass  # Expected for malformed input
 
     @given(
@@ -737,5 +737,5 @@ Content-Transfer-Encoding: base64
 --outer-boundary--
 """.encode("utf-8", errors="replace")
 
-        result = parse_email_message(raw_email)
+        result = parse_email(raw_email)
         assert result is None or isinstance(result, dict)

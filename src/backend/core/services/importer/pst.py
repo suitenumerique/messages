@@ -16,7 +16,7 @@ import uuid
 from email import message_from_string
 from typing import Generator, Optional, Tuple
 
-from core.mda.rfc5322 import compose_email, parse_email_address, parse_email_addresses
+from jmap_email import compose_email, parse_address, parse_addresses
 
 logger = logging.getLogger(__name__)
 
@@ -658,7 +658,7 @@ def _extract_sender_from_mapi(
     # 6. Try to parse sender_name as an email address.
     try:
         if message.sender_name:
-            parsed_name, addr = parse_email_address(message.sender_name)
+            parsed_name, addr = parse_address(message.sender_name)
             if addr and "@" in addr:
                 return _build(parsed_name, addr, sender_name_fallback=False)
     except Exception:
@@ -744,14 +744,14 @@ def _parse_display_recipients(display_string: Optional[str]) -> list:
         if not token:
             continue
         try:
-            name, addr = parse_email_address(token)
+            name, addr = parse_address(token)
         except Exception:
             logger.debug("Failed to parse display recipient token")
             continue
         if addr and "@" in addr:
             addresses.append(_addr_tuple_to_dict(name or "", addr))
         elif "@" in token:
-            # parse_email_address sometimes hands back the address as the
+            # parse_address sometimes hands back the address as the
             # name field when the token is a bare email — recover it.
             addresses.append(_addr_tuple_to_dict("", token))
         else:
@@ -957,11 +957,11 @@ def reconstruct_eml(
     store_email: Optional[str] = None,
     recipient_email: Optional[str] = None,
 ) -> bytes:  # pylint: disable=too-many-branches
-    """Convert a pypff message to RFC5322 bytes.
+    """Convert a pypff message to RFC 5322 bytes.
 
     If transport_headers is available, uses those for threading headers.
     Otherwise, constructs headers from MAPI properties.
-    Uses the core/mda/rfc5322 compose_email API for MIME construction.
+    Uses the ``jmap-email`` library's ``compose_email`` for MIME construction.
 
     ``recipient_email`` is the import target mailbox; its domain is used to
     synthesize ``unknown-sender@<domain>`` when no sender can be extracted,
@@ -969,7 +969,7 @@ def reconstruct_eml(
     """
     # pylint: disable=too-many-locals,too-many-branches,too-many-statements
     jmap_data = {}
-    extra_headers = {}
+    extra_headers: list[dict[str, str]] = []
 
     # Try to get original transport headers for threading-critical fields
     transport_headers = None
@@ -988,9 +988,9 @@ def reconstruct_eml(
         from_str = parsed_headers.get("From", "")
         from_name_hint: Optional[str] = None
         if from_str:
-            name, addr = parse_email_address(from_str)
+            name, addr = parse_address(from_str)
             if addr and "@" in addr:
-                jmap_data["from"] = _addr_tuple_to_dict(name, addr)
+                jmap_data["from"] = [_addr_tuple_to_dict(name, addr)]
             else:
                 from_name_hint = name or None
 
@@ -1001,25 +1001,25 @@ def reconstruct_eml(
                 preferred_name=from_name_hint,
             )
             if sender_dict:
-                jmap_data["from"] = sender_dict
+                jmap_data["from"] = [sender_dict]
 
         # To / Cc / Bcc — header values are authoritative when present.
         to_str = parsed_headers.get("To", "")
         if to_str:
             jmap_data["to"] = [
-                _addr_tuple_to_dict(n, a) for n, a in parse_email_addresses(to_str)
+                _addr_tuple_to_dict(n, a) for n, a in parse_addresses(to_str)
             ]
 
         cc_str = parsed_headers.get("Cc", "")
         if cc_str:
             jmap_data["cc"] = [
-                _addr_tuple_to_dict(n, a) for n, a in parse_email_addresses(cc_str)
+                _addr_tuple_to_dict(n, a) for n, a in parse_addresses(cc_str)
             ]
 
         bcc_str = parsed_headers.get("Bcc", "")
         if bcc_str:
             jmap_data["bcc"] = [
-                _addr_tuple_to_dict(n, a) for n, a in parse_email_addresses(bcc_str)
+                _addr_tuple_to_dict(n, a) for n, a in parse_addresses(bcc_str)
             ]
 
         # Subject
@@ -1027,10 +1027,10 @@ def reconstruct_eml(
         if subject:
             jmap_data["subject"] = subject
 
-        # Date
+        # sentAt
         date_str = parsed_headers.get("Date")
         if date_str:
-            jmap_data["date"] = date_str
+            jmap_data["sentAt"] = date_str
 
         # Message-ID — header is preferred, but Exchange/O365 exports
         # sometimes strip it or carry a malformed value (empty, missing
@@ -1039,31 +1039,31 @@ def reconstruct_eml(
         # cases.
         message_id = _sanitize_message_id(parsed_headers.get("Message-ID"))
         if message_id:
-            jmap_data["messageId"] = message_id
+            jmap_data["messageId"] = [message_id]
 
         # In-Reply-To and References — pass as custom headers to preserve
         # exact original values (the in_reply_to parameter on compose_email
         # would append to References, which we don't want for imports)
         in_reply_to_val = parsed_headers.get("In-Reply-To")
         if in_reply_to_val:
-            extra_headers["In-Reply-To"] = in_reply_to_val
+            extra_headers.append({"name": "In-Reply-To", "value": in_reply_to_val})
 
         references = parsed_headers.get("References")
         if references:
-            extra_headers["References"] = references
+            extra_headers.append({"name": "References", "value": references})
 
     else:
         # Build from MAPI properties — sender
         sender_dict = _extract_sender_from_mapi(message, store_email=store_email)
         if sender_dict:
-            jmap_data["from"] = sender_dict
+            jmap_data["from"] = [sender_dict]
 
-        # Date
+        # sentAt
         try:
             if message.delivery_time:
-                jmap_data["date"] = message.delivery_time.isoformat()
+                jmap_data["sentAt"] = message.delivery_time.isoformat()
             elif message.client_submit_time:
-                jmap_data["date"] = message.client_submit_time.isoformat()
+                jmap_data["sentAt"] = message.client_submit_time.isoformat()
         except Exception:
             logger.debug("Failed to read message date")
 
@@ -1088,9 +1088,9 @@ def reconstruct_eml(
     if "messageId" not in jmap_data:
         native_id = _extract_message_id_from_mapi(message)
         if native_id:
-            jmap_data["messageId"] = native_id
+            jmap_data["messageId"] = [native_id]
         else:
-            jmap_data["messageId"] = _synthesize_message_id(message, recipient_email)
+            jmap_data["messageId"] = [_synthesize_message_id(message, recipient_email)]
 
     # No sender resolvable: synthesize one using the recipient's domain so
     # compose_email accepts the message. inbound_create.py keeps this value
@@ -1107,7 +1107,7 @@ def reconstruct_eml(
         logger.warning(
             "PST message has no resolvable sender; using synthesized sender address"
         )
-        jmap_data["from"] = {"name": "Unknown Sender", "email": fallback_email}
+        jmap_data["from"] = [{"name": "Unknown Sender", "email": fallback_email}]
 
     # Body parts
     try:
@@ -1166,10 +1166,10 @@ def reconstruct_eml(
                     mime_type = "application/octet-stream"
 
                 # text/rfc822-headers (the original-headers part of a DSN/read
-                # receipt) composes fine but our display parser (flanker)
-                # silently drops the body of this subtype on re-parse, surfacing
-                # it as a 0-byte attachment in the UI. The content is plain
-                # RFC822 header text, so normalize the label to text/plain, which
+                # receipt) composes fine but on re-parse the display parser
+                # used to drop the body of this subtype, surfacing it as a
+                # 0-byte attachment in the UI. The content is plain RFC822
+                # header text, so normalize the label to text/plain, which
                 # round-trips intact.
                 if mime_type.split(";")[0].strip().lower() == "text/rfc822-headers":
                     mime_type = "text/plain"
@@ -1416,7 +1416,7 @@ def walk_pst_messages(
             )
         except Exception:
             # Yield None so pst_tasks.py counts this as a failure instead of
-            # silently dropping it (was hidden at debug level previously).
+            # silently dropping it.
             logger.exception(
                 "Failed to reconstruct EML for message %d in folder %s",
                 msg_idx,

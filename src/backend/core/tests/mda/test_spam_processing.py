@@ -16,7 +16,7 @@ from core.mda.inbound_tasks import (
     process_inbound_message_task,
     process_inbound_messages_queue_task,
 )
-from core.mda.rfc5322 import parse_email_message
+from jmap_email import parse_email
 
 
 @pytest.mark.django_db
@@ -31,9 +31,9 @@ class TestDeliverInboundMessageQueueing:
 
         parsed_email = {
             "subject": "Test Email",
-            "from": {"email": "sender@example.com", "name": "Test Sender"},
+            "from": [{"email": "sender@example.com", "name": "Test Sender"}],
             "to": [{"email": recipient_email}],
-            "date": timezone.now(),
+            "sentAt": timezone.now(),
         }
         raw_data = (
             b"From: sender@example.com\r\nTo: "
@@ -68,9 +68,9 @@ class TestDeliverInboundMessageQueueing:
         factories.MessageFactory(thread=thread, mime_id=mime_id)
 
         parsed_email = {
-            "messageId": mime_id,
+            "messageId": [mime_id],
             "subject": "Test Email",
-            "from": {"email": "sender@example.com"},
+            "from": [{"email": "sender@example.com"}],
             "to": [{"email": recipient_email}],
         }
         raw_data = b"Test email"
@@ -238,7 +238,7 @@ X-Spam: yes
 
 This is a test email body.
 """
-        parsed_email = parse_email_message(raw_email)
+        parsed_email = parse_email(raw_email)
         spam_config = {"rules": [{"header_match": "X-Spam:yes", "action": "spam"}]}
 
         result = _check_spam_with_hardcoded_rules(parsed_email, spam_config)
@@ -254,7 +254,7 @@ X-Spam: no
 
 This is a test email body.
 """
-        parsed_email = parse_email_message(raw_email)
+        parsed_email = parse_email(raw_email)
         spam_config = {"rules": [{"header_match": "X-Spam:no", "action": "ham"}]}
 
         result = _check_spam_with_hardcoded_rules(parsed_email, spam_config)
@@ -270,7 +270,7 @@ X-Spam: maybe
 
 This is a test email body.
 """
-        parsed_email = parse_email_message(raw_email)
+        parsed_email = parse_email(raw_email)
         spam_config = {"rules": [{"header_match": "X-Spam:yes", "action": "spam"}]}
 
         result = _check_spam_with_hardcoded_rules(parsed_email, spam_config)
@@ -286,7 +286,7 @@ X-Spam: yes
 
 This is a test email body.
 """
-        parsed_email = parse_email_message(raw_email)
+        parsed_email = parse_email(raw_email)
         spam_config = {}
 
         result = _check_spam_with_hardcoded_rules(parsed_email, spam_config)
@@ -307,7 +307,7 @@ Subject: Test Email
 
 This is a test email body.
 """
-        parsed_email = parse_email_message(raw_email)
+        parsed_email = parse_email(raw_email)
         spam_config = {"rules": [{"header_match": "X-Spam:no", "action": "ham"}]}
 
         result = _check_spam_with_hardcoded_rules(parsed_email, spam_config)
@@ -323,7 +323,7 @@ X-Spam: YES
 
 This is a test email body.
 """
-        parsed_email = parse_email_message(raw_email)
+        parsed_email = parse_email(raw_email)
         spam_config = {"rules": [{"header_match": "X-Spam:yes", "action": "spam"}]}
 
         result = _check_spam_with_hardcoded_rules(parsed_email, spam_config)
@@ -339,7 +339,7 @@ X-Custom: value:with:colons
 
 This is a test email body.
 """
-        parsed_email = parse_email_message(raw_email)
+        parsed_email = parse_email(raw_email)
         spam_config = {
             "rules": [{"header_match": "X-Custom:value:with:colons", "action": "spam"}]
         }
@@ -357,7 +357,7 @@ X-Spam: this is spam content
 
 This is a test email body.
 """
-        parsed_email = parse_email_message(raw_email)
+        parsed_email = parse_email(raw_email)
         spam_config = {
             "rules": [{"header_match_regex": "X-Spam:.*spam.*", "action": "spam"}]
         }
@@ -375,7 +375,7 @@ X-Spam: this is spam content
 
 This is a test email body.
 """
-        parsed_email = parse_email_message(raw_email)
+        parsed_email = parse_email(raw_email)
         spam_config = {
             "rules": [{"header_match_regex": "X-Spam:spam", "action": "spam"}]
         }
@@ -393,7 +393,7 @@ X-Spam: THIS IS SPAM CONTENT
 
 This is a test email body.
 """
-        parsed_email = parse_email_message(raw_email)
+        parsed_email = parse_email(raw_email)
         spam_config = {
             "rules": [{"header_match_regex": "X-Spam:.*spam.*", "action": "spam"}]
         }
@@ -411,7 +411,7 @@ X-Spam-Level: 5
 
 This is a test email body.
 """
-        parsed_email = parse_email_message(raw_email)
+        parsed_email = parse_email(raw_email)
         spam_config = {
             "rules": [{"header_match_regex": "X-Spam-Level:[4-9]", "action": "spam"}]
         }
@@ -429,7 +429,7 @@ X-Spam: yes
 
 This is a test email body.
 """
-        parsed_email = parse_email_message(raw_email)
+        parsed_email = parse_email(raw_email)
         spam_config = {
             "rules": [
                 {"header_match": "X-Spam:yes"}  # No action specified
@@ -449,7 +449,7 @@ X-Spam: yes
 
 This is a test email body.
 """
-        parsed_email = parse_email_message(raw_email)
+        parsed_email = parse_email(raw_email)
         spam_config = {"rules": [{"header_match": "X-Spam:yes", "action": "reject"}]}
 
         result = _check_spam_with_hardcoded_rules(parsed_email, spam_config)
@@ -465,7 +465,7 @@ X-Spam: no
 
 This is a test email body.
 """
-        parsed_email = parse_email_message(raw_email)
+        parsed_email = parse_email(raw_email)
         spam_config = {"rules": [{"header_match": "X-Spam:no", "action": "no action"}]}
 
         result = _check_spam_with_hardcoded_rules(parsed_email, spam_config)
@@ -482,7 +482,7 @@ X-Custom: ham
 
 This is a test email body.
 """
-        parsed_email = parse_email_message(raw_email)
+        parsed_email = parse_email(raw_email)
         spam_config = {
             "rules": [
                 # First rule: doesn't match (different header value)
@@ -509,7 +509,7 @@ X-Spam: yes
 
 This is a test email body.
 """
-        parsed_email = parse_email_message(raw_email)
+        parsed_email = parse_email(raw_email)
         spam_config = {
             "rules": [
                 # First rule: matches and should win (returns spam)
@@ -541,7 +541,7 @@ Subject: Test Email
 
 This is a test email body.
 """
-        parsed_email = parse_email_message(raw_email)
+        parsed_email = parse_email(raw_email)
         spam_config = {
             "rules": [{"header_match": "X-Spam:Yes", "action": "spam"}],
             "trusted_relays": 1,  # Trust block 0 and block 1
@@ -580,7 +580,7 @@ X-Spam: Yes
 This is a test email body.
 """
 
-        parsed_email = parse_email_message(raw_email)
+        parsed_email = parse_email(raw_email)
         spam_config = {
             "rules": [{"header_match": "X-Spam:Yes", "action": "spam"}],
             "trusted_relays": 1,  # Trust block 0 and block 1
@@ -624,7 +624,7 @@ This is a test email body.
 """
         )
 
-        parsed_email = parse_email_message(raw_email)
+        parsed_email = parse_email(raw_email)
         spam_config = {
             "rules": [{"header_match": "X-Spam:No", "action": "ham"}],
             "trusted_relays": 1,  # Trust block 0 and block 1
@@ -679,7 +679,7 @@ Subject: Test Email
 
 This is a test email body.
 """
-        parsed_email = parse_email_message(raw_email)
+        parsed_email = parse_email(raw_email)
         spam_config = {
             "rules": [
                 {"header_match": "X-Spam:Ham", "action": "ham"},

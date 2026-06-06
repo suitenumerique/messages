@@ -298,7 +298,7 @@ class TestInboundWidgetDeliver:
         call_args = mock_deliver.call_args[0]
         parsed_email = call_args[1]
 
-        assert parsed_email["from"]["email"] == "sender@example.com"
+        assert parsed_email["from"][0]["email"] == "sender@example.com"
         assert (
             "Test message with custom settings"
             in parsed_email["htmlBody"][0]["content"]

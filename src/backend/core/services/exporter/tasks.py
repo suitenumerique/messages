@@ -18,7 +18,7 @@ from sentry_sdk import capture_exception
 
 from core.api.utils import generate_presigned_url
 from core.mda.inbound import deliver_inbound_message
-from core.mda.rfc5322.parser import parse_email_message
+from jmap_email.parser import parse_email
 from core.models import Label, Mailbox, Message, ThreadAccess
 
 from messages.celery_app import app as celery_app
@@ -710,7 +710,7 @@ This file is in MBOX format and can be imported into most email clients.
     raw_data = msg.as_bytes()
 
     # Parse the email
-    parsed_email = parse_email_message(raw_data)
+    parsed_email = parse_email(raw_data)
 
     # Deliver to the mailbox
     return deliver_inbound_message(

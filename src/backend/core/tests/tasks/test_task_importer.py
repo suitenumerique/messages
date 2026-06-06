@@ -97,7 +97,7 @@ class TestExtractDateFromHeaders:
     """Test the extract_date_from_headers function."""
 
     def test_extract_valid_date(self):
-        """Test extracting a valid RFC5322 date."""
+        """Test extracting a valid RFC 5322 date."""
         raw = b"From: a@b.com\r\nDate: Mon, 1 Jan 2024 00:00:00 +0000\r\n\r\nBody"
         result = extract_date_from_headers(raw)
         assert result is not None
@@ -285,8 +285,7 @@ class TestProcessMboxFileTask:
         original_deliver = deliver_inbound_message
 
         def mock_deliver(recipient_email, parsed_email, raw_data, **kwargs):
-            subject = parsed_email.get("headers", {}).get("subject", "")
-            if subject == "Test Message 2":
+            if parsed_email.get("subject") == "Test Message 2":
                 return False
             return original_deliver(recipient_email, parsed_email, raw_data, **kwargs)
 
@@ -370,7 +369,7 @@ class TestProcessMboxFileTask:
 
             with (
                 patch(
-                    "core.services.importer.mbox_tasks.parse_email_message",
+                    "core.services.importer.mbox_tasks.parse_email",
                     side_effect=mock_parse,
                 ),
                 patch.object(

@@ -1173,11 +1173,6 @@ class Base(Configuration):
                 "level": "WARNING",
                 "propagate": False,
             },
-            "flanker": {
-                "handlers": ["console"],
-                "level": "WARNING",
-                "propagate": False,
-            },
         },
     }
 

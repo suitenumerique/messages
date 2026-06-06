@@ -37,6 +37,29 @@ postscreen_client_connection_count_limit = 1000
 # Security
 disable_vrfy_command = yes
 
+# SMTP smuggling defense (CVE-2023-51764 family + USENIX'25 variants).
+# Postfix 3.9+ defaults to ``normalize`` but we pin explicitly so a
+# distro / image change can't silently re-introduce the vector.
+#
+# NOTE: this is **defense in depth, not sufficient on its own**.
+# The Python backend parser must defend the same threat model
+# independently because many ingest paths (EML upload, mbox / PST /
+# IMAP import, drafts, forwards) bypass this MTA-in layer entirely.
+# A future migration to a Python-native MTA-in (suitenumerique/messages
+# PR #692) makes these settings transitional. See
+# the ``jmap-email`` library's ``parse_email`` for the canonical hardening.
+#
+#  - ``normalize`` rewrites every bare-LF in DATA to CRLF before the
+#    cleanup queue, defeating the <LF>.<CR><LF> end-of-DATA confusion.
+#  - The empty exclusions list prevents bypass by clients on
+#    ``$mynetworks`` — we set ``mynetworks`` tight below.
+#  - ``smtpd_forbid_unauth_pipelining = yes`` blocks the pre-greeting /
+#    pre-banner pipeline attacks.
+smtpd_forbid_bare_newline = normalize
+smtpd_forbid_bare_newline_exclusions =
+smtpd_forbid_unauth_pipelining = yes
+mynetworks = 127.0.0.0/8 [::1]/128
+
 # Done through postconf in entrypoint.sh:
 # - message_size_limit
 

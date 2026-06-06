@@ -5,7 +5,7 @@
 [project]
 name = "messages-backend"
 version = "0.7.0"
-authors = [{ "name" = "ANCT", "email" = "suiteterritoriale@anct.gouv.fr" }]
+authors = [{ "name" = "ANCT", "email" = "contact@suite.anct.gouv.fr" }]
 classifiers = [
     "Development Status :: 5 - Production/Stable",
     "Framework :: Django",
@@ -20,7 +20,7 @@ description = "A Django MDA"
 keywords = ["Django", "Contacts", "Templates", "RBAC"]
 license = "MIT"
 readme = "README.md"
-requires-python = ">=3.14.4,<4.0"
+requires-python = ">=3.14.5,<4.0"
 
 # Note: after changing this list you must re-run `make deps-lock-back`
 dependencies = [
@@ -49,9 +49,9 @@ dependencies = [
     "drf_spectacular==0.29.0",
     "opensearch-py==2.8.0",
     "factory_boy==3.3.3",
-    "flanker@git+https://github.com/sylvinus/flanker@77f4582044f1a8549d49333d50d9bded1176ca09",
     "gunicorn==25.1.0",
     "icalendar==7.0.3",
+    "jmap-email",
     "jsonschema==4.26.0",
     "nested-multipart-parser==1.6.0",
     "openai==2.21.0",
@@ -106,9 +106,15 @@ module-root = ""
 source-include = ["core/**"]
 source-exclude = ["core/tests/**"]
 
+# Path-based dependency on the jmap-email package while it lives in
+# this monorepo. After publishing to PyPI, replace with a normal
+# version pin in the ``dependencies`` list above.
+[tool.uv.sources]
+jmap-email = { path = "../jmap-email", editable = true }
+
 [tool.ruff]
-# Pin ruff at py313 even though our runtime floor is py314.4 (chosen for
-# stdlib `email` fixes — see core/mda/rfc5322/README.md). Targeting py313
+# Pin ruff at py313 even though our runtime floor is py314.5 (chosen for
+# stdlib `email` fixes — see ``src/jmap-email/README.md``). Targeting py313
 # keeps ruff's formatter from applying PEP 758 (un-parenthesized `except
 # E1, E2:`), which is valid Python 3.14 but trips up most static analysis
 # (CodeRabbit, IDEs on older Python, copy-pasted snippets).

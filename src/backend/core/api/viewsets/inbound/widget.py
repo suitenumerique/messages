@@ -18,7 +18,7 @@ from rest_framework.response import Response
 from core import models
 from core.api.permissions import IsAuthenticated
 from core.mda.inbound import deliver_inbound_message
-from core.mda.rfc5322 import compose_email
+from jmap_email import compose_email
 
 logger = logging.getLogger(__name__)
 
@@ -157,13 +157,13 @@ class InboundWidgetViewSet(viewsets.GenericViewSet):
         # Sanitize subject to prevent header injection (strip newlines/carriage returns)
         subject = subject.replace("\r", "").replace("\n", "")
 
-        # Build a JMAP-like structured format that we could have got from parse_email_message()
+        # Build a JMAP-like structured format that we could have got from parse_email()
 
         parsed_email = {
             "subject": subject,
-            "from": {"email": sender_email},
+            "from": [{"email": sender_email}],
             "to": [{"name": target_name, "email": target_email}],
-            "date": timezone.now(),
+            "sentAt": timezone.now().isoformat(),
             "htmlBody": [{"content": html_escape(message_text).replace("\n", "<br/>")}],
             "textBody": [{"content": message_text}],
         }

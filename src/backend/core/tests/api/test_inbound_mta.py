@@ -16,7 +16,7 @@ from rest_framework import status
 from rest_framework.test import APIClient
 
 from core import enums, factories, models
-from core.mda.rfc5322 import EmailParseError
+from jmap_email import ParseError
 
 
 @pytest.fixture(name="api_client")
@@ -118,7 +118,7 @@ class TestMTAInboundEmail:
     """Test the MTA inbound email endpoint."""
 
     @patch("core.api.viewsets.inbound.mta.deliver_inbound_message")
-    @patch("core.api.viewsets.inbound.mta.parse_email_message")
+    @patch("core.api.viewsets.inbound.mta.parse_email")
     @pytest.mark.django_db
     def test_valid_email_submission(
         self,
@@ -165,7 +165,7 @@ class TestMTAInboundEmail:
         assert second_call_args[1]["subject"] == "Test Email"
 
     @patch("core.api.viewsets.inbound.mta.deliver_inbound_message")
-    @patch("core.api.viewsets.inbound.mta.parse_email_message")
+    @patch("core.api.viewsets.inbound.mta.parse_email")
     def test_email_parse_failure(
         self,
         mock_parse,
@@ -175,7 +175,7 @@ class TestMTAInboundEmail:
         valid_jwt_token,
     ):
         """Test that if email parsing fails, a 400 is returned."""
-        mock_parse.side_effect = EmailParseError("Parsing failed")
+        mock_parse.side_effect = ParseError("Parsing failed")
 
         email = "recipient@example.com"
         token = valid_jwt_token(sample_email, {"original_recipients": [email]})
@@ -193,7 +193,7 @@ class TestMTAInboundEmail:
         mock_deliver.assert_not_called()  # Delivery should not be attempted
 
     @patch("core.api.viewsets.inbound.mta.deliver_inbound_message")
-    @patch("core.api.viewsets.inbound.mta.parse_email_message")
+    @patch("core.api.viewsets.inbound.mta.parse_email")
     def test_delivery_partial_failure(
         self,
         mock_parse,
@@ -235,7 +235,7 @@ class TestMTAInboundEmail:
         assert mock_deliver.call_count == 2  # Called for both recipients
 
     @patch("core.api.viewsets.inbound.mta.deliver_inbound_message")
-    @patch("core.api.viewsets.inbound.mta.parse_email_message")
+    @patch("core.api.viewsets.inbound.mta.parse_email")
     def test_delivery_total_failure(
         self,
         mock_parse,

@@ -1,13 +1,13 @@
-"""Tests for core.mda.rfc5322.utils — base64 image extraction utilities."""
+"""Tests for jmap_email.utils — base64 image extraction utilities."""
 
 # pylint: disable=missing-function-docstring,too-many-public-methods
 
 import base64
 import re
 
-from core.mda.rfc5322.utils import (
-    extract_base64_images_from_html,
-    extract_base64_images_from_text,
+from jmap_email.utils import (
+    extract_inline_images_html,
+    extract_inline_images_text,
     remove_mime_headers,
 )
 
@@ -26,23 +26,23 @@ _UUID_RE = re.compile(
 
 
 class TestExtractBase64Images:
-    """Tests for extract_base64_images_from_html()."""
+    """Tests for extract_inline_images_html()."""
 
     def test_extract_base64_html_no_images(self):
         """HTML without base64 images is returned unchanged."""
         html = "<p>Hello world</p>"
-        result_html, images = extract_base64_images_from_html(html)
+        result_html, images = extract_inline_images_html(html)
         assert result_html == html
         assert len(images) == 0
 
     def test_extract_base64_html_single_image(self):
         """A single base64 image is extracted and replaced with a CID."""
         html = f'<p>Text</p><img src="data:image/png;base64,{_1PX_PNG_B64}" alt="pic">'
-        result_html, images = extract_base64_images_from_html(html)
+        result_html, images = extract_inline_images_html(html)
 
         assert len(images) == 1
         assert images[0]["content"] == _1PX_PNG
-        assert images[0]["content_type"] == "image/png"
+        assert images[0]["type"] == "image/png"
         assert images[0]["size"] == len(_1PX_PNG)
         assert images[0]["name"].endswith(".png")
 
@@ -56,38 +56,38 @@ class TestExtractBase64Images:
             f'<img src="data:image/png;base64,{_1PX_PNG_B64}">'
             f'<img src="data:image/jpeg;base64,{_1PX_PNG_B64}">'
         )
-        result_html, images = extract_base64_images_from_html(html)
+        result_html, images = extract_inline_images_html(html)
 
         assert len(images) == 2
         assert images[0]["cid"] != images[1]["cid"]
-        assert images[0]["content_type"] == "image/png"
-        assert images[1]["content_type"] == "image/jpeg"
+        assert images[0]["type"] == "image/png"
+        assert images[1]["type"] == "image/jpeg"
         assert "data:image" not in result_html
 
     def test_extract_base64_html_existing_cid_not_touched(self):
         """Images already using cid: references are not modified."""
         html = '<img src="cid:existing-uuid">'
-        result_html, images = extract_base64_images_from_html(html)
+        result_html, images = extract_inline_images_html(html)
         assert result_html == html
         assert len(images) == 0
 
     def test_extract_base64_html_non_image_data_url_not_touched(self):
         """Non-image data URLs (e.g. text/plain) are left as-is."""
         html = '<img src="data:text/plain;base64,SGVsbG8=">'
-        result_html, images = extract_base64_images_from_html(html)
+        result_html, images = extract_inline_images_html(html)
         assert result_html == html
         assert len(images) == 0
 
     def test_extract_base64_html_invalid_left_as_is(self):
         """Invalid base64 data leaves the img tag unchanged."""
         html = '<img src="data:image/png;base64,!!!invalid!!!">'
-        result_html, images = extract_base64_images_from_html(html)
+        result_html, images = extract_inline_images_html(html)
         assert result_html == html
         assert len(images) == 0
 
     def test_extract_base64_html_empty(self):
         """Empty string returns empty string and no images."""
-        result_html, images = extract_base64_images_from_html("")
+        result_html, images = extract_inline_images_html("")
         assert result_html == ""
         assert len(images) == 0
 
@@ -98,7 +98,7 @@ class TestExtractBase64Images:
             '<img src="https://example.com/photo.jpg">'
             '<img src="cid:already-inline">'
         )
-        result_html, images = extract_base64_images_from_html(html)
+        result_html, images = extract_inline_images_html(html)
 
         assert len(images) == 1
         assert "https://example.com/photo.jpg" in result_html
@@ -108,28 +108,28 @@ class TestExtractBase64Images:
     def test_extract_base64_html_cid_is_valid_uuid(self):
         """Generated CIDs are valid UUID4 strings."""
         html = f'<img src="data:image/png;base64,{_1PX_PNG_B64}">'
-        _, images = extract_base64_images_from_html(html)
+        _, images = extract_inline_images_html(html)
         assert _UUID_RE.match(images[0]["cid"])
 
 
 class TestExtractBase64ImagesFromText:
-    """Tests for extract_base64_images_from_text()."""
+    """Tests for extract_inline_images_text()."""
 
     def test_extract_base64_text_no_images(self):
         """Plain text without base64 images is returned unchanged."""
         text = "Hello world\nThis is a message."
-        result, images = extract_base64_images_from_text(text)
+        result, images = extract_inline_images_text(text)
         assert result == text
         assert len(images) == 0
 
     def test_extract_base64_text_single_md_image(self):
         """A single markdown base64 image is replaced with a CID reference."""
         text = f"Before\n![logo](data:image/png;base64,{_1PX_PNG_B64})\nAfter"
-        result, images = extract_base64_images_from_text(text)
+        result, images = extract_inline_images_text(text)
 
         assert len(images) == 1
         assert images[0]["content"] == _1PX_PNG
-        assert images[0]["content_type"] == "image/png"
+        assert images[0]["type"] == "image/png"
         assert images[0]["size"] == len(_1PX_PNG)
         assert f"![logo](cid:{images[0]['cid']})" in result
         assert "data:image" not in result
@@ -142,7 +142,7 @@ class TestExtractBase64ImagesFromText:
             f"Start\n![a](data:image/png;base64,{_1PX_PNG_B64})\n"
             f"Middle\n![b](data:image/jpeg;base64,{_1PX_PNG_B64})\nEnd"
         )
-        result, images = extract_base64_images_from_text(text)
+        result, images = extract_inline_images_text(text)
 
         assert len(images) == 2
         assert images[0]["cid"] != images[1]["cid"]
@@ -154,7 +154,7 @@ class TestExtractBase64ImagesFromText:
     def test_extract_base64_text_preserves_normal_urls(self):
         """Markdown images with normal URLs are preserved."""
         text = "![photo](https://example.com/photo.jpg)"
-        result, images = extract_base64_images_from_text(text)
+        result, images = extract_inline_images_text(text)
         assert result == text
         assert len(images) == 0
 
@@ -164,7 +164,7 @@ class TestExtractBase64ImagesFromText:
             f"Hello\n![inline](data:image/png;base64,{_1PX_PNG_B64})\n"
             "![photo](https://example.com/photo.jpg)\nBye"
         )
-        result, images = extract_base64_images_from_text(text)
+        result, images = extract_inline_images_text(text)
 
         assert len(images) == 1
         assert "data:image" not in result
@@ -175,7 +175,7 @@ class TestExtractBase64ImagesFromText:
     def test_extract_base64_text_html_img_tag(self):
         """Residual HTML img tags with base64 data are also replaced with CIDs."""
         text = f'Some text <img src="data:image/png;base64,{_1PX_PNG_B64}" alt="pic"> more text'
-        result, images = extract_base64_images_from_text(text)
+        result, images = extract_inline_images_text(text)
 
         assert len(images) == 1
         assert "data:image" not in result
@@ -185,14 +185,14 @@ class TestExtractBase64ImagesFromText:
 
     def test_extract_base64_text_empty_string(self):
         """Empty string returns empty string and no images."""
-        result, images = extract_base64_images_from_text("")
+        result, images = extract_inline_images_text("")
         assert result == ""
         assert len(images) == 0
 
     def test_extract_base64_text_cid_is_valid_uuid(self):
         """Generated CIDs are valid UUID4 strings."""
         text = f"![img](data:image/png;base64,{_1PX_PNG_B64})"
-        _, images = extract_base64_images_from_text(text)
+        _, images = extract_inline_images_text(text)
         assert _UUID_RE.match(images[0]["cid"])
 
 
@@ -204,12 +204,12 @@ class TestDeduplication:
         known_images: dict[str, str] = {}
 
         text = f"![logo](data:image/png;base64,{_1PX_PNG_B64})"
-        text_result, text_images = extract_base64_images_from_text(
+        text_result, text_images = extract_inline_images_text(
             text, known_images=known_images
         )
 
         html = f'<img src="data:image/png;base64,{_1PX_PNG_B64}">'
-        html_result, html_images = extract_base64_images_from_html(
+        html_result, html_images = extract_inline_images_html(
             html, known_images=known_images
         )
 
@@ -235,12 +235,12 @@ class TestDeduplication:
         known_images: dict[str, str] = {}
 
         text = f"![a](data:image/png;base64,{_1PX_PNG_B64})"
-        _, text_images = extract_base64_images_from_text(
+        _, text_images = extract_inline_images_text(
             text, known_images=known_images
         )
 
         html = f'<img src="data:image/png;base64,{other_b64}">'
-        _, html_images = extract_base64_images_from_html(
+        _, html_images = extract_inline_images_html(
             html, known_images=known_images
         )
 
@@ -256,7 +256,7 @@ class TestDeduplication:
             f"![a](data:image/png;base64,{_1PX_PNG_B64})\n"
             f"![b](data:image/png;base64,{_1PX_PNG_B64})"
         )
-        result, images = extract_base64_images_from_text(
+        result, images = extract_inline_images_text(
             text, known_images=known_images
         )
 
@@ -455,3 +455,43 @@ class TestRemoveMimeHeaders:
         assert b"malformed-without-colon" in out
         # The indented line is a "continuation" of the malformed line — kept.
         assert b" indented-after-malformed" in out
+
+
+class TestExtractInlineImagesComposerHandoff:
+    """L11: the dict shape returned by ``extract_inline_images_*`` is the
+    same shape ``compose_email(attachments=[…])`` accepts. A caller can
+    splice the result straight into ``attachments`` (after stamping
+    ``disposition="inline"``) without renaming keys.
+    """
+
+    def test_extracted_image_dict_is_composer_ready(self):
+        """The dict carries ``content``, ``type``, ``name``, ``cid`` —
+        every key ``compose_email`` reads. Pin the rename of the legacy
+        ``content_type`` key to ``type``."""
+        from jmap_email import compose_email
+
+        html_in = f'<img src="data:image/png;base64,{_1PX_PNG_B64}">'
+        _, images = extract_inline_images_html(html_in)
+        assert images
+        img = images[0]
+        # The spec key names.
+        assert set(img) >= {"content", "type", "name", "cid", "size"}
+        assert "content_type" not in img, (
+            "L11: ``content_type`` was renamed to ``type`` for "
+            "composer handoff; the legacy key must NOT reappear."
+        )
+
+        # Round-trip: feed the dict (plus disposition) straight into
+        # ``compose_email`` — no rename required.
+        raw = compose_email(
+            {
+                "from": [{"email": "s@example.com"}],
+                "to": [{"email": "r@example.com"}],
+                "subject": "t",
+                "sentAt": "2026-01-01T00:00:00+00:00",
+                "htmlBody": [{"content": f'<img src="cid:{img["cid"]}">'}],
+                "attachments": [{**img, "disposition": "inline"}],
+            }
+        )
+        # Sanity: the cid landed on the wire.
+        assert f"<{img['cid']}>".encode("ascii") in raw

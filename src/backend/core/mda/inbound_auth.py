@@ -34,6 +34,7 @@ import logging
 import re
 from typing import Any, Dict, List, Optional
 
+from core.mda.jmap_utils import headers_blocks
 from core.mda.signing import verify_message_dkim
 
 logger = logging.getLogger(__name__)
@@ -128,7 +129,7 @@ def _authentication_results_values(
     Block 0 is what we (or our MTA) prepended; blocks 1..N are upstream relays
     (most recent first). Anything past ``trusted_relays`` is ignored.
     """
-    blocks = parsed_email.get("headers_blocks") or []
+    blocks = headers_blocks(parsed_email)
     blocks_to_check = trusted_relays + 1
     values: List[str] = []
     for block in blocks[:blocks_to_check]:

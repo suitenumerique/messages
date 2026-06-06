@@ -16,15 +16,16 @@ from core import models
 from core.enums import MessageDeliveryStatusChoices
 from core.mda.inbound import check_local_recipient, deliver_inbound_message
 from core.mda.outbound_direct import send_message_via_mx
-from core.mda.rfc5322 import (
-    EmailParseError,
+from jmap_email import (
+    ParseError,
     compose_email,
-    create_forward_message,
-    create_reply_message,
-    extract_base64_images_from_html,
-    extract_base64_images_from_text,
-    parse_email_message,
+    make_forward,
+    make_reply,
+    extract_inline_images_html,
+    extract_inline_images_text,
+    parse_email,
 )
+from core.mda.jmap_utils import first_address_email
 from core.mda.signing import sign_message_dkim, verify_message_dkim
 from core.mda.smtp import send_smtp_mail
 from core.services.blob_gc import schedule_for_gc
@@ -142,18 +143,18 @@ def compose_and_sign_mime(
         if parent_parsed:
             is_forward = (message.subject or "").lower().startswith("fwd:")
             if is_forward:
-                nested_data = create_forward_message(
+                nested_data = make_forward(
                     original_message=parent_parsed,
-                    forward_text=text_body,
-                    forward_html=html_body,
+                    body_text=text_body,
+                    body_html=html_body,
                     include_original=True,
                 )
             else:
-                nested_data = create_reply_message(
+                nested_data = make_reply(
                     original_message=parent_parsed,
-                    reply_text=text_body,
-                    reply_html=html_body,
-                    include_quote=True,
+                    body_text=text_body,
+                    body_html=html_body,
+                    include_original=True,
                 )
             if nested_data.get("textBody"):
                 text_body = nested_data["textBody"][0]["content"]
@@ -178,13 +179,13 @@ def compose_and_sign_mime(
 
     mime_data = {
         "from": [{"name": message.sender.name, "email": message.sender.email}],
-        "date": timezone.now().strftime("%a, %d %b %Y %H:%M:%S %z"),
+        "sentAt": timezone.now().isoformat(),
         "to": recipients_by_type.get(models.MessageRecipientTypeChoices.TO, []),
         "cc": recipients_by_type.get(models.MessageRecipientTypeChoices.CC, []),
         "subject": message.subject,
         "textBody": [{"content": text_body}] if text_body else [],
         "htmlBody": [{"content": html_body}] if html_body else [],
-        "message_id": message.mime_id,
+        "messageId": [message.mime_id] if message.mime_id else None,
     }
 
     if all_attachments:
@@ -243,29 +244,22 @@ def append_signature_and_extract_inline_images(
     raw_images = []
 
     if text_body:
-        text_body, text_images = extract_base64_images_from_text(
+        text_body, text_images = extract_inline_images_text(
             text_body, known_images=known_images
         )
         raw_images.extend(text_images)
 
     if html_body:
-        html_body, html_images = extract_base64_images_from_html(
+        html_body, html_images = extract_inline_images_html(
             html_body, known_images=known_images
         )
         raw_images.extend(html_images)
 
-    # Normalize to the format expected by compose_email
-    inline_attachments = [
-        {
-            "content": img["content"],
-            "type": img["content_type"],
-            "name": img["name"],
-            "disposition": "inline",
-            "cid": img["cid"],
-            "size": img["size"],
-        }
-        for img in raw_images
-    ]
+    # ``extract_inline_images_*`` already returns the JMAP / composer
+    # attachment shape (``type`` key, etc.). Set ``disposition="inline"``
+    # on each entry so the composer wraps in ``multipart/related`` and
+    # emits the ``cid`` Content-ID header.
+    inline_attachments = [{**img, "disposition": "inline"} for img in raw_images]
 
     return text_body, html_body, inline_attachments
 
@@ -498,8 +492,8 @@ def send_message(message: models.Message, force_mta_out: bool = False):
         with ThreadStatsUpdateDeferrer.defer():
             blob_content = message.blob.get_content()
             try:
-                parsed_email = parse_email_message(blob_content)
-            except EmailParseError as e:
+                parsed_email = parse_email(blob_content)
+            except ParseError as e:
                 logger.error(
                     "Failed to parse email for message %s: %s",
                     message.id,
@@ -514,7 +508,7 @@ def send_message(message: models.Message, force_mta_out: bool = False):
                     )
                 return
 
-            if parsed_email.get("from", {}).get("email") != message.sender.email:
+            if first_address_email(parsed_email.get("from")) != message.sender.email:
                 raise ValueError("Mailbox email does not match the raw message sender")
 
             message.sent_at = timezone.now()

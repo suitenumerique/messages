@@ -22,9 +22,10 @@ from core.api.authentication import ChannelApiKeyAuthentication
 from core.api.permissions import channel_scope
 from core.enums import MAILBOX_ROLES_CAN_SEND, ChannelApiKeyScope
 from core.mda.inbound_create import _create_message_from_inbound
+from core.mda.jmap_utils import first_address_email
 from core.mda.outbound import prepare_outbound_message
 from core.mda.outbound_tasks import send_message_task
-from core.mda.rfc5322 import EmailParseError, parse_email_message
+from jmap_email import ParseError, parse_email
 
 logger = logging.getLogger(__name__)
 
@@ -104,15 +105,15 @@ class SubmitRawEmailView(APIView):
 
         # Parse to validate structure
         try:
-            parsed = parse_email_message(raw_mime)
-        except EmailParseError:
+            parsed = parse_email(raw_mime)
+        except ParseError:
             return Response(
                 {"detail": "Failed to parse email message."},
                 status=status.HTTP_400_BAD_REQUEST,
             )
 
         # Validate sender matches the mailbox
-        sender_email = (parsed.get("from") or {}).get("email", "")
+        sender_email = first_address_email(parsed.get("from"))
         mailbox_email = str(mailbox)
         if sender_email.lower() != mailbox_email.lower():
             return Response(

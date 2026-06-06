@@ -1,5 +1,5 @@
 """
-Fuzzing tests for RFC5322 email address parsing.
+Fuzzing tests for RFC 5322 email address parsing.
 
 These tests use hypothesis for property-based testing to find edge cases
 and potential crashes in the email address parsing code.
@@ -12,11 +12,11 @@ import pytest
 from hypothesis import HealthCheck, Phase, given, settings
 from hypothesis import strategies as st
 
-from core.mda.rfc5322.parser import (
-    decode_email_header_text,
+from jmap_email.parser import (
+    decode_rfc2047_header,
     parse_date,
-    parse_email_address,
-    parse_email_addresses,
+    parse_address,
+    parse_addresses,
 )
 
 # Intensive fuzzing settings
@@ -214,8 +214,8 @@ class TestAddressParserFuzzing:
     @given(address=chaotic_address)
     @settings(**FUZZ_SETTINGS)
     def test_parse_email_address_never_crashes(self, address):
-        """parse_email_address should never crash on any input."""
-        result = parse_email_address(address)
+        """parse_address should never crash on any input."""
+        result = parse_address(address)
 
         # Should always return a tuple of two strings
         assert isinstance(result, tuple)
@@ -226,16 +226,16 @@ class TestAddressParserFuzzing:
     @given(address=evil_text)
     @settings(**FUZZ_SETTINGS)
     def test_parse_email_address_evil_input(self, address):
-        """parse_email_address should handle evil input."""
-        result = parse_email_address(address)
+        """parse_address should handle evil input."""
+        result = parse_address(address)
         assert isinstance(result, tuple)
         assert len(result) == 2
 
     @given(addresses=chaotic_address)
     @settings(**FUZZ_SETTINGS)
     def test_parse_email_addresses_never_crashes(self, addresses):
-        """parse_email_addresses should never crash on any input."""
-        result = parse_email_addresses(addresses)
+        """parse_addresses should never crash on any input."""
+        result = parse_addresses(addresses)
 
         # Should always return a list
         assert isinstance(result, list)
@@ -250,15 +250,15 @@ class TestAddressParserFuzzing:
     @given(addresses=evil_text)
     @settings(**FUZZ_SETTINGS)
     def test_parse_email_addresses_evil_input(self, addresses):
-        """parse_email_addresses should handle evil input."""
-        result = parse_email_addresses(addresses)
+        """parse_addresses should handle evil input."""
+        result = parse_addresses(addresses)
         assert isinstance(result, list)
 
     @given(text=evil_text)
     @settings(**FUZZ_SETTINGS)
     def test_decode_email_header_text_never_crashes(self, text):
-        """decode_email_header_text should never crash on any input."""
-        result = decode_email_header_text(text)
+        """decode_rfc2047_header should never crash on any input."""
+        result = decode_rfc2047_header(text)
         assert isinstance(result, str)
 
     @given(date_str=evil_text)
@@ -283,7 +283,7 @@ class TestAddressEdgeCasesFuzzing:
     def test_group_syntax_variants(self, prefix, suffix):
         """Test various group syntax patterns."""
         address = f"{prefix}{suffix}"
-        result = parse_email_addresses(address)
+        result = parse_addresses(address)
         assert isinstance(result, list)
 
     @given(
@@ -298,7 +298,7 @@ class TestAddressEdgeCasesFuzzing:
         else:
             address = f"{name} <test@example.com>"
 
-        result = parse_email_address(address)
+        result = parse_address(address)
         assert isinstance(result, tuple)
         assert len(result) == 2
 
@@ -318,7 +318,7 @@ class TestAddressEdgeCasesFuzzing:
     def test_encoded_headers(self, encoded_part, encoding, method):
         """Test RFC 2047 encoded header patterns."""
         header = f"=?{encoding}?{method}?{encoded_part}?= <test@example.com>"
-        result = parse_email_address(header)
+        result = parse_address(header)
         assert isinstance(result, tuple)
 
     @given(
@@ -328,7 +328,7 @@ class TestAddressEdgeCasesFuzzing:
     def test_many_recipients(self, num_recipients):
         """Test parsing many recipients."""
         recipients = ", ".join([f"user{i}@example.com" for i in range(num_recipients)])
-        result = parse_email_addresses(recipients)
+        result = parse_addresses(recipients)
         assert isinstance(result, list)
         if num_recipients > 0:
             assert len(result) == num_recipients
@@ -350,7 +350,7 @@ class TestAddressEdgeCasesFuzzing:
             f"  {local}@{domain}  ",
         ]
         for pattern in patterns:
-            result = parse_email_address(pattern)
+            result = parse_address(pattern)
             assert isinstance(result, tuple)
             assert len(result) == 2
 
@@ -360,7 +360,7 @@ class TestAddressEdgeCasesFuzzing:
     @settings(**FUZZ_SETTINGS)
     def test_special_character_combinations(self, chars):
         """Test combinations of special email characters."""
-        result = parse_email_address(chars)
+        result = parse_address(chars)
         assert isinstance(result, tuple)
-        result = parse_email_addresses(chars)
+        result = parse_addresses(chars)
         assert isinstance(result, list)

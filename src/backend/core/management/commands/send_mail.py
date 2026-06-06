@@ -21,10 +21,11 @@ import uuid
 from django.core.exceptions import ValidationError
 from django.core.management.base import BaseCommand, CommandError
 from django.core.validators import validate_email
+from django.utils import timezone
 
 from core import models
 from core.mda.outbound import send_outbound_email
-from core.mda.rfc5322 import compose_email
+from jmap_email import compose_email
 from core.mda.signing import sign_message_dkim
 
 logger = logging.getLogger(__name__)
@@ -120,15 +121,18 @@ class Command(BaseCommand):
         )
         mime_id = f"{mime_id}@_lst.{from_email.split('@')[1]}"
 
-        # Generate MIME content
+        # Generate MIME content. ``sentAt`` is required by RFC 5322
+        # §3.6.1; the composer is strict-by-design and refuses to
+        # fabricate ``now()`` on absence — we pass it explicitly here.
         mime_data = {
             "from": [{"name": from_name, "email": from_email}],
             "to": [{"name": to_email.split("@")[0], "email": to_email}],
             "cc": [],
             "subject": subject,
+            "sentAt": timezone.now().isoformat(),
             "textBody": [{"content": body}],
             "htmlBody": [],
-            "message_id": mime_id,
+            "messageId": [mime_id] if mime_id else None,
         }
 
         # Compose the email

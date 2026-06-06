@@ -18,7 +18,13 @@ from core.mda.inbound_auth import (
     get_inbound_auth_mode,
 )
 from core.mda.inbound_create import _create_message_from_inbound
-from core.mda.rfc5322 import parse_email_message
+from core.mda.jmap_utils import (
+    find_header,
+    first_address_email,
+    has_header,
+    headers_blocks,
+)
+from jmap_email import parse_email
 
 from messages.celery_app import app as celery_app
 
@@ -37,7 +43,7 @@ def _is_selfcheck_message(parsed_email: Dict[str, Any], recipient_email: str) ->
     if not selfcheck_from or not selfcheck_to:
         return False
 
-    from_email = ((parsed_email.get("from") or {}).get("email") or "").strip().lower()
+    from_email = first_address_email(parsed_email.get("from")).strip().lower()
     if from_email != selfcheck_from:
         return False
 
@@ -57,7 +63,6 @@ def _check_spam_with_hardcoded_rules(
         is_spam: True if the message is spam, False otherwise. None if no rules matched.
     """
     rules = spam_config.get("rules", [])
-    headers = parsed_email.get("headers", {})
 
     for rule in rules:
         if rule.get("header_match") or rule.get("header_match_regex"):
@@ -73,36 +78,39 @@ def _check_spam_with_hardcoded_rules(
             key = key.lower().strip()
             value = value.lower().strip()
 
-            # Existence check only — the actual value is read from
-            # headers_blocks below to apply the trusted-relays cut.
-            # ``headers`` follows the rfc5322 parser contract:
-            # str for RFC max=1 headers, list[str] otherwise; either
-            # shape is truthy when present, which is all we need here.
-            if headers.get(key) is None:
+            # Existence check first — the actual value is read from
+            # ``headersBlocks`` below to apply the trusted-relays cut.
+            if not has_header(parsed_email, key):
                 continue
 
-            # Use headers_blocks to identify which headers to trust based on trusted_relays config.
-            # Each block ends with a Received header, marking everything above it as trusted.
-            # Block 0: headers before first Received (ours from MTA), ending with first Received
-            # Block 1: headers between first and second Received, ending with second Received (relay 1)
-            # Block 2+: headers after second Received, ending with third Received (relay 2+)
-            headers_blocks = parsed_email.get("headers_blocks", [])
+            # Use ``ext.headersBlocks`` to identify which headers to
+            # trust based on the trusted_relays config. Each block ends
+            # with a Received header, marking everything above it as
+            # trusted.
+            #   Block 0: headers before first Received (ours from MTA),
+            #            ending with first Received.
+            #   Block 1: headers between first and second Received,
+            #            ending with second Received (relay 1).
+            #   Block 2+: headers after second Received, ending with
+            #             third Received (relay 2+).
+            blocks = headers_blocks(parsed_email)
 
-            # Get number of trusted relays (default: 1, meaning we trust block 0 and block 1)
+            # Default trusted relays = 1 means we trust block 0 and block 1.
             trusted_relays = spam_config.get("trusted_relays", 1)
-            # Number of blocks to check: block 0 (before our Received) + trusted_relays blocks
+            # block 0 (our Received) + trusted_relays upstream blocks.
             blocks_to_check = trusted_relays + 1
 
-            # Check only the trusted blocks (slicing beyond list length just returns all blocks)
-            # Blocks are ordered from most recent to oldest, so we want the first match (most recent)
+            # Check only the trusted blocks (slicing beyond list length
+            # just returns all blocks). Blocks are ordered most recent
+            # to oldest, so we want the first match (most recent).
             found_value = None
-            for block in headers_blocks[:blocks_to_check]:
+            for block in blocks[:blocks_to_check]:
                 if key in block:
                     block_value = block[key]
-                    # Values are always lists in headers_blocks, use the first one (most recent in that block)
+                    # Values inside a block are always lists; first entry
+                    # is the most recent occurrence within that block.
                     if block_value:
                         found_value = block_value[0]
-                    # Break after first match since blocks are ordered most recent to oldest
                     break
 
             if found_value is None:
@@ -234,7 +242,7 @@ def process_inbound_message_task(self, inbound_message_id: str):
         # Parse the email from raw_data
         raw_data_bytes = bytes(inbound_message.raw_data)
         try:
-            parsed_email = parse_email_message(raw_data_bytes)
+            parsed_email = parse_email(raw_data_bytes)
         except Exception as e:
             error_msg = f"Failed to parse email message: {e}"
             logger.error(error_msg)
@@ -290,7 +298,7 @@ def process_inbound_message_task(self, inbound_message_id: str):
                 + raw_data_bytes
             )
             try:
-                parsed_email = parse_email_message(prepended)
+                parsed_email = parse_email(prepended)
                 raw_data_bytes = prepended
             except Exception as e:  # pylint: disable=broad-exception-caught
                 # Keep raw_data_bytes / parsed_email in lockstep: if the

@@ -83,6 +83,8 @@ services:
   backend-base:
     build:
       context: src/backend
+      additional_contexts:
+        jmap-email: ./src/jmap-email
       target: runtime-dev
       args:
         DOCKER_USER: ${DOCKER_USER:-1000}
@@ -90,6 +92,11 @@ services:
     volumes:
       - ./src/backend:/app
       - ./data/static:/data/static
+      # Live-mount the jmap-email package over the frozen install so
+      # source edits propagate without a rebuild. The wheel installed
+      # at ``/venv/lib/python3.14/site-packages/jmap_email`` is
+      # overlaid with the editable source.
+      - ./src/jmap-email/jmap_email:/venv/lib/python3.14/site-packages/jmap_email
     healthcheck:
       test: ["CMD", "python", "-c", "import urllib.request as u; u.urlopen('http://localhost:8000/__heartbeat__/', timeout=1)"]
       interval: 3s
@@ -142,14 +149,24 @@ services:
       - tools
     volumes:
       - ./src/backend:/app
+      # Sibling package for path-based uv dependency. Both `backend`
+      # and `jmap-email` must be visible at the SAME relative path
+      # from /app as they are on the host (../jmap-email), so the
+      # ``[tool.uv.sources]`` declaration in src/backend/pyproject.toml
+      # resolves correctly inside the container.
+      - ./src/jmap-email:/jmap-email
     build:
-      context: src/backend/
+      context: src/backend
+      additional_contexts:
+        jmap-email: ./src/jmap-email
       target: uv
     pull_policy: build
 
   worker-dev:
     build:
       context: src/backend
+      additional_contexts:
+        jmap-email: ./src/jmap-email
       target: runtime-dev
       args:
         DOCKER_USER: ${DOCKER_USER:-1000}
@@ -170,6 +187,8 @@ services:
   worker-ui:
     build:
       context: src/backend
+      additional_contexts:
+        jmap-email: ./src/jmap-email
       target: runtime-dev
       args:
         DOCKER_USER: ${DOCKER_USER:-1000}
@@ -387,6 +406,21 @@ services:
         condition: service_started
       redis:
         condition: service_started
+
+  # Self-contained jmap-email package tests. Zero infrastructure
+  # dependencies (no DB, no opensearch, no redis) — the library has
+  # no runtime deps. Source is mounted for instant feedback during
+  # development.
+  jmap-email-test:
+    profiles:
+      - tools
+    build:
+      context: src/jmap-email
+    command: pytest -q tests/
+    volumes:
+      - ./src/jmap-email/jmap_email:/app/jmap_email
+      - ./src/jmap-email/tests:/app/tests
+      - ./src/jmap-email/pyproject.toml:/app/pyproject.toml
 
 volumes:
   objectstorage-data:

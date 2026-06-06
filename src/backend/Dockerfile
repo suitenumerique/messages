@@ -18,9 +18,8 @@ WORKDIR /app
 FROM base AS uv
 
 # Pin uv by SHA256 digest for supply chain security.
-# Verify with: gh attestation verify --owner astral-sh oci://ghcr.io/astral-sh/uv:0.11.10
-# SLSA provenance: https://github.com/astral-sh/uv/attestations/26524427
-COPY --from=ghcr.io/astral-sh/uv@sha256:bca7f6959666f3524e0c42129f9d8bbcfb0c180d847f5187846b98ff06125ead /uv /uvx /bin/
+# Verify with: gh attestation verify --owner astral-sh oci://ghcr.io/astral-sh/uv:0.11.19
+COPY --from=ghcr.io/astral-sh/uv@sha256:b46b03ddfcfbf8f547af7e9eaefdf8a39c8cebcba7c98858d3162bd28cf536f6 /uv /uvx /bin/
 
 RUN <<EOR
 apt-get update
@@ -43,12 +42,20 @@ ENV UV_PROJECT_ENVIRONMENT=/venv
 
 # Install Python via uv — integrity verified against SHA256 checksums embedded in the uv binary.
 # Uses python-build-standalone: most C deps (ssl, ffi, sqlite, zlib, lzma, bz2) are statically linked.
-RUN uv python install 3.14.4
+RUN uv python install 3.14.5
 
 # ---- Production dependencies ----
 FROM uv AS base-with-deps
 
 COPY pyproject.toml uv.lock ./
+# Path-based sibling dependency from src/jmap-email — uv's sync needs
+# the directory on disk at the same relative path the source tree uses
+# (``../jmap-email``). The sibling package is plumbed in as a named
+# build context (BuildKit's ``additional_contexts`` — see compose.yaml
+# ``backend-base``) so the primary build context stays narrow at
+# ``src/backend`` and Docker only re-scans the jmap-email tree when it
+# actually changes.
+COPY --from=jmap-email . /jmap-email
 
 ENV PATH="/venv/bin:$PATH"
 
@@ -79,7 +86,7 @@ EOR
 FROM uv AS python-runtime
 RUN <<EOR
 set -e
-PYDIR=$(dirname $(dirname $(uv python find 3.14.4)))
+PYDIR=$(dirname $(dirname $(uv python find 3.14.5)))
 rm -rf \
     $PYDIR/bin/idle* $PYDIR/bin/pip* $PYDIR/bin/pydoc* $PYDIR/bin/*-config \
     $PYDIR/include $PYDIR/share \

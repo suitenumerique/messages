@@ -13,6 +13,8 @@ from django.core.exceptions import ImproperlyConfigured, ValidationError
 import jsonschema
 from configurations import values
 
+from core.mda.jmap_utils import body_part_text
+
 logger = logging.getLogger(__name__)
 
 SNIPPET_MAX_LENGTH = 140
@@ -41,12 +43,16 @@ def extract_snippet(parsed_data: dict[str, Any], fallback: str = "") -> str:
     Tries textBody first, then htmlBody (stripped of HTML tags).
     Falls back to the provided fallback string if no body content is found.
     Result is truncated to SNIPPET_MAX_LENGTH characters.
+
+    Transparent to the ``body_values`` projection: reads ``content`` when
+    inline and ``bodyValues[partId]`` when the spec-default projection
+    moved the text. See ``core.mda.jmap_utils.body_part_text``.
     """
     if text_body := parsed_data.get("textBody"):
-        return text_body[0].get("content", "")[:SNIPPET_MAX_LENGTH]
+        return body_part_text(parsed_data, text_body[0])[:SNIPPET_MAX_LENGTH]
 
     if html_body := parsed_data.get("htmlBody"):
-        html_content = html_body[0].get("content", "")
+        html_content = body_part_text(parsed_data, html_body[0])
         clean_text = re.sub("<[^>]+>", " ", html_content)
         return " ".join(html.unescape(clean_text).strip().split())[:SNIPPET_MAX_LENGTH]
 

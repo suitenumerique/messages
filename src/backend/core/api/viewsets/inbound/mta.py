@@ -17,7 +17,7 @@ from rest_framework.response import Response
 
 from core import models
 from core.mda.inbound import check_local_recipients, deliver_inbound_message
-from core.mda.rfc5322 import EmailParseError, parse_email_message, remove_mime_headers
+from jmap_email import ParseError, parse_email, remove_mime_headers
 
 logger = logging.getLogger(__name__)
 
@@ -184,8 +184,8 @@ class InboundMTAViewSet(viewsets.GenericViewSet):
 
         # Parse the email message once
         try:
-            parsed_email = parse_email_message(raw_data)
-        except EmailParseError as e:
+            parsed_email = parse_email(raw_data)
+        except ParseError as e:
             logger.error("Failed to parse inbound email: %s", str(e))
             # Consider saving the raw email for debugging
             return Response(
