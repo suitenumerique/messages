@@ -12,7 +12,7 @@ import logging
 from django.core.exceptions import ValidationError as DjangoValidationError
 
 from drf_spectacular.utils import extend_schema
-from jmap_email import ParseError, first_address_email, parse_email
+from jmap_email import first_address_email, parse_email
 from rest_framework import status
 from rest_framework.exceptions import PermissionDenied
 from rest_framework.response import Response
@@ -103,9 +103,8 @@ class SubmitRawEmailView(APIView):
             )
 
         # Parse to validate structure
-        try:
-            parsed = parse_email(raw_mime)
-        except ParseError:
+        parsed = parse_email(raw_mime)
+        if parsed is None:
             return Response(
                 {"detail": "Failed to parse email message."},
                 status=status.HTTP_400_BAD_REQUEST,

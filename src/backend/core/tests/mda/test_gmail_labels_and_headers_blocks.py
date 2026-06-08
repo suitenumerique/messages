@@ -4,8 +4,7 @@ bounded header-block grouping.
 
 Both functions consume a ``parsed_email`` dict and walk its
 ``headers`` list. They do not depend on the parser's ``ext`` namespace,
-so they work on any output of :func:`jmap_email.parse_email` or
-:func:`jmap_email.parse_headers`.
+so they work on any output of :func:`jmap_email.parse_email`.
 """
 
 import pytest

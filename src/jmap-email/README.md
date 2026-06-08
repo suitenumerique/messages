@@ -39,8 +39,15 @@ pip install jmap-email
 ```python
 import jmap_email
 
-# Parse raw RFC 5322 bytes → JMAP Email object dict (RFC 8621 §4)
+# Parse raw RFC 5322 bytes → JMAP Email object dict (RFC 8621 §4),
+# or None when the input is fundamentally unparseable (empty, non-bytes,
+# stdlib produced no Message, etc.). parse_email never raises — the
+# failure mode is a single `is None` check at the call site, and
+# recoverable damage surfaces in email["ext"]["defects"] when parsing
+# succeeded but something needed salvaging.
 email = jmap_email.parse_email(raw_bytes)
+if email is None:
+    ...  # log + skip / 400 / quarantine — caller's choice
 email["subject"]        # str | None  (NFC normalised)
 email["from"]           # [{"name": str | None, "email": str}, ...] | None
 email["sentAt"]         # ISO-8601 with offset, e.g. "2026-06-08T14:30:00+02:00"
@@ -157,6 +164,26 @@ on purpose**:
 |---|---|---|
 | **Compose** (`compose_email`) | `email.policy.SMTP` (cloned, CTE 7-bit) | Caller-controlled input → must produce strictly RFC-compliant output. Enforces address-list folding, RFC 2047 / 2231 encoding, CRLF, line-length limits. |
 | **Parse** (`parse_email`)     | `email.policy.compat32`                 | Real-world inbound MIME violates the spec routinely. `compat32` is lenient: it returns raw header strings and recovers what it can from broken Content-Transfer-Encoding, missing charsets, malformed structural delimiters. |
+
+### Parser failure mode
+
+`parse_email` is total: it returns a `JmapEmail` dict on success or
+`None` on fundamental failure (empty bytes, wrong type, stdlib
+producing no `Message`, or any unhandled internal error). All failures
+log at WARNING level. No exception escapes.
+
+```python
+parsed = parse_email(raw)
+if parsed is None:
+    logger.warning("dropped unparseable message")
+    return
+...  # use parsed
+```
+
+Recoverable damage (a salvageable malformed header, an unknown
+charset, etc.) keeps the parse on track — those are surfaced in
+`parsed["ext"]["defects"]` so consumers can flag the message while
+still using its fields.
 
 ### Composer error hierarchy
 
@@ -300,12 +327,12 @@ Runnable scripts under `examples/`:
 
 - `examples/parse_and_print.py` — parse raw bytes and pretty-print the
   JMAP shape
+- `examples/import_eml_safely.py` — read an `.eml` off disk, handle
+  the `None` failure path, surface defects, print key fields
 - `examples/compose_with_attachment.py` — compose a multipart message
   with a regular attachment
 - `examples/inline_image_roundtrip.py` — compose + re-parse a message
   with an inline image, asserting the CID survives
-- `examples/reply_with_threading.py` — build a reply that preserves
-  `In-Reply-To` / `References` threading
 - `examples/encoded_word_subject.py` — compose a non-ASCII Subject
   and re-parse it
 

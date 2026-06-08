@@ -307,6 +307,13 @@ def process_mbox_file_task(self, file_key: str, recipient_id: str) -> Dict[str, 
                             continue
 
                         parsed_email = parse_email(message_content)
+                        if parsed_email is None:
+                            logger.warning(
+                                "mbox: skipping unparseable message (%d bytes)",
+                                len(message_content),
+                            )
+                            failure_count += 1
+                            continue
 
                         # Treat the message as a sent one when From matches
                         # the destination mailbox — same heuristic as IMAP

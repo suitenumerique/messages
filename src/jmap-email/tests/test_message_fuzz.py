@@ -14,7 +14,7 @@ import pytest
 from hypothesis import HealthCheck, Phase, given, settings
 from hypothesis import strategies as st
 
-from jmap_email.parser import ParseError, parse_email
+from jmap_email.parser import parse_email
 
 # Intensive fuzzing settings
 FUZZ_SETTINGS = {
@@ -300,11 +300,8 @@ Message-ID: <test@example.com>
     @settings(**FUZZ_SETTINGS)
     def test_parse_email_message_random_bytes(self, data):
         """parse_email should not crash on random bytes."""
-        try:
-            result = parse_email(data)
-            assert result is None or isinstance(result, dict)
-        except ParseError:
-            pass  # Expected for malformed input
+        result = parse_email(data)
+        assert result is None or isinstance(result, dict)
 
     @given(
         from_addr=evil_text,
@@ -383,11 +380,8 @@ Content-Transfer-Encoding: {transfer_encoding}
 {body}
 """.encode("utf-8", errors="replace")
 
-        try:
-            result = parse_email(raw_email)
-            assert result is None or isinstance(result, dict)
-        except ParseError:
-            pass  # Expected for malformed input
+        result = parse_email(raw_email)
+        assert result is None or isinstance(result, dict)
 
     @given(
         boundary1=boundary,
@@ -458,11 +452,8 @@ Content-Transfer-Encoding: base64
 --{boundary1}--
 """.encode("utf-8", errors="replace")
 
-        try:
-            result = parse_email(raw_email)
-            assert result is None or isinstance(result, dict)
-        except ParseError:
-            pass  # Expected for malformed input
+        result = parse_email(raw_email)
+        assert result is None or isinstance(result, dict)
 
     @given(
         depth=st.integers(min_value=1, max_value=10),
@@ -528,11 +519,8 @@ Content-Type: text/plain
 --{boundary_used}--
 """.encode("utf-8", errors="replace")
 
-        try:
-            result = parse_email(raw_email)
-            assert result is None or isinstance(result, dict)
-        except ParseError:
-            pass  # Expected for malformed input
+        result = parse_email(raw_email)
+        assert result is None or isinstance(result, dict)
 
     @given(
         num_parts=st.integers(min_value=0, max_value=100),
@@ -579,11 +567,8 @@ Content-Transfer-Encoding: {declared_encoding}
 
         raw_email = header + body
 
-        try:
-            result = parse_email(raw_email)
-            assert result is None or isinstance(result, dict)
-        except ParseError:
-            pass  # Expected for malformed input
+        result = parse_email(raw_email)
+        assert result is None or isinstance(result, dict)
 
     @given(
         inline_content=st.binary(max_size=5000),
@@ -687,11 +672,8 @@ Body
     @settings(**FUZZ_SETTINGS)
     def test_completely_random_binary(self, data):
         """Test completely random binary data as email."""
-        try:
-            result = parse_email(data)
-            assert result is None or isinstance(result, dict)
-        except ParseError:
-            pass  # Expected for malformed input
+        result = parse_email(data)
+        assert result is None or isinstance(result, dict)
 
     @given(
         prefix=st.binary(max_size=1000),
@@ -708,11 +690,8 @@ Body content here.
 """
         raw_email = prefix + valid_email + suffix
 
-        try:
-            result = parse_email(raw_email)
-            assert result is None or isinstance(result, dict)
-        except ParseError:
-            pass  # Expected for malformed input
+        result = parse_email(raw_email)
+        assert result is None or isinstance(result, dict)
 
     @given(
         embedded_eml=st.binary(max_size=5000),

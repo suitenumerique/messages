@@ -747,7 +747,7 @@ class TestProcessInboundMessageAuthIntegration:
             "ext": {"headersBlocks": [{}]},
             "from": [{"email": "a@b"}],
         }
-        mock_parse.side_effect = [original_parsed, RuntimeError("parser exploded")]
+        mock_parse.side_effect = [original_parsed, None]
         mock_auth_check.return_value = VERDICT_UNVERIFIED
         mock_create_message.return_value = True
 

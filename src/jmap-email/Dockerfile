@@ -13,6 +13,7 @@ RUN pip install --no-cache-dir \
     "pytest-cov==7.0.0" \
     "pytest-xdist==3.8.0" \
     "hypothesis==6.151.9" \
+    "pylint==4.0.4" \
     "ruff==0.15.0" \
     "ty==0.0.44"
 

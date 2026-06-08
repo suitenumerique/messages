@@ -704,6 +704,10 @@ This file is in MBOX format and can be imported into most email clients.
     }
     raw_data = compose_email(notification)
     parsed_email = parse_email(raw_data)
+    if parsed_email is None:
+        # We just composed this; failing to parse it back means the
+        # composer is broken — bubble up so Sentry catches it.
+        raise RuntimeError("Exporter notification failed to round-trip parse_email")
 
     return deliver_inbound_message(
         recipient_email=mailbox_email,

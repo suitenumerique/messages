@@ -28,8 +28,8 @@ logger = logging.getLogger(__name__)
 def _attach_utc_if_naive(dt: datetime.datetime) -> datetime.datetime:
     """Ensure ``dt`` is timezone-aware, defaulting to UTC.
 
-    Replaces the Django ``timezone.make_aware`` we used to call. Naive
-    datetimes are treated as UTC; aware datetimes pass through unchanged.
+    Naive datetimes are treated as UTC; aware datetimes pass through
+    unchanged.
     """
     if dt.tzinfo is None or dt.tzinfo.utcoffset(dt) is None:
         return dt.replace(tzinfo=datetime.timezone.utc)
@@ -317,11 +317,11 @@ def _normalize_date(date) -> datetime.datetime:
     if isinstance(date, str):
         try:
             return _attach_utc_if_naive(datetime.datetime.fromisoformat(date))
-        except ValueError, TypeError:
+        except (ValueError, TypeError):
             pass
         try:
             return _attach_utc_if_naive(parsedate_to_datetime(date))
-        except ValueError, TypeError, IndexError:
+        except (ValueError, TypeError, IndexError):
             pass
         raise InvalidDateError(
             f"'sentAt' string is neither ISO-8601 nor RFC 2822: {date!r}"
@@ -413,7 +413,7 @@ def _extract_threading_header(jmap_data: dict[str, Any], header_name: str) -> st
 
     Callers should prefer the dedicated JMAP fields (``inReplyTo`` /
     ``references``) via the list-aware ``_validate_msgid_list``; this
-    helper exists for the legacy path where the value is carried inside
+    helper covers the fallback where the value is carried inside
     ``jmap_data["headers"]`` in wire form (one or more space-separated
     angle-bracketed ids).
     """
@@ -436,7 +436,7 @@ def _validate_msgid_list(value: list[str] | None, *, field: str) -> str:
     This is distinct from :func:`_validate_references_chain`, which
     splits a wire-form *string* on whitespace and re-validates each
     piece — that's the right behavior when the value already arrived as
-    a chain (e.g. from a legacy ``headers`` entry), but it is the wrong
+    a chain (e.g. from a ``headers`` entry), but it is the wrong
     behavior for a JMAP list where ``["foo bar@example.com"]`` is a
     single (malformed) id, not two.
     """
@@ -501,10 +501,10 @@ def _filter_user_headers(items, *, source: str, also_skip: tuple = ()):
     Reserved names — From/To/Cc/Bcc/Subject/Date/Message-ID — are skipped
     with a warning; they're owned by _set_basic_headers, and silently
     shadowing them would let a caller spoof identity. Names listed in
-    `also_skip` are dropped silently (used to elide In-Reply-To/References:
-    _set_basic_headers owns those headers and validates them through
-    _validate_msg_id / _validate_references_chain regardless of whether the
-    value comes from the in_reply_to= parameter or jmap_data["headers"]).
+    `also_skip` are dropped silently — this elides In-Reply-To /
+    References, which _set_basic_headers owns and validates through
+    _validate_msg_id / _validate_references_chain whether the value
+    comes from the ``in_reply_to=`` parameter or ``jmap_data["headers"]``.
     Invalid field names raise ComposeError.
     """
     for k, v in items:

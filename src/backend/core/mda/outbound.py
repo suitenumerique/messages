@@ -12,7 +12,6 @@ from django.utils import timezone
 
 import rest_framework as drf
 from jmap_email import (
-    ParseError,
     compose_email,
     first_address_email,
     parse_email,
@@ -493,14 +492,9 @@ def send_message(message: models.Message, force_mta_out: bool = False):
         # Use context manager to batch thread stats updates for all delivery status changes
         with ThreadStatsUpdateDeferrer.defer():
             blob_content = message.blob.get_content()
-            try:
-                parsed_email = parse_email(blob_content)
-            except ParseError as e:
-                logger.error(
-                    "Failed to parse email for message %s: %s",
-                    message.id,
-                    e,
-                )
+            parsed_email = parse_email(blob_content)
+            if parsed_email is None:
+                logger.error("Failed to parse email for message %s", message.id)
                 # Mark all recipients as failed
                 for recipient in message.recipients.all():
                     recipient.delivery_status = MessageDeliveryStatusChoices.FAILED

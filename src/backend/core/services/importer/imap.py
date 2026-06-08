@@ -516,26 +516,32 @@ def process_folder_messages(  # pylint: disable=too-many-arguments
             else:
                 # Parse message
                 parsed_email = parse_email(raw_email)
-
-                # TODO: better heuristic to determine if the message is from the sender
-                is_sender = (
-                    first_address_email(parsed_email.get("from")).lower()
-                    == username.lower()
-                )
-
-                # Deliver message
-                if deliver_inbound_message(
-                    str(recipient),
-                    parsed_email,
-                    raw_email,
-                    is_import=True,
-                    is_import_sender=is_sender,
-                    imap_labels=[display_name],
-                    imap_flags=flags,
-                ):
-                    success_count += 1
-                else:
+                if parsed_email is None:
+                    logger.warning(
+                        "IMAP: skipping unparseable message %s",
+                        msg_num,
+                    )
                     failure_count += 1
+                else:
+                    # TODO: better heuristic to determine if the message is from the sender
+                    is_sender = (
+                        first_address_email(parsed_email.get("from")).lower()
+                        == username.lower()
+                    )
+
+                    # Deliver message
+                    if deliver_inbound_message(
+                        str(recipient),
+                        parsed_email,
+                        raw_email,
+                        is_import=True,
+                        is_import_sender=is_sender,
+                        imap_labels=[display_name],
+                        imap_flags=flags,
+                    ):
+                        success_count += 1
+                    else:
+                        failure_count += 1
 
         except Exception as e:
             logger.exception(

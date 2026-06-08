@@ -678,3 +678,127 @@ Custom data.
 
         assert len(content["attachments"]) == 1
         assert content["attachments"][0]["type"] == "application/x-custom-type"
+
+
+class TestBoundaryReuseDefence:
+    """Mailsploit-class defence: when a child multipart re-declares a
+    boundary that an ancestor already uses, the inner delimiters are
+    ambiguous with the ancestor's and strict / lenient receivers will
+    split the tree differently. The parser must refuse to recurse into
+    such a subtree — surfacing its content as body parts would let an
+    attacker hide payloads that some receivers process and others don't.
+
+    Reference: RFC 2046 §5.1.1 ("The boundary value cannot appear in any
+    of the encapsulated parts").
+    """
+
+    def test_same_boundary_at_two_levels_yields_no_body_parts(self):
+        """Outer and inner both declare ``boundary="a"``: the inner
+        re-declaration is invalid, so its child text/plain part must
+        not be surfaced."""
+        raw_email = (
+            b'Content-Type: multipart/mixed; boundary="a"\r\n'
+            b"\r\n"
+            b"--a\r\n"
+            b'Content-Type: multipart/mixed; boundary="a"\r\n'
+            b"\r\n"
+            b"--a\r\n"
+            b"Content-Type: text/plain\r\n"
+            b"\r\n"
+            b"smuggled body\r\n"
+        )
+        content = _parse_message_content(_stdlib_message(raw_email))
+        assert not content["textBody"]
+        assert not content["htmlBody"]
+        assert not content["attachments"]
+
+    def test_same_boundary_three_levels_deep_drops_all_inner_bodies(self):
+        """Three levels of ``boundary="1"`` reuse: even a strict parser
+        can only safely surface what the OUTERMOST level allows, which
+        is zero parts (the outer's first child is itself a multipart
+        with the same boundary)."""
+        raw_email = (
+            b'Content-Type: multipart/mixed; boundary="1"\r\n'
+            b"\r\n"
+            b"--1\r\n"
+            b'Content-Type: multipart/mixed; boundary="1"\r\n'
+            b"\r\n"
+            b"--1\r\n"
+            b'Content-Type: multipart/mixed; boundary="1"\r\n'
+            b"\r\n"
+            b"--1\r\n"
+            b"Content-Type: text/plain\r\n"
+            b"\r\n"
+            b"hidden body\r\n"
+        )
+        content = _parse_message_content(_stdlib_message(raw_email))
+        assert not content["textBody"]
+        assert not content["htmlBody"]
+        assert not content["attachments"]
+
+    def test_distinct_boundaries_still_recurse(self):
+        """Sanity check: when inner and outer use distinct boundary
+        values the parser must still descend (no false positive)."""
+        raw_email = (
+            b'Content-Type: multipart/mixed; boundary="outer"\r\n'
+            b"\r\n"
+            b"--outer\r\n"
+            b'Content-Type: multipart/mixed; boundary="inner"\r\n'
+            b"\r\n"
+            b"--inner\r\n"
+            b"Content-Type: text/plain\r\n"
+            b"\r\n"
+            b"legitimate body\r\n"
+            b"--inner--\r\n"
+            b"--outer--\r\n"
+        )
+        content = _parse_message_content(_stdlib_message(raw_email))
+        assert len(content["textBody"]) == 1
+        assert "legitimate body" in content["textBody"][0]["content"]
+
+    def test_outer_siblings_after_reuse_are_also_dropped(self):
+        """When the OUTER's first child re-declares the outer boundary,
+        every subsequent ``--X`` on the wire is ambiguous (outer-next
+        vs. inner-sep). Strict and lenient receivers will disagree on
+        which siblings belong to the outer vs. the inner — so the
+        defence drops the whole tree, not just the inner subtree.
+        Sibling salvage would re-open the smuggling vector."""
+        raw_email = (
+            b'Content-Type: multipart/mixed; boundary="X"\r\n'
+            b"\r\n"
+            b"--X\r\n"
+            b'Content-Type: multipart/mixed; boundary="X"\r\n'
+            b"\r\n"
+            b"--X\r\n"
+            b"Content-Type: text/plain\r\n"
+            b"\r\n"
+            b"hidden\r\n"
+            b"--X\r\n"
+            b"Content-Type: text/plain\r\n"
+            b"\r\n"
+            b"would-be sibling\r\n"
+            b"--X--\r\n"
+        )
+        content = _parse_message_content(_stdlib_message(raw_email))
+        assert not content["textBody"]
+        assert not content["htmlBody"]
+        assert not content["attachments"]
+
+    def test_defects_records_the_signal_when_caller_asks(self):
+        """``BoundaryReuseAmbiguousStructure`` is emitted into the
+        defects channel so a programmatic consumer can flag the
+        message without having to inspect logs."""
+        raw_email = (
+            b'Content-Type: multipart/mixed; boundary="X"\r\n'
+            b"\r\n"
+            b"--X\r\n"
+            b'Content-Type: multipart/mixed; boundary="X"\r\n'
+            b"\r\n"
+            b"--X\r\n"
+            b"Content-Type: text/plain\r\n"
+            b"\r\n"
+            b"x\r\n"
+        )
+        defects: list[str] = []
+        _parse_message_content(_stdlib_message(raw_email), defects=defects)
+        assert "BoundaryReuseAmbiguousStructure" in defects

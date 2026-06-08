@@ -241,18 +241,9 @@ def process_inbound_message_task(self, inbound_message_id: str):
 
         # Parse the email from raw_data
         raw_data_bytes = bytes(inbound_message.raw_data)
-        try:
-            parsed_email = parse_email(raw_data_bytes)
-        except Exception as e:
-            error_msg = f"Failed to parse email message: {e}"
-            logger.error(error_msg)
-            inbound_message.error_message = error_msg
-            inbound_message.save(update_fields=["error_message"])
-            # Keep the message for retry
-            return {"success": False, "error": error_msg}
-
-        if not parsed_email:
-            error_msg = "Failed to parse email message (returned None)"
+        parsed_email = parse_email(raw_data_bytes)
+        if parsed_email is None:
+            error_msg = "Failed to parse email message"
             logger.error(error_msg)
             inbound_message.error_message = error_msg
             inbound_message.save(update_fields=["error_message"])
@@ -297,18 +288,18 @@ def process_inbound_message_task(self, inbound_message_id: str):
                 f"X-StMsg-Sender-Auth: {auth_verdict}\r\n".encode("ascii")
                 + raw_data_bytes
             )
-            try:
-                parsed_email = parse_email(prepended)
+            reparsed = parse_email(prepended)
+            if reparsed is not None:
+                parsed_email = reparsed
                 raw_data_bytes = prepended
-            except Exception as e:  # pylint: disable=broad-exception-caught
+            else:
                 # Keep raw_data_bytes / parsed_email in lockstep: if the
                 # re-parse breaks, store the original bytes so the blob stays
                 # parseable for display (subject/body/recipients). The
                 # sender-auth banner is sacrificed in this rare case.
                 logger.warning(
                     "Failed to re-parse email after prepending auth header, "
-                    "dropping the prepend: %s",
-                    e,
+                    "dropping the prepend"
                 )
 
         # Create the message using the extracted function

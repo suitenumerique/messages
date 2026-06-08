@@ -46,13 +46,11 @@ from .helpers import (
 )
 from .limits import DEFAULT_PARSE_LIMITS, ParseLimits
 from .parser import (
-    ParseError,
     decode_rfc2047_header,
     parse_address,
     parse_addresses,
     parse_date,
     parse_email,
-    parse_headers,
 )
 from .types import (
     Attachment,
@@ -67,7 +65,6 @@ from .types import (
 __all__ = [
     # Wire-format pair
     "parse_email",
-    "parse_headers",
     "compose_email",
     # Field-level parsers
     "parse_address",
@@ -95,8 +92,7 @@ __all__ = [
     # Per-call resource caps
     "ParseLimits",
     "DEFAULT_PARSE_LIMITS",
-    # Errors
-    "ParseError",
+    # Errors (compose-side only; parse_email returns None on failure)
     "ComposeError",
     "InvalidAddressError",
     "InvalidMessageIdError",

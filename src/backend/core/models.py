@@ -30,7 +30,7 @@ from django.utils.text import slugify
 
 import pyzstd
 from encrypted_fields.fields import EncryptedJSONField, EncryptedTextField
-from jmap_email import EmailHeader, JmapEmail, ParseError, body_part_text, parse_email
+from jmap_email import EmailHeader, JmapEmail, body_part_text, parse_email
 from timezone_field import TimeZoneField
 
 from core.enums import (
@@ -1998,31 +1998,26 @@ class Message(BaseModel):
             return self._parsed_email_cache
 
         if self.blob:
+            # ``body_values=False`` keeps text-body content inlined on
+            # each ``EmailBodyPart`` rather than moving it to a
+            # separate ``bodyValues`` map. The library spec-default is
+            # the moved form (RFC 8621 §4.2 ``defaultProperties`` for
+            # ``Email/get``); this backend's consumers (snippet
+            # extraction, search indexing, LLM formatting, the API
+            # serializer) all read ``content`` inline, so we project
+            # back to that shape at the model boundary.
             try:
-                # ``body_values=False`` keeps text-body content inlined on
-                # each ``EmailBodyPart`` rather than moving it to a
-                # separate ``bodyValues`` map. The library spec-default is
-                # the moved form (RFC 8621 §4.2 ``defaultProperties`` for
-                # ``Email/get``); this backend's consumers (snippet
-                # extraction, search indexing, LLM formatting, the API
-                # serializer) all read ``content`` inline, so we project
-                # back to that shape at the model boundary.
-                self._parsed_email_cache = parse_email(
-                    self.blob.get_content(), body_values=False
-                )
-            except (ParseError, ValueError) as exc:
+                raw = self.blob.get_content()
+            except ValueError as exc:
                 # ``Blob.get_content`` raises ``ValueError`` on
-                # decompression / decryption / integrity-check failure;
-                # ``parse_email`` raises ``ParseError`` on malformed
-                # input. Either case collapses to an empty cache so
-                # downstream consumers see the same shape they get for
-                # a blob-less Message.
+                # decompression / decryption / integrity-check failure.
                 logger.warning(
-                    "Failed to load parsed email for message %s: %s",
-                    self.id,
-                    exc,
+                    "Failed to load blob content for message %s: %s", self.id, exc
                 )
                 self._parsed_email_cache = {}
+                return self._parsed_email_cache
+            parsed = parse_email(raw, body_values=False)
+            self._parsed_email_cache = parsed if parsed is not None else {}
         else:
             self._parsed_email_cache = {}
         return self._parsed_email_cache

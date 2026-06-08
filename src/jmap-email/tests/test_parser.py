@@ -14,7 +14,6 @@ from email.header import Header
 import pytest
 
 from jmap_email.parser import (
-    ParseError,
     _parse_message_content,
     decode_rfc2047_header,
     parse_address,
@@ -863,9 +862,9 @@ class TestEmailMessageParsing:
     def test_parse_invalid_message(self):
         """Test parsing a malformed multipart message (boundary mismatch).
 
-        Lenient contract: stdlib's compat32 parser does not raise on a
-        boundary mismatch; it returns the headers and whatever body it
-        could recover. ParseError is reserved for inputs the parser
+        Stdlib's compat32 parser does not raise on a boundary mismatch;
+        it returns the headers and whatever body it could recover.
+        ``parse_email`` returns ``None`` only for inputs the parser
         can't make any sense of at all.
         """
         invalid_email_bytes = b"""From: sender@example.com
@@ -984,15 +983,13 @@ This is a test email body.
         assert "def456" in headers_list[received_indices[1]][1]
         assert "abc123" in headers_list[received_indices[2]][1]
 
-    def test_parse_empty_message(self):
-        """Test parsing an empty message raises an error."""
-        with pytest.raises(ParseError, match="Input must be non-empty bytes."):
-            parse_email(b"")
+    def test_parse_empty_message_returns_none(self):
+        """Empty bytes are unparseable: ``parse_email`` returns ``None``."""
+        assert parse_email(b"") is None
 
-    def test_parse_none_input(self):
-        """Test parsing None input raises an error."""
-        with pytest.raises(ParseError, match="Input must be non-empty bytes."):
-            parse_email(None)
+    def test_parse_none_input_returns_none(self):
+        """Non-bytes input returns ``None`` instead of raising."""
+        assert parse_email(None) is None  # type: ignore[arg-type]
 
     def test_parse_email_with_nul_bytes(self):
         """Test that NUL bytes are stripped from subject and body content.
@@ -1484,7 +1481,7 @@ content
         content = _parse_message_content(message_obj)
         attachment = content["attachments"][0]
         # Should return "unnamed" without extension for unknown types
-        assert attachment["name"] == None
+        assert attachment["name"] is None
 
     def test_part_with_empty_body(self):
         """Test parsing part with empty body."""
@@ -1769,20 +1766,25 @@ Content-Type: multipart/mixed; boundary="boundary"
         must surface all levels. (Bomb behavior is tested separately
         in ``test_deeply_nested_multipart_bomb_does_not_recursion_error``.)
         """
-        # Create 10 levels of nesting
+        # Create 10 levels of nesting, each with a distinct boundary —
+        # reused boundaries trip the Mailsploit / body-smuggling defence
+        # (see TestBoundaryReuseDefence) and would zero the result.
         nested_content = b"""Content-Type: text/plain
 
 Innermost content."""
 
-        for _ in range(10):
+        for i in range(10):
+            boundary = f"inner{i}".encode()
             nested_content = (
-                b"""Content-Type: multipart/alternative; boundary="inner"
---inner
-"""
+                b'Content-Type: multipart/alternative; boundary="'
+                + boundary
+                + b'"\n--'
+                + boundary
+                + b"\n"
                 + nested_content
-                + b"""
---inner--
-"""
+                + b"\n--"
+                + boundary
+                + b"--\n"
             )
 
         raw_email = (
@@ -2073,7 +2075,7 @@ class TestParserSecurityRegressions:
     write-up so the rationale is auditable. The parser must:
 
     1. Never raise on adversarial input (we surface a parsed dict or
-       ``ParseError``; never a bare exception).
+       ``None``).
     2. Never produce a result that disagrees with the on-wire bytes in
        a way that lets a sender split or swap recipients.
     3. Stay bounded in time and memory on pathological inputs.
@@ -2929,8 +2931,8 @@ class TestBufferOverflowShapeRegressions:
         defense — ``parse_address`` / ``parse_addresses``
         catch ``RecursionError`` and degrade to an empty result —
         must keep the worker up. Either the message parses with an
-        empty From, or the outer ``parse_email`` raises
-        ``ParseError``; both are acceptable degradations.
+        empty From, or ``parse_email`` returns ``None``; both are
+        acceptable degradations.
 
         Source: https://www.cvedetails.com/cve/CVE-2002-1337/
         """
@@ -2943,13 +2945,10 @@ class TestBufferOverflowShapeRegressions:
             b"\r\n"
             b"body\r\n"
         )
-        try:
-            parsed = parse_email(raw)
-            # If we parse, From may degrade to empty — that's the
-            # acceptable outcome.
-            assert parsed is not None
-        except ParseError:
-            pass  # also acceptable
+        # Either parsed (From may degrade to empty) or returned None;
+        # both are acceptable degradations.
+        parsed = parse_email(raw)
+        assert parsed is None or isinstance(parsed, dict)
 
     def test_cve_2002_2325_pine_empty_boundary_no_infinite_loop(self):
         """CVE-2002-2325 (Pine 4.x): empty ``boundary=""`` in
@@ -3178,7 +3177,7 @@ class TestUnrecognisedMessageSubtypeRobustness:
     MIME-engine internals — so they remain valid across any future
     backend swap. The behavioural contract:
 
-    1. Parsing must not raise ``ParseError`` on any well-formed
+    1. Parsing must succeed (not return ``None``) on any well-formed
        multipart/report whose status part uses an unrecognised
        ``message/*`` subtype.
     2. The human-readable notification text part must survive parsing
@@ -3871,38 +3870,6 @@ class TestParserPass4Regressions:
         # NBSP between words must survive.
         decoded = decode_rfc2047_header("=?utf-8?Q?Caf=C3=A9=C2=A0Paris?=")
         assert decoded == "Café\xa0Paris"
-
-    # ----- M12: parse_headers ----------------------------------------------
-
-    def test_m12_parse_headers_returns_no_body_fields(self):
-        """``parse_headers`` skips the body walk. The output carries
-        every header-derived field but none of the body / preview /
-        bodyValues / hasAttachment / bodyStructure fields."""
-        from jmap_email import parse_headers
-
-        raw = (
-            b"From: a@b.c\r\n"
-            b"To: d@e.f\r\n"
-            b"Subject: t\r\n"
-            b"Message-ID: <id1@example.com>\r\n"
-            b"\r\nsome body the parser must NOT read\r\n"
-        )
-        parsed = parse_headers(raw)
-        # Header-side keys present.
-        assert parsed["subject"] == "t"
-        assert parsed["from"][0]["email"] == "a@b.c"
-        assert parsed["messageId"] == ["id1@example.com"]
-        # Body-side keys absent.
-        for k in (
-            "textBody",
-            "htmlBody",
-            "attachments",
-            "bodyValues",
-            "bodyStructure",
-            "preview",
-            "hasAttachment",
-        ):
-            assert k not in parsed, f"parse_headers leaked body-side key {k!r}"
 
     # ----- M14: Resent-* projections ---------------------------------------
 

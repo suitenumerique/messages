@@ -100,6 +100,20 @@ def process_eml_file_task(self, file_key: str, recipient_id: str) -> Dict[str, A
 
         # Parse the email message
         parsed_email = parse_email(file_content)
+        if parsed_email is None:
+            error_msg = "Failed to parse email message"
+            logger.error("%s for key %s", error_msg, file_key)
+            return {
+                "status": "FAILURE",
+                "result": {
+                    "status": "FAILURE",
+                    "current_message": 1,
+                    "success_count": 0,
+                    "failure_count": 1,
+                    "type": "eml",
+                },
+                "error": error_msg,
+            }
 
         # Treat the EML as a sent message when From matches the destination
         # mailbox — the same heuristic IMAP uses against the account

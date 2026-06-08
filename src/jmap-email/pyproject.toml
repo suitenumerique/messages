@@ -32,6 +32,7 @@ Changelog = "https://github.com/suitenumerique/messages/blob/main/src/jmap-email
 [project.optional-dependencies]
 dev = [
     "hypothesis>=6.151.0",
+    "pylint>=4.0.4",
     "pytest>=9.0.0",
     "pytest-cov>=7.0.0",
     "ruff>=0.15.0",
@@ -77,7 +78,11 @@ markers = [
 ]
 
 [tool.ruff]
-target-version = "py314"
+# Pin py313 even though the runtime floor is py314.5. Targeting py313
+# keeps ruff's formatter from applying PEP 758 (un-parenthesized
+# ``except E1, E2:``) — valid Python 3.14 but trips static analysis
+# (CodeRabbit, IDEs on older Python, copy-pasted snippets).
+target-version = "py313"
 line-length = 88
 
 [tool.ruff.lint]
@@ -119,3 +124,57 @@ python-version = "3.14"
 [tool.ty.src]
 include = ["jmap_email"]
 exclude = ["tests", "**/__pycache__", ".venv", "build", "dist"]
+
+# ──────────────────────────── pylint ────────────────────────────
+# ruff misses a few syntax classes (notably Python 2's
+# ``except A, B:``), so pylint covers the long-tail. The matrix of
+# rules disabled here is the intersection of "issues pylint flags
+# that ruff already covers" and "stylistic choices we accept".
+[tool.pylint.main]
+jobs = 0
+py-version = "3.14"
+ignore = ["__pycache__"]
+
+[tool.pylint."messages control"]
+disable = [
+    # Covered by ruff (PLR / PLW / PLC) or accepted style.
+    "missing-module-docstring",
+    "missing-class-docstring",
+    "missing-function-docstring",
+    "too-many-arguments",
+    "too-many-branches",
+    "too-many-locals",
+    "too-many-statements",
+    "too-many-lines",
+    "too-many-return-statements",
+    "too-many-positional-arguments",
+    "too-many-nested-blocks",
+    "too-many-public-methods",
+    "too-many-instance-attributes",
+    "too-few-public-methods",
+    "line-too-long",  # ruff format owns line length
+    "fixme",
+    "broad-exception-caught",
+    "unnecessary-pass",
+    "duplicate-code",
+    "invalid-name",
+    "protected-access",  # tests reach into _-prefixed helpers
+    "import-outside-toplevel",  # tests scope imports per regression
+    "wrong-import-order",  # ruff isort owns order
+    "wrong-import-position",
+    "ungrouped-imports",
+    "consider-using-f-string",
+    "consider-using-with",
+    "no-else-return",
+    "no-else-raise",
+    "redefined-outer-name",  # pytest fixtures pattern
+    "redefined-builtin",
+    "unused-argument",
+    "unused-variable",
+    "useless-import-alias",
+    "unspecified-encoding",
+    # Test fixtures embed RTL override / bidi chars to exercise the
+    # parser's handling of them; the library itself never carries
+    # such chars in source.
+    "bidirectional-unicode",
+]

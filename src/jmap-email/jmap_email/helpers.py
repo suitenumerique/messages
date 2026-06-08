@@ -118,7 +118,7 @@ def sent_at_to_datetime(sent_at: Any) -> datetime | None:
     if isinstance(sent_at, str):
         try:
             return datetime.fromisoformat(sent_at)
-        except TypeError, ValueError:
+        except (TypeError, ValueError):
             return None
     return None
 

@@ -33,9 +33,10 @@ from email.message import Message
 from email.utils import getaddresses, parsedate_to_datetime
 from ntpath import basename as nt_basename
 from posixpath import basename as posix_basename
-from typing import Any
+from typing import Any, cast
 
 from .limits import DEFAULT_PARSE_LIMITS, ParseLimits
+from .types import EmailAddress, EmailBodyPart, JmapEmail
 
 # Resource limits — all chosen to match or exceed the equivalents in
 # battle-tested mail servers. Real-world legitimate messages are well
@@ -64,14 +65,12 @@ from .limits import DEFAULT_PARSE_LIMITS, ParseLimits
 # forwards can only hurt us via stdlib's ``Message.as_bytes()`` when
 # we serialize the wrapped sub-message in ``_decoded_part_body``.
 # That call catches ``RecursionError`` directly.
-# Resource caps against adversarial input. The default values live on
-# :class:`jmap_email.limits.ParseLimits`; the module-level constants
-# below mirror those defaults for documentation and for the legacy
-# ``jmap_email.parser.MAX_*`` import path. Per-call overrides go
-# through the ``limits=`` keyword on :func:`parse_email` /
-# :func:`parse_addresses` — module-level reassignment is NOT a
-# supported tuning mechanism (it would race across threads / leak
-# across unrelated callers in the same process).
+# Module-level mirrors of the default resource caps. Authoritative
+# values live on :class:`jmap_email.limits.ParseLimits`; per-call
+# overrides go through the ``limits=`` keyword on :func:`parse_email`
+# / :func:`parse_addresses`. Module-level reassignment is not a
+# supported tuning mechanism — it would race across threads and leak
+# across unrelated callers in the same process.
 MAX_MIME_NESTING_DEPTH = DEFAULT_PARSE_LIMITS.max_mime_nesting_depth
 MAX_MIME_PARTS = DEFAULT_PARSE_LIMITS.max_mime_parts
 MAX_HEADER_VALUE_BYTES = DEFAULT_PARSE_LIMITS.max_header_value_bytes
@@ -113,10 +112,6 @@ def _strip_nul_bytes(text: str) -> str:
     https://datatracker.ietf.org/doc/html/rfc5322#page-31
     """
     return text.replace("\x00", "") if text else ""
-
-
-class ParseError(Exception):
-    """Exception raised for errors during email parsing."""
 
 
 def _repair_surrogate_escaped(text: str) -> str:
@@ -186,7 +181,7 @@ def decode_rfc2047_header(header_text: str) -> str:
             else:
                 try:
                     result_parts.append(part.decode(charset, errors="replace"))
-                except LookupError, UnicodeDecodeError:
+                except (LookupError, UnicodeDecodeError):
                     result_parts.append(part.decode("utf-8", errors="replace"))
         else:
             # Part is already a string. Repair surrogate-escaped 8-bit
@@ -709,7 +704,7 @@ def _decoded_part_body(part: Message) -> Any | None:
     """
     try:
         body = part.get_payload(decode=True)
-    except ValueError, AssertionError, TypeError:
+    except (ValueError, AssertionError, TypeError):
         body = None
     if body is not None:
         return body
@@ -717,7 +712,7 @@ def _decoded_part_body(part: Message) -> Any | None:
     # Fall back to whatever the parser actually retained.
     try:
         raw = part.get_payload()
-    except ValueError, TypeError:
+    except (ValueError, TypeError):
         return None
     if isinstance(raw, list):
         # ``message/*`` parts wrap one or more sub-Messages under
@@ -757,7 +752,7 @@ def _decoded_part_body(part: Message) -> Any | None:
         # round-trips correctly through it.
         try:
             return raw.encode("utf-8", errors="surrogateescape")
-        except UnicodeEncodeError, AttributeError:
+        except (UnicodeEncodeError, AttributeError):
             return raw.encode("utf-8", errors="replace")
     return raw
 
@@ -825,7 +820,7 @@ def _get_part_info(part: Message) -> dict[str, Any]:
     # garden-variety untagged-UTF-8 senders we see in practice).
     try:
         charset = part.get_content_charset()
-    except LookupError, ValueError, UnicodeDecodeError, AttributeError:
+    except (LookupError, ValueError, UnicodeDecodeError, AttributeError):
         charset = None
 
     # Per-part Content-Language (RFC 3282) — comma-separated tag list.
@@ -869,8 +864,12 @@ def _get_part_info(part: Message) -> dict[str, Any]:
     }
 
 
-def _build_body_part_dict(part_info: dict[str, Any]) -> dict[str, Any]:
+def _build_body_part_dict(part_info: dict[str, Any]) -> tuple[EmailBodyPart, bool]:
     """Build a JMAP ``EmailBodyPart`` for textBody/htmlBody arrays.
+
+    Returns ``(part, encoding_problem)``. ``encoding_problem`` is True
+    when the text decode hit a missing-charset / wrong-charset fallback;
+    callers route it into ``bodyValues[partId].isEncodingProblem``.
 
     Per RFC 8621 §4.1.4: ``partId``, ``size``, ``name``, ``type``,
     ``charset``, ``disposition``, ``cid`` are first-class fields. We
@@ -900,7 +899,7 @@ def _build_body_part_dict(part_info: dict[str, Any]) -> dict[str, Any]:
         charset = part_info.get("charset") or "utf-8"
         try:
             content = body.decode(charset, errors="replace")
-        except LookupError, UnicodeDecodeError:
+        except (LookupError, UnicodeDecodeError):
             content = body.decode("utf-8", errors="replace")
             encoding_problem = True
         size = len(body)
@@ -908,33 +907,32 @@ def _build_body_part_dict(part_info: dict[str, Any]) -> dict[str, Any]:
         content = body or ""
         size = len(content.encode("utf-8")) if content else 0
 
-    return {
-        "partId": part_info["part_id"],
+    part = EmailBodyPart(
+        partId=part_info["part_id"],
         # ``blobId`` is server-set in real JMAP (identifies a blob in the
         # store). The library has no blob store; we emit ``None`` so the
         # field shape matches the spec and the caller can assign one
         # before sending the object to a JMAP server.
-        "blobId": None,
-        "type": part_type,
-        "size": size,
-        "name": part_info["name"] or None,
-        "charset": part_info.get("charset") or None,
-        "disposition": part_info["disposition"] or None,
-        "cid": part_info["content_id"],
-        "language": part_info.get("language"),
-        "location": part_info.get("location"),
-        "headers": part_info.get("part_headers") or [],
+        blobId=None,
+        type=part_type,
+        size=size,
+        name=part_info["name"] or None,
+        charset=part_info.get("charset") or None,
+        disposition=part_info["disposition"] or None,
+        cid=part_info["content_id"],
+        language=part_info.get("language"),
+        location=part_info.get("location"),
+        headers=part_info.get("part_headers") or [],
         # Leaf parts have no children.
-        "subParts": None,
-        "content": _strip_nul_bytes(content),
-        # Internal hint for ``_build_body_values``; stripped before output.
-        "_encoding_problem": encoding_problem,
-    }
+        subParts=None,
+        content=_strip_nul_bytes(content),
+    )
+    return part, encoding_problem
 
 
 def _build_attachment_from_part_info(
     part_info: dict[str, Any], disposition_override: str = "attachment"
-) -> dict[str, Any]:
+) -> EmailBodyPart:
     """Build a JMAP ``EmailBodyPart`` for the attachments array."""
     disposition = part_info["disposition"] or disposition_override
     raw_filename = part_info["name"]
@@ -969,7 +967,7 @@ def _build_attachment_from_part_info(
 
 def _build_body_structure(
     message: Message, limits: ParseLimits
-) -> dict[str, Any] | None:
+) -> EmailBodyPart | None:
     """Recursively build a JMAP ``bodyStructure`` tree.
 
     Per RFC 8621 §4.1.4, ``bodyStructure`` is the entire ``EmailBodyPart``
@@ -984,7 +982,7 @@ def _build_body_structure(
         return _build_body_structure_node(
             message, ["1"], counter={"parts": 0}, limits=limits
         )
-    except RecursionError, ValueError, TypeError, AttributeError:
+    except (RecursionError, ValueError, TypeError, AttributeError):
         return None
 
 
@@ -995,7 +993,7 @@ def _build_body_structure_node(
     limits: ParseLimits,
     depth: int = 0,
     counter: dict[str, int] | None = None,
-) -> dict[str, Any]:
+) -> EmailBodyPart:
     """Build a single node of the bodyStructure tree.
 
     Enforces the same depth + part-count caps as the default body walk
@@ -1035,22 +1033,22 @@ def _build_body_structure_node(
 
     info = _get_part_info(part)
     info["part_id"] = ".".join(path)
-    node: dict[str, Any] = {
+    node: EmailBodyPart = EmailBodyPart(
         # multipart/* parts: partId and blobId are null per RFC 8621 §4.1.4
         # "if and only if". Leaf parts get a stable hierarchical id.
-        "partId": None if is_multipart else info["part_id"],
-        "blobId": None,
-        "type": info["type"],
-        "size": 0 if is_multipart else len(info["body"] or b""),
-        "name": info["name"] or None,
-        "charset": info["charset"] or None,
-        "disposition": info["disposition"] or None,
-        "cid": info["content_id"],
-        "language": info.get("language"),
-        "location": info.get("location"),
-        "headers": info.get("part_headers") or [],
-        "subParts": None,
-    }
+        partId=None if is_multipart else info["part_id"],
+        blobId=None,
+        type=info["type"],
+        size=0 if is_multipart else len(info["body"] or b""),
+        name=info["name"] or None,
+        charset=info["charset"] or None,
+        disposition=info["disposition"] or None,
+        cid=info["content_id"],
+        language=info.get("language"),
+        location=info.get("location"),
+        headers=info.get("part_headers") or [],
+        subParts=None,
+    )
     if is_multipart:
         # Truncate the subParts list at the part-count cap. The deep-cap
         # check at function entry catches one runaway level; this loop-
@@ -1058,7 +1056,7 @@ def _build_body_structure_node(
         # from emitting a million stub nodes (each stub costs memory
         # even if not recursed into).
         children = _subparts(part)
-        sub_nodes: list[dict[str, Any]] = []
+        sub_nodes: list[EmailBodyPart] = []
         for i, child in enumerate(children):
             if counter["parts"] >= limits.max_mime_parts:
                 logger.warning(
@@ -1098,13 +1096,14 @@ def _parse_body_structure(
     parts: list[Message],
     multipart_type: str,
     in_alternative: bool,
-    html_body: list[dict[str, Any]] | None,
-    text_body: list[dict[str, Any]] | None,
-    attachments: list[dict[str, Any]],
+    html_body: list[EmailBodyPart] | None,
+    text_body: list[EmailBodyPart] | None,
+    attachments: list[EmailBodyPart],
     *,
     limits: ParseLimits,
     depth: int = 0,
-    counter: dict[str, int] | None = None,
+    counter: dict[str, Any] | None = None,
+    parent_boundaries: tuple[str, ...] = (),
 ) -> None:
     """
     Recursively parse MIME structure following JMAP spec algorithm (Section 4.1).
@@ -1126,6 +1125,14 @@ def _parse_body_structure(
             parts across the whole walk. Caps prevent
             ``multipartmaxparts``-style DoS at low depth (e.g. 1000
             flat parts that wouldn't trip the depth guard).
+        parent_boundaries: MIME boundaries of every multipart ancestor on
+            the current path. If a child multipart re-declares one of
+            these boundaries we refuse to recurse — the inner delimiters
+            collide with an ancestor's, so the inner tree is ambiguous
+            and parsers will disagree on what content it holds (the
+            Mailsploit / body-smuggling class). Dropping the inner tree
+            is safer than surfacing parts that other receivers might
+            interpret differently.
     """
     if counter is None:
         counter = {"parts": 0, "next_part_id": 0}
@@ -1192,9 +1199,41 @@ def _parse_body_structure(
         )
 
         if is_multipart:
+            # Boundary-reuse defence (RFC 2046 §5.1.1: a boundary value
+            # must not appear inside an encapsulated part). When an
+            # inner multipart re-declares a boundary that an ancestor
+            # already uses, the inner delimiters are ambiguous — strict
+            # and lenient parsers will split the tree differently, so
+            # an attacker can hide content that some receivers surface
+            # and others don't. Refuse the recursion and drop the
+            # opaque subtree.
+            sub_boundary = part.get_boundary()
+            if sub_boundary and sub_boundary in parent_boundaries:
+                logger.warning(
+                    "MIME boundary %r reused at depth %d; "
+                    "marking structure ambiguous (body-smuggling defence)",
+                    sub_boundary,
+                    depth + 1,
+                )
+                # Once any ancestor's boundary is re-declared, stdlib's
+                # split of the rest of the tree is no longer well-defined
+                # — sibling text/plain parts at the outer level may
+                # actually belong to the inner subtree depending on
+                # which parser you ask. We flag the whole walk so the
+                # top-level caller clears all collected bodies; safer
+                # than letting some receivers process content others
+                # would hide.
+                counter["ambiguous_structure"] = 1
+                continue
+
             # Recurse into multipart
             sub_multipart_type = part.get_content_subtype() or "mixed"
             sub_parts = _subparts(part)
+            sub_parents = (
+                (*parent_boundaries, sub_boundary)
+                if sub_boundary
+                else parent_boundaries
+            )
             _parse_body_structure(
                 sub_parts,
                 sub_multipart_type,
@@ -1205,18 +1244,26 @@ def _parse_body_structure(
                 depth=depth + 1,
                 counter=counter,
                 limits=limits,
+                parent_boundaries=sub_parents,
             )
 
         elif is_inline:
             # Handle inline parts based on context
+            encoding_problems = counter.setdefault("encoding_problems", {})
             if multipart_type == "alternative":
                 # In direct alternative: route based on type only
                 if part_type == "text/plain":
                     if text_body is not None:
-                        text_body.append(_build_body_part_dict(part_info))
+                        body_part, ep = _build_body_part_dict(part_info)
+                        text_body.append(body_part)
+                        if ep:
+                            encoding_problems[part_info["part_id"]] = True
                 elif part_type == "text/html":
                     if html_body is not None:
-                        html_body.append(_build_body_part_dict(part_info))
+                        body_part, ep = _build_body_part_dict(part_info)
+                        html_body.append(body_part)
+                        if ep:
+                            encoding_problems[part_info["part_id"]] = True
                 else:
                     # Other types in alternative go to attachments
                     attachments.append(_build_attachment_from_part_info(part_info))
@@ -1232,10 +1279,14 @@ def _parse_body_structure(
                     text_body = None
 
             # Push to both arrays if not nullified
-            if text_body is not None:
-                text_body.append(_build_body_part_dict(part_info))
-            if html_body is not None:
-                html_body.append(_build_body_part_dict(part_info))
+            if text_body is not None or html_body is not None:
+                body_part, ep = _build_body_part_dict(part_info)
+                if ep:
+                    encoding_problems[part_info["part_id"]] = True
+                if text_body is not None:
+                    text_body.append(body_part)
+                if html_body is not None:
+                    html_body.append(body_part)
 
             # NOTE: We intentionally skip the JMAP spec's condition:
             # if ((!textBody || !htmlBody) && isInlineMediaType) attachments.push(part)
@@ -1279,7 +1330,7 @@ def _parse_message_content(
     Failures in the recursive walk are recorded in ``defects`` (when
     provided) so consumers see a programmatic signal beyond a log line.
     """
-    result = {"textBody": [], "htmlBody": [], "attachments": []}
+    result: dict[str, Any] = {"textBody": [], "htmlBody": [], "attachments": []}
 
     # Some malformed inputs end up as a ``Message`` with no Content-Type
     # at all and a raw str body. Stdlib defaults Content-Type to
@@ -1308,6 +1359,7 @@ def _parse_message_content(
             )
         return result
 
+    counter: dict[str, Any] = {"parts": 0, "next_part_id": 0}
     try:
         # Use the JMAP-style recursive parser
         # Wrap the message in a list and treat it as if inside multipart/mixed
@@ -1319,12 +1371,29 @@ def _parse_message_content(
             result["textBody"],
             result["attachments"],
             limits=limits,
+            counter=counter,
         )
     except Exception as e:  # pylint: disable=broad-exception-caught
         logger.error("Error parsing message body structure: %s", e, exc_info=True)
         if defects is not None:
             defects.append("BodyStructureWalkError")
 
+    # Boundary-reuse defence (Mailsploit class): once any inner multipart
+    # re-declares an ancestor's boundary, stdlib's split of the rest of
+    # the tree is ambiguous — sibling parts at outer levels may actually
+    # belong to the hidden inner subtree. We clear everything so strict
+    # and lenient receivers agree on what the message carries (nothing).
+    if counter.get("ambiguous_structure"):
+        if defects is not None:
+            defects.append("BoundaryReuseAmbiguousStructure")
+        return {
+            "textBody": [],
+            "htmlBody": [],
+            "attachments": [],
+            "encoding_problems": {},
+        }
+
+    result["encoding_problems"] = counter.get("encoding_problems") or {}
     return result
 
 
@@ -1333,7 +1402,7 @@ def _parse_message_content(
 # ────────────────────────────────────────────────────────────────────
 
 
-def _jmap_addresses(pairs: list[tuple[str, str]]) -> list[dict[str, Any]] | None:
+def _jmap_addresses(pairs: list[tuple[str, str]]) -> list[EmailAddress] | None:
     """Convert a list of ``(name, addr)`` tuples to JMAP ``EmailAddress[]``.
 
     Per RFC 8621 §4.1.2.3, ``EmailAddress = {name: String|null, email: String}``.
@@ -1345,7 +1414,7 @@ def _jmap_addresses(pairs: list[tuple[str, str]]) -> list[dict[str, Any]] | None
     return [{"name": name or None, "email": addr} for name, addr in pairs]
 
 
-def _jmap_single_address(name: str, addr: str) -> list[dict[str, Any]] | None:
+def _jmap_single_address(name: str, addr: str) -> list[EmailAddress] | None:
     """Convert a single ``(name, addr)`` to a single-element list (or None).
 
     JMAP requires address-list fields to always be lists; even a header
@@ -1432,7 +1501,7 @@ def _jmap_headers(raw_headers: list[tuple[str, str, str]]) -> list[dict[str, str
     ]
 
 
-def _compute_has_attachment(attachments: list[dict[str, Any]]) -> bool:
+def _compute_has_attachment(attachments: list[EmailBodyPart]) -> bool:
     """Compute the JMAP ``hasAttachment`` field.
 
     Per RFC 8621 §4.1.4: ``hasAttachment`` is true iff the message has
@@ -1453,7 +1522,7 @@ _HTML_TAG_RE = re.compile(r"<[^>]+>", re.UNICODE)
 
 
 def _compute_preview(
-    text_body: list[dict[str, Any]], html_body: list[dict[str, Any]]
+    text_body: list[EmailBodyPart], html_body: list[EmailBodyPart]
 ) -> str:
     """Compute the JMAP ``preview`` field: a single-line ≤ 256-char
     excerpt drawn from the first text body (or, if absent, the HTML
@@ -1476,17 +1545,19 @@ def _compute_preview(
 
 
 def _build_body_values(
-    text_body: list[dict[str, Any]],
-    html_body: list[dict[str, Any]],
+    text_body: list[EmailBodyPart],
+    html_body: list[EmailBodyPart],
+    encoding_problems: dict[str, bool],
 ) -> dict[str, dict[str, Any]]:
     """Build the JMAP ``bodyValues`` map: ``{partId: EmailBodyValue}``.
 
     Per RFC 8621 §4.1.5, ``EmailBodyValue`` has ``value``,
     ``isEncodingProblem``, ``isTruncated``. We never truncate (callers
     can apply ``maxBodyValueBytes`` themselves), so ``isTruncated`` is
-    always ``false``. ``isEncodingProblem`` is set when the charset
-    lookup failed — currently always ``false`` because our charset
-    fallback to utf-8/replace means decoding always succeeds.
+    always ``false``. ``isEncodingProblem`` flips when the part's
+    charset was missing or unknown and the body decoder fell back to
+    utf-8/replace — the producer records that signal in
+    ``encoding_problems`` keyed by ``partId``.
     """
     values: dict[str, dict[str, Any]] = {}
     for part in (*text_body, *html_body):
@@ -1497,7 +1568,7 @@ def _build_body_values(
             part_id,
             {
                 "value": str(part.get("content", "")),
-                "isEncodingProblem": bool(part.get("_encoding_problem", False)),
+                "isEncodingProblem": encoding_problems.get(part_id, False),
                 "isTruncated": False,
             },
         )
@@ -1505,12 +1576,12 @@ def _build_body_values(
 
 
 def _strip_body_part_content(
-    body_parts: list[dict[str, Any]],
-) -> list[dict[str, Any]]:
+    body_parts: list[EmailBodyPart],
+) -> list[EmailBodyPart]:
     """Remove ``content`` from each body part — used when ``body_values``
     is enabled so the content lives in the ``bodyValues`` map only."""
     return [
-        {k: v for k, v in p.items() if k not in ("content", "_encoding_problem")}
+        cast(EmailBodyPart, {k: v for k, v in p.items() if k != "content"})
         for p in body_parts
     ]
 
@@ -1523,7 +1594,7 @@ def parse_email(
     body_structure: bool = False,
     preview: bool = True,
     limits: ParseLimits = DEFAULT_PARSE_LIMITS,
-) -> dict[str, Any]:
+) -> JmapEmail | None:
     """Parse raw RFC 5322 bytes into a JMAP Email object (RFC 8621 §4).
 
     Output is a strict-JMAP-conformant dict by default. Server-set
@@ -1567,15 +1638,17 @@ def parse_email(
 
     Returns
     -------
-    dict
-        A JMAP Email object. See module docstring for the property
-        table.
+    dict or None
+        A JMAP Email object on success (see module docstring for the
+        property table). ``None`` when the input cannot be parsed at
+        all (empty bytes, wrong type, stdlib producing no
+        :class:`email.message.Message`, an unhandled exception during
+        the walk). Every failure is logged at WARNING level.
 
-    Raises
-    ------
-    ParseError
-        On unrecoverable parse failure (non-bytes input, empty input,
-        or an unhandled stdlib exception).
+        Recoverable damage (a salvageable malformed header, an unknown
+        encoding, etc.) does **not** trigger ``None`` — it surfaces in
+        ``result["ext"]["defects"]`` so callers can flag the message
+        while still using its parsed fields.
     """
     return _parse_email(
         raw_email_bytes,
@@ -1583,43 +1656,6 @@ def parse_email(
         body_values=body_values,
         body_structure=body_structure,
         preview=preview,
-        limits=limits,
-    )
-
-
-def parse_headers(
-    raw_email_bytes: bytes,
-    *,
-    include_extensions: bool = True,
-    limits: ParseLimits = DEFAULT_PARSE_LIMITS,
-) -> dict[str, Any]:
-    """Parse only the header section of an RFC 5322 message.
-
-    Returns the same JMAP Email object shape as :func:`parse_email`, but
-    skips the body walk entirely — no ``textBody`` / ``htmlBody`` /
-    ``attachments`` / ``bodyValues`` / ``bodyStructure`` / ``preview``
-    / ``hasAttachment`` are populated. Useful for header-only indexing
-    (Sieve evaluation, spam filtering, archival walks) where the body
-    walk's base64 decode + sha256 + charset decode cost is wasted.
-
-    The returned dict carries every header-derived field
-    (``subject``, ``from``, ``to``, ``cc``, ``bcc``, ``sender``,
-    ``replyTo``, ``messageId``, ``inReplyTo``, ``references``,
-    ``sentAt``, all ``resent*`` projections, ``headers`` raw list)
-    plus, when ``include_extensions=True``, the ``ext`` namespace
-    (``defects``).
-
-    ``limits`` follows the same contract as on :func:`parse_email`.
-    Only the per-header byte cap applies on this code path (body /
-    multipart caps are unreachable when the body walk is skipped).
-    """
-    return _parse_email(
-        raw_email_bytes,
-        include_extensions=include_extensions,
-        body_values=False,
-        body_structure=False,
-        preview=False,
-        headers_only=True,
         limits=limits,
     )
 
@@ -1632,8 +1668,7 @@ def _parse_email(
     body_structure: bool,
     preview: bool,
     limits: ParseLimits,
-    headers_only: bool = False,
-) -> dict[str, Any]:
+) -> JmapEmail | None:
     """Implementation of ``parse_email``. Kept separate so the public
     function carries a clean docstring and signature while this carries
     the per-header view construction.
@@ -1655,19 +1690,15 @@ def _parse_email(
         raw_email_bytes: Raw email data as bytes.
 
     Returns:
-        Dict of parsed fields, or raises ``ParseError`` on
-        fundamental parse failure.
-
-    Raises:
-        ParseError: parsing failed.
+        Dict of parsed fields, or ``None`` on fundamental parse failure
+        (logged at WARNING level). Never raises.
     """
     if not raw_email_bytes or not isinstance(raw_email_bytes, bytes):
-        # Ensure input is non-empty bytes
         logger.warning(
-            "Invalid input provided to parse_email: type=%s",
-            type(raw_email_bytes),
+            "parse_email: empty or non-bytes input (type=%s); returning None",
+            type(raw_email_bytes).__name__,
         )
-        raise ParseError("Input must be non-empty bytes.")
+        return None
 
     try:
         # Stdlib parser under compat32. ``message_from_bytes`` never
@@ -1678,12 +1709,10 @@ def _parse_email(
 
         if message is None:
             logger.warning(
-                "Stdlib parser failed to produce a message object. Input length: %d",
+                "parse_email: stdlib produced no Message (input length %d); returning None",
                 len(raw_email_bytes),
             )
-            raise ParseError(
-                "Stdlib email parser could not parse the input into a valid message."
-            )
+            return None
 
         # Extract all headers, normalizing keys to lowercase. We use
         # ``raw_items()`` rather than ``items()`` to get the *raw*
@@ -1755,7 +1784,7 @@ def _parse_email(
         # Address fields. Use the raw (surrogate-repaired but NOT RFC
         # 2047-decoded) header values to defend against PortSwigger
         # "Splitting the Email Atom" smuggling.
-        def _addrs(name: str) -> list[dict[str, Any]] | None:
+        def _addrs(name: str) -> list[EmailAddress] | None:
             """Header-present → list (possibly empty after validation);
             header-absent → None. Spec mandates the null-vs-empty
             distinction (RFC 8621 §4.1.2.2)."""
@@ -1801,18 +1830,12 @@ def _parse_email(
         except RecursionError:
             defects.append("RecursionError")
 
-        # Body parts (skipped entirely in headers_only mode).
-        if headers_only:
-            text_body: list[dict[str, Any]] = []
-            html_body: list[dict[str, Any]] = []
-            attachments: list[dict[str, Any]] = []
-            has_attachment = False
-        else:
-            body_parts = _parse_message_content(message, limits=limits, defects=defects)
-            text_body = body_parts["textBody"]
-            html_body = body_parts["htmlBody"]
-            attachments = body_parts["attachments"]
-            has_attachment = _compute_has_attachment(attachments)
+        body_parts = _parse_message_content(message, limits=limits, defects=defects)
+        text_body: list[EmailBodyPart] = body_parts["textBody"]
+        html_body: list[EmailBodyPart] = body_parts["htmlBody"]
+        attachments: list[EmailBodyPart] = body_parts["attachments"]
+        encoding_problems: dict[str, bool] = body_parts.get("encoding_problems") or {}
+        has_attachment = _compute_has_attachment(attachments)
 
         # ─── Assemble the JMAP Email object ───
         result: dict[str, Any] = {
@@ -1838,21 +1861,22 @@ def _parse_email(
             "headers": _jmap_headers(wire_headers),
         }
 
-        if not headers_only:
-            result["textBody"] = text_body
-            result["htmlBody"] = html_body
-            result["attachments"] = attachments
-            result["hasAttachment"] = has_attachment
+        result["textBody"] = text_body
+        result["htmlBody"] = html_body
+        result["attachments"] = attachments
+        result["hasAttachment"] = has_attachment
 
-            # ─── Body content projections ───
-            if preview:
-                result["preview"] = _compute_preview(text_body, html_body)
-            if body_values:
-                result["bodyValues"] = _build_body_values(text_body, html_body)
-                result["textBody"] = _strip_body_part_content(text_body)
-                result["htmlBody"] = _strip_body_part_content(html_body)
-            if body_structure:
-                result["bodyStructure"] = _build_body_structure(message, limits)
+        # ─── Body content projections ───
+        if preview:
+            result["preview"] = _compute_preview(text_body, html_body)
+        if body_values:
+            result["bodyValues"] = _build_body_values(
+                text_body, html_body, encoding_problems
+            )
+            result["textBody"] = _strip_body_part_content(text_body)
+            result["htmlBody"] = _strip_body_part_content(html_body)
+        if body_structure:
+            result["bodyStructure"] = _build_body_structure(message, limits)
 
         # ─── Extensions (project-specific) ───
         if include_extensions:
@@ -1860,11 +1884,8 @@ def _parse_email(
                 "defects": defects,
             }
 
-        return result
+        return cast(JmapEmail, result)
 
     except Exception as e:
-        # Ensure any ParseError raised above is not caught again
-        if isinstance(e, ParseError):
-            raise e
-        logger.exception("Unexpected error during email parsing: %s", str(e))
-        raise ParseError("Failed to parse email") from e
+        logger.exception("parse_email: unexpected error (%s); returning None", e)
+        return None

@@ -16,8 +16,16 @@ from email.parser import BytesParser
 import pytest
 
 import jmap_email.composer as _composer_module
+from jmap_email import is_valid_msg_id, parse_email
 from jmap_email.composer import (
+    _MSG_ID_MAX_OCTETS,
+    _POLICY,
+    AttachmentError,
     ComposeError,
+    HeaderInjectionError,
+    InvalidAddressError,
+    InvalidDateError,
+    InvalidMessageIdError,
     _create_attachment_part,
     _normalize_date,
     _split_content_type,
@@ -1187,7 +1195,6 @@ class TestErrorHandling:
         silently substitutes a fabricated ``now()`` — that would make
         every malformed input ship with a misleading send time.
         """
-        from jmap_email.composer import InvalidDateError
 
         jmap_data = {
             "subject": "Invalid Date",
@@ -1366,7 +1373,6 @@ class TestComposerSecurityAndHardening:
         actually sees; the unbalanced angle brackets fail
         ``_CID_STRUCTURAL_RE`` and the compose fails fast.
         """
-        from jmap_email.composer import InvalidMessageIdError
 
         jmap = self._minimal_jmap(
             attachments=[
@@ -1452,7 +1458,6 @@ class TestComposerSecurityAndHardening:
         silently falling back to ``now()`` would let every malformed
         ``sentAt`` ship with a fabricated timestamp.
         """
-        from jmap_email.composer import InvalidDateError
 
         with pytest.raises(InvalidDateError):
             _normalize_date("not a real date")
@@ -1611,7 +1616,6 @@ class TestComposerDeferredCVECoverage:
         CR/LF), which is the right outcome — Apache James
         CVE-2024-21742 / CPython CVE-2024-6923 threat model is
         "no boundary char in the output", not "no fragment text"."""
-        from jmap_email.composer import format_address
 
         # CR/LF in name.
         formatted = format_address("Alice\r\nBcc: leak@evil.com", "alice@example.com")
@@ -1638,8 +1642,6 @@ class TestComposerDeferredCVECoverage:
         compare on the parent-class chain rather than identity.
         """
         from email.headerregistry import UnstructuredHeader
-
-        from jmap_email.composer import _POLICY
 
         in_reply_to_cls = _POLICY.header_factory["in-reply-to"]
         references_cls = _POLICY.header_factory["references"]
@@ -2476,7 +2478,6 @@ class TestComposerMIMEStructure:  # pylint: disable=too-many-public-methods
         """Malformed base64 raises ``AttachmentError`` — strict-compose
         refuses to silently drop a bad attachment from the wire (that
         would be invisible data loss for the sender)."""
-        from jmap_email.composer import AttachmentError
 
         att = self._att()
         att["content"] = "&&&not-base64&&&"
@@ -2485,7 +2486,6 @@ class TestComposerMIMEStructure:  # pylint: disable=too-many-public-methods
 
     def test_attachment_with_empty_content_raises(self):
         """Empty / missing ``content`` raises ``AttachmentError``."""
-        from jmap_email.composer import AttachmentError
 
         att = self._att()
         att["content"] = ""
@@ -2510,7 +2510,6 @@ class TestComposerMIMEStructure:  # pylint: disable=too-many-public-methods
         """With strict-by-design attachments, the first failure raises;
         no partial output, no silent drop. Pin that there's no
         successful side effect (no partial MIME bytes returned)."""
-        from jmap_email.composer import AttachmentError
 
         good = self._att(name="good.pdf", data=b"PDF")
         bad = self._att()
@@ -2522,7 +2521,6 @@ class TestComposerMIMEStructure:  # pylint: disable=too-many-public-methods
 
     def test_bad_inline_attachment_raises(self):
         """Same strict contract for inline images."""
-        from jmap_email.composer import AttachmentError
 
         bad = self._att(disposition="inline", cid="abc")
         bad["content"] = "%not-base64%"
@@ -2753,7 +2751,6 @@ class TestComposerPass2Regressions:
 
     def test_m1_message_id_at_octet_ceiling_is_accepted(self):
         """A msg-id at the 900-octet ceiling passes; the cap is generous."""
-        from jmap_email.composer import _MSG_ID_MAX_OCTETS
 
         local = "a" * (_MSG_ID_MAX_OCTETS - len("<@example.com>"))
         big_id = [f"{local}@example.com"]
@@ -2763,7 +2760,6 @@ class TestComposerPass2Regressions:
 
     def test_m1_message_id_over_octet_ceiling_is_rejected(self):
         """A msg-id one octet over the cap raises ``InvalidMessageIdError``."""
-        from jmap_email.composer import _MSG_ID_MAX_OCTETS, InvalidMessageIdError
 
         # ``<…@example.com>`` brackets + "@" + ".com" eat 14 octets;
         # +1 to push past the ceiling.
@@ -2775,7 +2771,6 @@ class TestComposerPass2Regressions:
         """Same ceiling protects In-Reply-To — but on the threading path
         the composer drops the bad id and ships the message rather than
         500-ing the send (parent ids are not caller-controlled)."""
-        from jmap_email.composer import _MSG_ID_MAX_OCTETS
 
         local = "x" * (_MSG_ID_MAX_OCTETS - len("<@example.com>") + 1)
         raw = compose_email(
@@ -2801,7 +2796,6 @@ class TestComposerPass2Regressions:
     def test_m3_backslash_round_trips_through_parse(self):
         """End-to-end: a backslash in From: display name survives compose
         → parse without corruption."""
-        from jmap_email import parse_email
 
         jmap = self._minimal(
             **{"from": [{"name": 'Path\\To "Files"', "email": "path@example.com"}]},
@@ -2906,7 +2900,6 @@ class TestComposerPass2Regressions:
     def test_m10_missing_sent_at_raises_invalid_date_error(self):
         """``sentAt`` is required by RFC 5322 §3.6.1; strict-by-design
         composer refuses to fabricate ``now()``."""
-        from jmap_email.composer import InvalidDateError
 
         jmap = self._minimal()
         del jmap["sentAt"]
@@ -2915,7 +2908,6 @@ class TestComposerPass2Regressions:
 
     def test_m10_explicit_none_sent_at_raises(self):
         """An explicit ``None`` is just as missing as no key at all."""
-        from jmap_email.composer import InvalidDateError
 
         jmap = self._minimal(sentAt=None)
         with pytest.raises(InvalidDateError):
@@ -3004,7 +2996,6 @@ class TestComposerPass2Regressions:
         """A cid containing structural characters (embedded ``<`` /
         ``>`` / whitespace) is rejected — would smuggle a header field
         or break ``cid:`` resolution."""
-        from jmap_email.composer import InvalidMessageIdError
 
         inline = {
             "content": base64.b64encode(b"\x89PNG").decode("ascii"),
@@ -3021,13 +3012,6 @@ class TestComposerPass2Regressions:
         """All structured composer errors derive from ``ComposeError`` so
         callers that don't want to discriminate can still catch one
         exception type."""
-        from jmap_email.composer import (
-            AttachmentError,
-            HeaderInjectionError,
-            InvalidAddressError,
-            InvalidDateError,
-            InvalidMessageIdError,
-        )
 
         for cls in (
             InvalidAddressError,
@@ -3042,7 +3026,6 @@ class TestComposerPass2Regressions:
 
     def test_l12_invalid_address_raises_subclass(self):
         """Missing ``from`` raises the specific ``InvalidAddressError``."""
-        from jmap_email.composer import InvalidAddressError
 
         bad = self._minimal()
         del bad["from"]
@@ -3051,7 +3034,6 @@ class TestComposerPass2Regressions:
 
     def test_l12_header_injection_raises_subclass(self):
         """An invalid header field name raises ``HeaderInjectionError``."""
-        from jmap_email.composer import HeaderInjectionError
 
         with pytest.raises(HeaderInjectionError):
             compose_email(
@@ -3079,7 +3061,6 @@ class TestIsValidMsgId:
         ],
     )
     def test_accepts_well_formed(self, value):
-        from jmap_email import is_valid_msg_id
 
         assert is_valid_msg_id(value) is True
 
@@ -3100,15 +3081,12 @@ class TestIsValidMsgId:
         ],
     )
     def test_rejects_malformed(self, value):
-        from jmap_email import is_valid_msg_id
 
         assert is_valid_msg_id(value) is False
 
     def test_rejects_over_octet_ceiling(self):
         """The same length cap ``_validate_msg_id`` applies — a value
         one byte over the ceiling is rejected."""
-        from jmap_email import is_valid_msg_id
-        from jmap_email.composer import _MSG_ID_MAX_OCTETS
 
         local = "x" * (_MSG_ID_MAX_OCTETS - len("<@example.com>") + 1)
         assert is_valid_msg_id(f"<{local}@example.com>") is False
@@ -3118,8 +3096,6 @@ class TestIsValidMsgId:
         that id in ``messageId``; for every rejected value, it raises
         ``InvalidMessageIdError``. Pins the predicate against the
         composer's strict check so the two never drift."""
-        from jmap_email import compose_email, is_valid_msg_id
-        from jmap_email.composer import InvalidMessageIdError
 
         base = {
             "from": [{"email": "s@example.com"}],

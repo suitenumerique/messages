@@ -123,8 +123,7 @@ def gmail_labels(parsed_email: JmapEmail) -> list[str]:
     """Return labels harvested from ``X-Gmail-Labels`` / ``X-Keywords``.
 
     Deduped in first-seen order. Empty list when neither header is
-    present. Works against any ``parse_email`` / ``parse_headers``
-    output — reads the raw header list directly so the library does
+    present. Reads the raw header list directly so the library does
     not need to bake the Google / Dovecot label idiom into its
     strict-JMAP wire shape.
     """

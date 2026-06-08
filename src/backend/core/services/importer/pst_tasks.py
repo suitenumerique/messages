@@ -178,6 +178,13 @@ def process_pst_file_task(self, file_key: str, recipient_id: str) -> Dict[str, A
                                 continue
 
                             parsed_email = parse_email(eml_bytes)
+                            if parsed_email is None:
+                                logger.warning(
+                                    "PST: skipping unparseable message (%d bytes)",
+                                    len(eml_bytes),
+                                )
+                                failure_count += 1
+                                continue
 
                             # Compute IMAP-compatible flags from PST message flags
                             imap_flags = []

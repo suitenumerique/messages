@@ -12,7 +12,6 @@ from django.test import override_settings
 
 import jwt
 import pytest
-from jmap_email import ParseError
 from rest_framework import status
 from rest_framework.test import APIClient
 
@@ -175,7 +174,7 @@ class TestMTAInboundEmail:
         valid_jwt_token,
     ):
         """Test that if email parsing fails, a 400 is returned."""
-        mock_parse.side_effect = ParseError("Parsing failed")
+        mock_parse.return_value = None
 
         email = "recipient@example.com"
         token = valid_jwt_token(sample_email, {"original_recipients": [email]})

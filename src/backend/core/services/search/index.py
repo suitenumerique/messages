@@ -208,16 +208,20 @@ def _build_message_doc(message, mailbox_ids, recipients=None):
     Returns:
         dict or None if the message blob cannot be parsed.
     """
-    parsed_data = {}
-    try:
-        if message.blob:
-            parsed_data = parse_email(message.blob.get_content())
-    except models.Blob.DoesNotExist:
-        pass
-    # pylint: disable=broad-exception-caught
-    except Exception as e:
-        logger.error("Error parsing blob content for message %s: %s", message.id, e)
-        return None
+    parsed_data: dict = {}
+    if message.blob:
+        try:
+            raw = message.blob.get_content()
+        except models.Blob.DoesNotExist:
+            raw = None
+        except Exception as e:  # pylint: disable=broad-exception-caught
+            logger.error("Error reading blob content for message %s: %s", message.id, e)
+            return None
+        if raw is not None:
+            parsed_data = parse_email(raw)
+            if parsed_data is None:
+                logger.error("parse_email returned None for message %s", message.id)
+                return None
 
     if recipients is None:
         recipients = list(message.recipients.select_related("contact").all())

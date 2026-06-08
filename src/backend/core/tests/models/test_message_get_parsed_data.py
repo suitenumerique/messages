@@ -36,9 +36,9 @@ class TestMessageGetParsedData:
             assert fake_blob.get_content.call_count == 1
 
     def test_parse_error_returns_empty(self):
-        """``parse_email`` raises ``ParseError`` on unparseable bytes.
-        The method must collapse to ``{}`` (same contract as the
-        ValueError path)."""
+        """``parse_email`` returns ``None`` on unparseable bytes. The
+        method must collapse to ``{}`` (same shape as the
+        ValueError-on-blob-read path)."""
         fake_blob = MagicMock()
         fake_blob.get_content.return_value = b""  # parse_email rejects empty
         message = models.Message()
