@@ -57,9 +57,7 @@ def remove_mime_headers(
             out.append(line)
             continue
         name_lc = name.lower()
-        if name_lc in name_set or (
-            prefix_tuple and name_lc.startswith(prefix_tuple)
-        ):
+        if name_lc in name_set or (prefix_tuple and name_lc.startswith(prefix_tuple)):
             dropping = True
             continue
         dropping = False

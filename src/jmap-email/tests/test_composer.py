@@ -3590,5 +3590,82 @@ class TestComposerPass2Regressions:
         assert "include_quote" not in params
 
 
+class TestIsValidMsgId:
+    """Predicate-form mirror of the composer's strict msg-id check —
+    lenient-parse callers (archive importers, inbound salvaging) use
+    this to decide whether to keep a raw id or fall back to synthesis."""
+
+    @pytest.mark.parametrize(
+        "value",
+        [
+            "abc@example.com",
+            "<abc@example.com>",
+            # Outlook obs-id-left form with multiple '@'.
+            "002501dce856$b85cc030$29164090$@ducret@example.local",
+            "<002501dce856$b85cc030$29164090$@ducret@example.local>",
+            "a@b",
+            "<bug+report=12345@tracker.example>",
+        ],
+    )
+    def test_accepts_well_formed(self, value):
+        from jmap_email import is_valid_msg_id
+
+        assert is_valid_msg_id(value) is True
+
+    @pytest.mark.parametrize(
+        "value",
+        [
+            "",
+            None,
+            "foo bar@example.com",          # internal whitespace
+            "<foo\tbar@example.com>",        # tab
+            "no-at-sign-here",
+            "<no-at-sign-here>",
+            "<<doubly@wrapped.example>>",
+            "<a>b@example.com>",              # nested angle bracket
+            "just some words",
+            123,                              # wrong type
+            "a@b.com\r\nX-Injected: bad",     # CR/LF smuggling
+        ],
+    )
+    def test_rejects_malformed(self, value):
+        from jmap_email import is_valid_msg_id
+
+        assert is_valid_msg_id(value) is False
+
+    def test_rejects_over_octet_ceiling(self):
+        """The same length cap ``_validate_msg_id`` applies — a value
+        one byte over the ceiling is rejected."""
+        from jmap_email import is_valid_msg_id
+        from jmap_email.composer import _MSG_ID_MAX_OCTETS
+
+        local = "x" * (_MSG_ID_MAX_OCTETS - len("<@example.com>") + 1)
+        assert is_valid_msg_id(f"<{local}@example.com>") is False
+
+    def test_matches_compose_strict_validation(self):
+        """For every accepted value, ``compose_email`` succeeds with
+        that id in ``messageId``; for every rejected value, it raises
+        ``InvalidMessageIdError``. Pins the predicate against the
+        composer's strict check so the two never drift."""
+        from jmap_email import compose_email, is_valid_msg_id
+        from jmap_email.composer import InvalidMessageIdError
+
+        base = {
+            "from": [{"email": "s@example.com"}],
+            "to": [{"email": "r@example.com"}],
+            "subject": "t",
+            "sentAt": "2026-01-01T00:00:00+00:00",
+            "textBody": [{"content": "body"}],
+        }
+        for value in ["abc@example.com", "<abc@example.com>"]:
+            assert is_valid_msg_id(value) is True
+            compose_email({**base, "messageId": [value]})
+
+        for value in ["foo bar@example.com", "no-at"]:
+            assert is_valid_msg_id(value) is False
+            with pytest.raises(InvalidMessageIdError):
+                compose_email({**base, "messageId": [value]})
+
+
 if __name__ == "__main__":
     pytest.main()

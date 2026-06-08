@@ -19,10 +19,9 @@ from typing import Any, Dict, List, Optional, Tuple
 from django.conf import settings
 
 from celery.utils.log import get_task_logger
+from jmap_email import first_address_email, parse_email
 
 from core.mda.inbound import deliver_inbound_message
-from jmap_email import first_address_email
-from jmap_email import parse_email
 from core.services.ssrf import SSRFValidationError, validate_hostname
 
 logger = get_task_logger(__name__)

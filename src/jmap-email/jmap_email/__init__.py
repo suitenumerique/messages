@@ -29,6 +29,7 @@ from .composer import (
     compose_email,
     format_address,
     format_address_list,
+    is_valid_msg_id,
     make_forward,
     make_reply,
     reply_subject,
@@ -83,6 +84,8 @@ __all__ = [
     "format_address",
     "format_address_list",
     "reply_subject",
+    # Validators
+    "is_valid_msg_id",
     # Null-safe shape accessors
     "first_address",
     "first_address_email",

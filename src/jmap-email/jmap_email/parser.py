@@ -399,9 +399,28 @@ def _pick_best_address(parsed) -> tuple[str, str] | None:
     return candidate
 
 
-def parse_address(address_str: str) -> tuple[str, str]:
-    """
-    Parse an email address that might include a display name.
+def parse_address(
+    address_str: str,
+    *,
+    lenient: bool = False,
+) -> tuple[str, str]:
+    """Parse an email address that might include a display name.
+
+    Strict by default. The return value is always either:
+
+    - ``(name, addr)`` where ``addr`` passes the shape check (contains
+      ``@``, no encoded-word residue, no CR/LF/TAB/NUL); or
+    - ``("", "")`` when the input cannot be parsed into a valid
+      addr-spec.
+
+    Pass ``lenient=True`` to fall back to ``("", address_str.strip())``
+    when the addr-spec check fails — the right choice for
+    archive-import paths that must preserve the original wire bytes
+    even when they're invalid (PST / mbox / EML reconstruction). Do
+    NOT use lenient mode for entry-point validation (CLI flags, web
+    form input): under ``lenient=True``, ``parse_address("no-at")``
+    returns ``("", "no-at")``, which silently makes garbage look like
+    a valid address.
 
     Security note: this function deliberately does NOT pre-decode RFC
     2047 encoded-words on the full input — the display-name is decoded
@@ -413,16 +432,23 @@ def parse_address(address_str: str) -> tuple[str, str]:
     already run through ``decode_rfc2047_header``.
 
     Args:
-        address_str: String containing an email address, possibly with display name
+        address_str: String containing an email address, possibly with
+            a display name.
+        lenient: When ``True``, return the input as the ``email`` field
+            on parse failure instead of ``("", "")``. Default ``False``.
 
     Returns:
-        Tuple of (display_name, email_address)
+        Tuple of ``(display_name, email_address)``.
 
     Examples:
         >>> parse_address('user@example.com')
         ('', 'user@example.com')
         >>> parse_address('User <user@example.com>')
         ('User', 'user@example.com')
+        >>> parse_address('no-at-sign')
+        ('', '')
+        >>> parse_address('no-at-sign', lenient=True)
+        ('', 'no-at-sign')
     """
     if not address_str:
         return "", ""
@@ -453,14 +479,11 @@ def parse_address(address_str: str) -> tuple[str, str]:
         return "", ""
 
     if not parsed:
-        return "", address_str.strip()
+        return ("", address_str.strip()) if lenient else ("", "")
 
     best = _pick_best_address(parsed)
     if best is None:
-        # No usable addr-spec; surface the original input as the
-        # address so callers see *something* useful (PST import etc.
-        # depend on this fallback).
-        return "", address_str.strip()
+        return ("", address_str.strip()) if lenient else ("", "")
 
     name, addr = _clean_address_pair(*best)
     return name, addr
@@ -474,17 +497,26 @@ def parse_addresses(
     """
     Parse multiple email addresses from a comma-separated string.
 
-    Handles RFC 5322 group syntax (e.g., "Group: addr1, addr2;") by extracting
-    the addresses within groups.
+    Handles RFC 5322 group syntax (e.g., "Group: addr1, addr2;") by
+    extracting the addresses within groups.
+
+    Strict on each entry: tuples whose addr-spec fails the shape check
+    (no ``@``, encoded-word residue, embedded CR/LF, etc.) are
+    silently dropped — callers comparing the returned length to the
+    input's comma count will see a mismatch. There is no ``lenient=``
+    knob on this entry point: a multi-address header always wants
+    address-tuple recovery, never "the whole header was garbage so
+    return it as a single fake address."
 
     Args:
         addresses_str: Comma-separated string of email addresses.
-        limits: Per-call resource caps. See :class:`ParseLimits`. Pass a
-            custom instance to widen / tighten the address-list byte
+        limits: Per-call resource caps. See :class:`ParseLimits`. Pass
+            a custom instance to widen / tighten the address-list byte
             cap independently of any other parse call in the process.
 
     Returns:
         List of tuples, each containing (display_name, email_address).
+        Entries that fail the addr-spec shape check are omitted.
     """
     if not addresses_str:
         return []

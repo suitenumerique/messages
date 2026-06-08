@@ -11,8 +11,8 @@ from unittest.mock import MagicMock, Mock, patch
 from django.core.files.storage import storages
 
 import pytest
-
 from jmap_email import parse_email
+
 from core.models import Mailbox, MailDomain, Message
 from core.services.importer.pst import (
     FLAG_STATUS_FOLLOWUP,

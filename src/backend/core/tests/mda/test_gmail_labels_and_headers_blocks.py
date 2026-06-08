@@ -1,5 +1,5 @@
 """Tests for the Messages-specific computations in
-``core.mda.jmap_utils`` — Gmail-style label extraction and Received-
+``core.mda.utils`` — Gmail-style label extraction and Received-
 bounded header-block grouping.
 
 Both functions consume a ``parsed_email`` dict and walk its
@@ -9,9 +9,9 @@ so they work on any output of :func:`jmap_email.parse_email` or
 """
 
 import pytest
-
-from core.mda.jmap_utils import gmail_labels, headers_blocks
 from jmap_email import parse_email
+
+from core.mda.utils import gmail_labels, headers_blocks
 
 
 class TestGmailLabels:
@@ -21,12 +21,15 @@ class TestGmailLabels:
     def _parse(label_header_value: str, header_name: str = "X-Gmail-Labels"):
         raw = (
             b"From: a@b.c\r\nTo: d@e.f\r\n"
-            + header_name.encode("ascii") + b": " + label_header_value.encode("utf-8")
+            + header_name.encode("ascii")
+            + b": "
+            + label_header_value.encode("utf-8")
             + b"\r\n\r\nbody\r\n"
         )
         return parse_email(raw)
 
     def test_simple_comma_separated(self):
+        """Plain comma-separated input is the OfflineIMAP convention."""
         parsed = self._parse("Important, Work, Personal")
         assert gmail_labels(parsed) == ["Important", "Work", "Personal"]
 
@@ -41,6 +44,7 @@ class TestGmailLabels:
         assert gmail_labels(parsed) == ["work", "important", "project"]
 
     def test_empty_quoted_strings_are_dropped(self):
+        """Empty quoted entries are filtered out — only real labels survive."""
         parsed = self._parse('"", Work, ""')
         labels = gmail_labels(parsed)
         assert "Work" in labels
@@ -61,12 +65,13 @@ class TestGmailLabels:
         assert "keywords-only" in labels
 
     def test_no_labels_header_returns_empty(self):
+        """No ``X-Gmail-Labels`` or ``X-Keywords`` → empty list, never KeyError."""
         raw = b"From: a@b.c\r\nTo: d@e.f\r\nSubject: hi\r\n\r\nbody\r\n"
-        assert gmail_labels(parse_email(raw)) == []
+        assert not gmail_labels(parse_email(raw))
 
     def test_empty_parsed_email(self):
         """A defensive null-safety check — accept ``{}``, return ``[]``."""
-        assert gmail_labels({}) == []
+        assert not gmail_labels({})
 
     def test_utf8_encoded_labels_preserve_nbsp(self):
         """UTF-8 encoded RFC 2047 labels survive intact, including
@@ -74,7 +79,7 @@ class TestGmailLabels:
         raw = (
             b"From: a@b.c\r\nTo: d@e.f\r\n"
             b"X-Gmail-Labels: =?UTF-8?Q?Messages_archiv=C3=A9s,Ouvert,Cat=C3=A9gorie=C2=A0:_E-mails_?=\r\n"
-            b" =?UTF-8?Q?personnels,\"Culture,_associations,_=C3=A9v=C3=A9nements\"?=\r\n"
+            b' =?UTF-8?Q?personnels,"Culture,_associations,_=C3=A9v=C3=A9nements"?=\r\n'
             b"\r\nbody\r\n"
         )
         labels = gmail_labels(parse_email(raw))
@@ -88,6 +93,7 @@ class TestHeadersBlocks:
     """Received-bounded trust scope grouping."""
 
     def test_no_received_yields_one_block(self):
+        """A message with zero Received headers collapses to a single block."""
         raw = b"From: a@b.c\r\nTo: d@e.f\r\nSubject: hi\r\n\r\nbody\r\n"
         blocks = headers_blocks(parse_email(raw))
         assert len(blocks) == 1
@@ -125,6 +131,7 @@ class TestHeadersBlocks:
                 assert all(isinstance(v, str) for v in value)
 
     def test_multiple_received_headers_split_into_multiple_blocks(self):
+        """N Received headers → N closing blocks plus a final residual block."""
         raw = (
             b"Received: by our_mta\r\n"
             b"X-Spam: ham\r\n"
@@ -138,7 +145,8 @@ class TestHeadersBlocks:
         assert len(blocks) == 4
 
     def test_empty_parsed_email(self):
-        assert headers_blocks({}) == []
+        """Defensive null-safety: ``{}`` is accepted and returns ``[]``."""
+        assert not headers_blocks({})
 
 
 if __name__ == "__main__":

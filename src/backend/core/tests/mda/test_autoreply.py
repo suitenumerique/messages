@@ -86,7 +86,12 @@ class TestIsAutoReplyMessage:
 
     def test_normal_message_passes(self):
         """Normal message is not detected as auto-reply."""
-        parsed_email = {"headers": [{"name": "From", "value": "user@example.com"}, {"name": "Subject", "value": "Hello"}]}
+        parsed_email = {
+            "headers": [
+                {"name": "From", "value": "user@example.com"},
+                {"name": "Subject", "value": "Hello"},
+            ]
+        }
         assert _is_auto_reply_message(parsed_email) is False
 
     def test_empty_headers(self):
@@ -96,12 +101,16 @@ class TestIsAutoReplyMessage:
 
     def test_auto_submitted_auto_replied(self):
         """Auto-Submitted: auto-replied is detected."""
-        parsed_email = {"headers": [{"name": "Auto-Submitted", "value": "auto-replied"}]}
+        parsed_email = {
+            "headers": [{"name": "Auto-Submitted", "value": "auto-replied"}]
+        }
         assert _is_auto_reply_message(parsed_email) is True
 
     def test_auto_submitted_auto_generated(self):
         """Auto-Submitted: auto-generated is detected."""
-        parsed_email = {"headers": [{"name": "Auto-Submitted", "value": "auto-generated"}]}
+        parsed_email = {
+            "headers": [{"name": "Auto-Submitted", "value": "auto-generated"}]
+        }
         assert _is_auto_reply_message(parsed_email) is True
 
     def test_auto_submitted_no_passes(self):
@@ -131,12 +140,18 @@ class TestIsAutoReplyMessage:
 
     def test_list_unsubscribe_header(self):
         """List-Unsubscribe header is detected."""
-        parsed_email = {"headers": [{"name": "List-Unsubscribe", "value": "<mailto:unsub@example.com>"}]}
+        parsed_email = {
+            "headers": [
+                {"name": "List-Unsubscribe", "value": "<mailto:unsub@example.com>"}
+            ]
+        }
         assert _is_auto_reply_message(parsed_email) is True
 
     def test_x_auto_response_suppress(self):
         """X-Auto-Response-Suppress header is detected."""
-        parsed_email = {"headers": [{"name": "X-Auto-Response-Suppress", "value": "All"}]}
+        parsed_email = {
+            "headers": [{"name": "X-Auto-Response-Suppress", "value": "All"}]
+        }
         assert _is_auto_reply_message(parsed_email) is True
 
     def test_x_autoreply(self):
@@ -151,12 +166,21 @@ class TestIsAutoReplyMessage:
 
     def test_auto_submitted_with_parameters(self):
         """Auto-Submitted with RFC 3834 parameters after semicolon is detected."""
-        parsed_email = {"headers": [{"name": "Auto-Submitted", "value": 'auto-replied; owner-email="user@example.com"'}]}
+        parsed_email = {
+            "headers": [
+                {
+                    "name": "Auto-Submitted",
+                    "value": 'auto-replied; owner-email="user@example.com"',
+                }
+            ]
+        }
         assert _is_auto_reply_message(parsed_email) is True
 
     def test_auto_submitted_no_with_parameters(self):
         """Auto-Submitted: no with parameters is not detected."""
-        parsed_email = {"headers": [{"name": "Auto-Submitted", "value": "no; some-param=value"}]}
+        parsed_email = {
+            "headers": [{"name": "Auto-Submitted", "value": "no; some-param=value"}]
+        }
         assert _is_auto_reply_message(parsed_email) is False
 
 
@@ -175,27 +199,39 @@ class TestIsAutoReplyMessageExtended:
 
     def test_list_post_header(self):
         """List-Post header is detected."""
-        parsed_email = {"headers": [{"name": "List-Post", "value": "<mailto:list@example.com>"}]}
+        parsed_email = {
+            "headers": [{"name": "List-Post", "value": "<mailto:list@example.com>"}]
+        }
         assert _is_auto_reply_message(parsed_email) is True
 
     def test_list_help_header(self):
         """List-Help header is detected."""
-        parsed_email = {"headers": [{"name": "List-Help", "value": "<mailto:help@example.com>"}]}
+        parsed_email = {
+            "headers": [{"name": "List-Help", "value": "<mailto:help@example.com>"}]
+        }
         assert _is_auto_reply_message(parsed_email) is True
 
     def test_list_subscribe_header(self):
         """List-Subscribe header is detected."""
-        parsed_email = {"headers": [{"name": "List-Subscribe", "value": "<mailto:sub@example.com>"}]}
+        parsed_email = {
+            "headers": [{"name": "List-Subscribe", "value": "<mailto:sub@example.com>"}]
+        }
         assert _is_auto_reply_message(parsed_email) is True
 
     def test_list_owner_header(self):
         """List-Owner header is detected."""
-        parsed_email = {"headers": [{"name": "List-Owner", "value": "<mailto:owner@example.com>"}]}
+        parsed_email = {
+            "headers": [{"name": "List-Owner", "value": "<mailto:owner@example.com>"}]
+        }
         assert _is_auto_reply_message(parsed_email) is True
 
     def test_list_archive_header(self):
         """List-Archive header is detected."""
-        parsed_email = {"headers": [{"name": "List-Archive", "value": "<https://archive.example.com>"}]}
+        parsed_email = {
+            "headers": [
+                {"name": "List-Archive", "value": "<https://archive.example.com>"}
+            ]
+        }
         assert _is_auto_reply_message(parsed_email) is True
 
     def test_x_loop_header(self):
@@ -205,7 +241,9 @@ class TestIsAutoReplyMessageExtended:
 
     def test_feedback_id_header(self):
         """Feedback-ID header is detected (Gmail newsletters)."""
-        parsed_email = {"headers": [{"name": "Feedback-ID", "value": "123:campaign:gmail"}]}
+        parsed_email = {
+            "headers": [{"name": "Feedback-ID", "value": "123:campaign:gmail"}]
+        }
         assert _is_auto_reply_message(parsed_email) is True
 
 

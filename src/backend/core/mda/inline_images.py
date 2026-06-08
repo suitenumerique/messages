@@ -158,7 +158,5 @@ def extract_inline_images_html(
         :func:`extract_inline_images_text`.
     """
     images: list[dict] = []
-    stripped_html = _HTML_BASE64_IMG_RE.sub(
-        _make_replacer(images, known_images), html
-    )
+    stripped_html = _HTML_BASE64_IMG_RE.sub(_make_replacer(images, known_images), html)
     return stripped_html, images

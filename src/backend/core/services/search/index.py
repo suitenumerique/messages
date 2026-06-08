@@ -7,13 +7,12 @@ import logging
 from django.conf import settings
 from django.db.models import Prefetch, prefetch_related_objects
 
+from jmap_email import body_text_joined, parse_email
 from opensearchpy import OpenSearch
 from opensearchpy.exceptions import NotFoundError, TransportError
 from opensearchpy.helpers import bulk
 
 from core import enums, models
-from jmap_email import body_text_joined
-from jmap_email import parse_email
 from core.services.search.exceptions import (
     RETRYABLE_EXCEPTIONS,
     RETRYABLE_TRANSPORT_STATUS,

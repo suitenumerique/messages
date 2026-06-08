@@ -218,7 +218,7 @@ def send_smtp_mail(
             logger.debug("SMTP: QUIT failed %s", e)
 
     try:
-        client._host = smtp_host  # noqa: SLF001 # pylint: disable=protected-access
+        client._host = smtp_host  # noqa: SLF001 # pylint: disable=protected-access,attribute-defined-outside-init
         (code, msg) = client.connect(smtp_ip or smtp_host, smtp_port)
         logger.debug(
             "SMTP: connected to %s:%s (%s %s)", smtp_host, smtp_port, code, msg

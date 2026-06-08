@@ -7,6 +7,7 @@ from django.utils import timezone
 
 import pytest
 import requests
+from jmap_email import parse_email
 
 from core import factories, models
 from core.mda.inbound import deliver_inbound_message
@@ -16,7 +17,6 @@ from core.mda.inbound_tasks import (
     process_inbound_message_task,
     process_inbound_messages_queue_task,
 )
-from jmap_email import parse_email
 
 
 @pytest.mark.django_db

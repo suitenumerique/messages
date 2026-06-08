@@ -13,7 +13,7 @@ from datetime import datetime as dt
 from datetime import time, timedelta
 from functools import cached_property
 from logging import getLogger
-from typing import Any, Dict, List, Optional, Tuple
+from typing import Any, Dict, List, Optional
 from zoneinfo import ZoneInfo
 
 from django.conf import settings
@@ -30,6 +30,7 @@ from django.utils.text import slugify
 
 import pyzstd
 from encrypted_fields.fields import EncryptedJSONField, EncryptedTextField
+from jmap_email import ParseError, body_part_text, parse_email
 from timezone_field import TimeZoneField
 
 from core.enums import (
@@ -54,8 +55,6 @@ from core.enums import (
     thread_event_type_choices,
     user_event_type_choices,
 )
-from jmap_email import ParseError, parse_email
-from jmap_email import body_part_text
 from core.mda.signing import generate_dkim_key as _generate_dkim_key
 from core.services.tiered_storage import TieredStorageService, sha256_advisory_lock
 from core.utils import validate_json_schema
@@ -1990,10 +1989,10 @@ class Message(BaseModel):
         """Parse the raw MIME message and cache the strict JMAP Email
         object (RFC 8621 §4) produced by ``jmap_email.parse_email``.
 
-        Use the helpers in :mod:`core.mda.jmap_utils` for null-safe
-        access patterns over the list-typed fields (``from``, ``to``,
-        ``messageId``, ``headers``, …). Returns ``{}`` when there's no
-        blob or parsing fails.
+        Use the helpers in :mod:`jmap_email` (``first_address``,
+        ``first_msgid``, ``find_header``, …) for null-safe access
+        patterns over the list-typed fields. Returns ``{}`` when
+        there's no blob or parsing fails.
         """
         if self._parsed_email_cache is not None:
             return self._parsed_email_cache
@@ -2029,7 +2028,7 @@ class Message(BaseModel):
         """Return the MIME headers as a JMAP ``EmailHeader[]`` list.
 
         Each entry is ``{"name": <wire_case>, "value": <decoded>}`` in
-        document order. Use :func:`core.mda.jmap_utils.find_header` for
+        document order. Use :func:`jmap_email.find_header` for
         case-insensitive scalar lookups.
         """
         return self.get_parsed_data().get("headers", [])

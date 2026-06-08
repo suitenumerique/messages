@@ -7,6 +7,7 @@ from unittest.mock import Mock, patch
 from django.test import override_settings
 
 import pytest
+from jmap_email import parse_email
 
 from core import factories, models
 from core.mda.inbound_auth import (
@@ -15,7 +16,6 @@ from core.mda.inbound_auth import (
     check_inbound_authentication,
 )
 from core.mda.inbound_tasks import process_inbound_message_task
-from jmap_email import parse_email
 
 RAW_EMAIL = (
     b"From: sender@example.com\r\n"
@@ -74,7 +74,9 @@ class TestCheckInboundAuthenticationNative:
     def test_dmarc_header_ignored(self, mock_verify):
         """Native doesn't look at DMARC; passing DKIM alone is enough."""
         mock_verify.return_value = True
-        parsed = {"ext": {"headersBlocks": [{"authentication-results": ["mx; dmarc=fail"]}]}}
+        parsed = {
+            "ext": {"headersBlocks": [{"authentication-results": ["mx; dmarc=fail"]}]}
+        }
         config = {"inbound_auth": "native"}
         assert check_inbound_authentication(RAW_EMAIL, parsed, config) is None
 
@@ -224,9 +226,7 @@ class TestCheckInboundAuthenticationResults:
         for i in range(trust_blocks):
             if i < len(ar_values) and ar_values[i] is not None:
                 for value in ar_values[i]:
-                    headers.append(
-                        {"name": "Authentication-Results", "value": value}
-                    )
+                    headers.append({"name": "Authentication-Results", "value": value})
             headers.append({"name": "Received", "value": f"from hop{i}"})
         return {"headers": headers}
 

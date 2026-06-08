@@ -8,6 +8,7 @@ from django.conf import settings
 
 import jwt
 from drf_spectacular.utils import extend_schema
+from jmap_email import ParseError, parse_email
 from rest_framework import status, viewsets
 from rest_framework.authentication import BaseAuthentication
 from rest_framework.decorators import action
@@ -17,8 +18,6 @@ from rest_framework.response import Response
 
 from core import models
 from core.mda.inbound import check_local_recipients, deliver_inbound_message
-from jmap_email import ParseError, parse_email
-
 from core.mda.raw_mime import remove_mime_headers
 
 logger = logging.getLogger(__name__)

@@ -2,25 +2,27 @@
 
 import logging
 import re
-from typing import Any, Optional
+from typing import Optional
 
 from django.conf import settings
 from django.db import transaction
 from django.utils import timezone
+
+from jmap_email import (
+    JmapEmail,
+    find_header,
+    find_headers,
+    first_address_email,
+    has_header,
+    reply_subject,
+)
 
 from core import models
 from core.enums import (
     MessageRecipientTypeChoices,
     MessageTemplateTypeChoices,
 )
-from jmap_email import (
-    find_header,
-    find_headers,
-    first_address_email,
-    has_header,
-)
 from core.mda.outbound import compose_and_sign_mime
-from jmap_email.composer import reply_subject as _format_reply_subject
 from core.services.throttle import ThrottleLimitExceeded, ThrottleManager
 
 logger = logging.getLogger(__name__)
@@ -57,7 +59,7 @@ def _is_noreply_address(email: str) -> bool:
     return bool(_NOREPLY_PATTERNS.search(email))
 
 
-def _is_recipient_explicit(mailbox_email: str, parsed_email: dict[str, Any]) -> bool:
+def _is_recipient_explicit(mailbox_email: str, parsed_email: JmapEmail) -> bool:
     """Check that the mailbox address appears in To or Cc.
 
     Per RFC 5230 §4.5, a vacation responder MUST NOT respond to a
@@ -75,7 +77,7 @@ def _is_recipient_explicit(mailbox_email: str, parsed_email: dict[str, Any]) -> 
     return False
 
 
-def _is_auto_reply_message(parsed_email: dict[str, Any]) -> bool:
+def _is_auto_reply_message(parsed_email: JmapEmail) -> bool:
     """Detect whether the inbound message is itself an automatic reply.
 
     Checks Auto-Submitted, Precedence, List-Id, X-Auto-Response-Suppress,
@@ -107,7 +109,7 @@ def _is_auto_reply_message(parsed_email: dict[str, Any]) -> bool:
 
 def should_send_autoreply(
     mailbox: models.Mailbox,
-    parsed_email: dict[str, Any],
+    parsed_email: JmapEmail,
     is_spam: bool = False,
 ) -> Optional[models.MessageTemplate]:
     """Determine whether we should send an autoreply and return the template.
@@ -204,7 +206,7 @@ def send_autoreply_for_message(
     )
 
     # 2. Build subject with Re: prefix
-    reply_subject = _format_reply_subject(inbound_message.subject or "")[:255]
+    subject = reply_subject(inbound_message.subject or "")[:255]
 
     # 3-7: Create records and compose MIME atomically so a failure in
     #       compose_and_sign_mime does not leave orphan Message/Recipient rows.
@@ -213,7 +215,7 @@ def send_autoreply_for_message(
         message = models.Message.objects.create(
             thread=thread,
             sender=mailbox_contact,
-            subject=reply_subject,
+            subject=subject,
             parent=inbound_message,
             sent_at=timezone.now(),
             is_draft=False,
@@ -273,7 +275,7 @@ def send_autoreply_for_message(
 
 def try_send_autoreply(
     mailbox: models.Mailbox,
-    parsed_email: dict[str, Any],
+    parsed_email: JmapEmail,
     message: models.Message,
     is_spam: bool = False,
 ):

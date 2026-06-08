@@ -12,11 +12,11 @@ from django.test import override_settings
 
 import jwt
 import pytest
+from jmap_email import ParseError
 from rest_framework import status
 from rest_framework.test import APIClient
 
 from core import enums, factories, models
-from jmap_email import ParseError
 
 
 @pytest.fixture(name="api_client")

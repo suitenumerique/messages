@@ -6,12 +6,12 @@ import base64
 import re
 
 import pytest
+from jmap_email import compose_email
 
 from core.mda.inline_images import (
     extract_inline_images_html,
     extract_inline_images_text,
 )
-from jmap_email import compose_email
 
 # A tiny valid 1x1 red PNG (68 bytes)
 _1PX_PNG = (
@@ -34,7 +34,7 @@ class TestExtractFromHtml:
         html = "<p>Hello world</p>"
         result_html, images = extract_inline_images_html(html)
         assert result_html == html
-        assert images == []
+        assert not images
 
     def test_single_image_replaced_with_cid(self):
         html = f'<p>Text</p><img src="data:image/png;base64,{_1PX_PNG_B64}" alt="pic">'
@@ -65,24 +65,24 @@ class TestExtractFromHtml:
         html = '<img src="cid:existing-uuid">'
         result_html, images = extract_inline_images_html(html)
         assert result_html == html
-        assert images == []
+        assert not images
 
     def test_non_image_data_url_not_touched(self):
         html = '<img src="data:text/plain;base64,SGVsbG8=">'
         result_html, images = extract_inline_images_html(html)
         assert result_html == html
-        assert images == []
+        assert not images
 
     def test_invalid_base64_left_as_is(self):
         html = '<img src="data:image/png;base64,!!!invalid!!!">'
         result_html, images = extract_inline_images_html(html)
         assert result_html == html
-        assert images == []
+        assert not images
 
     def test_empty_html(self):
         result_html, images = extract_inline_images_html("")
         assert result_html == ""
-        assert images == []
+        assert not images
 
     def test_mixed_content_preserves_unrelated_urls(self):
         html = (
@@ -110,7 +110,7 @@ class TestExtractFromText:
         text = "Hello world\nThis is a message."
         result, images = extract_inline_images_text(text)
         assert result == text
-        assert images == []
+        assert not images
 
     def test_single_markdown_image(self):
         text = f"Before\n![logo](data:image/png;base64,{_1PX_PNG_B64})\nAfter"
@@ -140,7 +140,7 @@ class TestExtractFromText:
         text = "![photo](https://example.com/photo.jpg)"
         result, images = extract_inline_images_text(text)
         assert result == text
-        assert images == []
+        assert not images
 
     def test_residual_html_img_tag_also_replaced(self):
         text = f'Some text <img src="data:image/png;base64,{_1PX_PNG_B64}" alt="pic"> more text'
@@ -153,7 +153,7 @@ class TestExtractFromText:
     def test_empty_text(self):
         result, images = extract_inline_images_text("")
         assert result == ""
-        assert images == []
+        assert not images
 
 
 class TestDeduplication:
@@ -173,7 +173,7 @@ class TestDeduplication:
         )
 
         assert len(text_images) == 1
-        assert html_images == []
+        assert not html_images
         cid = text_images[0]["cid"]
         assert f"![logo](cid:{cid})" in text_result
         assert f'src="cid:{cid}"' in html_result
@@ -189,14 +189,10 @@ class TestDeduplication:
         known_images: dict[str, str] = {}
 
         text = f"![a](data:image/png;base64,{_1PX_PNG_B64})"
-        _, text_images = extract_inline_images_text(
-            text, known_images=known_images
-        )
+        _, text_images = extract_inline_images_text(text, known_images=known_images)
 
         html = f'<img src="data:image/png;base64,{other_b64}">'
-        _, html_images = extract_inline_images_html(
-            html, known_images=known_images
-        )
+        _, html_images = extract_inline_images_html(html, known_images=known_images)
 
         assert len(text_images) == 1
         assert len(html_images) == 1
@@ -209,9 +205,7 @@ class TestDeduplication:
             f"![a](data:image/png;base64,{_1PX_PNG_B64})\n"
             f"![b](data:image/png;base64,{_1PX_PNG_B64})"
         )
-        result, images = extract_inline_images_text(
-            text, known_images=known_images
-        )
+        result, images = extract_inline_images_text(text, known_images=known_images)
 
         assert len(images) == 1
         cid = images[0]["cid"]

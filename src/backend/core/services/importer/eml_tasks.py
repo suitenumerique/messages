@@ -7,11 +7,10 @@ from django.conf import settings
 from django.core.files.storage import storages
 
 from celery.utils.log import get_task_logger
+from jmap_email import first_address_email, parse_email
 from sentry_sdk import capture_exception
 
 from core.mda.inbound import deliver_inbound_message
-from jmap_email import first_address_email
-from jmap_email import parse_email
 from core.models import Mailbox
 from core.utils import ThreadReindexDeferrer, ThreadStatsUpdateDeferrer
 

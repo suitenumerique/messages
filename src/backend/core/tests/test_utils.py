@@ -2,7 +2,7 @@
 
 import pytest
 
-from core.utils import SNIPPET_MAX_LENGTH, thread_snippet
+from core.mda.utils import SNIPPET_MAX_LENGTH, thread_snippet
 
 
 class TestThreadSnippet:
@@ -48,9 +48,13 @@ class TestThreadSnippet:
         assert thread_snippet({}, fallback="default text") == "default text"
 
     def test_falls_back_to_empty_when_nothing(self):
+        """With neither parsed data nor fallback, returns the empty
+        string rather than raising."""
         assert thread_snippet({}) == ""
 
     def test_truncates_to_snippet_max_length(self):
+        """Any candidate longer than ``SNIPPET_MAX_LENGTH`` is sliced
+        before return."""
         long_preview = "x" * (SNIPPET_MAX_LENGTH * 2)
         out = thread_snippet({"preview": long_preview})
         assert len(out) == SNIPPET_MAX_LENGTH

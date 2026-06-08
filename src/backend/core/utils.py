@@ -9,37 +9,8 @@ from django.core.exceptions import ImproperlyConfigured, ValidationError
 
 import jsonschema
 from configurations import values
-from jmap_email import body_part_text
 
 logger = logging.getLogger(__name__)
-
-SNIPPET_MAX_LENGTH = 140
-
-
-def thread_snippet(parsed_email: dict, fallback: str = "") -> str:
-    """Return the thread-listing snippet for a parsed JMAP Email.
-
-    Resolution order:
-
-    1. ``parsed["preview"]`` — the library's spec-default ≤256-char
-       plain-text excerpt, already HTML-stripped and whitespace-
-       normalised.
-    2. The first ``textBody`` part — used when ``parse_email`` was
-       called with ``preview=False`` or when the caller hand-built the
-       JMAP dict (importers, autoreply, MTA-in test fixtures).
-    3. ``fallback`` — when neither preview nor a text body exists.
-
-    Output is always truncated to ``SNIPPET_MAX_LENGTH``.
-    """
-    parsed = parsed_email or {}
-    candidate = parsed.get("preview") or ""
-    if not candidate:
-        text_body = parsed.get("textBody") or []
-        if text_body:
-            candidate = body_part_text(parsed, text_body[0])
-    if not candidate:
-        candidate = fallback or ""
-    return candidate[:SNIPPET_MAX_LENGTH]
 
 
 def get_redis_client():

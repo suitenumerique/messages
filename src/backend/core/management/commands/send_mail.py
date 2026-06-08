@@ -18,15 +18,14 @@ import base64
 import logging
 import uuid
 
-from django.core.exceptions import ValidationError
 from django.core.management.base import BaseCommand, CommandError
-from django.core.validators import validate_email
-from django.utils import timezone
+
+from jmap_email import compose_email, parse_address
 
 from core import models
 from core.mda.outbound import send_outbound_email
-from jmap_email import compose_email
 from core.mda.signing import sign_message_dkim
+from core.mda.utils import current_sent_at
 
 logger = logging.getLogger(__name__)
 
@@ -74,17 +73,20 @@ class Command(BaseCommand):
         from_email = options.get("from_email")
         dry_run = options.get("dry_run", False)
 
-        # Validate email addresses
-        try:
-            validate_email(to_email)
-        except ValidationError as e:
-            raise CommandError(f"Invalid recipient email address: {to_email}") from e
+        # Validate email addresses through the same parser the rest of
+        # the inbound / outbound pipeline uses. ``parse_address`` is
+        # strict by default: ``("", "")`` on anything that isn't a real
+        # addr-spec.
+        _, parsed_to = parse_address(to_email)
+        if not parsed_to:
+            raise CommandError(f"Invalid recipient email address: {to_email}")
+        to_email = parsed_to
 
         if from_email:
-            try:
-                validate_email(from_email)
-            except ValidationError as e:
-                raise CommandError(f"Invalid sender email address: {from_email}") from e
+            _, parsed_from = parse_address(from_email)
+            if not parsed_from:
+                raise CommandError(f"Invalid sender email address: {from_email}")
+            from_email = parsed_from
 
         # Get sender mailbox or use minimal setup
         sender_mailbox = None
@@ -121,15 +123,12 @@ class Command(BaseCommand):
         )
         mime_id = f"{mime_id}@_lst.{from_email.split('@')[1]}"
 
-        # Generate MIME content. ``sentAt`` is required by RFC 5322
-        # §3.6.1; the composer is strict-by-design and refuses to
-        # fabricate ``now()`` on absence — we pass it explicitly here.
         mime_data = {
             "from": [{"name": from_name, "email": from_email}],
             "to": [{"name": to_email.split("@")[0], "email": to_email}],
             "cc": [],
             "subject": subject,
-            "sentAt": timezone.now().isoformat(),
+            "sentAt": current_sent_at(),
             "textBody": [{"content": body}],
             "htmlBody": [],
             "messageId": [mime_id] if mime_id else None,

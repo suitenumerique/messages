@@ -12,6 +12,7 @@ import logging
 from django.core.exceptions import ValidationError as DjangoValidationError
 
 from drf_spectacular.utils import extend_schema
+from jmap_email import ParseError, first_address_email, parse_email
 from rest_framework import status
 from rest_framework.exceptions import PermissionDenied
 from rest_framework.response import Response
@@ -22,10 +23,8 @@ from core.api.authentication import ChannelApiKeyAuthentication
 from core.api.permissions import channel_scope
 from core.enums import MAILBOX_ROLES_CAN_SEND, ChannelApiKeyScope
 from core.mda.inbound_create import _create_message_from_inbound
-from jmap_email import first_address_email
 from core.mda.outbound import prepare_outbound_message
 from core.mda.outbound_tasks import send_message_task
-from jmap_email import ParseError, parse_email
 
 logger = logging.getLogger(__name__)
 

@@ -11,6 +11,12 @@ from django.utils import timezone
 
 import requests
 from celery.utils.log import get_task_logger
+from jmap_email import (
+    JmapEmail,
+    first_address_email,
+    has_header,
+    parse_email,
+)
 
 from core import models
 from core.mda.inbound_auth import (
@@ -18,20 +24,14 @@ from core.mda.inbound_auth import (
     get_inbound_auth_mode,
 )
 from core.mda.inbound_create import _create_message_from_inbound
-from jmap_email import (
-    find_header,
-    first_address_email,
-    has_header,
-)
-from core.mda.jmap_utils import headers_blocks
-from jmap_email import parse_email
+from core.mda.utils import headers_blocks
 
 from messages.celery_app import app as celery_app
 
 logger = get_task_logger(__name__)
 
 
-def _is_selfcheck_message(parsed_email: Dict[str, Any], recipient_email: str) -> bool:
+def _is_selfcheck_message(parsed_email: JmapEmail, recipient_email: str) -> bool:
     """Return True when this message is the self-check probe.
 
     Match is strict on both envelope ends: the From address must equal
@@ -51,7 +51,7 @@ def _is_selfcheck_message(parsed_email: Dict[str, Any], recipient_email: str) ->
 
 
 def _check_spam_with_hardcoded_rules(
-    parsed_email: Dict[str, Any], spam_config: Dict[str, Any]
+    parsed_email: JmapEmail, spam_config: Dict[str, Any]
 ) -> Optional[bool]:
     """Check if a message is spam using hardcoded rules.
 

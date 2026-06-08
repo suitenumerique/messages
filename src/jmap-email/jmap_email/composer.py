@@ -229,6 +229,29 @@ _MSG_ID_RE = re.compile(r"^<[^\s<>]+@[^\s<>]+>$")
 _MSG_ID_MAX_OCTETS = 900
 
 
+def is_valid_msg_id(value: str | None) -> bool:
+    """Return True when ``value`` matches the composer's msg-id shape.
+
+    The same predicate :func:`compose_email` applies to Message-ID /
+    In-Reply-To / References entries: ``<local@domain>``, no internal
+    whitespace, no nested angle brackets, at least one ``@``, and
+    within the ``_MSG_ID_MAX_OCTETS`` byte ceiling. Angle brackets are
+    optional \u2014 callers may pass either the stripped (``local@domain``)
+    or wrapped (``<local@domain>``) form.
+
+    Use this from lenient-parse paths (archive importers, inbound
+    salvaging) to decide whether to keep a raw msg-id or fall back to
+    synthesis \u2014 checking the predicate yourself rather than try/except
+    against :func:`compose_email` keeps the cold path cheap.
+    """
+    if not isinstance(value, str) or not value:
+        return False
+    cleaned = _ensure_angle_brackets(_sanitize_header_value(value))
+    if len(cleaned.encode("utf-8", errors="replace")) > _MSG_ID_MAX_OCTETS:
+        return False
+    return _MSG_ID_RE.match(cleaned) is not None
+
+
 def _validate_msg_id(value: str, *, field: str) -> str:
     """Normalize and validate a Message-ID-like value.
 

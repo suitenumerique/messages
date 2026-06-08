@@ -246,9 +246,18 @@ class TestEmailAddressParsing:
         assert name == ""
         assert email_addr == ""
 
-    def test_parse_invalid_address(self):
-        """Test parsing an invalid address."""
+    def test_parse_invalid_address_strict_default(self):
+        """Strict by default: an unparseable input returns ``("", "")``
+        so callers can't mistake garbage for a valid address."""
         name, email_addr = parse_address("Not an email address")
+        assert name == ""
+        assert email_addr == ""
+
+    def test_parse_invalid_address_lenient(self):
+        """``lenient=True`` opts into the archive-import behaviour:
+        surface the original input as the address so the source
+        record stays visible."""
+        name, email_addr = parse_address("Not an email address", lenient=True)
         assert name == ""
         assert email_addr == "Not an email address"
 

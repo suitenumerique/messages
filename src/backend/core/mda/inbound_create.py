@@ -4,12 +4,20 @@
 
 import logging
 import re
-from typing import Any, Dict, List, Optional
+from typing import List, Optional
 
 from django.core.exceptions import ValidationError
 from django.db import transaction
 from django.db.utils import Error as DjangoDbError
 from django.utils import timezone
+
+from jmap_email import (
+    JmapEmail,
+    first_address_email,
+    first_address_name,
+    first_msgid,
+    sent_at_to_datetime,
+)
 
 from core import enums, models
 from core.ai.call_label import assign_label_to_thread
@@ -19,16 +27,10 @@ from core.ai.utils import (
     is_ai_summary_enabled,
     is_auto_labels_enabled,
 )
-from jmap_email import (
-    first_address_email,
-    first_address_name,
-    first_msgid,
-    sent_at_to_datetime,
-)
+from core.mda.utils import thread_snippet
 from core.services.importer.labels import (
     compute_labels_and_flags,
 )
-from core.utils import thread_snippet
 
 logger = logging.getLogger(__name__)
 
@@ -47,7 +49,7 @@ def _canonicalize_subject(subject: Optional[str]) -> str:
 
 
 def find_thread_for_inbound_message(
-    parsed_email: Dict[str, Any], mailbox: models.Mailbox
+    parsed_email: JmapEmail, mailbox: models.Mailbox
 ) -> Optional[models.Thread]:
     """Attempt to find an existing thread for an inbound message.
 
@@ -90,7 +92,7 @@ def find_thread_for_inbound_message(
 
 
 def find_thread_for_import(
-    parsed_email: Dict[str, Any], mailbox: models.Mailbox
+    parsed_email: JmapEmail, mailbox: models.Mailbox
 ) -> Optional[models.Thread]:
     """
     During import, try to find an existing thread that contains messages
@@ -116,9 +118,7 @@ def find_thread_for_import(
     return thread
 
 
-def _create_thread(
-    parsed_email: Dict[str, Any], mailbox: models.Mailbox
-) -> models.Thread:
+def _create_thread(parsed_email: JmapEmail, mailbox: models.Mailbox) -> models.Thread:
     """Create a new thread."""
 
     snippet = thread_snippet(
@@ -165,7 +165,7 @@ def _find_thread_by_message_ids(
 
 def _create_message_from_inbound(  # pylint: disable=too-many-arguments
     recipient_email: str,
-    parsed_email: Dict[str, Any],
+    parsed_email: JmapEmail,
     raw_data: bytes,
     mailbox: models.Mailbox,
     is_import: bool = False,
@@ -347,11 +347,7 @@ def _create_message_from_inbound(  # pylint: disable=too-many-arguments
                 blob=blob,
                 mime_id=first_msgid(parsed_email.get("messageId")) or None,
                 parent=parent_message,
-                sent_at=(
-                    None
-                    if is_outbound
-                    else (sent_at or timezone.now())
-                ),
+                sent_at=(None if is_outbound else (sent_at or timezone.now())),
                 is_draft=is_outbound,  # Outbound: draft until prepare_outbound_message finalizes
                 is_sender=is_sender,
                 is_trashed=False,

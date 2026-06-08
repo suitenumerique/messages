@@ -16,7 +16,13 @@ import uuid
 from email import message_from_string
 from typing import Generator, Optional, Tuple
 
-from jmap_email import compose_email, parse_address, parse_addresses
+from jmap_email import (
+    EmailAddress,
+    compose_email,
+    is_valid_msg_id,
+    parse_address,
+    parse_addresses,
+)
 
 logger = logging.getLogger(__name__)
 
@@ -542,8 +548,10 @@ def _get_flag_status(message) -> Optional[int]:
     return get_mapi_property_integer(message, PR_FLAG_STATUS)
 
 
-def _addr_tuple_to_dict(name: str, addr: str) -> dict:
-    """Convert a (name, email) tuple to a JMAP address dict."""
+def _addr_tuple_to_dict(name: str, addr: str) -> EmailAddress:
+    """Bridge the ``(name, email)`` shape returned by
+    :func:`jmap_email.parse_address` to a JMAP ``EmailAddress`` dict.
+    """
     return {"name": name, "email": addr}
 
 
@@ -587,7 +595,7 @@ def _extract_sender_from_mapi(
     message,
     store_email: Optional[str] = None,
     preferred_name: Optional[str] = None,
-) -> Optional[dict]:
+) -> Optional[EmailAddress]:
     """Extract sender address from MAPI properties on the message itself.
 
     Order of attempts (first hit wins):
@@ -612,7 +620,7 @@ def _extract_sender_from_mapi(
         smtp: str,
         *,
         sender_name_fallback: bool = True,
-    ) -> dict:
+    ) -> EmailAddress:
         # ``sender_name`` is only a valid display-name fallback when the SMTP
         # came from a *different* source (PR_SENDER_*, store_email…). When the
         # SMTP was itself extracted from ``sender_name``, reusing it as a name
@@ -658,7 +666,7 @@ def _extract_sender_from_mapi(
     # 6. Try to parse sender_name as an email address.
     try:
         if message.sender_name:
-            parsed_name, addr = parse_address(message.sender_name)
+            parsed_name, addr = parse_address(message.sender_name, lenient=True)
             if addr and "@" in addr:
                 return _build(parsed_name, addr, sender_name_fallback=False)
     except Exception:
@@ -671,10 +679,11 @@ def _extract_sender_from_mapi(
     return None
 
 
-def _extract_recipients_from_mapi(message) -> dict:
+def _extract_recipients_from_mapi(message) -> dict[str, list[EmailAddress]]:
     """Extract To/Cc/Bcc recipients from MAPI recipient table.
 
-    Returns dict with 'to', 'cc', 'bcc' keys mapping to lists of address dicts.
+    Returns dict with ``to`` / ``cc`` / ``bcc`` keys mapping to lists of
+    JMAP ``EmailAddress`` entries.
     """
     result = {"to": [], "cc": [], "bcc": []}
 
@@ -727,39 +736,42 @@ def _extract_recipients_from_mapi(message) -> dict:
     return result
 
 
-def _parse_display_recipients(display_string: Optional[str]) -> list:
+def _parse_display_recipients(
+    display_string: Optional[str],
+) -> list[EmailAddress]:
     """Parse Outlook's semicolon-separated To/Cc/Bcc display string.
 
-    Returns a list of JMAP address dicts for entries containing an email
-    address. Name-only entries (no '@') are dropped on purpose — a Contact
-    without an email cannot be created downstream, and silently inventing
-    one would corrupt the address book.
+    Returns a list of JMAP ``EmailAddress`` entries for tokens that
+    contain a usable email address. Name-only entries (no ``@``) are
+    dropped on purpose — a Contact without an email cannot be created
+    downstream, and silently inventing one would corrupt the address
+    book.
     """
     if not display_string:
         return []
 
-    addresses = []
+    addresses: list[EmailAddress] = []
     for raw in display_string.split(";"):
         token = raw.strip()
         if not token:
             continue
         try:
-            name, addr = parse_address(token)
+            name, addr = parse_address(token, lenient=True)
         except Exception:
             logger.debug("Failed to parse display recipient token")
             continue
         if addr and "@" in addr:
             addresses.append(_addr_tuple_to_dict(name or "", addr))
         elif "@" in token:
-            # parse_address sometimes hands back the address as the
-            # name field when the token is a bare email — recover it.
             addresses.append(_addr_tuple_to_dict("", token))
         else:
             logger.debug("Dropping display recipient with no email")
     return addresses
 
 
-def _extract_display_recipients_from_mapi(message) -> dict:
+def _extract_display_recipients_from_mapi(
+    message,
+) -> dict[str, list[EmailAddress]]:
     """Fall back to PR_DISPLAY_TO/CC/BCC when the recipient table is empty.
 
     Some PSTs exported from Exchange Online expose ``number_of_recipients=0``
@@ -844,29 +856,23 @@ def _apply_recipient_fallback_chain(message, jmap_data: dict) -> None:
             jmap_data[key] = display_recipients[key]
 
 
-# Shape mirror of compose_email's _MSG_ID_RE, applied to the bracket-stripped
-# value. PST archives routinely carry Message-IDs that would crash strict
-# composition (empty, missing '@', embedded whitespace, nested brackets) —
-# pre-validating here lets us fall back to MAPI/synth instead of failing the
-# entire message reconstruction. Multiple '@' are accepted (Outlook/MAPI emit
-# obs-id-left ids like `foo$@local@domain`); the composer routes In-Reply-To /
-# References through UnstructuredHeader so those preserve on the wire.
-_VALID_MSG_ID_INNER_RE = re.compile(r"^[^\s<>]+@[^\s<>]+$")
-
-
 def _sanitize_message_id(raw: Optional[str]) -> Optional[str]:
     """Return ``raw`` stripped of brackets/whitespace if it's a valid msg-id.
 
-    Returns None for anything compose_email would reject (empty, no '@',
-    whitespace, nested brackets…). Keeps the importer "lenient parse,
-    strict compose" contract from collapsing on malformed archives.
+    PST archives routinely carry Message-IDs that strict composition
+    would reject (empty, missing '@', embedded whitespace, nested
+    brackets). Falling back to MAPI / synthesis here keeps the importer
+    "lenient parse, strict compose" contract from collapsing on a
+    malformed archive. The shape predicate is owned by
+    :func:`jmap_email.is_valid_msg_id` so this path stays in lockstep
+    with the composer's strict check.
     """
     if not raw:
         return None
     candidate = raw.strip()
     if candidate.startswith("<") and candidate.endswith(">"):
         candidate = candidate[1:-1].strip()
-    if not candidate or not _VALID_MSG_ID_INNER_RE.match(candidate):
+    if not is_valid_msg_id(candidate):
         return None
     return candidate
 
@@ -988,7 +994,7 @@ def reconstruct_eml(
         from_str = parsed_headers.get("From", "")
         from_name_hint: Optional[str] = None
         if from_str:
-            name, addr = parse_address(from_str)
+            name, addr = parse_address(from_str, lenient=True)
             if addr and "@" in addr:
                 jmap_data["from"] = [_addr_tuple_to_dict(name, addr)]
             else:
@@ -1098,9 +1104,7 @@ def reconstruct_eml(
     # The synthesized date is the Unix epoch so a downstream UI can flag
     # the "no original date" state explicitly.
     if "sentAt" not in jmap_data:
-        logger.warning(
-            "PST message has no resolvable Date; falling back to epoch"
-        )
+        logger.warning("PST message has no resolvable Date; falling back to epoch")
         jmap_data["sentAt"] = "1970-01-01T00:00:00+00:00"
 
     # No sender resolvable: synthesize one using the recipient's domain so

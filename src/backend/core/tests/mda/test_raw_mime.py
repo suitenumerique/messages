@@ -7,7 +7,7 @@ import pytest
 from core.mda.raw_mime import remove_mime_headers
 
 
-class TestRemoveMimeHeaders:
+class TestRemoveMimeHeaders:  # pylint: disable=too-many-public-methods
     """Strip selected headers from raw MIME bytes byte-faithfully."""
 
     BASE_HEAD = (
@@ -80,9 +80,7 @@ class TestRemoveMimeHeaders:
         assert b"x-STmsg-Foo" not in out
 
     def test_multiple_prefixes(self):
-        raw = (
-            b"X-Spam-Score: 5\r\nX-StMsg-Foo: 1\r\nX-Other: keep\r\n" + self.BODY
-        )
+        raw = b"X-Spam-Score: 5\r\nX-StMsg-Foo: 1\r\nX-Other: keep\r\n" + self.BODY
         out = remove_mime_headers(raw, prefixes=["x-spam-", "x-stmsg-"])
         assert b"X-Spam-Score" not in out
         assert b"X-StMsg-Foo" not in out
@@ -97,13 +95,8 @@ class TestRemoveMimeHeaders:
     # --- Combined filters --------------------------------------------------
 
     def test_prefixes_and_names_combined(self):
-        raw = (
-            b"X-StMsg-Foo: 1\r\nDKIM-Signature: v=1; ...\r\nFrom: a@b\r\n"
-            + self.BODY
-        )
-        out = remove_mime_headers(
-            raw, prefixes=["x-stmsg-"], names=["DKIM-Signature"]
-        )
+        raw = b"X-StMsg-Foo: 1\r\nDKIM-Signature: v=1; ...\r\nFrom: a@b\r\n" + self.BODY
+        out = remove_mime_headers(raw, prefixes=["x-stmsg-"], names=["DKIM-Signature"])
         assert b"X-StMsg-Foo" not in out
         assert b"DKIM-Signature" not in out
         assert b"From: a@b" in out
@@ -156,9 +149,7 @@ class TestRemoveMimeHeaders:
     # --- Body / boundary semantics ----------------------------------------
 
     def test_body_left_byte_identical(self):
-        body = (
-            b"\r\n\r\nLine1\r\nX-StMsg-Foo: looks like a header but it's body\r\n"
-        )
+        body = b"\r\n\r\nLine1\r\nX-StMsg-Foo: looks like a header but it's body\r\n"
         raw = b"From: a@b\r\nX-StMsg-Foo: bar\r\n" + body
         out = remove_mime_headers(raw, prefixes=["x-stmsg-"])
         assert out.endswith(body)

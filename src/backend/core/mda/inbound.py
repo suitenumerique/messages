@@ -3,15 +3,16 @@
 # pylint: disable=broad-exception-caught
 
 import logging
-from typing import Any, Dict, List, Optional
+from typing import List, Optional
 
 from django.conf import settings
 from django.core.exceptions import ValidationError
 from django.db.utils import Error as DjangoDbError
 
+from jmap_email import JmapEmail, first_msgid
+
 from core import models
 from core.mda.inbound_tasks import process_inbound_message_task
-from jmap_email import first_msgid
 from core.services.importer.labels import (
     handle_duplicate_message,
 )
@@ -132,7 +133,7 @@ def count_external_recipients(message) -> int:
 
 def deliver_inbound_message(
     recipient_email: str,
-    parsed_email: Dict[str, Any],
+    parsed_email: JmapEmail,
     raw_data: bytes,
     is_import: bool = False,
     is_import_sender: bool = False,

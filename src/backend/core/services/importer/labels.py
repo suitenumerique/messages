@@ -1,10 +1,12 @@
 """Label and flag processing for imported messages."""
 
 import logging
-from typing import Any, Dict, List, Optional, Set, Tuple
+from typing import Dict, List, Optional, Set, Tuple
+
+from jmap_email import JmapEmail
 
 from core import models
-from core.mda.jmap_utils import gmail_labels
+from core.mda.utils import gmail_labels
 
 logger = logging.getLogger(__name__)
 
@@ -62,7 +64,7 @@ IMAP_LABELS_TO_IGNORE = [
 
 
 def compute_labels_and_flags(
-    parsed_email: Dict[str, Any],
+    parsed_email: JmapEmail,
     imap_labels: Optional[List[str]],
     imap_flags: Optional[List[str]],
 ) -> Tuple[Set[str], Dict[str, bool]]:
@@ -117,7 +119,7 @@ def compute_labels_and_flags(
 
 def handle_duplicate_message(
     existing_message: models.Message,
-    parsed_email: Dict[str, Any],
+    parsed_email: JmapEmail,
     imap_labels: List[str],
     imap_flags: List[str],
     mailbox: models.Mailbox,

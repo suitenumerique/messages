@@ -11,11 +11,6 @@ from django.db import transaction
 from django.utils import timezone
 
 import rest_framework as drf
-
-from core import models
-from core.enums import MessageDeliveryStatusChoices
-from core.mda.inbound import check_local_recipient, deliver_inbound_message
-from core.mda.outbound_direct import send_message_via_mx
 from jmap_email import (
     ParseError,
     compose_email,
@@ -24,12 +19,18 @@ from jmap_email import (
     make_reply,
     parse_email,
 )
+
+from core import models
+from core.enums import MessageDeliveryStatusChoices
+from core.mda.inbound import check_local_recipient, deliver_inbound_message
 from core.mda.inline_images import (
     extract_inline_images_html,
     extract_inline_images_text,
 )
+from core.mda.outbound_direct import send_message_via_mx
 from core.mda.signing import sign_message_dkim, verify_message_dkim
 from core.mda.smtp import send_smtp_mail
+from core.mda.utils import current_sent_at
 from core.services.blob_gc import schedule_for_gc
 from core.services.dns.check import check_spf_status
 from core.services.throttle import check_and_increment_throttle
@@ -181,7 +182,7 @@ def compose_and_sign_mime(
 
     mime_data = {
         "from": [{"name": message.sender.name, "email": message.sender.email}],
-        "sentAt": timezone.now().isoformat(),
+        "sentAt": current_sent_at(),
         "to": recipients_by_type.get(models.MessageRecipientTypeChoices.TO, []),
         "cc": recipients_by_type.get(models.MessageRecipientTypeChoices.CC, []),
         "subject": message.subject,

@@ -34,8 +34,10 @@ import logging
 import re
 from typing import Any, Dict, List, Optional
 
-from core.mda.jmap_utils import headers_blocks
+from jmap_email import JmapEmail
+
 from core.mda.signing import verify_message_dkim
+from core.mda.utils import headers_blocks
 
 logger = logging.getLogger(__name__)
 
@@ -122,7 +124,7 @@ def _rspamd_outcome(
 
 
 def _authentication_results_values(
-    parsed_email: Dict[str, Any], trusted_relays: int
+    parsed_email: JmapEmail, trusted_relays: int
 ) -> List[str]:
     """Collect Authentication-Results header values from trusted header blocks.
 
@@ -188,7 +190,7 @@ def get_inbound_auth_mode(spam_config: Dict[str, Any]) -> str:
 
 def check_inbound_authentication(
     raw_data: bytes,
-    parsed_email: Dict[str, Any],
+    parsed_email: JmapEmail,
     spam_config: Dict[str, Any],
     rspamd_result: Optional[Dict[str, Any]] = None,
 ) -> Optional[str]:

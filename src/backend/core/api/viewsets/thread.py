@@ -21,8 +21,8 @@ from rest_framework.response import Response
 
 from core import enums, models
 from core.ai.thread_summarizer import summarize_thread
+from core.mda.utils import thread_snippet
 from core.services.search import search_threads
-from core.utils import thread_snippet
 
 from .. import permissions, serializers
 

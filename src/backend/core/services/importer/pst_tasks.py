@@ -8,10 +8,10 @@ from django.core.files.storage import storages
 
 import pypff
 from celery.utils.log import get_task_logger
+from jmap_email import parse_email
 from sentry_sdk import capture_exception
 
 from core.mda.inbound import deliver_inbound_message
-from jmap_email import parse_email
 from core.models import Mailbox
 from core.utils import ThreadReindexDeferrer, ThreadStatsUpdateDeferrer
 

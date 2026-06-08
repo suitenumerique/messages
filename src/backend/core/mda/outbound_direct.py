@@ -92,7 +92,7 @@ def select_smtp_proxy() -> Optional[SmtpProxy]:
     config line doesn't take out the whole proxy pool.
     """
     proxies = list(settings.MTA_OUT_DIRECT_PROXIES)
-    random.shuffle(proxies)  # noqa: S311
+    random.shuffle(proxies)
     for url in proxies:
         try:
             parsed = urlparse(url)

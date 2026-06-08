@@ -4,11 +4,8 @@ import logging
 from html import escape as html_escape
 from urllib.parse import urlparse
 
-from django.core.exceptions import ValidationError
-from django.core.validators import validate_email
-from django.utils import timezone
-
 from drf_spectacular.utils import extend_schema
+from jmap_email import compose_email, parse_address
 from rest_framework import status, viewsets
 from rest_framework.authentication import BaseAuthentication
 from rest_framework.decorators import action
@@ -18,7 +15,7 @@ from rest_framework.response import Response
 from core import models
 from core.api.permissions import IsAuthenticated
 from core.mda.inbound import deliver_inbound_message
-from jmap_email import compose_email
+from core.mda.utils import current_sent_at
 
 logger = logging.getLogger(__name__)
 
@@ -95,13 +92,15 @@ class InboundWidgetViewSet(viewsets.GenericViewSet):
                 {"detail": "Missing email"}, status=status.HTTP_400_BAD_REQUEST
             )
 
-        # Validate the sender email format with django's email validator
-        try:
-            validate_email(sender_email)
-        except ValidationError:
+        # Validate through the same parser the rest of the pipeline
+        # uses. ``parse_address`` is strict by default and returns
+        # ``("", "")`` on garbage input.
+        _, normalised_sender = parse_address(sender_email)
+        if not normalised_sender:
             return Response(
                 {"detail": "Invalid email format"}, status=status.HTTP_400_BAD_REQUEST
             )
+        sender_email = normalised_sender
 
         if not message_text:
             return Response(
@@ -163,7 +162,7 @@ class InboundWidgetViewSet(viewsets.GenericViewSet):
             "subject": subject,
             "from": [{"email": sender_email}],
             "to": [{"name": target_name, "email": target_email}],
-            "sentAt": timezone.now().isoformat(),
+            "sentAt": current_sent_at(),
             "htmlBody": [{"content": html_escape(message_text).replace("\n", "<br/>")}],
             "textBody": [{"content": message_text}],
         }
