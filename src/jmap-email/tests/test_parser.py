@@ -15,12 +15,12 @@ import pytest
 
 from jmap_email.parser import (
     ParseError,
+    _parse_message_content,
     decode_rfc2047_header,
-    parse_date,
     parse_address,
     parse_addresses,
+    parse_date,
     parse_email,
-    _parse_message_content,
 )
 
 
@@ -270,6 +270,20 @@ class TestEmailAddressParsing:
         assert addresses[0] == ("Test User", "user@example.com")
         assert addresses[1] == ("Another User", "another@example.com")
 
+    def test_parse_addresses_silently_drops_invalid_entries(self):
+        """``parse_addresses`` filters per-entry: tuples failing the
+        addr-spec shape check (no ``@``, encoded-word residue, embedded
+        CR/LF, …) are silently dropped. Callers can't compare
+        ``len(result)`` to ``input.count(",") + 1`` and expect a match —
+        documented behaviour, pin it."""
+        addresses = parse_addresses(
+            "good@example.com, no-at-sign-here, also-good@example.com"
+        )
+        assert addresses == [
+            ("", "good@example.com"),
+            ("", "also-good@example.com"),
+        ]
+
     def test_parse_multiple_recipients_with_various_formats(self):
         """Test parsing multiple recipients in various formats."""
         addresses = parse_addresses(
@@ -303,9 +317,7 @@ class TestEmailAddressParsing:
 
     def test_parse_address_with_symbols_in_name(self):
         """Test parsing an email address with symbols in the display name."""
-        name, email_addr = parse_address(
-            '"Smith, Dr. John (CEO)" <ceo@company.org>'
-        )
+        name, email_addr = parse_address('"Smith, Dr. John (CEO)" <ceo@company.org>')
         assert name == "Smith, Dr. John (CEO)"
         assert email_addr == "ceo@company.org"
 
@@ -386,9 +398,7 @@ class TestEmailAddressParsing:
 
     def test_parse_addresses_group_with_members(self):
         """Test parsing group syntax extracts member addresses."""
-        addresses = parse_addresses(
-            "Group: user1@example.com, user2@example.com;"
-        )
+        addresses = parse_addresses("Group: user1@example.com, user2@example.com;")
         assert len(addresses) == 2
         assert addresses[0] == ("", "user1@example.com")
         assert addresses[1] == ("", "user2@example.com")
@@ -743,7 +753,6 @@ class TestEmailMessageParsing:
         assert "mime-version" in header_keys
         assert "content-type" in header_keys
 
-
     def test_parse_complex_email(self, complex_email):
         """Test parsing a complex email with nested parts and attachments."""
         parsed = parse_email(complex_email)
@@ -760,9 +769,7 @@ class TestEmailMessageParsing:
         assert parsed["to"][1]["name"] is None
         # textBody: text/plain from alternative + inline image
         assert len(parsed.get("textBody", [])) == 2
-        assert "Plain text body content." in _body_text(
-            parsed, parsed["textBody"][0]
-        )
+        assert "Plain text body content." in _body_text(parsed, parsed["textBody"][0])
         # htmlBody: text/html from alternative + inline image
         assert len(parsed.get("htmlBody", [])) == 2
         assert "<h1>HTML Content</h1>" in _body_text(parsed, parsed["htmlBody"][0])
@@ -843,9 +850,7 @@ class TestEmailMessageParsing:
         assert parsed["to"][0]["email"] == "recipient@example.com"
         assert not parsed.get("cc")
         assert len(parsed["textBody"]) == 1
-        assert "This is a test email body." in _body_text(
-            parsed, parsed["textBody"][0]
-        )
+        assert "This is a test email body." in _body_text(parsed, parsed["textBody"][0])
         # Per JMAP spec, text/plain outside alternative copies to htmlBody
         assert len(parsed.get("htmlBody", [])) == 1
         assert not parsed.get("attachments")
@@ -1261,8 +1266,12 @@ Date: Mon, 1 Jan 2024 12:00:00 +0000
 
 Body text."""
         parsed = parse_email(raw_email)
-        assert parsed["messageId"][0] if parsed["messageId"] else "" == "msg123@example.com"
-        assert parsed["inReplyTo"][0] if parsed["inReplyTo"] else "" == "reply123@example.com"
+        assert (
+            parsed["messageId"][0] if parsed["messageId"] else ""
+        ) == "msg123@example.com"
+        assert (
+            parsed["inReplyTo"][0] if parsed["inReplyTo"] else ""
+        ) == "reply123@example.com"
         assert parsed["references"] == ["ref1@example.com", "ref2@example.com"]
 
     def test_message_id_without_angle_brackets(self):
@@ -1276,8 +1285,12 @@ Date: Mon, 1 Jan 2024 12:00:00 +0000
 
 Body text."""
         parsed = parse_email(raw_email)
-        assert parsed["messageId"][0] if parsed["messageId"] else "" == "msg123@example.com"
-        assert parsed["inReplyTo"][0] if parsed["inReplyTo"] else "" == "reply123@example.com"
+        assert (
+            parsed["messageId"][0] if parsed["messageId"] else ""
+        ) == "msg123@example.com"
+        assert (
+            parsed["inReplyTo"][0] if parsed["inReplyTo"] else ""
+        ) == "reply123@example.com"
 
     def test_missing_date_header(self):
         """Test that default date is used when Date header is missing."""
@@ -1288,7 +1301,6 @@ Subject: No Date
 Body text."""
         parsed = parse_email(raw_email)
         assert parsed["sentAt"] is None  # JMAP: null when Date header absent
-                
 
     def test_multiple_same_headers(self):
         """Test parsing email with multiple headers of same name."""
@@ -1642,9 +1654,9 @@ Body text."""
         assert parsed["from"][0]["email"] == "sender@example.com"
         assert len(parsed["to"]) == 1
         # Optional headers should have default values
-        assert parsed["messageId"][0] if parsed["messageId"] else "" == ""
+        assert (parsed["messageId"][0] if parsed["messageId"] else "") == ""
         assert parsed["references"] is None
-        assert parsed["inReplyTo"][0] if parsed["inReplyTo"] else "" == ""
+        assert (parsed["inReplyTo"][0] if parsed["inReplyTo"] else "") == ""
 
     def test_inline_image_without_filename(self):
         """Test inline image without filename."""
@@ -2122,7 +2134,7 @@ class TestParserSecurityRegressions:
             b"body\r\n"
         )
         parsed = parse_email(raw)
-        from_email = (parsed["from"][0]["email"] if parsed["from"] else "")
+        from_email = parsed["from"][0]["email"] if parsed["from"] else ""
         # ``=40`` must NOT have been decoded into a literal ``@`` in
         # the addr-spec; the smuggled form ``victim@you.com`` would
         # otherwise surface as a "valid" From address.
@@ -2205,9 +2217,7 @@ class TestParserSecurityRegressions:
             b'Content-Type: application/octet-stream; name="x.bin"\r\n'
             b"Content-Disposition: attachment\r\n"
             b"Content-Transfer-Encoding: base64\r\n"
-            b"\r\n"
-            + body_b64
-            + b"\r\n"
+            b"\r\n" + body_b64 + b"\r\n"
         )
         parsed = parse_email(raw)
         # The recovered attachment content must include both segments —
@@ -2230,24 +2240,15 @@ class TestParserSecurityRegressions:
         # 100-level guard, well below CPython's 1000-frame limit but
         # close enough that an unguarded recursive walk would fail.
         depth = 500
-        body = (
-            b"Content-Type: text/plain\r\n\r\nDEEPEST_TEXT\r\n"
-        )
+        body = b"Content-Type: text/plain\r\n\r\nDEEPEST_TEXT\r\n"
         for _ in range(depth):
             body = (
                 b'Content-Type: multipart/mixed; boundary="b"\r\n'
                 b"\r\n"
-                b"--b\r\n"
-                + body
-                + b"\r\n"
+                b"--b\r\n" + body + b"\r\n"
                 b"--b--\r\n"
             )
-        raw = (
-            b"From: a@b.com\r\n"
-            b"To: c@d.com\r\n"
-            b"Subject: nesting bomb\r\n"
-            + body
-        )
+        raw = b"From: a@b.com\r\nTo: c@d.com\r\nSubject: nesting bomb\r\n" + body
         # Must not raise RecursionError or any other exception. The
         # body walk truncates at the depth cap; what we surface up
         # to that point is fine.
@@ -2379,16 +2380,10 @@ class TestParserSecurityRegressions:
             b"body\r\n"
         )
         parsed = parse_email(raw)
-        from_name = (parsed["from"][0]["name"] if parsed["from"] else "")
-        assert "\n" not in from_name, (
-            f"LF leaked into display name: {from_name!r}"
-        )
-        assert "\r" not in from_name, (
-            f"CR leaked into display name: {from_name!r}"
-        )
-        assert "\x00" not in from_name, (
-            f"NUL leaked into display name: {from_name!r}"
-        )
+        from_name = parsed["from"][0]["name"] if parsed["from"] else ""
+        assert "\n" not in from_name, f"LF leaked into display name: {from_name!r}"
+        assert "\r" not in from_name, f"CR leaked into display name: {from_name!r}"
+        assert "\x00" not in from_name, f"NUL leaked into display name: {from_name!r}"
 
     def test_defects_surfaced_for_quarantine(self):
         """Mailman pattern: surface stdlib's recorded MIME defects
@@ -2479,8 +2474,12 @@ class TestParserSecurityRegressions:
         parsed = parse_email(raw)
         # ASCII Punycode form is acceptable; what matters is that we
         # didn't drop the domain entirely or corrupt the local-part.
-        assert (parsed["from"][0]["email"] if parsed["from"] else "").startswith("user@")
-        assert "xn--" in (parsed["from"][0]["email"] if parsed["from"] else "") or "испытание" in (parsed["from"][0]["email"] if parsed["from"] else "")
+        assert (parsed["from"][0]["email"] if parsed["from"] else "").startswith(
+            "user@"
+        )
+        assert "xn--" in (
+            parsed["from"][0]["email"] if parsed["from"] else ""
+        ) or "испытание" in (parsed["from"][0]["email"] if parsed["from"] else "")
 
     def test_message_rfc822_with_malformed_inner_headers_serializes_safely(self):
         """Malformed inner headers inside a ``message/rfc822``
@@ -2526,7 +2525,7 @@ class TestParserSecurityRegressions:
             b"To: sender@example.org\r\n"
             b"Subject: DSN\r\n"
             b"MIME-Version: 1.0\r\n"
-            b'Content-Type: multipart/report; report-type=delivery-status;\r\n'
+            b"Content-Type: multipart/report; report-type=delivery-status;\r\n"
             b'\tboundary="dsn"\r\n'
             b"\r\n"
             b"--dsn\r\n"
@@ -2551,9 +2550,7 @@ class TestParserSecurityRegressions:
         )
         parsed = parse_email(raw)
         dsn_atts = [
-            a
-            for a in parsed["attachments"]
-            if a["type"] == "message/delivery-status"
+            a for a in parsed["attachments"] if a["type"] == "message/delivery-status"
         ]
         assert dsn_atts, "delivery-status attachment missing"
         body = dsn_atts[0]["content"]
@@ -2633,8 +2630,8 @@ class TestHistoricalCVERegressions:
         the parse contract is the same.
         """
         raw = (
-            b"From: \"Smith, John\" <smith@example.com>\r\n"
-            b"To: \"Doe, Jane\" <doe@example.com>, \"Roe, Mary\" <roe@example.com>\r\n"
+            b'From: "Smith, John" <smith@example.com>\r\n'
+            b'To: "Doe, Jane" <doe@example.com>, "Roe, Mary" <roe@example.com>\r\n'
             b"Subject: quoted commas\r\n"
             b"\r\n"
             b"body\r\n"
@@ -2693,7 +2690,7 @@ class TestHistoricalCVERegressions:
         )
         parsed = parse_email(raw)
         # The address must be surfaced — strict=True would drop it.
-        assert (parsed["from"][0]["email"] if parsed["from"] else ""), (
+        assert parsed["from"][0]["email"] if parsed["from"] else "", (
             "obs-route addr-spec lost — has strict mode been turned on?"
         )
 
@@ -2713,8 +2710,17 @@ class TestHistoricalCVERegressions:
         from jmap_email.parser import _clean_address_pair
 
         for char in (
-            "\x00", "\x01", "\x08", "\x0b", "\x0c", "\x0e", "\x1f",
-            "\x7f", "", " ", " ",
+            "\x00",
+            "\x01",
+            "\x08",
+            "\x0b",
+            "\x0c",
+            "\x0e",
+            "\x1f",
+            "\x7f",
+            "",
+            " ",
+            " ",
         ):
             tainted = f"Alice{char}Bcc:leak@evil.com"
             name, _addr = _clean_address_pair(tainted, "alice@example.com")
@@ -2740,13 +2746,9 @@ class TestHistoricalCVERegressions:
             b"body\r\n"
         )
         parsed = parse_email(raw)
-        name = (parsed["from"][0]["name"] if parsed["from"] else "")
-        assert " " not in name, (
-            f"U+2028 leaked into display name: {name!r}"
-        )
-        assert " " not in name, (
-            f"U+2029 leaked into display name: {name!r}"
-        )
+        name = parsed["from"][0]["name"] if parsed["from"] else ""
+        assert " " not in name, f"U+2028 leaked into display name: {name!r}"
+        assert " " not in name, f"U+2029 leaked into display name: {name!r}"
 
     def test_duplicate_from_first_wins_per_usenix_2020_chain(self):
         """USENIX 2020 "Weak Links in Authentication Chains" (Chen et
@@ -3016,9 +3018,7 @@ class TestBufferOverflowShapeRegressions:
             b"body\r\n"
             b"--B\r\n"
             b"Content-Type: application/octet-stream\r\n"
-            b"Content-Disposition: attachment; filename=\""
-            + big_filename
-            + b"\"\r\n"
+            b'Content-Disposition: attachment; filename="' + big_filename + b'"\r\n'
             b"\r\n"
             b"data\r\n"
             b"--B--\r\n"
@@ -3042,9 +3042,7 @@ class TestBufferOverflowShapeRegressions:
         # No From header at all → JMAP ``from`` is null per RFC 8621 §4.
         assert parsed["from"] is None
         # The body should still be surfaced somewhere.
-        assert any(
-            "body" in (_body_text(parsed, p) or "") for p in parsed["textBody"]
-        )
+        assert any("body" in (_body_text(parsed, p) or "") for p in parsed["textBody"])
 
     def test_lotus_domino_long_rfc2231_continuations(self):
         """Lotus Domino class (2005-08): long
@@ -3059,9 +3057,7 @@ class TestBufferOverflowShapeRegressions:
         n_segments = 200
         chunks = b""
         for i in range(n_segments):
-            chunks += (
-                f' filename*{i}="seg{i}_";'.encode("ascii")
-            )
+            chunks += f' filename*{i}="seg{i}_";'.encode("ascii")
         raw = (
             b"From: a@b.com\r\n"
             b'Content-Type: multipart/mixed; boundary="B"\r\n'
@@ -3081,9 +3077,7 @@ class TestBufferOverflowShapeRegressions:
         parsed = parse_email(raw)
         elapsed = _time.monotonic() - start
         assert parsed is not None
-        assert elapsed < 5.0, (
-            f"long RFC 2231 continuation parsed in {elapsed:.2f}s"
-        )
+        assert elapsed < 5.0, f"long RFC 2231 continuation parsed in {elapsed:.2f}s"
 
     def test_eudora_long_multipart_boundary(self):
         """BID-9846 / CVE-2004-0524 (Eudora long MIME boundary): a
@@ -3094,9 +3088,7 @@ class TestBufferOverflowShapeRegressions:
         long_boundary = b"A" * 100_000
         raw = (
             b"From: a@b.com\r\n"
-            b'Content-Type: multipart/mixed; boundary="'
-            + long_boundary
-            + b'"\r\n'
+            b'Content-Type: multipart/mixed; boundary="' + long_boundary + b'"\r\n'
             b"\r\n"
             b"--" + long_boundary + b"\r\n"
             b"Content-Type: text/plain\r\n"
@@ -3141,19 +3133,12 @@ class TestBufferOverflowShapeRegressions:
         big = b"; name=" + b"; name=".join(
             f"value{i}".encode("ascii") for i in range(5_000)
         )
-        raw = (
-            b"From: a@b.com\r\n"
-            b'Content-Type: text/plain' + big + b"\r\n"
-            b"\r\n"
-            b"body\r\n"
-        )
+        raw = b"From: a@b.com\r\nContent-Type: text/plain" + big + b"\r\n\r\nbody\r\n"
         start = _time.monotonic()
         parsed = parse_email(raw)
         elapsed = _time.monotonic() - start
         assert parsed is not None
-        assert elapsed < 10.0, (
-            f"5k duplicate params parsed in {elapsed:.2f}s"
-        )
+        assert elapsed < 10.0, f"5k duplicate params parsed in {elapsed:.2f}s"
 
     def test_unfolded_one_megabyte_header_line(self):
         """Fetchmail ≤6.2.4 class: a single unfolded header line of
@@ -3164,11 +3149,7 @@ class TestBufferOverflowShapeRegressions:
 
         big_line = b"X-Big: " + b"A" * (2 * MAX_HEADER_VALUE_BYTES) + b"\r\n"
         raw = (
-            b"From: a@b.com\r\n"
-            + big_line
-            + b"Subject: huge unfolded\r\n"
-            b"\r\n"
-            b"body\r\n"
+            b"From: a@b.com\r\n" + big_line + b"Subject: huge unfolded\r\n\r\nbody\r\n"
         )
         parsed = parse_email(raw)
         assert parsed is not None
@@ -3549,8 +3530,7 @@ class TestScalarHeaderDuplicates:
         assert isinstance(parsed["messageId"][0] if parsed["messageId"] else "", str)
         assert (
             parsed["messageId"][0] if parsed["messageId"] else ""
-            == "0S7NGNc8g9oEF8bStCvPthDYCCU0T9dnM20qLmmECY@example.com"
-        )
+        ) == "0S7NGNc8g9oEF8bStCvPthDYCCU0T9dnM20qLmmECY@example.com"
 
     def test_no_duplication_still_works(self):
         """Regression guard: emails without any duplicated header must
@@ -3560,7 +3540,9 @@ class TestScalarHeaderDuplicates:
         assert parsed["subject"] == "hello"
         assert parsed["from"][0]["email"] == "sender@example.com"
         assert parsed["to"][0]["email"] == "recipient@example.com"
-        assert parsed["messageId"][0] if parsed["messageId"] else "" == "canonical@example.com"
+        assert (
+            parsed["messageId"][0] if parsed["messageId"] else ""
+        ) == "canonical@example.com"
 
     def test_every_scalar_header_duplicated_simultaneously(self):
         """Stress test: every scalar header per RFC 5322 §3.6 emitted
@@ -3594,8 +3576,12 @@ class TestScalarHeaderDuplicates:
         # And the first values won.
         assert parsed["subject"] == "first subj"
         assert parsed["from"][0]["email"] == "first-from@example.com"
-        assert parsed["messageId"][0] if parsed["messageId"] else "" == "id-a@example.com"
-        assert parsed["inReplyTo"][0] if parsed["inReplyTo"] else "" == "irt-a@example.com"
+        assert (
+            parsed["messageId"][0] if parsed["messageId"] else ""
+        ) == "id-a@example.com"
+        assert (
+            parsed["inReplyTo"][0] if parsed["inReplyTo"] else ""
+        ) == "irt-a@example.com"
         assert parsed["references"] == ["ref-a@example.com"]
 
 
@@ -3628,9 +3614,7 @@ class TestParsedHeadersShape:
             ("list-unsubscribe", "<mailto:u@example.com>"),
         ],
     )
-    def test_repeatable_header_keeps_single_occurrence(
-        self, header_name, header_value
-    ):
+    def test_repeatable_header_keeps_single_occurrence(self, header_name, header_value):
         """A header registered as repeatable still appears as exactly
         one entry in ``parsed["headers"]`` when the source carries it
         once — no synthesis, no deduplication."""
@@ -3909,8 +3893,15 @@ class TestParserPass4Regressions:
         assert parsed["from"][0]["email"] == "a@b.c"
         assert parsed["messageId"] == ["id1@example.com"]
         # Body-side keys absent.
-        for k in ("textBody", "htmlBody", "attachments", "bodyValues",
-                  "bodyStructure", "preview", "hasAttachment"):
+        for k in (
+            "textBody",
+            "htmlBody",
+            "attachments",
+            "bodyValues",
+            "bodyStructure",
+            "preview",
+            "hasAttachment",
+        ):
             assert k not in parsed, f"parse_headers leaked body-side key {k!r}"
 
     # ----- M14: Resent-* projections ---------------------------------------
@@ -3954,9 +3945,14 @@ class TestParserPass4Regressions:
         raw = b"From: a@b.c\r\nTo: d@e.f\r\nSubject: t\r\n\r\nbody\r\n"
         parsed = parse_email(raw)
         for k in (
-            "resentFrom", "resentSender", "resentReplyTo",
-            "resentTo", "resentCc", "resentBcc",
-            "resentMessageId", "resentDate",
+            "resentFrom",
+            "resentSender",
+            "resentReplyTo",
+            "resentTo",
+            "resentCc",
+            "resentBcc",
+            "resentMessageId",
+            "resentDate",
         ):
             assert parsed[k] is None, f"{k} should be None when header absent"
 
@@ -3980,6 +3976,7 @@ class TestParserPass4Regressions:
             + b"--B--\r\n"
         )
         parsed = parse_email(raw, body_structure=True)
+
         # Walk the structure and count nodes; the total stays under cap+overhead.
         def _count(node):
             if node is None:
@@ -3993,9 +3990,7 @@ class TestParserPass4Regressions:
         # The cap is enforced after ``MAX_MIME_PARTS`` leaves have been
         # collected; with the multipart root + 1000 leaves, the total
         # stays just above the cap and well below the input count.
-        assert total < n, (
-            f"part cap not enforced: walked {total} of {n} input parts"
-        )
+        assert total < n, f"part cap not enforced: walked {total} of {n} input parts"
         # And not far above the cap itself (root + cap leaves + slack).
         assert total <= MAX_MIME_PARTS + 5, (
             f"part cap exceeded by more than expected: {total}"
@@ -4056,12 +4051,13 @@ class TestParserPass4Regressions:
         write-up showed NUL truncating display name vs. mailbox in some
         clients; we strip on the way in too."""
         raw = (
-            b"From: =?utf-8?B?" + base64.b64encode(b"good\x00bad@example.com")
+            b"From: =?utf-8?B?"
+            + base64.b64encode(b"good\x00bad@example.com")
             + b"?= <victim@example.com>\r\nTo: d@e.f\r\nSubject: t\r\n\r\nbody\r\n"
         )
         parsed = parse_email(raw)
         # Whatever the parser picks, there is NO NUL anywhere.
-        for addr in (parsed.get("from") or []):
+        for addr in parsed.get("from") or []:
             assert "\x00" not in addr["email"]
             assert "\x00" not in (addr.get("name") or "")
 

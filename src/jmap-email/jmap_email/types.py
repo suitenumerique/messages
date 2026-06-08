@@ -29,7 +29,7 @@ form because the JMAP Email object has a property named ``from`` —
 a Python reserved word that can't appear as a class-level key.
 """
 
-from typing import Any, NotRequired, Required, TypedDict
+from typing import NotRequired, Required, TypedDict
 
 
 class EmailAddress(TypedDict, total=False):

@@ -205,8 +205,16 @@ class TestBodyAccess:
         parsed = {
             "textBody": [{"partId": "1"}, {"partId": "2"}],
             "bodyValues": {
-                "1": {"value": "alpha", "isEncodingProblem": False, "isTruncated": False},
-                "2": {"value": "beta", "isEncodingProblem": False, "isTruncated": False},
+                "1": {
+                    "value": "alpha",
+                    "isEncodingProblem": False,
+                    "isTruncated": False,
+                },
+                "2": {
+                    "value": "beta",
+                    "isEncodingProblem": False,
+                    "isTruncated": False,
+                },
             },
         }
         assert body_text_joined(parsed) == "alphabeta"

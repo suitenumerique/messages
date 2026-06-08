@@ -13,7 +13,7 @@ needed to *read* a parsed Email object — the wire-format pair stays
 strict-JMAP, and the accessors stay null-safe.
 """
 
-from datetime import datetime
+from datetime import datetime, timezone
 from typing import Any
 
 __all__ = [
@@ -22,6 +22,7 @@ __all__ = [
     "first_address_name",
     "first_msgid",
     "msgid_chain",
+    "now_sent_at",
     "sent_at_to_datetime",
     "find_header",
     "find_headers",
@@ -29,6 +30,21 @@ __all__ = [
     "body_part_text",
     "body_text_joined",
 ]
+
+
+def now_sent_at() -> str:
+    """Return the current UTC time formatted as a ``sentAt`` ISO-8601 string.
+
+    Sugar over ``datetime.now(timezone.utc).isoformat()`` for the
+    common outbound pattern::
+
+        compose_email({..., "sentAt": now_sent_at(), ...})
+
+    The composer is strict on ``sentAt`` (RFC 5322 §3.6.1) and refuses
+    to silently fabricate a timestamp; this helper makes the explicit
+    "I want now" path a one-liner.
+    """
+    return datetime.now(timezone.utc).isoformat()
 
 
 def first_address(addrs: Any) -> dict[str, Any] | None:
@@ -102,7 +118,7 @@ def sent_at_to_datetime(sent_at: Any) -> datetime | None:
     if isinstance(sent_at, str):
         try:
             return datetime.fromisoformat(sent_at)
-        except (TypeError, ValueError):
+        except TypeError, ValueError:
             return None
     return None
 
@@ -138,9 +154,7 @@ def has_header(parsed_email: dict[str, Any], name: str) -> bool:
     )
 
 
-def body_part_text(
-    parsed_email: dict[str, Any], part: dict[str, Any]
-) -> str:
+def body_part_text(parsed_email: dict[str, Any], part: dict[str, Any]) -> str:
     """Return the decoded text of a JMAP ``EmailBodyPart``.
 
     Transparent across both parser output shapes:

@@ -126,11 +126,7 @@ class TestCustomLimitsOnParseEmail:
     def test_default_caps_truncate_header_value(self):
         """A header value beyond the default 100 KB cap gets truncated."""
         huge = b"x" * (MAX_HEADER_VALUE_BYTES + 1000)
-        raw = (
-            b"From: a@b.c\r\nTo: d@e.f\r\n"
-            b"X-Big: " + huge + b"\r\n"
-            b"\r\nbody\r\n"
-        )
+        raw = b"From: a@b.c\r\nTo: d@e.f\r\nX-Big: " + huge + b"\r\n\r\nbody\r\n"
         parsed = parse_email(raw)
         xbig = next(h for h in parsed["headers"] if h["name"].lower() == "x-big")
         assert len(xbig["value"]) <= MAX_HEADER_VALUE_BYTES

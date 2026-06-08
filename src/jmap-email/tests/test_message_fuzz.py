@@ -288,9 +288,13 @@ Message-ID: <test@example.com>
             assert "from" in result
             assert "to" in result
             assert "subject" in result
-            assert isinstance(result["from"], dict)
-            assert "name" in result["from"]
-            assert "email" in result["from"]
+            # RFC 8621 §4.1.2.2: ``from`` is ``EmailAddress[] | None``.
+            from_value = result["from"]
+            assert from_value is None or isinstance(from_value, list)
+            if from_value:
+                assert isinstance(from_value[0], dict)
+                assert "name" in from_value[0]
+                assert "email" in from_value[0]
 
     @given(data=st.binary(max_size=50000))
     @settings(**FUZZ_SETTINGS)

@@ -15,8 +15,6 @@ from jmap_email import (
     ParseError,
     compose_email,
     first_address_email,
-    make_forward,
-    make_reply,
     parse_email,
 )
 
@@ -28,6 +26,7 @@ from core.mda.inline_images import (
     extract_inline_images_text,
 )
 from core.mda.outbound_direct import send_message_via_mx
+from core.mda.replies import make_forward, make_reply
 from core.mda.signing import sign_message_dkim, verify_message_dkim
 from core.mda.smtp import send_smtp_mail
 from core.mda.utils import current_sent_at

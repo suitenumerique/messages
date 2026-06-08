@@ -186,7 +186,7 @@ def decode_rfc2047_header(header_text: str) -> str:
             else:
                 try:
                     result_parts.append(part.decode(charset, errors="replace"))
-                except (LookupError, UnicodeDecodeError):
+                except LookupError, UnicodeDecodeError:
                     result_parts.append(part.decode("utf-8", errors="replace"))
         else:
             # Part is already a string. Repair surrogate-escaped 8-bit
@@ -473,9 +473,7 @@ def parse_address(
     try:
         parsed = getaddresses([address_str], strict=False)
     except RecursionError:
-        logger.warning(
-            "RecursionError in getaddresses; returning empty result"
-        )
+        logger.warning("RecursionError in getaddresses; returning empty result")
         return "", ""
 
     if not parsed:
@@ -528,9 +526,7 @@ def parse_addresses(
     # mailing-list expansion that lands in a single header.
     cap = limits.max_address_list_bytes
     if len(addresses_str) > cap:
-        logger.warning(
-            "Address-list header exceeds %d bytes; truncating", cap
-        )
+        logger.warning("Address-list header exceeds %d bytes; truncating", cap)
         addresses_str = addresses_str[:cap]
 
     # Repair raw 8-bit (surrogate-escaped) bytes. See
@@ -713,7 +709,7 @@ def _decoded_part_body(part: Message) -> Any | None:
     """
     try:
         body = part.get_payload(decode=True)
-    except (ValueError, AssertionError, TypeError):
+    except ValueError, AssertionError, TypeError:
         body = None
     if body is not None:
         return body
@@ -721,7 +717,7 @@ def _decoded_part_body(part: Message) -> Any | None:
     # Fall back to whatever the parser actually retained.
     try:
         raw = part.get_payload()
-    except (ValueError, TypeError):
+    except ValueError, TypeError:
         return None
     if isinstance(raw, list):
         # ``message/*`` parts wrap one or more sub-Messages under
@@ -736,11 +732,7 @@ def _decoded_part_body(part: Message) -> Any | None:
         # body.
         if raw and part.get_content_maintype() == "message":
             try:
-                chunks = [
-                    sub.as_bytes()
-                    for sub in raw
-                    if isinstance(sub, Message)
-                ]
+                chunks = [sub.as_bytes() for sub in raw if isinstance(sub, Message)]
                 return b"\r\n".join(chunks) if chunks else None
             except (
                 TypeError,
@@ -765,7 +757,7 @@ def _decoded_part_body(part: Message) -> Any | None:
         # round-trips correctly through it.
         try:
             return raw.encode("utf-8", errors="surrogateescape")
-        except (UnicodeEncodeError, AttributeError):
+        except UnicodeEncodeError, AttributeError:
             return raw.encode("utf-8", errors="replace")
     return raw
 
@@ -833,7 +825,7 @@ def _get_part_info(part: Message) -> dict[str, Any]:
     # garden-variety untagged-UTF-8 senders we see in practice).
     try:
         charset = part.get_content_charset()
-    except (LookupError, ValueError, UnicodeDecodeError, AttributeError):
+    except LookupError, ValueError, UnicodeDecodeError, AttributeError:
         charset = None
 
     # Per-part Content-Language (RFC 3282) — comma-separated tag list.
@@ -842,9 +834,7 @@ def _get_part_info(part: Message) -> dict[str, Any]:
     language: list[str] | None = None
     if language_header:
         language = [
-            tag.strip()
-            for tag in str(language_header).split(",")
-            if tag.strip()
+            tag.strip() for tag in str(language_header).split(",") if tag.strip()
         ] or None
 
     # Per-part Content-Location (RFC 2557). String | null per spec.
@@ -859,9 +849,7 @@ def _get_part_info(part: Message) -> dict[str, Any]:
     part_headers: list[dict[str, str]] = []
     try:
         for k, v in part.raw_items():
-            part_headers.append(
-                {"name": k, "value": _repair_surrogate_escaped(str(v))}
-            )
+            part_headers.append({"name": k, "value": _repair_surrogate_escaped(str(v))})
     except AttributeError:
         # Defensive: synthesized parts may not expose raw_items().
         for k, v in part.items():
@@ -912,7 +900,7 @@ def _build_body_part_dict(part_info: dict[str, Any]) -> dict[str, Any]:
         charset = part_info.get("charset") or "utf-8"
         try:
             content = body.decode(charset, errors="replace")
-        except (LookupError, UnicodeDecodeError):
+        except LookupError, UnicodeDecodeError:
             content = body.decode("utf-8", errors="replace")
             encoding_problem = True
         size = len(body)
@@ -957,9 +945,7 @@ def _build_attachment_from_part_info(
     body_bytes = part_info["body"] or b""
     if isinstance(body_bytes, str):
         body_bytes = body_bytes.encode("utf-8")
-    sanitized_name = (
-        _sanitize_filename(raw_filename) if raw_filename else ""
-    )
+    sanitized_name = _sanitize_filename(raw_filename) if raw_filename else ""
     return {
         "partId": part_info["part_id"],
         "blobId": None,
@@ -998,7 +984,7 @@ def _build_body_structure(
         return _build_body_structure_node(
             message, ["1"], counter={"parts": 0}, limits=limits
         )
-    except (RecursionError, ValueError, TypeError, AttributeError):
+    except RecursionError, ValueError, TypeError, AttributeError:
         return None
 
 
@@ -1822,9 +1808,7 @@ def _parse_email(
             attachments: list[dict[str, Any]] = []
             has_attachment = False
         else:
-            body_parts = _parse_message_content(
-                message, limits=limits, defects=defects
-            )
+            body_parts = _parse_message_content(message, limits=limits, defects=defects)
             text_body = body_parts["textBody"]
             html_body = body_parts["htmlBody"]
             attachments = body_parts["attachments"]

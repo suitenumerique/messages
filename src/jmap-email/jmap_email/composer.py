@@ -11,7 +11,6 @@ See README.md for the strict-compose / lenient-parse split.
 import base64
 import binascii
 import datetime
-import html
 import logging
 import re
 from email.errors import MessageError
@@ -35,6 +34,7 @@ def _attach_utc_if_naive(dt: datetime.datetime) -> datetime.datetime:
     if dt.tzinfo is None or dt.tzinfo.utcoffset(dt) is None:
         return dt.replace(tzinfo=datetime.timezone.utc)
     return dt
+
 
 # Python 3.14 routes In-Reply-To and References through MsgIDListHeader, which
 # parses the value as a list of strict RFC 5322 msg-ids and re-emits them on
@@ -91,8 +91,12 @@ class InvalidDateError(ComposeError):
 
 
 class AttachmentError(ComposeError):
-    """An attachment dict is missing required fields or its content fails
-    to decode (e.g. malformed base64)."""
+    """An attachment dict is missing required fields, its ``content``
+    fails to decode (malformed base64), or its MIME-type / payload
+    combination is rejected by the stdlib generator. The composer is
+    strict on attachments because the caller controls the input —
+    silently dropping a bad attachment from the wire would be silent
+    data loss."""
 
 
 class HeaderInjectionError(ComposeError):
@@ -173,13 +177,6 @@ def format_address_list(addresses: list[dict[str, str]]) -> str:
         if email:
             formatted.append(format_address(name, email))
     return ", ".join(formatted)
-
-
-def reply_subject(subject: str) -> str:
-    """Add 'Re: ' prefix to a subject, avoiding duplication."""
-    if subject.lower().startswith("re:"):
-        return subject
-    return f"Re: {subject}"
 
 
 # Characters we strip from any user-controlled header value.
@@ -320,11 +317,11 @@ def _normalize_date(date) -> datetime.datetime:
     if isinstance(date, str):
         try:
             return _attach_utc_if_naive(datetime.datetime.fromisoformat(date))
-        except (ValueError, TypeError):
+        except ValueError, TypeError:
             pass
         try:
             return _attach_utc_if_naive(parsedate_to_datetime(date))
-        except (ValueError, TypeError, IndexError):
+        except ValueError, TypeError, IndexError:
             pass
         raise InvalidDateError(
             f"'sentAt' string is neither ISO-8601 nor RFC 2822: {date!r}"
@@ -452,9 +449,7 @@ def _validate_msgid_list(value: list[str] | None, *, field: str) -> str:
         try:
             validated.append(_validate_msg_id(entry, field=field))
         except InvalidMessageIdError:
-            logger.warning(
-                "Dropping malformed %s entry (length=%d)", field, len(entry)
-            )
+            logger.warning("Dropping malformed %s entry (length=%d)", field, len(entry))
     return " ".join(validated)
 
 
@@ -610,8 +605,7 @@ def _set_basic_headers(  # pylint: disable=too-many-branches
     # corruption. The parameter takes precedence over the headers dict. On a
     # malformed id we drop the threading headers instead of raising — the
     # parent message we did not write is the typical source of malformed
-    # ids, and failing the whole send would make replies impossible
-    # (make_reply already follows the same contract).
+    # ids, and failing the whole send would make replies impossible.
     # In-Reply-To: three input shapes, validated each in their idiom.
     #
     # 1. ``in_reply_to=`` parameter — a single id; single-id validation.
@@ -715,37 +709,51 @@ def _normalize_cid(cid: str) -> str:
 _CID_STRUCTURAL_RE = re.compile(r"^<[^\s<>]+>$")
 
 
-def _create_attachment_part(  # pylint: disable=too-many-return-statements
-    attachment: dict[str, Any],
-) -> MIMEPart | None:
+def _create_attachment_part(attachment: dict[str, Any]) -> MIMEPart:
     """Create a MIME part for an attachment from JMAP data.
+
+    Strict-by-design: the composer is caller-controlled and refuses to
+    silently drop a malformed attachment from the wire — that would be
+    invisible data loss for the sender. Every bad-input branch raises
+    :class:`AttachmentError` (or :class:`InvalidMessageIdError` for a
+    structurally broken ``cid``); the caller decides whether to retry,
+    surface the error, or drop the attachment from the JMAP dict.
 
     Args:
         attachment: Dictionary containing attachment data with keys:
-            - content: Base64 encoded content (str) or raw bytes
-            - type: MIME type (e.g., 'image/jpeg')
+            - content: Base64-encoded content (str) or raw bytes
+            - type: MIME type (e.g., ``image/jpeg``)
             - name: Filename
-            - disposition: 'attachment' or 'inline'
+            - disposition: ``attachment`` or ``inline``
             - cid: Content-ID for inline images (optional)
 
     Returns:
-        Part object or None if creation fails
+        The constructed ``MIMEPart``.
+
+    Raises:
+        AttachmentError: When ``attachment`` is not a dict, ``content``
+            is missing, base64 decoding fails, or stdlib's
+            ``set_content`` rejects the type / payload combination.
+        InvalidMessageIdError: When ``cid`` (on an inline attachment)
+            contains structural characters that would break Content-ID
+            serialization.
     """
-    if not attachment or not isinstance(attachment, dict):
-        logger.warning("Invalid attachment data provided")
-        return None
+    if not isinstance(attachment, dict):
+        raise AttachmentError(
+            f"Attachment must be a dict, got {type(attachment).__name__}"
+        )
 
     content = attachment.get("content")
     if not content:
-        logger.warning("No content provided for attachment")
-        return None
+        raise AttachmentError("Attachment is missing required 'content'")
 
     if isinstance(content, str):
         try:
             decoded = base64.b64decode(content)
         except binascii.Error as e:
-            logger.error("Failed to decode base64 content: %s", str(e))
-            return None
+            raise AttachmentError(
+                f"Attachment 'content' is not valid base64: {e}"
+            ) from e
     else:
         decoded = content
 
@@ -785,8 +793,9 @@ def _create_attachment_part(  # pylint: disable=too-many-return-statements
         part.set_content(decoded, **kwargs)
         return part
     except (TypeError, ValueError) as e:
-        logger.error("Failed to create attachment part: %s", str(e))
-        return None
+        raise AttachmentError(
+            f"Failed to build attachment part ({content_type}): {e}"
+        ) from e
 
 
 def _first_body(jmap_data: dict[str, Any], key: str) -> str | None:
@@ -956,7 +965,8 @@ def compose_email(
         The JMAP Email object to compose.
     in_reply_to : str, optional
         Override the In-Reply-To header (takes precedence over
-        ``jmap_data["inReplyTo"]``). Mostly used by ``make_reply``.
+        ``jmap_data["inReplyTo"]``). Convenience for reply-builder
+        layers that thread off a parent's Message-ID.
     prepend_headers : list of (name, value), optional
         Extra headers to inject at the top of the output (e.g.
         ``Received:`` set by an MTA-out pipeline).
@@ -1069,266 +1079,3 @@ def compose_email(
         # programmer errors in this module or genuinely unexpected I/O.
         logger.exception("Unexpected error during email composition: %s", str(e))
         raise ComposeError(f"Failed to compose email: {str(e)}") from e
-
-
-def _embed_original_message(
-    original_message: dict[str, Any],
-    new_text: str = "",
-    new_html: str | None = None,
-    include_original: bool = True,
-    is_forward: bool = False,
-) -> tuple[str, str]:
-    """Embed original message content into new text and HTML.
-
-    Returns (text_body, html_body).
-    """
-    if new_text is None:
-        new_text = ""
-
-    if not include_original:
-        html_body = new_html or f"<p>{html.escape(new_text)}</p>"
-        if html_body:
-            html_body = html_body.replace("&rsquo;", "'")
-        return new_text, html_body
-
-    # Coerce None → "" — inbound parsers may emit {"subject": None} when the
-    # source message has no Subject header, and downstream str.lower() etc.
-    # crash on None.
-    orig_subject = original_message.get("subject") or ""
-    orig_from_list = original_message.get("from") or []
-    orig_from = orig_from_list[0] if orig_from_list else {}
-    orig_to = original_message.get("to") or []
-    orig_cc = original_message.get("cc") or []
-    # ``sentAt`` is the JMAP ISO-8601 string shape. The composer also
-    # accepts a tz-aware ``datetime`` here for ergonomics: ``make_reply``
-    # / ``make_forward`` are typically invoked off a freshly-parsed
-    # ``Message`` model where ``sent_at`` is already a ``datetime``.
-    orig_date = original_message.get("sentAt") or ""
-
-    date_str = ""
-    if isinstance(orig_date, datetime.datetime):
-        date_str = format_datetime(_attach_utc_if_naive(orig_date))
-    elif isinstance(orig_date, str) and orig_date:
-        # parsedate_to_datetime can raise ValueError/IndexError/TypeError on
-        # malformed RFC 2822 input from real-world inbound. Fall back to the
-        # raw string instead of bubbling the exception up through the
-        # forward/reply quote-block builder.
-        try:
-            parsed_dt = parsedate_to_datetime(orig_date)
-        except (ValueError, TypeError, IndexError):
-            parsed_dt = None
-        if parsed_dt:
-            date_str = format_datetime(parsed_dt)
-        else:
-            date_str = orig_date
-    else:
-        date_str = "an unknown date"
-
-    header_text = ""
-    if is_forward:
-        from_display = format_address(
-            orig_from.get("name", ""), orig_from.get("email", "")
-        )
-        to_display = format_address_list(orig_to)
-        cc_display = format_address_list(orig_cc) if orig_cc else ""
-
-        header_text = "\r\n\r\n---------- Forwarded message ----------\r\n"
-        if from_display:
-            header_text += f"From: {from_display}\r\n"
-        if to_display:
-            header_text += f"To: {to_display}\r\n"
-        if cc_display:
-            header_text += f"Cc: {cc_display}\r\n"
-        header_text += f"Subject: {orig_subject}\r\n"
-        header_text += f"Date: {date_str}\r\n\r\n"
-    else:
-        from_display = format_address(
-            orig_from.get("name", ""), orig_from.get("email", "")
-        )
-        if from_display:
-            header_text = f"\r\n\r\nOn {date_str}, {from_display} wrote:\r\n"
-        else:
-            header_text = f"\r\n\r\nOn {date_str}, someone wrote:\r\n"
-
-    text_body = f"{new_text}{header_text}"
-
-    if original_message.get("textBody"):
-        text_body_list = original_message["textBody"]
-        first_text = text_body_list[0] if text_body_list else None
-        orig_text = _body_content(first_text) if first_text else ""
-        if orig_text:
-            if is_forward:
-                text_body += orig_text
-            else:
-                quoted_text = "\r\n".join(
-                    [f"> {line}" for line in orig_text.splitlines()]
-                )
-                text_body += quoted_text
-
-    html_content = new_html or f"<p>{html.escape(new_text)}</p>"
-    if html_content:
-        html_content = html_content.replace("&rsquo;", "'")
-
-    html_body = html_content
-    if new_html or original_message.get("htmlBody"):
-        from_display_html = html.escape(
-            format_address(orig_from.get("name", ""), orig_from.get("email", ""))
-        )
-        to_display_html = html.escape(format_address_list(orig_to))
-        cc_display_html = html.escape(format_address_list(orig_cc)) if orig_cc else ""
-
-        if is_forward:
-            header_html = "<p>---------- Forwarded message ----------<br/>"
-        else:
-            header_html = "<p>---------- In reply to ----------<br/>"
-
-        if from_display_html:
-            header_html += f"<strong>From:</strong> {from_display_html}<br/>"
-        if to_display_html:
-            header_html += f"<strong>To:</strong> {to_display_html}<br/>"
-        if cc_display_html:
-            header_html += f"<strong>Cc:</strong> {cc_display_html}<br/>"
-        header_html += f"<strong>Subject:</strong> {html.escape(orig_subject)}<br/>"
-        header_html += f"<strong>Date:</strong> {html.escape(date_str)}<br/>"
-        header_html += "</p>"
-
-        orig_html = ""
-        if original_message.get("htmlBody"):
-            html_body_list = original_message["htmlBody"]
-            first_html = html_body_list[0] if html_body_list else None
-            orig_html = _body_content(first_html) if first_html else ""
-
-        nested_html = f"""
-        <blockquote data-type="quote-separator">
-            {header_html}
-            {orig_html}
-        </blockquote>
-        """
-        html_body = f"{html_content}{nested_html}"
-
-    return text_body, html_body
-
-
-def make_reply(
-    original_message: dict[str, Any],
-    body_text: str = "",
-    body_html: str | None = None,
-    include_original: bool = True,
-) -> dict[str, Any]:
-    """Create a JMAP Email object pre-filled as a reply to ``original_message``.
-
-    Returns a new Email dict (not bytes). The caller is expected to set
-    the ``from`` address before passing it to ``compose_email``.
-
-    Threading contract: emits ``inReplyTo`` and a per-id-validated
-    ``references`` chain when the parent Message-ID parses cleanly;
-    emits neither when the parent id is malformed (better to lose
-    threading than relay corruption).
-    """
-    orig_subject = original_message.get("subject") or ""
-    orig_from_list = original_message.get("from") or []
-    orig_from = orig_from_list[0] if orig_from_list else None
-
-    # First ``messageId`` entry is the parent-message threading anchor.
-    orig_message_id = _first_msgid(original_message.get("messageId"))
-    # Reassemble the wire form for ``_validate_references_chain``.
-    orig_references = _collect_msgids(original_message.get("references"))
-
-    if body_text is None:
-        body_text = ""
-
-    new_subject = reply_subject(orig_subject)
-
-    text_body, html_body = _embed_original_message(
-        original_message, body_text, body_html, include_original, is_forward=False
-    )
-
-    # Threading headers gated on a parseable parent Message-ID.
-    reply_in_reply_to: list[str] | None = None
-    reply_refs: list[str] | None = None
-    if orig_message_id:
-        try:
-            orig_message_id_formatted = _validate_msg_id(
-                orig_message_id, field="In-Reply-To"
-            )
-        except ComposeError:
-            logger.warning(
-                "Dropping malformed inbound Message-ID %r from reply threading",
-                orig_message_id,
-            )
-        else:
-            # The validated formatted id is angle-bracketed; strip for
-            # the JMAP ``String[]`` shape.
-            stripped = orig_message_id_formatted.strip("<>")
-            reply_in_reply_to = [stripped]
-            references_chain = _validate_references_chain(
-                orig_references, append=orig_message_id_formatted
-            )
-            if references_chain:
-                reply_refs = [
-                    tok.strip("<>")
-                    for tok in references_chain.split()
-                    if tok.strip()
-                ]
-
-    reply: dict[str, Any] = {
-        "subject": new_subject,
-        "textBody": [
-            {"partId": "1", "type": "text/plain", "content": text_body}
-        ],
-        "from": None,
-        "to": [orig_from] if orig_from and orig_from.get("email") else None,
-        "cc": original_message.get("cc"),
-    }
-    if reply_in_reply_to:
-        reply["inReplyTo"] = reply_in_reply_to
-    if reply_refs:
-        reply["references"] = reply_refs
-    if html_body != (body_html or f"<p>{html.escape(body_text)}</p>"):
-        reply["htmlBody"] = [
-            {"partId": "2", "type": "text/html", "content": html_body}
-        ]
-
-    return reply
-
-
-def make_forward(
-    original_message: dict[str, Any],
-    body_text: str = "",
-    body_html: str | None = None,
-    include_original: bool = True,
-) -> dict[str, Any]:
-    """Create a JMAP Email object pre-filled as a forward of ``original_message``.
-
-    Returns a new Email dict (not bytes). The caller is expected to set
-    ``from`` and ``to`` before passing it to ``compose_email``.
-    """
-    orig_subject = original_message.get("subject") or ""
-    if orig_subject.lower().startswith("fwd:"):
-        forward_subject = orig_subject
-    else:
-        forward_subject = f"Fwd: {orig_subject}"
-
-    if body_text is None:
-        body_text = ""
-
-    text_body, html_body = _embed_original_message(
-        original_message, body_text, body_html, include_original, is_forward=True
-    )
-
-    forward: dict[str, Any] = {
-        "subject": forward_subject,
-        "textBody": [
-            {"partId": "1", "type": "text/plain", "content": text_body}
-        ],
-        "from": None,
-        "to": None,
-        "cc": None,
-    }
-
-    if html_body != (body_html or f"<p>{html.escape(body_text)}</p>"):
-        forward["htmlBody"] = [
-            {"partId": "2", "type": "text/html", "content": html_body}
-        ]
-
-    return forward

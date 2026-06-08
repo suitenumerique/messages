@@ -99,7 +99,10 @@ select = [
 ]
 
 [tool.ruff.lint.per-file-ignores]
-"tests/**" = ["S", "SLF"]
+# Tests legitimately import inside test methods (to scope a regression
+# test to one symbol), assert on hard-coded payload literals (S101 / S105),
+# and embed control characters in defense-matrix fixtures (PLE2502).
+"tests/**" = ["S", "SLF", "PLC0415", "PLE2502"]
 
 # ──────────────────────────── ty (PEP 561 typecheck) ────────────────────────────
 # Static typecheck via Astral's ``ty`` — single Rust binary, no Node,

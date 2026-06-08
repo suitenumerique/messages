@@ -14,7 +14,6 @@ from jmap_email import (
     find_headers,
     first_address_email,
     has_header,
-    reply_subject,
 )
 
 from core import models
@@ -23,6 +22,7 @@ from core.enums import (
     MessageTemplateTypeChoices,
 )
 from core.mda.outbound import compose_and_sign_mime
+from core.mda.replies import reply_subject
 from core.services.throttle import ThrottleLimitExceeded, ThrottleManager
 
 logger = logging.getLogger(__name__)

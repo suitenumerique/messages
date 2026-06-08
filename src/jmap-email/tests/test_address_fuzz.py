@@ -14,9 +14,9 @@ from hypothesis import strategies as st
 
 from jmap_email.parser import (
     decode_rfc2047_header,
-    parse_date,
     parse_address,
     parse_addresses,
+    parse_date,
 )
 
 # Intensive fuzzing settings
@@ -287,7 +287,13 @@ class TestAddressEdgeCasesFuzzing:
         assert isinstance(result, list)
 
     @given(
-        name=evil_text,
+        # Filter angle brackets out of the display-name strategy: with
+        # ``<`` / ``>`` in the name, ``getaddresses`` confuses the
+        # display-name with the angle-addr and the outer-quote strip
+        # contract no longer applies. This test pins the "single quotes
+        # around the whole name are stripped" rule, not the
+        # angle-bracket parsing.
+        name=evil_text.filter(lambda s: "<" not in s and ">" not in s),
         quote_style=st.sampled_from(["'", '"', "", "`", "''", '""']),
     )
     @settings(**FUZZ_SETTINGS)

@@ -4,7 +4,6 @@
 
 import logging
 import re
-from typing import List, Optional
 
 from django.core.exceptions import ValidationError
 from django.db import transaction
@@ -38,7 +37,7 @@ TOKEN_THRESHOLD_FOR_SUMMARY = 200  # Minimum token count to trigger summarizatio
 MINIMUM_MESSAGES_FOR_SUMMARY = 3  # Minimum number of messages to trigger summarization
 
 
-def _canonicalize_subject(subject: Optional[str]) -> str:
+def _canonicalize_subject(subject: str | None) -> str:
     """Strip leading ``Re:`` / ``Fwd:`` (and i18n variants) for thread match."""
     return re.sub(
         r"^((re|fwd|fw|rep|tr|rép)\s*:\s+)+",
@@ -50,7 +49,7 @@ def _canonicalize_subject(subject: Optional[str]) -> str:
 
 def find_thread_for_inbound_message(
     parsed_email: JmapEmail, mailbox: models.Mailbox
-) -> Optional[models.Thread]:
+) -> models.Thread | None:
     """Attempt to find an existing thread for an inbound message.
 
     Follows JMAP spec recommendations:
@@ -93,7 +92,7 @@ def find_thread_for_inbound_message(
 
 def find_thread_for_import(
     parsed_email: JmapEmail, mailbox: models.Mailbox
-) -> Optional[models.Thread]:
+) -> models.Thread | None:
     """
     During import, try to find an existing thread that contains messages
     with the same subject or referenced message IDs.
@@ -146,8 +145,8 @@ def _create_thread(parsed_email: JmapEmail, mailbox: models.Mailbox) -> models.T
 
 
 def _find_thread_by_message_ids(
-    in_reply_to: str, references: List[str], mailbox: models.Mailbox
-) -> Optional[models.Thread]:
+    in_reply_to: str, references: list[str], mailbox: models.Mailbox
+) -> models.Thread | None:
     """Find thread by message IDs (``inReplyTo`` and ``references``)."""
     if in_reply_to or references:
         thread = models.Thread.objects.filter(
@@ -170,12 +169,12 @@ def _create_message_from_inbound(  # pylint: disable=too-many-arguments
     mailbox: models.Mailbox,
     is_import: bool = False,
     is_import_sender: bool = False,
-    imap_labels: Optional[List[str]] = None,
-    imap_flags: Optional[List[str]] = None,
-    channel: Optional[models.Channel] = None,
+    imap_labels: list[str] | None = None,
+    imap_flags: list[str] | None = None,
+    channel: models.Channel | None = None,
     is_spam: bool = False,
     is_outbound: bool = False,
-) -> Optional[models.Message]:
+) -> models.Message | None:
     """Create a message and thread from parsed email data.
 
     Used for inbound delivery, imports, and outbound submission.
@@ -551,7 +550,7 @@ def _create_message_from_inbound(  # pylint: disable=too-many-arguments
 
 
 # def _process_attachments(
-#     message: models.Message, attachment_data: List[Dict], mailbox: models.Mailbox
+#     message: models.Message, attachment_data: list[Dict], mailbox: models.Mailbox
 # ) -> None:
 #     """
 #     Process attachments found during email parsing.

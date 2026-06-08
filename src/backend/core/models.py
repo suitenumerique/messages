@@ -30,7 +30,7 @@ from django.utils.text import slugify
 
 import pyzstd
 from encrypted_fields.fields import EncryptedJSONField, EncryptedTextField
-from jmap_email import ParseError, body_part_text, parse_email
+from jmap_email import EmailHeader, JmapEmail, ParseError, body_part_text, parse_email
 from timezone_field import TimeZoneField
 
 from core.enums import (
@@ -1974,7 +1974,7 @@ class Message(BaseModel):
     objects = MessageManager()
 
     # Internal cache for parsed data
-    _parsed_email_cache: Optional[Dict[str, Any]] = None
+    _parsed_email_cache: Optional[JmapEmail] = None
 
     class Meta:
         db_table = "messages_message"
@@ -1985,7 +1985,7 @@ class Message(BaseModel):
     def __str__(self):
         return str(self.subject) if self.subject else "(no subject)"
 
-    def get_parsed_data(self) -> Dict[str, Any]:
+    def get_parsed_data(self) -> JmapEmail:
         """Parse the raw MIME message and cache the strict JMAP Email
         object (RFC 8621 §4) produced by ``jmap_email.parse_email``.
 
@@ -2031,7 +2031,7 @@ class Message(BaseModel):
         """Get a parsed field from the parsed JMAP Email object."""
         return (self.get_parsed_data() or {}).get(field_name)
 
-    def get_mime_headers(self) -> List[Dict[str, str]]:
+    def get_mime_headers(self) -> list[EmailHeader]:
         """Return the MIME headers as a JMAP ``EmailHeader[]`` list.
 
         Each entry is ``{"name": <wire_case>, "value": <decoded>}`` in

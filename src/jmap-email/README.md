@@ -61,11 +61,6 @@ raw = jmap_email.compose_email({
 })
 # raw is RFC 5322 bytes ready for SMTP delivery (e.g.
 # smtplib.SMTP.sendmail handles dot-stuffing for you).
-
-# Reply / forward templates (return Email object dicts, not bytes).
-# The caller fills in `from` and `sentAt` before composing.
-reply = jmap_email.make_reply(email, body_text="thanks!")
-fwd = jmap_email.make_forward(email, body_text="see below")
 ```
 
 ## Conformance
@@ -174,20 +169,26 @@ ComposeError
 ├── InvalidAddressError       # missing/malformed `from`, `to`, …
 ├── InvalidMessageIdError     # Message-ID / In-Reply-To / References / Content-ID
 ├── InvalidDateError          # `sentAt` missing or unparseable
-├── AttachmentError           # base64 decode failure, …
+├── AttachmentError           # missing content, bad base64, bad MIME type, …
 └── HeaderInjectionError      # custom-header name not RFC 5322 ftext
 ```
 
-The composer is strict-by-design on `sentAt`: a missing or
-unparseable value raises `InvalidDateError` rather than substituting
-`now()`. Callers that genuinely want "now" pass
-`datetime.now(timezone.utc)` explicitly.
+The composer is strict on every input the caller controls. Silently
+substituting `now()` for a missing `sentAt`, or quietly dropping a
+broken attachment, would be invisible data loss for the sender.
+
+- Want "now" for `sentAt`? Use the `now_sent_at()` helper:
+  `compose_email({..., "sentAt": now_sent_at(), ...})`.
+- Handling flaky attachment input? Wrap the compose call in
+  `try / except ComposeError` (the base class catches every
+  composer error subclass — `InvalidAddressError`,
+  `AttachmentError`, etc. — at once).
 
 ## Shape helpers
 
-`jmap_email` ships null-safe accessors over the JMAP Email shape so
-downstream code doesn't repeat `parsed.get("from") or []` + index +
-`.get` chains:
+Every JMAP field is a list — `from`, `to`, `messageId`, `headers`, …
+Reading them safely usually means writing `parsed.get("from") or []`,
+then indexing, then `.get`. Skip that with these helpers:
 
 ```python
 from jmap_email import (
@@ -198,10 +199,55 @@ from jmap_email import (
 )
 ```
 
-`body_part_text(parsed, part)` is transparent to the `bodyValues`
-projection: it reads the inline `content` when present, falls through
-to `parsed["bodyValues"][partId]["value"]` otherwise. Future flips of
-the parser default won't break consumers.
+About `body_part_text(parsed, part)`: a text body part can have its
+text stored two ways depending on how `parse_email` was called. Either
+the text is right on the part (`part["content"]`), or it's in a
+separate map (`parsed["bodyValues"][part["partId"]]["value"]`). This
+helper checks both, so your code keeps working if the parser default
+ever flips.
+
+About `now_sent_at()`: returns the current UTC time formatted as the
+ISO-8601 string `compose_email` expects for `sentAt`. One-liner instead
+of `datetime.now(timezone.utc).isoformat()`.
+
+## Validators
+
+Want to know if a string would be accepted by `compose_email` as a
+Message-ID without actually trying to compose? Use `is_valid_msg_id`:
+
+```python
+from jmap_email import is_valid_msg_id
+
+if is_valid_msg_id(parent_header):
+    reply["inReplyTo"] = [parent_header]
+```
+
+It applies exactly the same checks `compose_email` does — shape,
+length ceiling, no embedded whitespace — but returns `True`/`False`
+instead of raising. Useful for lenient parse paths (archive importers,
+inbound salvaging) that need to decide between keeping a raw id and
+falling back to synthesis without catching an exception.
+
+## Strict vs. lenient `parse_address`
+
+`parse_address(s)` is **strict by default**: an input that can't be
+parsed into a valid addr-spec returns `("", "")`. Use this for entry-
+point validation (CLI flags, web form input) — `parse_address("no-at")`
+returning `("", "")` lets the caller reject garbage without a second
+`"@" in result` check.
+
+Pass `lenient=True` for archive-import paths that must preserve the
+original wire bytes even when invalid:
+
+```python
+parse_address("no-at-sign")               # → ("", "")
+parse_address("no-at-sign", lenient=True) # → ("", "no-at-sign")
+```
+
+`parse_addresses(s)` is always strict per-entry: tuples whose addr-spec
+fails the shape check are silently dropped — so
+`len(parse_addresses(header)) != header.count(",") + 1` is expected
+when the header carries garbage between real entries.
 
 ## Defense matrix
 

@@ -18,12 +18,10 @@ import pytest
 import jmap_email.composer as _composer_module
 from jmap_email.composer import (
     ComposeError,
+    _create_attachment_part,
     _normalize_date,
     _split_content_type,
     compose_email,
-    _create_attachment_part,
-    make_forward,
-    make_reply,
     format_address,
     format_address_list,
 )
@@ -177,7 +175,9 @@ class TestEmailComposition:
             "to": [{"name": "Jane Smith", "email": "jane@example.com"}],
             "subject": "Hello",
             "sentAt": "2026-01-01T00:00:00+00:00",
-            "htmlBody": [{"content": "<h1>Hello World</h1><p>This is an HTML email</p>"}],
+            "htmlBody": [
+                {"content": "<h1>Hello World</h1><p>This is an HTML email</p>"}
+            ],
         }
 
         result_bytes = compose_email(jmap_data)
@@ -201,8 +201,12 @@ class TestEmailComposition:
             "to": [{"name": "Jane Smith", "email": "jane@example.com"}],
             "subject": "Hello",
             "sentAt": "2026-01-01T00:00:00+00:00",
-            "textBody": [{"content": "This is the plain text version.\nIt also tests CRLF."}],
-            "htmlBody": [{"content": "<h1>Hello</h1>\n<p>This is the HTML version</p>"}],
+            "textBody": [
+                {"content": "This is the plain text version.\nIt also tests CRLF."}
+            ],
+            "htmlBody": [
+                {"content": "<h1>Hello</h1>\n<p>This is the HTML version</p>"}
+            ],
         }
 
         result_bytes = compose_email(jmap_data)
@@ -521,7 +525,6 @@ class TestEmailComposition:
 
         jmap_data = {
             "subject": "Email with Date",
-            "sentAt": "2026-01-01T00:00:00+00:00",
             "from": [{"name": "Sender", "email": "sender@example.com"}],
             "to": [{"name": "Recipient", "email": "recipient@example.com"}],
             "sentAt": date,
@@ -774,8 +777,8 @@ class TestEmailComposition:
             "htmlBody": [
                 {
                     "content": (
-                        '<h1>Email with Image</h1>'
-                        '<p>Here is an inline image: '
+                        "<h1>Email with Image</h1>"
+                        "<p>Here is an inline image: "
                         '<img src="cid:image1@example.com"></p>'
                     ),
                 },
@@ -1158,537 +1161,6 @@ class TestEmailCompositionRegression:
         }
         _, parsed = self._parse(jmap_data)
         assert parsed.get_content_type() == "multipart/mixed"
-
-
-class TestReplyGeneration:
-    """Tests for creating reply messages."""
-
-    def test_create_simple_reply(self):
-        """Test creating a simple reply to an email."""
-        original_message = {
-            "subject": "Original Subject",
-            "sentAt": "2026-01-01T00:00:00+00:00",
-            "from": [{"name": "Original Sender", "email": "original@example.com"}],
-            "to": [{"name": "Recipient", "email": "recipient@example.com"}],
-            "textBody": [
-                {
-                    "partId": "text-1",
-                    "type": "text/plain",
-                    "content": "This is the original message.\nIt also tests CRLF.",
-                }
-            ],
-            "sentAt": datetime(2023, 5, 15, 14, 30, 0, tzinfo=timezone.utc),
-        }
-
-        reply_text = "This is my reply."
-
-        reply = make_reply(original_message, reply_text)
-
-        assert reply["subject"] == "Re: Original Subject"
-        assert reply["to"] == [
-            {"name": "Original Sender", "email": "original@example.com"}
-        ]
-        assert len(reply["textBody"]) == 1
-        assert reply["textBody"][0]["type"] == "text/plain"
-        assert reply["textBody"][0]["content"].startswith("This is my reply.")
-        assert "On Mon, 15 May 2023 14:30:00" in reply["textBody"][0]["content"]
-        assert "Original Sender" in reply["textBody"][0]["content"]
-        assert "> This is the original message." in reply["textBody"][0]["content"]
-
-        reply["from"] = [{"name": "New Sender", "email": "new@example.com"}]
-        reply["sentAt"] = "2026-01-01T00:00:00+00:00"
-
-        raw_mime = compose_email(reply)
-        assert not re.search(r"(?<!\r)\n", raw_mime.decode("utf-8")), (
-            "We don't want LF without CRLF in the text body"
-        )
-
-    def test_create_reply_with_html(self):
-        """Test creating a reply with HTML content."""
-        original_message = {
-            "subject": "Original HTML Subject",
-            "sentAt": "2026-01-01T00:00:00+00:00",
-            "from": [{"name": "Original Sender", "email": "original@example.com"}],
-            "htmlBody": [
-                {
-                    "partId": "html-1",
-                    "type": "text/html",
-                    "content": "<html><body><p>This is the original HTML message.</p></body></html>",
-                }
-            ],
-            "sentAt": datetime(2023, 5, 15, 14, 30, 0, tzinfo=timezone.utc),
-        }
-
-        reply_text = "This is my reply."
-        reply_html = "<html><body><p>This is my HTML reply.</p></body></html>"
-
-        reply = make_reply(original_message, reply_text, reply_html)
-
-        assert reply["subject"] == "Re: Original HTML Subject"
-        assert len(reply["textBody"]) == 1
-
-        # Check text body content - includes reply text AND the quote header
-        text_content = reply["textBody"][0]["content"]
-        assert text_content.startswith("This is my reply.")
-        # Check for the quote header components
-        assert "On" in text_content
-        assert "Original Sender" in text_content
-        assert "wrote:" in text_content
-        # Specifically check that NO lines start with "> " (quote marker)
-        # because the original had no text part.
-        assert not any(
-            line.strip().startswith(">") for line in text_content.splitlines()
-        )
-
-        # Check HTML body
-        assert len(reply["htmlBody"]) == 1
-        assert reply["htmlBody"][0]["type"] == "text/html"
-        html_content = reply["htmlBody"][0]["content"]
-        assert "This is my HTML reply." in html_content
-        assert "This is the original HTML message." in html_content  # Check quoted HTML
-        assert "blockquote" in html_content  # Check blockquote tag
-
-    def test_create_reply_without_quote(self):
-        """Test creating a reply without quoting the original message."""
-        original_message = {
-            "subject": "Original Subject",
-            "sentAt": "2026-01-01T00:00:00+00:00",
-            "from": [{"name": "Original Sender", "email": "original@example.com"}],
-            "textBody": [
-                {
-                    "partId": "text-1",
-                    "type": "text/plain",
-                    "content": "This is the original message.",
-                }
-            ],
-        }
-
-        reply_text = "This is my reply without a quote."
-
-        reply = make_reply(original_message, reply_text, include_original=False)
-
-        assert reply["subject"] == "Re: Original Subject"
-        assert reply["textBody"][0]["content"] == "This is my reply without a quote."
-        assert ">" not in reply["textBody"][0]["content"]  # No quote marker
-
-    def test_create_reply_to_email_with_re_subject(self):
-        """Test creating a reply to an email that already has 'Re:' in the subject."""
-        original_message = {
-            "subject": "Re: Already a Reply",
-            "sentAt": "2026-01-01T00:00:00+00:00",
-            "from": [{"name": "Original Sender", "email": "original@example.com"}],
-            "textBody": [
-                {
-                    "partId": "text-1",
-                    "type": "text/plain",
-                    "content": "This is already a reply.",
-                }
-            ],
-        }
-
-        reply_text = "This is my reply to a reply."
-
-        reply = make_reply(original_message, reply_text)
-
-        assert reply["subject"] == "Re: Already a Reply"  # Should not add another "Re:"
-        assert reply["textBody"][0]["content"].startswith(
-            "This is my reply to a reply."
-        )
-
-    def test_reply_with_multipart_original(self):
-        """Test replying to a multipart email with both text and HTML."""
-        original_message = {
-            "subject": "Multipart Original",
-            "sentAt": "2026-01-01T00:00:00+00:00",
-            "from": [{"name": "Original Sender", "email": "original@example.com"}],
-            "textBody": [
-                {
-                    "partId": "text-1",
-                    "type": "text/plain",
-                    "content": "This is the original plain text.",
-                }
-            ],
-            "htmlBody": [
-                {
-                    "partId": "html-1",
-                    "type": "text/html",
-                    "content": "<html><body><p>This is the original <b>HTML</b> content.</p></body></html>",
-                }
-            ],
-            "sentAt": datetime(2023, 5, 15, 14, 30, 0, tzinfo=timezone.utc),
-        }
-
-        reply_text = "Here's my reply to your multipart email."
-        reply_html = "<html><body><p>Here's my <i>HTML</i> reply to your multipart email.</p></body></html>"
-
-        reply = make_reply(original_message, reply_text, reply_html)
-
-        # Check basic structure
-        assert reply["subject"] == "Re: Multipart Original"
-        assert reply["to"] == [
-            {"name": "Original Sender", "email": "original@example.com"}
-        ]
-
-        # Check text part with quote
-        assert len(reply["textBody"]) == 1
-        assert reply["textBody"][0]["content"].startswith("Here's my reply")
-        assert "> This is the original plain text." in reply["textBody"][0]["content"]
-
-        # Check HTML part with quote
-        assert len(reply["htmlBody"]) == 1
-        assert "<i>HTML</i> reply" in reply["htmlBody"][0]["content"]
-        assert (
-            "This is the original <b>HTML</b> content"
-            in reply["htmlBody"][0]["content"]
-        )
-        assert (
-            '<blockquote data-type="quote-separator">'
-            in reply["htmlBody"][0]["content"]
-        )
-        assert "---------- In reply to ----------" in reply["htmlBody"][0]["content"]
-
-    def test_reply_with_long_original(self):
-        """Test replying to a long email, ensuring proper quoting."""
-        # Create a long message with multiple paragraphs
-        long_text = "\r\n\r\n".join(
-            [f"This is paragraph {i} of the original message." for i in range(1, 6)]
-        )
-
-        original_message = {
-            "subject": "Long Original Email",
-            "sentAt": "2026-01-01T00:00:00+00:00",
-            "from": [{"name": "Original Sender", "email": "original@example.com"}],
-            "textBody": [
-                {"partId": "text-1", "type": "text/plain", "content": long_text}
-            ],
-            "sentAt": datetime(2023, 6, 20, 10, 15, 0, tzinfo=timezone.utc),
-        }
-
-        reply_text = "Here's my short reply to your long email."
-
-        reply = make_reply(original_message, reply_text)
-
-        # Check text part with quote
-        assert len(reply["textBody"]) == 1
-        assert reply["textBody"][0]["content"].startswith("Here's my short reply")
-
-        # Verify all paragraphs were quoted properly
-        quoted_content = reply["textBody"][0]["content"]
-        for i in range(1, 6):
-            assert f"> This is paragraph {i}" in quoted_content
-
-        # Make sure we have the right number of quote markers (>)
-        assert quoted_content.count(">") >= 5  # At least one for each paragraph
-
-    def test_reply_with_threading(self):
-        """Test reply creation with proper email threading information.
-
-        ``make_reply`` populates the JMAP ``inReplyTo`` and ``references``
-        fields directly (no ``headers`` dict); both are ``String[]`` of
-        msg-ids with the surrounding angle brackets stripped.
-        """
-        original_message = {
-            "subject": "Original for Threading",
-            "sentAt": "2026-01-01T00:00:00+00:00",
-            "from": [{"name": "Original Sender", "email": "original@example.com"}],
-            "messageId": ["original-message-id-12345@example.com"],
-            "textBody": [
-                {
-                    "partId": "1",
-                    "type": "text/plain",
-                    "content": "Original message for testing threading.",
-                }
-            ],
-            "references": ["initial-ref@example.com", "another-ref@example.com"],
-        }
-
-        reply_text = "This reply should maintain threading information."
-
-        reply = make_reply(original_message, reply_text)
-
-        # Threading headers surface as JMAP String[] (no <>).
-        assert reply["inReplyTo"] == ["original-message-id-12345@example.com"]
-        # References chain includes the inherited refs plus the parent
-        # Message-ID at the tail (in document order).
-        assert reply["references"] == [
-            "initial-ref@example.com",
-            "another-ref@example.com",
-            "original-message-id-12345@example.com",
-        ]
-
-    @pytest.mark.parametrize(
-        "raw_id,expected",
-        [
-            ("plain@example.com", "<plain@example.com>"),
-            ("<plain@example.com>", "<plain@example.com>"),
-            ("<half@example.com", "<half@example.com>"),
-            ("half@example.com>", "<half@example.com>"),
-        ],
-    )
-    def test_reply_message_id_angle_brackets_normalized_per_side(
-        self, raw_id, expected
-    ):
-        """Half-bracketed Message-IDs must be repaired on each side independently.
-
-        Real-world inbound mail occasionally arrives with a missing opening or
-        closing angle bracket; make_reply must produce a syntactically
-        valid In-Reply-To/References regardless of which side is missing.
-        The JMAP shape strips the brackets on emit (``inReplyTo`` /
-        ``references`` are ``String[]`` of bare msg-ids); the ``expected``
-        parametrize value carries the bracketed wire form, so compare
-        against the stripped form.
-        """
-        original_message = {
-            "subject": "Threading test",
-            "sentAt": "2026-01-01T00:00:00+00:00",
-            "from": [{"name": "Sender", "email": "sender@example.com"}],
-            "messageId": [raw_id],
-        }
-
-        reply = make_reply(original_message, "reply")
-        expected_bare = expected.strip("<>")
-        assert reply["inReplyTo"] == [expected_bare]
-        assert reply["references"] == [expected_bare]
-
-    @pytest.mark.parametrize(
-        "raw_id,expected",
-        [
-            ("plain@example.com", "<plain@example.com>"),
-            ("<plain@example.com>", "<plain@example.com>"),
-            ("<half@example.com", "<half@example.com>"),
-            ("half@example.com>", "<half@example.com>"),
-        ],
-    )
-    def test_compose_in_reply_to_and_message_id_angle_brackets_normalized(
-        self, raw_id, expected
-    ):
-        """Half-bracketed Message-ID/In-Reply-To inputs must be repaired per-side."""
-        jmap_data = {
-            "subject": "Subject",
-            "sentAt": "2026-01-01T00:00:00+00:00",
-            "from": [{"name": "S", "email": "s@example.com"}],
-            "to": [{"name": "R", "email": "r@example.com"}],
-            "messageId": [raw_id],
-            "textBody": [{"partId": "p", "type": "text/plain", "content": "body"}],
-        }
-
-        raw_email = compose_email(jmap_data, in_reply_to=raw_id)
-        msg = email.message_from_bytes(raw_email)
-
-        assert msg["Message-ID"] == expected
-        assert msg["In-Reply-To"] == expected
-
-    def test_reply_with_special_characters(self):
-        """Test replying to an email with special characters in the subject and content."""
-        original_message = {
-            "subject": "Spécial Châracters & Symbols!",
-            "sentAt": "2026-01-01T00:00:00+00:00",
-            "from": [{"name": "José García", "email": "jose@example.es"}],
-            "textBody": [
-                {
-                    "partId": "text-1",
-                    "type": "text/plain",
-                    "content": "Este mensaje contiene caracteres especiales: áéíóú ñ çãõ",
-                }
-            ],
-        }
-
-        reply_text = "Replying to your message with special characters."
-
-        reply = make_reply(original_message, reply_text)
-
-        # Check that special characters are preserved
-        assert reply["subject"] == "Re: Spécial Châracters & Symbols!"
-        assert reply["to"][0]["name"] == "José García"
-        assert (
-            "> Este mensaje contiene caracteres especiales: áéíóú ñ çãõ"
-            in reply["textBody"][0]["content"]
-        )
-
-    def test_create_reply_with_empty_original(self):
-        """Test creating a reply with an empty or minimal original message."""
-        minimal_original = {
-            "subject": "Minimal",
-            # No 'from', 'sentAt' (the "unknown date" branch under test), etc.
-        }
-
-        reply_text = "Replying to minimal message."
-        reply = make_reply(minimal_original, reply_text)
-
-        assert reply["subject"] == "Re: Minimal"
-        assert len(reply["textBody"]) == 1
-        assert reply["textBody"][0]["content"].startswith(
-            "Replying to minimal message."
-        )
-
-        # The 'to' field should be empty as original had no 'from' address
-        assert "to" in reply
-        assert not reply["to"]  # Check list is empty
-
-        # Check quote header contains fallback text
-        assert "On an unknown date, someone wrote:" in reply["textBody"][0]["content"]
-
-
-class TestForwardGeneration:
-    """Tests for creating forward messages."""
-
-    def test_forward_basic_structure(self):
-        """Test basic forward message creation."""
-        original_message = {
-            "subject": "Original Subject",
-            "sentAt": "2026-01-01T00:00:00+00:00",
-            "from": [{"name": "Original Sender", "email": "original@example.com"}],
-            "to": [{"name": "Recipient", "email": "recipient@example.com"}],
-            "cc": [{"name": "CC Recipient", "email": "cc@example.com"}],
-            "messageId": ["original-message-id-12345@example.com"],
-            "textBody": [
-                {
-                    "partId": "text-1",
-                    "type": "text/plain",
-                    "content": "Original message content.",
-                }
-            ],
-            "sentAt": datetime(2023, 5, 15, 14, 30, 0, tzinfo=timezone.utc),
-        }
-
-        forward_text = "This is a forward message."
-
-        forward = make_forward(original_message, forward_text)
-
-        # Check subject
-        assert forward["subject"] == "Fwd: Original Subject"
-
-        # Check text body contains forward header and original content
-        text_content = forward["textBody"][0]["content"]
-        assert "This is a forward message." in text_content
-        assert "---------- Forwarded message ----------" in text_content
-        assert "From: Original Sender <original@example.com>" in text_content
-        assert "To: Recipient <recipient@example.com>" in text_content
-        assert "Cc: CC Recipient <cc@example.com>" in text_content
-        assert "Subject: Original Subject" in text_content
-        assert "Original message content." in text_content
-
-    def test_forward_with_html(self):
-        """Test forward message creation with HTML content."""
-        original_message = {
-            "subject": "HTML Original",
-            "sentAt": "2026-01-01T00:00:00+00:00",
-            "from": [{"name": "HTML Sender", "email": "html@example.com"}],
-            "to": [{"name": "HTML Recipient", "email": "htmlrecip@example.com"}],
-            "messageId": ["html-original@example.com"],
-            "htmlBody": [
-                {
-                    "partId": "html-1",
-                    "type": "text/html",
-                    "content": "<p>Original <strong>HTML</strong> content.</p>",
-                }
-            ],
-            "sentAt": datetime(2023, 5, 15, 14, 30, 0, tzinfo=timezone.utc),
-        }
-
-        forward_html = "<p>Forward HTML content.</p>"
-
-        forward = make_forward(original_message, "Forward text", forward_html)
-
-        # Check HTML body
-        html_content = forward["htmlBody"][0]["content"]
-        assert "<p>Forward HTML content.</p>" in html_content
-        assert '<blockquote data-type="quote-separator">' in html_content
-        assert "---------- Forwarded message ----------" in html_content
-        assert (
-            "<strong>From:</strong> HTML Sender &lt;html@example.com&gt;<br/>"
-            in html_content
-        )
-        assert "<p>Original <strong>HTML</strong> content.</p>" in html_content
-
-    def test_forward_without_original(self):
-        """Test forward message creation without including original content."""
-        original_message = {
-            "subject": "Original Subject",
-            "sentAt": "2026-01-01T00:00:00+00:00",
-            "from": [{"name": "Original Sender", "email": "original@example.com"}],
-            "to": [{"name": "Recipient", "email": "recipient@example.com"}],
-            "textBody": [
-                {
-                    "partId": "text-1",
-                    "type": "text/plain",
-                    "content": "Original message content.",
-                }
-            ],
-            "sentAt": datetime(2023, 5, 15, 14, 30, 0, tzinfo=timezone.utc),
-        }
-
-        forward_text = "This is a forward message."
-
-        forward = make_forward(
-            original_message, forward_text, include_original=False
-        )
-
-        # Check subject
-        assert forward["subject"] == "Fwd: Original Subject"
-
-        # Check text body contains only forward text, no original content
-        text_content = forward["textBody"][0]["content"]
-        assert text_content == "This is a forward message."
-        assert "---------- Forwarded message ----------" not in text_content
-        assert "Original message content." not in text_content
-
-    def test_forward_already_fwd_subject(self):
-        """Test forward message with subject that already starts with Fwd:."""
-        original_message = {
-            "subject": "Fwd: Already Forwarded",
-            "sentAt": "2026-01-01T00:00:00+00:00",
-            "from": [{"name": "Original Sender", "email": "original@example.com"}],
-            "to": [{"name": "Recipient", "email": "recipient@example.com"}],
-            "textBody": [
-                {
-                    "partId": "text-1",
-                    "type": "text/plain",
-                    "content": "Original message content.",
-                }
-            ],
-            "sentAt": datetime(2023, 5, 15, 14, 30, 0, tzinfo=timezone.utc),
-        }
-
-        forward_text = "This is a forward message."
-
-        forward = make_forward(original_message, forward_text)
-
-        # Check subject doesn't get double Fwd: prefix
-        assert forward["subject"] == "Fwd: Already Forwarded"
-
-    def test_forward_empty_recipients(self):
-        """Test forward message creation with empty recipient lists."""
-        original_message = {
-            "subject": "Empty Recipients",
-            "sentAt": "2026-01-01T00:00:00+00:00",
-            "from": [{"name": "Original Sender", "email": "original@example.com"}],
-            "to": [],
-            "cc": [],
-            "messageId": ["empty-recipients@example.com"],
-            "textBody": [
-                {
-                    "partId": "text-1",
-                    "type": "text/plain",
-                    "content": "Original message content.",
-                }
-            ],
-            "sentAt": datetime(2023, 5, 15, 14, 30, 0, tzinfo=timezone.utc),
-        }
-
-        forward_text = "This is a forward message."
-
-        forward = make_forward(original_message, forward_text)
-
-        # Check text body doesn't crash with empty recipients
-        text_content = forward["textBody"][0]["content"]
-        assert "This is a forward message." in text_content
-        assert "---------- Forwarded message ----------" in text_content
-        assert "From: Original Sender <original@example.com>" in text_content
-        assert "Subject: Empty Recipients" in text_content
-        # Should not have To: or Cc: lines since they're empty
-        assert "To:" not in text_content
-        assert "Cc:" not in text_content
 
 
 class TestErrorHandling:
@@ -2146,9 +1618,7 @@ class TestComposerDeferredCVECoverage:
         assert "\r" not in formatted
         assert "\n" not in formatted
         # CR/LF in email.
-        formatted = format_address(
-            "Alice", "alice@example.com\r\nBcc: leak@evil.com"
-        )
+        formatted = format_address("Alice", "alice@example.com\r\nBcc: leak@evil.com")
         assert "\r" not in formatted
         assert "\n" not in formatted
         # NUL in either field.
@@ -2231,9 +1701,7 @@ class TestComposerRFCAudit:  # pylint: disable=too-many-public-methods
     def test_custom_headers_rejects_invalid_field_name(self):
         """Same RFC 5322 ftext rule applies to ``EmailHeader`` ``name`` values."""
         with pytest.raises(ComposeError):
-            compose_email(
-                self._minimal(headers=[{"name": "Bad Name", "value": "v"}])
-            )
+            compose_email(self._minimal(headers=[{"name": "Bad Name", "value": "v"}]))
 
     # --- B. CR/LF in the email address portion (CVE-2021-23400 nodemailer) -
 
@@ -2296,7 +1764,9 @@ class TestComposerRFCAudit:  # pylint: disable=too-many-public-methods
 
     def test_non_ascii_text_body_does_not_use_8bit_cte(self):
         """A non-ASCII body must be QP or base64 under SMTP policy (no 8bit)."""
-        _, parsed = self._compose_and_parse(self._minimal(textBody=[{"content": "café ☕ привет"}]))
+        _, parsed = self._compose_and_parse(
+            self._minimal(textBody=[{"content": "café ☕ привет"}])
+        )
         cte = parsed.get("Content-Transfer-Encoding", "").lower()
         assert cte in {"quoted-printable", "base64"}, (
             f"non-ASCII body got CTE={cte!r}; SMTP path is 7-bit-clean"
@@ -2304,7 +1774,9 @@ class TestComposerRFCAudit:  # pylint: disable=too-many-public-methods
 
     def test_ascii_text_body_does_not_use_8bit_cte(self):
         """ASCII bodies typically end up 7bit; never 8bit."""
-        _, parsed = self._compose_and_parse(self._minimal(textBody=[{"content": "plain ascii"}]))
+        _, parsed = self._compose_and_parse(
+            self._minimal(textBody=[{"content": "plain ascii"}])
+        )
         cte = parsed.get("Content-Transfer-Encoding", "").lower()
         assert cte != "8bit"
 
@@ -2441,7 +1913,9 @@ class TestComposerRFCAudit:  # pylint: disable=too-many-public-methods
         }
         raw = compose_email(
             self._minimal(
-                textBody=[{"content": "t"}], htmlBody=[{"content": "<p>h</p>"}], attachments=[attachment]
+                textBody=[{"content": "t"}],
+                htmlBody=[{"content": "<p>h</p>"}],
+                attachments=[attachment],
             )
         )
         parsed = BytesParser(policy=policy.default).parsebytes(raw)
@@ -2655,67 +2129,8 @@ class TestComposerRFCAudit:  # pylint: disable=too-many-public-methods
         assert "References" not in parsed
 
     # --- T. Reply builder validates inbound Message-ID ---------------------
-
-    def test_make_reply_drops_malformed_inbound_message_id(self):
-        """Real-world inbound mail occasionally has unparseable Message-IDs
-        (whitespace inside <>, missing '@'). The reply builder must NOT
-        propagate them into ``inReplyTo`` / ``references`` — stdlib's
-        ReferencesHeader silently truncates such values on parse, which
-        is silent thread corruption.
-        """
-        orig = {
-            "subject": "Hi",
-            "sentAt": "2026-01-01T00:00:00+00:00",
-            "from": [{"name": "X", "email": "x@example.com"}],
-            "messageId": ["broken with space"],
-            "references": ["a@x.com", "b@x.com"],
-        }
-        reply = make_reply(orig, "reply text")
-        # Malformed id is dropped — threading lost rather than corrupted.
-        assert reply.get("inReplyTo") is None
-        assert reply.get("references") is None
-
-    def test_make_reply_keeps_valid_inbound_message_id(self):
-        """Sanity counter-test: a well-formed inbound msg-id is preserved."""
-        orig = {
-            "subject": "Hi",
-            "sentAt": "2026-01-01T00:00:00+00:00",
-            "from": [{"name": "X", "email": "x@example.com"}],
-            "messageId": ["abc@example.com"],
-            "references": ["a@x.com"],
-        }
-        reply = make_reply(orig, "r")
-        assert reply["inReplyTo"] == ["abc@example.com"]
-        # References chain inherits inbound + appends parent message-id.
-        assert "a@x.com" in reply["references"]
-        assert "abc@example.com" in reply["references"]
-
-    def test_make_reply_filters_malformed_references(self):
-        """An inbound chain may itself carry whitespace ids or other
-        malformed entries (real PST archives do). ``make_reply`` must
-        filter them per-id rather than concatenating the chain raw —
-        otherwise our outbound reply re-emits the corruption."""
-        orig = {
-            "subject": "Hi",
-            "sentAt": "2026-01-01T00:00:00+00:00",
-            "from": [{"name": "X", "email": "x@example.com"}],
-            "messageId": ["abc@example.com"],
-            "references": [
-                "good@x.com",
-                "bad id@x.com",
-                "not-an-id",
-                "also@x.com",
-            ],
-        }
-        reply = make_reply(orig, "r")
-        refs = reply["references"]
-        assert "good@x.com" in refs
-        assert "also@x.com" in refs
-        assert "abc@example.com" in refs
-        assert all("bad id" not in r for r in refs)
-        assert all("not-an-id" not in r for r in refs)
-
-    # --- T2. References chain hygiene -------------------------------------
+    # (Reply / forward builders moved to ``core/mda/replies.py`` in
+    # Messages; the tests below live there now.)
 
     def test_references_picked_up_from_lowercase_headers_entry(self):
         """Header-name matching on the ``EmailHeader[]`` list is
@@ -2962,7 +2377,11 @@ class TestComposerMIMEStructure:  # pylint: disable=too-many-public-methods
     def test_text_and_html_yields_multipart_alternative(self):
         """RFC 2046 §5.1.4: alternatives ordered least-preferred first.
         Our composer puts text/plain first, text/html second."""
-        _, parsed = self._parse(self._minimal(textBody=[{"content": "t"}], htmlBody=[{"content": "<p>h</p>"}]))
+        _, parsed = self._parse(
+            self._minimal(
+                textBody=[{"content": "t"}], htmlBody=[{"content": "<p>h</p>"}]
+            )
+        )
         assert self._structure(parsed) == (
             "multipart/alternative",
             [("text/plain", []), ("text/html", [])],
@@ -2977,7 +2396,15 @@ class TestComposerMIMEStructure:  # pylint: disable=too-many-public-methods
 
     def test_only_first_text_body_entry_is_used(self):
         """Multiple textBody entries: only the first is used; rest dropped."""
-        _, parsed = self._parse(self._minimal(textBody=[{"content": "first"}, {"content": "second"}, {"content": "third"}]))
+        _, parsed = self._parse(
+            self._minimal(
+                textBody=[
+                    {"content": "first"},
+                    {"content": "second"},
+                    {"content": "third"},
+                ]
+            )
+        )
         body = parsed.get_content()
         assert "first" in body
         assert "second" not in body
@@ -2985,7 +2412,9 @@ class TestComposerMIMEStructure:  # pylint: disable=too-many-public-methods
 
     def test_only_first_html_body_entry_is_used(self):
         """Same drop-the-rest behavior for htmlBody."""
-        _, parsed = self._parse(self._minimal(htmlBody=[{"content": "<p>a</p>"}, {"content": "<p>b</p>"}]))
+        _, parsed = self._parse(
+            self._minimal(htmlBody=[{"content": "<p>a</p>"}, {"content": "<p>b</p>"}])
+        )
         body = parsed.get_content()
         assert "<p>a</p>" in body
         assert "<p>b</p>" not in body
@@ -2994,7 +2423,9 @@ class TestComposerMIMEStructure:  # pylint: disable=too-many-public-methods
         """The composer rewrites &rsquo; → ' in HTML content. This is a quirk
         of the application's HTML pipeline; it lives here for historical
         reasons. Lock the behavior."""
-        _, parsed = self._parse(self._minimal(htmlBody=[{"content": "it&rsquo;s here"}]))
+        _, parsed = self._parse(
+            self._minimal(htmlBody=[{"content": "it&rsquo;s here"}])
+        )
         assert "it's here" in parsed.get_content()
 
     # --- C. Attachment classification --------------------------------------
@@ -3034,24 +2465,32 @@ class TestComposerMIMEStructure:  # pylint: disable=too-many-public-methods
     def test_attachment_default_disposition_is_attachment(self):
         """No disposition key → defaults to 'attachment' → regular path."""
         att = {"content": self._b64(b"x"), "type": "application/pdf", "name": "f"}
-        _, parsed = self._parse(self._minimal(textBody=[{"content": "t"}], attachments=[att]))
+        _, parsed = self._parse(
+            self._minimal(textBody=[{"content": "t"}], attachments=[att])
+        )
         assert self._structure(parsed)[0] == "multipart/mixed"
 
     # --- D. Attachment content/parsing -------------------------------------
 
-    def test_attachment_with_invalid_base64_is_skipped(self):
-        """Invalid base64 → part build returns None → silently dropped."""
+    def test_attachment_with_invalid_base64_raises(self):
+        """Malformed base64 raises ``AttachmentError`` — strict-compose
+        refuses to silently drop a bad attachment from the wire (that
+        would be invisible data loss for the sender)."""
+        from jmap_email.composer import AttachmentError
+
         att = self._att()
         att["content"] = "&&&not-base64&&&"
-        _, parsed = self._parse(self._minimal(textBody=[{"content": "t"}], attachments=[att]))
-        assert self._structure(parsed) == ("text/plain", [])
+        with pytest.raises(AttachmentError):
+            self._parse(self._minimal(textBody=[{"content": "t"}], attachments=[att]))
 
-    def test_attachment_with_empty_content_is_skipped(self):
-        """Empty content string → skipped."""
+    def test_attachment_with_empty_content_raises(self):
+        """Empty / missing ``content`` raises ``AttachmentError``."""
+        from jmap_email.composer import AttachmentError
+
         att = self._att()
         att["content"] = ""
-        _, parsed = self._parse(self._minimal(textBody=[{"content": "t"}], attachments=[att]))
-        assert self._structure(parsed) == ("text/plain", [])
+        with pytest.raises(AttachmentError):
+            self._parse(self._minimal(textBody=[{"content": "t"}], attachments=[att]))
 
     def test_attachment_with_raw_bytes_content_works(self):
         """_create_attachment_part accepts bytes as well as base64 strings."""
@@ -3060,48 +2499,64 @@ class TestComposerMIMEStructure:  # pylint: disable=too-many-public-methods
             "type": "application/pdf",
             "name": "f.pdf",
         }
-        _, parsed = self._parse(self._minimal(textBody=[{"content": "t"}], attachments=[att]))
+        _, parsed = self._parse(
+            self._minimal(textBody=[{"content": "t"}], attachments=[att])
+        )
         attachments = list(parsed.iter_attachments())
         assert len(attachments) == 1
         assert attachments[0].get_content() == b"raw bytes here"
 
-    def test_all_attachments_failing_to_build_drops_the_mixed_wrapper(self):
-        """Defensive: don't emit a single-child multipart/mixed wrapper when
-        every attachment failed to build."""
-        bad1 = self._att()
-        bad1["content"] = "%not-base64%"
-        bad2 = self._att()
-        bad2["content"] = ""
-        _, parsed = self._parse(self._minimal(textBody=[{"content": "t"}], attachments=[bad1, bad2]))
-        assert self._structure(parsed) == ("text/plain", [])
+    def test_first_bad_attachment_stops_the_compose(self):
+        """With strict-by-design attachments, the first failure raises;
+        no partial output, no silent drop. Pin that there's no
+        successful side effect (no partial MIME bytes returned)."""
+        from jmap_email.composer import AttachmentError
 
-    def test_all_inline_attachments_failing_drops_the_related_wrapper(self):
-        """Same defensive rule for inline images."""
+        good = self._att(name="good.pdf", data=b"PDF")
+        bad = self._att()
+        bad["content"] = "%not-base64%"
+        with pytest.raises(AttachmentError):
+            self._parse(
+                self._minimal(textBody=[{"content": "t"}], attachments=[good, bad])
+            )
+
+    def test_bad_inline_attachment_raises(self):
+        """Same strict contract for inline images."""
+        from jmap_email.composer import AttachmentError
+
         bad = self._att(disposition="inline", cid="abc")
         bad["content"] = "%not-base64%"
-        _, parsed = self._parse(self._minimal(htmlBody=[{"content": "<p>h</p>"}], attachments=[bad]))
-        assert self._structure(parsed) == ("text/html", [])
+        with pytest.raises(AttachmentError):
+            self._parse(
+                self._minimal(htmlBody=[{"content": "<p>h</p>"}], attachments=[bad])
+            )
 
     # --- E. Attachment metadata --------------------------------------------
 
     def test_attachment_default_content_type_is_application_octet_stream(self):
         """No 'type' key → application/octet-stream."""
         att = {"content": self._b64(b"x"), "name": "f"}
-        _, parsed = self._parse(self._minimal(textBody=[{"content": "t"}], attachments=[att]))
+        _, parsed = self._parse(
+            self._minimal(textBody=[{"content": "t"}], attachments=[att])
+        )
         attachments = list(parsed.iter_attachments())
         assert attachments[0].get_content_type() == "application/octet-stream"
 
     def test_attachment_content_type_with_parameters_strips_subtype_params(self):
         """A type like 'image/jpeg; name=x.jpg' → bare subtype 'jpeg'."""
         att = self._att(mime="image/jpeg; name=evil.exe", data=b"img")
-        _, parsed = self._parse(self._minimal(textBody=[{"content": "t"}], attachments=[att]))
+        _, parsed = self._parse(
+            self._minimal(textBody=[{"content": "t"}], attachments=[att])
+        )
         attachments = list(parsed.iter_attachments())
         assert attachments[0].get_content_type() == "image/jpeg"
 
     def test_attachment_garbage_content_type_falls_back_to_octet_stream(self):
         """Type without '/' → application/octet-stream."""
         att = self._att(mime="garbage")
-        _, parsed = self._parse(self._minimal(textBody=[{"content": "t"}], attachments=[att]))
+        _, parsed = self._parse(
+            self._minimal(textBody=[{"content": "t"}], attachments=[att])
+        )
         attachments = list(parsed.iter_attachments())
         assert attachments[0].get_content_type() == "application/octet-stream"
 
@@ -3111,7 +2566,9 @@ class TestComposerMIMEStructure:  # pylint: disable=too-many-public-methods
         filename 'evilX-Smuggled: 1.pdf' — ugly but safe (parsers see it
         as the filename, not a separate header)."""
         att = self._att(name="evil\r\nX-Smuggled: 1.pdf")
-        raw, parsed = self._parse(self._minimal(textBody=[{"content": "t"}], attachments=[att]))
+        raw, parsed = self._parse(
+            self._minimal(textBody=[{"content": "t"}], attachments=[att])
+        )
         # No bare CRLF survived inside the header value
         assert b"\r\nX-Smuggled" not in raw
         # And the attachment parses as one attachment, not two
@@ -3123,13 +2580,17 @@ class TestComposerMIMEStructure:  # pylint: disable=too-many-public-methods
     def test_attachment_cid_only_set_for_inline_disposition(self):
         """A cid on a regular attachment is dropped (not emitted as Content-ID)."""
         att = self._att(disposition="attachment", cid="should-not-appear")
-        raw, _ = self._parse(self._minimal(textBody=[{"content": "t"}], attachments=[att]))
+        raw, _ = self._parse(
+            self._minimal(textBody=[{"content": "t"}], attachments=[att])
+        )
         assert b"should-not-appear" not in raw
 
     def test_inline_attachment_cid_normalized_with_angle_brackets(self):
         """Bare cid 'abc' → '<abc>' on Content-ID header."""
         att = self._att(disposition="inline", cid="abc", mime="image/png", data=b"PNG")
-        _, parsed = self._parse(self._minimal(htmlBody=[{"content": "<p>x</p>"}], attachments=[att]))
+        _, parsed = self._parse(
+            self._minimal(htmlBody=[{"content": "<p>x</p>"}], attachments=[att])
+        )
         inline_part = next(p for p in parsed.walk() if p.get("Content-ID"))
         assert inline_part["Content-ID"] == "<abc>"
 
@@ -3203,7 +2664,9 @@ class TestComposerMIMEStructure:  # pylint: disable=too-many-public-methods
         """An 'inline' attachment with text-only body still produces related.
         Questionable shape but locked by current behavior."""
         inline = self._att(mime="image/png", data=b"PNG", disposition="inline", cid="x")
-        _, parsed = self._parse(self._minimal(textBody=[{"content": "t"}], attachments=[inline]))
+        _, parsed = self._parse(
+            self._minimal(textBody=[{"content": "t"}], attachments=[inline])
+        )
         assert self._structure(parsed) == (
             "multipart/related",
             [("text/plain", []), ("image/png", [])],
@@ -3223,7 +2686,11 @@ class TestComposerMIMEStructure:  # pylint: disable=too-many-public-methods
     def test_envelope_headers_on_outermost_part_only(self):
         """From/To/Subject/Date/MIME-Version live on the outermost part,
         not on body subparts."""
-        _, parsed = self._parse(self._minimal(textBody=[{"content": "t"}], htmlBody=[{"content": "<p>h</p>"}]))
+        _, parsed = self._parse(
+            self._minimal(
+                textBody=[{"content": "t"}], htmlBody=[{"content": "<p>h</p>"}]
+            )
+        )
         assert parsed["From"] is not None
         assert parsed["To"] is not None
         assert parsed["Subject"] is not None
@@ -3238,7 +2705,11 @@ class TestComposerMIMEStructure:  # pylint: disable=too-many-public-methods
     def test_content_type_and_cte_are_per_part(self):
         """Each leaf part has its own Content-Type and Content-Transfer-Encoding.
         Multipart wrappers have Content-Type but no CTE (or 7bit/8bit/binary)."""
-        _, parsed = self._parse(self._minimal(textBody=[{"content": "t"}], htmlBody=[{"content": "<p>h</p>"}]))
+        _, parsed = self._parse(
+            self._minimal(
+                textBody=[{"content": "t"}], htmlBody=[{"content": "<p>h</p>"}]
+            )
+        )
         assert parsed.get_content_type() == "multipart/alternative"
         for sub in parsed.iter_parts():
             assert sub.get("Content-Type")
@@ -3248,7 +2719,9 @@ class TestComposerMIMEStructure:  # pylint: disable=too-many-public-methods
     def test_attachment_count_matches_input(self):
         """All attachments that build successfully appear in iter_attachments."""
         atts = [self._att(name=f"f{i}.pdf", data=f"data{i}".encode()) for i in range(5)]
-        _, parsed = self._parse(self._minimal(textBody=[{"content": "t"}], attachments=atts))
+        _, parsed = self._parse(
+            self._minimal(textBody=[{"content": "t"}], attachments=atts)
+        )
         assert len(list(parsed.iter_attachments())) == 5
 
 
@@ -3290,7 +2763,7 @@ class TestComposerPass2Regressions:
 
     def test_m1_message_id_over_octet_ceiling_is_rejected(self):
         """A msg-id one octet over the cap raises ``InvalidMessageIdError``."""
-        from jmap_email.composer import InvalidMessageIdError, _MSG_ID_MAX_OCTETS
+        from jmap_email.composer import _MSG_ID_MAX_OCTETS, InvalidMessageIdError
 
         # ``<…@example.com>`` brackets + "@" + ".com" eat 14 octets;
         # +1 to push past the ceiling.
@@ -3460,8 +2933,7 @@ class TestComposerPass2Regressions:
         )
         parsed = BytesParser(policy=policy.default).parsebytes(raw)
         assert (
-            parsed["In-Reply-To"]
-            == "<a@example.com> <b@example.com> <c@example.com>"
+            parsed["In-Reply-To"] == "<a@example.com> <b@example.com> <c@example.com>"
         )
 
     def test_m20_single_malformed_msgid_list_entry_is_dropped(self):
@@ -3479,10 +2951,7 @@ class TestComposerPass2Regressions:
         parsed = BytesParser(policy=policy.default).parsebytes(raw)
         # The good ones survive in order; the malformed entry is gone
         # entirely (no <bar@example.com> salvaging).
-        assert (
-            parsed["In-Reply-To"]
-            == "<good@example.com> <alsogood@example.com>"
-        )
+        assert parsed["In-Reply-To"] == "<good@example.com> <alsogood@example.com>"
 
     def test_m20_in_reply_to_tail_appears_in_references(self):
         """RFC 5322 §3.6.4 convention: the closest-parent id (last
@@ -3495,6 +2964,19 @@ class TestComposerPass2Regressions:
         )
         parsed = BytesParser(policy=policy.default).parsebytes(raw)
         assert parsed["References"].split()[-1] == "<parent@example.com>"
+
+    def test_m20_msgid_list_skips_none_and_non_str_entries(self):
+        """``_validate_msgid_list`` (the path that handles JMAP
+        ``inReplyTo`` / ``references`` lists) silently skips ``None``,
+        empty strings, and non-``str`` entries — the surviving valid
+        ids still ship on the wire."""
+        raw = compose_email(
+            self._minimal(
+                inReplyTo=["a@example.com", None, "", "b@example.com", 42],
+            )
+        )
+        parsed = BytesParser(policy=policy.default).parsebytes(raw)
+        assert parsed["In-Reply-To"] == "<a@example.com> <b@example.com>"
 
     # ----- L3: cid structural validation -----------------------------------
 
@@ -3578,17 +3060,6 @@ class TestComposerPass2Regressions:
 
     # ----- M9: include_quote → include_original rename ----------------------
 
-    def test_m9_make_reply_uses_include_original_kwarg(self):
-        """``make_reply`` now mirrors ``make_forward`` — both accept
-        ``include_original``. Old callers using ``include_quote`` would
-        produce a ``TypeError`` after this rename."""
-        import inspect
-
-        sig = inspect.signature(make_reply)
-        params = list(sig.parameters)
-        assert "include_original" in params
-        assert "include_quote" not in params
-
 
 class TestIsValidMsgId:
     """Predicate-form mirror of the composer's strict msg-id check —
@@ -3617,15 +3088,15 @@ class TestIsValidMsgId:
         [
             "",
             None,
-            "foo bar@example.com",          # internal whitespace
-            "<foo\tbar@example.com>",        # tab
+            "foo bar@example.com",  # internal whitespace
+            "<foo\tbar@example.com>",  # tab
             "no-at-sign-here",
             "<no-at-sign-here>",
             "<<doubly@wrapped.example>>",
-            "<a>b@example.com>",              # nested angle bracket
+            "<a>b@example.com>",  # nested angle bracket
             "just some words",
-            123,                              # wrong type
-            "a@b.com\r\nX-Injected: bad",     # CR/LF smuggling
+            123,  # wrong type
+            "a@b.com\r\nX-Injected: bad",  # CR/LF smuggling
         ],
     )
     def test_rejects_malformed(self, value):

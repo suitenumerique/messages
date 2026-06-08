@@ -2,7 +2,6 @@
 
 import base64
 import logging
-from typing import Optional
 
 import dns.resolver
 from cryptography.hazmat.primitives import serialization
@@ -56,7 +55,7 @@ def generate_dkim_key(
     return private_key_pem, public_key_b64
 
 
-def sign_message_dkim(raw_mime_message: bytes, maildomain) -> Optional[bytes]:
+def sign_message_dkim(raw_mime_message: bytes, maildomain) -> bytes | None:
     """Sign a raw MIME message with DKIM.
 
     Uses the most recent active DKIM key for the domain.

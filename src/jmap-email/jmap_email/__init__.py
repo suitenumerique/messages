@@ -11,7 +11,6 @@ Quick start::
 
     email = jmap_email.parse_email(raw_bytes)
     raw = jmap_email.compose_email(email)
-    reply = jmap_email.make_reply(email, body_text="thanks")
 
 Versioning: semantic. Public API is everything exported below; anything
 prefixed with ``_`` is internal.
@@ -30,9 +29,6 @@ from .composer import (
     format_address,
     format_address_list,
     is_valid_msg_id,
-    make_forward,
-    make_reply,
-    reply_subject,
 )
 from .helpers import (
     body_part_text,
@@ -45,6 +41,7 @@ from .helpers import (
     first_msgid,
     has_header,
     msgid_chain,
+    now_sent_at,
     sent_at_to_datetime,
 )
 from .limits import DEFAULT_PARSE_LIMITS, ParseLimits
@@ -72,9 +69,6 @@ __all__ = [
     "parse_email",
     "parse_headers",
     "compose_email",
-    # Object construction helpers
-    "make_reply",
-    "make_forward",
     # Field-level parsers
     "parse_address",
     "parse_addresses",
@@ -83,7 +77,6 @@ __all__ = [
     # Formatters
     "format_address",
     "format_address_list",
-    "reply_subject",
     # Validators
     "is_valid_msg_id",
     # Null-safe shape accessors
@@ -92,6 +85,7 @@ __all__ = [
     "first_address_name",
     "first_msgid",
     "msgid_chain",
+    "now_sent_at",
     "sent_at_to_datetime",
     "find_header",
     "find_headers",

@@ -306,6 +306,15 @@ test-jmap-email: ## run the jmap-email package tests (zero infrastructure deps)
 	@$(COMPOSE) run --build --rm jmap-email-test
 .PHONY: test-jmap-email
 
+fuzz-jmap-email: ## run the jmap-email Hypothesis fuzz suite
+	@$(COMPOSE) run --build --rm jmap-email-test pytest -m fuzz tests/
+.PHONY: fuzz-jmap-email
+
+lint-jmap-email: ## lint the jmap-email library (ruff check + format check)
+	@$(COMPOSE) run --build --rm --entrypoint ruff jmap-email-test check jmap_email tests
+	@$(COMPOSE) run --build --rm --entrypoint ruff jmap-email-test format --check jmap_email tests
+.PHONY: lint-jmap-email
+
 typecheck-jmap-email: ## type-check the jmap-email library with ty (Astral, Rust)
 	@$(COMPOSE) run --build --rm --entrypoint ty jmap-email-test check
 .PHONY: typecheck-jmap-email

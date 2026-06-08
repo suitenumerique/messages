@@ -1,15 +1,5 @@
 # Security policy
 
-## Supported versions
-
-Only the latest published 0.1.x patch release receives security fixes
-while the public API stabilises.
-
-| Version | Supported |
-|---------|-----------|
-| 0.1.x   | ✅        |
-| < 0.1   | ❌        |
-
 ## Reporting a vulnerability
 
 **Do not file a public issue** for security-sensitive reports.

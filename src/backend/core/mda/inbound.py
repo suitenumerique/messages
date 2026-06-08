@@ -3,7 +3,6 @@
 # pylint: disable=broad-exception-caught
 
 import logging
-from typing import List, Optional
 
 from django.conf import settings
 from django.core.exceptions import ValidationError
@@ -137,9 +136,9 @@ def deliver_inbound_message(
     raw_data: bytes,
     is_import: bool = False,
     is_import_sender: bool = False,
-    imap_labels: Optional[List[str]] = None,
-    imap_flags: Optional[List[str]] = None,
-    channel: Optional[models.Channel] = None,
+    imap_labels: list[str] | None = None,
+    imap_flags: list[str] | None = None,
+    channel: models.Channel | None = None,
     skip_inbound_queue: bool = False,
 ) -> bool:  # Return True on success, False on failure
     """Deliver a parsed inbound email message.

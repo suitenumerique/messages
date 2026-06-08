@@ -3,7 +3,7 @@
 # pylint: disable=unused-argument, broad-exception-raised, broad-exception-caught, too-many-lines
 
 import re
-from typing import Any, Dict, Optional, Tuple
+from typing import Any
 
 from django.conf import settings
 from django.core.cache import cache
@@ -51,8 +51,8 @@ def _is_selfcheck_message(parsed_email: JmapEmail, recipient_email: str) -> bool
 
 
 def _check_spam_with_hardcoded_rules(
-    parsed_email: JmapEmail, spam_config: Dict[str, Any]
-) -> Optional[bool]:
+    parsed_email: JmapEmail, spam_config: dict[str, Any]
+) -> bool | None:
     """Check if a message is spam using hardcoded rules.
 
     Args:
@@ -142,8 +142,8 @@ def _check_spam_with_hardcoded_rules(
 
 
 def _check_spam_with_rspamd(
-    raw_data: bytes, spam_config: Dict[str, Any]
-) -> Tuple[bool, Optional[str], Optional[Dict[str, Any]]]:
+    raw_data: bytes, spam_config: dict[str, Any]
+) -> tuple[bool, str | None, dict[str, Any] | None]:
     """Check if a message is spam using rspamd.
 
     Args:
@@ -262,7 +262,7 @@ def process_inbound_message_task(self, inbound_message_id: str):
         # Get spam config from maildomain (includes global settings + domain-specific overrides)
         spam_config = mailbox.domain.get_spam_config()
 
-        rspamd_result: Optional[Dict[str, Any]] = None
+        rspamd_result: dict[str, Any] | None = None
         if _is_selfcheck_message(parsed_email, recipient_email):
             logger.debug(
                 "Bypassing spam checks for selfcheck message %s", inbound_message_id

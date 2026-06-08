@@ -14,7 +14,7 @@ import re
 import struct
 import uuid
 from email import message_from_string
-from typing import Generator, Optional, Tuple
+from typing import Generator
 
 from jmap_email import (
     EmailAddress,
@@ -159,7 +159,7 @@ def get_mapi_property(item, property_tag):
     return None
 
 
-def get_mapi_property_data(item, property_tag) -> Optional[bytes]:
+def get_mapi_property_data(item, property_tag) -> bytes | None:
     """Get raw data bytes for a MAPI property."""
     entry = get_mapi_property(item, property_tag)
     if entry is not None:
@@ -170,7 +170,7 @@ def get_mapi_property_data(item, property_tag) -> Optional[bytes]:
     return None
 
 
-def get_mapi_property_integer(item, property_tag) -> Optional[int]:
+def get_mapi_property_integer(item, property_tag) -> int | None:
     """Get an integer value for a MAPI property."""
     entry = get_mapi_property(item, property_tag)
     if entry is not None:
@@ -181,7 +181,7 @@ def get_mapi_property_integer(item, property_tag) -> Optional[int]:
     return None
 
 
-def get_mapi_property_string(item, property_tag) -> Optional[str]:
+def get_mapi_property_string(item, property_tag) -> str | None:
     """Get a string value for a MAPI property."""
     entry = get_mapi_property(item, property_tag)
     if entry is not None:
@@ -198,7 +198,7 @@ def get_mapi_property_string(item, property_tag) -> Optional[str]:
     return None
 
 
-def _folder_id_from_entry_id(entry_id: Optional[bytes]) -> Optional[int]:
+def _folder_id_from_entry_id(entry_id: bytes | None) -> int | None:
     """Extract the folder identifier from a MAPI entry ID.
 
     PST entry IDs are 24 bytes: 4 flags + 16 UID + 4 folder_id (LE uint32).
@@ -233,7 +233,7 @@ def build_special_folder_map(pst_file) -> dict:
     return special_map
 
 
-def get_store_owner_email(pst_file) -> Optional[str]:
+def get_store_owner_email(pst_file) -> str | None:
     """Get the mailbox owner's email from the message store PR_DISPLAY_NAME."""
     try:
         store = pst_file.get_message_store()
@@ -543,7 +543,7 @@ def _get_message_flags(message) -> int:
     return flags if flags is not None else 0
 
 
-def _get_flag_status(message) -> Optional[int]:
+def _get_flag_status(message) -> int | None:
     """Get PR_FLAG_STATUS from a message (follow-up flag)."""
     return get_mapi_property_integer(message, PR_FLAG_STATUS)
 
@@ -555,7 +555,7 @@ def _addr_tuple_to_dict(name: str, addr: str) -> EmailAddress:
     return {"name": name, "email": addr}
 
 
-def _resolve_smtp_address(item) -> Optional[str]:
+def _resolve_smtp_address(item) -> str | None:
     """Resolve an SMTP email address from a MAPI item (recipient or message).
 
     Handles Exchange "EX" address types by checking PR_SMTP_ADDRESS first.
@@ -593,9 +593,9 @@ def _safe_sender_name(message) -> str:
 
 def _extract_sender_from_mapi(
     message,
-    store_email: Optional[str] = None,
-    preferred_name: Optional[str] = None,
-) -> Optional[EmailAddress]:
+    store_email: str | None = None,
+    preferred_name: str | None = None,
+) -> EmailAddress | None:
     """Extract sender address from MAPI properties on the message itself.
 
     Order of attempts (first hit wins):
@@ -616,7 +616,7 @@ def _extract_sender_from_mapi(
     """
 
     def _build(
-        fallback_name: Optional[str],
+        fallback_name: str | None,
         smtp: str,
         *,
         sender_name_fallback: bool = True,
@@ -737,7 +737,7 @@ def _extract_recipients_from_mapi(message) -> dict[str, list[EmailAddress]]:
 
 
 def _parse_display_recipients(
-    display_string: Optional[str],
+    display_string: str | None,
 ) -> list[EmailAddress]:
     """Parse Outlook's semicolon-separated To/Cc/Bcc display string.
 
@@ -856,7 +856,7 @@ def _apply_recipient_fallback_chain(message, jmap_data: dict) -> None:
             jmap_data[key] = display_recipients[key]
 
 
-def _sanitize_message_id(raw: Optional[str]) -> Optional[str]:
+def _sanitize_message_id(raw: str | None) -> str | None:
     """Return ``raw`` stripped of brackets/whitespace if it's a valid msg-id.
 
     PST archives routinely carry Message-IDs that strict composition
@@ -877,7 +877,7 @@ def _sanitize_message_id(raw: Optional[str]) -> Optional[str]:
     return candidate
 
 
-def _extract_message_id_from_mapi(message) -> Optional[str]:
+def _extract_message_id_from_mapi(message) -> str | None:
     """Read the native Internet Message-ID stored on the PST message.
 
     Returns the value of PR_INTERNET_MESSAGE_ID stripped of surrounding
@@ -889,7 +889,7 @@ def _extract_message_id_from_mapi(message) -> Optional[str]:
     )
 
 
-def _synthesize_message_id(message, recipient_email: Optional[str]) -> str:
+def _synthesize_message_id(message, recipient_email: str | None) -> str:
     """Build a deterministic Message-ID from stable MAPI properties.
 
     Used as last resort when no native Message-ID is available (typical of
@@ -960,8 +960,8 @@ def _synthesize_message_id(message, recipient_email: Optional[str]) -> str:
 
 def reconstruct_eml(
     message,
-    store_email: Optional[str] = None,
-    recipient_email: Optional[str] = None,
+    store_email: str | None = None,
+    recipient_email: str | None = None,
 ) -> bytes:  # pylint: disable=too-many-branches
     """Convert a pypff message to RFC 5322 bytes.
 
@@ -992,7 +992,7 @@ def reconstruct_eml(
         # parses to a real SMTP address; otherwise fall back to MAPI below,
         # preserving the human-readable name from the header.
         from_str = parsed_headers.get("From", "")
-        from_name_hint: Optional[str] = None
+        from_name_hint: str | None = None
         if from_str:
             name, addr = parse_address(from_str, lenient=True)
             if addr and "@" in addr:
@@ -1251,7 +1251,7 @@ def _find_ipm_subtree(pst_file):
     return root
 
 
-def count_pst_messages(pst_file, special_folder_map: Optional[dict] = None) -> int:
+def count_pst_messages(pst_file, special_folder_map: dict | None = None) -> int:
     """Recursively count email messages across all email folders in a PST file."""
     if special_folder_map is None:
         special_folder_map = build_special_folder_map(pst_file)
@@ -1288,9 +1288,9 @@ def count_pst_messages(pst_file, special_folder_map: Optional[dict] = None) -> i
 def walk_pst_messages(
     pst_file,
     special_folder_map: dict,
-    store_email: Optional[str] = None,
-    recipient_email: Optional[str] = None,
-) -> Generator[Tuple[str, str, int, Optional[int], Optional[bytes]], None, None]:
+    store_email: str | None = None,
+    recipient_email: str | None = None,
+) -> Generator[tuple[str, str, int, int | None, bytes | None], None, None]:
     """Walk all email messages in a PST file, yielding them in chronological order.
 
     First pass: collect lightweight metadata (folder ref + message index).
