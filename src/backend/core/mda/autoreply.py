@@ -13,7 +13,7 @@ from core.enums import (
     MessageRecipientTypeChoices,
     MessageTemplateTypeChoices,
 )
-from core.mda.jmap_utils import (
+from jmap_email import (
     find_header,
     find_headers,
     first_address_email,

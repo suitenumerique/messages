@@ -22,7 +22,7 @@ from rest_framework.response import Response
 from core import enums, models
 from core.ai.thread_summarizer import summarize_thread
 from core.services.search import search_threads
-from core.utils import extract_snippet
+from core.utils import thread_snippet
 
 from .. import permissions, serializers
 
@@ -912,7 +912,7 @@ class ThreadViewSet(
 
         with transaction.atomic():
             new_subject = split_message.subject or old_thread.subject
-            snippet = extract_snippet(
+            snippet = thread_snippet(
                 split_message.get_parsed_data(),
                 fallback=new_subject or "",
             )
@@ -985,7 +985,7 @@ class ThreadViewSet(
             # Recalculate old thread snippet from its most recent remaining message
             last_remaining = old_thread.messages.order_by("-created_at").first()
             if last_remaining:
-                old_thread.snippet = extract_snippet(
+                old_thread.snippet = thread_snippet(
                     last_remaining.get_parsed_data(),
                     fallback=old_thread.subject or "",
                 )

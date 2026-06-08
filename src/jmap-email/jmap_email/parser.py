@@ -22,7 +22,6 @@ import email
 import hashlib
 import logging
 import re
-import shlex
 import unicodedata
 from collections import defaultdict
 from datetime import datetime
@@ -35,6 +34,8 @@ from email.utils import getaddresses, parsedate_to_datetime
 from ntpath import basename as nt_basename
 from posixpath import basename as posix_basename
 from typing import Any
+
+from .limits import DEFAULT_PARSE_LIMITS, ParseLimits
 
 # Resource limits — all chosen to match or exceed the equivalents in
 # battle-tested mail servers. Real-world legitimate messages are well
@@ -63,10 +64,18 @@ from typing import Any
 # forwards can only hurt us via stdlib's ``Message.as_bytes()`` when
 # we serialize the wrapped sub-message in ``_decoded_part_body``.
 # That call catches ``RecursionError`` directly.
-_MAX_MIME_NESTING_DEPTH = 100
-_MAX_MIME_PARTS = 1000
-_MAX_HEADER_VALUE_BYTES = 102_400
-_MAX_ADDRESS_LIST_BYTES = 100_000
+# Resource caps against adversarial input. The default values live on
+# :class:`jmap_email.limits.ParseLimits`; the module-level constants
+# below mirror those defaults for documentation and for the legacy
+# ``jmap_email.parser.MAX_*`` import path. Per-call overrides go
+# through the ``limits=`` keyword on :func:`parse_email` /
+# :func:`parse_addresses` — module-level reassignment is NOT a
+# supported tuning mechanism (it would race across threads / leak
+# across unrelated callers in the same process).
+MAX_MIME_NESTING_DEPTH = DEFAULT_PARSE_LIMITS.max_mime_nesting_depth
+MAX_MIME_PARTS = DEFAULT_PARSE_LIMITS.max_mime_parts
+MAX_HEADER_VALUE_BYTES = DEFAULT_PARSE_LIMITS.max_header_value_bytes
+MAX_ADDRESS_LIST_BYTES = DEFAULT_PARSE_LIMITS.max_address_list_bytes
 
 # Characters stripped from decoded display-names before they are
 # surfaced. Header-injection vector: a downstream consumer that re-
@@ -457,7 +466,11 @@ def parse_address(address_str: str) -> tuple[str, str]:
     return name, addr
 
 
-def parse_addresses(addresses_str: str) -> list[tuple[str, str]]:
+def parse_addresses(
+    addresses_str: str,
+    *,
+    limits: ParseLimits = DEFAULT_PARSE_LIMITS,
+) -> list[tuple[str, str]]:
     """
     Parse multiple email addresses from a comma-separated string.
 
@@ -465,25 +478,28 @@ def parse_addresses(addresses_str: str) -> list[tuple[str, str]]:
     the addresses within groups.
 
     Args:
-        addresses_str: Comma-separated string of email addresses
+        addresses_str: Comma-separated string of email addresses.
+        limits: Per-call resource caps. See :class:`ParseLimits`. Pass a
+            custom instance to widen / tighten the address-list byte
+            cap independently of any other parse call in the process.
 
     Returns:
-        List of tuples, each containing (display_name, email_address)
+        List of tuples, each containing (display_name, email_address).
     """
     if not addresses_str:
         return []
 
     # Defensive byte cap. ``getaddresses`` is O(n) but a 50 MB
     # ``To:`` would allocate millions of tuples (see Dovecot
-    # CVE-2024-23184 — same anti-pattern in C). Truncate at 100 KB,
-    # which holds ~5_000 typical addresses; far above any legitimate
+    # CVE-2024-23184 — same anti-pattern in C). The default 100 KB cap
+    # holds ~5_000 typical addresses; well above any legitimate
     # mailing-list expansion that lands in a single header.
-    if len(addresses_str) > _MAX_ADDRESS_LIST_BYTES:
+    cap = limits.max_address_list_bytes
+    if len(addresses_str) > cap:
         logger.warning(
-            "Address-list header exceeds %d bytes; truncating",
-            _MAX_ADDRESS_LIST_BYTES,
+            "Address-list header exceeds %d bytes; truncating", cap
         )
-        addresses_str = addresses_str[:_MAX_ADDRESS_LIST_BYTES]
+        addresses_str = addresses_str[:cap]
 
     # Repair raw 8-bit (surrogate-escaped) bytes. See
     # ``parse_address`` for why we deliberately stop short of
@@ -933,7 +949,9 @@ def _build_attachment_from_part_info(
     }
 
 
-def _build_body_structure(message: Message) -> dict[str, Any] | None:
+def _build_body_structure(
+    message: Message, limits: ParseLimits
+) -> dict[str, Any] | None:
     """Recursively build a JMAP ``bodyStructure`` tree.
 
     Per RFC 8621 §4.1.4, ``bodyStructure`` is the entire ``EmailBodyPart``
@@ -945,7 +963,9 @@ def _build_body_structure(message: Message) -> dict[str, Any] | None:
     Returns ``None`` on walk error.
     """
     try:
-        return _build_body_structure_node(message, ["1"], counter={"parts": 0})
+        return _build_body_structure_node(
+            message, ["1"], counter={"parts": 0}, limits=limits
+        )
     except (RecursionError, ValueError, TypeError, AttributeError):
         return None
 
@@ -953,6 +973,8 @@ def _build_body_structure(message: Message) -> dict[str, Any] | None:
 def _build_body_structure_node(
     part: Message,
     path: list[str],
+    *,
+    limits: ParseLimits,
     depth: int = 0,
     counter: dict[str, int] | None = None,
 ) -> dict[str, Any]:
@@ -960,8 +982,9 @@ def _build_body_structure_node(
 
     Enforces the same depth + part-count caps as the default body walk
     (``_parse_body_structure``). A flat multipart with a million sub-
-    parts under one container would otherwise bypass ``_MAX_MIME_PARTS``
-    when the caller opted into ``body_structure=True``.
+    parts under one container would otherwise bypass
+    ``limits.max_mime_parts`` when the caller opted into
+    ``body_structure=True``.
 
     Per RFC 8621 §4.1.4: ``partId`` (and ``blobId``) MUST be ``null``
     if and only if the part is ``multipart/*``.
@@ -970,7 +993,10 @@ def _build_body_structure_node(
         counter = {"parts": 0}
     is_multipart = part.get_content_maintype() == "multipart"
 
-    if depth > _MAX_MIME_NESTING_DEPTH or counter["parts"] >= _MAX_MIME_PARTS:
+    if (
+        depth > limits.max_mime_nesting_depth
+        or counter["parts"] >= limits.max_mime_parts
+    ):
         # Truncated stub: still spec-shaped (null partId/blobId for
         # multipart) so consumers don't have to special-case it.
         return {
@@ -1016,15 +1042,19 @@ def _build_body_structure_node(
         children = _subparts(part)
         sub_nodes: list[dict[str, Any]] = []
         for i, child in enumerate(children):
-            if counter["parts"] >= _MAX_MIME_PARTS:
+            if counter["parts"] >= limits.max_mime_parts:
                 logger.warning(
                     "MIME part count exceeds limit %d; truncating bodyStructure",
-                    _MAX_MIME_PARTS,
+                    limits.max_mime_parts,
                 )
                 break
             sub_nodes.append(
                 _build_body_structure_node(
-                    child, path + [str(i + 1)], depth + 1, counter=counter
+                    child,
+                    path + [str(i + 1)],
+                    depth=depth + 1,
+                    counter=counter,
+                    limits=limits,
                 )
             )
         node["subParts"] = sub_nodes
@@ -1053,6 +1083,8 @@ def _parse_body_structure(
     html_body: list[dict[str, Any]] | None,
     text_body: list[dict[str, Any]] | None,
     attachments: list[dict[str, Any]],
+    *,
+    limits: ParseLimits,
     depth: int = 0,
     counter: dict[str, int] | None = None,
 ) -> None:
@@ -1084,11 +1116,11 @@ def _parse_body_structure(
     # Hard depth cap to defeat MIME-bomb style inputs (deeply nested
     # multiparts crafted to exhaust CPython's recursion limit). Below
     # the cap, real-world legitimate messages are unaffected.
-    if depth > _MAX_MIME_NESTING_DEPTH:
+    if depth > limits.max_mime_nesting_depth:
         logger.warning(
             "MIME nesting depth %d exceeds limit %d; truncating walk",
             depth,
-            _MAX_MIME_NESTING_DEPTH,
+            limits.max_mime_nesting_depth,
         )
         return
 
@@ -1097,10 +1129,10 @@ def _parse_body_structure(
     html_length = len(html_body) if html_body is not None else -1
 
     for i, part in enumerate(parts):
-        if counter["parts"] >= _MAX_MIME_PARTS:
+        if counter["parts"] >= limits.max_mime_parts:
             logger.warning(
                 "MIME part count exceeds limit %d; truncating walk",
-                _MAX_MIME_PARTS,
+                limits.max_mime_parts,
             )
             return
         counter["parts"] += 1
@@ -1154,6 +1186,7 @@ def _parse_body_structure(
                 attachments,
                 depth=depth + 1,
                 counter=counter,
+                limits=limits,
             )
 
         elif is_inline:
@@ -1212,7 +1245,10 @@ def _parse_body_structure(
 
 
 def _parse_message_content(
-    message, defects: list[str] | None = None
+    message,
+    *,
+    limits: ParseLimits = DEFAULT_PARSE_LIMITS,
+    defects: list[str] | None = None,
 ) -> dict[str, Any]:
     """Extract textBody / htmlBody / attachments from a message, JMAP-shaped.
 
@@ -1264,42 +1300,13 @@ def _parse_message_content(
             result["htmlBody"],
             result["textBody"],
             result["attachments"],
+            limits=limits,
         )
     except Exception as e:  # pylint: disable=broad-exception-caught
         logger.error("Error parsing message body structure: %s", e, exc_info=True)
         if defects is not None:
             defects.append("BodyStructureWalkError")
 
-    return result
-
-
-def _parse_labels_header(labels_str: str) -> list:
-    """Parse a labels header value, handling quoted strings.
-
-    Supports two formats:
-    - Comma-separated (our format, OfflineIMAP): ``label1, label2, "label three"``
-    - Space-separated (Dovecot): ``label1 label2 "label three"``
-    """
-    result = []
-    # Only use comma parsing when commas are actually present as delimiters
-    if "," in labels_str:
-        # Comma-separated format with optional quoted strings
-        pattern = r'\s*"([^"]*)"\s*|\s*([^,]+)'
-        matches = re.findall(pattern, labels_str)
-        for match in matches:
-            # match[0] is the quoted content (without quotes), match[1] is unquoted
-            label = (match[0] if match[0] else match[1]).strip()
-            if label:
-                result.append(label)
-    else:
-        # Space-separated format (Dovecot), with shlex to handle quoted strings
-        try:
-            result = [
-                token.strip() for token in shlex.split(labels_str) if token.strip()
-            ]
-        except ValueError:
-            # Fallback to simple split if shlex fails (e.g. unmatched quotes)
-            result = [token.strip() for token in labels_str.split() if token.strip()]
     return result
 
 
@@ -1497,6 +1504,7 @@ def parse_email(
     body_values: bool = True,
     body_structure: bool = False,
     preview: bool = True,
+    limits: ParseLimits = DEFAULT_PARSE_LIMITS,
 ) -> dict[str, Any]:
     """Parse raw RFC 5322 bytes into a JMAP Email object (RFC 8621 §4).
 
@@ -1516,9 +1524,9 @@ def parse_email(
     raw_email_bytes : bytes
         The raw RFC 5322 message.
     include_extensions : bool, default True
-        Emit the ``ext`` sub-dict carrying project-useful but non-JMAP
-        fields (``defects``, ``gmailLabels``, ``headersBlocks``). Set
-        ``False`` for strict-JMAP-only output.
+        Emit the ``ext`` sub-dict carrying parser-internal information
+        that doesn't belong to the JMAP wire shape (currently
+        ``defects``). Set ``False`` for strict-JMAP-only output.
     body_values : bool, default True
         Emit a top-level ``bodyValues`` map keyed by ``partId`` per
         RFC 8621 §4.1.5. Body parts then carry only metadata; the
@@ -1533,6 +1541,11 @@ def parse_email(
         Compute ``preview``: a single-line ≤ 256-char plain-text excerpt.
         Set to ``False`` when you don't need it; the cost is one HTML
         strip + a unicode-space normalise per message.
+    limits : ParseLimits, default :data:`DEFAULT_PARSE_LIMITS`
+        Per-call resource caps (MIME nesting depth, total part count,
+        per-header byte cap). See :class:`ParseLimits` for the
+        attribute table. Pass a custom instance to widen / tighten the
+        defaults independently of any other parse call in the process.
 
     Returns
     -------
@@ -1552,6 +1565,7 @@ def parse_email(
         body_values=body_values,
         body_structure=body_structure,
         preview=preview,
+        limits=limits,
     )
 
 
@@ -1559,6 +1573,7 @@ def parse_headers(
     raw_email_bytes: bytes,
     *,
     include_extensions: bool = True,
+    limits: ParseLimits = DEFAULT_PARSE_LIMITS,
 ) -> dict[str, Any]:
     """Parse only the header section of an RFC 5322 message.
 
@@ -1574,7 +1589,11 @@ def parse_headers(
     ``replyTo``, ``messageId``, ``inReplyTo``, ``references``,
     ``sentAt``, all ``resent*`` projections, ``headers`` raw list)
     plus, when ``include_extensions=True``, the ``ext`` namespace
-    (``defects``, ``gmailLabels``, ``headersBlocks``).
+    (``defects``).
+
+    ``limits`` follows the same contract as on :func:`parse_email`.
+    Only the per-header byte cap applies on this code path (body /
+    multipart caps are unreachable when the body walk is skipped).
     """
     return _parse_email(
         raw_email_bytes,
@@ -1583,6 +1602,7 @@ def parse_headers(
         body_structure=False,
         preview=False,
         headers_only=True,
+        limits=limits,
     )
 
 
@@ -1593,6 +1613,7 @@ def _parse_email(
     body_values: bool,
     body_structure: bool,
     preview: bool,
+    limits: ParseLimits,
     headers_only: bool = False,
 ) -> dict[str, Any]:
     """Implementation of ``parse_email``. Kept separate so the public
@@ -1682,13 +1703,13 @@ def _parse_email(
             # (gh-136063: ``get_phrase`` / ``_parseparam`` / etc.)
             # start to hurt — truncating early keeps wall-clock
             # bounded on adversarial input.
-            if len(raw_value) > _MAX_HEADER_VALUE_BYTES:
+            if len(raw_value) > limits.max_header_value_bytes:
                 logger.warning(
                     "Header %s value exceeds %d bytes; truncating",
                     k,
-                    _MAX_HEADER_VALUE_BYTES,
+                    limits.max_header_value_bytes,
                 )
-                raw_value = raw_value[:_MAX_HEADER_VALUE_BYTES]
+                raw_value = raw_value[: limits.max_header_value_bytes]
             decoded_value = decode_rfc2047_header(raw_value)
             key_lower = k.lower()
             wire_headers.append((k, decoded_value, raw_value))
@@ -1705,34 +1726,6 @@ def _parse_email(
             """
             occurrences = decoded_by_name.get(name)
             return occurrences[0] if occurrences else ""
-
-        # Split lower_headers into blocks based on Received headers.
-        # Each Received header marks the END of its block; everything
-        # above it is in the same trust scope. Block values are always
-        # lists for uniform downstream indexing.
-        headers_blocks: list[dict[str, list[str]]] = []
-        current_block: dict[str, list[str]] = defaultdict(list)
-        for header_name, header_value in lower_headers:
-            if header_name == "received":
-                current_block["received"].append(header_value)
-                headers_blocks.append(dict(current_block))
-                current_block = defaultdict(list)
-            else:
-                current_block[header_name].append(header_value)
-        if current_block:
-            headers_blocks.append(dict(current_block))
-
-        # Extract labels from X-Gmail-Labels / X-Keywords (project ext).
-        gmail_labels: list[str] = []
-        seen_labels: set = set()
-        for label_header in ("x-gmail-labels", "x-keywords"):
-            label_value = _first_value(label_header)
-            if not label_value:
-                continue
-            for label in _parse_labels_header(label_value):
-                if label not in seen_labels:
-                    seen_labels.add(label)
-                    gmail_labels.append(label)
 
         # ─── Per-property JMAP shape construction ───
         # Subject: NFC-normalized text; ``None`` when header absent
@@ -1797,7 +1790,9 @@ def _parse_email(
             attachments: list[dict[str, Any]] = []
             has_attachment = False
         else:
-            body_parts = _parse_message_content(message, defects=defects)
+            body_parts = _parse_message_content(
+                message, limits=limits, defects=defects
+            )
             text_body = body_parts["textBody"]
             html_body = body_parts["htmlBody"]
             attachments = body_parts["attachments"]
@@ -1841,14 +1836,12 @@ def _parse_email(
                 result["textBody"] = _strip_body_part_content(text_body)
                 result["htmlBody"] = _strip_body_part_content(html_body)
             if body_structure:
-                result["bodyStructure"] = _build_body_structure(message)
+                result["bodyStructure"] = _build_body_structure(message, limits)
 
         # ─── Extensions (project-specific) ───
         if include_extensions:
             result["ext"] = {
                 "defects": defects,
-                "gmailLabels": gmail_labels,
-                "headersBlocks": headers_blocks,
             }
 
         return result

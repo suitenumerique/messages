@@ -11,7 +11,7 @@ from django.db.utils import Error as DjangoDbError
 
 from core import models
 from core.mda.inbound_tasks import process_inbound_message_task
-from core.mda.jmap_utils import first_msgid
+from jmap_email import first_msgid
 from core.services.importer.labels import (
     handle_duplicate_message,
 )

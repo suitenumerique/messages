@@ -1,23 +1,45 @@
 """Root utils for the core application."""
 
-import html
 import json
 import logging
-import re
 from contextlib import contextmanager
 from contextvars import ContextVar
-from typing import Any
 
 from django.core.exceptions import ImproperlyConfigured, ValidationError
 
 import jsonschema
 from configurations import values
-
-from core.mda.jmap_utils import body_part_text
+from jmap_email import body_part_text
 
 logger = logging.getLogger(__name__)
 
 SNIPPET_MAX_LENGTH = 140
+
+
+def thread_snippet(parsed_email: dict, fallback: str = "") -> str:
+    """Return the thread-listing snippet for a parsed JMAP Email.
+
+    Resolution order:
+
+    1. ``parsed["preview"]`` — the library's spec-default ≤256-char
+       plain-text excerpt, already HTML-stripped and whitespace-
+       normalised.
+    2. The first ``textBody`` part — used when ``parse_email`` was
+       called with ``preview=False`` or when the caller hand-built the
+       JMAP dict (importers, autoreply, MTA-in test fixtures).
+    3. ``fallback`` — when neither preview nor a text body exists.
+
+    Output is always truncated to ``SNIPPET_MAX_LENGTH``.
+    """
+    parsed = parsed_email or {}
+    candidate = parsed.get("preview") or ""
+    if not candidate:
+        text_body = parsed.get("textBody") or []
+        if text_body:
+            candidate = body_part_text(parsed, text_body[0])
+    if not candidate:
+        candidate = fallback or ""
+    return candidate[:SNIPPET_MAX_LENGTH]
 
 
 def get_redis_client():
@@ -35,28 +57,6 @@ def get_redis_client():
     from django_redis import get_redis_connection
 
     return get_redis_connection("default")
-
-
-def extract_snippet(parsed_data: dict[str, Any], fallback: str = "") -> str:
-    """Extract a text snippet from parsed email/message data.
-
-    Tries textBody first, then htmlBody (stripped of HTML tags).
-    Falls back to the provided fallback string if no body content is found.
-    Result is truncated to SNIPPET_MAX_LENGTH characters.
-
-    Transparent to the ``body_values`` projection: reads ``content`` when
-    inline and ``bodyValues[partId]`` when the spec-default projection
-    moved the text. See ``core.mda.jmap_utils.body_part_text``.
-    """
-    if text_body := parsed_data.get("textBody"):
-        return body_part_text(parsed_data, text_body[0])[:SNIPPET_MAX_LENGTH]
-
-    if html_body := parsed_data.get("htmlBody"):
-        html_content = body_part_text(parsed_data, html_body[0])
-        clean_text = re.sub("<[^>]+>", " ", html_content)
-        return " ".join(html.unescape(clean_text).strip().split())[:SNIPPET_MAX_LENGTH]
-
-    return fallback[:SNIPPET_MAX_LENGTH]
 
 
 def validate_json_schema(value, schema, *, field):

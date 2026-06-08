@@ -12,7 +12,7 @@ from django.utils import timezone
 
 from core import models
 from core.mda.draft import create_draft
-from core.mda.jmap_utils import body_text_joined
+from jmap_email import body_text_joined
 from core.mda.outbound import prepare_outbound_message, send_message
 from core.mda.selfcheck_reporting import (
     SelfCheckResult,

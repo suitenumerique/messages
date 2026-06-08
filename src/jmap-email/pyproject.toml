@@ -54,8 +54,11 @@ include = [
     "jmap_email/**/*.py",
     "jmap_email/py.typed",
     "tests/**/*.py",
+    "examples/**/*.py",
     "README.md",
     "CHANGELOG.md",
+    "CONTRIBUTING.md",
+    "SECURITY.md",
     "LICENSE",
 ]
 

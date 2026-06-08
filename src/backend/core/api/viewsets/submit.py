@@ -22,7 +22,7 @@ from core.api.authentication import ChannelApiKeyAuthentication
 from core.api.permissions import channel_scope
 from core.enums import MAILBOX_ROLES_CAN_SEND, ChannelApiKeyScope
 from core.mda.inbound_create import _create_message_from_inbound
-from core.mda.jmap_utils import first_address_email
+from jmap_email import first_address_email
 from core.mda.outbound import prepare_outbound_message
 from core.mda.outbound_tasks import send_message_task
 from jmap_email import ParseError, parse_email

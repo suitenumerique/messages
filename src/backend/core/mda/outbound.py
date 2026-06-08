@@ -19,13 +19,15 @@ from core.mda.outbound_direct import send_message_via_mx
 from jmap_email import (
     ParseError,
     compose_email,
+    first_address_email,
     make_forward,
     make_reply,
-    extract_inline_images_html,
-    extract_inline_images_text,
     parse_email,
 )
-from core.mda.jmap_utils import first_address_email
+from core.mda.inline_images import (
+    extract_inline_images_html,
+    extract_inline_images_text,
+)
 from core.mda.signing import sign_message_dkim, verify_message_dkim
 from core.mda.smtp import send_smtp_mail
 from core.services.blob_gc import schedule_for_gc

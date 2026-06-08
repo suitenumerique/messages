@@ -1,181 +1,126 @@
-"""Null-safe accessors over the JMAP RFC 8621 Email object shape.
+"""Messages-specific JMAP shape computations.
 
-The strict-JMAP shape uses lists everywhere (``from: list[EmailAddress]``,
-``messageId: list[str]``, ``headers: list[EmailHeader]``, …). These
-helpers wrap the first-element / case-insensitive lookup patterns so
-call sites don't repeat ``parsed.get("from") or []`` + index + ``.get``
-chains. Every helper returns a sensible default on absence.
+The general-purpose null-safe accessors (``first_address``,
+``first_msgid``, ``find_header``, ``body_part_text`` …) moved into
+:mod:`jmap_email.helpers` for 0.1.0 — import them directly from the
+library.
 
-See :mod:`jmap_email.types` for the underlying ``TypedDict`` shapes.
+This module keeps the two computations that are Messages-specific —
+not generic JMAP and not useful to other consumers of ``jmap-email``:
+
+- :func:`gmail_labels` — labels harvested from ``X-Gmail-Labels`` /
+  ``X-Keywords``. The header convention is Google Takeout / Dovecot
+  / OfflineIMAP, not JMAP.
+- :func:`headers_blocks` — every header grouped into Received-bounded
+  trust scopes. Used by spam classifiers and inbound auth (trusted
+  relays cut), not by general JMAP consumers.
+
+Both are computed on demand from ``parsed["headers"]``, so they work
+on any ``parse_email`` or ``parse_headers`` output without requiring
+the library to bake them into its ``ext`` namespace.
 """
 
-from datetime import datetime
+import re
+import shlex
+from collections import defaultdict
 from typing import Any
 
+from jmap_email import decode_rfc2047_header
 
-def first_address(addrs: Any) -> dict[str, Any] | None:
-    """Return the first entry of a JMAP ``EmailAddress[]`` or ``None``.
+__all__ = ["gmail_labels", "headers_blocks"]
 
-    An entry without an ``email`` is treated as missing.
+
+# Comma-separated form with optional quoted strings — the OfflineIMAP /
+# Google Takeout convention. Falls back to space-separated (Dovecot) when
+# no comma is present.
+_COMMA_LABEL_RE = re.compile(r'\s*"([^"]*)"\s*|\s*([^,]+)')
+
+
+def _parse_labels_header(labels_str: str) -> list[str]:
+    """Parse a labels header value, handling quoted strings.
+
+    Supports two formats:
+
+    - Comma-separated (OfflineIMAP / Google Takeout):
+      ``label1, label2, "label three"``
+    - Space-separated (Dovecot): ``label1 label2 "label three"``
     """
-    if not addrs:
-        return None
-    for entry in addrs:
-        if isinstance(entry, dict) and entry.get("email"):
-            return entry
-    return None
-
-
-def first_address_email(addrs: Any) -> str:
-    """Return the ``email`` of the first ``EmailAddress`` or ``""``."""
-    entry = first_address(addrs)
-    return (entry.get("email") if entry else "") or ""
-
-
-def first_address_name(addrs: Any) -> str:
-    """Return the ``name`` of the first ``EmailAddress`` or ``""``."""
-    entry = first_address(addrs)
-    return (entry.get("name") if entry else "") or ""
-
-
-def first_msgid(ids: Any) -> str:
-    """Return the first non-empty entry of a JMAP ``String[]`` of
-    msg-ids, or ``""``. Entries are returned without surrounding
-    angle brackets (the JMAP wire shape strips them).
-
-    Strict-typed: a scalar string is rejected even though Python
-    would iterate it character by character; only a ``list`` of
-    strings is accepted.
-    """
-    if not isinstance(ids, list) or not ids:
-        return ""
-    for v in ids:
-        if isinstance(v, str) and v:
-            return v
-    return ""
-
-
-def msgid_chain(ids: Any) -> str:
-    """Reassemble a JMAP ``String[]`` of msg-ids into the angle-bracketed
-    space-separated wire form (e.g. ``"<a@x> <b@x>"``). Strict-typed:
-    see :func:`first_msgid` — only a list of strings is accepted."""
-    if not isinstance(ids, list) or not ids:
-        return ""
-    out: list[str] = []
-    for v in ids:
-        if not isinstance(v, str) or not v:
-            continue
-        v = v.strip()
-        if not (v.startswith("<") and v.endswith(">")):
-            v = f"<{v}>"
-        out.append(v)
-    return " ".join(out)
-
-
-def sent_at_to_datetime(sent_at: Any) -> datetime | None:
-    """Parse a JMAP ``sentAt`` ISO-8601 string into a tz-aware
-    :class:`datetime`. Returns ``None`` on absence or parse failure.
-    A ``datetime`` instance is returned as-is so callers can pass
-    either shape through unchanged."""
-    if not sent_at:
-        return None
-    if isinstance(sent_at, datetime):
-        return sent_at
-    if isinstance(sent_at, str):
+    result: list[str] = []
+    if "," in labels_str:
+        for quoted, plain in _COMMA_LABEL_RE.findall(labels_str):
+            label = (quoted if quoted else plain).strip()
+            if label:
+                result.append(label)
+    else:
         try:
-            return datetime.fromisoformat(sent_at)
-        except (TypeError, ValueError):
-            return None
-    return None
-
-
-def find_header(parsed_email: dict[str, Any], name: str) -> str:
-    """Return the value of the first header whose name matches ``name``
-    case-insensitively, or ``""`` when absent."""
-    target = name.lower()
-    for entry in parsed_email.get("headers") or []:
-        if isinstance(entry, dict) and (entry.get("name") or "").lower() == target:
-            return entry.get("value") or ""
-    return ""
-
-
-def find_headers(parsed_email: dict[str, Any], name: str) -> list[str]:
-    """Return every value whose header name matches ``name``
-    (case-insensitive), in document order. Empty list when absent."""
-    target = name.lower()
-    return [
-        entry.get("value") or ""
-        for entry in parsed_email.get("headers") or []
-        if isinstance(entry, dict) and (entry.get("name") or "").lower() == target
-    ]
-
-
-def has_header(parsed_email: dict[str, Any], name: str) -> bool:
-    """Return ``True`` when at least one header matches ``name``
-    case-insensitively."""
-    target = name.lower()
-    return any(
-        isinstance(entry, dict) and (entry.get("name") or "").lower() == target
-        for entry in parsed_email.get("headers") or []
-    )
-
-
-def body_part_text(
-    parsed_email: dict[str, Any], part: dict[str, Any]
-) -> str:
-    """Return the decoded text of a JMAP ``EmailBodyPart``.
-
-    Transparent across both parser output shapes:
-
-    - When :func:`jmap_email.parse_email` was called with the spec-default
-      ``body_values=True``, the part's ``content`` field is stripped and
-      the text lives in ``parsed["bodyValues"][partId]["value"]``.
-    - When the caller opted into ``body_values=False`` for cheaper parses,
-      the part carries its ``content`` inline.
-
-    Use this helper at every site that reads body text so a future flip
-    of the parser default doesn't break the consumer. Returns ``""`` when
-    the lookup fails (e.g. truncated walk, malformed input).
-    """
-    if not isinstance(part, dict):
-        return ""
-    inline = part.get("content")
-    if inline is not None:
-        # The inline shape: text parts carry ``str``; attachments carry
-        # ``bytes`` but consumers shouldn't be calling this helper on an
-        # attachment anyway.
-        return inline if isinstance(inline, str) else ""
-    part_id = part.get("partId")
-    if not part_id:
-        return ""
-    bv = (parsed_email.get("bodyValues") or {}).get(part_id) or {}
-    return bv.get("value") or ""
-
-
-def body_text_joined(parsed_email: dict[str, Any], key: str = "textBody") -> str:
-    """Concatenate every body part under ``parsed_email[key]`` (typically
-    ``textBody`` or ``htmlBody``) into a single string, transparent to
-    the ``body_values`` projection.
-
-    A convenience wrapper around :func:`body_part_text` for the common
-    "all body text as one string" pattern (snippet extraction, search
-    indexing, audit logging).
-    """
-    parts = parsed_email.get(key) or []
-    return "".join(body_part_text(parsed_email, p) for p in parts)
+            result = [token.strip() for token in shlex.split(labels_str) if token.strip()]
+        except ValueError:
+            # Unmatched quotes — fall back to a simple split rather than
+            # losing the label list entirely.
+            result = [token.strip() for token in labels_str.split() if token.strip()]
+    return result
 
 
 def gmail_labels(parsed_email: dict[str, Any]) -> list[str]:
-    """Return the project-extension ``ext.gmailLabels`` list (empty when
-    extensions were not requested or the source carried no label header)."""
-    return (parsed_email.get("ext") or {}).get("gmailLabels") or []
+    """Return labels harvested from ``X-Gmail-Labels`` / ``X-Keywords``.
+
+    Deduped in first-seen order. Empty list when neither header is
+    present. Works against any ``parse_email`` / ``parse_headers``
+    output — reads the raw header list directly so the library does
+    not need to bake the Google / Dovecot label idiom into its
+    strict-JMAP wire shape.
+    """
+    seen: set[str] = set()
+    labels: list[str] = []
+    for header in parsed_email.get("headers") or []:
+        if not isinstance(header, dict):
+            continue
+        name = (header.get("name") or "").lower()
+        if name not in ("x-gmail-labels", "x-keywords"):
+            continue
+        raw_value = header.get("value") or ""
+        if not raw_value:
+            continue
+        # ``parsed["headers"][*]["value"]`` is the RFC 8621 Raw form
+        # (byte-faithful, no encoded-word decode). Labels routinely ship
+        # as RFC 2047 ``=?UTF-8?Q?…?=`` words (Google Takeout uses Q-
+        # encoding for non-ASCII label text) so decode before splitting.
+        value = decode_rfc2047_header(raw_value)
+        for label in _parse_labels_header(value):
+            if label not in seen:
+                seen.add(label)
+                labels.append(label)
+    return labels
 
 
 def headers_blocks(
     parsed_email: dict[str, Any],
 ) -> list[dict[str, list[str]]]:
-    """Return ``ext.headersBlocks`` — every header grouped into
-    Received-bounded trust scopes (block 0 = our own MTA prepend,
-    block 1 = the first upstream relay, …). Empty list when extensions
-    were not requested."""
-    return (parsed_email.get("ext") or {}).get("headersBlocks") or []
+    """Return every header grouped into Received-bounded trust scopes.
+
+    Each ``Received`` header marks the END of its block; everything
+    above (earlier) it is in the same trust scope. The trailing
+    Received-less block holds our own MTA prepend. Values inside a
+    block are always lists for uniform downstream indexing.
+
+    Useful for inbound auth (trusted-relay cuts) and spam classifiers
+    that want to discriminate per-hop. Computed on demand so the
+    library's ``ext`` namespace stays free of Messages-specific
+    pre-computation.
+    """
+    blocks: list[dict[str, list[str]]] = []
+    current: dict[str, list[str]] = defaultdict(list)
+    for header in parsed_email.get("headers") or []:
+        if not isinstance(header, dict):
+            continue
+        name = (header.get("name") or "").lower()
+        value = header.get("value") or ""
+        if name == "received":
+            current["received"].append(value)
+            blocks.append(dict(current))
+            current = defaultdict(list)
+        else:
+            current[name].append(value)
+    if current:
+        blocks.append(dict(current))
+    return blocks

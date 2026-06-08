@@ -12,7 +12,7 @@ from opensearchpy.exceptions import NotFoundError, TransportError
 from opensearchpy.helpers import bulk
 
 from core import enums, models
-from core.mda.jmap_utils import body_text_joined
+from jmap_email import body_text_joined
 from jmap_email import parse_email
 from core.services.search.exceptions import (
     RETRYABLE_EXCEPTIONS,

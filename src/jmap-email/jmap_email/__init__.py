@@ -33,6 +33,20 @@ from .composer import (
     make_reply,
     reply_subject,
 )
+from .helpers import (
+    body_part_text,
+    body_text_joined,
+    find_header,
+    find_headers,
+    first_address,
+    first_address_email,
+    first_address_name,
+    first_msgid,
+    has_header,
+    msgid_chain,
+    sent_at_to_datetime,
+)
+from .limits import DEFAULT_PARSE_LIMITS, ParseLimits
 from .parser import (
     ParseError,
     decode_rfc2047_header,
@@ -50,11 +64,6 @@ from .types import (
     EmailHeader,
     JmapEmail,
     JmapEmailExt,
-)
-from .utils import (
-    extract_inline_images_html,
-    extract_inline_images_text,
-    remove_mime_headers,
 )
 
 __all__ = [
@@ -74,10 +83,21 @@ __all__ = [
     "format_address",
     "format_address_list",
     "reply_subject",
-    # HTML / MIME helpers
-    "extract_inline_images_html",
-    "extract_inline_images_text",
-    "remove_mime_headers",
+    # Null-safe shape accessors
+    "first_address",
+    "first_address_email",
+    "first_address_name",
+    "first_msgid",
+    "msgid_chain",
+    "sent_at_to_datetime",
+    "find_header",
+    "find_headers",
+    "has_header",
+    "body_part_text",
+    "body_text_joined",
+    # Per-call resource caps
+    "ParseLimits",
+    "DEFAULT_PARSE_LIMITS",
     # Errors
     "ParseError",
     "ComposeError",

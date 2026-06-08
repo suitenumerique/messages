@@ -18,12 +18,12 @@ from core.mda.inbound_auth import (
     get_inbound_auth_mode,
 )
 from core.mda.inbound_create import _create_message_from_inbound
-from core.mda.jmap_utils import (
+from jmap_email import (
     find_header,
     first_address_email,
     has_header,
-    headers_blocks,
 )
+from core.mda.jmap_utils import headers_blocks
 from jmap_email import parse_email
 
 from messages.celery_app import app as celery_app

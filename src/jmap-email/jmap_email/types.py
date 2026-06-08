@@ -140,20 +140,13 @@ class JmapEmailExt(TypedDict, total=False):
     when :func:`parse_email` is called with ``include_extensions=True``.
 
     These fields are NOT part of the JMAP spec — they expose
-    information the parser already computes (defects, label headers,
-    Received-block grouping) so downstream consumers don't have to
-    re-walk the message.
+    information the parser already computes so downstream consumers
+    don't have to re-walk the message.
     """
 
     # Class names of stdlib email parser defects collected from every
     # subpart (e.g. ``"InvalidBase64PaddingDefect"``).
     defects: Required[list[str]]
-    # Labels extracted from ``X-Gmail-Labels`` / ``X-Keywords``,
-    # deduped in first-seen order.
-    gmailLabels: Required[list[str]]
-    # Headers grouped into trust-scope blocks ending at each
-    # ``Received`` header — useful for trusted-relay filters.
-    headersBlocks: Required[list[dict[str, list[str]]]]
 
 
 # Top-level JMAP Email object (RFC 8621 §4.1). Declared via the

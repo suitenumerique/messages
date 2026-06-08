@@ -55,7 +55,7 @@ from core.enums import (
     user_event_type_choices,
 )
 from jmap_email import ParseError, parse_email
-from core.mda.jmap_utils import body_part_text
+from jmap_email import body_part_text
 from core.mda.signing import generate_dkim_key as _generate_dkim_key
 from core.services.tiered_storage import TieredStorageService, sha256_advisory_lock
 from core.utils import validate_json_schema
@@ -2000,7 +2000,17 @@ class Message(BaseModel):
 
         if self.blob:
             try:
-                self._parsed_email_cache = parse_email(self.blob.get_content())
+                # ``body_values=False`` keeps text-body content inlined on
+                # each ``EmailBodyPart`` rather than moving it to a
+                # separate ``bodyValues`` map. The library spec-default is
+                # the moved form (RFC 8621 §4.2 ``defaultProperties`` for
+                # ``Email/get``); this backend's consumers (snippet
+                # extraction, search indexing, LLM formatting, the API
+                # serializer) all read ``content`` inline, so we project
+                # back to that shape at the model boundary.
+                self._parsed_email_cache = parse_email(
+                    self.blob.get_content(), body_values=False
+                )
             except ParseError:
                 logger.warning(
                     "Failed to parse email for message %s, returning empty data",

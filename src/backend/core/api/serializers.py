@@ -15,7 +15,7 @@ from rest_framework import serializers
 from rest_framework.exceptions import PermissionDenied
 
 from core import enums, models
-from jmap_email import extract_inline_images_html
+from core.mda.inline_images import extract_inline_images_html
 from core.services.blob_gc import schedule_for_gc
 from core.services.identity import keycloak as keycloak_service
 
@@ -1074,42 +1074,13 @@ class MessageSerializer(serializers.ModelSerializer):
 
     @extend_schema_field(MessageBodyItemSerializer(many=True))
     def get_textBody(self, instance):  # pylint: disable=invalid-name
-        """Return the list of text body parts (JMAP style).
-
-        The frontend reads ``content`` inline on each part. The parser
-        emits it under ``bodyValues[partId]`` by default; we splice the
-        text back onto each part here so the API wire shape stays
-        stable across the parser's projection flip.
-        """
-        return self._body_parts_with_content_inlined(instance, "textBody")
+        """Return the list of text body parts (JMAP style)."""
+        return instance.get_parsed_field("textBody") or []
 
     @extend_schema_field(MessageBodyItemSerializer(many=True))
     def get_htmlBody(self, instance):  # pylint: disable=invalid-name
-        """Return the list of HTML body parts (JMAP style).
-
-        See ``get_textBody`` for the ``bodyValues`` rationale.
-        """
-        return self._body_parts_with_content_inlined(instance, "htmlBody")
-
-    @staticmethod
-    def _body_parts_with_content_inlined(instance, field_name: str):
-        parsed_data = instance.get_parsed_data() or {}
-        parts = parsed_data.get(field_name) or []
-        body_values = parsed_data.get("bodyValues") or {}
-        if not body_values:
-            return parts
-        merged: list[dict] = []
-        for part in parts:
-            if not isinstance(part, dict):
-                merged.append(part)
-                continue
-            if "content" in part:
-                merged.append(part)
-                continue
-            part_id = part.get("partId")
-            value = (body_values.get(part_id) or {}).get("value") if part_id else None
-            merged.append({**part, "content": value or ""})
-        return merged
+        """Return the list of HTML body parts (JMAP style)."""
+        return instance.get_parsed_field("htmlBody") or []
 
     @extend_schema_field(serializers.CharField(allow_null=True))
     def get_draftBody(self, instance):  # pylint: disable=invalid-name

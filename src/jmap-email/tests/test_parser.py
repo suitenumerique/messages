@@ -706,19 +706,6 @@ class TestEmailMessageParsing:
         assert "to" in header_keys
         assert "subject" in header_keys
 
-        # Check headers_blocks (no Received headers, so should have one block)
-        assert "headersBlocks" in parsed["ext"]
-        headers_blocks = parsed["ext"]["headersBlocks"]
-        assert isinstance(headers_blocks, list)
-        assert len(headers_blocks) == 1  # One block with all headers (no Received)
-        assert "from" in headers_blocks[0]
-        assert "to" in headers_blocks[0]
-        assert "subject" in headers_blocks[0]
-        # All values should be lists
-        assert isinstance(headers_blocks[0]["from"], list)
-        assert isinstance(headers_blocks[0]["to"], list)
-        assert isinstance(headers_blocks[0]["subject"], list)
-
     def test_parse_multipart_email(self, multipart_email):
         """Test parsing a multipart email."""
         parsed = parse_email(multipart_email)
@@ -747,13 +734,6 @@ class TestEmailMessageParsing:
         assert "mime-version" in header_keys
         assert "content-type" in header_keys
 
-        # Check headers_blocks (no Received headers, so should have one block)
-        assert "headersBlocks" in parsed["ext"]
-        headers_blocks = parsed["ext"]["headersBlocks"]
-        assert isinstance(headers_blocks, list)
-        assert len(headers_blocks) == 1
-        assert "mime-version" in headers_blocks[0]
-        assert "content-type" in headers_blocks[0]
 
     def test_parse_complex_email(self, complex_email):
         """Test parsing a complex email with nested parts and attachments."""
@@ -818,7 +798,6 @@ class TestEmailMessageParsing:
         assert "messageId" in parsed
         assert "references" in parsed
         assert "inReplyTo" in parsed
-        assert "gmailLabels" in parsed["ext"]
 
         # Verify attachment fields are complete
         attachment = parsed["attachments"][0]
@@ -862,11 +841,10 @@ class TestEmailMessageParsing:
         assert len(parsed.get("htmlBody", [])) == 1
         assert not parsed.get("attachments")
 
-        # Check headers_list and headers_blocks are present
-        assert parsed["headers"]  # headers list always emitted under JMAP shape
-        assert "headersBlocks" in parsed["ext"]
-        assert isinstance([(h["name"].lower(), h["value"]) for h in parsed["headers"]], list)
-        assert isinstance(parsed["ext"]["headersBlocks"], list)
+        assert parsed["headers"]
+        assert isinstance(
+            [(h["name"].lower(), h["value"]) for h in parsed["headers"]], list
+        )
 
     def test_parse_invalid_message(self):
         """Test parsing a malformed multipart message (boundary mismatch).
@@ -934,14 +912,6 @@ Text part.
         assert "x-priority" in header_keys
         assert "x-mailer" in header_keys
 
-        # Check headers_blocks
-        assert "headersBlocks" in parsed["ext"]
-        headers_blocks = parsed["ext"]["headersBlocks"]
-        assert len(headers_blocks) == 1  # No Received headers
-        assert "x-custom-header" in headers_blocks[0]
-        assert isinstance(headers_blocks[0]["x-custom-header"], list)
-        assert headers_blocks[0]["x-custom-header"][0] == "Custom Value"
-
     def test_parse_email_with_missing_from(self):
         """Test parsing an email with missing From header."""
         raw = (
@@ -999,52 +969,6 @@ This is a test email body.
         assert "our_mta_id" in headers_list[received_indices[0]][1]
         assert "def456" in headers_list[received_indices[1]][1]
         assert "abc123" in headers_list[received_indices[2]][1]
-
-        # Check headers_blocks structure
-        # When iterating through headers_list (most recent first), Received headers mark the END of their block
-        # Block 0: First Received (our_mta) - marks end of block 0
-        # Block 1: X-Spam (Ham) + second Received (relay2) - marks end of block 1
-        # Block 2: X-Spam (Spam) + third Received (relay1) - marks end of block 2
-        # Block 3: X-Spam (SenderSpam) + From, To, Subject, Date (original message)
-        assert "headersBlocks" in parsed["ext"]
-        headers_blocks = parsed["ext"]["headersBlocks"]
-        assert isinstance(headers_blocks, list)
-        # Should have 4 blocks: 3 blocks ending with Received headers + 1 final block
-        assert len(headers_blocks) == 4
-
-        # Block 0: First Received (our MTA) only
-        assert "received" in headers_blocks[0]
-        assert "our_mta_id" in headers_blocks[0]["received"][0]
-
-        # Block 1: X-Spam (Ham) + second Received (relay2)
-        assert "x-spam" in headers_blocks[1]
-        assert headers_blocks[1]["x-spam"][0] == "Ham"
-        assert "received" in headers_blocks[1]
-        assert "def456" in headers_blocks[1]["received"][0]
-
-        # Block 2: X-Spam (Spam) + third Received (relay1)
-        assert "x-spam" in headers_blocks[2]
-        assert headers_blocks[2]["x-spam"][0] == "Spam"
-        assert "received" in headers_blocks[2]
-        assert "abc123" in headers_blocks[2]["received"][0]
-
-        # Block 3: Original message headers (X-Spam from sender, From, To, Subject, Date)
-        assert "x-spam" in headers_blocks[3]
-        assert headers_blocks[3]["x-spam"][0] == "SenderSpam"
-        assert "from" in headers_blocks[3]
-        assert "to" in headers_blocks[3]
-        assert "subject" in headers_blocks[3]
-        assert "date" in headers_blocks[3]
-
-        # Verify all values in headers_blocks are lists
-        for block in headers_blocks:
-            for key, value in block.items():
-                assert isinstance(value, list), (
-                    f"Header {key} in block should be a list, got {type(value)}"
-                )
-                assert len(value) > 0, (
-                    f"Header {key} in block should have at least one value"
-                )
 
     def test_parse_empty_message(self):
         """Test parsing an empty message raises an error."""
@@ -1628,35 +1552,6 @@ Content-Transfer-Encoding: base64
         assert isinstance(decoded, str)
         assert len(decoded) > 0
 
-    def test_gmail_labels_empty_quotes(self):
-        """Test Gmail labels with empty quoted strings."""
-        email_content = """From: test@example.com
-To: recipient@example.com
-Subject: Test Email
-X-Gmail-Labels: "", Work, ""
-
-This is a test email.
-"""
-        parsed = parse_email(email_content.encode("utf-8"))
-        # Empty quoted strings should be filtered out (stripped_label check)
-        assert "Work" in parsed["ext"]["gmailLabels"]
-        # Empty strings should not be in the list
-        assert "" not in parsed["ext"]["gmailLabels"]
-
-    def test_gmail_labels_very_long(self):
-        """Test Gmail labels with very long label names."""
-        long_label = "A" * 1000
-        email_content = f"""From: test@example.com
-To: recipient@example.com
-Subject: Test Email
-X-Gmail-Labels: "{long_label}", Work
-
-This is a test email.
-"""
-        parsed = parse_email(email_content.encode("utf-8"))
-        assert long_label in parsed["ext"]["gmailLabels"]
-        assert "Work" in parsed["ext"]["gmailLabels"]
-
     def test_address_with_angle_brackets_in_name(self):
         """Test email address with angle brackets in display name."""
         name, email_addr = parse_address('"User <Name>" <user@example.com>')
@@ -1741,7 +1636,6 @@ Body text."""
         assert parsed["messageId"][0] if parsed["messageId"] else "" == ""
         assert parsed["references"] is None
         assert parsed["inReplyTo"][0] if parsed["inReplyTo"] else "" == ""
-        assert not parsed["ext"]["gmailLabels"]
 
     def test_inline_image_without_filename(self):
         """Test inline image without filename."""
@@ -1818,7 +1712,7 @@ Image content
         assert img_in_body is not None, "Inline image should be in textBody"
 
     def test_email_with_many_parts(self):
-        """Many MIME parts below ``_MAX_MIME_PARTS=1000`` must surface
+        """Many MIME parts below ``MAX_MIME_PARTS=1000`` must surface
         all parts. (Cap behavior is tested separately in
         ``test_huge_part_count_does_not_explode``.)
         """
@@ -1846,11 +1740,11 @@ Content-Type: multipart/mixed; boundary="boundary"
         )
         message_obj = _stdlib_message(raw_email)
         content = _parse_message_content(message_obj)
-        # Capped at ``_MAX_MIME_PARTS=1000``; 50 stays well below the cap
+        # Capped at ``MAX_MIME_PARTS=1000``; 50 stays well below the cap
         assert len(content["textBody"]) == 50
 
     def test_deeply_nested_multipart(self):
-        """Deeply nested multipart below ``_MAX_MIME_NESTING_DEPTH=100``
+        """Deeply nested multipart below ``MAX_MIME_NESTING_DEPTH=100``
         must surface all levels. (Bomb behavior is tested separately
         in ``test_deeply_nested_multipart_bomb_does_not_recursion_error``.)
         """
@@ -1884,7 +1778,7 @@ Content-Type: multipart/mixed; boundary="outer"
         )
         message_obj = _stdlib_message(raw_email)
         content = _parse_message_content(message_obj)
-        # Capped at ``_MAX_MIME_NESTING_DEPTH=100``; 10 levels stays well below
+        # Capped at ``MAX_MIME_NESTING_DEPTH=100``; 10 levels stays well below
         assert len(content["textBody"]) >= 1
 
     def test_header_with_control_characters_strips_nul_from_subject(self):
@@ -1933,247 +1827,6 @@ PDF content
         content = _parse_message_content(message_obj)
         assert len(content["attachments"]) == 1
         assert content["attachments"][0]["name"] == "documenté.pdf"
-
-
-class TestGmailLabelsSplitting:
-    """Tests specifically for Gmail labels splitting functionality."""
-
-    def test_split_simple_labels(self):
-        """Test splitting simple labels without quotes."""
-        email_content = """From: test@example.com
-To: recipient@example.com
-Subject: Test Email
-X-Gmail-Labels: Important, Work, Personal
-
-This is a test email.
-"""
-        parsed = parse_email(email_content.encode("utf-8"))
-        assert parsed["ext"]["gmailLabels"] == ["Important", "Work", "Personal"]
-
-    def test_split_labels_with_quoted_strings(self):
-        """Test splitting labels that contain quoted strings with commas."""
-        email_content = """From: test@example.com
-To: recipient@example.com
-Subject: Test Email
-X-Gmail-Labels: "Culture, associations, événements", Work, Personal
-
-This is a test email.
-"""
-        parsed = parse_email(email_content.encode("utf-8"))
-        assert parsed["ext"]["gmailLabels"] == [
-            "Culture, associations, événements",
-            "Work",
-            "Personal",
-        ]
-
-    def test_split_single_quoted_label(self):
-        """Test splitting when there's only one quoted label."""
-
-        email_content = """From: test@example.com
-To: recipient@example.com
-Subject: Test Email
-X-Gmail-Labels: "Culture, associations, événements"
-
-This is a test email.
-"""
-        parsed = parse_email(email_content.encode("utf-8"))
-        assert parsed["ext"]["gmailLabels"] == ["Culture, associations, événements"]
-
-    def test_split_empty_header(self):
-        """Test splitting when X-Gmail-Labels header is empty."""
-        email_content = """From: test@example.com
-To: recipient@example.com
-Subject: Test Email
-X-Gmail-Labels: 
-
-This is a test email.
-"""
-        parsed = parse_email(email_content.encode("utf-8"))
-        assert len(parsed["ext"]["gmailLabels"]) == 0
-
-    def test_split_missing_header(self):
-        """Test splitting when X-Gmail-Labels header is missing."""
-        email_content = """From: test@example.com
-To: recipient@example.com
-Subject: Test Email
-
-This is a test email.
-"""
-        parsed = parse_email(email_content.encode("utf-8"))
-        assert len(parsed["ext"]["gmailLabels"]) == 0
-
-    def test_split_multiple_headers(self):
-        """Test splitting when there are multiple X-Gmail-Labels headers (should take first)."""
-        email_content = """From: test@example.com
-To: recipient@example.com
-Subject: Test Email
-X-Gmail-Labels: "Culture, associations, événements", Work
-X-Gmail-Labels: Personal, Family
-
-This is a test email.
-"""
-        parsed = parse_email(email_content.encode("utf-8"))
-        # Should take the first X-Gmail-Labels header
-        assert parsed["ext"]["gmailLabels"] == ["Culture, associations, événements", "Work"]
-
-    def test_split_with_escaped_quotes(self):
-        """Test splitting with escaped quotes inside quoted strings.
-
-        Note: The current regex pattern r'"([^"]*)"|([^,]+)' does not handle
-        escaped quotes. This test verifies the actual behavior - escaped quotes
-        will break the quoted string parsing.
-        """
-        email_content = """From: test@example.com
-To: recipient@example.com
-Subject: Test Email
-X-Gmail-Labels: "Culture, associations, événements", "Test with \\"quotes\\" inside", Work
-
-This is a test email.
-"""
-        parsed = parse_email(email_content.encode("utf-8"))
-        # The regex will match up to the first unescaped quote, so the label
-        # will be split incorrectly. This test documents the current behavior.
-        assert "Culture, associations, événements" in parsed["ext"]["gmailLabels"]
-        assert "Work" in parsed["ext"]["gmailLabels"]
-        # The escaped quotes case will not parse correctly with current implementation
-
-    def test_split_edge_case_trailing_comma(self):
-        """Test splitting with trailing comma."""
-        email_content = """From: test@example.com
-To: recipient@example.com
-Subject: Test Email
-X-Gmail-Labels: Important, Work, Personal,
-
-This is a test email.
-"""
-        parsed = parse_email(email_content.encode("utf-8"))
-        assert parsed["ext"]["gmailLabels"] == ["Important", "Work", "Personal"]
-
-    def test_split_edge_case_leading_comma(self):
-        """Test splitting with leading comma."""
-        email_content = """From: test@example.com
-To: recipient@example.com
-Subject: Test Email
-X-Gmail-Labels: , Important, Work, Personal
-
-This is a test email.
-"""
-        parsed = parse_email(email_content.encode("utf-8"))
-        assert parsed["ext"]["gmailLabels"] == ["Important", "Work", "Personal"]
-
-    def test_split_edge_case_consecutive_commas(self):
-        """Test splitting with consecutive commas."""
-        email_content = """From: test@example.com
-To: recipient@example.com
-Subject: Test Email
-X-Gmail-Labels: Important,, Work, Personal
-
-This is a test email.
-"""
-        parsed = parse_email(email_content.encode("utf-8"))
-        assert parsed["ext"]["gmailLabels"] == ["Important", "Work", "Personal"]
-
-    def test_split_utf8_encoded_labels(self):
-        """Test splitting with real Gmail labels format from .mbox file."""
-        email_content = """From: test@example.com
-To: recipient@example.com
-Subject: Test Email
-X-Gmail-Labels: =?UTF-8?Q?Messages_archiv=C3=A9s,Ouvert,Cat=C3=A9gorie=C2=A0:_E-mails_?=
- =?UTF-8?Q?personnels,"Culture,_associations,_=C3=A9v=C3=A9nements"?=
-
-This is a test email.
-"""
-        parsed = parse_email(email_content.encode("utf-8"))
-        # The parser should handle the UTF-8 encoded content and extract the labels.
-        # The fourth label contains an NBSP (U+00A0) from the source's ``=C2=A0`` —
-        # ``decode_rfc2047_header`` preserves it rather than collapsing to a space.
-        assert "Messages archivés" in parsed["ext"]["gmailLabels"]
-        assert "Ouvert" in parsed["ext"]["gmailLabels"]
-        assert "Culture, associations, événements" in parsed["ext"]["gmailLabels"]
-        assert "Catégorie\xa0: E-mails personnels" in parsed["ext"]["gmailLabels"]
-
-    def test_x_keywords_comma_separated(self):
-        """Test parsing X-Keywords header with comma-separated values."""
-        email_content = """From: test@example.com
-To: recipient@example.com
-Subject: Test Email
-X-Keywords: work, important, project
-
-This is a test email.
-"""
-        parsed = parse_email(email_content.encode("utf-8"))
-        assert "work" in parsed["ext"]["gmailLabels"]
-        assert "important" in parsed["ext"]["gmailLabels"]
-        assert "project" in parsed["ext"]["gmailLabels"]
-
-    def test_x_keywords_space_separated(self):
-        """Test parsing X-Keywords header with space-separated values (Dovecot format)."""
-        email_content = """From: test@example.com
-To: recipient@example.com
-Subject: Test Email
-X-Keywords: work important project
-
-This is a test email.
-"""
-        parsed = parse_email(email_content.encode("utf-8"))
-        assert "work" in parsed["ext"]["gmailLabels"]
-        assert "important" in parsed["ext"]["gmailLabels"]
-        assert "project" in parsed["ext"]["gmailLabels"]
-
-    def test_x_keywords_with_quoted_strings(self):
-        """Test parsing X-Keywords header with quoted strings containing spaces."""
-        email_content = """From: test@example.com
-To: recipient@example.com
-Subject: Test Email
-X-Keywords: work, "project alpha", important
-
-This is a test email.
-"""
-        parsed = parse_email(email_content.encode("utf-8"))
-        assert "work" in parsed["ext"]["gmailLabels"]
-        assert "project alpha" in parsed["ext"]["gmailLabels"]
-        assert "important" in parsed["ext"]["gmailLabels"]
-
-    def test_x_keywords_combined_with_gmail_labels(self):
-        """Test that X-Keywords and X-Gmail-Labels are combined."""
-        email_content = """From: test@example.com
-To: recipient@example.com
-Subject: Test Email
-X-Gmail-Labels: gmail-label
-X-Keywords: keyword-label
-
-This is a test email.
-"""
-        parsed = parse_email(email_content.encode("utf-8"))
-        assert "gmail-label" in parsed["ext"]["gmailLabels"]
-        assert "keyword-label" in parsed["ext"]["gmailLabels"]
-
-    def test_x_keywords_combined_deduplication(self):
-        """Test that duplicate labels across X-Gmail-Labels and X-Keywords are deduplicated."""
-        email_content = """From: test@example.com
-To: recipient@example.com
-Subject: Test Email
-X-Gmail-Labels: shared-label, gmail-only
-X-Keywords: shared-label, keywords-only
-
-This is a test email.
-"""
-        parsed = parse_email(email_content.encode("utf-8"))
-        assert parsed["ext"]["gmailLabels"].count("shared-label") == 1
-        assert "gmail-only" in parsed["ext"]["gmailLabels"]
-        assert "keywords-only" in parsed["ext"]["gmailLabels"]
-
-    def test_x_keywords_empty(self):
-        """Test parsing empty X-Keywords header."""
-        email_content = """From: test@example.com
-To: recipient@example.com
-Subject: Test Email
-X-Keywords:
-
-This is a test email.
-"""
-        parsed = parse_email(email_content.encode("utf-8"))
-        assert len(parsed["ext"]["gmailLabels"]) == 0
 
 
 class TestMalformedTransferEncoding:
@@ -2676,7 +2329,7 @@ class TestParserSecurityRegressions:
     def test_huge_single_header_value_is_truncated_not_quadratic(self):
         """gh-136063: multiple quadratic sites in stdlib's
         ``_header_value_parser``. We cap raw header values at
-        ``_MAX_HEADER_VALUE_BYTES`` before decoding so the
+        ``MAX_HEADER_VALUE_BYTES`` before decoding so the
         worst-case parse time stays linear in the cap, not in the
         attacker-supplied length.
 
@@ -3496,11 +3149,11 @@ class TestBufferOverflowShapeRegressions:
     def test_unfolded_one_megabyte_header_line(self):
         """Fetchmail ≤6.2.4 class: a single unfolded header line of
         50 MB triggered unbounded malloc. We cap raw header value at
-        ``_MAX_HEADER_VALUE_BYTES``; the truncation must happen
+        ``MAX_HEADER_VALUE_BYTES``; the truncation must happen
         before the value lands in the decoded dict."""
-        from jmap_email.parser import _MAX_HEADER_VALUE_BYTES
+        from jmap_email.parser import MAX_HEADER_VALUE_BYTES
 
-        big_line = b"X-Big: " + b"A" * (2 * _MAX_HEADER_VALUE_BYTES) + b"\r\n"
+        big_line = b"X-Big: " + b"A" * (2 * MAX_HEADER_VALUE_BYTES) + b"\r\n"
         raw = (
             b"From: a@b.com\r\n"
             + big_line
@@ -3513,7 +3166,7 @@ class TestBufferOverflowShapeRegressions:
         x_big = _header_all(parsed, "x-big")
         if x_big and isinstance(x_big, list):
             # Stored value must be capped at the configured limit.
-            assert len(x_big[0]) <= _MAX_HEADER_VALUE_BYTES + 100, (
+            assert len(x_big[0]) <= MAX_HEADER_VALUE_BYTES + 100, (
                 f"raw header not truncated: len={len(x_big[0])}"
             )
 
@@ -4055,26 +3708,6 @@ class TestParsedHeadersShape:
             f"{header_name}: expected all three preserved in order, got {values!r}"
         )
 
-    def test_headers_blocks_always_uses_list_values(self):
-        """Inside ``parsed["ext"]["headersBlocks"]`` every value is
-        ``list[str]`` regardless of whether the spec marks the header
-        as max=1 — block consumers index uniformly so trusted-relays
-        cuts stay simple."""
-        raw = (
-            b"Received: from hop1 by hop2\r\n"
-            b"From: sender@example.com\r\n"
-            b"Subject: scalar in block\r\n"
-            b"\r\nbody\r\n"
-        )
-        parsed = parse_email(raw)
-        for block in parsed["ext"]["headersBlocks"]:
-            if "subject" in block:
-                assert isinstance(block["subject"], list)
-                assert block["subject"] == ["scalar in block"]
-                break
-        else:  # pragma: no cover — fail loudly if no block had Subject
-            pytest.fail("Subject not found in any header block")
-
     @pytest.mark.parametrize("case_variant", ["From", "FROM", "from", "FrOm"])
     def test_scalar_header_lookup_is_case_insensitive(self, case_variant):
         """Header names in input are case-insensitive per RFC 5322
@@ -4323,12 +3956,12 @@ class TestParserPass4Regressions:
     def test_m22_body_structure_part_cap_caps_total_parts(self):
         """A pathological multipart with thousands of children must not
         explode memory. The body-structure walker bails at
-        ``_MAX_MIME_PARTS``."""
-        from jmap_email.parser import _MAX_MIME_PARTS
+        ``MAX_MIME_PARTS``."""
+        from jmap_email.parser import MAX_MIME_PARTS
 
         # Build a flat multipart/mixed with many text/plain leaves.
         parts = []
-        n = _MAX_MIME_PARTS + 50
+        n = MAX_MIME_PARTS + 50
         for i in range(n):
             parts.append(b"--B\r\nContent-Type: text/plain\r\n\r\nx%d\r\n" % i)
         raw = (
@@ -4348,14 +3981,14 @@ class TestParserPass4Regressions:
             return c
 
         total = _count(parsed["bodyStructure"])
-        # The cap is enforced after ``_MAX_MIME_PARTS`` leaves have been
+        # The cap is enforced after ``MAX_MIME_PARTS`` leaves have been
         # collected; with the multipart root + 1000 leaves, the total
         # stays just above the cap and well below the input count.
         assert total < n, (
             f"part cap not enforced: walked {total} of {n} input parts"
         )
         # And not far above the cap itself (root + cap leaves + slack).
-        assert total <= _MAX_MIME_PARTS + 5, (
+        assert total <= MAX_MIME_PARTS + 5, (
             f"part cap exceeded by more than expected: {total}"
         )
 

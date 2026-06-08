@@ -1092,6 +1092,17 @@ def reconstruct_eml(
         else:
             jmap_data["messageId"] = [_synthesize_message_id(message, recipient_email)]
 
+    # ``sentAt`` fallback: the composer is strict-by-design and rejects
+    # a missing Date header. For archive imports we'd rather log a
+    # warning and surface a sentinel epoch than fail the whole message.
+    # The synthesized date is the Unix epoch so a downstream UI can flag
+    # the "no original date" state explicitly.
+    if "sentAt" not in jmap_data:
+        logger.warning(
+            "PST message has no resolvable Date; falling back to epoch"
+        )
+        jmap_data["sentAt"] = "1970-01-01T00:00:00+00:00"
+
     # No sender resolvable: synthesize one using the recipient's domain so
     # compose_email accepts the message. inbound_create.py keeps this value
     # as-is (it only substitutes when the email is empty).

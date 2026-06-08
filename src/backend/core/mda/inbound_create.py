@@ -19,7 +19,7 @@ from core.ai.utils import (
     is_ai_summary_enabled,
     is_auto_labels_enabled,
 )
-from core.mda.jmap_utils import (
+from jmap_email import (
     first_address_email,
     first_address_name,
     first_msgid,
@@ -28,7 +28,7 @@ from core.mda.jmap_utils import (
 from core.services.importer.labels import (
     compute_labels_and_flags,
 )
-from core.utils import extract_snippet
+from core.utils import thread_snippet
 
 logger = logging.getLogger(__name__)
 
@@ -121,7 +121,7 @@ def _create_thread(
 ) -> models.Thread:
     """Create a new thread."""
 
-    snippet = extract_snippet(
+    snippet = thread_snippet(
         parsed_email,
         fallback=parsed_email.get("subject") or "(No snippet available)",
     )
@@ -502,7 +502,7 @@ def _create_message_from_inbound(  # pylint: disable=too-many-arguments
     try:
         # Update snippet using the new message's body if possible
         # (This assumes the subject was used for the initial snippet if body was empty)
-        new_snippet = extract_snippet(
+        new_snippet = thread_snippet(
             parsed_email,
             fallback=parsed_email.get("subject", ""),
         )

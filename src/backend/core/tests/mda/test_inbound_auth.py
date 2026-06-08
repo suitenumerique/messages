@@ -211,13 +211,24 @@ class TestCheckInboundAuthenticationResults:
 
     @staticmethod
     def _parsed(ar_values, trust_blocks=1):
-        blocks = []
+        """Build a ``parsed_email`` with a ``headers`` list shaped so the
+        ``headers_blocks`` helper recovers exactly the blocks described
+        by ``ar_values``.
+
+        Each block ends with a synthetic ``Received`` header. AR entries
+        for the block appear before its closing ``Received``; ``None``
+        in ``ar_values`` produces a block whose Received is the only
+        header (no Authentication-Results).
+        """
+        headers: list[dict] = []
         for i in range(trust_blocks):
-            block = {}
             if i < len(ar_values) and ar_values[i] is not None:
-                block["authentication-results"] = ar_values[i]
-            blocks.append(block)
-        return {"ext": {"headersBlocks": blocks}}
+                for value in ar_values[i]:
+                    headers.append(
+                        {"name": "Authentication-Results", "value": value}
+                    )
+            headers.append({"name": "Received", "value": f"from hop{i}"})
+        return {"headers": headers}
 
     def test_dkim_pass_no_dmarc(self):
         config = {"inbound_auth": "authentication-results", "trusted_relays": 1}
@@ -282,15 +293,20 @@ class TestCheckInboundAuthenticationResults:
         assert check_inbound_authentication(b"", parsed, config) == VERDICT_UNVERIFIED
 
     def test_trusted_block_used(self):
-        """Default trusted_relays=1 -> block 1 is trusted."""
+        """Default trusted_relays=1 -> block 1 is trusted.
+
+        Block 0 (our own prepend) has no AR; block 1 (the first
+        upstream relay) carries ``dkim=pass``. ``headers_blocks`` groups
+        them by walking the ``headers`` list in order, closing each
+        block at the next ``Received``.
+        """
         config = {"inbound_auth": "authentication-results"}
         parsed = {
-            "ext": {
-                "headersBlocks": [
-                    {},
-                    {"authentication-results": ["mx; dkim=pass"]},
-                ]
-            }
+            "headers": [
+                {"name": "Received", "value": "from our-mta"},
+                {"name": "Authentication-Results", "value": "mx; dkim=pass"},
+                {"name": "Received", "value": "from upstream"},
+            ]
         }
         assert check_inbound_authentication(b"", parsed, config) is None
 
@@ -303,7 +319,12 @@ class TestCheckInboundAuthenticationResults:
     def test_single_string_ar_value(self):
         """AR header may be a bare string (single occurrence) rather than list."""
         config = {"inbound_auth": "authentication-results", "trusted_relays": 1}
-        parsed = {"ext": {"headersBlocks": [{"authentication-results": "mx; dkim=pass"}]}}
+        parsed = {
+            "headers": [
+                {"name": "Authentication-Results", "value": "mx; dkim=pass"},
+                {"name": "Received", "value": "from hop0"},
+            ]
+        }
         assert check_inbound_authentication(b"", parsed, config) is None
 
 
@@ -315,7 +336,12 @@ class TestCheckInboundAuthenticationResultsScrubbing:
 
     @staticmethod
     def _parsed(ar_value):
-        return {"ext": {"headersBlocks": [{"authentication-results": [ar_value]}]}}
+        return {
+            "headers": [
+                {"name": "Authentication-Results", "value": ar_value},
+                {"name": "Received", "value": "from hop0"},
+            ]
+        }
 
     # --- Comments (parens) ---------------------------------------------
 

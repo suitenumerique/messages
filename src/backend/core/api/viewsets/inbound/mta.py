@@ -17,7 +17,9 @@ from rest_framework.response import Response
 
 from core import models
 from core.mda.inbound import check_local_recipients, deliver_inbound_message
-from jmap_email import ParseError, parse_email, remove_mime_headers
+from jmap_email import ParseError, parse_email
+
+from core.mda.raw_mime import remove_mime_headers
 
 logger = logging.getLogger(__name__)
 
