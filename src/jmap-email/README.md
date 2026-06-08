@@ -169,7 +169,7 @@ on purpose**:
 Callers that don't want to discriminate can catch `ComposeError` only;
 callers that do can dispatch on the subclass:
 
-```
+```text
 ComposeError
 ├── InvalidAddressError       # missing/malformed `from`, `to`, …
 ├── InvalidMessageIdError     # Message-ID / In-Reply-To / References / Content-ID

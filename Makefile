@@ -118,7 +118,7 @@ build-back-distroless: ## build the distroless production image
 	# (see src/backend/Dockerfile ``COPY --from=jmap-email``). Use buildx
 	# explicitly so ``--build-context`` is available even on hosts where
 	# ``docker build`` still resolves to the legacy builder.
-	@docker buildx build --target runtime-distroless-prod -t messages-distroless \
+	@docker buildx build --load --target runtime-distroless-prod -t messages-distroless \
 		-f src/backend/Dockerfile \
 		--build-context jmap-email=src/jmap-email \
 		src/backend/

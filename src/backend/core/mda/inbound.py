@@ -164,11 +164,6 @@ def deliver_inbound_message(
     # --- 2. Check for Duplicate Message --- #
     mime_id = first_msgid(parsed_email.get("messageId"))
     if mime_id:
-        # JMAP ``String[]`` is already bracket-stripped, but defensively
-        # strip a stray pair in case an importer passed the wire form.
-        if mime_id.startswith("<") and mime_id.endswith(">"):
-            mime_id = mime_id[1:-1]
-
         # Check if a message with this MIME ID already exists in this mailbox
         existing_message = models.Message.objects.filter(
             mime_id=mime_id, thread__accesses__mailbox=mailbox

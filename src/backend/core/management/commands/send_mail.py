@@ -131,7 +131,7 @@ class Command(BaseCommand):
             "sentAt": current_sent_at(),
             "textBody": [{"content": body}],
             "htmlBody": [],
-            "messageId": [mime_id] if mime_id else None,
+            "messageId": [mime_id],
         }
 
         # Compose the email

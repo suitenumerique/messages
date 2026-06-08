@@ -2010,10 +2010,17 @@ class Message(BaseModel):
                 self._parsed_email_cache = parse_email(
                     self.blob.get_content(), body_values=False
                 )
-            except ParseError:
+            except (ParseError, ValueError) as exc:
+                # ``Blob.get_content`` raises ``ValueError`` on
+                # decompression / decryption / integrity-check failure;
+                # ``parse_email`` raises ``ParseError`` on malformed
+                # input. Either case collapses to an empty cache so
+                # downstream consumers see the same shape they get for
+                # a blob-less Message.
                 logger.warning(
-                    "Failed to parse email for message %s, returning empty data",
+                    "Failed to load parsed email for message %s: %s",
                     self.id,
+                    exc,
                 )
                 self._parsed_email_cache = {}
         else:

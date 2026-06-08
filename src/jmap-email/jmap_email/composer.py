@@ -387,10 +387,10 @@ def _collect_msgids(value: list[str] | None) -> str:
     for v in value:
         if not isinstance(v, str) or not v:
             continue
-        v = v.strip()
-        if not (v.startswith("<") and v.endswith(">")):
-            v = f"<{v}>"
-        chain.append(v)
+        sanitized = v.strip()
+        if not (sanitized.startswith("<") and sanitized.endswith(">")):
+            sanitized = f"<{sanitized}>"
+        chain.append(sanitized)
     return " ".join(chain)
 
 

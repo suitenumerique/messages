@@ -1,7 +1,5 @@
 """Tests for ``core.utils``."""
 
-import pytest
-
 from core.mda.utils import SNIPPET_MAX_LENGTH, thread_snippet
 
 
@@ -65,6 +63,41 @@ class TestThreadSnippet:
         fallback rather than an AttributeError."""
         assert thread_snippet(None, fallback="fb") == "fb"
 
+    def test_empty_text_body_list(self):
+        """An empty ``textBody`` list (no parts at all) falls through
+        to the caller-supplied fallback rather than crashing on
+        ``textBody[0]``."""
+        assert thread_snippet({"textBody": []}, fallback="fb") == "fb"
+        assert thread_snippet({"textBody": []}) == ""
 
-if __name__ == "__main__":
-    pytest.main()
+    def test_multiple_text_body_entries_uses_first(self):
+        """When ``textBody`` carries several parts (multipart/alternative
+        with text/plain + text/html copied to both arrays), only the
+        first contributes — same behaviour the search-index and snippet
+        consumers rely on."""
+        parsed = {
+            "textBody": [
+                {"partId": "1", "content": "first"},
+                {"partId": "2", "content": "second"},
+            ],
+        }
+        assert thread_snippet(parsed) == "first"
+
+    def test_missing_partid_in_body_values(self):
+        """A truncated walk (M22 part-count cap) can emit body parts
+        whose ``partId`` does not appear in ``bodyValues``. The helper
+        falls through to the caller fallback rather than KeyError."""
+        parsed = {
+            "textBody": [{"partId": "p_missing"}],
+            "bodyValues": {},
+        }
+        assert thread_snippet(parsed, fallback="fb") == "fb"
+        assert thread_snippet(parsed) == ""
+
+    def test_exact_snippet_max_length_boundary(self):
+        """A candidate of exactly ``SNIPPET_MAX_LENGTH`` passes through
+        unchanged — the truncation slice is inclusive of the cap."""
+        content = "y" * SNIPPET_MAX_LENGTH
+        out = thread_snippet({"preview": content})
+        assert len(out) == SNIPPET_MAX_LENGTH
+        assert out == content

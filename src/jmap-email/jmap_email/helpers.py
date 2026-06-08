@@ -83,10 +83,10 @@ def msgid_chain(ids: Any) -> str:
     for v in ids:
         if not isinstance(v, str) or not v:
             continue
-        v = v.strip()
-        if not (v.startswith("<") and v.endswith(">")):
-            v = f"<{v}>"
-        out.append(v)
+        sanitized = v.strip()
+        if not (sanitized.startswith("<") and sanitized.endswith(">")):
+            sanitized = f"<{sanitized}>"
+        out.append(sanitized)
     return " ".join(out)
 
 
