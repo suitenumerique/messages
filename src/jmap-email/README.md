@@ -134,6 +134,33 @@ fields mirror the base properties — `ext.resent["from"]`,
 `["messageId"]`, `["date"]` — and the sub-dict is omitted entirely
 when no Resent-* header is present on the wire.
 
+### Pragmatic deviations from RFC 8621
+
+Two places where the parser knowingly deviates from the spec text.
+Both are conscious choices for downstream safety; flagging them so
+the contract is explicit:
+
+- **`headers[i].value` is not strictly "Raw" form.** RFC 8621 §4.1.2
+  defines "Raw" as byte-faithful except for `CRLF+WSP` unfolding.
+  We additionally:
+  - Strip NUL (`\x00`) bytes — PostgreSQL `TEXT` cannot store NUL, so a
+    spec-faithful value would crash any downstream insert. Carrying
+    them through and dropping them at the storage boundary would also
+    be wrong (different stores would handle them differently).
+  - Truncate at `max_header_value_bytes` (default 102 400) — the stdlib
+    `_header_value_parser` has quadratic-time hot spots on adversarial
+    inputs (gh-136063); truncating early bounds wall-clock.
+  The `EmailBodyPart.headers[i].value` field follows the same policy.
+
+- **Inline media isn't added to `attachments` in the `multipart/alternative`
+  nullified-branch case.** The spec algorithm in §4.1.4 has a clause
+  `if ((!htmlBody || !textBody) && isInlineMediaType(part)) attachments.push(part)`.
+  We don't honor it. Effect: in the narrow case where a `multipart/
+  alternative` ancestor has nullified one body branch and the message
+  contains inline `image/*` / `audio/*` / `video/*`, the inline media
+  appears in the surviving body but not in `attachments`. Matches what
+  Gmail / Apple Mail render; differs from a strict spec walker.
+
 ## Resource limits
 
 The parser enforces hard caps against adversarial input. Caps are

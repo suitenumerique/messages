@@ -844,11 +844,21 @@ def _get_part_info(part: Message) -> dict[str, Any]:
     part_headers: list[dict[str, str]] = []
     try:
         for k, v in part.raw_items():
-            part_headers.append({"name": k, "value": _repair_surrogate_escaped(str(v))})
+            # Mirror the top-level headers pipeline: repair stdlib's
+            # surrogate-escape mangling of 8-bit bytes, then strip NULs
+            # (PostgreSQL TEXT can't carry \x00; downstream stores fail
+            # asymmetrically if part headers do and message headers
+            # don't).
+            part_headers.append(
+                {
+                    "name": k,
+                    "value": _strip_nul_bytes(_repair_surrogate_escaped(str(v))),
+                }
+            )
     except AttributeError:
         # Defensive: synthesized parts may not expose raw_items().
         for k, v in part.items():
-            part_headers.append({"name": k, "value": str(v)})
+            part_headers.append({"name": k, "value": _strip_nul_bytes(str(v))})
 
     return {
         "type": part_type,
@@ -1006,8 +1016,21 @@ def _build_body_structure_node(
     if and only if the part is ``multipart/*``.
     """
     if counter is None:
-        counter = {"parts": 0}
+        counter = {"parts": 0, "next_part_id": 0}
+    counter.setdefault("next_part_id", 0)
     is_multipart = part.get_content_maintype() == "multipart"
+
+    # Leaf partIds must match the flat counter assigned by
+    # ``_parse_body_structure`` so ``bodyStructure["partId"]`` can be
+    # used as a lookup key into ``bodyValues`` and against the entries
+    # in ``textBody`` / ``htmlBody`` / ``attachments`` (RFC 8621 §4.1.4).
+    # The hierarchical ``path`` is kept only for the truncation walk's
+    # diagnostic value — it is not exposed.
+    if not is_multipart:
+        counter["next_part_id"] += 1
+        leaf_part_id: str | None = str(counter["next_part_id"])
+    else:
+        leaf_part_id = None
 
     if (
         depth > limits.max_mime_nesting_depth
@@ -1016,7 +1039,7 @@ def _build_body_structure_node(
         # Truncated stub: still spec-shaped (null partId/blobId for
         # multipart) so consumers don't have to special-case it.
         return {
-            "partId": None if is_multipart else ".".join(path),
+            "partId": leaf_part_id,
             "blobId": None,
             "type": part.get_content_type() or "text/plain",
             "size": 0,
@@ -1032,11 +1055,12 @@ def _build_body_structure_node(
     counter["parts"] += 1
 
     info = _get_part_info(part)
-    info["part_id"] = ".".join(path)
+    info["part_id"] = leaf_part_id or ""
     node: EmailBodyPart = EmailBodyPart(
         # multipart/* parts: partId and blobId are null per RFC 8621 §4.1.4
-        # "if and only if". Leaf parts get a stable hierarchical id.
-        partId=None if is_multipart else info["part_id"],
+        # "if and only if". Leaf parts get a stable flat id matching
+        # the one assigned in ``textBody`` / ``htmlBody`` / ``attachments``.
+        partId=leaf_part_id,
         blobId=None,
         type=info["type"],
         size=0 if is_multipart else len(info["body"] or b""),
@@ -1504,16 +1528,14 @@ def _jmap_headers(raw_headers: list[tuple[str, str, str]]) -> list[dict[str, str
 def _compute_has_attachment(attachments: list[EmailBodyPart]) -> bool:
     """Compute the JMAP ``hasAttachment`` field.
 
-    Per RFC 8621 §4.1.4: ``hasAttachment`` is true iff the message has
-    a non-inline body part visible as an attachment. We follow the
-    pragmatic interpretation: any item in ``attachments`` whose
-    ``disposition`` is explicitly ``"attachment"`` counts; pure inline
-    images (e.g. inside ``multipart/related``) do not.
+    Per RFC 8621 §4.1.4: "A server SHOULD set ``hasAttachment`` to
+    true if the attachments list contains at least one item that does
+    not have ``Content-Disposition: inline``." The check is therefore
+    "any disposition that isn't literally ``inline``" — covers items
+    with ``attachment`` *and* any non-standard disposition value
+    (``form-data``, etc.) that a real-world sender might emit.
     """
-    for att in attachments:
-        if att.get("disposition") == "attachment":
-            return True
-    return False
+    return any(att.get("disposition") != "inline" for att in attachments)
 
 
 _PREVIEW_MAX_LEN = 256
@@ -1551,23 +1573,37 @@ def _build_body_values(
 ) -> dict[str, dict[str, Any]]:
     """Build the JMAP ``bodyValues`` map: ``{partId: EmailBodyValue}``.
 
-    Per RFC 8621 §4.1.5, ``EmailBodyValue`` has ``value``,
-    ``isEncodingProblem``, ``isTruncated``. We never truncate (callers
-    can apply ``maxBodyValueBytes`` themselves), so ``isTruncated`` is
-    always ``false``. ``isEncodingProblem`` flips when the part's
-    charset was missing or unknown and the body decoder fell back to
-    utf-8/replace — the producer records that signal in
-    ``encoding_problems`` keyed by ``partId``.
+    Per RFC 8621 §4.1.4, ``bodyValues`` is a map for ``text/*`` parts
+    only — non-text parts (inline images, audio, video) that ride in
+    ``textBody`` / ``htmlBody`` for rendering purposes are excluded.
+
+    Per §4.1.4 ``EmailBodyValue.value``: line endings are normalised
+    to ``\\n`` (CR / CRLF / LF all collapse to LF).
+
+    ``isTruncated`` is always ``false`` — we never truncate.
+    ``isEncodingProblem`` flips when the part's charset was missing or
+    unknown and the body decoder fell back to utf-8/replace; the
+    producer records that signal in ``encoding_problems`` keyed by
+    ``partId``.
     """
     values: dict[str, dict[str, Any]] = {}
     for part in (*text_body, *html_body):
         part_id = part.get("partId")
         if not part_id:
             continue
+        # Spec restricts the map to ``text/*`` parts. An inline image
+        # in textBody has type=image/png and its ``content`` is base64
+        # — emitting it as a string value here would be a category
+        # error for clients reading ``bodyValues``.
+        if not (part.get("type") or "").lower().startswith("text/"):
+            continue
+        raw = str(part.get("content", ""))
+        # Per spec §4.1.4: "CRLF, LF, and CR should be normalized to LF."
+        normalised = raw.replace("\r\n", "\n").replace("\r", "\n")
         values.setdefault(
             part_id,
             {
-                "value": str(part.get("content", "")),
+                "value": normalised,
                 "isEncodingProblem": encoding_problems.get(part_id, False),
                 "isTruncated": False,
             },

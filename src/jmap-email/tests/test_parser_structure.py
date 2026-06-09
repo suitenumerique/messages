@@ -680,6 +680,119 @@ Custom data.
         assert content["attachments"][0]["type"] == "application/x-custom-type"
 
 
+class TestRfc8621Conformance:
+    """Direct regression tests for RFC 8621 §4.1.4 conformance points
+    that were violated in an earlier iteration:
+
+    - ``partId`` must be consistent across ``bodyStructure``,
+      ``textBody`` / ``htmlBody`` / ``attachments``, and ``bodyValues``.
+    - ``bodyValues`` is keyed only for ``text/*`` parts.
+    - ``bodyValues.value`` normalises CR / CRLF / LF to LF.
+    - ``hasAttachment`` is true when at least one attachment has a
+      disposition other than literally ``inline``.
+    """
+
+    def test_partid_consistent_across_bodystructure_and_bodyvalues(self):
+        from jmap_email import parse_email
+
+        raw = (
+            b"From: a@b.c\r\nTo: d@e.f\r\nSubject: s\r\n"
+            b'Content-Type: multipart/mixed; boundary="X"\r\n'
+            b"\r\n"
+            b"--X\r\n"
+            b"Content-Type: text/plain\r\n"
+            b"\r\n"
+            b"plain\r\n"
+            b"--X\r\n"
+            b"Content-Type: text/html\r\n"
+            b"\r\n"
+            b"<p>html</p>\r\n"
+            b"--X--\r\n"
+        )
+        parsed = parse_email(raw, body_structure=True, body_values=True)
+        text_ids = [p["partId"] for p in parsed["textBody"]]
+        html_ids = [p["partId"] for p in parsed["htmlBody"]]
+        struct_ids = [
+            sp["partId"]
+            for sp in (parsed["bodyStructure"].get("subParts") or [])
+            if sp.get("partId") is not None
+        ]
+        bv_ids = sorted(parsed["bodyValues"].keys())
+        assert text_ids == ["1", "2"]
+        assert html_ids == ["1", "2"]
+        assert struct_ids == ["1", "2"]
+        assert bv_ids == ["1", "2"]
+
+    def test_bodyvalues_excludes_non_text_parts(self):
+        from jmap_email import parse_email
+
+        raw = (
+            b"From: a@b.c\r\nTo: d@e.f\r\nSubject: s\r\n"
+            b'Content-Type: multipart/mixed; boundary="X"\r\n'
+            b"\r\n"
+            b"--X\r\n"
+            b"Content-Type: text/plain\r\n"
+            b"\r\n"
+            b"text\r\n"
+            b"--X\r\n"
+            b"Content-Type: image/png\r\n"
+            b"Content-Transfer-Encoding: base64\r\n"
+            b"Content-Disposition: inline\r\n"
+            b"\r\n"
+            b"iVBORw0KGgo=\r\n"
+            b"--X--\r\n"
+        )
+        parsed = parse_email(raw)
+        # textBody contains both the text and the image (rendered inline
+        # per JMAP). bodyValues must only hold the text part.
+        text_part_ids = {p["partId"] for p in parsed["textBody"]}
+        bv_ids = set(parsed["bodyValues"].keys())
+        image_ids = {
+            p["partId"] for p in parsed["textBody"] if p["type"] == "image/png"
+        }
+        assert image_ids.issubset(text_part_ids)
+        assert image_ids.isdisjoint(bv_ids)
+
+    def test_bodyvalues_line_endings_normalised_to_lf(self):
+        from jmap_email import parse_email
+
+        raw = (
+            b"From: a@b.c\r\nTo: d@e.f\r\nSubject: s\r\n"
+            b"Content-Type: text/plain\r\n"
+            b"\r\n"
+            b"crlf\r\nlf\nbarecr\rmix\r\n"
+        )
+        parsed = parse_email(raw)
+        value = parsed["bodyValues"]["1"]["value"]
+        assert "\r" not in value
+        # Each input line break collapses to one LF.
+        assert value.count("\n") == 4
+
+    def test_hasattachment_true_for_non_inline_dispositions(self):
+        from jmap_email import parse_email
+
+        # ``form-data`` (or any other non-``inline``) must still flip
+        # hasAttachment per RFC 8621 §4.1.4.
+        raw = (
+            b"From: a@b.c\r\nTo: d@e.f\r\nSubject: s\r\n"
+            b'Content-Type: multipart/mixed; boundary="X"\r\n'
+            b"\r\n"
+            b"--X\r\n"
+            b"Content-Type: text/plain\r\n"
+            b"\r\n"
+            b"body\r\n"
+            b"--X\r\n"
+            b"Content-Type: application/pdf\r\n"
+            b'Content-Disposition: form-data; name="upload"\r\n'
+            b"\r\n"
+            b"fake pdf\r\n"
+            b"--X--\r\n"
+        )
+        parsed = parse_email(raw)
+        assert parsed["attachments"][0]["disposition"] == "form-data"
+        assert parsed["hasAttachment"] is True
+
+
 class TestBoundaryReuseDefence:
     """Mailsploit-class defence: when a child multipart re-declares a
     boundary that an ancestor already uses, the inner delimiters are
