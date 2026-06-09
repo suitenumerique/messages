@@ -4,7 +4,7 @@ These ``TypedDict`` definitions are the public contract for the data
 flowing in and out of :func:`parse_email` and :func:`compose_email`.
 They mirror the JMAP Email Object spec (RFC 8621 §4) one-for-one,
 plus a project-extension namespace (``ext``) the parser exposes when
-``include_extensions=True``.
+``extensions=True``.
 
 Importing these in downstream code makes the parser/composer contract
 visible to static type checkers (mypy, pyright). The package ships a
@@ -162,7 +162,7 @@ JmapResentProjection = TypedDict(
 
 class JmapEmailExt(TypedDict, total=False):
     """Project-extension namespace surfaced under ``parsed['ext']``
-    when :func:`parse_email` is called with ``include_extensions=True``.
+    when :func:`parse_email` is called with ``extensions=True``.
 
     These fields are NOT part of the JMAP spec — they expose
     information the parser already computes so downstream consumers
@@ -215,7 +215,7 @@ JmapEmail = TypedDict(
         "preview": str,
         "bodyValues": dict[str, EmailBodyValue],
         "bodyStructure": EmailBodyPart | None,
-        # Project-extension namespace (``include_extensions=True``).
+        # Project-extension namespace (``extensions=True``).
         "ext": JmapEmailExt,
     },
     total=False,

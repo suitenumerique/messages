@@ -2401,7 +2401,7 @@ class TestParserSecurityRegressions:
             b"\r\n"
             b"oops\r\n"
         )
-        parsed = parse_email(raw, include_extensions=True)
+        parsed = parse_email(raw, extensions=True)
         assert "defects" in parsed["ext"]
         # Stdlib records ``StartBoundaryNotFoundDefect`` /
         # ``MultipartInvariantViolationDefect`` for this structure.
@@ -3877,7 +3877,7 @@ class TestParserPass4Regressions:
         """RFC 8621 §4.1.3 lists only the 11 base convenience properties.
         The Resent-* group is a §4.1.2 typed-projection idiom that the
         library pre-computes and surfaces under ``ext["resent"]`` when
-        ``include_extensions=True``."""
+        ``extensions=True``."""
         raw = (
             b"From: orig@example.com\r\n"
             b"To: dest@example.com\r\n"
@@ -3892,7 +3892,7 @@ class TestParserPass4Regressions:
             b"Resent-Date: Mon, 1 Jan 2026 00:00:00 +0000\r\n"
             b"\r\nbody\r\n"
         )
-        parsed = parse_email(raw, include_extensions=True)
+        parsed = parse_email(raw, extensions=True)
         resent = parsed["ext"]["resent"]
         assert resent["from"][0]["email"] == "resender@example.com"
         assert resent["from"][0]["name"] == "Resender"
@@ -3909,7 +3909,7 @@ class TestParserPass4Regressions:
         ``resent`` sub-dict is omitted from ``ext`` entirely — non-
         forwarded mail pays no extra surface area."""
         raw = b"From: a@b.c\r\nTo: d@e.f\r\nSubject: t\r\n\r\nbody\r\n"
-        parsed = parse_email(raw, include_extensions=True)
+        parsed = parse_email(raw, extensions=True)
         assert "resent" not in parsed["ext"]
 
     def test_m14_resent_is_not_at_top_level(self):
@@ -3920,7 +3920,7 @@ class TestParserPass4Regressions:
             b'Resent-From: "R" <r@example.com>\r\n'
             b"\r\nbody\r\n"
         )
-        parsed = parse_email(raw, include_extensions=True)
+        parsed = parse_email(raw, extensions=True)
         for k in (
             "resentFrom",
             "resentSender",
@@ -4014,7 +4014,7 @@ class TestParserPass4Regressions:
             b'Content-Type: multipart/mixed; boundary=""\r\n'
             b"\r\nbody\r\n"
         )
-        parsed = parse_email(raw, include_extensions=True)
+        parsed = parse_email(raw, extensions=True)
         # The parse SHOULD complete (no crash); whether the walker
         # records a defect is implementation-dependent on the stdlib
         # tolerance — assert only that the structure is well-formed.

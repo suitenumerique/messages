@@ -51,7 +51,7 @@ if email is None:
 # charset that fell back to utf-8/replace, …) surfaces in
 # email["ext"]["defects"] when you opt into the project-extension
 # namespace:
-email_with_ext = jmap_email.parse_email(raw_bytes, include_extensions=True)
+email_with_ext = jmap_email.parse_email(raw_bytes, extensions=True)
 defects = (email_with_ext or {}).get("ext", {}).get("defects") or []
 email["subject"]        # str | None  (NFC normalised)
 email["from"]           # [{"name": str | None, "email": str}, ...] | None
@@ -93,7 +93,7 @@ following defaults, matching `Email/get` `defaultProperties`:
 | `preview`           | Yes              | ≤256-char plain-text excerpt; HTML-stripped + whitespace-normalised |
 | `bodyValues`        | Yes              | `{partId: EmailBodyValue}` per §4.1.5; text-body parts then carry metadata only |
 | `bodyStructure`     | Opt-in           | `parse_email(raw, body_structure=True)` |
-| `ext`               | Opt-in           | `parse_email(raw, include_extensions=True)` — project extensions; see below |
+| `ext`               | Opt-in           | `parse_email(raw, extensions=True)` — project extensions; see below |
 
 Parser-only fields (`preview`, `bodyValues`, `bodyStructure`,
 `hasAttachment`, `ext`) are ignored on composer input — passing them
@@ -101,7 +101,7 @@ through `compose_email` is harmless.
 
 ### Project extensions (`ext`)
 
-`include_extensions=True` adds a single `ext` sub-dict to the output.
+`extensions=True` adds a single `ext` sub-dict to the output.
 These fields are NOT in RFC 8621 — they expose information the parser
 already computes so consumers don't have to re-walk the message:
 
@@ -110,6 +110,33 @@ already computes so consumers don't have to re-walk the message:
   Mailman pattern).
 - `ext.resent` — Resent-* typed projection (see below). Present only
   when the wire carries at least one Resent-* header.
+
+### `EmailBodyPart` extensions
+
+RFC 8621 §4.1.4 lists the `EmailBodyPart` shape as `partId`, `blobId`,
+`size`, `headers`, `name`, `type`, `charset`, `disposition`, `cid`,
+`language`, `location`, `subParts`. The library extends that shape
+with two project fields. Where each shows up:
+
+| Location               | `content`                | `sha256` |
+|------------------------|--------------------------|----------|
+| `attachments[i]`       | always (`bytes`)         | always   |
+| `textBody[i]` / `htmlBody[i]` with `body_values=False` | yes (`str` for text/*, base64 `str` for inline media) | no |
+| `textBody[i]` / `htmlBody[i]` with `body_values=True`  | absent — content moves to `bodyValues` per §4.1.4 | no |
+| `bodyStructure` and its `subParts` tree                | never                    | never    |
+
+- `content` exists because the library has no blob store to satisfy
+  the spec's `blobId` → fetch-by-blob contract. Callers need the
+  bytes somewhere on the part. Attachment `content` is never
+  stripped; text/html `content` follows the `body_values` flag.
+- `sha256` is the hex digest of the part's decoded bytes — useful
+  for dedup / blob storage. Attachment parts only.
+
+`bodyStructure` is pure RFC 8621 shape — no project fields appear
+in that tree, so a strict JMAP consumer can ingest it as-is. Strict
+consumers should ignore unknown keys elsewhere. Composer input that
+includes these fields is harmless — the composer ignores parser-only
+metadata.
 
 ### Duplicate scalar headers
 
@@ -220,7 +247,7 @@ if parsed is None:
 Recoverable damage (a salvageable malformed header, an unknown
 charset, etc.) keeps the parse on track — those are surfaced in
 `parsed["ext"]["defects"]` when the caller opts in via
-`parse_email(raw, include_extensions=True)`.
+`parse_email(raw, extensions=True)`.
 
 ### Composer error hierarchy
 

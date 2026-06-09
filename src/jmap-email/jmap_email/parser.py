@@ -1625,7 +1625,7 @@ def _strip_body_part_content(
 def parse_email(
     raw_email_bytes: bytes,
     *,
-    include_extensions: bool = False,
+    extensions: bool = False,
     body_values: bool = True,
     body_structure: bool = False,
     preview: bool = True,
@@ -1648,7 +1648,7 @@ def parse_email(
     ----------
     raw_email_bytes : bytes
         The raw RFC 5322 message.
-    include_extensions : bool, default False
+    extensions : bool, default False
         Emit the ``ext`` sub-dict carrying project extensions outside
         the RFC 8621 wire shape: ``ext["defects"]`` (stdlib MIME
         defect class names) and ``ext["resent"]`` (Resent-* typed
@@ -1690,7 +1690,7 @@ def parse_email(
     """
     return _parse_email(
         raw_email_bytes,
-        include_extensions=include_extensions,
+        extensions=extensions,
         body_values=body_values,
         body_structure=body_structure,
         preview=preview,
@@ -1701,7 +1701,7 @@ def parse_email(
 def _parse_email(
     raw_email_bytes: bytes,
     *,
-    include_extensions: bool,
+    extensions: bool,
     body_values: bool,
     body_structure: bool,
     preview: bool,
@@ -1902,7 +1902,7 @@ def _parse_email(
             result["bodyStructure"] = _build_body_structure(message, limits)
 
         # ─── Extensions (project-specific) ───
-        if include_extensions:
+        if extensions:
             ext: dict[str, Any] = {"defects": defects}
             # Resent-* typed projection. RFC 8621 §4.1.3 names only the
             # 11 base convenience properties; Resent-* is a §4.1.2

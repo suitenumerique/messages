@@ -36,9 +36,9 @@ def main() -> int:
         print(f"Cannot read {path}: {e}", file=sys.stderr)
         return 1
 
-    # ``include_extensions=True`` opts into the project-extension
+    # ``extensions=True`` opts into the project-extension
     # namespace ``parsed["ext"]`` — defects + Resent-* projection.
-    parsed = parse_email(raw, include_extensions=True)
+    parsed = parse_email(raw, extensions=True)
     if parsed is None:
         print(f"{path}: unparseable, skipping", file=sys.stderr)
         return 1
