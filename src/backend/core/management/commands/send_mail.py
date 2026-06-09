@@ -100,10 +100,12 @@ class Command(BaseCommand):
                 )
                 maildomain_custom_settings = sender_mailbox.domain.custom_settings or {}
             except models.Mailbox.DoesNotExist:
-                # Use minimal setup without mailbox
+                # Use minimal setup without mailbox. Log domain only —
+                # the full address is PII and the local part doesn't help
+                # diagnose the missing-mailbox case.
                 logger.warning(
-                    "Mailbox with email '%s' not found, sending without DKIM",
-                    from_email,
+                    "Mailbox not found in domain '%s', sending without DKIM",
+                    from_email.split("@", 1)[-1],
                 )
         else:
             # Use minimal setup without mailbox
@@ -114,8 +116,14 @@ class Command(BaseCommand):
             sender_mailbox.contact.name if sender_mailbox else None
         ) or from_email.split("@")[0]
 
-        logger.info("Sending email from %s to %s", from_email, to_email)
-        logger.info("Subject: %s", subject)
+        # Domain-only in logs to avoid PII leakage; the full address is
+        # in the recipient model and the MIME envelope for forensics.
+        logger.info(
+            "Sending email from <%s> to <%s>",
+            from_email.split("@", 1)[-1],
+            to_email.split("@", 1)[-1],
+        )
+        logger.info("Subject length: %d", len(subject or ""))
 
         # Generate MIME ID
         mime_id = (

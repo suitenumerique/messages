@@ -1757,6 +1757,11 @@ def _parse_email(
                     limits.max_header_value_bytes,
                 )
                 raw_value = raw_value[: limits.max_header_value_bytes]
+            # NUL bytes in headers would either reach a downstream text
+            # store (PostgreSQL rejects \x00 in TEXT) or smuggle past a
+            # naive C-string parser. Strip before any decode + before
+            # the value lands in wire_headers.
+            raw_value = _strip_nul_bytes(raw_value)
             decoded_value = decode_rfc2047_header(raw_value)
             key_lower = k.lower()
             wire_headers.append((k, decoded_value, raw_value))

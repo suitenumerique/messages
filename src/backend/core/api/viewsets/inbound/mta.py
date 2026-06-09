@@ -186,7 +186,8 @@ class InboundMTAViewSet(viewsets.GenericViewSet):
         # Parse the email message once
         parsed_email = parse_email(raw_data)
         if parsed_email is None:
-            logger.error("Failed to parse inbound email (returning 400)")
+            # Sender-supplied malformed input; not an internal error.
+            logger.warning("Failed to parse inbound email (returning 400)")
             # Consider saving the raw email for debugging
             return Response(
                 {"status": "error", "detail": "Failed to parse email"},

@@ -493,7 +493,7 @@ class TestDeliverInboundMessage:
             "to": [{"name": "User Two", "email": addr2}],
             "textBody": [{"content": "Hello User Two!"}],
             "messageId": ["msg1.part1@exchange.test"],
-            "sentAt": timezone.now(),
+            "sentAt": timezone.now().isoformat(),
         }
         raw_email_1 = b"Raw for message 1"
 
@@ -522,7 +522,7 @@ class TestDeliverInboundMessage:
             "messageId": ["msg2.part2.reply@exchange.test"],
             "inReplyTo": [message1.mime_id],  # Link to previous message
             "references": [message1.mime_id],
-            "sentAt": timezone.now(),
+            "sentAt": timezone.now().isoformat(),
         }
         raw_email_2 = b"Raw for message 2"
 
@@ -551,7 +551,7 @@ class TestDeliverInboundMessage:
             "messageId": ["msg3.part3.rereply@exchange.test"],
             "inReplyTo": [message2.mime_id],  # Link to user2's reply
             "references": [message1.mime_id, message2.mime_id],  # Full chain
-            "sentAt": timezone.now(),
+            "sentAt": timezone.now().isoformat(),
         }
         raw_email_3 = b"Raw for message 3"
 
@@ -585,7 +585,7 @@ class TestDeliverInboundMessage:
             "bcc": [],
             "textBody": [{"content": "Test body content."}],
             "messageId": ["test.empty.subject@example.com"],
-            "sentAt": timezone.now(),
+            "sentAt": timezone.now().isoformat(),
         }
 
         success = deliver_inbound_message(
@@ -622,7 +622,7 @@ class TestDeliverInboundMessage:
             "bcc": [],
             "textBody": [{"content": "Test body content."}],
             "messageId": ["test.null.subject@example.com"],
-            "sentAt": timezone.now(),
+            "sentAt": timezone.now().isoformat(),
         }
 
         success = deliver_inbound_message(
@@ -661,7 +661,7 @@ class TestDeliverInboundMessage:
             "bcc": [],
             "textBody": [{"content": "Test body content."}],
             "messageId": ["test.no.subject@example.com"],
-            "sentAt": timezone.now(),
+            "sentAt": timezone.now().isoformat(),
         }
 
         success = deliver_inbound_message(
@@ -701,7 +701,7 @@ class TestDeliverInboundMessage:
             "bcc": [],
             "textBody": [{"content": "Test body content."}],
             "messageId": ["test.long.subject@example.com"],
-            "sentAt": timezone.now(),
+            "sentAt": timezone.now().isoformat(),
         }
 
         # This should now succeed with truncated subject
@@ -740,7 +740,7 @@ class TestDeliverInboundMessage:
             "to": [{"name": "Recipient", "email": recipient_addr}],
             "textBody": [{"content": "First message."}],
             "messageId": ["msg1.empty@example.com"],
-            "sentAt": timezone.now(),
+            "sentAt": timezone.now().isoformat(),
         }
 
         success1 = deliver_inbound_message(
@@ -756,7 +756,7 @@ class TestDeliverInboundMessage:
             "textBody": [{"content": "Second message."}],
             "messageId": ["msg2.empty@example.com"],
             "inReplyTo": ["msg1.empty@example.com"],
-            "sentAt": timezone.now(),
+            "sentAt": timezone.now().isoformat(),
         }
 
         success2 = deliver_inbound_message(
@@ -807,7 +807,7 @@ class TestDeliverInboundMessage:
             "bcc": [],
             "textBody": [{"content": "Test with duplicates."}],
             "messageId": ["test.duplicates@example.com"],
-            "sentAt": timezone.now(),
+            "sentAt": timezone.now().isoformat(),
         }
 
         # Should succeed without raising ValidationError
@@ -883,7 +883,7 @@ class TestInboundAutoreplyIntegration:
             "bcc": [],
             "textBody": [{"content": "Hello"}],
             "messageId": ["autoreply.integ.1@example.com"],
-            "sentAt": timezone.now(),
+            "sentAt": timezone.now().isoformat(),
         }
 
     @patch("core.mda.autoreply.try_send_autoreply")

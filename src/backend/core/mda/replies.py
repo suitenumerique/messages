@@ -21,7 +21,6 @@ The library still owns the wire-format primitives we depend on:
 """
 
 import html
-import logging
 import re
 from datetime import datetime, timezone
 from email.utils import format_datetime, parsedate_to_datetime
@@ -41,8 +40,6 @@ from jmap_email import (
 # the right half would survive shape validation — silent half-id
 # salvaging. Walking by ``<…>`` pairs keeps each bracketed token intact.
 _MSGID_TOKEN_RE = re.compile(r"<[^<>]*>")
-
-logger = logging.getLogger(__name__)
 
 __all__ = [
     "compute_reply_threading",

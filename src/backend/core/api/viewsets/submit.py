@@ -12,7 +12,7 @@ import logging
 from django.core.exceptions import ValidationError as DjangoValidationError
 
 from drf_spectacular.utils import extend_schema
-from jmap_email import first_address_email, parse_email
+from jmap_email import parse_email
 from rest_framework import status
 from rest_framework.exceptions import PermissionDenied
 from rest_framework.response import Response
@@ -110,17 +110,18 @@ class SubmitRawEmailView(APIView):
                 status=status.HTTP_400_BAD_REQUEST,
             )
 
-        # Validate sender matches the mailbox
-        sender_email = first_address_email(parsed.get("from"))
+        # Validate sender matches the mailbox. A multi-address From
+        # would let the caller pair their authorised mailbox with an
+        # unrelated identity that the receiver may display instead —
+        # the whole list must collapse to exactly the acting mailbox.
+        from_list = parsed.get("from") or []
         mailbox_email = str(mailbox)
-        if sender_email.lower() != mailbox_email.lower():
+        if len(from_list) != 1 or not all(
+            (entry.get("email") or "").lower() == mailbox_email.lower()
+            for entry in from_list
+        ):
             return Response(
-                {
-                    "detail": (
-                        f"From header '{sender_email}' does not match"
-                        f" mailbox '{mailbox_email}'."
-                    )
-                },
+                {"detail": (f"From header does not match mailbox '{mailbox_email}'.")},
                 status=status.HTTP_403_FORBIDDEN,
             )
 

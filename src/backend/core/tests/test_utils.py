@@ -3,19 +3,18 @@
 from datetime import datetime
 
 from jmap_email import compose_email
-from jmap_email.composer import _normalize_date
 
 from core.mda.utils import SNIPPET_MAX_LENGTH, current_sent_at, thread_snippet
 
 
 class TestCurrentSentAt:
     """``current_sent_at`` is the single ``sentAt`` source for outbound
-    composition — its output must be acceptable to ``compose_email``
-    and round-trip through ``_normalize_date`` cleanly."""
+    composition — its output must round-trip through ``compose_email``
+    and ``datetime.fromisoformat`` cleanly."""
 
     def test_round_trips_through_compose_email(self):
         """The string ``current_sent_at`` returns is accepted by the
-        composer's strict ``_normalize_date`` — pin that contract so
+        composer's strict ``sentAt`` validation — pin that contract so
         a future timezone / format change can't break outbound."""
         raw = compose_email(
             {
@@ -31,10 +30,8 @@ class TestCurrentSentAt:
     def test_returns_parseable_iso_8601_with_offset(self):
         """The string contains a tz offset (``+`` / ``-`` / ``Z``) so
         ``datetime.fromisoformat`` returns a tz-aware datetime."""
-        dt = _normalize_date(current_sent_at())
+        dt = datetime.fromisoformat(current_sent_at())
         assert dt.tzinfo is not None
-        # And a plain ``datetime.fromisoformat`` works the same way.
-        assert datetime.fromisoformat(current_sent_at()).tzinfo is not None
 
 
 class TestThreadSnippet:
