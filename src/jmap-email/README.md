@@ -49,10 +49,10 @@ if email is None:
 
 # Recoverable damage (a salvageable malformed header, an unknown
 # charset that fell back to utf-8/replace, …) surfaces in
-# email["ext"]["defects"] when you opt into the project-extension
+# email["_ext"]["defects"] when you opt into the project-extension
 # namespace:
 email_with_ext = jmap_email.parse_email(raw_bytes, extensions=True)
-defects = (email_with_ext or {}).get("ext", {}).get("defects") or []
+defects = (email_with_ext or {}).get("_ext", {}).get("defects") or []
 email["subject"]        # str | None  (NFC normalised)
 email["from"]           # [{"name": str | None, "email": str}, ...] | None
 email["sentAt"]         # ISO-8601 with offset, e.g. "2026-06-08T14:30:00+02:00"
@@ -93,7 +93,7 @@ following defaults, matching `Email/get` `defaultProperties`:
 | `preview`           | Yes              | ≤256-char plain-text excerpt; HTML-stripped + whitespace-normalised |
 | `bodyValues`        | Yes              | `{partId: EmailBodyValue}` per §4.1.5; text-body parts then carry metadata only |
 | `bodyStructure`     | Opt-in           | `parse_email(raw, body_structure=True)` |
-| `ext`               | Opt-in           | `parse_email(raw, extensions=True)` — project extensions; see below |
+| `_ext`               | Opt-in           | `parse_email(raw, extensions=True)` — project extensions; see below |
 
 Parser-only fields (`preview`, `bodyValues`, `bodyStructure`,
 `hasAttachment`, `ext`) are ignored on composer input — passing them
@@ -101,14 +101,14 @@ through `compose_email` is harmless.
 
 ### Project extensions (`ext`)
 
-`extensions=True` adds a single `ext` sub-dict to the output.
+`extensions=True` adds a single `_ext` sub-dict to the output.
 These fields are NOT in RFC 8621 — they expose information the parser
 already computes so consumers don't have to re-walk the message:
 
-- `ext.defects` — stdlib `MessageDefect` class names collected during
+- `_ext.defects` — stdlib `MessageDefect` class names collected during
   the parse walk; useful for message-store quarantine policies (the
   Mailman pattern).
-- `ext.resent` — Resent-* typed projection (see below). Present only
+- `_ext.resent` — Resent-* typed projection (see below). Present only
   when the wire carries at least one Resent-* header.
 
 ### `EmailBodyPart` extensions
@@ -150,11 +150,11 @@ occurrence still appears in the `headers` list in document order.
 Background: see "Detection of Weak Links in Authentication Chains",
 USENIX Security 2020.
 
-### Resent-* projection (`ext.resent`)
+### Resent-* projection (`_ext.resent`)
 
 RFC 8621 §4.1.3 names only the 11 base header convenience properties;
 Resent-* is not on that list. The library pre-computes it as a §4.1.2
-typed-projection idiom and exposes it under `ext.resent` so forwarded /
+typed-projection idiom and exposes it under `_ext.resent` so forwarded /
 resent mail handling doesn't need to walk `parsed["headers"]`. Sub-
 fields mirror the base properties — `ext.resent["from"]`,
 `["sender"]`, `["replyTo"]`, `["to"]`, `["cc"]`, `["bcc"]`,
@@ -246,7 +246,7 @@ if parsed is None:
 
 Recoverable damage (a salvageable malformed header, an unknown
 charset, etc.) keeps the parse on track — those are surfaced in
-`parsed["ext"]["defects"]` when the caller opts in via
+`parsed["_ext"]["defects"]` when the caller opts in via
 `parse_email(raw, extensions=True)`.
 
 ### Composer error hierarchy

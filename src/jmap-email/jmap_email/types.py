@@ -3,7 +3,7 @@
 These ``TypedDict`` definitions are the public contract for the data
 flowing in and out of :func:`parse_email` and :func:`compose_email`.
 They mirror the JMAP Email Object spec (RFC 8621 §4) one-for-one,
-plus a project-extension namespace (``ext``) the parser exposes when
+plus a project-extension namespace (``_ext``) the parser exposes when
 ``extensions=True``.
 
 Importing these in downstream code makes the parser/composer contract
@@ -142,7 +142,7 @@ class Attachment(TypedDict, total=False):
 # references — and provides §4.1.2 as the generic mechanism to request
 # any other header as a typed projection (``header:Resent-From:asAddresses``
 # etc.). The library pre-computes the Resent-* group and surfaces it under
-# ``parsed["ext"]["resent"]`` so callers handling forwarded/resent mail
+# ``parsed["_ext"]["resent"]`` so callers handling forwarded/resent mail
 # don't have to walk the raw ``headers`` list.
 JmapResentProjection = TypedDict(
     "JmapResentProjection",
@@ -161,7 +161,7 @@ JmapResentProjection = TypedDict(
 
 
 class JmapEmailExt(TypedDict, total=False):
-    """Project-extension namespace surfaced under ``parsed['ext']``
+    """Project-extension namespace surfaced under ``parsed['_ext']``
     when :func:`parse_email` is called with ``extensions=True``.
 
     These fields are NOT part of the JMAP spec — they expose
@@ -216,7 +216,7 @@ JmapEmail = TypedDict(
         "bodyValues": dict[str, EmailBodyValue],
         "bodyStructure": EmailBodyPart | None,
         # Project-extension namespace (``extensions=True``).
-        "ext": JmapEmailExt,
+        "_ext": JmapEmailExt,
     },
     total=False,
 )

@@ -2402,10 +2402,10 @@ class TestParserSecurityRegressions:
             b"oops\r\n"
         )
         parsed = parse_email(raw, extensions=True)
-        assert "defects" in parsed["ext"]
+        assert "defects" in parsed["_ext"]
         # Stdlib records ``StartBoundaryNotFoundDefect`` /
         # ``MultipartInvariantViolationDefect`` for this structure.
-        assert parsed["ext"]["defects"], (
+        assert parsed["_ext"]["defects"], (
             "expected stdlib to flag a defect on boundary mismatch"
         )
 
@@ -3893,7 +3893,7 @@ class TestParserPass4Regressions:
             b"\r\nbody\r\n"
         )
         parsed = parse_email(raw, extensions=True)
-        resent = parsed["ext"]["resent"]
+        resent = parsed["_ext"]["resent"]
         assert resent["from"][0]["email"] == "resender@example.com"
         assert resent["from"][0]["name"] == "Resender"
         assert resent["sender"][0]["email"] == "relay@example.com"
@@ -3906,11 +3906,11 @@ class TestParserPass4Regressions:
 
     def test_m14_resent_absent_means_no_resent_key(self):
         """When the message carries no Resent-* header at all, the
-        ``resent`` sub-dict is omitted from ``ext`` entirely — non-
+        ``resent`` sub-dict is omitted from ``_ext`` entirely — non-
         forwarded mail pays no extra surface area."""
         raw = b"From: a@b.c\r\nTo: d@e.f\r\nSubject: t\r\n\r\nbody\r\n"
         parsed = parse_email(raw, extensions=True)
-        assert "resent" not in parsed["ext"]
+        assert "resent" not in parsed["_ext"]
 
     def test_m14_resent_is_not_at_top_level(self):
         """``resentFrom`` / ``resentSender`` / etc. are NOT RFC 8621
@@ -4005,7 +4005,7 @@ class TestParserPass4Regressions:
     def test_l13_body_structure_walk_records_defect(self):
         """Pathologically malformed message that crashes the body-
         structure walker must surface ``BodyStructureWalkError`` in
-        ``ext.defects`` rather than 500-ing the parser."""
+        ``_ext.defects`` rather than 500-ing the parser."""
         # An empty boundary string (Pine CVE-2002-2325 shape) is the
         # classic broken-multipart input; our walker has a broad
         # exception handler that should record the defect.
@@ -4018,7 +4018,7 @@ class TestParserPass4Regressions:
         # The parse SHOULD complete (no crash); whether the walker
         # records a defect is implementation-dependent on the stdlib
         # tolerance — assert only that the structure is well-formed.
-        assert isinstance(parsed["ext"]["defects"], list)
+        assert isinstance(parsed["_ext"]["defects"], list)
 
     # ----- L14: _is_plausible_addr rejects \\x00 ----------------------------
 

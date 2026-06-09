@@ -976,7 +976,7 @@ def compose_email(
         recipients. Set True only for archive-reconstruction use
         cases (e.g. PST import).
     allow_extensions : bool, default True
-        When False, any ``ext`` key in ``jmap_data`` raises
+        When False, any ``_ext`` key in ``jmap_data`` raises
         ``ComposeError`` — a strict-JMAP signal that the caller is
         not silently relying on project extensions.
 
@@ -994,9 +994,9 @@ def compose_email(
         if not jmap_data:
             raise ComposeError("Empty JMAP data provided")
 
-        if not allow_extensions and "ext" in jmap_data:
+        if not allow_extensions and "_ext" in jmap_data:
             raise ComposeError(
-                "Strict-JMAP input rejects ``ext`` key "
+                "Strict-JMAP input rejects ``_ext`` key "
                 "(pass allow_extensions=True to accept project extensions)"
             )
 

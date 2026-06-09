@@ -1649,7 +1649,7 @@ def parse_email(
     raw_email_bytes : bytes
         The raw RFC 5322 message.
     extensions : bool, default False
-        Emit the ``ext`` sub-dict carrying project extensions outside
+        Emit the ``_ext`` sub-dict carrying project extensions outside
         the RFC 8621 wire shape: ``ext["defects"]`` (stdlib MIME
         defect class names) and ``ext["resent"]`` (Resent-* typed
         projection, present only when the wire actually carries any
@@ -1685,7 +1685,7 @@ def parse_email(
 
         Recoverable damage (a salvageable malformed header, an unknown
         encoding, etc.) does **not** trigger ``None`` — it surfaces in
-        ``result["ext"]["defects"]`` so callers can flag the message
+        ``result["_ext"]["defects"]`` so callers can flag the message
         while still using its parsed fields.
     """
     return _parse_email(
@@ -1922,7 +1922,7 @@ def _parse_email(
             }
             if any(v is not None for v in resent.values()):
                 ext["resent"] = resent
-            result["ext"] = ext
+            result["_ext"] = ext
 
         return cast(JmapEmail, result)
 

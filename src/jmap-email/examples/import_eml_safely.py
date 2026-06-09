@@ -9,7 +9,7 @@ Demonstrates the two failure surfaces a real consumer has to handle:
 
 2. Recoverable damage (a salvageable malformed header, an unknown
    charset that fell back to utf-8/replace, …) leaves the parse on
-   track and surfaces in ``parsed["ext"]["defects"]``. Strict
+   track and surfaces in ``parsed["_ext"]["defects"]``. Strict
    importers can quarantine on a non-empty defect list; lenient ones
    can flag and move on.
 
@@ -37,13 +37,13 @@ def main() -> int:
         return 1
 
     # ``extensions=True`` opts into the project-extension
-    # namespace ``parsed["ext"]`` — defects + Resent-* projection.
+    # namespace ``parsed["_ext"]`` — defects + Resent-* projection.
     parsed = parse_email(raw, extensions=True)
     if parsed is None:
         print(f"{path}: unparseable, skipping", file=sys.stderr)
         return 1
 
-    defects = (parsed.get("ext") or {}).get("defects") or []
+    defects = (parsed.get("_ext") or {}).get("defects") or []
     if defects:
         print(f"defects: {sorted(set(defects))}", file=sys.stderr)
 
