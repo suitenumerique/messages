@@ -32,7 +32,7 @@ const HomePage = () => {
           <Hero
             logo={<img src={`/images/${theme}/app-icon-${variant}.svg`} alt="Messages Logo" width={64} />}
             title={t("Simple and intuitive messaging")}
-            banner="/images/banner.webp"
+            banner={`/images/banner-${variant}.webp`}
             subtitle={t("Send and receive your messages in an instant.")}
             mainButton={<ProConnectButton onClick={login} />}
           />
