@@ -85,7 +85,7 @@ MAX_ADDRESS_LIST_BYTES = DEFAULT_PARSE_LIMITS.max_address_list_bytes
 # C0 controls except TAB, plus DEL, NEL, and the U+2028 / U+2029
 # Unicode line/paragraph separators.
 _NAME_INJECTION_CHARS = (
-    "".join(chr(c) for c in range(0x00, 0x20) if c != 0x09) + "\x7f  "
+    "".join(chr(c) for c in range(0x00, 0x20) if c != 0x09) + "\x7f\x85\u2028\u2029"
 )
 _NAME_INJECTION_TABLE = str.maketrans("", "", _NAME_INJECTION_CHARS)
 

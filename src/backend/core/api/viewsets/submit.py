@@ -113,15 +113,16 @@ class SubmitRawEmailView(APIView):
         # Validate sender matches the mailbox. A multi-address From
         # would let the caller pair their authorised mailbox with an
         # unrelated identity that the receiver may display instead —
-        # the whole list must collapse to exactly the acting mailbox.
+        # the From header must collapse to exactly one entry, the
+        # acting mailbox.
         from_list = parsed.get("from") or []
         mailbox_email = str(mailbox)
-        if len(from_list) != 1 or not all(
-            (entry.get("email") or "").lower() == mailbox_email.lower()
-            for entry in from_list
+        if (
+            len(from_list) != 1
+            or (from_list[0].get("email") or "").lower() != mailbox_email.lower()
         ):
             return Response(
-                {"detail": (f"From header does not match mailbox '{mailbox_email}'.")},
+                {"detail": f"From header does not match mailbox '{mailbox_email}'."},
                 status=status.HTTP_403_FORBIDDEN,
             )
 
