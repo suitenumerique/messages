@@ -42,12 +42,17 @@ import jmap_email
 # Parse raw RFC 5322 bytes → JMAP Email object dict (RFC 8621 §4),
 # or None when the input is fundamentally unparseable (empty, non-bytes,
 # stdlib produced no Message, etc.). parse_email never raises — the
-# failure mode is a single `is None` check at the call site, and
-# recoverable damage surfaces in email["ext"]["defects"] when parsing
-# succeeded but something needed salvaging.
+# failure mode is a single `is None` check at the call site.
 email = jmap_email.parse_email(raw_bytes)
 if email is None:
     ...  # log + skip / 400 / quarantine — caller's choice
+
+# Recoverable damage (a salvageable malformed header, an unknown
+# charset that fell back to utf-8/replace, …) surfaces in
+# email["ext"]["defects"] when you opt into the project-extension
+# namespace:
+email_with_ext = jmap_email.parse_email(raw_bytes, include_extensions=True)
+defects = (email_with_ext or {}).get("ext", {}).get("defects") or []
 email["subject"]        # str | None  (NFC normalised)
 email["from"]           # [{"name": str | None, "email": str}, ...] | None
 email["sentAt"]         # ISO-8601 with offset, e.g. "2026-06-08T14:30:00+02:00"
@@ -80,29 +85,31 @@ following defaults, matching `Email/get` `defaultProperties`:
 | Email metadata (`id`, `blobId`, `threadId`, `mailboxIds`, `keywords`, `size`, `receivedAt`) | No | Server-set; out of parser scope |
 | `subject`           | Yes              | NFC-normalised; `null` when absent     |
 | `from` / `sender` / `to` / `cc` / `bcc` / `replyTo` | Yes | `EmailAddress[]` or `null` |
-| `resentFrom` / `resentSender` / `resentReplyTo` / `resentTo` / `resentCc` / `resentBcc` | Yes | RFC 8621 §4.1.3 typed projections |
-| `messageId` / `inReplyTo` / `references` / `resentMessageId` | Yes | `String[]` (no `<>`) or `null` |
-| `sentAt` / `resentDate` | Yes          | ISO-8601 with offset; `null` when absent |
+| `messageId` / `inReplyTo` / `references` | Yes | `String[]` (no `<>`) or `null` |
+| `sentAt`            | Yes              | ISO-8601 with offset; `null` when absent |
 | `headers`           | Yes              | `[{name, value}]` ordered; `value` is RFC 8621 Raw form (byte-faithful, NOT encoded-word-decoded) |
 | `textBody` / `htmlBody` / `attachments` | Yes | `EmailBodyPart[]` per RFC 8621 §4.1.4 |
 | `hasAttachment`     | Yes              |                                        |
 | `preview`           | Yes              | ≤256-char plain-text excerpt; HTML-stripped + whitespace-normalised |
 | `bodyValues`        | Yes              | `{partId: EmailBodyValue}` per §4.1.5; text-body parts then carry metadata only |
 | `bodyStructure`     | Opt-in           | `parse_email(raw, body_structure=True)` |
+| `ext`               | Opt-in           | `parse_email(raw, include_extensions=True)` — project extensions; see below |
 
 Parser-only fields (`preview`, `bodyValues`, `bodyStructure`,
 `hasAttachment`, `ext`) are ignored on composer input — passing them
 through `compose_email` is harmless.
 
-When `include_extensions=True` (default), the output also carries an
-`ext` sub-dict surfacing parser-internal information that doesn't
-belong to the JMAP wire shape:
+### Project extensions (`ext`)
+
+`include_extensions=True` adds a single `ext` sub-dict to the output.
+These fields are NOT in RFC 8621 — they expose information the parser
+already computes so consumers don't have to re-walk the message:
 
 - `ext.defects` — stdlib `MessageDefect` class names collected during
   the parse walk; useful for message-store quarantine policies (the
   Mailman pattern).
-
-Pass `include_extensions=False` for strict-JMAP-only output.
+- `ext.resent` — Resent-* typed projection (see below). Present only
+  when the wire carries at least one Resent-* header.
 
 ### Duplicate scalar headers
 
@@ -116,13 +123,16 @@ occurrence still appears in the `headers` list in document order.
 Background: see "Detection of Weak Links in Authentication Chains",
 USENIX Security 2020.
 
-### Resent-* projections
+### Resent-* projection (`ext.resent`)
 
-The Resent-* convenience properties surface from the canonical
-`Resent-From` / `Resent-Sender` / `Resent-Reply-To` / `Resent-To` /
-`Resent-Cc` / `Resent-Bcc` / `Resent-Message-ID` / `Resent-Date`
-headers. Consumers don't need to walk `headers` manually to handle
-forwarded or resent mail.
+RFC 8621 §4.1.3 names only the 11 base header convenience properties;
+Resent-* is not on that list. The library pre-computes it as a §4.1.2
+typed-projection idiom and exposes it under `ext.resent` so forwarded /
+resent mail handling doesn't need to walk `parsed["headers"]`. Sub-
+fields mirror the base properties — `ext.resent["from"]`,
+`["sender"]`, `["replyTo"]`, `["to"]`, `["cc"]`, `["bcc"]`,
+`["messageId"]`, `["date"]` — and the sub-dict is omitted entirely
+when no Resent-* header is present on the wire.
 
 ## Resource limits
 
@@ -182,8 +192,8 @@ if parsed is None:
 
 Recoverable damage (a salvageable malformed header, an unknown
 charset, etc.) keeps the parse on track — those are surfaced in
-`parsed["ext"]["defects"]` so consumers can flag the message while
-still using its fields.
+`parsed["ext"]["defects"]` when the caller opts in via
+`parse_email(raw, include_extensions=True)`.
 
 ### Composer error hierarchy
 

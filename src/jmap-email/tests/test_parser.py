@@ -2401,7 +2401,7 @@ class TestParserSecurityRegressions:
             b"\r\n"
             b"oops\r\n"
         )
-        parsed = parse_email(raw)
+        parsed = parse_email(raw, include_extensions=True)
         assert "defects" in parsed["ext"]
         # Stdlib records ``StartBoundaryNotFoundDefect`` /
         # ``MultipartInvariantViolationDefect`` for this structure.
@@ -3871,14 +3871,13 @@ class TestParserPass4Regressions:
         decoded = decode_rfc2047_header("=?utf-8?Q?Caf=C3=A9=C2=A0Paris?=")
         assert decoded == "Café\xa0Paris"
 
-    # ----- M14: Resent-* projections ---------------------------------------
+    # ----- M14: Resent-* projection (project extension) -----------------------
 
-    def test_m14_resent_headers_are_projected(self):
-        """RFC 8621 §4.1.3 lists ``resentFrom`` / ``resentSender`` /
-        ``resentReplyTo`` / ``resentTo`` / ``resentCc`` / ``resentBcc``
-        / ``resentMessageId`` / ``resentDate`` under typed-header
-        projections. All must surface from the canonical Resent-*
-        headers without requiring a manual ``headers`` walk."""
+    def test_m14_resent_headers_surface_under_ext_resent(self):
+        """RFC 8621 §4.1.3 lists only the 11 base convenience properties.
+        The Resent-* group is a §4.1.2 typed-projection idiom that the
+        library pre-computes and surfaces under ``ext["resent"]`` when
+        ``include_extensions=True``."""
         raw = (
             b"From: orig@example.com\r\n"
             b"To: dest@example.com\r\n"
@@ -3893,24 +3892,35 @@ class TestParserPass4Regressions:
             b"Resent-Date: Mon, 1 Jan 2026 00:00:00 +0000\r\n"
             b"\r\nbody\r\n"
         )
-        parsed = parse_email(raw)
-        assert parsed["resentFrom"][0]["email"] == "resender@example.com"
-        assert parsed["resentFrom"][0]["name"] == "Resender"
-        assert parsed["resentSender"][0]["email"] == "relay@example.com"
-        assert parsed["resentTo"][0]["email"] == "rcpt@example.com"
-        assert parsed["resentCc"][0]["email"] == "cc@example.com"
-        assert parsed["resentReplyTo"][0]["email"] == "reply@example.com"
-        assert parsed["resentMessageId"] == ["resent@example.com"]
+        parsed = parse_email(raw, include_extensions=True)
+        resent = parsed["ext"]["resent"]
+        assert resent["from"][0]["email"] == "resender@example.com"
+        assert resent["from"][0]["name"] == "Resender"
+        assert resent["sender"][0]["email"] == "relay@example.com"
+        assert resent["to"][0]["email"] == "rcpt@example.com"
+        assert resent["cc"][0]["email"] == "cc@example.com"
+        assert resent["replyTo"][0]["email"] == "reply@example.com"
+        assert resent["messageId"] == ["resent@example.com"]
         # ISO-8601 with offset; the actual digits don't matter, just the shape.
-        assert parsed["resentDate"].startswith("2026-01-01")
+        assert resent["date"].startswith("2026-01-01")
 
-    def test_m14_resent_projections_default_to_none(self):
-        """When the corresponding Resent-* header is absent, the
-        projection field is ``None`` (NOT missing). The shape is stable
-        — consumers can read ``parsed["resentFrom"]`` without a
-        ``.get()`` defense."""
+    def test_m14_resent_absent_means_no_resent_key(self):
+        """When the message carries no Resent-* header at all, the
+        ``resent`` sub-dict is omitted from ``ext`` entirely — non-
+        forwarded mail pays no extra surface area."""
         raw = b"From: a@b.c\r\nTo: d@e.f\r\nSubject: t\r\n\r\nbody\r\n"
-        parsed = parse_email(raw)
+        parsed = parse_email(raw, include_extensions=True)
+        assert "resent" not in parsed["ext"]
+
+    def test_m14_resent_is_not_at_top_level(self):
+        """``resentFrom`` / ``resentSender`` / etc. are NOT RFC 8621
+        §4.1.3 properties and must not appear at the top level."""
+        raw = (
+            b"From: a@b.c\r\nTo: d@e.f\r\nSubject: t\r\n"
+            b'Resent-From: "R" <r@example.com>\r\n'
+            b"\r\nbody\r\n"
+        )
+        parsed = parse_email(raw, include_extensions=True)
         for k in (
             "resentFrom",
             "resentSender",
@@ -3921,7 +3931,7 @@ class TestParserPass4Regressions:
             "resentMessageId",
             "resentDate",
         ):
-            assert parsed[k] is None, f"{k} should be None when header absent"
+            assert k not in parsed, f"{k} must not appear at top level"
 
     # ----- M22: bodyStructure node count cap --------------------------------
 
@@ -4004,7 +4014,7 @@ class TestParserPass4Regressions:
             b'Content-Type: multipart/mixed; boundary=""\r\n'
             b"\r\nbody\r\n"
         )
-        parsed = parse_email(raw)
+        parsed = parse_email(raw, include_extensions=True)
         # The parse SHOULD complete (no crash); whether the walker
         # records a defect is implementation-dependent on the stdlib
         # tolerance — assert only that the structure is well-formed.

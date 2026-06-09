@@ -1589,7 +1589,7 @@ def _strip_body_part_content(
 def parse_email(
     raw_email_bytes: bytes,
     *,
-    include_extensions: bool = True,
+    include_extensions: bool = False,
     body_values: bool = True,
     body_structure: bool = False,
     preview: bool = True,
@@ -1612,10 +1612,12 @@ def parse_email(
     ----------
     raw_email_bytes : bytes
         The raw RFC 5322 message.
-    include_extensions : bool, default True
-        Emit the ``ext`` sub-dict carrying parser-internal information
-        that doesn't belong to the JMAP wire shape (currently
-        ``defects``). Set ``False`` for strict-JMAP-only output.
+    include_extensions : bool, default False
+        Emit the ``ext`` sub-dict carrying project extensions outside
+        the RFC 8621 wire shape: ``ext["defects"]`` (stdlib MIME
+        defect class names) and ``ext["resent"]`` (Resent-* typed
+        projection, present only when the wire actually carries any
+        Resent-* header). Set ``True`` to read them.
     body_values : bool, default True
         Emit a top-level ``bodyValues`` map keyed by ``partId`` per
         RFC 8621 §4.1.5. Body parts then carry only metadata; the
@@ -1803,28 +1805,16 @@ def _parse_email(
         jmap_to = _addrs("to")
         jmap_cc = _addrs("cc")
         jmap_bcc = _addrs("bcc")
-        # Resent-* projections per RFC 8621 §4.1.3 / RFC 5322 §3.6.6 —
-        # always emit, with ``None`` when the corresponding header is
-        # absent (which is the common case on non-forwarded mail).
-        jmap_resent_from = _addrs("resent-from")
-        jmap_resent_sender = _addrs("resent-sender")
-        jmap_resent_reply_to = _addrs("resent-reply-to")
-        jmap_resent_to = _addrs("resent-to")
-        jmap_resent_cc = _addrs("resent-cc")
-        jmap_resent_bcc = _addrs("resent-bcc")
 
         # MessageIds (Message-ID, In-Reply-To, References) — String[]
         # with CFWS + <> stripped. ``None`` when absent.
         jmap_message_id = _jmap_message_ids(_first_value("message-id"))
         jmap_in_reply_to = _jmap_message_ids(_first_value("in-reply-to"))
         jmap_references = _jmap_message_ids(_first_value("references"))
-        jmap_resent_message_id = _jmap_message_ids(_first_value("resent-message-id"))
 
-        # sentAt / resentDate: ISO-8601 with offset. ``None`` when the
-        # corresponding header is absent — we do NOT synthesize
-        # ``now()`` (anti-conformant).
+        # sentAt: ISO-8601 with offset. ``None`` when ``Date:`` is
+        # absent — we do NOT synthesize ``now()`` (anti-conformant).
         jmap_sent_at = _jmap_iso_date(parse_date(_first_value("date")))
-        jmap_resent_date = _jmap_iso_date(parse_date(_first_value("resent-date")))
 
         # Defects collected from the stdlib parse + our recursive walks.
         defects: list[str] = []
@@ -1855,14 +1845,6 @@ def _parse_email(
             "inReplyTo": jmap_in_reply_to,
             "references": jmap_references,
             "sentAt": jmap_sent_at,
-            "resentFrom": jmap_resent_from,
-            "resentSender": jmap_resent_sender,
-            "resentReplyTo": jmap_resent_reply_to,
-            "resentTo": jmap_resent_to,
-            "resentCc": jmap_resent_cc,
-            "resentBcc": jmap_resent_bcc,
-            "resentMessageId": jmap_resent_message_id,
-            "resentDate": jmap_resent_date,
             "headers": _jmap_headers(wire_headers),
         }
 
@@ -1885,9 +1867,26 @@ def _parse_email(
 
         # ─── Extensions (project-specific) ───
         if include_extensions:
-            result["ext"] = {
-                "defects": defects,
+            ext: dict[str, Any] = {"defects": defects}
+            # Resent-* typed projection. RFC 8621 §4.1.3 names only the
+            # 11 base convenience properties; Resent-* is a §4.1.2
+            # typed-projection idiom we pre-compute and surface here so
+            # forwarded / resent mail handling doesn't have to walk
+            # ``parsed["headers"]``. Only emit the sub-dict if any
+            # Resent-* header is actually present on the wire.
+            resent: dict[str, Any] = {
+                "from": _addrs("resent-from"),
+                "sender": _addrs("resent-sender"),
+                "replyTo": _addrs("resent-reply-to"),
+                "to": _addrs("resent-to"),
+                "cc": _addrs("resent-cc"),
+                "bcc": _addrs("resent-bcc"),
+                "messageId": _jmap_message_ids(_first_value("resent-message-id")),
+                "date": _jmap_iso_date(parse_date(_first_value("resent-date"))),
             }
+            if any(v is not None for v in resent.values()):
+                ext["resent"] = resent
+            result["ext"] = ext
 
         return cast(JmapEmail, result)
 

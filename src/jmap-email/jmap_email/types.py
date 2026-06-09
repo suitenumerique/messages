@@ -135,6 +135,31 @@ class Attachment(TypedDict, total=False):
     cid: NotRequired[str | None]
 
 
+# Resent-* typed projection (project extension, NOT in RFC 8621 §4.1.3).
+#
+# RFC 8621 §4.1.3 names exactly 11 header convenience properties — from,
+# sender, to, cc, bcc, replyTo, subject, sentAt, messageId, inReplyTo,
+# references — and provides §4.1.2 as the generic mechanism to request
+# any other header as a typed projection (``header:Resent-From:asAddresses``
+# etc.). The library pre-computes the Resent-* group and surfaces it under
+# ``parsed["ext"]["resent"]`` so callers handling forwarded/resent mail
+# don't have to walk the raw ``headers`` list.
+JmapResentProjection = TypedDict(
+    "JmapResentProjection",
+    {
+        "from": list[EmailAddress] | None,
+        "sender": list[EmailAddress] | None,
+        "replyTo": list[EmailAddress] | None,
+        "to": list[EmailAddress] | None,
+        "cc": list[EmailAddress] | None,
+        "bcc": list[EmailAddress] | None,
+        "messageId": list[str] | None,
+        "date": str | None,
+    },
+    total=False,
+)
+
+
 class JmapEmailExt(TypedDict, total=False):
     """Project-extension namespace surfaced under ``parsed['ext']``
     when :func:`parse_email` is called with ``include_extensions=True``.
@@ -147,6 +172,8 @@ class JmapEmailExt(TypedDict, total=False):
     # Class names of stdlib email parser defects collected from every
     # subpart (e.g. ``"InvalidBase64PaddingDefect"``).
     defects: Required[list[str]]
+    # Resent-* typed projection — see :class:`JmapResentProjection`.
+    resent: NotRequired[JmapResentProjection]
 
 
 # Top-level JMAP Email object (RFC 8621 §4.1). Declared via the
@@ -156,14 +183,13 @@ class JmapEmailExt(TypedDict, total=False):
 # rather than attribute-access.
 #
 # Per RFC 8621 §4.1.2.2, every address field (from, sender, to, cc,
-# bcc, replyTo, resentFrom, resentTo, resentCc, resentBcc,
-# resentSender, resentReplyTo) is ``EmailAddress[] | None``; ``None``
-# specifically when the header is absent (vs. an empty list when the
-# header is present but lists no valid address).
+# bcc, replyTo) is ``EmailAddress[] | None``; ``None`` specifically
+# when the header is absent (vs. an empty list when the header is
+# present but lists no valid address).
 #
-# ``messageId`` / ``inReplyTo`` / ``references`` / ``resentMessageId``
-# are ``String[] | None`` per RFC 8621 §4.1.2.1; ``sentAt`` /
-# ``resentDate`` are ISO-8601 UTCDate strings or ``None``.
+# ``messageId`` / ``inReplyTo`` / ``references`` are ``String[] | None``
+# per RFC 8621 §4.1.2.1; ``sentAt`` is an ISO-8601 UTCDate string or
+# ``None``.
 JmapEmail = TypedDict(
     "JmapEmail",
     {
@@ -179,18 +205,6 @@ JmapEmail = TypedDict(
         "inReplyTo": list[str] | None,
         "references": list[str] | None,
         "sentAt": str | None,
-        # Resent-* projections (RFC 8621 §4.1.3 explicitly lists these
-        # under the typed-header-projection mechanism). Always emitted
-        # by ``parse_email`` so consumers don't have to walk the raw
-        # ``headers`` list to handle forwarded / resent mail.
-        "resentFrom": list[EmailAddress] | None,
-        "resentSender": list[EmailAddress] | None,
-        "resentReplyTo": list[EmailAddress] | None,
-        "resentTo": list[EmailAddress] | None,
-        "resentCc": list[EmailAddress] | None,
-        "resentBcc": list[EmailAddress] | None,
-        "resentMessageId": list[str] | None,
-        "resentDate": str | None,
         # ─── Raw header projection (RFC 8621 §4.1.1) ───
         "headers": list[EmailHeader],
         # ─── Body parts (RFC 8621 §4.1.4) ───
@@ -216,4 +230,5 @@ __all__ = [
     "EmailHeader",
     "JmapEmail",
     "JmapEmailExt",
+    "JmapResentProjection",
 ]
