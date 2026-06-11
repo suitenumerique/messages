@@ -1648,15 +1648,12 @@ class MailboxAdminSerializer(serializers.ModelSerializer):
 
         domain = self.context.get("domain")
         metadata = self.context.get("metadata", {})
-        if metadata.get("type") == "personal" and not domain.identity_sync:
-            raise serializers.ValidationError(
-                {
-                    "identity_sync": (
-                        "Personal mailboxes cannot be created when "
-                        "identity synchronization is disabled."
-                    )
-                }
-            )
+
+        # Personal mailboxes can be created even when identity synchronization is
+        # disabled: this lets admins pre-create mailboxes for users who connect
+        # through a third-party (non-synced) identity provider. No password is
+        # provisioned in that case (see Mailbox.can_reset_password), but the
+        # mailbox can receive emails straight away.
 
         if metadata.get("type") == "personal":
             local_part = attrs.get("local_part", "")

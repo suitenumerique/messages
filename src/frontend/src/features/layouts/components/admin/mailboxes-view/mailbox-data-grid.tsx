@@ -185,7 +185,7 @@ export const AdminMailboxDataGrid = ({ domain, pagination, searchQuery }: AdminU
                     ? new Date(row.last_accessed_at).toLocaleDateString(i18n.resolvedLanguage)
                     : <EmptyCell />,
         },
-        ...(isMandatoryTotpEnabled ? [{
+        ...(isMandatoryTotpEnabled && domain.identity_sync ? [{
             id: "mandatory_totp",
             headerName: t("Mandatory 2FA"),
             size: 160,

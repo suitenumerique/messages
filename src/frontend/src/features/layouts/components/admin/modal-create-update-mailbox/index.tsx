@@ -20,7 +20,7 @@ import { useConfig } from "@/features/providers/config";
 import { JSONSchema } from "zod/v4/core";
 import MailboxHelper from "@/features/utils/mailbox-helper";
 import { addToast, ToasterItem } from "@/features/ui/components/toaster";
-import { Icon } from "@gouvfr-lasuite/ui-kit";
+import { Icon, IconType } from "@gouvfr-lasuite/ui-kit";
 import i18n from "@/features/i18n/initI18n";
 
 export const MODAL_CREATE_ADDRESS_ID = "modal-create-address";
@@ -59,7 +59,6 @@ export const ModalCreateOrUpdateMailbox = ({ isOpen, mailbox, onClose, onSuccess
       if (mailbox.alias_of) return "redirect";
       return "shared";
     }
-    if (isIdentitySyncDisabled) return "shared";
     return "personal";
   });
   const [isSubmitting, setIsSubmitting] = useState(false);
@@ -258,9 +257,7 @@ export const ModalCreateOrUpdateMailbox = ({ isOpen, mailbox, onClose, onSuccess
       setCreatedMailbox(response.data);
       onSuccess?.();
     } catch (error: unknown) {
-      if (error instanceof APIError && error.data?.identity_sync) {
-        setError(t('Personal mailboxes cannot be created when identity synchronization is disabled.'));
-      } else if (error instanceof APIError && error.data?.local_part_denied) {
+      if (error instanceof APIError && error.data?.local_part_denied) {
         setError(t('This email prefix is not allowed for personal mailboxes. Please choose a different prefix.'));
       } else if (error instanceof APIError && error.data?.local_part) {
         setError(t('An address with this prefix already exists in this domain.'));
@@ -318,7 +315,7 @@ export const ModalCreateOrUpdateMailbox = ({ isOpen, mailbox, onClose, onSuccess
   };
 
   const handleClose = () => {
-    const defaultTab = isIdentitySyncDisabled ? "shared" : "personal";
+    const defaultTab = "personal";
     setActiveTab(defaultTab);
     reset(getDefaultValues(defaultTab));
     setError(null);
@@ -355,8 +352,7 @@ export const ModalCreateOrUpdateMailbox = ({ isOpen, mailbox, onClose, onSuccess
               type="button"
               className={clsx('modal-tab', { 'modal-tab--active': activeTab === "personal" })}
               onClick={() => handleTabChange("personal")}
-              disabled={isUpdating || isIdentitySyncDisabled}
-              title={isIdentitySyncDisabled ? t('Personal mailboxes cannot be created when identity synchronization is disabled.') : undefined}
+              disabled={isUpdating}
             >
               {isUpdating ? t('Personal mailbox') : t('Create a new personal mailbox')}
             </button>
@@ -383,6 +379,11 @@ export const ModalCreateOrUpdateMailbox = ({ isOpen, mailbox, onClose, onSuccess
               {/* Personal Mailbox Form */}
               {activeTab === "personal" && (
                 <>
+                  {!isUpdating && isIdentitySyncDisabled && (
+                    <Banner type="info" icon={<Icon name="info" type={IconType.OUTLINED} />}>
+                      {t('Identity synchronization is disabled for this domain, so no password will be created here. The user will sign in through a third-party identity provider, and the mailbox can receive emails straight away.')}
+                    </Banner>
+                  )}
                   <div className="form-field-row name-row">
                     {isUpdating ? (
                       <RhfInput
