@@ -34,6 +34,14 @@
     border-color: var(--c--contextuals--border--semantic--neutral--tertiary);
 }
 
+// Keyboard focus ring, drawn inward so the scroll container does not clip
+// it. Outline does not conflict with the state backgrounds, so it stays
+// visible on selected and active rows too.
+.thread-item:focus-visible {
+    outline: 2px solid var(--c--contextuals--border--focus);
+    outline-offset: -2px;
+}
+
 .thread-item.thread-item--active {
     background-color: var(--c--contextuals--background--semantic--brand--tertiary);
     border-color: var(--c--contextuals--border--semantic--brand--tertiary);
@@ -76,6 +84,16 @@
 .thread-item__thread-details {
     min-width: 0;
     flex: 1;
+}
+
+// This wrapper carries aria-hidden="true", so it must stay a real box in the
+// layout. `display: contents` is handled inconsistently across browser/AT
+// combinations and can drop the aria-hidden boundary, leaking the checkbox
+// semantics into the parent role="option". inline-flex shrink-wraps the
+// checkbox so the visual layout stays identical.
+.thread-item__checkbox-wrapper {
+    display: inline-flex;
+    flex-shrink: 0;
 }
 
 .thread-item__checkbox {

@@ -97,7 +97,7 @@ test.describe("Inline Image in Composer", () => {
 
     // Verify the message appears in sentbox
     await page.getByRole("link", { name: "Sent" }).click();
-    const sentItem = page.getByRole("link", { name: "Message with inline image" }).first();
+    const sentItem = page.getByRole("option", { name: "Message with inline image" }).first();
     await expect(sentItem).toBeVisible();
 
     // Open the message and check content
@@ -117,7 +117,7 @@ test.describe("Inline Image in Composer", () => {
     await page.getByRole("link", { name: "Inbox" }).click();
 
     // Open the message and check content
-    const receivedItem = await page.getByRole("link", { name: "Message with inline image" }).first();
+    const receivedItem = await page.getByRole("option", { name: "Message with inline image" }).first();
     await expect(receivedItem).toBeVisible();
     await receivedItem.click();
     await page.getByRole("heading", { name: "Message with inline image", level: 2 }).waitFor({ state: "visible" });

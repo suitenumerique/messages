@@ -59,7 +59,7 @@ test.describe("Attachment preview", () => {
     await page.getByText("Message sent successfully").waitFor({ state: "visible" });
 
     await page.getByRole("link", { name: "Sent" }).click();
-    await page.getByRole("link", { name: subject }).first().click();
+    await page.getByRole("option", { name: subject }).first().click();
     await page.getByRole("heading", { name: subject, level: 2 }).waitFor({ state: "visible" });
   }
 

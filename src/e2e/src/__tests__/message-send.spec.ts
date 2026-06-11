@@ -53,7 +53,7 @@ test.describe("Send Message", () => {
 
     // Go to the sentbox and check if the message is there
     await page.getByRole("link", { name: "Sent" }).click();
-    const threadItem = page.getByRole("link", { name: "Hello everyone!" }).first();
+    const threadItem = page.getByRole("option", { name: "Hello everyone!" }).first();
     await expect(threadItem).toBeVisible();
     expect(await threadItem.textContent()).toMatch(new RegExp(`User E2E ${browserName}`, "i"));
 
@@ -64,7 +64,7 @@ test.describe("Send Message", () => {
 
     await page.getByRole("link", { name: "Inbox" }).click();
 
-    const messageItem = page.getByRole("link", { name: "Hello everyone!" }).first();
+    const messageItem = page.getByRole("option", { name: "Hello everyone!" }).first();
     await expect(messageItem).toBeVisible();
     expect(await messageItem.textContent()).toMatch(new RegExp(`User E2E ${browserName}`, "i"));
 

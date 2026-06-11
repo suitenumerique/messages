@@ -42,7 +42,7 @@ async function navigateToSharedThread(page: Page, browserName: BrowserName) {
   await inboxFolderLink(page).click();
   await page.waitForLoadState("networkidle");
   await page
-    .getByRole("link", { name: "Shared inbox thread for IM" })
+    .getByRole("option", { name: "Shared inbox thread for IM" })
     .first()
     .click();
   await page
@@ -93,7 +93,7 @@ test.describe("Thread Events (Internal Messages)", () => {
     await page.waitForLoadState("networkidle");
 
     await page
-      .getByRole("link", { name: "Inbox thread alpha" })
+      .getByRole("option", { name: "Inbox thread alpha" })
       .first()
       .click();
     await page
@@ -489,7 +489,7 @@ test.describe("Thread Events (Internal Messages)", () => {
     // "Unread mention" badge. The thread list is re-fetched on navigation,
     // which makes it the most reliable indicator that the mention landed.
     const threadLink = page
-      .getByRole("link", { name: "Shared inbox thread for IM" })
+      .getByRole("option", { name: "Shared inbox thread for IM" })
       .first();
     await expect(
       threadLink.getByLabel("Unread mention").first(),
@@ -591,7 +591,7 @@ test.describe("Thread Events (Assignations)", () => {
     await inboxFolderLink(page).click();
     await page.waitForLoadState("networkidle");
     await page
-      .getByRole("link", { name: "Inbox thread alpha" })
+      .getByRole("option", { name: "Inbox thread alpha" })
       .first()
       .click();
     await page
@@ -778,7 +778,7 @@ test.describe("Thread Events (Assignations)", () => {
     await page.waitForLoadState("networkidle");
 
     await expect(
-      page.getByRole("link", { name: "Shared inbox thread for IM" }).first(),
+      page.getByRole("option", { name: "Shared inbox thread for IM" }).first(),
     ).toBeVisible();
 
     // Cleanup: drop the assignment so the test is rerun-safe even when

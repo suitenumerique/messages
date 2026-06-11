@@ -2,6 +2,7 @@ import { createContext, PropsWithChildren, useCallback, useContext, useEffect, u
 import { useUrlSearchParams } from "@/hooks/use-url-search-params";
 import { useMailboxContext } from "./mailbox";
 import { Thread } from "@/features/api/gen/models/thread";
+import { computeRange, computeToggle, pruneSelection, resolveAnchorIndex } from "./thread-selection-core";
 
 export enum SelectionReadStatus {
     NONE = 'none',
@@ -19,12 +20,8 @@ export enum SelectionStarredStatus {
 interface ThreadSelectionState {
     selectedThreadIds: Set<string>;
     isSelectionMode: boolean;
-    toggleThreadSelection: (
-        threadId: string,
-        shiftKey?: boolean,
-        ctrlKey?: boolean,
-        arrowUpKey?: 'up' | 'down'
-    ) => void;
+    toggleThread: (threadId: string) => void;
+    selectRange: (threadId: string, fallbackAnchorId?: string) => void;
     selectAllThreads: () => void;
     clearSelection: () => void;
     enableSelectionMode: () => void;
@@ -40,118 +37,42 @@ const useThreadSelectionState = (threads: Thread[] | undefined, selectedThread: 
     const searchParams = useUrlSearchParams();
     const [selectedThreadIds, setSelectedThreadIds] = useState<Set<string>>(new Set());
     const [isSelectionMode, setIsSelectionMode] = useState(false);
-    const lastActiveThreadIdRef = useRef<string | null>(null);
     const anchorThreadIdRef = useRef<string | null>(null);
-    const focusThreadIdRef = useRef<string | null>(null);
 
-    const toggleThreadSelection = useCallback((
-        threadId: string,
-        shiftKey: boolean = false,
-        ctrlKey: boolean = false,
-        arrowUpKey?: 'up' | 'down'
-    ) => {
+    /**
+     * Additively toggle a thread in/out of the selection. The toggled
+     * thread becomes the anchor for subsequent range selections.
+     * Selection mode stays on even when the selection empties, so the
+     * bulk-action header does not flicker mid-interaction.
+     */
+    const toggleThread = useCallback((threadId: string) => {
+        setSelectedThreadIds((prev) => computeToggle(prev, threadId));
+        anchorThreadIdRef.current = threadId;
+        setIsSelectionMode(true);
+    }, []);
+
+    /**
+     * Select the range between the current anchor and the given thread.
+     * Successive range selections pivot from the same anchor.
+     * @param fallbackAnchorId seeds the anchor when none is set (e.g. the
+     * previously focused thread during Shift+Arrow keyboard expansion)
+     */
+    const selectRange = useCallback((threadId: string, fallbackAnchorId?: string) => {
         if (!threads) return;
+        const targetIndex = threads.findIndex((thread) => thread.id === threadId);
+        if (targetIndex === -1) return;
 
-        setSelectedThreadIds((prev) => {
-            let newSet: Set<string>;
-
-            if (shiftKey && arrowUpKey) {
-                // Shift+Arrow key: macOS Finder-like behavior
-                if (anchorThreadIdRef.current === null || focusThreadIdRef.current === null) {
-                    if (prev.size > 0) {
-                        const firstSelectedId = Array.from(prev)[0];
-                        anchorThreadIdRef.current = firstSelectedId;
-                        focusThreadIdRef.current = firstSelectedId;
-                    } else {
-                        anchorThreadIdRef.current = threadId;
-                        focusThreadIdRef.current = threadId;
-                    }
-                }
-
-                const currentFocusIndex = threads.findIndex((t) => t.id === focusThreadIdRef.current);
-                if (currentFocusIndex === -1) {
-                    // Focused thread was removed from list, reset to current thread
-                    focusThreadIdRef.current = threadId;
-                    anchorThreadIdRef.current = threadId;
-                    newSet = new Set([threadId]);
-                } else {
-                    let newFocusIndex = currentFocusIndex;
-                    if (arrowUpKey === 'up' && newFocusIndex > 0) {
-                        newFocusIndex = newFocusIndex - 1;
-                    } else if (arrowUpKey === 'down' && newFocusIndex < threads.length - 1) {
-                        newFocusIndex = newFocusIndex + 1;
-                    }
-
-                    const newFocusThreadId = threads[newFocusIndex].id;
-                    focusThreadIdRef.current = newFocusThreadId;
-
-                    const anchorIndex = threads.findIndex((t) => t.id === anchorThreadIdRef.current);
-                    const effectiveAnchorIndex = anchorIndex !== -1 ? anchorIndex : newFocusIndex;
-                    const start = Math.min(effectiveAnchorIndex, newFocusIndex);
-                    const end = Math.max(effectiveAnchorIndex, newFocusIndex);
-                    const range = threads.slice(start, end + 1);
-                    newSet = new Set(range.map((thread) => thread.id));
-
-                    setTimeout(() => {
-                        const threadItem = document.querySelector<HTMLElement>(`[data-thread-id="${newFocusThreadId}"]`);
-                        threadItem?.focus();
-                    }, 0);
-                }
-            }
-            else if (shiftKey) {
-                // Shift+Click: range selection
-                const index = threads.findIndex((t) => t.id === threadId);
-                let anchorIndex: number;
-
-                if (lastActiveThreadIdRef.current !== null) {
-                    const foundIndex = threads.findIndex((t) => t.id === lastActiveThreadIdRef.current);
-                    anchorIndex = foundIndex !== -1 ? foundIndex : index;
-                } else if (selectedThread) {
-                    const activeThreadIndex = threads.findIndex((t) => t.id === selectedThread.id);
-                    anchorIndex = activeThreadIndex !== -1 ? activeThreadIndex : index;
-                    lastActiveThreadIdRef.current = selectedThread.id;
-                } else {
-                    anchorIndex = index;
-                    lastActiveThreadIdRef.current = threadId;
-                }
-
-                anchorThreadIdRef.current = threads[anchorIndex]?.id ?? null;
-                focusThreadIdRef.current = threadId;
-
-                const start = Math.min(anchorIndex, index);
-                const end = Math.max(anchorIndex, index);
-                const range = threads.slice(start, end + 1);
-                newSet = new Set(range.map((thread) => thread.id));
-            } else if (ctrlKey) {
-                // Ctrl/Cmd+Click: toggle individual without affecting others
-                newSet = new Set(prev);
-                if (newSet.has(threadId)) {
-                    newSet.delete(threadId);
-                } else {
-                    newSet.add(threadId);
-                }
-                lastActiveThreadIdRef.current = threadId;
-                focusThreadIdRef.current = threadId;
-            } else {
-                // Normal click: if already selected, unselect it; otherwise, clear others and select only this one
-                if (prev.has(threadId)) {
-                    newSet = new Set(prev);
-                    newSet.delete(threadId);
-                } else {
-                    newSet = new Set([threadId]);
-                }
-                lastActiveThreadIdRef.current = threadId;
-                anchorThreadIdRef.current = threadId;
-                focusThreadIdRef.current = threadId;
-            }
-
-            if (newSet.size > 0) {
-                setIsSelectionMode(true);
-            }
-
-            return newSet;
-        });
-    }, [threads, selectedThread]);
+        const anchorIndex = resolveAnchorIndex(
+            threads,
+            targetIndex,
+            selectedThreadIds.size > 0 ? anchorThreadIdRef.current : null,
+            fallbackAnchorId,
+            selectedThread?.id,
+        );
+        anchorThreadIdRef.current = threads[anchorIndex].id;
+        setSelectedThreadIds(computeRange(threads, anchorIndex, targetIndex));
+        setIsSelectionMode(true);
+    }, [threads, selectedThread, selectedThreadIds.size]);
 
     const selectAllThreads = useCallback(() => {
         if (!threads) return;
@@ -162,9 +83,7 @@ const useThreadSelectionState = (threads: Thread[] | undefined, selectedThread: 
 
     const clearSelection = useCallback(() => {
         setSelectedThreadIds(new Set());
-        lastActiveThreadIdRef.current = null;
         anchorThreadIdRef.current = null;
-        focusThreadIdRef.current = null;
         setIsSelectionMode(false);
     }, []);
 
@@ -202,11 +121,8 @@ const useThreadSelectionState = (threads: Thread[] | undefined, selectedThread: 
     useEffect(() => {
         if (!threads) return;
         setSelectedThreadIds((prev) => {
-            if (prev.size === 0) return prev;
-            const threadIds = new Set(threads.map((t) => t.id));
-            const pruned = new Set([...prev].filter((id) => threadIds.has(id)));
-            if (pruned.size === prev.size) return prev;
-            if (pruned.size === 0) {
+            const pruned = pruneSelection(prev, threads);
+            if (pruned !== prev && pruned.size === 0) {
                 setIsSelectionMode(false);
             }
             return pruned;
@@ -216,9 +132,7 @@ const useThreadSelectionState = (threads: Thread[] | undefined, selectedThread: 
     // Clear selection when search params change
     useEffect(() => {
         setSelectedThreadIds(new Set());
-        lastActiveThreadIdRef.current = null;
         anchorThreadIdRef.current = null;
-        focusThreadIdRef.current = null;
         setIsSelectionMode(false);
     }, [searchParams]);
 
@@ -257,12 +171,13 @@ const useThreadSelectionState = (threads: Thread[] | undefined, selectedThread: 
         return () => {
             document.removeEventListener('keydown', handleKeyDown, true);
         };
-    }, [selectedThreadIds.size, isSelectionMode, clearSelection, selectAllThreads]);
+    }, [isSelectionMode, clearSelection, selectAllThreads]);
 
     return {
         selectedThreadIds,
         isSelectionMode,
-        toggleThreadSelection,
+        toggleThread,
+        selectRange,
         selectAllThreads,
         clearSelection,
         enableSelectionMode,

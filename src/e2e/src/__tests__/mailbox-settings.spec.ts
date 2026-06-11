@@ -81,8 +81,11 @@ test.describe("Mailbox settings modal", () => {
 
     // The switcher renders a single-select dropdown, so its entries expose a
     // `menuitemradio`/`option` role depending on the design-system version; match
-    // both so the assertion does not hinge on that internal detail.
-    const options = page.locator('[role^="menuitem"], [role="option"]');
+    // both so the assertion does not hinge on that internal detail. Scope to the
+    // dropdown popover: it is portalled outside the modal, and the thread list is
+    // itself a listbox whose `option` entries would otherwise be matched too.
+    const switcherPopover = page.getByRole("menu");
+    const options = switcherPopover.locator('[role^="menuitem"], [role="option"]');
     await expect(options).toHaveCount(2);
     await expect(
       options.filter({ hasText: `user.e2e.${browserName}@example.local` }),

@@ -10,6 +10,7 @@ import ThreadPanelHeader from "./components/thread-panel-header";
 import { useThreadSelection } from "@/features/providers/thread-selection";
 import { useScrollRestore } from "@/features/providers/scroll-restore";
 import { useThreadPanelFilters } from "./hooks/use-thread-panel-filters";
+import { useThreadListbox } from "./hooks/use-thread-listbox";
 
 export const ThreadPanel = () => {
     const { threads, queryStates, unselectThread, loadNextThreads, selectedThread, selectedMailbox } = useMailboxContext();
@@ -26,7 +27,8 @@ export const ThreadPanel = () => {
     const {
         selectedThreadIds,
         isSelectionMode,
-        toggleThreadSelection,
+        toggleThread,
+        selectRange,
         selectAllThreads,
         clearSelection,
         enableSelectionMode,
@@ -35,6 +37,8 @@ export const ThreadPanel = () => {
         selectionReadStatus,
         selectionStarredStatus,
     } = useThreadSelection();
+
+    const { getItemProps, onKeyDown: handleListboxKeyDown, onBlur: handleListboxBlur } = useThreadListbox(threads?.results);
 
     const handleObserver = useCallback((entries: IntersectionObserverEntry[]) => {
         const target = entries[0];
@@ -114,15 +118,26 @@ export const ThreadPanel = () => {
                     </div>
                 </div>
             ) : (
-                <div className="thread-panel__threads_list" ref={scrollContainerRef} onScroll={handleScroll}>
+                <div
+                    className="thread-panel__threads_list"
+                    ref={scrollContainerRef}
+                    onScroll={handleScroll}
+                    role="listbox"
+                    aria-multiselectable="true"
+                    aria-label={t('Thread list')}
+                    onKeyDown={handleListboxKeyDown}
+                    onBlur={handleListboxBlur}
+                >
                     {threads?.results.map((thread) => (
                         <ThreadItem
                             key={thread.id}
                             thread={thread}
                             isSelected={selectedThreadIds.has(thread.id)}
-                            onToggleSelection={toggleThreadSelection}
+                            onToggle={toggleThread}
+                            onSelectRange={selectRange}
                             selectedThreadIds={selectedThreadIds}
                             isSelectionMode={isSelectionMode}
+                            {...getItemProps(thread.id)}
                         />
                     ))}
                     {threads!.next && (
