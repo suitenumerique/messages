@@ -1924,7 +1924,9 @@ class Message(BaseModel):
     sent_at = models.DateTimeField("sent at", null=True, blank=True)
     archived_at = models.DateTimeField("archived at", null=True, blank=True)
 
-    mime_id = models.CharField("mime id", max_length=998, null=True, blank=True)
+    mime_id = models.CharField(
+        "mime id", max_length=998, null=True, blank=True, db_index=True
+    )
 
     channel = models.ForeignKey(
         "Channel",

@@ -702,10 +702,25 @@ class ThreadViewSet(
             page = int(self.paginator.get_page_number(request, self))
             page_size = int(self.paginator.get_page_size(request))
 
+            # Scope the search to the user's mailboxes. With an explicit
+            # mailbox_id we already verified access above; without one, fall
+            # back to every mailbox the user can access — never the whole
+            # cluster. An unscoped query leaks hit-totals and content-existence
+            # across mailboxes even though the bodies are access-filtered below.
+            if mailbox_id:
+                search_mailbox_ids = [mailbox_id]
+            else:
+                search_mailbox_ids = [
+                    str(mid)
+                    for mid in models.MailboxAccess.objects.filter(
+                        user=request.user
+                    ).values_list("mailbox_id", flat=True)
+                ]
+
             # Get search results from OpenSearch
             results = search_threads(
                 query=search_query,
-                mailbox_ids=[mailbox_id] if mailbox_id else None,
+                mailbox_ids=search_mailbox_ids,
                 filters=es_filters,
                 from_offset=(page - 1) * page_size,
                 size=page_size,

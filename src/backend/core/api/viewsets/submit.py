@@ -10,6 +10,7 @@ creation) and dispatches SMTP delivery asynchronously via Celery.
 import logging
 
 from django.core.exceptions import ValidationError as DjangoValidationError
+from django.db import transaction
 
 from drf_spectacular.utils import extend_schema
 from jmap_email import parse_email
@@ -126,50 +127,53 @@ class SubmitRawEmailView(APIView):
                 status=status.HTTP_403_FORBIDDEN,
             )
 
-        # Create thread, contacts, message, and recipients from the parsed email.
-        # is_outbound=True skips blob creation (handled by prepare_outbound_message
-        # with DKIM) and AI features.
-        message = _create_message_from_inbound(
-            recipient_email=mailbox_email,
-            parsed_email=parsed,
-            raw_data=raw_mime,
-            mailbox=mailbox,
-            is_outbound=True,
-        )
-        if not message:
-            return Response(
-                {"detail": "Failed to create message."},
-                status=status.HTTP_500_INTERNAL_SERVER_ERROR,
+        # Create the message, sign it, and arm the SMTP dispatch atomically.
+        # The whole thing rolls back on any failure (no orphan draft), and the
+        # Celery task is dispatched via ``transaction.on_commit`` so the broker
+        # never receives a delivery task for a message that is still uncommitted
+        # or whose transaction later rolls back.
+        with transaction.atomic():
+            # Create thread, contacts, message, and recipients from the parsed
+            # email. is_outbound=True skips blob creation (handled by
+            # prepare_outbound_message with DKIM) and AI features.
+            message = _create_message_from_inbound(
+                recipient_email=mailbox_email,
+                parsed_email=parsed,
+                raw_data=raw_mime,
+                mailbox=mailbox,
+                is_outbound=True,
             )
+            if not message:
+                return Response(
+                    {"detail": "Failed to create message."},
+                    status=status.HTTP_500_INTERNAL_SERVER_ERROR,
+                )
 
-        # Add envelope-only recipients as BCC.  _create_message_from_inbound
-        # creates MessageRecipient rows from the MIME To/Cc/Bcc headers, but
-        # true BCC recipients appear only in the envelope (X-Rcpt-To), never
-        # in the MIME headers — that's how BCC works in SMTP.
-        mime_recipients = {
-            e.lower()
-            for e in message.recipients.values_list("contact__email", flat=True)
-        }
-        for addr in recipient_emails:
-            if addr.lower() not in mime_recipients:
-                try:
-                    contact, _ = models.Contact.objects.get_or_create(
-                        email=addr,
-                        mailbox=mailbox,
-                        defaults={"name": addr.split("@")[0]},
-                    )
-                    models.MessageRecipient.objects.get_or_create(
-                        message=message,
-                        contact=contact,
-                        type=models.MessageRecipientTypeChoices.BCC,
-                    )
-                except Exception:  # pylint: disable=broad-exception-caught
-                    logger.warning("Failed to add BCC recipient (masked)")
+            # Add envelope-only recipients as BCC.  _create_message_from_inbound
+            # creates MessageRecipient rows from the MIME To/Cc/Bcc headers, but
+            # true BCC recipients appear only in the envelope (X-Rcpt-To), never
+            # in the MIME headers — that's how BCC works in SMTP.
+            mime_recipients = {
+                e.lower()
+                for e in message.recipients.values_list("contact__email", flat=True)
+            }
+            for addr in recipient_emails:
+                if addr.lower() not in mime_recipients:
+                    try:
+                        contact, _ = models.Contact.objects.get_or_create(
+                            email=addr,
+                            mailbox=mailbox,
+                            defaults={"name": addr.split("@")[0]},
+                        )
+                        models.MessageRecipient.objects.get_or_create(
+                            message=message,
+                            contact=contact,
+                            type=models.MessageRecipientTypeChoices.BCC,
+                        )
+                    except Exception:  # pylint: disable=broad-exception-caught
+                        logger.warning("Failed to add BCC recipient (masked)")
 
-        # Synchronous: validate recipients, throttle, DKIM sign, create blob.
-        # This is a one-shot API — clean up on any failure so no orphan
-        # draft remains.
-        try:
+            # Synchronous: validate recipients, throttle, DKIM sign, create blob.
             prepared = prepare_outbound_message(
                 mailbox,
                 message,
@@ -177,19 +181,20 @@ class SubmitRawEmailView(APIView):
                 "",
                 raw_mime=raw_mime,
             )
-        except Exception:
-            message.delete()
-            raise
+            if not prepared:
+                # Roll back so no orphan draft survives the failed prepare —
+                # returning from inside the atomic block would otherwise commit
+                # the partially-built message.
+                transaction.set_rollback(True)
+                return Response(
+                    {"detail": "Failed to prepare message for sending."},
+                    status=status.HTTP_500_INTERNAL_SERVER_ERROR,
+                )
 
-        if not prepared:
-            message.delete()
-            return Response(
-                {"detail": "Failed to prepare message for sending."},
-                status=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            # Dispatch async SMTP delivery once the message is durably committed.
+            transaction.on_commit(
+                lambda: send_message_task.delay(str(message.id))
             )
-
-        # Dispatch async SMTP delivery
-        send_message_task.delay(str(message.id))
 
         return Response(
             {"message_id": str(message.id), "status": "accepted"},

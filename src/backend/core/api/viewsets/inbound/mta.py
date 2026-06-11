@@ -24,9 +24,25 @@ logger = logging.getLogger(__name__)
 
 
 class MTAJWTAuthentication(BaseAuthentication):
-    """
-    Custom authentication for MTA endpoints using JWT tokens with email hash validation.
-    Returns None or (user, auth)
+    """Authenticate the MTA-to-MDA channel via an HS256 JWT.
+
+    Trust model: the whole channel rests on the shared ``MDA_API_SECRET``.
+    Only the MTA-in service knows it, so a valid HMAC signature *is* the proof
+    of identity — there is no per-request identity beyond "signed by the
+    secret". Consequently we do NOT attempt replay protection (a ``jti`` nonce
+    store, etc.): anyone able to forge the signature already holds the secret
+    and could mint fresh tokens at will, and anyone who cannot is stopped by
+    the signature check. Keeping the secret out of source (it has no default —
+    see ``settings.MDA_API_SECRET``) and the transport on TLS is what actually
+    secures this path.
+
+    On top of the signature we keep two cheap, narrow guards:
+    - ``exp``: bounds a leaked token's useful lifetime to ~60s.
+    - ``body_hash``: binds the token to its exact request body, so a captured
+      token can't be repurposed for a *different* body within that window.
+      Enforced even for an empty body (the bodyless ``/check`` path).
+
+    Returns None or (user, auth).
     """
 
     def authenticate(self, request):
@@ -41,20 +57,20 @@ class MTAJWTAuthentication(BaseAuthentication):
                 settings.MDA_API_SECRET,
                 algorithms=["HS256"],
                 options={
-                    "require": ["exp"],
+                    # exp bounds the lifetime; body_hash binds the token to its
+                    # payload. Both are mandatory.
+                    "require": ["exp", "body_hash"],
                     "verify_exp": True,
                     "verify_signature": True,
                 },
             )
 
-            if not payload.get("exp"):
-                raise jwt.InvalidTokenError("Missing expiration time")
-
-            # Validate email hash if there's a body
-            if request.body:
-                body_hash = hashlib.sha256(request.body).hexdigest()
-                if not secrets.compare_digest(body_hash, payload["body_hash"]):
-                    raise jwt.InvalidTokenError("Invalid email hash")
+            # Bind the token to its payload. Always enforced — including for
+            # an empty body (sha256 of b"") — so the bodyless /check endpoint
+            # can't be driven with a token minted for a different request.
+            body_hash = hashlib.sha256(request.body or b"").hexdigest()
+            if not secrets.compare_digest(body_hash, payload["body_hash"]):
+                raise jwt.InvalidTokenError("Invalid email hash")
 
             service_account = models.User()
             return (service_account, payload)

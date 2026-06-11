@@ -176,17 +176,6 @@ def test_search_threads_is_unread_filter(mock_es_client):
     assert has_parent_found, "has_parent terms filter for is:unread was not found"
 
 
-def test_search_threads_is_unread_without_mailbox_ids(mock_es_client):
-    """Test that is:unread without mailbox_ids does not add a filter."""
-    search_threads("is:unread")
-
-    call_args = mock_es_client.search.call_args[1]
-    for filter_item in call_args["body"]["query"]["bool"]["filter"]:
-        assert "has_parent" not in filter_item, (
-            "has_parent filter should not be present without mailbox_ids"
-        )
-
-
 def test_search_threads_filters_is_starred_true(mock_es_client):
     """Test that filters={'is_starred': True} uses has_parent on starred_mailboxes."""
     search_threads("some text", mailbox_ids=["mbx-1"], filters={"is_starred": True})
@@ -281,26 +270,6 @@ def test_search_threads_filters_is_unread_false(mock_es_client):
                     assert must_not["terms"]["unread_mailboxes"] == ["mbx-1"]
 
     assert has_parent_found, "has_parent must_not unread_mailboxes filter was not found"
-
-
-def test_search_threads_filters_starred_without_mailbox_ids(mock_es_client):
-    """Test that filters={'is_starred': True} without mailbox_ids does not add a filter."""
-    search_threads("some text", filters={"is_starred": True})
-
-    call_args = mock_es_client.search.call_args[1]
-    filters = call_args["body"]["query"]["bool"]["filter"]
-
-    for filter_item in filters:
-        if "has_parent" in filter_item:
-            hp = filter_item["has_parent"]
-            query = hp.get("query", {})
-            assert "starred_mailboxes" not in query.get("terms", {}), (
-                "starred_mailboxes filter should not be present without mailbox_ids"
-            )
-        if "term" in filter_item:
-            assert "is_starred" not in filter_item["term"], (
-                "Legacy is_starred term filter should not be emitted"
-            )
 
 
 def test_search_threads_filters_other_fields_still_use_term(mock_es_client):

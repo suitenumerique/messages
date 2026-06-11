@@ -5,7 +5,19 @@
 
 :{$PORT} {
 	root * {$MESSAGES_FRONTEND_ROOT:/app}
-	header -Server
+
+	# Security headers for everything this site serves (SPA shell, static
+	# assets, and proxied API/admin — `header` replaces, so it does not
+	# duplicate Django's own X-Frame-Options).
+	header {
+		-Server
+		# Clickjacking: the webmail UI must never be framable. frame-ancestors
+		# is the modern control; X-Frame-Options covers older browsers.
+		X-Frame-Options "DENY"
+		Content-Security-Policy "frame-ancestors 'none'; base-uri 'self'; object-src 'none'"
+		X-Content-Type-Options "nosniff"
+		Referrer-Policy "same-origin"
+	}
 
 	route {
 		# Health checks

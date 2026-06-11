@@ -331,7 +331,7 @@ def test_search_threads_pagination(mock_es_client_search):
     }
 
     # Call with from_offset=10, size=10 (page 2)
-    result = search_threads("test", from_offset=10, size=10)
+    result = search_threads("test", mailbox_ids=["mbx-1"], from_offset=10, size=10)
 
     # Verify results
     assert len(result["threads"]) == 10
@@ -357,6 +357,18 @@ def test_search_threads_disabled(mock_es_client_search):
     assert result["total"] == 0
 
     # Verify ES client was not called
+    mock_es_client_search.search.assert_not_called()
+
+
+@override_settings(OPENSEARCH_INDEX_THREADS=True)
+@pytest.mark.parametrize("mailbox_ids", [None, []])
+def test_search_threads_requires_mailbox_ids(mock_es_client_search, mailbox_ids):
+    """Without a mailbox scope, search must return empty and never hit the
+    cluster — an unscoped query would leak hit-totals/existence across every
+    mailbox. ``None`` and ``[]`` are both treated as "no scope -> no results"."""
+    result = search_threads("test query", mailbox_ids=mailbox_ids)
+
+    assert result == {"threads": [], "total": 0, "from": 0, "size": 20}
     mock_es_client_search.search.assert_not_called()
 
 

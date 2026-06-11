@@ -207,7 +207,7 @@ def check_inbound_authentication(
         dkim = _rspamd_outcome("dkim", rspamd_result)
         dmarc = _rspamd_outcome("dmarc", rspamd_result)
     elif mode == "authentication-results":
-        trusted_relays = int(spam_config.get("trusted_relays", 1))
+        trusted_relays = int(spam_config.get("trusted_relays", 0))
         ar_values = _authentication_results_values(parsed_email, trusted_relays)
         dkim = _ar_outcome("dkim", ar_values)
         dmarc = _ar_outcome("dmarc", ar_values)

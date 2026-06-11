@@ -2,6 +2,12 @@
 <html lang="en">
   <head>
     <meta charset="UTF-8" />
+    <!--
+      Defense-in-depth CSP belt that travels with the shell. Only directives
+      honoured in a <meta> CSP go here; clickjacking (frame-ancestors /
+      X-Frame-Options) is header-only and lives in the Caddy config.
+    -->
+    <meta http-equiv="Content-Security-Policy" content="object-src 'none'; base-uri 'self'" />
     <meta name="theme-color" content="#FFFFFF" />
     <link rel="manifest" href="/manifest.json" />
     <link rel="icon" type="image/png" sizes="32x32" href="/images/pwa/icons/ios/32.png" />

@@ -632,7 +632,7 @@ def test_import_imap_messages_by_superuser(admin_user, mailbox, mock_request):
     """Test importing messages from IMAP server by superuser."""
 
     # Mock IMAP connection and responses
-    with patch("imaplib.IMAP4_SSL") as mock_imap:
+    with patch("core.services.importer.imap._IPPinnedIMAP4SSL") as mock_imap:
         mock_imap_instance = mock_imap.return_value
 
         # Mock login
@@ -719,7 +719,7 @@ def test_import_imap_messages_user_with_access(user, mailbox, mock_request):
     mailbox.accesses.create(user=user, role=MailboxRoleChoices.ADMIN)
 
     # Mock IMAP connection and responses
-    with patch("imaplib.IMAP4_SSL") as mock_imap:
+    with patch("core.services.importer.imap._IPPinnedIMAP4SSL") as mock_imap:
         mock_imap_instance = mock_imap.return_value
 
         # Mock login
@@ -816,7 +816,7 @@ def test_import_messages_do_not_trigger_ai_features(
     mailbox.accesses.create(user=user, role=MailboxRoleChoices.ADMIN)
 
     # Mock IMAP connection and responses
-    with patch("imaplib.IMAP4_SSL") as mock_imap:
+    with patch("core.services.importer.imap._IPPinnedIMAP4SSL") as mock_imap:
         mock_imap_instance = mock_imap.return_value
 
         # Mock login

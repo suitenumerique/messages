@@ -293,12 +293,30 @@ class TestCheckInboundAuthenticationResults:
         assert check_inbound_authentication(b"", parsed, config) == VERDICT_UNVERIFIED
 
     def test_trusted_block_used(self):
-        """Default trusted_relays=1 -> block 1 is trusted.
+        """trusted_relays=1 -> block 1 (one configured relay hop) is trusted.
 
         Block 0 (our own prepend) has no AR; block 1 (the first
         upstream relay) carries ``dkim=pass``. ``headers_blocks`` groups
         them by walking the ``headers`` list in order, closing each
         block at the next ``Received``.
+        """
+        config = {"inbound_auth": "authentication-results", "trusted_relays": 1}
+        parsed = {
+            "headers": [
+                {"name": "Received", "value": "from our-mta"},
+                {"name": "Authentication-Results", "value": "mx; dkim=pass"},
+                {"name": "Received", "value": "from upstream"},
+            ]
+        }
+        assert check_inbound_authentication(b"", parsed, config) is None
+
+    def test_default_trusts_only_our_block(self):
+        """Default (no trusted_relays) -> only block 0 is trusted.
+
+        The same payload as ``test_trusted_block_used`` but without an
+        explicit ``trusted_relays`` must NOT honour block 1's ``dkim=pass``:
+        a sender can forge that block, so the secure default of 0 ignores it
+        and the verdict collapses to "unverified".
         """
         config = {"inbound_auth": "authentication-results"}
         parsed = {
@@ -308,7 +326,7 @@ class TestCheckInboundAuthenticationResults:
                 {"name": "Received", "value": "from upstream"},
             ]
         }
-        assert check_inbound_authentication(b"", parsed, config) is None
+        assert check_inbound_authentication(b"", parsed, config) == VERDICT_UNVERIFIED
 
     def test_dkim_fail_dominates_pass_across_values(self):
         """Multiple AR values in one block: fail wins -> 'none'."""

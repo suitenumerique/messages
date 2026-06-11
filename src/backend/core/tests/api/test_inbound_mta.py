@@ -509,6 +509,37 @@ class TestEmailAddressParsing:
 
 
 @pytest.mark.django_db
+class TestMTAJWTHardening:
+    """exp / body-hash guards on the shared-secret-authenticated MTA JWT."""
+
+    @staticmethod
+    def _token(body):
+        """Mint a token binding the given body, signed with the shared secret."""
+        payload = {
+            "body_hash": hashlib.sha256(body).hexdigest(),
+            "exp": datetime.datetime.now(datetime.UTC) + datetime.timedelta(seconds=30),
+            "original_recipients": ["recipient@example.com"],
+        }
+        return jwt.encode(payload, settings.MDA_API_SECRET, algorithm="HS256")
+
+    def test_body_hash_enforced_on_empty_body(self, api_client):
+        """body_hash is checked even when the request body is empty.
+
+        A token minted for a non-empty body but presented with an empty body
+        must fail — closing the old ``if request.body:`` bypass that skipped
+        the hash check (and let the bodyless /check path accept any token).
+        """
+        token = self._token(b"some real body")
+        response = api_client.post(
+            "/api/v1.0/inbound/mta/deliver/",
+            data=b"",
+            content_type="message/rfc822",
+            HTTP_AUTHORIZATION=f"Bearer {token}",
+        )
+        assert response.status_code == status.HTTP_401_UNAUTHORIZED
+
+
+@pytest.mark.django_db
 class TestMTAInboundEmailThreading:
     """Test the threading logic for MTA inbound emails."""
 

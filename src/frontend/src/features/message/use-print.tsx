@@ -36,6 +36,17 @@ const usePrint = () => {
         const html = '<!DOCTYPE html>' + renderToStaticMarkup(
             <html>
                 <head>
+                    {/*
+                      The body is already DOMPurify-sanitized, but this is a bare
+                      same-origin `window.open('')` with no other containment.
+                      This CSP is the backstop: scripts/objects cannot run even if
+                      sanitization ever regresses, while the images and inline
+                      styles the print layout needs are still allowed.
+                    */}
+                    <meta
+                        httpEquiv="Content-Security-Policy"
+                        content="default-src 'none'; img-src 'self' data: blob: https:; style-src 'unsafe-inline'; font-src 'self' data:"
+                    />
                     <meta charSet="utf-8" />
                     <title>{message.subject ?? ''}</title>
                     <style>{`

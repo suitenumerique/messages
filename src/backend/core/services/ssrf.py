@@ -40,6 +40,23 @@ def _check_ip(ip_addr: ipaddress._BaseAddress, hostname: str) -> None:
         raise SSRFValidationError(f"{hostname} resolves to private IP address")
 
 
+def assert_public_ip(ip: str, hostname: str = "") -> None:
+    """Raise ``SSRFValidationError`` unless ``ip`` is a public address.
+
+    Companion to ``validate_hostname`` for callers that have *already*
+    resolved a destination to a concrete IP and dial that exact IP — e.g.
+    outbound SMTP, which pins an MX host's A record and connects to it
+    directly (so there is no DNS-rebinding window to defend, only the IP to
+    vet). Blocks loopback / link-local / multicast / reserved / private
+    ranges and the cloud-metadata endpoints.
+    """
+    try:
+        ip_addr = ipaddress.ip_address(ip)
+    except ValueError as exc:
+        raise SSRFValidationError(f"Invalid IP address {ip!r}") from exc
+    _check_ip(ip_addr, hostname or ip)
+
+
 def validate_hostname(hostname: str, *, allow_ip_literal: bool = False) -> list[str]:
     """Resolve hostname and reject private/internal/metadata addresses.
 

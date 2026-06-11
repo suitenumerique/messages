@@ -364,19 +364,29 @@ class TestSubmitDispatch:
     @patch(PREPARE_MOCK, return_value=True)
     @patch(CREATE_MSG_MOCK)
     def test_accepted(
-        self, mock_create, mock_prepare, mock_task, client, auth_header, mailbox
+        self,
+        mock_create,
+        mock_prepare,
+        mock_task,
+        client,
+        auth_header,
+        mailbox,
+        django_capture_on_commit_callbacks,
     ):
         fake_message = self._fake_message()
         mock_create.return_value = fake_message
 
-        response = client.post(
-            SUBMIT_URL,
-            data=MINIMAL_MIME,
-            content_type="message/rfc822",
-            HTTP_X_MAIL_FROM=str(mailbox.id),
-            HTTP_X_RCPT_TO="attendee@example.com",
-            **auth_header,
-        )
+        # The delivery task is dispatched via transaction.on_commit, so capture
+        # and run the callbacks to observe the dispatch.
+        with django_capture_on_commit_callbacks(execute=True) as callbacks:
+            response = client.post(
+                SUBMIT_URL,
+                data=MINIMAL_MIME,
+                content_type="message/rfc822",
+                HTTP_X_MAIL_FROM=str(mailbox.id),
+                HTTP_X_RCPT_TO="attendee@example.com",
+                **auth_header,
+            )
 
         assert response.status_code == 202
         data = response.json()
@@ -392,7 +402,8 @@ class TestSubmitDispatch:
         mock_prepare.assert_called_once()
         assert mock_prepare.call_args[1]["raw_mime"] == MINIMAL_MIME
 
-        # Async task dispatched
+        # Async task dispatched, and only after the transaction committed.
+        assert len(callbacks) == 1
         mock_task.delay.assert_called_once_with(str(fake_message.id))
 
     @patch(TASK_MOCK)
@@ -450,20 +461,23 @@ class TestSubmitIntegration:
     signing, blob storage) and only mock the final async SMTP task."""
 
     @patch(TASK_MOCK)
-    def test_full_pipeline(self, mock_task, client, auth_header, mailbox):
+    def test_full_pipeline(
+        self, mock_task, client, auth_header, mailbox, django_capture_on_commit_callbacks
+    ):
         """Submit creates a Message with thread, recipients, blob, and dispatches delivery."""
         mailbox_email = str(mailbox)
         # X-Rcpt-To matches the To: header in MINIMAL_MIME (attendee@example.com)
         rcpt_to = "attendee@example.com"
 
-        response = client.post(
-            SUBMIT_URL,
-            data=MINIMAL_MIME,
-            content_type="message/rfc822",
-            HTTP_X_MAIL_FROM=str(mailbox.id),
-            HTTP_X_RCPT_TO=rcpt_to,
-            **auth_header,
-        )
+        with django_capture_on_commit_callbacks(execute=True):
+            response = client.post(
+                SUBMIT_URL,
+                data=MINIMAL_MIME,
+                content_type="message/rfc822",
+                HTTP_X_MAIL_FROM=str(mailbox.id),
+                HTTP_X_RCPT_TO=rcpt_to,
+                **auth_header,
+            )
 
         assert response.status_code == 202
         data = response.json()

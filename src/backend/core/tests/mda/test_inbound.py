@@ -939,3 +939,58 @@ class TestInboundAutoreplyIntegration:
 
         assert result is False
         mock_try_autoreply.assert_not_called()
+
+
+@pytest.mark.django_db
+class TestInboundDedupIdempotency:
+    """Inbound message creation is idempotent per (mailbox, mime_id).
+
+    The advisory-locked critical section in ``_create_message_from_inbound``
+    rechecks for an existing message before inserting, so two deliveries that
+    race (or an async retry) with the same Message-ID can't produce duplicate
+    Message rows or two parallel Threads.
+    """
+
+    def _parsed(self, mime_id):
+        return {
+            "subject": "Dedup Test",
+            "from": [{"name": "Sender", "email": "sender@test.com"}],
+            "to": [{"name": "Rcpt", "email": "recipient@deliver.test"}],
+            "textBody": [{"content": "Body."}],
+            "messageId": [mime_id],
+            "sentAt": timezone.now().isoformat(),
+        }
+
+    def test_same_mime_id_creates_single_message(self):
+        from core.mda.inbound_create import _create_message_from_inbound
+
+        mailbox = factories.MailboxFactory()
+        parsed = self._parsed("dup.race.1@example.com")
+        raw = b"raw mime bytes"
+
+        first = _create_message_from_inbound(
+            recipient_email=str(mailbox),
+            parsed_email=parsed,
+            raw_data=raw,
+            mailbox=mailbox,
+        )
+        second = _create_message_from_inbound(
+            recipient_email=str(mailbox),
+            parsed_email=parsed,
+            raw_data=raw,
+            mailbox=mailbox,
+        )
+
+        assert first is not None
+        # Second call is deduped to the existing message, not a new row.
+        assert second is not None
+        assert second.id == first.id
+        assert (
+            models.Message.objects.filter(
+                mime_id="dup.race.1@example.com",
+                thread__accesses__mailbox=mailbox,
+            ).count()
+            == 1
+        )
+        # And no second (parallel) thread was created.
+        assert models.Thread.objects.filter(accesses__mailbox=mailbox).count() == 1

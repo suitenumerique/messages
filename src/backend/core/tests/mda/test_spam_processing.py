@@ -692,6 +692,40 @@ This is a test email body.
         result = _check_spam_with_hardcoded_rules(parsed_email, spam_config)
         assert result is expected_result
 
+    def test_default_ignores_sender_injected_ham_header(self):
+        """By default (no trusted_relays) a sender cannot whitelist itself.
+
+        The attacker prepends one fake ``Received`` to lift a forged
+        ``X-Spam: Ham`` (action="ham") into what used to be the trusted slice.
+        Block 0 is our own MTA's Received (no X-Spam); the forged ham sits in
+        block 1. With the secure default of trusted_relays=0 only block 0 is
+        trusted, so the forged ham rule does NOT match and the result is None
+        (falls through to real spam scanning) — not False (ham bypass).
+        """
+        raw_email = b"""Received: from our_mta.example.com (our_mta.example.com [10.0.0.1])
+    by mail.example.com with SMTP id our_mta_id;
+    Mon, 1 Jan 2024 12:02:00 +0000
+X-Spam: Ham
+Received: from forged.attacker.example (forged [6.6.6.6])
+    by mail.example.com with SMTP id forged_id;
+    Mon, 1 Jan 2024 12:01:00 +0000
+From: sender@example.com
+To: recipient@example.com
+Subject: Test Email
+
+This is a test email body.
+"""
+        parsed_email = parse_email(raw_email)
+        # No trusted_relays key -> defaults to 0 (only our own block trusted).
+        spam_config = {
+            "rules": [
+                {"header_match": "X-Spam:Ham", "action": "ham"},
+            ],
+        }
+
+        result = _check_spam_with_hardcoded_rules(parsed_email, spam_config)
+        assert result is None  # forged ham not honoured
+
 
 @pytest.mark.django_db
 class TestProcessInboundMessageTask:

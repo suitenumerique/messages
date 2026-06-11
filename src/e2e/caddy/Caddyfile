@@ -1,4 +1,13 @@
 :80 {
+	# Mirror the production frontend's security headers so e2e exercises the
+	# same posture (and can assert on them). See src/frontend/caddy/Caddyfile.
+	header {
+		X-Frame-Options "DENY"
+		Content-Security-Policy "frame-ancestors 'none'; base-uri 'self'; object-src 'none'"
+		X-Content-Type-Options "nosniff"
+		Referrer-Policy "same-origin"
+	}
+
 	reverse_proxy /api/* backend:8000
 	reverse_proxy /oidc/* backend:8000
 	reverse_proxy /admin/* backend:8000

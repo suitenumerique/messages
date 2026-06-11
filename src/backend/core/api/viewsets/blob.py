@@ -5,9 +5,7 @@ import logging
 from django.conf import settings
 from django.core.exceptions import ValidationError as DjangoValidationError
 from django.http import HttpResponse
-from django.utils.decorators import method_decorator
 from django.utils.http import content_disposition_header
-from django.views.decorators.csrf import csrf_exempt
 
 import magic
 from drf_spectacular.types import OpenApiTypes
@@ -104,7 +102,6 @@ class BlobViewSet(ViewSet):
         },
         tags=["blob"],
     )
-    @method_decorator(csrf_exempt)
     @action(detail=False, methods=["post"], url_path="upload/(?P<mailbox_id>[^/.]+)")
     def upload(self, request, mailbox_id=None):
         """

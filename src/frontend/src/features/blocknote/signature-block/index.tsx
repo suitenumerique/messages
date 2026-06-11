@@ -232,7 +232,15 @@ export const BlockSignature = createReactBlockSpec(
                 const sanitized = domPurify.sanitize(html);
                 // Replace layout tables with flex divs to prevent BlockNote from
                 // parsing them as table blocks (which causes a crash).
-                return replaceLayoutTablesWithDivs(sanitized);
+                const transformed = replaceLayoutTablesWithDivs(sanitized);
+                // Re-sanitize after the rewrite: replaceLayoutTablesWithDivs
+                // reparses and re-serializes via innerHTML, and the result is
+                // injected into the app origin with dangerouslySetInnerHTML (no
+                // iframe boundary). A second pass guarantees the DOM rewrite
+                // can't reintroduce anything unsafe. cid: image refs survive
+                // here; the cid->blob: object-URL swap runs afterwards on
+                // already-clean HTML.
+                return domPurify.sanitize(transformed);
             }, [template?.html_body, placeholders, isLoading]);
 
             // eslint-disable-next-line react-hooks/rules-of-hooks

@@ -360,8 +360,14 @@ class Base(Configuration):
         },
     }
     # MDA settings
+    # No default on purpose: the MTA-to-MDA channel is authenticated solely by
+    # an HS256 JWT signed with this shared secret, so a hardcoded fallback would
+    # be internet-spoofable in production. The development value is supplied via
+    # env.d/development/backend.defaults (and the matching mta-in.defaults), the
+    # same way DJANGO_SECRET_KEY is handled. Unset → None → all MTA auth fails
+    # closed.
     MDA_API_SECRET = values.Value(
-        "my-shared-secret-mda", environ_name="MDA_API_SECRET", environ_prefix=None
+        None, environ_name="MDA_API_SECRET", environ_prefix=None
     )
 
     # Default CalDAV server settings (optional). Enables calendar features
@@ -410,8 +416,12 @@ class Base(Configuration):
     # Default spam configuration for all mail domains, overrideable per mail
     # domain in custom_settings. Recognised keys include:
     #   rspamd_url / rspamd_auth : rspamd /checkv2 endpoint + optional auth header
-    #   trusted_relays           : int, how many upstream Received blocks to trust
-    #                              for header-based rules (default 1)
+    #   trusted_relays           : int, how many sender-side upstream Received
+    #                              blocks to trust for header-based rules
+    #                              (default 0 — trust only the Received block our
+    #                              own MTA prepends; a sender can forge any block
+    #                              above that, so only raise this to the number of
+    #                              relay hops you actually operate)
     #   rules                    : list of hardcoded header-match spam rules
     #   inbound_auth             : sender authentication backend — one of
     #                              "native", "rspamd", "authentication-results",
@@ -797,6 +807,19 @@ class Base(Configuration):
             "caldav_conflicts": values.Value(
                 default="30/minute",
                 environ_name="API_CALDAV_CONFLICTS_THROTTLE_RATE",
+                environ_prefix=None,
+            ),
+            # Public widget deliver endpoint. The channel id is a public embed
+            # value, so these caps bound abuse: a per-channel ceiling on total
+            # inbound volume and a per-IP burst limit under it.
+            "widget_inbound_channel": values.Value(
+                default="30/minute",
+                environ_name="API_WIDGET_INBOUND_CHANNEL_THROTTLE_RATE",
+                environ_prefix=None,
+            ),
+            "widget_inbound_ip": values.Value(
+                default="10/minute",
+                environ_name="API_WIDGET_INBOUND_IP_THROTTLE_RATE",
                 environ_prefix=None,
             ),
         },

@@ -41,6 +41,17 @@ def search_threads(  # pylint: disable=too-many-branches
         logger.debug("OpenSearch search is disabled, returning empty results")
         return {"threads": [], "total": 0, "from": from_offset, "size": size}
 
+    # Scope is mandatory. An empty/None ``mailbox_ids`` would otherwise fall
+    # through to the ``if mailbox_ids:`` filter below and run an unscoped,
+    # cluster-wide search: the returned thread bodies are access-filtered by the
+    # caller, but the hit-total and pagination are not, leaking match counts and
+    # content-existence across every mailbox. The only caller passes the
+    # requesting user's accessible mailboxes, so "no mailboxes" must mean
+    # "no results", never "all mailboxes".
+    if not mailbox_ids:
+        logger.debug("search_threads called without mailbox_ids; returning empty")
+        return {"threads": [], "total": 0, "from": from_offset, "size": size}
+
     try:  # pylint: disable=too-many-nested-blocks
         es = get_opensearch_client()
 

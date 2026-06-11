@@ -1510,6 +1510,53 @@ class TestApiDraftAndSendReply:
         # Assert the response is unauthorized
         assert response.status_code == status.HTTP_401_UNAUTHORIZED
 
+    def test_update_draft_ignores_body_message_id_for_authorization(
+        self, mailbox, authenticated_user, draft_detail_url
+    ):
+        """The draft being updated is the one in the URL, not a body messageId.
+
+        A caller with edit rights on a draft they own must not edit a
+        *different* draft (named in the URL) that their sender mailbox cannot
+        access by passing the accessible draft's id in the body. The body id is
+        never read for authorization, so the inaccessible URL draft is denied
+        (the view scopes the lookup to an editable thread → 404).
+        """
+        # Sender mailbox the user can edit.
+        factories.MailboxAccessFactory(
+            mailbox=mailbox,
+            user=authenticated_user,
+            role=enums.MailboxRoleChoices.EDITOR,
+        )
+        # A draft the sender mailbox CAN edit (the decoy passed in the body).
+        own_access = factories.ThreadAccessFactory(
+            mailbox=mailbox, role=enums.ThreadAccessRoleChoices.EDITOR
+        )
+        own_draft = factories.MessageFactory(thread=own_access.thread, is_draft=True)
+        # A draft the sender mailbox CANNOT access (the real target, in the URL).
+        other_mailbox = factories.MailboxFactory()
+        victim_access = factories.ThreadAccessFactory(
+            mailbox=other_mailbox, role=enums.ThreadAccessRoleChoices.EDITOR
+        )
+        victim_draft = factories.MessageFactory(
+            thread=victim_access.thread, is_draft=True, subject="victim"
+        )
+
+        client = APIClient()
+        client.force_authenticate(user=authenticated_user)
+        response = client.put(
+            draft_detail_url(victim_draft.id),
+            {
+                "senderId": mailbox.id,
+                "messageId": own_draft.id,  # decoy — must be ignored
+                "subject": "hijacked",
+            },
+            format="json",
+        )
+
+        assert response.status_code == status.HTTP_404_NOT_FOUND
+        victim_draft.refresh_from_db()
+        assert victim_draft.subject == "victim"
+
     def test_api_email_exchange_single_thread(self, send_url):
         """Test a multi-step API email exchange results in one thread per mailbox."""
         # Setup Users and Mailboxes

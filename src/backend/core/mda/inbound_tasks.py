@@ -95,8 +95,14 @@ def _check_spam_with_hardcoded_rules(
             #             third Received (relay 2+).
             blocks = headers_blocks(parsed_email)
 
-            # Default trusted relays = 1 means we trust block 0 and block 1.
-            trusted_relays = spam_config.get("trusted_relays", 1)
+            # Default trusted_relays = 0: trust only block 0 (the Received our
+            # own MTA prepends, plus the headers above it). A sender can prepend
+            # their own Received lines, which land in block 1+ — trusting those
+            # by default would let them slip a forged header (e.g. an
+            # action="ham" allowlist match) into the trusted slice. Operators
+            # with real upstream relays opt in by setting trusted_relays to the
+            # number of hops they actually control.
+            trusted_relays = spam_config.get("trusted_relays", 0)
             # block 0 (our Received) + trusted_relays upstream blocks.
             blocks_to_check = trusted_relays + 1
 

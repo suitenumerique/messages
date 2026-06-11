@@ -15,6 +15,7 @@ import rest_framework as drf
 
 from core import enums, factories, models
 from core.mda import outbound
+from core.mda.outbound_direct import resolve_hostname_ip, send_message_via_mx
 from core.mda.signing import generate_dkim_key, sign_message_dkim
 from core.mda.smtp import SmtpProxy
 
@@ -1422,3 +1423,54 @@ class TestPrepareOutboundMessageBase64Images:
         assert len(cid_refs) >= 2, (
             f"Expected at least 2 CID references (text + HTML), got {len(cid_refs)}"
         )
+
+
+class TestOutboundDirectSSRF:
+    """Resolved MX/A IPs are SSRF-validated before the SMTP worker dials them.
+
+    A recipient domain (and therefore its MX records) is attacker-controlled,
+    so a domain whose MX points at internal infrastructure must never make the
+    direct-delivery worker connect there.
+    """
+
+    @patch("core.mda.outbound_direct.dns.resolver.resolve")
+    def test_resolve_hostname_ip_rejects_internal(self, mock_resolve):
+        """An MX host whose only A record is internal yields no IP (skipped)."""
+        mock_resolve.return_value = ["10.0.0.5"]
+        assert resolve_hostname_ip("mx.evil.test") is None
+
+    @patch("core.mda.outbound_direct.dns.resolver.resolve")
+    def test_resolve_hostname_ip_allows_public(self, mock_resolve):
+        mock_resolve.return_value = ["93.184.216.34"]
+        assert resolve_hostname_ip("mx.good.test") == "93.184.216.34"
+
+    @patch("core.mda.outbound_direct.dns.resolver.resolve")
+    def test_resolve_hostname_ip_skips_internal_returns_public(self, mock_resolve):
+        """Multi-A: the internal record is skipped, the public one is used."""
+        mock_resolve.return_value = ["10.0.0.5", "93.184.216.34"]
+        assert resolve_hostname_ip("mx.mixed.test") == "93.184.216.34"
+
+    @patch("core.mda.outbound_direct.send_smtp_mail")
+    @patch("core.mda.outbound_direct.dns.resolver.resolve")
+    def test_send_via_mx_never_dials_internal_mx(self, mock_resolve, mock_smtp_send):
+        """End to end: a domain whose MX → internal IP triggers no SMTP connect."""
+
+        def resolve_side_effect(name, record_type, **kwargs):
+            data = {
+                ("evil.test", "MX"): [
+                    MagicMock(preference=10, exchange="mx.evil.test"),
+                ],
+                ("mx.evil.test", "A"): ["10.0.0.5"],
+            }
+            return data.get((name, record_type))
+
+        mock_resolve.side_effect = resolve_side_effect
+
+        statuses = send_message_via_mx(
+            "from@ours.test", ["victim@evil.test"], b"raw mime"
+        )
+
+        # The worker was never asked to open an SMTP connection.
+        mock_smtp_send.assert_not_called()
+        # And the recipient was not delivered.
+        assert statuses["victim@evil.test"]["delivered"] is False
