@@ -1,16 +1,14 @@
 import {
-  Button,
   Modal,
   ModalSize,
   ModalTab,
 } from "@gouvfr-lasuite/cunningham-react";
-import { DropdownMenu, HorizontalSeparator, UserAvatar } from "@gouvfr-lasuite/ui-kit";
+import { HorizontalSeparator } from "@gouvfr-lasuite/ui-kit";
 import { useEffect, useMemo, useState } from "react";
 import { useTranslation } from "react-i18next";
-import { Mailbox } from "@/features/api/gen";
 import { useMailboxContext } from "@/features/providers/mailbox";
 import { FEATURE_KEYS, useFeatureFlag } from "@/hooks/use-feature";
-import MailboxHelper from "@/features/utils/mailbox-helper";
+import { MailboxSelector } from "@/features/layouts/components/mailbox-selector";
 import {
   useConfirmBeforeClose,
   useConfirmUnsavedChanges,
@@ -21,7 +19,6 @@ import { MailboxSettingsSignaturesTab } from "./signatures-tab";
 import { MailboxSettingsMessageTemplatesTab } from "./message-templates-tab";
 import { MailboxSettingsAutorepliesTab } from "./autoreplies-tab";
 import { MailboxSettingsIntegrationsTab } from "./integrations-tab";
-import { ChevronDown, ChevronUp } from "@gouvfr-lasuite/ui-kit/icons";
 
 export type SettingsTabId =
   | "general"
@@ -44,11 +41,6 @@ export const MODAL_MAILBOX_SETTINGS_ID = "modal-mailbox-settings";
 // breakpoint so the open-time tab selection matches the layout actually shown —
 // the sidebar↔content view itself can't be driven from outside the component.
 const COMPACT_MODAL_MEDIA_QUERY = "(max-width: 576px)";
-
-/** Display name shown on the identity card; falls back to the address when the
- * mailbox has no contact name set. */
-const getMailboxName = (mailbox: Mailbox) =>
-  mailbox.name?.trim() || mailbox.email;
 
 /**
  * Settings modal for a mailbox the user can configure. Built on Cunningham's
@@ -91,7 +83,6 @@ export const ModalMailboxSettings = ({
   const [selectedMailboxId, setSelectedMailboxId] = useState<string | null>(
     null,
   );
-  const [isMailboxDropdownOpen, setIsMailboxDropdownOpen] = useState(false);
 
   const [isActiveTabDirty, setIsActiveTabDirty] = useState(false);
   const confirmUnsavedChanges = useConfirmUnsavedChanges();
@@ -129,18 +120,6 @@ export const ModalMailboxSettings = ({
       ? "signatures"
       : "general";
   });
-
-  const mailboxOptions = useMemo(() => {
-    const sortedMailboxes = MailboxHelper.sortByKind(settingsMailboxes);
-
-    return sortedMailboxes.map((mailbox: Mailbox, index) => ({
-      label: getMailboxName(mailbox),
-      subText: mailbox.name?.trim() ? mailbox.email : undefined,
-      value: mailbox.id,
-      icon: <UserAvatar fullName={getMailboxName(mailbox)} size="small" />,
-      showSeparator: MailboxHelper.showSeparatorAfter(sortedMailboxes, index),
-    }));
-  }, [settingsMailboxes]);
 
   // Ordered ids of the tabs the selected mailbox exposes, gated by its abilities
   // (and the integrations feature flag). Single source of truth: it drives both
@@ -191,81 +170,20 @@ export const ModalMailboxSettings = ({
     return null;
   }
 
-  const hasMultipleMailboxes = settingsMailboxes.length > 1;
-  const mailboxName = getMailboxName(settingsMailbox);
-  const mailboxSubtitle = settingsMailbox.name?.trim()
-    ? settingsMailbox.email
-    : null;
-
-  // The macOS-style account card: avatar, name and (when distinct) the address
-  // underneath. Shared between the static and the switchable variants below.
-  const identityCardContent = (
-    <>
-      <UserAvatar fullName={mailboxName} size="medium" />
-      <span className="mailbox-settings__identity-text">
-        <span className="mailbox-settings__identity-name">{mailboxName}</span>
-        {mailboxSubtitle && (
-          <span className="mailbox-settings__identity-email">
-            {mailboxSubtitle}
-          </span>
-        )}
-      </span>
-    </>
-  );
-
+  // macOS-style account card switching the configured mailbox, shared with the
+  // sidebar header switcher. Switching remounts the General tab and discards any
+  // unsaved rename, so confirm first when there are pending edits.
   const sidebarHeader = (
     <>
-      {hasMultipleMailboxes ? (
-        <DropdownMenu
-          options={mailboxOptions}
-          isOpen={isMailboxDropdownOpen}
-          onOpenChange={setIsMailboxDropdownOpen}
-          selectedValues={[settingsMailbox.id]}
-          onSelectValue={async (value) => {
-            setIsMailboxDropdownOpen(false);
-            if (value === settingsMailbox.id) {
-              return;
-            }
-            // Switching the configured mailbox remounts the General tab and
-            // discards any unsaved rename, just like a tab switch does.
-            if (await confirmUnsavedChanges(isActiveTabDirty)) {
-              setSelectedMailboxId(value);
-            }
-          }}
-        >
-          <Button
-            className="mailbox-settings__dropdown-button"
-            variant="tertiary"
-            color="neutral"
-            aria-label={t("Select the mailbox to configure")}
-            aria-expanded={isMailboxDropdownOpen}
-            fullWidth
-            onClick={() => setIsMailboxDropdownOpen(!isMailboxDropdownOpen)}
-            icon={
-              isMailboxDropdownOpen ? (
-                <ChevronUp size="small" />
-              ) : (
-                <ChevronDown size="small" />
-              )
-            }
-            iconPosition="right"
-          >
-            <div className="mailbox-settings__dropdown-button__content">
-              {identityCardContent}
-            </div>
-          </Button>
-        </DropdownMenu>
-      ) : (
-        // Single mailbox: nothing to switch to, so the card is purely informative.
-        // Rendered as static content (not a disabled button) to avoid exposing a
-        // bogus "button, unavailable" control and to keep the name/address fully
-        // legible instead of greyed out by the disabled state.
-        <div className="mailbox-settings__identity-static">
-          <div className="mailbox-settings__dropdown-button__content">
-            {identityCardContent}
-          </div>
-        </div>
-      )}
+      <MailboxSelector
+        mailboxes={settingsMailboxes}
+        selectedMailbox={settingsMailbox}
+        onSelect={async (value) => {
+          if (await confirmUnsavedChanges(isActiveTabDirty)) {
+            setSelectedMailboxId(value);
+          }
+        }}
+      />
       <HorizontalSeparator width="double" />
     </>
   );

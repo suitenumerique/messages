@@ -68,9 +68,17 @@ export const signInKeycloakIfNeeded = async ({ page, username, navigateTo = "/" 
     await page.click('button[type="submit"]');
     await page.waitForURL(`/`, { waitUntil: 'networkidle' });
 
-    expect(proConnectButton).not.toBeVisible();
-    const mailboxName = await page.getByRole('button', { name: email });
-    expect(mailboxName).toBeVisible();
+    await expect(proConnectButton).not.toBeVisible();
+
+    // Confirm the authenticated app shell rendered before snapshotting storage
+    // state. The sidebar mailbox selector shows the signed-in address, but it
+    // renders as a switcher *button* only for multi-mailbox users; single-mailbox
+    // fixtures (e.g. domain_admin) get a static card instead. Match on the
+    // address text within the selector rather than a button role, which covers
+    // both variants.
+    await expect(
+        page.locator('.mailbox-selector').getByText(email),
+    ).toBeVisible();
 
     await page.context().storageState({ path: storageStatePath });
 };

@@ -23,7 +23,7 @@ test.describe("Import Message", () => {
 
     // Go the import mailbox
     await page.getByRole("button", { name: getMailboxEmail('user', browserName) }).click();
-    await page.getByRole("menuitem", { name: getMailboxEmail('import') }).click();
+    await page.getByRole("menuitem").filter({ hasText: getMailboxEmail('import') }).click();
     await page.waitForLoadState("networkidle");
 
     // As the database is fresh, there should be no threads and the Import messages button should be visible
@@ -117,7 +117,8 @@ test.describe("Import Message", () => {
     // Go to the shared mailbox where the user only has sender rights
     await page.getByRole("button", { name: email }).click();
     await page
-      .getByRole("menuitem", { name: getMailboxEmail("shared") })
+      .getByRole("menuitem")
+      .filter({ hasText: getMailboxEmail("shared") })
       .click();
     await page.waitForLoadState("networkidle");
 

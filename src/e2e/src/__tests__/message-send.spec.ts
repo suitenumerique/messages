@@ -59,7 +59,7 @@ test.describe("Send Message", () => {
 
     // Go the shared mailbox and check if the message is there
     await page.getByRole("button", { name: getMailboxEmail('user', browserName) }).click();
-    await page.getByRole("menuitem", { name: getMailboxEmail('shared') }).click();
+    await page.getByRole("menuitem").filter({ hasText: getMailboxEmail('shared') }).click();
     await page.waitForLoadState("networkidle");
 
     await page.getByRole("link", { name: "Inbox" }).click();

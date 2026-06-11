@@ -33,7 +33,8 @@ async function navigateToSharedThread(page: Page, browserName: BrowserName) {
     .getByRole("button", { name: getMailboxEmail("user", browserName) })
     .click();
   await page
-    .getByRole("menuitem", { name: getMailboxEmail("shared") })
+    .getByRole("menuitem")
+    .filter({ hasText: getMailboxEmail("shared") })
     .click();
   await page.waitForLoadState("networkidle");
 

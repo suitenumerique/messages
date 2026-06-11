@@ -36,76 +36,12 @@
   // macOS-style account card sitting at the very top of the settings sidebar:
   // mailbox avatar on the left, name in bold and (when set) the address in a
   // muted line underneath.
+  // Wrapper around the shared MailboxSelector in the sidebar header. Full width
+  // with min-width:0 so the selector's text column can shrink and ellipsize the
+  // long address instead of overflowing the narrow sidebar.
   &__identity {
-    /* gap: var(--c--globals--spacings--xs); */
     width: 100%;
-    // Min-width:0 lets the flexible text column actually shrink so the long
-    // address can ellipsize instead of overflowing the narrow sidebar.
     min-width: 0;
-  }
-
-  &__identity-text {
-    display: flex;
-    flex-direction: column;
-    align-items: flex-start;
-    min-width: 0;
-    line-height: 1.25;
-  }
-
-  &__identity-name {
-    overflow: hidden;
-    text-overflow: ellipsis;
-    white-space: nowrap;
-    max-width: 100%;
-    font-size: var(--c--globals--font--sizes--sm);
-    font-weight: 600;
-    color: var(--c--contextuals--content--semantic--neutral--primary);
-  }
-
-  &__identity-email {
-    overflow: hidden;
-    text-overflow: ellipsis;
-    white-space: nowrap;
-    font-size: var(--c--globals--font--sizes--xs);
-    font-weight: 400;
-    min-width: 0;
-    max-width: 100%;
-    color: var(--c--contextuals--content--semantic--neutral--secondary);
-  }
-
-  // Shared box for both card variants so the switchable (button) and the
-  // static (single-mailbox) renderings keep the exact same footprint.
-  &__dropdown-button,
-  &__identity-static {
-    padding: var(--c--globals--spacings--sm) var(--c--globals--spacings--xs);
-  }
-
-  // Switchable variant: the whole card becomes a borderless button with an
-  // unfold chevron and a subtle hover fill, mirroring a macOS popup button.
-  &__dropdown-button {
-    border: none;
-    height: inherit;
-    justify-content: space-between;
-  }
-
-  &__dropdown-button__content {
-      display: flex;
-      align-items: center;
-      gap: var(--c--globals--spacings--s);
-      // Let the content shrink inside the (full-width) card so the text column
-      // can ellipsize instead of pushing the card wider than the sidebar.
-      min-width: 0;
-
-      // The avatar keeps its size; only the text column absorbs the shrink.
-      & > :first-child {
-        flex-shrink: 0;
-      }
-  }
-
-  &__identity-chevron {
-    margin-left: auto;
-    flex-shrink: 0;
-    color: var(--c--contextuals--content--semantic--neutral--tertiary);
   }
 
   &__section {

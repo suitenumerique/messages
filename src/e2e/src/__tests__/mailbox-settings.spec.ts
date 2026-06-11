@@ -71,8 +71,12 @@ test.describe("Mailbox settings modal", () => {
     // The user administers two mailboxes (their own + the import mailbox) and is
     // only a sender on the shared mailbox, so the switcher is rendered and lists
     // exactly the two administered mailboxes.
+    //
+    // The switcher trigger is the shared MailboxSelector card: its accessible
+    // name is the currently-configured mailbox (the user's own administered
+    // mailbox) rather than a fixed label.
     await modal
-      .getByRole("button", { name: "Select the mailbox to configure" })
+      .getByRole("button", { name: `user.e2e.${browserName}@example.local` })
       .click();
 
     // The switcher renders a single-select dropdown, so its entries expose a

@@ -23,33 +23,11 @@
     flex-shrink: 0;
     padding-bottom: var(--c--globals--spacings--xs);
 
-    & > .c__dropdown-menu-trigger {
-        justify-content: flex-start;
-        width: 100%;
-    }
-
-    button.mailbox-panel__mailbox-title__dropdown-button {
-        color: var(--c--contextuals--content--semantic--neutral--primary);
-        font-weight: 700;
-        padding-block: var(--c--globals--spacings--sm);
+    // The trigger card itself lives in the shared MailboxSelector component; here
+    // we only nudge its trailing padding so the unfold chevron lines up with the
+    // action icons sitting above it in the sidebar header.
+    .mailbox-selector__trigger {
         // 1.1rem hardcoded to be aligned with other icon in the sidebar
-        padding-inline: var(--c--globals--spacings--base) 1.1rem;
-        width: 100%;
-        height: inherit;
-
-        & > .button__label {
-            overflow: hidden;
-            text-overflow: ellipsis;
-            white-space: nowrap;
-            flex: 1;
-            text-align: left;
-            justify-content: flex-start;
-        }
-
-        &:hover,
-        &:focus,
-        &:active {
-            color: inherit;
-        }
+        padding-inline-end: 1.1rem;
     }
 }
