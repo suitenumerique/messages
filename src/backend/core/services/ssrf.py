@@ -53,7 +53,10 @@ def assert_public_ip(ip: str, hostname: str = "") -> None:
     outbound SMTP, which pins an MX host's A record and connects to it
     directly (so there is no DNS-rebinding window to defend, only the IP to
     vet). Blocks loopback / link-local / multicast / reserved / private
-    ranges and the cloud-metadata endpoints.
+    ranges and the cloud-metadata endpoints, plus a final ``is_global``
+    catch-all (see ``_check_ip``) that rejects any remaining non-globally-
+    routable address — notably CGNAT / shared address space (100.64.0.0/10),
+    which is neither ``is_private`` nor ``is_reserved`` in Python's ipaddress.
     """
     try:
         ip_addr = ipaddress.ip_address(ip)

@@ -92,7 +92,13 @@ class DeliveryMilter(Milter.Base):
     def header(self, name, hval):
         """Called for each header"""
         header_line = f"{name}: {hval}\r\n"
-        self.message_data.write(header_line.encode("utf-8"))
+        # pymilter decodes header values with utf-8/surrogateescape, so a raw
+        # non-UTF-8 byte in the original header (e.g. a Latin-1 ``é`` = 0xe9)
+        # arrives as a lone surrogate (\udce9). Re-encode with the same error
+        # handler to faithfully restore the original bytes; plain "utf-8" would
+        # raise UnicodeEncodeError ("surrogates not allowed") and tempfail the
+        # whole message.
+        self.message_data.write(header_line.encode("utf-8", "surrogateescape"))
         return Milter.CONTINUE
 
     def eoh(self):

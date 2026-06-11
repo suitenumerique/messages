@@ -123,6 +123,46 @@ def test_simple_email_delivery_with_multiple_recipients(mock_api_server, smtp_cl
     assert body == "This is a test email\r\n"
 
 
+def test_email_delivery_with_non_utf8_header(mock_api_server, smtp_client):
+    """A header carrying a raw non-UTF-8 byte must not crash the milter.
+
+    pymilter hands header values to the callback decoded with
+    utf-8/surrogateescape, so a Latin-1 byte (0xe9 = 'é') arrives as the lone
+    surrogate '\\udce9'. Re-encoding it needs the same error handler — a plain
+    "utf-8" encode raised UnicodeEncodeError and tempfailed the whole message.
+    """
+
+    mock_api_server.add_mailbox("test@example.com")
+
+    # Raw 8-bit bytes: 0xe9 is 'é' in Latin-1 and is NOT valid UTF-8, both in a
+    # standard header (Subject) and a custom one.
+    raw_message = (
+        b"From: sender@example.com\r\n"
+        b"To: test@example.com\r\n"
+        b"Subject: Caf\xe9 meeting\r\n"
+        b"X-Custom-Header: R\xe9sum\xe9\r\n"
+        b"\r\n"
+        b"This is a test email\r\n"
+    )
+
+    # Before the fix this tempfailed (4xx) on the milter crash; it must now be
+    # accepted and delivered.
+    smtp_client.sendmail(
+        "sender@example.com",
+        ["test@example.com"],
+        raw_message,
+        mail_options=["BODY=8BITMIME"],
+    )
+
+    mock_api_server.wait_for_email()
+    assert len(mock_api_server.received_emails) == 1
+
+    # The raw 8-bit header bytes must round-trip to the MDA unchanged.
+    raw_email = mock_api_server.received_emails[0]["raw_email"]
+    assert b"Caf\xe9 meeting" in raw_email
+    assert b"X-Custom-Header: R\xe9sum\xe9" in raw_email
+
+
 def test_relay(mock_api_server, smtp_client):
     """Test sending outgoing emails. Should not be allowed."""
 
