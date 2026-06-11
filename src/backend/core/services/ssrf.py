@@ -38,6 +38,11 @@ def _check_ip(ip_addr: ipaddress._BaseAddress, hostname: str) -> None:
         raise SSRFValidationError(f"{hostname} resolves to reserved address")
     if ip_addr.is_private:
         raise SSRFValidationError(f"{hostname} resolves to private IP address")
+    # Catch-all for anything not globally routable that the specific checks
+    # above miss — notably shared address space / CGNAT (100.64.0.0/10), which
+    # is neither is_private nor is_reserved in Python's ipaddress module.
+    if not ip_addr.is_global:
+        raise SSRFValidationError(f"{hostname} resolves to non-global address")
 
 
 def assert_public_ip(ip: str, hostname: str = "") -> None:

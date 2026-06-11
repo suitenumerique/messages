@@ -33,7 +33,6 @@ logger = logging.getLogger(__name__)
         200: inline_serializer(
             name="SendMessageResponse",
             fields={
-                "message": serializers.MessageSerializer(),
                 "task_id": drf_serializers.CharField(help_text="Task ID for tracking"),
             },
         ),
@@ -45,8 +44,8 @@ logger = logging.getLogger(__name__)
             "Permission Error",
             value={"detail": "You do not have permission to send this message."},
         ),
-        503: OpenApiExample(
-            "Service Unavailable",
+        500: OpenApiExample(
+            "Prepare Failure",
             value={"detail": "Failed to prepare message for sending."},
         ),
     },

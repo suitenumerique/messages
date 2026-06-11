@@ -5,7 +5,7 @@ from datetime import timedelta
 from unittest import mock
 
 from django.db import connection
-from django.test.utils import CaptureQueriesContext
+from django.test.utils import CaptureQueriesContext, override_settings
 from django.urls import reverse
 from django.utils import timezone
 
@@ -1801,6 +1801,7 @@ class TestThreadListAPI:
 
         assert response.status_code == status.HTTP_403_FORBIDDEN
 
+    @override_settings(OPENSEARCH_HOSTS=["http://opensearch:9200"])
     def test_search_without_mailbox_id_scopes_to_accessible_mailboxes(
         self, api_client, url
     ):
@@ -1825,6 +1826,7 @@ class TestThreadListAPI:
         assert passed_mailbox_ids is not None
         assert set(passed_mailbox_ids) == {str(mbx_a.id), str(mbx_b.id)}
 
+    @override_settings(OPENSEARCH_HOSTS=["http://opensearch:9200"])
     def test_search_without_mailbox_id_and_no_access_passes_empty_scope(
         self, api_client, url
     ):

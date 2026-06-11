@@ -273,7 +273,12 @@ def _create_message_from_inbound(  # pylint: disable=too-many-arguments
                 thread = _create_thread(parsed_email, mailbox)
 
         except (DjangoDbError, ValidationError) as e:
-            logger.error("Failed to find or create thread for %s: %s", recipient_email, e)
+            logger.error(
+                "Failed to find or create thread for %s: %s", recipient_email, e
+            )
+            # Returning from inside the atomic block would commit any partial
+            # writes (e.g. a thread without its message); roll back instead.
+            transaction.set_rollback(True)
             return None  # Indicate failure
         except Exception as e:
             logger.exception(
@@ -281,6 +286,7 @@ def _create_message_from_inbound(  # pylint: disable=too-many-arguments
                 recipient_email,
                 e,
             )
+            transaction.set_rollback(True)
             return None
 
         if is_import:
@@ -307,10 +313,14 @@ def _create_message_from_inbound(  # pylint: disable=too-many-arguments
                     thread.labels.add(label_obj)
                 except models.Label.DoesNotExist:
                     logger.warning(
-                        "Label %s not found for channel %s, skipping", tag_id, channel.id
+                        "Label %s not found for channel %s, skipping",
+                        tag_id,
+                        channel.id,
                     )
                 except Exception as e:
-                    logger.exception("Error adding label %s from channel: %s", tag_id, e)
+                    logger.exception(
+                        "Error adding label %s from channel: %s", tag_id, e
+                    )
 
         # --- 4. Get or Create Sender Contact --- #
         sender_email = first_address_email(parsed_email.get("from"))
@@ -321,7 +331,9 @@ def _create_message_from_inbound(  # pylint: disable=too-many-arguments
                 "Inbound message for %s missing 'From' email, using fallback.",
                 recipient_email,
             )
-            sender_email = f"unknown-sender@{mailbox.domain.name}"  # Use recipient's domain
+            sender_email = (
+                f"unknown-sender@{mailbox.domain.name}"  # Use recipient's domain
+            )
             sender_name = sender_name or "Unknown Sender"
 
         try:
@@ -340,7 +352,9 @@ def _create_message_from_inbound(  # pylint: disable=too-many-arguments
             )
             if created:
                 logger.info(
-                    "Created contact for sender %s in mailbox %s", sender_email, mailbox.id
+                    "Created contact for sender %s in mailbox %s",
+                    sender_email,
+                    mailbox.id,
                 )
 
         except ValidationError as e:
@@ -365,6 +379,7 @@ def _create_message_from_inbound(  # pylint: disable=too-many-arguments
                 mailbox.id,
                 e,
             )
+            transaction.set_rollback(True)
             return None  # Indicate failure
         except Exception as e:
             logger.exception(
@@ -373,6 +388,7 @@ def _create_message_from_inbound(  # pylint: disable=too-many-arguments
                 mailbox.id,
                 e,
             )
+            transaction.set_rollback(True)
             return None
 
         # --- 5. Create Message --- #
@@ -464,6 +480,7 @@ def _create_message_from_inbound(  # pylint: disable=too-many-arguments
                     access.save(update_fields=["read_at"])
         except (DjangoDbError, ValidationError) as e:
             logger.error("Failed to create message in thread %s: %s", thread.id, e)
+            transaction.set_rollback(True)
             return None  # Indicate failure
         except Exception as e:
             logger.exception(
@@ -471,6 +488,7 @@ def _create_message_from_inbound(  # pylint: disable=too-many-arguments
                 thread.id,
                 e,
             )
+            transaction.set_rollback(True)
             return None
 
     # --- 6. Create Recipient Contacts and Links --- #

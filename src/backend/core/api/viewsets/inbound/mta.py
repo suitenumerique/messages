@@ -37,7 +37,8 @@ class MTAJWTAuthentication(BaseAuthentication):
     secures this path.
 
     On top of the signature we keep two cheap, narrow guards:
-    - ``exp``: bounds a leaked token's useful lifetime to ~60s.
+    - ``exp``: bounds a leaked token's useful lifetime. The issuer sizes the
+      claim to cover its full retry window (see mta-in ``mda_api_call``).
     - ``body_hash``: binds the token to its exact request body, so a captured
       token can't be repurposed for a *different* body within that window.
       Enforced even for an empty body (the bodyless ``/check`` path).
@@ -68,8 +69,14 @@ class MTAJWTAuthentication(BaseAuthentication):
             # Bind the token to its payload. Always enforced — including for
             # an empty body (sha256 of b"") — so the bodyless /check endpoint
             # can't be driven with a token minted for a different request.
+            claimed_hash = payload["body_hash"]
+            # ``compare_digest`` raises TypeError on mismatched types (e.g. a
+            # numeric ``body_hash`` claim), which would surface as a 500 rather
+            # than an auth failure. Reject a non-string claim up front.
+            if not isinstance(claimed_hash, str):
+                raise jwt.InvalidTokenError("Invalid email hash")
             body_hash = hashlib.sha256(request.body or b"").hexdigest()
-            if not secrets.compare_digest(body_hash, payload["body_hash"]):
+            if not secrets.compare_digest(body_hash, claimed_hash):
                 raise jwt.InvalidTokenError("Invalid email hash")
 
             service_account = models.User()

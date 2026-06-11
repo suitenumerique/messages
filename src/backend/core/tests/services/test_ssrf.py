@@ -40,6 +40,9 @@ class TestAssertPublicIP:
             ("169.254.169.254", "cloud metadata"),
             ("169.254.0.1", "link-local"),
             ("224.0.0.1", "multicast"),
+            # Shared address space / CGNAT (RFC 6598): not is_private nor
+            # is_reserved in Python's ipaddress, caught by the is_global guard.
+            ("100.64.0.1", "non-global"),
         ],
     )
     def test_non_public_ip_raises(self, ip, match):

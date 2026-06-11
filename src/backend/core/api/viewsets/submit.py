@@ -144,6 +144,10 @@ class SubmitRawEmailView(APIView):
                 is_outbound=True,
             )
             if not message:
+                # Roll back so any partial writes from the failed creation
+                # don't commit — returning from inside the atomic block would
+                # otherwise commit them (mirrors the prepare-failure path below).
+                transaction.set_rollback(True)
                 return Response(
                     {"detail": "Failed to create message."},
                     status=status.HTTP_500_INTERNAL_SERVER_ERROR,
@@ -192,9 +196,7 @@ class SubmitRawEmailView(APIView):
                 )
 
             # Dispatch async SMTP delivery once the message is durably committed.
-            transaction.on_commit(
-                lambda: send_message_task.delay(str(message.id))
-            )
+            transaction.on_commit(lambda: send_message_task.delay(str(message.id)))
 
         return Response(
             {"message_id": str(message.id), "status": "accepted"},
