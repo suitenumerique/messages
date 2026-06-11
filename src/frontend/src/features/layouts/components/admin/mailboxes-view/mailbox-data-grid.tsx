@@ -240,7 +240,7 @@ export const AdminMailboxDataGrid = ({ domain, pagination, searchQuery }: AdminU
             renderCell: ({ row }: { row: MailboxAdmin }) => <ActionsRow
                 onManageAccess={() => handleManageAccess(row)}
                 onResetPassword={row.can_reset_password ? () => handleResetPassword(row) : undefined}
-                onResetTotp={isMandatoryTotpEnabled && row.has_mandatory_totp !== null && row.has_mandatory_totp !== undefined
+                onResetTotp={isMandatoryTotpEnabled && domain.identity_sync && row.has_mandatory_totp !== null && row.has_mandatory_totp !== undefined
                     ? () => handleResetTotp(row)
                     : undefined}
                 onDelete={() => handleDelete(row)}

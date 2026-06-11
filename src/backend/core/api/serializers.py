@@ -1646,7 +1646,6 @@ class MailboxAdminSerializer(serializers.ModelSerializer):
                 "Domain is required in serializer context."
             )
 
-        domain = self.context.get("domain")
         metadata = self.context.get("metadata", {})
 
         # Personal mailboxes can be created even when identity synchronization is

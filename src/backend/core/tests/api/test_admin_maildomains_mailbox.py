@@ -859,9 +859,7 @@ class TestAdminMailDomainMailboxViewSet:
         # No password is provisioned when identity sync is disabled.
         assert "one_time_password" not in response.data
 
-        mailbox = models.Mailbox.objects.get(
-            local_part="john.doe", domain=mail_domain1
-        )
+        mailbox = models.Mailbox.objects.get(local_part="john.doe", domain=mail_domain1)
         assert mailbox.is_identity is True
         # No password can be provisioned without a configured identity provider.
         assert mailbox.can_reset_password is False
