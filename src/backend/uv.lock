@@ -946,7 +946,7 @@ wheels = [
 [[package]]
 name = "jmap-email"
 version = "0.1.0"
-source = { editable = "../jmap-email" }
+source = { directory = "../jmap-email" }
 
 [package.metadata]
 requires-dist = [
@@ -1201,7 +1201,7 @@ requires-dist = [
     { name = "gunicorn", specifier = "==25.1.0" },
     { name = "hypothesis", marker = "extra == 'dev'", specifier = "==6.151.9" },
     { name = "icalendar", specifier = "==7.0.3" },
-    { name = "jmap-email", editable = "../jmap-email" },
+    { name = "jmap-email", directory = "../jmap-email" },
     { name = "jsonschema", specifier = "==4.26.0" },
     { name = "libpff-python", specifier = "==20231205" },
     { name = "nested-multipart-parser", specifier = "==1.6.0" },

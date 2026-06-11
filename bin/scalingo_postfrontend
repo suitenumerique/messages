@@ -10,6 +10,16 @@ mkdir -p build/
 mv src/frontend/dist build/frontend-out
 
 mv src/backend/* ./
+
+# The backend declares jmap-email as a local path dependency
+# (tool.uv.sources: path = "../jmap-email"). After flattening the backend into
+# the app dir above, uv resolves that path one level UP — i.e. as a sibling of
+# the app dir, not a child. Place jmap-email there to match, mirroring the
+# Docker build (`COPY --from=jmap-email . /jmap-email`, backend at WORKDIR /app).
+# It lands outside `src/`, so `rm -rf src` in scalingo_postcompile won't delete
+# it, and `--no-editable` copies it into the venv so runtime needs no path.
+mv src/jmap-email ../jmap-email
+
 mkdir -p messages_backend && touch messages_backend/__init__.py
 
 # Download Caddy binary

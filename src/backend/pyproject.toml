@@ -109,8 +109,13 @@ source-exclude = ["core/tests/**"]
 # Path-based dependency on the jmap-email package while it lives in
 # this monorepo. After publishing to PyPI, replace with a normal
 # version pin in the ``dependencies`` list above.
+#
+# NOTE: non-editable on purpose. An editable install bakes the absolute
+# build path (/build/jmap-email on Scalingo) into the venv, which breaks at
+# runtime once the slug is relocated to /app. Non-editable copies the package
+# into site-packages so it travels with the slug. Do not switch to editable.
 [tool.uv.sources]
-jmap-email = { path = "../jmap-email", editable = true }
+jmap-email = { path = "../jmap-email", editable = false }
 
 [tool.ruff]
 # Pin ruff at py313 even though our runtime floor is py314.5 (chosen for
