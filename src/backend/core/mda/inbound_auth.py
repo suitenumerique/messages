@@ -14,8 +14,13 @@ Rules applied for every backend:
   - If DMARC is absent or passes, DKIM alone decides.
 
 The backend is picked by ``SPAM_CONFIG["inbound_auth"]``:
-  - ``"native"``: verify DKIM locally (crypto + DNS). DMARC is not yet
-    implemented for native, so only the DKIM rule applies.
+  - ``"native"``: verify DKIM locally (crypto + DNS) AND require the signing
+    ``d=`` domain to match the From: domain (strict alignment). Raw DKIM only
+    proves *some* domain signed the message; without alignment an attacker who
+    controls any DKIM-enabled domain could sign a message bearing a forged
+    From:. Full DMARC policy lookup is not implemented for native, so an
+    unaligned-but-cryptographically-valid signature collapses to ``"none"``
+    (we can't call it forgery without the From domain's published policy).
   - ``"rspamd"``: read DKIM / DMARC symbols from the rspamd /checkv2 result
     (reused from the spam check, or fetched on demand by the caller).
   - ``"authentication-results"``: parse ``dkim=`` / ``dmarc=`` entries from the
@@ -34,7 +39,7 @@ import logging
 import re
 from typing import Any
 
-from jmap_email import JmapEmail
+from jmap_email import JmapEmail, first_address_email
 
 from core.mda.signing import verify_message_dkim
 from core.mda.utils import headers_blocks
@@ -164,12 +169,45 @@ def _ar_outcome(check: str, ar_values: list[str]) -> str | None:
     return outcome if found else None
 
 
-def _native_dkim_outcome(raw_data: bytes) -> str | None:
+def _from_header_domain(parsed_email: JmapEmail) -> str | None:
+    """Return the lowercased domain of the RFC5322 From address, or ``None``."""
+    from_email = first_address_email(parsed_email.get("from"))
+    if not from_email:
+        return None
+    domain = from_email.strip().rstrip(".").lower().rpartition("@")[2]
+    return domain or None
+
+
+def _native_dkim_outcome(raw_data: bytes, parsed_email: JmapEmail) -> str | None:
+    """Verify DKIM locally and require From/DKIM identifier alignment.
+
+    A valid DKIM signature only proves that *some* domain signed the message,
+    so we additionally require the signing domain (``d=``) to match the From:
+    domain — strict alignment, an exact case-insensitive match. Without it an
+    attacker who owns any DKIM-enabled domain could sign a message carrying a
+    forged From: and have it shown as verified.
+
+    Native mode does no DMARC policy lookup, so an unaligned (but valid)
+    signature can't be called forgery; it downgrades to ``_NONE`` ("unverified")
+    rather than ``_FAIL``. (Both map to the same "none" verdict today, but the
+    distinction keeps the intent — and the log line — honest.)
+    """
     try:
-        return _PASS if verify_message_dkim(raw_data) else _FAIL
+        signing_domain = verify_message_dkim(raw_data)
     except Exception as e:  # pylint: disable=broad-exception-caught
         logger.warning("Native DKIM verification errored: %s", e)
         return None
+    if not signing_domain:
+        return _FAIL
+    from_domain = _from_header_domain(parsed_email)
+    if from_domain and signing_domain == from_domain:
+        return _PASS
+    logger.info(
+        "Native DKIM signature not aligned with From: d=%s from=%s -> unverified",
+        signing_domain,
+        from_domain,
+    )
+    return _NONE
 
 
 VERDICT_UNVERIFIED = "none"
@@ -201,7 +239,7 @@ def check_inbound_authentication(
         return None
 
     if mode == "native":
-        dkim = _native_dkim_outcome(raw_data)
+        dkim = _native_dkim_outcome(raw_data, parsed_email)
         dmarc: str | None = None
     elif mode == "rspamd":
         dkim = _rspamd_outcome("dkim", rspamd_result)

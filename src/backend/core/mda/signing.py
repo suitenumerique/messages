@@ -6,8 +6,8 @@ import logging
 import dns.resolver
 from cryptography.hazmat.primitives import serialization
 from cryptography.hazmat.primitives.asymmetric import rsa
+from dkim import DKIM
 from dkim import sign as dkim_sign
-from dkim import verify as dkim_verify
 
 from core.enums import DKIMAlgorithmChoices
 
@@ -116,7 +116,7 @@ def sign_message_dkim(raw_mime_message: bytes, maildomain) -> bytes | None:
         return None
 
 
-def verify_message_dkim(raw_mime_message: bytes) -> bool:
+def verify_message_dkim(raw_mime_message: bytes) -> str | None:
     """Verify a DKIM signature on a raw MIME message using public DNS.
 
     This verifies that the DKIM signature will pass validation when the receiving
@@ -127,7 +127,13 @@ def verify_message_dkim(raw_mime_message: bytes) -> bool:
         raw_mime_message: The raw bytes of the MIME message with DKIM signature.
 
     Returns:
-        True if the DKIM signature is valid, False otherwise.
+        The signing domain (the signature's ``d=`` tag, lowercased) if the DKIM
+        signature is valid, otherwise ``None``. Returning the domain rather than
+        a bare bool lets callers enforce identifier alignment against the From:
+        header — a valid signature only proves that *some* domain signed the
+        message, not that the visible From: address is authentic (that is
+        DMARC's job). Callers that only care whether *any* valid signature
+        exists can treat the result as truthy/falsy.
     """
     try:
         # Create a DNS function that performs actual DNS lookups
@@ -165,9 +171,18 @@ def verify_message_dkim(raw_mime_message: bytes) -> bool:
 
             return None
 
-        # Verify the DKIM signature using public DNS
-        return dkim_verify(raw_mime_message, dnsfunc=get_dns_txt)
+        # Verify the DKIM signature using public DNS. We drive the DKIM object
+        # directly (rather than the module-level ``verify`` helper) so we can
+        # read back the ``d=`` domain of the signature that validated: ``verify``
+        # records it on ``self.domain``.
+        dkim_obj = DKIM(raw_mime_message)
+        if not dkim_obj.verify(dnsfunc=get_dns_txt):
+            return None
+        signing_domain = dkim_obj.domain
+        if not signing_domain:
+            return None
+        return signing_domain.decode("ascii", "replace").rstrip(".").lower()
 
     except Exception as e:  # pylint: disable=broad-exception-caught
         logger.error("Error during DKIM verification: %s", e, exc_info=True)
-        return False
+        return None

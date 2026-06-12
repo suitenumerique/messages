@@ -1,10 +1,12 @@
 """Tests for DKIM signing functionality."""
 
+from unittest.mock import Mock, patch
+
 import pytest
 from dkim import verify as dkim_verify
 
 from core.enums import DKIMAlgorithmChoices
-from core.mda.signing import generate_dkim_key, sign_message_dkim
+from core.mda.signing import generate_dkim_key, sign_message_dkim, verify_message_dkim
 from core.models import DKIMKey, Mailbox, MailDomain
 
 
@@ -75,6 +77,47 @@ def test_sign_message_dkim_success():
         return None
 
     assert dkim_verify(full_message_signed, dnsfunc=get_dns_txt)
+
+
+@pytest.mark.django_db
+def test_verify_message_dkim_returns_signing_domain():
+    """verify_message_dkim returns the validated signature's d= domain.
+
+    Callers rely on the returned domain (not a bare bool) to enforce
+    From/DKIM alignment, so the contract is exercised end to end here with a
+    mocked DNS resolver serving the public key.
+    """
+    private_key_pem_str, public_key_str = generate_dkim_key(key_size=1024)
+    mail_domain = MailDomain.objects.create(name="example.com")
+    Mailbox.objects.create(local_part="test", domain=mail_domain)
+    DKIMKey.objects.create(
+        selector="testselector",
+        private_key=private_key_pem_str,
+        public_key=public_key_str,
+        key_size=1024,
+        is_active=True,
+        domain=mail_domain,
+    )
+
+    raw_message = (
+        b"From: test@example.com\r\nTo: recipient@other.com\r\n"
+        b"Subject: Test DKIM\r\n\r\nHello World!\r\n"
+    )
+    signature_header_bytes = sign_message_dkim(raw_message, mail_domain)
+    full_message_signed = signature_header_bytes + b"\r\n" + raw_message
+
+    answer = Mock()
+    answer.strings = [f"v=DKIM1; k=rsa; p={public_key_str}".encode()]
+    with patch("core.mda.signing.dns.resolver.resolve", return_value=[answer]):
+        assert verify_message_dkim(full_message_signed) == "example.com"
+
+
+@pytest.mark.django_db
+def test_verify_message_dkim_invalid_returns_none():
+    """A message whose signature does not validate yields None (falsy)."""
+    # Unsigned message -> no DKIM-Signature header -> cannot verify.
+    raw_message = b"From: test@example.com\r\nSubject: Test\r\n\r\nBody\r\n"
+    assert verify_message_dkim(raw_message) is None
 
 
 @pytest.mark.django_db
