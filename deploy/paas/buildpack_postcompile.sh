@@ -8,4 +8,4 @@ echo "-----> Running post-compile script"
 # Remove all the files we don't need
 rm -rf src docker env.d .cursor .github compose.yaml README.md .cache
 
-chmod +x bin/scalingo_run_web
+chmod +x deploy/paas/buildpack_start.sh

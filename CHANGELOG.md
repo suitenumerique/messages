@@ -8,6 +8,15 @@ and this project adheres to
 
 ## [Unreleased]
 
+### Changed
+
+- **Breaking (Scalingo only):** Buildpack scripts moved from `bin/` to `deploy/paas/` and renamed for consistency with other suitenumerique apps (`scalingo_postcompile` → `buildpack_postcompile.sh`, `scalingo_postfrontend` → `buildpack_postfrontend.sh`, `scalingo_run_web` → `buildpack_start.sh`). The `Procfile` is updated automatically; existing deployments must update the Scalingo env vars before the next deploy:
+
+  ```bash
+  scalingo env-set LASUITE_SCRIPT_POSTCOMPILE="deploy/paas/buildpack_postcompile.sh"
+  scalingo env-set LASUITE_SCRIPT_POSTFRONTEND="deploy/paas/buildpack_postfrontend.sh"
+  ```
+
 ## [0.7.0] - 2026-05-28
 
 ### Added
