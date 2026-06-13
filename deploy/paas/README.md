@@ -2,6 +2,28 @@
 
 Buildpack scripts for deploying [Messages](https://github.com/suitenumerique/messages) on a PaaS (Scalingo, Clever Cloud, …).
 
+## Scope: PaaS covers only the web app and workers
+
+The buildpack + `Procfile` deploy only:
+
+- `web`: Django backend + Caddy reverse proxy serving the Next.js frontend
+- `workerall`, `workerimports`, `workerreindex`, `workerrest`: background workers
+- `postdeploy`: `python manage.py migrate`
+
+**Every other Messages component must be deployed elsewhere and reached over the network:**
+
+| Component | Why it can't live on the PaaS |
+|---|---|
+| `mta-in` (SMTP, port **25** inbound) | Most PaaS providers do **not** allow binding privileged ports or expose port 25. **Hard blocker on Scalingo.** |
+| `mta-out` (SMTP, port 587 outbound) | Outbound SMTP is often blocked from PaaS providers, and email reputation requires a stable, dedicated egress IP — which the PaaS cannot guarantee since instances may be rescheduled on different hosts (with different IPs) on each redeploy. |
+| `mpa` (rspamd) | No hard PaaS blocker, but must scan mail synchronously for `mta-in`, so it gets co-located with it. |
+| `socks-proxy` | No hard PaaS blocker, but provides the stable egress IP for `mta-out`. That IP must also be **not blacklisted** by major anti-spam reputation lists (Spamhaus, Barracuda, SORBS, …) — PaaS shared IP pools offer no such guarantee, so `socks-proxy` runs on a dedicated host where the IP can be vetted, monitored and kept clean. |
+| OIDC provider | Provision a managed Keycloak elsewhere or use an external IdP. |
+
+**Managed addons** — on Scalingo, PostgreSQL, Redis, [OpenSearch](https://scalingo.com/databases/opensearch) and S3-compatible Object Storage are all available as managed services. Wire them to the `web`/worker processes via `DATABASE_URL`, `REDIS_URL`, the OpenSearch connection env vars and the AWS S3 variables. Other PaaS providers vary — check your provider's catalog.
+
+In practice, a PaaS deployment of Messages is **hybrid**: the web/worker tier on the PaaS, the mail tier (mta-in/mta-out/mpa/socks-proxy) on a VPS or Ansible-managed hosts. See [`docs/self-hosting.md`](../../docs/self-hosting.md) and [`suitenumerique/st-ansible`](https://github.com/suitenumerique/st-ansible) for the mail-tier side.
+
 ## Layout
 
 ```

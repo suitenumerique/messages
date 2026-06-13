@@ -31,6 +31,8 @@ Messages supports multiple deployment strategies depending on your infrastructur
 3. Deploy to any environment where Docker Compose runs
 4. Configure DNS and SSL certificates
 
+> For multi-server production deployments, prefer the Ansible collection (see below) — it provides the per-component isolation a generic compose file cannot capture. Messages also ships automated DNS provisioning for customer domains, **currently limited to Scaleway DNS** (see [DNS Management](#4-dns-management) below) — that feature works the same regardless of deployment method (Ansible, Compose, PaaS) since it lives in the backend.
+
 **Advantages**:
 - Simplest setup and maintenance
 - Easy to understand and modify
@@ -43,11 +45,11 @@ Messages supports multiple deployment strategies depending on your infrastructur
 
 **Requirements**:
 - Ansible knowledge
-- Target servers with Docker support
+- Target servers with **Podman** (rootless) — note: not Docker
 - Infrastructure automation experience
 
 **Process**:
-1. Use our [ST Ansible repository](https://github.com/suitenumerique/st-ansible) as a base
+1. Use our [ST Ansible repository](https://github.com/suitenumerique/st-ansible) as a base — the [`roles/messages`](https://github.com/suitenumerique/st-ansible/tree/main/roles/messages) role deploys the full Messages stack (app, workers, mta-in, socks-proxy, mpa) as **rootless Podman containers managed by systemd user units**. See the [`docs/02-messages`](https://github.com/suitenumerique/st-ansible/tree/main/docs/02-messages) section for component-by-component walkthrough.
 2. Customize playbooks for your infrastructure
 3. Deploy across multiple servers with automation
 4. Configure monitoring and backup strategies
@@ -57,6 +59,26 @@ Messages supports multiple deployment strategies depending on your infrastructur
 - Automated deployment and updates
 - Multi-server support
 - Production-ready with monitoring
+
+### PaaS (Scalingo, Clever Cloud, …) in hybrid mode
+
+**Best for**: Reusing an existing PaaS account for the web/worker tier; pairing it with mail components hosted elsewhere.
+
+**Requirements**:
+- A PaaS account that supports the [La Suite buildpack](https://github.com/suitenumerique/buildpack)
+- A separate host (VPS, Ansible-managed servers, …) for the mail tier — the PaaS **cannot** host `mta-in`, `mta-out`, `mpa` or `socks-proxy` because most PaaS providers do not expose privileged ports (notably SMTP port **25**)
+
+**Process**:
+1. Wire up the PaaS app (web + workers + DB + Redis) following [`deploy/paas/README.md`](../deploy/paas/README.md)
+2. Deploy `mta-in`, `mta-out`, `mpa` and `socks-proxy` separately — most easily via [`st-ansible`](https://github.com/suitenumerique/st-ansible)
+3. Point the Django backend at the external mail components via environment variables
+
+**Advantages**:
+- Quick web/worker setup if you already operate on a PaaS
+- Managed Postgres/Redis come for free
+- Clean separation between the application tier (PaaS) and the mail tier (your own hosts)
+
+**Note**: this is a partial-deployment option. A full single-cloud PaaS deployment is **not** supported — the SMTP ports are a hard blocker.
 
 ### Kubernetes Deployment
 
@@ -79,7 +101,7 @@ Messages supports multiple deployment strategies depending on your infrastructur
 - Cloud-native deployment patterns
 - Enterprise-grade monitoring and logging
 
-**Note**: Kubernetes deployment might be supported in future releases with official Helm charts.
+**Note**: Official Kubernetes support (Helm chart) is not yet available and might land in a future release. In the meantime, all Messages components are published as OCI images on GHCR (`ghcr.io/suitenumerique/messages-*`) and can be wired into your own Kubernetes manifests. A community-maintained Helm chart would be very welcome — open an issue or discussion on the [Messages repository](https://github.com/suitenumerique/messages) if you'd like to coordinate.
 
 ## Messages-Specific Configuration
 
