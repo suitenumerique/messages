@@ -42,7 +42,7 @@ import type {
   MessagesDeliveryStatusesPartialUpdateBodyOne,
   SendCreate400,
   SendCreate403,
-  SendCreate503,
+  SendCreate500,
   SendMessageRequest,
   SendMessageResponse,
 } from ".././models";
@@ -1623,9 +1623,9 @@ export type sendCreateResponse403 = {
   status: 403;
 };
 
-export type sendCreateResponse503 = {
-  data: SendCreate503;
-  status: 503;
+export type sendCreateResponse500 = {
+  data: SendCreate500;
+  status: 500;
 };
 
 export type sendCreateResponseSuccess = sendCreateResponse200 & {
@@ -1634,7 +1634,7 @@ export type sendCreateResponseSuccess = sendCreateResponse200 & {
 export type sendCreateResponseError = (
   | sendCreateResponse400
   | sendCreateResponse403
-  | sendCreateResponse503
+  | sendCreateResponse500
 ) & {
   headers: Headers;
 };
@@ -1660,7 +1660,7 @@ export const sendCreate = async (
 };
 
 export const getSendCreateMutationOptions = <
-  TError = ErrorType<SendCreate400 | SendCreate403 | SendCreate503>,
+  TError = ErrorType<SendCreate400 | SendCreate403 | SendCreate500>,
   TContext = unknown,
 >(options?: {
   mutation?: UseMutationOptions<
@@ -1702,11 +1702,11 @@ export type SendCreateMutationResult = NonNullable<
 >;
 export type SendCreateMutationBody = SendMessageRequest;
 export type SendCreateMutationError = ErrorType<
-  SendCreate400 | SendCreate403 | SendCreate503
+  SendCreate400 | SendCreate403 | SendCreate500
 >;
 
 export const useSendCreate = <
-  TError = ErrorType<SendCreate400 | SendCreate403 | SendCreate503>,
+  TError = ErrorType<SendCreate400 | SendCreate403 | SendCreate500>,
   TContext = unknown,
 >(
   options?: {

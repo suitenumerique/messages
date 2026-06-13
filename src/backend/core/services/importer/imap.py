@@ -197,7 +197,7 @@ class IMAPConnectionManager:
                 # else: use_ssl=False, connection remains unencrypted (explicit user choice)
 
             # Set UTF-8 encoding for the IMAP connection
-            self.connection._encoding = "utf-8"  # noqa: SLF001
+            self.connection._encoding = "utf-8"  # noqa: SLF001  # pylint: disable=attribute-defined-outside-init
 
             # Login
             self.connection.login(self.username, self.password)

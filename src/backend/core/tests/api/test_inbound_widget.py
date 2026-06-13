@@ -12,6 +12,7 @@ from rest_framework.exceptions import AuthenticationFailed
 from rest_framework.test import APIClient
 
 from core import factories, models
+from core.api.viewsets.inbound import widget as widget_module
 from core.api.viewsets.inbound.widget import WidgetAuthentication
 
 
@@ -492,14 +493,14 @@ class TestInboundWidgetDeliver:
 class TestInboundWidgetAbuse:
     """Throttling and body-size cap on the public widget deliver path."""
 
-    @patch("core.api.viewsets.inbound.widget.deliver_inbound_message", return_value=True)
+    @patch(
+        "core.api.viewsets.inbound.widget.deliver_inbound_message", return_value=True
+    )
     def test_per_ip_throttle_blocks_flood(self, _mock_deliver, api_client, channel):
         """Once the per-IP rate is exhausted, further posts get 429.
 
         The rate is forced low so the test is deterministic and fast.
         """
-        from core.api.viewsets.inbound import widget as widget_module
-
         data = {"email": "sender@example.com", "textBody": "hi"}
 
         with patch.object(
@@ -519,13 +520,13 @@ class TestInboundWidgetAbuse:
         assert first.status_code == status.HTTP_200_OK
         assert second.status_code == status.HTTP_429_TOO_MANY_REQUESTS
 
-    @patch("core.api.viewsets.inbound.widget.deliver_inbound_message", return_value=True)
+    @patch(
+        "core.api.viewsets.inbound.widget.deliver_inbound_message", return_value=True
+    )
     def test_per_channel_throttle_blocks_flood(
         self, _mock_deliver, api_client, channel
     ):
         """The per-channel cap trips even when the per-IP cap is generous."""
-        from core.api.viewsets.inbound import widget as widget_module
-
         data = {"email": "sender@example.com", "textBody": "hi"}
 
         with (
@@ -550,7 +551,9 @@ class TestInboundWidgetAbuse:
         assert first.status_code == status.HTTP_200_OK
         assert second.status_code == status.HTTP_429_TOO_MANY_REQUESTS
 
-    @patch("core.api.viewsets.inbound.widget.deliver_inbound_message", return_value=True)
+    @patch(
+        "core.api.viewsets.inbound.widget.deliver_inbound_message", return_value=True
+    )
     @override_settings(MAX_INCOMING_EMAIL_SIZE=1024)
     def test_oversized_body_rejected(self, mock_deliver, api_client, channel):
         """A body over MAX_INCOMING_EMAIL_SIZE is rejected before delivery."""
@@ -568,7 +571,9 @@ class TestInboundWidgetAbuse:
         assert response.status_code == status.HTTP_413_REQUEST_ENTITY_TOO_LARGE
         mock_deliver.assert_not_called()
 
-    @patch("core.api.viewsets.inbound.widget.deliver_inbound_message", return_value=True)
+    @patch(
+        "core.api.viewsets.inbound.widget.deliver_inbound_message", return_value=True
+    )
     @override_settings(MAX_INCOMING_EMAIL_SIZE=1024)
     def test_body_within_limit_accepted(self, mock_deliver, api_client, channel):
         """A body within the limit still goes through."""

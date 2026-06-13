@@ -9,7 +9,10 @@ import pytest
 
 from core import enums, factories, models
 from core.mda.inbound import deliver_inbound_message
-from core.mda.inbound_create import find_thread_for_inbound_message
+from core.mda.inbound_create import (
+    _create_message_from_inbound,
+    find_thread_for_inbound_message,
+)
 
 
 @pytest.mark.django_db
@@ -962,8 +965,7 @@ class TestInboundDedupIdempotency:
         }
 
     def test_same_mime_id_creates_single_message(self):
-        from core.mda.inbound_create import _create_message_from_inbound
-
+        """The same MIME Message-ID delivered twice yields a single message."""
         mailbox = factories.MailboxFactory()
         parsed = self._parsed("dup.race.1@example.com")
         raw = b"raw mime bytes"

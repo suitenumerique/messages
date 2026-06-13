@@ -1,6 +1,6 @@
 """Tests for IMAP connection manager and security features."""
 
-# pylint: disable=redefined-outer-name,invalid-name
+# pylint: disable=redefined-outer-name,invalid-name,protected-access
 
 import imaplib
 import ssl
@@ -27,6 +27,7 @@ class TestIMAPSSRFPinning:
     hostname — closing the DNS-rebinding (TOCTOU) SSRF window."""
 
     def test_validate_imap_host_returns_first_validated_ip(self):
+        """The first validated IP is the address pinned for the connection."""
         with patch(
             "core.services.importer.imap.validate_hostname",
             return_value=["203.0.113.5", "203.0.113.6"],
@@ -34,6 +35,7 @@ class TestIMAPSSRFPinning:
             assert _validate_imap_host("imap.example.com") == "203.0.113.5"
 
     def test_validate_imap_host_rejects_blocked_address(self):
+        """A host resolving to a blocked address raises ValueError."""
         with patch(
             "core.services.importer.imap.validate_hostname",
             side_effect=SSRFValidationError("resolves to private IP address"),

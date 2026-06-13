@@ -5159,7 +5159,7 @@
                         },
                         "description": ""
                     },
-                    "503": {
+                    "500": {
                         "content": {
                             "application/json": {
                                 "schema": {
@@ -9548,16 +9548,12 @@
             "SendMessageResponse": {
                 "type": "object",
                 "properties": {
-                    "message": {
-                        "$ref": "#/components/schemas/Message"
-                    },
                     "task_id": {
                         "type": "string",
                         "description": "Task ID for tracking"
                     }
                 },
                 "required": [
-                    "message",
                     "task_id"
                 ]
             },

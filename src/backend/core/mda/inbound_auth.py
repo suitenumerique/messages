@@ -187,10 +187,13 @@ def _native_dkim_outcome(raw_data: bytes, parsed_email: JmapEmail) -> str | None
     attacker who owns any DKIM-enabled domain could sign a message carrying a
     forged From: and have it shown as verified.
 
-    Native mode does no DMARC policy lookup, so an unaligned (but valid)
-    signature can't be called forgery; it downgrades to ``_NONE`` ("unverified")
-    rather than ``_FAIL``. (Both map to the same "none" verdict today, but the
-    distinction keeps the intent — and the log line — honest.)
+    Native mode never returns ``_FAIL``: it does no DMARC policy lookup, and a
+    bare DKIM verify can't tell a *missing* signature from an *invalid* one, so
+    it has no grounds to assert an explicit failure. Every non-pass outcome —
+    no/invalid signature, or a valid signature whose ``d=`` doesn't align with
+    From — collapses to ``_NONE`` ("unverified"). The unaligned case also logs
+    the mismatch, since a *valid* signature not matching From is the spoofing
+    signature.
     """
     try:
         signing_domain = verify_message_dkim(raw_data)
@@ -198,7 +201,9 @@ def _native_dkim_outcome(raw_data: bytes, parsed_email: JmapEmail) -> str | None
         logger.warning("Native DKIM verification errored: %s", e)
         return None
     if not signing_domain:
-        return _FAIL
+        # No signature, or one that didn't validate — a bare verify can't tell
+        # them apart, so this is "can't verify", not an explicit failure.
+        return _NONE
     from_domain = _from_header_domain(parsed_email)
     if from_domain and signing_domain == from_domain:
         return _PASS

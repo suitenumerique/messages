@@ -1441,6 +1441,7 @@ class TestOutboundDirectSSRF:
 
     @patch("core.mda.outbound_direct.dns.resolver.resolve")
     def test_resolve_hostname_ip_allows_public(self, mock_resolve):
+        """A public A record is accepted and returned."""
         mock_resolve.return_value = ["93.184.216.34"]
         assert resolve_hostname_ip("mx.good.test") == "93.184.216.34"
 

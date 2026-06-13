@@ -462,7 +462,12 @@ class TestSubmitIntegration:
 
     @patch(TASK_MOCK)
     def test_full_pipeline(
-        self, mock_task, client, auth_header, mailbox, django_capture_on_commit_callbacks
+        self,
+        mock_task,
+        client,
+        auth_header,
+        mailbox,
+        django_capture_on_commit_callbacks,
     ):
         """Submit creates a Message with thread, recipients, blob, and dispatches delivery."""
         mailbox_email = str(mailbox)

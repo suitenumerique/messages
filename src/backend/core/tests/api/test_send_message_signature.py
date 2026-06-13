@@ -133,7 +133,9 @@ class TestSendMessageAPIView:
             )
 
             assert response.status_code == status.HTTP_200_OK
-            assert uuid.UUID(response.data["task_id"])  # view-generated id, dispatched on commit
+            assert uuid.UUID(
+                response.data["task_id"]
+            )  # view-generated id, dispatched on commit
 
             message = models.Message.objects.get(id=draft_message.id)
             content = message.blob.get_content().decode()
@@ -176,7 +178,9 @@ class TestSendMessageAPIView:
                 )
 
                 assert response.status_code == status.HTTP_200_OK
-                assert uuid.UUID(response.data["task_id"])  # view-generated id, dispatched on commit
+                assert uuid.UUID(
+                    response.data["task_id"]
+                )  # view-generated id, dispatched on commit
 
     @override_settings(SCHEMA_CUSTOM_ATTRIBUTES_USER=SCHEMA_CUSTOM_ATTRIBUTES)
     def test_api_send_message_with_text_body_only(
@@ -213,7 +217,9 @@ class TestSendMessageAPIView:
             )
 
             assert response.status_code == status.HTTP_200_OK
-            assert uuid.UUID(response.data["task_id"])  # view-generated id, dispatched on commit
+            assert uuid.UUID(
+                response.data["task_id"]
+            )  # view-generated id, dispatched on commit
 
             message = models.Message.objects.get(id=draft_message.id)
             content = message.blob.get_content().decode()
@@ -258,7 +264,9 @@ class TestSendMessageAPIView:
             )
 
             assert response.status_code == status.HTTP_200_OK
-            assert uuid.UUID(response.data["task_id"])  # view-generated id, dispatched on commit
+            assert uuid.UUID(
+                response.data["task_id"]
+            )  # view-generated id, dispatched on commit
 
             message = models.Message.objects.get(id=draft_message.id)
             content = message.blob.get_content().decode()
@@ -313,7 +321,9 @@ class TestSendMessageAPIView:
             )
 
             assert response.status_code == status.HTTP_200_OK
-            assert uuid.UUID(response.data["task_id"])  # view-generated id, dispatched on commit
+            assert uuid.UUID(
+                response.data["task_id"]
+            )  # view-generated id, dispatched on commit
 
             message = models.Message.objects.get(id=draft_message.id)
             content = message.blob.get_content().decode()
@@ -354,7 +364,9 @@ class TestSendMessageAPIView:
                 )
 
             assert response.status_code == status.HTTP_200_OK
-            assert uuid.UUID(response.data["task_id"])  # view-generated id, dispatched on commit
+            assert uuid.UUID(
+                response.data["task_id"]
+            )  # view-generated id, dispatched on commit
 
             mock_task.apply_async.assert_called_once_with(
                 args=[str(draft_message.id)],
@@ -363,7 +375,12 @@ class TestSendMessageAPIView:
             )
 
     def test_api_send_message_with_archive_false(
-        self, user, mailbox_access, mailbox, draft_message, django_capture_on_commit_callbacks
+        self,
+        user,
+        mailbox_access,
+        mailbox,
+        draft_message,
+        django_capture_on_commit_callbacks,
     ):
         """Test sending a message with archive=False passes the parameter to the task."""
         # Authenticate user
@@ -387,7 +404,9 @@ class TestSendMessageAPIView:
                 )
 
             assert response.status_code == status.HTTP_200_OK
-            assert uuid.UUID(response.data["task_id"])  # view-generated id, dispatched on commit
+            assert uuid.UUID(
+                response.data["task_id"]
+            )  # view-generated id, dispatched on commit
 
             # Verify the task was dispatched with must_archive=False
             mock_task.apply_async.assert_called_once_with(
@@ -397,7 +416,12 @@ class TestSendMessageAPIView:
             )
 
     def test_api_send_message_without_archive_parameter(
-        self, user, mailbox_access, mailbox, draft_message, django_capture_on_commit_callbacks
+        self,
+        user,
+        mailbox_access,
+        mailbox,
+        draft_message,
+        django_capture_on_commit_callbacks,
     ):
         """Test sending a message without archive parameter defaults to False."""
         # Authenticate user
@@ -420,7 +444,9 @@ class TestSendMessageAPIView:
                 )
 
             assert response.status_code == status.HTTP_200_OK
-            assert uuid.UUID(response.data["task_id"])  # view-generated id, dispatched on commit
+            assert uuid.UUID(
+                response.data["task_id"]
+            )  # view-generated id, dispatched on commit
 
             # Verify the task was dispatched with must_archive=False (default)
             mock_task.apply_async.assert_called_once_with(
@@ -486,7 +512,12 @@ class TestSendMessageSecurity:
             mock_task.delay.assert_not_called()
 
     def test_send_task_dispatched_only_after_commit(
-        self, user, mailbox_access, mailbox, draft_message, django_capture_on_commit_callbacks
+        self,
+        user,
+        mailbox_access,
+        mailbox,
+        draft_message,
+        django_capture_on_commit_callbacks,
     ):
         """The delivery task is registered on transaction.on_commit, not fired
         inline — so a rolled-back send never leaks a task to the broker.

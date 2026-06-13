@@ -233,9 +233,7 @@ class DraftMessageView(APIView):
         # Resolve + authorize the sender mailbox (user must hold an editor-or-
         # above role on it). create_draft separately enforces access to the
         # parent thread for replies.
-        sender_mailbox = self._resolve_editable_sender_mailbox(
-            request.user, sender_id
-        )
+        sender_mailbox = self._resolve_editable_sender_mailbox(request.user, sender_id)
 
         # Create draft
         message = create_draft(
@@ -278,9 +276,7 @@ class DraftMessageView(APIView):
         # Resolve + authorize the sender mailbox (editor-or-above role). The
         # draft lookup below additionally scopes to a draft whose thread this
         # mailbox can edit (404 otherwise).
-        sender_mailbox = self._resolve_editable_sender_mailbox(
-            request.user, sender_id
-        )
+        sender_mailbox = self._resolve_editable_sender_mailbox(request.user, sender_id)
 
         # Get the draft message
         try:

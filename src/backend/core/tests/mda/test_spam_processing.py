@@ -226,7 +226,7 @@ class TestRspamdSpamCheck:
 
 
 @pytest.mark.django_db
-class TestHardcodedSpamRules:
+class TestHardcodedSpamRules:  # pylint: disable=too-many-public-methods
     """Test hardcoded spam rules functionality."""
 
     def test_check_spam_with_hardcoded_rules_spam(self):

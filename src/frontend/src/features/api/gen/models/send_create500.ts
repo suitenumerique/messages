@@ -9,4 +9,4 @@
 /**
  * Unspecified response body
  */
-export type SendCreate503 = { [key: string]: unknown };
+export type SendCreate500 = { [key: string]: unknown };

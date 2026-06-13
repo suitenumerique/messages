@@ -78,9 +78,19 @@ class TestE2EMessageOutboundFlow:
     """Test the outbound flow: API -> MDA -> Mailcatcher -> Verification."""
 
     @override_settings(MTA_OUT_MODE="direct", MTA_OUT_DIRECT_PORT=1025)
+    # The e2e MX (mailcatcher) resolves to a private compose-network IP, which
+    # the outbound SSRF guard (assert_public_ip) rejects. Bypass it here so the
+    # direct path can deliver to the local catcher.
+    @patch("core.mda.outbound_direct.assert_public_ip")
     @patch("core.mda.outbound_direct.dns.resolver.resolve")
     def test_draft_send_receive_verify_direct(
-        self, mock_resolve, mailbox, sender_contact, authenticated_user
+        self,
+        mock_resolve,
+        _mock_assert_public_ip,
+        mailbox,
+        sender_contact,
+        authenticated_user,
+        django_capture_on_commit_callbacks,
     ):
         """Test sending with mailcatcher as a MX server using direct SMTP"""
         mailcatcher_ip = socket.gethostbyname("mailcatcher")
@@ -97,19 +107,39 @@ class TestE2EMessageOutboundFlow:
 
         mock_resolve.side_effect = resolve_return_value
 
-        self._test(mailbox, sender_contact, authenticated_user)
+        self._test(
+            mailbox,
+            sender_contact,
+            authenticated_user,
+            django_capture_on_commit_callbacks,
+        )
 
     @override_settings(
         MTA_OUT_MODE="relay",
         MTA_OUT_RELAY_HOST="mailcatcher:1025",
     )
     def test_draft_send_receive_verify_relay(
-        self, mailbox, sender_contact, authenticated_user
+        self,
+        mailbox,
+        sender_contact,
+        authenticated_user,
+        django_capture_on_commit_callbacks,
     ):
         """Test sending with mailcatcher as an SMTP relay"""
-        self._test(mailbox, sender_contact, authenticated_user)
+        self._test(
+            mailbox,
+            sender_contact,
+            authenticated_user,
+            django_capture_on_commit_callbacks,
+        )
 
-    def _test(self, mailbox, sender_contact, authenticated_user):
+    def _test(
+        self,
+        mailbox,
+        sender_contact,
+        authenticated_user,
+        django_capture_on_commit_callbacks,
+    ):
         """Test creating a draft, sending it, receiving via mailcatcher, and verifying content/DKIM."""
         # --- Setup --- #
         # Create and configure DKIM key for the domain
@@ -176,9 +206,13 @@ class TestE2EMessageOutboundFlow:
             "textBody": "This is the E2E test body.",
             "htmlBody": "<p>This is the E2E test body.</p>",
         }
-        send_response = client.post(
-            reverse("send-message"), send_payload, format="json"
-        )
+        # Delivery is dispatched via ``transaction.on_commit`` (see
+        # SendMessageView), so capture and execute the callbacks to run the
+        # deferred ``send_message_task`` inline (CELERY_TASK_ALWAYS_EAGER).
+        with django_capture_on_commit_callbacks(execute=True):
+            send_response = client.post(
+                reverse("send-message"), send_payload, format="json"
+            )
         assert send_response.status_code == status.HTTP_200_OK, send_response.content
 
         assert (
