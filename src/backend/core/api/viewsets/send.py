@@ -33,7 +33,7 @@ logger = logging.getLogger(__name__)
         200: inline_serializer(
             name="SendMessageResponse",
             fields={
-                "task_id": drf_serializers.CharField(help_text="Task ID for tracking"),
+                "task_id": drf_serializers.UUIDField(help_text="Task ID for tracking"),
             },
         ),
         400: OpenApiExample(
@@ -65,6 +65,12 @@ logger = logging.getLogger(__name__)
                 "textBody": "Hello, world!",
                 "htmlBody": "<p>Hello, world!</p>",
             },
+            request_only=True,
+        ),
+        OpenApiExample(
+            "Send Draft Result",
+            value={"task_id": "123e4567-e89b-12d3-a456-426614174000"},
+            response_only=True,
         ),
     ],
 )

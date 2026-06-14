@@ -5121,14 +5121,11 @@
                                     "$ref": "#/components/schemas/SendMessageResponse"
                                 },
                                 "examples": {
-                                    "SendDraft": {
+                                    "SendDraftResult": {
                                         "value": {
-                                            "messageId": "123e4567-e89b-12d3-a456-426614174000",
-                                            "senderId": "a1b2c3d4-e5f6-7890-1234-567890abcdef",
-                                            "textBody": "Hello, world!",
-                                            "htmlBody": "<p>Hello, world!</p>"
+                                            "task_id": "123e4567-e89b-12d3-a456-426614174000"
                                         },
-                                        "summary": "Send Draft"
+                                        "summary": "Send Draft Result"
                                     }
                                 }
                             }
@@ -9550,6 +9547,7 @@
                 "properties": {
                     "task_id": {
                         "type": "string",
+                        "format": "uuid",
                         "description": "Task ID for tracking"
                     }
                 },

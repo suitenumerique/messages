@@ -519,6 +519,9 @@ class TestInboundWidgetAbuse:
 
         assert first.status_code == status.HTTP_200_OK
         assert second.status_code == status.HTTP_429_TOO_MANY_REQUESTS
+        # The throttled request must be rejected before the view runs delivery:
+        # only the first (200) post reached deliver_inbound_message.
+        _mock_deliver.assert_called_once()
 
     @patch(
         "core.api.viewsets.inbound.widget.deliver_inbound_message", return_value=True

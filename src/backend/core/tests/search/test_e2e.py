@@ -323,6 +323,9 @@ class TestSearchE2E:
             contact=contact,
             type=enums.MessageRecipientTypeChoices.TO,
         )
+        # Keep the thread's denormalized stats consistent with its messages,
+        # the way production does after a message lands.
+        thread.update_stats()
         wait_for_indexing()
 
         es = get_opensearch_client()
@@ -393,6 +396,9 @@ class TestSearchE2E:
             contact=contact,
             type=enums.MessageRecipientTypeChoices.TO,
         )
+        # Keep the thread's denormalized stats consistent with its messages,
+        # the way production does after a message lands.
+        thread.update_stats()
         wait_for_indexing()
 
         es = get_opensearch_client()
