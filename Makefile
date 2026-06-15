@@ -114,13 +114,8 @@ build: ## build the project containers
 .PHONY: build
 
 build-back-distroless: ## build the distroless production image
-	# Sibling jmap-email package is plumbed via BuildKit named context
-	# (see src/backend/Dockerfile ``COPY --from=jmap-email``). Use buildx
-	# explicitly so ``--build-context`` is available even on hosts where
-	# ``docker build`` still resolves to the legacy builder.
 	@docker buildx build --load --target runtime-distroless-prod -t messages-distroless \
 		-f src/backend/Dockerfile \
-		--build-context jmap-email=src/jmap-email \
 		src/backend/
 .PHONY: build-back-distroless
 

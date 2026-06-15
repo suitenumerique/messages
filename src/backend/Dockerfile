@@ -48,14 +48,6 @@ RUN uv python install 3.14.5
 FROM uv AS base-with-deps
 
 COPY pyproject.toml uv.lock ./
-# Path-based sibling dependency from src/jmap-email — uv's sync needs
-# the directory on disk at the same relative path the source tree uses
-# (``../jmap-email``). The sibling package is plumbed in as a named
-# build context (BuildKit's ``additional_contexts`` — see compose.yaml
-# ``backend-base``) so the primary build context stays narrow at
-# ``src/backend`` and Docker only re-scans the jmap-email tree when it
-# actually changes.
-COPY --from=jmap-email . /jmap-email
 
 ENV PATH="/venv/bin:$PATH"
 

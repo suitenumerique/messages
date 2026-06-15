@@ -26,11 +26,6 @@ name: Build and Push Container Image
         required: false
         default: ""
         description: "Build arg name to pass first amd64 tag to arm64 build (skips arch-independent build steps)"
-      build_contexts:
-        type: string
-        required: false
-        default: ""
-        description: "Newline-separated BuildKit named build contexts (e.g. ``jmap-email=src/jmap-email``)."
 
 # see https://docs.github.com/en/enterprise-cloud@latest/actions/how-tos/use-cases-and-examples/publishing-packages/publishing-docker-images#publishing-images-to-github-packages
 jobs:
@@ -88,7 +83,6 @@ jobs:
           provenance: false
           tags: ${{ steps.platform-tags.outputs.amd64 }}
           labels: ${{ steps.meta.outputs.labels }}
-          build-contexts: ${{ inputs.build_contexts }}
       - name: Build and push (arm64)
         uses: docker/build-push-action@v6
         with:
@@ -99,7 +93,6 @@ jobs:
           provenance: false
           tags: ${{ steps.platform-tags.outputs.arm64 }}
           labels: ${{ steps.meta.outputs.labels }}
-          build-contexts: ${{ inputs.build_contexts }}
           build-args: |
             ${{ inputs.arm64_reuse_amd64_build_arg && format('{0}={1}', inputs.arm64_reuse_amd64_build_arg, steps.platform-tags.outputs.amd64_first) || '' }}
       - name: Create multi-arch manifests

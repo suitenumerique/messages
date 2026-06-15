@@ -946,18 +946,11 @@ wheels = [
 [[package]]
 name = "jmap-email"
 version = "0.1.0"
-source = { editable = "../jmap-email" }
-
-[package.metadata]
-requires-dist = [
-    { name = "hypothesis", marker = "extra == 'dev'", specifier = ">=6.151.0" },
-    { name = "pylint", marker = "extra == 'dev'", specifier = ">=4.0.4" },
-    { name = "pytest", marker = "extra == 'dev'", specifier = ">=9.0.0" },
-    { name = "pytest-cov", marker = "extra == 'dev'", specifier = ">=7.0.0" },
-    { name = "ruff", marker = "extra == 'dev'", specifier = ">=0.15.0" },
-    { name = "ty", marker = "extra == 'dev'", specifier = ">=0.0.44" },
+source = { registry = "https://pypi.org/simple" }
+sdist = { url = "https://files.pythonhosted.org/packages/e5/65/86143692dc38e57ea950d85f6a7d66ea9df9a3b64debd8d258cb8ba2cb4d/jmap_email-0.1.0.tar.gz", hash = "sha256:04d906c22aff25ac62819bda04f467bc9f65e041be4a1f96bb5439a54c4d2de1", size = 149817, upload-time = "2026-06-09T13:41:36.923Z" }
+wheels = [
+    { url = "https://files.pythonhosted.org/packages/67/bf/41fd7b86859391bc112114162ae9d21d1a98c09986dfdc0872132e19dbf7/jmap_email-0.1.0-py3-none-any.whl", hash = "sha256:a32d8b49f5f33ae27de1279a1d402c1714c85c35a1b55844251c985a32ff1498", size = 59633, upload-time = "2026-06-09T13:41:34.395Z" },
 ]
-provides-extras = ["dev"]
 
 [[package]]
 name = "jmespath"
@@ -1201,7 +1194,7 @@ requires-dist = [
     { name = "gunicorn", specifier = "==25.1.0" },
     { name = "hypothesis", marker = "extra == 'dev'", specifier = "==6.151.9" },
     { name = "icalendar", specifier = "==7.0.3" },
-    { name = "jmap-email", editable = "../jmap-email" },
+    { name = "jmap-email", specifier = "==0.1.0" },
     { name = "jsonschema", specifier = "==4.26.0" },
     { name = "libpff-python", specifier = "==20231205" },
     { name = "nested-multipart-parser", specifier = "==1.6.0" },

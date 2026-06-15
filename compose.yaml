@@ -83,8 +83,6 @@ services:
   backend-base:
     build:
       context: src/backend
-      additional_contexts:
-        jmap-email: ./src/jmap-email
       target: runtime-dev
       args:
         DOCKER_USER: ${DOCKER_USER:-1000}
@@ -92,11 +90,13 @@ services:
     volumes:
       - ./src/backend:/app
       - ./data/static:/data/static
-      # Live-mount the jmap-email package over the frozen install so
-      # source edits propagate without a rebuild. The wheel installed
-      # at ``/venv/lib/${PYTHON_VERSION}/site-packages/jmap_email`` is
-      # overlaid with the editable source. Override ``PYTHON_VERSION``
-      # in the environment when the backend's Python floor moves.
+      # Dev-only override: live-mount the jmap-email working tree over the
+      # package installed from PyPI so local source edits propagate without a
+      # rebuild. The wheel installed at
+      # ``/venv/lib/${PYTHON_VERSION}/site-packages/jmap_email`` is overlaid
+      # with the working-tree source. Override ``PYTHON_VERSION`` in the
+      # environment when the backend's Python floor moves. Comment this mount
+      # out to run exactly what CI/prod install from PyPI.
       - ./src/jmap-email/jmap_email:/venv/lib/${PYTHON_VERSION:-python3.14}/site-packages/jmap_email
     healthcheck:
       test: ["CMD", "python", "-c", "import urllib.request as u; u.urlopen('http://localhost:8000/__heartbeat__/', timeout=1)"]
@@ -150,24 +150,14 @@ services:
       - tools
     volumes:
       - ./src/backend:/app
-      # Sibling package for path-based uv dependency. Both `backend`
-      # and `jmap-email` must be visible at the SAME relative path
-      # from /app as they are on the host (../jmap-email), so the
-      # ``[tool.uv.sources]`` declaration in src/backend/pyproject.toml
-      # resolves correctly inside the container.
-      - ./src/jmap-email:/jmap-email
     build:
       context: src/backend
-      additional_contexts:
-        jmap-email: ./src/jmap-email
       target: uv
     pull_policy: build
 
   worker-dev:
     build:
       context: src/backend
-      additional_contexts:
-        jmap-email: ./src/jmap-email
       target: runtime-dev
       args:
         DOCKER_USER: ${DOCKER_USER:-1000}
@@ -188,8 +178,6 @@ services:
   worker-ui:
     build:
       context: src/backend
-      additional_contexts:
-        jmap-email: ./src/jmap-email
       target: runtime-dev
       args:
         DOCKER_USER: ${DOCKER_USER:-1000}
