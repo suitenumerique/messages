@@ -324,9 +324,11 @@ def prepare_outbound_message(
         # atomic for just the Blob INSERT + FK-establishing save —
         # this keeps the per-sha advisory lock taken inside
         # ``create_blob`` held for ms, not for the duration of DKIM.
-        # Caller-supplied MIME may also lack a To header (e.g. Bcc-only).
-        # Detect via the lib parser and add the placeholder before signing.
-        if not find_header(parse_email(raw_mime), "to"):
+        # Caller-supplied MIME may also lack a To header (e.g. Bcc-only); add
+        # the placeholder before signing. ``parse_email`` returns None on
+        # unparseable input (already rejected upstream by the submit view).
+        parsed = parse_email(raw_mime)
+        if parsed is not None and not find_header(parsed, "to"):
             raw_mime = UNDISCLOSED_RECIPIENTS_TO_HEADER + b"\r\n" + raw_mime
         signed_mime = _sign_mime(mailbox_sender, raw_mime)
         validate_mime_size(len(signed_mime), message.id)

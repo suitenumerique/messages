@@ -343,6 +343,33 @@ class TestSubmitValidation:
         )
         assert response.status_code == 400
 
+    def test_bcc_header_returns_400(self, client, auth_header, mailbox):
+        """A Bcc header in the submitted MIME is rejected: blind recipients
+        belong in the X-Rcpt-To envelope, not in the (signed, delivered)
+        headers."""
+        mime_with_bcc = (
+            b"From: contact@company.com\r\n"
+            b"To: attendee@example.com\r\n"
+            b"Bcc: secret@example.com\r\n"
+            b"Subject: With Bcc\r\n"
+            b"Message-ID: <bcc-reject@company.com>\r\n"
+            b"Date: Mon, 30 Mar 2026 10:00:00 +0000\r\n"
+            b"MIME-Version: 1.0\r\n"
+            b"Content-Type: text/plain; charset=utf-8\r\n"
+            b"\r\n"
+            b"Hello world\r\n"
+        )
+        response = client.post(
+            SUBMIT_URL,
+            data=mime_with_bcc,
+            content_type="message/rfc822",
+            HTTP_X_MAIL_FROM=str(mailbox.id),
+            HTTP_X_RCPT_TO="attendee@example.com",
+            **auth_header,
+        )
+        assert response.status_code == 400
+        assert "Bcc" in response.json()["detail"]
+
 
 # =============================================================================
 # Message creation + DKIM signing + async dispatch
@@ -593,6 +620,49 @@ class TestSubmitIntegration:
             contact__email="hidden@example.com",
             type=MessageRecipientTypeChoices.BCC,
         ).exists()
+
+    @patch(TASK_MOCK)
+    def test_to_less_submission_gets_undisclosed_recipients(
+        self, mock_task, client, auth_header, mailbox
+    ):
+        """A submission with no To/Cc header (every recipient travels via
+        X-Rcpt-To) gets the empty-group placeholder in the stored blob, so it
+        isn't flagged for a missing To."""
+        mailbox_email = str(mailbox)
+        # No To/Cc header at all.
+        mime = (
+            f"From: {mailbox_email}\r\n"
+            f"Subject: No To header\r\n"
+            f"Message-ID: <noto@example.com>\r\n"
+            f"Date: Mon, 30 Mar 2026 10:00:00 +0000\r\n"
+            f"MIME-Version: 1.0\r\n"
+            f"Content-Type: text/plain\r\n"
+            f"\r\n"
+            f"body\r\n"
+        ).encode()
+
+        response = client.post(
+            SUBMIT_URL,
+            data=mime,
+            content_type="message/rfc822",
+            HTTP_X_MAIL_FROM=str(mailbox.id),
+            HTTP_X_RCPT_TO="hidden@example.com",
+            **auth_header,
+        )
+
+        assert response.status_code == 202, response.content
+        from core.enums import MessageRecipientTypeChoices
+        from core.models import Message
+
+        message = Message.objects.get(id=response.json()["message_id"])
+        # The envelope-only recipient is stored as BCC, never in the MIME.
+        assert message.recipients.filter(
+            contact__email="hidden@example.com",
+            type=MessageRecipientTypeChoices.BCC,
+        ).exists()
+        content = message.blob.get_content()
+        assert b"To: undisclosed-recipients:;" in content
+        assert b"hidden@example.com" not in content
 
     @patch(TASK_MOCK)
     def test_cc_recipients_created(self, mock_task, client, auth_header, mailbox):

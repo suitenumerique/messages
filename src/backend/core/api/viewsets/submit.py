@@ -13,7 +13,7 @@ from django.core.exceptions import ValidationError as DjangoValidationError
 from django.db import transaction
 
 from drf_spectacular.utils import extend_schema
-from jmap_email import parse_email
+from jmap_email import find_headers, parse_email
 from rest_framework import status
 from rest_framework.exceptions import PermissionDenied
 from rest_framework.response import Response
@@ -125,6 +125,20 @@ class SubmitRawEmailView(APIView):
             return Response(
                 {"detail": f"From header does not match mailbox '{mailbox_email}'."},
                 status=status.HTTP_403_FORBIDDEN,
+            )
+
+        # Bcc must travel in the X-Rcpt-To envelope, never in the MIME: a Bcc
+        # header would be signed and delivered visibly to every recipient
+        # (RFC 5322 §3.6.3). Reject rather than silently rewrite caller bytes.
+        if find_headers(parsed, "bcc"):
+            return Response(
+                {
+                    "detail": (
+                        "Bcc headers are not allowed; pass blind recipients "
+                        "via the X-Rcpt-To envelope."
+                    )
+                },
+                status=status.HTTP_400_BAD_REQUEST,
             )
 
         # Create the message, sign it, and arm the SMTP dispatch atomically.
