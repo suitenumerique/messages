@@ -106,6 +106,13 @@ def validate_attachments_size(total_size: int, message_id: str) -> None:
         )
 
 
+# When a message has no To recipient, emit a "To:" header using empty-group
+# syntax (RFC 4356 §3). A missing To header is a common anti-spam negative
+# signal (and resembles a DKIM-replay shape), so this keeps such sends —
+# typically Bcc-only — looking legitimate without disclosing anyone.
+UNDISCLOSED_RECIPIENTS_TO_HEADER = b"To: undisclosed-recipients:;"
+
+
 def compose_and_sign_mime(
     message: models.Message,
     mailbox: models.Mailbox,
@@ -198,6 +205,12 @@ def compose_and_sign_mime(
         in_reply_to=message.parent.mime_id if message.parent else None,
         prepend_headers=prepend_headers,
     )
+
+    # No To recipient (e.g. a Bcc-only send): inject an empty-group placeholder
+    # before signing so the header is covered by DKIM (``To`` is in the signed
+    # set, see core/mda/signing.py).
+    if not mime_data["to"]:
+        raw_mime = UNDISCLOSED_RECIPIENTS_TO_HEADER + b"\r\n" + raw_mime
 
     dkim_header = sign_message_dkim(raw_mime, mailbox.domain)
     if dkim_header:

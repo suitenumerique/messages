@@ -12,6 +12,7 @@ from django.test import TransactionTestCase, override_settings
 import dns.resolver
 import pytest
 import rest_framework as drf
+from dkim import verify as dkim_verify
 
 from core import enums, factories, models
 from core.mda import outbound
@@ -31,6 +32,9 @@ SCHEMA_CUSTOM_ATTRIBUTES = {
     },
     "required": [],
 }
+
+# Module-level DKIM keypair (1024-bit for speed) used by the signing tests.
+_TEST_DKIM_PRIVATE_KEY, _TEST_DKIM_PUBLIC_KEY = generate_dkim_key(key_size=1024)
 
 
 @pytest.fixture(name="user")
@@ -908,6 +912,152 @@ class TestPrepareOutboundMessageReadAt:
         message.refresh_from_db()
         assert access.read_at is not None
         assert access.read_at >= message.created_at
+
+
+@pytest.mark.django_db
+class TestUndisclosedRecipientsHeader:
+    """A message with no To recipient (e.g. Bcc-only) must get an empty-group
+    ``To: undisclosed-recipients:;`` header (RFC 4356) so receivers don't
+    flag the missing To as a spam signal. Messages that already have a
+    visible To must be left untouched."""
+
+    def _make_draft(self, mailbox_sender):
+        return factories.MessageFactory(
+            thread=factories.ThreadFactory(),
+            sender=factories.ContactFactory(mailbox=mailbox_sender),
+            is_draft=True,
+            subject="Test Message",
+            signature=None,
+        )
+
+    def _add_recipient(self, message, mailbox_sender, email, kind):
+        factories.MessageRecipientFactory(
+            message=message,
+            contact=factories.ContactFactory(mailbox=mailbox_sender, email=email),
+            type=kind,
+        )
+
+    def test_bcc_only_message_gets_undisclosed_to_header(
+        self, user, mailbox_sender, mailbox_access
+    ):
+        """Bcc-only send → placeholder added, Bcc address never leaked."""
+        message = self._make_draft(mailbox_sender)
+        self._add_recipient(
+            message,
+            mailbox_sender,
+            "bcc@example.com",
+            models.MessageRecipientTypeChoices.BCC,
+        )
+
+        assert (
+            outbound.prepare_outbound_message(
+                mailbox_sender, message, "Hello", "<p>Hello</p>", user
+            )
+            is True
+        )
+
+        message.refresh_from_db()
+        content = message.blob.get_content().decode()
+        assert "To: undisclosed-recipients:;" in content
+        # The Bcc recipient must never end up in a visible header.
+        assert "bcc@example.com" not in content
+
+    def test_to_recipient_suppresses_placeholder(
+        self, user, mailbox_sender, mailbox_access
+    ):
+        """A visible To recipient → no placeholder, real To preserved."""
+        message = self._make_draft(mailbox_sender)
+        self._add_recipient(
+            message,
+            mailbox_sender,
+            "to@example.com",
+            models.MessageRecipientTypeChoices.TO,
+        )
+        self._add_recipient(
+            message,
+            mailbox_sender,
+            "bcc@example.com",
+            models.MessageRecipientTypeChoices.BCC,
+        )
+
+        outbound.prepare_outbound_message(
+            mailbox_sender, message, "Hello", "<p>Hello</p>", user
+        )
+
+        message.refresh_from_db()
+        content = message.blob.get_content().decode()
+        assert "undisclosed-recipients" not in content
+        assert "to@example.com" in content
+
+    def test_cc_only_message_gets_undisclosed_to_header(
+        self, user, mailbox_sender, mailbox_access
+    ):
+        """A Cc-only send still has no To, so it gets the placeholder while
+        keeping the visible Cc recipient."""
+        message = self._make_draft(mailbox_sender)
+        self._add_recipient(
+            message,
+            mailbox_sender,
+            "cc@example.com",
+            models.MessageRecipientTypeChoices.CC,
+        )
+
+        outbound.prepare_outbound_message(
+            mailbox_sender, message, "Hello", "<p>Hello</p>", user
+        )
+
+        message.refresh_from_db()
+        content = message.blob.get_content().decode()
+        assert "To: undisclosed-recipients:;" in content
+        assert "cc@example.com" in content
+
+    def test_undisclosed_to_header_is_covered_by_dkim(
+        self, user, mailbox_sender, mailbox_access
+    ):
+        """The placeholder is added before signing, so DKIM (which signs To)
+        covers it — the key improvement over patching the blob afterwards."""
+        dkim_key = models.DKIMKey.objects.create(
+            selector="testselector",
+            private_key=_TEST_DKIM_PRIVATE_KEY,
+            public_key=_TEST_DKIM_PUBLIC_KEY,
+            key_size=1024,
+            is_active=True,
+            domain=mailbox_sender.domain,
+        )
+        message = self._make_draft(mailbox_sender)
+        self._add_recipient(
+            message,
+            mailbox_sender,
+            "bcc@example.com",
+            models.MessageRecipientTypeChoices.BCC,
+        )
+
+        outbound.prepare_outbound_message(
+            mailbox_sender, message, "Hello", "<p>Hello</p>", user
+        )
+
+        message.refresh_from_db()
+        email_source = message.blob.get_content()
+        assert b"To: undisclosed-recipients:;" in email_source
+        assert b"DKIM-Signature:" in email_source
+
+        domain = mailbox_sender.domain.name
+
+        def get_dns_txt(fqdn, **kwargs):
+            if fqdn == f"testselector._domainkey.{domain}.".encode():
+                return f"v=DKIM1; k=rsa; p={dkim_key.public_key}".encode()
+            return None
+
+        assert dkim_verify(email_source, dnsfunc=get_dns_txt), (
+            "DKIM verification failed"
+        )
+
+        # Tampering with the now-signed To header must break the signature,
+        # proving the placeholder is part of the signed header set.
+        tampered = email_source.replace(
+            b"To: undisclosed-recipients:;", b"To: attacker@evil.com"
+        )
+        assert not dkim_verify(tampered, dnsfunc=get_dns_txt)
 
 
 @pytest.mark.django_db
