@@ -13,6 +13,7 @@ from django.utils import timezone
 import rest_framework as drf
 from jmap_email import (
     compose_email,
+    find_header,
     first_address_email,
     parse_email,
 )
@@ -206,9 +207,8 @@ def compose_and_sign_mime(
         prepend_headers=prepend_headers,
     )
 
-    # No To recipient (e.g. a Bcc-only send): inject an empty-group placeholder
-    # before signing so the header is covered by DKIM (``To`` is in the signed
-    # set, see core/mda/signing.py).
+    # Bcc/Cc-only send: the composed MIME has no To header. Add the empty-group
+    # placeholder before signing so it is covered by DKIM.
     if not mime_data["to"]:
         raw_mime = UNDISCLOSED_RECIPIENTS_TO_HEADER + b"\r\n" + raw_mime
 
@@ -324,6 +324,10 @@ def prepare_outbound_message(
         # atomic for just the Blob INSERT + FK-establishing save —
         # this keeps the per-sha advisory lock taken inside
         # ``create_blob`` held for ms, not for the duration of DKIM.
+        # Caller-supplied MIME may also lack a To header (e.g. Bcc-only).
+        # Detect via the lib parser and add the placeholder before signing.
+        if not find_header(parse_email(raw_mime), "to"):
+            raw_mime = UNDISCLOSED_RECIPIENTS_TO_HEADER + b"\r\n" + raw_mime
         signed_mime = _sign_mime(mailbox_sender, raw_mime)
         validate_mime_size(len(signed_mime), message.id)
         message.sender_user = user

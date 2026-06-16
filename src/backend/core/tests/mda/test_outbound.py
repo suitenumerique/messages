@@ -1011,6 +1011,39 @@ class TestUndisclosedRecipientsHeader:
         assert "To: undisclosed-recipients:;" in content
         assert "cc@example.com" in content
 
+    def test_raw_mime_submission_without_to_gets_placeholder(
+        self, user, mailbox_sender, mailbox_access
+    ):
+        """The raw-MIME submission path (e.g. a Bcc-only send whose MIME has no
+        To header) is normalized too, before the blob is signed."""
+        message = self._make_draft(mailbox_sender)
+        self._add_recipient(
+            message,
+            mailbox_sender,
+            "bcc@example.com",
+            models.MessageRecipientTypeChoices.BCC,
+        )
+        raw_mime = (
+            b"From: sender@example.com\r\n"
+            b"Subject: Raw MIME test\r\n"
+            b"Date: Mon, 16 Jun 2026 12:00:00 +0000\r\n"
+            b"\r\n"
+            b"Body without a To header.\r\n"
+        )
+
+        assert (
+            outbound.prepare_outbound_message(
+                mailbox_sender, message, "", "", user, raw_mime=raw_mime
+            )
+            is True
+        )
+
+        message.refresh_from_db()
+        content = message.blob.get_content().decode()
+        assert "To: undisclosed-recipients:;" in content
+        # The Bcc recipient must never end up in a visible header.
+        assert "bcc@example.com" not in content
+
     def test_undisclosed_to_header_is_covered_by_dkim(
         self, user, mailbox_sender, mailbox_access
     ):
