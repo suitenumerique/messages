@@ -2405,23 +2405,23 @@ class ChannelCreateResponseSerializer(ChannelSerializer):
     response directly; the view assembles the body by hand.
     """
 
+    # ``required=False`` without ``read_only`` so drf-spectacular lists
+    # these as optional (not ``required``) in the response schema — each
+    # create returns only the one credential matching the channel type /
+    # auth_method, so the others are intentionally absent.
     api_key = serializers.CharField(
-        read_only=True,
         required=False,
         help_text="api_key channels only — the plaintext API key.",
     )
     password = serializers.CharField(
-        read_only=True,
         required=False,
         help_text="Plaintext password, when the channel type mints one.",
     )
     webhook_secret = serializers.CharField(
-        read_only=True,
         required=False,
         help_text="webhook channels with auth_method=jwt — the HMAC/JWT signing secret.",
     )
     webhook_api_key = serializers.CharField(
-        read_only=True,
         required=False,
         help_text="webhook channels with auth_method=api_key — the derived API key.",
     )

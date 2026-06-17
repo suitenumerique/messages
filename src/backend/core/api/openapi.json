@@ -7580,40 +7580,32 @@
                     },
                     "api_key": {
                         "type": "string",
-                        "readOnly": true,
                         "description": "api_key channels only — the plaintext API key."
                     },
                     "password": {
                         "type": "string",
-                        "readOnly": true,
                         "description": "Plaintext password, when the channel type mints one."
                     },
                     "webhook_secret": {
                         "type": "string",
-                        "readOnly": true,
                         "description": "webhook channels with auth_method=jwt — the HMAC/JWT signing secret."
                     },
                     "webhook_api_key": {
                         "type": "string",
-                        "readOnly": true,
                         "description": "webhook channels with auth_method=api_key — the derived API key."
                     }
                 },
                 "required": [
-                    "api_key",
                     "created_at",
                     "id",
                     "last_used_at",
                     "mailbox",
                     "maildomain",
                     "name",
-                    "password",
                     "scope_level",
                     "type",
                     "updated_at",
-                    "user",
-                    "webhook_api_key",
-                    "webhook_secret"
+                    "user"
                 ]
             },
             "ChannelRequest": {

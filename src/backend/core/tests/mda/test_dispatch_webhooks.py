@@ -2,6 +2,7 @@
 
 # pylint: disable=protected-access,import-outside-toplevel,missing-function-docstring
 # pylint: disable=missing-class-docstring,too-many-lines,too-many-public-methods
+# pylint: disable=use-implicit-booleaness-not-comparison
 
 import hashlib
 import hmac
@@ -262,8 +263,10 @@ class TestBuildJmapEmail:
         email = build_jmap_email(parsed)
         # Strict-JMAP fields pass through unchanged.
         assert email["messageId"] == ["abc@example.org"]
-        assert not email["inReplyTo"]
-        assert not email["references"]
+        # Strict JMAP Id[] contract: these must be empty lists, not just
+        # any falsey value.
+        assert email["inReplyTo"] == []
+        assert email["references"] == []
         assert email["from"] == [{"email": "alice@example.org", "name": "Alice"}]
         assert email["sentAt"] == "2026-01-01T00:00:00Z"
         # ``receivedAt`` is stamped at webhook-fire time.
