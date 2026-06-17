@@ -147,7 +147,7 @@ export const WebhookIntegrationForm = ({
                     </ToasterItem>,
                 );
                 await invalidateChannels();
-                if (newChannel.status < 300) {
+                if (newChannel.status === 201) {
                     // Surface the freshly minted credential exactly
                     // once — the receiver needs this value to verify
                     // every webhook we send. The backend returns
