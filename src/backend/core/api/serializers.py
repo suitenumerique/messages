@@ -2253,16 +2253,23 @@ class ChannelSerializer(CreateOnlyFieldsMixin, serializers.ModelSerializer):
             raise serializers.ValidationError(
                 {"settings": "webhook channels require settings.url (a string)."}
             )
-        if not url.startswith(("http://", "https://")):
+        # Parse first so the scheme check sees urlparse's normalized
+        # (lowercased) scheme — a raw ``startswith`` would wrongly reject
+        # e.g. ``HTTPS://``.
+        parsed_url = urlparse(url)
+        if parsed_url.scheme not in ("http", "https"):
             raise serializers.ValidationError(
                 {"settings": "webhook settings.url must be http:// or https://"}
+            )
+        host = (parsed_url.hostname or "").lower()
+        if not host:
+            raise serializers.ValidationError(
+                {"settings": "webhook settings.url must include a host."}
             )
         # Each POST carries the HMAC/JWT signing material in its headers,
         # so plaintext http would leak credentials in transit. Require
         # https except for a local-dev escape hatch: a loopback host, or
         # DEBUG (where operators routinely point at a local receiver).
-        parsed_url = urlparse(url)
-        host = (parsed_url.hostname or "").lower()
         is_loopback = host in ("localhost", "127.0.0.1", "::1")
         if parsed_url.scheme != "https" and not (settings.DEBUG or is_loopback):
             raise serializers.ValidationError(

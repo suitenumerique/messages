@@ -630,9 +630,7 @@ class Channel(BaseModel):
                 "secret": plaintext,
             }
         else:
-            raise ValueError(
-                f"Channel type {self.type!r} has no rotatable secret"
-            )
+            raise ValueError(f"Channel type {self.type!r} has no rotatable secret")
 
         if save:
             self.save(update_fields=["encrypted_settings", "updated_at"])
@@ -3259,11 +3257,13 @@ class MessageTemplate(BaseModel):
             Dictionary mapping placeholder keys to their resolved string values
         """
         context = {}
+        # Prefer the mailbox contact name, but fall back to the user's
+        # full name when the contact has no (or an empty) name.
         context["name"] = (
-            mailbox.contact.name
-            if mailbox and mailbox.contact
-            else (getattr(user, "full_name", None) if user else "")
-        ) or ""
+            (mailbox.contact.name if mailbox and mailbox.contact else None)
+            or (getattr(user, "full_name", None) if user else None)
+            or ""
+        )
         context["user_name"] = (getattr(user, "full_name", None) or "") if user else ""
         schema = settings.SCHEMA_CUSTOM_ATTRIBUTES_USER
         schema_properties = schema.get("properties", {})

@@ -23,9 +23,10 @@ import type {
 
 import type {
   Channel,
+  ChannelCreateResponse,
   ChannelRequest,
   PatchedChannelRequest,
-  RegeneratedApiKeyResponse,
+  RegeneratedSecretResponse,
 } from ".././models";
 
 import { fetchAPI } from "../../fetch-api";
@@ -221,16 +222,34 @@ export function useMailboxesChannelsList<
  * Manage integration channels for a mailbox
  */
 export type mailboxesChannelsCreateResponse201 = {
-  data: Channel;
+  data: ChannelCreateResponse;
   status: 201;
+};
+
+export type mailboxesChannelsCreateResponse400 = {
+  data: void;
+  status: 400;
+};
+
+export type mailboxesChannelsCreateResponse403 = {
+  data: void;
+  status: 403;
 };
 
 export type mailboxesChannelsCreateResponseSuccess =
   mailboxesChannelsCreateResponse201 & {
     headers: Headers;
   };
+export type mailboxesChannelsCreateResponseError = (
+  | mailboxesChannelsCreateResponse400
+  | mailboxesChannelsCreateResponse403
+) & {
+  headers: Headers;
+};
+
 export type mailboxesChannelsCreateResponse =
-  mailboxesChannelsCreateResponseSuccess;
+  | mailboxesChannelsCreateResponseSuccess
+  | mailboxesChannelsCreateResponseError;
 
 export const getMailboxesChannelsCreateUrl = (mailboxId: string) => {
   return `/api/v1.0/mailboxes/${mailboxId}/channels/`;
@@ -253,7 +272,7 @@ export const mailboxesChannelsCreate = async (
 };
 
 export const getMailboxesChannelsCreateMutationOptions = <
-  TError = ErrorType<unknown>,
+  TError = ErrorType<void>,
   TContext = unknown,
 >(options?: {
   mutation?: UseMutationOptions<
@@ -294,10 +313,10 @@ export type MailboxesChannelsCreateMutationResult = NonNullable<
   Awaited<ReturnType<typeof mailboxesChannelsCreate>>
 >;
 export type MailboxesChannelsCreateMutationBody = ChannelRequest;
-export type MailboxesChannelsCreateMutationError = ErrorType<unknown>;
+export type MailboxesChannelsCreateMutationError = ErrorType<void>;
 
 export const useMailboxesChannelsCreate = <
-  TError = ErrorType<unknown>,
+  TError = ErrorType<void>,
   TContext = unknown,
 >(
   options?: {
@@ -885,56 +904,56 @@ export const useMailboxesChannelsDestroy = <
 /**
  * Manage integration channels for a mailbox
  */
-export type mailboxesChannelsRegenerateApiKeyCreateResponse200 = {
-  data: RegeneratedApiKeyResponse;
+export type mailboxesChannelsRegenerateSecretCreateResponse200 = {
+  data: RegeneratedSecretResponse;
   status: 200;
 };
 
-export type mailboxesChannelsRegenerateApiKeyCreateResponse400 = {
+export type mailboxesChannelsRegenerateSecretCreateResponse400 = {
   data: void;
   status: 400;
 };
 
-export type mailboxesChannelsRegenerateApiKeyCreateResponse403 = {
+export type mailboxesChannelsRegenerateSecretCreateResponse403 = {
   data: void;
   status: 403;
 };
 
-export type mailboxesChannelsRegenerateApiKeyCreateResponse404 = {
+export type mailboxesChannelsRegenerateSecretCreateResponse404 = {
   data: void;
   status: 404;
 };
 
-export type mailboxesChannelsRegenerateApiKeyCreateResponseSuccess =
-  mailboxesChannelsRegenerateApiKeyCreateResponse200 & {
+export type mailboxesChannelsRegenerateSecretCreateResponseSuccess =
+  mailboxesChannelsRegenerateSecretCreateResponse200 & {
     headers: Headers;
   };
-export type mailboxesChannelsRegenerateApiKeyCreateResponseError = (
-  | mailboxesChannelsRegenerateApiKeyCreateResponse400
-  | mailboxesChannelsRegenerateApiKeyCreateResponse403
-  | mailboxesChannelsRegenerateApiKeyCreateResponse404
+export type mailboxesChannelsRegenerateSecretCreateResponseError = (
+  | mailboxesChannelsRegenerateSecretCreateResponse400
+  | mailboxesChannelsRegenerateSecretCreateResponse403
+  | mailboxesChannelsRegenerateSecretCreateResponse404
 ) & {
   headers: Headers;
 };
 
-export type mailboxesChannelsRegenerateApiKeyCreateResponse =
-  | mailboxesChannelsRegenerateApiKeyCreateResponseSuccess
-  | mailboxesChannelsRegenerateApiKeyCreateResponseError;
+export type mailboxesChannelsRegenerateSecretCreateResponse =
+  | mailboxesChannelsRegenerateSecretCreateResponseSuccess
+  | mailboxesChannelsRegenerateSecretCreateResponseError;
 
-export const getMailboxesChannelsRegenerateApiKeyCreateUrl = (
+export const getMailboxesChannelsRegenerateSecretCreateUrl = (
   mailboxId: string,
   id: string,
 ) => {
-  return `/api/v1.0/mailboxes/${mailboxId}/channels/${id}/regenerate-api-key/`;
+  return `/api/v1.0/mailboxes/${mailboxId}/channels/${id}/regenerate-secret/`;
 };
 
-export const mailboxesChannelsRegenerateApiKeyCreate = async (
+export const mailboxesChannelsRegenerateSecretCreate = async (
   mailboxId: string,
   id: string,
   options?: RequestInit,
-): Promise<mailboxesChannelsRegenerateApiKeyCreateResponse> => {
-  return fetchAPI<mailboxesChannelsRegenerateApiKeyCreateResponse>(
-    getMailboxesChannelsRegenerateApiKeyCreateUrl(mailboxId, id),
+): Promise<mailboxesChannelsRegenerateSecretCreateResponse> => {
+  return fetchAPI<mailboxesChannelsRegenerateSecretCreateResponse>(
+    getMailboxesChannelsRegenerateSecretCreateUrl(mailboxId, id),
     {
       ...options,
       method: "POST",
@@ -942,24 +961,24 @@ export const mailboxesChannelsRegenerateApiKeyCreate = async (
   );
 };
 
-export const getMailboxesChannelsRegenerateApiKeyCreateMutationOptions = <
+export const getMailboxesChannelsRegenerateSecretCreateMutationOptions = <
   TError = ErrorType<void>,
   TContext = unknown,
 >(options?: {
   mutation?: UseMutationOptions<
-    Awaited<ReturnType<typeof mailboxesChannelsRegenerateApiKeyCreate>>,
+    Awaited<ReturnType<typeof mailboxesChannelsRegenerateSecretCreate>>,
     TError,
     { mailboxId: string; id: string },
     TContext
   >;
   request?: SecondParameter<typeof fetchAPI>;
 }): UseMutationOptions<
-  Awaited<ReturnType<typeof mailboxesChannelsRegenerateApiKeyCreate>>,
+  Awaited<ReturnType<typeof mailboxesChannelsRegenerateSecretCreate>>,
   TError,
   { mailboxId: string; id: string },
   TContext
 > => {
-  const mutationKey = ["mailboxesChannelsRegenerateApiKeyCreate"];
+  const mutationKey = ["mailboxesChannelsRegenerateSecretCreate"];
   const { mutation: mutationOptions, request: requestOptions } = options
     ? options.mutation &&
       "mutationKey" in options.mutation &&
@@ -969,12 +988,12 @@ export const getMailboxesChannelsRegenerateApiKeyCreateMutationOptions = <
     : { mutation: { mutationKey }, request: undefined };
 
   const mutationFn: MutationFunction<
-    Awaited<ReturnType<typeof mailboxesChannelsRegenerateApiKeyCreate>>,
+    Awaited<ReturnType<typeof mailboxesChannelsRegenerateSecretCreate>>,
     { mailboxId: string; id: string }
   > = (props) => {
     const { mailboxId, id } = props ?? {};
 
-    return mailboxesChannelsRegenerateApiKeyCreate(
+    return mailboxesChannelsRegenerateSecretCreate(
       mailboxId,
       id,
       requestOptions,
@@ -984,20 +1003,20 @@ export const getMailboxesChannelsRegenerateApiKeyCreateMutationOptions = <
   return { mutationFn, ...mutationOptions };
 };
 
-export type MailboxesChannelsRegenerateApiKeyCreateMutationResult = NonNullable<
-  Awaited<ReturnType<typeof mailboxesChannelsRegenerateApiKeyCreate>>
+export type MailboxesChannelsRegenerateSecretCreateMutationResult = NonNullable<
+  Awaited<ReturnType<typeof mailboxesChannelsRegenerateSecretCreate>>
 >;
 
-export type MailboxesChannelsRegenerateApiKeyCreateMutationError =
+export type MailboxesChannelsRegenerateSecretCreateMutationError =
   ErrorType<void>;
 
-export const useMailboxesChannelsRegenerateApiKeyCreate = <
+export const useMailboxesChannelsRegenerateSecretCreate = <
   TError = ErrorType<void>,
   TContext = unknown,
 >(
   options?: {
     mutation?: UseMutationOptions<
-      Awaited<ReturnType<typeof mailboxesChannelsRegenerateApiKeyCreate>>,
+      Awaited<ReturnType<typeof mailboxesChannelsRegenerateSecretCreate>>,
       TError,
       { mailboxId: string; id: string },
       TContext
@@ -1006,13 +1025,13 @@ export const useMailboxesChannelsRegenerateApiKeyCreate = <
   },
   queryClient?: QueryClient,
 ): UseMutationResult<
-  Awaited<ReturnType<typeof mailboxesChannelsRegenerateApiKeyCreate>>,
+  Awaited<ReturnType<typeof mailboxesChannelsRegenerateSecretCreate>>,
   TError,
   { mailboxId: string; id: string },
   TContext
 > => {
   const mutationOptions =
-    getMailboxesChannelsRegenerateApiKeyCreateMutationOptions(options);
+    getMailboxesChannelsRegenerateSecretCreateMutationOptions(options);
 
   return useMutation(mutationOptions, queryClient);
 };
@@ -1185,16 +1204,34 @@ export function useUsersMeChannelsList<
  * Manage personal (scope_level=user) integration channels
  */
 export type usersMeChannelsCreateResponse201 = {
-  data: Channel;
+  data: ChannelCreateResponse;
   status: 201;
+};
+
+export type usersMeChannelsCreateResponse400 = {
+  data: void;
+  status: 400;
+};
+
+export type usersMeChannelsCreateResponse403 = {
+  data: void;
+  status: 403;
 };
 
 export type usersMeChannelsCreateResponseSuccess =
   usersMeChannelsCreateResponse201 & {
     headers: Headers;
   };
+export type usersMeChannelsCreateResponseError = (
+  | usersMeChannelsCreateResponse400
+  | usersMeChannelsCreateResponse403
+) & {
+  headers: Headers;
+};
+
 export type usersMeChannelsCreateResponse =
-  usersMeChannelsCreateResponseSuccess;
+  | usersMeChannelsCreateResponseSuccess
+  | usersMeChannelsCreateResponseError;
 
 export const getUsersMeChannelsCreateUrl = () => {
   return `/api/v1.0/users/me/channels/`;
@@ -1216,7 +1253,7 @@ export const usersMeChannelsCreate = async (
 };
 
 export const getUsersMeChannelsCreateMutationOptions = <
-  TError = ErrorType<unknown>,
+  TError = ErrorType<void>,
   TContext = unknown,
 >(options?: {
   mutation?: UseMutationOptions<
@@ -1257,10 +1294,10 @@ export type UsersMeChannelsCreateMutationResult = NonNullable<
   Awaited<ReturnType<typeof usersMeChannelsCreate>>
 >;
 export type UsersMeChannelsCreateMutationBody = ChannelRequest;
-export type UsersMeChannelsCreateMutationError = ErrorType<unknown>;
+export type UsersMeChannelsCreateMutationError = ErrorType<void>;
 
 export const useUsersMeChannelsCreate = <
-  TError = ErrorType<unknown>,
+  TError = ErrorType<void>,
   TContext = unknown,
 >(
   options?: {
@@ -1819,52 +1856,52 @@ export const useUsersMeChannelsDestroy = <
 /**
  * Manage personal (scope_level=user) integration channels
  */
-export type usersMeChannelsRegenerateApiKeyCreateResponse200 = {
-  data: RegeneratedApiKeyResponse;
+export type usersMeChannelsRegenerateSecretCreateResponse200 = {
+  data: RegeneratedSecretResponse;
   status: 200;
 };
 
-export type usersMeChannelsRegenerateApiKeyCreateResponse400 = {
+export type usersMeChannelsRegenerateSecretCreateResponse400 = {
   data: void;
   status: 400;
 };
 
-export type usersMeChannelsRegenerateApiKeyCreateResponse403 = {
+export type usersMeChannelsRegenerateSecretCreateResponse403 = {
   data: void;
   status: 403;
 };
 
-export type usersMeChannelsRegenerateApiKeyCreateResponse404 = {
+export type usersMeChannelsRegenerateSecretCreateResponse404 = {
   data: void;
   status: 404;
 };
 
-export type usersMeChannelsRegenerateApiKeyCreateResponseSuccess =
-  usersMeChannelsRegenerateApiKeyCreateResponse200 & {
+export type usersMeChannelsRegenerateSecretCreateResponseSuccess =
+  usersMeChannelsRegenerateSecretCreateResponse200 & {
     headers: Headers;
   };
-export type usersMeChannelsRegenerateApiKeyCreateResponseError = (
-  | usersMeChannelsRegenerateApiKeyCreateResponse400
-  | usersMeChannelsRegenerateApiKeyCreateResponse403
-  | usersMeChannelsRegenerateApiKeyCreateResponse404
+export type usersMeChannelsRegenerateSecretCreateResponseError = (
+  | usersMeChannelsRegenerateSecretCreateResponse400
+  | usersMeChannelsRegenerateSecretCreateResponse403
+  | usersMeChannelsRegenerateSecretCreateResponse404
 ) & {
   headers: Headers;
 };
 
-export type usersMeChannelsRegenerateApiKeyCreateResponse =
-  | usersMeChannelsRegenerateApiKeyCreateResponseSuccess
-  | usersMeChannelsRegenerateApiKeyCreateResponseError;
+export type usersMeChannelsRegenerateSecretCreateResponse =
+  | usersMeChannelsRegenerateSecretCreateResponseSuccess
+  | usersMeChannelsRegenerateSecretCreateResponseError;
 
-export const getUsersMeChannelsRegenerateApiKeyCreateUrl = (id: string) => {
-  return `/api/v1.0/users/me/channels/${id}/regenerate-api-key/`;
+export const getUsersMeChannelsRegenerateSecretCreateUrl = (id: string) => {
+  return `/api/v1.0/users/me/channels/${id}/regenerate-secret/`;
 };
 
-export const usersMeChannelsRegenerateApiKeyCreate = async (
+export const usersMeChannelsRegenerateSecretCreate = async (
   id: string,
   options?: RequestInit,
-): Promise<usersMeChannelsRegenerateApiKeyCreateResponse> => {
-  return fetchAPI<usersMeChannelsRegenerateApiKeyCreateResponse>(
-    getUsersMeChannelsRegenerateApiKeyCreateUrl(id),
+): Promise<usersMeChannelsRegenerateSecretCreateResponse> => {
+  return fetchAPI<usersMeChannelsRegenerateSecretCreateResponse>(
+    getUsersMeChannelsRegenerateSecretCreateUrl(id),
     {
       ...options,
       method: "POST",
@@ -1872,24 +1909,24 @@ export const usersMeChannelsRegenerateApiKeyCreate = async (
   );
 };
 
-export const getUsersMeChannelsRegenerateApiKeyCreateMutationOptions = <
+export const getUsersMeChannelsRegenerateSecretCreateMutationOptions = <
   TError = ErrorType<void>,
   TContext = unknown,
 >(options?: {
   mutation?: UseMutationOptions<
-    Awaited<ReturnType<typeof usersMeChannelsRegenerateApiKeyCreate>>,
+    Awaited<ReturnType<typeof usersMeChannelsRegenerateSecretCreate>>,
     TError,
     { id: string },
     TContext
   >;
   request?: SecondParameter<typeof fetchAPI>;
 }): UseMutationOptions<
-  Awaited<ReturnType<typeof usersMeChannelsRegenerateApiKeyCreate>>,
+  Awaited<ReturnType<typeof usersMeChannelsRegenerateSecretCreate>>,
   TError,
   { id: string },
   TContext
 > => {
-  const mutationKey = ["usersMeChannelsRegenerateApiKeyCreate"];
+  const mutationKey = ["usersMeChannelsRegenerateSecretCreate"];
   const { mutation: mutationOptions, request: requestOptions } = options
     ? options.mutation &&
       "mutationKey" in options.mutation &&
@@ -1899,31 +1936,31 @@ export const getUsersMeChannelsRegenerateApiKeyCreateMutationOptions = <
     : { mutation: { mutationKey }, request: undefined };
 
   const mutationFn: MutationFunction<
-    Awaited<ReturnType<typeof usersMeChannelsRegenerateApiKeyCreate>>,
+    Awaited<ReturnType<typeof usersMeChannelsRegenerateSecretCreate>>,
     { id: string }
   > = (props) => {
     const { id } = props ?? {};
 
-    return usersMeChannelsRegenerateApiKeyCreate(id, requestOptions);
+    return usersMeChannelsRegenerateSecretCreate(id, requestOptions);
   };
 
   return { mutationFn, ...mutationOptions };
 };
 
-export type UsersMeChannelsRegenerateApiKeyCreateMutationResult = NonNullable<
-  Awaited<ReturnType<typeof usersMeChannelsRegenerateApiKeyCreate>>
+export type UsersMeChannelsRegenerateSecretCreateMutationResult = NonNullable<
+  Awaited<ReturnType<typeof usersMeChannelsRegenerateSecretCreate>>
 >;
 
-export type UsersMeChannelsRegenerateApiKeyCreateMutationError =
+export type UsersMeChannelsRegenerateSecretCreateMutationError =
   ErrorType<void>;
 
-export const useUsersMeChannelsRegenerateApiKeyCreate = <
+export const useUsersMeChannelsRegenerateSecretCreate = <
   TError = ErrorType<void>,
   TContext = unknown,
 >(
   options?: {
     mutation?: UseMutationOptions<
-      Awaited<ReturnType<typeof usersMeChannelsRegenerateApiKeyCreate>>,
+      Awaited<ReturnType<typeof usersMeChannelsRegenerateSecretCreate>>,
       TError,
       { id: string },
       TContext
@@ -1932,13 +1969,13 @@ export const useUsersMeChannelsRegenerateApiKeyCreate = <
   },
   queryClient?: QueryClient,
 ): UseMutationResult<
-  Awaited<ReturnType<typeof usersMeChannelsRegenerateApiKeyCreate>>,
+  Awaited<ReturnType<typeof usersMeChannelsRegenerateSecretCreate>>,
   TError,
   { id: string },
   TContext
 > => {
   const mutationOptions =
-    getUsersMeChannelsRegenerateApiKeyCreateMutationOptions(options);
+    getUsersMeChannelsRegenerateSecretCreateMutationOptions(options);
 
   return useMutation(mutationOptions, queryClient);
 };

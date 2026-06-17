@@ -69,7 +69,7 @@ class Decision(IntEnum):
 
 
 @dataclass
-class InboundContext:
+class InboundContext:  # pylint: disable=too-many-instance-attributes
     """Mutable bag of state flowing through the pipeline.
 
     Steps read what they need and write what they decide. The post-loop
@@ -153,13 +153,16 @@ def _check_hardcoded_rules(
     only against headers from trusted relay blocks. Returns ``True`` /
     ``False`` on first matching rule, ``None`` if no rule matched."""
     rules = spam_config.get("rules", [])
-    for rule in rules:
+    for idx, rule in enumerate(rules):
         header_match = rule.get("header_match") or rule.get("header_match_regex")
         if not header_match:
             continue
         if ":" not in header_match:
+            # Log the rule position, not its raw value: ``spam_config``
+            # also carries spam-service credentials, so we never echo
+            # values read from it into logs.
             logger.warning(
-                "Invalid header_match format (missing colon): %s", header_match
+                "Invalid header_match format (missing colon) in spam rule #%d", idx
             )
             continue
         key, value = header_match.split(":", 1)
@@ -438,9 +441,10 @@ def _resolve_assignable_users(
         return []
 
     # The input is already lowercased + deduped by the classifier;
-    # belt-and-suspenders ``set()`` here in case a future caller
-    # forgets.
-    target_emails = {e.lower() for e in emails if e}
+    # belt-and-suspenders dedup here in case a future caller forgets.
+    # ``dict.fromkeys`` dedups while preserving input order so the
+    # resolved assignee payload is deterministic.
+    target_emails = list(dict.fromkeys(e.lower() for e in emails if e))
     if not target_emails:
         return []
 
