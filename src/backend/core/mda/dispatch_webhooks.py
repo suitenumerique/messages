@@ -41,6 +41,7 @@ import uuid as uuid_module
 from dataclasses import dataclass, field
 from datetime import datetime, timezone
 from typing import Any, Dict, List, Optional, Set, Tuple
+from urllib.parse import urlparse
 
 from django.db.models import Q
 
@@ -76,7 +77,7 @@ VALID_PHASES = frozenset({PHASE_BEFORE_SPAM, PHASE_AFTER_SPAM})
 
 
 @dataclass
-class _HttpResult:
+class _HttpResult:  # pylint: disable=too-many-instance-attributes
     """Internal: one webhook call's outcome — decision + the side
     effects the receiver asked us to apply to the pipeline context.
 
@@ -144,6 +145,26 @@ def _read_capped_body(response) -> bytes:
     except Exception as exc:
         logger.warning("Truncated response body read failed: %s", exc)
     return b"".join(chunks)
+
+
+def _sanitize_url(url: str) -> str:
+    """Reduce a webhook URL to ``scheme://host[:port]`` for safe logging.
+
+    Receivers routinely embed a secret token in the path, query string
+    or userinfo (e.g. ``https://hook.example.com/in/<token>``); logging
+    the raw URL would leak it. We keep only the scheme, host and port —
+    enough to identify the receiver without exposing credentials.
+    """
+    try:
+        parsed = urlparse(url)
+    except (ValueError, TypeError):
+        return "<unparseable-url>"
+    if not parsed.hostname:
+        return "<no-host>"
+    host = parsed.hostname
+    if parsed.port:
+        host = f"{host}:{parsed.port}"
+    return f"{parsed.scheme}://{host}"
 
 
 def _failure(blocking: bool, decision: Decision) -> _HttpResult:
@@ -478,6 +499,7 @@ def build_jmap_email(
             "bodyValues",
             "bodyStructure",
             "attachments",
+            "preview",
         ):
             email.pop(key, None)
 
@@ -651,7 +673,7 @@ class UserWebhookStep:
             logger.warning(
                 "Webhook channel %s rejected by SSRF for url=%s: %s",
                 self.channel.id,
-                url,
+                _sanitize_url(url),
                 exc,
             )
             return _failure(blocking, Decision.DROP)
@@ -662,7 +684,7 @@ class UserWebhookStep:
             logger.exception(
                 "Webhook channel %s network error for url=%s: %s",
                 self.channel.id,
-                url,
+                _sanitize_url(url),
                 exc,
             )
             return _failure(blocking, Decision.RETRY)
@@ -681,7 +703,7 @@ class UserWebhookStep:
                     logger.info(
                         "Webhook channel %s requested DROP via response body for url=%s",
                         self.channel.id,
-                        url,
+                        _sanitize_url(url),
                     )
                 return result
 
@@ -689,7 +711,7 @@ class UserWebhookStep:
                 "Webhook channel %s returned status %s for url=%s",
                 self.channel.id,
                 status,
-                url,
+                _sanitize_url(url),
             )
             if status in _RETRY_STATUSES or 500 <= status < 600:
                 return _failure(blocking, Decision.RETRY)

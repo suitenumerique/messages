@@ -1,6 +1,7 @@
 """Tests for the user-webhook step and the inbound pipeline integration."""
 
-# pylint: disable=protected-access
+# pylint: disable=protected-access,import-outside-toplevel,missing-function-docstring
+# pylint: disable=missing-class-docstring,too-many-lines,too-many-public-methods
 
 import hashlib
 import hmac
@@ -216,13 +217,13 @@ class TestFindWebhookChannels:
                 "events": ["message.received"],
             },
         )
-        assert list(find_webhook_channels_for_mailbox(mailbox)) == []
+        assert not list(find_webhook_channels_for_mailbox(mailbox))
 
     def test_excludes_other_types(self, mailbox):
         factories.ChannelFactory(
             type="widget", mailbox=mailbox, settings={"config": {"enabled": True}}
         )
-        assert list(find_webhook_channels_for_mailbox(mailbox)) == []
+        assert not list(find_webhook_channels_for_mailbox(mailbox))
 
 
 # --- JMAP body builder --- #
@@ -261,8 +262,8 @@ class TestBuildJmapEmail:
         email = build_jmap_email(parsed)
         # Strict-JMAP fields pass through unchanged.
         assert email["messageId"] == ["abc@example.org"]
-        assert email["inReplyTo"] == []
-        assert email["references"] == []
+        assert not email["inReplyTo"]
+        assert not email["references"]
         assert email["from"] == [{"email": "alice@example.org", "name": "Alice"}]
         assert email["sentAt"] == "2026-01-01T00:00:00Z"
         # ``receivedAt`` is stamped at webhook-fire time.
@@ -1666,13 +1667,22 @@ class TestDispatchActionBody:
                 "blocking": True,
             },
         )
-        # Feed three chunks that together exceed the cap — the reader
-        # must stop part-way and never request a fourth chunk.
+        # Expose a stream far larger than the cap and count how much of
+        # it the reader actually pulls. The reader must stop on its own
+        # rather than draining the whole stream — if the cap logic ever
+        # regresses, ``consumed`` blows past the bound and this test fails.
         oversize_chunk = b"x" * (MAX_RESPONSE_BODY // 2)
+        consumed = {"bytes": 0}
+
+        def _counting_iter(*_args, **_kwargs):
+            # 20x the cap worth of chunks; a working reader takes only a
+            # couple before stopping.
+            for _ in range(40):
+                consumed["bytes"] += len(oversize_chunk)
+                yield oversize_chunk
+
         response = _make_response(200)
-        response.iter_content = Mock(
-            return_value=iter([oversize_chunk, oversize_chunk, oversize_chunk])
-        )
+        response.iter_content = Mock(side_effect=_counting_iter)
         mock_session.return_value.post.return_value = response
         outcome = dispatch_webhooks(
             phase=PHASE_AFTER_SPAM,
@@ -1684,6 +1694,9 @@ class TestDispatchActionBody:
         )
         # Body was unparseable (all 'x'), so the result is plain CONTINUE.
         assert outcome.decision == Decision.CONTINUE
+        # The reader stopped at the cap: it consumed at most one chunk
+        # beyond ``MAX_RESPONSE_BODY``, never the whole oversize stream.
+        assert consumed["bytes"] <= MAX_RESPONSE_BODY + len(oversize_chunk)
         # And the connection was returned to the pool.
         response.close.assert_called_once()
 

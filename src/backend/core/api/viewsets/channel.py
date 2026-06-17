@@ -256,7 +256,11 @@ class ChannelViewSet(
         try:
             plaintext = instance.rotate_secret()
         except ValueError as exc:
-            raise ValidationError({"type": str(exc)}) from exc
+            # Static message — don't reflect the internal exception text
+            # back to the API caller.
+            raise ValidationError(
+                {"type": "This channel type does not support secret rotation."}
+            ) from exc
 
         # api_key channels store only the hash; stash the just-minted
         # plaintext on the instance so ``_attach_credential`` can find

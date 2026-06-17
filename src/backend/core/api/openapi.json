@@ -2978,11 +2978,17 @@
                         "content": {
                             "application/json": {
                                 "schema": {
-                                    "$ref": "#/components/schemas/Channel"
+                                    "$ref": "#/components/schemas/ChannelCreateResponse"
                                 }
                             }
                         },
-                        "description": ""
+                        "description": "Channel created successfully. The response carries the one-time plaintext credentials (api_key / webhook_secret / webhook_api_key / password) which are never returned again."
+                    },
+                    "400": {
+                        "description": "Invalid input data"
+                    },
+                    "403": {
+                        "description": "Permission denied"
                     }
                 }
             }
@@ -3198,9 +3204,9 @@
                 }
             }
         },
-        "/api/v1.0/mailboxes/{mailbox_id}/channels/{id}/regenerate-api-key/": {
+        "/api/v1.0/mailboxes/{mailbox_id}/channels/{id}/regenerate-secret/": {
             "post": {
-                "operationId": "mailboxes_channels_regenerate_api_key_create",
+                "operationId": "mailboxes_channels_regenerate_secret_create",
                 "description": "Manage integration channels for a mailbox",
                 "parameters": [
                     {
@@ -3234,14 +3240,14 @@
                         "content": {
                             "application/json": {
                                 "schema": {
-                                    "$ref": "#/components/schemas/RegeneratedApiKeyResponse"
+                                    "$ref": "#/components/schemas/RegeneratedSecretResponse"
                                 }
                             }
                         },
-                        "description": "Returns the freshly generated plaintext api_key. The previous secret is invalidated immediately. The plaintext is shown ONCE and cannot be retrieved later."
+                        "description": "Rotates the channel's secret. Single-active: the previous credential is invalidated immediately. The response carries exactly one of ``api_key`` / ``webhook_secret`` / ``webhook_api_key`` matching the channel's type (and, for webhooks, its current ``auth_method``)."
                     },
                     "400": {
-                        "description": "Channel is not an api_key channel"
+                        "description": "Channel type has no rotatable secret"
                     },
                     "403": {
                         "description": "Permission denied"
@@ -6934,11 +6940,17 @@
                         "content": {
                             "application/json": {
                                 "schema": {
-                                    "$ref": "#/components/schemas/Channel"
+                                    "$ref": "#/components/schemas/ChannelCreateResponse"
                                 }
                             }
                         },
-                        "description": ""
+                        "description": "Channel created successfully. The response carries the one-time plaintext credentials (api_key / webhook_secret / webhook_api_key / password) which are never returned again."
+                    },
+                    "400": {
+                        "description": "Invalid input data"
+                    },
+                    "403": {
+                        "description": "Permission denied"
                     }
                 }
             }
@@ -7118,9 +7130,9 @@
                 }
             }
         },
-        "/api/v1.0/users/me/channels/{id}/regenerate-api-key/": {
+        "/api/v1.0/users/me/channels/{id}/regenerate-secret/": {
             "post": {
-                "operationId": "users_me_channels_regenerate_api_key_create",
+                "operationId": "users_me_channels_regenerate_secret_create",
                 "description": "Manage personal (scope_level=user) integration channels",
                 "parameters": [
                     {
@@ -7145,14 +7157,14 @@
                         "content": {
                             "application/json": {
                                 "schema": {
-                                    "$ref": "#/components/schemas/RegeneratedApiKeyResponse"
+                                    "$ref": "#/components/schemas/RegeneratedSecretResponse"
                                 }
                             }
                         },
-                        "description": "Returns the freshly generated plaintext api_key. The previous secret is invalidated immediately. The plaintext is shown ONCE and cannot be retrieved later."
+                        "description": "Rotates the channel's secret. Single-active: the previous credential is invalidated immediately. The response carries exactly one of ``api_key`` / ``webhook_secret`` / ``webhook_api_key`` matching the channel's type (and, for webhooks, its current ``auth_method``)."
                     },
                     "400": {
-                        "description": "Channel is not an api_key channel"
+                        "description": "Channel type has no rotatable secret"
                     },
                     "403": {
                         "description": "Permission denied"
@@ -7492,6 +7504,116 @@
                     "type",
                     "updated_at",
                     "user"
+                ]
+            },
+            "ChannelCreateResponse": {
+                "type": "object",
+                "description": "Schema-only view of the channel-create 201 response.\n\n``ChannelViewSet.create`` returns the full ``ChannelSerializer``\npayload plus the freshly-minted plaintext credentials — surfaced\nexactly once on creation and never retrievable again. They are\ndeclared here as read-only fields so generated API clients see them\nin the OpenAPI schema. This serializer is never used to serialize a\nresponse directly; the view assembles the body by hand.",
+                "properties": {
+                    "id": {
+                        "type": "string",
+                        "format": "uuid",
+                        "readOnly": true,
+                        "description": "primary key for the record as UUID"
+                    },
+                    "name": {
+                        "type": "string",
+                        "description": "Human-readable name for this channel",
+                        "maxLength": 255
+                    },
+                    "type": {
+                        "type": "string",
+                        "description": "Type of channel",
+                        "maxLength": 255
+                    },
+                    "scope_level": {
+                        "allOf": [
+                            {
+                                "$ref": "#/components/schemas/ScopeLevelEnum"
+                            }
+                        ],
+                        "readOnly": true
+                    },
+                    "settings": {
+                        "description": "Channel-specific configuration settings"
+                    },
+                    "mailbox": {
+                        "type": "string",
+                        "format": "uuid",
+                        "description": "primary key for the record as UUID",
+                        "readOnly": true,
+                        "nullable": true
+                    },
+                    "maildomain": {
+                        "type": "string",
+                        "format": "uuid",
+                        "description": "primary key for the record as UUID",
+                        "readOnly": true,
+                        "nullable": true
+                    },
+                    "user": {
+                        "type": "string",
+                        "format": "uuid",
+                        "description": "primary key for the record as UUID",
+                        "readOnly": true,
+                        "nullable": true
+                    },
+                    "last_used_at": {
+                        "type": "string",
+                        "format": "date-time",
+                        "readOnly": true,
+                        "nullable": true
+                    },
+                    "created_at": {
+                        "type": "string",
+                        "format": "date-time",
+                        "readOnly": true,
+                        "title": "Created on",
+                        "description": "date and time at which a record was created"
+                    },
+                    "updated_at": {
+                        "type": "string",
+                        "format": "date-time",
+                        "readOnly": true,
+                        "title": "Updated on",
+                        "description": "date and time at which a record was last updated"
+                    },
+                    "api_key": {
+                        "type": "string",
+                        "readOnly": true,
+                        "description": "api_key channels only — the plaintext API key."
+                    },
+                    "password": {
+                        "type": "string",
+                        "readOnly": true,
+                        "description": "Plaintext password, when the channel type mints one."
+                    },
+                    "webhook_secret": {
+                        "type": "string",
+                        "readOnly": true,
+                        "description": "webhook channels with auth_method=jwt — the HMAC/JWT signing secret."
+                    },
+                    "webhook_api_key": {
+                        "type": "string",
+                        "readOnly": true,
+                        "description": "webhook channels with auth_method=api_key — the derived API key."
+                    }
+                },
+                "required": [
+                    "api_key",
+                    "created_at",
+                    "id",
+                    "last_used_at",
+                    "mailbox",
+                    "maildomain",
+                    "name",
+                    "password",
+                    "scope_level",
+                    "type",
+                    "updated_at",
+                    "user",
+                    "webhook_api_key",
+                    "webhook_secret"
                 ]
             },
             "ChannelRequest": {
@@ -9670,20 +9792,27 @@
                     "updated_at"
                 ]
             },
-            "RegeneratedApiKeyResponse": {
+            "RegeneratedSecretResponse": {
                 "type": "object",
                 "properties": {
                     "id": {
                         "type": "string",
-                        "description": "Channel id (also the X-Channel-Id header value)."
+                        "description": "Channel id."
                     },
                     "api_key": {
                         "type": "string",
-                        "description": "Freshly generated plaintext api_key. Returned ONCE on regeneration and cannot be retrieved later."
+                        "description": "Present for ``api_key`` channels — the plaintext used in subsequent X-API-Key calls. Returned ONCE."
+                    },
+                    "webhook_secret": {
+                        "type": "string",
+                        "description": "Present for webhook channels with ``auth_method='jwt'`` — the freshly minted root receivers use to verify the HMAC sig and JWT."
+                    },
+                    "webhook_api_key": {
+                        "type": "string",
+                        "description": "Present for webhook channels with ``auth_method='api_key'`` — the HMAC-derived value sent as X-StMsg-Api-Key. Changes whenever the root rotates."
                     }
                 },
                 "required": [
-                    "api_key",
                     "id"
                 ]
             },
