@@ -8,6 +8,49 @@ and this project adheres to
 
 ## [Unreleased]
 
+## [0.8.0] - 2026-06-18
+
+### Added
+
+- Allow permanently deleting drafts and improve draft edition
+- Allow passwordless mailbox creation when identity sync is off #707
+- Gather mailbox settings into a dialog
+- Translate template placeholder and add `user_name` builtin variable
+- Report selfcheck status to Sentry crons #694
+
+### Changed
+
+- Drop Next.js for Vite + TanStack Router #675
+- Move email parser & composer to new `jmap-email` library #700
+- Add PyPI release scripts for `jmap-email`
+- Use `LaGaufreV2` component
+- Improve thread navigation a11y and multiselect UX #708
+- Refine mailbox dropdown menu #705
+- New homepage illustration #702
+- Internationalize missing strings
+- Wrap autoreply date column
+- Bump `dompurify` to 3.4.11
+- Bump `django-lasuite` to 0.0.26 #689
+
+### Fixed
+
+- Fix composer issues
+- Add `To` header to outbound mails missing one #712
+- Manage message/delivery-status attachments at compose
+- Persist mailbox name when contact is missing
+- Fix order and default calendar selection when RSVPing #699
+- Fix display of recurring events with exceptions #686
+- Fix opportunistic TLS against MXes with mismatched certs #687
+- Fix mbox detection as `text/html` with some libmagic versions #696
+- Complete PST email folder prefixes list
+- Fix milter socket permission race on startup #693
+
+### Security
+
+- Add some defense-in-depth bits #706
+- Harden SMTP connection & proxies config
+- Harden inbound email parsing #695
+
 ## [0.7.0] - 2026-05-28
 
 ### Added
@@ -246,7 +289,8 @@ and this project adheres to
 - Exclude `is_trashed` and `is_spam` threads from search results by default
 - `to` search modifier now looks for messages where recipient fields (to, cc, bcc) contain the given email address.
 
-[unreleased]: https://github.com/suitenumerique/messages/compare/v0.7.0...main
+[unreleased]: https://github.com/suitenumerique/messages/compare/v0.8.0...main
+[0.8.0]: https://github.com/suitenumerique/messages/compare/v0.7.0...v0.8.0
 [0.7.0]: https://github.com/suitenumerique/messages/compare/v0.6.0...v0.7.0
 [0.6.0]: https://github.com/suitenumerique/messages/compare/v0.5.0...v0.6.0
 [0.5.0]: https://github.com/suitenumerique/messages/compare/v0.4.0...v0.5.0

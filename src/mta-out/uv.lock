@@ -445,7 +445,7 @@ wheels = [
 
 [[package]]
 name = "st-messages-mta-out"
-version = "0.7.0"
+version = "0.8.0"
 source = { editable = "." }
 dependencies = [
     { name = "jinja2" },
