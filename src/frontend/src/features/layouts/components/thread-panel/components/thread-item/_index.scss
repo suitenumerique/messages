@@ -94,6 +94,10 @@
 .thread-item__checkbox-wrapper {
     display: inline-flex;
     flex-shrink: 0;
+    // The checkbox is presentational only; let clicks reach the Link so
+    // handleItemClick handles selection (and the checkbox stays in sync via
+    // its `checked` prop instead of fighting the click's preventDefault).
+    pointer-events: none;
 }
 
 .thread-item__checkbox {

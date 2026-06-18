@@ -76,17 +76,6 @@ export const ThreadItem = ({ thread, isSelected, onToggle, onSelectRange, select
     );
     const hasEditableInDrag = useCanEditThreads(dragThreadIds);
 
-    const handleCheckboxClick = (e: React.MouseEvent) => {
-        e.stopPropagation();
-        e.preventDefault();
-        onFocusItem();
-        if (e.shiftKey) {
-            onSelectRange(thread.id);
-        } else {
-            onToggle(thread.id);
-        }
-    };
-
     const handleItemClick = (e: React.MouseEvent<HTMLAnchorElement>) => {
         onFocusItem();
         // Keyboard activation (Enter on the focused option) fires a click
@@ -177,13 +166,18 @@ export const ThreadItem = ({ thread, isSelected, onToggle, onSelectRange, select
             >
                 <div>
                     {showCheckbox && (
-                        // Mouse-only affordance: the option itself carries the
-                        // selection state (aria-selected), a focusable checkbox
-                        // would add a second tab stop inside the option.
+                        // Mouse-only affordance, purely presentational: the option
+                        // itself carries the selection state (aria-selected) and a
+                        // focusable checkbox would add a second tab stop, hence
+                        // aria-hidden + tabIndex=-1. pointer-events:none (see SCSS)
+                        // lets the click fall through to the Link, where
+                        // handleItemClick owns the selection logic; the checkbox
+                        // only reflects `checked`. Driving it from its own click
+                        // handler would fight handleItemClick's preventDefault and
+                        // leave it visually out of sync.
                         <span aria-hidden="true" className="thread-item__checkbox-wrapper">
                             <Checkbox
                                 checked={isSelected}
-                                onClick={handleCheckboxClick}
                                 tabIndex={-1}
                                 className="thread-item__checkbox"
                             />
