@@ -26,7 +26,7 @@ type WebhookChannelSettings = {
     url?: string;
     events?: string[];
     phase?: "before_spam" | "after_spam";
-    format?: "eml" | "jmap" | "jmap_without_body";
+    format?: "eml" | "jmap" | "jmap_metadata";
     blocking?: boolean;
     auth_method?: "jwt" | "api_key";
 };
@@ -53,7 +53,7 @@ const createFormSchema = (t: (key: string) => string) =>
                 error: t("URL must start with http:// or https://"),
             }),
         phase: z.enum(["before_spam", "after_spam"]),
-        format: z.enum(["eml", "jmap", "jmap_without_body"]),
+        format: z.enum(["eml", "jmap", "jmap_metadata"]),
         blocking: z.boolean(),
         auth_method: z.enum(["jwt", "api_key"]),
     });
@@ -109,7 +109,7 @@ export const WebhookIntegrationForm = ({
 
         const newSettings: WebhookChannelSettings = {
             url: data.url,
-            events: ["message.received"],
+            events: ["message.inbound"],
             phase: data.phase,
             format: data.format,
             blocking: data.blocking,
@@ -151,22 +151,17 @@ export const WebhookIntegrationForm = ({
                     // Surface the freshly minted credential exactly
                     // once — the receiver needs this value to verify
                     // every webhook we send. The backend returns
-                    // ``webhook_secret`` for auth_method=jwt and
-                    // ``webhook_api_key`` for auth_method=api_key.
-                    // The one-time ``webhook_secret`` / ``webhook_api_key``
-                    // are create-only response fields, not part of the
+                    // ``secret`` for auth_method=jwt and ``api_key`` for
+                    // auth_method=api_key. These one-time credentials are
+                    // create-only response fields, not part of the
                     // generated ``Channel`` type — read them off an
                     // index-signature view.
                     const payload = newChannel.data as unknown as Record<
                         string,
                         unknown
                     >;
-                    const secret = payload.webhook_secret as
-                        | string
-                        | undefined;
-                    const apiKey = payload.webhook_api_key as
-                        | string
-                        | undefined;
+                    const secret = payload.secret as string | undefined;
+                    const apiKey = payload.api_key as string | undefined;
                     if (secret) {
                         setCreatedCredential({
                             label: t("Webhook signing secret"),
@@ -307,8 +302,8 @@ export const WebhookIntegrationForm = ({
                                 value: "jmap",
                             },
                             {
-                                label: t("JMAP Email JSON without body (notification only)"),
-                                value: "jmap_without_body",
+                                label: t("JMAP Email metadata (notification only)"),
+                                value: "jmap_metadata",
                             },
                         ]}
                         text={t(

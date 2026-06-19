@@ -11,7 +11,13 @@ from jmap_email import parse_email
 
 from core import factories, models
 from core.mda.inbound import deliver_inbound_message
-from core.mda.inbound_pipeline import _call_rspamd, _check_hardcoded_rules
+from core.mda.inbound_pipeline import (
+    Decision,
+    InboundContext,
+    _call_rspamd,
+    _check_hardcoded_rules,
+    _make_rspamd_step,
+)
 from core.mda.inbound_tasks import (
     process_inbound_message_task,
     process_inbound_messages_queue_task,
@@ -854,3 +860,56 @@ class TestProcessInboundMessagesQueueTask:
         assert result["processed"] == 3
         assert result["total"] == 3
         assert mock_task_delay.call_count == 3
+
+
+@pytest.mark.django_db
+class TestRspamdStepFailureHandling:
+    """rspamd never fails open: an error holds the message for retry
+    (feeding the quarantine path) rather than delivering it unchecked."""
+
+    def _ctx(self, spam_config):
+        mailbox = factories.MailboxFactory()
+        inbound = models.InboundMessage.objects.create(
+            mailbox=mailbox, raw_data=b"raw"
+        )
+        return InboundContext(
+            mailbox=mailbox,
+            inbound_message=inbound,
+            recipient_email=str(mailbox),
+            raw_data=b"raw",
+            parsed_email={},
+            spam_config=spam_config,
+        )
+
+    @patch("core.mda.inbound_pipeline._call_rspamd")
+    def test_error_holds_for_retry(self, mock_call):
+        spam_config = {"rspamd_url": "http://rspamd:11334"}
+        # _call_rspamd returns is_spam=False on error.
+        mock_call.return_value = (False, "connection refused", None)
+
+        decision = _make_rspamd_step(spam_config)(self._ctx(spam_config))
+
+        # Never fail open — hold, don't deliver unchecked.
+        assert decision == Decision.RETRY
+
+    @patch("core.mda.inbound_pipeline._call_rspamd")
+    def test_not_configured_continues(self, mock_call):
+        # rspamd absent is "no opinion", not an error → keep moving.
+        mock_call.return_value = (None, None, None)
+        ctx = self._ctx({})
+
+        decision = _make_rspamd_step({})(ctx)
+
+        assert decision == Decision.CONTINUE
+        assert ctx.is_spam is None
+
+    @patch("core.mda.inbound_pipeline._call_rspamd")
+    def test_success_sets_verdict(self, mock_call):
+        spam_config = {"rspamd_url": "http://rspamd:11334"}
+        mock_call.return_value = (True, None, {"action": "reject"})
+        ctx = self._ctx(spam_config)
+
+        decision = _make_rspamd_step(spam_config)(ctx)
+
+        assert decision == Decision.CONTINUE
+        assert ctx.is_spam is True

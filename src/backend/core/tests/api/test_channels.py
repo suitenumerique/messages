@@ -588,53 +588,53 @@ class TestWebhookChannelSettings:
 
     @override_settings(FEATURE_MAILBOX_ADMIN_CHANNELS=["webhook"])
     def test_create_minimal_webhook(self, api_client, mailbox):
-        """A JWT webhook surfaces its one-time ``webhook_secret`` on create."""
+        """A JWT webhook surfaces its one-time ``secret`` on create."""
         response = self._post(
             api_client,
             mailbox,
             {
                 "url": "https://hook.example.com/in",
-                "events": ["message.received"],
+                "events": ["message.inbound"],
                 "auth_method": "jwt",
             },
         )
         assert response.status_code == status.HTTP_201_CREATED, response.content
         # The signing secret is returned exactly once, at creation time.
-        assert response.data.get("webhook_secret")
-        assert "webhook_api_key" not in response.data
+        assert response.data.get("secret")
+        assert "api_key" not in response.data
 
     @override_settings(FEATURE_MAILBOX_ADMIN_CHANNELS=["webhook"])
     def test_create_minimal_webhook_api_key(self, api_client, mailbox):
-        """An api_key webhook surfaces its one-time ``webhook_api_key``."""
+        """An api_key webhook surfaces its one-time ``api_key``."""
         response = self._post(
             api_client,
             mailbox,
             {
                 "url": "https://hook.example.com/in",
-                "events": ["message.received"],
+                "events": ["message.inbound"],
                 "auth_method": "api_key",
             },
         )
         assert response.status_code == status.HTTP_201_CREATED, response.content
         # api_key channels return the derived key, never the raw JWT secret.
-        assert response.data.get("webhook_api_key")
-        assert "webhook_secret" not in response.data
+        assert response.data.get("api_key")
+        assert "secret" not in response.data
 
     @override_settings(FEATURE_MAILBOX_ADMIN_CHANNELS=["webhook"])
     def test_regenerate_secret_jwt_webhook(self, api_client, mailbox):
-        """Rotating a JWT webhook returns a fresh ``webhook_secret``."""
+        """Rotating a JWT webhook returns a fresh ``secret``."""
         create = self._post(
             api_client,
             mailbox,
             {
                 "url": "https://hook.example.com/in",
-                "events": ["message.received"],
+                "events": ["message.inbound"],
                 "auth_method": "jwt",
             },
         )
         assert create.status_code == status.HTTP_201_CREATED, create.content
         channel_id = create.data["id"]
-        original_secret = create.data["webhook_secret"]
+        original_secret = create.data["secret"]
 
         url = reverse(
             "mailbox-channels-regenerate-secret",
@@ -643,26 +643,26 @@ class TestWebhookChannelSettings:
         response = api_client.post(url)
         assert response.status_code == status.HTTP_200_OK, response.content
         assert response.data["id"] == str(channel_id)
-        new_secret = response.data["webhook_secret"]
+        new_secret = response.data["secret"]
         assert new_secret
         assert new_secret != original_secret
-        assert "webhook_api_key" not in response.data
+        assert "api_key" not in response.data
 
     @override_settings(FEATURE_MAILBOX_ADMIN_CHANNELS=["webhook"])
     def test_regenerate_secret_api_key_webhook(self, api_client, mailbox):
-        """Rotating an api_key webhook returns a fresh ``webhook_api_key``."""
+        """Rotating an api_key webhook returns a fresh ``api_key``."""
         create = self._post(
             api_client,
             mailbox,
             {
                 "url": "https://hook.example.com/in",
-                "events": ["message.received"],
+                "events": ["message.inbound"],
                 "auth_method": "api_key",
             },
         )
         assert create.status_code == status.HTTP_201_CREATED, create.content
         channel_id = create.data["id"]
-        original_key = create.data["webhook_api_key"]
+        original_key = create.data["api_key"]
 
         url = reverse(
             "mailbox-channels-regenerate-secret",
@@ -671,10 +671,10 @@ class TestWebhookChannelSettings:
         response = api_client.post(url)
         assert response.status_code == status.HTTP_200_OK, response.content
         assert response.data["id"] == str(channel_id)
-        new_key = response.data["webhook_api_key"]
+        new_key = response.data["api_key"]
         assert new_key
         assert new_key != original_key
-        assert "webhook_secret" not in response.data
+        assert "secret" not in response.data
 
     @override_settings(FEATURE_MAILBOX_ADMIN_CHANNELS=["webhook"])
     def test_create_with_all_dispatcher_options(self, api_client, mailbox):
@@ -684,7 +684,7 @@ class TestWebhookChannelSettings:
             mailbox,
             {
                 "url": "https://hook.example.com/in",
-                "events": ["message.received"],
+                "events": ["message.inbound"],
                 "auth_method": "jwt",
                 "phase": "before_spam",
                 "blocking": True,
@@ -705,7 +705,7 @@ class TestWebhookChannelSettings:
             mailbox,
             {
                 "url": "https://hook.example.com/in",
-                "events": ["message.received"],
+                "events": ["message.inbound"],
                 "auth_method": "jwt",
                 "format": "yaml",
             },
@@ -713,16 +713,16 @@ class TestWebhookChannelSettings:
         assert response.status_code == status.HTTP_400_BAD_REQUEST
 
     @override_settings(FEATURE_MAILBOX_ADMIN_CHANNELS=["webhook"])
-    def test_accepts_jmap_without_body_format(self, api_client, mailbox):
-        """The ``jmap_without_body`` format is a valid webhook format."""
+    def test_accepts_jmap_metadata_format(self, api_client, mailbox):
+        """The ``jmap_metadata`` format is a valid webhook format."""
         response = self._post(
             api_client,
             mailbox,
             {
                 "url": "https://hook.example.com/in",
-                "events": ["message.received"],
+                "events": ["message.inbound"],
                 "auth_method": "jwt",
-                "format": "jmap_without_body",
+                "format": "jmap_metadata",
             },
         )
         assert response.status_code == status.HTTP_201_CREATED, response.content
@@ -735,7 +735,7 @@ class TestWebhookChannelSettings:
             mailbox,
             {
                 "url": "https://hook.example.com/in",
-                "events": ["message.received"],
+                "events": ["message.inbound"],
                 "auth_method": "jwt",
                 "phase": "whenever",
             },
@@ -750,7 +750,7 @@ class TestWebhookChannelSettings:
             mailbox,
             {
                 "url": "https://hook.example.com/in",
-                "events": ["message.received"],
+                "events": ["message.inbound"],
                 "auth_method": "jwt",
                 "blocking": "yes",
             },
@@ -766,7 +766,7 @@ class TestWebhookChannelSettings:
             mailbox,
             {
                 "url": "https://hook.example.com/in",
-                "events": ["message.received"],
+                "events": ["message.inbound"],
                 "auth_method": "jwt",
             },
         )
@@ -780,7 +780,7 @@ class TestWebhookChannelSettings:
             data={
                 "settings": {
                     "url": "https://hook.example.com/in",
-                    "events": ["message.received"],
+                    "events": ["message.inbound"],
                     "auth_method": "jwt",
                     "phase": "bogus",
                 }

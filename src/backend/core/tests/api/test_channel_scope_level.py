@@ -1025,7 +1025,7 @@ class TestUserChannelViewSet:
                 "type": "webhook",
                 "settings": {
                     "url": "https://hook.example.com/me",
-                    "events": ["message.received"], "auth_method": "jwt",
+                    "events": ["message.inbound"], "auth_method": "jwt",
                 },
             },
             format="json",

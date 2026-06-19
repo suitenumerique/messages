@@ -135,10 +135,19 @@ Step = Callable[[InboundContext], Decision]
 
 
 # Inbound messages held by a transient RETRY get one more chance every
-# 5 minutes via ``process_inbound_messages_queue_task``. After this cap
-# we drop and log loudly so a permanently-broken receiver can't pin a
-# row in the queue forever.
-RETRY_MAX_AGE = timedelta(days=7)
+# 5 minutes via ``process_inbound_messages_queue_task``. The webhook step
+# is the only producer of a RETRY, and it is bounded by the quarantine
+# window below — so a held message is never dropped, only delivered
+# (flagged) once it gives up.
+#
+# A processing step that keeps failing (a blocking webhook today; rspamd
+# or any future RETRY-returning step tomorrow) must not hold a message
+# forever *or* silently lose it. After this window the task stops holding
+# and delivers the message anyway, stamped with ``X-StMsg-Processing-
+# Failed`` so the UI warns the recipient it bypassed a processing step.
+# Generic on purpose — see the RETRY branch in
+# ``process_inbound_message_task``.
+QUARANTINE_AFTER = timedelta(hours=48)
 
 
 # ---------------------------------------------------------------------------
@@ -289,6 +298,13 @@ def _make_rspamd_step(spam_config: Dict[str, Any]) -> Step:
     Sets ``is_spam`` if no earlier step decided. Always caches the
     full ``rspamd_result`` dict on the context — ``inbound_auth_step``
     reuses the symbols (DKIM/DMARC) without a second HTTP call.
+
+    An rspamd *error* never fails open: we don't deliver mail that
+    couldn't be spam-checked. The step RETRYs instead, so the message is
+    held and retried; if the outage lasts past ``QUARANTINE_AFTER`` the
+    quarantine path delivers it flagged rather than silently unchecked.
+    (rspamd simply not being configured is not an error — ``_call_rspamd``
+    returns no opinion and the pipeline moves on.)
     """
 
     def rspamd(ctx: InboundContext) -> Decision:
@@ -299,11 +315,15 @@ def _make_rspamd_step(spam_config: Dict[str, Any]) -> Step:
             return Decision.CONTINUE
         is_spam, err, result = _call_rspamd(ctx.raw_data, spam_config)
         if err:
+            # Don't fail open — hold for retry rather than deliver
+            # unchecked. A sustained outage is bounded by the quarantine
+            # window (the message is then delivered flagged).
             logger.warning(
-                "rspamd error on inbound message %s: %s (treating as not spam)",
+                "rspamd error on inbound message %s: %s (holding for retry)",
                 ctx.inbound_message.id,
                 err,
             )
+            return Decision.RETRY
         ctx.rspamd_result = result
         if is_spam is not None:
             ctx.is_spam = is_spam

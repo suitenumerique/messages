@@ -228,8 +228,8 @@ class WebhookEvents(StrEnum):
     serializer at write time. Adding a new event is a Python-only change.
     """
 
-    MESSAGE_RECEIVED = "message.received"
-    MESSAGE_SENT = "message.sent"
+    MESSAGE_INBOUND = "message.inbound"
+    MESSAGE_OUTBOUND = "message.outbound"
 
 
 class ChannelApiKeyScope(models.TextChoices):

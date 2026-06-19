@@ -2011,8 +2011,8 @@ class ChannelSerializer(CreateOnlyFieldsMixin, serializers.ModelSerializer):
 
     # Channel types that mint a plaintext secret on create. The
     # viewset surfaces the minted value via the right response key
-    # (api_key for api_key channels, webhook_secret / webhook_api_key
-    # for webhook channels per ``settings.auth_method``).
+    # (``api_key`` for api_key channels and api_key webhooks, ``secret``
+    # for jwt webhooks — keyed by ``settings.auth_method``).
     _ROTATABLE_TYPES = frozenset(
         {enums.ChannelTypes.API_KEY, enums.ChannelTypes.WEBHOOK}
     )
@@ -2236,17 +2236,15 @@ class ChannelSerializer(CreateOnlyFieldsMixin, serializers.ModelSerializer):
             )
         # Each POST carries the HMAC/JWT signing material in its headers,
         # so plaintext http would leak credentials in transit. Require
-        # https except for a local-dev escape hatch: a loopback host, or
-        # DEBUG (where operators routinely point at a local receiver).
-        is_loopback = host in ("localhost", "127.0.0.1", "::1")
-        if parsed_url.scheme != "https" and not (settings.DEBUG or is_loopback):
+        # https except under DEBUG, the local-dev escape hatch where
+        # operators routinely point at a local receiver. We deliberately
+        # do *not* special-case loopback hosts here: in production the
+        # shared SSRF guard (``services.ssrf``) rejects loopback targets
+        # at dispatch anyway, so a hand-rolled allowance would only ever
+        # apply under DEBUG — which the check below already covers.
+        if parsed_url.scheme != "https" and not settings.DEBUG:
             raise serializers.ValidationError(
-                {
-                    "settings": (
-                        "webhook settings.url must use https:// "
-                        "(http:// is only allowed for localhost)."
-                    )
-                }
+                {"settings": "webhook settings.url must use https://."}
             )
 
         events = settings_data.get("events")
@@ -2379,27 +2377,25 @@ class ChannelCreateResponseSerializer(ChannelSerializer):
     # auth_method, so the others are intentionally absent.
     api_key = serializers.CharField(
         required=False,
-        help_text="api_key channels only — the plaintext API key.",
+        help_text=(
+            "Plaintext API key — api_key channels and webhook channels "
+            "with auth_method=api_key."
+        ),
     )
     password = serializers.CharField(
         required=False,
         help_text="Plaintext password, when the channel type mints one.",
     )
-    webhook_secret = serializers.CharField(
+    secret = serializers.CharField(
         required=False,
         help_text="webhook channels with auth_method=jwt — the HMAC/JWT signing secret.",
-    )
-    webhook_api_key = serializers.CharField(
-        required=False,
-        help_text="webhook channels with auth_method=api_key — the derived API key.",
     )
 
     class Meta(ChannelSerializer.Meta):
         fields = ChannelSerializer.Meta.fields + [
             "api_key",
             "password",
-            "webhook_secret",
-            "webhook_api_key",
+            "secret",
         ]
 
 

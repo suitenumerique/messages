@@ -1469,6 +1469,15 @@ class Test(Base):
 
     FEATURE_MAILBOX_ADMIN_CHANNELS = ["api_key", "widget", "webhook"]
 
+    # Tests must not depend on a reachable rspamd. With no rspamd_url the
+    # spam step is a no-op ("no opinion"), so inbound delivery tests
+    # deliver deterministically; spam-specific tests opt in explicitly via
+    # ``@override_settings(SPAM_CONFIG={"rspamd_url": ...})`` and mock the
+    # HTTP call. (A configured-but-unreachable rspamd now *holds* mail for
+    # retry instead of failing open — see ``_make_rspamd_step`` — so an
+    # inherited env SPAM_CONFIG would otherwise stall delivery in tests.)
+    SPAM_CONFIG = {}
+
     SCHEMA_CUSTOM_ATTRIBUTES_USER = {}
     SCHEMA_CUSTOM_ATTRIBUTES_MAILDOMAIN = {}
 

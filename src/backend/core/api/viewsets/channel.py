@@ -23,14 +23,16 @@ from .. import permissions, serializers
 def _attach_credential(data: dict, channel: models.Channel) -> None:
     """Add the channel's freshly-minted credential to ``data``.
 
-    Type-specific response key — lets the frontend branch on presence
-    instead of sniffing prefixes:
+    Response key by credential *kind* (the channel's type + auth_method
+    already tell the caller which to expect, so the keys are shared
+    across channel types rather than prefixed per type):
 
-      - ``api_key`` channels → ``api_key``
-      - ``webhook`` channels (``auth_method='jwt'``) → ``webhook_secret``
+      - ``api_key`` channels → ``api_key`` (plaintext, one-shot)
+      - ``webhook`` channels (``auth_method='jwt'``) → ``secret``
         (the raw root from ``encrypted_settings["secret"]``)
-      - ``webhook`` channels (``auth_method='api_key'``) →
-        ``webhook_api_key`` (HMAC-derived from the root)
+      - ``webhook`` channels (``auth_method='api_key'``) → ``api_key``
+        (HMAC-derived from the root) — same key name as api_key
+        channels: both are an API key presented in a request header
 
     For api_key channels the plaintext is one-shot (we only store the
     hash), so callers must stash it on ``instance._generated_api_key``
@@ -48,11 +50,11 @@ def _attach_credential(data: dict, channel: models.Channel) -> None:
         if auth_method == "jwt":
             root = (channel.encrypted_settings or {}).get("secret")
             if root:
-                data["webhook_secret"] = root
+                data["secret"] = root
         elif auth_method == "api_key":
             derived = channel.get_webhook_api_key()
             if derived:
-                data["webhook_api_key"] = derived
+                data["api_key"] = derived
 
 
 @extend_schema(
@@ -120,8 +122,8 @@ class ChannelViewSet(
                 response=serializers.ChannelCreateResponseSerializer,
                 description=(
                     "Channel created successfully. The response carries the "
-                    "one-time plaintext credentials (api_key / webhook_secret / "
-                    "webhook_api_key / password) which are never returned again."
+                    "one-time plaintext credentials (api_key / secret / "
+                    "password) which are never returned again."
                 ),
             ),
             400: OpenApiResponse(description="Invalid input data"),
@@ -197,12 +199,16 @@ class ChannelViewSet(
                         "api_key": drf_serializers.CharField(
                             required=False,
                             help_text=(
-                                "Present for ``api_key`` channels — the "
-                                "plaintext used in subsequent X-API-Key "
-                                "calls. Returned ONCE."
+                                "Present for ``api_key`` channels and "
+                                "webhook channels with "
+                                "``auth_method='api_key'`` — the plaintext "
+                                "API key presented in a request header "
+                                "(X-API-Key / X-StMsg-Api-Key). Returned "
+                                "ONCE; for api_key webhooks it changes "
+                                "whenever the root rotates."
                             ),
                         ),
-                        "webhook_secret": drf_serializers.CharField(
+                        "secret": drf_serializers.CharField(
                             required=False,
                             help_text=(
                                 "Present for webhook channels with "
@@ -211,25 +217,14 @@ class ChannelViewSet(
                                 "HMAC sig and JWT."
                             ),
                         ),
-                        "webhook_api_key": drf_serializers.CharField(
-                            required=False,
-                            help_text=(
-                                "Present for webhook channels with "
-                                "``auth_method='api_key'`` — the "
-                                "HMAC-derived value sent as "
-                                "X-StMsg-Api-Key. Changes whenever the "
-                                "root rotates."
-                            ),
-                        ),
                     },
                 ),
                 description=(
                     "Rotates the channel's secret. Single-active: the "
                     "previous credential is invalidated immediately. "
                     "The response carries exactly one of ``api_key`` / "
-                    "``webhook_secret`` / ``webhook_api_key`` matching "
-                    "the channel's type (and, for webhooks, its current "
-                    "``auth_method``)."
+                    "``secret`` matching the channel's type (and, for "
+                    "webhooks, its current ``auth_method``)."
                 ),
             ),
             400: OpenApiResponse(description="Channel type has no rotatable secret"),
