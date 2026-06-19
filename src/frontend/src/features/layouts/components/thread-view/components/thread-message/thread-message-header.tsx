@@ -41,6 +41,11 @@ const ThreadMessageHeader = ({
     const isUnverifiedSender = senderAuth === 'none';
     const isForgedSender = senderAuth === 'fail';
 
+    // A processing step (a blocking integration/webhook, spam check, …)
+    // failed repeatedly, so the message was delivered without it (see the
+    // quarantine path in the inbound pipeline). Warn prominently.
+    const processingFailed = Boolean(message.stmsg_headers?.['processing-failed']);
+
     const isUserSender = useMemo(() => {
         if (!message.is_sender) return false;
         if (!message.sender_user) return true;
@@ -159,6 +164,13 @@ const ThreadMessageHeader = ({
                         <Banner type="warning" compact fullWidth>
                             <div className="thread-message__header-banner__content">
                                 <p>{t("This contact's identity could not be verified. Proceed with caution.")}</p>
+                            </div>
+                        </Banner>
+                    )}
+                    {processingFailed && (
+                        <Banner type="error" compact fullWidth>
+                            <div className="thread-message__header-banner__content">
+                                <p>{t("This message was delivered without our usual safety checks. Please review it with caution.")}</p>
                             </div>
                         </Banner>
                     )}

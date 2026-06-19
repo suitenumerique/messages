@@ -54,12 +54,10 @@ export interface ChannelCreateResponse {
   readonly created_at: string;
   /** date and time at which a record was last updated */
   readonly updated_at: string;
-  /** api_key channels only — the plaintext API key. */
+  /** Plaintext API key — api_key channels and webhook channels with auth_method=api_key. */
   api_key?: string;
   /** Plaintext password, when the channel type mints one. */
   password?: string;
   /** webhook channels with auth_method=jwt — the HMAC/JWT signing secret. */
-  webhook_secret?: string;
-  /** webhook channels with auth_method=api_key — the derived API key. */
-  webhook_api_key?: string;
+  secret?: string;
 }

@@ -46,7 +46,7 @@ from urllib.parse import urlparse
 from django.db.models import Q
 
 import jwt
-from jmap_email import JmapEmail, first_msgid
+from jmap_email import JmapEmail
 
 from core import enums, models
 from core.mda.inbound_pipeline import Decision, InboundContext, Step
@@ -109,13 +109,6 @@ class _HttpResult:  # pylint: disable=too-many-instance-attributes
     # reply_draft: receiver-supplied MessageTemplate UUID. Resolved +
     # scope-checked + drafted in the pipeline finalize step.
     reply_draft_template_id: Optional[str] = None
-
-
-# HTTP status families that mean "try again later" rather than
-# "receiver rejected this message". 408 (timeout), 429 (rate limit),
-# and 5xx are conventional retry signals across the webhook ecosystem
-# (Stripe, GitHub, etc.).
-_RETRY_STATUSES = frozenset({408, 429})
 
 
 def _read_capped_body(response) -> bytes:
@@ -184,8 +177,8 @@ def _classify_response_body(body_bytes: bytes) -> _HttpResult:
         us to re-queue the inbound task; anything else (``"accept"``,
         missing) → CONTINUE.
       - ``is_spam``: bool; overrides the pipeline's spam verdict.
-      - ``labels``: list of label UUID strings; the pipeline validates
-        them against the destination mailbox.
+      - ``add_labels``: list of label UUID strings; the pipeline
+        validates them against the destination mailbox.
     """
     if not body_bytes:
         return _HttpResult()
@@ -212,7 +205,7 @@ def _classify_response_body(body_bytes: bytes) -> _HttpResult:
     if isinstance(is_spam, bool):
         result.is_spam_override = is_spam
 
-    labels = payload.get("labels")
+    labels = payload.get("add_labels")
     if isinstance(labels, list):
         for item in labels[:MAX_LABELS_PER_RESPONSE]:
             if not isinstance(item, str):
@@ -299,13 +292,13 @@ def _classify_response_body(body_bytes: bytes) -> _HttpResult:
 
 FORMAT_EML = "eml"
 FORMAT_JMAP = "jmap"
-# ``jmap_without_body`` is the cheap notification variant: same JMAP
+# ``jmap_metadata`` is the cheap notification variant: same JMAP
 # envelope (headers, from/to/subject, messageId, etc.) but no body
 # parts, no bodyValues, no attachments. Receivers that only need the
 # "a message arrived" signal can use it without ever seeing the body
 # content over the wire.
-FORMAT_JMAP_WITHOUT_BODY = "jmap_without_body"
-VALID_FORMATS = frozenset({FORMAT_EML, FORMAT_JMAP, FORMAT_JMAP_WITHOUT_BODY})
+FORMAT_JMAP_METADATA = "jmap_metadata"
+VALID_FORMATS = frozenset({FORMAT_EML, FORMAT_JMAP, FORMAT_JMAP_METADATA})
 DEFAULT_FORMAT = FORMAT_EML
 
 USER_AGENT = "Messages-Webhook/1.0"
@@ -515,38 +508,29 @@ def _envelope_headers(
     phase: str,
     mailbox: models.Mailbox,
     recipient_email: str,
-    parsed_email: JmapEmail,
     is_spam: Optional[bool],
 ) -> Dict[str, str]:
     """Build the ``X-StMsg-*`` envelope headers attached to every webhook
     POST regardless of body format. Same shape for ``eml`` and ``jmap``.
+
+    The message-id is intentionally *not* a header: every body format
+    already carries it (``messageId`` in the jmap variants, the raw
+    ``Message-ID:`` header in ``eml``), so a header would only duplicate
+    it.
     """
     if is_spam is None:
         spam_value = "unknown"
     else:
         spam_value = "true" if is_spam else "false"
-    mid = first_msgid(parsed_email.get("messageId"))
-    headers = {
+    return {
         "User-Agent": USER_AGENT,
-        "X-StMsg-Event": enums.WebhookEvents.MESSAGE_RECEIVED.value,
+        "X-StMsg-Event": enums.WebhookEvents.MESSAGE_INBOUND.value,
         "X-StMsg-Phase": phase,
         "X-StMsg-Channel-Id": str(channel.id),
         "X-StMsg-Mailbox": str(mailbox),
         "X-StMsg-Recipient": recipient_email,
         "X-StMsg-Is-Spam": spam_value,
     }
-    if mid:
-        # Re-bracket per RFC 5322 for headers (the JMAP body strips them).
-        # Strip CR/LF defensively: the parser normally does, but a
-        # malformed inbound Message-Id with embedded newlines would let
-        # the receiver see "spliced" headers. urllib3 would also reject
-        # it, but we'd rather drop the dodgy bytes than fail the POST.
-        mid = mid.replace("\r", "").replace("\n", "").strip()
-        if mid:
-            if not (mid.startswith("<") and mid.endswith(">")):
-                mid = f"<{mid}>"
-            headers["X-StMsg-Message-Id"] = mid
-    return headers
 
 
 # --- dispatch --- #
@@ -564,12 +548,16 @@ class UserWebhookStep:
       - non-blocking → always ``CONTINUE`` (fire-and-forget; failures
         only logged)
       - blocking:
-          * 2xx + ``{"action":"drop"}`` → DROP
+          * 2xx + ``{"action":"drop"}`` → DROP (the *only* path to DROP)
+          * 2xx + ``{"action":"retry"}`` → RETRY
           * 2xx + anything else → CONTINUE (with optional side effects)
-          * 4xx → DROP (receiver definitively rejected)
-          * 408 / 429 / 5xx → RETRY (transient)
-          * SSRF / missing secret / unknown auth_method → DROP
+          * any non-2xx (4xx / 5xx / 3xx) → RETRY
+          * SSRF / missing secret / unknown auth_method → RETRY
           * timeout / connection / generic transport → RETRY
+
+    A webhook error never drops the user's email — only an explicit
+    ``{"action": "drop"}`` does. Every failure is held for retry,
+    bounded by the pipeline's 7-day budget.
     """
 
     def __init__(self, channel: models.Channel, phase: str):
@@ -590,7 +578,6 @@ class UserWebhookStep:
             phase=self.phase,
             mailbox=ctx.mailbox,
             recipient_email=ctx.recipient_email,
-            parsed_email=ctx.parsed_email,
             is_spam=ctx.is_spam,
         )
         result = self._post(
@@ -642,17 +629,22 @@ class UserWebhookStep:
         secret = (self.channel.encrypted_settings or {}).get("secret")
         if not secret:
             # The create path always mints a secret; a row without one
-            # is misconfigured. Fail closed rather than POST something a
-            # receiver cannot authenticate.
+            # is misconfigured. We can't sign the POST, so we hold for
+            # RETRY rather than drop the user's mail — re-minting the
+            # secret lets the next sweep deliver. A webhook failure must
+            # never silently discard the email (only an explicit
+            # ``{"action": "drop"}`` on a 2xx does that).
             logger.warning(
-                "Webhook channel %s has no secret — skipping",
+                "Webhook channel %s has no secret — holding for retry",
                 self.channel.id,
             )
-            return _failure(blocking, Decision.DROP)
+            return _failure(blocking, Decision.RETRY)
 
         auth_headers = self._build_auth_headers(secret, body_bytes, ctx.mailbox)
         if auth_headers is None:
-            return _failure(blocking, Decision.DROP)
+            # Unknown/misconfigured auth_method — same reasoning: hold
+            # for retry, never drop the email on our config error.
+            return _failure(blocking, Decision.RETRY)
 
         signed_headers = {
             **headers,
@@ -669,14 +661,17 @@ class UserWebhookStep:
                 url, timeout=WEBHOOK_TIMEOUT, stream=True, **kwargs
             )
         except SSRFValidationError as exc:
-            # SSRF is a config error on our side — retrying won't fix it.
+            # SSRF block is a config error on our side (the URL points at a
+            # disallowed address). Hold for RETRY rather than drop — fixing
+            # the URL lets the next sweep deliver. We never discard the
+            # user's mail because of a webhook/config failure.
             logger.warning(
                 "Webhook channel %s rejected by SSRF for url=%s: %s",
                 self.channel.id,
                 _sanitize_url(url),
                 exc,
             )
-            return _failure(blocking, Decision.DROP)
+            return _failure(blocking, Decision.RETRY)
         except Exception as exc:
             # Timeout, connection refused, DNS, unknown transport-level
             # failure: all transient on the blocking path. The 7-day cap
@@ -713,10 +708,12 @@ class UserWebhookStep:
                 status,
                 _sanitize_url(url),
             )
-            if status in _RETRY_STATUSES or 500 <= status < 600:
-                return _failure(blocking, Decision.RETRY)
-            # 3xx and any other non-2xx non-retry code: receiver said no.
-            return _failure(blocking, Decision.DROP)
+            # Any non-2xx status is a transient failure → RETRY. A
+            # blocking webhook DROPs an email *only* when it explicitly
+            # returns ``{"action": "drop"}`` with a 2xx (handled above).
+            # A receiver bug that answers 4xx must never cost the user
+            # their mail — the 7-day retry budget bounds the hold.
+            return _failure(blocking, Decision.RETRY)
         finally:
             response.close()
 
@@ -783,8 +780,8 @@ def webhook_steps_for_mailbox(mailbox: models.Mailbox, *, phase: str) -> List[St
         cfg = channel.settings or {}
         if cfg.get("phase", PHASE_AFTER_SPAM) != phase:
             continue
-        events = cfg.get("events") or [enums.WebhookEvents.MESSAGE_RECEIVED.value]
-        if enums.WebhookEvents.MESSAGE_RECEIVED.value not in events:
+        events = cfg.get("events") or [enums.WebhookEvents.MESSAGE_INBOUND.value]
+        if enums.WebhookEvents.MESSAGE_INBOUND.value not in events:
             continue
         if not cfg.get("url"):
             continue

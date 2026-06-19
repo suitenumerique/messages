@@ -9,10 +9,8 @@
 export interface RegeneratedSecretResponse {
   /** Channel id. */
   id: string;
-  /** Present for ``api_key`` channels — the plaintext used in subsequent X-API-Key calls. Returned ONCE. */
+  /** Present for ``api_key`` channels and webhook channels with ``auth_method='api_key'`` — the plaintext API key presented in a request header (X-API-Key / X-StMsg-Api-Key). Returned ONCE; for api_key webhooks it changes whenever the root rotates. */
   api_key?: string;
   /** Present for webhook channels with ``auth_method='jwt'`` — the freshly minted root receivers use to verify the HMAC sig and JWT. */
-  webhook_secret?: string;
-  /** Present for webhook channels with ``auth_method='api_key'`` — the HMAC-derived value sent as X-StMsg-Api-Key. Changes whenever the root rotates. */
-  webhook_api_key?: string;
+  secret?: string;
 }

@@ -770,6 +770,7 @@
   "This message has not been delivered. You cancelled the delivery.": "This message has not been delivered. You cancelled the delivery.",
   "This message has not yet been delivered to all recipients.": "This message has not yet been delivered to all recipients.",
   "This message is being delivered.": "This message is being delivered.",
+  "This message was delivered without our usual safety checks. Please review it with caution.": "This message was delivered without our usual safety checks. Please review it with caution.",
   "This name is for internal use only and will not be visible to users.": "This name is for internal use only and will not be visible to users.",
   "This signature is forced": "This signature is forced",
   "This thread has been reported as spam.": "This thread has been reported as spam.",

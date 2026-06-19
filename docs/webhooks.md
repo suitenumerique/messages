@@ -52,7 +52,7 @@ A webhook channel stores its configuration in `Channel.settings`
 ```json
 {
   "url":         "https://example.com/inbox-hook",
-  "events":      ["message.received"],
+  "events":      ["message.inbound"],
   "phase":       "after_spam",
   "format":      "eml",
   "blocking":    false,
@@ -63,9 +63,9 @@ A webhook channel stores its configuration in `Channel.settings`
 | Key           | Type     | Default        | Description                                                                 |
 | ------------- | -------- | -------------- | --------------------------------------------------------------------------- |
 | `url`         | string   | **required**   | `http://` or `https://` endpoint. Validated by the SSRF guard at each call. |
-| `events`      | string[] | **required**   | Currently only `message.received` is implemented.                           |
+| `events`      | string[] | **required**   | Currently only `message.inbound` is implemented.                           |
 | `phase`       | string   | `after_spam`   | `before_spam` or `after_spam`.                                              |
-| `format`      | string   | `eml`          | `eml`, `jmap`, or `jmap_without_body` (see [Payload formats](#payload-formats)). |
+| `format`      | string   | `eml`          | `eml`, `jmap`, or `jmap_metadata` (see [Payload formats](#payload-formats)). |
 | `blocking`    | bool     | `false`        | If true, the webhook response determines delivery (see [Response contract](#response-contract) below). |
 | `auth_method` | string   | **required**   | `jwt` or `api_key` (see [Authentication](#authentication)).                 |
 
@@ -120,8 +120,8 @@ PATCH the channel's `settings.auth_method`. The root secret is **not**
 rotated — only the wire presentation changes — but the receiver was
 given the old method's credential at creation. To get the new method's
 credential, call `POST /channels/{id}/regenerate-secret/`: the
-response returns either `webhook_secret` (jwt) or `webhook_api_key`
-(api_key), matching the channel's current method. Rotation invalidates
+response returns either `secret` (jwt) or `api_key` (api_key),
+matching the channel's current method. Rotation invalidates
 the previous credential, so update the receiver before the next inbound
 message lands.
 
@@ -130,33 +130,72 @@ message lands.
 | Header                | Value                                                            |
 | --------------------- | ---------------------------------------------------------------- |
 | `Content-Type`        | `message/rfc822` for `eml`, `application/json` for both JMAP variants |
-| `X-StMsg-Event`       | `message.received`                                               |
+| `X-StMsg-Event`       | `message.inbound`                                               |
 | `X-StMsg-Phase`       | `before_spam` or `after_spam`                                    |
 | `X-StMsg-Channel-Id`  | UUID of the firing webhook Channel                               |
 | `X-StMsg-Mailbox`     | Destination mailbox address                                      |
 | `X-StMsg-Recipient`   | Envelope `RCPT TO` (usually the same as `X-StMsg-Mailbox`)       |
 | `X-StMsg-Is-Spam`     | `true`, `false`, or `unknown` (`unknown` in the `before_spam` phase) |
-| `X-StMsg-Message-Id`  | Original `Message-ID` header value (angle-bracketed), if any     |
+
+The message-id is **not** sent as a header — every body format already
+carries it (`messageId` in the JMAP variants, the raw `Message-ID:`
+header in `eml`).
 
 ### Response contract
 
 The classification below applies to **blocking** webhooks. Non-blocking
 webhooks treat every outcome as success — their bodies are ignored.
 
+The three possible **decisions** are about the inbound email itself:
+
+* **CONTINUE** — deliver it: the `Message` and its thread are created
+  normally.
+* **DROP** — discard it: **no `Message` and no thread are created**, so
+  the recipient never sees the email. The original sender is *not*
+  notified (the inbound SMTP transaction was already accepted). The
+  short-lived internal `InboundMessage` processing row is also removed —
+  but that happens on *every* terminal outcome, including normal
+  delivery, so "the `InboundMessage` is deleted" is not what makes DROP
+  special; **the email never landing** is.
+* **RETRY** — keep the email queued and re-fire the webhook on the next
+  5-minute sweep (bounded by the **quarantine window** below).
+
+**A webhook error never drops the email.** The *only* way a blocking
+webhook discards a message is by **explicitly** returning
+`{"action": "drop"}` with an HTTP `2xx` (see
+[JSON action body](#json-action-body)). Every transport- or status-level
+failure is held for RETRY — a receiver bug that answers `4xx`, an
+endpoint that is down, or a config error on our side must never cost the
+user their mail.
+
 | Outcome                               | Decision   | What happens                                                                    |
 | ------------------------------------- | ---------- | ------------------------------------------------------------------------------- |
-| HTTP `2xx`, empty / non-JSON body     | CONTINUE   | Delivery proceeds normally.                                                     |
-| HTTP `2xx` + JSON action body         | see below  | Body parsed for `action` / `is_spam` / `labels`.                                |
-| HTTP `4xx`                            | DROP       | Receiver definitively rejected the message; `InboundMessage` deleted.           |
-| HTTP `408`, `429`, `5xx`              | RETRY      | Transient — `InboundMessage` kept; the 5-min sweep re-fires the webhook.        |
+| HTTP `2xx`, empty / non-JSON body     | CONTINUE   | Email delivered normally.                                                       |
+| HTTP `2xx` + `{"action": "drop"}`     | DROP       | The **only** path to DROP — the receiver deliberately discards the email.        |
+| HTTP `2xx` + other JSON action body   | see below  | Body parsed for `action` / `is_spam` / `add_labels`; default is CONTINUE.       |
+| Any non-2xx (`4xx`, `5xx`, `3xx`)     | RETRY      | The email stays queued; the 5-min sweep re-fires the webhook.                   |
 | Connection error, timeout, DNS, etc.  | RETRY      | Transient.                                                                      |
-| SSRF rejection                        | DROP       | Config error on our side — retrying won't help.                                 |
-| Missing signing secret (misconfig)    | DROP       | The dispatcher fails closed rather than POST an unsigned request.               |
+| SSRF rejection                        | RETRY      | Config error on our side (bad URL) — held until fixed, never dropped.           |
+| Missing signing secret (misconfig)    | RETRY      | Can't sign the POST — held until the channel is fixed, never dropped.           |
 
-`RETRY` is bounded: an `InboundMessage` held in retry for more than
-**7 days** is dropped with a loud `ERROR` log. This prevents a
-permanently-broken receiver from pinning a row forever. (When you fix
-the receiver within 7 days, the next sweep delivers normally.)
+`RETRY` is bounded by a **quarantine window** so a persistently-failing
+processing step can neither pin a row forever nor lose mail. If a step
+is still failing **48 hours** after the message arrived, we stop holding
+and **deliver the message anyway** — landed in the inbox (`is_spam=False`
+so it isn't buried) and stamped with an `X-StMsg-Processing-Failed`
+marker. The web UI reads that marker and shows a prominent warning banner
+(the same surface as the unverified-sender warning), so the recipient
+knows the message bypassed a processing step and can review it with
+caution. Nothing is ever silently dropped; if the step recovers within
+the window, the next sweep delivers normally with no marker.
+
+The mechanism is generic: a blocking webhook is the trigger today, but
+any step that returns `RETRY` (e.g. a persistently-unreachable spam
+checker) is quarantined the same way.
+
+(The marker rides in the stored MIME as an `X-StMsg-*` header. Sender-
+supplied `X-StMsg-*` headers are stripped at ingest, so receivers can't
+forge it.)
 
 #### JSON action body
 
@@ -168,7 +207,7 @@ optional; unknown keys are ignored.
 {
   "action":         "drop",
   "is_spam":        true,
-  "labels":         ["b3c9c1c3-1f4a-4d4a-9b2d-9c5a2a7c0a01"],
+  "add_labels":     ["b3c9c1c3-1f4a-4d4a-9b2d-9c5a2a7c0a01"],
   "assign_to":      ["alice@example.org"],
   "mark_starred":   true,
   "mark_read":      true,
@@ -184,9 +223,9 @@ optional; unknown keys are ignored.
 
 | Key              | Type           | Meaning                                                                                                          |
 | ---------------- | -------------- | ---------------------------------------------------------------------------------------------------------------- |
-| `action`         | `"drop"` / `"retry"` | `"drop"` drops the message at this phase; `"retry"` re-queues the inbound task (bounded by the 7-day retry budget). Any other value (or omission) is treated as accept. Case-insensitive. |
+| `action`         | `"drop"` / `"retry"` | `"drop"` drops the message at this phase; `"retry"` re-queues the inbound task (bounded by the 48h quarantine window). Any other value (or omission) is treated as accept. Case-insensitive. |
 | `is_spam`        | bool           | Override the spam verdict. Acts as a full antispam: in the `before_spam` phase this **skips rspamd**.            |
-| `labels`         | string[]       | UUIDs of `Label` rows in the destination mailbox to attach to the thread once it is created.                     |
+| `add_labels`     | string[]       | UUIDs of `Label` rows in the destination mailbox to attach to the thread once it is created.                     |
 | `assign_to`      | string[]       | OIDC emails of users to assign to the resulting thread (one `ThreadEvent ASSIGN` per webhook, channel-attributed). |
 |  `mark_starred`  | bool (true only) | Star the resulting thread for the destination mailbox.                                                         |
 | `mark_read`      | bool (true only) | Mark the resulting thread as read for the destination mailbox.                                                 |
@@ -199,13 +238,13 @@ optional; unknown keys are ignored.
 Notes:
 
 * `action: "drop"` always wins. Setting `action: "drop"` together with
-  `labels` or `assign_to` still drops — the thread is never created,
+  `add_labels` or `assign_to` still drops — the thread is never created,
   so neither side effect is applied.
 * `is_spam` discriminates between **explicit false (ham)** and **no
   opinion**: returning `{}` leaves the dispatcher's verdict (typically
   rspamd) untouched, while returning `{"is_spam": false}` forces ham.
-* `labels` only makes sense for **mailbox-scoped** channels: labels are
-  per-mailbox. For domain- or global-scoped channels the UUIDs are
+* `add_labels` only makes sense for **mailbox-scoped** channels: labels
+  are per-mailbox. For domain- or global-scoped channels the UUIDs are
   validated against the receiving mailbox; unknown UUIDs are logged and
   skipped, not raised — a misbehaving webhook must not stall delivery.
 * `assign_to` resolves each email to a User row with
@@ -285,7 +324,7 @@ merge deterministically:
 * **decision**: most severe wins (`DROP` > `RETRY` > `CONTINUE`). The
   dispatcher short-circuits the fan-out as soon as any webhook drops.
 * **is_spam**: last decisive value wins (DB iteration order).
-* **labels**: set union across all webhooks.
+* **add_labels**: set union across all webhooks.
 * **assign_to**: each webhook's list lands as its own ThreadEvent
   (channel attribution preserved). A user assigned by an earlier
   webhook is absorbed by the partial UniqueConstraint when a later
@@ -312,13 +351,12 @@ MTA received them.
 ```http
 POST /inbox-hook HTTP/1.1
 Content-Type: message/rfc822
-X-StMsg-Event: message.received
+X-StMsg-Event: message.inbound
 X-StMsg-Phase: after_spam
 X-StMsg-Channel-Id: 05f1f991-c2e9-4fa7-8a78-98c3aa904c7c
 X-StMsg-Mailbox: alice@example.com
 X-StMsg-Recipient: alice@example.com
 X-StMsg-Is-Spam: false
-X-StMsg-Message-Id: <abc123@example.org>
 
 From: Bob <bob@example.org>
 To: alice@example.com
@@ -393,7 +431,7 @@ and `cid`. If you need the raw bytes pick `format: "eml"` instead.
 with an explicit `Z` suffix, e.g. `2026-01-01T12:00:00Z` (not
 `+00:00`). This matches RFC 8621 §1.4.
 
-### `jmap_without_body`
+### `jmap_metadata`
 
 Same JMAP `Email` shape as `jmap`, but the body content and attachments
 are dropped:
@@ -428,7 +466,7 @@ def inbox_hook():
     elif content_type.startswith("application/json"):
         body = request.get_json()
         print("JMAP subject:", body["subject"])
-        # Body content may not be there in jmap_without_body mode.
+        # Body content may not be there in jmap_metadata mode.
         body_values = body.get("bodyValues") or {}
         for part_id, value in body_values.items():
             print(f"  part {part_id}: {value['value'][:80]}")

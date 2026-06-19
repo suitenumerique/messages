@@ -30,7 +30,7 @@ from core.mda.dispatch_webhooks import (
     webhook_steps_for_mailbox,
 )
 from core.mda.inbound_pipeline import (
-    RETRY_MAX_AGE,
+    QUARANTINE_AFTER,
     Decision,
     InboundContext,
 )
@@ -160,7 +160,7 @@ class TestFindWebhookChannels:
             mailbox=mailbox,
             settings={
                 "url": "https://hook.example.com/a",
-                "events": ["message.received"],
+                "events": ["message.inbound"],
             },
         )
         assert list(find_webhook_channels_for_mailbox(mailbox)) == [ch]
@@ -172,7 +172,7 @@ class TestFindWebhookChannels:
             maildomain=mailbox.domain,
             settings={
                 "url": "https://hook.example.com/d",
-                "events": ["message.received"],
+                "events": ["message.inbound"],
             },
         )
         result = list(find_webhook_channels_for_mailbox(mailbox))
@@ -186,7 +186,7 @@ class TestFindWebhookChannels:
             scope_level=enums.ChannelScopeLevel.GLOBAL,
             settings={
                 "url": "https://hook.example.com/g",
-                "events": ["message.received"],
+                "events": ["message.inbound"],
             },
         )
         result = list(find_webhook_channels_for_mailbox(mailbox))
@@ -202,7 +202,7 @@ class TestFindWebhookChannels:
             scope_level=enums.ChannelScopeLevel.GLOBAL,
             settings={
                 "url": "https://hook.example.com/g",
-                "events": ["message.received"],
+                "events": ["message.inbound"],
             },
         )
         assert ch in find_webhook_channels_for_mailbox(mb_a)
@@ -215,7 +215,7 @@ class TestFindWebhookChannels:
             mailbox=other,
             settings={
                 "url": "https://hook.example.com/x",
-                "events": ["message.received"],
+                "events": ["message.inbound"],
             },
         )
         assert not list(find_webhook_channels_for_mailbox(mailbox))
@@ -378,7 +378,7 @@ class TestDispatchInboundWebhooks:
             mailbox=mailbox,
             settings={
                 "url": "https://hook.example.com",
-                "events": ["message.received"],
+                "events": ["message.inbound"],
                 "phase": "before_spam",
             },
         )
@@ -422,7 +422,7 @@ class TestDispatchInboundWebhooks:
             mailbox=mailbox,
             settings={
                 "url": "https://hook.example.com",
-                "events": ["message.received"],
+                "events": ["message.inbound"],
                 "blocking": False,
             },
         )
@@ -446,7 +446,7 @@ class TestDispatchInboundWebhooks:
             mailbox=mailbox,
             settings={
                 "url": "https://hook.example.com",
-                "events": ["message.received"],
+                "events": ["message.inbound"],
                 "blocking": True,
             },
         )
@@ -462,14 +462,15 @@ class TestDispatchInboundWebhooks:
         assert outcome.decision == Decision.RETRY
 
     @patch("core.mda.dispatch_webhooks.SSRFSafeSession")
-    def test_blocking_drops_on_4xx(self, mock_session, mailbox, parsed_email):
-        """4xx is a definitive receiver rejection — drop the message."""
+    def test_blocking_retries_on_4xx(self, mock_session, mailbox, parsed_email):
+        """A webhook error never drops the email: 4xx is held for RETRY.
+        Only an explicit {"action": "drop"} on a 2xx drops the message."""
         factories.ChannelFactory(
             type=enums.ChannelTypes.WEBHOOK,
             mailbox=mailbox,
             settings={
                 "url": "https://hook.example.com",
-                "events": ["message.received"],
+                "events": ["message.inbound"],
                 "blocking": True,
             },
         )
@@ -482,7 +483,7 @@ class TestDispatchInboundWebhooks:
             raw_data=b"raw",
             is_spam=False,
         )
-        assert outcome.decision == Decision.DROP
+        assert outcome.decision == Decision.RETRY
 
     @patch("core.mda.dispatch_webhooks.SSRFSafeSession")
     def test_blocking_retries_on_408(self, mock_session, mailbox, parsed_email):
@@ -492,7 +493,7 @@ class TestDispatchInboundWebhooks:
             mailbox=mailbox,
             settings={
                 "url": "https://hook.example.com",
-                "events": ["message.received"],
+                "events": ["message.inbound"],
                 "blocking": True,
             },
         )
@@ -515,7 +516,7 @@ class TestDispatchInboundWebhooks:
             mailbox=mailbox,
             settings={
                 "url": "https://hook.example.com",
-                "events": ["message.received"],
+                "events": ["message.inbound"],
                 "blocking": True,
             },
         )
@@ -531,16 +532,17 @@ class TestDispatchInboundWebhooks:
         assert outcome.decision == Decision.RETRY
 
     @patch("core.mda.dispatch_webhooks.SSRFSafeSession")
-    def test_blocking_drops_on_ssrf_rejection(
+    def test_blocking_retries_on_ssrf_rejection(
         self, mock_session, mailbox, parsed_email
     ):
-        """SSRF rejection is a config error on our side — retrying won't help."""
+        """SSRF rejection is a config error on our side — held for RETRY
+        (fix the URL and the next sweep delivers), never dropped."""
         factories.ChannelFactory(
             type=enums.ChannelTypes.WEBHOOK,
             mailbox=mailbox,
             settings={
                 "url": "https://internal.example.com",
-                "events": ["message.received"],
+                "events": ["message.inbound"],
                 "blocking": True,
             },
         )
@@ -553,7 +555,7 @@ class TestDispatchInboundWebhooks:
             raw_data=b"raw",
             is_spam=False,
         )
-        assert outcome.decision == Decision.DROP
+        assert outcome.decision == Decision.RETRY
 
     @patch("core.mda.dispatch_webhooks.SSRFSafeSession")
     def test_non_blocking_continues_on_ssrf_rejection(
@@ -564,7 +566,7 @@ class TestDispatchInboundWebhooks:
             mailbox=mailbox,
             settings={
                 "url": "https://internal.example.com",
-                "events": ["message.received"],
+                "events": ["message.inbound"],
                 "blocking": False,
             },
         )
@@ -587,7 +589,7 @@ class TestDispatchInboundWebhooks:
             mailbox=mailbox,
             settings={
                 "url": "https://hook.example.com",
-                "events": ["message.received"],
+                "events": ["message.inbound"],
                 "blocking": True,
             },
         )
@@ -612,7 +614,7 @@ class TestDispatchInboundWebhooks:
             mailbox=mailbox,
             settings={
                 "url": "https://hook.example.com",
-                "events": ["message.received"],
+                "events": ["message.inbound"],
                 "blocking": True,
             },
         )
@@ -640,7 +642,7 @@ class TestDispatchInboundWebhooks:
             mailbox=mailbox,
             settings={
                 "url": "https://hook.example.com",
-                "events": ["message.received"],
+                "events": ["message.inbound"],
                 "blocking": True,
             },
         )
@@ -664,7 +666,7 @@ class TestDispatchInboundWebhooks:
             mailbox=mailbox,
             settings={
                 "url": "https://hook.example.com/before",
-                "events": ["message.received"],
+                "events": ["message.inbound"],
                 "phase": "before_spam",
             },
         )
@@ -673,7 +675,7 @@ class TestDispatchInboundWebhooks:
             mailbox=mailbox,
             settings={
                 "url": "https://hook.example.com/after",
-                "events": ["message.received"],
+                "events": ["message.inbound"],
                 "phase": "after_spam",
             },
         )
@@ -696,7 +698,7 @@ class TestDispatchInboundWebhooks:
             mailbox=mailbox,
             settings={
                 "url": "https://hook.example.com",
-                "events": ["message.received"],
+                "events": ["message.inbound"],
             },
         )
         mock_session.return_value.post.return_value = _make_response(200)
@@ -722,7 +724,7 @@ class TestDispatchInboundWebhooks:
             mailbox=mailbox,
             settings={
                 "url": "https://hook.example.com",
-                "events": ["message.received"],
+                "events": ["message.inbound"],
                 "format": "jmap",
             },
         )
@@ -747,7 +749,7 @@ class TestDispatchInboundWebhooks:
         assert kwargs["headers"]["Content-Type"] == "application/json"
 
     @patch("core.mda.dispatch_webhooks.SSRFSafeSession")
-    def test_jmap_without_body_skips_body_parts(
+    def test_jmap_metadata_skips_body_parts(
         self, mock_session, mailbox, parsed_email
     ):
         """Notification variant: no textBody/htmlBody/bodyValues/attachments."""
@@ -756,8 +758,8 @@ class TestDispatchInboundWebhooks:
             mailbox=mailbox,
             settings={
                 "url": "https://hook.example.com",
-                "events": ["message.received"],
-                "format": "jmap_without_body",
+                "events": ["message.inbound"],
+                "format": "jmap_metadata",
             },
         )
         mock_session.return_value.post.return_value = _make_response(200)
@@ -798,7 +800,7 @@ class TestDispatchInboundWebhooks:
                 mailbox=mailbox,
                 settings={
                     "url": "https://hook.example.com",
-                    "events": ["message.received"],
+                    "events": ["message.inbound"],
                     "format": fmt,
                 },
             )
@@ -812,12 +814,14 @@ class TestDispatchInboundWebhooks:
                 is_spam=True,
             )
             headers = mock_session.return_value.post.call_args.kwargs["headers"]
-            assert headers["X-StMsg-Event"] == "message.received"
+            assert headers["X-StMsg-Event"] == "message.inbound"
             assert headers["X-StMsg-Phase"] == "after_spam"
             assert headers["X-StMsg-Mailbox"] == str(mailbox)
             assert headers["X-StMsg-Recipient"] == str(mailbox)
             assert headers["X-StMsg-Is-Spam"] == "true"
-            assert headers["X-StMsg-Message-Id"] == "<mid@example.com>"
+            # The message-id is NOT a header — every body format already
+            # carries it (messageId in jmap, raw Message-ID: in eml).
+            assert "X-StMsg-Message-Mime-Id" not in headers
 
     @patch("core.mda.dispatch_webhooks.SSRFSafeSession")
     def test_is_spam_header_unknown_when_none(
@@ -828,7 +832,7 @@ class TestDispatchInboundWebhooks:
             mailbox=mailbox,
             settings={
                 "url": "https://hook.example.com",
-                "events": ["message.received"],
+                "events": ["message.inbound"],
                 "phase": "before_spam",
             },
         )
@@ -853,7 +857,7 @@ class TestDispatchInboundWebhooks:
             mailbox=mailbox,
             settings={
                 "url": "https://hook.example.com",
-                "events": ["message.received"],
+                "events": ["message.inbound"],
                 "format": "yaml",
             },
         )
@@ -897,7 +901,7 @@ class TestWebhookSigning:
             mailbox=mailbox,
             settings={
                 "url": "https://hook.example.com",
-                "events": ["message.received"],
+                "events": ["message.inbound"],
                 "format": "eml",
             },
         )
@@ -936,7 +940,7 @@ class TestWebhookSigning:
             mailbox=mailbox,
             settings={
                 "url": "https://hook.example.com",
-                "events": ["message.received"],
+                "events": ["message.inbound"],
                 "format": "jmap",
             },
         )
@@ -975,7 +979,7 @@ class TestWebhookSigning:
             mailbox=mailbox,
             settings={
                 "url": "https://hook.example.com",
-                "events": ["message.received"],
+                "events": ["message.inbound"],
                 "auth_method": "api_key",
             },
         )
@@ -1010,7 +1014,7 @@ class TestWebhookSigning:
             mailbox=mailbox,
             settings={
                 "url": "https://hook.example.com",
-                "events": ["message.received"],
+                "events": ["message.inbound"],
                 "auth_method": "jwt",
             },
         )
@@ -1044,7 +1048,7 @@ class TestWebhookSigning:
             mailbox=mailbox,
             settings={
                 "url": "https://hook.example.com",
-                "events": ["message.received"],
+                "events": ["message.inbound"],
             },
             encrypted_settings={"secret": "whsec_test"},
         )
@@ -1070,7 +1074,7 @@ class TestWebhookSigning:
             mailbox=mailbox,
             settings={
                 "url": "https://hook.example.com",
-                "events": ["message.received"],
+                "events": ["message.inbound"],
                 "auth_method": "api_key",
             },
         )
@@ -1108,7 +1112,7 @@ class TestWebhookSigning:
             mailbox=mailbox,
             settings={
                 "url": "https://hook.example.com",
-                "events": ["message.received"],
+                "events": ["message.inbound"],
             },
             encrypted_settings={},
         )
@@ -1123,12 +1127,13 @@ class TestWebhookSigning:
         mock_session.return_value.post.assert_not_called()
 
     @patch("core.mda.dispatch_webhooks.SSRFSafeSession")
-    def test_missing_secret_blocks_when_blocking(
+    def test_missing_secret_retries_when_blocking(
         self, mock_session, mailbox, parsed_email
     ):
-        """If the misconfigured channel is also ``blocking``, the
-        dispatcher MUST drop the message — better than POSTing an
-        unsigned request that any verifying receiver will reject."""
+        """A misconfigured (secret-less) ``blocking`` channel can't sign
+        the POST, so the dispatcher holds the message for RETRY rather
+        than dropping it — re-minting the secret lets the next sweep
+        deliver. A config error must never discard the user's mail."""
         models.Channel.objects.create(
             name="no-secret-blocking",
             type=enums.ChannelTypes.WEBHOOK,
@@ -1136,7 +1141,7 @@ class TestWebhookSigning:
             mailbox=mailbox,
             settings={
                 "url": "https://hook.example.com",
-                "events": ["message.received"],
+                "events": ["message.inbound"],
                 "blocking": True,
             },
             encrypted_settings={},
@@ -1149,7 +1154,7 @@ class TestWebhookSigning:
             raw_data=b"raw",
             is_spam=False,
         )
-        assert outcome.decision == Decision.DROP
+        assert outcome.decision == Decision.RETRY
         mock_session.return_value.post.assert_not_called()
 
 
@@ -1161,7 +1166,7 @@ class TestPipelineIntegration:
     @patch("core.mda.inbound_tasks._create_message_from_inbound")
     @patch("core.mda.inbound_pipeline._call_rspamd")
     @patch("core.mda.dispatch_webhooks.SSRFSafeSession")
-    def test_before_spam_blocking_drops_message(
+    def test_before_spam_blocking_retries_message(
         self, mock_session, mock_check_spam, mock_create_message
     ):
         mailbox = factories.MailboxFactory()
@@ -1178,26 +1183,28 @@ class TestPipelineIntegration:
             mailbox=mailbox,
             settings={
                 "url": "https://hook.example.com",
-                "events": ["message.received"],
+                "events": ["message.inbound"],
                 "phase": "before_spam",
                 "blocking": True,
             },
         )
-        # 4xx → receiver definitively rejects this message → DROP.
+        # 4xx is a webhook error, not an explicit drop → hold for RETRY.
         mock_session.return_value.post.return_value = _make_response(403)
 
         with patch.object(process_inbound_message_task, "update_state", Mock()):
             result = process_inbound_message_task.run(str(inbound_message.id))
 
-        assert result["dropped_by"].endswith(":before_spam")
+        assert result["error"] == "retry"
+        assert result["step"].endswith(":before_spam")
         mock_check_spam.assert_not_called()
         mock_create_message.assert_not_called()
-        assert not models.InboundMessage.objects.filter(id=inbound_message.id).exists()
+        # The email is NOT dropped — its row is kept for the next sweep.
+        assert models.InboundMessage.objects.filter(id=inbound_message.id).exists()
 
     @patch("core.mda.inbound_tasks._create_message_from_inbound")
     @patch("core.mda.inbound_pipeline._call_rspamd")
     @patch("core.mda.dispatch_webhooks.SSRFSafeSession")
-    def test_after_spam_blocking_drops_message(
+    def test_after_spam_blocking_retries_message(
         self, mock_session, mock_check_spam, mock_create_message
     ):
         mailbox = factories.MailboxFactory()
@@ -1214,18 +1221,20 @@ class TestPipelineIntegration:
             mailbox=mailbox,
             settings={
                 "url": "https://hook.example.com",
-                "events": ["message.received"],
+                "events": ["message.inbound"],
                 "phase": "after_spam",
                 "blocking": True,
             },
         )
         mock_check_spam.return_value = (False, None, None)
+        # 4xx is a webhook error, not an explicit drop → hold for RETRY.
         mock_session.return_value.post.return_value = _make_response(403)
 
         with patch.object(process_inbound_message_task, "update_state", Mock()):
             result = process_inbound_message_task.run(str(inbound_message.id))
 
-        assert result["dropped_by"].endswith(":after_spam")
+        assert result["error"] == "retry"
+        assert result["step"].endswith(":after_spam")
         mock_check_spam.assert_called_once()
         mock_create_message.assert_not_called()
 
@@ -1250,7 +1259,7 @@ class TestPipelineIntegration:
             mailbox=mailbox,
             settings={
                 "url": "https://hook.example.com",
-                "events": ["message.received"],
+                "events": ["message.inbound"],
                 "phase": "after_spam",
             },
         )
@@ -1334,19 +1343,19 @@ class TestClassifyResponseBody:
         a = str(uuid.uuid4())
         b = str(uuid.uuid4())
         outcome = _classify_response_body(
-            json.dumps({"labels": [a, b]}).encode("utf-8")
+            json.dumps({"add_labels": [a, b]}).encode("utf-8")
         )
         assert outcome.labels == {a, b}
 
     def test_labels_non_uuid_strings_skipped(self):
         good = str(uuid.uuid4())
         outcome = _classify_response_body(
-            json.dumps({"labels": [good, "not-a-uuid", "", 42]}).encode("utf-8")
+            json.dumps({"add_labels": [good, "not-a-uuid", "", 42]}).encode("utf-8")
         )
         assert outcome.labels == {good}
 
     def test_labels_non_list_ignored(self):
-        outcome = _classify_response_body(b'{"labels": "spam"}')
+        outcome = _classify_response_body(b'{"add_labels": "spam"}')
         assert outcome.labels == set()
 
     def test_combined_action_and_labels(self):
@@ -1355,7 +1364,7 @@ class TestClassifyResponseBody:
         merge logic shouldn't lose them either)."""
         good = str(uuid.uuid4())
         outcome = _classify_response_body(
-            json.dumps({"action": "drop", "labels": [good]}).encode("utf-8")
+            json.dumps({"action": "drop", "add_labels": [good]}).encode("utf-8")
         )
         assert outcome.decision == Decision.DROP
         assert outcome.labels == {good}
@@ -1495,7 +1504,7 @@ class TestClassifyResponseBody:
         ]
         outcome = _classify_response_body(
             json.dumps(
-                {"labels": labels, "assign_to": emails, "add_event": events}
+                {"add_labels": labels, "assign_to": emails, "add_event": events}
             ).encode("utf-8")
         )
         assert len(outcome.labels) == MAX_LABELS_PER_RESPONSE
@@ -1540,7 +1549,7 @@ class TestDispatchActionBody:
             mailbox=mailbox,
             settings={
                 "url": "https://hook.example.com",
-                "events": ["message.received"],
+                "events": ["message.inbound"],
                 "blocking": True,
             },
         )
@@ -1566,7 +1575,7 @@ class TestDispatchActionBody:
             mailbox=mailbox,
             settings={
                 "url": "https://hook.example.com",
-                "events": ["message.received"],
+                "events": ["message.inbound"],
                 "blocking": True,
             },
         )
@@ -1596,7 +1605,7 @@ class TestDispatchActionBody:
             mailbox=mailbox,
             settings={
                 "url": "https://hook.example.com",
-                "events": ["message.received"],
+                "events": ["message.inbound"],
                 "blocking": False,
             },
         )
@@ -1624,7 +1633,7 @@ class TestDispatchActionBody:
             mailbox=mailbox,
             settings={
                 "url": "https://hook.example.com/first",
-                "events": ["message.received"],
+                "events": ["message.inbound"],
                 "blocking": True,
             },
         )
@@ -1633,7 +1642,7 @@ class TestDispatchActionBody:
             mailbox=mailbox,
             settings={
                 "url": "https://hook.example.com/second",
-                "events": ["message.received"],
+                "events": ["message.inbound"],
                 "blocking": True,
             },
         )
@@ -1666,7 +1675,7 @@ class TestDispatchActionBody:
             mailbox=mailbox,
             settings={
                 "url": "https://hook.example.com",
-                "events": ["message.received"],
+                "events": ["message.inbound"],
                 "blocking": True,
             },
         )
@@ -1731,7 +1740,7 @@ class TestPipelineRetry:
             mailbox=mailbox,
             settings={
                 "url": "https://hook.example.com",
-                "events": ["message.received"],
+                "events": ["message.inbound"],
                 "phase": "before_spam",
                 "blocking": True,
             },
@@ -1769,7 +1778,7 @@ class TestPipelineRetry:
             mailbox=mailbox,
             settings={
                 "url": "https://hook.example.com",
-                "events": ["message.received"],
+                "events": ["message.inbound"],
                 "phase": "before_spam",
                 "blocking": True,
             },
@@ -1787,11 +1796,13 @@ class TestPipelineRetry:
     @patch("core.mda.inbound_tasks._create_message_from_inbound")
     @patch("core.mda.inbound_pipeline._call_rspamd")
     @patch("core.mda.dispatch_webhooks.SSRFSafeSession")
-    def test_retry_past_max_age_drops_with_loud_log(
+    def test_blocking_webhook_quarantine_delivers_flagged_after_window(
         self, mock_session, mock_check_spam, mock_create_message
     ):
-        """An InboundMessage held in retry for >7 days is dropped to
-        prevent a broken receiver from pinning the row forever."""
+        """Past the 48h window a still-failing blocking webhook stops
+        holding: the message is delivered (never dropped), stamped
+        ``X-StMsg-Processing-Failed``, and forced to the inbox so the
+        warning banner is actually seen."""
         mailbox = factories.MailboxFactory()
         raw_data = (
             b"From: sender@example.com\r\n"
@@ -1801,10 +1812,10 @@ class TestPipelineRetry:
         inbound_message = models.InboundMessage.objects.create(
             mailbox=mailbox, raw_data=raw_data
         )
-        # Backdate past the 7-day cap.
+        # Backdate past the quarantine window (auto_now_add → update()).
         models.InboundMessage.objects.filter(id=inbound_message.id).update(
             created_at=dj_timezone.now()
-            - RETRY_MAX_AGE
+            - QUARANTINE_AFTER
             - dj_timezone.timedelta(minutes=1)
         )
         factories.ChannelFactory(
@@ -1812,21 +1823,32 @@ class TestPipelineRetry:
             mailbox=mailbox,
             settings={
                 "url": "https://hook.example.com",
-                "events": ["message.received"],
+                "events": ["message.inbound"],
                 "phase": "before_spam",
                 "blocking": True,
             },
         )
         mock_session.return_value.post.return_value = _make_response(503)
+        mock_create_message.return_value = True
 
         with patch.object(process_inbound_message_task, "update_state", Mock()):
-            result = process_inbound_message_task.run(str(inbound_message.id))
+            process_inbound_message_task.run(str(inbound_message.id))
 
-        assert result["error"] == "retry_exhausted"
-        # Row is gone — bounded retry budget.
-        assert not models.InboundMessage.objects.filter(id=inbound_message.id).exists()
+        # The pipeline aborts at the failing before_spam webhook (RETRY),
+        # so quarantine is decided at the task level — generic, not
+        # webhook-specific: rspamd is never reached this run.
         mock_check_spam.assert_not_called()
-        mock_create_message.assert_not_called()
+        # Delivered, not dropped.
+        mock_create_message.assert_called_once()
+        kwargs = mock_create_message.call_args.kwargs
+        # Stamped for the UI banner...
+        assert b"X-StMsg-Processing-Failed: true" in kwargs["raw_data"]
+        # ...and forced to the inbox (is_spam=False) so the banner is seen.
+        assert kwargs["is_spam"] is False
+        # Queue row consumed — not pinned, not dropped silently.
+        assert not models.InboundMessage.objects.filter(
+            id=inbound_message.id
+        ).exists()
 
 
 @pytest.mark.django_db
@@ -1853,7 +1875,7 @@ class TestPipelineWebhookAntispam:
             mailbox=mailbox,
             settings={
                 "url": "https://hook.example.com",
-                "events": ["message.received"],
+                "events": ["message.inbound"],
                 "phase": "before_spam",
                 "blocking": True,
             },
@@ -1893,7 +1915,7 @@ class TestPipelineWebhookAntispam:
             mailbox=mailbox,
             settings={
                 "url": "https://hook.example.com",
-                "events": ["message.received"],
+                "events": ["message.inbound"],
                 "phase": "after_spam",
                 "blocking": True,
             },
@@ -1940,7 +1962,7 @@ class TestPipelineWebhookLabels:
             mailbox=mailbox,
             settings={
                 "url": "https://hook.example.com",
-                "events": ["message.received"],
+                "events": ["message.inbound"],
                 "phase": "after_spam",
                 "blocking": True,
             },
@@ -1950,7 +1972,7 @@ class TestPipelineWebhookLabels:
             200,
             body=json.dumps(
                 {
-                    "labels": [
+                    "add_labels": [
                         str(good_label.id),
                         str(other_label.id),  # wrong mailbox → skipped
                         unknown_id,  # unknown UUID → skipped
@@ -2003,7 +2025,7 @@ class TestPipelineWebhookAssign:
             mailbox=mailbox,
             settings={
                 "url": "https://hook.example.com",
-                "events": ["message.received"],
+                "events": ["message.inbound"],
                 "phase": "after_spam",
                 "blocking": True,
             },
@@ -2079,7 +2101,7 @@ class TestPipelineWebhookAssign:
             mailbox=mailbox,
             settings={
                 "url": "https://hook.example.com",
-                "events": ["message.received"],
+                "events": ["message.inbound"],
                 "phase": "after_spam",
                 "blocking": True,
             },
@@ -2144,7 +2166,7 @@ class TestPipelineWebhookAssign:
             mailbox=mailbox,
             settings={
                 "url": "https://hook.example.com/a",
-                "events": ["message.received"],
+                "events": ["message.inbound"],
                 "phase": "after_spam",
                 "blocking": True,
             },
@@ -2154,7 +2176,7 @@ class TestPipelineWebhookAssign:
             mailbox=mailbox,
             settings={
                 "url": "https://hook.example.com/b",
-                "events": ["message.received"],
+                "events": ["message.inbound"],
                 "phase": "after_spam",
                 "blocking": True,
             },
@@ -2212,7 +2234,7 @@ class TestPipelineWebhookFlagActions:
             mailbox=mailbox,
             settings={
                 "url": "https://hook.example.com",
-                "events": ["message.received"],
+                "events": ["message.inbound"],
                 "phase": "after_spam",
                 "blocking": True,
             },
@@ -2274,7 +2296,7 @@ class TestPipelineWebhookFlagActions:
             mailbox=mailbox,
             settings={
                 "url": "https://hook.example.com",
-                "events": ["message.received"],
+                "events": ["message.inbound"],
                 "phase": "after_spam",
                 "blocking": True,
             },
@@ -2315,7 +2337,7 @@ class TestPipelineWebhookAddEvent:
             mailbox=mailbox,
             settings={
                 "url": "https://hook.example.com",
-                "events": ["message.received"],
+                "events": ["message.inbound"],
                 "phase": "after_spam",
                 "blocking": True,
             },
@@ -2389,7 +2411,7 @@ class TestPipelineWebhookReplyDraft:
             mailbox=mailbox,
             settings={
                 "url": "https://hook.example.com",
-                "events": ["message.received"],
+                "events": ["message.inbound"],
                 "phase": "after_spam",
                 "blocking": True,
             },
@@ -2451,7 +2473,7 @@ class TestPipelineWebhookReplyDraft:
             mailbox=mailbox,
             settings={
                 "url": "https://hook.example.com",
-                "events": ["message.received"],
+                "events": ["message.inbound"],
                 "phase": "after_spam",
                 "blocking": True,
             },
@@ -2514,7 +2536,7 @@ class TestFinalizeStepIsolation:
             mailbox=mailbox,
             settings={
                 "url": "https://hook.example.com",
-                "events": ["message.received"],
+                "events": ["message.inbound"],
                 "phase": "after_spam",
                 "blocking": True,
             },
@@ -2524,7 +2546,7 @@ class TestFinalizeStepIsolation:
             200,
             body=json.dumps(
                 {
-                    "labels": [str(label.id)],
+                    "add_labels": [str(label.id)],
                     "assign_to": ["editor@example.org"],
                 }
             ).encode("utf-8"),
