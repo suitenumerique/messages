@@ -883,6 +883,7 @@ class TestRspamdStepFailureHandling:
 
     @patch("core.mda.inbound_pipeline._call_rspamd")
     def test_error_holds_for_retry(self, mock_call):
+        """On rspamd error, never fail open — hold the message for retry."""
         spam_config = {"rspamd_url": "http://rspamd:11334"}
         # _call_rspamd returns is_spam=False on error.
         mock_call.return_value = (False, "connection refused", None)
@@ -894,6 +895,7 @@ class TestRspamdStepFailureHandling:
 
     @patch("core.mda.inbound_pipeline._call_rspamd")
     def test_not_configured_continues(self, mock_call):
+        """When rspamd isn't configured, continue without a verdict."""
         # rspamd absent is "no opinion", not an error → keep moving.
         mock_call.return_value = (None, None, None)
         ctx = self._ctx({})
@@ -905,6 +907,7 @@ class TestRspamdStepFailureHandling:
 
     @patch("core.mda.inbound_pipeline._call_rspamd")
     def test_success_sets_verdict(self, mock_call):
+        """A successful rspamd call sets the spam verdict and continues."""
         spam_config = {"rspamd_url": "http://rspamd:11334"}
         mock_call.return_value = (True, None, {"action": "reject"})
         ctx = self._ctx(spam_config)

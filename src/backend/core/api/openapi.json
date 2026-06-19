@@ -2982,7 +2982,7 @@
                                 }
                             }
                         },
-                        "description": "Channel created successfully. The response carries the one-time plaintext credentials (api_key / webhook_secret / webhook_api_key / password) which are never returned again."
+                        "description": "Channel created successfully. The response carries the one-time plaintext credentials (api_key / secret / password) which are never returned again."
                     },
                     "400": {
                         "description": "Invalid input data"
@@ -3244,7 +3244,7 @@
                                 }
                             }
                         },
-                        "description": "Rotates the channel's secret. Single-active: the previous credential is invalidated immediately. The response carries exactly one of ``api_key`` / ``webhook_secret`` / ``webhook_api_key`` matching the channel's type (and, for webhooks, its current ``auth_method``)."
+                        "description": "Rotates the channel's secret. Single-active: the previous credential is invalidated immediately. The response carries exactly one of ``api_key`` / ``secret`` matching the channel's type (and, for webhooks, its current ``auth_method``)."
                     },
                     "400": {
                         "description": "Channel type has no rotatable secret"
@@ -6944,7 +6944,7 @@
                                 }
                             }
                         },
-                        "description": "Channel created successfully. The response carries the one-time plaintext credentials (api_key / webhook_secret / webhook_api_key / password) which are never returned again."
+                        "description": "Channel created successfully. The response carries the one-time plaintext credentials (api_key / secret / password) which are never returned again."
                     },
                     "400": {
                         "description": "Invalid input data"
@@ -7161,7 +7161,7 @@
                                 }
                             }
                         },
-                        "description": "Rotates the channel's secret. Single-active: the previous credential is invalidated immediately. The response carries exactly one of ``api_key`` / ``webhook_secret`` / ``webhook_api_key`` matching the channel's type (and, for webhooks, its current ``auth_method``)."
+                        "description": "Rotates the channel's secret. Single-active: the previous credential is invalidated immediately. The response carries exactly one of ``api_key`` / ``secret`` matching the channel's type (and, for webhooks, its current ``auth_method``)."
                     },
                     "400": {
                         "description": "Channel type has no rotatable secret"
@@ -7580,19 +7580,15 @@
                     },
                     "api_key": {
                         "type": "string",
-                        "description": "api_key channels only — the plaintext API key."
+                        "description": "Plaintext API key — api_key channels and webhook channels with auth_method=api_key."
                     },
                     "password": {
                         "type": "string",
                         "description": "Plaintext password, when the channel type mints one."
                     },
-                    "webhook_secret": {
+                    "secret": {
                         "type": "string",
                         "description": "webhook channels with auth_method=jwt — the HMAC/JWT signing secret."
-                    },
-                    "webhook_api_key": {
-                        "type": "string",
-                        "description": "webhook channels with auth_method=api_key — the derived API key."
                     }
                 },
                 "required": [
@@ -9793,15 +9789,11 @@
                     },
                     "api_key": {
                         "type": "string",
-                        "description": "Present for ``api_key`` channels — the plaintext used in subsequent X-API-Key calls. Returned ONCE."
+                        "description": "Present for ``api_key`` channels and webhook channels with ``auth_method='api_key'`` — the plaintext API key presented in a request header (X-API-Key / X-StMsg-Api-Key). Returned ONCE; for api_key webhooks it changes whenever the root rotates."
                     },
-                    "webhook_secret": {
+                    "secret": {
                         "type": "string",
                         "description": "Present for webhook channels with ``auth_method='jwt'`` — the freshly minted root receivers use to verify the HMAC sig and JWT."
-                    },
-                    "webhook_api_key": {
-                        "type": "string",
-                        "description": "Present for webhook channels with ``auth_method='api_key'`` — the HMAC-derived value sent as X-StMsg-Api-Key. Changes whenever the root rotates."
                     }
                 },
                 "required": [

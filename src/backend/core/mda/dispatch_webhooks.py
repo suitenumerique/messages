@@ -557,7 +557,7 @@ class UserWebhookStep:
 
     A webhook error never drops the user's email — only an explicit
     ``{"action": "drop"}`` does. Every failure is held for retry,
-    bounded by the pipeline's 7-day budget.
+    bounded by the pipeline's 48-hour quarantine window.
     """
 
     def __init__(self, channel: models.Channel, phase: str):
@@ -674,8 +674,8 @@ class UserWebhookStep:
             return _failure(blocking, Decision.RETRY)
         except Exception as exc:
             # Timeout, connection refused, DNS, unknown transport-level
-            # failure: all transient on the blocking path. The 7-day cap
-            # in the pipeline runner bounds the retry budget.
+            # failure: all transient on the blocking path. The 48-hour
+            # quarantine window in the pipeline runner bounds the retries.
             logger.exception(
                 "Webhook channel %s network error for url=%s: %s",
                 self.channel.id,
@@ -781,6 +781,16 @@ def webhook_steps_for_mailbox(mailbox: models.Mailbox, *, phase: str) -> List[St
         if cfg.get("phase", PHASE_AFTER_SPAM) != phase:
             continue
         events = cfg.get("events") or [enums.WebhookEvents.MESSAGE_INBOUND.value]
+        if not isinstance(events, list):
+            # Validator guarantees a list on write; a non-list here is a
+            # misconfigured row. Fail closed — a bare string would make the
+            # ``in`` check below match substrings instead of members.
+            logger.warning(
+                "Webhook channel %s has non-list events=%r — skipping",
+                channel.id,
+                events,
+            )
+            continue
         if enums.WebhookEvents.MESSAGE_INBOUND.value not in events:
             continue
         if not cfg.get("url"):
