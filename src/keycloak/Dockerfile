@@ -5,10 +5,11 @@ ARG SCRIPT_GROUP_ATTRIBUTE_WHITELIST
 COPY ./scripts /scripts
 
 RUN <<EOR
+set -e
 apk --no-cache add zip
 cd /scripts
 if [ -n "$SCRIPT_GROUP_ATTRIBUTE_WHITELIST" ]; then
-    sed -i "s/SCRIPT_GROUP_ATTRIBUTE_WHITELIST/$SCRIPT_GROUP_ATTRIBUTE_WHITELIST/g" scripts/map-group-attribute.js
+    sed -i "s/SCRIPT_GROUP_ATTRIBUTE_WHITELIST/$SCRIPT_GROUP_ATTRIBUTE_WHITELIST/g" map-group-attribute.js
 fi
 zip -r /custom-scripts.jar META-INF *.js
 EOR
@@ -22,7 +23,10 @@ COPY --from=scripts --chown=keycloak:keycloak --chmod=644 /custom-scripts.jar /o
 # source under bulk-role-membership/.
 COPY --chown=keycloak:keycloak --chmod=644 bulk-role-membership/bulk-role-membership.jar /opt/keycloak/providers/bulk-role-membership.jar
 
+ARG KC_FEATURES=scripts
+ARG KC_FEATURES_DISABLED=kerberos
 ARG KC_METRICS_ENABLED=true
+ARG KC_EVENT_METRICS_USER_ENABLED=true
 ARG KC_HEALTH_ENABLED=true
 ARG KC_DB=postgres
 
