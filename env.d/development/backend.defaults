@@ -94,8 +94,12 @@ MTA_OUT_RELAY_HOST=mailcatcher:1025
 MDA_API_SECRET=my-shared-secret-mda
 SALT_KEY=ThisIsAnExampleSaltForDevPurposeOnly
 
-# Rspamd
-SPAM_CONFIG={"rspamd_url": "http://mpa:8010/_api", "rspamd_auth": ""}
+# Rspamd spam-check — disabled by default. The `mpa` service is not started by
+# `make start`, and a configured-but-unreachable rspamd holds inbound mail for
+# retry (fail-closed), which would stall the local pipeline. To enable spam
+# checks locally, start `mpa` and uncomment the line below.
+SPAM_CONFIG={}
+# SPAM_CONFIG={"rspamd_url": "http://mpa:8010/_api", "rspamd_auth": ""}
 
 # AI
 AI_BASE_URL=

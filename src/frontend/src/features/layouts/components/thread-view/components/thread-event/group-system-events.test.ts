@@ -17,6 +17,7 @@ const makeAssignEvent = (
     author: authorId
         ? ({ id: authorId, full_name: `User ${authorId}`, email: `${authorId}@example.com` } as ThreadEvent['author'])
         : (null as unknown as ThreadEvent['author']),
+    author_display: authorId ? `User ${authorId}` : null,
     data: { assignees },
     has_unread_mention: false,
     is_editable: false,
@@ -30,6 +31,7 @@ const makeIMEvent = (id: string, authorId: string, createdAt = '2026-01-01T10:00
     type: ThreadEventTypeEnum.im,
     channel: null,
     author: { id: authorId, full_name: `User ${authorId}`, email: `${authorId}@example.com` } as ThreadEvent['author'],
+    author_display: `User ${authorId}`,
     data: { content: 'hello', mentions: [] },
     has_unread_mention: false,
     is_editable: false,

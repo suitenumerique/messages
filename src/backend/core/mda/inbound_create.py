@@ -435,7 +435,13 @@ def _create_message_from_inbound(  # pylint: disable=too-many-arguments
                     is_draft=is_outbound,  # Outbound: draft until prepare_outbound_message finalizes
                     is_sender=is_sender,
                     is_trashed=is_trashed,
+                    # Keep timestamps in lockstep with the booleans, as the
+                    # flag endpoint does — a NULL trashed_at/archived_at on a
+                    # trashed/archived row breaks restore, ordering and any
+                    # auto-purge that keys off the timestamp.
+                    trashed_at=(timezone.now() if is_trashed else None),
                     is_archived=is_archived,
+                    archived_at=(timezone.now() if is_archived else None),
                     is_spam=is_spam,
                     has_attachments=len(parsed_email.get("attachments", [])) > 0,
                     channel=channel,

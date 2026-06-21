@@ -1,4 +1,4 @@
-import { Button, Input } from "@gouvfr-lasuite/cunningham-react";
+import { Button } from "@gouvfr-lasuite/cunningham-react";
 import { Icon, IconType } from "@gouvfr-lasuite/ui-kit";
 import { useTranslation } from "react-i18next";
 import { useForm, FormProvider } from "react-hook-form";
@@ -20,6 +20,7 @@ import {
 } from "@/features/forms/components/react-hook-form";
 import { addToast, ToasterItem } from "@/features/ui/components/toaster";
 import { Banner } from "@/features/ui/components/banner";
+import { CopyableInput } from "@/features/ui/components/copyable-input";
 import { handle } from "@/features/utils/errors";
 
 type WebhookChannelSettings = {
@@ -193,11 +194,12 @@ export const WebhookIntegrationForm = ({
                             "This value is shown only once. Configure your receiver with it before closing — you can rotate it later if you need a new one.",
                         )}
                     </Banner>
-                    <Input
-                        label={createdCredential.label}
+                    <label className="widget-integration-form__credential-label">
+                        {createdCredential.label}
+                    </label>
+                    <CopyableInput
                         value={createdCredential.value}
-                        readOnly
-                        fullWidth
+                        aria-label={createdCredential.label}
                     />
                 </div>
                 <div className="widget-integration-form__actions">

@@ -1304,6 +1304,7 @@ class ThreadEventSerializer(CreateOnlyFieldsMixin, serializers.ModelSerializer):
     """Serialize thread event information."""
 
     author = UserWithoutAbilitiesSerializer(read_only=True)
+    author_display = serializers.SerializerMethodField()
     data = ThreadEventDataField()
     has_unread_mention = serializers.SerializerMethodField()
     is_editable = serializers.SerializerMethodField()
@@ -1317,6 +1318,7 @@ class ThreadEventSerializer(CreateOnlyFieldsMixin, serializers.ModelSerializer):
             "channel",
             "message",
             "author",
+            "author_display",
             "data",
             "has_unread_mention",
             "is_editable",
@@ -1354,6 +1356,22 @@ class ThreadEventSerializer(CreateOnlyFieldsMixin, serializers.ModelSerializer):
         except DjangoValidationError as exc:
             raise serializers.ValidationError(exc.message_dict) from exc
         return attrs
+
+    @extend_schema_field(serializers.CharField(allow_null=True))
+    def get_author_display(self, obj):
+        """Human-readable author label for the UI.
+
+        Human-authored events resolve to the user's name (or email). Events
+        created by a webhook have no ``author`` but carry the firing
+        ``channel``; surface it as ``Webhook: {name}`` so the timeline shows
+        the integration instead of an anonymous "Unknown". Returns ``None``
+        when neither is available, letting the client fall back.
+        """
+        if obj.author_id:
+            return obj.author.full_name or obj.author.email
+        if obj.channel_id and obj.channel.name:
+            return f"Webhook: {obj.channel.name}"
+        return None
 
     @extend_schema_field(serializers.BooleanField())
     def get_has_unread_mention(self, obj):
