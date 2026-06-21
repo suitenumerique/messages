@@ -27,6 +27,7 @@ const makeEvent = (
   author: authorId === null
     ? (null as unknown as ThreadEvent['author'])
     : ({ id: authorId, full_name: `User ${authorId}`, email: `${authorId}@ex.com` } as ThreadEvent['author']),
+  author_display: authorId === null ? null : `User ${authorId}`,
   data: { assignees },
   has_unread_mention: false,
   is_editable: false,

@@ -184,9 +184,12 @@ def _classify_response_body(body_bytes: bytes) -> _HttpResult:
         return _HttpResult()
     try:
         # ``json.loads`` accepts bytes natively and raises ValueError
-        # (incl. JSONDecodeError) on anything malformed.
+        # (incl. JSONDecodeError) on anything malformed. Deeply-nested
+        # JSON raises RecursionError (a RuntimeError, not a ValueError),
+        # so catch it too — a misbehaving receiver must never escape this
+        # parser and stall the message on an uncaught exception.
         payload = json.loads(body_bytes)
-    except ValueError:
+    except (ValueError, RecursionError):
         return _HttpResult()
     if not isinstance(payload, dict):
         return _HttpResult()
@@ -676,11 +679,15 @@ class UserWebhookStep:
             # Timeout, connection refused, DNS, unknown transport-level
             # failure: all transient on the blocking path. The 48-hour
             # quarantine window in the pipeline runner bounds the retries.
-            logger.exception(
-                "Webhook channel %s network error for url=%s: %s",
+            # Log only the exception *type*, not its message or traceback:
+            # requests/urllib3 errors embed the full request URL (path +
+            # query), which is exactly where receivers carry secret tokens,
+            # so ``exc``/``exc_info`` would bypass ``_sanitize_url``.
+            logger.warning(
+                "Webhook channel %s network error (%s) for url=%s",
                 self.channel.id,
+                type(exc).__name__,
                 _sanitize_url(url),
-                exc,
             )
             return _failure(blocking, Decision.RETRY)
 
@@ -765,18 +772,30 @@ class UserWebhookStep:
         return None
 
 
-def webhook_steps_for_mailbox(mailbox: models.Mailbox, *, phase: str) -> List[Step]:
+def webhook_steps_for_mailbox(
+    mailbox: models.Mailbox,
+    *,
+    phase: str,
+    channels: Optional[List[models.Channel]] = None,
+) -> List[Step]:
     """Build one ``UserWebhookStep`` per matching channel for the phase.
 
     Channels are filtered here (phase, events, url present, valid
     format) rather than at run time so the pipeline iterator sees a
     flat list of ready-to-call steps.
+
+    ``channels`` may be passed in to reuse a single channel-set query
+    across both phases (the set is identical before- and after-spam);
+    when omitted it is fetched here.
     """
     if phase not in VALID_PHASES:
         raise ValueError(f"Invalid webhook phase: {phase}")
 
+    if channels is None:
+        channels = find_webhook_channels_for_mailbox(mailbox)
+
     steps: List[Step] = []
-    for channel in find_webhook_channels_for_mailbox(mailbox):
+    for channel in channels:
         cfg = channel.settings or {}
         if cfg.get("phase", PHASE_AFTER_SPAM) != phase:
             continue

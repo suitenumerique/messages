@@ -229,7 +229,11 @@ class WebhookEvents(StrEnum):
     """
 
     MESSAGE_INBOUND = "message.inbound"
-    MESSAGE_OUTBOUND = "message.outbound"
+    # MESSAGE_OUTBOUND ("message.outbound") is not wired yet — the dispatcher
+    # only ever fires on inbound. Kept commented so the serializer rejects it
+    # at write time instead of accepting a webhook that silently never fires.
+    # Uncomment once outbound dispatch is implemented.
+    # MESSAGE_OUTBOUND = "message.outbound"
 
 
 class ChannelApiKeyScope(models.TextChoices):

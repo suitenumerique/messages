@@ -255,8 +255,8 @@ export const ThreadEvent = ({ event, isCondensed = false, onEdit, onDelete, ment
                     {!isCondensed && (
                         <div className="thread-event__header">
                             <span className="thread-event__author">
-                                <UserAvatar fullName={event.author?.full_name || event.author?.email || t("Unknown")} size="xsmall" />
-                                {event.author?.full_name || event.author?.email || t("Unknown")}
+                                <UserAvatar fullName={event.author_display || t("Unknown")} size="xsmall" />
+                                {event.author_display || t("Unknown")}
                             </span>
                             <span className="thread-event__time">
                                 {t('{{date}} at {{time}}', {

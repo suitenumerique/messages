@@ -29,6 +29,8 @@ export interface ThreadEvent {
    */
   message?: string | null;
   readonly author: UserWithoutAbilities;
+  /** @nullable */
+  readonly author_display: string | null;
   data: ThreadEventData;
   readonly has_unread_mention: boolean;
   readonly is_editable: boolean;

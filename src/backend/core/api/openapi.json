@@ -10364,6 +10364,11 @@
                         ],
                         "readOnly": true
                     },
+                    "author_display": {
+                        "type": "string",
+                        "nullable": true,
+                        "readOnly": true
+                    },
                     "data": {
                         "$ref": "#/components/schemas/ThreadEventData"
                     },
@@ -10392,6 +10397,7 @@
                 },
                 "required": [
                     "author",
+                    "author_display",
                     "channel",
                     "created_at",
                     "data",

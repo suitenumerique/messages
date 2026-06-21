@@ -386,15 +386,24 @@ def build_inbound_pipeline(ctx: InboundContext) -> List[Step]:
     # cycle: webhook_steps_for_mailbox lives next to UserWebhookStep
     # because it instantiates one per matching channel.
     from core.mda.dispatch_webhooks import (  # pylint: disable=import-outside-toplevel
+        find_webhook_channels_for_mailbox,
         webhook_steps_for_mailbox,
     )
 
+    # Fetch the channel set once and reuse it for both phases — it's
+    # identical before- and after-spam, so a second query is pure waste.
+    channels = find_webhook_channels_for_mailbox(ctx.mailbox)
+
     return [
-        *webhook_steps_for_mailbox(ctx.mailbox, phase="before_spam"),
+        *webhook_steps_for_mailbox(
+            ctx.mailbox, phase="before_spam", channels=channels
+        ),
         _make_hardcoded_rules_step(ctx.spam_config),
         _make_rspamd_step(ctx.spam_config),
         _make_inbound_auth_step(ctx.spam_config),
-        *webhook_steps_for_mailbox(ctx.mailbox, phase="after_spam"),
+        *webhook_steps_for_mailbox(
+            ctx.mailbox, phase="after_spam", channels=channels
+        ),
     ]
 
 
@@ -561,6 +570,17 @@ def apply_thread_access_flags(
         access.save(update_fields=update_fields)
 
 
+def _channels_by_id(channel_ids: List[Any]) -> Dict[Any, models.Channel]:
+    """Resolve a batch of pending-action channel ids in a single query.
+
+    The deferred-apply helpers below each carry ``(channel_id, …)`` tuples;
+    resolving them one ``.get()`` at a time is an N+1 on the finalize hot
+    path. A channel absent from the returned map vanished mid-processing
+    (admin churn between dispatch and finalize) and the caller skips it.
+    """
+    return {c.id: c for c in models.Channel.objects.filter(id__in=set(channel_ids))}
+
+
 def apply_pending_drafts(
     inbound_msg: models.Message,
     mailbox: models.Mailbox,
@@ -584,6 +604,7 @@ def apply_pending_drafts(
         create_draft_reply_from_template,
     )
 
+    channels = _channels_by_id([cid for cid, _ in pending])
     for channel_id, template_id in pending:
         template = (
             models.MessageTemplate.objects.filter(
@@ -603,9 +624,8 @@ def apply_pending_drafts(
                 mailbox.id,
             )
             continue
-        try:
-            channel = models.Channel.objects.get(id=channel_id)
-        except models.Channel.DoesNotExist:
+        channel = channels.get(channel_id)
+        if channel is None:
             logger.warning(
                 "Webhook channel %s vanished before reply_draft could land — skipping",
                 channel_id,
@@ -629,14 +649,14 @@ def apply_pending_events(
     (the classifier dropped unknown types); future types just need
     their dispatch case added without touching the contract.
     """
+    channels = _channels_by_id([cid for cid, _ in pending])
     for channel_id, event in pending:
         event_type = event.get("type")
         if event_type != enums.ThreadEventTypeChoices.IM:
             logger.warning("Unknown pending event type %r — skipping", event_type)
             continue
-        try:
-            channel = models.Channel.objects.get(id=channel_id)
-        except models.Channel.DoesNotExist:
+        channel = channels.get(channel_id)
+        if channel is None:
             logger.warning(
                 "Webhook channel %s vanished before event could land — skipping",
                 channel_id,
@@ -665,13 +685,13 @@ def apply_pending_assigns(
     later webhook re-asking for an already-assigned user, so the
     first-to-ask is the canonical attribution.
     """
+    channels = _channels_by_id([cid for cid, _ in pending])
     for channel_id, emails in pending:
         assignees_data = _resolve_assignable_users(thread, emails)
         if not assignees_data:
             continue
-        try:
-            channel = models.Channel.objects.get(id=channel_id)
-        except models.Channel.DoesNotExist:
+        channel = channels.get(channel_id)
+        if channel is None:
             # The webhook channel was deleted between dispatch and
             # finalize (admin churn during processing). Skip the
             # assign rather than half-attribute it to a dead row.
