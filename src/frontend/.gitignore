@@ -1,3 +1,5 @@
 .env
+.next/
+next-env.d.ts
 bundle-stats.json
 src/routes.gen.ts
