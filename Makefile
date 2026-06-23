@@ -181,7 +181,8 @@ lint: \
   lint-front \
   typecheck-front \
   lint-mta-in \
-  lint-mta-out
+  lint-mta-out \
+  lint-realtime
 .PHONY: lint
 
 lint-check:  ## run all linters in check mode (no auto-fix)
@@ -238,6 +239,11 @@ lint-mta-out: ## lint mta-out python sources
 	$(COMPOSE_RUN) --rm -e EXEC_CMD_ONLY=true mta-out-test ruff format .
 .PHONY: lint-mta-out
 
+lint-realtime: ## lint the realtime relay python sources
+	@$(COMPOSE) run --rm --build realtime-relay-test ruff format .
+	@$(COMPOSE) run --rm realtime-relay-test ruff check . --fix
+.PHONY: lint-realtime
+
 # -- Tests
 
 test: ## run all tests
@@ -247,7 +253,8 @@ test: \
   test-mta-in \
   test-mta-out \
   test-mpa \
-  test-socks-proxy
+  test-socks-proxy \
+  test-realtime
 .PHONY: test
 
 test-back: ## run back-end tests
@@ -322,6 +329,10 @@ release-jmap-email: ## publish jmap-email to PyPI (interactive: TestPyPI → smo
 test-socks-proxy: ## run the socks-proxy tests
 	@$(COMPOSE) run --build --rm socks-proxy-test
 .PHONY: test-socks-proxy
+
+test-realtime: ## run the realtime relay tests (zero infrastructure deps)
+	@$(COMPOSE) run --build --rm realtime-relay-test
+.PHONY: test-realtime
 
 # -- E2E Tests
 
@@ -637,3 +648,7 @@ deps-lock-mta-in: ## lock the dependencies
 deps-lock-mta-out: ## lock the dependencies
 	@$(COMPOSE) run --rm --build mta-out-uv uv lock
 .PHONY: deps-lock-mta-out
+
+deps-lock-realtime: ## lock the realtime relay dependencies
+	@$(COMPOSE) run --rm --build realtime-relay-uv uv lock
+.PHONY: deps-lock-realtime

@@ -3,16 +3,53 @@
 # Set defaults for Caddy env vars
 export MESSAGES_FRONTEND_ROOT="${MESSAGES_FRONTEND_ROOT:-/app/build/frontend-out}"
 export MESSAGES_FRONTEND_BACKEND_SERVER="${MESSAGES_FRONTEND_BACKEND_SERVER:-localhost:8000}"
+export MESSAGES_FRONTEND_REALTIME_SERVER="${MESSAGES_FRONTEND_REALTIME_SERVER:-localhost:8001}"
 export DJANGO_ADMIN_URL="${DJANGO_ADMIN_URL:-admin}"
 
-# Start the Django backend server
+# Start the Django backend server (sync WSGI)
 gunicorn -b :8000 messages.wsgi:application --log-file - &
+
+# Start the realtime relay (async SSE) on a separate local port, behind the
+# same Caddy. On Scalingo (buildpack, single app) the relay is co-hosted here:
+# its code + deps were installed into this venv from src/realtime by the build
+# (see bin/scalingo_postcompile) — NOT from the backend pyproject. (For the
+# Docker target the relay is instead its own image; this dyno setup is
+# Scalingo-only.) It holds long-lived connections on its own event loop so it
+# never ties up gunicorn workers. Caddy routes /realtime-relay/* here.
+#
+# Gated on the SAME master switch the backend uses (REALTIME_ENABLED), so the
+# two halves agree and the feature ships truly dark by default. A missing
+# REALTIME_JWT_SECRET while enabled fails closed and is logged by the relay/mint
+# — surfacing the misconfig rather than silently running no relay. Matched to
+# django-configurations' BooleanValue truthy set (yes/y/true/1). Wrapped in a
+# restart loop so a relay crash self-heals WITHOUT the `wait -n` below tearing
+# down gunicorn/Caddy (i.e. a relay bug can't take down webmail).
+case "$(printf '%s' "${REALTIME_ENABLED:-}" | tr '[:upper:]' '[:lower:]')" in
+    yes | y | true | 1) realtime_enabled=1 ;;
+    *) realtime_enabled=0 ;;
+esac
+if [ "$realtime_enabled" = "1" ]; then
+    (
+        # Run uvicorn as a tracked child and forward SIGTERM to it, then stop the
+        # loop — otherwise the parent's `pkill -P $$` only reaches this subshell,
+        # leaving uvicorn (a grandchild) orphaned and ungracefully drained.
+        trap 'kill -TERM "${relay_child:-0}" 2>/dev/null; exit 0' TERM
+        while true; do
+            uvicorn realtime_relay.app:app --host 127.0.0.1 --port 8001 \
+                --no-access-log --timeout-keep-alive 75 &
+            relay_child=$!
+            wait "$relay_child"
+            echo "realtime-relay exited ($?); restarting in 2s" >&2
+            sleep 2
+        done
+    ) &
+fi
 
 # Start the Caddy server
 bin/caddy run --config Caddyfile --adapter caddyfile &
 
 # if the current shell is killed, also terminate all its children
-trap "pkill SIGTERM -P $$" SIGTERM
+trap "pkill -TERM -P $$" SIGTERM
 
 # wait for a single child to finish,
 wait -n

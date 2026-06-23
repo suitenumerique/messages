@@ -66,6 +66,16 @@ class Base(Configuration):
 
     API_VERSION = "v1.0"
 
+    # Build identity, surfaced via /config so the frontend can detect a new
+    # deploy (and later prompt a reload). Set per target: Docker passes them as
+    # build args (see src/backend/Dockerfile); Scalingo bakes them at build time
+    # into a .profile.d script (see bin/scalingo_postcompile). Default "dev" when
+    # running from source.
+    BUILD_VERSION = values.Value(
+        "dev", environ_name="BUILD_VERSION", environ_prefix=None
+    )
+    BUILD_DATE = values.Value("", environ_name="BUILD_DATE", environ_prefix=None)
+
     # Admin URL configuration
     ADMIN_URL = values.Value("admin")
 
@@ -221,6 +231,37 @@ class Base(Configuration):
     IMAGE_PROXY_CACHE_TTL = values.PositiveIntegerValue(
         60 * 60 * 24 * 30,  # 30 days in seconds
         environ_name="IMAGE_PROXY_CACHE_TTL",
+        environ_prefix=None,
+    )
+
+    # Realtime relay (SSE). Off by default — when enabled, the backend mints
+    # connection tokens and PUBLISHes thin events to the relay's Redis bus.
+    # See src/realtime/realtime_relay. REALTIME_JWT_SECRET MUST match the relay's.
+    # The publisher reuses the django_redis cache connection (core.utils
+    # .get_redis_client) — same Redis the relay psubscribes to (both via the
+    # standard REDIS_URL env), so there's no separate client/URL to keep in sync.
+    REALTIME_ENABLED = values.BooleanValue(
+        False, environ_name="REALTIME_ENABLED", environ_prefix=None
+    )
+    REALTIME_JWT_SECRET = values.Value(
+        "", environ_name="REALTIME_JWT_SECRET", environ_prefix=None
+    )
+    REALTIME_JWT_ALGORITHM = values.Value(
+        "HS256", environ_name="REALTIME_JWT_ALGORITHM", environ_prefix=None
+    )
+    # NB: the SSE path is hardcoded to /realtime-relay/ in the frontend (Caddy
+    # reverse-proxies it to the relay) — not configurable.
+    # Adaptive client polling, in seconds, surfaced to the frontend via /config so
+    # they are tunable per-deploy without a rebuild. "live" applies while the SSE
+    # stream is connected (slow safety net); "fallback" while it is offline.
+    REALTIME_POLL_INTERVAL_LIVE = values.PositiveIntegerValue(
+        1800,  # 30 minutes
+        environ_name="REALTIME_POLL_INTERVAL_LIVE",
+        environ_prefix=None,
+    )
+    REALTIME_POLL_INTERVAL_FALLBACK = values.PositiveIntegerValue(
+        60,  # 1 minute
+        environ_name="REALTIME_POLL_INTERVAL_FALLBACK",
         environ_prefix=None,
     )
 

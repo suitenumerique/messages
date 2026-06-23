@@ -411,5 +411,63 @@ services:
       - ./src/jmap-email/tests:/app/tests
       - ./src/jmap-email/pyproject.toml:/app/pyproject.toml
 
+  # Standalone realtime SSE relay — its own image, its own deps (src/realtime),
+  # nothing shared with the backend at runtime. In dev it's a separate
+  # origin/port; the frontend opens an EventSource straight at it.
+  realtime-relay:
+    build:
+      context: src/realtime
+      target: runtime-dev
+    user: ${DOCKER_USER:-1000}
+    command:
+      - uvicorn
+      - realtime_relay.app:app
+      - --host
+      - "0.0.0.0"
+      - --port
+      - "8000"
+      - --timeout-keep-alive
+      - "75"
+      # Don't log the ?token= query string (see Caddyfile security note).
+      - --no-access-log
+    environment:
+      - REDIS_URL=redis://redis:6379
+      # Dev only — must match the backend's REALTIME_JWT_SECRET.
+      - REALTIME_JWT_SECRET=dev-realtime-secret
+      - REALTIME_HEARTBEAT=15
+      # The relay is a separate origin in dev (its own port), so allow the
+      # frontend origin for cross-origin EventSource.
+      - REALTIME_CORS_ORIGINS=http://localhost:8900
+    volumes:
+      - ./src/realtime/realtime_relay:/app/realtime_relay
+    ports:
+      - "8905:8000"
+    depends_on:
+      redis:
+        condition: service_started
+
+  # Relay tests — self-contained, zero infrastructure (fakeredis, ASGI client).
+  realtime-relay-test:
+    profiles:
+      - tools
+    build:
+      context: src/realtime
+      target: runtime-dev
+    command: pytest
+    volumes:
+      - ./src/realtime/realtime_relay:/app/realtime_relay
+      - ./src/realtime/pyproject.toml:/app/pyproject.toml
+
+  # Lock the relay dependencies (make deps-lock-realtime).
+  realtime-relay-uv:
+    profiles:
+      - tools
+    build:
+      context: src/realtime
+      target: uv
+    pull_policy: build
+    volumes:
+      - ./src/realtime:/app
+
 volumes:
   objectstorage-data:

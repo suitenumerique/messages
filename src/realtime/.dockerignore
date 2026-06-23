@@ -1,0 +1,5 @@
+**/__pycache__
+**/*.pyc
+.ruff_cache
+.pytest_cache
+realtime_relay/tests

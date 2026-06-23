@@ -12,6 +12,7 @@ export * from "./channels/channels";
 export * from "./maildomains/maildomains";
 export * from "./maildomain-accesses/maildomain-accesses";
 export * from "./placeholders/placeholders";
+export * from "./realtime/realtime";
 export * from "./tasks/tasks";
 export * from "./third-party-drive/third-party-drive";
 export * from "./threads/threads";

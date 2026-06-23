@@ -203,6 +203,16 @@
                                             "type": "string",
                                             "readOnly": true
                                         },
+                                        "BUILD_VERSION": {
+                                            "type": "string",
+                                            "description": "Git commit of the running build ('dev' from source)",
+                                            "readOnly": true
+                                        },
+                                        "BUILD_DATE": {
+                                            "type": "string",
+                                            "description": "ISO 8601 date this build was produced (empty from source)",
+                                            "readOnly": true
+                                        },
                                         "LANGUAGES": {
                                             "type": "array",
                                             "items": {
@@ -330,10 +340,27 @@
                                             "type": "boolean",
                                             "description": "Whether silent OIDC login is enabled",
                                             "readOnly": true
+                                        },
+                                        "REALTIME_ENABLED": {
+                                            "type": "boolean",
+                                            "description": "Whether the realtime SSE relay is enabled",
+                                            "readOnly": true
+                                        },
+                                        "REALTIME_POLL_INTERVAL_LIVE": {
+                                            "type": "integer",
+                                            "description": "Background poll interval (seconds) while the SSE stream is connected",
+                                            "readOnly": true
+                                        },
+                                        "REALTIME_POLL_INTERVAL_FALLBACK": {
+                                            "type": "integer",
+                                            "description": "Background poll interval (seconds) while the SSE stream is offline",
+                                            "readOnly": true
                                         }
                                     },
                                     "required": [
                                         "ENVIRONMENT",
+                                        "BUILD_VERSION",
+                                        "BUILD_DATE",
                                         "LANGUAGES",
                                         "LANGUAGE_CODE",
                                         "AI_ENABLED",
@@ -353,7 +380,10 @@
                                         "FEATURE_THREAD_SPLIT",
                                         "FEATURE_MAILDOMAIN_MANAGE_TOTP",
                                         "MESSAGES_MANUAL_RETRY_MAX_AGE",
-                                        "FRONTEND_SILENT_LOGIN_ENABLED"
+                                        "FRONTEND_SILENT_LOGIN_ENABLED",
+                                        "REALTIME_ENABLED",
+                                        "REALTIME_POLL_INTERVAL_LIVE",
+                                        "REALTIME_POLL_INTERVAL_FALLBACK"
                                     ]
                                 }
                             }
@@ -5215,6 +5245,45 @@
                             }
                         },
                         "description": ""
+                    }
+                }
+            }
+        },
+        "/api/v1.0/realtime/token/": {
+            "post": {
+                "operationId": "realtime_token_create",
+                "description": "Mint a short-lived SSE connection token for the current user.",
+                "tags": [
+                    "realtime"
+                ],
+                "security": [
+                    {
+                        "cookieAuth": []
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "type": "object",
+                                    "properties": {
+                                        "token": {
+                                            "type": "string",
+                                            "nullable": true,
+                                            "description": "SSE connection JWT, or null when realtime is disabled (client should poll instead)."
+                                        }
+                                    },
+                                    "required": [
+                                        "token"
+                                    ]
+                                }
+                            }
+                        },
+                        "description": "A short-lived connection token (or null when disabled)."
+                    },
+                    "503": {
+                        "description": "Realtime is enabled but misconfigured (no signing secret)."
                     }
                 }
             }
@@ -10362,7 +10431,8 @@
                                 "$ref": "#/components/schemas/UserWithoutAbilities"
                             }
                         ],
-                        "readOnly": true
+                        "readOnly": true,
+                        "nullable": true
                     },
                     "author_display": {
                         "type": "string",

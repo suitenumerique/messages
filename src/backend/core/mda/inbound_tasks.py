@@ -85,10 +85,10 @@ def _handle_retry(
 
     The InboundMessage row is kept in place — the 5-min sweep
     (``process_inbound_messages_queue_task``) re-fires the task on the
-    next cycle. We never drop here: a persistently-failing blocking
-    webhook is bounded instead by ``QUARANTINE_AFTER`` (the message is
-    then delivered flagged, see ``_stamp_processing_failed``), and the
-    webhook step is the only thing that produces a RETRY.
+    next cycle. We never drop here: a persistently-failing step is bounded
+    instead by ``QUARANTINE_AFTER`` (the message is then delivered flagged,
+    see ``_stamp_processing_failed``). RETRY is produced by the rspamd step
+    (on an rspamd outage) and the blocking-webhook step.
     """
     age = timezone.now() - inbound_message.created_at
     logger.info(
@@ -299,6 +299,35 @@ def process_inbound_message_task(self, inbound_message_id: str):
                 # (e.g. when the webhook itself replies).
                 try_send_autoreply(
                     mailbox, ctx.parsed_email, inbound_msg, is_spam=bool(ctx.is_spam)
+                )
+
+            # Truly last step: fire-and-forget realtime notification now that
+            # the message is fully delivered. Gated so the default (realtime
+            # off) path adds NO work — not even the recipient query below.
+            # Spam is skipped: no point notifying about a spam message.
+            if (
+                isinstance(inbound_msg, models.Message)
+                and settings.REALTIME_ENABLED
+                and not ctx.is_spam
+            ):
+                from core.services.realtime import (  # pylint: disable=import-outside-toplevel
+                    notify_users,
+                )
+
+                # Exclude the message's own sender: a user never needs to be
+                # notified about a message they just sent.
+                accesses = mailbox.accesses.all()
+                if inbound_msg.sender_user_id:
+                    accesses = accesses.exclude(user_id=inbound_msg.sender_user_id)
+                user_ids = list(accesses.values_list("user_id", flat=True))
+                notify_users(
+                    user_ids,
+                    "inbox.changed",
+                    {
+                        "mailbox": str(mailbox.id),
+                        "thread": str(inbound_msg.thread_id),
+                        "message": str(inbound_msg.id),
+                    },
                 )
 
             logger.info(

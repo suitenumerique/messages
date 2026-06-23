@@ -47,6 +47,20 @@
 			header_up X-Forwarded-For {remote_host}
 		}
 
+		# Realtime relay (SSE). A SEPARATE app/image (src/realtime); set
+		# MESSAGES_FRONTEND_REALTIME_SERVER to its address. Caddy fronts it so the
+		# stream is same-origin. flush_interval -1 disables response buffering so
+		# events stream immediately; HTTP/2 to the client is provided by Caddy here.
+		# SECURITY: the SSE connection token rides in the ?token= query string
+		# (EventSource can't set headers). Access logging is intentionally off
+		# (no `log` directive above); if it is ever enabled, the query string
+		# MUST be redacted for this route or short-lived tokens leak into logs.
+		reverse_proxy /realtime-relay/* {$MESSAGES_FRONTEND_REALTIME_SERVER:localhost:8001} {
+			header_up X-Forwarded-Proto https
+			header_up X-Forwarded-For {remote_host}
+			flush_interval -1
+		}
+
 		# SPA fallback: any unmatched request returns index.html so the
 		# client-side router can resolve the path.
 		try_files {path} /index.html

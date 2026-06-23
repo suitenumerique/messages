@@ -1,4 +1,7 @@
 NEXT_PUBLIC_API_ORIGIN=http://localhost:8901
+# Realtime relay's own origin in dev (separate port; reached cross-origin).
+# Leave empty in prod so it falls back to the app origin (same-origin via Caddy).
+NEXT_PUBLIC_REALTIME_ORIGIN=http://localhost:8905
 NEXT_PUBLIC_FEEDBACK_WIDGET_API_URL=
 NEXT_PUBLIC_FEEDBACK_WIDGET_PATH=
 NEXT_PUBLIC_FEEDBACK_WIDGET_CHANNEL=

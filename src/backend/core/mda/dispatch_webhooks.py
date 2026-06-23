@@ -719,7 +719,7 @@ class UserWebhookStep:
             # blocking webhook DROPs an email *only* when it explicitly
             # returns ``{"action": "drop"}`` with a 2xx (handled above).
             # A receiver bug that answers 4xx must never cost the user
-            # their mail — the 7-day retry budget bounds the hold.
+            # their mail — the 48-hour quarantine window bounds the hold.
             return _failure(blocking, Decision.RETRY)
         finally:
             response.close()
