@@ -47,6 +47,19 @@ jobs:
       image_name: "socks-proxy"
       context: "src/socks-proxy"
 
+  docker-publish-realtime:
+    uses: ./.github/workflows/docker-publish.yml
+    permissions:
+      contents: read
+      packages: write
+      attestations: write
+      id-token: write
+    secrets: inherit
+    with:
+      image_name: "realtime"
+      context: "src/realtime"
+      target: runtime-prod
+
   docker-publish-frontend:
     uses: ./.github/workflows/docker-publish.yml
     permissions:
@@ -73,6 +86,9 @@ jobs:
       image_name: "backend"
       context: "src/backend"
       target: runtime-prod
+      build_args: |
+        BUILD_VERSION=${{ github.sha }}
+        BUILD_DATE=${{ github.event.head_commit.timestamp }}
 
   docker-publish-keycloak:
     uses: ./.github/workflows/docker-publish.yml

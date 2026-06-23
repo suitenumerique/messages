@@ -16,6 +16,8 @@ pytestmark = pytest.mark.django_db
 
 
 @override_settings(
+    BUILD_VERSION="dev",
+    BUILD_DATE="",
     LANGUAGES=[["en-us", "English"], ["fr-fr", "French"], ["de-de", "German"]],
     LANGUAGE_CODE="en-us",
     AI_API_KEY=None,
@@ -37,6 +39,9 @@ pytestmark = pytest.mark.django_db
     IMAGE_PROXY_ENABLED=False,
     MESSAGES_MANUAL_RETRY_MAX_AGE=86400,  # 1 day in seconds
     FRONTEND_SILENT_LOGIN_ENABLED=True,
+    REALTIME_ENABLED=False,
+    REALTIME_POLL_INTERVAL_LIVE=1800,
+    REALTIME_POLL_INTERVAL_FALLBACK=60,
 )
 @pytest.mark.parametrize("is_authenticated", [False, True])
 def test_api_config(is_authenticated):
@@ -51,6 +56,8 @@ def test_api_config(is_authenticated):
     assert response.status_code == HTTP_200_OK
     assert response.json() == {
         "ENVIRONMENT": "test",
+        "BUILD_VERSION": "dev",
+        "BUILD_DATE": "",
         "LANGUAGES": [["en-us", "English"], ["fr-fr", "French"], ["de-de", "German"]],
         "LANGUAGE_CODE": "en-us",
         "AI_ENABLED": False,
@@ -71,6 +78,9 @@ def test_api_config(is_authenticated):
         "IMAGE_PROXY_ENABLED": False,
         "MESSAGES_MANUAL_RETRY_MAX_AGE": 86400,
         "FRONTEND_SILENT_LOGIN_ENABLED": True,
+        "REALTIME_ENABLED": False,
+        "REALTIME_POLL_INTERVAL_LIVE": 1800,
+        "REALTIME_POLL_INTERVAL_FALLBACK": 60,
     }
 
 

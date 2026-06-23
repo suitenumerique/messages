@@ -1288,7 +1288,7 @@ class ThreadAccessSerializer(CreateOnlyFieldsMixin, serializers.ModelSerializer)
 class ThreadEventSerializer(CreateOnlyFieldsMixin, serializers.ModelSerializer):
     """Serialize thread event information."""
 
-    author = UserWithoutAbilitiesSerializer(read_only=True)
+    author = UserWithoutAbilitiesSerializer(read_only=True, allow_null=True)
     author_display = serializers.SerializerMethodField()
     data = ThreadEventDataField()
     has_unread_mention = serializers.SerializerMethodField()

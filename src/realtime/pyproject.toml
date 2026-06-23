@@ -1,0 +1,112 @@
+#
+# st-messages-realtime — SSE relay (Redis pub/sub fan-out)
+#
+# Self-contained component: its deps live here, never in the backend pyproject.
+# Runs as its own image on Docker, or co-hosted in the backend web dyno on
+# Scalingo (pip install ./src/realtime). Either way it shares only the Redis bus
+# with the backend — no DB, no Django import. See README.md.
+#
+[build-system]
+requires = ["uv_build>=0.10.0,<0.11.0"]
+build-backend = "uv_build"
+
+[project]
+name = "st-messages-realtime"
+version = "0.7.0"
+authors = [{ "name" = "ANCT", "email" = "suiteterritoriale@anct.gouv.fr" }]
+classifiers = [
+    "Development Status :: 5 - Production/Stable",
+    "Intended Audience :: Developers",
+    "License :: OSI Approved :: MIT License",
+    "Natural Language :: English",
+    "Programming Language :: Python :: 3",
+    "Programming Language :: Python :: 3.14",
+]
+description = "Realtime SSE relay: one Redis subscription fanned out to many SSE clients."
+keywords = ["Python", "SSE", "realtime", "redis"]
+license = "MIT"
+readme = "README.md"
+requires-python = ">=3.14.5,<4.0"
+dependencies = [
+    "starlette==0.49.1",
+    "sse-starlette==3.0.2",
+    "uvicorn[standard]==0.38.0",
+    "redis==6.4.0",
+    "PyJWT==2.11.0",
+]
+
+[project.urls]
+"Bug Tracker" = "https://github.com/suitenumerique/st-messages/issues/new"
+"Homepage" = "https://github.com/suitenumerique/st-messages"
+"Repository" = "https://github.com/suitenumerique/st-messages"
+
+[project.optional-dependencies]
+dev = [
+    "pytest==9.0.2",
+    "pytest-asyncio>=1.2.0",
+    "pytest-cov==7.0.0",
+    "fakeredis==2.31.3",
+    "httpx==0.28.1",
+    "ruff==0.15.2",
+    "pylint==4.0.4",
+]
+
+[tool.uv.build-backend]
+# The import package (realtime_relay) sits at the project root and differs from
+# the distribution name, so point the build backend at it explicitly. This makes
+# `pip install ./src/realtime` work for the Scalingo co-host build.
+module-root = ""
+module-name = "realtime_relay"
+source-exclude = ["realtime_relay/tests/**"]
+
+[tool.ruff]
+# Mirror the backend so the relay lints to the same bar. See the backend
+# pyproject for why we target py313 even on a 3.14 runtime.
+target-version = "py313"
+exclude = [
+    ".git",
+    ".venv",
+    "build",
+    "venv",
+    "__pycache__",
+]
+line-length = 88
+
+[tool.ruff.lint]
+ignore = ["DJ001", "PLC0415", "PLR2004", "PLR0915", "PLR0912", "PLR0913", "PLR0911", "BLE001"]
+select = [
+    "B", # flake8-bugbear
+    "BLE", # flake8-blind-except
+    "C4", # flake8-comprehensions
+    "DJ", # flake8-django
+    "I", # isort
+    "PLC", # pylint-convention
+    "PLE", # pylint-error
+    "PLR", # pylint-refactoring
+    "PLW", # pylint-warning
+    "RUF100", # Ruff unused-noqa
+    "RUF200", # Ruff check pyproject.toml
+    "S", # flake8-bandit
+    "SLF", # flake8-self
+    "T20", # flake8-print
+    "F"  # pyflakes
+]
+
+[tool.ruff.lint.isort]
+section-order = ["future","standard-library","third-party","first-party","local-folder"]
+extra-standard-library = ["tomllib"]
+
+[tool.ruff.lint.per-file-ignores]
+"**/tests/*" = ["S", "SLF"]
+
+[tool.pytest.ini_options]
+asyncio_mode = "auto"
+addopts = [
+    "-v",
+    # Allow test files to share names across dirs.
+    "--import-mode=importlib",
+]
+testpaths = ["realtime_relay/tests"]
+python_files = [
+    "test_*.py",
+]

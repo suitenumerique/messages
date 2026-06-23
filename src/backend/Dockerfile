@@ -117,6 +117,13 @@ ENV PATH="/venv/bin:$PATH"
 ENV VIRTUAL_ENV=/venv
 ENV VIRTUAL_ENV_PROMPT=venv
 
+# Build identity (git SHA + ISO date), surfaced via /config. Passed as build
+# args by CI (see .github/workflows/messages-ghcr.yml).
+ARG BUILD_VERSION=dev
+ARG BUILD_DATE=
+ENV BUILD_VERSION=${BUILD_VERSION}
+ENV BUILD_DATE=${BUILD_DATE}
+
 # We wrap commands run in this container by the following entrypoint that
 # creates a user on-the-fly with the container user ID (see USER) and root group
 # ID.
@@ -204,6 +211,12 @@ ENV PYTHONUNBUFFERED=1
 ENV PYTHONDONTWRITEBYTECODE=1
 # Distroless has no ldconfig — tell the dynamic linker where to find libmagic
 ENV LD_LIBRARY_PATH=/usr/lib
+
+# Build identity (git SHA + ISO date), surfaced via /config.
+ARG BUILD_VERSION=dev
+ARG BUILD_DATE=
+ENV BUILD_VERSION=${BUILD_VERSION}
+ENV BUILD_DATE=${BUILD_DATE}
 
 CMD ["gunicorn", "-c", "/app/gunicorn.conf.py", "messages.wsgi:application"]
 

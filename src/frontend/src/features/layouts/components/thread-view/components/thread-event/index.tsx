@@ -218,7 +218,10 @@ export const ThreadEvent = ({ event, isCondensed = false, onEdit, onDelete, ment
     };
 
     if (isIMEvent(event)) {
-        const authorName = event.author?.full_name || event.author?.email || "";
+        // Hash the same label that's displayed (author_display covers webhook /
+        // author-less events) so the bubble accent matches the avatar disc.
+        const authorName =
+            event.author?.full_name || event.author?.email || event.author_display || "";
         const avatarColor = getAvatarColor(authorName);
         const isMentioned = user
             ? event.data?.mentions?.map((m) => m.id)?.includes(user.id)

@@ -47,6 +47,7 @@ from core.api.viewsets.provisioning import (
     ProvisioningMailboxView,
     ProvisioningMailDomainView,
 )
+from core.api.viewsets.realtime import RealtimeTokenView
 from core.api.viewsets.send import SendMessageView
 from core.api.viewsets.submit import SubmitRawEmailView
 from core.api.viewsets.task import TaskDetailView
@@ -228,6 +229,11 @@ urlpatterns = [
         ),
     ),
     path(f"api/{settings.API_VERSION}/config/", ConfigView.as_view()),
+    path(
+        f"api/{settings.API_VERSION}/realtime/token/",
+        RealtimeTokenView.as_view(),
+        name="realtime-token",
+    ),
     path(
         f"api/{settings.API_VERSION}/flag/",
         ChangeFlagView.as_view(),

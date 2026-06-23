@@ -24,6 +24,16 @@ class ConfigView(drf.views.APIView):
                     "type": "object",
                     "properties": {
                         "ENVIRONMENT": {"type": "string", "readOnly": True},
+                        "BUILD_VERSION": {
+                            "type": "string",
+                            "description": "Git commit of the running build ('dev' from source)",
+                            "readOnly": True,
+                        },
+                        "BUILD_DATE": {
+                            "type": "string",
+                            "description": "ISO 8601 date this build was produced (empty from source)",
+                            "readOnly": True,
+                        },
                         "LANGUAGES": {
                             "type": "array",
                             "items": {"type": "string"},
@@ -151,9 +161,32 @@ class ConfigView(drf.views.APIView):
                             "description": "Whether silent OIDC login is enabled",
                             "readOnly": True,
                         },
+                        "REALTIME_ENABLED": {
+                            "type": "boolean",
+                            "description": "Whether the realtime SSE relay is enabled",
+                            "readOnly": True,
+                        },
+                        "REALTIME_POLL_INTERVAL_LIVE": {
+                            "type": "integer",
+                            "description": (
+                                "Background poll interval (seconds) while the SSE "
+                                "stream is connected"
+                            ),
+                            "readOnly": True,
+                        },
+                        "REALTIME_POLL_INTERVAL_FALLBACK": {
+                            "type": "integer",
+                            "description": (
+                                "Background poll interval (seconds) while the SSE "
+                                "stream is offline"
+                            ),
+                            "readOnly": True,
+                        },
                     },
                     "required": [
                         "ENVIRONMENT",
+                        "BUILD_VERSION",
+                        "BUILD_DATE",
                         "LANGUAGES",
                         "LANGUAGE_CODE",
                         "AI_ENABLED",
@@ -174,6 +207,9 @@ class ConfigView(drf.views.APIView):
                         "FEATURE_MAILDOMAIN_MANAGE_TOTP",
                         "MESSAGES_MANUAL_RETRY_MAX_AGE",
                         "FRONTEND_SILENT_LOGIN_ENABLED",
+                        "REALTIME_ENABLED",
+                        "REALTIME_POLL_INTERVAL_LIVE",
+                        "REALTIME_POLL_INTERVAL_FALLBACK",
                     ],
                 },
             )
@@ -187,6 +223,8 @@ class ConfigView(drf.views.APIView):
         """
         array_settings = [
             "ENVIRONMENT",
+            "BUILD_VERSION",
+            "BUILD_DATE",
             "LANGUAGES",
             "LANGUAGE_CODE",
             "SCHEMA_CUSTOM_ATTRIBUTES_USER",
@@ -203,6 +241,9 @@ class ConfigView(drf.views.APIView):
             "MAX_INCOMING_EMAIL_SIZE",
             "MAX_RECIPIENTS_PER_MESSAGE",
             "FRONTEND_SILENT_LOGIN_ENABLED",
+            "REALTIME_ENABLED",
+            "REALTIME_POLL_INTERVAL_LIVE",
+            "REALTIME_POLL_INTERVAL_FALLBACK",
         ]
         dict_settings = {}
         for setting in array_settings:

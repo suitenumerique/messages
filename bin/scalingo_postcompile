@@ -5,6 +5,37 @@ set -o pipefail   # don't ignore exit codes when piping output
 
 echo "-----> Running post-compile script"
 
+# Co-host the realtime relay in this (web) dyno. Scalingo is a single buildpack
+# app, so we install the relay package + its OWN deps (declared in
+# src/realtime, NOT in the backend pyproject) into the same venv. bin/scalingo_run_web
+# then launches `uvicorn realtime_relay.app:app` alongside gunicorn + Caddy.
+# (The Docker target deploys the relay as its own image instead — see
+# src/realtime/Dockerfile + .github/workflows/messages-ghcr.yml.)
+echo "-----> Installing realtime relay (src/realtime) into the web venv"
+# Install strictly from src/realtime/uv.lock so transitive deps are pinned
+# exactly like the Docker relay image. NEVER a lockfile-less `pip install`
+# (it floats transitives — unsafe / non-reproducible). uv is present because
+# the backend itself is uv-locked; if it somehow isn't, fail the build rather
+# than install unpinned.
+if ! command -v uv >/dev/null 2>&1; then
+    echo "ERROR: uv is required to install the realtime relay from its lockfile" >&2
+    exit 1
+fi
+uv export --frozen --no-emit-project --no-hashes --project src/realtime \
+    | pip install --no-deps -r /dev/stdin
+pip install --no-deps ./src/realtime
+
+# Build identity, surfaced via /config. Scalingo build env doesn't persist to
+# runtime, so bake the values (git SHA via $SOURCE_VERSION, build date) into a
+# .profile.d script — sourced at dyno boot — so BUILD_VERSION/BUILD_DATE are set
+# in the runtime env. (The Docker target passes these as build args instead.)
+echo "-----> Recording build identity (.profile.d/000-build-version.sh)"
+mkdir -p .profile.d
+{
+    echo "export BUILD_VERSION='${SOURCE_VERSION:-dev}'"
+    echo "export BUILD_DATE='$(date -u +%Y-%m-%dT%H:%M:%SZ)'"
+} > .profile.d/000-build-version.sh
+
 # Remove all the files we don't need
 rm -rf src docker env.d .cursor .github compose.yaml README.md .cache
 

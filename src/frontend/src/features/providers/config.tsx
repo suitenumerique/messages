@@ -14,6 +14,8 @@ const DEFAULT_DRIVE_CONFIG: NonNullable<ConfigRetrieve200['DRIVE']> = {
 
 const DEFAULT_CONFIG: AppConfig = {
     ENVIRONMENT: "",
+    BUILD_VERSION: "dev",
+    BUILD_DATE: "",
     LANGUAGES: [],
     LANGUAGE_CODE: "",
     AI_ENABLED: false,
@@ -35,16 +37,28 @@ const DEFAULT_CONFIG: AppConfig = {
     DRIVE: DEFAULT_DRIVE_CONFIG,
     MESSAGES_MANUAL_RETRY_MAX_AGE: 0,
     FRONTEND_SILENT_LOGIN_ENABLED: false,
+    REALTIME_ENABLED: false,
+    REALTIME_POLL_INTERVAL_LIVE: 1800,
+    REALTIME_POLL_INTERVAL_FALLBACK: 60,
 }
 
 const ConfigContext = createContext<AppConfig>(DEFAULT_CONFIG)
+
+// Re-fetch /config periodically so a long-lived tab picks up runtime changes
+// (e.g. REALTIME_ENABLED toggled to shed load) without a reload — the realtime
+// provider reacts to `enabled` changing. Cheap (one anonymous request/hour) and
+// the natural place to later detect a new build and prompt a reload, once
+// /config carries a version.
+const CONFIG_REFETCH_INTERVAL_MS = 60 * 60_000; // 1 hour
 
 /**
  * A global provider in charge of fetching the config at first load
  * and sharing it to the app.
  */
 export const ConfigProvider = ({ children }: PropsWithChildren) => {
-    const { data: config, isFetched } = useConfigRetrieve();
+    const { data: config, isFetched } = useConfigRetrieve({
+      query: { refetchInterval: CONFIG_REFETCH_INTERVAL_MS },
+    });
     const configValue = useMemo(() => {
       if (!config) return DEFAULT_CONFIG;
       return {

@@ -11,14 +11,16 @@ import { AttachmentPreviewProvider } from "@/features/providers/attachment-previ
 import { useTheme } from "@/features/providers/theme";
 import { LayoutProvider, useLayoutDragContext } from "@/features/layouts/components/layout-context";
 import { AttachmentPreviewModal } from "@/features/layouts/components/thread-view/components/attachment-preview-modal";
+import { RealtimeProvider } from "@/features/realtime/use-realtime";
 import { Link } from "@tanstack/react-router";
 import { useTranslation } from "react-i18next";
 
 export const MainLayout = ({ children }: PropsWithChildren) => {
     return (
         <AuthenticatedView>
-            <ScrollRestoreProvider>
-                <MailboxProvider>
+            <RealtimeProvider>
+                <ScrollRestoreProvider>
+                    <MailboxProvider>
                     <SentBoxProvider>
                         <ModalStoreProvider>
                             <AttachmentPreviewProvider>
@@ -30,7 +32,8 @@ export const MainLayout = ({ children }: PropsWithChildren) => {
                         </ModalStoreProvider>
                     </SentBoxProvider>
                 </MailboxProvider>
-            </ScrollRestoreProvider>
+                </ScrollRestoreProvider>
+            </RealtimeProvider>
         </AuthenticatedView>
     )
 }

@@ -135,16 +135,15 @@ Step = Callable[[InboundContext], Decision]
 
 
 # Inbound messages held by a transient RETRY get one more chance every
-# 5 minutes via ``process_inbound_messages_queue_task``. The webhook step
-# is the only producer of a RETRY, and it is bounded by the quarantine
-# window below — so a held message is never dropped, only delivered
-# (flagged) once it gives up.
+# 5 minutes via ``process_inbound_messages_queue_task``. RETRY is produced
+# by the rspamd step (on an rspamd outage) and the blocking-webhook step;
+# both are bounded by the quarantine window below — so a held message is
+# never dropped, only delivered (flagged) once it gives up.
 #
-# A processing step that keeps failing (a blocking webhook today; rspamd
-# or any future RETRY-returning step tomorrow) must not hold a message
-# forever *or* silently lose it. After this window the task stops holding
-# and delivers the message anyway, stamped with ``X-StMsg-Processing-
-# Failed`` so the UI warns the recipient it bypassed a processing step.
+# A processing step that keeps failing must not hold a message forever
+# *or* silently lose it. After this window the task stops holding and
+# delivers the message anyway, stamped with ``X-StMsg-Processing-Failed``
+# so the UI warns the recipient it bypassed a processing step.
 # Generic on purpose — see the RETRY branch in
 # ``process_inbound_message_task``.
 QUARANTINE_AFTER = timedelta(hours=48)
@@ -223,9 +222,10 @@ def _call_rspamd(
     """POST raw RFC-822 bytes to rspamd's ``/checkv2``.
 
     Returns ``(is_spam_or_None, error_message, result_dict)``. is_spam
-    is ``None`` only when rspamd is not configured. Errors are
-    swallowed and surfaced via the error_message channel so a flaky
-    rspamd never blocks delivery (mirroring the old behaviour).
+    is ``None`` only when rspamd is not configured. A request error is
+    not raised — it's surfaced via the error_message return value, and the
+    caller (the rspamd step) decides what to do (it holds the message for
+    retry rather than delivering it unchecked).
     """
     url = spam_config.get("rspamd_url")
     if not url:
@@ -395,15 +395,11 @@ def build_inbound_pipeline(ctx: InboundContext) -> List[Step]:
     channels = find_webhook_channels_for_mailbox(ctx.mailbox)
 
     return [
-        *webhook_steps_for_mailbox(
-            ctx.mailbox, phase="before_spam", channels=channels
-        ),
+        *webhook_steps_for_mailbox(ctx.mailbox, phase="before_spam", channels=channels),
         _make_hardcoded_rules_step(ctx.spam_config),
         _make_rspamd_step(ctx.spam_config),
         _make_inbound_auth_step(ctx.spam_config),
-        *webhook_steps_for_mailbox(
-            ctx.mailbox, phase="after_spam", channels=channels
-        ),
+        *webhook_steps_for_mailbox(ctx.mailbox, phase="after_spam", channels=channels),
     ]
 
 

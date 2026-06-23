@@ -6,7 +6,7 @@
  * OpenAPI spec version: 1.0.0 (v1.0)
  */
 import type { ThreadEventTypeEnum } from "./thread_event_type_enum";
-import type { UserWithoutAbilities } from "./user_without_abilities";
+import type { ThreadEventAuthor } from "./thread_event_author";
 import type { ThreadEventData } from "./thread_event_data";
 
 /**
@@ -28,7 +28,8 @@ export interface ThreadEvent {
    * @nullable
    */
   message?: string | null;
-  readonly author: UserWithoutAbilities;
+  /** @nullable */
+  readonly author: ThreadEventAuthor;
   /** @nullable */
   readonly author_display: string | null;
   data: ThreadEventData;

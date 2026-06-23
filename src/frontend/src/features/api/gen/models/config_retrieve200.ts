@@ -11,6 +11,10 @@ import type { ConfigRetrieve200SCHEMACUSTOMATTRIBUTESMAILDOMAIN } from "./config
 
 export type ConfigRetrieve200 = {
   readonly ENVIRONMENT: string;
+  /** Git commit of the running build ('dev' from source) */
+  readonly BUILD_VERSION: string;
+  /** ISO 8601 date this build was produced (empty from source) */
+  readonly BUILD_DATE: string;
   readonly LANGUAGES: readonly string[];
   readonly LANGUAGE_CODE: string;
   readonly AI_ENABLED: boolean;
@@ -41,4 +45,10 @@ export type ConfigRetrieve200 = {
   readonly MESSAGES_MANUAL_RETRY_MAX_AGE: number;
   /** Whether silent OIDC login is enabled */
   readonly FRONTEND_SILENT_LOGIN_ENABLED: boolean;
+  /** Whether the realtime SSE relay is enabled */
+  readonly REALTIME_ENABLED: boolean;
+  /** Background poll interval (seconds) while the SSE stream is connected */
+  readonly REALTIME_POLL_INTERVAL_LIVE: number;
+  /** Background poll interval (seconds) while the SSE stream is offline */
+  readonly REALTIME_POLL_INTERVAL_FALLBACK: number;
 };

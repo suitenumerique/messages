@@ -33,6 +33,16 @@ export function getApiOrigin() {
 }
 
 /**
+ * Origin of the realtime SSE relay. Empty in prod so it falls back to the app
+ * origin (the relay is same-origin there, fronted by Caddy under
+ * /realtime-relay/); in dev it's set to the relay's own port, which the browser
+ * reaches cross-origin (the relay CORS-allows the frontend origin).
+ */
+export function getRealtimeOrigin() {
+  return import.meta.env.NEXT_PUBLIC_REALTIME_ORIGIN || getApiOrigin();
+}
+
+/**
  * Build the request url from the context url and the base url
  *
  */

@@ -40,6 +40,17 @@ jobs:
         run: make typecheck-jmap-email
 
 
+  test-realtime:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v6
+      - name: Create env files
+        run: make create-env-files
+      - name: Run realtime relay tests
+        run: make test-realtime
+
+
   test-back:
     runs-on: ubuntu-latest
     env:

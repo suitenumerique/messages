@@ -4,6 +4,7 @@ import { FetchStatus, InfiniteData, QueryStatus, RefetchOptions, useQueryClient 
 import type { threadsListResponse } from "../api/gen/threads/threads";
 import { useLocation, useNavigate, useParams } from "@tanstack/react-router";
 import usePrevious from "@/hooks/use-previous";
+import { useRealtime } from "@/features/realtime/use-realtime";
 import { useUrlSearchParams } from "@/hooks/use-url-search-params";
 import { MAILBOX_FOLDERS } from "../layouts/components/mailbox-panel/components/mailbox-list";
 import {
@@ -255,9 +256,12 @@ export const MailboxProvider = ({ children }: PropsWithChildren) => {
     const hasSearchParamsChanged = useMemo(() => {
         return previousSearchParams?.toString() !== searchParams.toString();
     }, [previousSearchParams, searchParams]);
+    // Adaptive polling: slow while the SSE stream is live (just a safety net),
+    // fast while it's offline. Intervals come from runtime config (env vars).
+    const { pollIntervalMs } = useRealtime();
     const mailboxQuery = useMailboxesList({
         query: {
-            refetchInterval: 30 * 1000, // 30 seconds
+            refetchInterval: pollIntervalMs,
             refetchOnWindowFocus: true,
         },
     });
