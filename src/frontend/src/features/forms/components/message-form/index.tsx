@@ -668,9 +668,10 @@ export const MessageForm = forwardRef<MessageFormHandle, MessageFormProps>(({
      * Prevent the Enter key press to trigger onClick on input children (like file input)
      */
     const handleKeyDown = (event: React.KeyboardEvent) => {
-        if (event.key === 'Enter') {
-            event.preventDefault();
-        }
+        if (event.key !== 'Enter') return;
+        const target = event.target as HTMLElement;
+        if (target.isContentEditable || target.tagName === 'TEXTAREA') return;
+        event.preventDefault();
     }
 
     // The periodic auto-save only runs while a draft exists. Before that, the
