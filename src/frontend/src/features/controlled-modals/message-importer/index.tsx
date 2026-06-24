@@ -28,8 +28,8 @@ export const ModalMessageImporter = () => {
     const { t } = useTranslation();
     const modals = useModals();
     const taskImportCacheHelper = new TaskImportCacheHelper(selectedMailbox?.id);
-    const [taskId, setTaskId] = useState<string | null>(taskImportCacheHelper.get());
-    const [step, setStep] = useState<IMPORT_STEP>(taskId ? 'importing' : 'idle');
+    const [importId, setImportId] = useState<string | null>(taskImportCacheHelper.get());
+    const [step, setStep] = useState<IMPORT_STEP>(importId ? 'importing' : 'idle');
     const [error, setError] = useState<string | null>(null);
     const [recap, setRecap] = useState<ImportTaskRecap | null>(null);
     const { closeModal } = useModalStore();
@@ -52,7 +52,7 @@ export const ModalMessageImporter = () => {
     const handleClose = () => {
         if (altKeyRef.current && step === 'importing') {
             taskImportCacheHelper.remove();
-            setTaskId(null);
+            setImportId(null);
             setStep('idle');
         }
     };
@@ -63,9 +63,24 @@ export const ModalMessageImporter = () => {
 
     const handleImportingStepComplete = async (taskRecap: ImportTaskRecap) => {
         taskImportCacheHelper.remove();
-        setTaskId(null);
+        setImportId(null);
         setRecap(taskRecap);
         setStep('completed');
+        await Promise.all([
+            refetchMailboxes(),
+            invalidateThreadsStats(),
+            invalidateMailbox(),
+            invalidateLabels(),
+        ]);
+    }
+
+    // The import was cancelled: its messages were deleted server-side, so go
+    // back to the form and refresh the mailbox to drop them from the UI.
+    const handleImportCancelled = async () => {
+        taskImportCacheHelper.remove();
+        setImportId(null);
+        setError(null);
+        setStep('idle');
         await Promise.all([
             refetchMailboxes(),
             invalidateThreadsStats(),
@@ -77,20 +92,20 @@ export const ModalMessageImporter = () => {
 
     const handleArchiveUploading = () => {
         setStep('uploading');
-        setTaskId(null);
+        setImportId(null);
         setError(null);
         taskImportCacheHelper.remove();
     }
 
-    const handleFormSuccess = (taskId: string) => {
-        setTaskId(taskId);
+    const handleFormSuccess = (importId: string) => {
+        setImportId(importId);
         setStep('importing');
-        taskImportCacheHelper.set(taskId);
+        taskImportCacheHelper.set(importId);
     }
 
     const handleError = (error: string | null) => {
         setStep('idle');
-        setTaskId(null);
+        setImportId(null);
         taskImportCacheHelper.remove();
         setError(error);
     }
@@ -144,9 +159,10 @@ export const ModalMessageImporter = () => {
                 )}
                 {step === 'importing' && (
                     <StepLoader
-                        taskId={taskId!}
+                        importId={importId!}
                         onComplete={handleImportingStepComplete}
                         onError={handleError}
+                        onCancelled={handleImportCancelled}
                     />
                 )}
                 {step === 'completed' && (

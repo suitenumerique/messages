@@ -34,6 +34,7 @@ from core.api.viewsets.maildomain import (
 )
 from core.api.viewsets.maildomain_access import MaildomainAccessViewSet
 from core.api.viewsets.message import MessageViewSet
+from core.api.viewsets.message_import import MessageImportViewSet
 from core.api.viewsets.message_template import (
     AvailableMailboxMessageTemplateViewSet,
     MailboxMessageTemplateViewSet,
@@ -68,6 +69,7 @@ router.register("threads", ThreadViewSet, basename="threads")
 router.register("labels", LabelViewSet, basename="labels")
 router.register("mailboxes", MailboxViewSet, basename="mailboxes")
 router.register("maildomains", AdminMailDomainViewSet, basename="admin-maildomains")
+router.register("imports", MessageImportViewSet, basename="imports")
 router.register(
     "import/file/upload",
     MessagesArchiveUploadViewSet,

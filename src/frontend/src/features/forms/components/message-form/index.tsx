@@ -374,8 +374,6 @@ export const MessageForm = forwardRef<MessageFormHandle, MessageFormProps>(({
     });
 
     const draftUpdateMutation = useDraftUpdate2();
-
-
     const deleteMessageMutation = useMessagesDestroy();
     const isDeletingDraft = deleteMessageMutation.isPending;
     const isSubmittingMessage = isSubmitting || messageMutation.isPending;
@@ -792,7 +790,7 @@ export const MessageForm = forwardRef<MessageFormHandle, MessageFormProps>(({
                     <MessageComposer
                         ref={composerRef}
                         mailboxId={form.getValues('from')}
-                        defaultValue={form.getValues('messageDraftBody')}
+                        defaultValue={draft?.htmlBody.map(item => item.content).join('\n') ?? draft?.textBody.map(item => item.content).join('\n')}
                         fullWidth
                         state={form.formState.errors?.messageDraftBody ? "error" : "default"}
                         text={form.formState.errors?.messageDraftBody?.message}

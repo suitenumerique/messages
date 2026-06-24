@@ -43,17 +43,24 @@ class ImportViewSet(viewsets.ViewSet):
         request=ImportFileSerializer,
         responses={
             202: OpenApiResponse(
-                description="Import started. Returns Celery task ID for tracking.",
+                description="Import started. Returns the import id (and Celery task id).",
                 response={
                     "type": "object",
                     "properties": {
                         "task_id": {
                             "type": "string",
-                            "description": "Task ID for tracking the import",
+                            "description": "Celery task id for legacy progress tracking",
                         },
                         "type": {
                             "type": "string",
                             "description": "Type of import (eml, mbox, or pst)",
+                        },
+                        "import_id": {
+                            "type": "string",
+                            "description": (
+                                "Id of the import resource (poll GET /imports/{id}/ "
+                                "for status, progress and counts)"
+                            ),
                         },
                     },
                 },
@@ -97,17 +104,24 @@ class ImportViewSet(viewsets.ViewSet):
         request=ImportIMAPSerializer,
         responses={
             202: OpenApiResponse(
-                description="IMAP import started. Returns Celery task ID for tracking the import progress.",
+                description="IMAP import started. Returns the import id (and Celery task id).",
                 response={
                     "type": "object",
                     "properties": {
                         "task_id": {
                             "type": "string",
-                            "description": "Task ID for tracking the import",
+                            "description": "Celery task id for legacy progress tracking",
                         },
                         "type": {
                             "type": "string",
                             "description": "Type of import (imap)",
+                        },
+                        "import_id": {
+                            "type": "string",
+                            "description": (
+                                "Id of the import resource (poll GET /imports/{id}/ "
+                                "for status, progress and counts)"
+                            ),
                         },
                     },
                 },

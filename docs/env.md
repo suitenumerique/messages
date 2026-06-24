@@ -139,6 +139,9 @@ The application uses a new environment file structure with `.defaults` and `.loc
 | `STORAGE_MESSAGE_IMPORTS_SECRET_KEY` | `password` | S3 secret key | Required |
 | `STORAGE_MESSAGE_IMPORTS_REGION_NAME` | None | S3 region | Optional |
 | `STORAGE_MESSAGE_IMPORTS_EXPIRE_POLICY` | `3600` | Upload policy expiration (1h) | Optional |
+| `MESSAGES_IMPORT_USE_ORCHESTRATOR` | `False` | When True, mbox/eml imports are split into resumable batches by the orchestrator instead of one monolithic task: a crash loses only the in-flight batch and the periodic reaper re-dispatches the rest. PST/IMAP keep their monolithic task until their batch index lands. | Optional |
+| `MESSAGES_IMPORT_BATCH_SIZE` | `500` | Number of messages processed per import batch (orchestrator). Bounds per-batch memory and reindex/stats flush size. | Optional |
+| `MESSAGES_IMPORT_STALL_TIMEOUT` | `900` | Seconds without a heartbeat after which a still-`running` import is considered stalled and its unfinished batches are re-dispatched by the reaper (runs every 5 min). Must exceed a single batch's worst-case time. | Optional |
 
 ### Tiered Blob Storage
 
@@ -167,6 +170,7 @@ blob stays in PG.
 | `MESSAGES_BLOBS_COMPRESS` | `zstd:7` | Default compression: `none`, `zstd`, or `zstd:<level>` | Optional |
 | `MESSAGES_BLOBS_ENCRYPT_KEYS` | `{}` | JSON dict mapping `key_id` → entry. Each entry must be `{"algo": "aes-gcm", "secret": "<32+ chars>", "active": <bool>}`. Add `"active": true` to exactly one entry to make it the key new blobs are encrypted with; entries without `active` (or with `active=false`) stay readable for legacy ciphertext. The secret is SHA-256'd to a 32-byte AEAD key, so its strength is whatever entropy the operator supplied — use `openssl rand -base64 32` (or equivalent). Startup emits a warning when a secret is shorter than 32 characters; that floor is a length check only, not an entropy measurement. | Optional |
 | `MESSAGES_BLOBS_VERIFY_HASH` | `False` | When True, `Blob.get_content()` re-hashes plaintext and rejects mismatches. One SHA-256 over the plaintext per read; main value is for `key_id=0` blobs (encrypted blobs are already AAD-bound). | Optional |
+| `MESSAGES_IMPORT_BLOBS_DIRECT_TO_S3` | `False` | When True, blobs created during an import are written straight to object storage (`storage_location=OBJECT_STORAGE`) instead of being staged in PostgreSQL and later moved by the hourly offload task — avoiding a heavy double write on large imports. No effect when object storage is not configured: imports transparently fall back to the PostgreSQL blob path (so dev/test keeps working). | Optional |
 
 ### Static Files
 

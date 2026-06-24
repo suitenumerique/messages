@@ -50,11 +50,19 @@ class ChannelViewSet(
         the mailbox FK filter already excludes global/maildomain rows. Any
         accidentally force-inserted row with a non-null mailbox_id and a
         non-mailbox scope_level would be excluded here.
+
+        Import channels (type=import) are mailbox-scoped too but are not
+        integrations — they group an import's messages and are managed
+        through the dedicated ``/imports/`` API, so they are excluded here.
         """
-        return models.Channel.objects.filter(
-            mailbox=self.mailbox,
-            scope_level=ChannelScopeLevel.MAILBOX,
-        ).order_by("-created_at")
+        return (
+            models.Channel.objects.filter(
+                mailbox=self.mailbox,
+                scope_level=ChannelScopeLevel.MAILBOX,
+            )
+            .exclude(type=ChannelTypes.IMPORT)
+            .order_by("-created_at")
+        )
 
     def get_serializer_context(self):
         """Add mailbox to serializer context."""
@@ -231,10 +239,17 @@ class UserChannelViewSet(ChannelViewSet):
         return None
 
     def get_queryset(self):
-        return models.Channel.objects.filter(
-            user=self.request.user,
-            scope_level=ChannelScopeLevel.USER,
-        ).order_by("-created_at")
+        # Import channels are mailbox-scoped (never user-scoped), so they
+        # never match here; exclude defensively to keep the integration
+        # surface free of import runs regardless of future scope changes.
+        return (
+            models.Channel.objects.filter(
+                user=self.request.user,
+                scope_level=ChannelScopeLevel.USER,
+            )
+            .exclude(type=ChannelTypes.IMPORT)
+            .order_by("-created_at")
+        )
 
     def get_serializer_context(self):
         # Skip the mailbox-context branch in ChannelSerializer.validate so

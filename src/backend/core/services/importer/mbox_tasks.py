@@ -14,12 +14,19 @@ from jmap_email import first_address_email, parse_email
 from jmap_email.parser import parse_date
 from sentry_sdk import capture_exception
 
+from core import enums
 from core.mda.inbound import deliver_inbound_message
 from core.models import Mailbox
 from core.utils import ThreadReindexDeferrer, ThreadStatsUpdateDeferrer
 
 from messages.celery_app import app as celery_app
 
+from .channel import (
+    get_import_channel,
+    mark_finished,
+    mark_started,
+    update_import_state,
+)
 from .s3_seekable import BUFFER_CENTERED, S3SeekableReader
 
 logger = get_task_logger(__name__)
@@ -172,7 +179,9 @@ def _extract_and_store_index(
 
 
 @celery_app.task(bind=True)
-def process_mbox_file_task(self, file_key: str, recipient_id: str) -> Dict[str, Any]:
+def process_mbox_file_task(
+    self, file_key: str, recipient_id: str, channel_id: str | None = None
+) -> Dict[str, Any]:
     """
     Process a MBOX file asynchronously using a 2-pass approach.
 
@@ -182,6 +191,7 @@ def process_mbox_file_task(self, file_key: str, recipient_id: str) -> Dict[str, 
     Args:
         file_key: The storage key of the MBOX file
         recipient_id: The UUID of the recipient mailbox
+        channel_id: Optional import-channel id grouping the created messages
 
     Returns:
         Dict with task status and result
@@ -203,11 +213,21 @@ def process_mbox_file_task(self, file_key: str, recipient_id: str) -> Dict[str, 
             "type": "mbox",
             "current_message": 0,
         }
+        mark_finished(
+            channel_id,
+            status=enums.ImportStatus.FAILED.value,
+            success_count=0,
+            failure_count=0,
+            error=error_msg,
+        )
         return {
             "status": "FAILURE",
             "result": result,
             "error": error_msg,
         }
+
+    channel = get_import_channel(channel_id)
+    mark_started(channel_id)
 
     try:
         # Get storage and create S3 seekable reader
@@ -238,8 +258,16 @@ def process_mbox_file_task(self, file_key: str, recipient_id: str) -> Dict[str, 
             # Pass 1: Index messages
             message_indices = index_mbox_messages(reader)
             total_messages = len(message_indices)
+            update_import_state(channel_id, total_messages=total_messages)
 
             if total_messages == 0:
+                mark_finished(
+                    channel_id,
+                    status=enums.ImportStatus.COMPLETED.value,
+                    success_count=0,
+                    failure_count=0,
+                    total_messages=0,
+                )
                 return {
                     "status": "SUCCESS",
                     "result": {
@@ -333,6 +361,7 @@ def process_mbox_file_task(self, file_key: str, recipient_id: str) -> Dict[str, 
                             message_content,
                             is_import=True,
                             is_import_sender=is_import_sender,
+                            channel=channel,
                         ):
                             success_count += 1
                         else:
@@ -355,6 +384,14 @@ def process_mbox_file_task(self, file_key: str, recipient_id: str) -> Dict[str, 
             "current_message": current_message,
         }
 
+        mark_finished(
+            channel_id,
+            status=enums.ImportStatus.COMPLETED.value,
+            success_count=success_count,
+            failure_count=failure_count,
+            total_messages=total_messages,
+        )
+
         return {
             "status": "SUCCESS",
             "result": result,
@@ -376,6 +413,14 @@ def process_mbox_file_task(self, file_key: str, recipient_id: str) -> Dict[str, 
             "type": "mbox",
             "current_message": current_message,
         }
+        mark_finished(
+            channel_id,
+            status=enums.ImportStatus.FAILED.value,
+            success_count=success_count,
+            failure_count=failure_count,
+            total_messages=total_messages,
+            error="An error occurred while processing the MBOX file.",
+        )
         return {
             "status": "FAILURE",
             "result": result,

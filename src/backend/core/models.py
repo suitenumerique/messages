@@ -2174,6 +2174,45 @@ class InboundMessage(BaseModel):
 class BlobManager(models.Manager):
     """Custom Manager for Blob model."""
 
+    @staticmethod
+    def _prepare_ciphertext(content: bytes, sha256_hash: bytes):
+        """Compress then encrypt ``content`` for storage. Pure: no DB, no S3.
+
+        Returns ``(original_size, compression, encrypted_content,
+        encryption_key_id)`` — everything needed to persist a Blob row OR
+        push the ciphertext straight to object storage. Shared by
+        ``create_blob`` (PostgreSQL) and ``create_blob_on_s3`` (object
+        storage) so both produce byte-identical ciphertext for a given sha.
+
+        ``sha256_hash`` is bound as AAD by the encryption layer, so it must
+        be the digest of ``content``; a swap onto a different storage path
+        then fails the auth tag at decrypt time.
+        """
+        # Resolve algorithm + level from the configured spec ("zstd:3" etc.).
+        try:
+            compression, zstd_level = parse_compression_spec(
+                settings.MESSAGES_BLOBS_COMPRESS
+            )
+        except ValueError as exc:
+            raise ValidationError({"compression": str(exc)}) from exc
+
+        original_size = len(content)
+        if compression == CompressionTypeChoices.ZSTD:
+            compressed_content = pyzstd.compress(content, level_or_option=zstd_level)
+            logger.debug(
+                "Compressed blob from %d bytes to %d bytes (%.1f%% reduction)",
+                original_size,
+                len(compressed_content),
+                (1 - len(compressed_content) / original_size) * 100,
+            )
+        else:
+            compressed_content = content
+
+        encrypted_content, encryption_key_id = TieredStorageService().encrypt(
+            compressed_content, sha256_hash
+        )
+        return original_size, compression, encrypted_content, encryption_key_id
+
     def create_blob(
         self,
         content: bytes,
@@ -2228,33 +2267,8 @@ class BlobManager(models.Manager):
         if existing is not None:
             return existing
 
-        # Resolve algorithm + level from the configured spec ("zstd:3" etc.).
-        try:
-            compression, zstd_level = parse_compression_spec(
-                settings.MESSAGES_BLOBS_COMPRESS
-            )
-        except ValueError as exc:
-            raise ValidationError({"compression": str(exc)}) from exc
-
-        original_size = len(content)
-        if compression == CompressionTypeChoices.ZSTD:
-            compressed_content = pyzstd.compress(content, level_or_option=zstd_level)
-            logger.debug(
-                "Compressed blob from %d bytes to %d bytes (%.1f%% reduction)",
-                original_size,
-                len(compressed_content),
-                (1 - len(compressed_content) / original_size) * 100,
-            )
-        else:
-            compressed_content = content
-
-        # Encrypt content if encryption keys are configured. ``sha256_hash``
-        # is bound as AAD so the ciphertext can't be substituted across
-        # blobs — a swap onto a different storage path will fail the auth
-        # tag at decrypt time.
-        service = TieredStorageService()
-        encrypted_content, encryption_key_id = service.encrypt(
-            compressed_content, sha256_hash
+        original_size, compression, encrypted_content, encryption_key_id = (
+            self._prepare_ciphertext(content, sha256_hash)
         )
 
         # Drop any caller-supplied kwargs that would collide with the
@@ -2295,6 +2309,94 @@ class BlobManager(models.Manager):
             blob.id,
             original_size,
             compression.label,
+            content_type,
+        )
+
+        return blob
+
+    def create_blob_on_s3(
+        self,
+        content: bytes,
+        content_type: str,
+        **kwargs,
+    ) -> "Blob":
+        """Hash-first create-or-dedup, writing the ciphertext straight to S3.
+
+        Same dedup / compress / encrypt contract as ``create_blob`` but the
+        ciphertext is pushed to object storage and the row is inserted with
+        ``storage_location=OBJECT_STORAGE`` / ``raw_content=None`` — skipping
+        the PostgreSQL staging that the hourly ``offload_blobs_task`` would
+        otherwise have to move. Used by imports when
+        ``MESSAGES_IMPORT_BLOBS_DIRECT_TO_S3`` is on and object storage is
+        configured; ``create_blob`` is the fallback when it isn't.
+
+        The S3 PUT runs before the row INSERT. If the surrounding
+        transaction rolls back, the stored object is orphaned but harmless:
+        it is content-addressed (``blobs/{key_id}/{sha[:3]}/{sha}``),
+        idempotent on re-PUT, and swept by ``verify_blobs``.
+        """
+        if not content:
+            raise ValidationError({"content": "Content cannot be empty"})
+
+        sha256_hash = hashlib.sha256(content).digest()
+
+        # Hash-first dedup against ANY existing row, whatever its tier: one
+        # sha256 → one row. A pre-existing POSTGRES row is returned as-is
+        # (the periodic offload moves it later); we never double-store.
+        # ``select_for_update`` inside an atomic block guards the same GC
+        # race as ``create_blob``.
+        if connection.in_atomic_block:
+            existing = self.select_for_update().filter(sha256=sha256_hash).first()
+        else:
+            existing = self.filter(sha256=sha256_hash).first()
+        if existing is not None:
+            return existing
+
+        original_size, compression, encrypted_content, encryption_key_id = (
+            self._prepare_ciphertext(content, sha256_hash)
+        )
+
+        # Upload the ciphertext before inserting the row. ``put_ciphertext``
+        # dedups against an existing OBJECT_STORAGE sibling and returns the
+        # (key_id, compression) actually in force for this sha256.
+        stored_key_id, stored_compression = TieredStorageService().put_ciphertext(
+            sha256_hash, encrypted_content, encryption_key_id, compression
+        )
+
+        for reserved in (
+            "sha256",
+            "size",
+            "size_compressed",
+            "content_type",
+            "compression",
+            "raw_content",
+            "storage_location",
+            "encryption_key_id",
+        ):
+            kwargs.pop(reserved, None)
+
+        with transaction.atomic(), sha256_advisory_lock(sha256_hash):
+            existing = self.filter(sha256=sha256_hash).first()
+            if existing is not None:
+                return existing
+            blob = self.create(
+                sha256=sha256_hash,
+                size=original_size,
+                # raw_content is None, so Blob.save() can't derive
+                # size_compressed from it — set it explicitly.
+                size_compressed=len(encrypted_content),
+                content_type=content_type,
+                compression=stored_compression,
+                raw_content=None,
+                storage_location=BlobStorageLocationChoices.OBJECT_STORAGE,
+                encryption_key_id=stored_key_id,
+                **kwargs,
+            )
+
+        logger.debug(
+            "Created object-storage blob %s: %d bytes, content type %s",
+            blob.id,
+            original_size,
             content_type,
         )
 

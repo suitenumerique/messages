@@ -140,12 +140,18 @@ def deliver_inbound_message(
     imap_flags: list[str] | None = None,
     channel: models.Channel | None = None,
     skip_inbound_queue: bool = False,
+    force_lock: bool = False,
 ) -> bool:  # Return True on success, False on failure
     """Deliver a parsed inbound email message.
 
     For imports (is_import=True) or when skip_inbound_queue=True, messages are created
     directly without spam checking. For regular messages, they are queued for spam
     processing via rspamd. Warning: messages imported here could be is_sender=True.
+
+    ``force_lock`` makes the import path take the per-mailbox advisory lock it
+    normally skips: the resumable batch pipeline runs concurrent batches against
+    the same mailbox, so the find-or-create-thread critical section must be
+    serialized to avoid splitting a conversation across two threads.
 
     raw_data is not parsed again, just stored as is.
     """
@@ -195,6 +201,7 @@ def deliver_inbound_message(
             imap_flags=imap_flags,
             channel=channel,
             is_spam=False,  # Bypassed messages are never marked as spam
+            force_lock=force_lock,
         )
 
         # Send autoreply for internal messages (not imports, which are historical)

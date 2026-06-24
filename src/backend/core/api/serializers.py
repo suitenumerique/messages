@@ -1971,6 +1971,91 @@ class ImportIMAPSerializer(ImportBaseSerializer):
     )
 
 
+class MessageImportSerializer(serializers.ModelSerializer):
+    """Read-only view of an import run (a ``Channel`` with type=import).
+
+    The mutable run state lives in ``Channel.settings["import"]``; this
+    serializer surfaces it (status, counts, progress) so the frontend can
+    poll the import resource instead of the raw Celery task state.
+    """
+
+    status = serializers.SerializerMethodField()
+    source_type = serializers.SerializerMethodField()
+    total_messages = serializers.SerializerMethodField()
+    success_count = serializers.SerializerMethodField()
+    failure_count = serializers.SerializerMethodField()
+    progress = serializers.SerializerMethodField()
+    error = serializers.SerializerMethodField()
+    started_at = serializers.SerializerMethodField()
+    finished_at = serializers.SerializerMethodField()
+
+    class Meta:
+        model = models.Channel
+        fields = [
+            "id",
+            "name",
+            "mailbox",
+            "status",
+            "source_type",
+            "total_messages",
+            "success_count",
+            "failure_count",
+            "progress",
+            "error",
+            "started_at",
+            "finished_at",
+            "created_at",
+            "updated_at",
+        ]
+        read_only_fields = fields
+
+    @staticmethod
+    def _run(obj):
+        return (obj.settings or {}).get("import", {})
+
+    @extend_schema_field(serializers.CharField(allow_null=True))
+    def get_status(self, obj):
+        return self._run(obj).get("status")
+
+    @extend_schema_field(serializers.CharField(allow_null=True))
+    def get_source_type(self, obj):
+        return self._run(obj).get("source_type")
+
+    @extend_schema_field(serializers.IntegerField())
+    def get_total_messages(self, obj):
+        return self._run(obj).get("total_messages") or 0
+
+    @extend_schema_field(serializers.IntegerField())
+    def get_success_count(self, obj):
+        return self._run(obj).get("success_count") or 0
+
+    @extend_schema_field(serializers.IntegerField())
+    def get_failure_count(self, obj):
+        return self._run(obj).get("failure_count") or 0
+
+    @extend_schema_field(serializers.FloatField())
+    def get_progress(self, obj):
+        """Percentage of processed (success+failure) over total, 0-100."""
+        run = self._run(obj)
+        total = run.get("total_messages") or 0
+        if not total:
+            return 0.0
+        done = (run.get("success_count") or 0) + (run.get("failure_count") or 0)
+        return round(min(done, total) / total * 100, 1)
+
+    @extend_schema_field(serializers.CharField(allow_null=True))
+    def get_error(self, obj):
+        return self._run(obj).get("error")
+
+    @extend_schema_field(serializers.CharField(allow_null=True))
+    def get_started_at(self, obj):
+        return self._run(obj).get("started_at")
+
+    @extend_schema_field(serializers.CharField(allow_null=True))
+    def get_finished_at(self, obj):
+        return self._run(obj).get("finished_at")
+
+
 class ChannelSerializer(CreateOnlyFieldsMixin, serializers.ModelSerializer):
     """Serialize Channel model."""
 

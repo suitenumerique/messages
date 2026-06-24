@@ -532,6 +532,56 @@ def _fetch_message_with_flags_retry(
     raise RuntimeError(f"Failed to fetch message {msg_num} after {max_retries} retries")
 
 
+def get_folder_uidvalidity(imap_connection, folder: str) -> Optional[int]:
+    """Read a folder's UIDVALIDITY without changing the selected folder.
+
+    UIDVALIDITY is the contract that makes UIDs durable: if the server changes
+    it, every previously-collected UID for that folder is meaningless and the
+    batch import must refuse to reuse them. Returns ``None`` when it cannot be
+    read (the caller treats that as "cannot resume this folder").
+    """
+    try:
+        status, data = imap_connection.status(f'"{folder}"', "(UIDVALIDITY)")
+        if status != "OK" or not data or not data[0]:
+            return None
+        raw = data[0] if isinstance(data[0], bytes) else str(data[0]).encode()
+        match = re.search(rb"UIDVALIDITY\s+(\d+)", raw)
+        return int(match.group(1)) if match else None
+    except Exception as e:
+        logger.debug("Failed to read UIDVALIDITY for folder %s: %s", folder, e)
+        return None
+
+
+def uid_search_all(imap_connection, folder: str) -> List[int]:
+    """Select ``folder`` and return all message UIDs, ascending.
+
+    Uses ``UID SEARCH`` (not sequence numbers): UIDs are stable for the life of
+    a UIDVALIDITY, so a batch can re-fetch exactly the same messages on resume.
+    The ascending sort makes the index deterministic so a batch number always
+    maps to the same UID slice.
+    """
+    if not select_imap_folder(imap_connection, folder):
+        return []
+    status, data = imap_connection.uid("SEARCH", None, "ALL")
+    if status != "OK" or not data or not data[0]:
+        return []
+    return sorted(int(tok) for tok in data[0].split())
+
+
+def uid_fetch_message(imap_connection, uid: int) -> Tuple[List[str], Optional[bytes]]:
+    """Fetch one message by UID, returning ``(flags, raw_email)``.
+
+    Assumes the owning folder is already selected and its UIDVALIDITY verified.
+    """
+    status, msg_data = imap_connection.uid("FETCH", str(uid), "(FLAGS BODY.PEEK[])")
+    if status != "OK":
+        raise RuntimeError(f"UID FETCH {uid} failed: {msg_data}")
+    flags, raw_email = _extract_imap_flags_and_content(msg_data)
+    if raw_email is None:
+        raise RuntimeError(f"No raw email found for UID {uid}")
+    return flags, raw_email
+
+
 def process_folder_messages(  # pylint: disable=too-many-arguments
     imap_connection: Any,
     folder: str,
@@ -544,6 +594,7 @@ def process_folder_messages(  # pylint: disable=too-many-arguments
     failure_count: int,
     current_message: int,
     total_messages: int,
+    channel: Any = None,
 ) -> Tuple[int, int, int]:
     """Process messages in a specific folder."""
 
@@ -588,6 +639,7 @@ def process_folder_messages(  # pylint: disable=too-many-arguments
                         is_import_sender=is_sender,
                         imap_labels=[display_name],
                         imap_flags=flags,
+                        channel=channel,
                     ):
                         success_count += 1
                     else:

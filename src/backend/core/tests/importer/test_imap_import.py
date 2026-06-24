@@ -12,6 +12,11 @@ import pytest
 from core import enums, factories
 from core.forms import IMAPImportForm
 from core.models import Mailbox, MailDomain, Message, Thread
+from core.services.importer.imap import (
+    get_folder_uidvalidity,
+    uid_fetch_message,
+    uid_search_all,
+)
 from core.services.importer.imap_tasks import import_imap_messages_task
 
 from messages.celery_app import app as celery_app
@@ -456,3 +461,50 @@ def test_imap_import_task_duplicate_recipients(
         # Critical: Verify that no validation errors were logged
         # This ensures the deduplication logic works correctly
         mock_logger.error.assert_not_called()
+
+
+class TestImapUidHelpers:
+    """UID-based enumeration/fetch primitives that make IMAP batches resumable.
+
+    Pure protocol parsing — exercised against a mock connection, no server.
+    """
+
+    def test_get_folder_uidvalidity_parses_status(self):
+        conn = MagicMock()
+        conn.status.return_value = ("OK", [b'"INBOX" (UIDVALIDITY 1234567)'])
+        assert get_folder_uidvalidity(conn, "INBOX") == 1234567
+
+    def test_get_folder_uidvalidity_none_on_failure(self):
+        conn = MagicMock()
+        conn.status.return_value = ("NO", [b""])
+        assert get_folder_uidvalidity(conn, "INBOX") is None
+
+    @patch("core.services.importer.imap.select_imap_folder", return_value=True)
+    def test_uid_search_all_returns_sorted_uids(self, _select):
+        conn = MagicMock()
+        conn.uid.return_value = ("OK", [b"3 1 2 10"])
+        assert uid_search_all(conn, "INBOX") == [1, 2, 3, 10]
+
+    @patch("core.services.importer.imap.select_imap_folder", return_value=False)
+    def test_uid_search_all_empty_when_select_fails(self, _select):
+        conn = MagicMock()
+        assert uid_search_all(conn, "INBOX") == []
+
+    def test_uid_fetch_message_returns_flags_and_body(self):
+        conn = MagicMock()
+        conn.uid.return_value = (
+            "OK",
+            [
+                (b"1 (UID 1 FLAGS (\\Seen) BODY[] {11}", b"From: a@b\r\n"),
+                b")",
+            ],
+        )
+        flags, raw = uid_fetch_message(conn, 1)
+        assert raw == b"From: a@b\r\n"
+        assert "\\Seen" in flags
+
+    def test_uid_fetch_message_raises_without_body(self):
+        conn = MagicMock()
+        conn.uid.return_value = ("OK", [b"1 (UID 1 FLAGS (\\Seen))"])
+        with pytest.raises(RuntimeError):
+            uid_fetch_message(conn, 1)

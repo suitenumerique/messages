@@ -10,28 +10,26 @@ import pypff
 from celery.utils.log import get_task_logger
 from jmap_email import parse_email
 
+from core import enums
 from core.mda.inbound import deliver_inbound_message
 from core.models import Mailbox
 from core.utils import ThreadReindexDeferrer, ThreadStatsUpdateDeferrer
 
 from messages.celery_app import app as celery_app
 
+from .channel import (
+    get_import_channel,
+    mark_finished,
+    mark_started,
+    update_import_state,
+)
 from .pst import (
-    FLAG_STATUS_FOLLOWUP,
-    FOLDER_TYPE_DELETED,
-    FOLDER_TYPE_DRAFTS,
-    FOLDER_TYPE_INBOX,
-    FOLDER_TYPE_NORMAL,
-    FOLDER_TYPE_OUTBOX,
-    FOLDER_TYPE_SENT,
-    MSGFLAG_READ,
-    MSGFLAG_UNSENT,
     PSTFileUnreadableError,
     assert_pst_readable,
     build_special_folder_map,
+    compute_pst_labels_flags,
     count_pst_messages,
     get_store_owner_email,
-    sanitize_folder_name,
     walk_pst_messages,
 )
 from .s3_seekable import BUFFER_NONE, S3SeekableReader
@@ -40,13 +38,16 @@ logger = get_task_logger(__name__)
 
 
 @celery_app.task(bind=True)
-def process_pst_file_task(self, file_key: str, recipient_id: str) -> Dict[str, Any]:
+def process_pst_file_task(
+    self, file_key: str, recipient_id: str, channel_id: str | None = None
+) -> Dict[str, Any]:
     """
     Process a PST file asynchronously.
 
     Args:
         file_key: The storage key of the PST file
         recipient_id: The UUID of the recipient mailbox
+        channel_id: Optional import-channel id grouping the created messages
 
     Returns:
         Dict with task status and result
@@ -68,11 +69,21 @@ def process_pst_file_task(self, file_key: str, recipient_id: str) -> Dict[str, A
             "type": "pst",
             "current_message": 0,
         }
+        mark_finished(
+            channel_id,
+            status=enums.ImportStatus.FAILED.value,
+            success_count=0,
+            failure_count=0,
+            error=error_msg,
+        )
         return {
             "status": "FAILURE",
             "result": result,
             "error": error_msg,
         }
+
+    channel = get_import_channel(channel_id)
+    mark_started(channel_id)
 
     try:
         message_imports_storage = storages["message-imports"]
@@ -119,6 +130,7 @@ def process_pst_file_task(self, file_key: str, recipient_id: str) -> Dict[str, A
 
                 # Count messages
                 total_messages = count_pst_messages(pst, special_folder_map)
+                update_import_state(channel_id, total_messages=total_messages)
 
                 # Iterate messages chronologically. The deferrers batch all
                 # OpenSearch indexing and thread-stats updates into a single
@@ -185,45 +197,18 @@ def process_pst_file_task(self, file_key: str, recipient_id: str) -> Dict[str, A
                                 failure_count += 1
                                 continue
 
-                            # Compute IMAP-compatible flags from PST message flags
-                            imap_flags = []
-                            if message_flags & MSGFLAG_READ:
-                                imap_flags.append("\\Seen")
-                            if (
-                                message_flags & MSGFLAG_UNSENT
-                                or folder_type == FOLDER_TYPE_DRAFTS
-                            ):
-                                imap_flags.append("\\Draft")
-                            if (
-                                flag_status is not None
-                                and flag_status >= FLAG_STATUS_FOLLOWUP
-                            ):
-                                imap_flags.append("\\Flagged")
-
-                            # Compute IMAP-compatible labels from folder type
-                            imap_labels = []
-                            if folder_type == FOLDER_TYPE_SENT:
-                                imap_labels.append("Sent")
-                            elif folder_type == FOLDER_TYPE_DELETED:
-                                imap_labels.append("Trash")
-                            elif folder_type == FOLDER_TYPE_OUTBOX:
-                                imap_labels.append("OUTBOX")
-                            elif folder_type in (
-                                FOLDER_TYPE_INBOX,
-                                FOLDER_TYPE_DRAFTS,
-                            ):
-                                pass  # No label for inbox/drafts
-                            elif folder_path:
-                                imap_labels.append(sanitize_folder_name(folder_path))
-
-                            # Subfolders of special folders also get their
-                            # subfolder name as an additional label.
-                            if folder_path and folder_type != FOLDER_TYPE_NORMAL:
-                                imap_labels.append(sanitize_folder_name(folder_path))
-
-                            is_sender = folder_type in (
-                                FOLDER_TYPE_SENT,
-                                FOLDER_TYPE_OUTBOX,
+                            # Map PST folder/message metadata to IMAP-style
+                            # labels, flags and sender (shared with the batch
+                            # importer so both paths land identical messages).
+                            (
+                                imap_labels,
+                                imap_flags,
+                                is_sender,
+                            ) = compute_pst_labels_flags(
+                                folder_type,
+                                folder_path,
+                                message_flags,
+                                flag_status,
                             )
 
                             if deliver_inbound_message(
@@ -234,6 +219,7 @@ def process_pst_file_task(self, file_key: str, recipient_id: str) -> Dict[str, A
                                 is_import_sender=is_sender,
                                 imap_labels=imap_labels,
                                 imap_flags=imap_flags,
+                                channel=channel,
                             ):
                                 success_count += 1
                             else:
@@ -259,6 +245,14 @@ def process_pst_file_task(self, file_key: str, recipient_id: str) -> Dict[str, A
             "current_message": current_message,
         }
 
+        mark_finished(
+            channel_id,
+            status=enums.ImportStatus.COMPLETED.value,
+            success_count=success_count,
+            failure_count=failure_count,
+            total_messages=total_messages,
+        )
+
         return {
             "status": "SUCCESS",
             "result": result,
@@ -275,6 +269,14 @@ def process_pst_file_task(self, file_key: str, recipient_id: str) -> Dict[str, A
             "type": "pst",
             "current_message": current_message,
         }
+        mark_finished(
+            channel_id,
+            status=enums.ImportStatus.FAILED.value,
+            success_count=success_count,
+            failure_count=failure_count,
+            total_messages=total_messages,
+            error=f"PST_UNREADABLE: {e}",
+        )
         return {
             "status": "FAILURE",
             "result": result,
@@ -296,6 +298,14 @@ def process_pst_file_task(self, file_key: str, recipient_id: str) -> Dict[str, A
             "type": "pst",
             "current_message": current_message,
         }
+        mark_finished(
+            channel_id,
+            status=enums.ImportStatus.FAILED.value,
+            success_count=success_count,
+            failure_count=failure_count,
+            total_messages=total_messages,
+            error="An error occurred while processing the PST file.",
+        )
         return {
             "status": "FAILURE",
             "result": result,

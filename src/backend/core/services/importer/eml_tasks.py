@@ -10,23 +10,29 @@ from celery.utils.log import get_task_logger
 from jmap_email import first_address_email, parse_email
 from sentry_sdk import capture_exception
 
+from core import enums
 from core.mda.inbound import deliver_inbound_message
 from core.models import Mailbox
 from core.utils import ThreadReindexDeferrer, ThreadStatsUpdateDeferrer
 
 from messages.celery_app import app as celery_app
 
+from .channel import get_import_channel, mark_finished, mark_started
+
 logger = get_task_logger(__name__)
 
 
 @celery_app.task(bind=True)
-def process_eml_file_task(self, file_key: str, recipient_id: str) -> Dict[str, Any]:
+def process_eml_file_task(
+    self, file_key: str, recipient_id: str, channel_id: str | None = None
+) -> Dict[str, Any]:
     """
     Process an EML file asynchronously.
 
     Args:
         file_key: The storage key of the EML file
         recipient_id: The UUID of the recipient mailbox
+        channel_id: Optional import-channel id grouping the created message
 
     Returns:
         Dict with task status and result
@@ -43,11 +49,22 @@ def process_eml_file_task(self, file_key: str, recipient_id: str) -> Dict[str, A
             "type": "eml",
             "current_message": 0,
         }
+        mark_finished(
+            channel_id,
+            status=enums.ImportStatus.FAILED.value,
+            success_count=0,
+            failure_count=1,
+            total_messages=1,
+            error=error_msg,
+        )
         return {
             "status": "FAILURE",
             "result": result,
             "error": error_msg,
         }
+
+    channel = get_import_channel(channel_id)
+    mark_started(channel_id, total_messages=1)
 
     try:
         # Update progress state
@@ -92,6 +109,14 @@ def process_eml_file_task(self, file_key: str, recipient_id: str) -> Dict[str, A
                 "type": "eml",
                 "current_message": 1,
             }
+            mark_finished(
+                channel_id,
+                status=enums.ImportStatus.FAILED.value,
+                success_count=0,
+                failure_count=1,
+                total_messages=1,
+                error=error_msg,
+            )
             return {
                 "status": "FAILURE",
                 "result": result,
@@ -103,6 +128,14 @@ def process_eml_file_task(self, file_key: str, recipient_id: str) -> Dict[str, A
         if parsed_email is None:
             error_msg = "Failed to parse email message"
             logger.error("%s for key %s", error_msg, file_key)
+            mark_finished(
+                channel_id,
+                status=enums.ImportStatus.FAILED.value,
+                success_count=0,
+                failure_count=1,
+                total_messages=1,
+                error=error_msg,
+            )
             return {
                 "status": "FAILURE",
                 "result": {
@@ -137,6 +170,7 @@ def process_eml_file_task(self, file_key: str, recipient_id: str) -> Dict[str, A
                 file_content,
                 is_import=True,
                 is_import_sender=is_import_sender,
+                channel=channel,
             )
 
         result = {
@@ -147,6 +181,19 @@ def process_eml_file_task(self, file_key: str, recipient_id: str) -> Dict[str, A
             "type": "eml",
             "current_message": 1,
         }
+
+        mark_finished(
+            channel_id,
+            status=(
+                enums.ImportStatus.COMPLETED.value
+                if success
+                else enums.ImportStatus.FAILED.value
+            ),
+            success_count=1 if success else 0,
+            failure_count=0 if success else 1,
+            total_messages=1,
+            error=None if success else "Failed to deliver message",
+        )
 
         if success:
             return {
@@ -176,6 +223,14 @@ def process_eml_file_task(self, file_key: str, recipient_id: str) -> Dict[str, A
             "type": "eml",
             "current_message": 1,
         }
+        mark_finished(
+            channel_id,
+            status=enums.ImportStatus.FAILED.value,
+            success_count=0,
+            failure_count=1,
+            total_messages=1,
+            error="An error occurred while processing the EML file.",
+        )
         return {
             "status": "FAILURE",
             "result": result,

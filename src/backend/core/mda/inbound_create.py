@@ -7,6 +7,7 @@ import re
 import uuid
 from contextlib import contextmanager, nullcontext
 
+from django.conf import settings
 from django.core.exceptions import ValidationError
 from django.db import connection, transaction
 from django.db.utils import Error as DjangoDbError
@@ -32,6 +33,7 @@ from core.mda.utils import thread_snippet
 from core.services.importer.labels import (
     compute_labels_and_flags,
 )
+from core.services.tiered_storage import TieredStorageService
 
 logger = logging.getLogger(__name__)
 
@@ -212,6 +214,7 @@ def _create_message_from_inbound(  # pylint: disable=too-many-arguments
     channel: models.Channel | None = None,
     is_spam: bool = False,
     is_outbound: bool = False,
+    force_lock: bool = False,
 ) -> models.Message | None:
     """Create a message and thread from parsed email data.
 
@@ -236,9 +239,15 @@ def _create_message_from_inbound(  # pylint: disable=too-many-arguments
     # critical section. Serialize it per mailbox under a Postgres advisory lock
     # (held only across this DB-only work) so concurrent inbound deliveries to
     # the same mailbox cannot create duplicate Messages or split a conversation
-    # into two parallel Threads. Imports are a single-writer backfill path and
-    # skip the lock to avoid serializing bulk loads.
-    lock_ctx = nullcontext() if is_import else inbound_mailbox_lock(mailbox.id)
+    # into two parallel Threads. The monolithic import path is a single-writer
+    # backfill and skips the lock to avoid serializing bulk loads; the resumable
+    # batch pipeline runs concurrent batches against the same mailbox and opts
+    # back in via ``force_lock``.
+    lock_ctx = (
+        inbound_mailbox_lock(mailbox.id)
+        if (not is_import or force_lock)
+        else nullcontext()
+    )
     with transaction.atomic(), lock_ctx:
         # Recheck for an already-stored copy now that we hold the lock.
         # deliver_inbound_message dedups before queueing, but the async
@@ -417,10 +426,27 @@ def _create_message_from_inbound(  # pylint: disable=too-many-arguments
             with transaction.atomic():
                 blob = None
                 if not is_outbound:
-                    blob = models.Blob.objects.create_blob(
-                        content=raw_data,
-                        content_type="message/rfc822",
+                    # Imports can write the blob straight to object storage
+                    # (skipping the Postgres-then-offload double write) when
+                    # MESSAGES_IMPORT_BLOBS_DIRECT_TO_S3 is on and object
+                    # storage is configured. Any other path — and imports in
+                    # environments without object storage (dev/test) — fall
+                    # back to the Postgres blob path transparently.
+                    use_s3 = (
+                        is_import
+                        and settings.MESSAGES_IMPORT_BLOBS_DIRECT_TO_S3
+                        and TieredStorageService().enabled
                     )
+                    if use_s3:
+                        blob = models.Blob.objects.create_blob_on_s3(
+                            content=raw_data,
+                            content_type="message/rfc822",
+                        )
+                    else:
+                        blob = models.Blob.objects.create_blob(
+                            content=raw_data,
+                            content_type="message/rfc822",
+                        )
 
                 message = models.Message.objects.create(
                     thread=thread,

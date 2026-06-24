@@ -295,16 +295,25 @@ class TieredStorageService:
             return None
         return existing["encryption_key_id"], existing["compression"]
 
-    def upload_blob(self, blob: "Blob") -> "tuple[int, int]":
-        """Upload a blob's already-encrypted raw_content to object storage.
+    def put_ciphertext(
+        self,
+        sha256_bytes: bytes,
+        encrypted_content: bytes,
+        encryption_key_id: int,
+        compression: int,
+    ) -> "tuple[int, int]":
+        """Upload already-encrypted ciphertext for a sha256 to object storage.
 
-        Returns ``(encryption_key_id, compression)`` — the values the
-        caller must persist on the new blob row before flipping its
-        ``storage_location`` to OBJECT_STORAGE. On a dedup hit these
-        come from the existing sibling, not from the new blob: a given
+        Content-level counterpart of ``upload_blob``: takes the bytes
+        directly instead of reading them from a Blob row, so callers that
+        haven't persisted a row yet (e.g. direct-to-S3 import writes) can
+        reuse the exact same dedup + key + path logic.
+
+        On a dedup hit the returned ``(encryption_key_id, compression)``
+        come from the existing sibling, not from the arguments: a given
         sha256 keeps the encryption key and compression algorithm of
-        whichever copy hit the bucket first, regardless of what the
-        configured defaults are at upload time.
+        whichever copy hit the bucket first. The caller must persist the
+        returned pair on the row.
 
         We trust the DB: if a sibling row exists, we dedup unconditionally.
         Drift between DB and S3 (external deletion, lifecycle expiry, etc.)
@@ -314,24 +323,40 @@ class TieredStorageService:
         """
         if not self.enabled:
             raise RuntimeError("Object storage is not configured")
-        if blob.raw_content is None:
-            raise ValueError(f"Blob {blob.id} has no raw_content to upload")
 
-        sha256_bytes = bytes(blob.sha256)
         sibling = self.get_existing_sibling(sha256_bytes)
         if sibling is not None:
             existing_key_id, existing_compression = sibling
             logger.debug(
-                "Blob %s deduped against existing sibling at key_id=%d",
-                blob.id,
+                "Ciphertext for sha=%s deduped against existing sibling at key_id=%d",
+                sha256_bytes.hex()[:8],
                 existing_key_id,
             )
             return existing_key_id, existing_compression
 
-        key = self.compute_storage_key_for_blob(blob)
-        self.storage.save(key, ContentFile(blob.raw_content))
-        logger.info("Uploaded blob %s to object storage", blob.id)
-        return blob.encryption_key_id, blob.compression
+        key = self.compute_storage_key(sha256_bytes, encryption_key_id)
+        self.storage.save(key, ContentFile(encrypted_content))
+        logger.info(
+            "Uploaded ciphertext for sha=%s to object storage", sha256_bytes.hex()[:8]
+        )
+        return encryption_key_id, compression
+
+    def upload_blob(self, blob: "Blob") -> "tuple[int, int]":
+        """Upload a persisted blob's already-encrypted raw_content to S3.
+
+        Thin wrapper over ``put_ciphertext`` that reads the ciphertext and
+        metadata from a Blob row. Returns ``(encryption_key_id,
+        compression)`` — the values the caller must persist on the row
+        before flipping its ``storage_location`` to OBJECT_STORAGE.
+        """
+        if blob.raw_content is None:
+            raise ValueError(f"Blob {blob.id} has no raw_content to upload")
+        return self.put_ciphertext(
+            bytes(blob.sha256),
+            blob.raw_content,
+            blob.encryption_key_id,
+            blob.compression,
+        )
 
     def download_blob(self, blob: "Blob") -> bytes:
         """Download and decrypt a blob's content. Returns compressed bytes."""

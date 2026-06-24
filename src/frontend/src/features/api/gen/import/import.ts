@@ -5,19 +5,29 @@
  * This is the messages API schema.
  * OpenAPI spec version: 1.0.0 (v1.0)
  */
-import { useMutation } from "@tanstack/react-query";
+import { useMutation, useQuery } from "@tanstack/react-query";
 import type {
+  DataTag,
+  DefinedInitialDataOptions,
+  DefinedUseQueryResult,
   MutationFunction,
   QueryClient,
+  QueryFunction,
+  QueryKey,
+  UndefinedInitialDataOptions,
   UseMutationOptions,
   UseMutationResult,
+  UseQueryOptions,
+  UseQueryResult,
 } from "@tanstack/react-query";
 
 import type {
+  ImportCancelResponse,
   ImportFileCreate202,
   ImportFileRequest,
   ImportIMAPRequest,
   ImportImapCreate202,
+  MessageImport,
 } from ".././models";
 
 import { fetchAPI } from "../../fetch-api";
@@ -699,6 +709,452 @@ export const useImportImapCreate = <
   TContext
 > => {
   const mutationOptions = getImportImapCreateMutationOptions(options);
+
+  return useMutation(mutationOptions, queryClient);
+};
+/**
+ * List, retrieve and cancel import runs.
+
+An import run is a ``Channel`` with ``type=import`` grouping every
+message an import created. Visible to users with edit access to the
+target mailbox (and superusers); the object-level filter in
+``get_queryset`` doubles as the authorization gate.
+ */
+export type importsListResponse200 = {
+  data: MessageImport[];
+  status: 200;
+};
+
+export type importsListResponseSuccess = importsListResponse200 & {
+  headers: Headers;
+};
+export type importsListResponse = importsListResponseSuccess;
+
+export const getImportsListUrl = () => {
+  return `/api/v1.0/imports/`;
+};
+
+export const importsList = async (
+  options?: RequestInit,
+): Promise<importsListResponse> => {
+  return fetchAPI<importsListResponse>(getImportsListUrl(), {
+    ...options,
+    method: "GET",
+  });
+};
+
+export const getImportsListQueryKey = () => {
+  return [`/api/v1.0/imports/`] as const;
+};
+
+export const getImportsListQueryOptions = <
+  TData = Awaited<ReturnType<typeof importsList>>,
+  TError = ErrorType<unknown>,
+>(options?: {
+  query?: Partial<
+    UseQueryOptions<Awaited<ReturnType<typeof importsList>>, TError, TData>
+  >;
+  request?: SecondParameter<typeof fetchAPI>;
+}) => {
+  const { query: queryOptions, request: requestOptions } = options ?? {};
+
+  const queryKey = queryOptions?.queryKey ?? getImportsListQueryKey();
+
+  const queryFn: QueryFunction<Awaited<ReturnType<typeof importsList>>> = ({
+    signal,
+  }) => importsList({ signal, ...requestOptions });
+
+  return { queryKey, queryFn, ...queryOptions } as UseQueryOptions<
+    Awaited<ReturnType<typeof importsList>>,
+    TError,
+    TData
+  > & { queryKey: DataTag<QueryKey, TData, TError> };
+};
+
+export type ImportsListQueryResult = NonNullable<
+  Awaited<ReturnType<typeof importsList>>
+>;
+export type ImportsListQueryError = ErrorType<unknown>;
+
+export function useImportsList<
+  TData = Awaited<ReturnType<typeof importsList>>,
+  TError = ErrorType<unknown>,
+>(
+  options: {
+    query: Partial<
+      UseQueryOptions<Awaited<ReturnType<typeof importsList>>, TError, TData>
+    > &
+      Pick<
+        DefinedInitialDataOptions<
+          Awaited<ReturnType<typeof importsList>>,
+          TError,
+          Awaited<ReturnType<typeof importsList>>
+        >,
+        "initialData"
+      >;
+    request?: SecondParameter<typeof fetchAPI>;
+  },
+  queryClient?: QueryClient,
+): DefinedUseQueryResult<TData, TError> & {
+  queryKey: DataTag<QueryKey, TData, TError>;
+};
+export function useImportsList<
+  TData = Awaited<ReturnType<typeof importsList>>,
+  TError = ErrorType<unknown>,
+>(
+  options?: {
+    query?: Partial<
+      UseQueryOptions<Awaited<ReturnType<typeof importsList>>, TError, TData>
+    > &
+      Pick<
+        UndefinedInitialDataOptions<
+          Awaited<ReturnType<typeof importsList>>,
+          TError,
+          Awaited<ReturnType<typeof importsList>>
+        >,
+        "initialData"
+      >;
+    request?: SecondParameter<typeof fetchAPI>;
+  },
+  queryClient?: QueryClient,
+): UseQueryResult<TData, TError> & {
+  queryKey: DataTag<QueryKey, TData, TError>;
+};
+export function useImportsList<
+  TData = Awaited<ReturnType<typeof importsList>>,
+  TError = ErrorType<unknown>,
+>(
+  options?: {
+    query?: Partial<
+      UseQueryOptions<Awaited<ReturnType<typeof importsList>>, TError, TData>
+    >;
+    request?: SecondParameter<typeof fetchAPI>;
+  },
+  queryClient?: QueryClient,
+): UseQueryResult<TData, TError> & {
+  queryKey: DataTag<QueryKey, TData, TError>;
+};
+
+export function useImportsList<
+  TData = Awaited<ReturnType<typeof importsList>>,
+  TError = ErrorType<unknown>,
+>(
+  options?: {
+    query?: Partial<
+      UseQueryOptions<Awaited<ReturnType<typeof importsList>>, TError, TData>
+    >;
+    request?: SecondParameter<typeof fetchAPI>;
+  },
+  queryClient?: QueryClient,
+): UseQueryResult<TData, TError> & {
+  queryKey: DataTag<QueryKey, TData, TError>;
+} {
+  const queryOptions = getImportsListQueryOptions(options);
+
+  const query = useQuery(queryOptions, queryClient) as UseQueryResult<
+    TData,
+    TError
+  > & { queryKey: DataTag<QueryKey, TData, TError> };
+
+  query.queryKey = queryOptions.queryKey;
+
+  return query;
+}
+
+/**
+ * List, retrieve and cancel import runs.
+
+An import run is a ``Channel`` with ``type=import`` grouping every
+message an import created. Visible to users with edit access to the
+target mailbox (and superusers); the object-level filter in
+``get_queryset`` doubles as the authorization gate.
+ */
+export type importsRetrieveResponse200 = {
+  data: MessageImport;
+  status: 200;
+};
+
+export type importsRetrieveResponseSuccess = importsRetrieveResponse200 & {
+  headers: Headers;
+};
+export type importsRetrieveResponse = importsRetrieveResponseSuccess;
+
+export const getImportsRetrieveUrl = (id: string) => {
+  return `/api/v1.0/imports/${id}/`;
+};
+
+export const importsRetrieve = async (
+  id: string,
+  options?: RequestInit,
+): Promise<importsRetrieveResponse> => {
+  return fetchAPI<importsRetrieveResponse>(getImportsRetrieveUrl(id), {
+    ...options,
+    method: "GET",
+  });
+};
+
+export const getImportsRetrieveQueryKey = (id?: string) => {
+  return [`/api/v1.0/imports/${id}/`] as const;
+};
+
+export const getImportsRetrieveQueryOptions = <
+  TData = Awaited<ReturnType<typeof importsRetrieve>>,
+  TError = ErrorType<unknown>,
+>(
+  id: string,
+  options?: {
+    query?: Partial<
+      UseQueryOptions<
+        Awaited<ReturnType<typeof importsRetrieve>>,
+        TError,
+        TData
+      >
+    >;
+    request?: SecondParameter<typeof fetchAPI>;
+  },
+) => {
+  const { query: queryOptions, request: requestOptions } = options ?? {};
+
+  const queryKey = queryOptions?.queryKey ?? getImportsRetrieveQueryKey(id);
+
+  const queryFn: QueryFunction<Awaited<ReturnType<typeof importsRetrieve>>> = ({
+    signal,
+  }) => importsRetrieve(id, { signal, ...requestOptions });
+
+  return {
+    queryKey,
+    queryFn,
+    enabled: !!id,
+    ...queryOptions,
+  } as UseQueryOptions<
+    Awaited<ReturnType<typeof importsRetrieve>>,
+    TError,
+    TData
+  > & { queryKey: DataTag<QueryKey, TData, TError> };
+};
+
+export type ImportsRetrieveQueryResult = NonNullable<
+  Awaited<ReturnType<typeof importsRetrieve>>
+>;
+export type ImportsRetrieveQueryError = ErrorType<unknown>;
+
+export function useImportsRetrieve<
+  TData = Awaited<ReturnType<typeof importsRetrieve>>,
+  TError = ErrorType<unknown>,
+>(
+  id: string,
+  options: {
+    query: Partial<
+      UseQueryOptions<
+        Awaited<ReturnType<typeof importsRetrieve>>,
+        TError,
+        TData
+      >
+    > &
+      Pick<
+        DefinedInitialDataOptions<
+          Awaited<ReturnType<typeof importsRetrieve>>,
+          TError,
+          Awaited<ReturnType<typeof importsRetrieve>>
+        >,
+        "initialData"
+      >;
+    request?: SecondParameter<typeof fetchAPI>;
+  },
+  queryClient?: QueryClient,
+): DefinedUseQueryResult<TData, TError> & {
+  queryKey: DataTag<QueryKey, TData, TError>;
+};
+export function useImportsRetrieve<
+  TData = Awaited<ReturnType<typeof importsRetrieve>>,
+  TError = ErrorType<unknown>,
+>(
+  id: string,
+  options?: {
+    query?: Partial<
+      UseQueryOptions<
+        Awaited<ReturnType<typeof importsRetrieve>>,
+        TError,
+        TData
+      >
+    > &
+      Pick<
+        UndefinedInitialDataOptions<
+          Awaited<ReturnType<typeof importsRetrieve>>,
+          TError,
+          Awaited<ReturnType<typeof importsRetrieve>>
+        >,
+        "initialData"
+      >;
+    request?: SecondParameter<typeof fetchAPI>;
+  },
+  queryClient?: QueryClient,
+): UseQueryResult<TData, TError> & {
+  queryKey: DataTag<QueryKey, TData, TError>;
+};
+export function useImportsRetrieve<
+  TData = Awaited<ReturnType<typeof importsRetrieve>>,
+  TError = ErrorType<unknown>,
+>(
+  id: string,
+  options?: {
+    query?: Partial<
+      UseQueryOptions<
+        Awaited<ReturnType<typeof importsRetrieve>>,
+        TError,
+        TData
+      >
+    >;
+    request?: SecondParameter<typeof fetchAPI>;
+  },
+  queryClient?: QueryClient,
+): UseQueryResult<TData, TError> & {
+  queryKey: DataTag<QueryKey, TData, TError>;
+};
+
+export function useImportsRetrieve<
+  TData = Awaited<ReturnType<typeof importsRetrieve>>,
+  TError = ErrorType<unknown>,
+>(
+  id: string,
+  options?: {
+    query?: Partial<
+      UseQueryOptions<
+        Awaited<ReturnType<typeof importsRetrieve>>,
+        TError,
+        TData
+      >
+    >;
+    request?: SecondParameter<typeof fetchAPI>;
+  },
+  queryClient?: QueryClient,
+): UseQueryResult<TData, TError> & {
+  queryKey: DataTag<QueryKey, TData, TError>;
+} {
+  const queryOptions = getImportsRetrieveQueryOptions(id, options);
+
+  const query = useQuery(queryOptions, queryClient) as UseQueryResult<
+    TData,
+    TError
+  > & { queryKey: DataTag<QueryKey, TData, TError> };
+
+  query.queryKey = queryOptions.queryKey;
+
+  return query;
+}
+
+/**
+ * Cancel an import: delete its messages and clean orphan threads.
+ */
+export type importsCancelCreateResponse200 = {
+  data: ImportCancelResponse;
+  status: 200;
+};
+
+export type importsCancelCreateResponse403 = {
+  data: void;
+  status: 403;
+};
+
+export type importsCancelCreateResponse404 = {
+  data: void;
+  status: 404;
+};
+
+export type importsCancelCreateResponseSuccess =
+  importsCancelCreateResponse200 & {
+    headers: Headers;
+  };
+export type importsCancelCreateResponseError = (
+  | importsCancelCreateResponse403
+  | importsCancelCreateResponse404
+) & {
+  headers: Headers;
+};
+
+export type importsCancelCreateResponse =
+  | importsCancelCreateResponseSuccess
+  | importsCancelCreateResponseError;
+
+export const getImportsCancelCreateUrl = (id: string) => {
+  return `/api/v1.0/imports/${id}/cancel/`;
+};
+
+export const importsCancelCreate = async (
+  id: string,
+  options?: RequestInit,
+): Promise<importsCancelCreateResponse> => {
+  return fetchAPI<importsCancelCreateResponse>(getImportsCancelCreateUrl(id), {
+    ...options,
+    method: "POST",
+  });
+};
+
+export const getImportsCancelCreateMutationOptions = <
+  TError = ErrorType<void>,
+  TContext = unknown,
+>(options?: {
+  mutation?: UseMutationOptions<
+    Awaited<ReturnType<typeof importsCancelCreate>>,
+    TError,
+    { id: string },
+    TContext
+  >;
+  request?: SecondParameter<typeof fetchAPI>;
+}): UseMutationOptions<
+  Awaited<ReturnType<typeof importsCancelCreate>>,
+  TError,
+  { id: string },
+  TContext
+> => {
+  const mutationKey = ["importsCancelCreate"];
+  const { mutation: mutationOptions, request: requestOptions } = options
+    ? options.mutation &&
+      "mutationKey" in options.mutation &&
+      options.mutation.mutationKey
+      ? options
+      : { ...options, mutation: { ...options.mutation, mutationKey } }
+    : { mutation: { mutationKey }, request: undefined };
+
+  const mutationFn: MutationFunction<
+    Awaited<ReturnType<typeof importsCancelCreate>>,
+    { id: string }
+  > = (props) => {
+    const { id } = props ?? {};
+
+    return importsCancelCreate(id, requestOptions);
+  };
+
+  return { mutationFn, ...mutationOptions };
+};
+
+export type ImportsCancelCreateMutationResult = NonNullable<
+  Awaited<ReturnType<typeof importsCancelCreate>>
+>;
+
+export type ImportsCancelCreateMutationError = ErrorType<void>;
+
+export const useImportsCancelCreate = <
+  TError = ErrorType<void>,
+  TContext = unknown,
+>(
+  options?: {
+    mutation?: UseMutationOptions<
+      Awaited<ReturnType<typeof importsCancelCreate>>,
+      TError,
+      { id: string },
+      TContext
+    >;
+    request?: SecondParameter<typeof fetchAPI>;
+  },
+  queryClient?: QueryClient,
+): UseMutationResult<
+  Awaited<ReturnType<typeof importsCancelCreate>>,
+  TError,
+  { id: string },
+  TContext
+> => {
+  const mutationOptions = getImportsCancelCreateMutationOptions(options);
 
   return useMutation(mutationOptions, queryClient);
 };

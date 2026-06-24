@@ -1285,6 +1285,83 @@ def count_pst_messages(pst_file, special_folder_map: dict | None = None) -> int:
     return count
 
 
+def _walk_email_folders(
+    pst_file, special_folder_map: dict
+) -> Generator[tuple[object, str, str], None, None]:
+    """Yield every email folder once as ``(folder, folder_type, folder_path)``.
+
+    Single source of truth for the PST folder traversal: depth-limited DFS from
+    the IPM subtree, pruning non-mail folders (and their subtrees), resolving
+    each folder's type (entry-ID/well-known map, then name fallback for direct
+    children) and building hierarchical label paths. Both the chronological
+    message walk and the resumable index build on this so they can never drift
+    apart on folder classification.
+    """
+    start_folder = _find_ipm_subtree(pst_file)
+
+    # Build well-known folder type map from SourceWellKnownFolderType named
+    # property (Exchange/O365 migration PSTs). Merges with entry-ID-based map,
+    # with entry-ID taking priority.
+    wkft_map = build_well_known_folder_map(pst_file, start_folder)
+    merged_map = {**wkft_map, **special_folder_map}
+
+    def _walk(folder, folder_type, folder_path, depth=0):
+        if depth > MAX_FOLDER_DEPTH:
+            logger.warning("Maximum folder depth exceeded in PST file")
+            return
+        if not _is_email_folder(folder):
+            return
+
+        ft = _get_folder_type(folder, merged_map)
+        if ft != FOLDER_TYPE_NORMAL:
+            folder_type = ft
+
+        yield folder, folder_type, folder_path
+
+        # Children inherit the parent's folder_type (so they keep the special
+        # treatment, e.g. is_import_sender for Sent subfolders) and build
+        # hierarchical paths. Special folders are entered with folder_path=""
+        # so their children start from just their own name.
+        try:
+            for i in range(folder.number_of_sub_folders):
+                child = folder.get_sub_folder(i)
+                child_name = None
+                try:
+                    if child.name:
+                        child_name = sanitize_folder_name(child.name)
+                except Exception:
+                    logger.debug("Failed to read subfolder name")
+                if folder_path and child_name:
+                    child_path = f"{folder_path}/{child_name}"
+                else:
+                    child_path = child_name or folder_path
+                yield from _walk(child, folder_type, child_path, depth + 1)
+        except Exception:
+            logger.debug("Failed to iterate sub_folders in folder %s", folder_path)
+
+    try:
+        for i in range(start_folder.number_of_sub_folders):
+            subfolder = start_folder.get_sub_folder(i)
+            name = "Inbox"
+            try:
+                if subfolder.name:
+                    name = sanitize_folder_name(subfolder.name)
+            except Exception:
+                logger.debug("Failed to read root subfolder name")
+            folder_type = _get_folder_type(subfolder, merged_map)
+            # Fall back to name-based detection for direct children of
+            # the IPM subtree (standard Outlook special folders).
+            if folder_type == FOLDER_TYPE_NORMAL:
+                folder_type = _detect_folder_type_by_name(name)
+            # Special folders get empty path — their label comes from
+            # folder_type, not folder_path. Their children build paths
+            # starting from just their own name.
+            folder_path = "" if folder_type != FOLDER_TYPE_NORMAL else name
+            yield from _walk(subfolder, folder_type, folder_path)
+    except Exception:
+        logger.debug("Failed to iterate root sub_folders")
+
+
 def walk_pst_messages(
     pst_file,
     special_folder_map: dict,
@@ -1310,31 +1387,16 @@ def walk_pst_messages(
         could not be read from libpff or when EML reconstruction raised; the
         caller is expected to count those as failures rather than skip them.
     """
-    start_folder = _find_ipm_subtree(pst_file)
-
-    # Build well-known folder type map from SourceWellKnownFolderType named
-    # property (Exchange/O365 migration PSTs). Merges with entry-ID-based map,
-    # with entry-ID taking priority.
-    wkft_map = build_well_known_folder_map(pst_file, start_folder)
-    merged_map = {**wkft_map, **special_folder_map}
-
     # (timestamp, folder_ref, msg_index, folder_type, folder_path, flags, flag_status)
     collected = []
     # Keep folder references alive to prevent GC from releasing pypff resources
+    # between the metadata pass and the (separate) reconstruction pass.
     _folder_refs = []
 
-    def _collect_folder(folder, folder_type, folder_path, depth=0):
-        if depth > MAX_FOLDER_DEPTH:
-            logger.warning("Maximum folder depth exceeded in PST file")
-            return
-        if not _is_email_folder(folder):
-            return
+    for folder, folder_type, folder_path in _walk_email_folders(
+        pst_file, special_folder_map
+    ):
         _folder_refs.append(folder)
-
-        ft = _get_folder_type(folder, merged_map)
-        if ft != FOLDER_TYPE_NORMAL:
-            folder_type = ft
-
         try:
             for i in range(folder.number_of_sub_messages):
                 try:
@@ -1359,49 +1421,6 @@ def walk_pst_messages(
                     )
         except Exception:
             logger.debug("Failed to iterate sub_messages in folder %s", folder_path)
-
-        # Children inherit the parent's folder_type (so they keep the special
-        # treatment, e.g. is_import_sender for Sent subfolders) and build
-        # hierarchical paths. Special folders are called with folder_path=""
-        # so their children start from just their own name.
-        try:
-            for i in range(folder.number_of_sub_folders):
-                child = folder.get_sub_folder(i)
-                child_name = None
-                try:
-                    if child.name:
-                        child_name = sanitize_folder_name(child.name)
-                except Exception:
-                    logger.debug("Failed to read subfolder name")
-                if folder_path and child_name:
-                    child_path = f"{folder_path}/{child_name}"
-                else:
-                    child_path = child_name or folder_path
-                _collect_folder(child, folder_type, child_path, depth + 1)
-        except Exception:
-            logger.debug("Failed to iterate sub_folders in folder %s", folder_path)
-
-    try:
-        for i in range(start_folder.number_of_sub_folders):
-            subfolder = start_folder.get_sub_folder(i)
-            name = "Inbox"
-            try:
-                if subfolder.name:
-                    name = sanitize_folder_name(subfolder.name)
-            except Exception:
-                logger.debug("Failed to read root subfolder name")
-            folder_type = _get_folder_type(subfolder, merged_map)
-            # Fall back to name-based detection for direct children of
-            # the IPM subtree (standard Outlook special folders).
-            if folder_type == FOLDER_TYPE_NORMAL:
-                folder_type = _detect_folder_type_by_name(name)
-            # Special folders get empty path — their label comes from
-            # folder_type, not folder_path. Their children build paths
-            # starting from just their own name.
-            folder_path = "" if folder_type != FOLDER_TYPE_NORMAL else name
-            _collect_folder(subfolder, folder_type, folder_path)
-    except Exception:
-        logger.debug("Failed to iterate root sub_folders")
 
     # Sort by timestamp (oldest first), None timestamps go last
     collected.sort(key=lambda x: (x[0] is None, x[0] or 0))
@@ -1440,3 +1459,164 @@ def walk_pst_messages(
             yield folder_type, folder_path, flags, flag_status, None
             continue
         yield folder_type, folder_path, flags, flag_status, eml_bytes
+
+
+def collect_pst_message_index(pst_file, special_folder_map: dict) -> list[dict]:
+    """Build the resumable, chronological per-message index of a PST.
+
+    Phase-1 of a batch import: walk the same folders :func:`walk_pst_messages`
+    does and emit, for every message, a self-describing locator dict::
+
+        {folder_id, msg_index, folder_type, folder_path, flags, flag_status}
+
+    Sorted oldest-first with the exact key the monolithic walk uses, so a
+    locator at position *k* designates the same message the walk yields at *k*
+    — the property the orchestrator relies on to rebuild identical batches on
+    resume. ``folder_id`` is the folder's stable libpff identifier (the same
+    one :func:`build_pst_folder_map` keys on), letting a batch re-resolve the
+    message after the PST is re-opened in another worker. No EML is built here.
+    """
+    collected = []
+    for folder, folder_type, folder_path in _walk_email_folders(
+        pst_file, special_folder_map
+    ):
+        try:
+            folder_id = folder.get_identifier()
+        except Exception:
+            folder_id = None
+        if folder_id is None:
+            # Without a stable id a batch cannot re-resolve the folder; skipping
+            # keeps the index resumable rather than silently un-fetchable later.
+            logger.warning(
+                "PST index: folder %s has no identifier; skipping its messages",
+                folder_path,
+            )
+            continue
+        try:
+            for i in range(folder.number_of_sub_messages):
+                try:
+                    message = folder.get_sub_message(i)
+                    collected.append(
+                        {
+                            "_ts": _get_message_timestamp(message),
+                            "folder_id": folder_id,
+                            "msg_index": i,
+                            "folder_type": folder_type,
+                            "folder_path": folder_path,
+                            "flags": _get_message_flags(message),
+                            "flag_status": _get_flag_status(message),
+                        }
+                    )
+                except Exception:
+                    logger.debug(
+                        "Failed to read message %d in folder %s", i, folder_path
+                    )
+        except Exception:
+            logger.debug("Failed to iterate sub_messages in folder %s", folder_path)
+
+    collected.sort(key=lambda loc: (loc["_ts"] is None, loc["_ts"] or 0))
+    # Drop the transient datetime sort key: locators travel as Celery args and
+    # must stay JSON-serializable.
+    for loc in collected:
+        loc.pop("_ts", None)
+    return collected
+
+
+def build_pst_folder_map(pst_file, special_folder_map: dict) -> dict:
+    """Map each email folder's stable identifier to its live pypff folder.
+
+    A batch importer re-opens the PST and uses this to turn an index locator's
+    ``folder_id`` back into the folder it must read. Walks the same folders as
+    :func:`collect_pst_message_index`, so every indexed id resolves here.
+    """
+    folder_map = {}
+    for folder, _folder_type, folder_path in _walk_email_folders(
+        pst_file, special_folder_map
+    ):
+        try:
+            folder_id = folder.get_identifier()
+        except Exception:
+            logger.debug("Failed to read folder identifier for %s", folder_path)
+            continue
+        if folder_id is not None:
+            folder_map[folder_id] = folder
+    return folder_map
+
+
+def reconstruct_eml_for_locator(
+    folder_map: dict,
+    locator: dict,
+    store_email: str | None = None,
+    recipient_email: str | None = None,
+) -> bytes | None:
+    """Resolve one index locator to EML bytes, or ``None`` if unreadable.
+
+    ``None`` mirrors :func:`walk_pst_messages`' contract: the caller counts it
+    as a failure rather than silently dropping the message.
+    """
+    folder = folder_map.get(locator["folder_id"])
+    if folder is None:
+        logger.warning(
+            "PST resolve: folder %s not found in map", locator.get("folder_id")
+        )
+        return None
+    try:
+        message = folder.get_sub_message(locator["msg_index"])
+    except Exception:
+        logger.warning(
+            "PST resolve: failed to read message %s in folder %s",
+            locator.get("msg_index"),
+            locator.get("folder_path"),
+        )
+        return None
+    try:
+        return reconstruct_eml(
+            message, store_email=store_email, recipient_email=recipient_email
+        )
+    except Exception:
+        logger.exception(
+            "PST resolve: failed to reconstruct message %s in folder %s",
+            locator.get("msg_index"),
+            locator.get("folder_path"),
+        )
+        return None
+
+
+def compute_pst_labels_flags(
+    folder_type: str,
+    folder_path: str,
+    message_flags: int,
+    flag_status: int | None,
+) -> tuple[list[str], list[str], bool]:
+    """Map PST folder/message metadata to IMAP-style labels, flags and sender.
+
+    Single definition shared by the monolithic task and the batch importer so
+    an imported message lands with the same labels/flags whichever path ran.
+    Returns ``(imap_labels, imap_flags, is_sender)``.
+    """
+    imap_flags = []
+    if message_flags & MSGFLAG_READ:
+        imap_flags.append("\\Seen")
+    if message_flags & MSGFLAG_UNSENT or folder_type == FOLDER_TYPE_DRAFTS:
+        imap_flags.append("\\Draft")
+    if flag_status is not None and flag_status >= FLAG_STATUS_FOLLOWUP:
+        imap_flags.append("\\Flagged")
+
+    imap_labels = []
+    if folder_type == FOLDER_TYPE_SENT:
+        imap_labels.append("Sent")
+    elif folder_type == FOLDER_TYPE_DELETED:
+        imap_labels.append("Trash")
+    elif folder_type == FOLDER_TYPE_OUTBOX:
+        imap_labels.append("OUTBOX")
+    elif folder_type in (FOLDER_TYPE_INBOX, FOLDER_TYPE_DRAFTS):
+        pass  # No label for inbox/drafts
+    elif folder_path:
+        imap_labels.append(sanitize_folder_name(folder_path))
+
+    # Subfolders of special folders also get their subfolder name as a label.
+    if folder_path and folder_type != FOLDER_TYPE_NORMAL:
+        imap_labels.append(sanitize_folder_name(folder_path))
+
+    is_sender = folder_type in (FOLDER_TYPE_SENT, FOLDER_TYPE_OUTBOX)
+    return imap_labels, imap_flags, is_sender

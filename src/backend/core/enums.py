@@ -219,6 +219,39 @@ class ChannelTypes(StrEnum):
     API_KEY = "api_key"
     WEBHOOK = "webhook"
     CALDAV = "caldav"
+    # An import run. The channel groups every message created by one import
+    # (Message.channel FK), so the run is identifiable and cancellable, and
+    # carries the run state in ``settings["import"]`` (creds, if any, in
+    # ``encrypted_settings``). Excluded from the integration-channel API.
+    IMPORT = "import"
+
+
+class ImportSource(StrEnum):
+    """Source of an import run, stored in ``Channel.settings["import"]["source_type"]``.
+
+    Plain string values (no Django model / migration) — the import run state
+    lives entirely in the import Channel's JSON settings.
+    """
+
+    PST = "pst"
+    MBOX = "mbox"
+    EML = "eml"
+    IMAP = "imap"
+
+
+class ImportStatus(StrEnum):
+    """Lifecycle of an import run, stored in ``Channel.settings["import"]["status"]``.
+
+    ``pending`` → ``running`` → terminal (``completed`` / ``failed`` /
+    ``cancelled``). ``indexing`` is reserved for the split-task pipeline.
+    """
+
+    PENDING = "pending"
+    INDEXING = "indexing"
+    RUNNING = "running"
+    COMPLETED = "completed"
+    FAILED = "failed"
+    CANCELLED = "cancelled"
 
 
 class WebhookEvents(StrEnum):

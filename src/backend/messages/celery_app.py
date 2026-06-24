@@ -66,4 +66,12 @@ if not settings.DISABLE_CELERY_BEAT_SCHEDULE:
             "schedule": 3600.0,
             "options": {"queue": "default"},
         },
+        "reap-stalled-imports": {
+            # Re-dispatch the not-yet-completed batches of any import whose
+            # heartbeat went stale (worker crash / OOM mid-batch). Idempotent:
+            # mime_id dedup means re-running a batch creates no duplicates.
+            "task": "core.services.importer.orchestrator.reap_stalled_imports_task",
+            "schedule": 300.0,  # Every 5 minutes
+            "options": {"queue": "default"},
+        },
     }

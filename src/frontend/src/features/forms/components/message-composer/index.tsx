@@ -154,14 +154,12 @@ export const MessageComposer = React.forwardRef<MessageComposerHandle, MessageCo
      */
     const getInitialContent = () => {
         // Parse initial content
-        const initialContent = defaultValue
-            ? JSON.parse(defaultValue)
-            : [{ type: "paragraph", content: "" }];
+        let initialContent = [{ type: "paragraph", content: "" }];
 
         if (!quotedMessage) return initialContent;
         return initialContent.concat([{
             type: "quoted-message",
-            content: undefined,
+            content: initialContent,
             props: {
                 mode: quoteType!,
                 messageId: quotedMessage.id,
@@ -332,6 +330,10 @@ export const MessageComposer = React.forwardRef<MessageComposerHandle, MessageCo
         editorRef.current = editor;
         if (!editor) return;
         handleChange(editor, false);
+
+        if (!defaultValue) return;
+        const blocks = editor.tryParseHTMLToBlocks(defaultValue!);
+        editor.replaceBlocks(editor.document, blocks);
     }, [editor])
 
     useEffect(() => {

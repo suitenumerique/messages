@@ -5,11 +5,18 @@ from typing import Any, Dict
 
 from celery.utils.log import get_task_logger
 
+from core import enums
 from core.models import Mailbox
 from core.utils import ThreadReindexDeferrer, ThreadStatsUpdateDeferrer
 
 from messages.celery_app import app as celery_app
 
+from .channel import (
+    get_import_channel,
+    mark_finished,
+    mark_started,
+    update_import_state,
+)
 from .imap import (
     IMAPConnectionManager,
     create_folder_mapping,
@@ -31,6 +38,7 @@ def import_imap_messages_task(
     password: str,
     use_ssl: bool,
     recipient_id: str,
+    channel_id: str | None = None,
 ) -> Dict[str, Any]:
     """Import messages from an IMAP server.
 
@@ -41,6 +49,7 @@ def import_imap_messages_task(
         password: Password for login
         use_ssl: Whether to use SSL
         recipient_id: ID of the recipient mailbox
+        channel_id: Optional import-channel id grouping the created messages
 
     Returns:
         Dict with task status and result
@@ -53,6 +62,8 @@ def import_imap_messages_task(
     try:
         # Get recipient mailbox
         recipient = Mailbox.objects.get(id=recipient_id)
+        channel = get_import_channel(channel_id)
+        mark_started(channel_id)
 
         # Connect to IMAP server using context manager
         with IMAPConnectionManager(
@@ -79,6 +90,8 @@ def import_imap_messages_task(
                     if message_list:
                         folder_messages[folder_name] = message_list
                         total_messages += len(message_list)
+
+            update_import_state(channel_id, total_messages=total_messages)
 
             # Process each folder (reusing cached message lists). The
             # deferrers batch OpenSearch indexing and thread-stats updates
@@ -122,6 +135,7 @@ def import_imap_messages_task(
                         failure_count=failure_count,
                         current_message=current_message,
                         total_messages=total_messages,
+                        channel=channel,
                     )
 
         # Determine appropriate message status
@@ -143,6 +157,14 @@ def import_imap_messages_task(
             "current_message": current_message,
         }
 
+        mark_finished(
+            channel_id,
+            status=enums.ImportStatus.COMPLETED.value,
+            success_count=success_count,
+            failure_count=failure_count,
+            total_messages=total_messages,
+        )
+
         return {"status": "SUCCESS", "result": result, "error": None}
 
     except Mailbox.DoesNotExist:
@@ -155,6 +177,13 @@ def import_imap_messages_task(
             "type": "imap",
             "current_message": 0,
         }
+        mark_finished(
+            channel_id,
+            status=enums.ImportStatus.FAILED.value,
+            success_count=0,
+            failure_count=0,
+            error=error_msg,
+        )
         return {"status": "FAILURE", "result": result, "error": error_msg}
 
     except Exception as e:
@@ -168,4 +197,12 @@ def import_imap_messages_task(
             "type": "imap",
             "current_message": current_message,
         }
+        mark_finished(
+            channel_id,
+            status=enums.ImportStatus.FAILED.value,
+            success_count=success_count,
+            failure_count=failure_count,
+            total_messages=total_messages,
+            error=str(e),
+        )
         return {"status": "FAILURE", "result": result, "error": str(e)}

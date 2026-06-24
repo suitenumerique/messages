@@ -44,7 +44,7 @@ type FormFields = z.infer<typeof importerFormSchema>;
 
 type StepFormProps = {
     onUploading: () => void;
-    onSuccess: (taskId: string) => void;
+    onSuccess: (importId: string) => void;
     onError: (error: string | null) => void;
     error: string | null;
     step: IMPORT_STEP;
@@ -58,14 +58,14 @@ export const StepForm = ({ onUploading, onSuccess, onError, error, step }: StepF
         mutation: {
             meta: { noGlobalError: true },
             onError: () => onError(t('An error occurred while importing messages.')),
-            onSuccess: (data) => onSuccess((data as importImapCreateResponse202).data.task_id!)
+            onSuccess: (data) => onSuccess((data as importImapCreateResponse202).data.import_id!)
         }
     });
     const archiveMutation = useImportFileCreate({
         mutation: {
             meta: { noGlobalError: true },
             onError: () => onError(t('An error occurred while importing messages.')),
-            onSuccess: (data) => onSuccess((data as importFileCreateResponse202).data.task_id!)
+            onSuccess: (data) => onSuccess((data as importFileCreateResponse202).data.import_id!)
         }
     });
     const bucketUploadManager = useBucketUpload({

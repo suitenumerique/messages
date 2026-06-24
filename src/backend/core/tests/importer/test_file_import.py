@@ -11,14 +11,17 @@ from unittest.mock import (
 
 from django.core.files.storage import storages
 from django.core.files.uploadedfile import SimpleUploadedFile
+from django.test import override_settings
 from django.urls import reverse
 
 import pytest
 
 from core import factories
+from core.enums import BlobStorageLocationChoices
 from core.models import Mailbox, MailDomain, Message, Thread, ThreadAccess
 from core.services.importer.eml_tasks import process_eml_file_task
 from core.services.importer.mbox_tasks import process_mbox_file_task
+from core.services.tiered_storage import TieredStorageService
 
 
 def mock_storage_open(content: bytes):
@@ -502,3 +505,61 @@ This is a test message sent from the mailbox.
 
         # Verify the sender contact is correct
         assert message.sender.email == mailbox_email
+
+
+@pytest.mark.django_db
+@override_settings(MESSAGES_IMPORT_BLOBS_DIRECT_TO_S3=True)
+def test_import_writes_blobs_directly_to_s3(mailbox, mbox_file):
+    """With MESSAGES_IMPORT_BLOBS_DIRECT_TO_S3 on, imported message blobs go
+    straight to object storage instead of being staged in PostgreSQL."""
+    file_key, storage, s3_client = _upload_to_s3(mbox_file)
+    service = TieredStorageService()
+    created_keys = []
+    try:
+        with patch.object(process_mbox_file_task, "update_state", MagicMock()):
+            result = process_mbox_file_task(
+                file_key=file_key, recipient_id=str(mailbox.id)
+            )
+        assert result["status"] == "SUCCESS"
+        assert result["result"]["success_count"] == 3
+
+        messages = Message.objects.exclude(blob=None)
+        assert messages.count() == 3
+        for message in messages:
+            blob = message.blob
+            assert blob.storage_location == BlobStorageLocationChoices.OBJECT_STORAGE
+            assert blob.raw_content is None
+            created_keys.append(TieredStorageService.compute_storage_key_for_blob(blob))
+            # Read path is unchanged and still resolves from S3.
+            assert blob.get_content()
+    finally:
+        for key in created_keys:
+            if service.storage.exists(key):
+                service.storage.delete(key)
+        s3_client.delete_object(Bucket=storage.bucket_name, Key=file_key)
+
+
+@pytest.mark.django_db
+@override_settings(MESSAGES_IMPORT_BLOBS_DIRECT_TO_S3=True)
+def test_import_falls_back_to_postgres_when_object_storage_disabled(mailbox, mbox_file):
+    """Even with the flag on, imports keep using the PostgreSQL blob path when
+    object storage is not configured — so dev/test without S3 still work."""
+    file_key, storage, s3_client = _upload_to_s3(mbox_file)
+    try:
+        with (
+            patch.object(process_mbox_file_task, "update_state", MagicMock()),
+            patch("core.mda.inbound_create.TieredStorageService") as mock_svc,
+        ):
+            mock_svc.return_value.enabled = False
+            result = process_mbox_file_task(
+                file_key=file_key, recipient_id=str(mailbox.id)
+            )
+        assert result["status"] == "SUCCESS"
+
+        messages = Message.objects.exclude(blob=None)
+        assert messages.count() == 3
+        for message in messages:
+            assert message.blob.storage_location == BlobStorageLocationChoices.POSTGRES
+            assert message.blob.raw_content is not None
+    finally:
+        s3_client.delete_object(Bucket=storage.bucket_name, Key=file_key)

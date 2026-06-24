@@ -1662,17 +1662,21 @@
                                     "properties": {
                                         "task_id": {
                                             "type": "string",
-                                            "description": "Task ID for tracking the import"
+                                            "description": "Celery task id for legacy progress tracking"
                                         },
                                         "type": {
                                             "type": "string",
                                             "description": "Type of import (eml, mbox, or pst)"
+                                        },
+                                        "import_id": {
+                                            "type": "string",
+                                            "description": "Id of the import resource (poll GET /imports/{id}/ for status, progress and counts)"
                                         }
                                     }
                                 }
                             }
                         },
-                        "description": "Import started. Returns Celery task ID for tracking."
+                        "description": "Import started. Returns the import id (and Celery task id)."
                     },
                     "400": {
                         "description": "Invalid input data or file format"
@@ -1831,17 +1835,21 @@
                                     "properties": {
                                         "task_id": {
                                             "type": "string",
-                                            "description": "Task ID for tracking the import"
+                                            "description": "Celery task id for legacy progress tracking"
                                         },
                                         "type": {
                                             "type": "string",
                                             "description": "Type of import (imap)"
+                                        },
+                                        "import_id": {
+                                            "type": "string",
+                                            "description": "Id of the import resource (poll GET /imports/{id}/ for status, progress and counts)"
                                         }
                                     }
                                 }
                             }
                         },
-                        "description": "IMAP import started. Returns Celery task ID for tracking the import progress."
+                        "description": "IMAP import started. Returns the import id (and Celery task id)."
                     },
                     "400": {
                         "description": "Invalid input data or IMAP connection parameters"
@@ -1851,6 +1859,113 @@
                     },
                     "404": {
                         "description": "Specified mailbox not found"
+                    }
+                }
+            }
+        },
+        "/api/v1.0/imports/": {
+            "get": {
+                "operationId": "imports_list",
+                "description": "List, retrieve and cancel import runs.\n\nAn import run is a ``Channel`` with ``type=import`` grouping every\nmessage an import created. Visible to users with edit access to the\ntarget mailbox (and superusers); the object-level filter in\n``get_queryset`` doubles as the authorization gate.",
+                "tags": [
+                    "import"
+                ],
+                "security": [
+                    {
+                        "cookieAuth": []
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "type": "array",
+                                    "items": {
+                                        "$ref": "#/components/schemas/MessageImport"
+                                    }
+                                }
+                            }
+                        },
+                        "description": ""
+                    }
+                }
+            }
+        },
+        "/api/v1.0/imports/{id}/": {
+            "get": {
+                "operationId": "imports_retrieve",
+                "description": "List, retrieve and cancel import runs.\n\nAn import run is a ``Channel`` with ``type=import`` grouping every\nmessage an import created. Visible to users with edit access to the\ntarget mailbox (and superusers); the object-level filter in\n``get_queryset`` doubles as the authorization gate.",
+                "parameters": [
+                    {
+                        "in": "path",
+                        "name": "id",
+                        "schema": {
+                            "type": "string"
+                        },
+                        "required": true
+                    }
+                ],
+                "tags": [
+                    "import"
+                ],
+                "security": [
+                    {
+                        "cookieAuth": []
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "$ref": "#/components/schemas/MessageImport"
+                                }
+                            }
+                        },
+                        "description": ""
+                    }
+                }
+            }
+        },
+        "/api/v1.0/imports/{id}/cancel/": {
+            "post": {
+                "operationId": "imports_cancel_create",
+                "description": "Cancel an import: delete its messages and clean orphan threads.",
+                "parameters": [
+                    {
+                        "in": "path",
+                        "name": "id",
+                        "schema": {
+                            "type": "string"
+                        },
+                        "required": true
+                    }
+                ],
+                "tags": [
+                    "import"
+                ],
+                "security": [
+                    {
+                        "cookieAuth": []
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "$ref": "#/components/schemas/ImportCancelResponse"
+                                }
+                            }
+                        },
+                        "description": "Import cancelled: its imported messages are deleted and threads left empty are removed."
+                    },
+                    "403": {
+                        "description": "Permission denied"
+                    },
+                    "404": {
+                        "description": "Import not found"
                     }
                 }
             }
@@ -7721,6 +7836,21 @@
                 "type": "string",
                 "description": "* `unread` - unread\n* `starred` - starred\n* `trashed` - trashed\n* `archived` - archived\n* `spam` - spam"
             },
+            "ImportCancelResponse": {
+                "type": "object",
+                "properties": {
+                    "messages_deleted": {
+                        "type": "integer"
+                    },
+                    "threads_deleted": {
+                        "type": "integer"
+                    }
+                },
+                "required": [
+                    "messages_deleted",
+                    "threads_deleted"
+                ]
+            },
             "ImportFileRequest": {
                 "type": "object",
                 "description": "Serializer for importing email files.",
@@ -9026,6 +9156,102 @@
                     "failed",
                     "retry",
                     "cancelled"
+                ]
+            },
+            "MessageImport": {
+                "type": "object",
+                "description": "Read-only view of an import run (a ``Channel`` with type=import).\n\nThe mutable run state lives in ``Channel.settings[\"import\"]``; this\nserializer surfaces it (status, counts, progress) so the frontend can\npoll the import resource instead of the raw Celery task state.",
+                "properties": {
+                    "id": {
+                        "type": "string",
+                        "format": "uuid",
+                        "readOnly": true,
+                        "description": "primary key for the record as UUID"
+                    },
+                    "name": {
+                        "type": "string",
+                        "readOnly": true,
+                        "description": "Human-readable name for this channel"
+                    },
+                    "mailbox": {
+                        "type": "string",
+                        "format": "uuid",
+                        "description": "Mailbox that receives messages from this channel",
+                        "readOnly": true,
+                        "nullable": true
+                    },
+                    "status": {
+                        "type": "string",
+                        "nullable": true,
+                        "readOnly": true
+                    },
+                    "source_type": {
+                        "type": "string",
+                        "nullable": true,
+                        "readOnly": true
+                    },
+                    "total_messages": {
+                        "type": "integer",
+                        "readOnly": true
+                    },
+                    "success_count": {
+                        "type": "integer",
+                        "readOnly": true
+                    },
+                    "failure_count": {
+                        "type": "integer",
+                        "readOnly": true
+                    },
+                    "progress": {
+                        "type": "number",
+                        "format": "double",
+                        "readOnly": true
+                    },
+                    "error": {
+                        "type": "string",
+                        "nullable": true,
+                        "readOnly": true
+                    },
+                    "started_at": {
+                        "type": "string",
+                        "nullable": true,
+                        "readOnly": true
+                    },
+                    "finished_at": {
+                        "type": "string",
+                        "nullable": true,
+                        "readOnly": true
+                    },
+                    "created_at": {
+                        "type": "string",
+                        "format": "date-time",
+                        "readOnly": true,
+                        "title": "Created on",
+                        "description": "date and time at which a record was created"
+                    },
+                    "updated_at": {
+                        "type": "string",
+                        "format": "date-time",
+                        "readOnly": true,
+                        "title": "Updated on",
+                        "description": "date and time at which a record was last updated"
+                    }
+                },
+                "required": [
+                    "created_at",
+                    "error",
+                    "failure_count",
+                    "finished_at",
+                    "id",
+                    "mailbox",
+                    "name",
+                    "progress",
+                    "source_type",
+                    "started_at",
+                    "status",
+                    "success_count",
+                    "total_messages",
+                    "updated_at"
                 ]
             },
             "MessageRecipient": {

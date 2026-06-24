@@ -7,8 +7,10 @@
  */
 
 export type ImportImapCreate202 = {
-  /** Task ID for tracking the import */
+  /** Celery task id for legacy progress tracking */
   task_id?: string;
   /** Type of import (imap) */
   type?: string;
+  /** Id of the import resource (poll GET /imports/{id}/ for status, progress and counts) */
+  import_id?: string;
 };

@@ -17,6 +17,9 @@ from core.models import Mailbox, MailDomain, Message
 from core.services.importer.pst import (
     FLAG_STATUS_FOLLOWUP,
     FOLDER_TYPE_DELETED,
+    FOLDER_TYPE_DRAFTS,
+    FOLDER_TYPE_INBOX,
+    FOLDER_TYPE_NORMAL,
     FOLDER_TYPE_OUTBOX,
     FOLDER_TYPE_SENT,
     MAX_FOLDER_DEPTH,
@@ -55,9 +58,13 @@ from core.services.importer.pst import (
     _extract_sender_from_mapi,
     _parse_display_recipients,
     assert_pst_readable,
+    build_pst_folder_map,
+    collect_pst_message_index,
+    compute_pst_labels_flags,
     count_pst_messages,
     get_mapi_property,
     reconstruct_eml,
+    reconstruct_eml_for_locator,
     sanitize_folder_name,
     walk_pst_messages,
 )
@@ -1997,3 +2004,169 @@ def shared_mailbox_delegate_send_message():
         plain_text_body="Bonjour, veuillez trouver ci-joint le devis signé.",
         sender_mapi_entries=sender_entries,
     )
+
+
+def _eml_subject(eml_bytes):
+    """Read the Subject header from reconstructed EML bytes."""
+    return email.message_from_bytes(eml_bytes, policy=email.policy.default)["Subject"]
+
+
+class TestPstResumableIndex:
+    """The resumable index must designate the same messages, in the same
+    chronological order, as the monolithic walk — and resolve each back to the
+    identical EML. Exercised on a mock pypff tree (no delivery → no OpenSearch).
+    """
+
+    @staticmethod
+    def _tree():
+        # Messages spread across two folders and three dates; folders carry
+        # stable identifiers so the index can re-resolve them in a batch.
+        m_old = _make_message(
+            subject="Oldest",
+            transport_headers="From: a@example.com\r\nTo: b@example.com\r\n",
+            delivery_time=datetime(2024, 1, 1, tzinfo=timezone.utc),
+        )
+        m_mid = _make_message(
+            subject="Middle",
+            transport_headers="From: c@example.com\r\nTo: b@example.com\r\n",
+            delivery_time=datetime(2024, 6, 1, tzinfo=timezone.utc),
+        )
+        m_new = _make_message(
+            subject="Newest",
+            transport_headers="From: d@example.com\r\nTo: b@example.com\r\n",
+            delivery_time=datetime(2025, 1, 1, tzinfo=timezone.utc),
+        )
+        # Inbox holds new+old out of order to prove the index sorts, not the
+        # on-disk order.
+        inbox = _make_folder(
+            name="Inbox",
+            messages=[m_new, m_old],
+            container_class="IPF.Note",
+            folder_id=10,
+        )
+        sent = _make_folder(
+            name="Sent Items",
+            messages=[m_mid],
+            container_class="IPF.Note",
+            folder_id=20,
+        )
+        root = _make_folder(name="Root", subfolders=[inbox, sent], folder_id=1)
+        pst = Mock()
+        pst.get_root_folder.return_value = root
+        pst.get_message_store.return_value = Mock(number_of_record_sets=0)
+        pst.get_name_to_id_map.side_effect = Exception("no named props")
+        return pst
+
+    def test_index_count_matches_walk(self):
+        pst = self._tree()
+        special_map = {20: FOLDER_TYPE_SENT}
+        index = collect_pst_message_index(pst, special_map)
+        assert len(index) == count_pst_messages(pst, special_map) == 3
+
+    def test_index_order_and_classification_match_walk(self):
+        pst = self._tree()
+        special_map = {20: FOLDER_TYPE_SENT}
+
+        walk = list(walk_pst_messages(pst, special_map))
+        index = collect_pst_message_index(pst, special_map)
+        folder_map = build_pst_folder_map(pst, special_map)
+
+        walk_subjects = [_eml_subject(eml) for *_meta, eml in walk]
+        index_subjects = [
+            _eml_subject(reconstruct_eml_for_locator(folder_map, loc)) for loc in index
+        ]
+        assert index_subjects == walk_subjects == ["Oldest", "Middle", "Newest"]
+
+        # Folder classification travels on the locator: "Middle" lives in Sent.
+        by_subject = dict(zip(index_subjects, index, strict=True))
+        assert by_subject["Middle"]["folder_type"] == FOLDER_TYPE_SENT
+        assert by_subject["Oldest"]["folder_type"] == FOLDER_TYPE_INBOX
+
+    def test_resolution_is_byte_identical_to_walk(self):
+        pst = self._tree()
+        special_map = {20: FOLDER_TYPE_SENT}
+
+        walk = list(walk_pst_messages(pst, special_map))
+        index = collect_pst_message_index(pst, special_map)
+        folder_map = build_pst_folder_map(pst, special_map)
+
+        for (*_meta, walk_eml), loc in zip(walk, index, strict=True):
+            assert reconstruct_eml_for_locator(folder_map, loc) == walk_eml
+
+    def test_folder_without_identifier_is_skipped(self):
+        msg = _make_message(delivery_time=datetime(2025, 1, 1, tzinfo=timezone.utc))
+        # folder_id=None cannot be re-resolved in a batch, so the index drops
+        # its messages (with a warning) rather than emit unfetchable locators.
+        folder = _make_folder(
+            name="Inbox", messages=[msg], container_class="IPF.Note", folder_id=None
+        )
+        root = _make_folder(name="Root", subfolders=[folder], folder_id=1)
+        pst = Mock()
+        pst.get_root_folder.return_value = root
+        pst.get_message_store.return_value = Mock(number_of_record_sets=0)
+        pst.get_name_to_id_map.side_effect = Exception("no named props")
+
+        assert collect_pst_message_index(pst, {}) == []
+
+    def test_missing_locator_resolves_to_none(self):
+        pst = self._tree()
+        folder_map = build_pst_folder_map(pst, {20: FOLDER_TYPE_SENT})
+        # A folder id absent from the map (e.g. a folder that vanished) yields
+        # None so the batch counts it as a failure instead of crashing.
+        assert (
+            reconstruct_eml_for_locator(folder_map, {"folder_id": 999, "msg_index": 0})
+            is None
+        )
+
+
+class TestComputePstLabelsFlags:
+    """Pure mapping of PST folder/message metadata to IMAP labels/flags/sender."""
+
+    def test_inbox_read_message(self):
+        labels, flags, is_sender = compute_pst_labels_flags(
+            FOLDER_TYPE_INBOX, "", MSGFLAG_READ, None
+        )
+        assert labels == []
+        assert flags == ["\\Seen"]
+        assert is_sender is False
+
+    def test_sent_is_sender(self):
+        labels, _flags, is_sender = compute_pst_labels_flags(
+            FOLDER_TYPE_SENT, "", 0, None
+        )
+        assert labels == ["Sent"]
+        assert is_sender is True
+
+    def test_draft_flag_from_unsent(self):
+        labels, flags, _ = compute_pst_labels_flags(
+            FOLDER_TYPE_DRAFTS, "", MSGFLAG_UNSENT, None
+        )
+        assert "\\Draft" in flags
+        assert labels == []
+
+    def test_followup_is_flagged(self):
+        _labels, flags, _ = compute_pst_labels_flags(
+            FOLDER_TYPE_NORMAL, "Work", 0, FLAG_STATUS_FOLLOWUP
+        )
+        assert "\\Flagged" in flags
+
+    def test_normal_folder_uses_path_label(self):
+        labels, _flags, _ = compute_pst_labels_flags(
+            FOLDER_TYPE_NORMAL, "Projects/Acme", 0, None
+        )
+        assert labels == ["Projects/Acme"]
+
+    def test_deleted_and_outbox_labels(self):
+        assert compute_pst_labels_flags(FOLDER_TYPE_DELETED, "", 0, None)[0] == [
+            "Trash"
+        ]
+        assert compute_pst_labels_flags(FOLDER_TYPE_OUTBOX, "", 0, None)[0] == [
+            "OUTBOX"
+        ]
+
+    def test_sent_subfolder_keeps_type_and_adds_path(self):
+        labels, _flags, is_sender = compute_pst_labels_flags(
+            FOLDER_TYPE_SENT, "Clients", 0, None
+        )
+        assert labels == ["Sent", "Clients"]
+        assert is_sender is True

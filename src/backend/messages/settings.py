@@ -593,6 +593,43 @@ class Base(Configuration):
         default=0, environ_name="MESSAGES_BLOBS_OFFLOAD_MIN_SIZE", environ_prefix=None
     )
 
+    # When True, blobs created during an import are written straight to object
+    # storage (``storage_location=OBJECT_STORAGE``) instead of staging their
+    # content in PostgreSQL and waiting for the hourly ``offload_blobs_task``.
+    # This avoids a heavy double write (Postgres then S3) for large imports.
+    # No effect when object storage is not configured: the import transparently
+    # falls back to the PostgreSQL blob path (keeps dev/test working).
+    MESSAGES_IMPORT_BLOBS_DIRECT_TO_S3 = values.BooleanValue(
+        default=False,
+        environ_name="MESSAGES_IMPORT_BLOBS_DIRECT_TO_S3",
+        environ_prefix=None,
+    )
+
+    # When True, file imports (mbox/eml) are split into resumable batches by the
+    # orchestrator instead of running as one monolithic task; a crash then loses
+    # only the in-flight batch and the periodic reaper re-dispatches the rest.
+    # PST/IMAP still use their monolithic task until their batch index lands.
+    MESSAGES_IMPORT_USE_ORCHESTRATOR = values.BooleanValue(
+        default=False,
+        environ_name="MESSAGES_IMPORT_USE_ORCHESTRATOR",
+        environ_prefix=None,
+    )
+    # Number of messages processed per import batch.
+    MESSAGES_IMPORT_BATCH_SIZE = values.PositiveIntegerValue(
+        default=500,
+        environ_name="MESSAGES_IMPORT_BATCH_SIZE",
+        environ_prefix=None,
+    )
+    # An import whose heartbeat is older than this many seconds while still
+    # ``running`` is considered stalled: the reaper re-dispatches its
+    # not-yet-completed batches. Must comfortably exceed a single batch's
+    # worst-case processing time.
+    MESSAGES_IMPORT_STALL_TIMEOUT = values.PositiveIntegerValue(
+        default=900,  # 15 minutes
+        environ_name="MESSAGES_IMPORT_STALL_TIMEOUT",
+        environ_prefix=None,
+    )
+
     # Django fernet encrypted fields settings
     # Can be a list for key rotation: ['new_key', 'old_key']
     SALT_KEY = values.ListValue([], environ_name="SALT_KEY", environ_prefix=None)
@@ -891,6 +928,14 @@ class Base(Configuration):
         "core.services.importer.eml_tasks.*": {"queue": "imports"},
         "core.services.importer.imap_tasks.*": {"queue": "imports"},
         "core.services.importer.pst_tasks.*": {"queue": "imports"},
+        # Resumable import orchestrator: index + per-batch processing run on the
+        # dedicated (sequential) imports worker. The stalled-import reaper runs
+        # on "default" (matched first, before the glob) so it can re-dispatch
+        # even when the single imports worker is busy or stuck on a batch.
+        "core.services.importer.orchestrator.reap_stalled_imports_task": {
+            "queue": "default"
+        },
+        "core.services.importer.orchestrator.*": {"queue": "imports"},
         # Search indexing - lowest priority, can be delayed
         "core.services.search.tasks.*": {"queue": "reindex"},
     }
