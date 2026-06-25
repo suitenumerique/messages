@@ -6,6 +6,7 @@ import threading
 import time
 from unittest.mock import MagicMock, call, patch
 
+from django.conf import settings
 from django.core.cache import cache
 from django.test import TransactionTestCase, override_settings
 
@@ -1091,6 +1092,114 @@ class TestUndisclosedRecipientsHeader:
             b"To: undisclosed-recipients:;", b"To: attacker@evil.com"
         )
         assert not dkim_verify(tampered, dnsfunc=get_dns_txt)
+
+
+@pytest.mark.django_db
+class TestXMailerHeader:
+    """Outbound mail advertises the sending application through the
+    ``X-Mailer`` header — a small positive deliverability signal whose
+    absence reads as bulk/templated mail."""
+
+    def _make_draft(self, mailbox_sender):
+        message = factories.MessageFactory(
+            thread=factories.ThreadFactory(),
+            sender=factories.ContactFactory(mailbox=mailbox_sender),
+            is_draft=True,
+            subject="Test Message",
+            signature=None,
+        )
+        factories.MessageRecipientFactory(
+            message=message,
+            contact=factories.ContactFactory(
+                mailbox=mailbox_sender, email="to@example.com"
+            ),
+            type=models.MessageRecipientTypeChoices.TO,
+        )
+        return message
+
+    @override_settings(MDA_HEADER_XMAILER="Messages Test")
+    @override_settings(RELEASE="v6.0.0")
+    def test_header_emitted_with_release(self, user, mailbox_sender, mailbox_access):
+        """X-Mailer carries the product name and the running release."""
+        message = self._make_draft(mailbox_sender)
+
+        assert (
+            outbound.prepare_outbound_message(
+                mailbox_sender, message, "Hello", "<p>Hello</p>", user
+            )
+            is True
+        )
+
+        message.refresh_from_db()
+        content = message.blob.get_content().decode()
+        assert "X-Mailer: Messages Test v6.0.0\r\n" in content
+
+    @override_settings(RELEASE="NA")
+    def test_header_emitted_without_release(self, user, mailbox_sender, mailbox_access):
+        """With no usable release, X-Mailer carries just the product name."""
+        message = self._make_draft(mailbox_sender)
+
+        assert (
+            outbound.prepare_outbound_message(
+                mailbox_sender, message, "Hello", "<p>Hello</p>", user
+            )
+            is True
+        )
+
+        message.refresh_from_db()
+        content = message.blob.get_content().decode()
+        assert f"X-Mailer: {settings.MDA_HEADER_XMAILER}\r\n" in content
+
+    @override_settings(RELEASE="6.0.0")
+    def test_header_emitted_on_raw_mime_path(
+        self, user, mailbox_sender, mailbox_access
+    ):
+        """Raw-MIME submissions get the same X-Mailer signal as composed mail."""
+        message = self._make_draft(mailbox_sender)
+        raw_mime = (
+            b"From: sender@example.com\r\n"
+            b"To: to@example.com\r\n"
+            b"Subject: Raw MIME test\r\n"
+            b"\r\n"
+            b"Body.\r\n"
+        )
+
+        assert (
+            outbound.prepare_outbound_message(
+                mailbox_sender, message, "", "", user, raw_mime=raw_mime
+            )
+            is True
+        )
+
+        message.refresh_from_db()
+        content = message.blob.get_content().decode()
+        assert f"X-Mailer: {settings.MDA_HEADER_XMAILER} {settings.RELEASE}" in content
+
+    def test_caller_supplied_xmailer_is_preserved_on_raw_mime_path(
+        self, user, mailbox_sender, mailbox_access
+    ):
+        """A caller-set X-Mailer is kept as-is, not duplicated nor overwritten."""
+        message = self._make_draft(mailbox_sender)
+        raw_mime = (
+            b"From: sender@example.com\r\n"
+            b"To: to@example.com\r\n"
+            b"X-Mailer: CustomClient 1.0\r\n"
+            b"Subject: Raw MIME test\r\n"
+            b"\r\n"
+            b"Body.\r\n"
+        )
+
+        assert (
+            outbound.prepare_outbound_message(
+                mailbox_sender, message, "", "", user, raw_mime=raw_mime
+            )
+            is True
+        )
+
+        message.refresh_from_db()
+        content = message.blob.get_content().decode()
+        assert "X-Mailer: CustomClient 1.0" in content
+        assert content.count("X-Mailer:") == 1
 
 
 @pytest.mark.django_db

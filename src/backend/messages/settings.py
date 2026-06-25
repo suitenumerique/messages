@@ -370,6 +370,10 @@ class Base(Configuration):
         None, environ_name="MDA_API_SECRET", environ_prefix=None
     )
 
+    # Product name advertised in the outbound X-Mailer header (the running release
+    # is appended). See compose_and_sign_mime.
+    MDA_HEADER_XMAILER = "Messages"
+
     # Default CalDAV server settings (optional). Enables calendar features
     # for every mailbox that has not configured its own per-mailbox CalDAV
     # Channel — users can override the integration by pointing a Channel at
@@ -945,7 +949,9 @@ class Base(Configuration):
         {}, environ_name="OIDC_AUTH_REQUEST_EXTRA_PARAMS", environ_prefix=None
     )
     OIDC_AUTH_REQUEST_FORWARDED_PARAMS = values.ListValue(
-        ["login_hint"], environ_name="OIDC_AUTH_REQUEST_FORWARDED_PARAMS", environ_prefix=None
+        ["login_hint"],
+        environ_name="OIDC_AUTH_REQUEST_FORWARDED_PARAMS",
+        environ_prefix=None,
     )
     OIDC_RP_SCOPES = values.Value(
         "openid email", environ_name="OIDC_RP_SCOPES", environ_prefix=None

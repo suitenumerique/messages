@@ -114,6 +114,20 @@ def validate_attachments_size(total_size: int, message_id: str) -> None:
 UNDISCLOSED_RECIPIENTS_TO_HEADER = b"To: undisclosed-recipients:;"
 
 
+def build_xmailer_value() -> str:
+    """Return the X-Mailer header value: product name plus running release.
+
+    A present X-Mailer is a small positive deliverability signal (its absence
+    reads as bulk/templated mail to some filters, e.g. iCloud). Like other MUAs
+    (e.g. Open-Xchange's "Open-Xchange Mailer vX.Y.Z-RevN"), this identifies the
+    software, not the deployment — so the product name is fixed and the running
+    release appended when available.
+    """
+    if settings.RELEASE != "NA":
+        return f"{settings.MDA_HEADER_XMAILER} {settings.RELEASE}"
+    return settings.MDA_HEADER_XMAILER
+
+
 def compose_and_sign_mime(
     message: models.Message,
     mailbox: models.Mailbox,
@@ -196,6 +210,9 @@ def compose_and_sign_mime(
         "htmlBody": [{"content": html_body}] if html_body else [],
         "messageId": [message.mime_id] if message.mime_id else None,
     }
+
+    # Advertise the sending application via X-Mailer (see build_xmailer_value).
+    mime_data["headers"] = [{"name": "X-Mailer", "value": build_xmailer_value()}]
 
     if all_attachments:
         mime_data["attachments"] = all_attachments
@@ -328,8 +345,17 @@ def prepare_outbound_message(
         # the placeholder before signing. ``parse_email`` returns None on
         # unparseable input (already rejected upstream by the submit view).
         parsed = parse_email(raw_mime)
-        if parsed is not None and not find_header(parsed, "to"):
-            raw_mime = UNDISCLOSED_RECIPIENTS_TO_HEADER + b"\r\n" + raw_mime
+        if parsed is not None:
+            if not find_header(parsed, "to"):
+                raw_mime = UNDISCLOSED_RECIPIENTS_TO_HEADER + b"\r\n" + raw_mime
+            # Mirror the composed-body path: advertise the sending application
+            # via X-Mailer so raw submissions get the same deliverability
+            # signal. Prepend before signing so it's covered by DKIM, but keep a
+            # caller-supplied X-Mailer instead of duplicating the header.
+            if not find_header(parsed, "x-mailer"):
+                raw_mime = (
+                    f"X-Mailer: {build_xmailer_value()}".encode() + b"\r\n" + raw_mime
+                )
         signed_mime = _sign_mime(mailbox_sender, raw_mime)
         validate_mime_size(len(signed_mime), message.id)
         message.sender_user = user
