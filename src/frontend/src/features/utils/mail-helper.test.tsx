@@ -16,17 +16,6 @@ const withLanguage = (lng: string, fn: () => void) => {
 };
 
 describe('MailHelper', () => {
-  describe('markdownToHtml', () => {
-    it('should convert markdown to HTML', async () => {
-      const markdown = '**Hello World**\n\n*Note: This is a test*';
-      const html = await MailHelper.markdownToHtml(markdown);
-      expect(html).toMatchInlineSnapshot(`
-        "<p><strong style="font-weight:bold">Hello World</strong></p>
-        <p><em style="font-style:italic">Note: This is a test</em></p>"
-      `);
-    });
-  });
-
   describe('prefixSubjectIfNeeded', () => {
     it('should add prefix if not present', () => {
       const subject = 'Test Subject';

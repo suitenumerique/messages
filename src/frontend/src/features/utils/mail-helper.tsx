@@ -1,5 +1,4 @@
-import { renderToString, renderToStaticMarkup } from "react-dom/server";
-import { Markdown } from "@react-email/components";
+import { renderToStaticMarkup } from "react-dom/server";
 import DetectionMap from "@/features/i18n/attachments-detection-map.json";
 import i18n from "@/features/i18n/initI18n";
 import z from "zod";
@@ -62,16 +61,6 @@ const getAttachmentSeparator = (): string =>
 
 /** An helper which aims to gather all utils related write and send a message */
 class MailHelper {
-
-    /**
-     * Take a Markdown string
-     * then render HTML ready for email through react-email.
-     */
-    static async markdownToHtml(markdown: string) {
-        return renderToString(<Markdown>{markdown}</Markdown>)
-            .replace(/(^<div data-id="react-email-markdown">|<\/div>$)/g, '')
-            .trim();
-    }
 
     /**
      * Replace blob download URLs in HTML with cid: references for email embedding.

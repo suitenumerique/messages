@@ -1,7 +1,7 @@
 import React, { CSSProperties } from 'react';
 import { renderToStaticMarkup } from 'react-dom/server';
+import { VALID_LINK_PROTOCOLS } from '@blocknote/core';
 import type { Block, InlineContent, StyledText } from '@blocknote/core';
-import { Text, Heading, Img, Link, Hr, Row, Column } from '@react-email/components';
 import MailHelper from '@/features/utils/mail-helper';
 import { TEMPLATE_VARIABLE_TYPE } from '../inline-template-variable';
 
@@ -146,6 +146,32 @@ function textWithBreaks(text: string): React.ReactNode {
     ));
 }
 
+/**
+ * Validates a link href against BlockNote's own {@link VALID_LINK_PROTOCOLS}
+ * allowlist so the export stays consistent with what the editor permits.
+ * The editor only enforces this at render/paste time, so a value carrying a
+ * dangerous scheme (`javascript:`, `data:`…) can still reach the stored
+ * document and must be filtered here before it lands in the email HTML.
+ *
+ * We rely on the `URL` parser to read the scheme: per the WHATWG spec it strips
+ * tab/newline/control characters, so obfuscations like `java\tscript:` cannot
+ * smuggle a disallowed scheme past the check. A parse failure means a
+ * schemeless/relative URL (anchor, path, query) — there is no scheme to vet.
+ *
+ * @param href - the raw href from the link inline content
+ * @returns the href if safe (allowed scheme or schemeless/relative URL), else `null`
+ */
+function sanitizeLinkHref(href: string): string | null {
+    if (!href) return null;
+    let scheme: string;
+    try {
+        scheme = new URL(href).protocol.replace(/:$/, '');
+    } catch {
+        return href;
+    }
+    return VALID_LINK_PROTOCOLS.includes(scheme.toLowerCase()) ? href : null;
+}
+
 function renderStyledText(st: AnyStyledText, key: number): React.ReactNode {
     const style = inlineStylesToCSS(st.styles);
     const content = textWithBreaks(st.text);
@@ -163,6 +189,13 @@ function renderInlineContent(content: AnyInlineContent[]): React.ReactNode[] {
         if (ic.type === 'link') {
             // BlockNote Link: { type: "link", href: string, content: StyledText[] }
             const link = ic as { type: 'link'; href: string; content: AnyStyledText[] };
+            const renderedContent = link.content.map((st, j) => renderStyledText(st, j));
+            const safeHref = sanitizeLinkHref(link.href);
+            // Drop the anchor but keep its text when the href is rejected, so an
+            // unsafe link degrades to plain text rather than a dangerous <a>.
+            if (!safeHref) {
+                return <React.Fragment key={i}>{renderedContent}</React.Fragment>;
+            }
             // Mirror the link text's own color onto the <a> so the underline
             // matches the text instead of staying the default link blue.
             const textColor = link.content
@@ -170,9 +203,14 @@ function renderInlineContent(content: AnyInlineContent[]): React.ReactNode[] {
                 .find((color) => color && color !== 'default');
             const linkColor = textColor ? (COLORS[textColor]?.text || textColor) : '#0b6e99';
             return (
-                <Link key={i} href={link.href} style={{ color: linkColor, textDecoration: 'underline' }}>
-                    {link.content.map((st, j) => renderStyledText(st, j))}
-                </Link>
+                <a
+                    key={i}
+                    href={safeHref}
+                    rel="noopener noreferrer"
+                    style={{ color: linkColor, textDecoration: 'underline' }}
+                >
+                    {renderedContent}
+                </a>
             );
         }
         if (ic.type === TEMPLATE_VARIABLE_TYPE) {
@@ -300,26 +338,31 @@ function renderBlock(
 
     switch (block.type) {
         case 'paragraph': {
+            // A plain paragraph (no alignment/color) is emitted as a bare <p> with
+            // no inline style. Spam filters (e.g. iCloud) flag every `<p style=...>`
+            // as machine-generated templating, so styles are only attached when the
+            // user actually applied block-level formatting.
+            const pStyle = styleOrUndefined(style);
             if (isContentEmpty(content)) {
-                return <Text key={key} style={{ margin: 0, ...style }}><br /></Text>;
+                return <p key={key} style={pStyle}><br /></p>;
             }
             return (
-                <Text key={key} style={{ margin: 0, ...style }}>
+                <p key={key} style={pStyle}>
                     {renderInlineContent(content!)}
-                </Text>
+                </p>
             );
         }
 
         case 'heading': {
             const level = Math.min(Math.max((props.level as number) || 1, 1), 6);
-            const as = `h${level}` as 'h1' | 'h2' | 'h3' | 'h4' | 'h5' | 'h6';
+            const Tag = `h${level}` as 'h1' | 'h2' | 'h3' | 'h4' | 'h5' | 'h6';
             // `margin: 0` matches BlockNote (spacing comes from block padding) and
             // avoids the browser's large default heading margins in email clients.
             // Block-level styles (color/alignment) come last so they can override.
             return (
-                <Heading key={key} as={as} style={{ margin: 0, ...HEADING_LEVEL_STYLES[level], ...style }}>
+                <Tag key={key} style={{ margin: 0, ...HEADING_LEVEL_STYLES[level], ...style }}>
                     {renderInlineContent(content || [])}
-                </Heading>
+                </Tag>
             );
         }
 
@@ -328,11 +371,15 @@ function renderBlock(
             if (!url) return null;
 
             const cidUrl = MailHelper.replaceBlobUrlsWithCid(url);
-            const imgStyle: CSSProperties = {};
+            // display:block is mandatory, not just for alignment: an inline
+            // <img> sits on the text baseline and email clients render a few px
+            // of phantom whitespace beneath it (the classic "image bottom gap").
+            // Centering / right-aligning then relies on auto margins, which only
+            // apply to a block-level element anyway.
+            const imgStyle: CSSProperties = { display: 'block' };
 
             const width = resolveImageWidth(block, editorDomElement);
 
-            // Alignment via margin (Img already sets display:block)
             const alignment = props.textAlignment as string | undefined;
             if (alignment === 'center') {
                 imgStyle.marginLeft = 'auto';
@@ -343,12 +390,12 @@ function renderBlock(
 
             const caption = props.caption as string | undefined;
             const imgNode = (
-                <Img
-                    src={cidUrl}
-                    alt={caption || (props.name as string) || ''}
-                    width={width}
-                    style={styleOrUndefined(imgStyle)}
+                <img
                     loading="lazy"
+                    alt={caption || (props.name as string) || ''}
+                    src={cidUrl}
+                    style={styleOrUndefined(imgStyle)}
+                    width={width}
                 />
             );
 
@@ -380,7 +427,7 @@ function renderBlock(
         }
 
         case 'divider': {
-            return <Hr key={key} style={{ margin: '12px 0' }} />;
+            return <hr key={key} style={{ margin: '12px 0' }} />;
         }
 
         case 'columnList': {
@@ -389,44 +436,58 @@ function renderBlock(
             );
             const COLUMN_PADDING = 12;
 
+            // A multi-column layout genuinely needs a table; `role="presentation"`
+            // tells assistive tech and spam heuristics it is for layout, not data.
             return (
-                <Row key={key} style={{ padding: `${COLUMN_PADDING}px 0` }}>
-                    {columns.map((col: AnyBlock, colIdx: number) => {
-                        const colStyle: CSSProperties = { verticalAlign: 'top' };
-                        if (colIdx === 0) {
-                            colStyle.paddingRight = `${COLUMN_PADDING}px`;
-                        }
-                        else if (colIdx === columns.length - 1) {
-                            colStyle.paddingLeft = `${COLUMN_PADDING}px`;
-                        }
-                        else {
-                            colStyle.padding = `0 ${COLUMN_PADDING}px`;
-                        }
-                        const w = Number((col.props as Record<string, unknown>).width);
+                <table
+                    key={key}
+                    role="presentation"
+                    cellPadding={0}
+                    cellSpacing={0}
+                    border={0}
+                    width="100%"
+                    style={{ padding: `${COLUMN_PADDING}px 0` }}
+                >
+                    <tbody>
+                        <tr>
+                            {columns.map((col: AnyBlock, colIdx: number) => {
+                                const colStyle: CSSProperties = { verticalAlign: 'top' };
+                                if (colIdx === 0) {
+                                    colStyle.paddingRight = `${COLUMN_PADDING}px`;
+                                }
+                                else if (colIdx === columns.length - 1) {
+                                    colStyle.paddingLeft = `${COLUMN_PADDING}px`;
+                                }
+                                else {
+                                    colStyle.padding = `0 ${COLUMN_PADDING}px`;
+                                }
+                                const w = Number((col.props as Record<string, unknown>).width);
 
-                        // For shrink-to-content columns (width: 0), compute the
-                        // exact pixel width from child image blocks so the HTML
-                        // table algorithm allocates the correct space.  Without
-                        // an explicit width, the table distributes space evenly;
-                        // with it, sibling cells take the remaining space.
-                        let tdWidth: string | undefined;
-                        if (w === 0) {
-                            const contentWidth = resolveColumnContentWidth(
-                                col.children || [],
-                                editorDomElement,
-                            );
-                            if (contentWidth) {
-                                tdWidth = String(contentWidth);
-                            }
-                        }
+                                // For shrink-to-content columns (width: 0), compute the
+                                // exact pixel width from child image blocks so the HTML
+                                // table algorithm allocates the correct space.  Without
+                                // an explicit width, the table distributes space evenly;
+                                // with it, sibling cells take the remaining space.
+                                let tdWidth: string | undefined;
+                                if (w === 0) {
+                                    const contentWidth = resolveColumnContentWidth(
+                                        col.children || [],
+                                        editorDomElement,
+                                    );
+                                    if (contentWidth) {
+                                        tdWidth = String(contentWidth);
+                                    }
+                                }
 
-                        return (
-                            <Column key={colIdx} style={colStyle} width={tdWidth}>
-                                {transformBlocks(col.children || [], editorDomElement)}
-                            </Column>
-                        );
-                    })}
-                </Row>
+                                return (
+                                    <td key={colIdx} style={colStyle} width={tdWidth}>
+                                        {transformBlocks(col.children || [], editorDomElement)}
+                                    </td>
+                                );
+                            })}
+                        </tr>
+                    </tbody>
+                </table>
             );
         }
 
@@ -632,11 +693,16 @@ function transformBlocks(
 // ---------------------------------------------------------------------------
 
 /**
- * Exports BlockNote blocks to email-safe HTML with inline styles.
+ * Exports BlockNote blocks to email-safe HTML using native tags.
  *
- * Unlike BlockNote's built-in `blocksToHTMLLossy`, the output uses inline
- * styles (font-weight, font-style, etc.) that email clients can render,
- * and replaces blob download URLs with cid: references for inline images.
+ * Unlike BlockNote's built-in `blocksToHTMLLossy`, the output relies on inline
+ * styles (font-weight, font-style, etc.) that email clients can render, and
+ * replaces blob download URLs with cid: references for inline images.
+ *
+ * Inline styles are attached only where the user actually applied formatting:
+ * an unstyled paragraph exports as a bare `<p>`. This keeps simple messages
+ * looking human-authored, since spam filters (e.g. iCloud) treat blanket
+ * `<p style=...>` templating as a machine-generated-bulk signal.
  */
 export class EmailExporter {
     exportBlocks(blocks: AnyBlock[], editorDomElement: HTMLElement | null): string {

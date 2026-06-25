@@ -43,11 +43,9 @@ describe('EmailExporter', () => {
   // 1. Paragraph
   // -----------------------------------------------------------------------
   describe('paragraph', () => {
-    it('renders simple text in a <p> with margin:0', () => {
+    it('renders simple text in a clean <p> with no inline style', () => {
       const html = exportBlocks([paragraph('Hello world')]);
-      expect(html).toContain('<p');
-      expect(html).toContain('margin:0');
-      expect(html).toContain('Hello world');
+      expect(html).toBe('<p>Hello world</p>');
     });
 
     it('renders empty paragraph as <br>', () => {
@@ -311,6 +309,52 @@ describe('EmailExporter', () => {
       expect(html).toMatch(/<a[^>]*color:#e03e3e/);
       expect(html).not.toContain('color:#0b6e99');
     });
+
+    it('adds rel="noopener noreferrer" on safe links', () => {
+      const html = exportBlocks([
+        paragraph([link('https://example.com', 'Click here')]),
+      ]);
+      expect(html).toContain('rel="noopener noreferrer"');
+    });
+
+    it('keeps mailto/tel links from the allowlist', () => {
+      const html = exportBlocks([
+        paragraph([link('mailto:user@example.com', 'Mail me')]),
+      ]);
+      expect(html).toContain('href="mailto:user@example.com"');
+    });
+
+    it('drops the anchor but keeps the text for a javascript: href', () => {
+      const html = exportBlocks([
+        paragraph([link('javascript:alert(1)', 'Click here')]),
+      ]);
+      expect(html).not.toContain('<a');
+      expect(html).not.toContain('javascript:');
+      expect(html).toContain('Click here');
+    });
+
+    it('rejects schemes obfuscated with whitespace/control chars', () => {
+      const html = exportBlocks([
+        paragraph([link('java\tscript:alert(1)', 'Click here')]),
+      ]);
+      expect(html).not.toContain('<a');
+      expect(html).toContain('Click here');
+    });
+
+    it('drops the anchor for a data: href', () => {
+      const html = exportBlocks([
+        paragraph([link('data:text/html,<script>', 'Click here')]),
+      ]);
+      expect(html).not.toContain('<a');
+      expect(html).toContain('Click here');
+    });
+
+    it('keeps relative/anchor links that have no scheme', () => {
+      const html = exportBlocks([
+        paragraph([link('#section', 'Jump')]),
+      ]);
+      expect(html).toContain('href="#section"');
+    });
   });
 
   // -----------------------------------------------------------------------
@@ -324,6 +368,13 @@ describe('EmailExporter', () => {
       expect(html).toContain('<img');
       expect(html).toContain('src="https://example.com/photo.jpg"');
       expect(html).toContain('alt="photo"');
+    });
+
+    it('keeps display:block on a default-aligned image (avoids the bottom gap)', () => {
+      const html = exportBlocks([
+        image('https://example.com/photo.jpg', { name: 'photo' }),
+      ]);
+      expect(html).toContain('display:block');
     });
 
     it('renders image with caption as <figure> + <figcaption>', () => {
@@ -962,7 +1013,7 @@ describe('EmailExporter', () => {
           styledText('world', { bold: true }),
         ]),
       ]);
-      expect(html).toMatchInlineSnapshot(`"<p style="font-size:14px;line-height:24px;margin:0;margin-top:0;margin-bottom:0;margin-left:0;margin-right:0">Hello <span style="font-weight:bold">world</span></p>"`);
+      expect(html).toMatchInlineSnapshot(`"<p>Hello <span style="font-weight:bold">world</span></p>"`);
     });
 
     it('renders a heading with block-level color', () => {
@@ -980,7 +1031,7 @@ describe('EmailExporter', () => {
           previewWidth: 400,
         }),
       ]);
-      expect(html).toMatchInlineSnapshot(`"<figure style="margin:0;text-align:center"><img loading="lazy" alt="A nice photo" src="https://example.com/photo.jpg" style="display:block;outline:none;border:none;text-decoration:none;margin-left:auto;margin-right:auto" width="400"/><figcaption>A nice photo</figcaption></figure>"`);
+      expect(html).toMatchInlineSnapshot(`"<figure style="margin:0;text-align:center"><img loading="lazy" alt="A nice photo" src="https://example.com/photo.jpg" style="display:block;margin-left:auto;margin-right:auto" width="400"/><figcaption>A nice photo</figcaption></figure>"`);
     });
   });
 });
