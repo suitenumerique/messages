@@ -11,6 +11,7 @@ import { installThemeFavicons } from "@/features/providers/theme-favicons";
 import { initSentry } from "@/features/sentry";
 import { handle } from '@/features/utils/errors';
 import { checkAndApplyOtaUpdate, notifyOtaAppReady } from "./features/native/ota";
+import { listenForNativePushTaps } from "./features/native/push";
 
 // Tag the document on the Capacitor native app so the stylesheet can opt into
 // mobile-only chrome (compact header, floating bottom bars) without each
@@ -46,6 +47,11 @@ declare module "@tanstack/react-router" {
     router: typeof router;
   }
 }
+
+// Notification taps deep-link into the thread the push points at, through the
+// router history (an in-app navigation, not a WebView reload). Registered
+// before any await so the tap that cold-started the app is not missed.
+listenForNativePushTaps((url) => router.history.push(url));
 
 /**
  * Fetch the backend configuration then initialize everything that must be

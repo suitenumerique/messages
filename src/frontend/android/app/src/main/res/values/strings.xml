@@ -4,4 +4,12 @@
     <string name="title_activity_main">Messages</string>
     <string name="package_name">local.suitenumerique.messages</string>
     <string name="custom_url_scheme">local.suitenumerique.messages</string>
+
+    <!-- Content-free push banner: the FCM message carries only these
+         localization keys (core/services/push/fcm.py, FCM_TITLE_LOC_KEY /
+         FCM_BODY_LOC_KEY) — never sender or subject — and the OS renders the
+         strings from here even when the app is killed. Keep in sync with the
+         iOS Localizable.strings NEW_MESSAGE entry. -->
+    <string name="new_message_title">Messages</string>
+    <string name="new_message_body">New message</string>
 </resources>

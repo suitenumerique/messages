@@ -4,6 +4,7 @@
 import logging
 
 from django.conf import settings
+from django.contrib.auth.signals import user_logged_out
 from django.db import transaction
 from django.db.models.signals import post_delete, post_save, pre_delete
 from django.dispatch import receiver
@@ -14,6 +15,7 @@ from core.services.identity.keycloak import (
     sync_mailbox_to_keycloak_user,
     sync_maildomain_to_keycloak_group,
 )
+from core.services.push.common import session_hash
 from core.services.search.coalescer import (
     enqueue_message_delete,
     enqueue_thread_delete,
@@ -259,3 +261,37 @@ def delete_user_scope_channels_on_user_delete(sender, instance, **kwargs):
         user=instance,
         scope_level=enums.ChannelScopeLevel.USER,
     ).delete()
+
+
+@receiver(user_logged_out)
+def unregister_push_device_on_logout(sender, request, user, **kwargs):
+    """Unregister the push channel(s) bound to the session being logged out.
+
+    This is what makes a *voluntary* logout an opt-out of notifications for
+    that device, server-side (works even if the browser JS never runs — e.g.
+    logout hit directly). It fires before ``auth.logout`` flushes the session,
+    so the session key is still readable. Only channels stamped with THIS
+    session are removed — the same user's other devices keep receiving.
+
+    A session that merely *expires* never reaches ``auth.logout`` with an
+    authenticated user (the 401 funnel arrives anonymous), so this receiver
+    no-ops and the device keeps receiving — the product rule: notifications
+    survive expiry, stop on explicit logout, and resume transparently when the
+    client re-registers on the next login.
+    """
+    if user is None or request is None:
+        return
+    session_key = getattr(getattr(request, "session", None), "session_key", None)
+    if not session_key:
+        return
+    try:
+        models.Channel.objects.filter(
+            user=user,
+            type=enums.ChannelTypes.PUSH,
+            settings__session_hash=session_hash(session_key),
+        ).delete()
+    # pylint: disable=broad-exception-caught
+    except Exception:
+        # Never break the logout flow itself; an undeleted channel is only a
+        # notification-hygiene issue and the next voluntary logout retries.
+        logger.exception("Failed to unregister push channels on logout")

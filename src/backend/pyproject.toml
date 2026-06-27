@@ -47,6 +47,8 @@ dependencies = [
     "dkimpy==1.1.8",
     "dnspython==2.8.0",
     "drf_spectacular==0.29.0",
+    "google-auth==2.41.1",
+    "httpx[http2]==0.28.1",
     "opensearch-py==2.8.0",
     "factory_boy==3.3.3",
     "gunicorn==25.1.0",
@@ -68,6 +70,8 @@ dependencies = [
     "url-normalize==2.2.1",
     "whitenoise==6.11.0",
     "prometheus-client==0.24.1",
+    "py-vapid==1.9.4",
+    "http-ece==1.2.1",
 ]
 
 [project.urls]

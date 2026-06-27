@@ -10,11 +10,14 @@ import { LeftPanel } from "@/features/layouts/components/main/left-panel";
 import { SKIP_LINK_TARGET_ID } from "@/features/ui/components/skip-link";
 import { FeedbackWidget } from "@/features/ui/components/feedback-widget";
 import { useTheme } from "@/features/providers/theme";
+import { useDocumentTitle } from "@/hooks/use-document-title";
 
 const HomePage = () => {
   const { t } = useTranslation();
   const { theme, variant, themeConfig } = useTheme();
   const { user } = useAuth();
+
+  useDocumentTitle();
 
   if (user) {
     return <MainLayout />;

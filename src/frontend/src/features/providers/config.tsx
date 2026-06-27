@@ -1,7 +1,12 @@
 import { useConfigRetrieve } from "@/features/api/gen";
 import { AppConfig, resolveConfig } from "@/features/config/resolve";
 import { Spinner } from "@gouvfr-lasuite/ui-kit";
-import { PropsWithChildren, createContext, useContext, useMemo } from "react";
+import {
+  PropsWithChildren,
+  createContext,
+  useContext,
+  useMemo,
+} from "react";
 
 const ConfigContext = createContext<AppConfig | undefined>(undefined)
 
