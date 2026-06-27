@@ -394,16 +394,29 @@ def build_inbound_pipeline(ctx: InboundContext) -> List[Step]:
     # identical before- and after-spam, so a second query is pure waste.
     channels = find_webhook_channels_for_mailbox(ctx.mailbox)
 
+    # Internal mailbox-to-mailbox mail is trusted and not externally
+    # authenticated: run only the user-webhook steps. The spam steps
+    # would no-op anyway (the task pre-sets is_spam=False), and the auth
+    # step would prepend a meaningless X-StMsg-Sender-Auth banner — which
+    # also mutates the bytes and defeats blob dedup with the sender — plus
+    # do needless DNS/rspamd work. Webhooks still fire on both phases so
+    # internal mail is indistinguishable from external to a consumer.
+    if ctx.inbound_message.is_internal:
+        return [
+            *webhook_steps_for_mailbox(
+                ctx.mailbox, phase="before_spam", channels=channels
+            ),
+            *webhook_steps_for_mailbox(
+                ctx.mailbox, phase="after_spam", channels=channels
+            ),
+        ]
+
     return [
-        *webhook_steps_for_mailbox(
-            ctx.mailbox, phase="before_spam", channels=channels
-        ),
+        *webhook_steps_for_mailbox(ctx.mailbox, phase="before_spam", channels=channels),
         _make_hardcoded_rules_step(ctx.spam_config),
         _make_rspamd_step(ctx.spam_config),
         _make_inbound_auth_step(ctx.spam_config),
-        *webhook_steps_for_mailbox(
-            ctx.mailbox, phase="after_spam", channels=channels
-        ),
+        *webhook_steps_for_mailbox(ctx.mailbox, phase="after_spam", channels=channels),
     ]
 
 

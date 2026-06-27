@@ -8,9 +8,12 @@ import { useState, useMemo } from "react";
 import { useQueryClient } from "@tanstack/react-query";
 import {
     Channel,
+    ChannelCreateResponse,
     Mailbox,
+    RegeneratedSecretResponse,
     useMailboxesChannelsCreate,
     useMailboxesChannelsPartialUpdate,
+    useMailboxesChannelsRegenerateSecretCreate,
     getMailboxesChannelsListUrl,
 } from "@/features/api/gen";
 import {
@@ -21,7 +24,12 @@ import {
 import { addToast, ToasterItem } from "@/features/ui/components/toaster";
 import { Banner } from "@/features/ui/components/banner";
 import { CopyableInput } from "@/features/ui/components/copyable-input";
+import { useConfig } from "@/features/providers/config";
 import { handle } from "@/features/utils/errors";
+
+// Environments where the backend (DEBUG=True) accepts http:// webhook
+// URLs; everywhere else https is required, so mirror that client-side.
+const DEV_ENVIRONMENTS = ["development", "developmentminimal", "e2e"];
 
 type WebhookChannelSettings = {
     url?: string;
@@ -44,14 +52,19 @@ type WebhookIntegrationFormProps = {
     onClose: () => void;
 };
 
-const createFormSchema = (t: (key: string) => string) =>
+const createFormSchema = (
+    t: (key: string) => string,
+    allowInsecureUrl: boolean,
+) =>
     z.object({
         name: z.string().min(1, { error: t("Name is required.") }),
         url: z
             .string()
             .min(1, { error: t("URL is required.") })
-            .regex(/^https?:\/\//i, {
-                error: t("URL must start with http:// or https://"),
+            .regex(allowInsecureUrl ? /^https?:\/\//i : /^https:\/\//i, {
+                error: allowInsecureUrl
+                    ? t("URL must start with http:// or https://")
+                    : t("URL must start with https://"),
             }),
         phase: z.enum(["before_spam", "after_spam"]),
         format: z.enum(["eml", "jmap", "jmap_metadata"]),
@@ -68,15 +81,21 @@ export const WebhookIntegrationForm = ({
     onClose,
 }: WebhookIntegrationFormProps) => {
     const { t } = useTranslation();
+    const config = useConfig();
     const queryClient = useQueryClient();
     const [error, setError] = useState<string | null>(null);
     const settings = channel?.settings as WebhookChannelSettings | undefined;
     const isEditing = !!channel;
+    const allowInsecureUrl = DEV_ENVIRONMENTS.includes(config.ENVIRONMENT);
 
     const createMutation = useMailboxesChannelsCreate();
     const updateMutation = useMailboxesChannelsPartialUpdate();
+    const regenerateMutation = useMailboxesChannelsRegenerateSecretCreate();
 
-    const formSchema = useMemo(() => createFormSchema(t), [t]);
+    const formSchema = useMemo(
+        () => createFormSchema(t, allowInsecureUrl),
+        [t, allowInsecureUrl],
+    );
 
     const form = useForm<FormFields>({
         resolver: zodResolver(formSchema),
@@ -103,6 +122,46 @@ export const WebhookIntegrationForm = ({
             queryKey: [getMailboxesChannelsListUrl(mailbox.id)],
             exact: false,
         });
+    };
+
+    // Surface a freshly minted credential exactly once — the receiver
+    // needs it to verify every webhook we send. The backend returns
+    // ``secret`` for auth_method=jwt and ``api_key`` for api_key. Returns
+    // true when a credential was shown (so callers know not to close yet).
+    const showCredential = (
+        source: { secret?: string; api_key?: string },
+    ): boolean => {
+        if (source.secret) {
+            setCreatedCredential({
+                label: t("Webhook signing secret"),
+                value: source.secret,
+            });
+            return true;
+        }
+        if (source.api_key) {
+            setCreatedCredential({
+                label: t("Webhook API key"),
+                value: source.api_key,
+            });
+            return true;
+        }
+        return false;
+    };
+
+    const onRegenerate = async () => {
+        if (!channel) return;
+        setError(null);
+        try {
+            const response = await regenerateMutation.mutateAsync({
+                mailboxId: mailbox.id,
+                id: channel.id,
+            });
+            const data = response.data as RegeneratedSecretResponse;
+            showCredential(data);
+        } catch (err) {
+            handle(err);
+            setError(t("An error occurred while saving the integration."));
+        }
     };
 
     const onSubmit = async (data: FormFields) => {
@@ -149,31 +208,13 @@ export const WebhookIntegrationForm = ({
                 );
                 await invalidateChannels();
                 if (newChannel.status === 201) {
-                    // Surface the freshly minted credential exactly
-                    // once — the receiver needs this value to verify
-                    // every webhook we send. The backend returns
-                    // ``secret`` for auth_method=jwt and ``api_key`` for
-                    // auth_method=api_key. These one-time credentials are
-                    // create-only response fields, not part of the
-                    // generated ``Channel`` type — read them off an
-                    // index-signature view.
-                    const payload = newChannel.data as unknown as Record<
-                        string,
-                        unknown
-                    >;
-                    const secret = payload.secret as string | undefined;
-                    const apiKey = payload.api_key as string | undefined;
-                    if (secret) {
-                        setCreatedCredential({
-                            label: t("Webhook signing secret"),
-                            value: secret,
-                        });
-                    } else if (apiKey) {
-                        setCreatedCredential({
-                            label: t("Webhook API key"),
-                            value: apiKey,
-                        });
-                    } else {
+                    // The one-time credentials are create-only response
+                    // fields surfaced via the generated
+                    // ``ChannelCreateResponse`` view (the create hook types
+                    // ``data`` as the plain ``Channel``, which omits them).
+                    const payload =
+                        newChannel.data as unknown as ChannelCreateResponse;
+                    if (!showCredential(payload)) {
                         onSuccess(newChannel.data);
                     }
                 }
@@ -184,7 +225,9 @@ export const WebhookIntegrationForm = ({
         }
     };
 
-    if (createdCredential && !isEditing) {
+    // Shown after create OR after regenerating in edit mode — the new
+    // credential is only ever returned once.
+    if (createdCredential) {
         return (
             <div className="widget-integration-form">
                 <div className="widget-integration-form__section">
@@ -194,10 +237,14 @@ export const WebhookIntegrationForm = ({
                             "This value is shown only once. Configure your receiver with it before closing — you can rotate it later if you need a new one.",
                         )}
                     </Banner>
-                    <label className="widget-integration-form__credential-label">
+                    <label
+                        className="widget-integration-form__credential-label"
+                        htmlFor="webhook-credential-value"
+                    >
                         {createdCredential.label}
                     </label>
                     <CopyableInput
+                        id="webhook-credential-value"
                         value={createdCredential.value}
                         aria-label={createdCredential.label}
                     />
@@ -342,6 +389,25 @@ export const WebhookIntegrationForm = ({
                         </p>
                     </Banner>
                 </div>
+
+                {isEditing && (
+                    <div className="widget-integration-form__section">
+                        <h3>{t("Authentication")}</h3>
+                        <Banner type="info">
+                            {t(
+                                "Regenerating the secret invalidates the old one immediately. The receiver must be updated with the new value before it can verify webhooks again.",
+                            )}
+                        </Banner>
+                        <Button
+                            type="button"
+                            variant="secondary"
+                            onClick={onRegenerate}
+                            disabled={regenerateMutation.isPending}
+                        >
+                            {t("Regenerate secret")}
+                        </Button>
+                    </div>
+                )}
 
                 {error && <Banner type="error">{error}</Banner>}
 

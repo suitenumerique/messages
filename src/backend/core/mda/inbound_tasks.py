@@ -112,6 +112,43 @@ def _handle_retry(
     }
 
 
+def _retry_or_abandon(
+    inbound_message: models.InboundMessage, reason: str
+) -> Dict[str, Any]:
+    """Bounded handling for a message that failed to be created/processed.
+
+    Within ``QUARANTINE_AFTER`` the row is kept so the 5-min sweep retries
+    it (a transient DB error or constraint hiccup clears on its own). Past
+    the window the attempt is abandoned and the row deleted: otherwise a
+    poison message (one that parses but can never be created) loops
+    forever, re-running the whole pipeline — and re-firing every user
+    webhook — on each sweep.
+    """
+    age = timezone.now() - inbound_message.created_at
+    if age <= QUARANTINE_AFTER:
+        inbound_message.error_message = reason
+        inbound_message.save(update_fields=["error_message"])
+        return {
+            "success": False,
+            "inbound_message_id": str(inbound_message.id),
+            "error": "retry",
+            "reason": reason,
+        }
+    logger.error(
+        "Inbound message %s abandoned after persistent failure (age=%s): %s",
+        inbound_message.id,
+        age,
+        reason,
+    )
+    inbound_message.delete()
+    return {
+        "success": False,
+        "inbound_message_id": str(inbound_message.id),
+        "error": "abandoned",
+        "reason": reason,
+    }
+
+
 def _stamp_processing_failed(ctx: InboundContext) -> None:
     """Prepend the ``X-StMsg-Processing-Failed`` marker to the message.
 
@@ -162,7 +199,7 @@ def process_inbound_message_task(self, inbound_message_id: str):
             logger.error(error_msg)
             return {"success": False, "error": error_msg}
 
-        raw_data_bytes = bytes(inbound_message.raw_data)
+        raw_data_bytes = inbound_message.get_raw_bytes()
         parsed_email = parse_email(raw_data_bytes)
         if parsed_email is None:
             error_msg = "Failed to parse email message"
@@ -181,13 +218,17 @@ def process_inbound_message_task(self, inbound_message_id: str):
             parsed_email=parsed_email,
             spam_config=mailbox.domain.get_spam_config(),
         )
-        if _is_selfcheck(parsed_email, recipient_email):
-            # System self-probe: short-circuit the spam check before
-            # the pipeline runs. The hardcoded-rules + rspamd steps
-            # both no-op when ctx.is_spam is already set.
+        if inbound_message.is_internal or _is_selfcheck(parsed_email, recipient_email):
+            # Internal mailbox-to-mailbox mail is trusted, and the system
+            # self-probe must never be junked: short-circuit the spam
+            # check before the pipeline runs. The hardcoded-rules + rspamd
+            # steps both no-op when ctx.is_spam is already set, but the
+            # user-webhook steps still fire — so internal mail looks
+            # identical to external mail to a webhook consumer.
             ctx.is_spam = False
             logger.debug(
-                "Selfcheck probe — pre-setting is_spam=False for %s",
+                "Skipping spam check (internal=%s) for %s",
+                inbound_message.is_internal,
                 inbound_message_id,
             )
 
@@ -297,9 +338,22 @@ def process_inbound_message_task(self, inbound_message_id: str):
                 # The ``skip_autoreply`` flag wraps the same gate from
                 # the outside so a non-spam message can also opt out
                 # (e.g. when the webhook itself replies).
-                try_send_autoreply(
-                    mailbox, ctx.parsed_email, inbound_msg, is_spam=bool(ctx.is_spam)
-                )
+                #
+                # Best-effort: the message has already landed (and the
+                # InboundMessage row is already deleted). A send failure
+                # here must not bubble to the outer ``except`` — that
+                # would try to retry/abandon an already-deleted row.
+                try:
+                    try_send_autoreply(
+                        mailbox,
+                        ctx.parsed_email,
+                        inbound_msg,
+                        is_spam=bool(ctx.is_spam),
+                    )
+                except Exception:  # pylint: disable=broad-exception-caught
+                    logger.exception(
+                        "Autoreply failed for inbound message %s", inbound_message_id
+                    )
 
             logger.info(
                 "Successfully processed inbound message %s (is_spam=%s)",
@@ -313,19 +367,20 @@ def process_inbound_message_task(self, inbound_message_id: str):
                 "is_spam": ctx.is_spam,
             }
 
-        error_msg = "Failed to create message from inbound message"
-        inbound_message.error_message = error_msg
-        inbound_message.save(update_fields=["error_message"])
-        # Keep the message for retry
-        return {"success": False, "error": error_msg}
+        # Creation failed (transient DB error, constraint, …). Hold for a
+        # bounded retry rather than keeping the row forever.
+        return _retry_or_abandon(
+            inbound_message, "Failed to create message from inbound message"
+        )
 
     except Exception as e:
         logger.exception(
             "Error processing inbound message %s: %s", inbound_message_id, e
         )
         if inbound_message:
-            inbound_message.error_message = str(e)
-            inbound_message.save(update_fields=["error_message"])
+            # Same bounded-retry policy as a failed creation: a persistent
+            # error must not pin the row (and re-fire webhooks) forever.
+            return _retry_or_abandon(inbound_message, str(e))
         return {"success": False, "error": str(e)}
     finally:
         # Always release the lock

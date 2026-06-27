@@ -574,13 +574,13 @@ class ChannelAdmin(admin.ModelAdmin):
         custom_urls = [
             path(
                 "<path:object_id>/regenerate-secret/",
-                self.admin_site.admin_view(self.regenerate_api_key_view),
-                name="core_channel_regenerate_api_key",
+                self.admin_site.admin_view(self.regenerate_secret_view),
+                name="core_channel_regenerate_secret",
             ),
         ]
         return custom_urls + urls
 
-    def regenerate_api_key_view(self, request, object_id):
+    def regenerate_secret_view(self, request, object_id):
         """Regenerate the secret on an api_key or webhook channel.
 
         Both channel types authenticate with a single root secret
@@ -609,17 +609,31 @@ class ChannelAdmin(admin.ModelAdmin):
             )
             return redirect("..")
 
-        plaintext = channel.rotate_secret()
+        root = channel.rotate_secret()
+
+        # Show the credential the *receiver* actually presents, matching
+        # the DRF ``_attach_credential`` flow. ``rotate_secret`` always
+        # returns the root signing secret, but an ``api_key``-auth webhook
+        # authenticates with the derived ``whk_…`` value (the root never
+        # touches the wire) — showing the root here would hand the operator
+        # a credential the receiver never sees.
+        if (
+            channel.type == ChannelTypes.WEBHOOK
+            and (channel.settings or {}).get("auth_method") == "api_key"
+        ):
+            display_secret = channel.get_webhook_api_key()
+        else:
+            display_secret = root
 
         context = {
             **self.admin_site.each_context(request),
             "opts": self.model._meta,  # noqa: SLF001
             "original": channel,
             "title": "New secret generated",
-            "secret": plaintext,
+            "secret": display_secret,
         }
         return TemplateResponse(
-            request, "admin/core/channel/regenerated_api_key.html", context
+            request, "admin/core/channel/regenerated_secret.html", context
         )
 
 

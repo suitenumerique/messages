@@ -1366,6 +1366,11 @@ class ThreadEventSerializer(CreateOnlyFieldsMixin, serializers.ModelSerializer):
         ``channel``; surface it as ``Webhook: {name}`` so the timeline shows
         the integration instead of an anonymous "Unknown". Returns ``None``
         when neither is available, letting the client fall back.
+
+        The ``Webhook:`` prefix is intentionally a fixed, server-side label
+        and not localized: it is a trust/provenance marker that prevents a
+        channel from choosing a ``name`` that impersonates a human author
+        in the timeline. This might get moved to the frontend in the future.
         """
         if obj.author_id:
             return obj.author.full_name or obj.author.email

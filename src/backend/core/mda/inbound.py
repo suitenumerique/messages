@@ -139,13 +139,22 @@ def deliver_inbound_message(
     imap_labels: list[str] | None = None,
     imap_flags: list[str] | None = None,
     channel: models.Channel | None = None,
-    skip_inbound_queue: bool = False,
+    is_internal: bool = False,
+    blob: "models.Blob | None" = None,
 ) -> bool:  # Return True on success, False on failure
     """Deliver a parsed inbound email message.
 
-    For imports (is_import=True) or when skip_inbound_queue=True, messages are created
-    directly without spam checking. For regular messages, they are queued for spam
-    processing via rspamd. Warning: messages imported here could be is_sender=True.
+    Imports (``is_import=True``) bypass the queue and create the message
+    directly — historical bulk data, no spam check, no user webhooks.
+    Warning: messages imported here could be is_sender=True.
+
+    Everything else is queued for the inbound pipeline via
+    ``process_inbound_message_task`` (spam steps + user webhooks).
+    Internal mailbox-to-mailbox delivery sets ``is_internal=True`` so the
+    pipeline skips spam checking while still firing webhooks, and passes
+    the sender's already-committed ``blob`` so the queue row references
+    the encrypted bytes instead of copying them. ``raw_data`` is stored
+    inline only when no ``blob`` is supplied (the external MTA path).
 
     raw_data is not parsed again, just stored as is.
     """
@@ -181,9 +190,10 @@ def deliver_inbound_message(
             )
             return True  # Return success since we handled the duplicate gracefully
 
-    # --- 3. Handle imports and internal messages directly, queue others for spam processing --- #
-    if is_import or skip_inbound_queue:
-        # Imports and internal messages bypass spam checking and create messages directly
+    # --- 3. Imports bypass the queue; everything else runs the pipeline --- #
+    if is_import:
+        # Historical bulk import: create the message directly, no spam
+        # check and no user webhooks (autoreply is suppressed too).
         result = _create_message_from_inbound(
             recipient_email=recipient_email,
             parsed_email=parsed_email,
@@ -196,28 +206,30 @@ def deliver_inbound_message(
             channel=channel,
             is_spam=False,  # Bypassed messages are never marked as spam
         )
-
-        # Send autoreply for internal messages (not imports, which are historical)
-        if not is_import and isinstance(result, models.Message):
-            from core.mda.autoreply import (  # pylint: disable=import-outside-toplevel
-                try_send_autoreply,
-            )
-
-            try_send_autoreply(mailbox, parsed_email, result)
-
         return bool(result)
 
-    # Regular messages: queue for spam processing
+    # Internal mail is expected to reference the sender's already-committed
+    # blob — that's the whole point (no second plaintext copy). Enforce the
+    # contract so a future caller can't silently fall back to inline bytes.
+    if is_internal and blob is None:
+        raise ValueError("internal delivery requires a blob")
+
+    # External and internal messages: queue for the inbound pipeline.
+    # Internal mail references the sender's existing blob (no second
+    # plaintext copy); external mail stores its MTA bytes inline.
     try:
         inbound_message = models.InboundMessage.objects.create(
             mailbox=mailbox,
-            raw_data=raw_data,
+            raw_data=None if blob is not None else raw_data,
+            blob=blob,
             channel=channel,
+            is_internal=is_internal,
         )
         logger.info(
-            "Queued inbound message %s (recipient: %s)",
+            "Queued inbound message %s (recipient: %s, internal: %s)",
             inbound_message.id,
             recipient_email,
+            is_internal,
         )
         # Queue the task immediately for processing (no lag)
         process_inbound_message_task.delay(str(inbound_message.id))

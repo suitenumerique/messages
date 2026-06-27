@@ -991,5 +991,8 @@
   "You will no longer have access to the mailbox \"{{mailboxName}}\".": "Vous n'aurez plus accès à la boîte aux lettres « {{mailboxName}} ».",
   "Your email...": "Renseigner votre email...",
   "Your endpoint will receive a JSON payload containing the parsed message (from, to, subject, body, headers, …).": "Votre point de terminaison recevra une charge utile JSON contenant le message analysé (expéditeur, destinataire, objet, corps, en-têtes, …).",
-  "Your session has expired. Please log in again.": "Votre session a expiré. Veuillez vous reconnecter."
+  "Your session has expired. Please log in again.": "Votre session a expiré. Veuillez vous reconnecter.",
+  "URL must start with https://": "L'URL doit commencer par https://",
+  "Regenerate secret": "Régénérer le secret",
+  "Regenerating the secret invalidates the old one immediately. The receiver must be updated with the new value before it can verify webhooks again.": "La régénération du secret invalide immédiatement l'ancien. Le récepteur doit être mis à jour avec la nouvelle valeur avant de pouvoir vérifier à nouveau les webhooks."
 }

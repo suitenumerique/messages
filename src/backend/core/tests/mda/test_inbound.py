@@ -6,6 +6,7 @@ from django.test import override_settings
 from django.utils import timezone
 
 import pytest
+from jmap_email import parse_email
 
 from core import enums, factories, models
 from core.mda.inbound import deliver_inbound_message
@@ -257,7 +258,7 @@ class TestDeliverInboundMessage:
         assert models.Message.objects.count() == 0
 
         success = deliver_inbound_message(
-            recipient_addr, sample_parsed_email, raw_email_data, skip_inbound_queue=True
+            recipient_addr, sample_parsed_email, raw_email_data, is_import=True
         )
 
         assert success is True
@@ -323,7 +324,7 @@ class TestDeliverInboundMessage:
         assert models.Message.objects.count() == 0
 
         success = deliver_inbound_message(
-            recipient_addr, sample_parsed_email, raw_email_data, skip_inbound_queue=True
+            recipient_addr, sample_parsed_email, raw_email_data, is_import=True
         )
 
         assert success is True
@@ -346,7 +347,7 @@ class TestDeliverInboundMessage:
         ).exists()
 
         success = deliver_inbound_message(
-            recipient_addr, sample_parsed_email, raw_email_data, skip_inbound_queue=True
+            recipient_addr, sample_parsed_email, raw_email_data, is_import=True
         )
 
         assert success is True
@@ -366,7 +367,7 @@ class TestDeliverInboundMessage:
         ).exists()
 
         success = deliver_inbound_message(
-            recipient_addr, sample_parsed_email, raw_email_data, skip_inbound_queue=True
+            recipient_addr, sample_parsed_email, raw_email_data, is_import=True
         )
 
         assert success is False
@@ -395,7 +396,7 @@ class TestDeliverInboundMessage:
         ).exists()
 
         success = deliver_inbound_message(
-            recipient_addr, sample_parsed_email, raw_email_data, skip_inbound_queue=True
+            recipient_addr, sample_parsed_email, raw_email_data, is_import=True
         )
 
         assert success is True
@@ -420,7 +421,7 @@ class TestDeliverInboundMessage:
         ]
 
         success = deliver_inbound_message(
-            recipient_addr, sample_parsed_email, raw_email_data, skip_inbound_queue=True
+            recipient_addr, sample_parsed_email, raw_email_data, is_import=True
         )
 
         assert success is True  # Should still succeed using fallback
@@ -439,7 +440,7 @@ class TestDeliverInboundMessage:
         del sample_parsed_email["from"]  # Remove From header
 
         success = deliver_inbound_message(
-            recipient_addr, sample_parsed_email, raw_email_data, skip_inbound_queue=True
+            recipient_addr, sample_parsed_email, raw_email_data, is_import=True
         )
 
         assert success is True
@@ -466,7 +467,7 @@ class TestDeliverInboundMessage:
         ]
 
         success = deliver_inbound_message(
-            recipient_addr, sample_parsed_email, raw_email_data, skip_inbound_queue=True
+            recipient_addr, sample_parsed_email, raw_email_data, is_import=True
         )
 
         assert success is True  # Delivery succeeds overall
@@ -501,7 +502,7 @@ class TestDeliverInboundMessage:
         raw_email_1 = b"Raw for message 1"
 
         success1 = deliver_inbound_message(
-            addr2, parsed_email_1, raw_email_1, skip_inbound_queue=True
+            addr2, parsed_email_1, raw_email_1, is_import=True
         )
         assert success1 is True
         assert models.Thread.objects.filter(accesses__mailbox=mailbox1).count() == 0
@@ -530,7 +531,7 @@ class TestDeliverInboundMessage:
         raw_email_2 = b"Raw for message 2"
 
         success2 = deliver_inbound_message(
-            addr1, parsed_email_2, raw_email_2, skip_inbound_queue=True
+            addr1, parsed_email_2, raw_email_2, is_import=True
         )
         assert success2 is True
         assert models.Thread.objects.filter(accesses__mailbox=mailbox1).count() == 1
@@ -559,7 +560,7 @@ class TestDeliverInboundMessage:
         raw_email_3 = b"Raw for message 3"
 
         success3 = deliver_inbound_message(
-            addr2, parsed_email_3, raw_email_3, skip_inbound_queue=True
+            addr2, parsed_email_3, raw_email_3, is_import=True
         )
         assert success3 is True
         # Counts should remain 1 thread per mailbox
@@ -595,7 +596,7 @@ class TestDeliverInboundMessage:
             recipient_addr,
             parsed_email_empty_subject,
             raw_email_data,
-            skip_inbound_queue=True,
+            is_import=True,
         )
 
         assert success is True
@@ -632,7 +633,7 @@ class TestDeliverInboundMessage:
             recipient_addr,
             parsed_email_null_subject,
             raw_email_data,
-            skip_inbound_queue=True,
+            is_import=True,
         )
 
         assert success is True
@@ -671,7 +672,7 @@ class TestDeliverInboundMessage:
             recipient_addr,
             parsed_email_no_subject,
             raw_email_data,
-            skip_inbound_queue=True,
+            is_import=True,
         )
 
         assert success is True
@@ -712,7 +713,7 @@ class TestDeliverInboundMessage:
             recipient_addr,
             parsed_email_long_subject,
             raw_email_data,
-            skip_inbound_queue=True,
+            is_import=True,
         )
         assert success is True
         assert models.Message.objects.count() == 1
@@ -747,7 +748,7 @@ class TestDeliverInboundMessage:
         }
 
         success1 = deliver_inbound_message(
-            recipient_addr, parsed_email_1, raw_email_data, skip_inbound_queue=True
+            recipient_addr, parsed_email_1, raw_email_data, is_import=True
         )
         assert success1 is True
 
@@ -763,7 +764,7 @@ class TestDeliverInboundMessage:
         }
 
         success2 = deliver_inbound_message(
-            recipient_addr, parsed_email_2, raw_email_data, skip_inbound_queue=True
+            recipient_addr, parsed_email_2, raw_email_data, is_import=True
         )
         assert success2 is True
 
@@ -818,7 +819,7 @@ class TestDeliverInboundMessage:
             recipient_addr,
             parsed_email_with_duplicates,
             raw_email_data,
-            skip_inbound_queue=True,
+            is_import=True,
         )
 
         assert success is True
@@ -890,24 +891,40 @@ class TestInboundAutoreplyIntegration:
         }
 
     @patch("core.mda.autoreply.try_send_autoreply")
-    def test_autoreply_called_on_direct_delivery(
-        self, mock_try_autoreply, target_mailbox, sample_parsed_email
+    def test_autoreply_called_on_internal_delivery(
+        self, mock_try_autoreply, target_mailbox
     ):
-        """try_send_autoreply is called for skip_inbound_queue deliveries."""
+        """try_send_autoreply fires for internal deliveries.
+
+        Internal mail now runs through the inbound pipeline task, which
+        re-parses the raw bytes, so we feed real MIME (not a placeholder).
+        The autoreply is dispatched from the task after message creation.
+        """
         recipient_addr = f"{target_mailbox.local_part}@{target_mailbox.domain.name}"
+        raw = (
+            b"From: sender@test.com\r\n"
+            b"To: " + recipient_addr.encode() + b"\r\n"
+            b"Subject: Autoreply Test\r\n"
+            b"Message-ID: <autoreply.integ.1@example.com>\r\n\r\nHello"
+        )
+        # Internal delivery references the sender's committed blob, just
+        # like outbound.send_message does.
+        blob = models.Blob.objects.create_blob(
+            content=raw, content_type="message/rfc822"
+        )
 
         result = deliver_inbound_message(
             recipient_addr,
-            sample_parsed_email,
-            b"raw data",
-            skip_inbound_queue=True,
+            parse_email(raw),
+            raw,
+            is_internal=True,
+            blob=blob,
         )
 
         assert result is True
         mock_try_autoreply.assert_called_once()
         args = mock_try_autoreply.call_args[0]
         assert args[0] == target_mailbox
-        assert args[1] == sample_parsed_email
         assert isinstance(args[2], models.Message)
 
     @patch("core.mda.autoreply.try_send_autoreply")
@@ -937,7 +954,7 @@ class TestInboundAutoreplyIntegration:
             "nonexistent@nonexistent-domain.invalid",
             sample_parsed_email,
             b"raw data",
-            skip_inbound_queue=True,
+            is_import=True,
         )
 
         assert result is False

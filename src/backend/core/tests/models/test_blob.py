@@ -5,7 +5,7 @@ from django.test import override_settings
 
 import pytest
 
-from core import enums, factories
+from core import enums, factories, models
 
 
 @pytest.mark.django_db
@@ -75,3 +75,49 @@ class TestBlobCompression:
             compression_ratio < 0.1
         )  # Should compress to less than 10% of original size
         assert blob.get_content() == content  # Verify data integrity
+
+
+@pytest.mark.django_db
+class TestInboundMessageBlobReference:
+    """Internal mail parks the sender's blob on a transient InboundMessage
+    while the recipient pipeline runs. The GC must treat that as a live
+    reference, or it could reap the bytes out from under delivery."""
+
+    def test_inbound_message_counts_as_a_blob_reference(self):
+        """A blob referenced only by an InboundMessage survives GC, and
+        becomes collectable once that row is gone."""
+        # pylint: disable-next=import-outside-toplevel
+        from core.services.blob_gc import gc_orphan_blobs_task
+
+        mailbox = factories.MailboxFactory()
+        blob = models.Blob.objects.create_blob(
+            content=b"internal mime bytes", content_type="message/rfc822"
+        )
+        inbound = models.InboundMessage.objects.create(
+            mailbox=mailbox, blob=blob, is_internal=True
+        )
+
+        # Referenced solely by the in-flight queue row → still alive.
+        assert models.Blob.objects.is_referenced(blob.id) is True
+        gc_orphan_blobs_task(mode="full")
+        assert models.Blob.objects.filter(id=blob.id).exists()
+
+        # Queue row gone, nothing else references it → collectable.
+        inbound.delete()
+        assert models.Blob.objects.is_referenced(blob.id) is False
+        gc_orphan_blobs_task(mode="full")
+        assert not models.Blob.objects.filter(id=blob.id).exists()
+
+    def test_exactly_one_source_constraint(self):
+        """An InboundMessage must carry raw_data XOR a blob, never both."""
+        mailbox = factories.MailboxFactory()
+        blob = models.Blob.objects.create_blob(
+            content=b"bytes", content_type="message/rfc822"
+        )
+
+        # Both set → rejected (full_clean surfaces the check constraint
+        # as a ValidationError before the INSERT reaches the DB).
+        with pytest.raises(ValidationError):
+            models.InboundMessage.objects.create(
+                mailbox=mailbox, raw_data=b"bytes", blob=blob
+            )

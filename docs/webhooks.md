@@ -193,6 +193,14 @@ The mechanism is generic: a blocking webhook is the trigger today, but
 any step that returns `RETRY` (e.g. a persistently-unreachable spam
 checker) is quarantined the same way.
 
+> **Delivery is at-least-once — make your receiver idempotent.** A
+> `RETRY` re-fires the webhook on the next sweep, and a worker crash
+> after we POST but before we record success can re-deliver the same
+> message. The `Message` itself is created exactly once (deduplicated by
+> `Message-ID`), but your endpoint may legitimately see the *same*
+> message more than once. Key on the `Message-ID` (or the
+> `X-StMsg-*` envelope headers) and treat repeats as no-ops.
+
 (The marker rides in the stored MIME as an `X-StMsg-*` header. Sender-
 supplied `X-StMsg-*` headers are stripped at ingest, so receivers can't
 forge it.)

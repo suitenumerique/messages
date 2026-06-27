@@ -165,6 +165,17 @@ def schedule_template_blob_for_gc(sender, instance, **kwargs):
     schedule_for_gc(instance.blob_id)
 
 
+@receiver(post_delete, sender=models.InboundMessage)
+def schedule_inbound_message_blob_for_gc(sender, instance, **kwargs):
+    """Push ``InboundMessage.blob`` id into the GC set.
+
+    Internal mail references the sender's blob while in flight; once the
+    task deletes the queue row the blob may have become collectable
+    (no-op when ``blob_id`` is None, i.e. external inline-bytes rows).
+    """
+    schedule_for_gc(instance.blob_id)
+
+
 @receiver(post_delete, sender=models.Message)
 def delete_message_from_index(sender, instance, **kwargs):
     """Enqueue a targeted OpenSearch delete for the message child document.

@@ -10,7 +10,7 @@
 {% if original and original.type == "api_key" %}
 <li>
     <form method="post"
-          action="{% url 'admin:core_channel_regenerate_api_key' original.pk %}"
+          action="{% url 'admin:core_channel_regenerate_secret' original.pk %}"
           style="display: inline;"
           onsubmit="return confirm('Regenerate the api_key for this channel? The previous secret will stop working immediately.');">
         {% csrf_token %}

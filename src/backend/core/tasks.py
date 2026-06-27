@@ -1,6 +1,7 @@
 # pylint: disable=wildcard-import, unused-wildcard-import
 """Register all tasks here so that Celery autodiscovery can find them."""
 
+from core.mda.dispatch_webhooks import dispatch_webhook_task  # noqa: F401
 from core.mda.inbound_tasks import *  # noqa: F403
 from core.mda.outbound_tasks import *  # noqa: F403
 from core.services.blob_gc import *  # noqa: F403

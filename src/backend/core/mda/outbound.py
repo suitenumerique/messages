@@ -645,11 +645,18 @@ def send_message(message: models.Message, force_mta_out: bool = False):
                     and not force_mta_out
                 ):
                     try:
+                        # Reference the sender's already-committed blob so
+                        # the queue row carries the encrypted bytes, not a
+                        # second plaintext copy. ``delivered`` here means
+                        # "handed off to the recipient's inbound queue" —
+                        # the recipient's webhook outcome plays out on their
+                        # side and never feeds back into the sender's status.
                         delivered = deliver_inbound_message(
                             recipient_email,
                             parsed_email,
                             blob_content,
-                            skip_inbound_queue=True,
+                            is_internal=True,
+                            blob=message.blob,
                         )
                         _mark_delivered(recipient_email, delivered, True)
                     except Exception as e:

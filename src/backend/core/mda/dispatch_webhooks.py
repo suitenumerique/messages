@@ -31,6 +31,7 @@ Two body formats are supported (see ``docs/webhooks.md``):
 
 from __future__ import annotations
 
+import base64
 import hashlib
 import hmac
 import json
@@ -52,9 +53,17 @@ from core import enums, models
 from core.mda.inbound_pipeline import Decision, InboundContext, Step
 from core.services.ssrf import SSRFSafeSession, SSRFValidationError
 
+from messages.celery_app import app as celery_app
+
 logger = logging.getLogger(__name__)
 
+# Total wall-clock budget for one webhook delivery (connect + send +
+# read the capped response body). Enforced as a hard deadline across the
+# streamed body read too, so a receiver that drip-feeds bytes just under
+# the per-read timeout can't pin a worker indefinitely.
 WEBHOOK_TIMEOUT = 30  # seconds
+# Separate, tight cap on just the TCP/TLS connect phase.
+WEBHOOK_CONNECT_TIMEOUT = 5  # seconds
 
 # Hard cap on the receiver response body we parse for the action JSON.
 # The contract body is tiny (action / is_spam / labels = a few hundred
@@ -111,7 +120,7 @@ class _HttpResult:  # pylint: disable=too-many-instance-attributes
     reply_draft_template_id: Optional[str] = None
 
 
-def _read_capped_body(response) -> bytes:
+def _read_capped_body(response, deadline: Optional[float] = None) -> bytes:
     """Read at most ``MAX_RESPONSE_BODY`` bytes from a streaming response.
 
     The action body contract is tiny (a few hundred bytes). Reading
@@ -119,11 +128,19 @@ def _read_capped_body(response) -> bytes:
     receiver returns a huge payload we keep what we have and ignore
     the rest. Network errors mid-stream get logged and the caller
     treats the partial body as if the receiver had returned no body.
+
+    ``deadline`` (a ``time.monotonic()`` value) bounds total read time:
+    a receiver dribbling bytes just under the per-read socket timeout
+    would otherwise hold the worker far past ``WEBHOOK_TIMEOUT``. When
+    the deadline is crossed we raise ``TimeoutError`` so the caller
+    treats it as a transport failure (RETRY), not an empty body.
     """
     chunks: List[bytes] = []
     received = 0
     try:
         for chunk in response.iter_content(chunk_size=8192, decode_unicode=False):
+            if deadline is not None and time.monotonic() > deadline:
+                raise TimeoutError("webhook response read exceeded time budget")
             if not chunk:
                 continue
             remaining = MAX_RESPONSE_BODY - received
@@ -135,6 +152,8 @@ def _read_capped_body(response) -> bytes:
                 break
             chunks.append(chunk)
             received += len(chunk)
+    except TimeoutError:
+        raise
     except Exception as exc:
         logger.warning("Truncated response body read failed: %s", exc)
     return b"".join(chunks)
@@ -321,20 +340,19 @@ def _resolve_body(
     body_format: str,
     raw_data: bytes,
     parsed_email: JmapEmail,
-) -> Tuple[str, bytes, Any]:
-    """Compute (Content-Type, raw bytes to sign, request kwarg).
+) -> Tuple[str, bytes]:
+    """Compute (Content-Type, raw bytes to sign and POST).
 
-    The dispatcher needs:
-      - the Content-Type to send,
-      - the exact byte string the signature is computed over,
-      - the kwarg (``data=`` or ``json=``) to hand off to ``requests``.
+    The dispatcher needs the Content-Type to send and the exact byte
+    string the signature is computed over — which is also the byte
+    string we POST verbatim via ``data=``.
 
     JSON is serialised here once so the signature and the wire bytes
     cannot drift (``requests`` would otherwise re-serialise with
     different separators/ordering).
     """
     if body_format == FORMAT_EML:
-        return "message/rfc822", raw_data, {"data": raw_data}
+        return "message/rfc822", raw_data
     include_body = body_format == FORMAT_JMAP
     payload = build_jmap_email(parsed_email, include_body=include_body)
     # ``separators=(",", ":")`` produces the compact bytes we sign.
@@ -343,7 +361,7 @@ def _resolve_body(
     body_bytes = json.dumps(payload, ensure_ascii=False, separators=(",", ":")).encode(
         "utf-8"
     )
-    return "application/json", body_bytes, {"data": body_bytes}
+    return "application/json", body_bytes
 
 
 def _sign(secret: str, timestamp: str, body_bytes: bytes) -> str:
@@ -572,23 +590,43 @@ class UserWebhookStep:
 
     def __call__(self, ctx: InboundContext) -> Decision:
         cfg = self.channel.settings or {}
-        url = cfg["url"]  # validated at channel-create time
         body_format = cfg.get("format", DEFAULT_FORMAT)
         blocking = bool(cfg.get("blocking", False))
 
-        headers = _envelope_headers(
-            channel=self.channel,
-            phase=self.phase,
-            mailbox=ctx.mailbox,
-            recipient_email=ctx.recipient_email,
-            is_spam=ctx.is_spam,
+        content_type, body_bytes = _resolve_body(
+            body_format, ctx.raw_data, ctx.parsed_email
         )
-        result = self._post(
-            url=url,
-            body_format=body_format,
-            headers=headers,
-            ctx=ctx,
-            blocking=blocking,
+
+        if not blocking:
+            # Non-blocking webhooks can't influence delivery, so we never
+            # run their network I/O on the inbound worker — a slow/hostile
+            # receiver (the mailbox owner's own endpoint) would otherwise
+            # stall mail processing for everyone sharing the queue. Snapshot
+            # the phase-correct request and hand the POST to a Celery task
+            # on the default queue, then continue immediately. Fires via
+            # ``.delay`` (not ``on_commit``) to match the previous inline
+            # semantics: a non-blocking webhook fires regardless of whether
+            # the message is later dropped or its delivery rolls back.
+            dispatch_webhook_task.delay(
+                str(self.channel.id),
+                str(ctx.mailbox.id),
+                self.phase,
+                ctx.is_spam,
+                ctx.recipient_email,
+                content_type,
+                base64.b64encode(body_bytes).decode("ascii"),
+            )
+            return Decision.CONTINUE
+
+        result = _dispatch_webhook(
+            channel=self.channel,
+            mailbox=ctx.mailbox,
+            phase=self.phase,
+            is_spam=ctx.is_spam,
+            recipient_email=ctx.recipient_email,
+            content_type=content_type,
+            body_bytes=body_bytes,
+            blocking=True,
         )
         if result.is_spam_override is not None:
             ctx.is_spam = result.is_spam_override
@@ -616,160 +654,263 @@ class UserWebhookStep:
             ctx.pending_drafts.append((self.channel.id, result.reply_draft_template_id))
         return result.decision
 
-    def _post(
-        self,
-        *,
-        url: str,
-        body_format: str,
-        headers: Dict[str, str],
-        ctx: InboundContext,
-        blocking: bool,
-    ) -> _HttpResult:
-        content_type, body_bytes, body_kwargs = _resolve_body(
-            body_format, ctx.raw_data, ctx.parsed_email
+
+def _build_auth_headers(
+    channel: models.Channel,
+    secret: str,
+    body_bytes: bytes,
+    mailbox: models.Mailbox,
+) -> Optional[Dict[str, str]]:
+    """Return the auth headers for the channel's ``auth_method``, or
+    ``None`` when the channel is misconfigured (caller fails closed)."""
+    auth_method = (channel.settings or {}).get("auth_method")
+
+    if auth_method == "api_key":
+        # Derived from the root secret via HMAC. The raw root never
+        # touches the wire — a receiver-side log leak of this value
+        # reveals nothing about the root, so HMAC/JWT verification
+        # remains unforgeable.
+        return {"X-StMsg-Api-Key": channel.get_webhook_api_key()}
+
+    if auth_method == "jwt":
+        # HMAC signature over the body + short-TTL HS256 JWT, both keyed
+        # by the root secret. Signed at send time (here / in the task),
+        # so the JWT TTL is measured from the actual POST, not enqueue.
+        now = int(time.time())
+        timestamp = str(now)
+        signature = _sign(secret, timestamp, body_bytes)
+        bearer = _sign_jwt(
+            secret,
+            channel=channel,
+            mailbox=mailbox,
+            body_bytes=body_bytes,
+            issued_at=now,
         )
-
-        secret = (self.channel.encrypted_settings or {}).get("secret")
-        if not secret:
-            # The create path always mints a secret; a row without one
-            # is misconfigured. We can't sign the POST, so we hold for
-            # RETRY rather than drop the user's mail — re-minting the
-            # secret lets the next sweep deliver. A webhook failure must
-            # never silently discard the email (only an explicit
-            # ``{"action": "drop"}`` on a 2xx does that).
-            logger.warning(
-                "Webhook channel %s has no secret — holding for retry",
-                self.channel.id,
-            )
-            return _failure(blocking, Decision.RETRY)
-
-        auth_headers = self._build_auth_headers(secret, body_bytes, ctx.mailbox)
-        if auth_headers is None:
-            # Unknown/misconfigured auth_method — same reasoning: hold
-            # for retry, never drop the email on our config error.
-            return _failure(blocking, Decision.RETRY)
-
-        signed_headers = {
-            **headers,
-            "Content-Type": content_type,
-            **auth_headers,
+        return {
+            "X-StMsg-Webhook-Timestamp": timestamp,
+            "X-StMsg-Webhook-Signature": f"{SIGNATURE_SCHEME}={signature}",
+            "Authorization": f"Bearer {bearer}",
         }
-        kwargs = {"headers": signed_headers, **body_kwargs}
 
-        # ``stream=True`` lets us cap the response body we actually
-        # read — a misconfigured receiver returning a multi-GB error
-        # page must not OOM the worker.
-        try:
-            response = SSRFSafeSession().post(
-                url, timeout=WEBHOOK_TIMEOUT, stream=True, **kwargs
-            )
-        except SSRFValidationError as exc:
-            # SSRF block is a config error on our side (the URL points at a
-            # disallowed address). Hold for RETRY rather than drop — fixing
-            # the URL lets the next sweep deliver. We never discard the
-            # user's mail because of a webhook/config failure.
-            logger.warning(
-                "Webhook channel %s rejected by SSRF for url=%s: %s",
-                self.channel.id,
-                _sanitize_url(url),
-                exc,
-            )
-            return _failure(blocking, Decision.RETRY)
-        except Exception as exc:
-            # Timeout, connection refused, DNS, unknown transport-level
-            # failure: all transient on the blocking path. The 48-hour
-            # quarantine window in the pipeline runner bounds the retries.
-            # Log only the exception *type*, not its message or traceback:
-            # requests/urllib3 errors embed the full request URL (path +
-            # query), which is exactly where receivers carry secret tokens,
-            # so ``exc``/``exc_info`` would bypass ``_sanitize_url``.
-            logger.warning(
-                "Webhook channel %s network error (%s) for url=%s",
-                self.channel.id,
-                type(exc).__name__,
-                _sanitize_url(url),
-            )
-            return _failure(blocking, Decision.RETRY)
+    # Settings validator forbids creating a webhook channel without a
+    # valid auth_method; an existing row with a missing/unknown value is
+    # misconfigured.
+    logger.warning(
+        "Webhook channel %s has missing/unknown auth_method=%r — skipping",
+        channel.id,
+        auth_method,
+    )
+    return None
 
-        try:
-            status = response.status_code
-            if 200 <= status < 300:
-                if not blocking:
-                    # Non-blocking webhooks never influence delivery —
-                    # ignore the body entirely. Avoids surprises if a
-                    # receiver accidentally returns {"action":"drop"}.
-                    return _HttpResult()
-                body_bytes_response = _read_capped_body(response)
-                result = _classify_response_body(body_bytes_response)
-                if result.decision == Decision.DROP:
-                    logger.info(
-                        "Webhook channel %s requested DROP via response body for url=%s",
-                        self.channel.id,
-                        _sanitize_url(url),
-                    )
-                return result
 
-            logger.info(
-                "Webhook channel %s returned status %s for url=%s",
-                self.channel.id,
-                status,
-                _sanitize_url(url),
-            )
-            # Any non-2xx status is a transient failure → RETRY. A
-            # blocking webhook DROPs an email *only* when it explicitly
-            # returns ``{"action": "drop"}`` with a 2xx (handled above).
-            # A receiver bug that answers 4xx must never cost the user
-            # their mail — the 7-day retry budget bounds the hold.
-            return _failure(blocking, Decision.RETRY)
-        finally:
-            response.close()
+def _deliver_signed_webhook(
+    *,
+    channel: models.Channel,
+    mailbox: models.Mailbox,
+    url: str,
+    content_type: str,
+    body_bytes: bytes,
+    envelope_headers: Dict[str, str],
+    blocking: bool,
+) -> _HttpResult:
+    """Sign and POST one webhook, returning the classified ``_HttpResult``.
 
-    def _build_auth_headers(
-        self,
-        secret: str,
-        body_bytes: bytes,
-        mailbox: models.Mailbox,
-    ) -> Optional[Dict[str, str]]:
-        """Return the auth headers for the channel's ``auth_method``,
-        or ``None`` when the channel is misconfigured (caller fails
-        closed)."""
-        auth_method = (self.channel.settings or {}).get("auth_method")
-
-        if auth_method == "api_key":
-            # Derived from the root secret via HMAC. The raw root
-            # never touches the wire — a receiver-side log leak of
-            # this value reveals nothing about the root, so HMAC/JWT
-            # verification remains unforgeable.
-            return {"X-StMsg-Api-Key": self.channel.get_webhook_api_key()}
-
-        if auth_method == "jwt":
-            # HMAC signature over the body + short-TTL HS256 JWT,
-            # both keyed by the root secret.
-            now = int(time.time())
-            timestamp = str(now)
-            signature = _sign(secret, timestamp, body_bytes)
-            bearer = _sign_jwt(
-                secret,
-                channel=self.channel,
-                mailbox=mailbox,
-                body_bytes=body_bytes,
-                issued_at=now,
-            )
-            return {
-                "X-StMsg-Webhook-Timestamp": timestamp,
-                "X-StMsg-Webhook-Signature": f"{SIGNATURE_SCHEME}={signature}",
-                "Authorization": f"Bearer {bearer}",
-            }
-
-        # Settings validator forbids creating a webhook channel without
-        # a valid auth_method; an existing row with a missing/unknown
-        # value is misconfigured.
+    The single network path shared by the inline blocking step and the
+    out-of-band non-blocking task, so signing/SSRF/timeout/response
+    handling can never drift between them.
+    """
+    secret = (channel.encrypted_settings or {}).get("secret")
+    if not secret:
+        # The create path always mints a secret; a row without one is
+        # misconfigured. We can't sign the POST, so we hold for RETRY
+        # rather than drop the user's mail — re-minting the secret lets
+        # the next sweep deliver. A webhook failure must never silently
+        # discard the email (only an explicit ``{"action": "drop"}`` on
+        # a 2xx does that).
         logger.warning(
-            "Webhook channel %s has missing/unknown auth_method=%r — skipping",
-            self.channel.id,
-            auth_method,
+            "Webhook channel %s has no secret — holding for retry",
+            channel.id,
         )
-        return None
+        return _failure(blocking, Decision.RETRY)
+
+    auth_headers = _build_auth_headers(channel, secret, body_bytes, mailbox)
+    if auth_headers is None:
+        # Unknown/misconfigured auth_method — same reasoning: hold for
+        # retry, never drop the email on our config error.
+        return _failure(blocking, Decision.RETRY)
+
+    signed_headers = {
+        **envelope_headers,
+        "Content-Type": content_type,
+        **auth_headers,
+    }
+    # ``stream=True`` lets us cap the response body we actually read — a
+    # misconfigured receiver returning a multi-GB error page must not OOM
+    # the worker. The ``(connect, read)`` tuple bounds the connect phase
+    # tightly and each socket read; the ``deadline`` below bounds the
+    # *total* exchange against slow drip.
+    deadline = time.monotonic() + WEBHOOK_TIMEOUT
+    try:
+        response = SSRFSafeSession().post(
+            url,
+            timeout=(WEBHOOK_CONNECT_TIMEOUT, WEBHOOK_TIMEOUT),
+            stream=True,
+            headers=signed_headers,
+            data=body_bytes,
+        )
+    except SSRFValidationError as exc:
+        # SSRF block is a config error on our side (the URL points at a
+        # disallowed address). Hold for RETRY rather than drop — fixing
+        # the URL lets the next sweep deliver. We never discard the user's
+        # mail because of a webhook/config failure.
+        logger.warning(
+            "Webhook channel %s rejected by SSRF for url=%s: %s",
+            channel.id,
+            _sanitize_url(url),
+            exc,
+        )
+        return _failure(blocking, Decision.RETRY)
+    except Exception as exc:
+        # Timeout, connection refused, DNS, unknown transport-level
+        # failure: all transient. The 48-hour quarantine window in the
+        # pipeline runner bounds the retries. Log only the exception
+        # *type*, not its message or traceback: requests/urllib3 errors
+        # embed the full request URL (path + query), which is exactly
+        # where receivers carry secret tokens, so ``exc``/``exc_info``
+        # would bypass ``_sanitize_url``.
+        logger.warning(
+            "Webhook channel %s network error (%s) for url=%s",
+            channel.id,
+            type(exc).__name__,
+            _sanitize_url(url),
+        )
+        return _failure(blocking, Decision.RETRY)
+
+    try:
+        status = response.status_code
+        if 200 <= status < 300:
+            if not blocking:
+                # Non-blocking webhooks never influence delivery — ignore
+                # the body entirely. Avoids surprises if a receiver
+                # accidentally returns {"action":"drop"}.
+                return _HttpResult()
+            try:
+                body_bytes_response = _read_capped_body(response, deadline=deadline)
+            except TimeoutError:
+                logger.warning(
+                    "Webhook channel %s exceeded %ss budget reading response "
+                    "for url=%s — holding for retry",
+                    channel.id,
+                    WEBHOOK_TIMEOUT,
+                    _sanitize_url(url),
+                )
+                return _failure(blocking, Decision.RETRY)
+            result = _classify_response_body(body_bytes_response)
+            if result.decision == Decision.DROP:
+                logger.info(
+                    "Webhook channel %s requested DROP via response body for url=%s",
+                    channel.id,
+                    _sanitize_url(url),
+                )
+            return result
+
+        logger.info(
+            "Webhook channel %s returned status %s for url=%s",
+            channel.id,
+            status,
+            _sanitize_url(url),
+        )
+        # Any non-2xx status is a transient failure → RETRY. A blocking
+        # webhook DROPs an email *only* when it explicitly returns
+        # ``{"action": "drop"}`` with a 2xx (handled above). A receiver
+        # bug that answers 4xx must never cost the user their mail — the
+        # 48-hour quarantine window bounds the hold.
+        return _failure(blocking, Decision.RETRY)
+    finally:
+        response.close()
+
+
+def _dispatch_webhook(
+    *,
+    channel: models.Channel,
+    mailbox: models.Mailbox,
+    phase: str,
+    is_spam: Optional[bool],
+    recipient_email: str,
+    content_type: str,
+    body_bytes: bytes,
+    blocking: bool,
+) -> _HttpResult:
+    """Build the envelope headers and deliver one webhook.
+
+    The shared entry point above ``_deliver_signed_webhook``: both the
+    inline blocking step and the out-of-band non-blocking task land here,
+    so the URL lookup and header-building can't drift between them.
+    """
+    url = (channel.settings or {}).get("url")
+    if not url:
+        # The serializer guarantees a url on create; a row without one is
+        # misconfigured. Hold for retry rather than drop (blocking); for
+        # the non-blocking task this collapses to a no-op CONTINUE.
+        logger.warning("Webhook channel %s has no url — skipping", channel.id)
+        return _failure(blocking, Decision.RETRY)
+    envelope_headers = _envelope_headers(
+        channel=channel,
+        phase=phase,
+        mailbox=mailbox,
+        recipient_email=recipient_email,
+        is_spam=is_spam,
+    )
+    return _deliver_signed_webhook(
+        channel=channel,
+        mailbox=mailbox,
+        url=url,
+        content_type=content_type,
+        body_bytes=body_bytes,
+        envelope_headers=envelope_headers,
+        blocking=blocking,
+    )
+
+
+@celery_app.task
+def dispatch_webhook_task(
+    channel_id: str,
+    mailbox_id: str,
+    phase: str,
+    is_spam: Optional[bool],
+    recipient_email: str,
+    content_type: str,
+    body_b64: str,
+) -> None:
+    """Deliver one non-blocking webhook off the inbound worker.
+
+    Non-blocking webhooks can't influence delivery, so their network I/O
+    runs here (default queue) instead of pinning the time-sensitive
+    inbound pipeline worker. Best-effort and at-least-once: the message
+    is already handled, so any failure is logged and swallowed (matching
+    the previous inline non-blocking contract). The request is re-signed
+    here at send time, so the root secret never travels through the
+    broker and the JWT TTL is measured from the actual POST.
+    """
+    try:
+        channel = models.Channel.objects.filter(id=channel_id).first()
+        mailbox = models.Mailbox.objects.filter(id=mailbox_id).first()
+        if channel is None or mailbox is None:
+            return
+        _dispatch_webhook(
+            channel=channel,
+            mailbox=mailbox,
+            phase=phase,
+            is_spam=is_spam,
+            recipient_email=recipient_email,
+            content_type=content_type,
+            body_bytes=base64.b64decode(body_b64),
+            blocking=False,
+        )
+    except Exception:  # pylint: disable=broad-exception-caught
+        logger.exception(
+            "Non-blocking webhook dispatch failed (channel=%s)", channel_id
+        )
 
 
 def webhook_steps_for_mailbox(

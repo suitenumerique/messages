@@ -52,6 +52,7 @@ A Blob is alive as long as any of these references it:
   (the body of a draft being composed)
 - ``Attachment.blob`` (per-attachment during draft composition)
 - ``MessageTemplate.blob`` (signatures, autoreply bodies)
+- ``InboundMessage.blob`` (in-flight internal message)
 
 Plus a short-lived **upload reservation** in the form of a
 ``MailboxBlob`` row carrying an explicit ``expires_at`` timestamp. The

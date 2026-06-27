@@ -4,6 +4,7 @@
 # pylint: disable=missing-class-docstring,too-many-lines,too-many-public-methods
 # pylint: disable=use-implicit-booleaness-not-comparison
 
+import base64
 import hashlib
 import hmac
 import json
@@ -18,6 +19,7 @@ import pytest
 import requests as requests_lib
 
 from core import enums, factories, models
+from core.mda import outbound
 from core.mda.dispatch_webhooks import (
     DEFAULT_FORMAT,
     FORMAT_EML,
@@ -26,6 +28,7 @@ from core.mda.dispatch_webhooks import (
     PHASE_BEFORE_SPAM,
     _classify_response_body,
     build_jmap_email,
+    dispatch_webhook_task,
     find_webhook_channels_for_mailbox,
     webhook_steps_for_mailbox,
 )
@@ -635,8 +638,9 @@ class TestDispatchInboundWebhooks:
     def test_blocking_retries_on_unknown_exception(
         self, mock_session, mailbox, parsed_email
     ):
-        """Unknown transport-level errors land as RETRY — the 7-day cap
-        bounds how long we'll keep trying a busted receiver."""
+        """Unknown transport-level errors land as RETRY — the 48-hour
+        quarantine window bounds how long we'll keep trying a busted
+        receiver."""
         factories.ChannelFactory(
             type=enums.ChannelTypes.WEBHOOK,
             mailbox=mailbox,
@@ -749,9 +753,7 @@ class TestDispatchInboundWebhooks:
         assert kwargs["headers"]["Content-Type"] == "application/json"
 
     @patch("core.mda.dispatch_webhooks.SSRFSafeSession")
-    def test_jmap_metadata_skips_body_parts(
-        self, mock_session, mailbox, parsed_email
-    ):
+    def test_jmap_metadata_skips_body_parts(self, mock_session, mailbox, parsed_email):
         """Notification variant: no textBody/htmlBody/bodyValues/attachments."""
         factories.ChannelFactory(
             type=enums.ChannelTypes.WEBHOOK,
@@ -1275,6 +1277,296 @@ class TestPipelineIntegration:
         assert headers["X-StMsg-Is-Spam"] == "true"
         assert headers["X-StMsg-Phase"] == "after_spam"
 
+    @patch("core.mda.inbound_tasks._create_message_from_inbound")
+    @patch("core.mda.inbound_pipeline._call_rspamd")
+    def test_creation_failure_retries_then_abandons(self, mock_rspamd, mock_create):
+        """A message that parses but can never be created is held for a
+        bounded retry, then abandoned — it must not loop (re-firing the
+        pipeline + webhooks) forever."""
+        mock_rspamd.return_value = (False, None, None)
+        mock_create.return_value = None  # creation always fails
+        mailbox = factories.MailboxFactory()
+        raw_data = (
+            b"From: s@example.com\r\n"
+            b"To: " + str(mailbox).encode() + b"\r\n"
+            b"Subject: t\r\n\r\nbody"
+        )
+        inbound_message = models.InboundMessage.objects.create(
+            mailbox=mailbox, raw_data=raw_data
+        )
+
+        # Within the quarantine window → held for retry, row kept.
+        with patch.object(process_inbound_message_task, "update_state", Mock()):
+            result = process_inbound_message_task.run(str(inbound_message.id))
+        assert result["error"] == "retry"
+        assert models.InboundMessage.objects.filter(id=inbound_message.id).exists()
+
+        # Aged past the window → abandoned, row deleted (loop stops).
+        models.InboundMessage.objects.filter(id=inbound_message.id).update(
+            created_at=dj_timezone.now() - QUARANTINE_AFTER - QUARANTINE_AFTER
+        )
+        with patch.object(process_inbound_message_task, "update_state", Mock()):
+            result = process_inbound_message_task.run(str(inbound_message.id))
+        assert result["error"] == "abandoned"
+        assert not models.InboundMessage.objects.filter(id=inbound_message.id).exists()
+
+
+# --- non-blocking dispatch isolation --- #
+
+
+@pytest.mark.django_db
+class TestNonBlockingDispatch:
+    """Non-blocking webhooks must hand the POST to a Celery task (default
+    queue) rather than do network I/O on the inbound worker — that's the
+    worker-isolation guarantee."""
+
+    def _ctx(self, mailbox, parsed_email, is_spam=False):
+        return InboundContext(
+            mailbox=mailbox,
+            inbound_message=Mock(id="im", created_at=dj_timezone.now()),
+            recipient_email=str(mailbox),
+            raw_data=b"From: s@example.com\r\nTo: x\r\nSubject: t\r\n\r\nbody",
+            parsed_email=parsed_email,
+            spam_config={},
+            is_spam=is_spam,
+        )
+
+    @patch("core.mda.dispatch_webhooks.dispatch_webhook_task")
+    @patch("core.mda.dispatch_webhooks.SSRFSafeSession")
+    def test_non_blocking_enqueues_and_skips_inline_post(
+        self, mock_session, mock_task, mailbox, parsed_email
+    ):
+        channel = factories.ChannelFactory(
+            type=enums.ChannelTypes.WEBHOOK,
+            mailbox=mailbox,
+            settings={
+                "url": "https://hook.example.com",
+                "events": ["message.inbound"],
+                "blocking": False,
+                "auth_method": "jwt",
+            },
+        )
+        ctx = self._ctx(mailbox, parsed_email, is_spam=False)
+
+        for step in webhook_steps_for_mailbox(mailbox, phase=PHASE_AFTER_SPAM):
+            assert step(ctx) == Decision.CONTINUE
+
+        # Enqueued exactly once with the phase-correct snapshot...
+        mock_task.delay.assert_called_once()
+        args = mock_task.delay.call_args[0]
+        assert args[0] == str(channel.id)
+        assert args[1] == str(mailbox.id)
+        assert args[2] == PHASE_AFTER_SPAM
+        assert args[3] is False  # is_spam
+        # ...and NO network I/O happened on the inbound worker.
+        mock_session.return_value.post.assert_not_called()
+
+    @patch("core.mda.dispatch_webhooks.SSRFSafeSession")
+    def test_dispatch_webhook_task_posts_signed(self, mock_session, mailbox):
+        channel = factories.ChannelFactory(
+            type=enums.ChannelTypes.WEBHOOK,
+            mailbox=mailbox,
+            settings={
+                "url": "https://hook.example.com",
+                "events": ["message.inbound"],
+                "blocking": False,
+                "auth_method": "jwt",
+            },
+        )
+        mock_session.return_value.post.return_value = _make_response(200)
+
+        dispatch_webhook_task(
+            str(channel.id),
+            str(mailbox.id),
+            PHASE_AFTER_SPAM,
+            False,
+            str(mailbox),
+            "message/rfc822",
+            base64.b64encode(b"raw mime").decode("ascii"),
+        )
+
+        mock_session.return_value.post.assert_called_once()
+        headers = mock_session.return_value.post.call_args.kwargs["headers"]
+        assert headers["X-StMsg-Phase"] == "after_spam"
+        assert headers["X-StMsg-Event"] == enums.WebhookEvents.MESSAGE_INBOUND.value
+        # Signed at send time (jwt auth_method).
+        assert "X-StMsg-Webhook-Signature" in headers
+
+    @patch("core.mda.dispatch_webhooks.SSRFSafeSession")
+    def test_dispatch_webhook_task_no_ops_when_channel_gone(
+        self, mock_session, mailbox
+    ):
+        # Channel id that doesn't exist → best-effort no-op, no POST, no raise.
+        dispatch_webhook_task(
+            str(uuid.uuid4()),
+            str(mailbox.id),
+            PHASE_AFTER_SPAM,
+            False,
+            str(mailbox),
+            "message/rfc822",
+            base64.b64encode(b"raw").decode("ascii"),
+        )
+        mock_session.return_value.post.assert_not_called()
+
+
+# --- internal (mailbox-to-mailbox) delivery --- #
+
+
+@pytest.mark.django_db
+class TestInternalDeliveryWebhooks:
+    """Internal mail (one local mailbox to another) must fire the
+    recipient's ``message.inbound`` webhook exactly like external mail.
+
+    To a webhook consumer an internal email should be indistinguishable
+    from an external one — same event, same envelope headers. The
+    sender and recipient may be fully unrelated tenants (different
+    domains on the same instance), so the recipient's webhook outcome
+    (drop / retry / failure) must NOT leak back into the sender's
+    delivery status: the sender sees ``INTERNAL`` the moment the message
+    is handed off, and the webhook plays out on the recipient's side.
+    """
+
+    def _build_internal_message(self, sender_mailbox, recipient_email):
+        thread = factories.ThreadFactory()
+        factories.ThreadAccessFactory(
+            mailbox=sender_mailbox,
+            thread=thread,
+            role=enums.ThreadAccessRoleChoices.EDITOR,
+        )
+        sender_contact = factories.ContactFactory(mailbox=sender_mailbox)
+        message = factories.MessageFactory(
+            thread=thread,
+            sender=sender_contact,
+            is_draft=False,
+            is_sender=True,
+            subject="Internal hello",
+        )
+        raw_mime = (
+            f"From: {sender_contact.email}\r\n"
+            f"To: {recipient_email}\r\n"
+            "Subject: Internal hello\r\n"
+            "Message-ID: <internal-1@example.com>\r\n\r\nbody"
+        ).encode()
+        message.blob = factories.BlobFactory(
+            mailbox=sender_mailbox,
+            content=raw_mime,
+            content_type="message/rfc822",
+        )
+        message.save()
+        recipient_contact = factories.ContactFactory(
+            mailbox=sender_mailbox, email=recipient_email
+        )
+        factories.MessageRecipientFactory(
+            message=message,
+            contact=recipient_contact,
+            type=models.MessageRecipientTypeChoices.TO,
+        )
+        return message
+
+    @patch("core.mda.inbound_pipeline._call_rspamd")
+    @patch("core.mda.dispatch_webhooks.SSRFSafeSession")
+    def test_internal_delivery_fires_recipient_webhook(self, mock_session, mock_rspamd):
+        # Sender and recipient live on *different* domains — unrelated
+        # tenants that happen to share the instance.
+        sender_mailbox = factories.MailboxFactory()
+        recipient_mailbox = factories.MailboxFactory()
+        recipient_email = str(recipient_mailbox)
+
+        factories.ChannelFactory(
+            type=enums.ChannelTypes.WEBHOOK,
+            mailbox=recipient_mailbox,
+            settings={
+                "url": "https://hook.example.com",
+                "events": ["message.inbound"],
+            },
+        )
+        mock_session.return_value.post.return_value = _make_response(200)
+
+        message = self._build_internal_message(sender_mailbox, recipient_email)
+        outbound.send_message(message)
+
+        # The recipient's webhook fired with the inbound event, addressed
+        # to the recipient mailbox.
+        assert mock_session.return_value.post.called
+        headers = mock_session.return_value.post.call_args.kwargs["headers"]
+        assert headers["X-StMsg-Event"] == enums.WebhookEvents.MESSAGE_INBOUND.value
+        assert headers["X-StMsg-Recipient"] == recipient_email
+
+        # Sender's view is decoupled from the recipient's webhook: it sees
+        # a clean internal handoff regardless of what the webhook returns.
+        recipient = message.recipients.first()
+        recipient.refresh_from_db()
+        assert recipient.delivery_status == enums.MessageDeliveryStatusChoices.INTERNAL
+
+    @patch("core.mda.inbound_pipeline._call_rspamd")
+    @patch("core.mda.dispatch_webhooks.SSRFSafeSession")
+    def test_recipient_webhook_failure_does_not_affect_sender(
+        self, mock_session, mock_rspamd
+    ):
+        """A failing/blocking recipient webhook is the recipient tenant's
+        problem: it holds *their* queue row for retry but never feeds back
+        into the (possibly unrelated) sender's delivery status."""
+        sender_mailbox = factories.MailboxFactory()
+        recipient_mailbox = factories.MailboxFactory()
+        recipient_email = str(recipient_mailbox)
+
+        factories.ChannelFactory(
+            type=enums.ChannelTypes.WEBHOOK,
+            mailbox=recipient_mailbox,
+            settings={
+                "url": "https://hook.example.com",
+                "events": ["message.inbound"],
+                "phase": "before_spam",
+                "blocking": True,
+            },
+        )
+        # 4xx is a webhook error → the recipient pipeline holds for RETRY.
+        mock_session.return_value.post.return_value = _make_response(403)
+
+        message = self._build_internal_message(sender_mailbox, recipient_email)
+        outbound.send_message(message)
+
+        # Sender still sees a clean handoff.
+        recipient = message.recipients.first()
+        recipient.refresh_from_db()
+        assert recipient.delivery_status == enums.MessageDeliveryStatusChoices.INTERNAL
+
+        # The recipient's queue row is held (not lost, not delivered),
+        # and no message has landed in their mailbox yet.
+        assert models.InboundMessage.objects.filter(
+            mailbox=recipient_mailbox, is_internal=True
+        ).exists()
+        assert not models.Message.objects.filter(
+            thread__accesses__mailbox=recipient_mailbox
+        ).exists()
+
+    @patch("core.mda.inbound_pipeline._call_rspamd")
+    @patch("core.mda.dispatch_webhooks.SSRFSafeSession")
+    def test_internal_delivery_skips_spam_scan(self, mock_session, mock_rspamd):
+        """Internal mail is trusted: the spam steps are skipped (rspamd is
+        never consulted) while the message still lands for the recipient."""
+        sender_mailbox = factories.MailboxFactory()
+        recipient_mailbox = factories.MailboxFactory()
+        recipient_email = str(recipient_mailbox)
+
+        factories.ChannelFactory(
+            type=enums.ChannelTypes.WEBHOOK,
+            mailbox=recipient_mailbox,
+            settings={
+                "url": "https://hook.example.com",
+                "events": ["message.inbound"],
+            },
+        )
+        mock_session.return_value.post.return_value = _make_response(200)
+
+        message = self._build_internal_message(sender_mailbox, recipient_email)
+        outbound.send_message(message)
+
+        mock_rspamd.assert_not_called()
+        assert models.Message.objects.filter(
+            thread__accesses__mailbox=recipient_mailbox
+        ).exists()
+
 
 # Keep dj_timezone import used to silence "imported but unused" if the
 # linter wakes up after edits; it's referenced from fixtures via factories.
@@ -1282,6 +1574,34 @@ _ = dj_timezone
 
 
 # --- response body parsing --- #
+
+
+class TestReadCappedBody:
+    """``_read_capped_body`` bounds memory (size cap) and time (deadline)
+    so a hostile/slow receiver can't OOM or pin a worker."""
+
+    class _FakeResponse:
+        def __init__(self, chunks):
+            self._chunks = chunks
+
+        def iter_content(self, chunk_size, decode_unicode):
+            yield from self._chunks
+
+    def test_size_cap(self):
+        from core.mda.dispatch_webhooks import MAX_RESPONSE_BODY, _read_capped_body
+
+        resp = self._FakeResponse([b"x" * (MAX_RESPONSE_BODY + 1000)])
+        assert len(_read_capped_body(resp)) == MAX_RESPONSE_BODY
+
+    def test_deadline_exceeded_raises(self):
+        import time
+
+        from core.mda.dispatch_webhooks import _read_capped_body
+
+        resp = self._FakeResponse([b"a", b"b"])
+        # Deadline already in the past → first chunk trips the guard.
+        with pytest.raises(TimeoutError):
+            _read_capped_body(resp, deadline=time.monotonic() - 1)
 
 
 class TestClassifyResponseBody:
@@ -1846,9 +2166,7 @@ class TestPipelineRetry:
         # ...and forced to the inbox (is_spam=False) so the banner is seen.
         assert kwargs["is_spam"] is False
         # Queue row consumed — not pinned, not dropped silently.
-        assert not models.InboundMessage.objects.filter(
-            id=inbound_message.id
-        ).exists()
+        assert not models.InboundMessage.objects.filter(id=inbound_message.id).exists()
 
 
 @pytest.mark.django_db

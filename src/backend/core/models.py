@@ -2206,7 +2206,41 @@ class InboundMessage(BaseModel):
         on_delete=models.CASCADE,
         related_name="inbound_messages",
     )
-    raw_data = models.BinaryField("raw data", help_text="Raw email message bytes")
+    # Two mutually-exclusive sources for the message bytes (enforced by
+    # the ``inboundmessage_exactly_one_source`` constraint below):
+    #   - ``raw_data``: external mail arrives from the MTA as loose
+    #     bytes with no Blob yet, so we store them inline (plaintext,
+    #     transient — deleted once the message is created).
+    #   - ``blob``: internal mail already has a committed, encrypted,
+    #     deduped Blob (the sender's ``Message.blob``). We reference it
+    #     instead of copying the bytes — no second plaintext copy, and
+    #     ``get_content()`` reads it back transparently.
+    raw_data = models.BinaryField(
+        "raw data",
+        null=True,
+        blank=True,
+        help_text="Raw email message bytes (external mail; null when backed by blob)",
+    )
+    # PROTECT mirrors ``Message.blob``: the GC sweep is the only
+    # authorised deleter and clears references first. ``is_referenced``
+    # counts this FK, so a referenced blob is never collected.
+    blob = models.ForeignKey(
+        "Blob",
+        on_delete=models.PROTECT,
+        null=True,
+        blank=True,
+        related_name="inbound_messages",
+        help_text="Existing blob holding the message bytes (internal mail)",
+    )
+    # Internal mail (mailbox-to-mailbox) is trusted: the task pre-sets
+    # ``is_spam=False`` so the spam steps no-op while the user-webhook
+    # steps still run. Kept explicit rather than inferred from ``blob``
+    # so storage mechanism stays decoupled from trust semantics.
+    is_internal = models.BooleanField(
+        "is internal",
+        default=False,
+        help_text="Internal mailbox-to-mailbox delivery (skips spam checking)",
+    )
     channel = models.ForeignKey(
         "Channel",
         on_delete=models.SET_NULL,
@@ -2228,9 +2262,30 @@ class InboundMessage(BaseModel):
         indexes = [
             models.Index(fields=["created_at"]),
         ]
+        constraints = [
+            # Exactly one byte source: inline raw_data XOR a blob FK.
+            models.CheckConstraint(
+                check=(
+                    models.Q(raw_data__isnull=False, blob__isnull=True)
+                    | models.Q(raw_data__isnull=True, blob__isnull=False)
+                ),
+                name="inboundmessage_exactly_one_source",
+            ),
+        ]
 
     def __str__(self):
         return f"InboundMessage {self.id} - {self.mailbox}"
+
+    def get_raw_bytes(self) -> bytes:
+        """Return the message bytes regardless of storage backing.
+
+        Internal mail references an existing (encrypted, deduped) blob;
+        external mail stores the bytes inline. ``Blob.get_content()``
+        transparently decrypts and handles tiered storage.
+        """
+        if self.blob_id is not None:
+            return self.blob.get_content()
+        return bytes(self.raw_data)
 
 
 class BlobManager(models.Manager):
@@ -2381,6 +2436,10 @@ class BlobManager(models.Manager):
             ).exists()
             or Attachment.objects.filter(blob_id=blob_id).exists()
             or MessageTemplate.objects.filter(blob_id=blob_id).exists()
+            # Internal mail in flight references the sender's blob from
+            # its transient queue row; collecting it here would strip the
+            # bytes out from under the recipient pipeline mid-delivery.
+            or InboundMessage.objects.filter(blob_id=blob_id).exists()
         )
 
     def user_can_access(self, user, blob_id) -> bool:

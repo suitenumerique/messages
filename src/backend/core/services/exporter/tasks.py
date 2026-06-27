@@ -713,6 +713,5 @@ This file is in MBOX format and can be imported into most email clients.
         recipient_email=mailbox_email,
         parsed_email=parsed_email,
         raw_data=raw_data,
-        is_import=True,  # Skip spam checking
-        skip_inbound_queue=True,
+        is_import=True,  # Skip spam checking; bypass queue and webhooks
     )

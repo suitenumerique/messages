@@ -564,5 +564,8 @@
   "You have unsaved changes. Are you sure you want to close?": "Je hebt niet-opgeslagen wijzigingen. Weet je zeker dat je wil annuleren?",
   "You must confirm this statement.": "U moet deze verklaring bevestigen.",
   "Your email...": "Jouw email...",
-  "Your session has expired. Please log in again.": "Je sessie is verlopen. Log opnieuw in."
+  "Your session has expired. Please log in again.": "Je sessie is verlopen. Log opnieuw in.",
+  "URL must start with https://": "URL moet beginnen met https://",
+  "Regenerate secret": "Geheim opnieuw genereren",
+  "Regenerating the secret invalidates the old one immediately. The receiver must be updated with the new value before it can verify webhooks again.": "Het opnieuw genereren van het geheim maakt het oude direct ongeldig. De ontvanger moet met de nieuwe waarde worden bijgewerkt voordat webhooks weer geverifieerd kunnen worden."
 }

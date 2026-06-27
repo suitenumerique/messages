@@ -178,7 +178,7 @@ class TestInboundSpoofedSender:
 
         assert (
             deliver_inbound_message(
-                recipient, parsed_email, b"raw", skip_inbound_queue=True
+                recipient, parsed_email, b"raw", is_import=True
             )
             is True
         )
