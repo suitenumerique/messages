@@ -45,6 +45,8 @@ export interface Channel {
   readonly user: string | null;
   /** @nullable */
   readonly last_used_at: string | null;
+  /** @nullable */
+  readonly token_hash: string | null;
   /** date and time at which a record was created */
   readonly created_at: string;
   /** date and time at which a record was last updated */

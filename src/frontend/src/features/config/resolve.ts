@@ -32,7 +32,6 @@ export type AppConfig = Omit<
   | "DRIVE"
   | "LANGUAGES"
   | "LANGUAGE_CODE"
-  | "SENTRY_DSN"
   | "FRONTEND_THEME_CONFIG"
   | "FRONTEND_FORCED_DEFAULT_LANGUAGE"
   | "FRONTEND_MULTIPART_UPLOAD_CHUNK_SIZE_MB"
@@ -47,7 +46,6 @@ export type AppConfig = Omit<
   BASE_LANGUAGE: string;
   /** When true, fall back to BASE_LANGUAGE instead of the browser language. */
   IS_LANGUAGE_FORCED: boolean;
-  SENTRY_DSN?: string;
   SENTRY_ENVIRONMENT?: string;
   THEME_CONFIG: ThemeConfig;
   MULTIPART_UPLOAD_CHUNK_SIZE_MB: number;
@@ -309,5 +307,7 @@ export const resolveConfig = (api?: ConfigRetrieve200): AppConfig => {
       ),
     FEEDBACK_WIDGET: resolveFeedbackWidget(api),
     LAGAUFRE_WIDGET: resolveLagaufreWidget(api),
+    PUSH_ENABLED: api?.PUSH_ENABLED ?? false,
+    PUSH_VAPID_PUBLIC_KEY: api?.PUSH_VAPID_PUBLIC_KEY,
   };
 };

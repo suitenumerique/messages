@@ -1,0 +1,16 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+	<!--
+	  Push Notifications capability (docs/push-notifications.md §3). The value
+	  here is what development-signed builds use — it must match the backend's
+	  PUSH_APNS_USE_SANDBOX=True (sandbox gateway). Xcode's archive export
+	  rewrites it to "production" when re-signing for distribution, which pairs
+	  with PUSH_APNS_USE_SANDBOX=False. The App ID must have the Push
+	  Notifications capability enabled in the Apple developer portal.
+	-->
+	<key>aps-environment</key>
+	<string>development</string>
+</dict>
+</plist>

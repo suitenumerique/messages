@@ -4,14 +4,21 @@ import { Panel, Group, Separator, useDefaultLayout } from "react-resizable-panel
 import { ThreadPanel } from "@/features/layouts/components/thread-panel";
 import { ThreadSelectionPlaceholder } from "@/features/layouts/components/thread-selection-placeholder";
 import { ThreadView } from "@/features/layouts/components/thread-view";
+import { useMailboxContext } from "@/features/providers/mailbox";
 import { useThreadSelection } from "@/features/providers/thread-selection";
+import { useCurrentFolderName } from "@/hooks/use-current-folder-name";
+import { useDocumentTitle } from "@/hooks/use-document-title";
 
 const Mailbox = () => {
   const { selectedThreadIds } = useThreadSelection();
+  const { selectedMailbox } = useMailboxContext();
+  const folderName = useCurrentFolderName();
   const { defaultLayout, onLayoutChange } = useDefaultLayout({
     groupId: "threads",
     storage: localStorage,
   });
+
+  useDocumentTitle(folderName, selectedMailbox?.email);
 
   return (
     <Group defaultLayout={defaultLayout} onLayoutChange={onLayoutChange} orientation="horizontal" className="threads__container">

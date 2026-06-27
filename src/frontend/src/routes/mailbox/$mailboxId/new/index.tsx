@@ -6,12 +6,15 @@ import { MessageForm } from "@/features/forms/components/message-form";
 import { useMailboxContext } from "@/features/providers/mailbox";
 import { MAILBOX_FOLDERS } from "@/features/layouts/components/mailbox-panel/components/mailbox-list";
 import { SKIP_LINK_TARGET_ID } from "@/features/ui/components/skip-link";
+import { useDocumentTitle } from "@/hooks/use-document-title";
 
 const NewMessageFormPage = () => {
   const { t } = useTranslation();
   const navigate = useNavigate();
   const router = useRouter();
   const { queryStates, selectedMailbox } = useMailboxContext();
+
+  useDocumentTitle(t("New message"), selectedMailbox?.email);
 
   const handleClose = () => {
     if (window.history.length > 1) {

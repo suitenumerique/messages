@@ -9,6 +9,7 @@ import { ModalStoreProvider } from "@/features/providers/modal-store";
 import { ScrollRestoreProvider } from "@/features/providers/scroll-restore";
 import { AttachmentPreviewProvider } from "@/features/providers/attachment-preview";
 import { useTheme } from "@/features/providers/theme";
+import { useUnreadBadge } from "@/features/providers/use-unread-badge";
 import { LayoutProvider, useLayoutDragContext } from "@/features/layouts/components/layout-context";
 import { AttachmentPreviewModal } from "@/features/layouts/components/thread-view/components/attachment-preview-modal";
 import { Link } from "@tanstack/react-router";
@@ -41,6 +42,8 @@ const MainLayoutContent = ({ children }: PropsWithChildren<{ simple?: boolean }>
     const hasNoMailbox = queryStates.mailboxes.status === 'success' && mailboxes!.length === 0;
     const { theme, variant } = useTheme();
     const { isLeftPanelOpen, setIsLeftPanelOpen, isDragging } = useLayoutDragContext();
+
+    useUnreadBadge();
 
     return (
         <AppLayout

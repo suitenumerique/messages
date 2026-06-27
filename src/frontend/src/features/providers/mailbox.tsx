@@ -258,6 +258,11 @@ export const MailboxProvider = ({ children }: PropsWithChildren) => {
     const mailboxQuery = useMailboxesList({
         query: {
             refetchInterval: 30 * 1000, // 30 seconds
+            // React Query pauses `refetchInterval` on a hidden tab, which is
+            // exactly when the unread badge (use-unread-badge) needs to spot
+            // mail arriving. Web Push covers that window only for the few users
+            // who opted in, so the poll has to keep running for everyone else.
+            refetchIntervalInBackground: true,
             refetchOnWindowFocus: true,
         },
     });

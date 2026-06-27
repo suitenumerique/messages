@@ -52,6 +52,15 @@
 		<key>NSAllowsLocalNetworking</key>
 		<true/>
 	</dict>
+	<!--
+	  Wakes the app for remote notifications so the (future) fetch-to-enrich /
+	  background refresh path can run; the visible loc-key alert itself is
+	  rendered by the OS and does not need it.
+	-->
+	<key>UIBackgroundModes</key>
+	<array>
+		<string>remote-notification</string>
+	</array>
 	<key>UILaunchStoryboardName</key>
 	<string>LaunchScreen</string>
 	<key>UIMainStoryboardFile</key>

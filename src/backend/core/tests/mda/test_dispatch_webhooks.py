@@ -3682,6 +3682,42 @@ class TestPipelineIdempotency:
         assert mock_delay.call_count == 1
         assert models.Message.objects.filter(mime_id=mime).count() == 1
 
+    @override_settings(PUSH_ENABLED=True)
+    @patch("core.mda.inbound_tasks.enqueue_push_notifications")
+    @patch("core.mda.spam.call_rspamd")
+    def test_dedup_hit_does_not_refire_push(self, mock_rspamd, mock_enqueue_push):
+        """A duplicate delivery must not re-enqueue push notifications — the
+        push dispatch is a finalize side effect gated on ``_created_now``.
+        ``enqueue_push_notifications`` has no idempotency of its own (the
+        collapse key only coalesces in the tray, ``renotify`` re-alerts), so a
+        second enqueue on an SMTP redelivery would wake the device again for a
+        message it already announced."""
+        mailbox = factories.MailboxFactory()
+        mock_rspamd.return_value = ("no action", None, None)
+
+        mime = "idem-push@example.com"
+        raw_data = (
+            b"From: customer@example.com\r\n"
+            b"To: " + str(mailbox).encode() + b"\r\n"
+            b"Subject: help\r\n"
+            b"Message-ID: <" + mime.encode() + b">\r\n\r\nbody"
+        )
+
+        im1 = _queue_inbound(mailbox, raw_data)
+        with patch.object(process_inbound_message_task, "update_state", Mock()):
+            process_inbound_message_task.run(str(im1.id))
+        # Enqueued exactly once, on the original create.
+        assert mock_enqueue_push.call_count == 1
+
+        # Duplicate delivery: same Message-ID, separate queue row.
+        im2 = _queue_inbound(mailbox, raw_data)
+        with patch.object(process_inbound_message_task, "update_state", Mock()):
+            process_inbound_message_task.run(str(im2.id))
+
+        # Still 1 — the dedup hit skipped the push enqueue.
+        assert mock_enqueue_push.call_count == 1
+        assert models.Message.objects.filter(mime_id=mime).count() == 1
+
 
 # --- cross-retry blocking-webhook result cache --- #
 

@@ -385,10 +385,14 @@ services:
     environment:
       HOME: /tmp
     env_file:
-      - env.d/development/frontend.defaults
-      - env.d/development/frontend.local
+      - deploy/env/frontend.defaults
+      - deploy/env/frontend.local
     volumes:
       - ./src/frontend/:/home/frontend/
+      # Share the same fast node_modules volume as frontend-dev so that
+      # `make install-frozen-front` (which runs here) installs into the volume
+      # that frontend-dev consumes.
+      - frontend-node-modules:/home/frontend/node_modules
 
   crowdin:
     image: crowdin/cli:4.11.0@sha256:9b32eafcfd8ba4b5183bd601bfeb8a65b0d338f2d2fc36df155f4845ee244eff

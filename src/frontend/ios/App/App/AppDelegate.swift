@@ -1,5 +1,6 @@
 import UIKit
 import Capacitor
+import UserNotifications
 
 @UIApplicationMain
 class AppDelegate: UIResponder, UIApplicationDelegate {
@@ -49,7 +50,15 @@ class AppDelegate: UIResponder, UIApplicationDelegate {
     }
 
     func applicationDidBecomeActive(_ application: UIApplication) {
-        // Restart any tasks that were paused (or not yet started) while the application was inactive. If the application was previously in the background, optionally refresh the user interface.
+        // The push badge carries the unread count as of send time; once the
+        // user is in the app it is stale, so drop it (web counterpart:
+        // clearAppBadge in features/auth). Delivered banners are dismissed by
+        // the JS side (clearDeliveredNativeNotifications).
+        if #available(iOS 16.0, *) {
+            UNUserNotificationCenter.current().setBadgeCount(0)
+        } else {
+            application.applicationIconBadgeNumber = 0
+        }
     }
 
     func applicationWillTerminate(_ application: UIApplication) {
@@ -67,6 +76,18 @@ class AppDelegate: UIResponder, UIApplicationDelegate {
         // Feel free to add additional processing here, but if you want the App API to support
         // tracking app url opens, make sure to keep this call
         return ApplicationDelegateProxy.shared.application(application, continue: userActivity, restorationHandler: restorationHandler)
+    }
+
+    // Hand the APNs registration outcome to @capacitor/push-notifications:
+    // its native side observes these notifications and resolves the JS
+    // "registration"/"registrationError" events the app awaits
+    // (features/native/push.ts, obtainToken).
+    func application(_ application: UIApplication, didRegisterForRemoteNotificationsWithDeviceToken deviceToken: Data) {
+        NotificationCenter.default.post(name: .capacitorDidRegisterForRemoteNotifications, object: deviceToken)
+    }
+
+    func application(_ application: UIApplication, didFailToRegisterForRemoteNotificationsWithError error: Error) {
+        NotificationCenter.default.post(name: .capacitorDidFailToRegisterForRemoteNotifications, object: error)
     }
 
 }

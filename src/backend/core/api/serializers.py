@@ -2290,6 +2290,7 @@ class ChannelSerializer(CreateOnlyFieldsMixin, serializers.ModelSerializer):
         choices=enums.ChannelScopeLevel.choices, read_only=True
     )
     last_used_at = serializers.DateTimeField(read_only=True, allow_null=True)
+    token_hash = serializers.SerializerMethodField()
 
     class Meta:
         model = models.Channel
@@ -2304,6 +2305,7 @@ class ChannelSerializer(CreateOnlyFieldsMixin, serializers.ModelSerializer):
             "maildomain",
             "user",
             "last_used_at",
+            "token_hash",
             "created_at",
             "updated_at",
         ]
@@ -2314,6 +2316,7 @@ class ChannelSerializer(CreateOnlyFieldsMixin, serializers.ModelSerializer):
             "user",
             "scope_level",
             "last_used_at",
+            "token_hash",
             "created_at",
             "updated_at",
         ]
@@ -2351,6 +2354,21 @@ class ChannelSerializer(CreateOnlyFieldsMixin, serializers.ModelSerializer):
     _ROTATABLE_TYPES = frozenset(
         {enums.ChannelTypes.API_KEY, enums.ChannelTypes.WEBHOOK}
     )
+
+    @extend_schema_field(serializers.CharField(allow_null=True))
+    def get_token_hash(self, obj):
+        """Expose the push channel's ``lookup_hash`` (sha256 of the device
+        token/endpoint) so the web client can recognise *its own* device row —
+        needed to unsubscribe this browser on sign-out — without the raw
+        token/endpoint ever leaving the server. The hash is preimage-resistant,
+        so it discloses nothing replayable (the cross-user reclaim path already
+        requires the raw token; see ``services.push.common.register_push_device``).
+        Only ``push`` channels populate ``lookup_hash``; every other type
+        returns ``None``.
+        """
+        if obj.type == enums.ChannelTypes.PUSH:
+            return obj.lookup_hash
+        return None
 
     def create(self, validated_data):
         # Mint the per-type secret on a transient instance so the
@@ -2685,6 +2703,26 @@ class ChannelSerializer(CreateOnlyFieldsMixin, serializers.ModelSerializer):
                         {
                             "type": f"Channel type '{channel_type}' is not authorized. "
                             f"Allowed types: {', '.join(allowed_types)}"
+                        }
+                    )
+            # Push channels are device registrations handled by the dedicated
+            # upsert path on the collection POST (``type=push``). Block
+            # create/PATCH through the generic channel serializer so the
+            # queryable platform / lookup_hash can't be desynced from the
+            # encrypted token. (Create is also gated by the type allowlist; this
+            # additionally covers the read-only-type PATCH path on an existing
+            # push channel.) One exception: renaming — ``name`` is display-only
+            # metadata with no sync invariant, and re-registration can't carry
+            # a rename for a *remote* device.
+            instance_type = getattr(self.instance, "type", None)
+            if enums.ChannelTypes.PUSH in (channel_type, instance_type):
+                is_rename_only = self.instance is not None and set(attrs) <= {"name"}
+                if not is_rename_only:
+                    raise serializers.ValidationError(
+                        {
+                            "type": "push channels are managed via device "
+                            "registration (POST to this collection with "
+                            "type=push); only `name` may be updated."
                         }
                     )
             self._reject_caller_supplied_encrypted_keys(attrs)
@@ -3098,3 +3136,84 @@ class ThreadBulkDeleteRequestSerializer(serializers.Serializer):
 
     def update(self, instance, validated_data):
         """This serializer is only used to validate the data, not to create or update."""
+
+
+class WebPushKeysSerializer(serializers.Serializer):
+    """The Web Push subscription key pair (``p256dh`` and ``auth``)."""
+
+    # Both are typed as plain (non-blank) strings on purpose. That is enough to
+    # reject the poison shape a bare DictField allowed — key *values* that
+    # aren't strings (``{p256dh: {...}, auth: [...]}``), which used to be stored
+    # and then fail deterministically (retrying forever) at send time. We do NOT
+    # validate the base64url encoding or byte lengths: browsers are the only
+    # web-push clients and always emit well-formed keys, so length checks would
+    # be a footgun (rejecting a future non-standard-but-valid client) for no
+    # real gain — a genuinely undeliverable key is now handled gracefully at
+    # send time (marked stale, never retried; see ``services/push/webpush.py``).
+    # Declaring exactly these two fields also means only they get stored.
+    p256dh = serializers.CharField()
+    auth = serializers.CharField()
+
+    def create(self, validated_data):
+        """Input-only nested serializer; never persisted directly."""
+
+    def update(self, instance, validated_data):
+        """Input-only nested serializer; never persisted directly."""
+
+
+class PushDeviceRegistrationSerializer(serializers.Serializer):
+    """Validate a mobile/web device push registration.
+
+    Input for the push branch of ``UserChannelViewSet.create`` (a POST with
+    ``type=push``): the platform, the opaque push token, and optional client
+    metadata. The viewset turns this into a user-scoped ``push`` Channel (token
+    stored encrypted). ``keys`` carries the Web Push p256dh/auth pair; unused
+    for native platforms.
+    """
+
+    platform = serializers.ChoiceField(choices=enums.PushPlatformChoices.choices)
+    token = serializers.CharField(max_length=8192, trim_whitespace=False)
+    app_version = serializers.CharField(max_length=64, required=False, allow_blank=True)
+    keys = WebPushKeysSerializer(required=False)
+    name = serializers.CharField(max_length=255, required=False, allow_blank=True)
+
+    def validate_token(self, value):
+        """Validate the token is not an empty value."""
+        if not value.strip():
+            raise serializers.ValidationError("token must not be empty")
+        return value
+
+    def validate(self, attrs):
+        """Web Push needs the subscription keys, or the device can never be
+        delivered to — reject at registration rather than silently accepting a
+        web device that gets no pushes. Non-web platforms don't use keys.
+
+        Only the presence of the pair is enforced here; the nested
+        ``WebPushKeysSerializer`` just types the two values as strings.
+        """
+        if attrs.get("platform") == enums.PushPlatformChoices.WEB:
+            if not attrs.get("keys"):
+                raise serializers.ValidationError(
+                    {"keys": "web push requires keys.p256dh and keys.auth."}
+                )
+        else:
+            attrs.pop("keys", None)
+        return attrs
+
+    def create(self, validated_data):
+        """Input-only serializer; the viewset performs the registration."""
+
+    def update(self, instance, validated_data):
+        """Input-only serializer; the viewset performs the registration."""
+
+
+class PushChannelCreateSerializer(PushDeviceRegistrationSerializer):
+    """Schema variant of the push registration body for ``POST .../channels/``.
+
+    Identical to ``PushDeviceRegistrationSerializer`` plus the ``type``
+    discriminator, so the polymorphic create endpoint documents the push shape
+    ({type:"push", platform, token, keys?, name?, app_version?}) alongside the
+    generic channel shape. Validation at runtime still uses the parent.
+    """
+
+    type = serializers.ChoiceField(choices=[enums.ChannelTypes.PUSH])

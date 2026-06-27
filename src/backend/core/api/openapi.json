@@ -394,6 +394,16 @@
                                             "type": "string",
                                             "description": "OTA channel manifest URL the mobile apps poll at startup; unset disables OTA updates",
                                             "readOnly": true
+                                        },
+                                        "PUSH_ENABLED": {
+                                            "type": "boolean",
+                                            "description": "Whether push notifications are available on this deployment (gates the device-registration UI).",
+                                            "readOnly": true
+                                        },
+                                        "PUSH_VAPID_PUBLIC_KEY": {
+                                            "type": "string",
+                                            "description": "VAPID public key (base64url) the web client passes as applicationServerKey to subscribe; null when Web Push is not configured.",
+                                            "readOnly": true
                                         }
                                     },
                                     "required": [
@@ -417,7 +427,8 @@
                                         "FEATURE_THREAD_SPLIT",
                                         "FEATURE_MAILDOMAIN_MANAGE_TOTP",
                                         "MESSAGES_MANUAL_RETRY_MAX_AGE",
-                                        "FRONTEND_SILENT_LOGIN_ENABLED"
+                                        "FRONTEND_SILENT_LOGIN_ENABLED",
+                                        "PUSH_ENABLED"
                                     ]
                                 }
                             }
@@ -7188,16 +7199,15 @@
                     "content": {
                         "application/json": {
                             "schema": {
-                                "$ref": "#/components/schemas/ChannelRequest"
+                                "$ref": "#/components/schemas/UserChannelCreateRequestRequest"
                             }
                         },
                         "multipart/form-data": {
                             "schema": {
-                                "$ref": "#/components/schemas/ChannelRequest"
+                                "$ref": "#/components/schemas/UserChannelCreateRequestRequest"
                             }
                         }
-                    },
-                    "required": true
+                    }
                 },
                 "security": [
                     {
@@ -7205,6 +7215,16 @@
                     }
                 ],
                 "responses": {
+                    "200": {
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "$ref": "#/components/schemas/Channel"
+                                }
+                            }
+                        },
+                        "description": "Existing push device refreshed (idempotent re-register)."
+                    },
                     "201": {
                         "content": {
                             "application/json": {
@@ -7213,13 +7233,7 @@
                                 }
                             }
                         },
-                        "description": "Channel created successfully. The response carries the one-time plaintext credential (api_key / secret) which is never returned again."
-                    },
-                    "400": {
-                        "description": "Invalid input data"
-                    },
-                    "403": {
-                        "description": "Permission denied"
+                        "description": "Channel created (or push device registered)."
                     }
                 }
             }
@@ -7752,6 +7766,11 @@
                         "readOnly": true,
                         "nullable": true
                     },
+                    "token_hash": {
+                        "type": "string",
+                        "nullable": true,
+                        "readOnly": true
+                    },
                     "created_at": {
                         "type": "string",
                         "format": "date-time",
@@ -7775,6 +7794,7 @@
                     "maildomain",
                     "name",
                     "scope_level",
+                    "token_hash",
                     "type",
                     "updated_at",
                     "user"
@@ -7843,6 +7863,11 @@
                         "readOnly": true,
                         "nullable": true
                     },
+                    "token_hash": {
+                        "type": "string",
+                        "nullable": true,
+                        "readOnly": true
+                    },
                     "created_at": {
                         "type": "string",
                         "format": "date-time",
@@ -7874,6 +7899,7 @@
                     "maildomain",
                     "name",
                     "scope_level",
+                    "token_hash",
                     "type",
                     "updated_at",
                     "user"
@@ -10150,6 +10176,55 @@
                     }
                 }
             },
+            "PlatformEnum": {
+                "enum": [
+                    "apns",
+                    "fcm",
+                    "web"
+                ],
+                "type": "string",
+                "description": "* `apns` - Apple (APNs)\n* `fcm` - Google (FCM)\n* `web` - Web Push"
+            },
+            "PushChannelCreateRequest": {
+                "type": "object",
+                "description": "Schema variant of the push registration body for ``POST .../channels/``.\n\nIdentical to ``PushDeviceRegistrationSerializer`` plus the ``type``\ndiscriminator, so the polymorphic create endpoint documents the push shape\n({type:\"push\", platform, token, keys?, name?, app_version?}) alongside the\ngeneric channel shape. Validation at runtime still uses the parent.",
+                "properties": {
+                    "platform": {
+                        "$ref": "#/components/schemas/PlatformEnum"
+                    },
+                    "token": {
+                        "type": "string",
+                        "minLength": 1,
+                        "maxLength": 8192
+                    },
+                    "app_version": {
+                        "type": "string",
+                        "maxLength": 64
+                    },
+                    "keys": {
+                        "$ref": "#/components/schemas/WebPushKeysRequest"
+                    },
+                    "name": {
+                        "type": "string",
+                        "maxLength": 255
+                    },
+                    "type": {
+                        "$ref": "#/components/schemas/PushChannelCreateTypeEnum"
+                    }
+                },
+                "required": [
+                    "platform",
+                    "token",
+                    "type"
+                ]
+            },
+            "PushChannelCreateTypeEnum": {
+                "enum": [
+                    "push"
+                ],
+                "type": "string",
+                "description": "* `push` - push"
+            },
             "ReadMessageTemplate": {
                 "type": "object",
                 "description": "Serialize message templates with dynamic body field inclusion.\n\nBody fields (html_body, text_body, raw_body) are only included when\nexplicitly requested via the ``?bodies=`` query parameter or the\n``body_fields`` keyword argument (for nested usage).\n\nAllowed values: ``raw``, ``html``, ``text`` (comma-separated).\nMapping: ``raw`` → ``raw_body``, ``html`` → ``html_body``, ``text`` → ``text_body``.\n\nWhen neither query param nor kwarg is provided, no body field is returned.",
@@ -11183,6 +11258,16 @@
                     "slug"
                 ]
             },
+            "UserChannelCreateRequestRequest": {
+                "oneOf": [
+                    {
+                        "$ref": "#/components/schemas/ChannelRequest"
+                    },
+                    {
+                        "$ref": "#/components/schemas/PushChannelCreateRequest"
+                    }
+                ]
+            },
             "UserWithAbilities": {
                 "type": "object",
                 "description": "Serialize users with abilities.\nAllow to have separated OpenAPI definition for users with and without abilities.",
@@ -11284,6 +11369,24 @@
                     "email",
                     "full_name",
                     "id"
+                ]
+            },
+            "WebPushKeysRequest": {
+                "type": "object",
+                "description": "The Web Push subscription key pair (``p256dh`` and ``auth``).",
+                "properties": {
+                    "p256dh": {
+                        "type": "string",
+                        "minLength": 1
+                    },
+                    "auth": {
+                        "type": "string",
+                        "minLength": 1
+                    }
+                },
+                "required": [
+                    "auth",
+                    "p256dh"
                 ]
             }
         },
