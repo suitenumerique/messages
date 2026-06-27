@@ -1,5 +1,7 @@
 """Tests for the core.mda.inbound module."""
 
+# pylint: disable=too-many-lines
+
 from unittest.mock import patch
 
 from django.test import override_settings

@@ -869,9 +869,7 @@ class TestRspamdStepFailureHandling:
 
     def _ctx(self, spam_config):
         mailbox = factories.MailboxFactory()
-        inbound = models.InboundMessage.objects.create(
-            mailbox=mailbox, raw_data=b"raw"
-        )
+        inbound = models.InboundMessage.objects.create(mailbox=mailbox, raw_data=b"raw")
         return InboundContext(
             mailbox=mailbox,
             inbound_message=inbound,

@@ -1465,7 +1465,9 @@ class TestInternalDeliveryWebhooks:
 
     @patch("core.mda.inbound_pipeline._call_rspamd")
     @patch("core.mda.dispatch_webhooks.SSRFSafeSession")
-    def test_internal_delivery_fires_recipient_webhook(self, mock_session, mock_rspamd):
+    def test_internal_delivery_fires_recipient_webhook(
+        self, mock_session, _mock_rspamd
+    ):
         # Sender and recipient live on *different* domains — unrelated
         # tenants that happen to share the instance.
         sender_mailbox = factories.MailboxFactory()
@@ -1501,7 +1503,7 @@ class TestInternalDeliveryWebhooks:
     @patch("core.mda.inbound_pipeline._call_rspamd")
     @patch("core.mda.dispatch_webhooks.SSRFSafeSession")
     def test_recipient_webhook_failure_does_not_affect_sender(
-        self, mock_session, mock_rspamd
+        self, mock_session, _mock_rspamd
     ):
         """A failing/blocking recipient webhook is the recipient tenant's
         problem: it holds *their* queue row for retry but never feeds back
@@ -1584,7 +1586,7 @@ class TestReadCappedBody:
         def __init__(self, chunks):
             self._chunks = chunks
 
-        def iter_content(self, chunk_size, decode_unicode):
+        def iter_content(self, chunk_size, decode_unicode):  # pylint: disable=unused-argument
             yield from self._chunks
 
     def test_size_cap(self):

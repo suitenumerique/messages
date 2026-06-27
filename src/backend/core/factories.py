@@ -363,11 +363,7 @@ class ChannelFactory(factory.django.DjangoModelFactory):
     # fails-closed without one. Non-webhook channels keep an empty
     # encrypted_settings (matching production behaviour).
     encrypted_settings = factory.LazyAttribute(
-        lambda o: (
-            {"secret": "whsec_factory_test"}
-            if o.type == "webhook"
-            else {}
-        )
+        lambda o: {"secret": "whsec_factory_test"} if o.type == "webhook" else {}
     )
     mailbox = factory.SubFactory(MailboxFactory)
     maildomain = None
