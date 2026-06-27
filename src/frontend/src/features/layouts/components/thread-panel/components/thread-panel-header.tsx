@@ -1,7 +1,5 @@
 import { useUrlSearchParams } from "@/hooks/use-url-search-params";
-import { findRootFolder } from "../../mailbox-panel/components/mailbox-list";
-import { useLabelsList } from "@/features/api/gen";
-import type { TreeLabel } from "@/features/api/gen/models";
+import { useCurrentFolderName } from "@/hooks/use-current-folder-name";
 import { useMailboxContext } from "@/features/providers/mailbox";
 import { useTranslation } from "react-i18next";
 import { useMemo, useState } from "react";
@@ -16,7 +14,7 @@ import useDeleteDrafts from "@/features/message/use-delete-drafts";
 import useStarred from "@/features/message/use-starred";
 import useCanEditThreads from "@/features/message/use-can-edit-threads";
 import { ThreadPanelFilter } from "./thread-panel-filter";
-import { THREAD_PANEL_FILTER_PARAMS, useThreadPanelFilters } from "../hooks/use-thread-panel-filters";
+import { useThreadPanelFilters } from "../hooks/use-thread-panel-filters";
 import { SelectionReadStatus, SelectionStarredStatus } from "@/features/providers/thread-selection";
 import { LabelsWidget } from "@/features/layouts/components/labels-widget";
 import useAbility, { Abilities } from "@/hooks/use-ability";
@@ -46,7 +44,6 @@ const ThreadPanelTitle = ({ selectedThreadIds, isAllSelected, isSomeSelected, is
     const searchParams = useUrlSearchParams();
     const isSearch = searchParams.has('search');
     const { threads, selectedMailbox, unselectThread } = useMailboxContext();
-    const labelsQuery = useLabelsList({ mailbox_id: selectedMailbox?.id }, { query: { enabled: !!selectedMailbox && !!searchParams.get('label_slug') } })
     const isTrashedView = ViewHelper.isTrashedView();
     const isSpamView = ViewHelper.isSpamView();
     const isArchivedView = ViewHelper.isArchivedView();
@@ -61,25 +58,7 @@ const ThreadPanelTitle = ({ selectedThreadIds, isAllSelected, isSomeSelected, is
     // regardless.
     const canEditSelection = useCanEditThreads(selectedThreadIds);
 
-    const findLabelBySlug = (labels: readonly TreeLabel[], slug: string): TreeLabel | undefined => {
-        for (const label of labels) {
-            if (label.slug === slug) return label;
-            const found = findLabelBySlug(label.children, slug);
-            if (found) return found;
-        }
-        return undefined;
-    };
-
-    const title = useMemo(() => {
-        if (searchParams.has('search')) return t('folder.search', { defaultValue: 'Search' });
-        if (searchParams.has('label_slug')) return findLabelBySlug(labelsQuery.data?.data || [], searchParams.get('label_slug')!)?.display_name;
-        // Thread panel filters stack on top of the folder filter — strip them
-        // so the matching resolves to the underlying folder.
-        const folderParams = new URLSearchParams(searchParams.toString());
-        THREAD_PANEL_FILTER_PARAMS.forEach((param) => folderParams.delete(param));
-        const activeFolder = findRootFolder((folder) => new URLSearchParams(folder.filter).toString() === folderParams.toString());
-        return activeFolder?.name ?? t('Messages');
-    }, [searchParams, labelsQuery.data?.data, t, findLabelBySlug])
+    const title = useCurrentFolderName() ?? t('Messages');
 
     const handleSelectAllToggle = () => {
         if (isAllSelected) {

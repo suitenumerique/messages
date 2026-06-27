@@ -41,6 +41,7 @@ from core.mda.inbound_pipeline import (
     build_inbound_pipeline,
     run_inbound_pipeline,
 )
+from core.services.push import enqueue_push_notifications
 
 from messages.celery_app import app as celery_app
 
@@ -502,6 +503,17 @@ def process_inbound_message_task(self, inbound_message_id: str):
                     logger.exception(
                         "Autoreply failed for inbound message %s", inbound_message_id
                     )
+
+            # Truly last step: fire-and-forget push now that the message is
+            # fully delivered. Gated on `created_now` like every other side
+            # effect above: on a dedup hit (SMTP retry, greylisting) the push
+            # already fired for the original create and would otherwise re-alert
+            # the device — `enqueue_push_notifications` has no idempotency of
+            # its own. Spam is skipped: no point waking a device for it.
+            # `enqueue_push_notifications` already no-ops when push is
+            # disabled ("safe to call unconditionally"), so no extra gate here.
+            if created_now and not ctx.is_spam:
+                enqueue_push_notifications(inbound_msg)
 
             logger.info(
                 "Successfully processed inbound message %s (is_spam=%s)",

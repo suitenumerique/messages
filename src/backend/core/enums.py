@@ -255,6 +255,10 @@ class ChannelTypes(StrEnum):
     WEBHOOK = "webhook"
     CALDAV = "caldav"
     IMPORT = "import"
+    # A user-scoped push-notification target (one per mobile device). The
+    # device's push token lives in ``encrypted_settings``; ``settings`` carries
+    # the platform + a token hash for dedup/reclaim. See core.services.push.
+    PUSH = "push"
 
 
 class ImportSource(StrEnum):
@@ -471,6 +475,22 @@ class MessageTemplateTypeChoices(models.IntegerChoices):
     MESSAGE = 1, "message"
     SIGNATURE = 2, "signature"
     AUTOREPLY = 3, "autoreply"
+
+
+class PushPlatformChoices(models.TextChoices):
+    """Push delivery transports a push channel can target.
+
+    Named by transport, not by OS, because that is what the server keys on: the
+    value selects which sender in :mod:`core.services.push` handles it. OS and
+    transport are not 1:1 (a de-Googled Android uses HMS, not FCM; an iOS app on
+    the Firebase SDK gets an FCM token), so the OS is a frontend display concern
+    carried in the device's ``name`` — never inferred from this value. Stored as
+    a short string in the push channel's ``settings.platform``.
+    """
+
+    APNS = "apns", "Apple (APNs)"
+    FCM = "fcm", "Google (FCM)"
+    WEB = "web", "Web Push"
 
 
 EML_SUPPORTED_MIME_TYPES = ["message/rfc822", "application/eml", "text/plain"]

@@ -33,6 +33,21 @@
             </intent-filter>
         </activity>
 
+        <!--
+            FCM rendering defaults for pushes arriving while the app is killed
+            (the SDK builds the notification itself then). The channel id must
+            match ANDROID_NOTIFICATION_CHANNEL_ID (features/native/push.ts,
+            where the channel is created) and FCM_ANDROID_CHANNEL_ID
+            (core/services/push/fcm.py); the icon is the monochrome status
+            silhouette (colored launcher icons render as a flat disc there).
+        -->
+        <meta-data
+            android:name="com.google.firebase.messaging.default_notification_channel_id"
+            android:value="new_messages" />
+        <meta-data
+            android:name="com.google.firebase.messaging.default_notification_icon"
+            android:resource="@drawable/ic_stat_notification" />
+
         <provider
             android:name="androidx.core.content.FileProvider"
             android:authorities="${applicationId}.fileprovider"
@@ -45,4 +60,9 @@
     <!-- Permissions -->
 
     <uses-permission android:name="android.permission.INTERNET" />
+    <!--
+        Android 13+ runtime permission behind the notification prompt driven by
+        PushNotifications.requestPermissions() (features/native/push.ts).
+    -->
+    <uses-permission android:name="android.permission.POST_NOTIFICATIONS" />
 </manifest>

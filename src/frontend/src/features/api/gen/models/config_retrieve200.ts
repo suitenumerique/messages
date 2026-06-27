@@ -61,4 +61,8 @@ export type ConfigRetrieve200 = {
   readonly FRONTEND_LAGAUFRE_WIDGET_CONFIG?: ConfigRetrieve200FRONTENDLAGAUFREWIDGETCONFIG;
   /** OTA channel manifest URL the mobile apps poll at startup; unset disables OTA updates */
   readonly MOBILE_OTA_MANIFEST_URL?: string;
+  /** Whether push notifications are available on this deployment (gates the device-registration UI). */
+  readonly PUSH_ENABLED: boolean;
+  /** VAPID public key (base64url) the web client passes as applicationServerKey to subscribe; null when Web Push is not configured. */
+  readonly PUSH_VAPID_PUBLIC_KEY?: string;
 };

@@ -1,0 +1,6 @@
+/* Content-free push banner: the APNs alert carries only this localization key
+   (core/services/push/apns.py, APNS_ALERT_LOC_KEY) — never sender or subject —
+   and the OS renders the string from here even when the app is killed. Keep in
+   sync with the Android strings.xml new_message_* entries and the Web Push
+   service worker fallback banner. */
+"NEW_MESSAGE" = "New message";

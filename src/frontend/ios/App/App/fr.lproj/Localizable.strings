@@ -1,0 +1,6 @@
+/* Bannière push sans contenu : l'alerte APNs ne transporte que cette clé de
+   localisation (core/services/push/apns.py, APNS_ALERT_LOC_KEY) — jamais
+   l'expéditeur ni le sujet — et l'OS affiche la chaîne ci-dessous même quand
+   l'app est tuée. À garder aligné avec les entrées new_message_* du
+   strings.xml Android et la bannière de repli du service worker Web Push. */
+"NEW_MESSAGE" = "Nouveau message";

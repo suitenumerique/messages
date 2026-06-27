@@ -1,2 +1,5 @@
 /build/*
 !/build/.npmkeep
+# Per-instance Firebase config (FCM push): like MOBILE_APP_ID, the publishing
+# organisation supplies its own — never commit one to this open-source repo.
+google-services.json

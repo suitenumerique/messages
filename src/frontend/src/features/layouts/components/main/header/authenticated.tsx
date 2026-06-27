@@ -18,7 +18,9 @@ import { CircularProgress } from "@/features/ui/components/circular-progress";
 import { useTheme } from "@/features/providers/theme";
 import { MODAL_MAILBOX_SETTINGS_ID } from "@/features/layouts/components/mailbox-settings/modal-mailbox-settings";
 import { useOpenImporter } from "@/features/layouts/components/mailbox-settings/imports-view/use-open-importer";
+import { MODAL_NOTIFICATIONS_ID } from "@/features/layouts/components/notifications-settings/modal-notifications";
 import { useModalStore } from "@/features/providers/modal-store";
+import { useConfig } from "@/features/providers/config";
 
 
 type AuthenticatedHeaderProps = HeaderProps & {
@@ -227,10 +229,14 @@ const ApplicationMenu = () => {
   const canManageIntegrations = canManageMessageTemplates && isIntegrationsEnabled;
   const canAdministrateSelectedMailbox = useAbility(Abilities.CAN_MANAGE_ACCESSES, selectedMailbox);
   const canOpenMailboxSettings = canAdministrateSelectedMailbox || canManageMessageTemplates || canManageIntegrations;
+  // Notifications/devices are user-scoped, so every user sees this entry when
+  // push is enabled — independent of any mailbox ability.
+  const config = useConfig();
+  const canManageNotifications = config.PUSH_ENABLED;
   const { t } = useTranslation();
   const navigate = useNavigate();
 
-  const hasOptions = canAccessDomainAdmin || canImportMessages || canOpenMailboxSettings;
+  const hasOptions = canAccessDomainAdmin || canImportMessages || canOpenMailboxSettings || canManageNotifications;
   // Live progress moved to the header ImportIndicator (which reads the imports
   // resource); the menu entry just opens the importer.
   const importMessageOption = {
@@ -268,6 +274,12 @@ const ApplicationMenu = () => {
                 showSeparator: canAccessDomainAdmin && !canImportMessages
               }] : []),
               ...(canImportMessages ? [importMessageOption] : []),
+              ...(canManageNotifications ? [{
+                label: t("Notifications"),
+                icon: <Icon name="notifications" style={{ fontSize: 24 }} />,
+                callback: () => openModal(MODAL_NOTIFICATIONS_ID),
+                showSeparator: canAccessDomainAdmin,
+              }] : []),
               ...(canAccessDomainAdmin ? [{
                 label: t("Domain admin"),
                 icon: <Icon name="domain" style={{ fontSize: 24 }} />,
