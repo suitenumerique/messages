@@ -1,0 +1,7 @@
+<?xml version='1.0' encoding='utf-8'?>
+<!-- Only the push banner strings are localized; everything else (app name,
+     scheme...) is locale-independent and falls back to values/strings.xml. -->
+<resources>
+    <string name="new_message_title">Messages</string>
+    <string name="new_message_body">Nouveau message</string>
+</resources>

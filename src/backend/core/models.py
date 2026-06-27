@@ -537,6 +537,29 @@ class Channel(BaseModel):
         help_text="Uncheck to pause this channel without deleting it.",
     )
 
+    # Hash of an external natural key, for indexed find-or-create when a
+    # channel's identity is assigned *outside* our system rather than being its
+    # own PK. Today only ``push`` uses it: the device token is issued by
+    # Apple/Google/the browser, so on reinstall the client has lost any channel
+    # id we minted but still holds the same token — we must look up on this hash,
+    # not on the PK. Channels identified by their own PK (api_key, client-bridge,
+    # webhook) leave it NULL.
+    #
+    # The ``uniq_channel_lookup_hash`` partial index makes it globally unique
+    # whenever set (NULLs are exempt). Uniqueness *scope* is therefore chosen by
+    # the caller via the hashed input, not by the index: a type wanting global
+    # uniqueness hashes only the natural key (push: ``sha256(f"push:{token}")``);
+    # one wanting per-user/per-mailbox uniqueness folds that id in
+    # (``sha256(f"{user_id}:{key}")``); and every type MUST namespace its input
+    # with a type prefix so two types can never collide on the same raw value.
+    lookup_hash = models.CharField(
+        "lookup hash",
+        max_length=64,
+        null=True,
+        blank=True,
+        help_text="Hash of the channel's external lookup key.",
+    )
+
     class Meta:
         db_table = "messages_channel"
         verbose_name = "channel"
@@ -584,6 +607,14 @@ class Channel(BaseModel):
                     )
                 ),
                 name="channel_scope_level_targets",
+            ),
+            # Globally unique external-identity hash (NULLs exempt). The scope
+            # of uniqueness is encoded in the hashed input by the caller, not
+            # here — see the ``lookup_hash`` field comment.
+            models.UniqueConstraint(
+                fields=["lookup_hash"],
+                condition=Q(lookup_hash__isnull=False),
+                name="uniq_channel_lookup_hash",
             ),
         ]
 

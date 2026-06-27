@@ -27,6 +27,7 @@ import type {
   ChannelRequest,
   PatchedChannelRequest,
   RegeneratedSecretResponse,
+  UserChannelCreateRequestRequest,
 } from ".././models";
 
 import { fetchAPI } from "../../fetch-api";
@@ -1203,42 +1204,31 @@ export function useUsersMeChannelsList<
 /**
  * Manage personal (scope_level=user) integration channels
  */
+export type usersMeChannelsCreateResponse200 = {
+  data: Channel;
+  status: 200;
+};
+
 export type usersMeChannelsCreateResponse201 = {
   data: ChannelCreateResponse;
   status: 201;
 };
 
-export type usersMeChannelsCreateResponse400 = {
-  data: void;
-  status: 400;
-};
-
-export type usersMeChannelsCreateResponse403 = {
-  data: void;
-  status: 403;
-};
-
-export type usersMeChannelsCreateResponseSuccess =
-  usersMeChannelsCreateResponse201 & {
-    headers: Headers;
-  };
-export type usersMeChannelsCreateResponseError = (
-  | usersMeChannelsCreateResponse400
-  | usersMeChannelsCreateResponse403
+export type usersMeChannelsCreateResponseSuccess = (
+  | usersMeChannelsCreateResponse200
+  | usersMeChannelsCreateResponse201
 ) & {
   headers: Headers;
 };
-
 export type usersMeChannelsCreateResponse =
-  | usersMeChannelsCreateResponseSuccess
-  | usersMeChannelsCreateResponseError;
+  usersMeChannelsCreateResponseSuccess;
 
 export const getUsersMeChannelsCreateUrl = () => {
   return `/api/v1.0/users/me/channels/`;
 };
 
 export const usersMeChannelsCreate = async (
-  channelRequest: ChannelRequest,
+  userChannelCreateRequestRequest: UserChannelCreateRequestRequest,
   options?: RequestInit,
 ): Promise<usersMeChannelsCreateResponse> => {
   return fetchAPI<usersMeChannelsCreateResponse>(
@@ -1247,26 +1237,26 @@ export const usersMeChannelsCreate = async (
       ...options,
       method: "POST",
       headers: { "Content-Type": "application/json", ...options?.headers },
-      body: JSON.stringify(channelRequest),
+      body: JSON.stringify(userChannelCreateRequestRequest),
     },
   );
 };
 
 export const getUsersMeChannelsCreateMutationOptions = <
-  TError = ErrorType<void>,
+  TError = ErrorType<unknown>,
   TContext = unknown,
 >(options?: {
   mutation?: UseMutationOptions<
     Awaited<ReturnType<typeof usersMeChannelsCreate>>,
     TError,
-    { data: ChannelRequest },
+    { data: UserChannelCreateRequestRequest },
     TContext
   >;
   request?: SecondParameter<typeof fetchAPI>;
 }): UseMutationOptions<
   Awaited<ReturnType<typeof usersMeChannelsCreate>>,
   TError,
-  { data: ChannelRequest },
+  { data: UserChannelCreateRequestRequest },
   TContext
 > => {
   const mutationKey = ["usersMeChannelsCreate"];
@@ -1280,7 +1270,7 @@ export const getUsersMeChannelsCreateMutationOptions = <
 
   const mutationFn: MutationFunction<
     Awaited<ReturnType<typeof usersMeChannelsCreate>>,
-    { data: ChannelRequest }
+    { data: UserChannelCreateRequestRequest }
   > = (props) => {
     const { data } = props ?? {};
 
@@ -1293,18 +1283,18 @@ export const getUsersMeChannelsCreateMutationOptions = <
 export type UsersMeChannelsCreateMutationResult = NonNullable<
   Awaited<ReturnType<typeof usersMeChannelsCreate>>
 >;
-export type UsersMeChannelsCreateMutationBody = ChannelRequest;
-export type UsersMeChannelsCreateMutationError = ErrorType<void>;
+export type UsersMeChannelsCreateMutationBody = UserChannelCreateRequestRequest;
+export type UsersMeChannelsCreateMutationError = ErrorType<unknown>;
 
 export const useUsersMeChannelsCreate = <
-  TError = ErrorType<void>,
+  TError = ErrorType<unknown>,
   TContext = unknown,
 >(
   options?: {
     mutation?: UseMutationOptions<
       Awaited<ReturnType<typeof usersMeChannelsCreate>>,
       TError,
-      { data: ChannelRequest },
+      { data: UserChannelCreateRequestRequest },
       TContext
     >;
     request?: SecondParameter<typeof fetchAPI>;
@@ -1313,7 +1303,7 @@ export const useUsersMeChannelsCreate = <
 ): UseMutationResult<
   Awaited<ReturnType<typeof usersMeChannelsCreate>>,
   TError,
-  { data: ChannelRequest },
+  { data: UserChannelCreateRequestRequest },
   TContext
 > => {
   const mutationOptions = getUsersMeChannelsCreateMutationOptions(options);

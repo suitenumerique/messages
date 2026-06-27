@@ -83,6 +83,17 @@ MOBILE_AUTH_CALLBACK_SCHEMES=["stmessages"]
 # frontend.defaults to exercise the OTA chain.
 # MOBILE_OTA_MANIFEST_URL=http://localhost:8906/messages-ota/channels/dev/manifest.json
 
+# Push notifications — OPT-IN in dev: dark by default, per-developer
+# credentials go in backend.local (see docs/mobile.md, "Push notifications in
+# dev", and docs/env.md for the full reference). Each gateway no-ops until its
+# variables are all set.
+# - Web Push: `python manage.py generate_vapid_private_key` prints the three
+#   PUSH_VAPID_* values to set.
+# - iOS: PUSH_APNS_KEY/_KEY_ID/_TEAM_ID/_BUNDLE_ID + PUSH_APNS_USE_SANDBOX=True
+#   (dev-signed builds hold sandbox tokens).
+# - Android: PUSH_FCM_CREDENTIALS/_PROJECT_ID from your dev Firebase project.
+# PUSH_ENABLED=True
+
 # keycloak
 IDENTITY_PROVIDER=keycloak
 KEYCLOAK_REALM=messages

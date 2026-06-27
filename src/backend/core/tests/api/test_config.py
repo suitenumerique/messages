@@ -38,6 +38,10 @@ pytestmark = pytest.mark.django_db
     MESSAGES_MANUAL_RETRY_MAX_AGE=86400,  # 1 day in seconds
     FRONTEND_SILENT_LOGIN_ENABLED=True,
     RELEASE="1.2.3",
+    PUSH_ENABLED=False,
+    PUSH_VAPID_PRIVATE_KEY=None,
+    PUSH_VAPID_PUBLIC_KEY=None,
+    FRONTEND_THEME_CONFIG=None,
 )
 @pytest.mark.parametrize("is_authenticated", [False, True])
 def test_api_config(is_authenticated):
@@ -72,6 +76,7 @@ def test_api_config(is_authenticated):
         "MESSAGE_TRUSTED_LINK_DOMAINS": [],
         "MESSAGES_MANUAL_RETRY_MAX_AGE": 86400,
         "FRONTEND_SILENT_LOGIN_ENABLED": True,
+        "PUSH_ENABLED": False,
     }
     # Optional settings left unconfigured must be omitted, not null nor
     # defaulted: the frontend falls back on its deprecated NEXT_PUBLIC_*
@@ -86,6 +91,8 @@ def test_api_config(is_authenticated):
     assert "FRONTEND_FEEDBACK_WIDGET_CONFIG" not in response.json()
     assert "FRONTEND_LAGAUFRE_WIDGET_CONFIG" not in response.json()
     assert "MOBILE_OTA_MANIFEST_URL" not in response.json()
+    assert "PUSH_VAPID_PUBLIC_KEY" not in response.json()
+    assert "PUSH_VAPID_PRIVATE_KEY" not in response.json()
 
 
 @override_settings(
@@ -160,7 +167,10 @@ def test_api_config_trusted_link_domains():
     """The trusted-link-domains allowlist should be exposed to the frontend."""
     response = APIClient().get("/api/v1.0/config/")
     assert response.status_code == HTTP_200_OK
-    assert response.json()["MESSAGE_TRUSTED_LINK_DOMAINS"] == ["gouv.fr", "*.example.com"]
+    assert response.json()["MESSAGE_TRUSTED_LINK_DOMAINS"] == [
+        "gouv.fr",
+        "*.example.com",
+    ]
 
 
 @override_settings(
