@@ -229,7 +229,7 @@ The bucket hosts one **self-contained folder per channel** —
 exactly one channel: the channel segment lives in the `MOBILE_OTA_MANIFEST_URL`
 served by the backend the app talks to (`/config` endpoint). The deploy
 pipeline publishes to `staging` and `prod`; local development uses `dev`
-(commented default in `env.d/development/backend.defaults`), so experiments
+(commented default in `deploy/env/backend.defaults`), so experiments
 never look like a release.
 
 **A bundle is never copied or promoted across channels.** The `NEXT_PUBLIC_*`
@@ -341,12 +341,16 @@ revert build may still reference them.
 | Native login / logout | `src/frontend/src/features/native/auth.ts` |
 | Native CSRF token store | `src/frontend/src/features/native/csrf.ts` |
 | Native download → share | `src/frontend/src/features/native/download.ts` |
+| Native push client (enable / on-launch refresh / tap deep-link) | `src/frontend/src/features/native/push.ts` |
+| Push opt-in marker + token-hash contract (shared web/native) | `src/frontend/src/features/push/shared.ts` |
 | OTA client | `src/frontend/src/features/native/ota.ts` |
 | Startup wiring (OTA, `native` html class) | `src/frontend/src/main.tsx` |
 | CSRF / API origin wiring | `src/frontend/src/features/api/utils.ts` |
 | Login/logout routing | `src/frontend/src/features/auth/index.tsx` |
 | iOS ASWebAuthenticationSession plugin | `src/frontend/ios/App/App/WebAuthSessionPlugin.swift` |
 | iOS plugin registration | `src/frontend/ios/App/App/MainViewController.swift` |
+| iOS push entitlement + APNs bridge + banner strings | `src/frontend/ios/App/App/App.entitlements`, `AppDelegate.swift`, `{en,fr}.lproj/Localizable.strings` |
+| Android push banner strings (FCM loc-keys) | `src/frontend/android/app/src/main/res/values{,-fr}/strings.xml` |
 | SSO invariants tripwire (CI guard on the native declarations) | `src/frontend/src/features/native/sso-invariants.test.ts` |
 | Android project | `src/frontend/android/` |
 | Backend mobile-aware OIDC views | `src/backend/core/authentication/views.py` |
@@ -412,7 +416,7 @@ end-to-end first; the list below is what this project specifically needs.
 ## Build & run workflow
 
 The web bundle is built **in a container** (`frontend-mobile`) so the
-`NEXT_PUBLIC_*` vars from `env.d/development/frontend.{defaults,local}` are
+`NEXT_PUBLIC_*` vars from `deploy/env/frontend.{defaults,local}` are
 inlined at build time (Vite `envPrefix: 'NEXT_PUBLIC_'`). Building on the host
 with a bare `npm run build` would inline none of them. The native compile, IDE,
 `adb` and Xcode steps run on the **host**.
@@ -448,7 +452,7 @@ Run the `App` scheme after `make mobile-ios`.
 ### Hot reload (on by default in dev)
 
 `MOBILE_DEV_SERVER_URL` — set to `http://localhost:8900` (the Vite dev server)
-in `env.d/development/frontend.defaults` — is baked by `cap sync` into the app
+in `deploy/env/frontend.defaults` — is baked by `cap sync` into the app
 as Capacitor's `server.url`: the WebView loads the app straight from Vite
 instead of the embedded `dist/`, so JS/CSS changes apply through HMR without
 rebuilding or reinstalling. Since every `make mobile-*` target runs in a
@@ -469,16 +473,73 @@ of the box**. Requirements and caveats:
 
 **Disabling it** — to test the embedded bundle (what a store build ships), or
 the OTA chain end to end: set the variable **empty** in
-`env.d/development/frontend.local` (gitignored, overrides the defaults):
+`deploy/env/frontend.local` (gitignored, overrides the defaults):
 
 ```bash
-# env.d/development/frontend.local
+# deploy/env/frontend.local
 MOBILE_DEV_SERVER_URL=
 ```
 
 then rerun `make mobile-build` (or any target that wraps it) and reinstall the
 app. A leftover `server.url` fails Android **release** builds (gradle guard in
 `android/app/build.gradle`); see the release checklist for iOS.
+
+## Push notifications in dev (optional)
+
+Push is **off by default** (`PUSH_ENABLED=False`): the apps build, run and hide
+the notification settings without any of this. Full architecture:
+[push-notifications.md](./push-notifications.md). What ships in the repo
+(entitlements, loc-key banner strings, permission, conditional google-services
+apply) needs no setup; what follows is the per-developer credential part.
+
+**The app self-configures per environment where it can** — the client picks its
+transport at runtime (`apns` on iOS / `fcm` on Android), and a dev-signed iOS
+build automatically registers against Apple's *sandbox* gateway
+(`aps-environment = development` in `App.entitlements`; Xcode's distribution
+export rewrites it to `production`). What it **cannot** infer is the backend
+half: the gateway credentials and the sandbox flag below must match the build
+you install.
+
+### Android (FCM)
+
+1. Create a (free) dev Firebase project and register an **Android app whose
+   package name is exactly the `applicationId`** of your build — the
+   `MOBILE_APP_ID` default, `local.suitenumerique.messages`. A
+   `google-services.json` for another package fails the Android build at the
+   google-services step.
+2. Download `google-services.json` into `src/frontend/android/app/`
+   (gitignored, per-instance). Rebuild/reinstall.
+3. In Firebase console → project settings → service accounts, generate a
+   service-account key and set in `deploy/env/backend.local`:
+   `PUSH_ENABLED=True`, `PUSH_FCM_CREDENTIALS` (the JSON, single line),
+   `PUSH_FCM_PROJECT_ID`. Restart the backend + celery worker.
+4. Emulator: use the same **Play-services image** the SSO setup already
+   requires (see *Prerequisites*) — FCM registration fails on a bare AOSP
+   image (the UI then shows the `registration_failed` message, by design).
+
+### iOS (APNs)
+
+1. **Physical iPhone required** for the end-to-end path: simulators never get a
+   real APNs token, so registration against Apple's gateway can't be exercised
+   there (`xcrun simctl push` only injects local payloads).
+2. Apple developer account: enable the **Push Notifications capability on the
+   App ID** matching your bundle id, and create an **APNs auth key** (`.p8`).
+3. In `deploy/env/backend.local`: `PUSH_ENABLED=True`,
+   `PUSH_APNS_KEY` (the `.p8` PEM), `PUSH_APNS_KEY_ID`, `PUSH_APNS_TEAM_ID`,
+   `PUSH_APNS_BUNDLE_ID` (= your `MOBILE_APP_ID`), and
+   **`PUSH_APNS_USE_SANDBOX=True`** — dev-signed builds hold sandbox tokens;
+   against the production gateway they are rejected as `BadDeviceToken`.
+   Restart the backend + celery worker.
+
+### Smoke test (both platforms)
+
+1. In the app: account menu → Notifications → *Enable notifications on this
+   device* → accept the OS prompt. The device must appear in the list.
+2. Kill the app, send the mailbox a message from another account: a
+   content-free "New message / Nouveau message" banner must show (rendered by
+   the OS from the loc-key strings — a blank banner means those strings are
+   missing from the build).
+3. Tap it: the app must open on the thread (deep-link path).
 
 ## Configuration
 
@@ -585,6 +646,15 @@ or the Capacitor version.
    (gradle guard in `android/app/build.gradle`); Xcode has no equivalent guard,
    so **check manually for iOS** (no `server.url` in
    `ios/App/App/capacitor.config.json`).
+8. **Push environment pairing** — nothing fails loudly on a mismatch, pushes
+   just never arrive (or hit `BadDeviceToken` in the sender logs). For a store
+   release: the backend serving those users must run
+   `PUSH_APNS_USE_SANDBOX=False` (a distribution-signed build holds
+   *production* APNs tokens — Xcode rewrites `aps-environment` at export, no
+   manual step); the bundled `google-services.json` must come from the
+   **production** Firebase project and contain a client for the release
+   `MOBILE_APP_ID`; `PUSH_APNS_BUNDLE_ID` must equal that same id. Then run the
+   smoke test of *Push notifications in dev* against the release build.
 
 ## See also
 

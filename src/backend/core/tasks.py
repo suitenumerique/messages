@@ -10,5 +10,6 @@ from core.services.blob_gc import *  # noqa: F403
 from core.services.calendar.tasks import *  # noqa: F403
 from core.services.dns.tasks import *  # noqa: F403
 from core.services.importer.tasks import *  # noqa: F403
+from core.services.push.tasks import *  # noqa: F403
 from core.services.search.tasks import *  # noqa: F403
 from core.services.tiered_storage_tasks import *  # noqa: F403

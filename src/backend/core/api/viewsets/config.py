@@ -242,6 +242,28 @@ CONFIG_ENTRIES = (
         },
         required=False,
     ),
+    ConfigEntry(
+        "PUSH_ENABLED",
+        {
+            "type": "boolean",
+            "description": (
+                "Whether push notifications are available on this "
+                "deployment (gates the device-registration UI)."
+            ),
+        },
+    ),
+    ConfigEntry(
+        "PUSH_VAPID_PUBLIC_KEY",
+        {
+            "type": "string",
+            "description": (
+                "VAPID public key (base64url) the web client passes "
+                "as applicationServerKey to subscribe; null when "
+                "Web Push is not configured."
+            ),
+        },
+        required=False,
+    ),
 )
 
 

@@ -191,7 +191,7 @@ variables (read by `src/frontend/scripts/*-ota*.mjs`, not by Django). They live
 in the frontend env files; in CI they come from secrets.
 
 > **Opt-in in dev**: they ship **commented out** in
-> `env.d/development/frontend.defaults` (the values below are the working
+> `deploy/env/frontend.defaults` (the values below are the working
 > dev-stack ones) — uncomment them, along with `MOBILE_OTA_MANIFEST_URL` in
 > `backend.local`, to exercise the OTA chain locally.
 > Hot reload (`MOBILE_DEV_SERVER_URL`, on by default in dev) skips the startup
@@ -450,6 +450,27 @@ without redeploying the frontend (the flag is pulled from
 | `FEATURE_AI_SUMMARY` | `False` | Default enabled mode for summary AI features | Required |
 | `FEATURE_AI_AUTOLABELS` | `False` | Default enabled mode for label AI features | Required |
 
+### Push Notifications
+
+Push notifications for new messages, delivered to iOS (APNs), Android (FCM) and web browsers (Web Push / VAPID). The feature is **off by default** (`PUSH_ENABLED=False`): no tokens are pushed to and no external gateway is contacted. To go live, set `PUSH_ENABLED=True` **and** fully configure at least one gateway below.
+
+Each gateway is all-or-nothing, and validated at boot: with `PUSH_ENABLED=True`, each gateway's variables must be set **together or not at all** (e.g. `PUSH_VAPID_PRIVATE_KEY`, `PUSH_VAPID_PUBLIC_KEY` and `PUSH_VAPID_SUBJECT` for Web Push), otherwise Django raises a `ValueError` at startup — a partial group would enroll devices that never receive anything. Device registration additionally refuses (400) any platform whose gateway is absent altogether, and a sender that finds itself without credentials at send time (removed *after* devices enrolled) drops with a deduplicated warning rather than silently. A deployment configuring only some gateways (e.g. native-only, no VAPID vars) boots and runs fine.
+
+| Variable | Default | Description | Required |
+|----------|---------|-------------|----------|
+| `PUSH_ENABLED` | `False` | Master switch. When `False`, the feature is fully dark: no gateway is contacted and the enqueue helper never schedules the Celery task. | Optional |
+| `PUSH_APNS_KEY` | None | Contents of the APNs auth key `.p8` file (PEM). Required for iOS (with the three vars below). | Optional |
+| `PUSH_APNS_KEY_ID` | None | APNs auth key id (Key ID from the Apple developer portal). | Optional |
+| `PUSH_APNS_TEAM_ID` | None | Apple developer Team ID. | Optional |
+| `PUSH_APNS_BUNDLE_ID` | None | App bundle id, used as the APNs topic. | Optional |
+| `PUSH_APNS_USE_SANDBOX` | `False` | `False` targets Apple's production gateway; `True` the sandbox gateway (only accepts tokens from a development-signed build). | Optional |
+| `PUSH_FCM_CREDENTIALS` | None | Firebase service-account JSON (the whole file contents) as a string. Required for Android (with `PUSH_FCM_PROJECT_ID`). | Optional |
+| `PUSH_FCM_PROJECT_ID` | None | Firebase project id; selects the FCM HTTP v1 endpoint. Separate staging from production by pointing at a different Firebase project, not a flag. | Optional |
+| `PUSH_VAPID_PRIVATE_KEY` | None | VAPID application-server private key (PEM or base64url). Required for Web Push (see boot coupling above). Rotating it orphans every existing web subscription — clients must re-subscribe — and requires re-deriving the public key. | Optional |
+| `PUSH_VAPID_PUBLIC_KEY` | None | Matching VAPID public key (base64url, the uncompressed P-256 point). Served verbatim via `/config` as the browser's `applicationServerKey`; public by definition. Derive it from the private key with `python manage.py derive_vapid_public_key` (add `--verify` to check the pair matches). | Optional |
+| `PUSH_VAPID_SUBJECT` | None | VAPID `sub` claim; must be a `mailto:` or `https:` URI, e.g. `mailto:ops@example.com`. | Optional |
+| `PUSH_MAX_DEVICES_PER_USER` | `20` | Hard ceiling on push devices one user may keep. Registering beyond it prunes the least-recently-used device(s). | Optional |
+
 ### Throttling
 
 Outbound message throttling limits the number of **external recipients** (recipients whose domain is not managed by this instance) that can be sent from a mailbox or maildomain within a time period, using simple fixed time windows.
@@ -465,6 +486,7 @@ Outbound message throttling limits the number of **external recipients** (recipi
 | `API_CALDAV_CONFLICTS_THROTTLE_RATE` | `30/minute` | Rate limit on the CalDAV conflict-check API. | Optional |
 | `API_WIDGET_INBOUND_CHANNEL_THROTTLE_RATE` | `30/minute` | Rate limit on inbound widget submissions, per widget channel. | Optional |
 | `API_WIDGET_INBOUND_IP_THROTTLE_RATE` | `10/minute` | Per-IP burst limit on inbound widget submissions. | Optional |
+| `API_DEVICE_REGISTRATION_THROTTLE_RATE` | `30/hour` | Per-user rate limit on push device (re)registration. Clients re-register on every cold launch and on token rotation, so this is deliberately loose; the hard ceiling on distinct devices is `PUSH_MAX_DEVICES_PER_USER`. | Optional |
 
 ### Image Proxy
 

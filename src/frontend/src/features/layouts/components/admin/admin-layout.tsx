@@ -5,6 +5,7 @@ import { Link } from "@tanstack/react-router";
 import { useTranslation } from "react-i18next";
 import { AdminMailDomainProvider, useAdminMailDomain } from "@/features/providers/admin-maildomain";
 import useAbility, { Abilities } from "@/hooks/use-ability";
+import { useDocumentTitle } from "@/hooks/use-document-title";
 import { ErrorPage } from "@/features/ui/components/error-page";
 import { Toaster } from "@/features/ui/components/toaster";
 import { Badge, Icon, IconSize, IconType } from "@gouvfr-lasuite/ui-kit";
@@ -25,6 +26,19 @@ function AdminLayoutContent({
   const { t } = useTranslation();
   const { selectedMailDomain } = useAdminMailDomain();
   const canViewDomainAdmin = useAbility(Abilities.CAN_VIEW_DOMAIN_ADMIN);
+  const tabLabels: Record<string, string> = {
+    addresses: t("Addresses"),
+    dns: t("DNS"),
+    signatures: t("Signatures"),
+  };
+  const domainName = selectedMailDomain?.name || selectedMailDomain?.id;
+
+  // The domain only exists inside `AdminMailDomainProvider`, so the title of
+  // every admin route is set here rather than in the routes themselves.
+  useDocumentTitle(
+    domainName ?? t("Maildomains management"),
+    domainName && currentTab && tabLabels[currentTab]
+  );
 
   // Build breadcrumb items
   const breadcrumbItems = [
@@ -57,14 +71,10 @@ function AdminLayoutContent({
 
     // Add current page to breadcrumbs if not on main addresses page
     if (currentTab && currentTab !== "addresses") {
-      const tabLabels = {
-        dns: t("DNS"),
-        signatures: t("Signatures")
-      };
       breadcrumbItems.push({
         content: (
           <span className="c__breadcrumbs__button active">
-            {tabLabels[currentTab as keyof typeof tabLabels]}
+            {tabLabels[currentTab]}
           </span>
         )
       });

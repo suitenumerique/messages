@@ -15,11 +15,6 @@ NEXT_PUBLIC_MULTIPART_UPLOAD_CHUNK_SIZE=100
 NEXT_PUBLIC_SENTRY_DSN=
 NEXT_PUBLIC_SENTRY_ENVIRONMENT=
 
-## Theme Customization
-NEXT_PUBLIC_THEME_CONFIG='{
-    "theme": "white-label"
-}'
-
 ## Mobile app build identity (Capacitor). Neutral placeholder shared by the repo;
 ## read by `cap sync` (container) and by the native builds (host: gradle / Xcode).
 ## An organisation publishing to the stores overrides it — in BOTH contexts — with

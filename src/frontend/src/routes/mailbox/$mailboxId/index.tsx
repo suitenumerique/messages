@@ -11,11 +11,14 @@ import { useThreadSelection } from "@/features/providers/thread-selection";
 import { useMailboxContext } from "@/features/providers/mailbox";
 import { useUrlSearchParams } from "@/hooks/use-url-search-params";
 import useAbility, { Abilities } from "@/hooks/use-ability";
+import { useCurrentFolderName } from "@/hooks/use-current-folder-name";
+import { useDocumentTitle } from "@/hooks/use-document-title";
 import ViewHelper from "@/features/utils/view-helper";
 
 const Mailbox = () => {
   const { t } = useTranslation();
   const { selectedMailbox, threads } = useMailboxContext();
+  const folderName = useCurrentFolderName();
   const canImportMessages = useAbility(Abilities.CAN_IMPORT_MESSAGES, selectedMailbox);
   const { selectedThreadIds } = useThreadSelection();
   const searchParams = useUrlSearchParams();
@@ -27,6 +30,8 @@ const Mailbox = () => {
     groupId: showThreadView ? "threads" : "threads-single",
     storage: localStorage,
   });
+
+  useDocumentTitle(folderName, selectedMailbox?.email);
 
   const showImportButton = useMemo(() => {
     if (!canImportMessages || !emptyMailbox) return false;
