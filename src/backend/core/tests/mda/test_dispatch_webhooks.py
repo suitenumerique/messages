@@ -4,12 +4,12 @@
 # pylint: disable=missing-class-docstring,too-many-lines,too-many-public-methods
 # pylint: disable=use-implicit-booleaness-not-comparison
 
-import base64
 import hashlib
 import hmac
 import json
 import uuid
 from dataclasses import dataclass, field
+from datetime import timedelta
 from typing import Optional, Set
 from unittest.mock import Mock, patch
 
@@ -418,8 +418,10 @@ class TestDispatchInboundWebhooks:
         mock_session.assert_not_called()
 
     @patch("core.mda.dispatch_webhooks.SSRFSafeSession")
-    def test_non_blocking_continues_on_5xx(self, mock_session, mailbox, parsed_email):
-        """Non-blocking webhooks never influence delivery, even on 5xx."""
+    def test_non_blocking_does_no_inline_io(self, mock_session, mailbox, parsed_email):
+        """A non-blocking webhook never influences delivery and never
+        touches the network on the inbound worker — it's recorded during
+        the pipeline and fired from a task after the Message exists."""
         factories.ChannelFactory(
             type=enums.ChannelTypes.WEBHOOK,
             mailbox=mailbox,
@@ -429,7 +431,6 @@ class TestDispatchInboundWebhooks:
                 "blocking": False,
             },
         )
-        mock_session.return_value.post.return_value = _make_response(500)
         outcome = dispatch_webhooks(
             phase=PHASE_AFTER_SPAM,
             mailbox=mailbox,
@@ -439,7 +440,7 @@ class TestDispatchInboundWebhooks:
             is_spam=False,
         )
         assert outcome.decision == Decision.CONTINUE
-        mock_session.return_value.post.assert_called_once()
+        mock_session.return_value.post.assert_not_called()
 
     @patch("core.mda.dispatch_webhooks.SSRFSafeSession")
     def test_blocking_retries_on_5xx(self, mock_session, mailbox, parsed_email):
@@ -561,30 +562,6 @@ class TestDispatchInboundWebhooks:
         assert outcome.decision == Decision.RETRY
 
     @patch("core.mda.dispatch_webhooks.SSRFSafeSession")
-    def test_non_blocking_continues_on_ssrf_rejection(
-        self, mock_session, mailbox, parsed_email
-    ):
-        factories.ChannelFactory(
-            type=enums.ChannelTypes.WEBHOOK,
-            mailbox=mailbox,
-            settings={
-                "url": "https://internal.example.com",
-                "events": ["message.inbound"],
-                "blocking": False,
-            },
-        )
-        mock_session.return_value.post.side_effect = SSRFValidationError("blocked")
-        outcome = dispatch_webhooks(
-            phase=PHASE_AFTER_SPAM,
-            mailbox=mailbox,
-            recipient_email=str(mailbox),
-            parsed_email=parsed_email,
-            raw_data=b"raw",
-            is_spam=False,
-        )
-        assert outcome.decision == Decision.CONTINUE
-
-    @patch("core.mda.dispatch_webhooks.SSRFSafeSession")
     def test_blocking_retries_on_timeout(self, mock_session, mailbox, parsed_email):
         """A connection timeout is transient: retry rather than lose the message."""
         factories.ChannelFactory(
@@ -672,6 +649,7 @@ class TestDispatchInboundWebhooks:
                 "url": "https://hook.example.com/before",
                 "events": ["message.inbound"],
                 "phase": "before_spam",
+                "blocking": True,
             },
         )
         factories.ChannelFactory(
@@ -681,6 +659,7 @@ class TestDispatchInboundWebhooks:
                 "url": "https://hook.example.com/after",
                 "events": ["message.inbound"],
                 "phase": "after_spam",
+                "blocking": True,
             },
         )
         mock_session.return_value.post.return_value = _make_response(200)
@@ -703,6 +682,7 @@ class TestDispatchInboundWebhooks:
             settings={
                 "url": "https://hook.example.com",
                 "events": ["message.inbound"],
+                "blocking": True,
             },
         )
         mock_session.return_value.post.return_value = _make_response(200)
@@ -730,6 +710,7 @@ class TestDispatchInboundWebhooks:
                 "url": "https://hook.example.com",
                 "events": ["message.inbound"],
                 "format": "jmap",
+                "blocking": True,
             },
         )
         mock_session.return_value.post.return_value = _make_response(200)
@@ -762,6 +743,7 @@ class TestDispatchInboundWebhooks:
                 "url": "https://hook.example.com",
                 "events": ["message.inbound"],
                 "format": "jmap_metadata",
+                "blocking": True,
             },
         )
         mock_session.return_value.post.return_value = _make_response(200)
@@ -804,6 +786,7 @@ class TestDispatchInboundWebhooks:
                     "url": "https://hook.example.com",
                     "events": ["message.inbound"],
                     "format": fmt,
+                    "blocking": True,
                 },
             )
             mock_session.return_value.post.return_value = _make_response(200)
@@ -836,6 +819,7 @@ class TestDispatchInboundWebhooks:
                 "url": "https://hook.example.com",
                 "events": ["message.inbound"],
                 "phase": "before_spam",
+                "blocking": True,
             },
         )
         mock_session.return_value.post.return_value = _make_response(200)
@@ -905,6 +889,7 @@ class TestWebhookSigning:
                 "url": "https://hook.example.com",
                 "events": ["message.inbound"],
                 "format": "eml",
+                "blocking": True,
             },
         )
         mock_session.return_value.post.return_value = _make_response(200)
@@ -944,6 +929,7 @@ class TestWebhookSigning:
                 "url": "https://hook.example.com",
                 "events": ["message.inbound"],
                 "format": "jmap",
+                "blocking": True,
             },
         )
         mock_session.return_value.post.return_value = _make_response(200)
@@ -983,6 +969,7 @@ class TestWebhookSigning:
                 "url": "https://hook.example.com",
                 "events": ["message.inbound"],
                 "auth_method": "api_key",
+                "blocking": True,
             },
         )
         mock_session.return_value.post.return_value = _make_response(200)
@@ -1018,6 +1005,7 @@ class TestWebhookSigning:
                 "url": "https://hook.example.com",
                 "events": ["message.inbound"],
                 "auth_method": "jwt",
+                "blocking": True,
             },
         )
         mock_session.return_value.post.return_value = _make_response(200)
@@ -1078,6 +1066,7 @@ class TestWebhookSigning:
                 "url": "https://hook.example.com",
                 "events": ["message.inbound"],
                 "auth_method": "api_key",
+                "blocking": True,
             },
         )
         mock_session.return_value.post.return_value = _make_response(200)
@@ -1263,6 +1252,7 @@ class TestPipelineIntegration:
                 "url": "https://hook.example.com",
                 "events": ["message.inbound"],
                 "phase": "after_spam",
+                "blocking": True,
             },
         )
         mock_check_spam.return_value = (True, None, None)
@@ -1316,9 +1306,10 @@ class TestPipelineIntegration:
 
 @pytest.mark.django_db
 class TestNonBlockingDispatch:
-    """Non-blocking webhooks must hand the POST to a Celery task (default
-    queue) rather than do network I/O on the inbound worker — that's the
-    worker-isolation guarantee."""
+    """Non-blocking webhooks are recorded during the pipeline and fired
+    from a Celery task after the Message exists — the task renders the
+    payload from the durable ``Message.blob`` (no snapshot, nothing large
+    on the broker), keeping the inbound worker free of webhook I/O."""
 
     def _ctx(self, mailbox, parsed_email, is_spam=False):
         return InboundContext(
@@ -1331,11 +1322,12 @@ class TestNonBlockingDispatch:
             is_spam=is_spam,
         )
 
-    @patch("core.mda.dispatch_webhooks.dispatch_webhook_task")
     @patch("core.mda.dispatch_webhooks.SSRFSafeSession")
-    def test_non_blocking_enqueues_and_skips_inline_post(
-        self, mock_session, mock_task, mailbox, parsed_email
+    def test_non_blocking_records_pending_webhook(
+        self, mock_session, mailbox, parsed_email
     ):
+        # The step records the channel (with phase-time is_spam) and does
+        # NO network I/O — the actual send happens later from the task.
         channel = factories.ChannelFactory(
             type=enums.ChannelTypes.WEBHOOK,
             mailbox=mailbox,
@@ -1351,15 +1343,38 @@ class TestNonBlockingDispatch:
         for step in webhook_steps_for_mailbox(mailbox, phase=PHASE_AFTER_SPAM):
             assert step(ctx) == Decision.CONTINUE
 
-        # Enqueued exactly once with the phase-correct snapshot...
-        mock_task.delay.assert_called_once()
-        args = mock_task.delay.call_args[0]
-        assert args[0] == str(channel.id)
-        assert args[1] == str(mailbox.id)
-        assert args[2] == PHASE_AFTER_SPAM
-        assert args[3] is False  # is_spam
-        # ...and NO network I/O happened on the inbound worker.
+        assert ctx.pending_webhooks == [(channel.id, PHASE_AFTER_SPAM, False)]
         mock_session.return_value.post.assert_not_called()
+
+    @patch("core.mda.dispatch_webhooks.dispatch_webhook_task")
+    def test_dispatch_recorded_webhooks_enqueues_one_task_each(
+        self, mock_task, mailbox
+    ):
+        from core.mda.dispatch_webhooks import dispatch_recorded_webhooks
+
+        message = factories.MessageFactory(raw_mime=b"raw mime")
+        c1, c2 = uuid.uuid4(), uuid.uuid4()
+        dispatch_recorded_webhooks(
+            message,
+            mailbox,
+            [(c1, PHASE_AFTER_SPAM, False), (c2, PHASE_BEFORE_SPAM, None)],
+        )
+
+        assert mock_task.delay.call_count == 2
+        assert mock_task.delay.call_args_list[0][0] == (
+            str(message.id),
+            str(c1),
+            str(mailbox.id),
+            PHASE_AFTER_SPAM,
+            False,
+        )
+        assert mock_task.delay.call_args_list[1][0] == (
+            str(message.id),
+            str(c2),
+            str(mailbox.id),
+            PHASE_BEFORE_SPAM,
+            None,
+        )
 
     @patch("core.mda.dispatch_webhooks.SSRFSafeSession")
     def test_dispatch_webhook_task_posts_signed(self, mock_session, mailbox):
@@ -1375,38 +1390,98 @@ class TestNonBlockingDispatch:
         )
         mock_session.return_value.post.return_value = _make_response(200)
 
+        message = factories.MessageFactory(raw_mime=b"raw mime")
         dispatch_webhook_task(
+            str(message.id),
             str(channel.id),
             str(mailbox.id),
             PHASE_AFTER_SPAM,
             False,
-            str(mailbox),
-            "message/rfc822",
-            base64.b64encode(b"raw mime").decode("ascii"),
         )
 
         mock_session.return_value.post.assert_called_once()
+        # The signed body is the message blob content, rendered at task init.
+        assert mock_session.return_value.post.call_args.kwargs["data"] == b"raw mime"
         headers = mock_session.return_value.post.call_args.kwargs["headers"]
         assert headers["X-StMsg-Phase"] == "after_spam"
         assert headers["X-StMsg-Event"] == enums.WebhookEvents.MESSAGE_INBOUND.value
         # Signed at send time (jwt auth_method).
         assert "X-StMsg-Webhook-Signature" in headers
+        # Fired post-persist, so the platform's Message/Thread ids ride along
+        # for receiver-side API callbacks.
+        assert headers["X-StMsg-Message-Id"] == str(message.id)
+        assert headers["X-StMsg-Thread-Id"] == str(message.thread_id)
 
     @patch("core.mda.dispatch_webhooks.SSRFSafeSession")
     def test_dispatch_webhook_task_no_ops_when_channel_gone(
         self, mock_session, mailbox
     ):
         # Channel id that doesn't exist → best-effort no-op, no POST, no raise.
+        message = factories.MessageFactory(raw_mime=b"raw mime")
         dispatch_webhook_task(
+            str(message.id),
             str(uuid.uuid4()),
             str(mailbox.id),
             PHASE_AFTER_SPAM,
             False,
-            str(mailbox),
-            "message/rfc822",
-            base64.b64encode(b"raw").decode("ascii"),
         )
         mock_session.return_value.post.assert_not_called()
+
+    @patch("core.mda.dispatch_webhooks.SSRFSafeSession")
+    def test_dispatch_webhook_task_skips_when_message_gone(self, mock_session, mailbox):
+        # The source message is gone before the task ran (e.g. deleted) →
+        # re-validation at init fails closed: no POST, no guessed payload.
+        channel = factories.ChannelFactory(
+            type=enums.ChannelTypes.WEBHOOK,
+            mailbox=mailbox,
+            settings={
+                "url": "https://hook.example.com",
+                "events": ["message.inbound"],
+                "blocking": False,
+                "auth_method": "jwt",
+            },
+        )
+        dispatch_webhook_task(
+            str(uuid.uuid4()),
+            str(channel.id),
+            str(mailbox.id),
+            PHASE_AFTER_SPAM,
+            False,
+        )
+        mock_session.return_value.post.assert_not_called()
+
+    @patch("core.mda.dispatch_webhooks.SSRFSafeSession")
+    def test_dispatch_webhook_task_swallows_send_errors(self, mock_session, mailbox):
+        # Non-blocking is fire-and-forget: a 5xx, a transport failure, or a
+        # receiver body must never surface as an exception or side effect.
+        channel = factories.ChannelFactory(
+            type=enums.ChannelTypes.WEBHOOK,
+            mailbox=mailbox,
+            settings={
+                "url": "https://hook.example.com",
+                "events": ["message.inbound"],
+                "blocking": False,
+                "auth_method": "jwt",
+            },
+        )
+        message = factories.MessageFactory(raw_mime=b"raw mime")
+        args = (
+            str(message.id),
+            str(channel.id),
+            str(mailbox.id),
+            PHASE_AFTER_SPAM,
+            False,
+        )
+
+        # 5xx with a drop-shaped body — ignored, no raise.
+        mock_session.return_value.post.return_value = _make_response(
+            500, body=b'{"action": "drop"}'
+        )
+        dispatch_webhook_task(*args)
+
+        # Transport failure — swallowed, no raise.
+        mock_session.return_value.post.side_effect = SSRFValidationError("blocked")
+        dispatch_webhook_task(*args)
 
 
 # --- internal (mailbox-to-mailbox) delivery --- #
@@ -1919,9 +1994,10 @@ class TestDispatchActionBody:
     def test_non_blocking_ignores_action_body(
         self, mock_session, mailbox, parsed_email
     ):
-        """Non-blocking webhooks are fire-and-forget. A receiver's body
-        should never affect delivery — protects against a non-blocking
-        webhook accidentally returning {"action":"drop"}."""
+        """Non-blocking webhooks are fire-and-forget. They're not in the
+        delivery decision path at all — the step only records them and does
+        no inline I/O — so a receiver's body (even ``{"action":"drop"}``)
+        can never affect delivery."""
         factories.ChannelFactory(
             type=enums.ChannelTypes.WEBHOOK,
             mailbox=mailbox,
@@ -1930,9 +2006,6 @@ class TestDispatchActionBody:
                 "events": ["message.inbound"],
                 "blocking": False,
             },
-        )
-        mock_session.return_value.post.return_value = _make_response(
-            200, body=b'{"action": "drop", "is_spam": true}'
         )
         outcome = dispatch_webhooks(
             phase=PHASE_AFTER_SPAM,
@@ -1944,6 +2017,7 @@ class TestDispatchActionBody:
         )
         assert outcome.decision == Decision.CONTINUE
         assert outcome.is_spam_override is None
+        mock_session.return_value.post.assert_not_called()
 
     @patch("core.mda.dispatch_webhooks.SSRFSafeSession")
     def test_multi_webhook_drop_wins_and_short_circuits(
@@ -2136,9 +2210,7 @@ class TestPipelineRetry:
         )
         # Backdate past the quarantine window (auto_now_add → update()).
         models.InboundMessage.objects.filter(id=inbound_message.id).update(
-            created_at=dj_timezone.now()
-            - QUARANTINE_AFTER
-            - dj_timezone.timedelta(minutes=1)
+            created_at=dj_timezone.now() - QUARANTINE_AFTER - timedelta(minutes=1)
         )
         factories.ChannelFactory(
             type=enums.ChannelTypes.WEBHOOK,

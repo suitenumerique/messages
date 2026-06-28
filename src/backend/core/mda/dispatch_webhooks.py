@@ -31,7 +31,6 @@ Two body formats are supported (see ``docs/webhooks.md``):
 
 from __future__ import annotations
 
-import base64
 import hashlib
 import hmac
 import json
@@ -47,7 +46,7 @@ from urllib.parse import urlparse
 from django.db.models import Q
 
 import jwt
-from jmap_email import JmapEmail
+from jmap_email import JmapEmail, parse_email
 
 from core import enums, models
 from core.mda.inbound_pipeline import Decision, InboundContext, Step
@@ -155,7 +154,9 @@ def _read_capped_body(response, deadline: Optional[float] = None) -> bytes:
     except TimeoutError:
         raise
     except Exception as exc:
-        logger.warning("Truncated response body read failed: %s", exc)
+        # Don't interpolate ``exc`` — its text can echo the request URL or
+        # body and leak receiver secrets into logs. The type name is enough.
+        logger.warning("Truncated response body read failed (%s)", type(exc).__name__)
     return b"".join(chunks)
 
 
@@ -530,20 +531,26 @@ def _envelope_headers(
     mailbox: models.Mailbox,
     recipient_email: str,
     is_spam: Optional[bool],
+    message: Optional[models.Message] = None,
 ) -> Dict[str, str]:
     """Build the ``X-StMsg-*`` envelope headers attached to every webhook
     POST regardless of body format. Same shape for ``eml`` and ``jmap``.
 
-    The message-id is intentionally *not* a header: every body format
-    already carries it (``messageId`` in the jmap variants, the raw
-    ``Message-ID:`` header in ``eml``), so a header would only duplicate
-    it.
+    The *MIME* message-id is intentionally *not* a header: every body
+    format already carries it (``messageId`` in the jmap variants, the
+    raw ``Message-ID:`` header in ``eml``), so a header would only
+    duplicate it.
+
+    When ``message`` is supplied (the non-blocking path fires after the
+    ``Message`` is persisted) we add the platform's own ``Message`` /
+    ``Thread`` ids so a receiver can call back into our API. Blocking
+    webhooks fire before the row exists, so they don't carry them.
     """
     if is_spam is None:
         spam_value = "unknown"
     else:
         spam_value = "true" if is_spam else "false"
-    return {
+    headers = {
         "User-Agent": USER_AGENT,
         "X-StMsg-Event": enums.WebhookEvents.MESSAGE_INBOUND.value,
         "X-StMsg-Phase": phase,
@@ -552,6 +559,10 @@ def _envelope_headers(
         "X-StMsg-Recipient": recipient_email,
         "X-StMsg-Is-Spam": spam_value,
     }
+    if message is not None:
+        headers["X-StMsg-Message-Id"] = str(message.id)
+        headers["X-StMsg-Thread-Id"] = str(message.thread_id)
+    return headers
 
 
 # --- dispatch --- #
@@ -590,33 +601,29 @@ class UserWebhookStep:
 
     def __call__(self, ctx: InboundContext) -> Decision:
         cfg = self.channel.settings or {}
-        body_format = cfg.get("format", DEFAULT_FORMAT)
         blocking = bool(cfg.get("blocking", False))
 
+        if not blocking:
+            # Non-blocking webhooks can't influence delivery, so they don't
+            # run network I/O on the inbound worker. We also don't render or
+            # snapshot the body here: we record the channel (with the
+            # phase-time ``is_spam``) and fire it AFTER the Message is
+            # created — see ``dispatch_recorded_webhooks``. The task then
+            # renders the payload from the durable ``Message.blob``, so the
+            # email bytes never get copied or pushed through the broker.
+            #
+            # Consequence (intended): a non-blocking webhook fires only for
+            # messages that actually become a Message — not for ones a
+            # blocking webhook later DROPs. The X-StMsg-* headers still carry
+            # the phase/spam context, and the body is the canonical stored
+            # MIME regardless of phase.
+            ctx.pending_webhooks.append((self.channel.id, self.phase, ctx.is_spam))
+            return Decision.CONTINUE
+
+        body_format = cfg.get("format", DEFAULT_FORMAT)
         content_type, body_bytes = _resolve_body(
             body_format, ctx.raw_data, ctx.parsed_email
         )
-
-        if not blocking:
-            # Non-blocking webhooks can't influence delivery, so we never
-            # run their network I/O on the inbound worker — a slow/hostile
-            # receiver (the mailbox owner's own endpoint) would otherwise
-            # stall mail processing for everyone sharing the queue. Snapshot
-            # the phase-correct request and hand the POST to a Celery task
-            # on the default queue, then continue immediately. Fires via
-            # ``.delay`` (not ``on_commit``) to match the previous inline
-            # semantics: a non-blocking webhook fires regardless of whether
-            # the message is later dropped or its delivery rolls back.
-            dispatch_webhook_task.delay(
-                str(self.channel.id),
-                str(ctx.mailbox.id),
-                self.phase,
-                ctx.is_spam,
-                ctx.recipient_email,
-                content_type,
-                base64.b64encode(body_bytes).decode("ascii"),
-            )
-            return Decision.CONTINUE
 
         result = _dispatch_webhook(
             channel=self.channel,
@@ -840,12 +847,15 @@ def _dispatch_webhook(
     content_type: str,
     body_bytes: bytes,
     blocking: bool,
+    message: Optional[models.Message] = None,
 ) -> _HttpResult:
     """Build the envelope headers and deliver one webhook.
 
     The shared entry point above ``_deliver_signed_webhook``: both the
     inline blocking step and the out-of-band non-blocking task land here,
     so the URL lookup and header-building can't drift between them.
+    ``message`` is set on the non-blocking path (fired post-persist) so
+    its id / thread id ride along as headers.
     """
     url = (channel.settings or {}).get("url")
     if not url:
@@ -860,6 +870,7 @@ def _dispatch_webhook(
         mailbox=mailbox,
         recipient_email=recipient_email,
         is_spam=is_spam,
+        message=message,
     )
     return _deliver_signed_webhook(
         channel=channel,
@@ -872,15 +883,52 @@ def _dispatch_webhook(
     )
 
 
+def _resolve_body_from_message(
+    body_format: str, message: models.Message
+) -> Tuple[str, bytes]:
+    """Render the webhook body from a durable ``Message``.
+
+    The non-blocking dispatch path sources its bytes from the stored
+    ``Message.blob`` (re-parsed the same way the pipeline parsed them)
+    instead of a transient snapshot, so there's no second copy of the
+    email. Mirrors ``_resolve_body``'s output contract.
+    """
+    raw_data = message.blob.get_content()
+    parsed_email = parse_email(raw_data) or {}
+    return _resolve_body(body_format, raw_data, parsed_email)
+
+
+def dispatch_recorded_webhooks(
+    message: models.Message,
+    mailbox: models.Mailbox,
+    pending: List[Tuple[Any, str, Optional[bool]]],
+) -> None:
+    """Fire the non-blocking webhooks recorded during the pipeline.
+
+    Called from the inbound finalizer once the ``Message`` exists and is
+    committed (the inbound task runs in autocommit). Each task receives
+    only ids — it re-fetches the message and renders the body from
+    ``Message.blob`` at run time, so nothing large rides the broker and
+    there's no payload snapshot to keep alive. If the message somehow
+    isn't there when the task runs, the task skips rather than guessing.
+    """
+    if not pending:
+        return
+    message_id = str(message.id)
+    mailbox_id = str(mailbox.id)
+    for channel_id, phase, is_spam in pending:
+        dispatch_webhook_task.delay(
+            message_id, str(channel_id), mailbox_id, phase, is_spam
+        )
+
+
 @celery_app.task
 def dispatch_webhook_task(
+    message_id: str,
     channel_id: str,
     mailbox_id: str,
     phase: str,
     is_spam: Optional[bool],
-    recipient_email: str,
-    content_type: str,
-    body_b64: str,
 ) -> None:
     """Deliver one non-blocking webhook off the inbound worker.
 
@@ -891,21 +939,38 @@ def dispatch_webhook_task(
     the previous inline non-blocking contract). The request is re-signed
     here at send time, so the root secret never travels through the
     broker and the JWT TTL is measured from the actual POST.
+
+    The payload never travels through the broker — only the ``message_id``
+    does. We re-fetch (and so re-validate) the source ``Message`` at task
+    init and render the body from its blob; if the message is already gone
+    (e.g. deleted before the task ran) the dispatch is skipped rather than
+    guessed at.
     """
     try:
         channel = models.Channel.objects.filter(id=channel_id).first()
         mailbox = models.Mailbox.objects.filter(id=mailbox_id).first()
         if channel is None or mailbox is None:
             return
+        message = models.Message.objects.filter(id=message_id).first()
+        if message is None or message.blob_id is None:
+            logger.warning(
+                "Webhook source message %s missing — skipping dispatch (channel=%s)",
+                message_id,
+                channel_id,
+            )
+            return
+        body_format = (channel.settings or {}).get("format", DEFAULT_FORMAT)
+        content_type, body_bytes = _resolve_body_from_message(body_format, message)
         _dispatch_webhook(
             channel=channel,
             mailbox=mailbox,
             phase=phase,
             is_spam=is_spam,
-            recipient_email=recipient_email,
+            recipient_email=str(mailbox),
             content_type=content_type,
-            body_bytes=base64.b64decode(body_b64),
+            body_bytes=body_bytes,
             blocking=False,
+            message=message,
         )
     except Exception:  # pylint: disable=broad-exception-caught
         logger.exception(
@@ -940,7 +1005,12 @@ def webhook_steps_for_mailbox(
         cfg = channel.settings or {}
         if cfg.get("phase", PHASE_AFTER_SPAM) != phase:
             continue
-        events = cfg.get("events") or [enums.WebhookEvents.MESSAGE_INBOUND.value]
+        events = cfg.get("events")
+        if events is None:
+            # Only a missing/null key falls back to the default. An explicit
+            # empty list means "subscribed to nothing" and must stay empty so
+            # the membership check below correctly skips the channel.
+            events = [enums.WebhookEvents.MESSAGE_INBOUND.value]
         if not isinstance(events, list):
             # Validator guarantees a list on write; a non-list here is a
             # misconfigured row. Fail closed — a bare string would make the

@@ -425,7 +425,7 @@
   "Forced": "Forced",
   "Forced signature": "Forced signature",
   "Forward": "Forward",
-  "Forward every incoming message to a URL of your choice as a JSON POST.": "Forward every incoming message to a URL of your choice as a JSON POST.",
+  "Forward every incoming message to a URL of your choice.": "Forward every incoming message to a URL of your choice.",
   "Forwarded message": "Forwarded message",
   "Friday": "Friday",
   "From": "From",
@@ -439,7 +439,7 @@
   "Grant editor access to the thread?": "Grant editor access to the thread?",
   "Help center & Support": "Help center & Support",
   "High failure rate": "High failure rate",
-  "How the receiver authenticates our requests. The secret is shown once at creation.": "How the receiver authenticates our requests. The secret is shown once at creation.",
+  "How the receiver authenticates our requests. The credential is shown once at creation.": "How the receiver authenticates our requests. The credential is shown once at creation.",
   "How to allow IMAP connections from your account {{name}}?": "How to allow IMAP connections from your account {{name}}?",
   "I confirm that this address corresponds to the real identity of a colleague, and I commit to deactivating it when their position ends.": "I confirm that this address corresponds to the real identity of a colleague, and I commit to deactivating it when their position ends.",
   "I have an issue or a feature request": "I have an issue or a feature request",
@@ -900,6 +900,6 @@
   "Your endpoint will receive a JSON payload containing the parsed message (from, to, subject, body, headers, …).": "Your endpoint will receive a JSON payload containing the parsed message (from, to, subject, body, headers, …).",
   "Your session has expired. Please log in again.": "Your session has expired. Please log in again.",
   "URL must start with https://": "URL must start with https://",
-  "Regenerate secret": "Regenerate secret",
-  "Regenerating the secret invalidates the old one immediately. The receiver must be updated with the new value before it can verify webhooks again.": "Regenerating the secret invalidates the old one immediately. The receiver must be updated with the new value before it can verify webhooks again."
+  "Regenerate credential": "Regenerate credential",
+  "Regenerating the credential invalidates the old one immediately. The receiver must be updated with the new value before it can verify webhooks again.": "Regenerating the credential invalidates the old one immediately. The receiver must be updated with the new value before it can verify webhooks again."
 }

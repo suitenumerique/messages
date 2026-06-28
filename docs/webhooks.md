@@ -26,9 +26,23 @@ A channel may also be **blocking** (`settings.blocking: true`). A
 blocking webhook gets to shape delivery: it can drop the message, ask
 to be retried later, or return a small JSON body that overrides the
 spam verdict and/or attaches labels to the resulting thread (see
-[Response contract](#response-contract) below). Non-blocking webhooks
-are fire-and-forget — failures are logged and the pipeline continues
-unchanged.
+[Response contract](#response-contract) below). Blocking webhooks run
+**inline** at their phase, on the pipeline worker.
+
+Non-blocking webhooks are fire-and-forget — failures are logged and the
+pipeline continues unchanged. Because they can't influence delivery,
+they don't run on the pipeline worker at all: at their phase the channel
+is just **recorded** (capturing the phase and the phase-time `is_spam`),
+and the actual POST is handed to a background task **after the `Message`
+is persisted**. The task renders the body from the stored message, so
+nothing is copied or sent through the broker. Two consequences:
+
+* A non-blocking webhook fires only for messages that become a
+  `Message` — not for one a blocking webhook later **drops**. (Spam is
+  *not* a drop: it still lands in the spam folder, so it still fires,
+  with `X-StMsg-Is-Spam: true`.)
+* The POST body is the canonical stored message regardless of phase; the
+  `phase`/`is_spam` context lives in the `X-StMsg-*` headers as before.
 
 ## Channel scopes
 
@@ -62,7 +76,7 @@ A webhook channel stores its configuration in `Channel.settings`
 
 | Key           | Type     | Default        | Description                                                                 |
 | ------------- | -------- | -------------- | --------------------------------------------------------------------------- |
-| `url`         | string   | **required**   | `http://` or `https://` endpoint. Validated by the SSRF guard at each call. |
+| `url`         | string   | **required**   | `https://` endpoint, validated by the SSRF guard at each call. `http://` is accepted only when Django `DEBUG` is on (the local-dev escape hatch). |
 | `events`      | string[] | **required**   | Currently only `message.inbound` is implemented.                           |
 | `phase`       | string   | `after_spam`   | `before_spam` or `after_spam`.                                              |
 | `format`      | string   | `eml`          | `eml`, `jmap`, or `jmap_metadata` (see [Payload formats](#payload-formats)). |
@@ -136,10 +150,17 @@ message lands.
 | `X-StMsg-Mailbox`     | Destination mailbox address                                      |
 | `X-StMsg-Recipient`   | Envelope `RCPT TO` (usually the same as `X-StMsg-Mailbox`)       |
 | `X-StMsg-Is-Spam`     | `true`, `false`, or `unknown` (`unknown` in the `before_spam` phase) |
+| `X-StMsg-Message-Id`  | UUID of the stored `Message` — **non-blocking only** (see note)   |
+| `X-StMsg-Thread-Id`   | UUID of the `Message`'s `Thread` — **non-blocking only**          |
 
-The message-id is **not** sent as a header — every body format already
-carries it (`messageId` in the JMAP variants, the raw `Message-ID:`
-header in `eml`).
+The MIME message-id is **not** sent as a header — every body format
+already carries it (`messageId` in the JMAP variants, the raw
+`Message-ID:` header in `eml`).
+
+`X-StMsg-Message-Id` / `X-StMsg-Thread-Id` are the platform's own ids
+(for calling back into the API). They're only present on **non-blocking**
+webhooks, which fire after the `Message` is persisted; blocking webhooks
+run before it exists, so they can't carry them.
 
 ### Response contract
 

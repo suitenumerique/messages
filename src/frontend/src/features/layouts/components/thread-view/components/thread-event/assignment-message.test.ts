@@ -19,6 +19,10 @@ const makeEvent = (
   type: 'assign' | 'unassign',
   authorId: string | null,
   assignees: { id: string; name: string }[],
+  // Override author_display independently of authorId so tests can build the
+  // webhook/channel actor shape (author === null but author_display set), which
+  // buildAssignmentMessage special-cases as a named third party.
+  authorDisplay?: string | null,
 ): AssignmentEvent => ({
   id: 'e',
   thread: 't',
@@ -27,7 +31,10 @@ const makeEvent = (
   author: authorId === null
     ? (null as unknown as ThreadEvent['author'])
     : ({ id: authorId, full_name: `User ${authorId}`, email: `${authorId}@ex.com` } as ThreadEvent['author']),
-  author_display: authorId === null ? null : `User ${authorId}`,
+  author_display:
+    authorDisplay !== undefined
+      ? authorDisplay
+      : authorId === null ? null : `User ${authorId}`,
   data: { assignees },
   has_unread_mention: false,
   is_editable: false,
@@ -105,6 +112,26 @@ describe('buildAssignmentMessage', () => {
     it('third party self-unassigned', () => {
         const event = makeEvent(ThreadEventTypeEnum.unassign, 'alice', [{ id: 'alice', name: 'Alice' }]);
         expect(buildAssignmentMessage(event, SELF_ID, fakeT)).toBe('User alice unassigned themself');
+    });
+
+    it('webhook actor (author null, author_display set) assigns others', () => {
+        const event = makeEvent(
+            ThreadEventTypeEnum.assign,
+            null,
+            [{ id: 'bob', name: 'Bob' }],
+            'Webhook: CRM',
+        );
+        expect(buildAssignmentMessage(event, SELF_ID, fakeT)).toBe('Webhook: CRM assigned Bob');
+    });
+
+    it('webhook actor (author null, author_display set) assigns the current user', () => {
+        const event = makeEvent(
+            ThreadEventTypeEnum.assign,
+            null,
+            [{ id: SELF_ID, name: 'Me' }],
+            'Webhook: CRM',
+        );
+        expect(buildAssignmentMessage(event, SELF_ID, fakeT)).toBe('Webhook: CRM assigned you');
     });
 
     it('K — system unassigned the current user', () => {

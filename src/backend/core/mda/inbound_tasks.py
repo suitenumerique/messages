@@ -18,6 +18,7 @@ from celery.utils.log import get_task_logger
 from jmap_email import JmapEmail, first_address_email, parse_email
 
 from core import models
+from core.mda.dispatch_webhooks import dispatch_recorded_webhooks
 from core.mda.inbound_create import _create_message_from_inbound
 from core.mda.inbound_pipeline import (
     QUARANTINE_AFTER,
@@ -266,6 +267,10 @@ def process_inbound_message_task(self, inbound_message_id: str):
             )
             _stamp_processing_failed(ctx)
             quarantined = True
+            # The message is being forced to the inbox, so it is no longer
+            # treated as spam. Normalize ctx.is_spam so downstream consumers
+            # (autoreply gate, task result) agree with where it actually lands.
+            ctx.is_spam = False
 
         inbound_msg = _create_message_from_inbound(
             recipient_email=ctx.recipient_email,
@@ -326,6 +331,14 @@ def process_inbound_message_task(self, inbound_message_id: str):
                         mailbox,
                         mark_starred=ctx.mark_starred,
                         mark_read=ctx.mark_read,
+                    ),
+                )
+                _safe_finalize(
+                    "webhooks",
+                    inbound_message_id,
+                    ctx.pending_webhooks,
+                    lambda: dispatch_recorded_webhooks(
+                        inbound_msg, mailbox, ctx.pending_webhooks
                     ),
                 )
 

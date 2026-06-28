@@ -218,7 +218,10 @@ export const ThreadEvent = ({ event, isCondensed = false, onEdit, onDelete, ment
     };
 
     if (isIMEvent(event)) {
-        const authorName = event.author?.full_name || event.author?.email || "";
+        // Prefer ``author_display`` so webhook/channel-authored events (which
+        // have no ``author``) get a stable color from their displayed name
+        // instead of falling back to an empty string.
+        const authorName = event.author_display || event.author?.full_name || event.author?.email || "";
         const avatarColor = getAvatarColor(authorName);
         const isMentioned = user
             ? event.data?.mentions?.map((m) => m.id)?.includes(user.id)

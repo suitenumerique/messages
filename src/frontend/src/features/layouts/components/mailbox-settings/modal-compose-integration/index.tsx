@@ -53,7 +53,7 @@ const CHANNEL_TYPE_METADATA: Record<ChannelType, ChannelTypeMetadata> = {
     webhook: {
         type: "webhook",
         title: i18n.t("Outbound Webhook"),
-        description: i18n.t("Forward every incoming message to a URL of your choice as a JSON POST."),
+        description: i18n.t("Forward every incoming message to a URL of your choice."),
         icon: "webhook",
     },
 };

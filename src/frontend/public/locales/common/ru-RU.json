@@ -843,8 +843,8 @@
   "Each incoming message will be POSTed to this URL in the format selected below.": "Каждое входящее сообщение будет отправлено POST-запросом на этот URL в выбранном ниже формате.",
   "Edit Webhook": "Редактировать вебхук",
   "Endpoint": "Эндпоинт",
-  "Forward every incoming message to a URL of your choice as a JSON POST.": "Пересылайте каждое входящее сообщение на выбранный вами URL в виде JSON POST-запроса.",
-  "How the receiver authenticates our requests. The secret is shown once at creation.": "Как получатель аутентифицирует наши запросы. Секрет показывается один раз при создании.",
+  "Forward every incoming message to a URL of your choice.": "Пересылайте каждое входящее сообщение на выбранный вами URL.",
+  "How the receiver authenticates our requests. The credential is shown once at creation.": "Как получатель аутентифицирует наши запросы. Секрет показывается один раз при создании.",
   "JMAP Email JSON (RFC 8621)": "JMAP Email JSON (RFC 8621)",
   "JMAP Email metadata (notification only)": "Метаданные JMAP Email (только уведомление)",
   "Non-blocking (default) is the safe choice:": "Неблокирующий (по умолчанию) — безопасный выбор:",
@@ -865,6 +865,6 @@
   "Whether the webhook fires before or after the message is checked for spam.": "Срабатывает ли вебхук до или после проверки сообщения на спам.",
   "Your endpoint will receive a JSON payload containing the parsed message (from, to, subject, body, headers, …).": "Ваш эндпоинт получит полезную нагрузку JSON с разобранным сообщением (отправитель, получатель, тема, тело, заголовки, …).",
   "URL must start with https://": "URL должен начинаться с https://",
-  "Regenerate secret": "Сгенерировать новый секрет",
-  "Regenerating the secret invalidates the old one immediately. The receiver must be updated with the new value before it can verify webhooks again.": "Генерация нового секрета немедленно делает старый недействительным. Получателя необходимо обновить новым значением, прежде чем он снова сможет проверять вебхуки."
+  "Regenerate credential": "Сгенерировать новый секрет",
+  "Regenerating the credential invalidates the old one immediately. The receiver must be updated with the new value before it can verify webhooks again.": "Генерация нового секрета немедленно делает старый недействительным. Получателя необходимо обновить новым значением, прежде чем он снова сможет проверять вебхуки."
 }

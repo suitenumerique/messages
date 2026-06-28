@@ -502,7 +502,7 @@
   "Forced": "Forcée",
   "Forced signature": "Signature forcée",
   "Forward": "Transférer",
-  "Forward every incoming message to a URL of your choice as a JSON POST.": "Transférez chaque message entrant vers une URL de votre choix via un POST JSON.",
+  "Forward every incoming message to a URL of your choice.": "Transférez chaque message entrant vers une URL de votre choix.",
   "Forwarded message": "Message transféré",
   "Friday": "Vendredi",
   "From": "De",
@@ -516,7 +516,7 @@
   "Grant editor access to the thread?": "Accorder l'accès en édition à la conversation ?",
   "Help center & Support": "Centre d'aide et Support",
   "High failure rate": "Taux d'échec élevé",
-  "How the receiver authenticates our requests. The secret is shown once at creation.": "Comment le destinataire authentifie nos requêtes. Le secret est affiché une seule fois lors de la création.",
+  "How the receiver authenticates our requests. The credential is shown once at creation.": "Comment le destinataire authentifie nos requêtes. L'identifiant est affiché une seule fois lors de la création.",
   "How to allow IMAP connections from your account {{name}}?": "Comment autoriser les connexions IMAP depuis votre compte {{name}} ?",
   "I confirm that this address corresponds to the real identity of a colleague, and I commit to deactivating it when their position ends.": "Je confirme que cette adresse correspond à l'identité d'une personne physique travaillant avec moi, et m'engage à la désactiver quand son poste prendra fin.",
   "I have an issue or a feature request": "J'ai un problème ou une demande d'amélioration",
@@ -993,6 +993,6 @@
   "Your endpoint will receive a JSON payload containing the parsed message (from, to, subject, body, headers, …).": "Votre point de terminaison recevra une charge utile JSON contenant le message analysé (expéditeur, destinataire, objet, corps, en-têtes, …).",
   "Your session has expired. Please log in again.": "Votre session a expiré. Veuillez vous reconnecter.",
   "URL must start with https://": "L'URL doit commencer par https://",
-  "Regenerate secret": "Régénérer le secret",
-  "Regenerating the secret invalidates the old one immediately. The receiver must be updated with the new value before it can verify webhooks again.": "La régénération du secret invalide immédiatement l'ancien. Le récepteur doit être mis à jour avec la nouvelle valeur avant de pouvoir vérifier à nouveau les webhooks."
+  "Regenerate credential": "Régénérer l'identifiant",
+  "Regenerating the credential invalidates the old one immediately. The receiver must be updated with the new value before it can verify webhooks again.": "La régénération de l'identifiant invalide immédiatement l'ancien. Le récepteur doit être mis à jour avec la nouvelle valeur avant de pouvoir vérifier à nouveau les webhooks."
 }

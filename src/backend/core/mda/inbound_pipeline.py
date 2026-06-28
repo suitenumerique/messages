@@ -113,6 +113,16 @@ class InboundContext:  # pylint: disable=too-many-instance-attributes
     # the autoreply path's shared record helper.
     pending_drafts: List[Tuple[Any, str]] = field(default_factory=list)
 
+    # Deferred non-blocking webhook dispatches. Each entry is
+    # ``(channel_id, phase, is_spam_at_phase)`` — recorded when the webhook
+    # step runs and fired AFTER the Message exists, so the task renders the
+    # payload from the durable ``Message`` (no transient snapshot, nothing
+    # large on the broker). Same record-now / fire-after-Message pattern
+    # push notifications use, so the two slot together cleanly.
+    pending_webhooks: List[Tuple[Any, str, Optional[bool]]] = field(
+        default_factory=list
+    )
+
     # Blocking-webhook flag actions (OR-merged across webhooks). All
     # default to False and are only ever flipped to True by a
     # receiver explicitly opting in via the JSON action body. The
@@ -725,8 +735,10 @@ def apply_pending_assigns(
             # pre-filtered, so this shouldn't fire — but if a race
             # invalidated the rights between filter and service call,
             # don't blow up delivery over it.
+            # Log only the exception type — the message can embed assignee
+            # emails or names and leak user-identifying details into logs.
             logger.warning(
-                "assign_users skipped %d assignee(s) due to race: %s",
+                "assign_users skipped %d assignee(s) due to race (%s)",
                 len(assignees_data),
-                exc,
+                type(exc).__name__,
             )

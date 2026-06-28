@@ -312,7 +312,7 @@ export const WebhookIntegrationForm = ({
                             },
                         ]}
                         text={t(
-                            "How the receiver authenticates our requests. The secret is shown once at creation.",
+                            "How the receiver authenticates our requests. The credential is shown once at creation.",
                         )}
                         fullWidth
                     />
@@ -395,7 +395,7 @@ export const WebhookIntegrationForm = ({
                         <h3>{t("Authentication")}</h3>
                         <Banner type="info">
                             {t(
-                                "Regenerating the secret invalidates the old one immediately. The receiver must be updated with the new value before it can verify webhooks again.",
+                                "Regenerating the credential invalidates the old one immediately. The receiver must be updated with the new value before it can verify webhooks again.",
                             )}
                         </Banner>
                         <Button
@@ -404,7 +404,7 @@ export const WebhookIntegrationForm = ({
                             onClick={onRegenerate}
                             disabled={regenerateMutation.isPending}
                         >
-                            {t("Regenerate secret")}
+                            {t("Regenerate credential")}
                         </Button>
                     </div>
                 )}
