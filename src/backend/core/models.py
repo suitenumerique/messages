@@ -618,6 +618,10 @@ class Channel(BaseModel):
 
         if self.type == ChannelTypes.API_KEY:
             plaintext = "msgk_" + secrets.token_urlsafe(32)
+            # SHA-256 (not Argon2/bcrypt) is correct: this hashes a 256-bit
+            # random token for O(1) lookup, not a low-entropy password — a
+            # slow KDF would add nothing. (CodeQL py/weak-sensitive-data-
+            # hashing false positive.)
             digest = hashlib.sha256(plaintext.encode("utf-8")).hexdigest()
             self.encrypted_settings = {
                 **(self.encrypted_settings or {}),
@@ -653,6 +657,10 @@ class Channel(BaseModel):
         root = (self.encrypted_settings or {}).get("secret")
         if not root:
             return None
+        # HMAC-SHA256 key derivation from a 256-bit random root (not password
+        # hashing): a deterministic, unsalted PRF is required so the same root
+        # always yields the same key. Argon2/bcrypt are slow/salted and would
+        # break that. (CodeQL py/weak-sensitive-data-hashing false positive.)
         derived = hmac.new(
             root.encode("utf-8"),
             self.WEBHOOK_API_KEY_KDF_LABEL,
