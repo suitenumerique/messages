@@ -223,7 +223,7 @@ class TestSendOutboundMessage:
         assert draft_message.recipients.count() == 4
         assert (
             draft_message.recipients.filter(
-                delivery_status=enums.MessageDeliveryStatusChoices.SENT
+                delivery_status=enums.MessageDeliveryStatusChoices.SENT_EXTERNAL
             ).count()
             == 2
         )
@@ -328,7 +328,7 @@ class TestSendOutboundMessage:
         assert draft_message.recipients.count() == 4
         assert (
             draft_message.recipients.filter(
-                delivery_status=enums.MessageDeliveryStatusChoices.SENT
+                delivery_status=enums.MessageDeliveryStatusChoices.SENT_EXTERNAL
             ).count()
             == 2
         )
@@ -456,7 +456,7 @@ class TestSendOutboundMessage:
         assert (
             draft_message.recipients.filter(
                 contact__email="bcc@example2.com",
-                delivery_status=enums.MessageDeliveryStatusChoices.SENT,
+                delivery_status=enums.MessageDeliveryStatusChoices.SENT_EXTERNAL,
             ).count()
             == 1
         )
@@ -1287,7 +1287,10 @@ class TestSendMessageDKIMVerification:
         # Verify message was sent (not marked for retry)
         message.refresh_from_db()
         recipient = message.recipients.first()
-        assert recipient.delivery_status == enums.MessageDeliveryStatusChoices.SENT
+        assert (
+            recipient.delivery_status
+            == enums.MessageDeliveryStatusChoices.SENT_EXTERNAL
+        )
         assert mock_send_outbound.called
 
     @override_settings(MESSAGES_DKIM_VERIFY_OUTGOING=True)
@@ -1423,6 +1426,60 @@ class TestSendMessageDKIMVerification:
 
         # Verify internal delivery was attempted
         assert mock_deliver_inbound.called
+
+    @override_settings(MESSAGES_ALLOW_INTERNAL_DELIVERY=False)
+    @patch("core.mda.outbound.send_outbound_message")
+    @patch("core.mda.outbound.deliver_inbound_message")
+    def test_internal_delivery_disabled_routes_local_recipient_external(
+        self, mock_deliver_inbound, mock_send_outbound, mailbox_sender
+    ):
+        """With MESSAGES_ALLOW_INTERNAL_DELIVERY=False, a same-instance
+        recipient is routed out through the MTA instead of the internal
+        fast path."""
+        thread = factories.ThreadFactory()
+        factories.ThreadAccessFactory(
+            mailbox=mailbox_sender,
+            thread=thread,
+            role=enums.ThreadAccessRoleChoices.EDITOR,
+        )
+        sender_contact = factories.ContactFactory(mailbox=mailbox_sender)
+        message = factories.MessageFactory(
+            thread=thread,
+            sender=sender_contact,
+            is_draft=False,
+            is_sender=True,
+            subject="No internal fast path",
+        )
+        recipient_email = f"internal@{mailbox_sender.domain.name}"
+        raw_mime = (
+            f"From: {sender_contact.email}\r\n"
+            + f"To: {recipient_email}\r\n"
+            + "Subject: Test\r\n\r\nBody\r\n"
+        ).encode()
+        message.blob = factories.BlobFactory(
+            mailbox=mailbox_sender, content=raw_mime, content_type="message/rfc822"
+        )
+        message.save()
+        # A genuinely local recipient (same instance).
+        internal_mailbox = factories.MailboxFactory(
+            domain=mailbox_sender.domain, local_part="internal"
+        )
+        internal_contact = factories.ContactFactory(
+            mailbox=internal_mailbox, email=recipient_email
+        )
+        factories.MessageRecipientFactory(
+            message=message,
+            contact=internal_contact,
+            type=models.MessageRecipientTypeChoices.TO,
+        )
+        mock_send_outbound.return_value = {recipient_email: {"delivered": True}}
+
+        outbound.send_message(message)
+
+        # The local recipient went out through the MTA, not the internal
+        # fast path.
+        assert not mock_deliver_inbound.called
+        assert mock_send_outbound.called
 
 
 def _create_spf_test_message(mailbox_sender):

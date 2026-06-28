@@ -7,15 +7,15 @@
 {% endblock %}
 
 {% block object-tools-items %}
-{% if original and original.type == "api_key" %}
+{% if original and original.type == "api_key" or original and original.type == "webhook" %}
 <li>
     <form method="post"
           action="{% url 'admin:core_channel_regenerate_secret' original.pk %}"
           style="display: inline;"
-          onsubmit="return confirm('Regenerate the api_key for this channel? The previous secret will stop working immediately.');">
+          onsubmit="return confirm('Regenerate the secret for this channel? The previous secret will stop working immediately.');">
         {% csrf_token %}
         <button type="submit" class="historylink">
-            {% translate "Regenerate api_key" %}
+            {% translate "Regenerate secret" %}
         </button>
     </form>
 </li>

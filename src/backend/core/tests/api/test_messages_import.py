@@ -155,7 +155,10 @@ def test_api_import_eml_file(api_client, user, mailbox, eml_file):
     assert message.sent_at == datetime.datetime(
         2025, 5, 26, 20, 13, 44, tzinfo=datetime.timezone.utc
     )
-    assert message.recipients.get().delivery_status == MessageDeliveryStatusChoices.SENT
+    assert (
+        message.recipients.get().delivery_status
+        == MessageDeliveryStatusChoices.SENT_EXTERNAL
+    )
 
 
 def test_api_import_mbox_file(api_client, user, mailbox, mbox_file):
@@ -982,7 +985,7 @@ This is a regular message."""
     recipients = message.recipients.all()
     assert recipients.count() == 1
     for recipient in recipients:
-        assert recipient.delivery_status == MessageDeliveryStatusChoices.SENT
+        assert recipient.delivery_status == MessageDeliveryStatusChoices.SENT_EXTERNAL
 
 
 # def test_api_import_mbox_multiple_times_threading(api_client, user, mailbox, mbox_file_path):

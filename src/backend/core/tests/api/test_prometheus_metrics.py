@@ -116,12 +116,20 @@ class TestPrometheusMetrics:
         metrics = response_to_metrics_dict(response, with_label="status")
 
         assert (
-            metrics[("message_status_count", MessageDeliveryStatusChoices.SENT.label)]
+            metrics[
+                (
+                    "message_status_count",
+                    MessageDeliveryStatusChoices.SENT_EXTERNAL.label,
+                )
+            ]
             == 0
         )
         assert (
             metrics[
-                ("message_status_count", MessageDeliveryStatusChoices.INTERNAL.label)
+                (
+                    "message_status_count",
+                    MessageDeliveryStatusChoices.SENT_INTERNAL.label,
+                )
             ]
             == 0
         )
@@ -144,8 +152,8 @@ class TestPrometheusMetrics:
         """
 
         statuses_to_count = {
-            MessageDeliveryStatusChoices.SENT: 1,
-            MessageDeliveryStatusChoices.INTERNAL: 2,
+            MessageDeliveryStatusChoices.SENT_EXTERNAL: 1,
+            MessageDeliveryStatusChoices.SENT_INTERNAL: 2,
             MessageDeliveryStatusChoices.FAILED: 3,
             MessageDeliveryStatusChoices.RETRY: 4,
         }

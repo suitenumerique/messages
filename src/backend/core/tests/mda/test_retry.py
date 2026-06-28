@@ -79,7 +79,7 @@ class TestRetryMessagesTask:
             message=message,
             contact=bcc_contact,
             type=models.MessageRecipientTypeChoices.BCC,
-            delivery_status=enums.MessageDeliveryStatusChoices.SENT,
+            delivery_status=enums.MessageDeliveryStatusChoices.SENT_EXTERNAL,
             delivered_at=timezone.now(),
         )
 
@@ -410,7 +410,7 @@ class TestRetryMessagesTask:
             message=message,
             contact=sent_contact,
             type=models.MessageRecipientTypeChoices.CC,
-            delivery_status=enums.MessageDeliveryStatusChoices.SENT,
+            delivery_status=enums.MessageDeliveryStatusChoices.SENT_EXTERNAL,
             delivered_at=timezone.now(),
         )
 
@@ -465,7 +465,7 @@ class TestRetryMessagesTask:
             message=message,
             contact=sent_contact,
             type=models.MessageRecipientTypeChoices.TO,
-            delivery_status=enums.MessageDeliveryStatusChoices.SENT,
+            delivery_status=enums.MessageDeliveryStatusChoices.SENT_EXTERNAL,
             delivered_at=timezone.now(),
         )
 

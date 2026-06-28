@@ -78,6 +78,10 @@ const ThreadMessageHeader = ({
                 return { status: 'delivering', timestamp: recipient.retry_at, message: recipient.delivery_message };
             case MessageDeliveryStatusChoices.cancelled:
                 return { status: 'cancelled', timestamp: recipient.retry_at, message: recipient.delivery_message };
+            // `sent` (external) and `internal` (same-instance) are both
+            // terminal "delivered" states — keep them together. Dropping the
+            // `internal` case would silently render internal mail as "no
+            // status". See MessageDeliveryStatusChoices on the backend.
             case MessageDeliveryStatusChoices.sent:
             case MessageDeliveryStatusChoices.internal:
                 return { status: 'delivered', timestamp: recipient.delivered_at, message: recipient.delivery_message };

@@ -1,5 +1,5 @@
 """Tests for autoreply MDA logic."""
-# pylint: disable=redefined-outer-name,unused-argument
+# pylint: disable=redefined-outer-name,unused-argument,too-many-lines
 
 import base64
 from datetime import datetime, timedelta
@@ -794,6 +794,38 @@ class TestSendAutoreplyForMessage:
         mime_str = mime_bytes.decode("utf-8", errors="replace")
         assert "Auto-Submitted: auto-replied" in mime_str
         assert "Precedence: bulk" in mime_str
+
+    @patch("core.mda.outbound_tasks.send_message_task", new_callable=MagicMock)
+    @patch("core.mda.outbound.sign_message_dkim", return_value=None)
+    def test_our_autoreply_does_not_trigger_another_autoreply(
+        self, mock_dkim, mock_send_task, mailbox, autoreply_template, inbound_message
+    ):
+        """Loop prevention, end to end: the MIME we compose for our own
+        autoreply must be classified as an automatic message when parsed
+        back, so feeding it through delivery never fires a second autoreply.
+
+        This closes the loop between the *compose* side (which stamps
+        ``Auto-Submitted`` / ``X-Auto-Response-Suppress`` / ``Precedence``)
+        and the *detect* side (``_is_auto_reply_message``): a regression in
+        either — a renamed header, a parser change — would reopen the loop,
+        and the isolated unit tests on each side wouldn't catch it.
+        """
+        # pylint: disable-next=import-outside-toplevel
+        from jmap_email import parse_email
+
+        send_autoreply_for_message(autoreply_template, mailbox, inbound_message)
+        autoreply_msg = models.Message.objects.filter(
+            parent=inbound_message, is_sender=True
+        ).last()
+
+        parsed = parse_email(autoreply_msg.blob.get_content())
+        assert parsed is not None
+
+        # The detector flags our own autoreply...
+        assert _is_auto_reply_message(parsed) is True
+        # ...and the full gate refuses to reply to it, so no loop can form
+        # even if this message were delivered back to an autoresponding box.
+        assert should_send_autoreply(mailbox, parsed) is None
 
     @override_settings(MAX_OUTGOING_ATTACHMENT_SIZE=10)
     @patch("core.mda.outbound_tasks.send_message_task", new_callable=MagicMock)

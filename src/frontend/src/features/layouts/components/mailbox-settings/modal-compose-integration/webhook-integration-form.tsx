@@ -19,7 +19,6 @@ import {
 import {
     RhfInput,
     RhfSelect,
-    RhfCheckbox,
 } from "@/features/forms/components/react-hook-form";
 import { addToast, ToasterItem } from "@/features/ui/components/toaster";
 import { Banner } from "@/features/ui/components/banner";
@@ -31,12 +30,19 @@ import { handle } from "@/features/utils/errors";
 // URLs; everywhere else https is required, so mirror that client-side.
 const DEV_ENVIRONMENTS = ["development", "developmentminimal", "e2e"];
 
+// A single flat trigger lifecycle event replaces the old (events, phase,
+// blocking) triple — the event name itself says when it fires and whether
+// it blocks, so only valid combinations are representable. Mirrors
+// enums.WebhookTrigger.
+type WebhookTrigger =
+    | "message.inbound"
+    | "message.delivering"
+    | "message.delivered";
+
 type WebhookChannelSettings = {
     url?: string;
-    events?: string[];
-    phase?: "before_spam" | "after_spam";
+    trigger?: WebhookTrigger;
     format?: "eml" | "jmap" | "jmap_metadata";
-    blocking?: boolean;
     auth_method?: "jwt" | "api_key";
 };
 
@@ -66,9 +72,12 @@ const createFormSchema = (
                     ? t("URL must start with http:// or https://")
                     : t("URL must start with https://"),
             }),
-        phase: z.enum(["before_spam", "after_spam"]),
+        trigger: z.enum([
+            "message.inbound",
+            "message.delivering",
+            "message.delivered",
+        ]),
         format: z.enum(["eml", "jmap", "jmap_metadata"]),
-        blocking: z.boolean(),
         auth_method: z.enum(["jwt", "api_key"]),
     });
 
@@ -102,9 +111,8 @@ export const WebhookIntegrationForm = ({
         defaultValues: {
             name: channel?.name || "",
             url: settings?.url || "",
-            phase: settings?.phase || "after_spam",
+            trigger: settings?.trigger || "message.delivered",
             format: settings?.format || "eml",
-            blocking: settings?.blocking ?? false,
             auth_method: settings?.auth_method || "jwt",
         },
     });
@@ -169,10 +177,8 @@ export const WebhookIntegrationForm = ({
 
         const newSettings: WebhookChannelSettings = {
             url: data.url,
-            events: ["message.inbound"],
-            phase: data.phase,
+            trigger: data.trigger,
             format: data.format,
-            blocking: data.blocking,
             auth_method: data.auth_method,
         };
 
@@ -320,21 +326,33 @@ export const WebhookIntegrationForm = ({
 
                 <div className="widget-integration-form__section">
                     <h3>{t("Behavior")}</h3>
+                    {/* One flat trigger: a lifecycle event whose name says
+                        both when it fires and whether it blocks delivery. */}
                     <RhfSelect
-                        label={t("When to fire")}
-                        name="phase"
+                        label={t("Trigger")}
+                        name="trigger"
                         options={[
                             {
-                                label: t("After spam check (recommended)"),
-                                value: "after_spam",
+                                label: t(
+                                    "Message delivered (recommended) — fire after delivery, response ignored",
+                                ),
+                                value: "message.delivered",
                             },
                             {
-                                label: t("Before spam check"),
-                                value: "before_spam",
+                                label: t(
+                                    "Message delivering — blocking, after the spam check; can shape the message and sees the verdict",
+                                ),
+                                value: "message.delivering",
+                            },
+                            {
+                                label: t(
+                                    "Message inbound — blocking, before the spam check; can shape the message before it is scanned",
+                                ),
+                                value: "message.inbound",
                             },
                         ]}
                         text={t(
-                            "Whether the webhook fires before or after the message is checked for spam.",
+                            "Which point in the message's lifecycle fires this webhook, and whether it can influence delivery.",
                         )}
                         fullWidth
                     />
@@ -360,17 +378,11 @@ export const WebhookIntegrationForm = ({
                         )}
                         fullWidth
                     />
-                    <RhfCheckbox
-                        label={t(
-                            "Blocking — let this endpoint shape what happens to the message",
-                        )}
-                        name="blocking"
-                    />
                     <Banner type="info">
                         <p>
                             <strong>
                                 {t(
-                                    "Non-blocking (default) is the safe choice:",
+                                    "Message delivered (default) is the safe choice:",
                                 )}
                             </strong>{" "}
                             {t(
@@ -380,7 +392,7 @@ export const WebhookIntegrationForm = ({
                         <p>
                             <strong>
                                 {t(
-                                    "Blocking lets the receiver act on this single message",
+                                    "Blocking triggers let the receiver act on this single message",
                                 )}
                             </strong>{" "}
                             {t(

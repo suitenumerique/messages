@@ -62,10 +62,24 @@ class MessageRecipientTypeChoices(models.IntegerChoices):
 
 
 class MessageDeliveryStatusChoices(models.IntegerChoices):
-    """Defines the possible statuses of a message delivery."""
+    """Defines the possible statuses of a message delivery.
 
-    INTERNAL = 1, "internal"
-    SENT = 2, "sent"
+    FOOTGUN: ``SENT_INTERNAL`` and ``SENT_EXTERNAL`` are *both* terminal
+    "delivered"-class statuses — ``SENT_INTERNAL`` for same-instance
+    (mailbox-to-mailbox) delivery, ``SENT_EXTERNAL`` for external (handed to
+    the MTA). They render identically to the user. So any "did it send / is
+    it delivered?" check must treat them together: a bare ``== SENT_EXTERNAL``
+    / ``!= SENT_EXTERNAL`` silently mishandles internal mail.
+    (``mda/selfcheck.py`` gets away with ``!= SENT_EXTERNAL`` only because it
+    forces ``force_mta_out=True``, taking the external path.)
+
+    The integer values and string labels are unchanged from the old
+    ``INTERNAL``/``SENT`` members (1/"internal", 2/"sent") — only the Python
+    member names changed — so this is not a DB or wire change.
+    """
+
+    SENT_INTERNAL = 1, "internal"
+    SENT_EXTERNAL = 2, "sent"
     FAILED = 3, "failed"
     RETRY = 4, "retry"
     CANCELLED = 5, "cancelled"
@@ -221,19 +235,48 @@ class ChannelTypes(StrEnum):
     CALDAV = "caldav"
 
 
-class WebhookEvents(StrEnum):
-    """Known webhook event identifiers.
+class WebhookTrigger(StrEnum):
+    """The lifecycle event that fires a webhook, stored as
+    ``Channel.settings["trigger"]`` and surfaced verbatim in the
+    ``X-StMsg-Trigger`` header.
 
-    Stored as strings in ``Channel.settings["events"]``; validated by the
-    serializer at write time. Adding a new event is a Python-only change.
+    A single flat value — the event name *is* the behaviour, so there's no
+    separate blocking/phase flag and invalid combinations can't be
+    expressed. Which pipeline phase each runs at and whether it blocks
+    delivery is the spec in ``docs/webhooks.md``:
+
+      - ``MESSAGE_INBOUND`` — the message just arrived, **before** the spam
+        check. Synchronous (blocking): the receiver can DROP / RETRY /
+        mutate it and sees no spam verdict yet.
+      - ``MESSAGE_DELIVERING`` — **after** the spam check, while delivery
+        is still in flight. Synchronous (blocking): can DROP / RETRY /
+        mutate and sees the verdict.
+      - ``MESSAGE_DELIVERED`` — the message has landed in the mailbox.
+        Asynchronous (fire-and-forget): a notification that can't influence
+        delivery, always reflecting the final spam verdict.
+
+    Future lifecycle events (e.g. ``message.sent``) are added here.
     """
 
     MESSAGE_INBOUND = "message.inbound"
-    # MESSAGE_OUTBOUND ("message.outbound") is not wired yet — the dispatcher
-    # only ever fires on inbound. Kept commented so the serializer rejects it
-    # at write time instead of accepting a webhook that silently never fires.
-    # Uncomment once outbound dispatch is implemented.
-    # MESSAGE_OUTBOUND = "message.outbound"
+    MESSAGE_DELIVERING = "message.delivering"
+    MESSAGE_DELIVERED = "message.delivered"
+
+
+class WebhookAuthMethod(StrEnum):
+    """How a webhook channel presents its single stored secret on each
+    POST, stored as ``Channel.settings["auth_method"]``.
+
+      - ``JWT`` — an HMAC signature over the body plus a short-TTL HS256
+        JWT, both keyed by the root secret (which never travels the wire).
+      - ``API_KEY`` — a static ``whk_…`` header value HMAC-derived from
+        the root, for receivers that can only check a header.
+
+    See ``docs/webhooks.md`` for the wire details.
+    """
+
+    JWT = "jwt"
+    API_KEY = "api_key"
 
 
 class ChannelApiKeyScope(models.TextChoices):

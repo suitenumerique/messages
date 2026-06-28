@@ -597,10 +597,22 @@ def send_message(message: models.Message, force_mta_out: bool = False):
                     # TODO also update message.updated_at?
                     envelope_to[recipient_email].delivered_at = timezone.now()
                     envelope_to[recipient_email].delivery_message = None
+                    # Same-instance delivery gets its own SENT_INTERNAL
+                    # status, distinct from external SENT_EXTERNAL, so the
+                    # internal/external split stays visible in the data and
+                    # metrics. Both render as "delivered" to the user.
+                    #
+                    # FOOTGUN: SENT_INTERNAL is a second "delivered"-class
+                    # status alongside SENT_EXTERNAL. Any "did it send?" check
+                    # written as ``== SENT_EXTERNAL`` / ``!= SENT_EXTERNAL``
+                    # must also accept SENT_INTERNAL or it silently mishandles
+                    # internal mail (see the note on
+                    # ``MessageDeliveryStatusChoices`` and the
+                    # ``force_mta_out`` guard in ``mda/selfcheck.py``).
                     envelope_to[recipient_email].delivery_status = (
-                        MessageDeliveryStatusChoices.INTERNAL
+                        MessageDeliveryStatusChoices.SENT_INTERNAL
                         if internal
-                        else MessageDeliveryStatusChoices.SENT
+                        else MessageDeliveryStatusChoices.SENT_EXTERNAL
                     )
                     envelope_to[recipient_email].save(
                         update_fields=[
@@ -640,9 +652,15 @@ def send_message(message: models.Message, force_mta_out: bool = False):
 
             external_recipients = set()
             for recipient_email in envelope_to:
+                # ``MESSAGES_ALLOW_INTERNAL_DELIVERY=False`` forces local
+                # recipients out through the MTA instead of the internal fast
+                # path. ``check_local_recipient`` stays first so its
+                # create-if-missing side effect is unchanged either way (the
+                # mailbox still needs to exist to receive the MTA round-trip).
                 if (
                     check_local_recipient(recipient_email, create_if_missing=True)
                     and not force_mta_out
+                    and settings.MESSAGES_ALLOW_INTERNAL_DELIVERY
                 ):
                     try:
                         # Reference the sender's already-committed blob so

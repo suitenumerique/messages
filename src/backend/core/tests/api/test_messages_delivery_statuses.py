@@ -596,7 +596,7 @@ class TestMessagesDeliveryStatuses:
         )
         recipient = factories.MessageRecipientFactory(
             message=message,
-            delivery_status=enums.MessageDeliveryStatusChoices.SENT,
+            delivery_status=enums.MessageDeliveryStatusChoices.SENT_EXTERNAL,
         )
 
         client = APIClient()
@@ -646,7 +646,7 @@ class TestMessagesDeliveryStatuses:
         )
         recipient_sent = factories.MessageRecipientFactory(
             message=message,
-            delivery_status=enums.MessageDeliveryStatusChoices.SENT,
+            delivery_status=enums.MessageDeliveryStatusChoices.SENT_EXTERNAL,
         )
 
         thread.update_stats()
@@ -686,7 +686,10 @@ class TestMessagesDeliveryStatuses:
             recipient_retry.delivery_status
             == enums.MessageDeliveryStatusChoices.CANCELLED
         )
-        assert recipient_sent.delivery_status == enums.MessageDeliveryStatusChoices.SENT
+        assert (
+            recipient_sent.delivery_status
+            == enums.MessageDeliveryStatusChoices.SENT_EXTERNAL
+        )
 
         thread.refresh_from_db()
         assert thread.has_delivery_failed is False
@@ -720,7 +723,7 @@ class TestMessagesDeliveryStatuses:
         )
         recipient_sent = factories.MessageRecipientFactory(
             message=message,
-            delivery_status=enums.MessageDeliveryStatusChoices.SENT,
+            delivery_status=enums.MessageDeliveryStatusChoices.SENT_EXTERNAL,
         )
 
         client = APIClient()
@@ -743,7 +746,10 @@ class TestMessagesDeliveryStatuses:
             recipient_failed.delivery_status
             == enums.MessageDeliveryStatusChoices.FAILED
         )
-        assert recipient_sent.delivery_status == enums.MessageDeliveryStatusChoices.SENT
+        assert (
+            recipient_sent.delivery_status
+            == enums.MessageDeliveryStatusChoices.SENT_EXTERNAL
+        )
 
     def test_api_messages_delivery_statuses_retry_multiple_failed_recipients(self):
         """Test retry of multiple failed recipients at once."""
@@ -783,7 +789,7 @@ class TestMessagesDeliveryStatuses:
         )
         recipient_sent = factories.MessageRecipientFactory(
             message=message,
-            delivery_status=enums.MessageDeliveryStatusChoices.SENT,
+            delivery_status=enums.MessageDeliveryStatusChoices.SENT_EXTERNAL,
         )
 
         thread.update_stats()
@@ -824,7 +830,10 @@ class TestMessagesDeliveryStatuses:
         assert recipient_failed_2.retry_at is None
         assert recipient_failed_2.delivery_message is None
 
-        assert recipient_sent.delivery_status == enums.MessageDeliveryStatusChoices.SENT
+        assert (
+            recipient_sent.delivery_status
+            == enums.MessageDeliveryStatusChoices.SENT_EXTERNAL
+        )
 
         thread.refresh_from_db()
         assert thread.has_delivery_failed is False

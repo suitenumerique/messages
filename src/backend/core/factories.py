@@ -380,20 +380,6 @@ class ChannelFactory(factory.django.DjangoModelFactory):
         )
     )
 
-    @factory.post_generation
-    def _default_webhook_auth_method(  # pylint: disable=unused-argument
-        self, create, extracted, **kwargs
-    ):
-        """Inject ``auth_method='jwt'`` into webhook channel settings if a
-        test didn't set one. The serializer requires it on real creates;
-        this just spares every webhook test from spelling it out."""
-        if not create or self.type != "webhook":
-            return
-        if (self.settings or {}).get("auth_method"):
-            return
-        self.settings = {**(self.settings or {}), "auth_method": "jwt"}
-        self.save(update_fields=["settings"])
-
 
 def make_api_key_channel(
     *,

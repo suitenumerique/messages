@@ -611,19 +611,12 @@ class ChannelAdmin(admin.ModelAdmin):
 
         root = channel.rotate_secret()
 
-        # Show the credential the *receiver* actually presents, matching
-        # the DRF ``_attach_credential`` flow. ``rotate_secret`` always
-        # returns the root signing secret, but an ``api_key``-auth webhook
-        # authenticates with the derived ``whk_…`` value (the root never
-        # touches the wire) — showing the root here would hand the operator
-        # a credential the receiver never sees.
-        if (
-            channel.type == ChannelTypes.WEBHOOK
-            and (channel.settings or {}).get("auth_method") == "api_key"
-        ):
-            display_secret = channel.get_webhook_api_key()
-        else:
-            display_secret = root
+        # Show the credential the *receiver* actually presents. The
+        # webhook (jwt→secret / api_key→derived) rule lives on the model
+        # so this and the DRF ``_attach_credential`` flow can't drift;
+        # api_key *channels* (not webhooks) fall back to the rotated root.
+        credential = channel.get_webhook_surfaced_credential()
+        display_secret = credential[1] if credential else root
 
         context = {
             **self.admin_site.each_context(request),

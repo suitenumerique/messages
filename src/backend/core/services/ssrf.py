@@ -237,13 +237,23 @@ class SSRFSafeSession:
         session.mount("https://", adapter)
         return session, hostname
 
-    def get(self, url: str, timeout: int, **kwargs) -> requests.Response:
-        """Perform a safe HTTP GET with per-hop SSRF validation on redirects.
+    def _request_with_redirects(
+        self, method: str, url: str, timeout: int, **kwargs
+    ) -> requests.Response:
+        """Issue ``method`` to ``url``, following redirects manually with
+        per-hop SSRF validation.
 
-        Redirects are followed manually up to MAX_REDIRECTS hops. Each Location
-        URL is re-validated from scratch, so an attacker-controlled server
-        cannot redirect to an internal address or a different private target
-        on a later hop.
+        Redirects are followed up to MAX_REDIRECTS hops. Each Location URL is
+        re-validated and re-pinned from scratch, so an attacker-controlled
+        server cannot redirect to an internal address or a different private
+        target on a later hop. The HTTP method is preserved across hops (we
+        re-issue the same verb rather than downgrading a 30x to GET), so a
+        POST body reaches the final, validated destination intact.
+
+        ``method`` is the lowercase session method name (``"get"`` /
+        ``"post"``) — we call that bound method directly rather than
+        ``Session.request`` so each verb keeps a distinct, individually
+        mockable entry point.
         """
         # We always handle redirects ourselves — strip any caller override so
         # the underlying requests session never follows a redirect unchecked.
@@ -253,7 +263,7 @@ class SSRFSafeSession:
         for _ in range(MAX_REDIRECTS + 1):
             session, _ = self._pinned_session(current_url)
 
-            response = session.get(
+            response = getattr(session, method)(
                 current_url, timeout=timeout, allow_redirects=False, **kwargs
             )
 
@@ -271,14 +281,20 @@ class SSRFSafeSession:
 
         raise SSRFValidationError(f"Too many redirects (max {MAX_REDIRECTS})")
 
-    def post(self, url: str, timeout: int, **kwargs) -> requests.Response:
-        """Perform a safe HTTP POST.
+    def get(self, url: str, timeout: int, **kwargs) -> requests.Response:
+        """Perform a safe HTTP GET with per-hop SSRF validation on redirects."""
+        return self._request_with_redirects("get", url, timeout, **kwargs)
 
-        Redirects are NOT followed: webhook providers conventionally don't
-        chase 3xx on POST, and silently turning a 30x into a follow-up GET
-        (which is what most clients do for 301/302/303) would surprise the
-        caller. A 3xx is returned to the caller as-is.
+    def post(self, url: str, timeout: int, **kwargs) -> requests.Response:
+        """Perform a safe HTTP POST with per-hop SSRF validation on redirects.
+
+        Redirects are followed — re-validating and re-pinning each hop — and
+        the POST is re-issued (method + body preserved) to the validated
+        Location, so a webhook endpoint that 3xx-redirects (e.g. behind a
+        load balancer or URL canonicaliser) still receives the signed
+        payload. The signature is computed over the body, which is unchanged
+        across hops, so it stays valid at the final destination. We never
+        downgrade to GET — silently dropping the body would surprise the
+        caller and defeat the delivery.
         """
-        kwargs.pop("allow_redirects", None)
-        session, _ = self._pinned_session(url)
-        return session.post(url, timeout=timeout, allow_redirects=False, **kwargs)
+        return self._request_with_redirects("post", url, timeout, **kwargs)

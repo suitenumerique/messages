@@ -594,7 +594,7 @@ class TestWebhookChannelSettings:
             mailbox,
             {
                 "url": "https://hook.example.com/in",
-                "events": ["message.inbound"],
+                "trigger": "message.delivered",
                 "auth_method": "jwt",
             },
         )
@@ -611,7 +611,7 @@ class TestWebhookChannelSettings:
             mailbox,
             {
                 "url": "https://hook.example.com/in",
-                "events": ["message.inbound"],
+                "trigger": "message.delivered",
                 "auth_method": "api_key",
             },
         )
@@ -628,7 +628,7 @@ class TestWebhookChannelSettings:
             mailbox,
             {
                 "url": "https://hook.example.com/in",
-                "events": ["message.inbound"],
+                "trigger": "message.delivered",
                 "auth_method": "jwt",
             },
         )
@@ -656,7 +656,7 @@ class TestWebhookChannelSettings:
             mailbox,
             {
                 "url": "https://hook.example.com/in",
-                "events": ["message.inbound"],
+                "trigger": "message.delivered",
                 "auth_method": "api_key",
             },
         )
@@ -684,17 +684,14 @@ class TestWebhookChannelSettings:
             mailbox,
             {
                 "url": "https://hook.example.com/in",
-                "events": ["message.inbound"],
+                "trigger": "message.inbound",
                 "auth_method": "jwt",
-                "phase": "before_spam",
-                "blocking": True,
                 "format": "jmap",
             },
         )
         assert response.status_code == status.HTTP_201_CREATED, response.content
         channel = models.Channel.objects.get(id=response.data["id"])
-        assert channel.settings["phase"] == "before_spam"
-        assert channel.settings["blocking"] is True
+        assert channel.settings["trigger"] == "message.inbound"
         assert channel.settings["format"] == "jmap"
 
     @override_settings(FEATURE_MAILBOX_ADMIN_CHANNELS=["webhook"])
@@ -705,7 +702,7 @@ class TestWebhookChannelSettings:
             mailbox,
             {
                 "url": "https://hook.example.com/in",
-                "events": ["message.inbound"],
+                "trigger": "message.delivered",
                 "auth_method": "jwt",
                 "format": "yaml",
             },
@@ -720,7 +717,7 @@ class TestWebhookChannelSettings:
             mailbox,
             {
                 "url": "https://hook.example.com/in",
-                "events": ["message.inbound"],
+                "trigger": "message.delivered",
                 "auth_method": "jwt",
                 "format": "jmap_metadata",
             },
@@ -728,37 +725,34 @@ class TestWebhookChannelSettings:
         assert response.status_code == status.HTTP_201_CREATED, response.content
 
     @override_settings(FEATURE_MAILBOX_ADMIN_CHANNELS=["webhook"])
-    def test_rejects_invalid_phase(self, api_client, mailbox):
-        """An unknown webhook ``phase`` is rejected with HTTP 400."""
+    def test_rejects_invalid_trigger(self, api_client, mailbox):
+        """An unknown webhook ``trigger`` is rejected with HTTP 400."""
         response = self._post(
             api_client,
             mailbox,
             {
                 "url": "https://hook.example.com/in",
-                "events": ["message.inbound"],
+                "trigger": "whenever",
                 "auth_method": "jwt",
-                "phase": "whenever",
             },
         )
         assert response.status_code == status.HTTP_400_BAD_REQUEST
 
     @override_settings(FEATURE_MAILBOX_ADMIN_CHANNELS=["webhook"])
-    def test_rejects_non_bool_blocking(self, api_client, mailbox):
-        """A non-boolean ``blocking`` value is rejected with HTTP 400."""
+    def test_rejects_missing_trigger(self, api_client, mailbox):
+        """A webhook channel without a ``trigger`` is rejected with HTTP 400."""
         response = self._post(
             api_client,
             mailbox,
             {
                 "url": "https://hook.example.com/in",
-                "events": ["message.inbound"],
                 "auth_method": "jwt",
-                "blocking": "yes",
             },
         )
         assert response.status_code == status.HTTP_400_BAD_REQUEST
 
     @override_settings(FEATURE_MAILBOX_ADMIN_CHANNELS=["webhook"])
-    def test_rejects_patch_with_invalid_phase(self, api_client, mailbox):
+    def test_rejects_patch_with_invalid_trigger(self, api_client, mailbox):
         """A PATCH that touches only ``settings`` must still re-run the
         webhook validator (same airtight rule as api_key scopes)."""
         create = self._post(
@@ -766,7 +760,7 @@ class TestWebhookChannelSettings:
             mailbox,
             {
                 "url": "https://hook.example.com/in",
-                "events": ["message.inbound"],
+                "trigger": "message.delivered",
                 "auth_method": "jwt",
             },
         )
@@ -780,11 +774,75 @@ class TestWebhookChannelSettings:
             data={
                 "settings": {
                     "url": "https://hook.example.com/in",
-                    "events": ["message.inbound"],
+                    "trigger": "bogus",
                     "auth_method": "jwt",
-                    "phase": "bogus",
                 }
             },
             format="json",
         )
         assert response.status_code == status.HTTP_400_BAD_REQUEST
+
+    @override_settings(FEATURE_MAILBOX_ADMIN_CHANNELS=["webhook"])
+    def test_partial_patch_preserves_auth_method(self, api_client, mailbox):
+        """A settings PATCH that omits ``auth_method`` keeps the existing
+        one instead of being rejected — auth_method pairs with the stored
+        secret and shouldn't have to be re-sent on every unrelated edit."""
+        create = self._post(
+            api_client,
+            mailbox,
+            {
+                "url": "https://hook.example.com/in",
+                "trigger": "message.delivered",
+                "auth_method": "api_key",
+            },
+        )
+        assert create.status_code == status.HTTP_201_CREATED, create.content
+        channel_id = create.data["id"]
+
+        url = reverse(
+            "mailbox-channels-detail",
+            kwargs={"mailbox_id": mailbox.id, "pk": channel_id},
+        )
+        response = api_client.patch(
+            url,
+            data={
+                "settings": {
+                    "url": "https://hook.example.com/changed",
+                    "trigger": "message.delivered",
+                }
+            },
+            format="json",
+        )
+        assert response.status_code == status.HTTP_200_OK, response.content
+        channel = models.Channel.objects.get(id=channel_id)
+        # The new url stuck, and the omitted auth_method was carried forward
+        # and persisted (not dropped on the replace-save).
+        assert channel.settings["url"] == "https://hook.example.com/changed"
+        assert channel.settings["auth_method"] == "api_key"
+
+    @override_settings(FEATURE_MAILBOX_ADMIN_CHANNELS=["webhook"])
+    def test_regenerate_secret_rejects_unknown_auth_method(self, api_client, mailbox):
+        """Rotating a webhook whose auth_method we can't surface is rejected
+        up front, so the old secret is never invalidated for a new one the
+        caller could never learn."""
+        # An unknown auth_method (legacy/admin-edited row). A truthy value
+        # also stops the factory from auto-filling a valid "jwt".
+        channel = ChannelFactory(
+            type="webhook",
+            mailbox=mailbox,
+            settings={
+                "url": "https://hook.example.com/in",
+                "trigger": "message.delivered",
+                "auth_method": "bogus",
+            },
+            encrypted_settings={"secret": "whsec_original"},
+        )
+        url = reverse(
+            "mailbox-channels-regenerate-secret",
+            kwargs={"mailbox_id": mailbox.id, "pk": channel.id},
+        )
+        response = api_client.post(url)
+        assert response.status_code == status.HTTP_400_BAD_REQUEST, response.content
+        channel.refresh_from_db()
+        # Old secret untouched — rotation never ran.
+        assert channel.encrypted_settings["secret"] == "whsec_original"

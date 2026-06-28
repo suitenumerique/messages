@@ -380,7 +380,8 @@ class TestApiDraftAndSendMessage:
         assert sent_message.thread.messaged_at is not None
 
         assert all(
-            recipient.delivery_status == enums.MessageDeliveryStatusChoices.SENT
+            recipient.delivery_status
+            == enums.MessageDeliveryStatusChoices.SENT_EXTERNAL
             for recipient in sent_message.recipients.all()
         )
         assert all(
@@ -480,7 +481,8 @@ class TestApiDraftAndSendMessage:
             contact__email="success@external.com"
         )
         assert (
-            success_recipient.delivery_status == enums.MessageDeliveryStatusChoices.SENT
+            success_recipient.delivery_status
+            == enums.MessageDeliveryStatusChoices.SENT_EXTERNAL
         )
         assert success_recipient.delivered_at is not None
         assert success_recipient.retry_count == 0

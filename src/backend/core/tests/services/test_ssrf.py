@@ -307,3 +307,71 @@ class TestSSRFSafeSessionRedirects:
 
         intermediate.close.assert_called_once()
         final.close.assert_not_called()
+
+
+class TestSSRFSafeSessionPostRedirects:
+    """Redirect-handling contract for SSRFSafeSession.post.
+
+    POST follows redirects too (a webhook endpoint behind a load balancer /
+    canonicaliser commonly 3xx-redirects), re-validating each hop and
+    re-issuing the POST so the signed body reaches the final destination.
+    """
+
+    @patch("core.services.ssrf.requests.Session.post")
+    @patch("core.services.ssrf.socket.getaddrinfo")
+    def test_no_redirect_returns_response_directly(self, mock_dns, mock_post):
+        """A 2xx POST is returned without any extra request."""
+        mock_dns.return_value = _addrinfo(PUBLIC_IP)
+        mock_post.return_value = _mock_response(200)
+
+        response = SSRFSafeSession().post(
+            "https://hook.legit.com/in", timeout=10, data=b"payload"
+        )
+
+        assert response.status_code == 200
+        assert mock_post.call_count == 1
+
+    @pytest.mark.parametrize("redirect_status", [301, 302, 303, 307, 308])
+    @patch("core.services.ssrf.requests.Session.post")
+    @patch("core.services.ssrf.socket.getaddrinfo")
+    def test_post_follows_redirect_preserving_method_and_body(
+        self, mock_dns, mock_post, redirect_status
+    ):
+        """A 3xx on POST is followed by re-POSTing the same body to the
+        validated Location (method preserved, never downgraded to GET)."""
+        mock_dns.return_value = _addrinfo(PUBLIC_IP)
+        mock_post.side_effect = [
+            _mock_response(redirect_status, location="https://cdn.legit.com/in"),
+            _mock_response(200),
+        ]
+
+        response = SSRFSafeSession().post(
+            "https://hook.legit.com/in", timeout=10, data=b"payload"
+        )
+
+        assert response.status_code == 200
+        assert mock_post.call_count == 2
+        # The body rode along on the followed hop, and we never fell back to GET.
+        assert mock_post.call_args.kwargs.get("data") == b"payload"
+
+    @patch("core.services.ssrf.requests.Session.post")
+    @patch("core.services.ssrf.socket.getaddrinfo")
+    def test_post_blocks_redirect_to_private_ip(self, mock_dns, mock_post):
+        """A POST Location resolving to a private IP is rejected mid-chain."""
+
+        def dns_side_effect(host, *_args, **_kwargs):
+            if host == "hook.legit.com":
+                return _addrinfo(PUBLIC_IP)
+            if host == "internal.evil.com":
+                return _addrinfo(PRIVATE_IP)
+            raise AssertionError(f"unexpected DNS lookup: {host}")
+
+        mock_dns.side_effect = dns_side_effect
+        mock_post.return_value = _mock_response(
+            302, location="https://internal.evil.com/pwn"
+        )
+
+        with pytest.raises(SSRFValidationError, match="private IP"):
+            SSRFSafeSession().post("https://hook.legit.com/in", timeout=10, data=b"x")
+
+        assert mock_post.call_count == 1

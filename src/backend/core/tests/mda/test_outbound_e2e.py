@@ -215,17 +215,20 @@ class TestE2EMessageOutboundFlow:
             )
         assert send_response.status_code == status.HTTP_200_OK, send_response.content
 
+        # Same-instance recipients are delivered internally and marked
+        # SENT_INTERNAL; external recipients are marked SENT_EXTERNAL on MTA
+        # hand-off.
         assert (
             models.MessageRecipient.objects.filter(
                 message__id=draft_message_id,
-                delivery_status=enums.MessageDeliveryStatusChoices.INTERNAL,
+                delivery_status=enums.MessageDeliveryStatusChoices.SENT_INTERNAL,
             ).count()
             == 1
         )
         assert (
             models.MessageRecipient.objects.filter(
                 message__id=draft_message_id,
-                delivery_status=enums.MessageDeliveryStatusChoices.SENT,
+                delivery_status=enums.MessageDeliveryStatusChoices.SENT_EXTERNAL,
             ).count()
             == 3
         )

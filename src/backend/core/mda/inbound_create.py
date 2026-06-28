@@ -549,7 +549,7 @@ def _create_message_from_inbound(  # pylint: disable=too-many-arguments
                 defaults = {}
                 if is_import and not message.is_draft:
                     defaults["delivery_status"] = (
-                        enums.MessageDeliveryStatusChoices.SENT
+                        enums.MessageDeliveryStatusChoices.SENT_EXTERNAL
                     )
                 models.MessageRecipient.objects.get_or_create(
                     message=message,

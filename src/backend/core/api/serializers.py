@@ -17,9 +17,7 @@ from rest_framework.exceptions import PermissionDenied
 
 from core import enums, models
 from core.mda.dispatch_webhooks import (
-    PHASE_AFTER_SPAM,
     VALID_FORMATS,
-    VALID_PHASES,
 )
 from core.mda.inline_images import extract_inline_images_html
 from core.services.blob_gc import schedule_for_gc
@@ -2302,32 +2300,21 @@ class ChannelSerializer(CreateOnlyFieldsMixin, serializers.ModelSerializer):
                 {"settings": "webhook settings.url must use https://."}
             )
 
-        events = settings_data.get("events")
-        if not events or not isinstance(events, list):
-            raise serializers.ValidationError(
-                {
-                    "settings": "webhook channels require settings.events (a non-empty list)."
-                }
-            )
-        unknown = [e for e in events if e not in enums.WebhookEvents]
-        if unknown:
-            raise serializers.ValidationError(
-                {"settings": f"Unknown webhook events: {unknown}"}
-            )
-
-        # Optional dispatcher knobs. Validated here so a malformed PATCH
-        # to ``settings`` can't strand a webhook channel in a state the
-        # dispatcher silently treats as defaults.
-        phase = settings_data.get("phase", PHASE_AFTER_SPAM)
-        if phase not in VALID_PHASES:
+        # A single ``trigger`` lifecycle event describes the webhook — it
+        # encodes the event, the pipeline phase, and whether it blocks
+        # delivery, so invalid combinations (e.g. non-blocking before-spam)
+        # can't be expressed (see ``enums.WebhookTrigger``).
+        trigger = settings_data.get("trigger")
+        if trigger not in enums.WebhookTrigger:
             raise serializers.ValidationError(
                 {
                     "settings": (
-                        f"webhook settings.phase must be one of: "
-                        f"{', '.join(sorted(VALID_PHASES))}."
+                        "webhook channels require settings.trigger, one of: "
+                        f"{', '.join(t.value for t in enums.WebhookTrigger)}."
                     )
                 }
             )
+
         body_format = settings_data.get("format", "eml")
         if body_format not in VALID_FORMATS:
             raise serializers.ValidationError(
@@ -2338,18 +2325,29 @@ class ChannelSerializer(CreateOnlyFieldsMixin, serializers.ModelSerializer):
                     )
                 }
             )
-        if "blocking" in settings_data and not isinstance(
-            settings_data["blocking"], bool
-        ):
-            raise serializers.ValidationError(
-                {"settings": "webhook settings.blocking must be a boolean."}
-            )
-        if settings_data.get("auth_method") not in ("jwt", "api_key"):
+        # auth_method selects how the stored secret is presented on each
+        # POST; it pairs with the credential in encrypted_settings, which a
+        # settings PATCH never touches. So treat it like that credential:
+        # carry the existing value forward when a partial PATCH omits it,
+        # instead of forcing the caller to re-send it on every edit (and
+        # silently dropping it on the replace-on-PATCH save). Only a value
+        # that is actually supplied — or a create with none — is rejected.
+        auth_method = settings_data.get("auth_method")
+        if auth_method is None and self.instance is not None:
+            existing = (self.instance.settings or {}).get("auth_method")
+            if existing in enums.WebhookAuthMethod and isinstance(
+                attrs.get("settings"), dict
+            ):
+                # Persist it through the replace-save so the dispatcher
+                # still knows how to present the secret.
+                attrs["settings"]["auth_method"] = existing
+                auth_method = existing
+        if auth_method not in enums.WebhookAuthMethod:
             raise serializers.ValidationError(
                 {
                     "settings": (
-                        "webhook settings.auth_method is required and must "
-                        "be 'jwt' or 'api_key'."
+                        "webhook settings.auth_method is required, one of: "
+                        f"{', '.join(m.value for m in enums.WebhookAuthMethod)}."
                     )
                 }
             )

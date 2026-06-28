@@ -52,7 +52,7 @@ class TestUpdateThreadStatsOnDeliveryStatusChange:
         )
 
         with patch.object(thread, "update_stats") as mock_update_stats:
-            recipient.delivery_status = enums.MessageDeliveryStatusChoices.SENT
+            recipient.delivery_status = enums.MessageDeliveryStatusChoices.SENT_EXTERNAL
             recipient.save(update_fields=["delivery_status"])
 
             mock_update_stats.assert_called_once()
@@ -72,7 +72,7 @@ class TestUpdateThreadStatsOnDeliveryStatusChange:
         )
 
         with patch.object(thread, "update_stats") as mock_update_stats:
-            recipient.delivery_status = enums.MessageDeliveryStatusChoices.SENT
+            recipient.delivery_status = enums.MessageDeliveryStatusChoices.SENT_EXTERNAL
             recipient.save(update_fields=["delivery_status"])
 
             mock_update_stats.assert_not_called()
@@ -92,7 +92,7 @@ class TestUpdateThreadStatsOnDeliveryStatusChange:
         )
 
         with patch.object(thread, "update_stats") as mock_update_stats:
-            recipient.delivery_status = enums.MessageDeliveryStatusChoices.SENT
+            recipient.delivery_status = enums.MessageDeliveryStatusChoices.SENT_EXTERNAL
             recipient.save(update_fields=["delivery_status"])
 
             mock_update_stats.assert_not_called()
@@ -112,7 +112,7 @@ class TestUpdateThreadStatsOnDeliveryStatusChange:
         )
 
         with patch.object(thread, "update_stats") as mock_update_stats:
-            recipient.delivery_status = enums.MessageDeliveryStatusChoices.SENT
+            recipient.delivery_status = enums.MessageDeliveryStatusChoices.SENT_EXTERNAL
             recipient.save(update_fields=["delivery_status"])
 
             mock_update_stats.assert_not_called()
@@ -128,7 +128,7 @@ class TestUpdateThreadStatsOnDeliveryStatusChange:
         )
         recipient = factories.MessageRecipientFactory(
             message=message,
-            delivery_status=enums.MessageDeliveryStatusChoices.SENT,
+            delivery_status=enums.MessageDeliveryStatusChoices.SENT_EXTERNAL,
         )
 
         with patch.object(thread, "update_stats") as mock_update_stats:
@@ -161,7 +161,9 @@ class TestThreadStatsUpdateDeferrer:
 
         with patch("core.models.Thread.update_stats") as mock_update_stats:
             with ThreadStatsUpdateDeferrer.defer():
-                recipient1.delivery_status = enums.MessageDeliveryStatusChoices.SENT
+                recipient1.delivery_status = (
+                    enums.MessageDeliveryStatusChoices.SENT_EXTERNAL
+                )
                 recipient1.save(update_fields=["delivery_status"])
 
                 recipient2.delivery_status = enums.MessageDeliveryStatusChoices.FAILED
@@ -190,7 +192,9 @@ class TestThreadStatsUpdateDeferrer:
         with patch("core.models.Thread.update_stats") as mock_update_stats:
             with ThreadStatsUpdateDeferrer.defer():
                 with ThreadStatsUpdateDeferrer.defer():
-                    recipient.delivery_status = enums.MessageDeliveryStatusChoices.SENT
+                    recipient.delivery_status = (
+                        enums.MessageDeliveryStatusChoices.SENT_EXTERNAL
+                    )
                     recipient.save(update_fields=["delivery_status"])
 
                 # Inner context exited, should not have been called yet
@@ -226,10 +230,14 @@ class TestThreadStatsUpdateDeferrer:
 
         with patch("core.models.Thread.update_stats") as mock_update_stats:
             with ThreadStatsUpdateDeferrer.defer():
-                recipient1.delivery_status = enums.MessageDeliveryStatusChoices.SENT
+                recipient1.delivery_status = (
+                    enums.MessageDeliveryStatusChoices.SENT_EXTERNAL
+                )
                 recipient1.save(update_fields=["delivery_status"])
 
-                recipient2.delivery_status = enums.MessageDeliveryStatusChoices.SENT
+                recipient2.delivery_status = (
+                    enums.MessageDeliveryStatusChoices.SENT_EXTERNAL
+                )
                 recipient2.save(update_fields=["delivery_status"])
 
             # Should be called twice, once per thread
@@ -267,10 +275,14 @@ class TestThreadStatsUpdateDeferrer:
         ) as mock_update_stats:
             # Should not raise, error is caught and logged
             with ThreadStatsUpdateDeferrer.defer():
-                recipient1.delivery_status = enums.MessageDeliveryStatusChoices.SENT
+                recipient1.delivery_status = (
+                    enums.MessageDeliveryStatusChoices.SENT_EXTERNAL
+                )
                 recipient1.save(update_fields=["delivery_status"])
 
-                recipient2.delivery_status = enums.MessageDeliveryStatusChoices.SENT
+                recipient2.delivery_status = (
+                    enums.MessageDeliveryStatusChoices.SENT_EXTERNAL
+                )
                 recipient2.save(update_fields=["delivery_status"])
 
             # Both should have been attempted
@@ -517,7 +529,7 @@ class TestThreadReindexDeferrer:
             patch("core.signals.enqueue_thread_reindex") as mock_enqueue,
             django_capture_on_commit_callbacks(execute=True),
         ):
-            recipient.delivery_status = enums.MessageDeliveryStatusChoices.SENT
+            recipient.delivery_status = enums.MessageDeliveryStatusChoices.SENT_EXTERNAL
             recipient.save(update_fields=["delivery_status"])
 
         mock_enqueue.assert_called_once_with(message.thread_id)

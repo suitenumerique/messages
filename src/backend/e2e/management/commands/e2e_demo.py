@@ -321,7 +321,7 @@ class Command(BaseCommand):
                 (
                     "sent@external.invalid",
                     "Sent Recipient",
-                    MessageDeliveryStatusChoices.SENT,
+                    MessageDeliveryStatusChoices.SENT_EXTERNAL,
                     None,
                     {"delivered_at": timezone.now()},
                 ),
@@ -352,7 +352,7 @@ class Command(BaseCommand):
                 (
                     "delivered@external.invalid",
                     "Delivered Recipient",
-                    MessageDeliveryStatusChoices.SENT,
+                    MessageDeliveryStatusChoices.SENT_EXTERNAL,
                     None,
                     {"delivered_at": timezone.now()},
                 ),

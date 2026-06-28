@@ -228,7 +228,7 @@ class TestInboundSpoofedSender:
         # guarantee that imports never enter the retry pipeline.
         assert (
             message.recipients.filter(
-                delivery_status=enums.MessageDeliveryStatusChoices.SENT
+                delivery_status=enums.MessageDeliveryStatusChoices.SENT_EXTERNAL
             ).count()
             == message.recipients.count()
         )

@@ -271,6 +271,13 @@ def process_inbound_message_task(self, inbound_message_id: str):
             # treated as spam. Normalize ctx.is_spam so downstream consumers
             # (autoreply gate, task result) agree with where it actually lands.
             ctx.is_spam = False
+            # ...but a quarantine delivery means a processing step never
+            # completed: the forced is_spam=False is a placement decision,
+            # not a real spam verdict, and a blocking step that wanted to
+            # suppress the reply (or classify the sender as spam) never got
+            # to run. Don't fire an autoreply to a sender we couldn't fully
+            # vet — suppress it for quarantined messages.
+            ctx.skip_autoreply = True
 
         inbound_msg = _create_message_from_inbound(
             recipient_email=ctx.recipient_email,

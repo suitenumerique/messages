@@ -15,7 +15,7 @@ from rest_framework.exceptions import ValidationError
 from rest_framework.response import Response
 
 from core import models
-from core.enums import ChannelScopeLevel, ChannelTypes
+from core.enums import ChannelScopeLevel, ChannelTypes, WebhookAuthMethod
 
 from .. import permissions, serializers
 
@@ -45,16 +45,12 @@ def _attach_credential(data: dict, channel: models.Channel) -> None:
         if plaintext:
             data["api_key"] = plaintext
         return
-    if channel.type == ChannelTypes.WEBHOOK:
-        auth_method = (channel.settings or {}).get("auth_method")
-        if auth_method == "jwt":
-            root = (channel.encrypted_settings or {}).get("secret")
-            if root:
-                data["secret"] = root
-        elif auth_method == "api_key":
-            derived = channel.get_webhook_api_key()
-            if derived:
-                data["api_key"] = derived
+    # Webhook channels: the (jwt→secret / api_key→derived) rule lives on the
+    # model so this and the Django-admin regenerate view can't drift.
+    credential = channel.get_webhook_surfaced_credential()
+    if credential:
+        key, value = credential
+        data[key] = value
 
 
 @extend_schema(
@@ -248,6 +244,26 @@ class ChannelViewSet(
         feature available via Django admin.
         """
         instance = self.get_object()
+
+        # Guard before rotating: a webhook channel whose auth_method isn't
+        # one ``_attach_credential`` knows how to surface would have its old
+        # secret invalidated by ``rotate_secret`` while the freshly minted
+        # one is dropped from the response — permanently bricking the
+        # webhook with no way to learn the new secret. Reject up front so
+        # rotation only runs when we can hand the result back.
+        if (
+            instance.type == ChannelTypes.WEBHOOK
+            and (instance.settings or {}).get("auth_method") not in WebhookAuthMethod
+        ):
+            raise ValidationError(
+                {
+                    "settings": (
+                        "webhook settings.auth_method must be 'jwt' or "
+                        "'api_key' before the secret can be rotated."
+                    )
+                }
+            )
+
         try:
             plaintext = instance.rotate_secret()
         except ValueError as exc:

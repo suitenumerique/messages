@@ -620,6 +620,17 @@ class Base(Configuration):
         environ_prefix=None,
     )
 
+    # Deliver mailbox-to-mailbox mail through the internal inbound pipeline
+    # (the fast path) instead of routing it out through the MTA. Set False to
+    # force every message — including same-instance recipients — through the
+    # external MTA path, e.g. so all mail passes the same scanning/archiving
+    # as outbound. Default True keeps the local fast path.
+    MESSAGES_ALLOW_INTERNAL_DELIVERY = values.BooleanValue(
+        default=True,
+        environ_name="MESSAGES_ALLOW_INTERNAL_DELIVERY",
+        environ_prefix=None,
+    )
+
     # Technical domain for DNS records (MX, SPF, DKIM hosting)
     MESSAGES_TECHNICAL_DOMAIN = values.Value(
         "localhost", environ_name="MESSAGES_TECHNICAL_DOMAIN", environ_prefix=None

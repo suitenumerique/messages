@@ -660,6 +660,33 @@ class Channel(BaseModel):
         ).hexdigest()
         return "whk_" + derived
 
+    def get_webhook_surfaced_credential(self) -> "Optional[tuple[str, str]]":
+        """The credential a webhook receiver actually presents, as
+        ``(response_key, value)``:
+
+          - ``auth_method='jwt'`` → ``("secret", <root>)``
+          - ``auth_method='api_key'`` → ``("api_key", <whk_… derived>)``
+
+        Returns ``None`` for a non-webhook channel, an unknown/missing
+        ``auth_method``, or an absent secret. Single source of truth for
+        "which credential is surfaceable", shared by the DRF
+        create/regenerate response (``_attach_credential``) and the
+        Django-admin regenerate view, so the two can't drift.
+        """
+        # pylint: disable-next=import-outside-toplevel
+        from core.enums import ChannelTypes, WebhookAuthMethod
+
+        if self.type != ChannelTypes.WEBHOOK:
+            return None
+        auth_method = (self.settings or {}).get("auth_method")
+        if auth_method == WebhookAuthMethod.JWT:
+            root = (self.encrypted_settings or {}).get("secret")
+            return ("secret", root) if root else None
+        if auth_method == WebhookAuthMethod.API_KEY:
+            derived = self.get_webhook_api_key()
+            return ("api_key", derived) if derived else None
+        return None
+
     def api_key_covers(
         self, *, mailbox=None, maildomain=None, mailbox_roles=None
     ) -> bool:

@@ -11,38 +11,40 @@ of this document.
 
 ## When does it fire?
 
-For each inbound message accepted by the MTA the delivery pipeline goes
-through two webhook phases:
+A webhook channel has a single **`trigger`**: the point in a message's
+lifecycle that fires it. The event name says both *when* it fires and
+*whether* it can influence delivery — there's no separate blocking flag,
+so invalid combinations can't be expressed:
 
-1. **`before_spam`** — fires right after the message has been parsed,
-   before any spam check. `is_spam` is not yet known.
-2. **`after_spam`** — fires after the spam verdict but before the
-   `Message` row is created. `is_spam` is known.
+| `trigger`             | Fires                                              | Blocking? | `is_spam` |
+| --------------------- | ------------------------------------------------- | --------- | --------- |
+| `message.inbound`     | The message just arrived, before the spam check   | yes (sync)  | pending |
+| `message.delivering`  | After the spam verdict, while delivery is in flight | yes (sync) | known  |
+| `message.delivered`   | After the message has landed in the mailbox       | no (async)  | final   |
 
-Each webhook channel picks **one** phase via `settings.phase`
-(default `after_spam`).
+This flat list replaces the older `(events, phase, blocking)` triple.
+Future lifecycle events (e.g. `message.sent`) extend it with new
+`trigger` values.
 
-A channel may also be **blocking** (`settings.blocking: true`). A
-blocking webhook gets to shape delivery: it can drop the message, ask
-to be retried later, or return a small JSON body that overrides the
-spam verdict and/or attaches labels to the resulting thread (see
-[Response contract](#response-contract) below). Blocking webhooks run
-**inline** at their phase, on the pipeline worker.
+**`message.inbound`** and **`message.delivering`** are *synchronous*: they
+run **inline** on the pipeline worker and get to shape delivery — drop the
+message, ask to be retried later, or return a small JSON body that
+overrides the spam verdict and/or attaches labels to the resulting thread
+(see [Response contract](#response-contract)).
 
-Non-blocking webhooks are fire-and-forget — failures are logged and the
-pipeline continues unchanged. Because they can't influence delivery,
-they don't run on the pipeline worker at all: at their phase the channel
-is just **recorded** (capturing the phase and the phase-time `is_spam`),
-and the actual POST is handed to a background task **after the `Message`
-is persisted**. The task renders the body from the stored message, so
+**`message.delivered`** is *asynchronous* — fire-and-forget; failures are
+logged and the pipeline continues unchanged. Because it can't influence
+delivery, it doesn't run on the pipeline worker at all: the channel is
+**recorded** during the pipeline (capturing the final `is_spam`) and the
+actual POST is handed to a background task **after the `Message` is
+persisted**. The task renders the body from the stored message, so
 nothing is copied or sent through the broker. Two consequences:
 
-* A non-blocking webhook fires only for messages that become a
-  `Message` — not for one a blocking webhook later **drops**. (Spam is
-  *not* a drop: it still lands in the spam folder, so it still fires,
-  with `X-StMsg-Is-Spam: true`.)
-* The POST body is the canonical stored message regardless of phase; the
-  `phase`/`is_spam` context lives in the `X-StMsg-*` headers as before.
+* It fires only for messages that become a `Message` — not for one a
+  blocking webhook later **drops**. (Spam is *not* a drop: it still lands
+  in the spam folder, so it still fires, with `X-StMsg-Is-Spam: true`.)
+* It always runs after the spam step, so its `X-StMsg-Is-Spam` is the
+  final verdict.
 
 ## Channel scopes
 
@@ -66,10 +68,8 @@ A webhook channel stores its configuration in `Channel.settings`
 ```json
 {
   "url":         "https://example.com/inbox-hook",
-  "events":      ["message.inbound"],
-  "phase":       "after_spam",
+  "trigger":     "message.delivered",
   "format":      "eml",
-  "blocking":    false,
   "auth_method": "jwt"
 }
 ```
@@ -77,10 +77,8 @@ A webhook channel stores its configuration in `Channel.settings`
 | Key           | Type     | Default        | Description                                                                 |
 | ------------- | -------- | -------------- | --------------------------------------------------------------------------- |
 | `url`         | string   | **required**   | `https://` endpoint, validated by the SSRF guard at each call. `http://` is accepted only when Django `DEBUG` is on (the local-dev escape hatch). |
-| `events`      | string[] | **required**   | Currently only `message.inbound` is implemented.                           |
-| `phase`       | string   | `after_spam`   | `before_spam` or `after_spam`.                                              |
+| `trigger`     | string   | **required**   | `message.inbound`, `message.delivering`, or `message.delivered` (see [When does it fire?](#when-does-it-fire)). |
 | `format`      | string   | `eml`          | `eml`, `jmap`, or `jmap_metadata` (see [Payload formats](#payload-formats)). |
-| `blocking`    | bool     | `false`        | If true, the webhook response determines delivery (see [Response contract](#response-contract) below). |
 | `auth_method` | string   | **required**   | `jwt` or `api_key` (see [Authentication](#authentication)).                 |
 
 The serializer validates every change to `settings`, on create **and**
@@ -94,8 +92,11 @@ Every call is:
 * `POST` to `settings.url`.
 * `User-Agent: Messages-Webhook/1.0`.
 * 30-second timeout.
-* HTTP `3xx` is **not** followed — receivers must respond on the URL
-  configured, not after a redirect.
+* HTTP `3xx` **is** followed (small hop limit), but **every hop is
+  re-validated and re-pinned** by the SSRF guard and the `POST` is
+  re-issued (method + body preserved), so a receiver behind a load
+  balancer or URL canonicaliser still gets the signed payload — and a
+  redirect can't point the delivery at an internal target.
 * The destination hostname/IP must pass the shared SSRF check (no
   loopback, link-local, private, multicast, reserved, or cloud metadata
   addresses; no IP literals).
@@ -144,12 +145,11 @@ message lands.
 | Header                | Value                                                            |
 | --------------------- | ---------------------------------------------------------------- |
 | `Content-Type`        | `message/rfc822` for `eml`, `application/json` for both JMAP variants |
-| `X-StMsg-Event`       | `message.inbound`                                               |
-| `X-StMsg-Phase`       | `before_spam` or `after_spam`                                    |
+| `X-StMsg-Trigger`     | The lifecycle event that fired (`message.inbound` / `message.delivering` / `message.delivered`). Route on this — it says what happened and, implicitly, whether the webhook blocked. |
 | `X-StMsg-Channel-Id`  | UUID of the firing webhook Channel                               |
 | `X-StMsg-Mailbox`     | Destination mailbox address                                      |
 | `X-StMsg-Recipient`   | Envelope `RCPT TO` (usually the same as `X-StMsg-Mailbox`)       |
-| `X-StMsg-Is-Spam`     | `true`, `false`, or `unknown` (`unknown` in the `before_spam` phase) |
+| `X-StMsg-Is-Spam`     | `true`, `false`, or `pending` (`pending` for `message.inbound`, which fires before the spam check) |
 | `X-StMsg-Message-Id`  | UUID of the stored `Message` — **non-blocking only** (see note)   |
 | `X-StMsg-Thread-Id`   | UUID of the `Message`'s `Thread` — **non-blocking only**          |
 
@@ -253,7 +253,7 @@ optional; unknown keys are ignored.
 | Key              | Type           | Meaning                                                                                                          |
 | ---------------- | -------------- | ---------------------------------------------------------------------------------------------------------------- |
 | `action`         | `"drop"` / `"retry"` | `"drop"` drops the message at this phase; `"retry"` re-queues the inbound task (bounded by the 48h quarantine window). Any other value (or omission) is treated as accept. Case-insensitive. |
-| `is_spam`        | bool           | Override the spam verdict. Acts as a full antispam: in the `before_spam` phase this **skips rspamd**.            |
+| `is_spam`        | bool           | Override the spam verdict. Acts as a full antispam: for a `message.inbound` webhook this **skips rspamd**. |
 | `add_labels`     | string[]       | UUIDs of `Label` rows in the destination mailbox to attach to the thread once it is created.                     |
 | `assign_to`      | string[]       | OIDC emails of users to assign to the resulting thread (one `ThreadEvent ASSIGN` per webhook, channel-attributed). |
 |  `mark_starred`  | bool (true only) | Star the resulting thread for the destination mailbox.                                                         |
@@ -380,8 +380,7 @@ MTA received them.
 ```http
 POST /inbox-hook HTTP/1.1
 Content-Type: message/rfc822
-X-StMsg-Event: message.inbound
-X-StMsg-Phase: after_spam
+X-StMsg-Trigger: message.delivered
 X-StMsg-Channel-Id: 05f1f991-c2e9-4fa7-8a78-98c3aa904c7c
 X-StMsg-Mailbox: alice@example.com
 X-StMsg-Recipient: alice@example.com
@@ -503,7 +502,7 @@ def inbox_hook():
         return "unsupported", 415
 
     # Echo envelope metadata for logging.
-    print("phase:",   request.headers["X-StMsg-Phase"])
+    print("trigger:", request.headers["X-StMsg-Trigger"])
     print("is_spam:", request.headers["X-StMsg-Is-Spam"])
     print("mailbox:", request.headers["X-StMsg-Mailbox"])
     return "", 200
@@ -520,9 +519,28 @@ def inbox_hook():
   * The validated IP is **pinned** for the actual connection, defeating
     DNS-rebinding (TOCTOU). For HTTPS the TLS certificate is verified
     against the original hostname.
+  * Redirects are followed (up to a small hop limit) but **each hop is
+    re-validated and re-pinned**, so an endpoint can't 3xx-redirect the
+    delivery to an internal target. The `POST` is re-issued on each hop
+    (method + body preserved), so a receiver behind a load balancer or
+    URL canonicaliser still gets the signed payload.
 * Blocking webhooks are silent for the original sender — the inbound
   SMTP transaction has already been accepted. A blocking-drop is
   visible only through logs and the pipeline's `dropped_by_webhook`
   return value.
+
+## Performance notes & future work
+
+* **Per-webhook blob re-fetch (non-blocking).** Each non-blocking
+  webhook for a message runs in its own task that independently
+  re-fetches `Message.blob` (object-storage download + decrypt +
+  decompress) and re-parses the MIME. With *K* non-blocking webhooks on
+  the same message that's *K* downloads and *K* parses of identical
+  bytes — wasteful for large messages. This is an accepted trade-off for
+  now (each task stays self-contained and the payload never rides the
+  broker). A future optimization is a **short-lived blob/parse cache**
+  (keyed by `blob_id`, scoped to a single message's fan-out) so the
+  bytes are fetched and parsed once and reused across that message's
+  webhook tasks.
 
 [rfc8621]: https://www.rfc-editor.org/rfc/rfc8621#section-4.1

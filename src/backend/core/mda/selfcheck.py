@@ -91,7 +91,13 @@ def create_and_send_draft(
     # Check message delivery status
     recipient_status = message.recipients.first().delivery_status  # pylint: disable=no-member
 
-    if recipient_status != models.MessageDeliveryStatusChoices.SENT:
+    # ``!= SENT_EXTERNAL`` is safe here ONLY because
+    # ``send_message(force_mta_out=True)`` above forces the external MTA path,
+    # which yields SENT_EXTERNAL. A same-instance recipient delivered
+    # internally would be SENT_INTERNAL (also "delivered") and would wrongly
+    # fail this check — see the footgun note on MessageDeliveryStatusChoices.
+    # Don't drop force_mta_out without also accepting SENT_INTERNAL here.
+    if recipient_status != models.MessageDeliveryStatusChoices.SENT_EXTERNAL:
         raise SelfCheckError("Message not delivered")
 
     return message

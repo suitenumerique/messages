@@ -1521,7 +1521,7 @@ class TestThreadStatsAPI:
         # SENT - should not affect flags
         MessageRecipientFactory(
             message=message,
-            delivery_status=enums.MessageDeliveryStatusChoices.SENT,
+            delivery_status=enums.MessageDeliveryStatusChoices.SENT_EXTERNAL,
         )
         # FAILED - should set has_delivery_failed
         MessageRecipientFactory(
