@@ -1,9 +1,10 @@
-import pytest
-import time
 import logging
+import time
 from email.message import EmailMessage
 from email.parser import BytesParser
 from email.policy import default as default_policy
+
+import pytest
 
 logger = logging.getLogger(__name__)
 
@@ -49,7 +50,7 @@ def test_mime_message_unmodified(smtp_client, mock_smtp_server):
         # sendmail expects bytes for the message
         smtp_client.sendmail(sender, recipient, original_bytes)
         logger.info("Raw message sent successfully via smtp_client.")
-    except Exception as e:
+    except Exception as e:  # noqa: BLE001
         logger.error(f"Failed to send raw message: {e}")
         pytest.fail(f"SMTP sendmail failed: {e}")
 

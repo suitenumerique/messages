@@ -1,8 +1,8 @@
 import logging
 import os
 import time
-from email.mime.text import MIMEText
 from email.mime.multipart import MIMEMultipart
+from email.mime.text import MIMEText
 
 logger = logging.getLogger(__name__)
 
@@ -30,7 +30,7 @@ def test_send_simple_text_email(smtp_client, mock_smtp_server):
 
     # Give some time for the message to be relayed and received by the mock server
     max_retries = 10
-    for attempt in range(max_retries):
+    for _attempt in range(max_retries):
         if len(mock_smtp_server.get_messages()) > 0:
             break
         time.sleep(0.5)
@@ -65,7 +65,7 @@ def test_send_simple_text_email_localhost(smtp_client, mock_smtp_server):
 
     # Give some time for the message to be relayed and received by the mock server
     max_retries = 10
-    for attempt in range(max_retries):
+    for _attempt in range(max_retries):
         if len(mock_smtp_server.get_messages()) > 0:
             break
         time.sleep(0.5)

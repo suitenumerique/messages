@@ -48,14 +48,20 @@ def main() -> None:
 
     parsed = parse_email(raw)
     inline = next(
-        (a for a in parsed.get("attachments") or [] if a.get("disposition") == "inline"),
+        (
+            a
+            for a in parsed.get("attachments") or []
+            if a.get("disposition") == "inline"
+        ),
         None,
     )
     assert inline is not None, "expected an inline attachment on round-trip"
     assert inline.get("cid") == CID, (
         f"cid did not round-trip: composed={CID!r}, parsed={inline.get('cid')!r}"
     )
-    print(f"OK: inline image '{inline['name']}' round-tripped with cid <{inline['cid']}>")
+    print(
+        f"OK: inline image '{inline['name']}' round-tripped with cid <{inline['cid']}>"
+    )
 
 
 if __name__ == "__main__":

@@ -296,9 +296,7 @@ def main() -> int:
         _ok("cross-realm role_id (master 'admin' role) → 404")
 
         # ────────────────────── authentication ──────────────────────
-        r = _post_with_token(
-            None, {"role_id": created_role_id, "usernames": usernames}
-        )
+        r = _post_with_token(None, {"role_id": created_role_id, "usernames": usernames})
         assert r.status_code == 401
         _ok("no Authorization header → 401")
 

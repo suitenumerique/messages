@@ -84,7 +84,7 @@ def test_simple_email_delivery_with_multiple_recipients(mock_api_server, smtp_cl
     assert len(mock_api_server.received_emails) == 1
 
     email = mock_api_server.received_emails[0]
-    assert set(email["metadata"]["original_recipients"]) == set(["test@example.com"])
+    assert set(email["metadata"]["original_recipients"]) == {"test@example.com"}
     assert email["metadata"]["sender"] == "sender@example.com"
     assert email["email"]["subject"] == "Simple Test Email"
     assert email["email"]["from"] == "sender@example.com"
@@ -112,9 +112,10 @@ def test_simple_email_delivery_with_multiple_recipients(mock_api_server, smtp_cl
     assert len(mock_api_server.received_emails) == 1
 
     email = mock_api_server.received_emails[0]
-    assert set(email["metadata"]["original_recipients"]) == set(
-        ["test@example.com", "test2@example.com"]
-    )
+    assert set(email["metadata"]["original_recipients"]) == {
+        "test@example.com",
+        "test2@example.com",
+    }
     assert email["metadata"]["sender"] == "sender@example.com"
     assert email["email"]["subject"] == "Simple Test Email"
     assert email["email"]["from"] == "sender@example.com"

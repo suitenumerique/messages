@@ -1,9 +1,9 @@
-import logging
 import base64
-from email.mime.text import MIMEText
-from email.mime.multipart import MIMEMultipart
+import logging
 from email.mime.application import MIMEApplication
 from email.mime.image import MIMEImage
+from email.mime.multipart import MIMEMultipart
+from email.mime.text import MIMEText
 
 logger = logging.getLogger(__name__)
 

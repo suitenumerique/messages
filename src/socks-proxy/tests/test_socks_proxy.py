@@ -19,9 +19,9 @@ def test_socks_authentication_invalid_password(socks_client):
         proxy_host=socks_client.proxy_host,
         proxy_port=socks_client.proxy_port,
         username=socks_client.username,
-        password="wrong_password"
+        password="wrong_password",
     )
-    
+
     result = client.test_connection("8.8.8.8", 53)
     assert not result, "SOCKS connection should fail with invalid password"
 
@@ -33,9 +33,9 @@ def test_socks_authentication_invalid_username(socks_client):
         proxy_host=socks_client.proxy_host,
         proxy_port=socks_client.proxy_port,
         username="wrong_username",
-        password=socks_client.password
+        password=socks_client.password,
     )
-    
+
     result = client.test_connection("8.8.8.8", 53)
     assert not result, "SOCKS connection should fail with invalid username"
 
@@ -44,10 +44,9 @@ def test_socks_authentication_no_credentials(socks_client):
     """Test SOCKS connection without authentication (should fail)"""
     # Create client without credentials using existing fixture
     client = SOCKSClient(
-        proxy_host=socks_client.proxy_host,
-        proxy_port=socks_client.proxy_port
+        proxy_host=socks_client.proxy_host, proxy_port=socks_client.proxy_port
     )
-    
+
     result = client.test_connection("8.8.8.8", 53)
     assert not result, "SOCKS connection should fail without credentials"
 
@@ -59,9 +58,9 @@ def test_socks_authentication_failure_handling(socks_client):
         proxy_host=socks_client.proxy_host,
         proxy_port=socks_client.proxy_port,
         username="invalid_user",
-        password="invalid_pass"
+        password="invalid_pass",
     )
-    
+
     result = client.test_connection("8.8.8.8", 53)
     assert not result, "Connection should fail with invalid credentials"
 
@@ -69,7 +68,9 @@ def test_socks_authentication_failure_handling(socks_client):
 # Connection Tests
 def test_socks_proxy_connection_establishment(socks_client):
     """Test that SOCKS proxy connection can be established"""
-    assert socks_client.test_connection("8.8.8.8", 53), "SOCKS connection should be established successfully"
+    assert socks_client.test_connection("8.8.8.8", 53), (
+        "SOCKS connection should be established successfully"
+    )
 
 
 def test_socks_proxy_connection_refused(socks_client):
@@ -86,5 +87,5 @@ def test_socks_proxy_connection_timeout(socks_client):
 
 def test_socks_proxy_error_handling(socks_client):
     """Test SOCKS proxy error handling"""
-    
+
     assert not socks_client.test_connection("nonexistent.invalid", 80)

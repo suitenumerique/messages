@@ -1,12 +1,13 @@
-import pytest
-import smtplib
-import time
 import logging
 import os
+import smtplib
+import time
+from email.parser import BytesParser
+
+import pytest
 from aiosmtpd.controller import Controller
 from aiosmtpd.handlers import Message
 from aiosmtpd.smtp import AuthResult, LoginPassword
-from email.parser import BytesParser
 
 # Set up logging
 logging.basicConfig(level=logging.INFO)

@@ -1,24 +1,19 @@
 import pytest
 import smtplib
-import time
 import logging
 import os
-import socket
 import subprocess
-import ssl
-import struct
 import socks
 from aiosmtpd.controller import Controller
 from aiosmtpd.handlers import Message
+from urllib.parse import urlparse
+from dataclasses import dataclass
 from email.parser import BytesParser
 
 # Set up logging
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
 
-# Parse SOCKS proxy environment variables
-from urllib.parse import urlparse
-from dataclasses import dataclass
 
 @dataclass
 class ProxyConfig:
@@ -27,28 +22,30 @@ class ProxyConfig:
     host: str = "localhost"
     port: int = 1080
 
+
 def parse_proxy_env(proxy_env):
     """Parse SOCKS_PROXY1 or SOCKS_PROXY2 environment variable
     Format: username:password@host:port
     """
     if not proxy_env:
         return ProxyConfig()
-    
+
     try:
         # Add scheme to make it a valid URL for urlparse
-        if not proxy_env.startswith(('http://', 'https://', 'socks://')):
+        if not proxy_env.startswith(("http://", "https://", "socks://")):
             proxy_env = f"socks://{proxy_env}"
-        
+
         parsed = urlparse(proxy_env)
-        
+
         return ProxyConfig(
             username=parsed.username,
             password=parsed.password,
             host=parsed.hostname or "localhost",
-            port=parsed.port or 1080
+            port=parsed.port or 1080,
         )
     except Exception:
         return ProxyConfig()
+
 
 # Parse both proxy configurations
 PROXY1_CONFIG = parse_proxy_env(os.getenv("SOCKS_PROXY1"))
@@ -58,15 +55,16 @@ PROXY2_CONFIG = parse_proxy_env(os.getenv("SOCKS_PROXY2"))
 def get_container_ip():
     """Get the container's IP address automatically"""
     try:
-        result = subprocess.run(['hostname', '-I'], capture_output=True, text=True)
+        result = subprocess.run(["hostname", "-I"], capture_output=True, text=True)
         # hostname -I returns space-separated IPs, first one is usually the main one
         return result.stdout.strip().split()[0]
-    except:
+    except Exception:
         return "127.0.0.1"  # fallback
 
 
 class MessageStore:
     """Simple storage for received email messages"""
+
     def __init__(self):
         self.messages = []
 
@@ -78,13 +76,13 @@ class MessageStore:
 
     def get_messages(self):
         return self.messages
-    
+
     def get_last_connection_info(self):
         """Get connection info from the last received message"""
         if self.messages:
             return self.messages[-1].get("connection_info", {})
         return {}
-    
+
     def get_connection_info_for_subject(self, subject):
         """Get connection info for a specific message subject"""
         for message in self.messages:
@@ -95,6 +93,7 @@ class MessageStore:
 
 class MockSMTPHandler(Message):
     """Handle SMTP messages and store them"""
+
     def __init__(self, message_store):
         super().__init__()
         self.message_store = message_store
@@ -123,6 +122,7 @@ class MockSMTPHandler(Message):
 
 class MockSMTPServer:
     """Mock SMTP server for testing"""
+
     def __init__(self, host="0.0.0.0", port=2525):
         self.host = host
         self.port = port
@@ -143,18 +143,35 @@ class MockSMTPServer:
         return self.message_store.get_messages()
 
 
-def create_proxied_socket(proxy_host, proxy_port, target_host, target_port, username=None, password=None, timeout=5):
+def create_proxied_socket(
+    proxy_host,
+    proxy_port,
+    target_host,
+    target_port,
+    username=None,
+    password=None,
+    timeout=5,
+):
     """Create a socket connected through a SOCKS proxy"""
     proxy = socks.socksocket()
     if type(timeout) in {int, float}:
         proxy.settimeout(timeout)
-    proxy.set_proxy(socks.PROXY_TYPE_SOCKS5, proxy_host, proxy_port, rdns=False, username=username, password=password)
+    proxy.set_proxy(
+        socks.PROXY_TYPE_SOCKS5,
+        proxy_host,
+        proxy_port,
+        rdns=False,
+        username=username,
+        password=password,
+    )
     proxy.connect((target_host, target_port))
-    
+
     return proxy
+
 
 class SOCKSClient:
     """SOCKS client for testing"""
+
     def __init__(self, proxy_host, proxy_port, username=None, password=None):
         self.proxy_host = proxy_host
         self.proxy_port = proxy_port
@@ -170,7 +187,7 @@ class SOCKSClient:
                 target_port,
                 self.username,
                 self.password,
-                timeout
+                timeout,
             )
             sock.close()
             return True
@@ -192,7 +209,7 @@ def socks_client():
         proxy_host=PROXY1_CONFIG.host,
         proxy_port=PROXY1_CONFIG.port,
         username=PROXY1_CONFIG.username,
-        password=PROXY1_CONFIG.password
+        password=PROXY1_CONFIG.password,
     )
 
 
@@ -203,7 +220,7 @@ def socks_client_proxy2():
         proxy_host=PROXY2_CONFIG.host,
         proxy_port=PROXY2_CONFIG.port,
         username=PROXY2_CONFIG.username,
-        password=PROXY2_CONFIG.password
+        password=PROXY2_CONFIG.password,
     )
 
 
@@ -216,7 +233,7 @@ def smtp_client_direct():
 
     try:
         client.quit()
-    except:
+    except Exception:
         pass
 
 
@@ -230,9 +247,9 @@ class ProxySMTP(smtplib.SMTP):
         # This makes it simpler for SMTP_SSL to use the SMTP connect code
         # and just alter the socket connection bit.
         if timeout is not None and not timeout:
-            raise ValueError('Non-blocking socket (timeout=0) is not supported')
+            raise ValueError("Non-blocking socket (timeout=0) is not supported")
         if self.debuglevel > 0:
-            self._print_debug('connect: to', (host, port), self.source_address)
+            self._print_debug("connect: to", (host, port), self.source_address)
 
         return create_proxied_socket(
             self.socks_client.proxy_host,
@@ -241,7 +258,7 @@ class ProxySMTP(smtplib.SMTP):
             port,
             self.socks_client.username,
             self.socks_client.password,
-            timeout
+            timeout,
         )
 
 
@@ -254,11 +271,10 @@ def smtp_client_via_proxy(socks_client):
 
     client = ProxySMTP(container_ip, 2525, socks_client=socks_client)
     client.set_debuglevel(2)
-    
+
     yield client
 
     try:
         client.quit()
-    except:
+    except Exception:
         pass
-

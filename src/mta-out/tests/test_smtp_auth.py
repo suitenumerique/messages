@@ -1,7 +1,8 @@
-import pytest
-import smtplib
 import logging
 import os
+import smtplib
+
+import pytest
 
 logger = logging.getLogger(__name__)
 

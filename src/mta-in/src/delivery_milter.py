@@ -85,7 +85,7 @@ class DeliveryMilter(Milter.Base):
             self.rcpttos.append(clean_to)
             return Milter.CONTINUE
 
-        except Exception:
+        except Exception:  # noqa: BLE001
             # Exception during validation - temporary failure
             return Milter.TEMPFAIL
 
@@ -150,7 +150,7 @@ class DeliveryMilter(Milter.Base):
             else:
                 return Milter.TEMPFAIL
 
-        except Exception:
+        except Exception:  # noqa: BLE001
             return Milter.TEMPFAIL
 
     def close(self):
@@ -165,7 +165,7 @@ class DeliveryMilter(Milter.Base):
 
 def main():
     """Run the milter server"""
-    print("Starting delivery milter...")
+    print("Starting delivery milter...")  # noqa: T201
 
     # Set the socket for milter communication
     # Use Unix socket for better performance and security
@@ -179,7 +179,7 @@ def main():
     try:
         os.setgid(grp.getgrnam("postfix").gr_gid)
     except (KeyError, OSError) as e:
-        print(f"Warning: could not set gid to postfix: {e}", file=sys.stderr)
+        print(f"Warning: could not set gid to postfix: {e}", file=sys.stderr)  # noqa: T201
     os.umask(0o117)
 
     # Register our milter class
@@ -189,15 +189,15 @@ def main():
     flags = Milter.CHGBODY + Milter.CHGHDRS + Milter.ADDHDRS
     Milter.set_flags(flags)
 
-    print(f"Milter listening on {socket_path}")
+    print(f"Milter listening on {socket_path}")  # noqa: T201
 
     try:
         # Start the milter
         Milter.runmilter("delivery_milter", socket_path, timeout=240)
     except KeyboardInterrupt:
-        print("Milter shutting down...")
-    except Exception as e:
-        print(f"Milter error: {e}")
+        print("Milter shutting down...")  # noqa: T201
+    except Exception as e:  # noqa: BLE001
+        print(f"Milter error: {e}")  # noqa: T201
         sys.exit(1)
 
 

@@ -109,6 +109,9 @@ select = [
 # and embed control characters in defense-matrix fixtures (PLE2502).
 "tests/**" = ["S", "SLF", "PLC0415", "PLE2502"]
 
+# CLI examples use print() for output and assert for self-checking.
+"examples/**" = ["T20", "S101"]
+
 # ──────────────────────────── ty (PEP 561 typecheck) ────────────────────────────
 # Static typecheck via Astral's ``ty`` — single Rust binary, no Node,
 # no Python deps. The shape contracts (``types.py``) and the public

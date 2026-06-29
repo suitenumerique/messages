@@ -19,7 +19,7 @@ def wait_for_rspamd():
     max_retries = 200  # Increase retries (40 seconds total)
     base_url = RSPAMD_URL.replace("/_api", "")
     last_error = None
-    
+
     for attempt in range(max_retries):
         # Try checkv2 endpoint first (more reliable than ping through nginx)
         try:
@@ -34,7 +34,9 @@ def wait_for_rspamd():
             )
             # If we get a response (even if it's an error about empty message), rspamd is up
             if response.status_code in (200, 400, 401, 403):
-                logger.info(f"Rspamd is ready (checkv2 check returned {response.status_code})")
+                logger.info(
+                    f"Rspamd is ready (checkv2 check returned {response.status_code})"
+                )
                 return
             last_error = f"Unexpected status code: {response.status_code}"
         except requests.exceptions.ConnectionError as e:
@@ -49,7 +51,7 @@ def wait_for_rspamd():
             last_error = f"Request error: {e}"
             if attempt % 30 == 0:
                 logger.debug(f"Checkv2 check error: {e}")
-        
+
         # Also try ping endpoint as backup
         try:
             response = requests.get(f"{base_url}/ping", timeout=2)
@@ -59,7 +61,7 @@ def wait_for_rspamd():
         except requests.exceptions.RequestException:
             # Ignore ping errors, we prefer checkv2
             pass
-        
+
         if attempt == max_retries - 1:
             raise RuntimeError(
                 f"Rspamd did not become ready after {max_retries} attempts. "
@@ -72,4 +74,3 @@ def wait_for_rspamd():
                 f"last error: {last_error}, retrying..."
             )
         time.sleep(0.2)
-
