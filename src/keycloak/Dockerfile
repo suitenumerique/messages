@@ -14,7 +14,7 @@ fi
 zip -r /custom-scripts.jar META-INF *.js
 EOR
 
-FROM quay.io/keycloak/keycloak:26.6.3 AS builder
+FROM quay.io/keycloak/keycloak:26.6.4 AS builder
 
 WORKDIR /opt/keycloak
 COPY --chown=keycloak:keycloak --chmod=644 themes/dsfr-2.2.1.jar /opt/keycloak/providers/dsfr.jar
@@ -32,7 +32,7 @@ ARG KC_DB=postgres
 
 RUN /opt/keycloak/bin/kc.sh build
 
-FROM quay.io/keycloak/keycloak:26.6.3
+FROM quay.io/keycloak/keycloak:26.6.4
 
 COPY --from=builder /opt/keycloak/ /opt/keycloak/
 ENTRYPOINT ["/opt/keycloak/bin/kc.sh"]
