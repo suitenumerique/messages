@@ -1,5 +1,7 @@
 """Test messages delivery statuses endpoint."""
 
+# pylint: disable=too-many-lines
+
 from datetime import timedelta
 from unittest.mock import patch
 

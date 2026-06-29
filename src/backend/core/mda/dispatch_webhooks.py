@@ -29,7 +29,7 @@ Two body formats are supported (see ``docs/webhooks.md``):
     same envelope metadata in ``X-StMsg-*`` headers.
 """
 
-# pylint: disable=broad-exception-caught
+# pylint: disable=broad-exception-caught,too-many-lines
 
 from __future__ import annotations
 
