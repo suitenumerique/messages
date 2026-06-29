@@ -44,6 +44,7 @@ from dataclasses import dataclass, field
 from typing import Any, Dict, List, Optional, Set, Tuple
 from urllib.parse import urlparse
 
+from django.conf import settings
 from django.db.models import Q
 
 import jwt
@@ -494,9 +495,15 @@ def _envelope_headers(
         "X-StMsg-Trigger": (channel.settings or {}).get("trigger", ""),
         "X-StMsg-Channel-Id": str(channel.id),
         "X-StMsg-Mailbox": str(mailbox),
+        "X-StMsg-Mailbox-Id": str(mailbox.id),
         "X-StMsg-Recipient": recipient_email,
         "X-StMsg-Is-Spam": spam_value,
     }
+    # The instance's own public URL, so a receiver (especially a shared one
+    # serving several instances) knows who fired and can turn the ``*-Id``
+    # headers into callback API URLs. Optional — omitted when unconfigured.
+    if settings.INSTANCE_URL:
+        headers["X-StMsg-Instance"] = settings.INSTANCE_URL
     if message is not None:
         headers["X-StMsg-Message-Id"] = str(message.id)
         headers["X-StMsg-Thread-Id"] = str(message.thread_id)

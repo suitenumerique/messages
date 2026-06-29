@@ -39,7 +39,6 @@ AWS_S3_ACCESS_KEY_ID=messages
 AWS_S3_SECRET_ACCESS_KEY=password
 AWS_S3_SIGNATURE_VERSION=s3v4
 AWS_S3_DOMAIN_REPLACE=http://localhost:8906
-MEDIA_BASE_URL=http://localhost:8902
 
 # Message imports storage
 STORAGE_MESSAGE_IMPORTS_ENDPOINT_URL=http://objectstorage:9000

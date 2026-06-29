@@ -288,9 +288,6 @@ class Base(Configuration):
     STATIC_ROOT = os.path.join(DATA_DIR, "static")
     MEDIA_URL = "/media/"
     MEDIA_ROOT = os.path.join(DATA_DIR, "media")
-    MEDIA_BASE_URL = values.Value(
-        None, environ_name="MEDIA_BASE_URL", environ_prefix=None
-    )
 
     SITE_ID = 1
 
@@ -532,6 +529,19 @@ class Base(Configuration):
     MESSAGES_SELFCHECK_SENTRY_MONITOR_SLUG = values.Value(
         None,
         environ_name="MESSAGES_SELFCHECK_SENTRY_MONITOR_SLUG",
+        environ_prefix=None,
+    )
+
+    # Public base URL of this Messages instance, i.e. the origin that serves
+    # both the API and the web app (e.g. ``https://messages-public-url.example.com``).
+    # Instance-wide, not feature-specific: anything that has to emit an
+    # absolute link back to ourselves should read this. Today the only
+    # consumer is outbound webhooks, which send it as the ``X-StMsg-Instance``
+    # header so a receiver can build callback API URLs from the ``*-Id``
+    # headers; the header is omitted when this is unset.
+    INSTANCE_URL = values.Value(
+        None,
+        environ_name="INSTANCE_URL",
         environ_prefix=None,
     )
 

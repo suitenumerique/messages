@@ -146,8 +146,10 @@ message lands.
 | --------------------- | ---------------------------------------------------------------- |
 | `Content-Type`        | `message/rfc822` for `eml`, `application/json` for both JMAP variants |
 | `X-StMsg-Trigger`     | The lifecycle event that fired (`message.inbound` / `message.delivering` / `message.delivered`). Route on this — it says what happened and, implicitly, whether the webhook blocked. |
+| `X-StMsg-Instance`    | Public base URL of the originating instance (e.g. `https://messages-public-url.example.com`). **Only present when the instance sets `INSTANCE_URL`.** Combine with the `*-Id` headers to build callback API URLs. |
 | `X-StMsg-Channel-Id`  | UUID of the firing webhook Channel                               |
 | `X-StMsg-Mailbox`     | Destination mailbox address                                      |
+| `X-StMsg-Mailbox-Id`  | UUID of the destination `Mailbox` (the API is keyed by this, not the address) |
 | `X-StMsg-Recipient`   | Envelope `RCPT TO` (usually the same as `X-StMsg-Mailbox`)       |
 | `X-StMsg-Is-Spam`     | `true`, `false`, or `pending` (`pending` for `message.inbound`, which fires before the spam check) |
 | `X-StMsg-Message-Id`  | UUID of the stored `Message` — **non-blocking only** (see note)   |
@@ -157,8 +159,12 @@ The MIME message-id is **not** sent as a header — every body format
 already carries it (`messageId` in the JMAP variants, the raw
 `Message-ID:` header in `eml`).
 
-`X-StMsg-Message-Id` / `X-StMsg-Thread-Id` are the platform's own ids
-(for calling back into the API). They're only present on **non-blocking**
+`X-StMsg-Mailbox-Id`, `X-StMsg-Message-Id` and `X-StMsg-Thread-Id` are the
+platform's own ids (the API is keyed by UUID, not by address). To call back
+into the API, join them to the instance base URL — sent as `X-StMsg-Instance`
+when configured — e.g.
+`GET {X-StMsg-Instance}/api/v1.0/mailboxes/{X-StMsg-Mailbox-Id}/…`.
+`X-StMsg-Message-Id` / `X-StMsg-Thread-Id` are only present on **non-blocking**
 webhooks, which fire after the `Message` is persisted; blocking webhooks
 run before it exists, so they can't carry them.
 
@@ -381,8 +387,10 @@ MTA received them.
 POST /inbox-hook HTTP/1.1
 Content-Type: message/rfc822
 X-StMsg-Trigger: message.delivered
+X-StMsg-Instance: https://messages-public-url.example.com
 X-StMsg-Channel-Id: 05f1f991-c2e9-4fa7-8a78-98c3aa904c7c
 X-StMsg-Mailbox: alice@example.com
+X-StMsg-Mailbox-Id: 3c2e0b1a-9d4f-4e8c-bf2a-1a2b3c4d5e6f
 X-StMsg-Recipient: alice@example.com
 X-StMsg-Is-Spam: false
 

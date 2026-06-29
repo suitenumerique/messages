@@ -13,6 +13,7 @@ from datetime import timedelta
 from typing import Optional, Set
 from unittest.mock import Mock, patch
 
+from django.test import override_settings
 from django.utils import timezone as dj_timezone
 
 import pytest
@@ -808,11 +809,42 @@ class TestDispatchInboundWebhooks:
             headers = mock_session.return_value.post.call_args.kwargs["headers"]
             assert headers["X-StMsg-Trigger"] == "message.delivering"
             assert headers["X-StMsg-Mailbox"] == str(mailbox)
+            assert headers["X-StMsg-Mailbox-Id"] == str(mailbox.id)
             assert headers["X-StMsg-Recipient"] == str(mailbox)
             assert headers["X-StMsg-Is-Spam"] == "true"
             # The message-id is NOT a header — every body format already
             # carries it (messageId in jmap, raw Message-ID: in eml).
             assert "X-StMsg-Message-Mime-Id" not in headers
+            # The instance URL header is opt-in — absent unless configured.
+            assert "X-StMsg-Instance" not in headers
+
+    @override_settings(INSTANCE_URL="https://messages-public-url.example.com")
+    @patch("core.mda.dispatch_webhooks.SSRFSafeSession")
+    def test_instance_header_set_when_configured(
+        self, mock_session, mailbox, parsed_email
+    ):
+        # message.delivering is the blocking, after-spam trigger that fires
+        # in PHASE_AFTER_SPAM (message.delivered fires post-persist, not here).
+        factories.ChannelFactory(
+            type=enums.ChannelTypes.WEBHOOK,
+            mailbox=mailbox,
+            settings={
+                "url": "https://hook.example.com",
+                "trigger": "message.delivering",
+                "auth_method": "jwt",
+            },
+        )
+        mock_session.return_value.post.return_value = _make_response(200)
+        dispatch_webhooks(
+            phase=PHASE_AFTER_SPAM,
+            mailbox=mailbox,
+            recipient_email=str(mailbox),
+            parsed_email=parsed_email,
+            raw_data=b"raw",
+            is_spam=False,
+        )
+        headers = mock_session.return_value.post.call_args.kwargs["headers"]
+        assert headers["X-StMsg-Instance"] == "https://messages-public-url.example.com"
 
     @patch("core.mda.dispatch_webhooks.SSRFSafeSession")
     def test_is_spam_header_unknown_when_none(

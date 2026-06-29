@@ -35,6 +35,9 @@ The application uses a new environment file structure with `.defaults` and `.loc
 | `DJANGO_SUPERUSER_PASSWORD` | `admin` | Default superuser password for development | Dev |
 | `DJANGO_DATA_DIR` | `/data` | Base directory for data storage | Optional |
 | `DJANGO_ADMIN_URL` | `admin` | admin route (must not be ended by `/`) | Optional |
+| `INSTANCE_URL` | None | Public base URL of this instance — the scheme+host that serves both the API and the web app (e.g. `https://messages-public-url.example.com`). Used to build absolute links back into the product; currently emitted as the `X-StMsg-Instance` header on outbound webhooks (omitted when unset). | Optional |
+| `USE_X_FORWARDED_FOR` | `False` | Trust the `X-Forwarded-For` header to determine the client IP (enable only behind a trusted proxy that sets it). | Optional |
+| `DATA_UPLOAD_MAX_MEMORY_SIZE` | `2621440` | Django's max request body (bytes) buffered in memory before rejecting (2.5MB). | Optional |
 
 ### Database Configuration
 
@@ -71,6 +74,7 @@ The application uses a new environment file structure with `.defaults` and `.loc
 | Variable | Default | Description | Required |
 |----------|---------|-------------|----------|
 | `OPENSEARCH_URL` | `["http://opensearch:9200"]` | OpenSearch hosts list | Optional |
+| `OPENSEARCH_CA_CERTS` | None | Path to a CA bundle for verifying the OpenSearch TLS certificate (for `https://` hosts with a private CA). | Optional |
 | `OPENSEARCH_TIMEOUT` | `20` | OpenSearch query timeout (seconds) for unitary requests | Optional |
 | `OPENSEARCH_BULK_TIMEOUT` | `60` | OpenSearch request timeout (seconds) applied to bulk indexation calls. Raise it if full reindex (`make search-index`) hits timeouts on large payloads. | Optional |
 | `OPENSEARCH_BULK_MAX_BYTES` | `26_214_400` | Flush threshold (bytes) for bulk indexation payloads; default 25 MiB. Once accumulated actions exceed this, `opensearch-py` emits a sub-chunk HTTP request. Note: this is a batching threshold, not a per-document cap — a single oversized document is still sent as its own chunk. Keep well under the OpenSearch server `http.max_content_length` | Optional |
@@ -110,9 +114,12 @@ The application uses a new environment file structure with `.defaults` and `.loc
 | Variable | Default | Description | Required |
 |----------|---------|-------------|----------|
 | `MESSAGES_DKIM_SELECTOR` | `default` | DKIM selector | Optional |
+| `MESSAGES_DKIM_DEFAULT_SELECTOR` | `stmessages` | Default DKIM selector applied to managed domains that don't override it. | Optional |
 | `MESSAGES_DKIM_DOMAINS` | `[]` | List of domains for DKIM signing | Optional |
 | `MESSAGES_DKIM_PRIVATE_KEY_B64` | None | Base64 encoded DKIM private key | Optional |
 | `MESSAGES_DKIM_PRIVATE_KEY_FILE` | None | Path to DKIM private key file | Optional |
+| `MESSAGES_DKIM_VERIFY_OUTGOING` | `False` | Verify the DKIM signature on outgoing messages before sending. | Optional |
+| `MESSAGES_SPF_CHECK_OUTGOING` | `False` | Block outgoing messages when the sending domain's SPF includes are not correctly set up. | Optional |
 
 ## Storage Configuration
 
@@ -123,10 +130,11 @@ The application uses a new environment file structure with `.defaults` and `.loc
 | `AWS_S3_ENDPOINT_URL` | `http://objectstorage:9000` | S3 endpoint URL | Optional |
 | `AWS_S3_ACCESS_KEY_ID` | `messages` | S3 access key | Optional |
 | `AWS_S3_SECRET_ACCESS_KEY` | `password` | S3 secret key | Optional |
+| `AWS_S3_SIGNATURE_VERSION` | `s3v4` | S3 request signature version | Optional |
+| `AWS_S3_DOMAIN_REPLACE` | None | If set, rewrites the host of generated S3 URLs to this value — e.g. map an internal endpoint to a public one for presigned/download links. | Optional |
 | `AWS_S3_REGION_NAME` | None | S3 region | Optional |
 | `AWS_STORAGE_BUCKET_NAME` | `st-messages-media-storage` | S3 bucket name | Optional |
 | `AWS_S3_UPLOAD_POLICY_EXPIRATION` | `86400` | Upload policy expiration (24h) | Optional |
-| `MEDIA_BASE_URL` | `http://localhost:8902` | Base URL for media files | Optional |
 | `ITEM_FILE_MAX_SIZE` | `5368709120` | Max file size (5GB) | Optional |
 
 ### Message Imports Storage
@@ -236,7 +244,9 @@ _Those settings are deprecated and will be removed in the future._
 | `CORS_ALLOWED_ORIGINS` | `[]` | Specific allowed CORS origins | Optional |
 | `CORS_ALLOWED_ORIGIN_REGEXES` | `[]` | Regex patterns for allowed origins | Optional |
 | `CSRF_TRUSTED_ORIGINS` | `["http://localhost:8900", "http://localhost:8901"]` | Trusted origins for CSRF | Optional |
+| `ALLOWED_HOSTS` | `[]` | Host/domain allow-list (Production configuration; the Development class sets this from `DJANGO_ALLOWED_HOSTS`). | Optional |
 | `SERVER_TO_SERVER_API_TOKENS` | `[]` | API tokens for server-to-server auth | Optional |
+| `SALT_KEY` | `[]` | Key(s) for Django Fernet-encrypted model fields. Accepts a list for rotation (`["new_key", "old_key"]`); the first is used to encrypt, all are tried to decrypt. | Optional |
 
 ## Monitoring & Observability
 
@@ -325,6 +335,7 @@ without redeploying the frontend (the flag is pulled from
 | `FEATURE_MAILDOMAIN_MANAGE_ACCESSES` | `True` | Allows managing mail domain accesses (create/delete). When `False`, those actions return 403. | Optional |
 | `FEATURE_MESSAGE_TEMPLATES` | `True` | Enables the "message templates" feature. When `False`, mailbox admins lose the `CAN_MANAGE_MESSAGE_TEMPLATES` ability and the related UI is hidden. | Optional |
 | `FEATURE_THREAD_SPLIT` | `True` | Enables "split thread" feature. When `False`, the split API action returns 404 and the frontend hides the menu entry. | Optional |
+| `FEATURE_MAILDOMAIN_MANAGE_TOTP` | `False` | Enables the "Mandatory 2FA" (TOTP) toggle for mail domains. Requires the Keycloak identity-provider settings and `KEYCLOAK_TOTP_ROLE_ID`. | Optional |
 
 ### Business Logic
 
@@ -339,6 +350,8 @@ without redeploying the frontend (the flag is pulled from
 | `MAX_TEMPLATE_IMAGE_SIZE` | `2097152` | Maximum size in bytes for images embedded in templates and signatures (2MB) | Optional |
 | `MAX_RECIPIENTS_PER_MESSAGE` | `500` | Maximum number of recipients per message (to + cc + bcc) | Optional |
 | `MAX_THREAD_EVENT_EDIT_DELAY` | `3600` | Time window in seconds during which a ThreadEvent (internal comment) can still be edited or deleted after creation. Set to `0` to disable the restriction. | Optional |
+| `MESSAGES_ALLOW_INTERNAL_DELIVERY` | `True` | Deliver mailbox-to-mailbox mail through the internal inbound pipeline (fast path). Set `False` to force same-instance mail out through the external MTA so it passes the same scanning/archiving as outbound. | Optional |
+| `MESSAGES_MAILBOX_LOCALPART_DENYLIST_PERSONAL` | `[]` | Local parts rejected for personal mailboxes (case-insensitive exact match). | Optional |
 
 ### Model custom attributes schema
 
@@ -376,6 +389,11 @@ Outbound message throttling limits the number of **external recipients** (recipi
 | `THROTTLE_MAILBOX_OUTBOUND_EXTERNAL_RECIPIENTS` | None | Rate limit per mailbox. Format: `count/period` where period is `minute`, `hour`, or `day`. Example: `1000/day` limits each mailbox to 1000 external recipients per day. | Optional |
 | `THROTTLE_MAILDOMAIN_OUTBOUND_EXTERNAL_RECIPIENTS` | None | Rate limit per maildomain. Format: `count/period`. Example: `10000/day` limits each domain to 10000 external recipients per day. | Optional |
 | `THROTTLE_AUTOREPLY_PER_SENDER` | `1/day` | Rate limit for autoreplies per sender per mailbox. Format: `count/period`. Example: `1/day` limits each sender to 1 autoreply per day per mailbox. | Optional |
+| `API_USERS_LIST_THROTTLE_RATE_SUSTAINED` | `180/hour` | Sustained rate limit on the users-list API (per user). | Optional |
+| `API_USERS_LIST_THROTTLE_RATE_BURST` | `30/minute` | Burst rate limit on the users-list API (per user). | Optional |
+| `API_CALDAV_CONFLICTS_THROTTLE_RATE` | `30/minute` | Rate limit on the CalDAV conflict-check API. | Optional |
+| `API_WIDGET_INBOUND_CHANNEL_THROTTLE_RATE` | `30/minute` | Rate limit on inbound widget submissions, per widget channel. | Optional |
+| `API_WIDGET_INBOUND_IP_THROTTLE_RATE` | `10/minute` | Per-IP burst limit on inbound widget submissions. | Optional |
 
 ### Image Proxy
 
@@ -403,6 +421,92 @@ it can lead to memory exhaustion, increase at your own risk.
 |----------|---------|-------------|----------|
 | `DRIVE_BASE_URL` | None | Base URL to access Drive endpoints | Optional |
 | `DRIVE_APP_NAME` | `Drive` | Name of the Drive application used in the frontend | Optional |
+
+### Identity Provider (Keycloak)
+
+Used for provisioning-side operations against Keycloak (e.g. toggling
+mandatory 2FA on a mail domain). Distinct from the OIDC login settings
+above, which handle end-user authentication.
+
+| Variable | Default | Description | Required |
+|----------|---------|-------------|----------|
+| `IDENTITY_PROVIDER` | None | Identity-provider integration to enable (e.g. `keycloak`). Unset disables provisioning-side IdP calls. | Optional |
+| `KEYCLOAK_URL` | None | Base URL of the Keycloak server. | Optional |
+| `KEYCLOAK_REALM` | None | Keycloak realm. | Optional |
+| `KEYCLOAK_CLIENT_ID` | None | Service-account client id used for admin/provisioning calls. | Optional |
+| `KEYCLOAK_CLIENT_SECRET` | None | Service-account client secret. | Optional |
+| `KEYCLOAK_GROUP_PATH_PREFIX` | None | Prefix for Keycloak group paths mapped to mail domains. | Optional |
+| `KEYCLOAK_TOTP_ROLE_ID` | None | Realm role id assigned in Keycloak when "Mandatory 2FA" is enabled for a mailbox (see `FEATURE_MAILDOMAIN_MANAGE_TOTP`). | Optional |
+
+### Domain DNS Provisioning
+
+Hosting of MX/SPF/DKIM records for managed mail domains, optionally
+automated through a DNS provider.
+
+| Variable | Default | Description | Required |
+|----------|---------|-------------|----------|
+| `MESSAGES_TECHNICAL_DOMAIN` | `localhost` | Technical domain that MX/SPF/DKIM records point at. | Optional |
+| `MESSAGES_DNS_RECORDS` | MX/SPF/DKIM template | JSON template of expected DNS records, with `{technical_domain}` placeholders. | Optional |
+| `DNS_DEFAULT_PROVIDER` | None | DNS provider used to auto-create records (e.g. `scaleway`). Unset = manual DNS. | Optional |
+| `DNS_SCALEWAY_API_TOKEN` | None | Scaleway API token (when `DNS_DEFAULT_PROVIDER=scaleway`). | Optional |
+| `DNS_SCALEWAY_PROJECT_ID` | None | Scaleway project id. | Optional |
+| `DNS_SCALEWAY_TTL` | `3600` | TTL (seconds) for records created via Scaleway. | Optional |
+
+### Calendar (CalDAV)
+
+| Variable | Default | Description | Required |
+|----------|---------|-------------|----------|
+| `CALDAV_DEFAULT_URL` | None | Base URL of the external CalDAV server. | Optional |
+| `CALDAV_DEFAULT_WEB_URL` | None | URL of the calendar web UI surfaced to the frontend. | Optional |
+| `CALDAV_DEFAULT_PASSWORD` | None | Credential for the default CalDAV account. | Optional |
+
+### Entitlements
+
+Pluggable backend deciding what a user/domain is entitled to.
+
+| Variable | Default | Description | Required |
+|----------|---------|-------------|----------|
+| `ENTITLEMENTS_BACKEND` | `core.entitlements.backends.local.LocalEntitlementsBackend` | Dotted path to the entitlements backend class. | Optional |
+| `ENTITLEMENTS_BACKEND_PARAMETERS` | `{}` | JSON parameters passed to the backend. | Optional |
+| `ENTITLEMENTS_CACHE_TIMEOUT` | `300` | Cache TTL (seconds) for entitlement lookups. | Optional |
+
+### Message Import (IMAP)
+
+Tuning for the IMAP-based message importer (see also `FEATURE_IMPORT_MESSAGES`).
+
+| Variable | Default | Description | Required |
+|----------|---------|-------------|----------|
+| `IMAP_TIMEOUT` | `60` | Socket timeout (seconds) for IMAP connections during import. | Optional |
+| `IMAP_MAX_RETRIES` | `3` | Retry budget for transient IMAP failures during import. | Optional |
+
+### Spam Filtering
+
+| Variable | Default | Description | Required |
+|----------|---------|-------------|----------|
+| `SPAM_CONFIG` | `{}` | JSON config for the spam checker. Empty `{}` disables it. Example: `{"rspamd_url": "http://mpa:8010/_api", "rspamd_auth": ""}`. | Optional |
+
+### Celery / Task Queue
+
+| Variable | Default | Description | Required |
+|----------|---------|-------------|----------|
+| `DISABLE_CELERY_BEAT_SCHEDULE` | `False` | Disable the periodic Beat schedule (search indexing, offload, selfcheck, …). | Optional |
+| `CELERY_TASK_SEND_SENT_EVENT` | `True` | Emit Celery `task-sent` events (monitoring/Flower). | Optional |
+| `CELERY_WORKER_SEND_TASK_EVENTS` | `True` | Workers emit task events (monitoring/Flower). | Optional |
+
+### Metrics
+
+| Variable | Default | Description | Required |
+|----------|---------|-------------|----------|
+| `METRICS_STORAGE_USED_OVERHEAD_BY_MESSAGE` | `1024` | Per-message overhead (bytes) added when computing reported storage usage. | Optional |
+
+### Deprecated
+
+_Set only to receive a startup deprecation warning; otherwise ignored._
+
+| Variable | Default | Description | Required | ⚠️ Deprecated |
+|----------|---------|-------------|----------|----------|
+| `PROVISIONING_API_KEY` | None | Ignored since global `api_key` Channels landed. Migrate to a global `api_key` Channel. | Optional | Removed in a future release |
+| `METRICS_API_KEY` | None | Ignored since global `api_key` Channels landed. Migrate to a global `api_key` Channel. | Optional | Removed in a future release |
 
 ## Legend
 
