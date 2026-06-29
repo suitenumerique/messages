@@ -220,6 +220,12 @@
     border-top: 1px solid var(--c--contextuals--border--semantic--neutral--default);
 }
 
+// The regenerate button sits alone in a flex-column section, which would
+// stretch it full width — keep it sized to its label.
+.webhook-integration-form__regenerate {
+    align-self: flex-start;
+}
+
 // Credential label (webhook-only: the one-time secret display)
 .webhook-integration-form__credential-label {
     font-size: 0.9rem;

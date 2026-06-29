@@ -1,5 +1,5 @@
 import { Button } from "@gouvfr-lasuite/cunningham-react";
-import { Icon, IconType } from "@gouvfr-lasuite/ui-kit";
+import { Icon, IconSize, IconType } from "@gouvfr-lasuite/ui-kit";
 import { useTranslation } from "react-i18next";
 import { useForm, FormProvider } from "react-hook-form";
 import { zodResolver } from "@hookform/resolvers/zod";
@@ -294,14 +294,68 @@ export const WebhookIntegrationForm = ({
                         text={
                             errors.url?.message ||
                             t(
-                                "Each incoming message will be POSTed to this URL in the format selected below.",
+                                "Data will be POSTed to this URL in the format selected below.",
                             )
                         }
                         state={errors.url ? "error" : "default"}
                         fullWidth
                     />
+                    {/* One flat trigger: a lifecycle event whose name says
+                        both when it fires and whether it blocks delivery. */}
                     <RhfSelect
-                        label={t("Authentication")}
+                        label={t("Trigger")}
+                        name="trigger"
+                        options={[
+                            {
+                                label: t(
+                                    "Message inbound — blocking, before the spam check; can shape the message before it is scanned",
+                                ),
+                                value: "message.inbound",
+                            },
+                            {
+                                label: t(
+                                    "Message delivering — blocking, after the spam check; can shape the message and sees the verdict",
+                                ),
+                                value: "message.delivering",
+                            },
+                            {
+                                label: t(
+                                    "Message delivered (recommended) — fire after delivery, response ignored",
+                                ),
+                                value: "message.delivered",
+                            },
+                        ]}
+                        text={t(
+                            "Which point in the message's lifecycle fires this webhook, and whether it can influence delivery.",
+                        )}
+                        fullWidth
+                    />
+                    <RhfSelect
+                        label={t("Payload format")}
+                        name="format"
+                        options={[
+                            {
+                                label: t("Raw .eml (message/rfc822)"),
+                                value: "eml",
+                            },
+                            {
+                                label: t("JMAP Email (full message, RFC 8621)"),
+                                value: "jmap",
+                            },
+                            {
+                                label: t("JMAP Email (metadata only, no body)"),
+                                value: "jmap_metadata",
+                            },
+                        ]}
+                        text={t("What we post in the request body.")}
+                        fullWidth
+                    />
+                </div>
+
+                <div className="webhook-integration-form__section">
+                    <h3>{t("Authentication")}</h3>
+                    <RhfSelect
+                        label={t("Method")}
                         name="auth_method"
                         options={[
                             {
@@ -322,104 +376,42 @@ export const WebhookIntegrationForm = ({
                         )}
                         fullWidth
                     />
+                    {isEditing && (
+                        <>
+                            <Banner type="info">
+                                {t(
+                                    "Regenerating the credential invalidates the old one immediately. The receiver must be updated with the new value before it can verify webhooks again.",
+                                )}
+                            </Banner>
+                            <Button
+                                type="button"
+                                variant="secondary"
+                                onClick={onRegenerate}
+                                disabled={regenerateMutation.isPending}
+                                className="webhook-integration-form__regenerate"
+                            >
+                                {t("Regenerate credential")}
+                            </Button>
+                        </>
+                    )}
                 </div>
 
-                <div className="webhook-integration-form__section">
-                    <h3>{t("Behavior")}</h3>
-                    {/* One flat trigger: a lifecycle event whose name says
-                        both when it fires and whether it blocks delivery. */}
-                    <RhfSelect
-                        label={t("Trigger")}
-                        name="trigger"
-                        options={[
-                            {
-                                label: t(
-                                    "Message delivered (recommended) — fire after delivery, response ignored",
-                                ),
-                                value: "message.delivered",
-                            },
-                            {
-                                label: t(
-                                    "Message delivering — blocking, after the spam check; can shape the message and sees the verdict",
-                                ),
-                                value: "message.delivering",
-                            },
-                            {
-                                label: t(
-                                    "Message inbound — blocking, before the spam check; can shape the message before it is scanned",
-                                ),
-                                value: "message.inbound",
-                            },
-                        ]}
-                        text={t(
-                            "Which point in the message's lifecycle fires this webhook, and whether it can influence delivery.",
+                <p className="webhook-integration-form__doc-link">
+                    <a
+                        href="https://github.com/suitenumerique/messages/blob/main/docs/webhooks.md"
+                        target="_blank"
+                        rel="noopener noreferrer"
+                    >
+                        {t(
+                            "Read the webhook documentation for all technical details",
                         )}
-                        fullWidth
-                    />
-                    <RhfSelect
-                        label={t("Payload format")}
-                        name="format"
-                        options={[
-                            {
-                                label: t("Raw .eml (message/rfc822)"),
-                                value: "eml",
-                            },
-                            {
-                                label: t("JMAP Email JSON (RFC 8621)"),
-                                value: "jmap",
-                            },
-                            {
-                                label: t("JMAP Email metadata (notification only)"),
-                                value: "jmap_metadata",
-                            },
-                        ]}
-                        text={t(
-                            "Body posted to the endpoint. Envelope metadata is always sent as X-StMsg-* headers.",
-                        )}
-                        fullWidth
-                    />
-                    <Banner type="info">
-                        <p>
-                            <strong>
-                                {t(
-                                    "Message delivered (default) is the safe choice:",
-                                )}
-                            </strong>{" "}
-                            {t(
-                                "we POST and ignore the response. Receivers cannot affect the message.",
-                            )}
-                        </p>
-                        <p>
-                            <strong>
-                                {t(
-                                    "Blocking triggers let the receiver act on this single message",
-                                )}
-                            </strong>{" "}
-                            {t(
-                                "by returning a JSON body. Available actions (all scoped to the message being received): drop / retry the delivery, override the spam verdict, attach labels, assign users by email, mark starred / read / trashed / archived, suppress the autoreply, add an internal comment to the thread, and create a draft reply from a template. Use blocking only with receivers you trust.",
-                            )}
-                        </p>
-                    </Banner>
-                </div>
-
-                {isEditing && (
-                    <div className="webhook-integration-form__section">
-                        <h3>{t("Authentication")}</h3>
-                        <Banner type="info">
-                            {t(
-                                "Regenerating the credential invalidates the old one immediately. The receiver must be updated with the new value before it can verify webhooks again.",
-                            )}
-                        </Banner>
-                        <Button
-                            type="button"
-                            variant="secondary"
-                            onClick={onRegenerate}
-                            disabled={regenerateMutation.isPending}
-                        >
-                            {t("Regenerate credential")}
-                        </Button>
-                    </div>
-                )}
+                        <Icon
+                            name="open_in_new"
+                            type={IconType.OUTLINED}
+                            size={IconSize.SMALL}
+                        />
+                    </a>
+                </p>
 
                 {error && <Banner type="error">{error}</Banner>}
 
@@ -438,17 +430,6 @@ export const WebhookIntegrationForm = ({
                             : t("Create integration")}
                     </Button>
                 </div>
-
-                {!isEditing && (
-                    <div className="webhook-integration-form__section webhook-integration-form__section--info">
-                        <Icon name="info" type={IconType.OUTLINED} />
-                        <p>
-                            {t(
-                                "Your endpoint will receive a JSON payload containing the parsed message (from, to, subject, body, headers, …).",
-                            )}
-                        </p>
-                    </div>
-                )}
             </form>
         </FormProvider>
     );
