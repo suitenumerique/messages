@@ -48,7 +48,7 @@ def strip_brackets(raw: str) -> str:
     return raw
 
 
-def validate_envelope_address(
+def validate_envelope_address(  # noqa: PLR0912
     raw: str,
     *,
     allow_empty: bool,
@@ -74,7 +74,17 @@ def validate_envelope_address(
             smtp_text="5.1.3 Empty recipient address not allowed",
         )
 
-    # ----- 1. control / CRLF / NUL injection ---------------------------------
+    # ----- 1a. residual angle brackets ---------------------------------------
+    # strip_brackets only removes a balanced outer pair; any leftover '<' or '>'
+    # means the address is malformed (unbalanced or nested brackets).
+    if "<" in address or ">" in address:
+        raise AddressError(
+            reason="bad_address",
+            smtp_code=501,
+            smtp_text="5.1.3 Malformed address syntax",
+        )
+
+    # ----- 1b. control / CRLF / NUL injection --------------------------------
     bad = _FORBIDDEN_CHARS & set(address)
     if bad:
         raise AddressError(

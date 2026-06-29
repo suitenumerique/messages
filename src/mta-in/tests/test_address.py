@@ -80,6 +80,27 @@ def test_null_sender_rejected_for_rcpt():
 
 
 # ---------------------------------------------------------------------------
+# Residual / unbalanced angle brackets
+# ---------------------------------------------------------------------------
+
+
+@pytest.mark.parametrize(
+    "address",
+    [
+        "<<user@example.com>>",
+        "<user@example.com",
+        "user@example.com>",
+        "<user@example.com>extra",
+    ],
+)
+def test_residual_brackets_rejected(address):
+    with pytest.raises(AddressError) as exc:
+        _validate(address)
+    assert exc.value.reason == "bad_address"
+    assert exc.value.smtp_code == 501
+
+
+# ---------------------------------------------------------------------------
 # Control characters / CRLF injection
 # ---------------------------------------------------------------------------
 

@@ -44,6 +44,12 @@ trap cleanup INT TERM
 
 if [ "${EXEC_CMD:-false}" = "true" ]; then
     start_pymta
+    status=$?
+    if [ "$status" -ne 0 ]; then
+        echo "ERROR: pymta failed to start, not executing command" >&2
+        cleanup
+        exit "$status"
+    fi
     "$@"
     status=$?
     cleanup

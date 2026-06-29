@@ -38,6 +38,8 @@ async def test_global_cap_blocks_when_total_reached():
     with pytest.raises(TooManyConnections) as exc:
         await gate._try_acquire("3.3.3.3")
     assert exc.value.scope == "global"
+    await gate._release("1.1.1.1")
+    await gate._release("2.2.2.2")
 
 
 @pytest.mark.asyncio
@@ -50,6 +52,9 @@ async def test_per_ip_cap_blocks_same_ip_only():
     assert exc.value.scope == "per_ip"
     # A different IP is still admitted.
     await gate._try_acquire("2.2.2.2")
+    await gate._release("1.1.1.1")
+    await gate._release("1.1.1.1")
+    await gate._release("2.2.2.2")
 
 
 @pytest.mark.asyncio
@@ -61,6 +66,7 @@ async def test_release_frees_slot_for_same_ip():
     await gate._release("1.1.1.1")
     # Slot freed — next acquire from the same IP succeeds.
     await gate._try_acquire("1.1.1.1")
+    await gate._release("1.1.1.1")
 
 
 @pytest.mark.asyncio
@@ -69,11 +75,8 @@ async def test_zero_disables_concurrency_caps():
     # Loopback test harness traffic comes from one IP; we must not throttle it.
     for _ in range(50):
         await gate._try_acquire("127.0.0.1")
-
-
-# ---------------------------------------------------------------------------
-# Per-IP new-session rate cap (new behaviour).
-# ---------------------------------------------------------------------------
+    for _ in range(50):
+        await gate._release("127.0.0.1")
 
 
 @pytest.mark.asyncio
@@ -176,6 +179,7 @@ async def test_global_cap_takes_precedence_over_rate_cap():
     assert exc.value.scope == "global"
     # The refused acquire must not have consumed 2.2.2.2's rate budget.
     assert "2.2.2.2" not in gate._rate_per_ip
+    await gate._release("1.1.1.1")
 
 
 @pytest.mark.asyncio
@@ -188,3 +192,4 @@ async def test_per_ip_concurrent_cap_takes_precedence_over_rate_cap():
     assert exc.value.scope == "per_ip"
     # Only the first (admitted) acquire should have been billed to the bucket.
     assert gate._rate_per_ip["1.1.1.1"][0] == 1
+    await gate._release("1.1.1.1")
