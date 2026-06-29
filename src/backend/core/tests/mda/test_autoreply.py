@@ -809,6 +809,11 @@ class TestSendAutoreplyForMessage:
         and the *detect* side (``_is_auto_reply_message``): a regression in
         either — a renamed header, a parser change — would reopen the loop,
         and the isolated unit tests on each side wouldn't catch it.
+
+        The ``should_send_autoreply`` gate is checked against a *different*
+        mailbox (with its own template) so the self-reply guard (sender ==
+        mailbox) can't mask a detection failure — the only path to ``None``
+        is the auto-reply header detection.
         """
         # pylint: disable-next=import-outside-toplevel
         from jmap_email import parse_email
@@ -825,7 +830,24 @@ class TestSendAutoreplyForMessage:
         assert _is_auto_reply_message(parsed) is True
         # ...and the full gate refuses to reply to it, so no loop can form
         # even if this message were delivered back to an autoresponding box.
-        assert should_send_autoreply(mailbox, parsed) is None
+        # Use a second mailbox (not the autoreply sender) with its own
+        # template so the self-reply skip can't mask a detection regression.
+        other_mailbox = factories.MailboxFactory()
+        if not other_mailbox.contact:
+            other_mailbox.contact = factories.ContactFactory(
+                email=str(other_mailbox), name="Other", mailbox=other_mailbox
+            )
+            other_mailbox.save()
+        factories.MessageTemplateFactory(
+            name="Other OOO",
+            type=MessageTemplateTypeChoices.AUTOREPLY,
+            mailbox=other_mailbox,
+            is_active=True,
+            metadata={"schedule_type": "always"},
+            html_body="<p>away</p>",
+            text_body="away",
+        )
+        assert should_send_autoreply(other_mailbox, parsed) is None
 
     @override_settings(MAX_OUTGOING_ATTACHMENT_SIZE=10)
     @patch("core.mda.outbound_tasks.send_message_task", new_callable=MagicMock)

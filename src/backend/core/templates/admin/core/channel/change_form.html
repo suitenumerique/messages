@@ -12,7 +12,7 @@
     <form method="post"
           action="{% url 'admin:core_channel_regenerate_secret' original.pk %}"
           style="display: inline;"
-          onsubmit="return confirm('Regenerate the secret for this channel? The previous secret will stop working immediately.');">
+          onsubmit="return confirm('{% blocktranslate %}Regenerate the secret for this channel? The previous secret will stop working immediately.{% endblocktranslate %}');">
         {% csrf_token %}
         <button type="submit" class="historylink">
             {% translate "Regenerate secret" %}

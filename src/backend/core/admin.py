@@ -593,7 +593,7 @@ class ChannelAdmin(admin.ModelAdmin):
         through signed-cookie message storage.
         """
         # pylint: disable=import-outside-toplevel
-        from core.enums import ChannelTypes
+        from core.enums import ChannelTypes, WebhookAuthMethod
 
         if request.method != "POST":
             return HttpResponseNotAllowed(["POST"])
@@ -606,6 +606,21 @@ class ChannelAdmin(admin.ModelAdmin):
             messages.error(
                 request,
                 "Only api_key and webhook channels can have their secret regenerated.",
+            )
+            return redirect("..")
+        # Guard before rotating: a webhook channel whose auth_method isn't
+        # one ``get_webhook_surfaced_credential`` knows how to surface would
+        # have its old secret invalidated by ``rotate_secret`` while the
+        # freshly minted one can't be handed back — permanently bricking the
+        # webhook. Reject up front, mirroring the DRF regenerate flow.
+        if (
+            channel.type == ChannelTypes.WEBHOOK
+            and (channel.settings or {}).get("auth_method") not in WebhookAuthMethod
+        ):
+            messages.error(
+                request,
+                "Webhook auth_method must be 'jwt' or 'api_key' before "
+                "the secret can be rotated.",
             )
             return redirect("..")
 

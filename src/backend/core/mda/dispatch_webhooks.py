@@ -153,9 +153,13 @@ def _read_capped_body(response, deadline: Optional[float] = None) -> bytes:
                 break
             chunks.append(chunk)
             received += len(chunk)
-    except TimeoutError:
-        raise
     except Exception as exc:
+        # TimeoutError MUST propagate so the caller treats it as RETRY.
+        # Everything else (network blip mid-stream) is logged silently —
+        # the body we have so far (possibly empty) is returned and the
+        # caller classifies it as a benign empty-body CONTINUE.
+        if isinstance(exc, TimeoutError):
+            raise
         # Don't interpolate ``exc`` — its text can echo the request URL or
         # body and leak receiver secrets into logs. The type name is enough.
         logger.warning("Truncated response body read failed (%s)", type(exc).__name__)
@@ -985,4 +989,18 @@ def webhook_steps_for_mailbox(
             )
             continue
         steps.append(UserWebhookStep(channel, phase=phase))
+
+    # Within the after-spam phase, blocking triggers (message.delivering)
+    # must run before non-blocking ones (message.delivered) so the latter
+    # records the final ``ctx.is_spam`` — a delivering webhook that
+    # overrides the verdict after a delivered webhook has already captured
+    # it would leave the non-blocking dispatch with a stale value.
+    if phase == PHASE_AFTER_SPAM:
+        steps.sort(
+            key=lambda s: (
+                s.channel.settings.get("trigger")
+                == enums.WebhookTrigger.MESSAGE_DELIVERING
+            ),
+            reverse=True,
+        )
     return steps

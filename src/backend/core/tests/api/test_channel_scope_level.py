@@ -1032,8 +1032,8 @@ class TestUserChannelViewSet:
             format="json",
         )
         assert response.status_code == 201, response.content
-        # No HMAC secret generation yet — that scaffolding lands with the
-        # delivery pipeline. The response carries the row id only.
+        # The one-time signing secret is surfaced for jwt auth_method.
+        assert "secret" in response.data
         assert "hmac_secret" not in response.data
         created = models.Channel.objects.get(pk=response.data["id"])
         assert created.scope_level == ChannelScopeLevel.USER

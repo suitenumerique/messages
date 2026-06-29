@@ -14,7 +14,7 @@
   "Edit Webhook": "Webhook bewerken",
   "Endpoint": "Endpoint",
   "Forward every incoming message to a URL of your choice.": "Stuur elk binnenkomend bericht door naar een URL naar keuze.",
-  "How the receiver authenticates our requests. The credential is shown once at creation.": "Hoe de ontvanger onze verzoeken authenticeert. Het geheim wordt eenmalig getoond bij het aanmaken.",
+  "How the receiver authenticates our requests. The credential is shown once at creation.": "Hoe de ontvanger onze verzoeken authenticeert. De toegangsgegevens worden eenmalig getoond bij het aanmaken.",
   "JMAP Email JSON (RFC 8621)": "JMAP Email JSON (RFC 8621)",
   "JMAP Email metadata (notification only)": "JMAP Email-metadata (alleen melding)",
   "Non-blocking (default) is the safe choice:": "Niet-blokkerend (standaard) is de veilige keuze:",
@@ -566,6 +566,6 @@
   "Your email...": "Jouw email...",
   "Your session has expired. Please log in again.": "Je sessie is verlopen. Log opnieuw in.",
   "URL must start with https://": "URL moet beginnen met https://",
-  "Regenerate credential": "Geheim opnieuw genereren",
-  "Regenerating the credential invalidates the old one immediately. The receiver must be updated with the new value before it can verify webhooks again.": "Het opnieuw genereren van het geheim maakt het oude direct ongeldig. De ontvanger moet met de nieuwe waarde worden bijgewerkt voordat webhooks weer geverifieerd kunnen worden."
+  "Regenerate credential": "Toegangsgegevens opnieuw genereren",
+  "Regenerating the credential invalidates the old one immediately. The receiver must be updated with the new value before it can verify webhooks again.": "Het opnieuw genereren van de toegangsgegevens maakt de oude direct ongeldig. De ontvanger moet met de nieuwe waarde worden bijgewerkt voordat webhooks weer geverifieerd kunnen worden."
 }

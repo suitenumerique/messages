@@ -235,8 +235,8 @@ export const WebhookIntegrationForm = ({
     // credential is only ever returned once.
     if (createdCredential) {
         return (
-            <div className="widget-integration-form">
-                <div className="widget-integration-form__section">
+            <div className="webhook-integration-form">
+                <div className="webhook-integration-form__section">
                     <h3>{t("Save this credential now")}</h3>
                     <Banner type="warning">
                         {t(
@@ -244,7 +244,7 @@ export const WebhookIntegrationForm = ({
                         )}
                     </Banner>
                     <label
-                        className="widget-integration-form__credential-label"
+                        className="webhook-integration-form__credential-label"
                         htmlFor="webhook-credential-value"
                     >
                         {createdCredential.label}
@@ -255,7 +255,7 @@ export const WebhookIntegrationForm = ({
                         aria-label={createdCredential.label}
                     />
                 </div>
-                <div className="widget-integration-form__actions">
+                <div className="webhook-integration-form__actions">
                     <Button type="button" onClick={onClose}>
                         {t("Done")}
                     </Button>
@@ -268,9 +268,9 @@ export const WebhookIntegrationForm = ({
         <FormProvider {...form}>
             <form
                 onSubmit={handleSubmit(onSubmit)}
-                className="widget-integration-form"
+                className="webhook-integration-form"
             >
-                <div className="widget-integration-form__section">
+                <div className="webhook-integration-form__section">
                     <h3>{t("General")}</h3>
                     <RhfInput
                         label={t("Name")}
@@ -286,7 +286,7 @@ export const WebhookIntegrationForm = ({
                     />
                 </div>
 
-                <div className="widget-integration-form__section">
+                <div className="webhook-integration-form__section">
                     <h3>{t("Endpoint")}</h3>
                     <RhfInput
                         label={t("URL")}
@@ -324,7 +324,7 @@ export const WebhookIntegrationForm = ({
                     />
                 </div>
 
-                <div className="widget-integration-form__section">
+                <div className="webhook-integration-form__section">
                     <h3>{t("Behavior")}</h3>
                     {/* One flat trigger: a lifecycle event whose name says
                         both when it fires and whether it blocks delivery. */}
@@ -403,7 +403,7 @@ export const WebhookIntegrationForm = ({
                 </div>
 
                 {isEditing && (
-                    <div className="widget-integration-form__section">
+                    <div className="webhook-integration-form__section">
                         <h3>{t("Authentication")}</h3>
                         <Banner type="info">
                             {t(
@@ -423,7 +423,7 @@ export const WebhookIntegrationForm = ({
 
                 {error && <Banner type="error">{error}</Banner>}
 
-                <div className="widget-integration-form__actions">
+                <div className="webhook-integration-form__actions">
                     <Button type="button" variant="secondary" onClick={onClose}>
                         {t("Cancel")}
                     </Button>
@@ -440,7 +440,7 @@ export const WebhookIntegrationForm = ({
                 </div>
 
                 {!isEditing && (
-                    <div className="widget-integration-form__section widget-integration-form__section--info">
+                    <div className="webhook-integration-form__section webhook-integration-form__section--info">
                         <Icon name="info" type={IconType.OUTLINED} />
                         <p>
                             {t(

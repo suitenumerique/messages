@@ -2981,3 +2981,110 @@ class TestFinalizeStepIsolation:
         # Labels still got attached even though assigns raised.
         assert label in list(message.thread.labels.all())
         mock_apply_assigns.assert_called_once()
+
+
+@pytest.mark.django_db
+class TestQuarantineDelivery:
+    """When a blocking webhook fails persistently past ``QUARANTINE_AFTER``,
+    the message is delivered anyway — stamped with the ``X-StMsg-Processing-
+    Failed`` marker, forced to the inbox (``is_spam=False``), and the
+    autoreply is suppressed."""
+
+    @patch("core.mda.autoreply.try_send_autoreply")
+    @patch("core.mda.inbound_pipeline._call_rspamd")
+    @patch("core.mda.dispatch_webhooks.SSRFSafeSession")
+    def test_quarantine_delivers_message_past_window(
+        self, mock_session, mock_rspamd, mock_autoreply
+    ):
+        mailbox = factories.MailboxFactory()
+        raw_data = (
+            b"From: sender@example.com\r\n"
+            b"To: " + str(mailbox).encode() + b"\r\n"
+            b"Subject: quarantine\r\n"
+            b"Message-ID: <quarantine-test@example.com>\r\n\r\nbody"
+        )
+        inbound_message = models.InboundMessage.objects.create(
+            mailbox=mailbox, raw_data=raw_data
+        )
+        # Push ``created_at`` past the 48-hour quarantine window so the
+        # task takes the age > QUARANTINE_AFTER branch on first attempt.
+        models.InboundMessage.objects.filter(id=inbound_message.id).update(
+            created_at=dj_timezone.now() - QUARANTINE_AFTER - timedelta(hours=1)
+        )
+        inbound_message.refresh_from_db()
+
+        factories.ChannelFactory(
+            type=enums.ChannelTypes.WEBHOOK,
+            mailbox=mailbox,
+            settings={
+                "url": "https://hook.example.com",
+                "trigger": "message.delivering",
+                "auth_method": "jwt",
+            },
+        )
+        mock_rspamd.return_value = (False, None, None)
+        # Non-2xx triggers RETRY from the blocking webhook.
+        mock_session.return_value.post.return_value = _make_response(503)
+
+        with patch.object(process_inbound_message_task, "update_state", Mock()):
+            result = process_inbound_message_task.run(str(inbound_message.id))
+
+        # Message delivered despite the blocking webhook failing.
+        assert result["success"] is True
+        assert result["is_spam"] is False
+        message = models.Message.objects.get(mime_id="quarantine-test@example.com")
+
+        # X-StMsg-Processing-Failed stamp is embedded in the stored MIME.
+        blob_content = message.blob.get_content()
+        assert b"X-StMsg-Processing-Failed: true" in blob_content
+
+        # Autoreply suppressed for quarantined messages.
+        mock_autoreply.assert_not_called()
+
+    @patch("core.mda.autoreply.try_send_autoreply")
+    @patch("core.mda.inbound_pipeline._call_rspamd")
+    @patch("core.mda.dispatch_webhooks.SSRFSafeSession")
+    def test_quarantine_force_is_spam_false(
+        self, mock_session, mock_rspamd, mock_autoreply
+    ):
+        """Even when the pipeline sets is_spam=True (e.g. rspamd), the
+        quarantine path forces is_spam=False so the message lands in the
+        inbox where the recipient sees the warning banner."""
+        mailbox = factories.MailboxFactory()
+        raw_data = (
+            b"From: spammer@example.com\r\n"
+            b"To: " + str(mailbox).encode() + b"\r\n"
+            b"Subject: quarantine spam\r\n"
+            b"Message-ID: <quarantine-spam@example.com>\r\n\r\nbody"
+        )
+        inbound_message = models.InboundMessage.objects.create(
+            mailbox=mailbox, raw_data=raw_data
+        )
+        models.InboundMessage.objects.filter(id=inbound_message.id).update(
+            created_at=dj_timezone.now() - QUARANTINE_AFTER - timedelta(hours=1)
+        )
+        inbound_message.refresh_from_db()
+
+        factories.ChannelFactory(
+            type=enums.ChannelTypes.WEBHOOK,
+            mailbox=mailbox,
+            settings={
+                "url": "https://hook.example.com",
+                "trigger": "message.delivering",
+                "auth_method": "jwt",
+            },
+        )
+        # Rspamd votes spam, webhook errors → RETRY → quarantine should
+        # still force is_spam=False.
+        mock_rspamd.return_value = (True, None, None)
+        mock_session.return_value.post.return_value = _make_response(503)
+
+        with patch.object(process_inbound_message_task, "update_state", Mock()):
+            result = process_inbound_message_task.run(str(inbound_message.id))
+
+        assert result["success"] is True
+        assert result["is_spam"] is False
+        message = models.Message.objects.get(mime_id="quarantine-spam@example.com")
+        blob_content = message.blob.get_content()
+        assert b"X-StMsg-Processing-Failed: true" in blob_content
+        mock_autoreply.assert_not_called()

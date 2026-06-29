@@ -39,7 +39,6 @@ from enum import IntEnum
 from typing import Any, Callable, Dict, List, Optional, Set, Tuple
 
 from django.db.models import Q
-from django.db.models.functions import Lower
 from django.utils import timezone
 
 import requests
@@ -476,11 +475,10 @@ def _resolve_assignable_users(
 ) -> List[Dict[str, Any]]:
     """Resolve OIDC emails → user dicts ready for ``assign_users``.
 
-    A single SQL query case-folds both sides (``Lower("email")``) and
-    fetches all matching users at once — no N+1. Ambiguity (≥2 users
-    sharing one email) and unknown emails are logged and skipped.
-    NEVER auto-creates users: a webhook receiver must not be able to
-    pollute the ``User`` table.
+    A single SQL query fetches all matching users at once via
+    ``email__in`` — no N+1. Ambiguity (≥2 users sharing one email) and
+    unknown emails are logged and skipped. NEVER auto-creates users: a
+    webhook receiver must not be able to pollute the ``User`` table.
 
     The survivors are then filtered to users that currently hold one
     of the assignable mailbox roles on this thread (editor / sender /
@@ -499,9 +497,9 @@ def _resolve_assignable_users(
         return []
 
     matches = list(
-        models.User.objects.annotate(_lemail=Lower("email"))
-        .filter(_lemail__in=target_emails)
-        .only("id", "email", "full_name")
+        models.User.objects.filter(email__in=target_emails).only(
+            "id", "email", "full_name"
+        )
     )
 
     # Group by lowercased email to detect ambiguity per address.

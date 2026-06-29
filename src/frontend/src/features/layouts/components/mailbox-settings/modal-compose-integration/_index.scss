@@ -109,20 +109,23 @@
     color: var(--c--contextuals--content--semantic--neutral--tertiary);
 }
 
-// Widget Integration Form
-.widget-integration-form {
+// Widget & Webhook Integration Forms (shared layout)
+.widget-integration-form,
+.webhook-integration-form {
     display: flex;
     flex-direction: column;
     gap: var(--c--globals--spacings--lg);
 }
 
-.widget-integration-form__header {
+.widget-integration-form__header,
+.webhook-integration-form__header {
     display: flex;
     align-items: center;
     gap: var(--c--globals--spacings--base);
 }
 
-.widget-integration-form__section {
+.widget-integration-form__section,
+.webhook-integration-form__section {
     display: flex;
     flex-direction: column;
     gap: var(--c--globals--spacings--sm);
@@ -154,13 +157,15 @@
     }
 }
 
-.widget-integration-form__section-description {
+.widget-integration-form__section-description,
+.webhook-integration-form__section-description {
     font-size: 0.85rem;
     color: var(--c--contextuals--content--semantic--neutral--secondary);
     margin: 0;
 }
 
-.widget-integration-form__snippet {
+.widget-integration-form__snippet,
+.webhook-integration-form__snippet {
     position: relative;
     background: var(--c--contextuals--background--surface--tertiary);
     border: 1px solid var(--c--contextuals--border--semantic--neutral--tertiary);
@@ -187,7 +192,8 @@
     }
 }
 
-.widget-integration-form__doc-link {
+.widget-integration-form__doc-link,
+.webhook-integration-form__doc-link {
     margin: 0;
 
     a {
@@ -204,13 +210,22 @@
     }
 }
 
-.widget-integration-form__actions {
+.widget-integration-form__actions,
+.webhook-integration-form__actions {
     display: flex;
     align-items: center;
     justify-content: flex-end;
     gap: var(--c--globals--spacings--sm);
     padding-top: var(--c--globals--spacings--base);
     border-top: 1px solid var(--c--contextuals--border--semantic--neutral--default);
+}
+
+// Credential label (webhook-only: the one-time secret display)
+.webhook-integration-form__credential-label {
+    font-size: 0.9rem;
+    font-weight: 600;
+    margin: 0;
+    color: var(--c--contextuals--content--semantic--neutral--primary);
 }
 
 // Tags Selector (reuses labels-widget and cunningham styles)

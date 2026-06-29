@@ -218,10 +218,13 @@ export const ThreadEvent = ({ event, isCondensed = false, onEdit, onDelete, ment
     };
 
     if (isIMEvent(event)) {
-        // Prefer ``author_display`` so webhook/channel-authored events (which
-        // have no ``author``) get a stable color from their displayed name
-        // instead of falling back to an empty string.
-        const authorName = event.author_display || event.author?.full_name || event.author?.email || "";
+        // Single shared label for both the color hash and the rendered
+        // header — ``author_display`` (set server-side for webhook/channel
+        // events) takes priority, then the human author's name/email, then
+        // "Unknown". Without this, stale payloads that lack
+        // ``author_display`` but have a real ``author.full_name`` would
+        // render "Unknown" while the color hash used the real name.
+        const authorName = event.author_display || event.author?.full_name || event.author?.email || t("Unknown");
         const avatarColor = getAvatarColor(authorName);
         const isMentioned = user
             ? event.data?.mentions?.map((m) => m.id)?.includes(user.id)
@@ -258,8 +261,8 @@ export const ThreadEvent = ({ event, isCondensed = false, onEdit, onDelete, ment
                     {!isCondensed && (
                         <div className="thread-event__header">
                             <span className="thread-event__author">
-                                <UserAvatar fullName={event.author_display || t("Unknown")} size="xsmall" />
-                                {event.author_display || t("Unknown")}
+                                <UserAvatar fullName={authorName} size="xsmall" />
+                                {authorName}
                             </span>
                             <span className="thread-event__time">
                                 {t('{{date}} at {{time}}', {

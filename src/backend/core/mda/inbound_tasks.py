@@ -203,11 +203,10 @@ def process_inbound_message_task(self, inbound_message_id: str):
         raw_data_bytes = inbound_message.get_raw_bytes()
         parsed_email = parse_email(raw_data_bytes)
         if parsed_email is None:
-            error_msg = "Failed to parse email message"
-            logger.error(error_msg)
-            inbound_message.error_message = error_msg
-            inbound_message.save(update_fields=["error_message"])
-            return {"success": False, "error": error_msg}
+            # A deterministic parse failure never succeeds on retry —
+            # route through ``_retry_or_abandon`` so it's bounded by the
+            # quarantine window instead of looping on every 5-min sweep.
+            return _retry_or_abandon(inbound_message, "Failed to parse email message")
 
         mailbox = inbound_message.mailbox
         recipient_email = str(mailbox)
