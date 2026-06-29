@@ -5,6 +5,8 @@ import { BlockNoteEditor, BlockNoteEditorOptions, BlockNoteSchema, defaultBlockS
 import { MessageTemplateSelector } from '@/features/blocknote/message-template-block';
 import { imageBlockSpec, ALLOWED_IMAGE_MIME_TYPES } from '@/features/blocknote/image-block';
 import { EmailExporter } from '@/features/blocknote/email-exporter';
+import { blocksToMarkdown } from '@/features/blocknote/markdown-exporter';
+
 import { FieldProps } from '@gouvfr-lasuite/cunningham-react';
 import { useFormContext } from 'react-hook-form';
 import React, { useEffect, useImperativeHandle, useRef } from 'react';
@@ -257,7 +259,7 @@ export const MessageComposer = React.forwardRef<MessageComposerHandle, MessageCo
     useImperativeHandle(ref, () => ({
         exportContent: async () => {
             const blocks = editor.document;
-            const textBody = await editor.blocksToMarkdownLossy(blocks);
+            const textBody = await blocksToMarkdown(editor, blocks);
             const htmlBody = emailExporter.exportBlocks(blocks, editor.domElement ?? null);
             return { htmlBody, textBody };
         },
@@ -380,35 +382,26 @@ export const MessageComposer = React.forwardRef<MessageComposerHandle, MessageCo
 
         // Add signature block if we have a signature to use
         if (signatureToUse) {
-            let cancelled = false;
-
-            const insertSignature = async () => {
-                // Ensure a draft exists so placeholders can be resolved immediately
-                const resolvedMessageId = draft?.id ?? await ensureDraft?.();
-                if (cancelled) return;
-
-                const signatureBlock = {
-                    id: "signature",
-                    type: "signature" as const,
-                    props: {
-                        templateId: signatureToUse.id,
-                        mailboxId: mailboxId,
-                        messageId: resolvedMessageId,
-                    }
-                };
-
-                // Put signature at the end of the document or before the quote block if it exists
-                MessageComposerHelper.insertSignatureBlock(editor, signatureBlock);
-
-                // Set the signatureId in the form
-                form.setValue('signatureId', signatureToUse.id);
+            // Insert the signature without forcing a draft to exist: an empty
+            // new message must not create a draft just because a default
+            // signature applies. The block's `messageId` is patched later by
+            // the effect below once the user enters content and a draft is born,
+            // which is when placeholders get resolved.
+            const signatureBlock = {
+                id: "signature",
+                type: "signature" as const,
+                props: {
+                    templateId: signatureToUse.id,
+                    mailboxId: mailboxId,
+                    messageId: draft?.id,
+                }
             };
 
-            insertSignature().catch((error) => {
-                console.warn("Failed to insert signature:", error);
-            });
+            // Put signature at the end of the document or before the quote block if it exists
+            MessageComposerHelper.insertSignatureBlock(editor, signatureBlock);
 
-            return () => { cancelled = true; };
+            // Set the signatureId in the form
+            form.setValue('signatureId', signatureToUse.id);
         } else {
             // Set signatureId to undefined after a microtask to avoid flushSync issues
             form.setValue('signatureId', undefined);
@@ -475,7 +468,6 @@ export const MessageComposer = React.forwardRef<MessageComposerHandle, MessageCo
                         isLoading={isLoadingSignatures}
                         mailboxId={mailboxId}
                         messageId={draft?.id}
-                        ensureDraft={ensureDraft}
                         defaultSelected={draft?.signature?.id}
                     />
                 </Toolbar>
@@ -487,4 +479,3 @@ export const MessageComposer = React.forwardRef<MessageComposerHandle, MessageCo
 });
 
 MessageComposer.displayName = 'MessageComposer';
-

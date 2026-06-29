@@ -1,4 +1,5 @@
-import { Icon, IconSize, Spinner } from "@gouvfr-lasuite/ui-kit";
+import { Spinner } from "@gouvfr-lasuite/ui-kit";
+import { Trash } from "@gouvfr-lasuite/ui-kit/icons";
 import { Button, Column, DataGrid, useModal, useModals } from "@gouvfr-lasuite/cunningham-react";
 import { useTranslation } from "react-i18next";
 import { useState } from "react";
@@ -74,23 +75,24 @@ export const MessageTemplateDataGrid = ({ mailbox }: MessageTemplateDataGridProp
         },
         {
             id: "actions",
-            size: 154,
+            size: 130,
             headerName: t("Actions"),
             renderCell: ({ row }) => (
                 <div className="flex-row flex-justify-start" style={{ width: "100%", gap: "var(--c--globals--spacings--2xs)" }}>
                     <Button
-                        variant="bordered"
-                        size="small"
+                        variant="tertiary"
+                        size="nano"
                         onClick={() => handleModifyRow(row)}
                     >
                         {t("Modify")}
                     </Button>
                     <Button
                         color="error"
-                        size="small"
+                        variant="tertiary"
+                        size="nano"
                         onClick={() => handleDeleteRow(row)}
                         disabled={isDeleting}
-                        icon={isDeleting ? <Spinner size="sm" /> : <Icon name="delete" size={IconSize.SMALL} />}
+                        icon={isDeleting ? <Spinner size="sm" /> : <Trash size="small" />}
                         aria-label={t("Delete")}
                     />
                 </div>
@@ -119,24 +121,23 @@ export const MessageTemplateDataGrid = ({ mailbox }: MessageTemplateDataGridProp
     }
 
     return (
-        <section className="admin-page__body">
-            <div className="admin-data-grid">
-                <DataGrid
-                    columns={columns}
-                    rows={templates?.data ?? []}
-                    onSortModelChange={() => undefined}
-                    enableSorting={false}
-                    emptyPlaceholderLabel={t("No template found")}
-                />
-                <ModalComposeTemplate
-                    isOpen={modal.isOpen}
-                    onClose={() => {
-                        modal.close();
-                        setSelectedTemplate(undefined);
-                    }}
-                    template={selectedTemplate}
-                />
-            </div>
-        </section>
+        <div className="admin-data-grid">
+            <DataGrid
+                columns={columns}
+                rows={templates?.data ?? []}
+                onSortModelChange={() => undefined}
+                enableSorting={false}
+                emptyPlaceholderLabel={t("No templates")}
+            />
+            <ModalComposeTemplate
+                isOpen={modal.isOpen}
+                onClose={() => {
+                    modal.close();
+                    setSelectedTemplate(undefined);
+                }}
+                mailbox={mailbox}
+                template={selectedTemplate}
+            />
+        </div>
     );
 };

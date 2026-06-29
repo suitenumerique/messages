@@ -126,6 +126,8 @@ class TestResolvePlaceholder:
         response = client.get(resolve_url(draft.id))
         assert response.status_code == status.HTTP_200_OK
         assert response.data["name"] == "Mairie de Brigny"
+        # user_name resolves to the authenticated user, distinct from the mailbox.
+        assert response.data["user_name"] == "John Doe"
         assert response.data["job_title"] == "Adjointe"
 
     @patch(

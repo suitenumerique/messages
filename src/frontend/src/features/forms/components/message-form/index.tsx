@@ -1,7 +1,7 @@
 import { Icon, IconType, Spinner } from "@gouvfr-lasuite/ui-kit";
 import { Button, Tooltip, useModals } from "@gouvfr-lasuite/cunningham-react";
 import { clsx } from "clsx";
-import { useEffect, useMemo, useState, useRef } from "react";
+import { useEffect, useMemo, useState, useRef, forwardRef, useImperativeHandle } from "react";
 import { FormProvider, useForm, useWatch } from "react-hook-form";
 import { useTranslation } from "react-i18next";
 import z from "zod";
@@ -14,7 +14,7 @@ import { RhfInput, RhfSelect } from "../react-hook-form";
 import { addToast, ToasterItem } from "@/features/ui/components/toaster";
 import { toast } from "react-toastify";
 import { useSentBox } from "@/features/providers/sent-box";
-import { useRouter } from "next/router";
+import { useLocation, useNavigate } from "@tanstack/react-router";
 import { AttachmentUploader } from "./attachment-uploader";
 import { DateHelper } from "@/features/utils/date-helper";
 import { Banner } from "@/features/ui/components/banner";
@@ -23,10 +23,11 @@ import useAbility, { Abilities } from "@/hooks/use-ability";
 import i18n from "@/features/i18n/initI18n";
 import { DropdownButton } from "@/features/ui/components/dropdown-button";
 import { PREFER_SEND_MODE_KEY, PreferSendMode } from "@/features/config/constants";
-import { useSearchParams } from "next/navigation";
+import { useUrlSearchParams } from "@/hooks/use-url-search-params";
 import { useConfig } from "@/features/providers/config";
 import { DriveFile } from "./drive-attachment-picker";
 import { useAttachments } from "@/features/forms/hooks/use-attachments";
+import { MessageComposerHelper } from "@/features/utils/composer-helper";
 
 export type MessageFormMode = "new" | "reply" | "reply_all" | "forward";
 
@@ -39,6 +40,10 @@ interface MessageFormProps {
     // For new message mode
     showSubject?: boolean;
     onSuccess?: () => void;
+    // Notifies the parent whether the current user may delete this draft, so a
+    // surrounding surface (e.g. the draft header menu) can mirror the same
+    // mailbox + thread permission check used to gate the in-form delete button.
+    onDeletableChange?: (deletable: boolean) => void;
 }
 
 // Zod schema for form validation
@@ -71,22 +76,44 @@ const messageFormSchema = z.object({
 
 export type MessageFormValues = z.infer<typeof messageFormSchema>;
 
+// Imperative handle so a parent (e.g. the draft compose surface header) can
+// trigger the form's coordinated draft deletion instead of duplicating its
+// autosave-aware logic.
+export type MessageFormHandle = {
+    deleteDraft: () => void;
+};
+
 const DRAFT_TOAST_ID = "MESSAGE_FORM_DRAFT_TOAST";
 
-export const MessageForm = ({
+export const MessageForm = forwardRef<MessageFormHandle, MessageFormProps>(({
     parentMessage,
     mode = "new",
     onClose,
     draftMessage,
-    onSuccess
-}: MessageFormProps) => {
+    onSuccess,
+    onDeletableChange
+}, ref) => {
     const { t } = useTranslation();
-    const router = useRouter();
-    const searchParams = useSearchParams();
+    const navigate = useNavigate();
+    const location = useLocation();
+    const searchParams = useUrlSearchParams();
     const config = useConfig();
     const modals = useModals();
     const composerRef = useRef<MessageComposerHandle>(null);
     const [draft, setDraftState] = useState<Message | undefined>(draftMessage);
+    const {
+      selectedMailbox,
+      selectedThread,
+      mailboxes,
+      removeMessages,
+      patchMessages,
+      invalidateMailbox,
+      invalidateThreadList,
+      invalidateThreadsStats,
+      unselectThread,
+      unpinThreads,
+      pinThreads
+    } = useMailboxContext();
     // Synchronous mirror of `draft`. `saveDraftInner` may be re-entered (via
     // composer onChange firing right after `ensureDraft` resolves) before
     // React commits the previous setDraft, so the closure-captured `draft`
@@ -106,7 +133,6 @@ export const MessageForm = ({
     const autoSaveTimerRef = useRef<NodeJS.Timeout | null>(null);
     const saveDraftRef = useRef<() => void>(() => {});
     const quoteType: QuoteType | undefined = mode !== "new" ? (mode === "forward" ? "forward" : "reply") : undefined;
-    const { selectedMailbox, selectedThread, mailboxes, removeMessages, invalidateMailbox, invalidateThreadsStats, unselectThread, unpinThreads, pinThreads } = useMailboxContext();
     const hideSubjectField = Boolean(draftMessage?.parent_id ?? parentMessage);
     // For replies/forwards, only allow sending from a mailbox that has access to the thread.
     const availableMailboxes = useMemo(() => {
@@ -248,6 +274,9 @@ export const MessageForm = ({
     const canSendMessages = useAbility(Abilities.CAN_SEND_MESSAGES, currentSender!) && canEditThread;
     const canWriteMessages = useAbility(Abilities.CAN_WRITE_MESSAGES, currentSender!) && canEditThread;
     const canChangeSender = !draft || canWriteMessages;
+    // Same gate as the in-form delete button below: requires write rights on the
+    // sender mailbox AND edit rights on the thread, and an existing draft.
+    const canDeleteDraft = canWriteMessages && !!draft;
 
     const initialAttachments = useMemo((): (Attachment | DriveFile)[] => {
         // Include parent message attachments when forwarding
@@ -287,15 +316,30 @@ export const MessageForm = ({
                 form.clearErrors();
                 toast.dismiss(DRAFT_TOAST_ID);
             },
-            onSuccess: async (response) => {
+            onSuccess: async (response, variables) => {
                 const data = (response as sendCreateResponse200).data;
+                // The backend un-drafts the message synchronously before queuing
+                // the SMTP task. Reflect that optimistically so the thread renders
+                // it as a sending message right away instead of keeping the draft
+                // form open until the background refetch lands.
+                const sentThreadId = draft?.thread_id ?? selectedThread?.id;
+                if (sentThreadId) {
+                    patchMessages(sentThreadId, (message) =>
+                        message.id === variables.data.messageId
+                            ? { ...message, is_draft: false }
+                            : message
+                    );
+                }
                 addQueuedMessage(data.task_id);
                 onSuccess?.();
             }
         }
     });
 
-    const handleDraftMutationSuccess = () => {
+    // Only surfaced on draft creation. Subsequent updates are intentionally
+    // silent: the in-form "saved at" label already conveys the save state, and
+    // a toast flashing on every autosave is more distracting than informative.
+    const notifyDraftCreated = () => {
         addToast(
             <ToasterItem type="info">
                 <span>{t("Draft saved")}</span>
@@ -324,14 +368,12 @@ export const MessageForm = ({
                 }
                 invalidateMailbox();
                 invalidateThreadsStats();
-                handleDraftMutationSuccess();
+                notifyDraftCreated();
             }
         }
     });
 
-    const draftUpdateMutation = useDraftUpdate2({
-        mutation: { onSuccess: handleDraftMutationSuccess }
-    });
+    const draftUpdateMutation = useDraftUpdate2();
 
 
     const deleteMessageMutation = useMessagesDestroy();
@@ -348,6 +390,7 @@ export const MessageForm = ({
         await saveDraftPromiseRef.current;
         stopAutoSave();
 
+        const isSingleMessage = selectedThread?.messages.length === 1;
         deleteMessageMutation.mutate({
             id: messageId
         }, {
@@ -361,12 +404,17 @@ export const MessageForm = ({
                     // is authoritative.
                     unpinThreads([selectedThread.id]);
                 }
-                invalidateMailbox();
-                invalidateThreadsStats();
-                // Unselect the thread if we are in the draft view
-                if (searchParams.get('has_draft') === '1') {
+                if (isSingleMessage) {
+                    invalidateThreadList();
                     unselectThread();
+                } else {
+                    invalidateMailbox();
+                    // Unselect the thread if we are in the draft view
+                    if (searchParams.get('has_draft') === '1') {
+                        unselectThread();
+                    }
                 }
+                invalidateThreadsStats();
                 addToast(
                     <ToasterItem type="info">
                         <span>{t("Draft deleted")}</span>
@@ -376,6 +424,17 @@ export const MessageForm = ({
             onError: startAutoSave,
         });
     }
+
+    useImperativeHandle(ref, () => ({
+        deleteDraft: () => {
+            const id = draftRef.current?.id;
+            if (id) void handleDeleteMessage(id);
+        },
+    }));
+
+    useEffect(() => {
+        onDeletableChange?.(canDeleteDraft);
+    }, [canDeleteDraft, onDeletableChange]);
 
     /**
      * If the user changes the message sender, we need to delete the draft,
@@ -395,14 +454,15 @@ export const MessageForm = ({
                 }
             });
 
-            if (router.asPath.includes("new")) {
+            if (location.pathname.includes("new")) {
                 setDraft(response.data as Message);
                 return;
             }
             const mailboxId = data.senderId;
-            const threadId = response.data.thread_id
-            // @TODO: Make something less hardcoded to improve the maintainability of the code
-            router.replace(`/mailbox/${mailboxId}/thread/${threadId}?has_draft=1`);
+            const threadId = (response.data as Message).thread_id
+            if (threadId) {
+                navigate({ to: '/mailbox/$mailboxId/thread/$threadId', params: { mailboxId, threadId }, search: { has_draft: '1' }, replace: true });
+            }
         }
     }
 
@@ -429,8 +489,36 @@ export const MessageForm = ({
     };
 
     /**
+     * Whether the form holds genuine user content worth persisting as a draft.
+     * Recipients alone do not trigger creation by design: only a subject, body
+     * or attachment does.
+     *
+     * Everything is measured against the initial template (`formDefaultValues`),
+     * not against zero, so reply/forward behave like a new message: the prefilled
+     * "Re:"/"Fwd:" subject and the attachments carried over from a forwarded
+     * message do not, on their own, create a draft. The body is checked through
+     * the editor blocks (not its raw length), and `hasUserBodyContent` ignores
+     * the auto-inserted signature and quoted-message blocks — so a pristine
+     * composer counts as empty in every mode.
+     */
+    const hasUserDraftContent = (data: MessageFormValues): boolean => {
+        const subjectChanged =
+            data.subject.trim() !== (formDefaultValues.subject ?? "").trim();
+        const initialAttachmentCount =
+            (formDefaultValues.attachments?.length ?? 0) +
+            (formDefaultValues.driveAttachments?.length ?? 0);
+        const currentAttachmentCount =
+            (data.attachments?.length ?? 0) + (data.driveAttachments?.length ?? 0);
+        return (
+            subjectChanged
+            || currentAttachmentCount > initialAttachmentCount
+            || MessageComposerHelper.hasUserBodyContent(data.messageDraftBody)
+        )
+    }
+
+    /**
      * Update or create a draft message if any field to change.
-     * When `force` is true, bypass the dirty-fields check (used by ensureDraft).
+     * When `force` is true, bypass the content check (used by ensureDraft).
      * Returns the draft id on success.
      */
     const saveDraftInner = async (force = false): Promise<string | undefined> => {
@@ -439,20 +527,16 @@ export const MessageForm = ({
         const data = form.getValues();
         if (!canWriteMessages) return draft?.id;
 
+        // Once a draft exists, keep the reactive behavior (save on any dirty
+        // field, plus the 30s timer). Before a draft exists, only create one
+        // when the user has actually entered content: relying on `dirtyFields`
+        // here is both unreliable (it lags behind the synchronous form values,
+        // hence the "save only on the second blur" bug) and too eager (the
+        // composer marks `messageDraftBody` dirty on mount with an empty doc).
         const saveDraftNeeded = force || (
-            Object.keys(form.formState.dirtyFields).length > 0
-            && (
-                !!draft || (
-                    data.subject.length > 0
-                    || data.to.length > 0
-                    || (data.cc?.length ?? 0) > 0
-                    || (data.bcc?.length ?? 0) > 0
-                    || (data.messageDraftBody?.length ?? 0) > 0
-                    || (data.attachments?.length ?? 0) > 0
-                    || (data.driveAttachments?.length ?? 0) > 0
-                    || (data.signatureId?.length ?? 0) > 0
-                )
-            )
+            draftRef.current
+                ? Object.keys(form.formState.dirtyFields).length > 0
+                : hasUserDraftContent(data)
         )
 
         if (!saveDraftNeeded) {
@@ -503,7 +587,9 @@ export const MessageForm = ({
                 return draftRef.current?.id;
             } finally {
                 saveDraftPromiseRef.current = null;
-                startAutoSave();
+                // Only resume the periodic auto-save once a draft actually
+                // exists; an empty new-message form must not be polled.
+                if (draftRef.current) startAutoSave();
             }
         })();
 
@@ -582,13 +668,17 @@ export const MessageForm = ({
      * Prevent the Enter key press to trigger onClick on input children (like file input)
      */
     const handleKeyDown = (event: React.KeyboardEvent) => {
-        if (event.key === 'Enter') {
-            event.preventDefault();
-        }
+        if (event.key !== 'Enter') return;
+        const target = event.target as HTMLElement;
+        if (target.isContentEditable || target.tagName === 'TEXTAREA') return;
+        event.preventDefault();
     }
 
+    // The periodic auto-save only runs while a draft exists. Before that, the
+    // draft is created on demand from real user content, not on a timer.
     useEffect(() => {
-        startAutoSave();
+        if (draft) startAutoSave();
+        else stopAutoSave();
         return () => stopAutoSave();
     }, [draft]);
 
@@ -647,14 +737,13 @@ export const MessageForm = ({
                         name="to"
                         label={t("To:")}
                         autoFocus={mode === "forward"}
-                        // icon={<span className="material-icons">group</span>}
                         text={form.formState.errors.to && !Array.isArray(form.formState.errors.to) ? form.formState.errors.to.message : t("Enter the email addresses of the recipients separated by commas")}
                         textItems={Array.isArray(form.formState.errors.to) ? form.formState.errors.to?.map((error, index) => t(error!.message as string, { email: form.getValues('to')?.[index] })) : []}
                         disabled={!canWriteMessages}
                         rightText={
                             <div className="form-field-options">
-                                <Button tabIndex={-1} type="button" size="nano" variant={showCCField ? "bordered" : "tertiary"} onClick={() => setShowCCField(!showCCField)} disabled={!canWriteMessages}>cc</Button>
-                                <Button tabIndex={-1} type="button" size="nano" variant={showBCCField ? "bordered" : "tertiary"} onClick={() => setShowBCCField(!showBCCField)} disabled={!canWriteMessages}>bcc</Button>
+                                <Button tabIndex={-1} type="button" size="nano" variant={showCCField ? "bordered" : "tertiary"} onClick={() => setShowCCField(!showCCField)} disabled={!canWriteMessages}>{t("cc")}</Button>
+                                <Button tabIndex={-1} type="button" size="nano" variant={showBCCField ? "bordered" : "tertiary"} onClick={() => setShowBCCField(!showBCCField)} disabled={!canWriteMessages}>{t("bcc")}</Button>
                             </div> as unknown as string // TODO: Allow ReactNode as rightText in Cunningham
                         }
                         fullWidth
@@ -667,7 +756,6 @@ export const MessageForm = ({
                         <RhfContactComboBox
                             name="cc"
                             label={t("Copy: ")}
-                            // icon={<span className="material-icons">group</span>}
                             text={form.formState.errors.cc && !Array.isArray(form.formState.errors.cc) ? t(form.formState.errors.cc.message as string) : t("Enter the email addresses of the recipients separated by commas")}
                             textItems={Array.isArray(form.formState.errors.cc) ? form.formState.errors.cc?.map((error, index) => t(error!.message as string, { email: form.getValues('cc')?.[index] })) : []}
                             disabled={!canWriteMessages}
@@ -682,7 +770,6 @@ export const MessageForm = ({
                         <RhfContactComboBox
                             name="bcc"
                             label={t("Blind copy: ")}
-                            // icon={<span className="material-icons">visibility_off</span>}
                             text={form.formState.errors.bcc && !Array.isArray(form.formState.errors.bcc) ? t(form.formState.errors.bcc.message as string) : t("Enter the email addresses of the recipients separated by commas")}
                             textItems={Array.isArray(form.formState.errors.bcc) ? form.formState.errors.bcc?.map((error, index) => t(error!.message as string, { email: form.getValues('bcc')?.[index] })) : []}
                             disabled={!canWriteMessages}
@@ -796,8 +883,8 @@ export const MessageForm = ({
                         </Tooltip>
                     )}
                     {
-                        canWriteMessages && draft && (
-                            <Tooltip content={t("Delete draft")}>
+                        canDeleteDraft && (
+                            <Tooltip content={t("Delete draft")} placement="top">
                                 <Button
                                     type="button"
                                     variant="tertiary"
@@ -812,4 +899,6 @@ export const MessageForm = ({
             </form>
         </FormProvider>
     );
-};
+});
+
+MessageForm.displayName = "MessageForm";

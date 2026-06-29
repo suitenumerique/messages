@@ -31,12 +31,12 @@ export const AttachmentList = ({ attachments }: AttachmentListProps) => {
             {selectedThread?.is_spam && (
                 <div className="mb-sm">
                     <Banner type="info" icon={<Icon name="file_download_off" type={IconType.OUTLINED} />} fullWidth>
-                        <p>{t('This thread has been reported as spam. For your security, downloading attachments has been disabled.')}</p>
+                        <p>{t('This thread has been reported as spam. For your security, previewing and downloading attachments has been disabled.')}</p>
                     </Banner>
                 </div>
             )}
             <div className="thread-attachment-list__body">
-                {attachments.map((attachment) => <AttachmentItem key={`attachment-${attachment.name}-${attachment.size}-${attachment.created_at}`} attachment={attachment} canDownload={!selectedThread?.is_spam} />)}
+                {attachments.map((attachment) => <AttachmentItem key={`attachment-${attachment.name}-${attachment.size}-${attachment.created_at}`} attachment={attachment} canDownload={!selectedThread?.is_spam} canPreview={!selectedThread?.is_spam} />)}
             </div>
         </section>
     )

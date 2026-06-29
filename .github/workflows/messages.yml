@@ -8,6 +8,11 @@ name: Lint and tests
     branches:
       - '*'
 
+# Default to least-privilege at the workflow scope. Jobs that need
+# more (e.g. opening / editing comments) opt in explicitly.
+permissions:
+  contents: read
+
 env:
   COMPOSE_BAKE: true
 
@@ -22,6 +27,17 @@ jobs:
         run: make create-env-files
       - name: Run linting checks
         run: make lint-back
+
+
+  typecheck-jmap-email:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v6
+      - name: Create env files
+        run: make create-env-files
+      - name: Run pyright (strict) on the jmap-email library
+        run: make typecheck-jmap-email
 
 
   test-back:

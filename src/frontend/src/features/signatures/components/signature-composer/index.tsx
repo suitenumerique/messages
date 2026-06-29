@@ -5,9 +5,10 @@ import { SuggestionMenuController } from "@blocknote/react";
 import { FieldProps } from "@gouvfr-lasuite/cunningham-react";
 import { forwardRef, useImperativeHandle } from "react";
 import { useFormContext } from "react-hook-form";
-import { InlineTemplateVariable, TemplateVariableSelector } from "@/features/blocknote/inline-template-variable";
+import { buildTemplateVariableInsertion, InlineTemplateVariable, TemplateVariableSelector } from "@/features/blocknote/inline-template-variable";
+import { TemplateVariableEditingBehavior } from "@/features/blocknote/inline-template-variable/editing-behavior";
+import { usePlaceholderVariables } from "@/features/blocknote/inline-template-variable/use-placeholder-variables";
 import { Toolbar } from "@/features/blocknote/toolbar";
-import { usePlaceholdersRetrieve } from "@/features/api/gen";
 import { imageBlockSpec } from "@/features/blocknote/image-block";
 import { useBase64Composer, Base64ComposerHandle } from "@/features/blocknote/hooks/use-base64-composer";
 import { ColumnBlock, ColumnListBlock } from "@/features/blocknote/column-layout-block";
@@ -48,18 +49,19 @@ export const SignatureComposer = forwardRef<Base64ComposerHandle, SignatureCompo
         defaultValue,
         trailingBlock: true,
         blockNoteOptions: { autofocus: "end", ...blockNoteOptions },
+        extensions: [TemplateVariableEditingBehavior],
     });
 
     useImperativeHandle(ref, () => ({ exportContent }), [exportContent]);
 
-    const { data: { data: placeholders = {} } = {}, isLoading: isLoadingPlaceholders } = usePlaceholdersRetrieve();
-    const canShowPlaceholdersMenu = !isLoadingPlaceholders && !!Object.keys(placeholders).length;
+    const { variables, isLoading: isLoadingPlaceholders } = usePlaceholderVariables();
+    const canShowPlaceholdersMenu = !isLoadingPlaceholders && variables.length > 0;
 
     const getPlaceholderMenuItems = (editor: BlockNoteEditor<SignatureComposerBlockSchema, SignatureComposerInlineContentSchema, SignatureComposerStyleSchema>) => {
-        return Object.entries(placeholders).map(([value, label]) => ({
+        return variables.map(({ value, label }) => ({
             title: label,
             onItemClick: () => {
-                editor.insertInlineContent([{ type: "template-variable", props: { value, label } }, " "]);
+                editor.insertInlineContent(buildTemplateVariableInsertion({ value, label }, editor.getActiveStyles()));
             }
         }));
     };
@@ -78,7 +80,7 @@ export const SignatureComposer = forwardRef<Base64ComposerHandle, SignatureCompo
             >
                 <Toolbar>
                     {canShowPlaceholdersMenu &&
-                        <TemplateVariableSelector key="templateVariableSelector" variables={placeholders} isLoading={isLoadingPlaceholders} />
+                        <TemplateVariableSelector key="templateVariableSelector" variables={variables} isLoading={isLoadingPlaceholders} />
                     }
                 </Toolbar>
                 {canShowPlaceholdersMenu &&

@@ -225,7 +225,7 @@ export const SignatureDataGrid = ({ domain }: SignatureDataGridProps) => {
                 rows={signatures}
                 onSortModelChange={() => undefined}
                 enableSorting={false}
-                emptyPlaceholderLabel={t("No signatures found")}
+                emptyPlaceholderLabel={t("No signatures")}
             />
             <ModalComposeSignature
                 isOpen={modal.isOpen}

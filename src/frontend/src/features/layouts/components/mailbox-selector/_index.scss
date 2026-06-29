@@ -1,0 +1,99 @@
+.mailbox-selector {
+    // Make the dropdown trigger wrapper span the full available width so the
+    // card aligns with the surrounding sidebar/header content.
+    & > .c__dropdown-menu-trigger {
+        justify-content: flex-start;
+        width: 100%;
+    }
+
+    // Card shared by the switchable (button) and the static (single-mailbox)
+    // variants: avatar on the left, bold name and the address underneath, with
+    // the unfold chevron pushed to the trailing edge.
+    .mailbox-selector__trigger {
+        display: flex;
+        align-items: center;
+        gap: var(--c--globals--spacings--xs);
+        width: 100%;
+        height: inherit;
+        padding-block: var(--c--globals--spacings--base) var(--c--globals--spacings--sm);
+        padding-inline: var(--c--globals--spacings--base);
+        .c__button__icon {
+            transition: transform 0.25s ease;
+            backface-visibility: visible;
+        }
+    }
+
+    .mailbox-selector__trigger[aria-expanded="true"] {
+        .c__button__icon {
+            transform: rotateX(-180deg);
+        }
+    }
+
+    .mailbox-selector__trigger--static {
+        // Nothing to unfold for a single mailbox: drop the interactive cursor.
+        cursor: default;
+    }
+
+    // Shared (non-identity) mailboxes get a rounded-square avatar to set them
+    // apart from the circular personal one.
+    .mailbox-selector__avatar[data-shared="true"] .c__avatar {
+        border-radius: 8px;
+    }
+
+    .mailbox-selector__text {
+        display: flex;
+        flex-direction: column;
+        flex: 1;
+        min-width: 0;
+        overflow: hidden;
+        text-align: left;
+    }
+
+    .mailbox-selector__name {
+        font-size: var(--c--globals--font--sizes--sm);
+        line-height: 1.2;
+        font-weight: 700;
+        overflow: hidden;
+        text-overflow: ellipsis;
+        white-space: nowrap;
+    }
+
+    .mailbox-selector__email {
+        font-size: var(--c--globals--font--sizes--xs);
+        opacity: 0.8;
+        font-weight: 500;
+        line-height: 1.2;
+        overflow: hidden;
+        text-overflow: ellipsis;
+        white-space: nowrap;
+    }
+}
+
+// Same rounded-square treatment for shared mailboxes in the dropdown options.
+// The popover renders in a portal outside `.mailbox-selector`, so this rule is
+// intentionally global rather than nested under it.
+.mailbox-selector__option-avatar {
+    // Layout-transparent wrapper: the avatar sits exactly where the dropdown
+    // expects its icon, we only need the element as a styling hook.
+    display: contents;
+
+    &[data-shared="true"] .c__avatar {
+        border-radius: 8px;
+    }
+}
+
+// The dropdown caps its width at 320px, so a long mailbox name would otherwise
+// wrap onto several lines. Truncate it with an ellipsis instead. Scoped to our
+// items (which carry the avatar hook) since the popover lives in a portal.
+.c__dropdown-menu-item:has(.mailbox-selector__option-avatar) {
+    .c__dropdown-menu-item__label-container {
+        min-width: 0;
+    }
+
+    .c__dropdown-menu-item__label,
+    .c__dropdown-menu-item__label-subtext {
+        overflow: hidden;
+        text-overflow: ellipsis;
+        white-space: nowrap;
+    }
+}

@@ -60,8 +60,10 @@ const ThreadMessageActions = ({
         if (!selectedThread) return;
         if (is_unread) {
             // Mark as unread from here: subtract 1ms so this message becomes unread.
-            // Unmount the thread view before the mutation so the visibility observer
-            // cannot debounce a mark-as-read request on the newly-unread messages.
+            // `unselectThread()` unmounts the thread view synchronously, tearing
+            // down its auto-mark-as-read observer before this mutation's cache
+            // patch lands — otherwise the observer would re-read the messages we
+            // just flagged unread.
             const readAt = new Date(new Date(message.created_at!).getTime() - 1).toISOString();
             unselectThread();
             markAsReadAt({ threadIds: [selectedThread.id], readAt });

@@ -10,11 +10,11 @@ from django.conf import settings
 from django.core.files.storage import storages
 
 from celery.utils.log import get_task_logger
+from jmap_email import first_address_email, parse_email
+from jmap_email.parser import parse_date
 from sentry_sdk import capture_exception
 
 from core.mda.inbound import deliver_inbound_message
-from core.mda.rfc5322 import parse_email_message
-from core.mda.rfc5322.parser import parse_date
 from core.models import Mailbox
 from core.utils import ThreadReindexDeferrer, ThreadStatsUpdateDeferrer
 
@@ -306,7 +306,14 @@ def process_mbox_file_task(self, file_key: str, recipient_id: str) -> Dict[str, 
                             failure_count += 1
                             continue
 
-                        parsed_email = parse_email_message(message_content)
+                        parsed_email = parse_email(message_content)
+                        if parsed_email is None:
+                            logger.warning(
+                                "mbox: skipping unparseable message (%d bytes)",
+                                len(message_content),
+                            )
+                            failure_count += 1
+                            continue
 
                         # Treat the message as a sent one when From matches
                         # the destination mailbox — same heuristic as IMAP
@@ -314,9 +321,7 @@ def process_mbox_file_task(self, file_key: str, recipient_id: str) -> Dict[str, 
                         # one's own sent mails would land them in the inbox
                         # view.
                         recipient_email = str(recipient)
-                        sender_email = (parsed_email.get("from") or {}).get(
-                            "email"
-                        ) or ""
+                        sender_email = first_address_email(parsed_email.get("from"))
                         # TODO: better heuristic to determine if the message is from the sender
                         is_import_sender = (
                             sender_email.lower() == recipient_email.lower()

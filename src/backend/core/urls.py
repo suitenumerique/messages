@@ -6,6 +6,12 @@ from django.urls import include, path
 from rest_framework.routers import DefaultRouter
 
 from core.api.viewsets.blob import BlobViewSet
+from core.api.viewsets.calendar import (
+    CalendarAddEventView,
+    CalendarConflictsView,
+    CalendarListView,
+    CalendarRsvpView,
+)
 from core.api.viewsets.channel import ChannelViewSet, UserChannelViewSet
 from core.api.viewsets.config import ConfigView
 from core.api.viewsets.contacts import ContactViewSet
@@ -182,6 +188,26 @@ urlpatterns = [
                     include(
                         mailbox_channel_nested_router.urls
                     ),  # Includes /mailboxes/{id}/channels/
+                ),
+                path(
+                    "mailboxes/<uuid:mailbox_id>/calendar/rsvp/",
+                    CalendarRsvpView.as_view(),
+                    name="calendar-rsvp",
+                ),
+                path(
+                    "mailboxes/<uuid:mailbox_id>/calendar/add/",
+                    CalendarAddEventView.as_view(),
+                    name="calendar-add-event",
+                ),
+                path(
+                    "mailboxes/<uuid:mailbox_id>/calendar/conflicts/",
+                    CalendarConflictsView.as_view(),
+                    name="calendar-conflicts",
+                ),
+                path(
+                    "mailboxes/<uuid:mailbox_id>/calendar/calendars/",
+                    CalendarListView.as_view(),
+                    name="calendar-list",
                 ),
                 path(
                     "maildomains/<uuid:maildomain_pk>/",

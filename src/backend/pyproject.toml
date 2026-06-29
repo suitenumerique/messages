@@ -4,8 +4,8 @@
 
 [project]
 name = "messages-backend"
-version = "0.5.0"
-authors = [{ "name" = "ANCT", "email" = "suiteterritoriale@anct.gouv.fr" }]
+version = "0.8.0"
+authors = [{ "name" = "ANCT", "email" = "contact@suite.anct.gouv.fr" }]
 classifiers = [
     "Development Status :: 5 - Production/Stable",
     "Framework :: Django",
@@ -20,7 +20,7 @@ description = "A Django MDA"
 keywords = ["Django", "Contacts", "Templates", "RBAC"]
 license = "MIT"
 readme = "README.md"
-requires-python = ">=3.14.4,<4.0"
+requires-python = ">=3.14.5,<4.0"
 
 # Note: after changing this list you must re-run `make deps-lock-back`
 dependencies = [
@@ -28,6 +28,7 @@ dependencies = [
     "botocore==1.42.53",
     "celery[redis]==5.6.2",
     "cryptography==46.0.5",
+    "defusedxml==0.7.1",
     "dj-database-url==3.1.2",
     "django==5.2.11",
     "django-celery-beat==2.8.1",
@@ -37,7 +38,7 @@ dependencies = [
     "django-countries==8.2.0",
     "django-fernet-encrypted-fields==0.3.1",
     "django-filter==25.2",
-    "django-lasuite[all]==0.0.24",
+    "django-lasuite[all]==0.0.27",
     "django-prometheus==2.4.1",
     "django-redis==6.0.0",
     "django-storages==1.14.6",
@@ -48,8 +49,9 @@ dependencies = [
     "drf_spectacular==0.29.0",
     "opensearch-py==2.8.0",
     "factory_boy==3.3.3",
-    "flanker@git+https://github.com/sylvinus/flanker@a4248826794d446b07fb26719479c1c355411f5a",
     "gunicorn==25.1.0",
+    "icalendar==7.0.3",
+    "jmap-email==0.1.0",
     "jsonschema==4.26.0",
     "nested-multipart-parser==1.6.0",
     "openai==2.21.0",
@@ -90,6 +92,7 @@ dev = [
     "pytest-icdiff==0.9",
     "pytest-repeat==0.9.4",
     "pytest-xdist==3.8.0",
+    "radicale==3.6.1",
     "responses==0.26.0",
     "ruff==0.15.2"
 ]
@@ -104,8 +107,8 @@ source-include = ["core/**"]
 source-exclude = ["core/tests/**"]
 
 [tool.ruff]
-# Pin ruff at py313 even though our runtime floor is py314.4 (chosen for
-# stdlib `email` fixes — see core/mda/rfc5322/README.md). Targeting py313
+# Pin ruff at py313 even though our runtime floor is py314.5 (chosen for
+# stdlib `email` fixes — see ``src/jmap-email/README.md``). Targeting py313
 # keeps ruff's formatter from applying PEP 758 (un-parenthesized `except
 # E1, E2:`), which is valid Python 3.14 but trips up most static analysis
 # (CodeRabbit, IDEs on older Python, copy-pasted snippets).
@@ -167,4 +170,5 @@ python_files = [
 markers = [
     "fuzz: marks tests as fuzz tests (run with: pytest -m fuzz)",
     "redis: marks tests that need a real Redis service (skip with: pytest -m 'not redis')",
+    "caldav_ssrf_real: opt out of the test-suite-wide SSRF bypass and exercise the real per-channel guard",
 ]

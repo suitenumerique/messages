@@ -5,10 +5,8 @@
  * This is the messages API schema.
  * OpenAPI spec version: 1.0.0 (v1.0)
  */
-import type { Message } from "./message";
 
 export interface SendMessageResponse {
-  message: Message;
   /** Task ID for tracking */
   task_id: string;
 }

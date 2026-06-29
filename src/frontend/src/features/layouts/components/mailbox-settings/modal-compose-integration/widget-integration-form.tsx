@@ -8,11 +8,11 @@ import { useState, useMemo } from "react";
 import { useQueryClient } from "@tanstack/react-query";
 import {
     Channel,
+    Mailbox,
     useMailboxesChannelsCreate,
     useMailboxesChannelsPartialUpdate,
     getMailboxesChannelsListUrl,
 } from "@/features/api/gen";
-import { useMailboxContext } from "@/features/providers/mailbox";
 import { RhfInput } from "@/features/forms/components/react-hook-form";
 import { addToast, ToasterItem } from "@/features/ui/components/toaster";
 import { Banner } from "@/features/ui/components/banner";
@@ -26,6 +26,7 @@ type WidgetChannelSettings = {
 };
 
 type WidgetIntegrationFormProps = {
+    mailbox: Mailbox;
     channel?: Channel;
     onSuccess: (channel: Channel) => void;
     onClose: () => void;
@@ -39,12 +40,12 @@ const createFormSchema = (t: (key: string) => string) => z.object({
 type FormFields = z.infer<ReturnType<typeof createFormSchema>>;
 
 export const WidgetIntegrationForm = ({
+    mailbox,
     channel,
     onSuccess,
     onClose,
 }: WidgetIntegrationFormProps) => {
     const { t } = useTranslation();
-    const { selectedMailbox } = useMailboxContext();
     const queryClient = useQueryClient();
     const [error, setError] = useState<string | null>(null);
     const widgetSettings = (channel?.settings as WidgetChannelSettings | undefined);
@@ -70,7 +71,7 @@ export const WidgetIntegrationForm = ({
 
     const invalidateChannels = async () => {
         await queryClient.invalidateQueries({
-            queryKey: [getMailboxesChannelsListUrl(selectedMailbox!.id)],
+            queryKey: [getMailboxesChannelsListUrl(mailbox.id)],
             exact: false
         });
     };
@@ -88,7 +89,7 @@ export const WidgetIntegrationForm = ({
             if (isEditing && channel) {
                 // For updates, only send name and settings (not type)
                 await updateMutation.mutateAsync({
-                    mailboxId: selectedMailbox!.id,
+                    mailboxId: mailbox.id,
                     id: channel.id,
                     data: {
                         name: data.name,
@@ -104,7 +105,7 @@ export const WidgetIntegrationForm = ({
             } else {
                 // For creation, include type
                 const newChannel = await createMutation.mutateAsync({
-                    mailboxId: selectedMailbox!.id,
+                    mailboxId: mailbox.id,
                     data: {
                         name: data.name,
                         type: "widget",
@@ -127,15 +128,15 @@ export const WidgetIntegrationForm = ({
         }
     };
 
-    const widgetSnippet = channel ? `<script src="${process.env.NEXT_PUBLIC_FEEDBACK_WIDGET_PATH}loader.js" async></script>
+    const widgetSnippet = channel ? `<script src="${import.meta.env.NEXT_PUBLIC_FEEDBACK_WIDGET_PATH}loader.js" async></script>
 <script>
 window._lasuite_widget = window._lasuite_widget || [];
 _lasuite_widget.push(["loader", "init", {
   "params": {
-    "api": "${process.env.NEXT_PUBLIC_FEEDBACK_WIDGET_API_URL}",
+    "api": "${import.meta.env.NEXT_PUBLIC_FEEDBACK_WIDGET_API_URL}",
     "channel": "${channel.id}"
   },
-  "script": "${process.env.NEXT_PUBLIC_FEEDBACK_WIDGET_PATH}feedback.js",
+  "script": "${import.meta.env.NEXT_PUBLIC_FEEDBACK_WIDGET_PATH}feedback.js",
   "widget": "feedback",
 }]);
 </script>` : "";
@@ -164,6 +165,7 @@ _lasuite_widget.push(["loader", "init", {
                     fullWidth
                 />
                 <TagsSelector
+                    mailbox={mailbox}
                     selectedTags={selectedTags}
                     onTagsChange={setSelectedTags}
                 />
@@ -204,7 +206,8 @@ _lasuite_widget.push(["loader", "init", {
                         <pre><code>{widgetSnippet}</code></pre>
                         <Button
                             type="button"
-                            variant="tertiary"
+                            color="neutral"
+                            variant="secondary"
                             size="small"
                             icon={<Icon name="content_copy" type={IconType.OUTLINED} />}
                             onClick={async () => {

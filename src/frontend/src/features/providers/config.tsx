@@ -8,6 +8,7 @@ const DEFAULT_DRIVE_CONFIG: NonNullable<ConfigRetrieve200['DRIVE']> = {
     sdk_url: "",
     api_url: "",
     file_url: "",
+    preview_url: "",
     app_name: "Drive",
 }
 

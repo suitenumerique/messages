@@ -173,7 +173,7 @@ def test_imap_import_form_view(admin_client, mailbox):
         mock_task.assert_called_once()
 
 
-@patch("imaplib.IMAP4_SSL")
+@patch("core.services.importer.imap._IPPinnedIMAP4SSL")
 @patch.object(celery_app.backend, "store_result")
 def test_imap_import_task_success(
     mock_store_result, mock_imap4_ssl, mailbox, mock_imap_connection, sample_email
@@ -267,7 +267,7 @@ def test_imap_import_task_login_failure(mailbox):
     # Mock IMAP connection to raise an error on login
     with (
         patch.object(import_imap_messages_task, "update_state", mock_task.update_state),
-        patch("core.services.importer.imap.imaplib.IMAP4_SSL") as mock_imap,
+        patch("core.services.importer.imap._IPPinnedIMAP4SSL") as mock_imap,
     ):
         mock_imap_instance = MagicMock()
         mock_imap.return_value = mock_imap_instance
@@ -299,7 +299,7 @@ def test_imap_import_task_login_failure(mailbox):
         assert Message.objects.count() == 0
 
 
-@patch("imaplib.IMAP4_SSL")
+@patch("core.services.importer.imap._IPPinnedIMAP4SSL")
 @patch.object(celery_app.backend, "store_result")
 def test_imap_import_task_message_fetch_failure(
     mock_store_result, mock_imap4_ssl, mailbox
@@ -374,7 +374,7 @@ def test_imap_import_task_message_fetch_failure(
 
 
 @patch("core.mda.inbound.logger")
-@patch("imaplib.IMAP4_SSL")
+@patch("core.services.importer.imap._IPPinnedIMAP4SSL")
 @patch.object(celery_app.backend, "store_result")
 def test_imap_import_task_duplicate_recipients(
     mock_store_result,

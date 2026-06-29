@@ -14,7 +14,8 @@ from django.conf import settings
 
 import dns.resolver
 
-from core.mda.smtp import send_smtp_mail
+from core.mda.smtp import SmtpProxy, send_smtp_mail
+from core.services.ssrf import SSRFValidationError, assert_public_ip
 
 logger = logging.getLogger(__name__)
 
@@ -51,13 +52,27 @@ def resolve_mx_records(domain: str) -> List[Tuple[int, str]]:
 
 
 def resolve_hostname_ip(hostname: str) -> Optional[str]:
-    """
-    Resolve a hostname to its first A record IP address, with a direct DNS query
+    """Resolve a hostname to its first *public* A-record IP.
+
+    SSRF guard: a recipient domain's MX (or A-record fallback) is
+    attacker-controlled, so any address that fails SSRF validation
+    (loopback / link-local / private / reserved / multicast / cloud-metadata)
+    is skipped — the SMTP worker must never be steered into dialing internal
+    infrastructure. Returns None when the host has no usable public IP, which
+    makes the caller skip this MX and ultimately permanent-fail the recipient
+    rather than connecting anywhere unsafe. Because we connect to exactly the
+    IP returned here, there is no DNS-rebinding window between check and dial.
     """
     try:
         answers = dns.resolver.resolve(hostname, "A", lifetime=10)
         for r in answers:
-            return str(r)
+            ip_str = str(r)
+            try:
+                assert_public_ip(ip_str, hostname)
+            except SSRFValidationError as e:
+                logger.warning("Refusing non-public MX target %s: %s", hostname, e)
+                continue
+            return ip_str
     except Exception as e:  # pylint: disable=broad-exception-caught
         logger.error("Error resolving IP for %s: %s", hostname, e)
     return None
@@ -85,21 +100,31 @@ def group_recipients_by_mx(recipients: List[str]) -> Dict[str, Dict[str, Any]]:
     return domain_map
 
 
-def select_smtp_proxy() -> Dict[str, Any]:
+def select_smtp_proxy() -> Optional[SmtpProxy]:
+    """Pick a SOCKS5 proxy at random from MTA_OUT_DIRECT_PROXIES, if any.
+
+    Skips entries whose URL is missing a hostname or port, so a single bad
+    config line doesn't take out the whole proxy pool.
     """
-    Select an SMTP proxy to use for sending messages.
-    """
-    if len(settings.MTA_OUT_DIRECT_PROXIES) > 0:
-        proxy = random.choice(settings.MTA_OUT_DIRECT_PROXIES)  # noqa: S311
-        parsed = urlparse(proxy)
-        return {
-            "proxy_host": parsed.hostname,
-            "proxy_port": parsed.port,
-            "proxy_username": parsed.username,
-            "proxy_password": parsed.password,
-            "sender_hostname": parsed.hostname,
-        }
-    return {}
+    proxies = list(settings.MTA_OUT_DIRECT_PROXIES)
+    random.shuffle(proxies)
+    for url in proxies:
+        try:
+            parsed = urlparse(url)
+        except ValueError as e:
+            logger.warning("Invalid SMTP proxy URL %r: %s", url, e)
+            continue
+        if not parsed.hostname or not parsed.port:
+            logger.warning("SMTP proxy URL %r missing hostname or port, skipping", url)
+            continue
+        return SmtpProxy(
+            host=parsed.hostname,
+            port=parsed.port,
+            username=parsed.username,
+            password=parsed.password,
+            sender_hostname=parsed.hostname,
+        )
+    return None
 
 
 def send_message_via_mx(envelope_from, recipient_emails, mime_data) -> Dict[str, Any]:
@@ -151,8 +176,6 @@ def send_message_via_mx(envelope_from, recipient_emails, mime_data) -> Dict[str,
                 remaining_recipients,
             )
 
-            proxy_settings = select_smtp_proxy()
-
             # Use direct SMTP, no auth
             smtp_statuses = send_smtp_mail(
                 smtp_host=mx_hostname,
@@ -161,7 +184,8 @@ def send_message_via_mx(envelope_from, recipient_emails, mime_data) -> Dict[str,
                 envelope_from=envelope_from,
                 recipient_emails=remaining_recipients.copy(),
                 message_content=mime_data,
-                **proxy_settings,
+                smtp_tls_security_level=settings.MTA_OUT_SMTP_TLS_SECURITY_LEVEL,
+                proxy=select_smtp_proxy(),
             )
 
             # Process results and update remaining recipients

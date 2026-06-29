@@ -65,7 +65,12 @@ class TestApiDraftAndSendMessage:
 
     @patch("core.mda.outbound.send_outbound_message")
     def test_draft_and_send_message_success(
-        self, mock_send_outbound_message, mailbox, authenticated_user, send_url
+        self,
+        mock_send_outbound_message,
+        mailbox,
+        authenticated_user,
+        send_url,
+        django_capture_on_commit_callbacks,
     ):
         """Test create draft message and then successfully send it via the service."""
 
@@ -151,15 +156,16 @@ class TestApiDraftAndSendMessage:
         assert draft_api_message["is_draft"] is True
         assert draft_api_message["bcc"][0]["contact"]["email"] == "jean@external.com"
 
-        send_response = client.post(
-            send_url,
-            {
-                "messageId": draft_message_id,
-                "senderId": mailbox.id,
-                "textBody": "test",
-            },
-            format="json",
-        )
+        with django_capture_on_commit_callbacks(execute=True):
+            send_response = client.post(
+                send_url,
+                {
+                    "messageId": draft_message_id,
+                    "senderId": mailbox.id,
+                    "textBody": "test",
+                },
+                format="json",
+            )
 
         assert send_response.status_code == status.HTTP_200_OK
 
@@ -234,7 +240,12 @@ class TestApiDraftAndSendMessage:
 
     @patch("core.mda.outbound.send_outbound_message")
     def test_draft_and_send_message_success_delegated_access(
-        self, mock_send_outbound_message, mailbox, authenticated_user, send_url
+        self,
+        mock_send_outbound_message,
+        mailbox,
+        authenticated_user,
+        send_url,
+        django_capture_on_commit_callbacks,
     ):
         """Test create draft message and then successfully send it via the service."""
         mock_send_outbound_message.side_effect = (
@@ -332,14 +343,15 @@ class TestApiDraftAndSendMessage:
         assert draft_api_message["draftBody"] == draft_content
         assert draft_api_message["is_draft"] is True
 
-        send_response = client.post(
-            send_url,
-            {
-                "messageId": draft_message_id,
-                "senderId": mailbox.id,
-            },
-            format="json",
-        )
+        with django_capture_on_commit_callbacks(execute=True):
+            send_response = client.post(
+                send_url,
+                {
+                    "messageId": draft_message_id,
+                    "senderId": mailbox.id,
+                },
+                format="json",
+            )
 
         assert send_response.status_code == status.HTTP_200_OK
 
@@ -383,6 +395,7 @@ class TestApiDraftAndSendMessage:
         mailbox,
         authenticated_user,
         send_url,
+        django_capture_on_commit_callbacks,
     ):
         """Test sending a draft message when the delivery service fails."""
 
@@ -430,15 +443,16 @@ class TestApiDraftAndSendMessage:
         assert draft_response.status_code == status.HTTP_201_CREATED
         draft_message_id = draft_response.data["id"]
 
-        send_response = client.post(
-            send_url,
-            {
-                "messageId": draft_message_id,
-                "senderId": str(mailbox.id),
-                "textBody": "test",
-            },
-            format="json",
-        )
+        with django_capture_on_commit_callbacks(execute=True):
+            send_response = client.post(
+                send_url,
+                {
+                    "messageId": draft_message_id,
+                    "senderId": str(mailbox.id),
+                    "textBody": "test",
+                },
+                format="json",
+            )
 
         assert send_response.status_code == status.HTTP_200_OK
 
@@ -787,7 +801,12 @@ class TestApiDraftAndSendMessage:
 
     @patch("core.mda.outbound.send_outbound_message")
     def test_send_message_with_empty_subject(
-        self, mock_send_outbound_message, mailbox, authenticated_user, send_url
+        self,
+        mock_send_outbound_message,
+        mailbox,
+        authenticated_user,
+        send_url,
+        django_capture_on_commit_callbacks,
     ):
         """Test sending a message with empty subject (migration 0018)."""
         mock_send_outbound_message.side_effect = (
@@ -825,14 +844,15 @@ class TestApiDraftAndSendMessage:
         draft_message_id = draft_response.data["id"]
 
         # Send the message
-        send_response = client.post(
-            send_url,
-            {
-                "messageId": draft_message_id,
-                "senderId": mailbox.id,
-            },
-            format="json",
-        )
+        with django_capture_on_commit_callbacks(execute=True):
+            send_response = client.post(
+                send_url,
+                {
+                    "messageId": draft_message_id,
+                    "senderId": mailbox.id,
+                },
+                format="json",
+            )
 
         assert send_response.status_code == status.HTTP_200_OK
 
@@ -1099,7 +1119,13 @@ class TestApiDraftAndSendMessage:
 class TestApiDraftAndSendReply:
     """Test API draft and send reply endpoints."""
 
-    def test_draft_and_send_reply_success(self, mailbox, authenticated_user, send_url):
+    def test_draft_and_send_reply_success(
+        self,
+        mailbox,
+        authenticated_user,
+        send_url,
+        django_capture_on_commit_callbacks,
+    ):
         """Create draft reply to an existing message and then send it."""
         # Create a mailbox access on this mailbox for the authenticated user
         factories.MailboxAccessFactory(
@@ -1150,15 +1176,16 @@ class TestApiDraftAndSendReply:
         assert draft_api_message["parent_id"] == str(message.id)
 
         # Step 2: Send the draft reply
-        send_response = client.post(
-            send_url,
-            {
-                "messageId": draft_message.id,
-                "senderId": mailbox.id,
-                "textBody": "test",
-            },
-            format="json",
-        )
+        with django_capture_on_commit_callbacks(execute=True):
+            send_response = client.post(
+                send_url,
+                {
+                    "messageId": draft_message.id,
+                    "senderId": mailbox.id,
+                    "textBody": "test",
+                },
+                format="json",
+            )
 
         # Assert the send response is successful
         assert send_response.status_code == status.HTTP_200_OK
@@ -1307,6 +1334,7 @@ class TestApiDraftAndSendReply:
         mailbox_role,
         draft_detail_url,
         send_url,
+        django_capture_on_commit_callbacks,
     ):
         """Test updating a draft message successfully."""
         # Create a mailbox access on this mailbox for the authenticated user
@@ -1395,14 +1423,15 @@ class TestApiDraftAndSendReply:
         # assert thread.snippet == "updated content"[:100]
 
         # Step 3: Send the updated draft message
-        send_response = client.post(
-            send_url,
-            {
-                "messageId": updated_message.id,
-                "senderId": mailbox.id,
-            },
-            format="json",
-        )
+        with django_capture_on_commit_callbacks(execute=True):
+            send_response = client.post(
+                send_url,
+                {
+                    "messageId": updated_message.id,
+                    "senderId": mailbox.id,
+                },
+                format="json",
+            )
 
         sent_message = models.Message.objects.get(id=updated_message.id)
         assert sent_message.subject == updated_subject
@@ -1510,7 +1539,58 @@ class TestApiDraftAndSendReply:
         # Assert the response is unauthorized
         assert response.status_code == status.HTTP_401_UNAUTHORIZED
 
-    def test_api_email_exchange_single_thread(self, send_url):
+    def test_update_draft_ignores_body_message_id_for_authorization(
+        self, mailbox, authenticated_user, draft_detail_url
+    ):
+        """The draft being updated is the one in the URL, not a body messageId.
+
+        A caller with edit rights on a draft they own must not edit a
+        *different* draft (named in the URL) that their sender mailbox cannot
+        access by passing the accessible draft's id in the body. The body id is
+        never read for authorization, so the inaccessible URL draft is denied
+        (the view scopes the lookup to an editable thread → 404).
+        """
+        # Sender mailbox the user can edit.
+        factories.MailboxAccessFactory(
+            mailbox=mailbox,
+            user=authenticated_user,
+            role=enums.MailboxRoleChoices.EDITOR,
+        )
+        # A draft the sender mailbox CAN edit (the decoy passed in the body).
+        own_access = factories.ThreadAccessFactory(
+            mailbox=mailbox, role=enums.ThreadAccessRoleChoices.EDITOR
+        )
+        own_draft = factories.MessageFactory(thread=own_access.thread, is_draft=True)
+        # A draft the sender mailbox CANNOT access (the real target, in the URL).
+        other_mailbox = factories.MailboxFactory()
+        victim_access = factories.ThreadAccessFactory(
+            mailbox=other_mailbox, role=enums.ThreadAccessRoleChoices.EDITOR
+        )
+        victim_draft = factories.MessageFactory(
+            thread=victim_access.thread, is_draft=True, subject="victim"
+        )
+
+        client = APIClient()
+        client.force_authenticate(user=authenticated_user)
+        response = client.put(
+            draft_detail_url(victim_draft.id),
+            {
+                "senderId": mailbox.id,
+                "messageId": own_draft.id,  # decoy — must be ignored
+                "subject": "hijacked",
+            },
+            format="json",
+        )
+
+        assert response.status_code == status.HTTP_404_NOT_FOUND
+        victim_draft.refresh_from_db()
+        assert victim_draft.subject == "victim"
+
+    def test_api_email_exchange_single_thread(
+        self,
+        send_url,
+        django_capture_on_commit_callbacks,
+    ):
         """Test a multi-step API email exchange results in one thread per mailbox."""
         # Setup Users and Mailboxes
         user1 = factories.UserFactory(email="user1@exchange.api")
@@ -1543,15 +1623,16 @@ class TestApiDraftAndSendReply:
         assert draft1_response.status_code == status.HTTP_201_CREATED
         message1_id = draft1_response.data["id"]
 
-        send1_response = client.post(
-            send_url,
-            {
-                "messageId": message1_id,
-                "senderId": str(mailbox1.id),
-                "textBody": "Hello User Two!",
-            },
-            format="json",
-        )
+        with django_capture_on_commit_callbacks(execute=True):
+            send1_response = client.post(
+                send_url,
+                {
+                    "messageId": message1_id,
+                    "senderId": str(mailbox1.id),
+                    "textBody": "Hello User Two!",
+                },
+                format="json",
+            )
         assert send1_response.status_code == status.HTTP_200_OK
 
         # Message should be marked as sent immediately for local delivery
@@ -1595,15 +1676,16 @@ class TestApiDraftAndSendReply:
         assert draft2_response.status_code == status.HTTP_201_CREATED
         message2_id = draft2_response.data["id"]
 
-        send2_response = client.post(
-            send_url,
-            {
-                "messageId": message2_id,
-                "senderId": str(mailbox2.id),
-                "textBody": "Hi User One, thanks!",
-            },
-            format="json",
-        )
+        with django_capture_on_commit_callbacks(execute=True):
+            send2_response = client.post(
+                send_url,
+                {
+                    "messageId": message2_id,
+                    "senderId": str(mailbox2.id),
+                    "textBody": "Hi User One, thanks!",
+                },
+                format="json",
+            )
         assert send2_response.status_code == status.HTTP_200_OK
 
         # Mark message as sent (local delivery)
@@ -1651,11 +1733,12 @@ class TestApiDraftAndSendReply:
         assert draft3_response.status_code == status.HTTP_201_CREATED
         message3_id = draft3_response.data["id"]
 
-        send3_response = client.post(
-            send_url,
-            {"messageId": message3_id, "senderId": str(mailbox1.id)},
-            format="json",
-        )
+        with django_capture_on_commit_callbacks(execute=True):
+            send3_response = client.post(
+                send_url,
+                {"messageId": message3_id, "senderId": str(mailbox1.id)},
+                format="json",
+            )
         assert send3_response.status_code == status.HTTP_200_OK
 
         assert models.Thread.objects.count() == 2  # Still only 2 threads
@@ -1687,7 +1770,12 @@ class TestApiDraftAndSendReply:
         assert models.Thread.objects.filter(accesses__mailbox=mailbox2).count() == 1
 
     def test_send_message_with_user_having_role_on_two_mailboxes_on_same_thread(
-        self, mailbox, mailbox2, authenticated_user, send_url
+        self,
+        mailbox,
+        mailbox2,
+        authenticated_user,
+        send_url,
+        django_capture_on_commit_callbacks,
     ):
         """
         Test that sending a message succeeds when a user has access to two mailboxes
@@ -1753,15 +1841,16 @@ class TestApiDraftAndSendReply:
         assert draft_api_message["parent_id"] == str(message.id)
 
         # Step 2: Send the draft reply
-        send_response = client.post(
-            send_url,
-            {
-                "messageId": draft_message.id,
-                "senderId": mailbox.id,
-                "textBody": "test",
-            },
-            format="json",
-        )
+        with django_capture_on_commit_callbacks(execute=True):
+            send_response = client.post(
+                send_url,
+                {
+                    "messageId": draft_message.id,
+                    "senderId": mailbox.id,
+                    "textBody": "test",
+                },
+                format="json",
+            )
 
         # Assert the send response is successful
         assert send_response.status_code == status.HTTP_200_OK

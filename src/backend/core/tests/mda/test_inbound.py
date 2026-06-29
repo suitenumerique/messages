@@ -9,7 +9,10 @@ import pytest
 
 from core import enums, factories, models
 from core.mda.inbound import deliver_inbound_message
-from core.mda.inbound_create import find_thread_for_inbound_message
+from core.mda.inbound_create import (
+    _create_message_from_inbound,
+    find_thread_for_inbound_message,
+)
 
 
 @pytest.mark.django_db
@@ -47,10 +50,8 @@ class TestFindThread:
         # Parsed email data for the incoming reply
         parsed_reply = {
             "subject": f"Re: {initial_subject}",
-            "headers": {
-                "references": f"<other.ref@example.com> <{initial_mime_id}>",
-            },
-            "from": {"email": "replier@a.com"},
+            "references": ["other.ref@example.com", initial_mime_id],
+            "from": [{"email": "replier@a.com"}],
         }
 
         found_thread = find_thread_for_inbound_message(parsed_reply, self.mailbox)
@@ -79,8 +80,8 @@ class TestFindThread:
 
         parsed_reply = {
             "subject": f"Fwd: {initial_subject}",  # Different prefix, should still match
-            "in_reply_to": f"{initial_mime_id}",
-            "from": {"email": "replier@a.com"},
+            "inReplyTo": [initial_mime_id],
+            "from": [{"email": "replier@a.com"}],
         }
 
         found_thread = find_thread_for_inbound_message(parsed_reply, self.mailbox)
@@ -110,10 +111,8 @@ class TestFindThread:
         # Reply has reference, but completely different subject
         parsed_reply = {
             "subject": "Totally Unrelated Topic",
-            "headers": {
-                "references": f"<{initial_mime_id}>",
-            },
-            "from": {"email": "replier@a.com"},
+            "references": [initial_mime_id],
+            "from": [{"email": "replier@a.com"}],
         }
 
         # Create a new thread
@@ -140,11 +139,9 @@ class TestFindThread:
 
         parsed_reply = {
             "subject": "Re: Some Thread",
-            "headers": {
-                "references": "<nonexistent.ref@example.com>",
-            },
-            "in_reply_to": "another.nonexistent@example.com",
-            "from": {"email": "replier@a.com"},
+            "references": ["nonexistent.ref@example.com"],
+            "inReplyTo": ["another.nonexistent@example.com"],
+            "from": [{"email": "replier@a.com"}],
         }
 
         found_thread = find_thread_for_inbound_message(parsed_reply, self.mailbox)
@@ -185,10 +182,8 @@ class TestFindThread:
 
         parsed_reply = {
             "subject": f"Re: {initial_subject}",
-            "headers": {
-                "references": f"<{initial_mime_id}>",
-            },
-            "from": {"email": "replier@a.com"},
+            "references": [initial_mime_id],
+            "from": [{"email": "replier@a.com"}],
         }
 
         # Should find the thread in *our* mailbox
@@ -214,7 +209,7 @@ class TestFindThread:
         parsed_new_email = {
             "subject": "Brand New Topic",
             # No In-Reply-To or References
-            "from": {"email": "new@a.com"},
+            "from": [{"email": "new@a.com"}],
         }
         found_thread = find_thread_for_inbound_message(parsed_new_email, self.mailbox)
         assert found_thread is None
@@ -226,16 +221,16 @@ class TestDeliverInboundMessage:
 
     @pytest.fixture
     def sample_parsed_email(self):
-        """Sample parsed email data for testing delivery."""
+        """Sample parsed JMAP Email object for testing delivery."""
         return {
             "subject": "Delivery Test Subject",
-            "from": {"name": "Test Sender", "email": "sender@test.com"},
+            "from": [{"name": "Test Sender", "email": "sender@test.com"}],
             "to": [{"name": "Recipient Name", "email": "recipient@deliver.test"}],
             "cc": [],
             "bcc": [],
             "textBody": [{"content": "Test body content."}],
-            "message_id": "test.delivery.1@example.com",
-            "date": timezone.now(),
+            "messageId": ["test.delivery.1@example.com"],
+            "sentAt": timezone.now().isoformat(),
         }
 
     @pytest.fixture
@@ -286,7 +281,7 @@ class TestDeliverInboundMessage:
         assert message.sender.name == "Test Sender"
         assert message.sender.mailbox == target_mailbox
         assert message.blob.get_content() == raw_email_data
-        assert message.mime_id == sample_parsed_email["message_id"]
+        assert message.mime_id == sample_parsed_email["messageId"][0]
 
         # Inbound message from another sender: thread should be unread
         assert access.read_at is None
@@ -387,7 +382,7 @@ class TestDeliverInboundMessage:
         recipient_addr = f"{target_mailbox.local_part}@{target_mailbox.domain.name}"
         sample_parsed_email["to"] = [{"name": "Test Recip", "email": recipient_addr}]
         sample_parsed_email["cc"] = [{"name": "CC Contact", "email": "cc@example.com"}]
-        sender_email = sample_parsed_email["from"]["email"]
+        sender_email = sample_parsed_email["from"][0]["email"]
 
         assert not models.Contact.objects.filter(
             email=sender_email, mailbox=target_mailbox
@@ -420,10 +415,9 @@ class TestDeliverInboundMessage:
     ):
         """Test delivery uses fallback sender if From address is invalid."""
         recipient_addr = f"{target_mailbox.local_part}@{target_mailbox.domain.name}"
-        sample_parsed_email["from"] = {
-            "name": "Invalid Sender",
-            "email": "invalid-email-format",
-        }
+        sample_parsed_email["from"] = [
+            {"name": "Invalid Sender", "email": "invalid-email-format"},
+        ]
 
         success = deliver_inbound_message(
             recipient_addr, sample_parsed_email, raw_email_data, skip_inbound_queue=True
@@ -498,11 +492,11 @@ class TestDeliverInboundMessage:
         subject = "Conversation Starter"
         parsed_email_1 = {
             "subject": subject,
-            "from": {"name": "User One", "email": addr1},
+            "from": [{"name": "User One", "email": addr1}],
             "to": [{"name": "User Two", "email": addr2}],
             "textBody": [{"content": "Hello User Two!"}],
-            "message_id": "msg1.part1@exchange.test",
-            "date": timezone.now(),
+            "messageId": ["msg1.part1@exchange.test"],
+            "sentAt": timezone.now().isoformat(),
         }
         raw_email_1 = b"Raw for message 1"
 
@@ -516,7 +510,7 @@ class TestDeliverInboundMessage:
         assert thread2.messages.count() == 1
         assert thread2.subject == subject
         message1 = thread2.messages.first()
-        assert message1.mime_id == parsed_email_1["message_id"]
+        assert message1.mime_id == parsed_email_1["messageId"][0]
 
         # mailbox2 received a message from someone else: thread should be unread
         access2 = thread2.accesses.get(mailbox=mailbox2)
@@ -525,13 +519,13 @@ class TestDeliverInboundMessage:
         # 2. user2 -> user1 (Reply)
         parsed_email_2 = {
             "subject": f"Re: {subject}",
-            "from": {"name": "User Two", "email": addr2},
+            "from": [{"name": "User Two", "email": addr2}],
             "to": [{"name": "User One", "email": addr1}],
             "textBody": [{"content": "Hi User One, thanks!"}],
-            "message_id": "msg2.part2.reply@exchange.test",
-            "in_reply_to": message1.mime_id,  # Link to previous message
-            "headers": {"references": f"<{message1.mime_id}>"},
-            "date": timezone.now(),
+            "messageId": ["msg2.part2.reply@exchange.test"],
+            "inReplyTo": [message1.mime_id],  # Link to previous message
+            "references": [message1.mime_id],
+            "sentAt": timezone.now().isoformat(),
         }
         raw_email_2 = b"Raw for message 2"
 
@@ -544,7 +538,7 @@ class TestDeliverInboundMessage:
         thread1 = models.Thread.objects.get(accesses__mailbox=mailbox1)
         assert thread1.messages.count() == 1
         message2 = thread1.messages.first()
-        assert message2.mime_id == parsed_email_2["message_id"]
+        assert message2.mime_id == parsed_email_2["messageId"][0]
         assert thread1.subject == f"Re: {subject}"
 
         # mailbox1 received a reply: thread should be unread
@@ -554,15 +548,13 @@ class TestDeliverInboundMessage:
         # 3. user1 -> user2 (Reply to Reply)
         parsed_email_3 = {
             "subject": f"Re: {subject}",
-            "from": {"name": "User One", "email": addr1},
+            "from": [{"name": "User One", "email": addr1}],
             "to": [{"name": "User Two", "email": addr2}],
             "textBody": [{"content": "You are welcome!"}],
-            "message_id": "msg3.part3.rereply@exchange.test",
-            "in_reply_to": message2.mime_id,  # Link to user2's reply
-            "headers": {
-                "references": f"<{message1.mime_id}> <{message2.mime_id}>"
-            },  # Full chain
-            "date": timezone.now(),
+            "messageId": ["msg3.part3.rereply@exchange.test"],
+            "inReplyTo": [message2.mime_id],  # Link to user2's reply
+            "references": [message1.mime_id, message2.mime_id],  # Full chain
+            "sentAt": timezone.now().isoformat(),
         }
         raw_email_3 = b"Raw for message 3"
 
@@ -581,7 +573,7 @@ class TestDeliverInboundMessage:
         assert thread2.messages.count() == 2  # Now message 1 and message 3
         message3 = thread2.messages.exclude(id=message1.id).first()
         assert thread2.subject == subject  # Make sure the original subject is kept
-        assert message3.mime_id == parsed_email_3["message_id"]
+        assert message3.mime_id == parsed_email_3["messageId"][0]
 
     def test_deliver_message_with_empty_subject(self, target_mailbox, raw_email_data):
         """Test delivery of message with empty subject."""
@@ -590,13 +582,13 @@ class TestDeliverInboundMessage:
         # Create parsed email with empty subject
         parsed_email_empty_subject = {
             "subject": "",  # Empty subject
-            "from": {"name": "Test Sender", "email": "sender@test.com"},
+            "from": [{"name": "Test Sender", "email": "sender@test.com"}],
             "to": [{"name": "Recipient Name", "email": recipient_addr}],
             "cc": [],
             "bcc": [],
             "textBody": [{"content": "Test body content."}],
-            "message_id": "test.empty.subject@example.com",
-            "date": timezone.now(),
+            "messageId": ["test.empty.subject@example.com"],
+            "sentAt": timezone.now().isoformat(),
         }
 
         success = deliver_inbound_message(
@@ -627,13 +619,13 @@ class TestDeliverInboundMessage:
         # Create parsed email with null subject
         parsed_email_null_subject = {
             "subject": None,  # Null subject
-            "from": {"name": "Test Sender", "email": "sender@test.com"},
+            "from": [{"name": "Test Sender", "email": "sender@test.com"}],
             "to": [{"name": "Recipient Name", "email": recipient_addr}],
             "cc": [],
             "bcc": [],
             "textBody": [{"content": "Test body content."}],
-            "message_id": "test.null.subject@example.com",
-            "date": timezone.now(),
+            "messageId": ["test.null.subject@example.com"],
+            "sentAt": timezone.now().isoformat(),
         }
 
         success = deliver_inbound_message(
@@ -666,13 +658,13 @@ class TestDeliverInboundMessage:
         # Create parsed email without subject field
         parsed_email_no_subject = {
             # No subject field
-            "from": {"name": "Test Sender", "email": "sender@test.com"},
+            "from": [{"name": "Test Sender", "email": "sender@test.com"}],
             "to": [{"name": "Recipient Name", "email": recipient_addr}],
             "cc": [],
             "bcc": [],
             "textBody": [{"content": "Test body content."}],
-            "message_id": "test.no.subject@example.com",
-            "date": timezone.now(),
+            "messageId": ["test.no.subject@example.com"],
+            "sentAt": timezone.now().isoformat(),
         }
 
         success = deliver_inbound_message(
@@ -706,13 +698,13 @@ class TestDeliverInboundMessage:
         long_subject = "A" * 256  # Exceeds max_length of 255
         parsed_email_long_subject = {
             "subject": long_subject,
-            "from": {"name": "Test Sender", "email": "sender@test.com"},
+            "from": [{"name": "Test Sender", "email": "sender@test.com"}],
             "to": [{"name": "Recipient Name", "email": recipient_addr}],
             "cc": [],
             "bcc": [],
             "textBody": [{"content": "Test body content."}],
-            "message_id": "test.long.subject@example.com",
-            "date": timezone.now(),
+            "messageId": ["test.long.subject@example.com"],
+            "sentAt": timezone.now().isoformat(),
         }
 
         # This should now succeed with truncated subject
@@ -747,11 +739,11 @@ class TestDeliverInboundMessage:
         # First message with empty subject
         parsed_email_1 = {
             "subject": "",
-            "from": {"name": "Sender 1", "email": "sender1@test.com"},
+            "from": [{"name": "Sender 1", "email": "sender1@test.com"}],
             "to": [{"name": "Recipient", "email": recipient_addr}],
             "textBody": [{"content": "First message."}],
-            "message_id": "msg1.empty@example.com",
-            "date": timezone.now(),
+            "messageId": ["msg1.empty@example.com"],
+            "sentAt": timezone.now().isoformat(),
         }
 
         success1 = deliver_inbound_message(
@@ -762,12 +754,12 @@ class TestDeliverInboundMessage:
         # Second message with empty subject (should join same thread)
         parsed_email_2 = {
             "subject": "",
-            "from": {"name": "Sender 2", "email": "sender2@test.com"},
+            "from": [{"name": "Sender 2", "email": "sender2@test.com"}],
             "to": [{"name": "Recipient", "email": recipient_addr}],
             "textBody": [{"content": "Second message."}],
-            "message_id": "msg2.empty@example.com",
-            "in_reply_to": "msg1.empty@example.com",
-            "date": timezone.now(),
+            "messageId": ["msg2.empty@example.com"],
+            "inReplyTo": ["msg1.empty@example.com"],
+            "sentAt": timezone.now().isoformat(),
         }
 
         success2 = deliver_inbound_message(
@@ -801,7 +793,7 @@ class TestDeliverInboundMessage:
         # Email with duplicate recipient in TO list
         parsed_email_with_duplicates = {
             "subject": "Test Duplicate Recipients",
-            "from": {"name": "Sender", "email": "sender@test.com"},
+            "from": [{"name": "Sender", "email": "sender@test.com"}],
             "to": [
                 {"name": "Recipient", "email": "duplicate@test.com"},
                 {
@@ -817,8 +809,8 @@ class TestDeliverInboundMessage:
             ],
             "bcc": [],
             "textBody": [{"content": "Test with duplicates."}],
-            "message_id": "test.duplicates@example.com",
-            "date": timezone.now(),
+            "messageId": ["test.duplicates@example.com"],
+            "sentAt": timezone.now().isoformat(),
         }
 
         # Should succeed without raising ValidationError
@@ -888,13 +880,13 @@ class TestInboundAutoreplyIntegration:
         """Sample parsed email data."""
         return {
             "subject": "Autoreply Integration Test",
-            "from": {"name": "Sender", "email": "sender@test.com"},
+            "from": [{"name": "Sender", "email": "sender@test.com"}],
             "to": [{"name": "Recipient", "email": "recipient@autoreply-integ.test"}],
             "cc": [],
             "bcc": [],
             "textBody": [{"content": "Hello"}],
-            "message_id": "autoreply.integ.1@example.com",
-            "date": timezone.now(),
+            "messageId": ["autoreply.integ.1@example.com"],
+            "sentAt": timezone.now().isoformat(),
         }
 
     @patch("core.mda.autoreply.try_send_autoreply")
@@ -950,3 +942,57 @@ class TestInboundAutoreplyIntegration:
 
         assert result is False
         mock_try_autoreply.assert_not_called()
+
+
+@pytest.mark.django_db
+class TestInboundDedupIdempotency:
+    """Inbound message creation is idempotent per (mailbox, mime_id).
+
+    The advisory-locked critical section in ``_create_message_from_inbound``
+    rechecks for an existing message before inserting, so two deliveries that
+    race (or an async retry) with the same Message-ID can't produce duplicate
+    Message rows or two parallel Threads.
+    """
+
+    def _parsed(self, mime_id):
+        return {
+            "subject": "Dedup Test",
+            "from": [{"name": "Sender", "email": "sender@test.com"}],
+            "to": [{"name": "Rcpt", "email": "recipient@deliver.test"}],
+            "textBody": [{"content": "Body."}],
+            "messageId": [mime_id],
+            "sentAt": timezone.now().isoformat(),
+        }
+
+    def test_same_mime_id_creates_single_message(self):
+        """The same MIME Message-ID delivered twice yields a single message."""
+        mailbox = factories.MailboxFactory()
+        parsed = self._parsed("dup.race.1@example.com")
+        raw = b"raw mime bytes"
+
+        first = _create_message_from_inbound(
+            recipient_email=str(mailbox),
+            parsed_email=parsed,
+            raw_data=raw,
+            mailbox=mailbox,
+        )
+        second = _create_message_from_inbound(
+            recipient_email=str(mailbox),
+            parsed_email=parsed,
+            raw_data=raw,
+            mailbox=mailbox,
+        )
+
+        assert first is not None
+        # Second call is deduped to the existing message, not a new row.
+        assert second is not None
+        assert second.id == first.id
+        assert (
+            models.Message.objects.filter(
+                mime_id="dup.race.1@example.com",
+                thread__accesses__mailbox=mailbox,
+            ).count()
+            == 1
+        )
+        # And no second (parallel) thread was created.
+        assert models.Thread.objects.filter(accesses__mailbox=mailbox).count() == 1

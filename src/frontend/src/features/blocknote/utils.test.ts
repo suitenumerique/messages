@@ -1,6 +1,7 @@
 import type { Block } from '@blocknote/core';
-import { resolveTemplateVariables } from './utils';
+import { backfillTemplateVariableContent, resolveTemplateVariables } from './utils';
 import {
+  AnyInlineContent,
   bulletListItem,
   divider,
   image,
@@ -8,6 +9,17 @@ import {
   styledText,
   templateVariable,
 } from './__tests__/block-factories';
+
+// Legacy `template-variable` token as persisted before the inline spec
+// switched to `content: "styled"`: props are filled but `content` is absent.
+const legacyTemplateVariable = (
+  value: string,
+  label?: string,
+): AnyInlineContent =>
+  ({
+    type: 'template-variable',
+    props: label === undefined ? { value } : { value, label },
+  }) as unknown as AnyInlineContent;
 
 // resolveTemplateVariables is typed against the public Block schema; the
 // factories return loosely-typed blocks, so we cast at the boundary.
@@ -116,6 +128,23 @@ describe('resolveTemplateVariables', () => {
     expect(content[1].styles).toEqual({});
   });
 
+  it('carries the styles applied to the variable onto the resolved text', () => {
+    const blocks = asBlocks([
+      paragraph([
+        templateVariable('name', 'Name', { bold: true, textColor: 'red' }),
+      ]),
+    ]);
+
+    const resolved = resolveTemplateVariables(blocks, { name: 'Carol' });
+
+    const content = resolved[0].content as { type: string; text: string; styles: Record<string, unknown> }[];
+    expect(content[0]).toEqual({
+      type: 'text',
+      text: 'Carol',
+      styles: { bold: true, textColor: 'red' },
+    });
+  });
+
   it('does not mutate the input blocks', () => {
     const blocks = asBlocks([
       paragraph([
@@ -128,5 +157,71 @@ describe('resolveTemplateVariables', () => {
     resolveTemplateVariables(blocks, { name: 'Dave' });
 
     expect(blocks).toEqual(snapshot);
+  });
+});
+
+describe('backfillTemplateVariableContent', () => {
+  it('seeds the styled content of a legacy token from its label', () => {
+    const blocks = [
+      paragraph([
+        styledText('Hello '),
+        legacyTemplateVariable('name', 'Sender name'),
+      ]) as unknown as Record<string, unknown>,
+    ];
+
+    const [block] = backfillTemplateVariableContent(blocks);
+    const content = block.content as { content: { type: string; text: string }[] }[];
+
+    expect(content[1].content).toEqual([
+      { type: 'text', text: 'Sender name', styles: {} },
+    ]);
+  });
+
+  it('falls back to the slug when the label is missing', () => {
+    const blocks = [
+      paragraph([legacyTemplateVariable('user_name')]) as unknown as Record<string, unknown>,
+    ];
+
+    const [block] = backfillTemplateVariableContent(blocks);
+    const content = block.content as { content: { text: string }[] }[];
+
+    expect(content[0].content[0].text).toBe('user_name');
+  });
+
+  it('leaves already-populated tokens untouched', () => {
+    const blocks = [
+      paragraph([templateVariable('name', 'Sender name')]) as unknown as Record<string, unknown>,
+    ];
+    const snapshot = JSON.parse(JSON.stringify(blocks));
+
+    const result = backfillTemplateVariableContent(blocks);
+
+    expect(result[0].content).toEqual(snapshot[0].content);
+  });
+
+  it('recurses into children blocks', () => {
+    const blocks = [
+      bulletListItem('Parent', {}, [
+        bulletListItem([legacyTemplateVariable('nested', 'Nested')]),
+      ]) as unknown as Record<string, unknown>,
+    ];
+
+    const result = backfillTemplateVariableContent(blocks);
+    const child = (result[0].children as Record<string, unknown>[])[0];
+    const childContent = child.content as { content: { text: string }[] }[];
+
+    expect(childContent[0].content[0].text).toBe('Nested');
+  });
+
+  it('preserves blocks without a content array', () => {
+    const blocks = [
+      divider() as unknown as Record<string, unknown>,
+      image('https://example.com/a.png') as unknown as Record<string, unknown>,
+    ];
+
+    const result = backfillTemplateVariableContent(blocks);
+
+    expect(result[0].type).toBe('divider');
+    expect(result[1].type).toBe('image');
   });
 });

@@ -14,9 +14,15 @@ import re
 import struct
 import uuid
 from email import message_from_string
-from typing import Generator, Optional, Tuple
+from typing import Generator
 
-from core.mda.rfc5322 import compose_email, parse_email_address, parse_email_addresses
+from jmap_email import (
+    EmailAddress,
+    compose_email,
+    is_valid_msg_id,
+    parse_address,
+    parse_addresses,
+)
 
 logger = logging.getLogger(__name__)
 
@@ -92,8 +98,11 @@ MSGFLAG_UNSENT = 0x8
 # Flag status values
 FLAG_STATUS_FOLLOWUP = 2  # Flagged for follow-up
 
-# Container class prefix for email folders (MAPI standard)
-EMAIL_CONTAINER_CLASS_PREFIX = "IPF.Note"
+# Container class prefixes for folders that hold mail items (MAPI standard).
+# IPF.Note — standard Outlook mail folders.
+# IPF.Imap — IMAP accounts archived to PST keep this class on their mail
+# folders (e.g. the inbox), so they must be treated as mail too.
+EMAIL_CONTAINER_CLASS_PREFIXES = ("IPF.Note", "IPF.Imap")
 
 # Maximum recursion depth for PST folder traversal
 MAX_FOLDER_DEPTH = 50
@@ -150,7 +159,7 @@ def get_mapi_property(item, property_tag):
     return None
 
 
-def get_mapi_property_data(item, property_tag) -> Optional[bytes]:
+def get_mapi_property_data(item, property_tag) -> bytes | None:
     """Get raw data bytes for a MAPI property."""
     entry = get_mapi_property(item, property_tag)
     if entry is not None:
@@ -161,7 +170,7 @@ def get_mapi_property_data(item, property_tag) -> Optional[bytes]:
     return None
 
 
-def get_mapi_property_integer(item, property_tag) -> Optional[int]:
+def get_mapi_property_integer(item, property_tag) -> int | None:
     """Get an integer value for a MAPI property."""
     entry = get_mapi_property(item, property_tag)
     if entry is not None:
@@ -172,7 +181,7 @@ def get_mapi_property_integer(item, property_tag) -> Optional[int]:
     return None
 
 
-def get_mapi_property_string(item, property_tag) -> Optional[str]:
+def get_mapi_property_string(item, property_tag) -> str | None:
     """Get a string value for a MAPI property."""
     entry = get_mapi_property(item, property_tag)
     if entry is not None:
@@ -189,7 +198,7 @@ def get_mapi_property_string(item, property_tag) -> Optional[str]:
     return None
 
 
-def _folder_id_from_entry_id(entry_id: Optional[bytes]) -> Optional[int]:
+def _folder_id_from_entry_id(entry_id: bytes | None) -> int | None:
     """Extract the folder identifier from a MAPI entry ID.
 
     PST entry IDs are 24 bytes: 4 flags + 16 UID + 4 folder_id (LE uint32).
@@ -224,7 +233,7 @@ def build_special_folder_map(pst_file) -> dict:
     return special_map
 
 
-def get_store_owner_email(pst_file) -> Optional[str]:
+def get_store_owner_email(pst_file) -> str | None:
     """Get the mailbox owner's email from the message store PR_DISPLAY_NAME."""
     try:
         store = pst_file.get_message_store()
@@ -349,7 +358,7 @@ def _is_email_folder(folder) -> bool:
         return True
     try:
         container_class = entry.data_as_string
-        return container_class.startswith(EMAIL_CONTAINER_CLASS_PREFIX)
+        return container_class.startswith(EMAIL_CONTAINER_CLASS_PREFIXES)
     except Exception:
         logger.debug("Failed to read container class for folder")
     return True
@@ -534,17 +543,19 @@ def _get_message_flags(message) -> int:
     return flags if flags is not None else 0
 
 
-def _get_flag_status(message) -> Optional[int]:
+def _get_flag_status(message) -> int | None:
     """Get PR_FLAG_STATUS from a message (follow-up flag)."""
     return get_mapi_property_integer(message, PR_FLAG_STATUS)
 
 
-def _addr_tuple_to_dict(name: str, addr: str) -> dict:
-    """Convert a (name, email) tuple to a JMAP address dict."""
+def _addr_tuple_to_dict(name: str, addr: str) -> EmailAddress:
+    """Bridge the ``(name, email)`` shape returned by
+    :func:`jmap_email.parse_address` to a JMAP ``EmailAddress`` dict.
+    """
     return {"name": name, "email": addr}
 
 
-def _resolve_smtp_address(item) -> Optional[str]:
+def _resolve_smtp_address(item) -> str | None:
     """Resolve an SMTP email address from a MAPI item (recipient or message).
 
     Handles Exchange "EX" address types by checking PR_SMTP_ADDRESS first.
@@ -582,9 +593,9 @@ def _safe_sender_name(message) -> str:
 
 def _extract_sender_from_mapi(
     message,
-    store_email: Optional[str] = None,
-    preferred_name: Optional[str] = None,
-) -> Optional[dict]:
+    store_email: str | None = None,
+    preferred_name: str | None = None,
+) -> EmailAddress | None:
     """Extract sender address from MAPI properties on the message itself.
 
     Order of attempts (first hit wins):
@@ -605,11 +616,11 @@ def _extract_sender_from_mapi(
     """
 
     def _build(
-        fallback_name: Optional[str],
+        fallback_name: str | None,
         smtp: str,
         *,
         sender_name_fallback: bool = True,
-    ) -> dict:
+    ) -> EmailAddress:
         # ``sender_name`` is only a valid display-name fallback when the SMTP
         # came from a *different* source (PR_SENDER_*, store_email…). When the
         # SMTP was itself extracted from ``sender_name``, reusing it as a name
@@ -655,7 +666,7 @@ def _extract_sender_from_mapi(
     # 6. Try to parse sender_name as an email address.
     try:
         if message.sender_name:
-            parsed_name, addr = parse_email_address(message.sender_name)
+            parsed_name, addr = parse_address(message.sender_name, lenient=True)
             if addr and "@" in addr:
                 return _build(parsed_name, addr, sender_name_fallback=False)
     except Exception:
@@ -668,10 +679,11 @@ def _extract_sender_from_mapi(
     return None
 
 
-def _extract_recipients_from_mapi(message) -> dict:
+def _extract_recipients_from_mapi(message) -> dict[str, list[EmailAddress]]:
     """Extract To/Cc/Bcc recipients from MAPI recipient table.
 
-    Returns dict with 'to', 'cc', 'bcc' keys mapping to lists of address dicts.
+    Returns dict with ``to`` / ``cc`` / ``bcc`` keys mapping to lists of
+    JMAP ``EmailAddress`` entries.
     """
     result = {"to": [], "cc": [], "bcc": []}
 
@@ -724,39 +736,42 @@ def _extract_recipients_from_mapi(message) -> dict:
     return result
 
 
-def _parse_display_recipients(display_string: Optional[str]) -> list:
+def _parse_display_recipients(
+    display_string: str | None,
+) -> list[EmailAddress]:
     """Parse Outlook's semicolon-separated To/Cc/Bcc display string.
 
-    Returns a list of JMAP address dicts for entries containing an email
-    address. Name-only entries (no '@') are dropped on purpose — a Contact
-    without an email cannot be created downstream, and silently inventing
-    one would corrupt the address book.
+    Returns a list of JMAP ``EmailAddress`` entries for tokens that
+    contain a usable email address. Name-only entries (no ``@``) are
+    dropped on purpose — a Contact without an email cannot be created
+    downstream, and silently inventing one would corrupt the address
+    book.
     """
     if not display_string:
         return []
 
-    addresses = []
+    addresses: list[EmailAddress] = []
     for raw in display_string.split(";"):
         token = raw.strip()
         if not token:
             continue
         try:
-            name, addr = parse_email_address(token)
+            name, addr = parse_address(token, lenient=True)
         except Exception:
             logger.debug("Failed to parse display recipient token")
             continue
         if addr and "@" in addr:
             addresses.append(_addr_tuple_to_dict(name or "", addr))
         elif "@" in token:
-            # parse_email_address sometimes hands back the address as the
-            # name field when the token is a bare email — recover it.
             addresses.append(_addr_tuple_to_dict("", token))
         else:
             logger.debug("Dropping display recipient with no email")
     return addresses
 
 
-def _extract_display_recipients_from_mapi(message) -> dict:
+def _extract_display_recipients_from_mapi(
+    message,
+) -> dict[str, list[EmailAddress]]:
     """Fall back to PR_DISPLAY_TO/CC/BCC when the recipient table is empty.
 
     Some PSTs exported from Exchange Online expose ``number_of_recipients=0``
@@ -841,34 +856,28 @@ def _apply_recipient_fallback_chain(message, jmap_data: dict) -> None:
             jmap_data[key] = display_recipients[key]
 
 
-# Shape mirror of compose_email's _MSG_ID_RE, applied to the bracket-stripped
-# value. PST archives routinely carry Message-IDs that would crash strict
-# composition (empty, missing '@', embedded whitespace, nested brackets) —
-# pre-validating here lets us fall back to MAPI/synth instead of failing the
-# entire message reconstruction. Multiple '@' are accepted (Outlook/MAPI emit
-# obs-id-left ids like `foo$@local@domain`); the composer routes In-Reply-To /
-# References through UnstructuredHeader so those preserve on the wire.
-_VALID_MSG_ID_INNER_RE = re.compile(r"^[^\s<>]+@[^\s<>]+$")
-
-
-def _sanitize_message_id(raw: Optional[str]) -> Optional[str]:
+def _sanitize_message_id(raw: str | None) -> str | None:
     """Return ``raw`` stripped of brackets/whitespace if it's a valid msg-id.
 
-    Returns None for anything compose_email would reject (empty, no '@',
-    whitespace, nested brackets…). Keeps the importer "lenient parse,
-    strict compose" contract from collapsing on malformed archives.
+    PST archives routinely carry Message-IDs that strict composition
+    would reject (empty, missing '@', embedded whitespace, nested
+    brackets). Falling back to MAPI / synthesis here keeps the importer
+    "lenient parse, strict compose" contract from collapsing on a
+    malformed archive. The shape predicate is owned by
+    :func:`jmap_email.is_valid_msg_id` so this path stays in lockstep
+    with the composer's strict check.
     """
     if not raw:
         return None
     candidate = raw.strip()
     if candidate.startswith("<") and candidate.endswith(">"):
         candidate = candidate[1:-1].strip()
-    if not candidate or not _VALID_MSG_ID_INNER_RE.match(candidate):
+    if not is_valid_msg_id(candidate):
         return None
     return candidate
 
 
-def _extract_message_id_from_mapi(message) -> Optional[str]:
+def _extract_message_id_from_mapi(message) -> str | None:
     """Read the native Internet Message-ID stored on the PST message.
 
     Returns the value of PR_INTERNET_MESSAGE_ID stripped of surrounding
@@ -880,7 +889,7 @@ def _extract_message_id_from_mapi(message) -> Optional[str]:
     )
 
 
-def _synthesize_message_id(message, recipient_email: Optional[str]) -> str:
+def _synthesize_message_id(message, recipient_email: str | None) -> str:
     """Build a deterministic Message-ID from stable MAPI properties.
 
     Used as last resort when no native Message-ID is available (typical of
@@ -951,14 +960,14 @@ def _synthesize_message_id(message, recipient_email: Optional[str]) -> str:
 
 def reconstruct_eml(
     message,
-    store_email: Optional[str] = None,
-    recipient_email: Optional[str] = None,
+    store_email: str | None = None,
+    recipient_email: str | None = None,
 ) -> bytes:  # pylint: disable=too-many-branches
-    """Convert a pypff message to RFC5322 bytes.
+    """Convert a pypff message to RFC 5322 bytes.
 
     If transport_headers is available, uses those for threading headers.
     Otherwise, constructs headers from MAPI properties.
-    Uses the core/mda/rfc5322 compose_email API for MIME construction.
+    Uses the ``jmap-email`` library's ``compose_email`` for MIME construction.
 
     ``recipient_email`` is the import target mailbox; its domain is used to
     synthesize ``unknown-sender@<domain>`` when no sender can be extracted,
@@ -966,7 +975,7 @@ def reconstruct_eml(
     """
     # pylint: disable=too-many-locals,too-many-branches,too-many-statements
     jmap_data = {}
-    extra_headers = {}
+    extra_headers: list[dict[str, str]] = []
 
     # Try to get original transport headers for threading-critical fields
     transport_headers = None
@@ -983,11 +992,11 @@ def reconstruct_eml(
         # parses to a real SMTP address; otherwise fall back to MAPI below,
         # preserving the human-readable name from the header.
         from_str = parsed_headers.get("From", "")
-        from_name_hint: Optional[str] = None
+        from_name_hint: str | None = None
         if from_str:
-            name, addr = parse_email_address(from_str)
+            name, addr = parse_address(from_str, lenient=True)
             if addr and "@" in addr:
-                jmap_data["from"] = _addr_tuple_to_dict(name, addr)
+                jmap_data["from"] = [_addr_tuple_to_dict(name, addr)]
             else:
                 from_name_hint = name or None
 
@@ -998,25 +1007,25 @@ def reconstruct_eml(
                 preferred_name=from_name_hint,
             )
             if sender_dict:
-                jmap_data["from"] = sender_dict
+                jmap_data["from"] = [sender_dict]
 
         # To / Cc / Bcc — header values are authoritative when present.
         to_str = parsed_headers.get("To", "")
         if to_str:
             jmap_data["to"] = [
-                _addr_tuple_to_dict(n, a) for n, a in parse_email_addresses(to_str)
+                _addr_tuple_to_dict(n, a) for n, a in parse_addresses(to_str)
             ]
 
         cc_str = parsed_headers.get("Cc", "")
         if cc_str:
             jmap_data["cc"] = [
-                _addr_tuple_to_dict(n, a) for n, a in parse_email_addresses(cc_str)
+                _addr_tuple_to_dict(n, a) for n, a in parse_addresses(cc_str)
             ]
 
         bcc_str = parsed_headers.get("Bcc", "")
         if bcc_str:
             jmap_data["bcc"] = [
-                _addr_tuple_to_dict(n, a) for n, a in parse_email_addresses(bcc_str)
+                _addr_tuple_to_dict(n, a) for n, a in parse_addresses(bcc_str)
             ]
 
         # Subject
@@ -1024,10 +1033,10 @@ def reconstruct_eml(
         if subject:
             jmap_data["subject"] = subject
 
-        # Date
+        # sentAt
         date_str = parsed_headers.get("Date")
         if date_str:
-            jmap_data["date"] = date_str
+            jmap_data["sentAt"] = date_str
 
         # Message-ID — header is preferred, but Exchange/O365 exports
         # sometimes strip it or carry a malformed value (empty, missing
@@ -1036,31 +1045,31 @@ def reconstruct_eml(
         # cases.
         message_id = _sanitize_message_id(parsed_headers.get("Message-ID"))
         if message_id:
-            jmap_data["messageId"] = message_id
+            jmap_data["messageId"] = [message_id]
 
         # In-Reply-To and References — pass as custom headers to preserve
         # exact original values (the in_reply_to parameter on compose_email
         # would append to References, which we don't want for imports)
         in_reply_to_val = parsed_headers.get("In-Reply-To")
         if in_reply_to_val:
-            extra_headers["In-Reply-To"] = in_reply_to_val
+            extra_headers.append({"name": "In-Reply-To", "value": in_reply_to_val})
 
         references = parsed_headers.get("References")
         if references:
-            extra_headers["References"] = references
+            extra_headers.append({"name": "References", "value": references})
 
     else:
         # Build from MAPI properties — sender
         sender_dict = _extract_sender_from_mapi(message, store_email=store_email)
         if sender_dict:
-            jmap_data["from"] = sender_dict
+            jmap_data["from"] = [sender_dict]
 
-        # Date
+        # sentAt
         try:
             if message.delivery_time:
-                jmap_data["date"] = message.delivery_time.isoformat()
+                jmap_data["sentAt"] = message.delivery_time.isoformat()
             elif message.client_submit_time:
-                jmap_data["date"] = message.client_submit_time.isoformat()
+                jmap_data["sentAt"] = message.client_submit_time.isoformat()
         except Exception:
             logger.debug("Failed to read message date")
 
@@ -1085,9 +1094,18 @@ def reconstruct_eml(
     if "messageId" not in jmap_data:
         native_id = _extract_message_id_from_mapi(message)
         if native_id:
-            jmap_data["messageId"] = native_id
+            jmap_data["messageId"] = [native_id]
         else:
-            jmap_data["messageId"] = _synthesize_message_id(message, recipient_email)
+            jmap_data["messageId"] = [_synthesize_message_id(message, recipient_email)]
+
+    # ``sentAt`` fallback: the composer is strict-by-design and rejects
+    # a missing Date header. For archive imports we'd rather log a
+    # warning and surface a sentinel epoch than fail the whole message.
+    # The synthesized date is the Unix epoch so a downstream UI can flag
+    # the "no original date" state explicitly.
+    if "sentAt" not in jmap_data:
+        logger.warning("PST message has no resolvable Date; falling back to epoch")
+        jmap_data["sentAt"] = "1970-01-01T00:00:00+00:00"
 
     # No sender resolvable: synthesize one using the recipient's domain so
     # compose_email accepts the message. inbound_create.py keeps this value
@@ -1104,7 +1122,7 @@ def reconstruct_eml(
         logger.warning(
             "PST message has no resolvable sender; using synthesized sender address"
         )
-        jmap_data["from"] = {"name": "Unknown Sender", "email": fallback_email}
+        jmap_data["from"] = [{"name": "Unknown Sender", "email": fallback_email}]
 
     # Body parts
     try:
@@ -1140,6 +1158,15 @@ def reconstruct_eml(
                 att_size = attachment.get_size()
                 att_data = attachment.read_buffer(att_size)
 
+                # Skip empty / whitespace-only parts. DSN and read-receipt
+                # reports routinely expose blank diagnostic parts (e.g. an empty
+                # text/rfc822-headers) that libpff surfaces as attachments;
+                # importing them yields 0-byte attachments that render as broken
+                # in the UI while carrying no information.
+                if not att_data or not att_data.strip():
+                    logger.debug("Skipping empty attachment %d", i)
+                    continue
+
                 # Filename from MAPI properties
                 filename = (
                     get_mapi_property_string(attachment, PR_ATTACH_LONG_FILENAME)
@@ -1152,6 +1179,15 @@ def reconstruct_eml(
                 mime_type = get_mapi_property_string(attachment, PR_ATTACH_MIME_TAG)
                 if not mime_type:
                     mime_type = "application/octet-stream"
+
+                # text/rfc822-headers (the original-headers part of a DSN/read
+                # receipt) composes fine but on re-parse the display parser
+                # used to drop the body of this subtype, surfacing it as a
+                # 0-byte attachment in the UI. The content is plain RFC822
+                # header text, so normalize the label to text/plain, which
+                # round-trips intact.
+                if mime_type.split(";")[0].strip().lower() == "text/rfc822-headers":
+                    mime_type = "text/plain"
 
                 # Content-ID for inline images
                 content_id = get_mapi_property_string(attachment, PR_ATTACH_CONTENT_ID)
@@ -1215,7 +1251,7 @@ def _find_ipm_subtree(pst_file):
     return root
 
 
-def count_pst_messages(pst_file, special_folder_map: Optional[dict] = None) -> int:
+def count_pst_messages(pst_file, special_folder_map: dict | None = None) -> int:
     """Recursively count email messages across all email folders in a PST file."""
     if special_folder_map is None:
         special_folder_map = build_special_folder_map(pst_file)
@@ -1252,9 +1288,9 @@ def count_pst_messages(pst_file, special_folder_map: Optional[dict] = None) -> i
 def walk_pst_messages(
     pst_file,
     special_folder_map: dict,
-    store_email: Optional[str] = None,
-    recipient_email: Optional[str] = None,
-) -> Generator[Tuple[str, str, int, Optional[int], Optional[bytes]], None, None]:
+    store_email: str | None = None,
+    recipient_email: str | None = None,
+) -> Generator[tuple[str, str, int, int | None, bytes | None], None, None]:
     """Walk all email messages in a PST file, yielding them in chronological order.
 
     First pass: collect lightweight metadata (folder ref + message index).
@@ -1395,7 +1431,7 @@ def walk_pst_messages(
             )
         except Exception:
             # Yield None so pst_tasks.py counts this as a failure instead of
-            # silently dropping it (was hidden at debug level previously).
+            # silently dropping it.
             logger.exception(
                 "Failed to reconstruct EML for message %d in folder %s",
                 msg_idx,

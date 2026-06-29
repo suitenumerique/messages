@@ -2,6 +2,7 @@ import * as locales from '@blocknote/core/locales';
 import { Block } from '@blocknote/core';
 import { TFunction } from 'i18next';
 import { ALLOWED_IMAGE_MIME_TYPES } from '@/features/blocknote/image-block';
+import { TEMPLATE_VARIABLE_TYPE } from '@/features/blocknote/inline-template-variable';
 
 /**
  * Builds the BlockNote i18n dictionary for the given locale.
@@ -85,9 +86,12 @@ export const resolveTemplateVariables = (
             resolvedBlock.content = block.content.flatMap(
                 // eslint-disable-next-line @typescript-eslint/no-explicit-any
                 (ic: any) => {
-                    if (ic.type === 'template-variable') {
+                    if (ic.type === TEMPLATE_VARIABLE_TYPE) {
                         const value = resolvedValues[ic.props?.value] ?? `{${ic.props?.value}}`;
-                        return { type: 'text' as const, text: value, styles: {} };
+                        // Carry over the styles applied to the token so the
+                        // resolved text keeps its bold/italic/color formatting.
+                        const styles = ic.content?.[0]?.styles ?? {};
+                        return { type: 'text' as const, text: value, styles };
                     }
                     return ic;
                 },
@@ -99,5 +103,46 @@ export const resolveTemplateVariables = (
         }
 
         return resolvedBlock;
+    });
+};
+
+/**
+ * Backfills the styled `content` of legacy `template-variable` inline nodes.
+ *
+ * These tokens used to be stored with `content: "none"` (no styled content),
+ * the slug being rendered from `props.value`. The inline spec now uses
+ * `content: "styled"` and renders the token from its `content`, so a legacy
+ * node with an empty `content` shows up as an empty blue chip. We seed the
+ * missing content from the persisted `label` (falling back to the `value`
+ * slug) so old signatures and templates keep displaying their variable names.
+ *
+ * Operates on the raw JSON blocks (pre-`useCreateBlockNote`), hence the loose
+ * typing. Recurses into children blocks.
+ */
+export const backfillTemplateVariableContent = (
+    blocks: Record<string, unknown>[],
+): Record<string, unknown>[] => {
+    return blocks.map((block) => {
+        const result = { ...block };
+
+        if (Array.isArray(result.content)) {
+            result.content = result.content.map((ic: Record<string, unknown>) => {
+                const isEmptyToken =
+                    ic?.type === TEMPLATE_VARIABLE_TYPE &&
+                    (!Array.isArray(ic.content) || ic.content.length === 0);
+                if (!isEmptyToken) return ic;
+
+                const props = (ic.props ?? {}) as Record<string, unknown>;
+                const text = (props.label as string) || (props.value as string) || '';
+                return { ...ic, content: [{ type: 'text', text, styles: {} }] };
+            });
+        }
+
+        const children = result.children;
+        if (Array.isArray(children) && children.length > 0) {
+            result.children = backfillTemplateVariableContent(children as Record<string, unknown>[]);
+        }
+
+        return result;
     });
 };

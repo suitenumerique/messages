@@ -1,4 +1,4 @@
-import { Icon, IconSize, Spinner } from "@gouvfr-lasuite/ui-kit";
+import { Spinner } from "@gouvfr-lasuite/ui-kit";
 import { Button, Checkbox, Column, DataGrid, useModal, useModals } from "@gouvfr-lasuite/cunningham-react";
 import { useTranslation } from "react-i18next";
 import { useState } from "react";
@@ -7,6 +7,7 @@ import { Mailbox, ReadMessageTemplate, MessageTemplateTypeChoices, useMailboxesM
 import { Banner } from "@/features/ui/components/banner";
 import { addToast, ToasterItem } from "@/features/ui/components/toaster";
 import { ModalComposeMailboxSignature } from "../modal-compose-mailbox-signature";
+import { Trash } from "@gouvfr-lasuite/ui-kit/icons";
 
 type SignatureDataGridProps = {
     mailbox: Mailbox;
@@ -28,7 +29,8 @@ export const SignatureDataGrid = ({ mailbox }: SignatureDataGridProps) => {
         }
     );
     const { mutateAsync: updateSignature, isPending: isUpdating } = useMailboxesMessageTemplatesPartialUpdate();
-    const { mutateAsync: deleteSignature, isPending: isDeleting } = useMailboxesMessageTemplatesDestroy();
+    const { mutateAsync: deleteSignature } = useMailboxesMessageTemplatesDestroy();
+    const [deletingId, setDeletingId] = useState<string | null>(null);
     const [selectedSignature, setSelectedSignature] = useState<ReadMessageTemplate | undefined>();
     const queryClient = useQueryClient();
 
@@ -55,6 +57,7 @@ export const SignatureDataGrid = ({ mailbox }: SignatureDataGridProps) => {
             children: t('Are you sure you want to delete this signature? This action is irreversible!'),
         });
         if (decision === 'delete') {
+            setDeletingId(signature.id);
             try {
                 await deleteSignature({ mailboxId: mailbox.id, id: signature.id });
                 await invalidateSignatures();
@@ -69,6 +72,8 @@ export const SignatureDataGrid = ({ mailbox }: SignatureDataGridProps) => {
                         <span>{t("Failed to delete signature.")}</span>
                     </ToasterItem>,
                 );
+            } finally {
+                setDeletingId(null);
             }
         }
     }
@@ -114,23 +119,24 @@ export const SignatureDataGrid = ({ mailbox }: SignatureDataGridProps) => {
         },
         {
             id: "actions",
-            size: 154,
+            size: 130,
             headerName: t("Actions"),
             renderCell: ({ row }) => (
                 <div className="flex-row flex-justify-start" style={{ width: "100%", gap: "var(--c--globals--spacings--2xs)" }}>
                     <Button
-                        variant="bordered"
-                        size="small"
+                        variant="tertiary"
+                        size="nano"
                         onClick={() => handleModifyRow(row)}
                     >
                         {t("Modify")}
                     </Button>
                     <Button
                         color="error"
-                        size="small"
+                        variant="tertiary"
+                        size="nano"
                         onClick={() => handleDeleteRow(row)}
-                        disabled={isDeleting}
-                        icon={isDeleting ? <Spinner size="sm" /> : <Icon name="delete" size={IconSize.SMALL} />}
+                        disabled={deletingId === row.id}
+                        icon={deletingId === row.id ? <Spinner size="sm" /> : <Trash size="small" />}
                         aria-label={t("Delete")}
                     />
                 </div>
@@ -159,28 +165,27 @@ export const SignatureDataGrid = ({ mailbox }: SignatureDataGridProps) => {
     }
 
     return (
-        <section className="admin-page__body">
-            <div className="admin-data-grid">
-                <DataGrid
-                    columns={columns}
-                    rows={signatures?.data ?? []}
-                    onSortModelChange={() => undefined}
-                    enableSorting={false}
-                    emptyPlaceholderLabel={t("No signatures found")}
-                />
-                <ModalComposeMailboxSignature
-                    isOpen={modal.isOpen}
-                    onClose={
-                        () => {
-                            modal.close();
-                            if (selectedSignature) {
-                                setSelectedSignature(undefined);
-                            }
+        <div className="admin-data-grid">
+            <DataGrid
+                columns={columns}
+                rows={signatures?.data ?? []}
+                onSortModelChange={() => undefined}
+                enableSorting={false}
+                emptyPlaceholderLabel={t("No signatures")}
+            />
+            <ModalComposeMailboxSignature
+                isOpen={modal.isOpen}
+                onClose={
+                    () => {
+                        modal.close();
+                        if (selectedSignature) {
+                            setSelectedSignature(undefined);
                         }
                     }
-                    signature={selectedSignature}
-                />
-            </div>
-        </section>
+                }
+                mailbox={mailbox}
+                signature={selectedSignature}
+            />
+        </div>
     );
 };

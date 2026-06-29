@@ -1,10 +1,12 @@
-import { MouseEventHandler } from 'react';
+import { MouseEventHandler, useCallback, useMemo } from 'react';
 import { Attachment } from "@/features/api/gen/models";
 import { Button, Field } from '@gouvfr-lasuite/cunningham-react';
-import { AttachmentItem, isAttachment } from '@/features/layouts/components/thread-view/components/thread-attachment-list/attachment-item';
+import { AttachmentItem, isAttachment, isDriveFile } from '@/features/layouts/components/thread-view/components/thread-attachment-list/attachment-item';
 import { useTranslation } from 'react-i18next';
 import { useDropzone } from 'react-dropzone';
 import { AttachmentHelper } from '@/features/utils/attachment-helper';
+import { useAttachmentPreview } from '@/features/providers/attachment-preview';
+import { useConfig } from '@/features/providers/config';
 import { DropZone } from './dropzone';
 import { DriveAttachmentPicker, DriveFile } from './drive-attachment-picker';
 import { Icon } from '@gouvfr-lasuite/ui-kit';
@@ -36,12 +38,37 @@ export const AttachmentUploader = ({
     maxAttachmentSize,
 }: AttachmentUploaderProps) => {
     const { t, i18n } = useTranslation();
+    const { openPreview } = useAttachmentPreview();
+    const { DRIVE } = useConfig();
 
     const { getRootProps, getInputProps, isDragActive } = useDropzone({
         onDrop: (acceptedFiles) => onUploadFiles(acceptedFiles),
         disabled,
         maxSize: maxAttachmentSize,
     });
+
+    // The preview modal builds its file list from the thread's persisted
+    // messages, which never include a draft's PJ. We therefore feed it the
+    // draft's own attachments (local state) so they can be previewed.
+    const previewFiles = useMemo(
+        () => attachments.map((entry) =>
+            isAttachment(entry)
+                ? AttachmentHelper.toFilePreviewType(entry)
+                : AttachmentHelper.driveFileToFilePreviewType(entry, DRIVE.preview_url),
+        ),
+        [attachments, DRIVE.preview_url],
+    );
+    const driveUrlById = useMemo(() => {
+        const map = new Map<string, string>();
+        for (const entry of attachments) {
+            if (isDriveFile(entry)) map.set(entry.id, entry.url);
+        }
+        return map;
+    }, [attachments]);
+    const handlePreview = useCallback(
+        (fileId: string) => openPreview(fileId, { files: previewFiles, driveUrlById }),
+        [openPreview, previewFiles, driveUrlById],
+    );
 
     const handleClick: MouseEventHandler<HTMLElement> = (event) => {
         const hasClickInBucketList = (event.target as HTMLElement).closest('.attachment-bucket__list');
@@ -109,6 +136,7 @@ export const AttachmentUploader = ({
                                 canDownload={false}
                                 attachment={entry}
                                 onDelete={disabled ? undefined : () => onRemove(entry)}
+                                onPreview={handlePreview}
                             />
                         ))}
                     </div>

@@ -60,13 +60,23 @@ class ConfigView(drf.views.APIView):
                                     "type": "string",
                                     "readOnly": True,
                                 },
+                                "preview_url": {
+                                    "type": "string",
+                                    "readOnly": True,
+                                },
                                 "app_name": {
                                     "type": "string",
                                     "readOnly": True,
                                 },
                             },
                             "readOnly": True,
-                            "required": ["sdk_url", "api_url", "file_url", "app_name"],
+                            "required": [
+                                "sdk_url",
+                                "api_url",
+                                "file_url",
+                                "preview_url",
+                                "app_name",
+                            ],
                         },
                         "SCHEMA_CUSTOM_ATTRIBUTES_USER": {
                             "type": "object",
@@ -218,6 +228,9 @@ class ConfigView(drf.views.APIView):
                         "sdk_url": f"{base_url}{settings.DRIVE_CONFIG.get('sdk_url')}",
                         "api_url": f"{base_url}{settings.DRIVE_CONFIG.get('api_url')}",
                         "file_url": f"{base_url}{settings.DRIVE_CONFIG.get('file_url')}",
+                        "preview_url": (
+                            f"{base_url}{settings.DRIVE_CONFIG.get('preview_url')}"
+                        ),
                         "app_name": settings.DRIVE_CONFIG.get("app_name"),
                     }
                 }

@@ -33,8 +33,9 @@ export const QuotedMessageBlock = createReactBlockSpec(
                 </div>
             )
         },
-        // We don't embedded the quoted message as it is done by the backend
-        // Take a look at the backend/core/mda/rfc5322/composer.py:477 for more details
+        // We don't embed the quoted message — the backend does it during
+        // outbound composition. See the ``jmap-email`` library
+        // (``compose_email`` + ``make_reply`` / ``make_forward``).
         toExternalHTML: () => (<span />),
         meta: {
             selectable: false,

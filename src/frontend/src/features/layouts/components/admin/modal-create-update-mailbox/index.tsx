@@ -4,7 +4,7 @@ import { useTranslation } from "react-i18next";
 import { FieldErrors, FormProvider, useForm } from "react-hook-form";
 import { zodResolver } from "@hookform/resolvers/zod";
 import * as z from "zod";
-import { useRouter } from "next/router";
+import { useParams } from "@tanstack/react-router";
 import { useMaildomainsMailboxesCreate, useMaildomainsMailboxesList, useMaildomainsMailboxesPartialUpdate } from "@/features/api/gen/maildomains/maildomains";
 import { RhfInput } from "@/features/forms/components/react-hook-form";
 import { RhfCheckbox } from "@/features/forms/components/react-hook-form/rhf-checkbox";
@@ -20,7 +20,7 @@ import { useConfig } from "@/features/providers/config";
 import { JSONSchema } from "zod/v4/core";
 import MailboxHelper from "@/features/utils/mailbox-helper";
 import { addToast, ToasterItem } from "@/features/ui/components/toaster";
-import { Icon } from "@gouvfr-lasuite/ui-kit";
+import { Icon, IconType } from "@gouvfr-lasuite/ui-kit";
 import i18n from "@/features/i18n/initI18n";
 
 export const MODAL_CREATE_ADDRESS_ID = "modal-create-address";
@@ -47,8 +47,8 @@ type ModalCreateOrUpdateMailboxProps = {
 
 export const ModalCreateOrUpdateMailbox = ({ isOpen, mailbox, onClose, onSuccess }: ModalCreateOrUpdateMailboxProps) => {
   const { t } = useTranslation();
-  const router = useRouter();
-  const domainId = router.query.maildomainId as string;
+  const routeParams = useParams({ strict: false }) as { maildomainId?: string };
+  const domainId = routeParams.maildomainId ?? '';
   const [error, setError] = useState<string | null>(null);
   const { selectedMailDomain } = useAdminMailDomain();
   const isIdentitySyncDisabled = !(selectedMailDomain?.identity_sync ?? true);
@@ -59,7 +59,6 @@ export const ModalCreateOrUpdateMailbox = ({ isOpen, mailbox, onClose, onSuccess
       if (mailbox.alias_of) return "redirect";
       return "shared";
     }
-    if (isIdentitySyncDisabled) return "shared";
     return "personal";
   });
   const [isSubmitting, setIsSubmitting] = useState(false);
@@ -80,8 +79,8 @@ export const ModalCreateOrUpdateMailbox = ({ isOpen, mailbox, onClose, onSuccess
   const createMailboxSchema = z.discriminatedUnion("type", [
     z.object({
       type: z.literal("personal"),
-      first_name: z.string().min(1, { error: i18n.t("First name is required.") }),
-      last_name: z.string().min(1, { error: i18n.t("Last name is required.") }),
+      first_name: z.string().trim().min(1, { error: i18n.t("First name is required.") }),
+      last_name: z.string().trim().min(1, { error: i18n.t("Last name is required.") }),
       prefix: z.string()
         .min(1, { error: i18n.t("Prefix is required.") })
         .regex(/^[a-zA-Z0-9_.-]+$/, { error: i18n.t("Prefix can only contain letters, numbers, dots, underscores and hyphens.") }),
@@ -90,7 +89,10 @@ export const ModalCreateOrUpdateMailbox = ({ isOpen, mailbox, onClose, onSuccess
     }),
     z.object({
       type: z.literal("shared"),
-      name: z.string().min(1, { error: i18n.t("Name is required.") }),
+      name: z.string()
+        .trim()
+        .min(1, { error: i18n.t("Name is required.") })
+        .max(255, { error: i18n.t("The name must not exceed 255 characters.") }),
       prefix: z.string()
         .min(1, { error: i18n.t("Prefix is required.") })
         .regex(/^[a-zA-Z0-9_.-]+$/, { error: i18n.t("Prefix can only contain letters, numbers, dots, underscores and hyphens.") }),
@@ -106,12 +108,18 @@ export const ModalCreateOrUpdateMailbox = ({ isOpen, mailbox, onClose, onSuccess
   const editMailboxSchema = z.discriminatedUnion("type", [
     z.object({
       type: z.literal("personal"),
-      full_name: z.string().min(1, { error: i18n.t("Full name is required.") }),
+      full_name: z.string()
+        .trim()
+        .min(1, { error: i18n.t("Full name is required.") })
+        .max(255, { error: i18n.t("The name must not exceed 255 characters.") }),
       ...convertJsonSchemaToZod(SCHEMA_CUSTOM_ATTRIBUTES_USER as JSONSchema.Schema),
     }),
     z.object({
       type: z.literal("shared"),
-      name: z.string().min(1, { error: i18n.t("Name is required.") }),
+      name: z.string()
+        .trim()
+        .min(1, { error: i18n.t("Name is required.") })
+        .max(255, { error: i18n.t("The name must not exceed 255 characters.") }),
     }),
   ]);
   type CreateMailboxFormData = z.infer<typeof createMailboxSchema>;
@@ -126,7 +134,7 @@ export const ModalCreateOrUpdateMailbox = ({ isOpen, mailbox, onClose, onSuccess
           type: "personal",
           prefix: mailbox?.local_part ?? "",
           confirmation_accepted: true,
-          full_name: owner_access?.user.full_name ?? "",
+          full_name: mailbox?.contact?.name ?? "",
           ...Object.fromEntries(Object.entries(customAttributes).map(
             ([name, schema]) => ([name, owner_access?.user.custom_attributes[name] ?? schema.default ?? ''])
           )),
@@ -249,9 +257,7 @@ export const ModalCreateOrUpdateMailbox = ({ isOpen, mailbox, onClose, onSuccess
       setCreatedMailbox(response.data);
       onSuccess?.();
     } catch (error: unknown) {
-      if (error instanceof APIError && error.data?.identity_sync) {
-        setError(t('Personal mailboxes cannot be created when identity synchronization is disabled.'));
-      } else if (error instanceof APIError && error.data?.local_part_denied) {
+      if (error instanceof APIError && error.data?.local_part_denied) {
         setError(t('This email prefix is not allowed for personal mailboxes. Please choose a different prefix.'));
       } else if (error instanceof APIError && error.data?.local_part) {
         setError(t('An address with this prefix already exists in this domain.'));
@@ -309,7 +315,7 @@ export const ModalCreateOrUpdateMailbox = ({ isOpen, mailbox, onClose, onSuccess
   };
 
   const handleClose = () => {
-    const defaultTab = isIdentitySyncDisabled ? "shared" : "personal";
+    const defaultTab = "personal";
     setActiveTab(defaultTab);
     reset(getDefaultValues(defaultTab));
     setError(null);
@@ -346,8 +352,7 @@ export const ModalCreateOrUpdateMailbox = ({ isOpen, mailbox, onClose, onSuccess
               type="button"
               className={clsx('modal-tab', { 'modal-tab--active': activeTab === "personal" })}
               onClick={() => handleTabChange("personal")}
-              disabled={isUpdating || isIdentitySyncDisabled}
-              title={isIdentitySyncDisabled ? t('Personal mailboxes cannot be created when identity synchronization is disabled.') : undefined}
+              disabled={isUpdating}
             >
               {isUpdating ? t('Personal mailbox') : t('Create a new personal mailbox')}
             </button>
@@ -374,6 +379,11 @@ export const ModalCreateOrUpdateMailbox = ({ isOpen, mailbox, onClose, onSuccess
               {/* Personal Mailbox Form */}
               {activeTab === "personal" && (
                 <>
+                  {!isUpdating && isIdentitySyncDisabled && (
+                    <Banner type="info" icon={<Icon name="info" type={IconType.OUTLINED} />}>
+                      {t('Identity synchronization is disabled for this domain, so no password will be created here. The user will sign in through a third-party identity provider, and the mailbox can receive emails straight away.')}
+                    </Banner>
+                  )}
                   <div className="form-field-row name-row">
                     {isUpdating ? (
                       <RhfInput

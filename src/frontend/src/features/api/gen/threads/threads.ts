@@ -28,7 +28,10 @@ import type {
 import type {
   PaginatedThreadList,
   Thread,
+  ThreadBulkDeleteRequestRequest,
   ThreadSplitRequestRequest,
+  ThreadsBulkDeleteCreate200,
+  ThreadsBulkDeleteCreate400,
   ThreadsListParams,
   ThreadsRefreshSummaryCreate200,
   ThreadsSplitCreate400,
@@ -1097,6 +1100,134 @@ export function useThreadsSummaryRetrieve<
   return query;
 }
 
+/**
+ * Permanently delete (hard-delete) draft messages within the given accessible and editable threads. A thread emptied by the deletion is removed; otherwise its stats are recomputed.
+ */
+export type threadsBulkDeleteCreateResponse200 = {
+  data: ThreadsBulkDeleteCreate200;
+  status: 200;
+};
+
+export type threadsBulkDeleteCreateResponse400 = {
+  data: ThreadsBulkDeleteCreate400;
+  status: 400;
+};
+
+export type threadsBulkDeleteCreateResponse401 = {
+  data: void;
+  status: 401;
+};
+
+export type threadsBulkDeleteCreateResponse403 = {
+  data: void;
+  status: 403;
+};
+
+export type threadsBulkDeleteCreateResponseSuccess =
+  threadsBulkDeleteCreateResponse200 & {
+    headers: Headers;
+  };
+export type threadsBulkDeleteCreateResponseError = (
+  | threadsBulkDeleteCreateResponse400
+  | threadsBulkDeleteCreateResponse401
+  | threadsBulkDeleteCreateResponse403
+) & {
+  headers: Headers;
+};
+
+export type threadsBulkDeleteCreateResponse =
+  | threadsBulkDeleteCreateResponseSuccess
+  | threadsBulkDeleteCreateResponseError;
+
+export const getThreadsBulkDeleteCreateUrl = () => {
+  return `/api/v1.0/threads/bulk-delete/`;
+};
+
+export const threadsBulkDeleteCreate = async (
+  threadBulkDeleteRequestRequest: ThreadBulkDeleteRequestRequest,
+  options?: RequestInit,
+): Promise<threadsBulkDeleteCreateResponse> => {
+  return fetchAPI<threadsBulkDeleteCreateResponse>(
+    getThreadsBulkDeleteCreateUrl(),
+    {
+      ...options,
+      method: "POST",
+      headers: { "Content-Type": "application/json", ...options?.headers },
+      body: JSON.stringify(threadBulkDeleteRequestRequest),
+    },
+  );
+};
+
+export const getThreadsBulkDeleteCreateMutationOptions = <
+  TError = ErrorType<ThreadsBulkDeleteCreate400 | void>,
+  TContext = unknown,
+>(options?: {
+  mutation?: UseMutationOptions<
+    Awaited<ReturnType<typeof threadsBulkDeleteCreate>>,
+    TError,
+    { data: ThreadBulkDeleteRequestRequest },
+    TContext
+  >;
+  request?: SecondParameter<typeof fetchAPI>;
+}): UseMutationOptions<
+  Awaited<ReturnType<typeof threadsBulkDeleteCreate>>,
+  TError,
+  { data: ThreadBulkDeleteRequestRequest },
+  TContext
+> => {
+  const mutationKey = ["threadsBulkDeleteCreate"];
+  const { mutation: mutationOptions, request: requestOptions } = options
+    ? options.mutation &&
+      "mutationKey" in options.mutation &&
+      options.mutation.mutationKey
+      ? options
+      : { ...options, mutation: { ...options.mutation, mutationKey } }
+    : { mutation: { mutationKey }, request: undefined };
+
+  const mutationFn: MutationFunction<
+    Awaited<ReturnType<typeof threadsBulkDeleteCreate>>,
+    { data: ThreadBulkDeleteRequestRequest }
+  > = (props) => {
+    const { data } = props ?? {};
+
+    return threadsBulkDeleteCreate(data, requestOptions);
+  };
+
+  return { mutationFn, ...mutationOptions };
+};
+
+export type ThreadsBulkDeleteCreateMutationResult = NonNullable<
+  Awaited<ReturnType<typeof threadsBulkDeleteCreate>>
+>;
+export type ThreadsBulkDeleteCreateMutationBody =
+  ThreadBulkDeleteRequestRequest;
+export type ThreadsBulkDeleteCreateMutationError =
+  ErrorType<ThreadsBulkDeleteCreate400 | void>;
+
+export const useThreadsBulkDeleteCreate = <
+  TError = ErrorType<ThreadsBulkDeleteCreate400 | void>,
+  TContext = unknown,
+>(
+  options?: {
+    mutation?: UseMutationOptions<
+      Awaited<ReturnType<typeof threadsBulkDeleteCreate>>,
+      TError,
+      { data: ThreadBulkDeleteRequestRequest },
+      TContext
+    >;
+    request?: SecondParameter<typeof fetchAPI>;
+  },
+  queryClient?: QueryClient,
+): UseMutationResult<
+  Awaited<ReturnType<typeof threadsBulkDeleteCreate>>,
+  TError,
+  { data: ThreadBulkDeleteRequestRequest },
+  TContext
+> => {
+  const mutationOptions = getThreadsBulkDeleteCreateMutationOptions(options);
+
+  return useMutation(mutationOptions, queryClient);
+};
 /**
  * Get aggregated statistics for threads based on filters.
  */

@@ -19,9 +19,9 @@ from typing import Any, Dict, List, Optional, Tuple
 from django.conf import settings
 
 from celery.utils.log import get_task_logger
+from jmap_email import first_address_email, parse_email
 
 from core.mda.inbound import deliver_inbound_message
-from core.mda.rfc5322 import parse_email_message
 from core.services.ssrf import SSRFValidationError, validate_hostname
 
 logger = get_task_logger(__name__)
@@ -63,19 +63,61 @@ def decode_imap_utf7(s):
     return re.sub(r"&([^-]*)-", decode_match, s)
 
 
-def _validate_imap_host(server: str) -> None:
-    """Validate that the IMAP server hostname is not a private/internal address.
+def _validate_imap_host(server: str) -> str:
+    """Validate the IMAP server hostname and return the vetted IP to pin to.
 
-    Wraps the shared SSRF validator but allows public IP literals, which are
-    legitimate addresses for customer-supplied IMAP servers.
+    Wraps the shared SSRF validator (allowing public IP literals, which are
+    legitimate for customer-supplied IMAP servers) and returns the first
+    validated IP address. The caller connects to *exactly* that address so the
+    address we vetted is the address we dial — closing the DNS-rebinding
+    (TOCTOU) window where stock imaplib would re-resolve the hostname and could
+    land on an internal IP.
 
     Raises:
-        ValueError: If the hostname resolves to a blocked IP address.
+        ValueError: If the hostname resolves to a blocked / non-public address.
     """
     try:
-        validate_hostname(server, allow_ip_literal=True)
+        valid_ips = validate_hostname(server, allow_ip_literal=True)
     except SSRFValidationError as exc:
         raise ValueError(f"IMAP server {server} is not allowed: {exc}") from exc
+    if not valid_ips:
+        raise ValueError(f"IMAP server {server} did not resolve to a usable address")
+    return valid_ips[0]
+
+
+class _IPPinnedIMAP4(imaplib.IMAP4):
+    """``imaplib.IMAP4`` that dials a pre-validated IP instead of re-resolving.
+
+    SSRF hardening: ``validate_hostname`` vets the server name, but stock
+    imaplib re-resolves the hostname when it opens the socket — a DNS-rebinding
+    window in which the second lookup can return an internal address. We pin the
+    connection to the already-validated IP. The original hostname is kept as
+    ``self.host`` (used for STARTTLS SNI/cert verification upstream).
+    """
+
+    def __init__(self, host, port, *, connect_ip, timeout=None):
+        self._connect_ip = connect_ip
+        super().__init__(host, port, timeout)
+
+    def _create_socket(self, timeout):
+        return socket.create_connection((self._connect_ip, self.port), timeout)
+
+
+class _IPPinnedIMAP4SSL(imaplib.IMAP4_SSL):
+    """SSL variant of :class:`_IPPinnedIMAP4`.
+
+    Connects to the pinned IP but verifies the TLS certificate against the
+    original hostname (``server_hostname`` SNI), so pinning never weakens
+    certificate validation.
+    """
+
+    def __init__(self, host, port, *, connect_ip, timeout=None):
+        self._connect_ip = connect_ip
+        super().__init__(host, port, timeout=timeout)
+
+    def _create_socket(self, timeout):
+        sock = socket.create_connection((self._connect_ip, self.port), timeout)
+        return self.ssl_context.wrap_socket(sock, server_hostname=self.host)
 
 
 class IMAPConnectionManager:
@@ -92,8 +134,10 @@ class IMAPConnectionManager:
         self.connection = None
 
     def __enter__(self):
-        # Validate the server hostname to prevent SSRF
-        _validate_imap_host(self.server)
+        # Validate the server hostname AND pin the vetted IP to prevent SSRF
+        # (including DNS-rebinding TOCTOU): we connect to exactly the address
+        # that passed validation, never a freshly re-resolved one.
+        connect_ip = _validate_imap_host(self.server)
 
         # Port 143 typically uses STARTTLS, port 993 uses SSL direct
         # If use_ssl=True and port is 143, use STARTTLS instead of SSL direct
@@ -104,8 +148,11 @@ class IMAPConnectionManager:
             if self.use_ssl and not use_starttls:
                 # SSL direct (typically port 993)
                 try:
-                    self.connection = imaplib.IMAP4_SSL(
-                        self.server, self.port, timeout=settings.IMAP_TIMEOUT
+                    self.connection = _IPPinnedIMAP4SSL(
+                        self.server,
+                        self.port,
+                        connect_ip=connect_ip,
+                        timeout=settings.IMAP_TIMEOUT,
                     )
                 except ssl.SSLError as e:
                     # SSL handshake failed - likely wrong port or server doesn't support SSL
@@ -118,8 +165,11 @@ class IMAPConnectionManager:
                     raise IMAPSecurityError(error_msg) from e
             else:
                 # Non-encrypted connection initially (will upgrade to TLS if use_ssl=True)
-                self.connection = imaplib.IMAP4(
-                    self.server, self.port, timeout=settings.IMAP_TIMEOUT
+                self.connection = _IPPinnedIMAP4(
+                    self.server,
+                    self.port,
+                    connect_ip=connect_ip,
+                    timeout=settings.IMAP_TIMEOUT,
                 )
 
                 if use_starttls:
@@ -147,7 +197,7 @@ class IMAPConnectionManager:
                 # else: use_ssl=False, connection remains unencrypted (explicit user choice)
 
             # Set UTF-8 encoding for the IMAP connection
-            self.connection._encoding = "utf-8"  # noqa: SLF001
+            self.connection._encoding = "utf-8"  # noqa: SLF001  # pylint: disable=attribute-defined-outside-init
 
             # Login
             self.connection.login(self.username, self.password)
@@ -515,24 +565,33 @@ def process_folder_messages(  # pylint: disable=too-many-arguments
                 failure_count += 1
             else:
                 # Parse message
-                parsed_email = parse_email_message(raw_email)
-
-                # TODO: better heuristic to determine if the message is from the sender
-                is_sender = parsed_email["from"]["email"].lower() == username.lower()
-
-                # Deliver message
-                if deliver_inbound_message(
-                    str(recipient),
-                    parsed_email,
-                    raw_email,
-                    is_import=True,
-                    is_import_sender=is_sender,
-                    imap_labels=[display_name],
-                    imap_flags=flags,
-                ):
-                    success_count += 1
-                else:
+                parsed_email = parse_email(raw_email)
+                if parsed_email is None:
+                    logger.warning(
+                        "IMAP: skipping unparseable message %s",
+                        msg_num,
+                    )
                     failure_count += 1
+                else:
+                    # TODO: better heuristic to determine if the message is from the sender
+                    is_sender = (
+                        first_address_email(parsed_email.get("from")).lower()
+                        == username.lower()
+                    )
+
+                    # Deliver message
+                    if deliver_inbound_message(
+                        str(recipient),
+                        parsed_email,
+                        raw_email,
+                        is_import=True,
+                        is_import_sender=is_sender,
+                        imap_labels=[display_name],
+                        imap_flags=flags,
+                    ):
+                        success_count += 1
+                    else:
+                        failure_count += 1
 
         except Exception as e:
             logger.exception(

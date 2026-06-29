@@ -1,7 +1,7 @@
 import { StatusEnum, useTasksRetrieve } from "@/features/api/gen";
 import { addToast, ToasterItem } from "@/features/ui/components/toaster";
 import soundbox from "@/features/utils/soundbox";
-import { Spinner } from "@gouvfr-lasuite/ui-kit";
+import { Icon, Spinner } from "@gouvfr-lasuite/ui-kit";
 import { useEffect, useMemo, useState } from "react";
 import { useTranslation } from "react-i18next";
 import { Id, toast } from "react-toastify";
@@ -49,7 +49,7 @@ export const QueueMessage = ({ taskId, onSettled }: QueueMessageProps) => {
             toast.update(toastId, {
                 render: (
                     <ToasterItem type="error">
-                        <span className="material-icons">error</span>
+                        <Icon name="error" />
                         <span>{t('The message could not be sent.')}</span>
                     </ToasterItem>
                 ),
@@ -71,7 +71,7 @@ export const QueueMessage = ({ taskId, onSettled }: QueueMessageProps) => {
             toast.update(toastId, {
                 render: (
                     <ToasterItem type="info">
-                        <span className="material-icons">check_circle</span>
+                        <Icon name="check_circle" />
                         <span>{t('Message sent successfully')}</span>
                     </ToasterItem>
                 ),
@@ -83,7 +83,7 @@ export const QueueMessage = ({ taskId, onSettled }: QueueMessageProps) => {
             toast.update(toastId, {
                 render: (
                     <ToasterItem type="error">
-                        <span className="material-icons">error</span>
+                        <Icon name="error" />
                         <span>{t('The message could not be sent.')}</span>
                     </ToasterItem>
                 ),
@@ -95,8 +95,17 @@ export const QueueMessage = ({ taskId, onSettled }: QueueMessageProps) => {
 
     useEffect(() => {
         if (hasTimedOut) {
+            // The send didn't fail: the backend already un-drafted the message and
+            // the SMTP task is still running. Reassure the user and point them to
+            // the Outbox rather than showing a misleading error. onSettled refreshes
+            // the stats so the Outbox folder reflects the pending message.
             toast.update(toastId, {
-                render: <ToasterItem type="error"><span>{t('The message could not be sent. Please try again later.')}</span></ToasterItem>,
+                render: (
+                    <ToasterItem type="warning">
+                        <Icon name="schedule_send" />
+                        <span>{t('Sending is taking longer than expected. You can track your message in the Outbox.')}</span>
+                    </ToasterItem>
+                ),
                 autoClose: QUEUED_MESSAGE_CLOSE_DELAY * 2,
             });
             onSettled?.();

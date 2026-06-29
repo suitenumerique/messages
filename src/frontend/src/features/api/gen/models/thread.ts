@@ -5,7 +5,7 @@
  * This is the messages API schema.
  * OpenAPI spec version: 1.0.0 (v1.0)
  */
-import type { ThreadAccessRoleChoices } from "./thread_access_role_choices";
+import type { ThreadUserRole } from "./thread_user_role";
 import type { ThreadAccessDetail } from "./thread_access_detail";
 import type { ThreadLabel } from "./thread_label";
 import type { ThreadAbilities } from "./thread_abilities";
@@ -68,7 +68,8 @@ export interface Thread {
   readonly sender_names: readonly string[];
   /** date and time at which a record was last updated */
   readonly updated_at: string;
-  readonly user_role: ThreadAccessRoleChoices;
+  /** @nullable */
+  readonly user_role: ThreadUserRole;
   readonly accesses: readonly ThreadAccessDetail[];
   readonly labels: readonly ThreadLabel[];
   readonly summary: string;

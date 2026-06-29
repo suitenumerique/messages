@@ -18,6 +18,22 @@ export const inboxFolderLink = (page: Page): Locator =>
     .filter({ hasText: /Inbox/ })
     .first();
 
+/**
+ * Open the mailbox settings modal from the header "More options" menu and return
+ * the settings dialog locator. The per-mailbox configuration views (rename,
+ * access, signatures, templates, auto-replies, integrations) all live as tabs
+ * inside this single modal, so callers select the tab they need on the returned
+ * dialog.
+ */
+export const openMailboxSettingsModal = async (page: Page): Promise<Locator> => {
+  const header = page.locator(".c__header");
+  await header.getByRole("button", { name: "More options" }).click();
+  await page.getByRole("menuitem", { name: "All settings" }).click();
+  const modal = page.getByRole("dialog", { name: "Settings" });
+  await expect(modal).toBeVisible();
+  return modal;
+};
+
 export const signInKeycloakIfNeeded = async ({ page, username, navigateTo = "/" }: { page: Page, username: string, navigateTo?: string }) => {
     // Set up response listener BEFORE navigation to avoid race condition
     const meResponsePromise = page.waitForResponse((response) => response.url().includes('/api/v1.0/users/me/') && [200, 401].includes(response.status()));
@@ -52,9 +68,17 @@ export const signInKeycloakIfNeeded = async ({ page, username, navigateTo = "/" 
     await page.click('button[type="submit"]');
     await page.waitForURL(`/`, { waitUntil: 'networkidle' });
 
-    expect(proConnectButton).not.toBeVisible();
-    const mailboxName = await page.getByRole('button', { name: email });
-    expect(mailboxName).toBeVisible();
+    await expect(proConnectButton).not.toBeVisible();
+
+    // Confirm the authenticated app shell rendered before snapshotting storage
+    // state. The sidebar mailbox selector shows the signed-in address, but it
+    // renders as a switcher *button* only for multi-mailbox users; single-mailbox
+    // fixtures (e.g. domain_admin) get a static card instead. Match on the
+    // address text within the selector rather than a button role, which covers
+    // both variants.
+    await expect(
+        page.locator('.mailbox-selector').getByText(email),
+    ).toBeVisible();
 
     await page.context().storageState({ path: storageStatePath });
 };

@@ -1,0 +1,18 @@
+.autoreply-schedule-cell {
+    display: flex;
+    flex-direction: column;
+    align-items: flex-start;
+    gap: var(--c--globals--spacings--3xs);
+    padding-block: var(--c--globals--spacings--3xs);
+
+    // The global `.admin-data-grid td` rule forces `white-space: nowrap` with an
+    // ellipsis on every cell. The schedule cell carries both a date range and a
+    // status badge, which is too much for the column width: it must wrap instead
+    // of being truncated.
+    white-space: normal;
+
+    &__range {
+        line-height: 1.3;
+        overflow-wrap: anywhere;
+    }
+}

@@ -41,7 +41,7 @@
     font-size: var(--c--globals--font--sizes--sm);
     line-height: 1.5;
     white-space: pre-wrap;
-    word-break: break-word;
+    overflow-wrap: break-word;
     padding: var(--c--globals--spacings--xs) var(--c--globals--spacings--sm);
     margin-inline: var(--c--globals--spacings--xs);
     transition: transform 0.2s ease;
@@ -219,7 +219,7 @@
     color: var(--c--contextuals--content--semantic--neutral--secondary);
     line-height: 1.5;
     white-space: pre-wrap;
-    word-break: break-word;
+    overflow-wrap: break-word;
 }
 
 .thread-event__badge {

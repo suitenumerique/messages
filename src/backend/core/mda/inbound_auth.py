@@ -14,8 +14,13 @@ Rules applied for every backend:
   - If DMARC is absent or passes, DKIM alone decides.
 
 The backend is picked by ``SPAM_CONFIG["inbound_auth"]``:
-  - ``"native"``: verify DKIM locally (crypto + DNS). DMARC is not yet
-    implemented for native, so only the DKIM rule applies.
+  - ``"native"``: verify DKIM locally (crypto + DNS) AND require the signing
+    ``d=`` domain to match the From: domain (strict alignment). Raw DKIM only
+    proves *some* domain signed the message; without alignment an attacker who
+    controls any DKIM-enabled domain could sign a message bearing a forged
+    From:. Full DMARC policy lookup is not implemented for native, so an
+    unaligned-but-cryptographically-valid signature collapses to ``"none"``
+    (we can't call it forgery without the From domain's published policy).
   - ``"rspamd"``: read DKIM / DMARC symbols from the rspamd /checkv2 result
     (reused from the spam check, or fetched on demand by the caller).
   - ``"authentication-results"``: parse ``dkim=`` / ``dmarc=`` entries from the
@@ -32,9 +37,12 @@ an explicit DMARC fail.
 
 import logging
 import re
-from typing import Any, Dict, List, Optional
+from typing import Any
+
+from jmap_email import JmapEmail, first_address_email
 
 from core.mda.signing import verify_message_dkim
+from core.mda.utils import headers_blocks
 
 logger = logging.getLogger(__name__)
 
@@ -46,7 +54,7 @@ _NONE = "none"  # explicitly no signature / policy
 
 # Rspamd symbol names -> outcome, per check type.
 # https://rspamd.com/doc/modules/dkim.html / dmarc
-_RSPAMD_SYMBOLS: Dict[str, Dict[str, str]] = {
+_RSPAMD_SYMBOLS: dict[str, dict[str, str]] = {
     "dkim": {
         "R_DKIM_ALLOW": _PASS,
         "R_DKIM_REJECT": _FAIL,
@@ -97,16 +105,14 @@ def _scrub_ar_value(value: str) -> str:
     return _AR_QUOTED_STRING_RE.sub(" ", value)
 
 
-def _rspamd_outcome(
-    check: str, rspamd_result: Optional[Dict[str, Any]]
-) -> Optional[str]:
+def _rspamd_outcome(check: str, rspamd_result: dict[str, Any] | None) -> str | None:
     if not rspamd_result:
         return None
     symbols = rspamd_result.get("symbols") or {}
     if not isinstance(symbols, dict):
         return None
     mapping = _RSPAMD_SYMBOLS.get(check, {})
-    outcome: Optional[str] = None
+    outcome: str | None = None
     for symbol, result in mapping.items():
         if symbol not in symbols:
             continue
@@ -121,16 +127,16 @@ def _rspamd_outcome(
 
 
 def _authentication_results_values(
-    parsed_email: Dict[str, Any], trusted_relays: int
-) -> List[str]:
+    parsed_email: JmapEmail, trusted_relays: int
+) -> list[str]:
     """Collect Authentication-Results header values from trusted header blocks.
 
     Block 0 is what we (or our MTA) prepended; blocks 1..N are upstream relays
     (most recent first). Anything past ``trusted_relays`` is ignored.
     """
-    blocks = parsed_email.get("headers_blocks") or []
+    blocks = headers_blocks(parsed_email)
     blocks_to_check = trusted_relays + 1
-    values: List[str] = []
+    values: list[str] = []
     for block in blocks[:blocks_to_check]:
         ar = block.get("authentication-results")
         if not ar:
@@ -142,11 +148,11 @@ def _authentication_results_values(
     return values
 
 
-def _ar_outcome(check: str, ar_values: List[str]) -> Optional[str]:
+def _ar_outcome(check: str, ar_values: list[str]) -> str | None:
     if not ar_values:
         return None
     found = False
-    outcome: Optional[str] = None
+    outcome: str | None = None
     for value in ar_values:
         scrubbed = _scrub_ar_value(value)
         for match in _AR_METHOD_RE.finditer(scrubbed):
@@ -163,19 +169,57 @@ def _ar_outcome(check: str, ar_values: List[str]) -> Optional[str]:
     return outcome if found else None
 
 
-def _native_dkim_outcome(raw_data: bytes) -> Optional[str]:
+def _from_header_domain(parsed_email: JmapEmail) -> str | None:
+    """Return the lowercased domain of the RFC5322 From address, or ``None``."""
+    from_email = first_address_email(parsed_email.get("from"))
+    if not from_email:
+        return None
+    domain = from_email.strip().rstrip(".").lower().rpartition("@")[2]
+    return domain or None
+
+
+def _native_dkim_outcome(raw_data: bytes, parsed_email: JmapEmail) -> str | None:
+    """Verify DKIM locally and require From/DKIM identifier alignment.
+
+    A valid DKIM signature only proves that *some* domain signed the message,
+    so we additionally require the signing domain (``d=``) to match the From:
+    domain — strict alignment, an exact case-insensitive match. Without it an
+    attacker who owns any DKIM-enabled domain could sign a message carrying a
+    forged From: and have it shown as verified.
+
+    Native mode never returns ``_FAIL``: it does no DMARC policy lookup, and a
+    bare DKIM verify can't tell a *missing* signature from an *invalid* one, so
+    it has no grounds to assert an explicit failure. Every non-pass outcome —
+    no/invalid signature, or a valid signature whose ``d=`` doesn't align with
+    From — collapses to ``_NONE`` ("unverified"). The unaligned case also logs
+    the mismatch, since a *valid* signature not matching From is the spoofing
+    signature.
+    """
     try:
-        return _PASS if verify_message_dkim(raw_data) else _FAIL
+        signing_domain = verify_message_dkim(raw_data)
     except Exception as e:  # pylint: disable=broad-exception-caught
         logger.warning("Native DKIM verification errored: %s", e)
         return None
+    if not signing_domain:
+        # No signature, or one that didn't validate — a bare verify can't tell
+        # them apart, so this is "can't verify", not an explicit failure.
+        return _NONE
+    from_domain = _from_header_domain(parsed_email)
+    if from_domain and signing_domain == from_domain:
+        return _PASS
+    logger.info(
+        "Native DKIM signature not aligned with From: d=%s from=%s -> unverified",
+        signing_domain,
+        from_domain,
+    )
+    return _NONE
 
 
 VERDICT_UNVERIFIED = "none"
 VERDICT_FORGED = "fail"
 
 
-def get_inbound_auth_mode(spam_config: Dict[str, Any]) -> str:
+def get_inbound_auth_mode(spam_config: dict[str, Any]) -> str:
     """Return the normalized ``inbound_auth`` mode from a spam config.
 
     Empty or missing values become an empty string. Callers can treat the
@@ -187,10 +231,10 @@ def get_inbound_auth_mode(spam_config: Dict[str, Any]) -> str:
 
 def check_inbound_authentication(
     raw_data: bytes,
-    parsed_email: Dict[str, Any],
-    spam_config: Dict[str, Any],
-    rspamd_result: Optional[Dict[str, Any]] = None,
-) -> Optional[str]:
+    parsed_email: JmapEmail,
+    spam_config: dict[str, Any],
+    rspamd_result: dict[str, Any] | None = None,
+) -> str | None:
     """Return the ``X-StMsg-Sender-Auth`` verdict for this message.
 
     See module docstring for the rule set and supported backends.
@@ -200,13 +244,13 @@ def check_inbound_authentication(
         return None
 
     if mode == "native":
-        dkim = _native_dkim_outcome(raw_data)
-        dmarc: Optional[str] = None
+        dkim = _native_dkim_outcome(raw_data, parsed_email)
+        dmarc: str | None = None
     elif mode == "rspamd":
         dkim = _rspamd_outcome("dkim", rspamd_result)
         dmarc = _rspamd_outcome("dmarc", rspamd_result)
     elif mode == "authentication-results":
-        trusted_relays = int(spam_config.get("trusted_relays", 1))
+        trusted_relays = int(spam_config.get("trusted_relays", 0))
         ar_values = _authentication_results_values(parsed_email, trusted_relays)
         dkim = _ar_outcome("dkim", ar_values)
         dmarc = _ar_outcome("dmarc", ar_values)

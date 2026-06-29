@@ -8,15 +8,27 @@ import { DriveIcon } from "@/features/forms/components/message-form/drive-icon";
 import { DriveFile } from "@/features/forms/components/message-form/drive-attachment-picker";
 import { DriveUploadButton } from "./drive-upload-button";
 import { DrivePreviewLink } from "./drive-preview-link";
+import { useAttachmentPreview } from "@/features/providers/attachment-preview";
 
 type AttachmentItemProps = {
     attachment: Attachment | File | DriveFile;
     isLoading?: boolean;
     canDownload?: boolean;
+    /**
+     * Whether clicking the item opens the inline preview. Disabled (alongside
+     * download) for spam threads, where attachments must not be opened.
+     */
+    canPreview?: boolean;
     variant?: "error" | "default";
     errorMessage?: string;
     errorAction?: () => void;
     onDelete?: () => void;
+    /**
+     * Override the preview opener. The default aggregates the current thread's
+     * attachments; a draft compose form passes its own files here so its
+     * (not-yet-persisted) PJ can be previewed.
+     */
+    onPreview?: (fileId: string) => void;
 }
 
 export const isAttachment = (attachment: Attachment | File | DriveFile): attachment is Attachment => {
@@ -29,13 +41,52 @@ export const isInlineImage = (attachment: Attachment | File | DriveFile): boolea
     return isAttachment(attachment) && !!attachment.cid;
 }
 
-export const AttachmentItem = ({ attachment, isLoading = false, canDownload = true, variant = "default", errorMessage, errorAction, onDelete }: AttachmentItemProps) => {
+export const AttachmentItem = ({ attachment, isLoading = false, canDownload = true, canPreview = true, variant = "default", errorMessage, errorAction, onDelete, onPreview }: AttachmentItemProps) => {
     const { t, i18n } = useTranslation();
+    const { openPreview } = useAttachmentPreview();
     const icon = AttachmentHelper.getIcon(attachment);
     const downloadUrl = isAttachment(attachment) || isDriveFile(attachment) ? AttachmentHelper.getDownloadUrl(attachment) : undefined;
 
+    // The viewer can navigate across every persisted attachment of the
+    // thread — including Drive files, which fall back to a "Open in Drive"
+    // action inside the modal. Files mid-upload (raw ``File``) and
+    // errored items are excluded: there is nothing to render yet.
+    const isPreviewable = canPreview && (isAttachment(attachment) || isDriveFile(attachment)) && variant !== "error";
+    const previewableId = isAttachment(attachment)
+        ? attachment.blobId
+        : isDriveFile(attachment)
+            ? attachment.id
+            : undefined;
+
+    const triggerPreview = () => {
+        if (!isPreviewable || !previewableId) return;
+        (onPreview ?? openPreview)(previewableId);
+    };
+
     return (
-        <div className={clsx("attachment-item", { "attachment-item--loading": isLoading, "attachment-item--error": variant === "error" })} title={attachment.name}>
+        <div
+            // Stable DOM anchor so the preview sidebar's "Show in conversation"
+            // can scroll back to this exact attachment. ``previewableId`` is
+            // the same id used as ``FilePreviewType.id``.
+            id={previewableId ? `attachment-anchor-${previewableId}` : undefined}
+            className={clsx("attachment-item", {
+                "attachment-item--loading": isLoading,
+                "attachment-item--error": variant === "error",
+                "attachment-item--previewable": isPreviewable,
+            })}
+            title={attachment.name}
+        >
+            {/* Stretched primary action: a real button covering the card opens
+                the preview. Keeping it a sibling (not a wrapper) avoids nesting
+                interactive controls inside the action buttons below. */}
+            {isPreviewable && (
+                <button
+                    type="button"
+                    className="attachment-item-preview-trigger"
+                    onClick={triggerPreview}
+                    aria-label={t("Preview {{name}}", { name: attachment.name })}
+                />
+            )}
             <div className="attachment-item-metadata">
                 <div className="attachment-item-icon-container">
                     {variant === "error" ?

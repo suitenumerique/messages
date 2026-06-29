@@ -69,12 +69,12 @@ class TestInboundSpoofedSender:
         raw = _build_spoofed_raw(recipient)
         parsed_email = {
             "subject": "Spoofed self-sender",
-            "from": {"email": recipient},
+            "from": [{"email": recipient}],
             "to": [{"email": recipient}],
-            "messageId": "spoof.1@example.com",
-            "date": timezone.now(),
-            "headers": {},
-            "headers_blocks": [],
+            "messageId": ["spoof.1@example.com"],
+            "sentAt": timezone.now().isoformat(),
+            "headers": [],
+            "ext": {"headersBlocks": []},
         }
 
         # Bypass the Celery layer: deliver and process in-thread.
@@ -109,12 +109,12 @@ class TestInboundSpoofedSender:
         raw = _build_spoofed_raw(recipient)
         parsed_email = {
             "subject": "Spoofed self-sender",
-            "from": {"email": recipient},
+            "from": [{"email": recipient}],
             "to": [{"email": recipient}],
-            "messageId": "spoof.2@example.com",
-            "date": timezone.now(),
-            "headers": {},
-            "headers_blocks": [],
+            "messageId": ["spoof.2@example.com"],
+            "sentAt": timezone.now().isoformat(),
+            "headers": [],
+            "ext": {"headersBlocks": []},
         }
 
         with patch("core.mda.inbound.process_inbound_message_task.delay"):
@@ -168,12 +168,12 @@ class TestInboundSpoofedSender:
 
         parsed_email = {
             "subject": "Genuine self-send",
-            "from": {"email": recipient},
+            "from": [{"email": recipient}],
             "to": [{"email": recipient}],
-            "messageId": mime_id,
-            "date": timezone.now(),
-            "headers": {},
-            "headers_blocks": [],
+            "messageId": [mime_id],
+            "sentAt": timezone.now().isoformat(),
+            "headers": [],
+            "ext": {"headersBlocks": []},
         }
 
         assert (
@@ -205,12 +205,12 @@ class TestInboundSpoofedSender:
         raw = _build_spoofed_raw(recipient)
         parsed_email = {
             "subject": "Imported self-send",
-            "from": {"email": recipient},
+            "from": [{"email": recipient}],
             "to": [{"email": recipient}],
-            "messageId": "import.self.1@example.com",
-            "date": timezone.now(),
-            "headers": {},
-            "headers_blocks": [],
+            "messageId": ["import.self.1@example.com"],
+            "sentAt": timezone.now().isoformat(),
+            "headers": [],
+            "ext": {"headersBlocks": []},
         }
 
         assert (

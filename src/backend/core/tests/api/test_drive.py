@@ -95,6 +95,7 @@ class TestDriveAPIView:
             "sdk_url": "/sdk",
             "api_url": "/api/v1.0",
             "file_url": "/explorer/items/files",
+            "preview_url": "/media/preview/item",
         }
 
     def test_api_third_party_drive_get_anonymous(self):

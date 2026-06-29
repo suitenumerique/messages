@@ -85,12 +85,8 @@
             flex-shrink: 0;
             min-height: var(--toolbar-height);
 
-            // Override the max-height set by the Floating UI `size` middleware
-            // on toolbar select dropdowns. Without portal rendering, the dropdown
-            // is constrained to the available space inside the toolbar container,
-            // which becomes too small when the toolbar wraps onto multiple lines.
             .mantine-Menu-dropdown {
-                max-height: none !important;
+                max-height: 250px !important;
             }
 
             .bn-toolbar-separator {

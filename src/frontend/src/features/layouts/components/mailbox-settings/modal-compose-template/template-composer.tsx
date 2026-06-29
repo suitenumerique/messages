@@ -1,12 +1,14 @@
 import { BlockNoteViewField } from "@/features/blocknote/blocknote-view-field";
 import { BlockNoteEditor, BlockNoteEditorOptions, BlockNoteSchema, defaultBlockSpecs, defaultInlineContentSpecs } from "@blocknote/core";
-import { InlineTemplateVariable, TemplateVariableSelector } from "@/features/blocknote/inline-template-variable";
+import { buildTemplateVariableInsertion, InlineTemplateVariable, TemplateVariableSelector } from "@/features/blocknote/inline-template-variable";
+import { TemplateVariableEditingBehavior } from "@/features/blocknote/inline-template-variable/editing-behavior";
+import { usePlaceholderVariables } from "@/features/blocknote/inline-template-variable/use-placeholder-variables";
 import { FieldProps } from "@gouvfr-lasuite/cunningham-react";
 import { forwardRef, useEffect, useImperativeHandle, useMemo } from "react";
 import { useFormContext } from "react-hook-form";
 import { Toolbar } from "@/features/blocknote/toolbar";
 import { BlockSignature, BlockSignatureConfigProps, SignatureTemplateSelector } from "@/features/blocknote/signature-block";
-import { MessageTemplateTypeChoices, useMailboxesMessageTemplatesAvailableList, usePlaceholdersRetrieve } from "@/features/api/gen";
+import { MessageTemplateTypeChoices, useMailboxesMessageTemplatesAvailableList } from "@/features/api/gen";
 import { useMailboxContext } from "@/features/providers/mailbox";
 import { imageBlockSpec } from "@/features/blocknote/image-block";
 import { SmartTrailingBlock } from "@/features/blocknote/smart-trailing-block";
@@ -51,24 +53,18 @@ export const TemplateComposer = forwardRef<Base64ComposerHandle, TemplateCompose
         defaultValue,
         blockNoteOptions,
         trailingBlock: false,
-        extensions: [SmartTrailingBlock],
+        extensions: [SmartTrailingBlock, TemplateVariableEditingBehavior],
     });
 
     useImperativeHandle(ref, () => ({ exportContent }), [exportContent]);
 
-    const { data: { data: placeholders = {} } = {}, isLoading: isLoadingPlaceholders } = usePlaceholdersRetrieve({
-        query: {
-            enabled: allowVariables,
-            refetchOnMount: true,
-            refetchOnWindowFocus: true,
-        }
-    });
-    const canShowPlaceholdersMenu = allowVariables && !isLoadingPlaceholders && !!Object.keys(placeholders).length;
+    const { variables, isLoading: isLoadingPlaceholders } = usePlaceholderVariables(allowVariables);
+    const canShowPlaceholdersMenu = allowVariables && !isLoadingPlaceholders && variables.length > 0;
     const getPlaceholderMenuItems = (editor: BlockNoteEditor<TemplateComposerBlockSchema, TemplateComposerInlineContentSchema, TemplateComposerStyleSchema>) => {
-        return Object.entries(placeholders).map(([value, label]) => ({
+        return variables.map(({ value, label }) => ({
             title: label,
             onItemClick: () => {
-                editor.insertInlineContent([{ type: "template-variable", props: { value, label } }, " "]);
+                editor.insertInlineContent(buildTemplateVariableInsertion({ value, label }, editor.getActiveStyles()));
             }
         }));
     };
@@ -161,7 +157,7 @@ export const TemplateComposer = forwardRef<Base64ComposerHandle, TemplateCompose
                     />
                     {canShowPlaceholdersMenu &&
                         <TemplateVariableSelector
-                            variables={placeholders}
+                            variables={variables}
                             isLoading={isLoadingPlaceholders}
                         />
                     }

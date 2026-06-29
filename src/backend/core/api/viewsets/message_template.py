@@ -9,7 +9,9 @@ from drf_spectacular.utils import (
     extend_schema,
 )
 from rest_framework import mixins, viewsets
+from rest_framework.decorators import action
 from rest_framework.generics import get_object_or_404
+from rest_framework.response import Response
 
 from core.api import permissions
 from core.api.serializers import (
@@ -19,6 +21,7 @@ from core.api.serializers import (
 from core.api.viewsets.mixins import MessageTemplateResponseMixin
 from core.models import (
     Mailbox,
+    Message,
     MessageTemplate,
     MessageTemplateTypeChoices,
 )
@@ -55,7 +58,7 @@ class MailboxMessageTemplateViewSet(
 
     def get_permissions(self):
         """Get permissions for the viewset."""
-        if self.action in ["list", "retrieve"]:
+        if self.action in ["list", "retrieve", "render"]:
             return [permissions.HasAccessToMailbox()]
         return super().get_permissions()
 
@@ -66,7 +69,7 @@ class MailboxMessageTemplateViewSet(
 
     def get_queryset(self):
         """Get message templates for a mailbox the user has access to."""
-        if self.action == "retrieve":
+        if self.action in ("retrieve", "render"):
             queryset = MessageTemplate.objects.filter(
                 Q(mailbox=self.mailbox) | Q(maildomain=self.mailbox.domain)
             )
@@ -111,6 +114,68 @@ class MailboxMessageTemplateViewSet(
     def retrieve(self, request, *args, **kwargs):
         """Retrieve a message template."""
         return super().retrieve(request, *args, **kwargs)
+
+    @extend_schema(
+        summary="Render a message template",
+        description=(
+            "Render the template's html and text bodies with placeholders "
+            "resolved from the mailbox and the authenticated user "
+            "(name, user_name, custom attributes). When a draft message_id is "
+            "provided, message-level placeholders (recipient_name) are also "
+            "resolved. Unresolved placeholders keep their {placeholder} token."
+        ),
+        parameters=[
+            OpenApiParameter(
+                name="message_id",
+                type=OpenApiTypes.UUID,
+                location=OpenApiParameter.QUERY,
+                required=False,
+                description=(
+                    "Optional draft id used to resolve message-level "
+                    "placeholders. Ignored unless it references a draft "
+                    "owned by this mailbox."
+                ),
+            ),
+        ],
+        responses={
+            200: {
+                "type": "object",
+                "description": "The rendered template bodies.",
+                "properties": {
+                    "html_body": {"type": "string"},
+                    "text_body": {"type": "string"},
+                },
+                "required": ["html_body", "text_body"],
+                "example": {
+                    "html_body": "<p>John Doe</p>",
+                    "text_body": "John Doe",
+                },
+            },
+        },
+    )
+    @action(detail=True, methods=["get"])
+    def render(self, request, *args, **kwargs):
+        """Render a template with placeholders resolved for the current context.
+
+        The mailbox comes from the URL. A draft (message_id) is only honored
+        when it belongs to this mailbox, so the endpoint cannot be used to
+        probe recipients of drafts the user does not own.
+        """
+        template = self.get_object()
+
+        message = None
+        message_id = request.query_params.get("message_id")
+        if message_id:
+            message = Message.objects.filter(
+                id=message_id,
+                is_draft=True,
+                sender__mailbox=self.mailbox,
+            ).first()
+
+        rendered = template.render_template(
+            mailbox=self.mailbox, user=request.user, message=message
+        )
+        return Response(rendered)
 
 
 class AvailableMailboxMessageTemplateViewSet(

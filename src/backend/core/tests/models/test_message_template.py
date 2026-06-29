@@ -41,6 +41,25 @@ class TestResolveplaceholderValues:
         result = models.MessageTemplate.resolve_placeholder_values()
         assert result["name"] == ""
 
+    def test_resolve_placeholder_user_name_from_user(self):
+        """user_name resolves to the user's full_name, independent of the mailbox."""
+        mailbox = factories.MailboxFactory()
+        contact = factories.ContactFactory(name="Mairie de Brigny", mailbox=mailbox)
+        mailbox.contact = contact
+        mailbox.save()
+        user = factories.UserFactory(full_name="John Doe")
+
+        result = models.MessageTemplate.resolve_placeholder_values(
+            mailbox=mailbox, user=user
+        )
+        assert result["name"] == "Mairie de Brigny"
+        assert result["user_name"] == "John Doe"
+
+    def test_resolve_placeholder_user_name_empty_when_no_user(self):
+        """When no user is provided, user_name should be empty."""
+        result = models.MessageTemplate.resolve_placeholder_values()
+        assert result["user_name"] == ""
+
     @patch(
         "django.conf.settings.SCHEMA_CUSTOM_ATTRIBUTES_USER",
         {

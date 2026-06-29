@@ -41,9 +41,9 @@ class UserViewSet(viewsets.GenericViewSet):
             permission_classes = [permissions.IsAuthenticated & permissions.IsSelf]
 
         elif self.action == "list":
-            permission_classes = [
-                permissions.IsSuperUser | permissions.IsMailDomainAdmin
-            ]
+            # Fine-grained authorization (super user, domain admin or mailbox
+            # admin of the requested maildomain) is enforced in ``list``.
+            permission_classes = [permissions.IsAuthenticated]
         else:
             return super().get_permissions()
 
@@ -77,17 +77,25 @@ class UserViewSet(viewsets.GenericViewSet):
         maildomain_pk = request.query_params.get("maildomain_pk")
         is_superuser = request.user.is_superuser
 
-        # If not superuser, a maildomain_pk is required and the user must be an admin of that maildomain
+        # If not superuser, a maildomain_pk is required and the user must be an
+        # admin of that maildomain, or an admin of at least one mailbox within
+        # it (so mailbox admins can search users to grant them access).
         if not is_superuser:
             if not maildomain_pk:
                 raise drf.exceptions.PermissionDenied(
                     "You do not have permission to perform this action."
                 )
-            if not models.MailDomainAccess.objects.filter(
+            is_domain_admin = models.MailDomainAccess.objects.filter(
                 user=request.user,
                 maildomain_id=maildomain_pk,
                 role=models.MailDomainAccessRoleChoices.ADMIN,
-            ).exists():
+            ).exists()
+            is_mailbox_admin = models.MailboxAccess.objects.filter(
+                user=request.user,
+                mailbox__domain_id=maildomain_pk,
+                role=models.MailboxRoleChoices.ADMIN,
+            ).exists()
+            if not (is_domain_admin or is_mailbox_admin):
                 raise drf.exceptions.PermissionDenied(
                     "You do not have administrative rights for this mail domain."
                 )

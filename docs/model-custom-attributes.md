@@ -54,12 +54,12 @@ Example of a valid JSON Schema:
       "minLength": 3,
       "x-i18n": {
         "title": {
-          "fr": "Fonction",
-          "en": "Job title"
+          "fr-Fr": "Fonction",
+          "en-US": "Job title"
         },
         "description": {
-          "fr": "Le nom de la fonction de l'utilisateur",
-          "en": "The job name of the user"
+          "fr-Fr": "Le nom de la fonction de l'utilisateur",
+          "en-US": "The job name of the user"
         }
       }
     },
@@ -70,11 +70,11 @@ Example of a valid JSON Schema:
       "description": "Whether the user is elected",
       "x-i18n": {
         "title": {
-          "fr": "Est élu",
-          "en": "Is elected"
+          "fr-Fr": "Est élu",
+          "en-US": "Is elected"
         },
         "description": {
-          "fr": "Indique si l'utilisateur est élu"
+          "fr-Fr": "Indique si l'utilisateur est élu",
         }
       }
     }

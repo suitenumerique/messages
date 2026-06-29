@@ -13,11 +13,11 @@ export function FeedbackWidget({
   const { t } = useTranslation();
   const { user } = useAuth();
 
-  const apiUrl = process.env.NEXT_PUBLIC_FEEDBACK_WIDGET_API_URL;
-  const widgetPath = process.env.NEXT_PUBLIC_FEEDBACK_WIDGET_PATH;
+  const apiUrl = import.meta.env.NEXT_PUBLIC_FEEDBACK_WIDGET_API_URL;
+  const widgetPath = import.meta.env.NEXT_PUBLIC_FEEDBACK_WIDGET_PATH;
   const channel =
-    process.env.NEXT_PUBLIC_FEEDBACK_WIDGET_HOME_CHANNEL ||
-    process.env.NEXT_PUBLIC_FEEDBACK_WIDGET_CHANNEL;
+    import.meta.env.NEXT_PUBLIC_FEEDBACK_WIDGET_HOME_CHANNEL ||
+    import.meta.env.NEXT_PUBLIC_FEEDBACK_WIDGET_CHANNEL;
 
   const title: string = t("Do you have any feedback?");
   const placeholder: string = t("Share your feedback here...");

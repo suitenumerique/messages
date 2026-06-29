@@ -453,6 +453,79 @@ def test_import_file_invalid_file(admin_user, mailbox, mock_request):
         )
 
 
+@pytest.mark.django_db
+def test_import_file_mbox_misclassified_by_libmagic(admin_user, mailbox, mock_request):
+    """Regression: an mbox file must be recognized even when libmagic
+    misclassifies it (e.g. returns text/html because the first message body
+    contains HTML strong enough to outrank the ``From `` envelope signature).
+
+    Observed against libmagic 5.41 (Ubuntu 22.04, the libmagic Scalingo's
+    scalingo-22 stack ships) on a real multipart/alternative Zimbra-exported
+    mbox: libmagic 5.41 returns text/html and the upload is rejected. Debian
+    13's libmagic 5.46 — used in the dev container and the distroless image
+    built from src/backend/Dockerfile — has tuned scoring so the same bytes
+    classify as application/mbox, which is why this test mocks
+    ``magic.from_buffer`` rather than relying on real bytes (a real-bytes
+    fixture passes trivially on the dev libmagic regardless of the fix).
+
+    RFC 4155 requires every mbox file to start with a ``From `` envelope line
+    at offset 0; we trust that signature ahead of libmagic.
+    """
+    mbox_content = (
+        b"From sender@example.com Mon Jun 01 00:00:00 2026\r\n"
+        b"From: sender@example.com\r\n"
+        b"To: jean.recipient@example.com\r\n"
+        b"Subject: HTML body trips libmagic\r\n"
+        b"MIME-Version: 1.0\r\n"
+        b"Content-Type: text/html; charset=utf-8\r\n"
+        b"\r\n"
+        b"<!DOCTYPE html><html><body><h1>Hello</h1></body></html>\r\n"
+    )
+    uploaded = SimpleUploadedFile(
+        # Deliberately no .mbox extension so the extension fallback can't rescue us.
+        "ambiguous-upload",
+        mbox_content,
+        content_type="application/octet-stream",
+    )
+    file_key = get_file_key(admin_user.id, uploaded.name)
+    storage = storages["message-imports"]
+    s3_client = storage.connection.meta.client
+    s3_client.put_object(
+        Bucket=storage.bucket_name,
+        Key=file_key,
+        Body=mbox_content,
+        ContentType=uploaded.content_type,
+    )
+
+    try:
+        with (
+            patch(
+                "core.services.importer.service.magic.from_buffer",
+                return_value="text/html",
+            ) as mock_magic,
+            patch(
+                "core.services.importer.mbox_tasks.process_mbox_file_task.delay"
+            ) as mock_task,
+        ):
+            mock_task.return_value.id = "fake-task-id"
+            success, response_data = ImportService.import_file(
+                file_key=file_key,
+                recipient=mailbox,
+                user=admin_user,
+                request=mock_request,
+                filename=uploaded.name,
+            )
+
+            assert success is True, response_data
+            assert response_data["type"] == "mbox"
+            mock_task.assert_called_once()
+            # The RFC 4155 ``From `` envelope at offset 0 must short-circuit
+            # detection — libmagic is never consulted on this branch.
+            mock_magic.assert_not_called()
+    finally:
+        s3_client.delete_object(Bucket=storage.bucket_name, Key=file_key)
+
+
 def test_import_imap_by_superuser(admin_user, mailbox, mock_request):
     """Test successful IMAP import."""
     with patch(
@@ -559,7 +632,7 @@ def test_import_imap_messages_by_superuser(admin_user, mailbox, mock_request):
     """Test importing messages from IMAP server by superuser."""
 
     # Mock IMAP connection and responses
-    with patch("imaplib.IMAP4_SSL") as mock_imap:
+    with patch("core.services.importer.imap._IPPinnedIMAP4SSL") as mock_imap:
         mock_imap_instance = mock_imap.return_value
 
         # Mock login
@@ -646,7 +719,7 @@ def test_import_imap_messages_user_with_access(user, mailbox, mock_request):
     mailbox.accesses.create(user=user, role=MailboxRoleChoices.ADMIN)
 
     # Mock IMAP connection and responses
-    with patch("imaplib.IMAP4_SSL") as mock_imap:
+    with patch("core.services.importer.imap._IPPinnedIMAP4SSL") as mock_imap:
         mock_imap_instance = mock_imap.return_value
 
         # Mock login
@@ -743,7 +816,7 @@ def test_import_messages_do_not_trigger_ai_features(
     mailbox.accesses.create(user=user, role=MailboxRoleChoices.ADMIN)
 
     # Mock IMAP connection and responses
-    with patch("imaplib.IMAP4_SSL") as mock_imap:
+    with patch("core.services.importer.imap._IPPinnedIMAP4SSL") as mock_imap:
         mock_imap_instance = mock_imap.return_value
 
         # Mock login

@@ -4,23 +4,64 @@ import logging
 from html import escape as html_escape
 from urllib.parse import urlparse
 
-from django.core.exceptions import ValidationError
-from django.core.validators import validate_email
-from django.utils import timezone
+from django.conf import settings
 
 from drf_spectacular.utils import extend_schema
+from jmap_email import compose_email, parse_address
 from rest_framework import status, viewsets
 from rest_framework.authentication import BaseAuthentication
 from rest_framework.decorators import action
 from rest_framework.exceptions import AuthenticationFailed
 from rest_framework.response import Response
+from rest_framework.throttling import SimpleRateThrottle
 
 from core import models
 from core.api.permissions import IsAuthenticated
 from core.mda.inbound import deliver_inbound_message
-from core.mda.rfc5322 import compose_email
+from core.mda.utils import current_sent_at
 
 logger = logging.getLogger(__name__)
+
+
+class WidgetChannelThrottle(SimpleRateThrottle):
+    """Per-channel rate limit for the public widget deliver endpoint.
+
+    The channel id is the literal value embedded in the public HTML snippet,
+    so it offers no secrecy — anyone who scrapes it can POST. Keying the
+    throttle on the channel (not the source IP) caps the total inbound volume
+    a single widget can push into its mailbox regardless of how many IPs the
+    caller rotates through, bounding mailbox/blob/Contact/Thread growth and
+    per-message AI labeling cost.
+    """
+
+    scope = "widget_inbound_channel"
+
+    def get_cache_key(self, request, view):
+        auth = getattr(request, "auth", None)
+        channel = auth.get("channel") if isinstance(auth, dict) else None
+        if channel is None:
+            return None  # Unauthenticated — auth layer will reject it.
+        return self.cache_format % {"scope": self.scope, "ident": str(channel.id)}
+
+
+class WidgetIPThrottle(SimpleRateThrottle):
+    """Per-IP burst limit, layered under the per-channel cap above.
+
+    Stops a single source from saturating a channel's quota and gives a
+    cheaper first line of defense against floods from one host.
+    """
+
+    scope = "widget_inbound_ip"
+
+    def get_cache_key(self, request, view):
+        # Key on REMOTE_ADDR, not DRF's get_ident(): get_ident() prefers the
+        # raw X-Forwarded-For header (client-spoofable, and only trustworthy
+        # when NUM_PROXIES is configured — this project does not use it).
+        # Instead REMOTE_ADDR is normalized to the real client IP by
+        # XForwardedForMiddleware when USE_X_FORWARDED_FOR is enabled, which is
+        # the IP the rest of this view already trusts.
+        ident = request.META.get("REMOTE_ADDR")
+        return self.cache_format % {"scope": self.scope, "ident": ident}
 
 
 class WidgetAuthentication(BaseAuthentication):
@@ -54,6 +95,17 @@ class InboundWidgetViewSet(viewsets.GenericViewSet):
     permission_classes = [IsAuthenticated]
     authentication_classes = [WidgetAuthentication]
 
+    def get_throttles(self):
+        """Rate-limit only the public ``deliver`` endpoint.
+
+        ``config`` is a cheap idempotent read fetched on widget load and is
+        left unthrottled; ``deliver`` is the write path an attacker could
+        abuse, so it carries both the per-channel and per-IP throttles.
+        """
+        if getattr(self, "action", None) == "deliver":
+            return [WidgetChannelThrottle(), WidgetIPThrottle()]
+        return super().get_throttles()
+
     @extend_schema(exclude=True)
     @action(
         detail=False,
@@ -81,8 +133,6 @@ class InboundWidgetViewSet(viewsets.GenericViewSet):
     def deliver(self, request):
         """Handle incoming widget message."""
 
-        # TODO: throttle
-
         data = request.data
         auth_data = request.auth
         channel = auth_data["channel"]
@@ -95,13 +145,26 @@ class InboundWidgetViewSet(viewsets.GenericViewSet):
                 {"detail": "Missing email"}, status=status.HTTP_400_BAD_REQUEST
             )
 
-        # Validate the sender email format with django's email validator
-        try:
-            validate_email(sender_email)
-        except ValidationError:
+        # Cap the body so a caller can't fill blob storage with one giant
+        # message. ``message_text`` is the only unbounded field; it is expanded
+        # into both the text and HTML parts of the stored MIME, so bounding it
+        # bounds the resulting blob. Mirrors the MAX_INCOMING_EMAIL_SIZE limit
+        # the MTA path already enforces.
+        if len(message_text.encode("utf-8")) > settings.MAX_INCOMING_EMAIL_SIZE:
+            return Response(
+                {"detail": "Message too large"},
+                status=status.HTTP_413_REQUEST_ENTITY_TOO_LARGE,
+            )
+
+        # Validate through the same parser the rest of the pipeline
+        # uses. ``parse_address`` is strict by default and returns
+        # ``("", "")`` on garbage input.
+        _, normalised_sender = parse_address(sender_email)
+        if not normalised_sender:
             return Response(
                 {"detail": "Invalid email format"}, status=status.HTTP_400_BAD_REQUEST
             )
+        sender_email = normalised_sender
 
         if not message_text:
             return Response(
@@ -157,13 +220,13 @@ class InboundWidgetViewSet(viewsets.GenericViewSet):
         # Sanitize subject to prevent header injection (strip newlines/carriage returns)
         subject = subject.replace("\r", "").replace("\n", "")
 
-        # Build a JMAP-like structured format that we could have got from parse_email_message()
+        # Build a JMAP-like structured format that we could have got from parse_email()
 
         parsed_email = {
             "subject": subject,
-            "from": {"email": sender_email},
+            "from": [{"email": sender_email}],
             "to": [{"name": target_name, "email": target_email}],
-            "date": timezone.now(),
+            "sentAt": current_sent_at(),
             "htmlBody": [{"content": html_escape(message_text).replace("\n", "<br/>")}],
             "textBody": [{"content": message_text}],
         }

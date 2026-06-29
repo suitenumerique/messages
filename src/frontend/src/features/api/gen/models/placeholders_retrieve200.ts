@@ -5,8 +5,16 @@
  * This is the messages API schema.
  * OpenAPI spec version: 1.0.0 (v1.0)
  */
+import type { PlaceholdersRetrieve200I18n } from "./placeholders_retrieve200_i18n";
 
 /**
- * Field slugs mapped to their verbose labels
+ * Field slugs mapped to their label metadata. Built-in fields have an empty object and are localized client-side. Custom attribute fields expose their schema title and optional per-language translations.
  */
-export type PlaceholdersRetrieve200 = { [key: string]: string };
+export type PlaceholdersRetrieve200 = {
+  [key: string]: {
+    /** Default label (custom fields only). */
+    title?: string;
+    /** Label translations by language code, from the schema 'x-i18n' entry (custom fields only). */
+    i18n?: PlaceholdersRetrieve200I18n;
+  };
+};

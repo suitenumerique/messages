@@ -11,22 +11,25 @@ from django.db import transaction
 from django.utils import timezone
 
 import rest_framework as drf
+from jmap_email import (
+    compose_email,
+    find_header,
+    first_address_email,
+    parse_email,
+)
 
 from core import models
 from core.enums import MessageDeliveryStatusChoices
 from core.mda.inbound import check_local_recipient, deliver_inbound_message
-from core.mda.outbound_direct import send_message_via_mx
-from core.mda.rfc5322 import (
-    EmailParseError,
-    compose_email,
-    create_forward_message,
-    create_reply_message,
-    extract_base64_images_from_html,
-    extract_base64_images_from_text,
-    parse_email_message,
+from core.mda.inline_images import (
+    extract_inline_images_html,
+    extract_inline_images_text,
 )
+from core.mda.outbound_direct import send_message_via_mx
+from core.mda.replies import make_forward, make_reply
 from core.mda.signing import sign_message_dkim, verify_message_dkim
 from core.mda.smtp import send_smtp_mail
+from core.mda.utils import current_sent_at
 from core.services.blob_gc import schedule_for_gc
 from core.services.dns.check import check_spf_status
 from core.services.throttle import check_and_increment_throttle
@@ -104,6 +107,27 @@ def validate_attachments_size(total_size: int, message_id: str) -> None:
         )
 
 
+# When a message has no To recipient, emit a "To:" header using empty-group
+# syntax (RFC 4356 §3). A missing To header is a common anti-spam negative
+# signal (and resembles a DKIM-replay shape), so this keeps such sends —
+# typically Bcc-only — looking legitimate without disclosing anyone.
+UNDISCLOSED_RECIPIENTS_TO_HEADER = b"To: undisclosed-recipients:;"
+
+
+def build_xmailer_value() -> str:
+    """Return the X-Mailer header value: product name plus running release.
+
+    A present X-Mailer is a small positive deliverability signal (its absence
+    reads as bulk/templated mail to some filters, e.g. iCloud). Like other MUAs
+    (e.g. Open-Xchange's "Open-Xchange Mailer vX.Y.Z-RevN"), this identifies the
+    software, not the deployment — so the product name is fixed and the running
+    release appended when available.
+    """
+    if settings.RELEASE != "NA":
+        return f"{settings.MDA_HEADER_XMAILER} {settings.RELEASE}"
+    return settings.MDA_HEADER_XMAILER
+
+
 def compose_and_sign_mime(
     message: models.Message,
     mailbox: models.Mailbox,
@@ -142,18 +166,18 @@ def compose_and_sign_mime(
         if parent_parsed:
             is_forward = (message.subject or "").lower().startswith("fwd:")
             if is_forward:
-                nested_data = create_forward_message(
+                nested_data = make_forward(
                     original_message=parent_parsed,
-                    forward_text=text_body,
-                    forward_html=html_body,
+                    body_text=text_body,
+                    body_html=html_body,
                     include_original=True,
                 )
             else:
-                nested_data = create_reply_message(
+                nested_data = make_reply(
                     original_message=parent_parsed,
-                    reply_text=text_body,
-                    reply_html=html_body,
-                    include_quote=True,
+                    body_text=text_body,
+                    body_html=html_body,
+                    include_original=True,
                 )
             if nested_data.get("textBody"):
                 text_body = nested_data["textBody"][0]["content"]
@@ -178,14 +202,17 @@ def compose_and_sign_mime(
 
     mime_data = {
         "from": [{"name": message.sender.name, "email": message.sender.email}],
-        "date": timezone.now().strftime("%a, %d %b %Y %H:%M:%S %z"),
+        "sentAt": current_sent_at(),
         "to": recipients_by_type.get(models.MessageRecipientTypeChoices.TO, []),
         "cc": recipients_by_type.get(models.MessageRecipientTypeChoices.CC, []),
         "subject": message.subject,
         "textBody": [{"content": text_body}] if text_body else [],
         "htmlBody": [{"content": html_body}] if html_body else [],
-        "message_id": message.mime_id,
+        "messageId": [message.mime_id] if message.mime_id else None,
     }
+
+    # Advertise the sending application via X-Mailer (see build_xmailer_value).
+    mime_data["headers"] = [{"name": "X-Mailer", "value": build_xmailer_value()}]
 
     if all_attachments:
         mime_data["attachments"] = all_attachments
@@ -196,6 +223,11 @@ def compose_and_sign_mime(
         in_reply_to=message.parent.mime_id if message.parent else None,
         prepend_headers=prepend_headers,
     )
+
+    # Bcc/Cc-only send: the composed MIME has no To header. Add the empty-group
+    # placeholder before signing so it is covered by DKIM.
+    if not mime_data["to"]:
+        raw_mime = UNDISCLOSED_RECIPIENTS_TO_HEADER + b"\r\n" + raw_mime
 
     dkim_header = sign_message_dkim(raw_mime, mailbox.domain)
     if dkim_header:
@@ -243,29 +275,22 @@ def append_signature_and_extract_inline_images(
     raw_images = []
 
     if text_body:
-        text_body, text_images = extract_base64_images_from_text(
+        text_body, text_images = extract_inline_images_text(
             text_body, known_images=known_images
         )
         raw_images.extend(text_images)
 
     if html_body:
-        html_body, html_images = extract_base64_images_from_html(
+        html_body, html_images = extract_inline_images_html(
             html_body, known_images=known_images
         )
         raw_images.extend(html_images)
 
-    # Normalize to the format expected by compose_email
-    inline_attachments = [
-        {
-            "content": img["content"],
-            "type": img["content_type"],
-            "name": img["name"],
-            "disposition": "inline",
-            "cid": img["cid"],
-            "size": img["size"],
-        }
-        for img in raw_images
-    ]
+    # ``extract_inline_images_*`` already returns the JMAP / composer
+    # attachment shape (``type`` key, etc.). Set ``disposition="inline"``
+    # on each entry so the composer wraps in ``multipart/related`` and
+    # emits the ``cid`` Content-ID header.
+    inline_attachments = [{**img, "disposition": "inline"} for img in raw_images]
 
     return text_body, html_body, inline_attachments
 
@@ -316,6 +341,21 @@ def prepare_outbound_message(
         # atomic for just the Blob INSERT + FK-establishing save —
         # this keeps the per-sha advisory lock taken inside
         # ``create_blob`` held for ms, not for the duration of DKIM.
+        # Caller-supplied MIME may also lack a To header (e.g. Bcc-only); add
+        # the placeholder before signing. ``parse_email`` returns None on
+        # unparseable input (already rejected upstream by the submit view).
+        parsed = parse_email(raw_mime)
+        if parsed is not None:
+            if not find_header(parsed, "to"):
+                raw_mime = UNDISCLOSED_RECIPIENTS_TO_HEADER + b"\r\n" + raw_mime
+            # Mirror the composed-body path: advertise the sending application
+            # via X-Mailer so raw submissions get the same deliverability
+            # signal. Prepend before signing so it's covered by DKIM, but keep a
+            # caller-supplied X-Mailer instead of duplicating the header.
+            if not find_header(parsed, "x-mailer"):
+                raw_mime = (
+                    f"X-Mailer: {build_xmailer_value()}".encode() + b"\r\n" + raw_mime
+                )
         signed_mime = _sign_mime(mailbox_sender, raw_mime)
         validate_mime_size(len(signed_mime), message.id)
         message.sender_user = user
@@ -497,14 +537,9 @@ def send_message(message: models.Message, force_mta_out: bool = False):
         # Use context manager to batch thread stats updates for all delivery status changes
         with ThreadStatsUpdateDeferrer.defer():
             blob_content = message.blob.get_content()
-            try:
-                parsed_email = parse_email_message(blob_content)
-            except EmailParseError as e:
-                logger.error(
-                    "Failed to parse email for message %s: %s",
-                    message.id,
-                    e,
-                )
+            parsed_email = parse_email(blob_content)
+            if parsed_email is None:
+                logger.error("Failed to parse email for message %s", message.id)
                 # Mark all recipients as failed
                 for recipient in message.recipients.all():
                     recipient.delivery_status = MessageDeliveryStatusChoices.FAILED
@@ -514,7 +549,7 @@ def send_message(message: models.Message, force_mta_out: bool = False):
                     )
                 return
 
-            if parsed_email.get("from", {}).get("email") != message.sender.email:
+            if first_address_email(parsed_email.get("from")) != message.sender.email:
                 raise ValueError("Mailbox email does not match the raw message sender")
 
             message.sent_at = timezone.now()
@@ -754,6 +789,7 @@ def send_outbound_email(
             message_content=mime_data,
             smtp_username=mta_out_smtp_username,
             smtp_password=mta_out_smtp_password,
+            smtp_tls_security_level=settings.MTA_OUT_SMTP_TLS_SECURITY_LEVEL,
         )
         return statuses
 

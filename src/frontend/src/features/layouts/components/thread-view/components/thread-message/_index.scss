@@ -191,7 +191,7 @@
 }
 .thread-message__correspondents dd {
     margin: 0;
-    word-break: break-word;
+    overflow-wrap: break-word;
     min-width: 0;
 }
 
@@ -224,12 +224,38 @@
     display: flex;
     justify-content: center;
     align-items: center;
-    height: 100%;
-    margin-block: var(--c--globals--spacings--base);
+    margin-bottom: var(--c--globals--spacings--base);
 }
 
 .thread-message__reply-form {
     margin-bottom: var(--c--globals--spacings--base);
+}
+
+// Break the detached compose surface out of the message card's inner padding so
+// it spans edge-to-edge and stops aligning with the quoted message body, and add
+// a clear gap above so it visually separates from the message it answers.
+.thread-message__reply-form--detached {
+    margin-top: var(--c--globals--spacings--sm);
+    margin-inline: calc(var(--c--globals--spacings--base) * -1);
+}
+
+// A standalone draft IS the compose surface — strip the message-card chrome
+// (background, padding, outline) so only the "Brouillon" panel shows, instead of
+// a draft nested inside a message that is itself the draft.
+.thread-message--compose {
+    padding: 0;
+    background-color: transparent;
+    outline: none;
+
+    .thread-message__reply-form--detached {
+        margin: 0;
+    }
+
+    // No parent message to inset against: the compose surface spans the full
+    // width instead of the reply inset.
+    .message-reply-form-container--detached {
+        margin-inline: 0;
+    }
 }
 
 .banner:has(.thread-message__external-images-banner) {

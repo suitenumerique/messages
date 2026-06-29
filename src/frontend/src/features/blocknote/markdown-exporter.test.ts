@@ -1,20 +1,22 @@
 /**
- * Regression net for `BlockNoteEditor.blocksToMarkdownLossy()`.
+ * Regression net for `blocksToMarkdown()`, our wrapper around the BlockNote
+ * built-in `blocksToMarkdownLossy()`.
  *
- * This serializer is a BlockNote built-in (no source in this repo) used in
- * `message-composer/index.tsx` to produce the email text body. A silent
- * regression here breaks plain-text recipients. These tests pin a contract
- * per block type against the production schema (`BLOCKNOTE_SCHEMA`), so a
- * BlockNote upgrade that changes the markdown shape is caught at CI time.
+ * This serializer produces the email text body (see `use-base64-composer.tsx`),
+ * so a silent regression breaks plain-text recipients. These tests pin a
+ * contract per block type against the production schema (`BLOCKNOTE_SCHEMA`),
+ * so a BlockNote upgrade that changes the markdown shape is caught at CI time.
  *
  * Note: snapshots are deliberately structural (`toContain`) rather than full
- * inline snapshots to absorb cosmetic differences (trailing newlines, bullet
- * marker, etc.) across BlockNote patch versions. The only inline snapshot is
- * the empty-document case, which should never produce noise.
+ * inline snapshots to absorb cosmetic differences (bullet marker, etc.) across
+ * BlockNote patch versions. The only inline snapshot is the empty-document
+ * case: BlockNote >=0.51 emits a trailing "\n" there, which the wrapper trims
+ * back to '' — that contract is what this case guards.
  */
 import { BlockNoteEditor } from '@blocknote/core';
 import type { PartialBlock } from '@blocknote/core';
 import { BLOCKNOTE_SCHEMA } from '@/features/forms/components/message-composer';
+import { blocksToMarkdown } from './markdown-exporter';
 
 // jsdom 27 ships without matchMedia/ResizeObserver/IntersectionObserver, which
 // BlockNote/TipTap probe when an editor is instantiated. The schema import
@@ -63,10 +65,10 @@ function createHeadlessEditor(): EditorType {
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
 async function toMarkdown(blocks: PartialBlock<any, any, any>[]): Promise<string> {
   const editor = createHeadlessEditor();
-  return editor.blocksToMarkdownLossy(blocks);
+  return blocksToMarkdown(editor, blocks);
 }
 
-describe('blocksToMarkdownLossy', () => {
+describe('blocksToMarkdown', () => {
   it('returns an empty string for an empty document', async () => {
     const md = await toMarkdown([]);
     expect(md).toBe('');

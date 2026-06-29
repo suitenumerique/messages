@@ -51,6 +51,14 @@
     }
   }
 
+  // The info banner shown above the personal mailbox form is a direct child of
+  // the (gap: 0) form, so it needs its own spacing before the first field row.
+  // The error banner (banner--error) is already spaced by the submit button's
+  // margin-top, so we only target the info banner here.
+  .banner--info {
+    margin-bottom: var(--c--globals--spacings--s);
+  }
+
   .form-field-row {
     display: flex;
     flex-direction: column;

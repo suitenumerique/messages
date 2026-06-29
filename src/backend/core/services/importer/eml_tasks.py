@@ -7,10 +7,10 @@ from django.conf import settings
 from django.core.files.storage import storages
 
 from celery.utils.log import get_task_logger
+from jmap_email import first_address_email, parse_email
 from sentry_sdk import capture_exception
 
 from core.mda.inbound import deliver_inbound_message
-from core.mda.rfc5322 import parse_email_message
 from core.models import Mailbox
 from core.utils import ThreadReindexDeferrer, ThreadStatsUpdateDeferrer
 
@@ -99,14 +99,28 @@ def process_eml_file_task(self, file_key: str, recipient_id: str) -> Dict[str, A
             }
 
         # Parse the email message
-        parsed_email = parse_email_message(file_content)
+        parsed_email = parse_email(file_content)
+        if parsed_email is None:
+            error_msg = "Failed to parse email message"
+            logger.error("%s for key %s", error_msg, file_key)
+            return {
+                "status": "FAILURE",
+                "result": {
+                    "status": "FAILURE",
+                    "current_message": 1,
+                    "success_count": 0,
+                    "failure_count": 1,
+                    "type": "eml",
+                },
+                "error": error_msg,
+            }
 
         # Treat the EML as a sent message when From matches the destination
         # mailbox — the same heuristic IMAP uses against the account
         # username. Without this flag, importing one's own sent mails would
         # land them in the inbox view.
         recipient_email = str(recipient)
-        sender_email = (parsed_email.get("from") or {}).get("email") or ""
+        sender_email = first_address_email(parsed_email.get("from"))
         # TODO: better heuristic to determine if the message is from the sender
         is_import_sender = sender_email.lower() == recipient_email.lower()
 

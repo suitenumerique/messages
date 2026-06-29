@@ -3,5 +3,88 @@
     box-shadow: 0 2px 5px var(--c--contextuals--background--semantic--contextual--primary-hover);
     border-radius: 4px;
     padding: var(--c--globals--spacings--base);
+
+    .message-reply-form-container__body {
+        min-width: 0;
+    }
 }
 
+// Detached compose surface: a draft replying to an existing message must read
+// as its own authoring panel, not as content nested inside that message.
+.message-reply-form-container--detached {
+    padding: 0;
+    margin-inline: var(--c--globals--spacings--sm);
+    overflow: hidden;
+    border: 1px solid var(--c--contextuals--border--semantic--brand--secondary);
+    border-radius: 8px;
+    background-color: var(--c--contextuals--background--semantic--brand--tertiary);
+    box-shadow:
+        0 1px 2px rgba(0, 0, 0, 0.04),
+        0 8px 20px -8px var(--c--contextuals--background--semantic--contextual--primary-hover);
+    animation: reply-surface-in 0.28s cubic-bezier(0.16, 1, 0.3, 1) both;
+
+    .message-reply-form-container__header {
+        display: flex;
+        flex-direction: row;
+        align-items: center;
+        gap: var(--c--globals--spacings--2xs);
+        // Padding on the leading edge only so the trailing options button can sit
+        // flush to the right of the surface.
+        padding: var(--c--globals--spacings--xs) 0 var(--c--globals--spacings--xs) var(--c--globals--spacings--base);
+        border-bottom: 1px solid var(--c--contextuals--border--semantic--brand--tertiary);
+        color: var(--c--contextuals--content--semantic--brand--primary);
+
+        .material-icons {
+            font-size: 1.125rem;
+        }
+    }
+
+    .message-reply-form-container__header-label {
+        font-size: var(--c--globals--font--sizes--xs);
+        font-weight: 600;
+        letter-spacing: 0.04em;
+        text-transform: uppercase;
+    }
+
+    .message-reply-form-container__header-date {
+        font-size: var(--c--globals--font--sizes--xs);
+        color: var(--c--contextuals--content--semantic--neutral--secondary);
+
+        &::before {
+            content: "·";
+            margin-right: var(--c--globals--spacings--2xs);
+        }
+    }
+
+    .message-reply-form-container__header-actions {
+        // Push the options menu to the trailing edge of the header, and keep the
+        // small icon button from inflating the strip's height.
+        margin-left: auto;
+        margin-block: calc(var(--c--globals--spacings--xs) * -1);
+    }
+
+    .message-reply-form-container__body {
+        padding: var(--c--globals--spacings--base);
+        // Lift the editor back onto a plain surface so writing stays comfortable
+        // while the surrounding chrome carries the "draft" identity.
+        background-color: var(--c--contextuals--background--surface--primary);
+    }
+}
+
+@keyframes reply-surface-in {
+    from {
+        opacity: 0;
+        transform: translateY(6px);
+    }
+
+    to {
+        opacity: 1;
+        transform: translateY(0);
+    }
+}
+
+@media (prefers-reduced-motion: reduce) {
+    .message-reply-form-container--detached {
+        animation: none;
+    }
+}

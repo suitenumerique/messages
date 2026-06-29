@@ -1,6 +1,5 @@
-import { ReadMessageTemplate, MessageTemplateTypeChoices, useMailboxesMessageTemplatesCreate, useMailboxesMessageTemplatesUpdate, useMailboxesMessageTemplatesRetrieve, getMailboxesMessageTemplatesListUrl } from "@/features/api/gen";
+import { Mailbox, ReadMessageTemplate, MessageTemplateTypeChoices, useMailboxesMessageTemplatesCreate, useMailboxesMessageTemplatesUpdate, useMailboxesMessageTemplatesRetrieve, getMailboxesMessageTemplatesListUrl } from "@/features/api/gen";
 import { RhfInput } from "@/features/forms/components/react-hook-form/rhf-input";
-import { useMailboxContext } from "@/features/providers/mailbox";
 import { zodResolver } from "@hookform/resolvers/zod";
 import { Button, Modal, ModalSize } from "@gouvfr-lasuite/cunningham-react";
 import { Spinner } from "@gouvfr-lasuite/ui-kit";
@@ -25,17 +24,17 @@ import { extractSignatureId } from "../utils";
 type ModalComposeTemplateProps = {
     isOpen: boolean;
     onClose: () => void;
+    mailbox: Mailbox;
     template?: ReadMessageTemplate;
 }
 
-export const ModalComposeTemplate = ({ isOpen, onClose, template }: ModalComposeTemplateProps) => {
+export const ModalComposeTemplate = ({ isOpen, onClose, mailbox, template }: ModalComposeTemplateProps) => {
     const { t } = useTranslation();
-    const { selectedMailbox } = useMailboxContext();
     const queryClient = useQueryClient();
     const [isDirty, setIsDirty] = useState(false);
     const guardedOnClose = useConfirmBeforeClose(isDirty, onClose);
     const invalidateMessageTemplates = async () => {
-        await queryClient.invalidateQueries({ queryKey: [getMailboxesMessageTemplatesListUrl(selectedMailbox!.id)], exact: false });
+        await queryClient.invalidateQueries({ queryKey: [getMailboxesMessageTemplatesListUrl(mailbox.id)], exact: false });
     }
 
     const handleSuccess = async () => {
@@ -60,7 +59,7 @@ export const ModalComposeTemplate = ({ isOpen, onClose, template }: ModalCompose
             <div className="modal-compose-template">
                 {template ? (
                     <TemplateComposeFormWithRetrieve
-                        mailboxId={selectedMailbox!.id}
+                        mailboxId={mailbox.id}
                         templateId={template.id}
                         templateName={template.name}
                         onSuccess={handleSuccess}
@@ -68,7 +67,7 @@ export const ModalComposeTemplate = ({ isOpen, onClose, template }: ModalCompose
                     />
                 ) : (
                     <TemplateComposeForm
-                        mailboxId={selectedMailbox!.id}
+                        mailboxId={mailbox.id}
                         onSuccess={handleSuccess}
                         onDirtyChange={setIsDirty}
                     />

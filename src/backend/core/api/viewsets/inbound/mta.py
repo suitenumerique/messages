@@ -8,6 +8,7 @@ from django.conf import settings
 
 import jwt
 from drf_spectacular.utils import extend_schema
+from jmap_email import parse_email
 from rest_framework import status, viewsets
 from rest_framework.authentication import BaseAuthentication
 from rest_framework.decorators import action
@@ -17,15 +18,32 @@ from rest_framework.response import Response
 
 from core import models
 from core.mda.inbound import check_local_recipients, deliver_inbound_message
-from core.mda.rfc5322 import EmailParseError, parse_email_message, remove_mime_headers
+from core.mda.raw_mime import remove_mime_headers
 
 logger = logging.getLogger(__name__)
 
 
 class MTAJWTAuthentication(BaseAuthentication):
-    """
-    Custom authentication for MTA endpoints using JWT tokens with email hash validation.
-    Returns None or (user, auth)
+    """Authenticate the MTA-to-MDA channel via an HS256 JWT.
+
+    Trust model: the whole channel rests on the shared ``MDA_API_SECRET``.
+    Only the MTA-in service knows it, so a valid HMAC signature *is* the proof
+    of identity — there is no per-request identity beyond "signed by the
+    secret". Consequently we do NOT attempt replay protection (a ``jti`` nonce
+    store, etc.): anyone able to forge the signature already holds the secret
+    and could mint fresh tokens at will, and anyone who cannot is stopped by
+    the signature check. Keeping the secret out of source (it has no default —
+    see ``settings.MDA_API_SECRET``) and the transport on TLS is what actually
+    secures this path.
+
+    On top of the signature we keep two cheap, narrow guards:
+    - ``exp``: bounds a leaked token's useful lifetime. The issuer sizes the
+      claim to cover its full retry window (see mta-in ``mda_api_call``).
+    - ``body_hash``: binds the token to its exact request body, so a captured
+      token can't be repurposed for a *different* body within that window.
+      Enforced even for an empty body (the bodyless ``/check`` path).
+
+    Returns None or (user, auth).
     """
 
     def authenticate(self, request):
@@ -40,20 +58,26 @@ class MTAJWTAuthentication(BaseAuthentication):
                 settings.MDA_API_SECRET,
                 algorithms=["HS256"],
                 options={
-                    "require": ["exp"],
+                    # exp bounds the lifetime; body_hash binds the token to its
+                    # payload. Both are mandatory.
+                    "require": ["exp", "body_hash"],
                     "verify_exp": True,
                     "verify_signature": True,
                 },
             )
 
-            if not payload.get("exp"):
-                raise jwt.InvalidTokenError("Missing expiration time")
-
-            # Validate email hash if there's a body
-            if request.body:
-                body_hash = hashlib.sha256(request.body).hexdigest()
-                if not secrets.compare_digest(body_hash, payload["body_hash"]):
-                    raise jwt.InvalidTokenError("Invalid email hash")
+            # Bind the token to its payload. Always enforced — including for
+            # an empty body (sha256 of b"") — so the bodyless /check endpoint
+            # can't be driven with a token minted for a different request.
+            claimed_hash = payload["body_hash"]
+            # ``compare_digest`` raises TypeError on mismatched types (e.g. a
+            # numeric ``body_hash`` claim), which would surface as a 500 rather
+            # than an auth failure. Reject a non-string claim up front.
+            if not isinstance(claimed_hash, str):
+                raise jwt.InvalidTokenError("Invalid email hash")
+            body_hash = hashlib.sha256(request.body or b"").hexdigest()
+            if not secrets.compare_digest(body_hash, claimed_hash):
+                raise jwt.InvalidTokenError("Invalid email hash")
 
             service_account = models.User()
             return (service_account, payload)
@@ -183,10 +207,10 @@ class InboundMTAViewSet(viewsets.GenericViewSet):
             ).encode("utf-8") + raw_data
 
         # Parse the email message once
-        try:
-            parsed_email = parse_email_message(raw_data)
-        except EmailParseError as e:
-            logger.error("Failed to parse inbound email: %s", str(e))
+        parsed_email = parse_email(raw_data)
+        if parsed_email is None:
+            # Sender-supplied malformed input; not an internal error.
+            logger.warning("Failed to parse inbound email (returning 400)")
             # Consider saving the raw email for debugging
             return Response(
                 {"status": "error", "detail": "Failed to parse email"},

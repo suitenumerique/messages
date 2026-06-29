@@ -8,9 +8,10 @@ import { useTranslation } from 'react-i18next';
 import { useUploadImageAsBase64 } from '@/features/blocknote/image-block/use-upload-image-as-base64';
 import { useImageObjectUrls } from '@/features/blocknote/image-block/use-image-object-urls';
 import { EmailExporter } from '@/features/blocknote/email-exporter';
+import { blocksToMarkdown } from '@/features/blocknote/markdown-exporter';
 import { useConfig } from '@/features/providers/config';
 import MailHelper from '@/features/utils/mail-helper';
-import { createBlockNoteDictionary, createNonImageFileBlockers } from '@/features/blocknote/utils';
+import { backfillTemplateVariableContent, createBlockNoteDictionary, createNonImageFileBlockers } from '@/features/blocknote/utils';
 import { handle } from '@/features/utils/errors';
 
 const emailExporter = new EmailExporter();
@@ -81,6 +82,11 @@ export const useBase64Composer = <
             return DEFAULT_CONTENT;
         }
 
+        // Restore the styled content of legacy `template-variable` tokens stored
+        // before the inline spec switched from `content: "none"` to "styled",
+        // otherwise they render as empty blue chips.
+        blocks = backfillTemplateVariableContent(blocks);
+
         // Traverse blocks tree to transform image data URLs to Object URLs
         let imageIndex = 0;
         const processImageBlocks = (blocks: Record<string, unknown>[]) => {
@@ -130,7 +136,7 @@ export const useBase64Composer = <
     }, [editor, form, resolveObjectUrls]);
 
     const exportContent = useCallback(async () => {
-        const markdown = await editor.blocksToMarkdownLossy(editor.document);
+        const markdown = await blocksToMarkdown(editor, editor.document);
         const html = emailExporter.exportBlocks(editor.document, editor.domElement ?? null);
         return {
             htmlBody: resolveObjectUrls(html),

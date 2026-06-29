@@ -1,0 +1,180 @@
+[project]
+name = "jmap-email"
+version = "0.8.0"
+description = "A strict-JMAP RFC 8621 Email object library for Python 3.14+ with lenient RFC 5322 / MIME parsing and strict-by-design composition. Zero runtime dependencies."
+readme = "README.md"
+license = "MIT"
+authors = [{ name = "ANCT", email = "contact@suite.anct.gouv.fr" }]
+requires-python = ">=3.14.5,<4.0"
+keywords = ["jmap", "rfc5322", "rfc8621", "email", "mime", "parser", "composer"]
+classifiers = [
+    "Development Status :: 4 - Beta",
+    "Intended Audience :: Developers",
+    "License :: OSI Approved :: MIT License",
+    "Natural Language :: English",
+    "Programming Language :: Python :: 3",
+    "Programming Language :: Python :: 3.14",
+    "Topic :: Communications :: Email",
+    "Topic :: Software Development :: Libraries :: Python Modules",
+]
+
+# Zero runtime dependencies. The whole point of this library is to be a
+# clean stdlib-only wrapper. If you find yourself adding one, stop and
+# read the README first.
+dependencies = []
+
+[project.urls]
+Homepage = "https://github.com/suitenumerique/messages"
+Repository = "https://github.com/suitenumerique/messages"
+"Bug Tracker" = "https://github.com/suitenumerique/messages/issues"
+Changelog = "https://github.com/suitenumerique/messages/blob/main/src/jmap-email/CHANGELOG.md"
+
+[project.optional-dependencies]
+dev = [
+    "hypothesis>=6.151.0",
+    "pylint>=4.0.4",
+    "pytest>=9.0.0",
+    "pytest-cov>=7.0.0",
+    "ruff>=0.15.0",
+    "ty>=0.0.44",
+]
+
+[build-system]
+requires = ["hatchling>=1.27.0"]
+build-backend = "hatchling.build"
+
+[tool.hatch.build.targets.wheel]
+packages = ["jmap_email"]
+# PEP 561 marker — opt-in type information for downstream type
+# checkers (mypy, pyright). Hatchling needs an explicit include for
+# non-``.py`` files inside the package directory.
+include = ["jmap_email/py.typed"]
+
+[tool.hatch.build.targets.sdist]
+include = [
+    "jmap_email/**/*.py",
+    "jmap_email/py.typed",
+    "tests/**/*.py",
+    "examples/**/*.py",
+    "README.md",
+    "CHANGELOG.md",
+    "CONTRIBUTING.md",
+    "SECURITY.md",
+    "LICENSE",
+]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+addopts = [
+    "-v",
+    "--import-mode=importlib",
+    "-m", "not fuzz",
+    # jmap-email has no Django dependency; disable pytest-django if
+    # the global environment loaded it.
+    "-p", "no:django",
+]
+markers = [
+    "fuzz: marks tests as fuzz tests (run with: pytest -m fuzz)",
+]
+
+[tool.ruff]
+# Pin py313 even though the runtime floor is py314.5. Targeting py313
+# keeps ruff's formatter from applying PEP 758 (un-parenthesized
+# ``except E1, E2:``) — valid Python 3.14 but trips static analysis
+# (CodeRabbit, IDEs on older Python, copy-pasted snippets).
+target-version = "py313"
+line-length = 88
+
+[tool.ruff.lint]
+ignore = ["PLR2004", "PLR0915", "PLR0912", "PLR0913", "PLR0911", "BLE001"]
+select = [
+    "B",
+    "BLE",
+    "C4",
+    "I",
+    "PLC",
+    "PLE",
+    "PLR",
+    "PLW",
+    "RUF100",
+    "S",
+    "SLF",
+    "T20",
+    "F",
+]
+
+[tool.ruff.lint.per-file-ignores]
+# Tests legitimately import inside test methods (to scope a regression
+# test to one symbol), assert on hard-coded payload literals (S101 / S105),
+# and embed control characters in defense-matrix fixtures (PLE2502).
+"tests/**" = ["S", "SLF", "PLC0415", "PLE2502"]
+
+# ──────────────────────────── ty (PEP 561 typecheck) ────────────────────────────
+# Static typecheck via Astral's ``ty`` — single Rust binary, no Node,
+# no Python deps. The shape contracts (``types.py``) and the public
+# re-exports (``__init__.py``) are checked from day one; older
+# internal modules will be picked up as their annotations are
+# completed (ratchet driven by per-file ``# ty: ignore`` markers
+# rather than module-wide overrides).
+#
+# Run locally with: ``make typecheck-jmap-email``
+[tool.ty.environment]
+python-version = "3.14"
+
+[tool.ty.src]
+include = ["jmap_email"]
+exclude = ["tests", "**/__pycache__", ".venv", "build", "dist"]
+
+# ──────────────────────────── pylint ────────────────────────────
+# ruff misses a few syntax classes (notably Python 2's
+# ``except A, B:``), so pylint covers the long-tail. The matrix of
+# rules disabled here is the intersection of "issues pylint flags
+# that ruff already covers" and "stylistic choices we accept".
+[tool.pylint.main]
+jobs = 0
+py-version = "3.14"
+ignore = ["__pycache__"]
+
+[tool.pylint."messages control"]
+disable = [
+    # Covered by ruff (PLR / PLW / PLC) or accepted style.
+    "missing-module-docstring",
+    "missing-class-docstring",
+    "missing-function-docstring",
+    "too-many-arguments",
+    "too-many-branches",
+    "too-many-locals",
+    "too-many-statements",
+    "too-many-lines",
+    "too-many-return-statements",
+    "too-many-positional-arguments",
+    "too-many-nested-blocks",
+    "too-many-public-methods",
+    "too-many-instance-attributes",
+    "too-few-public-methods",
+    "line-too-long",  # ruff format owns line length
+    "fixme",
+    "broad-exception-caught",
+    "unnecessary-pass",
+    "duplicate-code",
+    "invalid-name",
+    "protected-access",  # tests reach into _-prefixed helpers
+    "import-outside-toplevel",  # tests scope imports per regression
+    "wrong-import-order",  # ruff isort owns order
+    "wrong-import-position",
+    "ungrouped-imports",
+    "consider-using-f-string",
+    "consider-using-with",
+    "no-else-return",
+    "no-else-raise",
+    "redefined-outer-name",  # pytest fixtures pattern
+    "redefined-builtin",
+    "unused-argument",
+    "unused-variable",
+    "useless-import-alias",
+    "unspecified-encoding",
+    # Test fixtures embed RTL override / bidi chars to exercise the
+    # parser's handling of them; the library itself never carries
+    # such chars in source.
+    "bidirectional-unicode",
+]

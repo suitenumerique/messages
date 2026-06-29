@@ -15,7 +15,7 @@ from rest_framework import serializers
 from rest_framework.exceptions import PermissionDenied
 
 from core import enums, models
-from core.mda.rfc5322 import extract_base64_images_from_html
+from core.mda.inline_images import extract_inline_images_html
 from core.services.blob_gc import schedule_for_gc
 from core.services.identity import keycloak as keycloak_service
 
@@ -220,6 +220,23 @@ class IntegerChoicesField(serializers.ChoiceField):
         super().fail(key, **kwargs)
 
 
+def nullable_choices_schema(choices_class):
+    """Nullable enum schema for a ``SerializerMethodField`` that may return
+    ``None``.
+
+    Reuse the shared ``{choices_class.__name__}`` component (registered by the
+    non-null :class:`IntegerChoicesField` usages) and apply the nullability
+    locally via the ``allOf`` wrapper. Baking ``nullable`` into the component
+    itself would collide with those non-null usages; an inline enum dict would
+    instead make drf-spectacular extract a redundant ``…Enum`` component. This
+    mirrors the shape drf-spectacular emits natively for a nullable ``$ref``.
+    """
+    return {
+        "allOf": [{"$ref": f"#/components/schemas/{choices_class.__name__}"}],
+        "nullable": True,
+    }
+
+
 class AbilitiesModelSerializer(serializers.ModelSerializer):
     """
     A ModelSerializer that takes an additional `exclude` argument that
@@ -342,6 +359,8 @@ class MailboxSerializer(AbilitiesModelSerializer):
     """Serialize mailboxes."""
 
     email = serializers.SerializerMethodField(read_only=True)
+    name = serializers.SerializerMethodField(read_only=True)
+    domain_id = serializers.UUIDField(read_only=True)
     role = serializers.SerializerMethodField(read_only=True)
     count_unread_threads = serializers.SerializerMethodField(read_only=True)
     count_threads = serializers.SerializerMethodField(read_only=True)
@@ -355,6 +374,8 @@ class MailboxSerializer(AbilitiesModelSerializer):
         fields = [
             "id",
             "email",
+            "name",
+            "domain_id",
             "is_identity",
             "is_shared",
             "role",
@@ -370,7 +391,13 @@ class MailboxSerializer(AbilitiesModelSerializer):
         """Return the email of the mailbox."""
         return str(instance)
 
-    @extend_schema_field(IntegerChoicesField(choices_class=models.MailboxRoleChoices))
+    def get_name(self, instance) -> str | None:
+        """Return the display name of the mailbox (its contact name)."""
+        if instance.contact:
+            return instance.contact.name
+        return None
+
+    @extend_schema_field(nullable_choices_schema(models.MailboxRoleChoices))
     def get_role(self, instance):
         """Return the allowed actions of the logged-in user on the instance."""
         # Use the annotated user_role field
@@ -495,6 +522,35 @@ class MailboxSerializer(AbilitiesModelSerializer):
     def get_abilities(self, instance):
         """Get abilities for the instance."""
         return super().get_abilities(instance)
+
+
+class MailboxNameUpdateSerializer(serializers.Serializer):
+    """Validate and apply a mailbox display-name update (its contact name)."""
+
+    name = serializers.CharField(max_length=255)
+
+    def validate_name(self, value):
+        """Strip surrounding whitespace and reject whitespace-only names, which
+        would otherwise be stored (and sent in the ``From`` header) verbatim."""
+        value = value.strip()
+        if not value:
+            raise serializers.ValidationError("Name cannot be blank.")
+        return value
+
+    def create(self, validated_data):
+        """Do not allow creating instances from this serializer."""
+        raise RuntimeError(f"{self.__class__.__name__} does not support create method")
+
+    def update(self, instance, validated_data):
+        """Persist the new display name through the mailbox helper.
+
+        The PATCH is partial: an absent ``name`` is a no-op, so callers may send
+        an empty body without error. This matches the optional ``name`` in the
+        generated OpenAPI request schema.
+        """
+        if "name" in validated_data:
+            instance.set_display_name(validated_data["name"])
+        return instance
 
 
 class MailboxLightSerializer(serializers.ModelSerializer):
@@ -851,9 +907,7 @@ class ThreadSerializer(serializers.ModelSerializer):
             cached = instance.messages.order_by("created_at")
         return [str(message.id) for message in cached]
 
-    @extend_schema_field(
-        IntegerChoicesField(choices_class=models.ThreadAccessRoleChoices)
-    )
+    @extend_schema_field(nullable_choices_schema(models.ThreadAccessRoleChoices))
     def get_user_role(self, instance):
         """Get current user's role for this thread, scoped to the context mailbox.
 
@@ -1116,10 +1170,11 @@ class MessageSerializer(serializers.ModelSerializer):
                 stripped_attachments.append(
                     {
                         "blobId": f"msg_{instance.id}_{index}",
-                        "name": attachment["name"],
+                        "name": attachment.get("name") or "unnamed",
                         "size": attachment["size"],
                         "type": attachment["type"],
                         "cid": attachment.get("cid"),
+                        "sha256": attachment.get("sha256"),
                     }
                 )
             return stripped_attachments
@@ -1404,6 +1459,21 @@ class MailDomainAdminSerializer(AbilitiesModelSerializer):
         """Return the abilities for the mail domain."""
         return super().get_abilities(instance)
 
+    @extend_schema_field(
+        {
+            "type": "array",
+            "nullable": True,
+            "items": {
+                "type": "object",
+                "properties": {
+                    "target": {"type": "string"},
+                    "type": {"type": "string"},
+                    "value": {"type": "string"},
+                },
+                "required": ["target", "type", "value"],
+            },
+        }
+    )
     def get_expected_dns_records(self, instance):
         """Return the expected DNS records for the mail domain, only in detail views."""
 
@@ -1512,7 +1582,9 @@ class MailboxAdminSerializer(serializers.ModelSerializer):
         many=True, read_only=True
     )  # accesses is the related_name
     can_reset_password = serializers.BooleanField(read_only=True)
-    contact = ContactSerializer(read_only=True)
+    # ``Mailbox.contact`` is ``SET_NULL, null=True`` — an alias mailbox (or one
+    # whose contact was deleted) has none, so the nested field must be nullable.
+    contact = ContactSerializer(read_only=True, allow_null=True)
     alias_of = serializers.PrimaryKeyRelatedField(
         required=False, allow_null=True, queryset=models.Mailbox.objects.none()
     )
@@ -1606,17 +1678,13 @@ class MailboxAdminSerializer(serializers.ModelSerializer):
                 "Domain is required in serializer context."
             )
 
-        domain = self.context.get("domain")
         metadata = self.context.get("metadata", {})
-        if metadata.get("type") == "personal" and not domain.identity_sync:
-            raise serializers.ValidationError(
-                {
-                    "identity_sync": (
-                        "Personal mailboxes cannot be created when "
-                        "identity synchronization is disabled."
-                    )
-                }
-            )
+
+        # Personal mailboxes can be created even when identity synchronization is
+        # disabled: this lets admins pre-create mailboxes for users who connect
+        # through a third-party (non-synced) identity provider. No password is
+        # provisioned in that case (see Mailbox.can_reset_password), but the
+        # mailbox can receive emails straight away.
 
         if metadata.get("type") == "personal":
             local_part = attrs.get("local_part", "")
@@ -1713,11 +1781,10 @@ class MailboxAdminSerializer(serializers.ModelSerializer):
 
         if instance.is_identity is True:
             user_updated_fields = {}
-            contact_updated_fields = {}
+            display_name = metadata.get("full_name")
 
-            if full_name := metadata.get("full_name"):
-                user_updated_fields["full_name"] = full_name
-                contact_updated_fields["name"] = full_name
+            if display_name:
+                user_updated_fields["full_name"] = display_name
             if custom_attributes := metadata.get("custom_attributes"):
                 user_updated_fields["custom_attributes"] = custom_attributes
 
@@ -1732,21 +1799,12 @@ class MailboxAdminSerializer(serializers.ModelSerializer):
                     owner.save(update_fields=list(user_updated_fields.keys()))
                     updated = True
 
-            if contact_updated_fields:
-                contact = models.Contact.objects.filter(pk=instance.contact_id)
-                contact.update(**contact_updated_fields)
-                updated = True
-
         else:
-            contact_updated_fields = {}
+            display_name = metadata.get("name")
 
-            if name := metadata.get("name"):
-                contact_updated_fields["name"] = name
-
-            if contact_updated_fields:
-                contact = models.Contact.objects.filter(pk=instance.contact_id)
-                contact.update(**contact_updated_fields)
-                updated = True
+        if display_name:
+            instance.set_display_name(display_name)
+            updated = True
 
         if updated:
             instance.refresh_from_db()
@@ -1965,6 +2023,10 @@ class ChannelSerializer(CreateOnlyFieldsMixin, serializers.ModelSerializer):
     # generators write directly to ``encrypted_settings`` instead.
     RESERVED_SETTINGS_KEYS = {
         enums.ChannelTypes.API_KEY: ["api_key_hashes"],
+        # CalDAV credentials must live in ``encrypted_settings``, never in
+        # the plaintext ``settings`` JSONField — a DB read would otherwise
+        # surface every user's CalDAV password.
+        enums.ChannelTypes.CALDAV: ["username", "password"],
     }
 
     def create(self, validated_data):
@@ -2334,7 +2396,7 @@ class MessageTemplateSerializer(serializers.ModelSerializer):
                 attrs.pop("text_body")
                 attrs.pop("raw_body")
             else:
-                _html, images = extract_base64_images_from_html(attrs["html_body"])
+                _html, images = extract_inline_images_html(attrs["html_body"])
                 total_image_size = 0
                 for image in images:
                     total_image_size += image["size"]
@@ -2547,6 +2609,54 @@ class ProvisioningMailDomainSerializer(serializers.Serializer):
     custom_attributes = serializers.JSONField(required=False, default=dict)
     oidc_autojoin = serializers.BooleanField(required=False, default=True)
     identity_sync = serializers.BooleanField(required=False, default=False)
+
+    def create(self, validated_data):
+        """This serializer is only used to validate the data, not to create or update."""
+
+    def update(self, instance, validated_data):
+        """This serializer is only used to validate the data, not to create or update."""
+
+
+class ThreadBulkDeleteRequestSerializer(serializers.Serializer):
+    """Payload for the bulk-delete endpoint: a scope and the threads/messages
+    to permanently delete."""
+
+    # Scopes accepted by the bulk-delete endpoint, mapping each to the queryset
+    # filter selecting the messages whose rows get permanently removed. Only
+    # "draft" is exposed for now: trashed deletion is intentionally not offered
+    # until the product behavior for trashed messages is decided.
+    BULK_DELETE_SCOPE_FILTERS = {"draft": {"is_draft": True}}
+    BULK_DELETE_SCOPES = list(BULK_DELETE_SCOPE_FILTERS)
+
+    scope = serializers.ChoiceField(
+        choices=BULK_DELETE_SCOPES,
+        help_text=(
+            "Which messages to permanently delete. Only 'draft' "
+            "(draft messages) is supported."
+        ),
+    )
+    thread_ids = serializers.ListField(
+        child=serializers.UUIDField(),
+        required=False,
+        allow_empty=True,
+        default=list,
+        help_text="Threads whose scope-matching messages should be deleted.",
+    )
+    message_ids = serializers.ListField(
+        child=serializers.UUIDField(),
+        required=False,
+        allow_empty=True,
+        default=list,
+        help_text="Specific messages to delete (still scope-filtered).",
+    )
+
+    def validate(self, attrs):
+        """Require at least one target list to be non-empty."""
+        if not attrs["thread_ids"] and not attrs["message_ids"]:
+            raise serializers.ValidationError(
+                "Provide at least one of thread_ids or message_ids."
+            )
+        return attrs
 
     def create(self, validated_data):
         """This serializer is only used to validate the data, not to create or update."""

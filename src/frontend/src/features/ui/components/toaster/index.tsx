@@ -1,4 +1,5 @@
 import { Button } from "@gouvfr-lasuite/cunningham-react";
+import { Icon } from "@gouvfr-lasuite/ui-kit";
 import clsx from "clsx";
 import { useMemo } from "react";
 import { Slide, ToastContainer, ToastContentProps, toast } from "react-toastify";
@@ -57,7 +58,7 @@ export const ToasterItem = ({
             color={buttonColor}
             variant="tertiary"
             size="small"
-            icon={action.icon && <span className="material-icons">{action.icon}</span>}
+            icon={action.icon && <Icon name={action.icon} />}
           >{action.showLabel || !action.icon && action.label}</Button>
         ))}
         {closeButton && (
@@ -66,7 +67,7 @@ export const ToasterItem = ({
             color={buttonColor}
             variant="tertiary"
             size="small"
-            icon={<span className="material-icons">close</span>}
+            icon={<Icon name="close" />}
           ></Button>
         )}
       </div>

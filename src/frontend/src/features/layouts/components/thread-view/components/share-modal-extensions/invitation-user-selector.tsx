@@ -4,6 +4,7 @@
 // so the visual styling bundled in ui-kit's style.css applies as-is.
 import { ReactNode, useState } from "react";
 import { Button, useCunningham } from "@gouvfr-lasuite/cunningham-react";
+import { Icon } from "@gouvfr-lasuite/ui-kit";
 import type { DropdownMenuOption, UserData } from "@gouvfr-lasuite/ui-kit";
 import { useTranslation } from "react-i18next";
 import { AccessRoleDropdown } from "./access-role-dropdown";
@@ -83,7 +84,7 @@ const InvitationUserSelectorItem = <UserType,>({
                 color="neutral"
                 size="nano"
                 onClick={() => onRemoveUser?.(user)}
-                icon={<span className="material-icons">close</span>}
+                icon={<Icon name="close" />}
             />
         </div>
     );

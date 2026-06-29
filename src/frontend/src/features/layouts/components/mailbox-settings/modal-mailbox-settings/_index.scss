@@ -1,0 +1,92 @@
+@use "../../../../../styles/utils" as *;
+
+// Tweak original modal sidebar
+.c__modal__tab-sidebar:has(.mailbox-settings__identity) {
+    padding: 0;
+
+    & > .c__modal__tab-sidebar__header {
+        margin-bottom: 0;
+        gap: var(--c--globals--spacings--2xs);
+    }
+
+    .c__modal__tab-sidebar__close {
+        padding: var(--c--globals--spacings--sm)
+    }
+
+    & .c__modal__tab-sidebar__title {
+        padding: var(--c--globals--spacings--sm);
+        padding-bottom: 0;
+        width: 100%;
+    }
+
+    & > .c__modal__tab-sidebar__nav {
+        padding: var(--c--globals--spacings--sm);
+        padding-top: 0;
+    }
+}
+
+.mailbox-settings__tab {
+    /* height: 80vh; */
+    // Feature tabs embed a (potentially long) data grid; let the tab body scroll
+    // instead of overflowing the modal.
+    overflow-y: auto;
+}
+
+.mailbox-settings {
+  // macOS-style account card sitting at the very top of the settings sidebar:
+  // mailbox avatar on the left, name in bold and (when set) the address in a
+  // muted line underneath.
+  // Wrapper around the shared MailboxSelector in the sidebar header. Full width
+  // with min-width:0 so the selector's text column can shrink and ellipsize the
+  // long address instead of overflowing the narrow sidebar.
+  &__identity {
+    width: 100%;
+    min-width: 0;
+  }
+
+  &__section {
+    margin-bottom: var(--c--globals--spacings--lg);
+  }
+
+  &__section-header {
+    display: flex;
+    justify-content: space-between;
+    align-items: baseline;
+    gap: var(--c--globals--spacings--s);
+    margin-bottom: var(--c--globals--spacings--xs);
+  }
+
+  &__section-title {
+    margin: 0;
+  }
+
+  // Muted helper line sitting right under a section title (e.g. the sender-name
+  // hint below "Name").
+  &__section-description {
+    margin: var(--c--globals--spacings--3xs) 0 0;
+    font-size: var(--c--globals--font--sizes--sm);
+    color: var(--c--contextuals--content--semantic--neutral--secondary);
+  }
+
+  &__section-count {
+    font-size: var(--c--globals--font--sizes--sm);
+    color: var(--c--contextuals--content--semantic--neutral--secondary);
+    white-space: nowrap;
+  }
+
+  // Name field's submit button is embedded in the input's right slot; keep it
+  // snug against the trailing edge so the field reads as one inline control.
+  &__general {
+    .c__input__icon-right {
+      margin-right: calc(-1 * var(--c--globals--spacings--3xs));
+    }
+  }
+
+  // Plain, borderless members list (no card chrome): each ShareMemberItem row
+  // stacks with light vertical spacing, matching the access-sharing mockup.
+  &__accesses-list {
+    display: flex;
+    flex-direction: column;
+    gap: var(--c--globals--spacings--2xs);
+  }
+}

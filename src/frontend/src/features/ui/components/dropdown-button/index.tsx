@@ -1,6 +1,8 @@
-import { DropdownMenu, DropdownMenuOption, Icon, IconType } from "@gouvfr-lasuite/ui-kit";
+import { DropdownMenu, DropdownMenuOption } from "@gouvfr-lasuite/ui-kit";
 import { Button, ButtonProps } from "@gouvfr-lasuite/cunningham-react";
 import { PropsWithChildren, useState } from "react";
+import { ChevronDown } from "@gouvfr-lasuite/ui-kit/icons";
+import { useTranslation } from "react-i18next";
 
 export type DropdownButtonProps = PropsWithChildren<ButtonProps & {
     /** Optional dropdown menu options */
@@ -15,6 +17,7 @@ export const DropdownButton = ({
     showDropdown = true,
     ...buttonProps
 }: DropdownButtonProps) => {
+    const { t } = useTranslation();
     const [dropdownOpen, setDropdownOpen] = useState(false);
 
     const hasDropdownOptions = showDropdown && dropdownOptions.length > 0;
@@ -33,7 +36,8 @@ export const DropdownButton = ({
                     <Button
                         color={buttonProps.color}
                         disabled={buttonProps.disabled}
-                        icon={<Icon name="arrow_drop_down" type={IconType.OUTLINED} />}
+                        icon={<ChevronDown size="small" />}
+                        aria-label={buttonProps["aria-label"] ?? t("More options")}
                         type="button"
                         onClick={() => setDropdownOpen(open => !open)}
                     />

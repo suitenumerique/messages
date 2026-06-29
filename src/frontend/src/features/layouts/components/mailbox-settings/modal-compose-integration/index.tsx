@@ -1,8 +1,9 @@
 import { Modal, ModalSize, Button } from "@gouvfr-lasuite/cunningham-react";
 import { Icon, IconType, IconSize } from "@gouvfr-lasuite/ui-kit";
+import { ArrowLeft } from "@gouvfr-lasuite/ui-kit/icons";
 import { useTranslation } from "react-i18next";
 import { useState, useEffect } from "react";
-import { Channel } from "@/features/api/gen";
+import { Channel, Mailbox } from "@/features/api/gen";
 import { WidgetIntegrationForm } from "./widget-integration-form";
 import { useConfig } from "@/features/providers/config";
 import i18n from "@/features/i18n/initI18n";
@@ -10,6 +11,7 @@ import i18n from "@/features/i18n/initI18n";
 type ModalComposeIntegrationProps = {
     isOpen: boolean;
     onClose: () => void;
+    mailbox: Mailbox;
     channel?: Channel;
     onSuccess?: () => void;
 };
@@ -78,9 +80,10 @@ const BackButton = ({ onClick }: { onClick: () => void }) => {
     return (
         <Button
             type="button"
+            color="neutral"
             variant="tertiary"
             size="small"
-            icon={<Icon name="arrow_back" type={IconType.OUTLINED} />}
+            icon={<ArrowLeft size={IconSize.SMALL} />}
             onClick={onClick}
             aria-label={t("Back")}
         />
@@ -90,6 +93,7 @@ const BackButton = ({ onClick }: { onClick: () => void }) => {
 export const ModalComposeIntegration = ({
     isOpen,
     onClose,
+    mailbox,
     channel: initialChannel,
     onSuccess,
 }: ModalComposeIntegrationProps) => {
@@ -135,18 +139,27 @@ export const ModalComposeIntegration = ({
         onSuccess?.();
     };
 
-    const getTitle = () => {
+    // Show back button only when in form view after selecting a type (not when editing existing)
+  const showBackButton = viewState === "form" && !isEditing;
+
+  const getTitle = () => {
+    let label: string;
         if (viewState === "select_type") {
-            return t("Create a new integration");
+            label = t("Create a new integration");
         }
-        if (selectedType === "widget") {
-            return isEditing ? t("Edit Widget") : t("Create a Widget");
+        else if (selectedType === "widget") {
+            label = isEditing ? t("Edit Widget") : t("Create a Widget");
         }
-        return t("Integrations");
+        else {
+            label = t("Integrations");
+        }
+
+      return <>
+        {showBackButton && <BackButton onClick={handleBack} />}
+        {label}
+      </>;
     };
 
-    // Show back button only when in form view after selecting a type (not when editing existing)
-    const showBackButton = viewState === "form" && !isEditing;
 
     return (
         <Modal
@@ -154,7 +167,6 @@ export const ModalComposeIntegration = ({
             onClose={onClose}
             title={getTitle()}
             size={ModalSize.LARGE}
-            leftActions={showBackButton ? <BackButton onClick={handleBack} /> : undefined}
         >
             <div className="modal-compose-integration">
                 {viewState === "select_type" && (
@@ -183,6 +195,7 @@ export const ModalComposeIntegration = ({
                 )}
                 {viewState === "form" && selectedType === "widget" && (
                     <WidgetIntegrationForm
+                        mailbox={mailbox}
                         channel={currentChannel}
                         onSuccess={handleSuccess}
                         onClose={onClose}

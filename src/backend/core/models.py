@@ -30,6 +30,7 @@ from django.utils.text import slugify
 
 import pyzstd
 from encrypted_fields.fields import EncryptedJSONField, EncryptedTextField
+from jmap_email import EmailHeader, JmapEmail, body_part_text, parse_email
 from timezone_field import TimeZoneField
 
 from core.enums import (
@@ -54,7 +55,6 @@ from core.enums import (
     thread_event_type_choices,
     user_event_type_choices,
 )
-from core.mda.rfc5322 import EmailParseError, parse_email_message
 from core.mda.signing import generate_dkim_key as _generate_dkim_key
 from core.services.tiered_storage import TieredStorageService, sha256_advisory_lock
 from core.utils import validate_json_schema
@@ -734,6 +734,21 @@ class Mailbox(BaseModel):
         )
 
         return reset_keycloak_user_password(email)
+
+    def set_display_name(self, name):
+        """Set the mailbox display name through its linked Contact.
+
+        Ensures a Contact (matching the mailbox email) exists and carries
+        ``name``, creating and linking it when the mailbox has none yet. This
+        guards against silently dropping the update when ``contact`` is NULL.
+        """
+        contact, _ = Contact.objects.update_or_create(
+            email=str(self), mailbox=self, defaults={"name": name}
+        )
+        if self.contact_id != contact.id:
+            self.contact = contact
+            self.save(update_fields=["contact"])
+        return contact
 
     @property
     def threads_viewer(self):
@@ -1924,7 +1939,9 @@ class Message(BaseModel):
     sent_at = models.DateTimeField("sent at", null=True, blank=True)
     archived_at = models.DateTimeField("archived at", null=True, blank=True)
 
-    mime_id = models.CharField("mime id", max_length=998, null=True, blank=True)
+    mime_id = models.CharField(
+        "mime id", max_length=998, null=True, blank=True, db_index=True
+    )
 
     channel = models.ForeignKey(
         "Channel",
@@ -1974,7 +1991,7 @@ class Message(BaseModel):
     objects = MessageManager()
 
     # Internal cache for parsed data
-    _parsed_email_cache: Optional[Dict[str, Any]] = None
+    _parsed_email_cache: Optional[JmapEmail] = None
 
     class Meta:
         db_table = "messages_message"
@@ -1985,42 +2002,72 @@ class Message(BaseModel):
     def __str__(self):
         return str(self.subject) if self.subject else "(no subject)"
 
-    def get_parsed_data(self) -> Dict[str, Any]:
-        """Parse raw mime message using parser and cache the result."""
+    def get_parsed_data(self) -> JmapEmail:
+        """Parse the raw MIME message and cache the strict JMAP Email
+        object (RFC 8621 §4) produced by ``jmap_email.parse_email``.
+
+        Use the helpers in :mod:`jmap_email` (``first_address``,
+        ``first_msgid``, ``find_header``, …) for null-safe access
+        patterns over the list-typed fields. Returns ``{}`` when
+        there's no blob or parsing fails.
+        """
         if self._parsed_email_cache is not None:
             return self._parsed_email_cache
 
         if self.blob:
+            # ``body_values=False`` keeps text-body content inlined on
+            # each ``EmailBodyPart`` rather than moving it to a
+            # separate ``bodyValues`` map. The library spec-default is
+            # the moved form (RFC 8621 §4.2 ``defaultProperties`` for
+            # ``Email/get``); this backend's consumers (snippet
+            # extraction, search indexing, LLM formatting, the API
+            # serializer) all read ``content`` inline, so we project
+            # back to that shape at the model boundary.
             try:
-                self._parsed_email_cache = parse_email_message(self.blob.get_content())
-            except EmailParseError:
+                raw = self.blob.get_content()
+            except ValueError as exc:
+                # ``Blob.get_content`` raises ``ValueError`` on
+                # decompression / decryption / integrity-check failure.
                 logger.warning(
-                    "Failed to parse email for message %s, returning empty data",
-                    self.id,
+                    "Failed to load blob content for message %s: %s", self.id, exc
                 )
                 self._parsed_email_cache = {}
+                return self._parsed_email_cache
+            parsed = parse_email(raw, body_values=False)
+            self._parsed_email_cache = parsed if parsed is not None else {}
         else:
             self._parsed_email_cache = {}
         return self._parsed_email_cache
 
     def get_parsed_field(self, field_name: str) -> Any:
-        """Get a parsed field from the parsed email data."""
+        """Get a parsed field from the parsed JMAP Email object."""
         return (self.get_parsed_data() or {}).get(field_name)
 
-    def get_mime_headers(self) -> Dict[str, str]:
-        """Get the MIME headers of the message."""
-        return self.get_parsed_data().get("headers", {})
+    def get_mime_headers(self) -> list[EmailHeader]:
+        """Return the MIME headers as a JMAP ``EmailHeader[]`` list.
+
+        Each entry is ``{"name": <wire_case>, "value": <decoded>}`` in
+        document order. Use :func:`jmap_email.find_header` for
+        case-insensitive scalar lookups.
+        """
+        return self.get_parsed_data().get("headers", [])
 
     def get_stmsg_headers(self) -> Dict[str, str]:
-        """Get the STMSG headers of the message."""
-        return {
-            k[len("x-stmsg-") :].lower(): v
-            for k, v in self.get_parsed_data().get("headers", {}).items()
-            if k.startswith("x-stmsg-")
-        }
+        """Return the ``X-StMsg-*`` headers as ``{suffix_lower: value}``.
+
+        ``X-StMsg-*`` headers are stamped by our MTA pipeline (one per
+        message) and any sender-supplied copies are stripped before
+        parsing; first occurrence wins on duplicates.
+        """
+        result: Dict[str, str] = {}
+        for h in self.get_parsed_data().get("headers", []):
+            name = h.get("name", "")
+            if name.lower().startswith("x-stmsg-"):
+                result.setdefault(name[len("x-stmsg-") :].lower(), h.get("value", ""))
+        return result
 
     def generate_mime_id(self) -> str:
-        """Get the RFC5322 Message-ID of the message."""
+        """Get the RFC 5322 Message-ID of the message."""
         _id = base64.urlsafe_b64encode(uuid.uuid4().bytes).rstrip(b"=").decode("ascii")
         return f"{_id}@_lst.{self.sender.email.split('@')[1]}"
 
@@ -2051,12 +2098,15 @@ class Message(BaseModel):
         cc = [str(mr.contact) for mr in cc_contacts]
         # Subject
         subject = self.subject or "No subject"
-        # Body: try to get text/plain from parsed data
+        # Body: pick the first text/plain text-body part. Transparent to
+        # the body_values projection — body_part_text reads inline
+        # ``content`` or ``bodyValues[partId]`` depending on which the
+        # parser emitted.
         body = ""
         parsed_data = self.get_parsed_data()
         for part in parsed_data.get("textBody", []):
             if part.get("type") == "text/plain":
-                body = part.get("content", "")
+                body = body_part_text(parsed_data, part)
                 break
         # Message ID
         msg_id = str(self.id)
@@ -2074,12 +2124,13 @@ class Message(BaseModel):
         """Get the number of tokens in the message (subject + body)."""
         # Subject
         subject = self.subject or "No subject"
-        # Body: try to get text/plain from parsed data
+        # Body: pick the first text/plain text-body part. See
+        # ``Message.format_for_llm`` for the body_values rationale.
         body = ""
         parsed_data = self.get_parsed_data()
         for part in parsed_data.get("textBody", []):
             if part.get("type") == "text/plain":
-                body = part.get("content", "")
+                body = body_part_text(parsed_data, part)
                 break
         counted_text = f"{subject} {body}"
         return len(counted_text.split())
@@ -2122,20 +2173,6 @@ class InboundMessage(BaseModel):
 
 class BlobManager(models.Manager):
     """Custom Manager for Blob model."""
-
-    def get_queryset(self):
-        """Defer the rollback-safety ``_deprecated_*`` FKs.
-
-        The columns have already been dropped in some deployed databases
-        but the model fields are intentionally retained for rollback
-        (see ``_deprecated_mailbox`` / ``_deprecated_maildomain``). A
-        default SELECT must not reference the missing columns.
-        """
-        return (
-            super()
-            .get_queryset()
-            .defer("_deprecated_mailbox", "_deprecated_maildomain")
-        )
 
     def create_blob(
         self,
@@ -2383,32 +2420,6 @@ class Blob(BaseModel):
         ),
     )
 
-    # DEPRECATED — kept for rollback safety. Blob lifetime is now governed
-    # by the reference graph + GC sweep (see core/services/blob_gc.py);
-    # these columns are no longer read or written by the application.
-    _deprecated_mailbox = models.ForeignKey(
-        "Mailbox",
-        null=True,
-        blank=True,
-        on_delete=models.SET_NULL,
-        related_name="_deprecated_blobs",
-        help_text=(
-            "DEPRECATED: legacy owner pre-tiered-storage. Kept for rollback; "
-            "do not read or write. To be dropped in a future migration."
-        ),
-    )
-    _deprecated_maildomain = models.ForeignKey(
-        "MailDomain",
-        null=True,
-        blank=True,
-        on_delete=models.SET_NULL,
-        related_name="_deprecated_blobs",
-        help_text=(
-            "DEPRECATED: legacy owner pre-tiered-storage. Kept for rollback; "
-            "do not read or write. To be dropped in a future migration."
-        ),
-    )
-
     objects = BlobManager()
 
     class Meta:
@@ -2577,20 +2588,6 @@ class Attachment(BaseModel):
         blank=True,
         null=True,
         help_text="Content-ID for inline images",
-    )
-
-    # DEPRECATED — replaced by ``message`` (FK) above. Through table
-    # ``messages_attachment__deprecated_messages`` is a frozen snapshot
-    # of pre-migration links, kept for rollback safety and audit trail.
-    # Not read or written by the application.
-    _deprecated_messages = models.ManyToManyField(
-        "Message",
-        blank=True,
-        related_name="_deprecated_attachments",
-        help_text=(
-            "DEPRECATED: legacy multi-message linking. Kept for rollback; "
-            "do not read or write. To be dropped in a future migration."
-        ),
     )
 
     class Meta:
@@ -3190,7 +3187,8 @@ class MessageTemplate(BaseModel):
 
         Args:
             mailbox: Mailbox object — provides `name` via its contact
-            user: User object — fallback for `name` and source of custom attributes
+            user: User object — source of `user_name`, fallback for `name`,
+                and source of custom attributes
             message: Message object — provides `recipient_name` from TO recipients
 
         Returns:
@@ -3201,7 +3199,8 @@ class MessageTemplate(BaseModel):
             mailbox.contact.name
             if mailbox and mailbox.contact
             else (getattr(user, "full_name", None) if user else "")
-        )
+        ) or ""
+        context["user_name"] = (getattr(user, "full_name", None) or "") if user else ""
         schema = settings.SCHEMA_CUSTOM_ATTRIBUTES_USER
         schema_properties = schema.get("properties", {})
 

@@ -1,0 +1,3 @@
+.env
+bundle-stats.json
+src/routes.gen.ts

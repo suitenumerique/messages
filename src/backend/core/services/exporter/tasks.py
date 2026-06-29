@@ -5,8 +5,6 @@ import html
 import io
 import re
 from datetime import datetime, timezone
-from email.message import EmailMessage
-from email.utils import format_datetime
 from typing import Any, Dict
 
 from django.conf import settings
@@ -14,11 +12,12 @@ from django.core.files.storage import storages
 from django.db.models import OuterRef, Subquery
 
 from celery.utils.log import get_task_logger
+from jmap_email import JmapEmail, compose_email, parse_email
 from sentry_sdk import capture_exception
 
 from core.api.utils import generate_presigned_url
 from core.mda.inbound import deliver_inbound_message
-from core.mda.rfc5322.parser import parse_email_message
+from core.mda.utils import current_sent_at
 from core.models import Label, Mailbox, Message, ThreadAccess
 
 from messages.celery_app import app as celery_app
@@ -664,14 +663,6 @@ def _create_notification_message(
     Returns:
         True if message was delivered successfully, False otherwise
     """
-    # Build the notification email
-    msg = EmailMessage()
-    msg["From"] = f"noreply@{settings.MESSAGES_TECHNICAL_DOMAIN}"
-    msg["To"] = mailbox_email
-    msg["Subject"] = "Your mailbox export is ready"
-    msg["Date"] = format_datetime(datetime.now(timezone.utc))
-
-    # Create message body
     body_text = f"""Your mailbox export is ready for download.
 
 Export Summary:
@@ -703,16 +694,21 @@ This file is in MBOX format and can be imported into most email clients.
 </body>
 </html>"""
 
-    msg.set_content(body_text)
-    msg.add_alternative(body_html, subtype="html")
+    notification: JmapEmail = {
+        "from": [{"email": f"noreply@{settings.MESSAGES_TECHNICAL_DOMAIN}"}],
+        "to": [{"email": mailbox_email}],
+        "subject": "Your mailbox export is ready",
+        "sentAt": current_sent_at(),
+        "textBody": [{"partId": "1", "type": "text/plain", "content": body_text}],
+        "htmlBody": [{"partId": "2", "type": "text/html", "content": body_html}],
+    }
+    raw_data = compose_email(notification)
+    parsed_email = parse_email(raw_data)
+    if parsed_email is None:
+        # We just composed this; failing to parse it back means the
+        # composer is broken — bubble up so Sentry catches it.
+        raise RuntimeError("Exporter notification failed to round-trip parse_email")
 
-    # Convert to bytes for delivery
-    raw_data = msg.as_bytes()
-
-    # Parse the email
-    parsed_email = parse_email_message(raw_data)
-
-    # Deliver to the mailbox
     return deliver_inbound_message(
         recipient_email=mailbox_email,
         parsed_email=parsed_email,

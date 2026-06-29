@@ -11,6 +11,10 @@ from rest_framework.views import APIView
 
 from core import enums, models
 
+# Built-in placeholders, always available. They carry no label: the frontend
+# localizes them client-side from its "placeholders" i18next namespace.
+BUILTIN_PLACEHOLDER_FIELDS = ("name", "recipient_name", "user_name")
+
 
 @extend_schema(tags=["placeholders"])
 class PlaceholderView(APIView):
@@ -32,40 +36,65 @@ class PlaceholderView(APIView):
         responses={
             200: {
                 "type": "object",
-                "description": "Field slugs mapped to their verbose labels",
+                "description": (
+                    "Field slugs mapped to their label metadata. Built-in "
+                    "fields have an empty object and are localized client-side. "
+                    "Custom attribute fields expose their schema title and "
+                    "optional per-language translations."
+                ),
                 "additionalProperties": {
-                    "type": "string",
-                    "description": "Verbose label for the field",
+                    "type": "object",
+                    "properties": {
+                        "title": {
+                            "type": "string",
+                            "description": "Default label (custom fields only).",
+                        },
+                        "i18n": {
+                            "type": "object",
+                            "additionalProperties": {"type": "string"},
+                            "description": (
+                                "Label translations by language code, from the "
+                                "schema 'x-i18n' entry (custom fields only)."
+                            ),
+                        },
+                    },
                 },
                 "example": {
-                    "name": "Name",
-                    "job_title": "Job title",
-                    "is_elected": "Is elected",
+                    "name": {},
+                    "recipient_name": {},
+                    "job_title": {
+                        "title": "Job title",
+                        "i18n": {"en": "Job title", "fr": "Fonction"},
+                    },
                 },
             },
         },
     )
     def get(self, request):
-        """Get the structure of available fields."""
-        current_language = settings.LANGUAGE_CODE.split("-")[0]
-        fields = {
-            "name": "Name",
-            "recipient_name": "Recipient name",
-        }
-        # Add user custom attributes fields from schema
+        """Get the structure of available fields.
+
+        Built-in fields are returned as empty objects and localized
+        client-side. Custom attribute fields carry their schema title and,
+        when defined, the ``x-i18n`` title translations so the frontend can
+        pick the right language.
+        """
+        fields = {field_name: {} for field_name in BUILTIN_PLACEHOLDER_FIELDS}
+
+        # Add user custom attributes fields from schema. Only string fields are
+        # exposed: a placeholder is substituted as text, so non-string types
+        # (e.g. boolean, integer) are not meaningful here.
         schema = settings.SCHEMA_CUSTOM_ATTRIBUTES_USER
         schema_properties = schema.get("properties", {})
         for field_name, field_schema in schema_properties.items():
-            # Check if there's internationalization
-            i18n_data = field_schema.get("x-i18n", {})
-            if "title" in i18n_data:
-                label = i18n_data["title"].get(
-                    current_language, i18n_data["title"].get("en", field_name)
-                )
-            else:
-                # No internationalization, use schema title
-                label = field_schema.get("title", field_name)
-            fields[field_name] = label
+            if field_schema.get("type") != "string":
+                continue
+            field = {"title": field_schema.get("title", field_name)}
+            x_i18n = field_schema.get("x-i18n")
+            if isinstance(x_i18n, dict):
+                i18n_titles = x_i18n.get("title")
+                if isinstance(i18n_titles, dict) and i18n_titles:
+                    field["i18n"] = i18n_titles
+            fields[field_name] = field
         return Response(fields)
 
 

@@ -15,8 +15,8 @@ type DriveAttachmentPickerProps = ButtonProps & {
     onPick: (attachments: DriveFile[]) => void;
 }
 
-// TODO: Remove this type once the Drive SDK is updated to include the url_permalink field
-type PatchedItem = Item & { url_permalink: string };
+// TODO: Remove this type once the Drive SDK is updated to include mimetype
+type PatchedItem = Item & { mimetype?: string };
 
 /**
  * DriveAttachmentPicker is a component that allows the user to pick files
@@ -36,7 +36,7 @@ export const DriveAttachmentPicker = ({ onPick, ...buttonProps }: DriveAttachmen
         id: item.id,
         name: item.title,
         url: item.url_permalink ?? item.url,
-        type: item.type,
+        type: item.mimetype || "application/octet-stream",
         size: item.size,
         created_at: new Date().toISOString(),
     });

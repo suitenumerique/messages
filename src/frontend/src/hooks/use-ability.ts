@@ -12,6 +12,7 @@ enum MailboxAbilities {
   CAN_MANAGE_MAILBOX_LABELS = "manage_labels",
   CAN_IMPORT_MESSAGES = "import_messages",
   CAN_MANAGE_MESSAGE_TEMPLATES = "manage_message_templates",
+  CAN_MANAGE_ACCESSES = "manage_accesses"
 }
 
 enum UserAbilities {

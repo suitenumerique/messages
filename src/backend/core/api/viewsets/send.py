@@ -1,6 +1,9 @@
 """API ViewSet for sending messages."""
 
 import logging
+import uuid
+
+from django.db import transaction
 
 from drf_spectacular.utils import (
     OpenApiExample,
@@ -13,7 +16,7 @@ from rest_framework import status
 from rest_framework.response import Response
 from rest_framework.views import APIView
 
-from core import models
+from core import enums, models
 from core.api.viewsets.task import register_task_owner
 from core.mda.outbound import prepare_outbound_message
 from core.mda.outbound_tasks import send_message_task
@@ -30,8 +33,7 @@ logger = logging.getLogger(__name__)
         200: inline_serializer(
             name="SendMessageResponse",
             fields={
-                "message": serializers.MessageSerializer(),
-                "task_id": drf_serializers.CharField(help_text="Task ID for tracking"),
+                "task_id": drf_serializers.UUIDField(help_text="Task ID for tracking"),
             },
         ),
         400: OpenApiExample(
@@ -42,8 +44,8 @@ logger = logging.getLogger(__name__)
             "Permission Error",
             value={"detail": "You do not have permission to send this message."},
         ),
-        503: OpenApiExample(
-            "Service Unavailable",
+        500: OpenApiExample(
+            "Prepare Failure",
             value={"detail": "Failed to prepare message for sending."},
         ),
     },
@@ -63,6 +65,12 @@ logger = logging.getLogger(__name__)
                 "textBody": "Hello, world!",
                 "htmlBody": "<p>Hello, world!</p>",
             },
+            request_only=True,
+        ),
+        OpenApiExample(
+            "Send Draft Result",
+            value={"task_id": "123e4567-e89b-12d3-a456-426614174000"},
+            response_only=True,
         ),
     ],
 )
@@ -107,29 +115,60 @@ class SendMessageView(APIView):
 
         self.check_object_permissions(request, message)
 
-        prepared = prepare_outbound_message(
-            mailbox_sender,
-            message,
-            request.data.get("textBody"),
-            request.data.get("htmlBody"),
-            request.user,
-        )
-        if not prepared:
-            raise drf_exceptions.APIException(
-                "Failed to prepare message for sending.",
-                code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+        # The sender mailbox itself must be authorised to send on this thread.
+        # ``IsAllowedToAccess`` only proves the user can SEND through *some*
+        # mailbox holding EDITOR access to the thread — not necessarily
+        # ``mailbox_sender``. Re-check against the specific ``senderId`` so a
+        # VIEWER on the sender mailbox cannot send as it by piggy-backing on a
+        # SENDER role they hold on a different mailbox sharing the thread.
+        can_send_as_sender = models.ThreadAccess.objects.filter(
+            thread=message.thread,
+            mailbox=mailbox_sender,
+            role=enums.ThreadAccessRoleChoices.EDITOR,
+            mailbox__accesses__user=request.user,
+            mailbox__accesses__role__in=enums.MAILBOX_ROLES_CAN_SEND,
+        ).exists()
+        if not can_send_as_sender:
+            raise drf_exceptions.PermissionDenied(
+                "You do not have permission to send as this mailbox."
             )
 
-        # Launch async task for sending the message
-        task = send_message_task.delay(str(message.id), must_archive=must_archive)
-        register_task_owner(task.id, request.user.id)
+        # Pre-generate the Celery task id so we can return it to the caller
+        # while still deferring the actual dispatch to ``transaction.on_commit``
+        # below — the broker must never receive a delivery task for a message
+        # whose finalized state is still uncommitted (or rolled back).
+        task_id = str(uuid.uuid4())
 
-        # --- Finalize ---
-        # Message state should be updated by prepare_outbound_message/send_message
-        # Refresh from DB to get final state (e.g., is_draft=False)
-        message.refresh_from_db()
+        with transaction.atomic():
+            prepared = prepare_outbound_message(
+                mailbox_sender,
+                message,
+                request.data.get("textBody"),
+                request.data.get("htmlBody"),
+                request.user,
+            )
+            if not prepared:
+                raise drf_exceptions.APIException(
+                    "Failed to prepare message for sending.",
+                    code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+                )
 
-        # Update thread stats after un-drafting
-        message.thread.update_stats()
+            register_task_owner(task_id, request.user.id)
 
-        return Response({"task_id": task.id}, status=status.HTTP_200_OK)
+            # Dispatch only once the message's finalized state is durable.
+            transaction.on_commit(
+                lambda: send_message_task.apply_async(
+                    args=[str(message.id)],
+                    kwargs={"must_archive": must_archive},
+                    task_id=task_id,
+                )
+            )
+
+            # --- Finalize ---
+            # Message state was updated by prepare_outbound_message (e.g.
+            # is_draft=False); refresh and update thread stats in the same
+            # transaction so the un-drafting and stats commit atomically.
+            message.refresh_from_db()
+            message.thread.update_stats()
+
+        return Response({"task_id": task_id}, status=status.HTTP_200_OK)

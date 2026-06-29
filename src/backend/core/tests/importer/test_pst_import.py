@@ -4,12 +4,14 @@
 # pylint: disable=too-many-lines, too-many-arguments, broad-exception-caught
 
 import email
+import email.policy
 from datetime import datetime, timezone
 from unittest.mock import MagicMock, Mock, patch
 
 from django.core.files.storage import storages
 
 import pytest
+from jmap_email import parse_email
 
 from core.models import Mailbox, MailDomain, Message
 from core.services.importer.pst import (
@@ -261,6 +263,7 @@ def _make_folder(
 # --- reconstruct_eml tests ---
 
 
+# pylint: disable=too-many-public-methods
 class TestReconstructEml:
     """Tests for EML reconstruction from pypff messages."""
 
@@ -296,7 +299,7 @@ class TestReconstructEml:
         assert "Hello world" in text_parts[0].get_payload(decode=True).decode()
 
     def test_reconstruct_preserves_rfc5322_date(self):
-        """Test that RFC5322 date from transport headers is preserved correctly."""
+        """Test that RFC 5322 date from transport headers is preserved correctly."""
         transport = (
             "From: sender@example.com\r\nDate: Mon, 26 May 2025 10:00:00 +0000\r\n"
         )
@@ -587,6 +590,106 @@ class TestReconstructEml:
         ]
         assert len(att_parts) == 1
         assert att_parts[0].get_content_type() == "application/octet-stream"
+
+    def test_reconstruct_delivery_status_attachment_does_not_crash(self):
+        """A DSN delivery-status part imports without crashing the composer.
+
+        Regression: bounce/read-receipt reports in a PST carry the
+        delivery-status body as a flat-bytes MAPI attachment. Fed to the strict
+        composer as message/delivery-status, email.generator walked the base64
+        string character by character and raised "'str' object has no attribute
+        'policy'", dropping the whole message. The composer now relabels the
+        part to text/plain (content preserved, readable), so reconstructing the
+        report no longer crashes.
+        """
+        dsn = (
+            b"Reporting-MTA: dns; mx.example.com\r\n"
+            b"Final-Recipient: rfc822; nobody@example.com\r\n"
+            b"Action: failed\r\nStatus: 5.1.1\r\n"
+        )
+        att = _make_attachment(
+            data=dsn,
+            long_filename="details.txt",
+            mime_type="message/delivery-status",
+        )
+        msg = _make_message(
+            transport_headers="From: daemon@example.com\r\n",
+            plain_text_body="Delivery failed",
+            num_attachments=1,
+            attachments=[att],
+        )
+        eml_bytes = reconstruct_eml(msg)
+        parsed = email.message_from_bytes(eml_bytes, policy=email.policy.default)
+
+        part = next(p for p in parsed.walk() if p.get_filename() == "details.txt")
+        # Relabelled to a safe leaf type; content preserved verbatim.
+        assert part.get_content_type() == "text/plain"
+        assert part.get_payload(decode=True) == dsn
+        # The original message/delivery-status type is never emitted.
+        assert b"message/delivery-status" not in eml_bytes
+
+    def test_reconstruct_skips_empty_attachment(self):
+        """Blank/whitespace-only attachments (e.g. empty DSN parts) are dropped.
+
+        libpff surfaces empty diagnostic report parts as attachments; importing
+        them produces 0-byte attachments that render as broken in the UI while
+        carrying no information.
+        """
+        empty = _make_attachment(
+            data=b"\r\n",
+            long_filename="empty.txt",
+            mime_type="text/rfc822-headers",
+        )
+        msg = _make_message(
+            transport_headers="From: a@b.com\r\n",
+            plain_text_body="body",
+            num_attachments=1,
+            attachments=[empty],
+        )
+        eml_bytes = reconstruct_eml(msg)
+        parsed = email.message_from_bytes(eml_bytes)
+
+        att_parts = [
+            p for p in parsed.walk() if p.get_content_disposition() == "attachment"
+        ]
+        assert att_parts == []
+
+    def test_reconstruct_rfc822_headers_attachment_is_displayable(self):
+        """text/rfc822-headers is relabelled so it doesn't show as 0 bytes.
+
+        Regression: the original-headers part of a DSN composes fine, but
+        on re-parse the display parser previously dropped the body of
+        text/rfc822-headers, so the UI showed a 0-byte attachment. The
+        importer normalizes the label to text/plain, which round-trips
+        with its content intact.
+        """
+
+        headers = (
+            b"Return-Path: <sender@example.com>\r\n"
+            b"From: Sender <sender@example.com>\r\n"
+            b"To: Recipient <rcpt@example.com>\r\n"
+            b"Subject: original\r\n"
+        )
+        att = _make_attachment(
+            data=headers,
+            long_filename="Message Headers.txt",
+            mime_type="text/rfc822-headers",
+        )
+        msg = _make_message(
+            transport_headers="From: daemon@example.com\r\n",
+            plain_text_body="Delivered",
+            num_attachments=1,
+            attachments=[att],
+        )
+        eml_bytes = reconstruct_eml(msg)
+
+        # Re-parse the stored .eml the way the message view does.
+        parsed = parse_email(eml_bytes)
+        headers_att = next(
+            a for a in parsed["attachments"] if a["name"] == "Message Headers.txt"
+        )
+        assert headers_att["type"] == "text/plain"
+        assert headers_att["size"] == len(headers)
 
     def test_reconstruct_empty_message(self):
         """Test EML reconstruction with no body."""
@@ -941,11 +1044,11 @@ class TestDisplayRecipients:
         assert not _parse_display_recipients("   ")
 
     def test_parse_recovers_bare_email_when_parser_returns_empty_addr(self):
-        """If parse_email_address returns no usable address but the original
+        """If parse_address returns no usable address but the original
         token contains '@', the token itself is salvaged as the email — guards
-        against flanker quirks where the address ends up in the name slot."""
+        against parser quirks where the address ends up in the name slot."""
         with patch(
-            "core.services.importer.pst.parse_email_address",
+            "core.services.importer.pst.parse_address",
             return_value=("", ""),
         ):
             result = _parse_display_recipients("salvage@example.com")
@@ -1226,6 +1329,46 @@ class TestFolderIdentification:
 
         count = count_pst_messages(pst, {})
         assert count == 1
+
+    def test_process_imap_folder(self):
+        """IMAP-archived PSTs tag mail folders IPF.Imap — they must be counted."""
+        msg = _make_message(delivery_time=datetime(2025, 1, 1, tzinfo=timezone.utc))
+        folder = _make_folder(
+            name="Boîte de réception",
+            messages=[msg],
+            container_class="IPF.Imap",
+        )
+        root = _make_folder(name="Root", subfolders=[folder])
+
+        pst = Mock()
+        pst.get_root_folder.return_value = root
+        pst.get_message_store.return_value = Mock(number_of_record_sets=0)
+
+        count = count_pst_messages(pst, {})
+        assert count == 1
+
+    def test_walk_yields_messages_from_imap_folder(self):
+        """walk_pst_messages (the import path) must yield IPF.Imap messages."""
+        msg = _make_message(
+            subject="IMAP message",
+            transport_headers="From: a@example.com\r\nTo: b@example.com\r\n",
+            delivery_time=datetime(2025, 1, 1, tzinfo=timezone.utc),
+        )
+        folder = _make_folder(
+            name="Boîte de réception",
+            messages=[msg],
+            container_class="IPF.Imap",
+        )
+        root = _make_folder(name="Root", subfolders=[folder])
+
+        pst = Mock()
+        pst.get_root_folder.return_value = root
+        pst.get_message_store.return_value = Mock(number_of_record_sets=0)
+        pst.get_name_to_id_map.side_effect = Exception("no named props")
+
+        results = list(walk_pst_messages(pst, {}))
+        assert len(results) == 1
+        assert results[0][4] is not None  # eml_bytes reconstructed
 
     def test_sent_folder_identification_via_entry_id(self):
         """Test identifying Sent Items via message store folder identifier."""

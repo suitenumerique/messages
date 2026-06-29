@@ -6,7 +6,7 @@
  * OpenAPI spec version: 1.0.0 (v1.0)
  */
 import type { MailboxAccessNestedUser } from "./mailbox_access_nested_user";
-import type { Contact } from "./contact";
+import type { MailboxAdminContact } from "./mailbox_admin_contact";
 
 /**
  * Serialize Mailbox details for admin view, including users with access.
@@ -33,7 +33,8 @@ export interface MailboxAdmin {
   /** date and time at which a record was last updated */
   readonly updated_at: string;
   readonly can_reset_password: boolean;
-  readonly contact: Contact;
+  /** @nullable */
+  readonly contact: MailboxAdminContact;
   /**
    * Most recent ``accessed_at`` across all mailbox accesses.
    * @nullable

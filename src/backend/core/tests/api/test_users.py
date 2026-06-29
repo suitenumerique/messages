@@ -167,6 +167,7 @@ class TestUsersGetMe:
         assert "full_name" in data
 
 
+# pylint: disable=too-many-public-methods
 class TestAdminUsersList:
     """Test suite for the admin user list endpoint API."""
 
@@ -247,6 +248,42 @@ class TestAdminUsersList:
         assert len(response.data) == 2
         for user in response.data:
             assert user["email"] in [admin_user.email, mailbox_user.email]
+
+    def test_api_admin_users_list_allowed_mailbox_admin(self, api_client):
+        """A mailbox admin (not a domain admin) can search users within the
+        domain of a mailbox they administer."""
+        domain = factories.MailDomainFactory(name="sardine.local")
+        mailbox = factories.MailboxFactory(domain=domain)
+        admin_user = factories.UserFactory(email="admin@sardine.local")
+        factories.MailboxAccessFactory(
+            mailbox=mailbox,
+            user=admin_user,
+            role=enums.MailboxRoleChoices.ADMIN,
+        )
+
+        url = reverse("users-list")
+        api_client.force_authenticate(user=admin_user)
+        response = api_client.get(url, {"maildomain_pk": domain.id, "q": "sardine"})
+
+        assert response.status_code == status.HTTP_200_OK
+        assert [user["email"] for user in response.data] == [admin_user.email]
+
+    def test_api_admin_users_list_mailbox_non_admin_forbidden(self, api_client):
+        """A non-admin mailbox member cannot search users in the domain."""
+        domain = factories.MailDomainFactory(name="sardine.local")
+        mailbox = factories.MailboxFactory(domain=domain)
+        member = factories.UserFactory(email="member@sardine.local")
+        factories.MailboxAccessFactory(
+            mailbox=mailbox,
+            user=member,
+            role=enums.MailboxRoleChoices.EDITOR,
+        )
+
+        url = reverse("users-list")
+        api_client.force_authenticate(user=member)
+        response = api_client.get(url, {"maildomain_pk": domain.id, "q": "sardine"})
+
+        assert response.status_code == status.HTTP_403_FORBIDDEN
 
     def test_api_admin_users_list_search_query_mandatory(self, api_client):
         """

@@ -1,6 +1,5 @@
-import { useState, useMemo, useEffect } from "react";
+import { useMemo } from "react";
 import { useTranslation } from "react-i18next";
-import { useThirdPartyDriveCreate } from "@/features/api/gen";
 import { Attachment } from "@/features/api/gen/models";
 import usePrevious from "@/hooks/use-previous";
 import { Spinner, Icon } from "@gouvfr-lasuite/ui-kit";
@@ -9,8 +8,7 @@ import clsx from "clsx";
 import { DrivePreviewLink } from "./drive-preview-link";
 import { FEATURE_KEYS, useFeatureFlag } from "@/hooks/use-feature";
 import { useConfig } from "@/features/providers/config";
-import { handle } from "@/features/utils/errors";
-import { driveUploadStore } from "./drive-upload-store";
+import { useDriveUpload } from "./use-drive-upload";
 
 
 type DriveUploadButtonProps = {
@@ -27,54 +25,15 @@ export const DriveUploadButton = ({ attachment }: DriveUploadButtonProps) => {
     const { t } = useTranslation();
     const { DRIVE } = useConfig();
     const isDriveDisabled = !useFeatureFlag(FEATURE_KEYS.DRIVE);
-    const [state, setState] = useState<'idle' | 'uploading' | 'error' | 'success'>('idle');
-    const [driveFileId, setDriveFileId] = useState<string | undefined>(
-        () => driveUploadStore.get(attachment.blobId),
-    );
+    const { state, driveFileId, upload } = useDriveUpload(attachment.blobId);
     const prevState = usePrevious(state);
-    const uploadToDrive = useThirdPartyDriveCreate({
-        request: {
-            logoutOn401: false,
-        },
-        mutation: {
-            onSuccess: (data) => {
-                setDriveFileId(data.data.id);
-                driveUploadStore.set(attachment.blobId, data.data.id);
-            },
-        },
-    });
     const showUploadTooltip = useMemo(() => ['success', 'error'].includes(state), [state]);
-
-    const handleUploadToDrive = async () => {
-        if (state === 'uploading') return;
-        setState('uploading');
-        try {
-            await uploadToDrive.mutateAsync({
-                data: {
-                    blob_id: attachment.blobId,
-                }
-            });
-            setState('success');
-        } catch (error) {
-            handle(error);
-            setState('error');
-        }
-    }
 
     const StateIcon = useMemo(() => {
         if (state === 'uploading') return <Spinner size="sm" />;
         if (state === 'success') return <Icon name="check_circle" />;
         if (state === 'error') return <Icon name="error" />;
         return <Icon name="drive_folder_upload" />;
-    }, [state]);
-
-    useEffect(() => {
-        if (['error', 'success'].includes(state)) {
-            const timeoutId = setTimeout(() => {
-                setState('idle');
-            }, state === 'success' ? 1500 : 5000);
-            return () => clearTimeout(timeoutId);
-        }
     }, [state]);
 
     if (isDriveDisabled) return null;
@@ -91,7 +50,7 @@ export const DriveUploadButton = ({ attachment }: DriveUploadButtonProps) => {
                         aria-busy={state === 'uploading'}
                         color={state === 'error' ? 'error' : 'brand'}
                         variant="tertiary"
-                        onClick={handleUploadToDrive}
+                        onClick={upload}
                         data-state={state}
                         className="attachment-item-drive-upload-button"
                     />

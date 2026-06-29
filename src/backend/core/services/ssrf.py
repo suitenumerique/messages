@@ -38,6 +38,31 @@ def _check_ip(ip_addr: ipaddress._BaseAddress, hostname: str) -> None:
         raise SSRFValidationError(f"{hostname} resolves to reserved address")
     if ip_addr.is_private:
         raise SSRFValidationError(f"{hostname} resolves to private IP address")
+    # Catch-all for anything not globally routable that the specific checks
+    # above miss — notably shared address space / CGNAT (100.64.0.0/10), which
+    # is neither is_private nor is_reserved in Python's ipaddress module.
+    if not ip_addr.is_global:
+        raise SSRFValidationError(f"{hostname} resolves to non-global address")
+
+
+def assert_public_ip(ip: str, hostname: str = "") -> None:
+    """Raise ``SSRFValidationError`` unless ``ip`` is a public address.
+
+    Companion to ``validate_hostname`` for callers that have *already*
+    resolved a destination to a concrete IP and dial that exact IP — e.g.
+    outbound SMTP, which pins an MX host's A record and connects to it
+    directly (so there is no DNS-rebinding window to defend, only the IP to
+    vet). Blocks loopback / link-local / multicast / reserved / private
+    ranges and the cloud-metadata endpoints, plus a final ``is_global``
+    catch-all (see ``_check_ip``) that rejects any remaining non-globally-
+    routable address — notably CGNAT / shared address space (100.64.0.0/10),
+    which is neither ``is_private`` nor ``is_reserved`` in Python's ipaddress.
+    """
+    try:
+        ip_addr = ipaddress.ip_address(ip)
+    except ValueError as exc:
+        raise SSRFValidationError(f"Invalid IP address {ip!r}") from exc
+    _check_ip(ip_addr, hostname or ip)
 
 
 def validate_hostname(hostname: str, *, allow_ip_literal: bool = False) -> list[str]:

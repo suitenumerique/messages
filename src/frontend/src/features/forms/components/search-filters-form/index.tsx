@@ -1,6 +1,6 @@
 import { ALL_MESSAGES_FOLDER, MAILBOX_FOLDERS } from "@/features/layouts/components/mailbox-panel/components/mailbox-list";
 import { SearchHelper } from "@/features/utils/search-helper";
-import { Label } from "@gouvfr-lasuite/ui-kit";
+import { Icon, Label } from "@gouvfr-lasuite/ui-kit";
 import { Button, Checkbox, Input, Select } from "@gouvfr-lasuite/cunningham-react";
 import { useId, useRef } from "react";
 import { useTranslation } from "react-i18next";
@@ -111,7 +111,7 @@ type FolderOptionProps = {
 const FolderOption = ({ label, icon }: FolderOptionProps) => {
     return (
         <div className="search__filters-folder-option">
-            <span className="material-icons">{icon}</span>
+            <Icon name={icon} />
             {label}
         </div>
     );

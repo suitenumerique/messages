@@ -16,9 +16,20 @@ import ThreadMessageBody from "./thread-message-body";
 import MessageReplyForm from "../message-reply-form";
 import ThreadMessageHeader from "./thread-message-header";
 import ThreadMessageFooter from "./thread-message-footer";
+import { CalendarInvite } from "../calendar-invite";
 import { ThreadMessageProps } from "./types";
 import { BodyPart } from "./renderers";
 import { DriveFile } from "@/features/forms/components/message-form/drive-attachment-picker";
+
+const CALENDAR_MIME_TYPES = ["text/calendar", "application/ics"];
+
+// Real emails often send Content-Type with parameters
+// (e.g. "text/calendar; method=REQUEST; charset=UTF-8"), so match on the
+// media type prefix rather than the full string.
+const isCalendarMime = (type: string) => {
+    const base = (type || "").split(";")[0].trim().toLowerCase();
+    return CALENDAR_MIME_TYPES.includes(base);
+};
 
 export const ThreadMessage = forwardRef<HTMLSpanElement, ThreadMessageProps>(
     ({ message, isLatest, draftMessage, ...props }, ref) => {
@@ -106,8 +117,30 @@ export const ThreadMessage = forwardRef<HTMLSpanElement, ThreadMessageProps>(
         // Determine which body parts to render (prefer HTML if available)
         const bodyPartsToRender = processedHtmlBody.length > 0 ? processedHtmlBody : processedTextBody;
 
+        // Separate calendar attachments (rendered as a widget above the body)
+        // from regular attachments (rendered in the footer). Google Calendar
+        // sends the same ICS as both inline and attachment, so dedupe by SHA256.
+        const { calendarAttachments, regularAttachments } = useMemo(() => {
+            const calendar = message.attachments.filter((att) => isCalendarMime(att.type));
+            const regular = message.attachments.filter((att) => !isCalendarMime(att.type));
+            // Dedupe by sha256 when available; fall back to a name+size key
+            // so distinct files with missing/empty hashes don't collapse.
+            const seenKeys = new Set<string>();
+            const uniqueCalendar = calendar.filter((att) => {
+                const key = att.sha256 || `${att.name}:${att.size}`;
+                if (seenKeys.has(key)) return false;
+                seenKeys.add(key);
+                return true;
+            });
+            return { calendarAttachments: uniqueCalendar, regularAttachments: regular };
+        }, [message.attachments]);
+
+        const hasCalendarInvites = !message.is_draft && calendarAttachments.length > 0;
+
         // Component state
-        const [isThreadMessageBodyLoaded, setIsThreadMessageBodyLoaded] = useState(isMessageReady);
+        // A standalone draft has no message body iframe to wait for (its content
+        // lives in the compose form), so it is ready to render immediately.
+        const [isThreadMessageBodyLoaded, setIsThreadMessageBodyLoaded] = useState(isMessageReady || message.is_draft);
         const [isFolded, setIsFolded] = useState(!isLatest && !message.is_unread && !draftMessage?.is_draft);
 
         // Deep-link target: unfold this message when the URL hash points to
@@ -130,6 +163,10 @@ export const ThreadMessage = forwardRef<HTMLSpanElement, ThreadMessageProps>(
 
         // Computed flags
         const showReplyForm = replyFormMode !== null;
+        // When the card *is* a draft being composed, it must read as a pure
+        // compose surface: the message chrome (sender header, reply/forward/fold
+        // actions, body) is redundant and nonsensical on your own draft.
+        const renderAsComposeOnly = message.is_draft && showReplyForm;
         // Reply/Reply All/Forward require BOTH sending rights on the mailbox
         // AND full edit rights on the thread. A user with only VIEWER access
         // (mailbox or thread) must not see these buttons — the backend would
@@ -257,84 +294,109 @@ export const ThreadMessage = forwardRef<HTMLSpanElement, ThreadMessageProps>(
                     "thread-message--sender": message.is_sender,
                     "thread-message--delivery-failed": deliveryStatus === 'failed',
                     "thread-message--delivery-retry": deliveryStatus === 'retry',
+                    "thread-message--compose": renderAsComposeOnly,
                 })}
                 data-unread={message.is_unread}
                 data-trashed={message.is_trashed}
                 {...props}
             >
-                {deliveryStatus === 'failed' && (
-                    <Banner
-                        icon={<Icon name="error" type={IconType.OUTLINED} />}
-                        type="error"
-                        fullWidth
-                        actions={canUpdateDeliveryStatus ? [
-                            ...(canRetry ? [{
-                                label: t('Retry'),
-                                onClick: handleRetryFailures,
-                                color: "error" as const,
-                                variant: "secondary" as const,
-                            }] : []),
-                            {
-                                label: t('Cancel those sendings'),
-                                onClick: handleDismissFailures,
-                                color: "error",
-                                variant: "secondary",
-                            }
-                        ] : undefined}
-                    >
-                        <p>{t('Some recipients have not received this message!')}</p>
-                    </Banner>
+                {!renderAsComposeOnly && (
+                    <>
+                        {deliveryStatus === 'failed' && (
+                            <Banner
+                                icon={<Icon name="error" type={IconType.OUTLINED} />}
+                                type="error"
+                                fullWidth
+                                actions={canUpdateDeliveryStatus ? [
+                                    ...(canRetry ? [{
+                                        label: t('Retry'),
+                                        onClick: handleRetryFailures,
+                                        color: "error" as const,
+                                        variant: "secondary" as const,
+                                    }] : []),
+                                    {
+                                        label: t('Cancel those sendings'),
+                                        onClick: handleDismissFailures,
+                                        color: "error",
+                                        variant: "secondary",
+                                    }
+                                ] : undefined}
+                            >
+                                <p>{t('Some recipients have not received this message!')}</p>
+                            </Banner>
+                        )}
+                        {deliveryStatus === 'retry' && (
+                            <Banner
+                                icon={<Icon name="update" type={IconType.OUTLINED} />}
+                                type="warning"
+                                fullWidth
+                                // Only offer cancellation when there are recipients the
+                                // backend can actually transition (retry). A message still
+                                // being sent has pending recipients (delivery_status null),
+                                // which the banner reports but which cannot be cancelled —
+                                // showing the button there would POST an empty payload.
+                                actions={canUpdateDeliveryStatus && retryRecipients.length > 0 ? [
+                                    {
+                                        label: t('Cancel those sendings'),
+                                        onClick: handleCancelRetries,
+                                        variant: "secondary",
+                                    }
+                                ] : undefined}
+                            >
+                                <p>{t('This message has not yet been delivered to all recipients.')}</p>
+                            </Banner>
+                        )}
+
+                        <ThreadMessageHeader
+                            message={message}
+                            draftMessage={draftMessage}
+                            isLatest={isLatest}
+                            isFolded={isFolded}
+                            canSendMessages={canSendMessages}
+                            canRetry={canRetry}
+                            hasSeveralRecipients={hasSeveralRecipients}
+                            onToggleFold={toggleFold}
+                            onSetReplyFormMode={setReplyFormMode}
+                            onUpdateRecipientStatus={canUpdateDeliveryStatus ? handleUpdateRecipientStatus : undefined}
+                        />
+
+                        {hasCalendarInvites && !isFolded && isMessageReady && (
+                            <div className="thread-message__calendar-invites">
+                                {calendarAttachments.map((attachment) => (
+                                    <CalendarInvite
+                                        key={attachment.blobId}
+                                        attachment={attachment}
+                                        canDownload={!selectedThread?.is_spam}
+                                        mailboxId={selectedMailbox?.id}
+                                        mailboxEmail={selectedMailbox?.email}
+                                    />
+                                ))}
+                            </div>
+                        )}
+
+                        <ThreadMessageBody
+                            bodyParts={bodyPartsToRender}
+                            attachments={message.attachments}
+                            messageId={message.id}
+                            isHidden={isFolded || !isMessageReady}
+                            onLoad={() => setIsThreadMessageBodyLoaded(true)}
+                        />
+
+                        <ThreadMessageFooter
+                            message={message}
+                            regularAttachments={regularAttachments}
+                            driveAttachments={driveAttachments}
+                            showReplyButton={showReplyButton}
+                            hasSeveralRecipients={hasSeveralRecipients}
+                            onSetReplyFormMode={setReplyFormMode}
+                            intersectionRef={ref}
+                        />
+                    </>
                 )}
-                {deliveryStatus === 'retry' && (
-                    <Banner
-                        icon={<Icon name="update" type={IconType.OUTLINED} />}
-                        type="warning"
-                        fullWidth
-                        actions={canUpdateDeliveryStatus ? [
-                            {
-                                label: t('Cancel those sendings'),
-                                onClick: handleCancelRetries,
-                                variant: "secondary",
-                            }
-                        ] : undefined}
-                    >
-                        <p>{t('This message has not yet been delivered to all recipients.')}</p>
-                    </Banner>
-                )}
-
-                <ThreadMessageHeader
-                    message={message}
-                    draftMessage={draftMessage}
-                    isLatest={isLatest}
-                    isFolded={isFolded}
-                    canSendMessages={canSendMessages}
-                    canRetry={canRetry}
-                    hasSeveralRecipients={hasSeveralRecipients}
-                    onToggleFold={toggleFold}
-                    onSetReplyFormMode={setReplyFormMode}
-                    onUpdateRecipientStatus={canUpdateDeliveryStatus ? handleUpdateRecipientStatus : undefined}
-                />
-
-                <ThreadMessageBody
-                    bodyParts={bodyPartsToRender}
-                    attachments={message.attachments}
-                    messageId={message.id}
-                    isHidden={isFolded || !isMessageReady}
-                    onLoad={() => setIsThreadMessageBodyLoaded(true)}
-                />
-
-                <ThreadMessageFooter
-                    message={message}
-                    driveAttachments={driveAttachments}
-                    showReplyButton={showReplyButton}
-                    hasSeveralRecipients={hasSeveralRecipients}
-                    onSetReplyFormMode={setReplyFormMode}
-                    intersectionRef={ref}
-                />
 
                 {isMessageReady && showReplyForm && (
                     <section
-                        className="thread-message__reply-form"
+                        className="thread-message__reply-form thread-message__reply-form--detached"
                         ref={replyFormRef}
                         onFocus={() => threadViewContext.setIsMessageFormFocused(true)}
                         onBlur={(e) => {
@@ -347,6 +409,7 @@ export const ThreadMessage = forwardRef<HTMLSpanElement, ThreadMessageProps>(
                             mode={replyFormMode}
                             handleClose={handleCloseReplyForm}
                             message={draftMessage || message}
+                            detached
                         />
                     </section>
                 )}

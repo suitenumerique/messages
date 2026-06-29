@@ -27,7 +27,7 @@ RUN npm run build
 
 # Normalize output path to /app (matches the runtime-prod layout)
 FROM scratch AS frontend-build-output
-COPY --from=frontend-build /home/frontend/out /app
+COPY --from=frontend-build /home/frontend/dist /app
 
 # When FRONTEND_IMAGE is set to an external image, BuildKit skips
 # frontend-deps, frontend-build, and frontend-build-output entirely

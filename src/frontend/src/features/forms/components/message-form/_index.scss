@@ -160,17 +160,11 @@
     flex-direction: row;
     gap: var(--c--globals--spacings--xs);
     align-items: center;
+    flex-wrap: wrap;
 }
 
 .attachment-uploader__input > .c__button {
     white-space: nowrap;
-}
-
-@media screen and (max-width: breakpoint(xs)) {
-    .attachment-uploader__input {
-        flex-direction: column;
-        align-items: flex-start;
-    }
 }
 
 .attachment-uploader__input__helper-text {
@@ -190,6 +184,10 @@
     display: grid;
     grid-template-columns: repeat(auto-fill, minmax(min(350px, 100%), 1fr));
     gap: 10px;
+}
+
+.drive-attachment-picker {
+    flex-shrink: 0;
 }
 
 .drive-attachment-picker:disabled {

@@ -1,7 +1,6 @@
-import { ReadMessageTemplate, MessageTemplateTypeChoices, useMailboxesMessageTemplatesCreate, useMailboxesMessageTemplatesUpdate, useMailboxesMessageTemplatesRetrieve, getMailboxesMessageTemplatesListUrl } from "@/features/api/gen";
+import { Mailbox, ReadMessageTemplate, MessageTemplateTypeChoices, useMailboxesMessageTemplatesCreate, useMailboxesMessageTemplatesUpdate, useMailboxesMessageTemplatesRetrieve, getMailboxesMessageTemplatesListUrl } from "@/features/api/gen";
 import { RhfInput } from "@/features/forms/components/react-hook-form/rhf-input";
 import { RhfCheckbox } from "@/features/forms/components/react-hook-form/rhf-checkbox";
-import { useMailboxContext } from "@/features/providers/mailbox";
 import { zodResolver } from "@hookform/resolvers/zod";
 import { Button, Modal, ModalSize } from "@gouvfr-lasuite/cunningham-react";
 import { Spinner } from "@gouvfr-lasuite/ui-kit";
@@ -25,22 +24,18 @@ import { useConfirmBeforeClose } from "@/features/hooks/use-confirm-before-close
 type ModalComposeMailboxSignatureProps = {
     isOpen: boolean;
     onClose: () => void;
+    mailbox: Mailbox;
     signature?: ReadMessageTemplate;
 }
 
-export const ModalComposeMailboxSignature = ({ isOpen, onClose, signature }: ModalComposeMailboxSignatureProps) => {
+export const ModalComposeMailboxSignature = ({ isOpen, onClose, mailbox, signature }: ModalComposeMailboxSignatureProps) => {
     const { t } = useTranslation();
-    const { selectedMailbox } = useMailboxContext();
     const queryClient = useQueryClient();
     const [isDirty, setIsDirty] = useState(false);
     const guardedOnClose = useConfirmBeforeClose(isDirty, onClose);
 
-    if (!selectedMailbox) {
-        return null;
-    }
-
     const invalidateSignatures = async () => {
-        await queryClient.invalidateQueries({ queryKey: [getMailboxesMessageTemplatesListUrl(selectedMailbox.id)], exact: false });
+        await queryClient.invalidateQueries({ queryKey: [getMailboxesMessageTemplatesListUrl(mailbox.id)], exact: false });
     }
 
     const handleSuccess = async () => {
@@ -65,14 +60,14 @@ export const ModalComposeMailboxSignature = ({ isOpen, onClose, signature }: Mod
             <div className="modal-compose-template">
                 {signature ? (
                     <SignatureComposeFormWithRetrieve
-                        mailboxId={selectedMailbox.id}
+                        mailboxId={mailbox.id}
                         signature={signature}
                         onSuccess={handleSuccess}
                         onDirtyChange={setIsDirty}
                     />
                 ) : (
                     <SignatureComposeForm
-                        mailboxId={selectedMailbox.id}
+                        mailboxId={mailbox.id}
                         onSuccess={handleSuccess}
                         onDirtyChange={setIsDirty}
                     />

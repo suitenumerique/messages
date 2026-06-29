@@ -1,0 +1,11 @@
+.lagaufre-button > .c__button__icon > svg {
+  // Local shim mirroring upstream ui-kit fix suitenumerique/ui-kit#247: the
+  // LaGaufreV2 waffle icon is painted with the brand color token, which is
+  // identical across the light and dark variants, so the icon never follows the
+  // active theme. The upstream fix paints it with `currentColor` instead. Until
+  // a ui-kit release ships that fix, we reach the same result by remapping the
+  // token this icon consumes to `currentColor`, so it inherits the button text
+  // color (tertiary) and switches with the theme variant.
+  // TODO: remove once @gouvfr-lasuite/ui-kit ships the fix from PR #247.
+    --c--contextuals--background--semantic--brand--primary: currentColor;
+}

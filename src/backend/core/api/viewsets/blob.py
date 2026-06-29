@@ -3,15 +3,21 @@
 import logging
 
 from django.conf import settings
+from django.core.exceptions import ValidationError as DjangoValidationError
 from django.http import HttpResponse
-from django.utils.decorators import method_decorator
 from django.utils.http import content_disposition_header
-from django.views.decorators.csrf import csrf_exempt
 
+import magic
+from drf_spectacular.types import OpenApiTypes
 from drf_spectacular.utils import OpenApiParameter, OpenApiResponse, extend_schema
 from rest_framework import status
 from rest_framework.decorators import action
-from rest_framework.exceptions import NotFound
+from rest_framework.exceptions import (
+    APIException,
+    NotFound,
+    ParseError,
+    PermissionDenied,
+)
 from rest_framework.parsers import MultiPartParser
 from rest_framework.response import Response
 from rest_framework.viewsets import ViewSet
@@ -19,6 +25,12 @@ from rest_framework.viewsets import ViewSet
 from core import enums, models
 from core.api import permissions, utils
 from core.services.blob_gc import upload_and_reserve_blob
+
+# Number of leading bytes inspected by python-magic on the preview endpoint.
+# Every format we allowlist is identified by a signature in its first few hundred
+# bytes, so 2 KiB is a comfortable margin — not a tight bound. We cap the slice
+# only to avoid handing magic the whole payload before deciding to refuse.
+_PREVIEW_MAGIC_SNIFF_BYTES = 2048
 
 # Define logger
 logger = logging.getLogger(__name__)
@@ -90,7 +102,6 @@ class BlobViewSet(ViewSet):
         },
         tags=["blob"],
     )
-    @method_decorator(csrf_exempt)
     @action(detail=False, methods=["post"], url_path="upload/(?P<mailbox_id>[^/.]+)")
     def upload(self, request, mailbox_id=None):
         """
@@ -167,6 +178,58 @@ class BlobViewSet(ViewSet):
                 status=status.HTTP_500_INTERNAL_SERVER_ERROR,
             )
 
+    def _resolve_blob_source(self, pk, user):
+        """Resolve a blob to its bytes and metadata.
+
+        `msg_*` IDs are served from the parsed message attachment cache
+
+        Returns:
+            A dict with keys `content` (bytes), `declared_type` (str),
+            `filename` (str), `size` (int).
+
+        Raises:
+            ParseError: malformed `msg_*` ID.
+            NotFound: `msg_*` ID points at a missing attachment.
+            PermissionDenied: blob doesn't exist or user has no access
+        """
+        if pk.startswith("msg_"):
+            try:
+                attachment = utils.get_attachment_from_blob_id(pk, user)
+            except ValueError as e:
+                raise ParseError("Invalid blob ID") from e
+            except models.Blob.DoesNotExist as e:
+                raise NotFound("Blob not found") from e
+            return {
+                "content": attachment["content"],
+                "declared_type": attachment["type"],
+                "filename": attachment["name"],
+                "size": attachment["size"],
+            }
+
+        try:
+            blob = models.Blob.objects.get(id=pk)
+        except DjangoValidationError as e:
+            # Non-UUID ``pk`` reaches the ORM as a ValidationError; surface
+            # it as a 400 instead of falling through to the generic 500.
+            raise ParseError("Invalid blob ID") from e
+        except models.Blob.DoesNotExist as e:
+            raise PermissionDenied(
+                "You do not have permission to access this blob"
+            ) from e
+
+        if not models.Blob.objects.user_can_access(user, blob.id):
+            raise PermissionDenied("You do not have permission to access this blob")
+        attachment_row = models.Attachment.objects.filter(blob=blob).first()
+
+        return {
+            "content": blob.get_content(),
+            "declared_type": blob.content_type,
+            "filename": (
+                attachment_row.name if attachment_row else f"blob-{blob.id}.bin"
+            ),
+            "size": blob.size,
+        }
+
     @action(detail=True, methods=["get"])
     def download(self, request, pk=None):
         """
@@ -176,75 +239,149 @@ class BlobViewSet(ViewSet):
         by checking if the user has access to any mailbox that owns this blob.
         """
         try:
-            # Blob IDs in the form msg_[message_id]_[attachment_number] are looked up
-            # directly in the message's attachments.
-            if pk.startswith("msg_"):
-                try:
-                    attachment = utils.get_attachment_from_blob_id(pk, request.user)
-                except ValueError as e:
-                    return Response(
-                        status=status.HTTP_400_BAD_REQUEST, data={"error": str(e)}
-                    )
-                except models.Blob.DoesNotExist as e:
-                    return Response(
-                        status=status.HTTP_404_NOT_FOUND, data={"error": str(e)}
-                    )
+            source = self._resolve_blob_source(pk, request.user)
 
-                # Create response with decompressed content
-                response = HttpResponse(
-                    attachment["content"], content_type=attachment["type"]
-                )
-
-                # Add appropriate headers for download
-                response["Content-Disposition"] = content_disposition_header(
-                    True, attachment["name"]
-                )
-                response["Content-Length"] = attachment["size"]
-                # Enable browser caching for 30 days (inline images benefit from this)
-                response["Cache-Control"] = "private, max-age=2592000"
-
-            else:
-                # Get the blob
-                blob = models.Blob.objects.get(id=pk)
-
-                # Authz: walk the reference graph (Attachment, Message,
-                # MessageTemplate) plus any active upload reservation.
-                # See ``BlobManager.user_can_access`` for the union.
-                if not models.Blob.objects.user_can_access(request.user, blob.id):
-                    return Response(
-                        {"error": "You do not have permission to download this blob"},
-                        status=status.HTTP_403_FORBIDDEN,
-                    )
-
-                # Get the first attachment name to use as filename (if available)
-                attachment = models.Attachment.objects.filter(blob=blob).first()
-                filename = attachment.name if attachment else f"blob-{blob.id}.bin"
-
-                # Create response with decompressed content
-                response = HttpResponse(
-                    blob.get_content(), content_type=blob.content_type
-                )
-
-                # Add appropriate headers for download
-                response["Content-Disposition"] = content_disposition_header(
-                    True, filename
-                )
-                response["Content-Length"] = blob.size
-                # Enable browser caching for 30 days (inline images benefit from this)
-                response["Cache-Control"] = "private, max-age=2592000"
-
+            response = HttpResponse(
+                source["content"], content_type=source["declared_type"]
+            )
+            response["Content-Disposition"] = content_disposition_header(
+                True, source["filename"]
+            )
+            response["Content-Length"] = source["size"]
+            # Enable browser caching for 30 days (inline images benefit from this)
+            response["Cache-Control"] = "private, max-age=2592000"
             return response
 
-        except models.Blob.DoesNotExist:
-            # Same error to hide blob existence
-            return Response(
-                {"error": "You do not have permission to download this blob"},
-                status=status.HTTP_403_FORBIDDEN,
-            )
+        except APIException:
+            # Let DRF convert ParseError / NotFound / PermissionDenied raised by
+            # ``_resolve_blob_source`` into the proper Response.
+            raise
         # pylint: disable=broad-exception-caught
         except Exception as e:
             logger.exception("Error downloading file: %s", str(e))
             return Response(
                 {"error": "Error downloading file"},
+                status=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            )
+
+    @extend_schema(
+        responses={
+            (200, "application/octet-stream"): OpenApiResponse(
+                description=(
+                    "Inline preview of the blob. The Content-Type is the MIME "
+                    "type detected server-side and is guaranteed to belong to "
+                    "``PREVIEWABLE_MIME_TYPES``."
+                ),
+                response=OpenApiTypes.BINARY,
+            ),
+            400: OpenApiResponse(description="Invalid blob ID"),
+            403: OpenApiResponse(
+                description="Forbidden - User does not have permission to preview this blob"
+            ),
+            404: OpenApiResponse(description="Blob not found"),
+            415: OpenApiResponse(
+                description=(
+                    "Unsupported media type for inline preview. The detected "
+                    "MIME is not in ``PREVIEWABLE_MIME_TYPES`` or does not "
+                    "match the declared Content-Type. The response body "
+                    "includes a ``code`` field set to either ``suspicious`` "
+                    "(declared type was previewable but bytes disagree) or "
+                    "``unsupported`` (type is plainly not previewable)."
+                ),
+            ),
+            500: OpenApiResponse(description="Internal server error"),
+        },
+        tags=["blob"],
+    )
+    @action(detail=True, methods=["get"])
+    def preview(self, request, pk=None):
+        """
+        Serve a blob inline for the FilePreview viewer.
+
+        Sibling of ``download`` with the same authorization model but two
+        extra guarantees:
+
+        - the response Content-Type is the MIME type detected from the bytes
+          (via ``python-magic``), not the value declared at upload time;
+        - the detected MIME must belong to ``PREVIEWABLE_MIME_TYPES``,
+          otherwise the endpoint refuses with 415.
+
+        Returning 415 (rather than 200 with the raw payload) is the security
+        contract that lets the frontend render the response inline: any byte
+        we send back has been re-classified server-side as one of the safe
+        previewable types.
+        """
+        try:
+            source = self._resolve_blob_source(pk, request.user)
+            content = source["content"]
+            declared_type = source["declared_type"]
+
+            # Normalize the declared Content-Type (e.g. image/PNG; charset=binary)
+            declared_media_type = declared_type.partition(";")[0].strip().lower()
+            detected_type = magic.from_buffer(
+                content[:_PREVIEW_MAGIC_SNIFF_BYTES], mime=True
+            ).lower()
+
+            # A preview is served only when the detected bytes are an
+            # allowlisted type AND match the declared Content-Type. Anything
+            # else is refused — the browser must never render bytes the
+            # uploader lied about. The blob can still be downloaded via
+            # /download/.
+            if (
+                detected_type not in enums.PREVIEWABLE_MIME_TYPES
+                or detected_type != declared_media_type
+            ):
+                # When the *declared* type was itself previewable, the bytes
+                # don't back that claim — flag the attachment as suspicious.
+                # Otherwise it's plainly not previewable.
+                suspicious = declared_media_type in enums.PREVIEWABLE_MIME_TYPES
+                code = (
+                    enums.PreviewRefusalCode.SUSPICIOUS
+                    if suspicious
+                    else enums.PreviewRefusalCode.UNSUPPORTED
+                )
+                logger.log(
+                    logging.WARNING if suspicious else logging.INFO,
+                    "Refused preview for blob %s: declared %s, detected %s (%s)",
+                    pk,
+                    declared_type,
+                    detected_type,
+                    code.value,
+                )
+                return Response(
+                    {
+                        "error": "File type not supported for preview",
+                        "code": code.value,
+                    },
+                    status=status.HTTP_415_UNSUPPORTED_MEDIA_TYPE,
+                )
+
+            response = HttpResponse(content, content_type=detected_type)
+            response["Content-Disposition"] = content_disposition_header(
+                False, source["filename"]
+            )
+            response["Content-Length"] = source["size"]
+            response["Cache-Control"] = "private, max-age=2592000"
+            # Defense in depth on top of the global SECURE_CONTENT_TYPE_NOSNIFF.
+            response["X-Content-Type-Options"] = "nosniff"
+            response["Referrer-Policy"] = "no-referrer"
+            # Strict CSP: the response is expected to be loaded only via
+            # <img>, <video>, <audio> or fetch() (PDF.js) — never as a
+            # top-level document with scripts.
+            response["Content-Security-Policy"] = (
+                "default-src 'none'; img-src 'self' blob: data:; "
+                "media-src 'self' blob:; sandbox"
+            )
+            return response
+
+        except APIException:
+            # Let DRF convert ParseError / NotFound / PermissionDenied raised by
+            # ``_resolve_blob_source`` into the proper Response.
+            raise
+        # pylint: disable=broad-exception-caught
+        except Exception as e:
+            logger.exception("Error previewing file: %s", str(e))
+            return Response(
+                {"error": "Error previewing file"},
                 status=status.HTTP_500_INTERNAL_SERVER_ERROR,
             )

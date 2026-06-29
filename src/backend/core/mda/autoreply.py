@@ -8,33 +8,41 @@ from django.conf import settings
 from django.db import transaction
 from django.utils import timezone
 
+from jmap_email import (
+    JmapEmail,
+    find_header,
+    find_headers,
+    first_address_email,
+    has_header,
+)
+
 from core import models
 from core.enums import (
     MessageRecipientTypeChoices,
     MessageTemplateTypeChoices,
 )
 from core.mda.outbound import compose_and_sign_mime
-from core.mda.rfc5322.composer import make_reply_subject
+from core.mda.replies import reply_subject
 from core.services.throttle import ThrottleLimitExceeded, ThrottleManager
 
 logger = logging.getLogger(__name__)
 
 # Headers that indicate an automatic message (loop prevention)
 _PRECEDENCE_VALUES = {"bulk", "list", "junk"}
-_LOOP_HEADERS = {
-    "x-auto-response-suppress",
-    "x-autoreply",
-    "x-autorespond",
-    "x-loop",
-    "list-id",
-    "list-unsubscribe",
-    "list-post",
-    "list-help",
-    "list-subscribe",
-    "list-owner",
-    "list-archive",
-    "feedback-id",
-}
+_LOOP_HEADERS = (
+    "X-Auto-Response-Suppress",
+    "X-Autoreply",
+    "X-Autorespond",
+    "X-Loop",
+    "List-Id",
+    "List-Unsubscribe",
+    "List-Post",
+    "List-Help",
+    "List-Subscribe",
+    "List-Owner",
+    "List-Archive",
+    "Feedback-ID",
+)
 
 # Addresses that should never receive autoreplies (RFC 3834 / RFC 5230)
 _NOREPLY_PATTERNS = re.compile(
@@ -51,71 +59,57 @@ def _is_noreply_address(email: str) -> bool:
     return bool(_NOREPLY_PATTERNS.search(email))
 
 
-def _is_recipient_explicit(mailbox_email: str, parsed_email_headers: dict) -> bool:
+def _is_recipient_explicit(mailbox_email: str, parsed_email: JmapEmail) -> bool:
     """Check that the mailbox address appears in To or Cc.
 
-    Per RFC 5230 Section 4.5, a vacation responder MUST NOT respond to a
-    message unless the recipient's address is explicitly listed.  We only
-    check To and Cc because BCC headers are stripped before delivery — if
-    the mailbox was BCC'd its address won't appear in the received headers,
-    which is exactly the behaviour we want (no autoreply for BCC'd copies).
+    Per RFC 5230 §4.5, a vacation responder MUST NOT respond to a
+    message unless the recipient's address is explicitly listed. We
+    only check To and Cc because BCC headers are stripped before
+    delivery — if the mailbox was BCC'd its address won't appear in
+    the received headers, which is exactly the behaviour we want
+    (no autoreply for BCC'd copies).
     """
     target = mailbox_email.lower()
     for field in ("to", "cc"):
-        recipients = parsed_email_headers.get(field) or []
-        for recipient in recipients:
-            if isinstance(recipient, dict):
-                if recipient.get("email", "").lower() == target:
-                    return True
-            elif isinstance(recipient, str):
-                if recipient.lower() == target:
-                    return True
+        for entry in parsed_email.get(field) or []:
+            if isinstance(entry, dict) and (entry.get("email") or "").lower() == target:
+                return True
     return False
 
 
-def _is_auto_reply_message(headers: dict) -> bool:
+def _is_auto_reply_message(parsed_email: JmapEmail) -> bool:
     """Detect whether the inbound message is itself an automatic reply.
 
     Checks Auto-Submitted, Precedence, List-Id, X-Auto-Response-Suppress,
-    X-Autoreply, X-Autorespond headers.
+    X-Autoreply, X-Autorespond, and Return-Path bounce indicators.
     """
-    if not headers:
-        return False
-
-    # Normalize header keys to lowercase for comparison
-    lower_headers = {k.lower(): v for k, v in headers.items()}
-
-    # Return-Path: empty or <> means bounce (RFC 3834)
-    if "return-path" in lower_headers:
-        return_path = lower_headers["return-path"].strip()
-        if return_path in ("", "<>"):
+    # Return-Path empty or <> means bounce (RFC 3834). Walk every
+    # occurrence so a benign duplicate can't mask a bounce indicator.
+    for return_path in find_headers(parsed_email, "Return-Path"):
+        if return_path.strip() in ("", "<>"):
             return True
 
-    # Auto-Submitted: anything other than "no" means auto-generated.
-    # RFC 3834 allows parameters after ";" (e.g. "auto-replied; owner-email=...").
-    auto_submitted = lower_headers.get("auto-submitted", "").strip().lower()
-    if auto_submitted:
-        # Strip parameters: "auto-replied; foo=bar" -> "auto-replied"
-        auto_submitted_value = auto_submitted.split(";", 1)[0].strip()
-        if auto_submitted_value and auto_submitted_value != "no":
-            return True
-
-    # Precedence: bulk, list, junk
-    precedence = lower_headers.get("precedence", "").strip().lower()
-    if precedence in _PRECEDENCE_VALUES:
+    # Auto-Submitted (max=1 per RFC 3834 §5). Parameters after ``;``
+    # (e.g. ``auto-replied; owner-email=...``) are stripped before
+    # comparison; anything other than ``no`` counts.
+    auto_submitted = find_header(parsed_email, "Auto-Submitted").strip().lower()
+    if auto_submitted and auto_submitted.split(";", 1)[0].strip() not in ("", "no"):
         return True
 
-    # Presence of any loop header
-    for header_name in _LOOP_HEADERS:
-        if lower_headers.get(header_name):
+    # Precedence: bulk / list / junk. Repeatable per RFC 5322
+    # (optional-field).
+    for precedence in find_headers(parsed_email, "Precedence"):
+        if precedence.strip().lower() in _PRECEDENCE_VALUES:
             return True
 
-    return False
+    # Presence of any loop indicator header is enough (list-id,
+    # list-unsubscribe, x-loop, …).
+    return any(has_header(parsed_email, name) for name in _LOOP_HEADERS)
 
 
 def should_send_autoreply(
     mailbox: models.Mailbox,
-    parsed_email_headers: dict,
+    parsed_email: JmapEmail,
     is_spam: bool = False,
 ) -> Optional[models.MessageTemplate]:
     """Determine whether we should send an autoreply and return the template.
@@ -127,16 +121,12 @@ def should_send_autoreply(
     if is_spam:
         return None
 
-    headers = parsed_email_headers.get("headers", {})
-
     # 2. Skip auto-generated messages (loop prevention)
-    if _is_auto_reply_message(headers):
+    if _is_auto_reply_message(parsed_email):
         return None
 
     # 3. Self-reply prevention: skip if sender == mailbox email
-    sender_info = parsed_email_headers.get("from", {})
-    sender_email = sender_info.get("email", "").lower() if sender_info else ""
-
+    sender_email = first_address_email(parsed_email.get("from")).lower()
     if not sender_email:
         return None
 
@@ -150,7 +140,7 @@ def should_send_autoreply(
 
     # 3c. RFC 5230 §4.5: only reply if mailbox address appears in To/Cc.
     #     Prevents autoreplies to BCC'd copies and mailing-list expansions.
-    if not _is_recipient_explicit(mailbox_email, parsed_email_headers):
+    if not _is_recipient_explicit(mailbox_email, parsed_email):
         return None
 
     # 4. Find active autoreply template for this mailbox
@@ -216,7 +206,7 @@ def send_autoreply_for_message(
     )
 
     # 2. Build subject with Re: prefix
-    reply_subject = make_reply_subject(inbound_message.subject or "")[:255]
+    subject = reply_subject(inbound_message.subject or "")[:255]
 
     # 3-7: Create records and compose MIME atomically so a failure in
     #       compose_and_sign_mime does not leave orphan Message/Recipient rows.
@@ -225,7 +215,7 @@ def send_autoreply_for_message(
         message = models.Message.objects.create(
             thread=thread,
             sender=mailbox_contact,
-            subject=reply_subject,
+            subject=subject,
             parent=inbound_message,
             sent_at=timezone.now(),
             is_draft=False,
@@ -285,7 +275,7 @@ def send_autoreply_for_message(
 
 def try_send_autoreply(
     mailbox: models.Mailbox,
-    parsed_email: dict,
+    parsed_email: JmapEmail,
     message: models.Message,
     is_spam: bool = False,
 ):
@@ -295,16 +285,7 @@ def try_send_autoreply(
     Exceptions are logged but never propagated.
     """
     try:
-        parsed_headers = {
-            "from": parsed_email.get("from", {}),
-            "to": parsed_email.get("to", []),
-            "cc": parsed_email.get("cc", []),
-            "subject": parsed_email.get("subject", ""),
-            "messageId": parsed_email.get("messageId")
-            or parsed_email.get("message_id"),
-            "headers": parsed_email.get("headers", {}),
-        }
-        template = should_send_autoreply(mailbox, parsed_headers, is_spam=is_spam)
+        template = should_send_autoreply(mailbox, parsed_email, is_spam=is_spam)
         if template:
             send_autoreply_for_message(template, mailbox, message)
     except Exception:  # pylint: disable=broad-exception-caught

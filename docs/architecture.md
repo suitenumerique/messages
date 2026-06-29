@@ -8,7 +8,7 @@
 
 ### Frontend App
 
-- **Next.js Application**: React-based SPA with TypeScript
+- **React Application**: React-based SPA with TypeScript, Vite, Tanstack Router and React Query
 - **Auto-generated API Client**: Generated from OpenAPI schema using Orval
 - **Multi-panel Interface**: Mailbox panel, thread list, and message view
 - **Real-time Updates**: Using TanStack Query for efficient state management

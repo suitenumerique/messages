@@ -7,6 +7,7 @@ from unittest.mock import Mock, patch
 from django.test import override_settings
 
 import pytest
+from jmap_email import parse_email
 
 from core import factories, models
 from core.mda.inbound_auth import (
@@ -15,7 +16,6 @@ from core.mda.inbound_auth import (
     check_inbound_authentication,
 )
 from core.mda.inbound_tasks import process_inbound_message_task
-from core.mda.rfc5322 import parse_email_message
 
 RAW_EMAIL = (
     b"From: sender@example.com\r\n"
@@ -49,42 +49,100 @@ class TestCheckInboundAuthenticationDisabled:
 
 
 class TestCheckInboundAuthenticationNative:
-    """Native mode verifies DKIM locally and ignores DMARC."""
+    """Native mode verifies DKIM locally, requires From/DKIM alignment, and
+    ignores DMARC."""
+
+    # parsed_email carrying a From: whose domain is ``example.com``.
+    PARSED_FROM = {"from": [{"email": "sender@example.com"}]}
 
     @patch("core.mda.inbound_auth.verify_message_dkim")
-    def test_dkim_pass(self, mock_verify):
-        mock_verify.return_value = True
+    def test_dkim_pass_aligned(self, mock_verify):
+        """Valid signature whose d= matches the From domain -> verified."""
+        mock_verify.return_value = "example.com"
         config = {"inbound_auth": "native"}
-        assert check_inbound_authentication(RAW_EMAIL, {}, config) is None
+        assert check_inbound_authentication(RAW_EMAIL, self.PARSED_FROM, config) is None
+
+    @patch("core.mda.inbound_auth.verify_message_dkim")
+    def test_dkim_pass_unaligned_unverified(self, mock_verify):
+        """Valid signature from an unrelated domain (spoofed From) -> 'none'.
+
+        This is the spoofing case: From: sender@example.com but the message is
+        DKIM-signed with d=attacker.com. Raw DKIM passes, but the signer is not
+        the From domain, so it must NOT be shown as verified.
+        """
+        mock_verify.return_value = "attacker.com"
+        config = {"inbound_auth": "native"}
+        assert (
+            check_inbound_authentication(RAW_EMAIL, self.PARSED_FROM, config)
+            == VERDICT_UNVERIFIED
+        )
+
+    @patch("core.mda.inbound_auth.verify_message_dkim")
+    def test_dkim_subdomain_not_strictly_aligned(self, mock_verify):
+        """Strict alignment: d=mail.example.com does NOT match From example.com."""
+        mock_verify.return_value = "mail.example.com"
+        config = {"inbound_auth": "native"}
+        assert (
+            check_inbound_authentication(RAW_EMAIL, self.PARSED_FROM, config)
+            == VERDICT_UNVERIFIED
+        )
+
+    @patch("core.mda.inbound_auth.verify_message_dkim")
+    def test_alignment_is_case_insensitive(self, mock_verify):
+        """From: Sender@Example.COM aligns with d=example.com."""
+        mock_verify.return_value = "example.com"
+        config = {"inbound_auth": "native"}
+        parsed = {"from": [{"email": "Sender@Example.COM"}]}
+        assert check_inbound_authentication(RAW_EMAIL, parsed, config) is None
+
+    @patch("core.mda.inbound_auth.verify_message_dkim")
+    def test_no_from_header_unverified(self, mock_verify):
+        """A valid signature with no From: to align against -> can't verify."""
+        mock_verify.return_value = "example.com"
+        config = {"inbound_auth": "native"}
+        assert check_inbound_authentication(RAW_EMAIL, {}, config) == VERDICT_UNVERIFIED
 
     @patch("core.mda.inbound_auth.verify_message_dkim")
     def test_dkim_fail(self, mock_verify):
-        mock_verify.return_value = False
+        """No valid signature (verify returns None) -> 'none'."""
+        mock_verify.return_value = None
         config = {"inbound_auth": "native"}
-        assert check_inbound_authentication(RAW_EMAIL, {}, config) == VERDICT_UNVERIFIED
+        assert (
+            check_inbound_authentication(RAW_EMAIL, self.PARSED_FROM, config)
+            == VERDICT_UNVERIFIED
+        )
 
     @patch("core.mda.inbound_auth.verify_message_dkim")
     def test_dkim_error_unverified(self, mock_verify):
         """Transient errors -> cannot verify -> "none" (not forgery)."""
         mock_verify.side_effect = RuntimeError("dns broken")
         config = {"inbound_auth": "native"}
-        assert check_inbound_authentication(RAW_EMAIL, {}, config) == VERDICT_UNVERIFIED
+        assert (
+            check_inbound_authentication(RAW_EMAIL, self.PARSED_FROM, config)
+            == VERDICT_UNVERIFIED
+        )
 
     @patch("core.mda.inbound_auth.verify_message_dkim")
     def test_dmarc_header_ignored(self, mock_verify):
-        """Native doesn't look at DMARC; passing DKIM alone is enough."""
-        mock_verify.return_value = True
-        parsed = {"headers_blocks": [{"authentication-results": ["mx; dmarc=fail"]}]}
+        """Native doesn't look at DMARC; an aligned passing DKIM is enough."""
+        mock_verify.return_value = "example.com"
+        parsed = {
+            "from": [{"email": "sender@example.com"}],
+            "ext": {"headersBlocks": [{"authentication-results": ["mx; dmarc=fail"]}]},
+        }
         config = {"inbound_auth": "native"}
         assert check_inbound_authentication(RAW_EMAIL, parsed, config) is None
 
     @patch("core.mda.inbound_auth.verify_message_dkim")
     def test_dmarc_rspamd_ignored(self, mock_verify):
         """Native ignores any rspamd_result that was passed in."""
-        mock_verify.return_value = True
+        mock_verify.return_value = "example.com"
         rspamd = {"symbols": {"DMARC_POLICY_REJECT": {"score": 5}}}
         config = {"inbound_auth": "native"}
-        assert check_inbound_authentication(RAW_EMAIL, {}, config, rspamd) is None
+        assert (
+            check_inbound_authentication(RAW_EMAIL, self.PARSED_FROM, config, rspamd)
+            is None
+        )
 
 
 class TestCheckInboundAuthenticationRspamd:
@@ -211,13 +269,22 @@ class TestCheckInboundAuthenticationResults:
 
     @staticmethod
     def _parsed(ar_values, trust_blocks=1):
-        blocks = []
+        """Build a ``parsed_email`` with a ``headers`` list shaped so the
+        ``headers_blocks`` helper recovers exactly the blocks described
+        by ``ar_values``.
+
+        Each block ends with a synthetic ``Received`` header. AR entries
+        for the block appear before its closing ``Received``; ``None``
+        in ``ar_values`` produces a block whose Received is the only
+        header (no Authentication-Results).
+        """
+        headers: list[dict] = []
         for i in range(trust_blocks):
-            block = {}
             if i < len(ar_values) and ar_values[i] is not None:
-                block["authentication-results"] = ar_values[i]
-            blocks.append(block)
-        return {"headers_blocks": blocks}
+                for value in ar_values[i]:
+                    headers.append({"name": "Authentication-Results", "value": value})
+            headers.append({"name": "Received", "value": f"from hop{i}"})
+        return {"headers": headers}
 
     def test_dkim_pass_no_dmarc(self):
         config = {"inbound_auth": "authentication-results", "trusted_relays": 1}
@@ -259,7 +326,7 @@ class TestCheckInboundAuthenticationResults:
     def test_header_absent_unverified(self):
         """No AR header anywhere -> can't verify -> 'none'."""
         config = {"inbound_auth": "authentication-results", "trusted_relays": 1}
-        parsed = {"headers_blocks": [{}]}
+        parsed = {"ext": {"headersBlocks": [{}]}}
         assert check_inbound_authentication(b"", parsed, config) == VERDICT_UNVERIFIED
 
     def test_no_dkim_entry_unverified(self):
@@ -272,23 +339,50 @@ class TestCheckInboundAuthenticationResults:
         """trusted_relays=0 -> only block 0 (our MTA) is trusted."""
         config = {"inbound_auth": "authentication-results", "trusted_relays": 0}
         parsed = {
-            "headers_blocks": [
-                {},  # block 0: no AR from us
-                {"authentication-results": ["mx; dkim=pass"]},  # untrusted
-            ]
+            "ext": {
+                "headersBlocks": [
+                    {},  # block 0: no AR from us
+                    {"authentication-results": ["mx; dkim=pass"]},  # untrusted
+                ]
+            }
         }
         assert check_inbound_authentication(b"", parsed, config) == VERDICT_UNVERIFIED
 
     def test_trusted_block_used(self):
-        """Default trusted_relays=1 -> block 1 is trusted."""
-        config = {"inbound_auth": "authentication-results"}
+        """trusted_relays=1 -> block 1 (one configured relay hop) is trusted.
+
+        Block 0 (our own prepend) has no AR; block 1 (the first
+        upstream relay) carries ``dkim=pass``. ``headers_blocks`` groups
+        them by walking the ``headers`` list in order, closing each
+        block at the next ``Received``.
+        """
+        config = {"inbound_auth": "authentication-results", "trusted_relays": 1}
         parsed = {
-            "headers_blocks": [
-                {},
-                {"authentication-results": ["mx; dkim=pass"]},
+            "headers": [
+                {"name": "Received", "value": "from our-mta"},
+                {"name": "Authentication-Results", "value": "mx; dkim=pass"},
+                {"name": "Received", "value": "from upstream"},
             ]
         }
         assert check_inbound_authentication(b"", parsed, config) is None
+
+    def test_default_trusts_only_our_block(self):
+        """Default (no trusted_relays) -> only block 0 is trusted.
+
+        The same payload as ``test_trusted_block_used`` but without an
+        explicit ``trusted_relays`` must NOT honour block 1's ``dkim=pass``:
+        a sender can forge that block, so the secure default of 0 ignores it
+        and the verdict collapses to "unverified".
+        """
+        config = {"inbound_auth": "authentication-results"}
+        parsed = {
+            "headers": [
+                {"name": "Received", "value": "from our-mta"},
+                {"name": "Authentication-Results", "value": "mx; dkim=pass"},
+                {"name": "Received", "value": "from upstream"},
+            ]
+        }
+        assert check_inbound_authentication(b"", parsed, config) == VERDICT_UNVERIFIED
 
     def test_dkim_fail_dominates_pass_across_values(self):
         """Multiple AR values in one block: fail wins -> 'none'."""
@@ -299,7 +393,12 @@ class TestCheckInboundAuthenticationResults:
     def test_single_string_ar_value(self):
         """AR header may be a bare string (single occurrence) rather than list."""
         config = {"inbound_auth": "authentication-results", "trusted_relays": 1}
-        parsed = {"headers_blocks": [{"authentication-results": "mx; dkim=pass"}]}
+        parsed = {
+            "headers": [
+                {"name": "Authentication-Results", "value": "mx; dkim=pass"},
+                {"name": "Received", "value": "from hop0"},
+            ]
+        }
         assert check_inbound_authentication(b"", parsed, config) is None
 
 
@@ -311,7 +410,12 @@ class TestCheckInboundAuthenticationResultsScrubbing:
 
     @staticmethod
     def _parsed(ar_value):
-        return {"headers_blocks": [{"authentication-results": [ar_value]}]}
+        return {
+            "headers": [
+                {"name": "Authentication-Results", "value": ar_value},
+                {"name": "Received", "value": "from hop0"},
+            ]
+        }
 
     # --- Comments (parens) ---------------------------------------------
 
@@ -519,7 +623,11 @@ class TestProcessInboundMessageAuthIntegration:
         call_kwargs = mock_create_message.call_args[1]
         assert call_kwargs["raw_data"].startswith(b"X-StMsg-Sender-Auth: none\r\n")
         parsed = call_kwargs["parsed_email"]
-        assert parsed["headers"].get("x-stmsg-sender-auth") == "none"
+        assert [
+            h["value"]
+            for h in parsed["headers"]
+            if h["name"].lower() == "x-stmsg-sender-auth"
+        ] == ["none"]
 
     @override_settings(SPAM_CONFIG={"inbound_auth": "rspamd"})
     @patch("core.mda.inbound_tasks.check_inbound_authentication")
@@ -541,7 +649,11 @@ class TestProcessInboundMessageAuthIntegration:
         call_kwargs = mock_create_message.call_args[1]
         assert call_kwargs["raw_data"].startswith(b"X-StMsg-Sender-Auth: fail\r\n")
         parsed = call_kwargs["parsed_email"]
-        assert parsed["headers"].get("x-stmsg-sender-auth") == "fail"
+        assert [
+            h["value"]
+            for h in parsed["headers"]
+            if h["name"].lower() == "x-stmsg-sender-auth"
+        ] == ["fail"]
 
     @override_settings(SPAM_CONFIG={"inbound_auth": "native"})
     @patch("core.mda.inbound_tasks.check_inbound_authentication")
@@ -682,11 +794,16 @@ class TestProcessInboundMessageAuthIntegration:
     def test_header_injection_propagates_to_stmsg(self):
         """After prepending, the parser exposes the header via x-stmsg-*."""
         tagged = b"X-StMsg-Sender-Auth: fail\r\n" + RAW_EMAIL
-        parsed = parse_email_message(tagged)
-        assert parsed["headers"].get("x-stmsg-sender-auth") == "fail"
+        parsed = parse_email(tagged)
+        values = [
+            h["value"]
+            for h in parsed["headers"]
+            if h["name"].lower() == "x-stmsg-sender-auth"
+        ]
+        assert values == ["fail"]
 
     @override_settings(SPAM_CONFIG={"inbound_auth": "native"})
-    @patch("core.mda.inbound_tasks.parse_email_message")
+    @patch("core.mda.inbound_tasks.parse_email")
     @patch("core.mda.inbound_tasks.check_inbound_authentication")
     @patch("core.mda.inbound_tasks._create_message_from_inbound")
     def test_reparse_failure_after_prepend_keeps_views_in_sync(
@@ -700,11 +817,11 @@ class TestProcessInboundMessageAuthIntegration:
         """
         # First call: initial parse succeeds. Second: re-parse after prepend fails.
         original_parsed = {
-            "headers": {"from": "a@b"},
-            "headers_blocks": [{}],
-            "from": {"email": "a@b"},
+            "headers": [{"name": "from", "value": "a@b"}],
+            "ext": {"headersBlocks": [{}]},
+            "from": [{"email": "a@b"}],
         }
-        mock_parse.side_effect = [original_parsed, RuntimeError("flanker exploded")]
+        mock_parse.side_effect = [original_parsed, None]
         mock_auth_check.return_value = VERDICT_UNVERIFIED
         mock_create_message.return_value = True
 

@@ -5,7 +5,7 @@
  * This is the messages API schema.
  * OpenAPI spec version: 1.0.0 (v1.0)
  */
-import type { MailboxRoleChoices } from "./mailbox_role_choices";
+import type { MailboxRole } from "./mailbox_role";
 import type { MailboxAbilities } from "./mailbox_abilities";
 
 /**
@@ -15,6 +15,12 @@ export interface Mailbox {
   /** primary key for the record as UUID */
   readonly id: string;
   readonly email: string;
+  /**
+   * Return the display name of the mailbox (its contact name).
+   * @nullable
+   */
+  readonly name: string | null;
+  readonly domain_id: string;
   /** Whether this mailbox identifies a person (i.e. is not an alias or a group) */
   readonly is_identity: boolean;
   /** Return True if the mailbox is shared (non-identity or has more than one access).
@@ -23,7 +29,8 @@ Drives mailbox-level UI gating for collaboration features (assignment
 sub-folders, mention folder) that have no purpose in a mono-user
 identity mailbox. */
   readonly is_shared: boolean;
-  readonly role: MailboxRoleChoices;
+  /** @nullable */
+  readonly role: MailboxRole;
   /** Return the number of threads with unread messages in the mailbox. */
   readonly count_unread_threads: number;
   /** Return the number of threads in the mailbox. */

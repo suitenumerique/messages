@@ -21,8 +21,8 @@ from rest_framework.response import Response
 
 from core import enums, models
 from core.ai.thread_summarizer import summarize_thread
+from core.mda.utils import thread_snippet
 from core.services.search import search_threads
-from core.utils import extract_snippet
 
 from .. import permissions, serializers
 
@@ -46,7 +46,7 @@ class ThreadViewSet(
         `refresh_summary` mutates thread state (writes `thread.summary`)
         so it must also gate on full edit rights, not just authentication.
         """
-        if self.action in ("destroy", "split", "refresh_summary"):
+        if self.action in ("destroy", "split", "refresh_summary", "bulk_delete"):
             return [permissions.HasThreadEditAccess()]
         return super().get_permissions()
 
@@ -702,10 +702,25 @@ class ThreadViewSet(
             page = int(self.paginator.get_page_number(request, self))
             page_size = int(self.paginator.get_page_size(request))
 
+            # Scope the search to the user's mailboxes. With an explicit
+            # mailbox_id we already verified access above; without one, fall
+            # back to every mailbox the user can access — never the whole
+            # cluster. An unscoped query leaks hit-totals and content-existence
+            # across mailboxes even though the bodies are access-filtered below.
+            if mailbox_id:
+                search_mailbox_ids = [mailbox_id]
+            else:
+                search_mailbox_ids = [
+                    str(mid)
+                    for mid in models.MailboxAccess.objects.filter(
+                        user=request.user
+                    ).values_list("mailbox_id", flat=True)
+                ]
+
             # Get search results from OpenSearch
             results = search_threads(
                 query=search_query,
-                mailbox_ids=[mailbox_id] if mailbox_id else None,
+                mailbox_ids=search_mailbox_ids,
                 filters=es_filters,
                 from_offset=(page - 1) * page_size,
                 size=page_size,
@@ -912,7 +927,7 @@ class ThreadViewSet(
 
         with transaction.atomic():
             new_subject = split_message.subject or old_thread.subject
-            snippet = extract_snippet(
+            snippet = thread_snippet(
                 split_message.get_parsed_data(),
                 fallback=new_subject or "",
             )
@@ -985,7 +1000,7 @@ class ThreadViewSet(
             # Recalculate old thread snippet from its most recent remaining message
             last_remaining = old_thread.messages.order_by("-created_at").first()
             if last_remaining:
-                old_thread.snippet = extract_snippet(
+                old_thread.snippet = thread_snippet(
                     last_remaining.get_parsed_data(),
                     fallback=old_thread.subject or "",
                 )
@@ -1009,83 +1024,106 @@ class ThreadViewSet(
         )
         return drf.response.Response(serializer.data, status=status.HTTP_201_CREATED)
 
-    # @extend_schema(
-    #     tags=["threads"],
-    #     request=inline_serializer(
-    #         name="ThreadBulkDeleteRequest",
-    #         fields={
-    #             "thread_ids": drf_serializers.ListField(
-    #                 child=drf_serializers.UUIDField(),
-    #                 required=True,
-    #                 help_text="List of thread IDs to delete",
-    #             ),
-    #         },
-    #     ),
-    #     responses={
-    #         200: OpenApiExample(
-    #             "Success Response",
-    #             value={"detail": "Successfully deleted 5 threads", "deleted_count": 5},
-    #         ),
-    #         400: OpenApiExample(
-    #             "Validation Error", value={"detail": "thread_ids must be provided"}
-    #         ),
-    #     },
-    #     description="Delete multiple threads at once by providing a list of thread IDs.",
-    # )
-    # @drf.decorators.action(
-    #     detail=False,
-    #     methods=["post"],
-    #     url_path="bulk-delete",
-    #     url_name="bulk-delete",
-    # )
-    # def bulk_delete(self, request):
-    #     """Delete multiple threads at once."""
-    #     thread_ids = request.data.get("thread_ids", [])
+    @extend_schema(
+        tags=["threads"],
+        request=serializers.ThreadBulkDeleteRequestSerializer,
+        responses={
+            200: OpenApiResponse(
+                response={
+                    "type": "object",
+                    "properties": {
+                        "success": {"type": "boolean"},
+                        "deleted_count": {"type": "integer"},
+                    },
+                    "required": ["success", "deleted_count"],
+                },
+                description="Messages permanently deleted.",
+            ),
+            400: OpenApiResponse(
+                response={
+                    "type": "object",
+                    "properties": {"detail": {"type": "string"}},
+                },
+                description="Missing or invalid parameters.",
+            ),
+            401: OpenApiResponse(
+                description=(
+                    "Authentication credentials were not provided or are invalid."
+                ),
+            ),
+            403: OpenApiResponse(
+                description=(
+                    "You do not have permission to delete drafts in one or more "
+                    "targeted threads."
+                ),
+            ),
+        },
+        description=(
+            "Permanently delete (hard-delete) draft messages within the given "
+            "accessible and editable threads. A thread emptied by the deletion is "
+            "removed; otherwise its stats are recomputed."
+        ),
+    )
+    @drf.decorators.action(
+        detail=False,
+        methods=["post"],
+        url_path="bulk-delete",
+        url_name="bulk-delete",
+    )
+    def bulk_delete(self, request):
+        """Permanently delete draft messages in bulk.
 
-    #     if not thread_ids:
-    #         return drf.response.Response(
-    #             {"detail": "thread_ids must be provided"},
-    #             status=drf.status.HTTP_400_BAD_REQUEST,
-    #         )
+        Unlike the soft-delete flag endpoint, this removes the message rows for
+        good. It targets only the messages matching ``scope`` so reply-draft
+        threads keep their other messages.
+        """
+        serializer = serializers.ThreadBulkDeleteRequestSerializer(data=request.data)
+        serializer.is_valid(raise_exception=True)
+        scope = serializer.validated_data["scope"]
+        thread_ids = serializer.validated_data["thread_ids"]
+        message_ids = serializer.validated_data["message_ids"]
 
-    #     # Get threads the user has access to
-    #     # Check if user has delete permission for each thread
-    #     threads_to_delete = []
-    #     forbidden_threads = []
+        # The scope is constrained to a known key by the serializer, so the
+        # lookup is guaranteed to resolve.
+        scope_filter = (
+            serializers.ThreadBulkDeleteRequestSerializer.BULK_DELETE_SCOPE_FILTERS[
+                scope
+            ]
+        )
 
-    #     for thread_id in thread_ids:
-    #         try:
-    #             thread = models.Thread.objects.get(id=thread_id)
-    #             # Check if user has permission to delete this thread
-    #             try:
-    #                 self.check_object_permissions(self.request, thread)
-    #             except drf.exceptions.PermissionDenied:
-    #                 forbidden_threads.append(thread_id)
-    #             else:
-    #                 threads_to_delete.append(thread_id)
-    #         except models.Thread.DoesNotExist:
-    #             # Skip threads that don't exist
-    #             pass
+        # Per-thread authorization: restrict to threads the user can fully edit
+        # (EDITOR ThreadAccess + CAN_EDIT MailboxAccess), exactly like the flag
+        # endpoint. The view-level HasThreadEditAccess only gates authentication
+        # for this detail=False action, so the real check is this queryset scope.
+        accessible_thread_ids = models.ThreadAccess.objects.editable_by(
+            request.user
+        ).values_list("thread_id", flat=True)
 
-    #     if forbidden_threads and not threads_to_delete:
-    #         # If all requested threads are forbidden, return 403
-    #         return drf.response.Response(
-    #             {"detail": "You don't have permission to delete these threads"},
-    #             status=drf.status.HTTP_403_FORBIDDEN,
-    #         )
+        with transaction.atomic():
+            messages_to_delete = models.Message.objects.filter(
+                thread_id__in=accessible_thread_ids,
+                **scope_filter,
+            )
+            if thread_ids:
+                messages_to_delete = messages_to_delete.filter(thread_id__in=thread_ids)
+            if message_ids:
+                messages_to_delete = messages_to_delete.filter(id__in=message_ids)
 
-    #     # Update thread_ids to only include those with proper permissions
-    #     accessible_threads = self.get_queryset().filter(id__in=threads_to_delete)
+            affected_thread_ids = set(
+                messages_to_delete.values_list("thread_id", flat=True)
+            )
+            # Count before deletion: the cascade total returned by delete() also
+            # includes related rows (recipients, attachments), not just messages.
+            deleted_count = messages_to_delete.count()
+            messages_to_delete.delete()
 
-    #     # Count before deletion
-    #     count = accessible_threads.count()
+            # An emptied thread is removed; a thread that still has messages has
+            # its denormalized stats (has_draft, has_trashed, ...) recomputed so
+            # it drops out of the corresponding folder filter.
+            for thread in models.Thread.objects.filter(pk__in=affected_thread_ids):
+                if thread.messages.exists():
+                    thread.update_stats()
+                else:
+                    thread.delete()
 
-    #     # Delete the threads
-    #     accessible_threads.delete()
-
-    #     return drf.response.Response(
-    #         {
-    #             "detail": f"Successfully deleted {count} threads",
-    #             "deleted_count": count,
-    #         }
-    #     )
+        return drf.response.Response({"success": True, "deleted_count": deleted_count})

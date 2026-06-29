@@ -38,7 +38,7 @@ Messages is the all-in-one collaborative inbox for [La Suite territoriale](https
 
 Messages is a full communication platform enabling teams to collaborate on emails through shared or personal mailboxes.
 
-It features a [MTA](https://en.wikipedia.org/wiki/Message_transfer_agent) based on [Postfix](https://www.postfix.org/), a custom [MDA](https://en.wikipedia.org/wiki/Message_delivery_agent) built on top of [Django Rest Framework](https://www.django-rest-framework.org/) and a frontend using [Next.js](https://nextjs.org/) and [BlockNote.js](https://www.blocknotejs.org/).
+It features a [MTA](https://en.wikipedia.org/wiki/Message_transfer_agent) based on [Postfix](https://www.postfix.org/), a custom [MDA](https://en.wikipedia.org/wiki/Message_delivery_agent) built on top of [Django Rest Framework](https://www.django-rest-framework.org/) and a frontend using [Vite](https://vite.dev/), [TanStack Router](https://tanstack.com/router/) and [BlockNote.js](https://www.blocknotejs.org/).
 
 ### Familiar messaging features
 * 📝 Receive, draft and send emails.

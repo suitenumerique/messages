@@ -135,7 +135,7 @@ const ThreadMessageHeader = ({
                 {message.is_trashed && (
                     <Banner
                         type="info"
-                        icon={<span className="material-icons">restore_from_trash</span>}
+                        icon={<Icon name="restore_from_trash" />}
                         fullWidth
                         actions={canEditThread ? [
                             {

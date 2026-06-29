@@ -118,7 +118,7 @@ services:
       target: frontend-build
       args:
         API_ORIGIN: http://proxy
-    command: ["npx", "serve", "-s", "out"]
+    command: ["npx", "serve", "-s", "dist"]
     ports: !reset []
 
   frontend-dev:

@@ -80,6 +80,7 @@ def test_api_config(is_authenticated):
         "sdk_url": "/sdk",
         "api_url": "/api/v1.0",
         "file_url": "/explorer/items/files",
+        "preview_url": "/media/preview/item",
         "app_name": "Drive App",
     }
 )
@@ -93,6 +94,7 @@ def test_api_config_with_external_services():
         "sdk_url": "http://localhost:8902/sdk",
         "api_url": "http://localhost:8902/api/v1.0",
         "file_url": "http://localhost:8902/explorer/items/files",
+        "preview_url": "http://localhost:8902/media/preview/item",
         "app_name": "Drive App",
     }
 

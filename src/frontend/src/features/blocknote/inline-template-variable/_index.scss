@@ -8,11 +8,24 @@
         color: var(--c--contextuals--content--semantic--brand--primary);
         font-size: var(--c--globals--font--sizes--xs);
         border: 1px solid var(--c--contextuals--border--semantic--brand--secondary);
-        user-select: none;
         font-family: monospace;
     }
 
     .node-template-variable.ProseMirror-selectednode span[data-inline-content-type="template-variable"] {
         background: #94badc;
+    }
+
+    // The signature block injects server-rendered HTML where placeholders are
+    // already resolved to their plain values, yet the exporter keeps the
+    // `data-inline-content-type` wrapper around them. These are not editable
+    // variables, so they must render as normal text instead of editable chips.
+    [data-content-type="signature"] span[data-inline-content-type="template-variable"] {
+        padding: 0;
+        border: none;
+        border-radius: 0;
+        background: none;
+        color: inherit;
+        font-size: inherit;
+        font-family: inherit;
     }
 }

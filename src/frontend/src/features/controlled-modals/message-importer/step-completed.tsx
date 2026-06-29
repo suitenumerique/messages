@@ -1,6 +1,7 @@
 import { Button } from "@gouvfr-lasuite/cunningham-react";
+import { Icon } from "@gouvfr-lasuite/ui-kit";
 import { useTranslation } from "react-i18next";
-import { ImportTaskRecap } from "@/hooks/use-import-task";
+import { ImportTaskRecap } from "@/hooks/use-task-status";
 import clsx from "clsx";
 
 type StepCompletedProps = {
@@ -26,9 +27,7 @@ export const StepCompleted = ({ onClose, recap }: StepCompletedProps) => {
                 'importer-completed__badge',
                 { 'importer-completed__badge--warning': showFailureWarning }
             )}>
-                <span className="material-icons">
-                    {showFailureWarning ? 'report_problem' : 'check'}
-                </span>
+                <Icon name={showFailureWarning ? 'report_problem' : 'check'} />
             </span>
             <div className="importer-completed__heading">
                 <p className="importer-completed__title">{t('Import complete')}</p>
@@ -56,13 +55,12 @@ export const StepCompleted = ({ onClose, recap }: StepCompletedProps) => {
                                 {t('Failed: {{count}} messages', { count: failure })}
                             </span>
                             {showFailureWarning && (
-                                <span
-                                    className="material-icons importer-completed__percent-warning"
+                                <Icon
+                                    name="report_problem"
+                                    className="importer-completed__percent-warning"
                                     aria-label={t('High failure rate')}
                                     title={t('High failure rate')}
-                                >
-                                    report_problem
-                                </span>
+                                />
                             )}
                         </li>
                     )}

@@ -825,14 +825,21 @@ class TestAdminMailDomainMailboxViewSet:
         response = api_client.post(url, data=data, format="json")
         assert response.status_code == status.HTTP_201_CREATED
 
-    def test_admin_maildomains_mailbox_create_personal_blocked_when_no_identity_sync(
+    @override_settings(IDENTITY_PROVIDER=None)
+    def test_admin_maildomains_mailbox_create_personal_allowed_when_no_identity_sync(
         self,
         api_client,
         domain_admin_user,
         domain_admin_access1,
         mail_domain1,
     ):
-        """Creating a personal mailbox should fail when identity_sync is disabled."""
+        """Creating a personal mailbox should succeed when identity_sync is disabled,
+        even when no identity provider (e.g. Keycloak) is configured at all.
+
+        This lets admins pre-create mailboxes for users who connect through a
+        third-party (non-synced) identity provider. No one-time password is
+        provisioned, but the mailbox and its identity user are created.
+        """
         mail_domain1.identity_sync = False
         mail_domain1.save()
 
@@ -847,8 +854,20 @@ class TestAdminMailDomainMailboxViewSet:
             },
         }
         response = api_client.post(url, data=data, format="json")
-        assert response.status_code == status.HTTP_400_BAD_REQUEST
-        assert "identity_sync" in response.data
+        assert response.status_code == status.HTTP_201_CREATED
+        assert response.data["is_identity"] is True
+        # No password is provisioned when identity sync is disabled.
+        assert "one_time_password" not in response.data
+
+        mailbox = models.Mailbox.objects.get(local_part="john.doe", domain=mail_domain1)
+        assert mailbox.is_identity is True
+        # No password can be provisioned without a configured identity provider.
+        assert mailbox.can_reset_password is False
+        # The identity user and its access were created.
+        user = models.User.objects.get(email=str(mailbox))
+        assert mailbox.accesses.filter(
+            user=user, role=models.MailboxRoleChoices.ADMIN
+        ).exists()
 
     def test_admin_maildomains_mailbox_create_shared_allowed_when_no_identity_sync(
         self,
@@ -918,15 +937,21 @@ class TestAdminMailDomainMailboxViewSet:
         response = api_client.post(url, data=data, format="json")
         assert response.status_code == status.HTTP_201_CREATED
 
+    @patch("core.services.identity.keycloak.reset_keycloak_user_password")
+    @patch("core.signals.sync_mailbox_to_keycloak_user")
     @override_settings(IDENTITY_PROVIDER="keycloak")
     def test_admin_maildomains_mailbox_create_personal_without_maildomain_identity_sync(
         self,
+        mock_sync_mailbox,
+        mock_reset_password,
         api_client,
         domain_admin_user,
         domain_admin_access1,
         mail_domain1,
     ):
-        """Test that personal mailbox creation is blocked when maildomain identity_sync is False."""
+        """Personal mailbox creation succeeds without a password and without
+        Keycloak sync when the maildomain has identity_sync disabled, even with
+        Keycloak configured as the identity provider."""
         api_client.force_authenticate(user=domain_admin_user)
         url = self.mailboxes_url(mail_domain1.pk)
 
@@ -940,8 +965,13 @@ class TestAdminMailDomainMailboxViewSet:
 
         response = api_client.post(url, data, format="json")
 
-        assert response.status_code == status.HTTP_400_BAD_REQUEST
-        assert "identity_sync" in response.data
+        assert response.status_code == status.HTTP_201_CREATED
+        assert response.data["local_part"] == "testuser"
+        # No password is provisioned and no Keycloak sync happens when
+        # identity_sync is disabled, regardless of the identity provider.
+        assert "one_time_password" not in response.data
+        mock_reset_password.assert_not_called()
+        mock_sync_mailbox.assert_not_called()
 
     @patch("core.services.identity.keycloak.reset_keycloak_user_password")
     @override_settings(IDENTITY_PROVIDER="other_provider")
@@ -1186,6 +1216,71 @@ class TestAdminMailDomainMailboxViewSet:
 
         mailbox2_domain1.refresh_from_db()
         assert mailbox2_domain1.contact.name == "Helpdesk"
+
+    def test_admin_maildomains_mailbox_partial_update_shared_creates_missing_contact(
+        self,
+        api_client,
+        domain_admin_user,
+        domain_admin_access1,
+        mail_domain1,
+    ):
+        """Renaming a shared mailbox that has no contact yet should create and
+        link one, instead of silently dropping the update."""
+        api_client.force_authenticate(user=domain_admin_user)
+
+        mailbox = factories.MailboxFactory(
+            domain=mail_domain1,
+            local_part="orphan-shared",
+            is_identity=False,
+            contact=None,
+        )
+        assert mailbox.contact_id is None
+
+        patch_url = self.mailbox_detail_url(mail_domain1.pk, mailbox.pk)
+        patch_response = api_client.patch(
+            patch_url, data={"metadata": {"name": "Helpdesk"}}, format="json"
+        )
+        assert patch_response.status_code == status.HTTP_200_OK
+
+        mailbox.refresh_from_db()
+        assert mailbox.contact is not None
+        assert mailbox.contact.name == "Helpdesk"
+        assert mailbox.contact.email == str(mailbox)
+
+    def test_admin_maildomains_mailbox_partial_update_personal_creates_missing_contact(
+        self,
+        api_client,
+        domain_admin_user,
+        domain_admin_access1,
+        mail_domain1,
+    ):
+        """Renaming a personal mailbox that has no contact yet should create and
+        link one, and still update the owner full name."""
+        api_client.force_authenticate(user=domain_admin_user)
+
+        mailbox = factories.MailboxFactory(
+            domain=mail_domain1,
+            local_part="orphan-personal",
+            is_identity=True,
+            contact=None,
+            users_admin=[
+                factories.UserFactory(email=f"orphan-personal@{mail_domain1.name}")
+            ],
+        )
+        assert mailbox.contact_id is None
+
+        patch_url = self.mailbox_detail_url(mail_domain1.pk, mailbox.pk)
+        patch_response = api_client.patch(
+            patch_url, data={"metadata": {"full_name": "Jane D."}}, format="json"
+        )
+        assert patch_response.status_code == status.HTTP_200_OK
+
+        mailbox.refresh_from_db()
+        assert mailbox.contact is not None
+        assert mailbox.contact.name == "Jane D."
+
+        user = models.User.objects.get(email=str(mailbox))
+        assert user.full_name == "Jane D."
 
     def test_admin_maildomains_mailbox_partial_update_forbidden_not_admin(
         self,

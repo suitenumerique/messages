@@ -35,6 +35,58 @@
                 }
             }
         },
+        "/api/v1.0/blob/{id}/preview/": {
+            "get": {
+                "operationId": "blob_preview_retrieve",
+                "description": "Serve a blob inline for the FilePreview viewer.\n\nSibling of ``download`` with the same authorization model but two\nextra guarantees:\n\n- the response Content-Type is the MIME type detected from the bytes\n  (via ``python-magic``), not the value declared at upload time;\n- the detected MIME must belong to ``PREVIEWABLE_MIME_TYPES``,\n  otherwise the endpoint refuses with 415.\n\nReturning 415 (rather than 200 with the raw payload) is the security\ncontract that lets the frontend render the response inline: any byte\nwe send back has been re-classified server-side as one of the safe\npreviewable types.",
+                "parameters": [
+                    {
+                        "in": "path",
+                        "name": "id",
+                        "schema": {
+                            "type": "string"
+                        },
+                        "required": true
+                    }
+                ],
+                "tags": [
+                    "blob"
+                ],
+                "security": [
+                    {
+                        "cookieAuth": []
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "content": {
+                            "application/octet-stream": {
+                                "schema": {
+                                    "type": "string",
+                                    "format": "binary"
+                                }
+                            }
+                        },
+                        "description": "Inline preview of the blob. The Content-Type is the MIME type detected server-side and is guaranteed to belong to ``PREVIEWABLE_MIME_TYPES``."
+                    },
+                    "400": {
+                        "description": "Invalid blob ID"
+                    },
+                    "403": {
+                        "description": "Forbidden - User does not have permission to preview this blob"
+                    },
+                    "404": {
+                        "description": "Blob not found"
+                    },
+                    "415": {
+                        "description": "Unsupported media type for inline preview. The detected MIME is not in ``PREVIEWABLE_MIME_TYPES`` or does not match the declared Content-Type. The response body includes a ``code`` field set to either ``suspicious`` (declared type was previewable but bytes disagree) or ``unsupported`` (type is plainly not previewable)."
+                    },
+                    "500": {
+                        "description": "Internal server error"
+                    }
+                }
+            }
+        },
         "/api/v1.0/blob/upload/{mailbox_id}/": {
             "post": {
                 "operationId": "blob_upload_create",
@@ -197,6 +249,10 @@
                                                     "type": "string",
                                                     "readOnly": true
                                                 },
+                                                "preview_url": {
+                                                    "type": "string",
+                                                    "readOnly": true
+                                                },
                                                 "app_name": {
                                                     "type": "string",
                                                     "readOnly": true
@@ -207,6 +263,7 @@
                                                 "sdk_url",
                                                 "api_url",
                                                 "file_url",
+                                                "preview_url",
                                                 "app_name"
                                             ]
                                         },
@@ -2527,6 +2584,319 @@
                 }
             }
         },
+        "/api/v1.0/mailboxes/{mailbox_id}/calendar/add/": {
+            "post": {
+                "operationId": "mailboxes_calendar_add_create",
+                "description": "Add an event to the mailbox's CalDAV calendar via a background task.",
+                "parameters": [
+                    {
+                        "in": "path",
+                        "name": "mailbox_id",
+                        "schema": {
+                            "type": "string",
+                            "format": "uuid"
+                        },
+                        "required": true
+                    }
+                ],
+                "tags": [
+                    "calendar"
+                ],
+                "requestBody": {
+                    "content": {
+                        "application/json": {
+                            "schema": {
+                                "$ref": "#/components/schemas/CalendarAddEventRequestRequest"
+                            }
+                        },
+                        "multipart/form-data": {
+                            "schema": {
+                                "$ref": "#/components/schemas/CalendarAddEventRequestRequest"
+                            }
+                        }
+                    },
+                    "required": true
+                },
+                "security": [
+                    {
+                        "cookieAuth": []
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "$ref": "#/components/schemas/CalendarAddEventResponse"
+                                }
+                            }
+                        },
+                        "description": ""
+                    },
+                    "400": {
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "type": "object",
+                                    "properties": {
+                                        "detail": {
+                                            "type": "string"
+                                        }
+                                    }
+                                }
+                            }
+                        },
+                        "description": "Missing ics_data."
+                    },
+                    "503": {
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "type": "object",
+                                    "properties": {
+                                        "detail": {
+                                            "type": "string"
+                                        }
+                                    }
+                                }
+                            }
+                        },
+                        "description": "Task broker unavailable; the add-event could not be enqueued."
+                    }
+                }
+            }
+        },
+        "/api/v1.0/mailboxes/{mailbox_id}/calendar/calendars/": {
+            "get": {
+                "operationId": "mailboxes_calendar_calendars_retrieve",
+                "description": "Return the list of calendars available for the mailbox.",
+                "parameters": [
+                    {
+                        "in": "path",
+                        "name": "mailbox_id",
+                        "schema": {
+                            "type": "string",
+                            "format": "uuid"
+                        },
+                        "required": true
+                    }
+                ],
+                "tags": [
+                    "calendar"
+                ],
+                "security": [
+                    {
+                        "cookieAuth": []
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "$ref": "#/components/schemas/CalendarListResponse"
+                                }
+                            }
+                        },
+                        "description": ""
+                    },
+                    "403": {
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "type": "object",
+                                    "properties": {
+                                        "detail": {
+                                            "type": "string"
+                                        }
+                                    }
+                                }
+                            }
+                        },
+                        "description": "Per-mailbox CalDAV channel denied access (upstream 403). Not returned for the deployment-default config, where a 403 is treated as an empty calendar list."
+                    },
+                    "502": {
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "type": "object",
+                                    "properties": {
+                                        "detail": {
+                                            "type": "string"
+                                        }
+                                    }
+                                }
+                            }
+                        },
+                        "description": "CalDAV server error while listing calendars."
+                    }
+                }
+            }
+        },
+        "/api/v1.0/mailboxes/{mailbox_id}/calendar/conflicts/": {
+            "post": {
+                "operationId": "mailboxes_calendar_conflicts_create",
+                "description": "Return a list of events overlapping the requested time range.",
+                "parameters": [
+                    {
+                        "in": "path",
+                        "name": "mailbox_id",
+                        "schema": {
+                            "type": "string",
+                            "format": "uuid"
+                        },
+                        "required": true
+                    }
+                ],
+                "tags": [
+                    "calendar"
+                ],
+                "requestBody": {
+                    "content": {
+                        "application/json": {
+                            "schema": {
+                                "$ref": "#/components/schemas/CalendarConflictsRequestRequest"
+                            }
+                        },
+                        "multipart/form-data": {
+                            "schema": {
+                                "$ref": "#/components/schemas/CalendarConflictsRequestRequest"
+                            }
+                        }
+                    },
+                    "required": true
+                },
+                "security": [
+                    {
+                        "cookieAuth": []
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "$ref": "#/components/schemas/CalendarConflictsResponse"
+                                }
+                            }
+                        },
+                        "description": ""
+                    },
+                    "400": {
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "type": "object",
+                                    "properties": {
+                                        "detail": {
+                                            "type": "string"
+                                        }
+                                    }
+                                }
+                            }
+                        },
+                        "description": "Missing or invalid start/end."
+                    },
+                    "502": {
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "type": "object",
+                                    "properties": {
+                                        "detail": {
+                                            "type": "string"
+                                        }
+                                    }
+                                }
+                            }
+                        },
+                        "description": "CalDAV server error while checking conflicts."
+                    }
+                }
+            }
+        },
+        "/api/v1.0/mailboxes/{mailbox_id}/calendar/rsvp/": {
+            "post": {
+                "operationId": "mailboxes_calendar_rsvp_create",
+                "description": "Submit an RSVP response via a background CalDAV task.",
+                "parameters": [
+                    {
+                        "in": "path",
+                        "name": "mailbox_id",
+                        "schema": {
+                            "type": "string",
+                            "format": "uuid"
+                        },
+                        "required": true
+                    }
+                ],
+                "tags": [
+                    "calendar"
+                ],
+                "requestBody": {
+                    "content": {
+                        "application/json": {
+                            "schema": {
+                                "$ref": "#/components/schemas/CalendarRsvpRequestRequest"
+                            }
+                        },
+                        "multipart/form-data": {
+                            "schema": {
+                                "$ref": "#/components/schemas/CalendarRsvpRequestRequest"
+                            }
+                        }
+                    },
+                    "required": true
+                },
+                "security": [
+                    {
+                        "cookieAuth": []
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "$ref": "#/components/schemas/CalendarRsvpResponse"
+                                }
+                            }
+                        },
+                        "description": ""
+                    },
+                    "400": {
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "type": "object",
+                                    "properties": {
+                                        "detail": {
+                                            "type": "string"
+                                        }
+                                    }
+                                }
+                            }
+                        },
+                        "description": "Missing or invalid ics_data / response."
+                    },
+                    "503": {
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "type": "object",
+                                    "properties": {
+                                        "detail": {
+                                            "type": "string"
+                                        }
+                                    }
+                                }
+                            }
+                        },
+                        "description": "Task broker unavailable; the RSVP could not be enqueued."
+                    }
+                }
+            }
+        },
         "/api/v1.0/mailboxes/{mailbox_id}/channels/": {
             "get": {
                 "operationId": "mailboxes_channels_list",
@@ -3250,6 +3620,78 @@
                 }
             }
         },
+        "/api/v1.0/mailboxes/{mailbox_id}/message-templates/{id}/render/": {
+            "get": {
+                "operationId": "mailboxes_message_templates_render_retrieve",
+                "description": "Render the template's html and text bodies with placeholders resolved from the mailbox and the authenticated user (name, user_name, custom attributes). When a draft message_id is provided, message-level placeholders (recipient_name) are also resolved. Unresolved placeholders keep their {placeholder} token.",
+                "summary": "Render a message template",
+                "parameters": [
+                    {
+                        "in": "path",
+                        "name": "id",
+                        "schema": {
+                            "type": "string"
+                        },
+                        "required": true
+                    },
+                    {
+                        "in": "path",
+                        "name": "mailbox_id",
+                        "schema": {
+                            "type": "string",
+                            "format": "uuid"
+                        },
+                        "required": true
+                    },
+                    {
+                        "in": "query",
+                        "name": "message_id",
+                        "schema": {
+                            "type": "string",
+                            "format": "uuid"
+                        },
+                        "description": "Optional draft id used to resolve message-level placeholders. Ignored unless it references a draft owned by this mailbox."
+                    }
+                ],
+                "tags": [
+                    "mailboxes"
+                ],
+                "security": [
+                    {
+                        "cookieAuth": []
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "type": "object",
+                                    "description": "The rendered template bodies.",
+                                    "properties": {
+                                        "html_body": {
+                                            "type": "string"
+                                        },
+                                        "text_body": {
+                                            "type": "string"
+                                        }
+                                    },
+                                    "required": [
+                                        "html_body",
+                                        "text_body"
+                                    ],
+                                    "example": {
+                                        "html_body": "<p>John Doe</p>",
+                                        "text_body": "John Doe"
+                                    }
+                                }
+                            }
+                        },
+                        "description": ""
+                    }
+                }
+            }
+        },
         "/api/v1.0/mailboxes/{mailbox_id}/message-templates/available/": {
             "get": {
                 "operationId": "mailboxes_message_templates_available_list",
@@ -3327,6 +3769,54 @@
                 "tags": [
                     "mailboxes"
                 ],
+                "security": [
+                    {
+                        "cookieAuth": []
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "$ref": "#/components/schemas/Mailbox"
+                                }
+                            }
+                        },
+                        "description": ""
+                    }
+                }
+            },
+            "patch": {
+                "operationId": "mailboxes_partial_update",
+                "description": "Rename a mailbox (its display contact name). Mailbox admins only.\n\n``partial=True`` keeps true PATCH semantics: omitting ``name`` is a no-op\nrather than a 400, so the runtime matches the optional request schema.",
+                "parameters": [
+                    {
+                        "in": "path",
+                        "name": "id",
+                        "schema": {
+                            "type": "string"
+                        },
+                        "required": true
+                    }
+                ],
+                "tags": [
+                    "mailboxes"
+                ],
+                "requestBody": {
+                    "content": {
+                        "application/json": {
+                            "schema": {
+                                "$ref": "#/components/schemas/PatchedMailboxNameUpdateRequest"
+                            }
+                        },
+                        "multipart/form-data": {
+                            "schema": {
+                                "$ref": "#/components/schemas/PatchedMailboxNameUpdateRequest"
+                            }
+                        }
+                    }
+                },
                 "security": [
                     {
                         "cookieAuth": []
@@ -4687,15 +5177,33 @@
                             "application/json": {
                                 "schema": {
                                     "type": "object",
-                                    "description": "Field slugs mapped to their verbose labels",
+                                    "description": "Field slugs mapped to their label metadata. Built-in fields have an empty object and are localized client-side. Custom attribute fields expose their schema title and optional per-language translations.",
                                     "additionalProperties": {
-                                        "type": "string",
-                                        "description": "Verbose label for the field"
+                                        "type": "object",
+                                        "properties": {
+                                            "title": {
+                                                "type": "string",
+                                                "description": "Default label (custom fields only)."
+                                            },
+                                            "i18n": {
+                                                "type": "object",
+                                                "additionalProperties": {
+                                                    "type": "string"
+                                                },
+                                                "description": "Label translations by language code, from the schema 'x-i18n' entry (custom fields only)."
+                                            }
+                                        }
                                     },
                                     "example": {
-                                        "name": "Name",
-                                        "job_title": "Job title",
-                                        "is_elected": "Is elected"
+                                        "name": {},
+                                        "recipient_name": {},
+                                        "job_title": {
+                                            "title": "Job title",
+                                            "i18n": {
+                                                "en": "Job title",
+                                                "fr": "Fonction"
+                                            }
+                                        }
                                     }
                                 }
                             }
@@ -4751,14 +5259,11 @@
                                     "$ref": "#/components/schemas/SendMessageResponse"
                                 },
                                 "examples": {
-                                    "SendDraft": {
+                                    "SendDraftResult": {
                                         "value": {
-                                            "messageId": "123e4567-e89b-12d3-a456-426614174000",
-                                            "senderId": "a1b2c3d4-e5f6-7890-1234-567890abcdef",
-                                            "textBody": "Hello, world!",
-                                            "htmlBody": "<p>Hello, world!</p>"
+                                            "task_id": "123e4567-e89b-12d3-a456-426614174000"
                                         },
-                                        "summary": "Send Draft"
+                                        "summary": "Send Draft Result"
                                     }
                                 }
                             }
@@ -4789,7 +5294,7 @@
                         },
                         "description": ""
                     },
-                    "503": {
+                    "500": {
                         "content": {
                             "application/json": {
                                 "schema": {
@@ -6039,6 +6544,80 @@
                 }
             }
         },
+        "/api/v1.0/threads/bulk-delete/": {
+            "post": {
+                "operationId": "threads_bulk_delete_create",
+                "description": "Permanently delete (hard-delete) draft messages within the given accessible and editable threads. A thread emptied by the deletion is removed; otherwise its stats are recomputed.",
+                "tags": [
+                    "threads"
+                ],
+                "requestBody": {
+                    "content": {
+                        "application/json": {
+                            "schema": {
+                                "$ref": "#/components/schemas/ThreadBulkDeleteRequestRequest"
+                            }
+                        },
+                        "multipart/form-data": {
+                            "schema": {
+                                "$ref": "#/components/schemas/ThreadBulkDeleteRequestRequest"
+                            }
+                        }
+                    },
+                    "required": true
+                },
+                "security": [
+                    {
+                        "cookieAuth": []
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "type": "object",
+                                    "properties": {
+                                        "success": {
+                                            "type": "boolean"
+                                        },
+                                        "deleted_count": {
+                                            "type": "integer"
+                                        }
+                                    },
+                                    "required": [
+                                        "success",
+                                        "deleted_count"
+                                    ]
+                                }
+                            }
+                        },
+                        "description": "Messages permanently deleted."
+                    },
+                    "400": {
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "type": "object",
+                                    "properties": {
+                                        "detail": {
+                                            "type": "string"
+                                        }
+                                    }
+                                }
+                            }
+                        },
+                        "description": "Missing or invalid parameters."
+                    },
+                    "401": {
+                        "description": "Authentication credentials were not provided or are invalid."
+                    },
+                    "403": {
+                        "description": "You do not have permission to delete drafts in one or more targeted threads."
+                    }
+                }
+            }
+        },
         "/api/v1.0/threads/stats/": {
             "get": {
                 "operationId": "threads_stats_retrieve",
@@ -6639,6 +7218,148 @@
                     "type"
                 ]
             },
+            "CalendarAddEventRequestRequest": {
+                "type": "object",
+                "properties": {
+                    "ics_data": {
+                        "type": "string",
+                        "minLength": 1,
+                        "description": "Raw ICS content of the event"
+                    },
+                    "calendar_id": {
+                        "type": "string",
+                        "nullable": true,
+                        "minLength": 1,
+                        "description": "Optional specific calendar URL"
+                    }
+                },
+                "required": [
+                    "ics_data"
+                ]
+            },
+            "CalendarAddEventResponse": {
+                "type": "object",
+                "properties": {
+                    "task_id": {
+                        "type": "string"
+                    }
+                },
+                "required": [
+                    "task_id"
+                ]
+            },
+            "CalendarConflictsRequestRequest": {
+                "type": "object",
+                "properties": {
+                    "start": {
+                        "type": "string",
+                        "format": "date-time",
+                        "description": "Start of the time range (ISO 8601)"
+                    },
+                    "end": {
+                        "type": "string",
+                        "format": "date-time",
+                        "description": "End of the time range (ISO 8601)"
+                    },
+                    "exclude_uid": {
+                        "type": "string",
+                        "nullable": true,
+                        "description": "Optional UID of an event to exclude from conflicts (avoids flagging prior imports of the same invite)."
+                    }
+                },
+                "required": [
+                    "end",
+                    "start"
+                ]
+            },
+            "CalendarConflictsResponse": {
+                "type": "object",
+                "properties": {
+                    "conflicts": {
+                        "type": "array",
+                        "items": {
+                            "type": "object",
+                            "additionalProperties": {}
+                        }
+                    },
+                    "existing_partstats": {
+                        "type": "object",
+                        "additionalProperties": {
+                            "type": "string"
+                        },
+                        "description": "PARTSTAT per attendee identity (calendar owner email, lowercased) on the prior copy of ``exclude_uid``. Lets the UI pre-select the right prior RSVP for the *selected* calendar when a mailbox can act through several attendee-owned calendars."
+                    }
+                },
+                "required": [
+                    "conflicts",
+                    "existing_partstats"
+                ]
+            },
+            "CalendarListResponse": {
+                "type": "object",
+                "properties": {
+                    "calendars": {
+                        "type": "array",
+                        "items": {
+                            "type": "object",
+                            "additionalProperties": {}
+                        }
+                    },
+                    "web_url": {
+                        "type": "string",
+                        "nullable": true,
+                        "description": "Public URL of the calendar web UI, if configured."
+                    },
+                    "configured": {
+                        "type": "boolean",
+                        "description": "True when a CalDAV service is configured for this mailbox (per-mailbox channel or deployment default). False means the integration is disabled."
+                    }
+                },
+                "required": [
+                    "calendars",
+                    "configured",
+                    "web_url"
+                ]
+            },
+            "CalendarRsvpRequestRequest": {
+                "type": "object",
+                "properties": {
+                    "ics_data": {
+                        "type": "string",
+                        "minLength": 1,
+                        "description": "Raw ICS content of the event"
+                    },
+                    "response": {
+                        "allOf": [
+                            {
+                                "$ref": "#/components/schemas/ResponseEnum"
+                            }
+                        ],
+                        "description": "RSVP response\n\n* `ACCEPTED` - ACCEPTED\n* `DECLINED` - DECLINED\n* `TENTATIVE` - TENTATIVE"
+                    },
+                    "calendar_id": {
+                        "type": "string",
+                        "nullable": true,
+                        "minLength": 1,
+                        "description": "Optional specific calendar URL"
+                    }
+                },
+                "required": [
+                    "ics_data",
+                    "response"
+                ]
+            },
+            "CalendarRsvpResponse": {
+                "type": "object",
+                "properties": {
+                    "task_id": {
+                        "type": "string"
+                    }
+                },
+                "required": [
+                    "task_id"
+                ]
+            },
             "ChangeFlagRequestRequest": {
                 "type": "object",
                 "properties": {
@@ -7207,7 +7928,27 @@
                         "description": "date and time at which a record was last updated"
                     },
                     "expected_dns_records": {
-                        "type": "string",
+                        "type": "array",
+                        "nullable": true,
+                        "items": {
+                            "type": "object",
+                            "properties": {
+                                "target": {
+                                    "type": "string"
+                                },
+                                "type": {
+                                    "type": "string"
+                                },
+                                "value": {
+                                    "type": "string"
+                                }
+                            },
+                            "required": [
+                                "target",
+                                "type",
+                                "value"
+                            ]
+                        },
                         "readOnly": true
                     },
                     "mailbox_count": {
@@ -7363,6 +8104,17 @@
                         "type": "string",
                         "readOnly": true
                     },
+                    "name": {
+                        "type": "string",
+                        "nullable": true,
+                        "description": "Return the display name of the mailbox (its contact name).",
+                        "readOnly": true
+                    },
+                    "domain_id": {
+                        "type": "string",
+                        "format": "uuid",
+                        "readOnly": true
+                    },
                     "is_identity": {
                         "type": "boolean",
                         "readOnly": true,
@@ -7379,6 +8131,7 @@
                                 "$ref": "#/components/schemas/MailboxRoleChoices"
                             }
                         ],
+                        "nullable": true,
                         "readOnly": true
                     },
                     "count_unread_threads": {
@@ -7478,10 +8231,12 @@
                     "count_threads",
                     "count_unread_mentions",
                     "count_unread_threads",
+                    "domain_id",
                     "email",
                     "id",
                     "is_identity",
                     "is_shared",
+                    "name",
                     "role"
                 ]
             },
@@ -7687,7 +8442,8 @@
                                 "$ref": "#/components/schemas/Contact"
                             }
                         ],
-                        "readOnly": true
+                        "readOnly": true,
+                        "nullable": true
                     },
                     "last_accessed_at": {
                         "type": "string",
@@ -7777,7 +8533,8 @@
                                 "$ref": "#/components/schemas/Contact"
                             }
                         ],
-                        "readOnly": true
+                        "readOnly": true,
+                        "nullable": true
                     },
                     "last_accessed_at": {
                         "type": "string",
@@ -8750,6 +9507,17 @@
                     }
                 }
             },
+            "PatchedMailboxNameUpdateRequest": {
+                "type": "object",
+                "description": "Validate and apply a mailbox display-name update (its contact name).",
+                "properties": {
+                    "name": {
+                        "type": "string",
+                        "minLength": 1,
+                        "maxLength": 255
+                    }
+                }
+            },
             "PatchedMessageTemplateRequest": {
                 "type": "object",
                 "description": "Serialize message templates for POST/PUT/PATCH operations.",
@@ -8986,6 +9754,22 @@
                     "one_time_password"
                 ]
             },
+            "ResponseEnum": {
+                "enum": [
+                    "ACCEPTED",
+                    "DECLINED",
+                    "TENTATIVE"
+                ],
+                "type": "string",
+                "description": "* `ACCEPTED` - ACCEPTED\n* `DECLINED` - DECLINED\n* `TENTATIVE` - TENTATIVE"
+            },
+            "ScopeEnum": {
+                "enum": [
+                    "draft"
+                ],
+                "type": "string",
+                "description": "* `draft` - draft"
+            },
             "ScopeLevelEnum": {
                 "enum": [
                     "global",
@@ -9027,16 +9811,13 @@
             "SendMessageResponse": {
                 "type": "object",
                 "properties": {
-                    "message": {
-                        "$ref": "#/components/schemas/Message"
-                    },
                     "task_id": {
                         "type": "string",
+                        "format": "uuid",
                         "description": "Task ID for tracking"
                     }
                 },
                 "required": [
-                    "message",
                     "task_id"
                 ]
             },
@@ -9217,6 +9998,7 @@
                                 "$ref": "#/components/schemas/ThreadAccessRoleChoices"
                             }
                         ],
+                        "nullable": true,
                         "readOnly": true
                     },
                     "accesses": {
@@ -9418,6 +10200,39 @@
                 "enum": [
                     "viewer",
                     "editor"
+                ]
+            },
+            "ThreadBulkDeleteRequestRequest": {
+                "type": "object",
+                "description": "Payload for the bulk-delete endpoint: a scope and the threads/messages\nto permanently delete.",
+                "properties": {
+                    "scope": {
+                        "allOf": [
+                            {
+                                "$ref": "#/components/schemas/ScopeEnum"
+                            }
+                        ],
+                        "description": "Which messages to permanently delete. Only 'draft' (draft messages) is supported.\n\n* `draft` - draft"
+                    },
+                    "thread_ids": {
+                        "type": "array",
+                        "items": {
+                            "type": "string",
+                            "format": "uuid"
+                        },
+                        "description": "Threads whose scope-matching messages should be deleted."
+                    },
+                    "message_ids": {
+                        "type": "array",
+                        "items": {
+                            "type": "string",
+                            "format": "uuid"
+                        },
+                        "description": "Specific messages to delete (still scope-filtered)."
+                    }
+                },
+                "required": [
+                    "scope"
                 ]
             },
             "ThreadEvent": {

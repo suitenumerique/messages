@@ -218,6 +218,7 @@ class ChannelTypes(StrEnum):
     WIDGET = "widget"
     API_KEY = "api_key"
     WEBHOOK = "webhook"
+    CALDAV = "caldav"
 
 
 class WebhookEvents(StrEnum):
@@ -360,3 +361,36 @@ BLACKLISTED_PROXY_IMAGE_MIME_TYPES = [
     "image/cgm",
     "image/x-cut",
 ]
+
+# Attachment types that can be rendered inline by the FilePreview viewer.
+# Anything outside this set is refused with 415 by the /blob/{id}/preview/
+# endpoint. SVG and HEIC are intentionally excluded — SVG can carry
+# JavaScript, HEIC is not natively rendered by browsers.
+PREVIEWABLE_MIME_TYPES = frozenset(
+    {
+        "image/png",
+        "image/jpeg",
+        "image/gif",
+        "image/webp",
+        "application/pdf",
+        "video/mp4",
+        "video/webm",
+        "audio/mpeg",
+        "audio/ogg",
+        "audio/wav",
+    }
+)
+
+
+class PreviewRefusalCode(StrEnum):
+    """Machine-readable reason returned with a 415 from /blob/{id}/preview/.
+
+    Lets the frontend react without re-deriving the allowlist client-side:
+
+    - ``SUSPICIOUS``: the declared (previewable) Content-Type doesn't match the
+      detected bytes, so the UI should warn the user.
+    - ``UNSUPPORTED``: the file type simply can't be previewed.
+    """
+
+    SUSPICIOUS = "suspicious"
+    UNSUPPORTED = "unsupported"

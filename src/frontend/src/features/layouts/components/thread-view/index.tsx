@@ -17,6 +17,7 @@ import { SKIP_LINK_TARGET_ID } from "@/features/ui/components/skip-link"
 import { useTranslation } from "react-i18next"
 import { ThreadViewLabelsList } from "./components/thread-view-labels-list"
 import { ThreadSummary } from "./components/thread-summary";
+import { ThreadViewEmpty } from "./components/thread-view-empty";
 import clsx from "clsx";
 import ThreadViewProvider, { useThreadViewContext } from "./provider";
 import useSpam from "@/features/message/use-spam";
@@ -132,7 +133,10 @@ const ThreadViewComponent = ({ threadItems, mailboxId, thread, showTrashedMessag
     const debouncedFlushMentions = useDebounceCallback(flushPendingMentions, 150);
     const isThreadTrashed = stats.trashed === stats.total;
     const isThreadArchived = stats.archived === stats.total;
-    const isThreadSender = messages?.some((m) => m.is_sender);
+    // Talk mode (left/right alternating layout) only makes sense for an actual
+    // back-and-forth: at least one received message AND at least one truly sent
+    // one. A draft doesn't count as sent, so a lone draft stays full-width.
+    const isTalkMode = messages?.some((m) => !m.is_sender) && messages?.some((m) => m.is_sender && !m.is_draft);
     const latestMessage = messages.reduce((acc, message) => {
         if (message!.created_at && acc!.created_at && message!.created_at > acc!.created_at) {
             return message;
@@ -313,7 +317,7 @@ const ThreadViewComponent = ({ threadItems, mailboxId, thread, showTrashedMessag
     }, [thread.id]);
 
     return (
-        <div id={SKIP_LINK_TARGET_ID} className={clsx("thread-view", { "thread-view--talk": isThreadSender })} ref={rootRef}>
+        <div id={SKIP_LINK_TARGET_ID} className={clsx("thread-view", { "thread-view--talk": isTalkMode })} ref={rootRef}>
             <div className="thread-view__sticky-container" ref={stickyContainerRef}>
                 <header className="thread-view__header">
                     <div className="thread-view__header__top">
@@ -431,7 +435,7 @@ const ThreadViewComponent = ({ threadItems, mailboxId, thread, showTrashedMessag
 
 export const ThreadView = () => {
     const isTrashView = ViewHelper.isTrashedView();
-    const { selectedMailbox, selectedThread, messages, threadItems, queryStates } = useMailboxContext();
+    const { selectedMailbox, selectedThread, unmountThreadViewNeeded, messages, threadItems, queryStates } = useMailboxContext();
     const [showTrashedMessages, setShowTrashedMessages] = useState(isTrashView);
     // Nest draft messages under their parent messages
     const messagesWithDraftChildren = useMemo(() => {
@@ -498,6 +502,11 @@ export const ThreadView = () => {
         setShowTrashedMessages(isTrashView);
     }, [selectedThread]);
 
+    // `unmountThreadViewNeeded` unmounts the heavy thread view (and its
+    // auto-mark-as-read observer) synchronously on unselect, before the
+    // navigation completes, while still showing the empty placeholder rather
+    // than a blank panel.
+    if (unmountThreadViewNeeded) return <ThreadViewEmpty />
     if (!selectedMailbox || !selectedThread) return null
 
     if (queryStates.messages.isLoading || queryStates.threadEvents.isLoading) {

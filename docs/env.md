@@ -93,7 +93,7 @@ The application uses a new environment file structure with `.defaults` and `.loc
 | `MTA_OUT_RELAY_PASSWORD` | `pass` | Outbound SMTP password for relay mode | Optional |
 | `MTA_OUT_DIRECT_PROXIES` | `[]` | List of SOCKS proxy URLs (randomly chosen when non-empty; used in direct mode) | Optional |
 | `MTA_OUT_DIRECT_PORT` | `25` | TCP port for direct mode on remote MX servers | Optional |
-| `MTA_OUT_SMTP_TLS_SECURITY_LEVEL` | `may` | SMTP TLS security level ("none", "may") | Optional |
+| `MTA_OUT_SMTP_TLS_SECURITY_LEVEL` | `may` | SMTP TLS security level: `none`, `may` (opportunistic, no cert check, matches Postfix), or `secure` (mandatory TLS + CA chain + hostname check). Applied to both direct and relay modes — set to `secure` when running against a controlled relay with a valid cert. | Optional |
 | `MDA_API_SECRET` | `my-shared-secret-mda` | Shared secret for MDA API | Required |
 | `MDA_API_BASE_URL` | `http://backend-dev:8000/api/v1.0/` | Base URL for MDA API | Dev |
 
@@ -208,6 +208,7 @@ blob stays in PG.
 | `OIDC_FALLBACK_TO_EMAIL_FOR_IDENTIFICATION` | `True` | Use email as fallback identifier | Optional |
 | `OIDC_ALLOW_DUPLICATE_EMAILS` | `False` | Allow duplicate emails (⚠️ Security risk) | Optional |
 | `OIDC_AUTH_REQUEST_EXTRA_PARAMS` | `{"acr_values": "eidas1"}` | Extra parameters for auth requests | Optional |
+| `OIDC_AUTH_REQUEST_FORWARDED_PARAMS` | `["login_hint"]` | Forwarded parameters for auth requests | Optional |
 
 ### User Mapping (⚠️ DEPRECATED)
 _Those settings are deprecated and will be removed in the future._
@@ -246,6 +247,20 @@ _Those settings are deprecated and will be removed in the future._
 | `SENTRY_DSN` | None | Sentry DSN for error tracking | Optional |
 | `NEXT_PUBLIC_SENTRY_DSN` | None | Sentry DSN for error tracking | Optional |
 | `NEXT_PUBLIC_SENTRY_ENVIRONMENT` | None | Sentry environment for error tracking | Optional ('production', 'development', 'staging') |
+
+### Selfcheck
+
+End-to-end mail delivery probe — see [selfcheck.md](selfcheck.md) for details.
+
+| Variable | Default | Description | Required |
+|----------|---------|-------------|----------|
+| `MESSAGES_SELFCHECK_FROM` | None | Email address the selfcheck sends from. Leave unset to disable the selfcheck. | Optional |
+| `MESSAGES_SELFCHECK_TO` | None | Email address the selfcheck sends to. Leave unset to disable the selfcheck. | Optional |
+| `MESSAGES_SELFCHECK_SECRET` | `self-check-secret-for-dev` | Secret string embedded in the test message body | Optional |
+| `MESSAGES_SELFCHECK_INTERVAL` | `600` | Interval between selfcheck runs, in seconds | Optional |
+| `MESSAGES_SELFCHECK_TIMEOUT` | `60` | Timeout for message reception, in seconds | Optional |
+| `MESSAGES_SELFCHECK_WEBHOOK_URL` | None | Webhook URL POSTed on each successful selfcheck (updown.io-compatible heartbeat) | Optional |
+| `MESSAGES_SELFCHECK_SENTRY_MONITOR_SLUG` | None | Sentry cron monitor slug. When set (with `SENTRY_DSN`), each run is reported as a Sentry check-in. | Optional |
 
 ### Logging
 

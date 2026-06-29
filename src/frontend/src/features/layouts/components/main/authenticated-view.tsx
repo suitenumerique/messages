@@ -1,5 +1,5 @@
 import { useAuth } from "@/features/auth";
-import { useRouter } from "next/router";
+import { useNavigate } from "@tanstack/react-router";
 import { useEffect } from "react";
 
 /**
@@ -7,13 +7,13 @@ import { useEffect } from "react";
  */
 const AuthenticatedView = ({ children }: { children: React.ReactNode }) => {
     const { user } = useAuth();
-    const router = useRouter();
+    const navigate = useNavigate();
 
     useEffect(() => {
         if (user === null) {
-            router.replace("/");
+            navigate({ to: "/", replace: true });
         }
-    }, [user, router]);
+    }, [user, navigate]);
 
     if (!user) return null;
 

@@ -2,6 +2,7 @@
 
 # pylint: disable=unused-argument
 
+import uuid
 from unittest.mock import MagicMock, patch
 
 from django.test import override_settings
@@ -132,7 +133,9 @@ class TestSendMessageAPIView:
             )
 
             assert response.status_code == status.HTTP_200_OK
-            assert response.data["task_id"] == "task-123"
+            assert uuid.UUID(
+                response.data["task_id"]
+            )  # view-generated id, dispatched on commit
 
             message = models.Message.objects.get(id=draft_message.id)
             content = message.blob.get_content().decode()
@@ -175,7 +178,9 @@ class TestSendMessageAPIView:
                 )
 
                 assert response.status_code == status.HTTP_200_OK
-                assert response.data["task_id"] == "task-123"
+                assert uuid.UUID(
+                    response.data["task_id"]
+                )  # view-generated id, dispatched on commit
 
     @override_settings(SCHEMA_CUSTOM_ATTRIBUTES_USER=SCHEMA_CUSTOM_ATTRIBUTES)
     def test_api_send_message_with_text_body_only(
@@ -212,7 +217,9 @@ class TestSendMessageAPIView:
             )
 
             assert response.status_code == status.HTTP_200_OK
-            assert response.data["task_id"] == "task-123"
+            assert uuid.UUID(
+                response.data["task_id"]
+            )  # view-generated id, dispatched on commit
 
             message = models.Message.objects.get(id=draft_message.id)
             content = message.blob.get_content().decode()
@@ -257,7 +264,9 @@ class TestSendMessageAPIView:
             )
 
             assert response.status_code == status.HTTP_200_OK
-            assert response.data["task_id"] == "task-123"
+            assert uuid.UUID(
+                response.data["task_id"]
+            )  # view-generated id, dispatched on commit
 
             message = models.Message.objects.get(id=draft_message.id)
             content = message.blob.get_content().decode()
@@ -312,7 +321,9 @@ class TestSendMessageAPIView:
             )
 
             assert response.status_code == status.HTTP_200_OK
-            assert response.data["task_id"] == "task-123"
+            assert uuid.UUID(
+                response.data["task_id"]
+            )  # view-generated id, dispatched on commit
 
             message = models.Message.objects.get(id=draft_message.id)
             content = message.blob.get_content().decode()
@@ -329,6 +340,7 @@ class TestSendMessageAPIView:
         mailbox,
         draft_message,
         signature_template,
+        django_capture_on_commit_callbacks,
     ):
         """Test sending a message with archive=True passes the parameter to the task."""
         # Authenticate user
@@ -337,31 +349,38 @@ class TestSendMessageAPIView:
 
         # Mock the send_message_task
         with patch("core.api.viewsets.send.send_message_task") as mock_task:
-            mock_task_instance = MagicMock()
-            mock_task_instance.id = "task-123"
-            mock_task.delay.return_value = mock_task_instance
-
-            # Send request with HTML body only
-            response = client.post(
-                reverse("send-message"),
-                format="json",
-                data={
-                    "messageId": str(draft_message.id),
-                    "senderId": str(mailbox.id),
-                    "htmlBody": "<p>Hello world!</p>",
-                    "archive": True,
-                },
-            )
+            # Send request with HTML body only. The delivery task is dispatched
+            # via transaction.on_commit, so capture and run the callbacks.
+            with django_capture_on_commit_callbacks(execute=True):
+                response = client.post(
+                    reverse("send-message"),
+                    format="json",
+                    data={
+                        "messageId": str(draft_message.id),
+                        "senderId": str(mailbox.id),
+                        "htmlBody": "<p>Hello world!</p>",
+                        "archive": True,
+                    },
+                )
 
             assert response.status_code == status.HTTP_200_OK
-            assert response.data["task_id"] == "task-123"
+            assert uuid.UUID(
+                response.data["task_id"]
+            )  # view-generated id, dispatched on commit
 
-            mock_task.delay.assert_called_once_with(
-                str(draft_message.id), must_archive=True
+            mock_task.apply_async.assert_called_once_with(
+                args=[str(draft_message.id)],
+                kwargs={"must_archive": True},
+                task_id=response.data["task_id"],
             )
 
     def test_api_send_message_with_archive_false(
-        self, user, mailbox_access, mailbox, draft_message
+        self,
+        user,
+        mailbox_access,
+        mailbox,
+        draft_message,
+        django_capture_on_commit_callbacks,
     ):
         """Test sending a message with archive=False passes the parameter to the task."""
         # Authenticate user
@@ -370,33 +389,39 @@ class TestSendMessageAPIView:
 
         # Mock the send_message_task
         with patch("core.api.viewsets.send.send_message_task") as mock_task:
-            mock_task_instance = MagicMock()
-            mock_task_instance.id = "task-123"
-            mock_task.delay.return_value = mock_task_instance
-
             # Send request with archive=False
-            response = client.post(
-                reverse("send-message"),
-                format="json",
-                data={
-                    "messageId": str(draft_message.id),
-                    "senderId": str(mailbox.id),
-                    "textBody": "Hello world!",
-                    "htmlBody": "<p>Hello world!</p>",
-                    "archive": False,
-                },
-            )
+            with django_capture_on_commit_callbacks(execute=True):
+                response = client.post(
+                    reverse("send-message"),
+                    format="json",
+                    data={
+                        "messageId": str(draft_message.id),
+                        "senderId": str(mailbox.id),
+                        "textBody": "Hello world!",
+                        "htmlBody": "<p>Hello world!</p>",
+                        "archive": False,
+                    },
+                )
 
             assert response.status_code == status.HTTP_200_OK
-            assert response.data["task_id"] == "task-123"
+            assert uuid.UUID(
+                response.data["task_id"]
+            )  # view-generated id, dispatched on commit
 
-            # Verify the task was called with must_archive=False
-            mock_task.delay.assert_called_once_with(
-                str(draft_message.id), must_archive=False
+            # Verify the task was dispatched with must_archive=False
+            mock_task.apply_async.assert_called_once_with(
+                args=[str(draft_message.id)],
+                kwargs={"must_archive": False},
+                task_id=response.data["task_id"],
             )
 
     def test_api_send_message_without_archive_parameter(
-        self, user, mailbox_access, mailbox, draft_message
+        self,
+        user,
+        mailbox_access,
+        mailbox,
+        draft_message,
+        django_capture_on_commit_callbacks,
     ):
         """Test sending a message without archive parameter defaults to False."""
         # Authenticate user
@@ -405,26 +430,123 @@ class TestSendMessageAPIView:
 
         # Mock the send_message_task
         with patch("core.api.viewsets.send.send_message_task") as mock_task:
-            mock_task_instance = MagicMock()
-            mock_task_instance.id = "task-123"
-            mock_task.delay.return_value = mock_task_instance
-
             # Send request without archive parameter
-            response = client.post(
-                reverse("send-message"),
-                format="json",
-                data={
-                    "messageId": str(draft_message.id),
-                    "senderId": str(mailbox.id),
-                    "textBody": "Hello world!",
-                    "htmlBody": "<p>Hello world!</p>",
-                },
-            )
+            with django_capture_on_commit_callbacks(execute=True):
+                response = client.post(
+                    reverse("send-message"),
+                    format="json",
+                    data={
+                        "messageId": str(draft_message.id),
+                        "senderId": str(mailbox.id),
+                        "textBody": "Hello world!",
+                        "htmlBody": "<p>Hello world!</p>",
+                    },
+                )
 
             assert response.status_code == status.HTTP_200_OK
-            assert response.data["task_id"] == "task-123"
+            assert uuid.UUID(
+                response.data["task_id"]
+            )  # view-generated id, dispatched on commit
 
-            # Verify the task was called with must_archive=False (default)
-            mock_task.delay.assert_called_once_with(
-                str(draft_message.id), must_archive=False
+            # Verify the task was dispatched with must_archive=False (default)
+            mock_task.apply_async.assert_called_once_with(
+                args=[str(draft_message.id)],
+                kwargs={"must_archive": False},
+                task_id=response.data["task_id"],
             )
+
+
+class TestSendMessageSecurity:
+    """Security regressions for SendMessageView."""
+
+    def test_cannot_send_as_mailbox_user_only_views(
+        self, user, mailbox, draft_message, django_capture_on_commit_callbacks
+    ):
+        """A VIEWER on the sender mailbox cannot send as it by leaning on a
+        SENDER role held on a *different* mailbox that shares the thread.
+
+        Setup:
+        - ``mailbox`` (the senderId, "B"): the draft lives here, user is VIEWER.
+        - ``other_mailbox`` ("A"): user is SENDER, and it also has EDITOR
+          ThreadAccess on the same thread.
+
+        The old object-level check passed as long as the user could SEND
+        through *any* EDITOR mailbox on the thread — so A's SENDER role would
+        wrongly authorise sending as B. The fix re-checks the role on the
+        specific senderId, so this must be 403.
+        """
+        # User is only a VIEWER on the sender mailbox B.
+        factories.MailboxAccessFactory(
+            mailbox=mailbox, user=user, role=enums.MailboxRoleChoices.VIEWER
+        )
+
+        # User is SENDER on a different mailbox A that also edits the thread.
+        other_mailbox = factories.MailboxFactory()
+        factories.MailboxAccessFactory(
+            mailbox=other_mailbox, user=user, role=enums.MailboxRoleChoices.SENDER
+        )
+        factories.ThreadAccessFactory(
+            mailbox=other_mailbox,
+            thread=draft_message.thread,
+            role=enums.ThreadAccessRoleChoices.EDITOR,
+        )
+
+        client = APIClient()
+        client.force_authenticate(user=user)
+
+        with patch("core.api.viewsets.send.send_message_task") as mock_task:
+            with django_capture_on_commit_callbacks(execute=True):
+                response = client.post(
+                    reverse("send-message"),
+                    format="json",
+                    data={
+                        "messageId": str(draft_message.id),
+                        "senderId": str(mailbox.id),  # send AS B
+                        "textBody": "Hello world!",
+                    },
+                )
+
+            assert response.status_code == status.HTTP_403_FORBIDDEN
+            # Nothing was dispatched.
+            mock_task.apply_async.assert_not_called()
+            mock_task.delay.assert_not_called()
+
+    def test_send_task_dispatched_only_after_commit(
+        self,
+        user,
+        mailbox_access,
+        mailbox,
+        draft_message,
+        django_capture_on_commit_callbacks,
+    ):
+        """The delivery task is registered on transaction.on_commit, not fired
+        inline — so a rolled-back send never leaks a task to the broker.
+        """
+        client = APIClient()
+        client.force_authenticate(user=user)
+
+        with patch("core.api.viewsets.send.send_message_task") as mock_task:
+            # execute=False: capture the on_commit callbacks without running them.
+            with django_capture_on_commit_callbacks(execute=False) as callbacks:
+                response = client.post(
+                    reverse("send-message"),
+                    format="json",
+                    data={
+                        "messageId": str(draft_message.id),
+                        "senderId": str(mailbox.id),
+                        "textBody": "Hello world!",
+                    },
+                )
+
+                assert response.status_code == status.HTTP_200_OK
+                # Inside the request/transaction the task must NOT be dispatched.
+                mock_task.apply_async.assert_not_called()
+
+            # The send dispatch was deferred to commit (other unrelated
+            # on_commit hooks, e.g. search reindex, may also be present).
+            send_callbacks = [
+                cb
+                for cb in callbacks
+                if "SendMessageView" in getattr(cb, "__qualname__", "")
+            ]
+            assert len(send_callbacks) == 1

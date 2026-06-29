@@ -1,6 +1,6 @@
-import * as Sentry from "@sentry/nextjs";
+import * as Sentry from "@sentry/react";
 
-const isSentryEnabled = process.env.NEXT_PUBLIC_SENTRY_DSN && process.env.NEXT_PUBLIC_SENTRY_ENVIRONMENT;
+const isSentryEnabled = import.meta.env.NEXT_PUBLIC_SENTRY_DSN && import.meta.env.NEXT_PUBLIC_SENTRY_ENVIRONMENT;
 
 type CaptureExceptionContext = Parameters<typeof Sentry.captureException>[1];
 

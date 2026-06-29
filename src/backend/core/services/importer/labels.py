@@ -1,9 +1,11 @@
 """Label and flag processing for imported messages."""
 
 import logging
-from typing import Any, Dict, List, Optional, Set, Tuple
+
+from jmap_email import JmapEmail
 
 from core import models
+from core.mda.utils import gmail_labels
 
 logger = logging.getLogger(__name__)
 
@@ -61,17 +63,16 @@ IMAP_LABELS_TO_IGNORE = [
 
 
 def compute_labels_and_flags(
-    parsed_email: Dict[str, Any],
-    imap_labels: Optional[List[str]],
-    imap_flags: Optional[List[str]],
-) -> Tuple[Set[str], Dict[str, bool]]:
+    parsed_email: JmapEmail,
+    imap_labels: list[str] | None,
+    imap_flags: list[str] | None,
+) -> tuple[set[str], dict[str, bool]]:
     """Compute labels and flags for a parsed email."""
 
     # Combine both imap_labels and gmail_labels from parsed email
-    gmail_labels = parsed_email.get("gmail_labels", [])
     imap_labels = imap_labels or []
     imap_flags = imap_flags or []
-    all_labels = list(imap_labels) + list(gmail_labels)
+    all_labels = list(imap_labels) + gmail_labels(parsed_email)
 
     message_flags = {}
     labels_to_add = set()
@@ -117,9 +118,9 @@ def compute_labels_and_flags(
 
 def handle_duplicate_message(
     existing_message: models.Message,
-    parsed_email: Dict[str, Any],
-    imap_labels: List[str],
-    imap_flags: List[str],
+    parsed_email: JmapEmail,
+    imap_labels: list[str],
+    imap_flags: list[str],
     mailbox: models.Mailbox,
 ) -> None:
     """Handle duplicate message by updating labels and flags."""

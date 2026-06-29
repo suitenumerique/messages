@@ -22,10 +22,16 @@ export function link(href: string, text: string): AnyInlineContent {
   } as unknown as AnyInlineContent;
 }
 
-export function templateVariable(value: string, label?: string): AnyInlineContent {
+export function templateVariable(
+  value: string,
+  label?: string,
+  styles: Record<string, unknown> = {},
+): AnyInlineContent {
+  const display = label ?? value;
   return {
     type: 'template-variable',
-    props: { value, label: label ?? value },
+    props: { value, label: display },
+    content: [styledText(display, styles)],
   } as unknown as AnyInlineContent;
 }
 

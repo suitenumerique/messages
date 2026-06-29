@@ -34,5 +34,4 @@ db.sqlite3
 
 # Frontend
 node_modules
-out
-.next
+dist

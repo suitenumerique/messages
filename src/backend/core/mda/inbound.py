@@ -3,11 +3,12 @@
 # pylint: disable=broad-exception-caught
 
 import logging
-from typing import Any, Dict, List, Optional
 
 from django.conf import settings
 from django.core.exceptions import ValidationError
 from django.db.utils import Error as DjangoDbError
+
+from jmap_email import JmapEmail, first_msgid
 
 from core import models
 from core.mda.inbound_tasks import process_inbound_message_task
@@ -131,13 +132,13 @@ def count_external_recipients(message) -> int:
 
 def deliver_inbound_message(
     recipient_email: str,
-    parsed_email: Dict[str, Any],
+    parsed_email: JmapEmail,
     raw_data: bytes,
     is_import: bool = False,
     is_import_sender: bool = False,
-    imap_labels: Optional[List[str]] = None,
-    imap_flags: Optional[List[str]] = None,
-    channel: Optional[models.Channel] = None,
+    imap_labels: list[str] | None = None,
+    imap_flags: list[str] | None = None,
+    channel: models.Channel | None = None,
     skip_inbound_queue: bool = False,
 ) -> bool:  # Return True on success, False on failure
     """Deliver a parsed inbound email message.
@@ -160,12 +161,8 @@ def deliver_inbound_message(
         return False
 
     # --- 2. Check for Duplicate Message --- #
-    mime_id = parsed_email.get("messageId", parsed_email.get("message_id"))
+    mime_id = first_msgid(parsed_email.get("messageId"))
     if mime_id:
-        # Remove angle brackets if present
-        if mime_id.startswith("<") and mime_id.endswith(">"):
-            mime_id = mime_id[1:-1]
-
         # Check if a message with this MIME ID already exists in this mailbox
         existing_message = models.Message.objects.filter(
             mime_id=mime_id, thread__accesses__mailbox=mailbox

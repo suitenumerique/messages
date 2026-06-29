@@ -1,4 +1,4 @@
-import { useSearchParams } from "next/navigation";
+import { useUrlSearchParams } from "@/hooks/use-url-search-params";
 import { findRootFolder } from "../../mailbox-panel/components/mailbox-list";
 import { useLabelsList } from "@/features/api/gen";
 import type { TreeLabel } from "@/features/api/gen/models";
@@ -12,6 +12,7 @@ import ViewHelper from "@/features/utils/view-helper";
 import useArchive from "@/features/message/use-archive";
 import useSpam from "@/features/message/use-spam";
 import useTrash from "@/features/message/use-trash";
+import useDeleteDrafts from "@/features/message/use-delete-drafts";
 import useStarred from "@/features/message/use-starred";
 import useCanEditThreads from "@/features/message/use-can-edit-threads";
 import { ThreadPanelFilter } from "./thread-panel-filter";
@@ -38,10 +39,11 @@ const ThreadPanelTitle = ({ selectedThreadIds, isAllSelected, isSomeSelected, is
     const { markAsReadAt } = useRead();
     const { markAsArchived, markAsUnarchived } = useArchive();
     const { markAsTrashed, markAsUntrashed } = useTrash();
+    const { deleteDrafts } = useDeleteDrafts();
     const { markAsSpam, markAsNotSpam } = useSpam();
     const { markAsStarred, markAsUnstarred } = useStarred();
     const [isDropdownOpen, setIsDropdownOpen] = useState(false);
-    const searchParams = useSearchParams();
+    const searchParams = useUrlSearchParams();
     const isSearch = searchParams.has('search');
     const { threads, selectedMailbox, unselectThread } = useMailboxContext();
     const labelsQuery = useLabelsList({ mailbox_id: selectedMailbox?.id }, { query: { enabled: !!selectedMailbox && !!searchParams.get('label_slug') } })
@@ -116,9 +118,10 @@ const ThreadPanelTitle = ({ selectedThreadIds, isAllSelected, isSomeSelected, is
     const canArchive = canEditSelection && !isSpamView && !isTrashedView && !isDraftsView;
     const canReportSpam = canEditSelection && !isTrashedView && !isSentView && !isDraftsView;
     const canTrash = canEditSelection && !isDraftsView;
+    const canDeleteDrafts = canEditSelection && isDraftsView;
     const canManageLabels = useAbility(Abilities.CAN_MANAGE_MAILBOX_LABELS, selectedMailbox);
     const canAssignLabel = canManageLabels && !isSpamView && !isTrashedView && !isDraftsView;
-    const hasSelectionActions = canArchive || canReportSpam || canTrash || canAssignLabel;
+    const hasSelectionActions = canArchive || canReportSpam || canTrash || canDeleteDrafts || canAssignLabel;
 
     const countLabel = useMemo(() => {
         if (isSearch) {
@@ -280,6 +283,26 @@ const ThreadPanelTitle = ({ selectedThreadIds, isAllSelected, isSomeSelected, is
                                     />
                                 </Tooltip>
                             )}
+                            {canDeleteDrafts && (
+                                <Tooltip content={t('Delete drafts')} className={selectedThreadIds.size === 0 ? 'hidden' : ''}>
+                                    <Button
+                                        onClick={() => {
+                                            deleteDrafts({
+                                                threadIds: threadIdsToMark,
+                                                onSuccess: () => {
+                                                    unselectThread();
+                                                    onClearSelection();
+                                                }
+                                            });
+                                        }}
+                                        disabled={selectedThreadIds.size === 0}
+                                        icon={<Icon name="edit_off" type={IconType.OUTLINED} />}
+                                        variant="tertiary"
+                                        size="nano"
+                                        aria-label={t('Delete draft')}
+                                    />
+                                </Tooltip>
+                            )}
                             {canAssignLabel && (
                                 <LabelsWidget
                                     threadIds={Array.from(selectedThreadIds)}
@@ -306,7 +329,7 @@ const ThreadPanelTitle = ({ selectedThreadIds, isAllSelected, isSomeSelected, is
                             },
                             ...([SelectionReadStatus.MIXED, SelectionReadStatus.UNREAD].includes(selectionReadStatus) ? [{
                                 label: markAllTooltip,
-                                icon: <span className="material-icons">drafts</span>,
+                                icon: <Icon name="drafts" />,
                                 callback: () => {
                                     markAsReadAt({
                                         threadIds: threadIdsToMark,
@@ -320,7 +343,7 @@ const ThreadPanelTitle = ({ selectedThreadIds, isAllSelected, isSomeSelected, is
                             }] : []),
                             ...([SelectionReadStatus.MIXED, SelectionReadStatus.READ, SelectionReadStatus.NONE].includes(selectionReadStatus) ? [{
                                 label: markAllUnreadLabel,
-                                icon: <span className="material-icons">mark_email_unread</span>,
+                                icon: <Icon name="mark_email_unread" />,
                                 callback: () => {
                                     // Close the open thread before the mutation so the visibility
                                     // observer cannot re-mark the newly-unread messages as read.
@@ -363,7 +386,7 @@ const ThreadPanelTitle = ({ selectedThreadIds, isAllSelected, isSomeSelected, is
                         <Tooltip content={t('More options')}>
                             <Button
                                 onClick={() => setIsDropdownOpen(true)}
-                                icon={<span className="material-icons">more_vert</span>}
+                                icon={<Icon name="more_vert" />}
                                 variant="tertiary"
                                 aria-label={t('More options')}
                                 size="nano"

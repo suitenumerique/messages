@@ -22,7 +22,7 @@ test.describe("Delivery failures", () => {
 
     // The thread with delivery issues should be visible in the list
     const threadItem = page
-      .getByRole("link", { name: "Test message with delivery failure" })
+      .getByRole("option", { name: "Test message with delivery failure" })
       .first();
     await expect(threadItem).toBeVisible();
   });
@@ -39,7 +39,7 @@ test.describe("Delivery failures", () => {
 
     // Click on the thread to open it
     const threadItem = page
-      .getByRole("link", { name: "Test message with delivery failure" })
+      .getByRole("option", { name: "Test message with delivery failure" })
       .first();
     await threadItem.click();
 
@@ -79,7 +79,7 @@ test.describe("Delivery failures", () => {
     await page.waitForLoadState("networkidle");
 
     await page
-      .getByRole("link", { name: "Test message with delivery failure" })
+      .getByRole("option", { name: "Test message with delivery failure" })
       .first()
       .click();
 
@@ -110,7 +110,7 @@ test.describe("Delivery failures", () => {
     await page.waitForLoadState("networkidle");
 
     await page
-      .getByRole("link", { name: "Test message with delivery failure" })
+      .getByRole("option", { name: "Test message with delivery failure" })
       .first()
       .click();
 
@@ -144,7 +144,7 @@ test.describe("Delivery failures", () => {
     await page.waitForLoadState("networkidle");
 
     await page
-      .getByRole("link", { name: "Test message with delivery failure" })
+      .getByRole("option", { name: "Test message with delivery failure" })
       .first()
       .click();
 
@@ -180,7 +180,7 @@ test.describe("Delivery failures", () => {
     await page.waitForLoadState("networkidle");
 
     await page
-      .getByRole("link", { name: "Test message with delivery failure" })
+      .getByRole("option", { name: "Test message with delivery failure" })
       .first()
       .click();
 
@@ -225,7 +225,7 @@ test.describe("Delivery pending (retry only)", () => {
     await page.waitForLoadState("networkidle");
 
     await page
-      .getByRole("link", { name: "Test message with pending delivery" })
+      .getByRole("option", { name: "Test message with pending delivery" })
       .first()
       .click();
 
@@ -258,7 +258,7 @@ test.describe("Delivery pending (retry only)", () => {
     await page.waitForLoadState("networkidle");
 
     await page
-      .getByRole("link", { name: "Test message with pending delivery" })
+      .getByRole("option", { name: "Test message with pending delivery" })
       .first()
       .click();
 

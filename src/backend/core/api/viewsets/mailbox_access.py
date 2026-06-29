@@ -52,9 +52,9 @@ class MailboxAccessViewSet(
         Return MailboxAccess instances for the specific Mailbox from the URL.
         Permissions should have already verified the user can access this mailbox.
         """
-        mailbox = self.get_mailbox_object()  # Ensures mailbox exists and handles 404
+        mailbox = self.get_mailbox_object()
         return mailbox.accesses.select_related("user", "mailbox__domain").order_by(
-            "-created_at"
+            "created_at"
         )
 
     def get_serializer_context(self):

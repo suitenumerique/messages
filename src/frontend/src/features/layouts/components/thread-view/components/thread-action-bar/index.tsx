@@ -12,7 +12,9 @@ import { LabelsWidget } from "@/features/layouts/components/labels-widget";
 import useArchive from "@/features/message/use-archive";
 import useSpam from "@/features/message/use-spam";
 import useStarred from "@/features/message/use-starred";
+import useDeleteDrafts from "@/features/message/use-delete-drafts";
 import useDeleteThreadAccess from "@/features/message/use-delete-thread-access";
+import ViewHelper from "@/features/utils/view-helper";
 import { MailboxRoleChoices, ThreadAccessRoleChoices } from "@/features/api/gen";
 import { addToast, ToasterItem } from "@/features/ui/components/toaster";
 import useCopyDeepLink from "@/features/message/use-copy-deep-link";
@@ -24,13 +26,15 @@ type ThreadActionBarProps = {
 
 export const ThreadActionBar = ({ canUndelete, canUnarchive }: ThreadActionBarProps) => {
     const { t } = useTranslation();
-    const { selectedMailbox, selectedThread, unselectThread } = useMailboxContext();
+    const { selectedMailbox, selectedThread, unselectThread, messages } = useMailboxContext();
     const { markAsReadAt } = useRead();
     const { markAsTrashed, markAsUntrashed } = useTrash();
     const { markAsArchived, markAsUnarchived } = useArchive();
     const { markAsSpam, markAsNotSpam } = useSpam();
     const { markAsStarred, markAsUnstarred } = useStarred();
+    const { deleteDrafts } = useDeleteDrafts();
     const { deleteThreadAccess } = useDeleteThreadAccess();
+    const isDraftsView = ViewHelper.isDraftsView();
     const modals = useModals();
     const accessesWidgetRef = useRef<ThreadAccessesWidgetHandle>(null);
     // Full edit rights on the thread — gates archive, spam, delete.
@@ -40,6 +44,12 @@ export const ThreadActionBar = ({ canUndelete, canUnarchive }: ThreadActionBarPr
     // therefore stays visible for viewer-only threads.
     const canEditThread = useAbility(Abilities.CAN_EDIT_THREAD, selectedThread ?? null);
     const canShowArchiveCTA = canEditThread && !selectedThread?.is_spam
+    // A thread holding nothing but the draft being composed: archiving, spam
+    // reporting or trashing it is meaningless — only permanent deletion is. When
+    // the draft replies inside a real thread, those actions still make sense but
+    // are demoted to the "More options" menu (see the dropdown below).
+    const isDraftOnlyThread = isDraftsView && !!messages && messages.length > 0 && messages.every((m) => m.is_draft);
+    const showDraftThreadManagement = isDraftsView && !isDraftOnlyThread && canEditThread;
     const [isDropdownOpen, setIsDropdownOpen] = useState(false);
     const isStarred = selectedThread?.has_starred;
     const hasUnread = selectedThread?.has_unread;
@@ -84,7 +94,18 @@ export const ThreadActionBar = ({ canUndelete, canUnarchive }: ThreadActionBarPr
                     />
                 </Tooltip>
                 <VerticalSeparator />
-                {canShowArchiveCTA && (
+                {canEditThread && isDraftsView && (
+                    <Tooltip content={t('Delete draft')}>
+                        <Button
+                            variant="tertiary"
+                            aria-label={t('Delete draft')}
+                            size="nano"
+                            icon={<Icon name="edit_off" type={IconType.OUTLINED} />}
+                            onClick={() => deleteDrafts({ threadIds: [selectedThread!.id], onSuccess: unselectThread })}
+                        />
+                    </Tooltip>
+                )}
+                {canShowArchiveCTA && !isDraftsView && (
                     canUnarchive ? (
                         (
                             <Tooltip content={t('Unarchive')}>
@@ -109,7 +130,7 @@ export const ThreadActionBar = ({ canUndelete, canUnarchive }: ThreadActionBarPr
                         </Tooltip>
                     )
                 )}
-                {canEditThread && (
+                {canEditThread && !isDraftsView && (
                     !selectedThread?.is_spam ? (
                         <Tooltip content={t('Report as spam')}>
                             <Button
@@ -132,19 +153,17 @@ export const ThreadActionBar = ({ canUndelete, canUnarchive }: ThreadActionBarPr
                         </Tooltip>
                     )
                 )}
-                {canEditThread && (
+                {canEditThread && !isDraftsView && (
                     canUndelete ? (
-                        (
-                            <Tooltip content={t('Undelete')}>
-                                <Button
-                                    variant="tertiary"
-                                    aria-label={t('Undelete')}
-                                    size="nano"
-                                    icon={<Icon name="restore_from_trash" type={IconType.OUTLINED} />}
-                                    onClick={() => markAsUntrashed({ threadIds: [selectedThread!.id], onSuccess: unselectThread })}
-                                />
-                            </Tooltip>
-                        )
+                        <Tooltip content={t('Undelete')}>
+                            <Button
+                                variant="tertiary"
+                                aria-label={t('Undelete')}
+                                size="nano"
+                                icon={<Icon name="restore_from_trash" type={IconType.OUTLINED} />}
+                                onClick={() => markAsUntrashed({ threadIds: [selectedThread!.id], onSuccess: unselectThread })}
+                            />
+                        </Tooltip>
                     ) : (
                         <Tooltip content={t('Delete')}>
                             <Button
@@ -209,6 +228,24 @@ export const ThreadActionBar = ({ canUndelete, canUnarchive }: ThreadActionBarPr
                     isOpen={isDropdownOpen}
                     onOpenChange={setIsDropdownOpen}
                     options={[
+                        ...(showDraftThreadManagement ? [
+                            {
+                                label: t('Archive'),
+                                icon: <Icon name="archive" type={IconType.OUTLINED} />,
+                                callback: () => markAsArchived({ threadIds: [selectedThread!.id], onSuccess: unselectThread }),
+                            },
+                            {
+                                label: t('Report as spam'),
+                                icon: <Icon name="report" type={IconType.OUTLINED} />,
+                                callback: () => markAsSpam({ threadIds: [selectedThread!.id], onSuccess: unselectThread }),
+                            },
+                            {
+                                label: t('Move to trash'),
+                                icon: <Icon name="delete" type={IconType.OUTLINED} />,
+                                callback: () => markAsTrashed({ threadIds: [selectedThread!.id], onSuccess: unselectThread }),
+                                showSeparator: true,
+                            },
+                        ] : []),
                         {
                             label: t('Copy link to thread'),
                             icon: <Icon name="link" type={IconType.OUTLINED} />,

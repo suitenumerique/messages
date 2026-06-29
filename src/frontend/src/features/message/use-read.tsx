@@ -41,9 +41,8 @@ const deriveThreadHasUnread = (messagedAt: string | null | undefined, readAt: st
  * callback — NOT on a per-call `onSuccess` — so they still fire when the
  * caller component (e.g. `ThreadActionBar`) unmounts before the mutation
  * settles. React Query drops per-call callbacks of unmounted hooks but keeps
- * mutation-level ones; routing both through `useFlag` options makes the
- * "mark as unread" flow survive the synchronous `unselectThread()` that
- * precedes it.
+ * mutation-level ones — this is what makes the "mark as unread" flow survive
+ * the synchronous `unselectThread()` that precedes it.
  */
 const useRead = () => {
     const { selectedMailbox, pinThreads, patchMessages, invalidateThreadsStats } = useMailboxContext();

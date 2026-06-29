@@ -11,10 +11,11 @@ i18n
   .init({
     lng: getLanguage(),
     supportedLngs: LANGUAGES_ALLOWED,
-    // We register two namespaces
+    // Register namespaces
     // - common: for the common strings
     // - roles: for the roles strings as they cannot be extracted by i18next-cli as key are dynamic
-    ns: ["common", "roles"],
+    // - placeholders: for the built-in template/signature placeholders (dynamic keys, same as roles)
+    ns: ["common", "roles", "placeholders"],
     defaultNS: "common",
     // Use flat keys and avoid interpreting ':' or '.' in natural language keys
     keySeparator: false,

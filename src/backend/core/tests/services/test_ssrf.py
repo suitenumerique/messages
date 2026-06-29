@@ -15,10 +15,45 @@ from core.services.ssrf import (
     MAX_REDIRECTS,
     SSRFSafeSession,
     SSRFValidationError,
+    assert_public_ip,
 )
 
 PUBLIC_IP = "93.184.216.34"
 PRIVATE_IP = "192.168.1.1"
+
+
+class TestAssertPublicIP:
+    """``assert_public_ip`` — the IP guard reused by the outbound SMTP path."""
+
+    def test_public_ip_passes(self):
+        """A routable public address passes (returns None, does not raise)."""
+        assert assert_public_ip(PUBLIC_IP) is None
+
+    @pytest.mark.parametrize(
+        "ip, match",
+        [
+            ("10.0.0.5", "private"),
+            ("192.168.1.1", "private"),
+            ("172.16.0.1", "private"),
+            ("127.0.0.1", "loopback"),
+            ("::1", "loopback"),
+            ("169.254.169.254", "cloud metadata"),
+            ("169.254.0.1", "link-local"),
+            ("224.0.0.1", "multicast"),
+            # Shared address space / CGNAT (RFC 6598): not is_private nor
+            # is_reserved in Python's ipaddress, caught by the is_global guard.
+            ("100.64.0.1", "non-global"),
+        ],
+    )
+    def test_non_public_ip_raises(self, ip, match):
+        """Private, reserved, loopback, metadata and CGNAT addresses are rejected."""
+        with pytest.raises(SSRFValidationError, match=match):
+            assert_public_ip(ip, "mx.evil.test")
+
+    def test_invalid_ip_raises(self):
+        """A non-parseable IP string raises an Invalid IP error."""
+        with pytest.raises(SSRFValidationError, match="Invalid IP"):
+            assert_public_ip("not-an-ip")
 
 
 def _addrinfo(ip: str):

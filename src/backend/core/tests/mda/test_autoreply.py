@@ -86,78 +86,102 @@ class TestIsAutoReplyMessage:
 
     def test_normal_message_passes(self):
         """Normal message is not detected as auto-reply."""
-        headers = {"From": "user@example.com", "Subject": "Hello"}
-        assert _is_auto_reply_message(headers) is False
+        parsed_email = {
+            "headers": [
+                {"name": "From", "value": "user@example.com"},
+                {"name": "Subject", "value": "Hello"},
+            ]
+        }
+        assert _is_auto_reply_message(parsed_email) is False
 
     def test_empty_headers(self):
-        """Empty or None headers are not detected as auto-reply."""
+        """Empty or missing headers are not detected as auto-reply."""
         assert _is_auto_reply_message({}) is False
-        assert _is_auto_reply_message(None) is False
+        assert _is_auto_reply_message({"headers": []}) is False
 
     def test_auto_submitted_auto_replied(self):
         """Auto-Submitted: auto-replied is detected."""
-        headers = {"Auto-Submitted": "auto-replied"}
-        assert _is_auto_reply_message(headers) is True
+        parsed_email = {
+            "headers": [{"name": "Auto-Submitted", "value": "auto-replied"}]
+        }
+        assert _is_auto_reply_message(parsed_email) is True
 
     def test_auto_submitted_auto_generated(self):
         """Auto-Submitted: auto-generated is detected."""
-        headers = {"Auto-Submitted": "auto-generated"}
-        assert _is_auto_reply_message(headers) is True
+        parsed_email = {
+            "headers": [{"name": "Auto-Submitted", "value": "auto-generated"}]
+        }
+        assert _is_auto_reply_message(parsed_email) is True
 
     def test_auto_submitted_no_passes(self):
         """Auto-Submitted: no is not detected as auto-reply."""
-        headers = {"Auto-Submitted": "no"}
-        assert _is_auto_reply_message(headers) is False
+        parsed_email = {"headers": [{"name": "Auto-Submitted", "value": "no"}]}
+        assert _is_auto_reply_message(parsed_email) is False
 
     def test_precedence_bulk(self):
         """Precedence: bulk is detected."""
-        headers = {"Precedence": "bulk"}
-        assert _is_auto_reply_message(headers) is True
+        parsed_email = {"headers": [{"name": "Precedence", "value": "bulk"}]}
+        assert _is_auto_reply_message(parsed_email) is True
 
     def test_precedence_list(self):
         """Precedence: list is detected."""
-        headers = {"Precedence": "list"}
-        assert _is_auto_reply_message(headers) is True
+        parsed_email = {"headers": [{"name": "Precedence", "value": "list"}]}
+        assert _is_auto_reply_message(parsed_email) is True
 
     def test_precedence_junk(self):
         """Precedence: junk is detected."""
-        headers = {"Precedence": "junk"}
-        assert _is_auto_reply_message(headers) is True
+        parsed_email = {"headers": [{"name": "Precedence", "value": "junk"}]}
+        assert _is_auto_reply_message(parsed_email) is True
 
     def test_list_id_header(self):
         """List-Id header is detected."""
-        headers = {"List-Id": "<list.example.com>"}
-        assert _is_auto_reply_message(headers) is True
+        parsed_email = {"headers": [{"name": "List-Id", "value": "<list.example.com>"}]}
+        assert _is_auto_reply_message(parsed_email) is True
 
     def test_list_unsubscribe_header(self):
         """List-Unsubscribe header is detected."""
-        headers = {"List-Unsubscribe": "<mailto:unsub@example.com>"}
-        assert _is_auto_reply_message(headers) is True
+        parsed_email = {
+            "headers": [
+                {"name": "List-Unsubscribe", "value": "<mailto:unsub@example.com>"}
+            ]
+        }
+        assert _is_auto_reply_message(parsed_email) is True
 
     def test_x_auto_response_suppress(self):
         """X-Auto-Response-Suppress header is detected."""
-        headers = {"X-Auto-Response-Suppress": "All"}
-        assert _is_auto_reply_message(headers) is True
+        parsed_email = {
+            "headers": [{"name": "X-Auto-Response-Suppress", "value": "All"}]
+        }
+        assert _is_auto_reply_message(parsed_email) is True
 
     def test_x_autoreply(self):
         """X-Autoreply header is detected."""
-        headers = {"X-Autoreply": "yes"}
-        assert _is_auto_reply_message(headers) is True
+        parsed_email = {"headers": [{"name": "X-Autoreply", "value": "yes"}]}
+        assert _is_auto_reply_message(parsed_email) is True
 
     def test_x_autorespond(self):
         """X-Autorespond header is detected."""
-        headers = {"X-Autorespond": "yes"}
-        assert _is_auto_reply_message(headers) is True
+        parsed_email = {"headers": [{"name": "X-Autorespond", "value": "yes"}]}
+        assert _is_auto_reply_message(parsed_email) is True
 
     def test_auto_submitted_with_parameters(self):
         """Auto-Submitted with RFC 3834 parameters after semicolon is detected."""
-        headers = {"Auto-Submitted": 'auto-replied; owner-email="user@example.com"'}
-        assert _is_auto_reply_message(headers) is True
+        parsed_email = {
+            "headers": [
+                {
+                    "name": "Auto-Submitted",
+                    "value": 'auto-replied; owner-email="user@example.com"',
+                }
+            ]
+        }
+        assert _is_auto_reply_message(parsed_email) is True
 
     def test_auto_submitted_no_with_parameters(self):
         """Auto-Submitted: no with parameters is not detected."""
-        headers = {"Auto-Submitted": "no; some-param=value"}
-        assert _is_auto_reply_message(headers) is False
+        parsed_email = {
+            "headers": [{"name": "Auto-Submitted", "value": "no; some-param=value"}]
+        }
+        assert _is_auto_reply_message(parsed_email) is False
 
 
 class TestIsAutoReplyMessageExtended:
@@ -165,48 +189,62 @@ class TestIsAutoReplyMessageExtended:
 
     def test_return_path_null(self):
         """Return-Path: <> (null sender) is detected."""
-        headers = {"Return-Path": "<>"}
-        assert _is_auto_reply_message(headers) is True
+        parsed_email = {"headers": [{"name": "Return-Path", "value": "<>"}]}
+        assert _is_auto_reply_message(parsed_email) is True
 
     def test_return_path_empty(self):
         """Return-Path with empty value is detected."""
-        headers = {"Return-Path": ""}
-        assert _is_auto_reply_message(headers) is True
+        parsed_email = {"headers": [{"name": "Return-Path", "value": ""}]}
+        assert _is_auto_reply_message(parsed_email) is True
 
     def test_list_post_header(self):
         """List-Post header is detected."""
-        headers = {"List-Post": "<mailto:list@example.com>"}
-        assert _is_auto_reply_message(headers) is True
+        parsed_email = {
+            "headers": [{"name": "List-Post", "value": "<mailto:list@example.com>"}]
+        }
+        assert _is_auto_reply_message(parsed_email) is True
 
     def test_list_help_header(self):
         """List-Help header is detected."""
-        headers = {"List-Help": "<mailto:help@example.com>"}
-        assert _is_auto_reply_message(headers) is True
+        parsed_email = {
+            "headers": [{"name": "List-Help", "value": "<mailto:help@example.com>"}]
+        }
+        assert _is_auto_reply_message(parsed_email) is True
 
     def test_list_subscribe_header(self):
         """List-Subscribe header is detected."""
-        headers = {"List-Subscribe": "<mailto:sub@example.com>"}
-        assert _is_auto_reply_message(headers) is True
+        parsed_email = {
+            "headers": [{"name": "List-Subscribe", "value": "<mailto:sub@example.com>"}]
+        }
+        assert _is_auto_reply_message(parsed_email) is True
 
     def test_list_owner_header(self):
         """List-Owner header is detected."""
-        headers = {"List-Owner": "<mailto:owner@example.com>"}
-        assert _is_auto_reply_message(headers) is True
+        parsed_email = {
+            "headers": [{"name": "List-Owner", "value": "<mailto:owner@example.com>"}]
+        }
+        assert _is_auto_reply_message(parsed_email) is True
 
     def test_list_archive_header(self):
         """List-Archive header is detected."""
-        headers = {"List-Archive": "<https://archive.example.com>"}
-        assert _is_auto_reply_message(headers) is True
+        parsed_email = {
+            "headers": [
+                {"name": "List-Archive", "value": "<https://archive.example.com>"}
+            ]
+        }
+        assert _is_auto_reply_message(parsed_email) is True
 
     def test_x_loop_header(self):
         """X-Loop header is detected."""
-        headers = {"X-Loop": "yes"}
-        assert _is_auto_reply_message(headers) is True
+        parsed_email = {"headers": [{"name": "X-Loop", "value": "yes"}]}
+        assert _is_auto_reply_message(parsed_email) is True
 
     def test_feedback_id_header(self):
         """Feedback-ID header is detected (Gmail newsletters)."""
-        headers = {"Feedback-ID": "123:campaign:gmail"}
-        assert _is_auto_reply_message(headers) is True
+        parsed_email = {
+            "headers": [{"name": "Feedback-ID", "value": "123:campaign:gmail"}]
+        }
+        assert _is_auto_reply_message(parsed_email) is True
 
 
 # ---------------------------------------------------------------------------
@@ -404,10 +442,10 @@ class TestShouldSendAutoreply:
     def test_eligible_message(self, mailbox, autoreply_template):
         """Eligible message triggers autoreply."""
         parsed = {
-            "from": {"email": "sender@example.com"},
+            "from": [{"email": "sender@example.com"}],
             "to": [{"email": str(mailbox)}],
             "subject": "Hello",
-            "headers": {},
+            "headers": [],
         }
         result = should_send_autoreply(mailbox, parsed)
         assert result is not None
@@ -416,33 +454,33 @@ class TestShouldSendAutoreply:
     def test_skip_spam(self, mailbox, autoreply_template):
         """Spam messages do not trigger autoreply."""
         parsed = {
-            "from": {"email": "sender@example.com"},
-            "headers": {},
+            "from": [{"email": "sender@example.com"}],
+            "headers": [],
         }
         assert should_send_autoreply(mailbox, parsed, is_spam=True) is None
 
     def test_skip_auto_reply_message(self, mailbox, autoreply_template):
         """Auto-reply messages do not trigger autoreply."""
         parsed = {
-            "from": {"email": "sender@example.com"},
-            "headers": {"Auto-Submitted": "auto-replied"},
+            "from": [{"email": "sender@example.com"}],
+            "headers": [{"name": "Auto-Submitted", "value": "auto-replied"}],
         }
         assert should_send_autoreply(mailbox, parsed) is None
 
     def test_skip_self_reply(self, mailbox, autoreply_template):
         """Messages from the mailbox itself do not trigger autoreply."""
         parsed = {
-            "from": {"email": str(mailbox)},
-            "headers": {},
+            "from": [{"email": str(mailbox)}],
+            "headers": [],
         }
         assert should_send_autoreply(mailbox, parsed) is None
 
     def test_no_autoreply_template(self, mailbox):
         """No autoreply template means no autoreply."""
         parsed = {
-            "from": {"email": "sender@example.com"},
+            "from": [{"email": "sender@example.com"}],
             "to": [{"email": str(mailbox)}],
-            "headers": {},
+            "headers": [],
         }
         assert should_send_autoreply(mailbox, parsed) is None
 
@@ -456,9 +494,9 @@ class TestShouldSendAutoreply:
         }
         autoreply_template.save()
         parsed = {
-            "from": {"email": "sender@example.com"},
+            "from": [{"email": "sender@example.com"}],
             "to": [{"email": str(mailbox)}],
-            "headers": {},
+            "headers": [],
         }
         assert should_send_autoreply(mailbox, parsed) is None
 
@@ -467,9 +505,9 @@ class TestShouldSendAutoreply:
         """Rate-limited sender does not trigger autoreply."""
         # First call consumes the throttle allowance
         parsed = {
-            "from": {"email": "sender@example.com"},
+            "from": [{"email": "sender@example.com"}],
             "to": [{"email": str(mailbox)}],
-            "headers": {},
+            "headers": [],
         }
         assert should_send_autoreply(mailbox, parsed) is not None
         # Second call is throttled
@@ -478,82 +516,82 @@ class TestShouldSendAutoreply:
     def test_skip_noreply_sender(self, mailbox, autoreply_template):
         """noreply@ sender does not trigger autoreply."""
         parsed = {
-            "from": {"email": "noreply@example.com"},
-            "headers": {},
+            "from": [{"email": "noreply@example.com"}],
+            "headers": [],
         }
         assert should_send_autoreply(mailbox, parsed) is None
 
     def test_skip_mailer_daemon_sender(self, mailbox, autoreply_template):
         """mailer-daemon@ sender does not trigger autoreply."""
         parsed = {
-            "from": {"email": "mailer-daemon@example.com"},
-            "headers": {},
+            "from": [{"email": "mailer-daemon@example.com"}],
+            "headers": [],
         }
         assert should_send_autoreply(mailbox, parsed) is None
 
     def test_skip_postmaster_sender(self, mailbox, autoreply_template):
         """postmaster@ sender does not trigger autoreply."""
         parsed = {
-            "from": {"email": "postmaster@example.com"},
-            "headers": {},
+            "from": [{"email": "postmaster@example.com"}],
+            "headers": [],
         }
         assert should_send_autoreply(mailbox, parsed) is None
 
     def test_skip_bounce_sender(self, mailbox, autoreply_template):
         """bounces-123@ sender does not trigger autoreply."""
         parsed = {
-            "from": {"email": "bounces-123@example.com"},
-            "headers": {},
+            "from": [{"email": "bounces-123@example.com"}],
+            "headers": [],
         }
         assert should_send_autoreply(mailbox, parsed) is None
 
     def test_skip_owner_prefix_sender(self, mailbox, autoreply_template):
         """owner-list@ sender does not trigger autoreply."""
         parsed = {
-            "from": {"email": "owner-list@example.com"},
-            "headers": {},
+            "from": [{"email": "owner-list@example.com"}],
+            "headers": [],
         }
         assert should_send_autoreply(mailbox, parsed) is None
 
     def test_skip_missing_from(self, mailbox, autoreply_template):
         """Missing 'from' key in parsed headers returns None."""
         parsed = {
-            "headers": {},
+            "headers": [],
         }
         assert should_send_autoreply(mailbox, parsed) is None
 
     def test_skip_empty_sender_email(self, mailbox, autoreply_template):
         """Empty sender email returns None."""
         parsed = {
-            "from": {"email": ""},
-            "headers": {},
+            "from": [{"email": ""}],
+            "headers": [],
         }
         assert should_send_autoreply(mailbox, parsed) is None
 
     def test_case_insensitive_self_reply(self, mailbox, autoreply_template):
         """Case-insensitive self-reply detection."""
         parsed = {
-            "from": {"email": str(mailbox).upper()},
-            "headers": {},
+            "from": [{"email": str(mailbox).upper()}],
+            "headers": [],
         }
         assert should_send_autoreply(mailbox, parsed) is None
 
     def test_skip_bcc_recipient(self, mailbox, autoreply_template):
         """Mailbox not in To/Cc/Bcc suppresses autoreply (RFC 5230 §4.5)."""
         parsed = {
-            "from": {"email": "sender@example.com"},
+            "from": [{"email": "sender@example.com"}],
             "to": [{"email": "someone-else@example.com"}],
-            "headers": {},
+            "headers": [],
         }
         assert should_send_autoreply(mailbox, parsed) is None
 
     def test_mailbox_in_cc_triggers(self, mailbox, autoreply_template):
         """Mailbox in Cc still triggers autoreply."""
         parsed = {
-            "from": {"email": "sender@example.com"},
+            "from": [{"email": "sender@example.com"}],
             "to": [{"email": "someone-else@example.com"}],
             "cc": [{"email": str(mailbox)}],
-            "headers": {},
+            "headers": [],
         }
         result = should_send_autoreply(mailbox, parsed)
         assert result is not None
@@ -561,8 +599,8 @@ class TestShouldSendAutoreply:
     def test_skip_no_recipients(self, mailbox, autoreply_template):
         """No To/Cc/Bcc fields suppresses autoreply."""
         parsed = {
-            "from": {"email": "sender@example.com"},
-            "headers": {},
+            "from": [{"email": "sender@example.com"}],
+            "headers": [],
         }
         assert should_send_autoreply(mailbox, parsed) is None
 
@@ -686,9 +724,9 @@ class TestSendAutoreplyForMessage:
     ):
         """should_send_autoreply increments throttle, blocking subsequent calls."""
         parsed = {
-            "from": {"email": inbound_message.sender.email},
+            "from": [{"email": inbound_message.sender.email}],
             "to": [{"email": str(mailbox)}],
-            "headers": {},
+            "headers": [],
         }
         # First call succeeds and increments the throttle
         assert should_send_autoreply(mailbox, parsed) is not None

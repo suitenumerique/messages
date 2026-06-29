@@ -90,6 +90,14 @@ services:
     volumes:
       - ./src/backend:/app
       - ./data/static:/data/static
+      # Dev-only override: live-mount the jmap-email working tree over the
+      # package installed from PyPI so local source edits propagate without a
+      # rebuild. The wheel installed at
+      # ``/venv/lib/${PYTHON_VERSION}/site-packages/jmap_email`` is overlaid
+      # with the working-tree source. Override ``PYTHON_VERSION`` in the
+      # environment when the backend's Python floor moves. Comment this mount
+      # out to run exactly what CI/prod install from PyPI.
+      - ./src/jmap-email/jmap_email:/venv/lib/${PYTHON_VERSION:-python3.14}/site-packages/jmap_email
     healthcheck:
       test: ["CMD", "python", "-c", "import urllib.request as u; u.urlopen('http://localhost:8000/__heartbeat__/', timeout=1)"]
       interval: 3s
@@ -143,7 +151,7 @@ services:
     volumes:
       - ./src/backend:/app
     build:
-      context: src/backend/
+      context: src/backend
       target: uv
     pull_policy: build
 
@@ -401,7 +409,7 @@ services:
     pull_policy: build
 
   keycloak:
-    image: quay.io/keycloak/keycloak:26.6.1
+    image: quay.io/keycloak/keycloak:26.6.3
     volumes:
       - ./src/keycloak/realm.json:/opt/keycloak/data/import/realm.json:ro
       - ./src/keycloak/themes/dsfr-2.2.1.jar:/opt/keycloak/providers/keycloak-theme.jar:ro
@@ -454,6 +462,21 @@ services:
         condition: service_started
       redis:
         condition: service_started
+
+  # Self-contained jmap-email package tests. Zero infrastructure
+  # dependencies (no DB, no opensearch, no redis) — the library has
+  # no runtime deps. Source is mounted for instant feedback during
+  # development.
+  jmap-email-test:
+    profiles:
+      - tools
+    build:
+      context: src/jmap-email
+    command: pytest -q tests/
+    volumes:
+      - ./src/jmap-email/jmap_email:/app/jmap_email
+      - ./src/jmap-email/tests:/app/tests
+      - ./src/jmap-email/pyproject.toml:/app/pyproject.toml
 
 volumes:
   objectstorage-data:

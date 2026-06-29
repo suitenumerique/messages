@@ -22,7 +22,7 @@ pytestmark = pytest.mark.django_db
 
 @pytest.fixture(autouse=True)
 def _mock_ssrf_dns():
-    """Short-circuit SSRF DNS validation for IMAP import tests.
+    """Short-circuit SSRF hostname validation for IMAP import tests.
 
     The IMAP endpoint validates the server hostname via
     ``core.services.ssrf.validate_hostname``; tests use unresolvable fixtures
@@ -332,7 +332,7 @@ def test_api_import_imap(api_client, user, mailbox):
     """Test import of IMAP messages."""
     mailbox.accesses.create(user=user, role=MailboxRoleChoices.ADMIN)
     # Mock IMAP connection and responses
-    with patch("imaplib.IMAP4_SSL") as mock_imap:
+    with patch("core.services.importer.imap._IPPinnedIMAP4SSL") as mock_imap:
         mock_imap_instance = mock_imap.return_value
 
         # Mock login
@@ -706,7 +706,7 @@ def test_api_import_duplicate_imap_messages(api_client, user, mailbox):
     assert Thread.objects.count() == 0
 
     # Mock IMAP connection and responses
-    with patch("imaplib.IMAP4_SSL") as mock_imap:
+    with patch("core.services.importer.imap._IPPinnedIMAP4SSL") as mock_imap:
         mock_imap_instance = mock_imap.return_value
 
         # Mock login
@@ -781,7 +781,7 @@ def test_api_import_duplicate_imap_messages_different_mailboxes(
     mailbox2 = factories.MailboxFactory()
     mailbox2.accesses.create(user=user, role=MailboxRoleChoices.ADMIN)
     # Mock IMAP connection and responses
-    with patch("imaplib.IMAP4_SSL") as mock_imap:
+    with patch("core.services.importer.imap._IPPinnedIMAP4SSL") as mock_imap:
         mock_imap_instance = mock_imap.return_value
 
         # Mock login
@@ -869,7 +869,7 @@ Date: Mon, 26 May 2025 10:00:00 +0000
 This is a draft message."""
 
     # Mock IMAP connection and responses
-    with patch("imaplib.IMAP4_SSL") as mock_imap:
+    with patch("core.services.importer.imap._IPPinnedIMAP4SSL") as mock_imap:
         mock_imap_instance = mock_imap.return_value
 
         # Mock login
@@ -935,7 +935,7 @@ Date: Mon, 26 May 2025 10:00:00 +0000
 This is a regular message."""
 
     # Mock IMAP connection and responses
-    with patch("imaplib.IMAP4_SSL") as mock_imap:
+    with patch("core.services.importer.imap._IPPinnedIMAP4SSL") as mock_imap:
         mock_imap_instance = mock_imap.return_value
 
         # Mock login

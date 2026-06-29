@@ -3,7 +3,8 @@ import { Icon, IconSize, Spinner } from "@gouvfr-lasuite/ui-kit";
 import { useCallback, useMemo, useState } from "react";
 import { Props } from "@blocknote/core";
 import DomPurify from "dompurify";
-import { ReadMessageTemplate, useMailboxesMessageTemplatesRetrieve, useDraftPlaceholdersRetrieve, DraftPlaceholdersRetrieve200 } from "@/features/api/gen";
+import { keepPreviousData } from "@tanstack/react-query";
+import { ReadMessageTemplate, useMailboxesMessageTemplatesRenderRetrieve } from "@/features/api/gen";
 import { MessageComposerBlockSchema, MessageComposerInlineContentSchema, MessageComposerStyleSchema, PartialMessageComposerBlockSchema } from "@/features/forms/components/message-composer";
 import { useTranslation } from "react-i18next";
 import { MessageComposerHelper } from "@/features/utils/composer-helper";
@@ -50,7 +51,6 @@ function replaceLayoutTablesWithDivs(html: string): string {
 type SignatureTemplateSelectorProps = {
     mailboxId?: string;
     messageId?: string;
-    ensureDraft?: () => Promise<string | undefined>;
     templates?: ReadMessageTemplate[];
     defaultSelected?: string | null;
     isLoading?: boolean;
@@ -60,7 +60,7 @@ type SignatureTemplateSelectorProps = {
  * A BlockNote toolbar selector which allows the user to select a signature template from
  * all active signatures for a given mailbox.
  */
-export const SignatureTemplateSelector = ({ mailboxId, messageId, ensureDraft, templates = [], defaultSelected, isLoading }: SignatureTemplateSelectorProps) => {
+export const SignatureTemplateSelector = ({ mailboxId, messageId, templates = [], defaultSelected, isLoading }: SignatureTemplateSelectorProps) => {
     const editor = useBlockNoteEditor<MessageComposerBlockSchema, MessageComposerInlineContentSchema, MessageComposerStyleSchema>();
     const { t } = useTranslation();
     const Components = useComponentsContext()!;
@@ -128,7 +128,7 @@ export const SignatureTemplateSelector = ({ mailboxId, messageId, ensureDraft, t
         key="signatureTemplateSelector"
         items={[
           {
-            text: t("No signature"),
+            text: t("No signatures"),
             isSelected: !isSelected,
             isDisabled: false,
             icon: <Icon name="drive_file_rename_outline" size={IconSize.SMALL} />,
@@ -141,7 +141,7 @@ export const SignatureTemplateSelector = ({ mailboxId, messageId, ensureDraft, t
             isSelected: isSelected === template.id,
             isDisabled: template.is_forced,
             icon: <Icon name={template.is_forced ? "lock" : "drive_file_rename_outline"} size={IconSize.SMALL} />,
-            onClick: async () => {
+            onClick: () => {
                 const signatureBlock = editor.getBlock('signature');
 
                 // If this signature is already selected, check if it can be deselected
@@ -158,16 +158,17 @@ export const SignatureTemplateSelector = ({ mailboxId, messageId, ensureDraft, t
                     return;
                 }
 
-                const resolvedMessageId = messageId ?? await ensureDraft?.();
-
-                // Otherwise, add or replace the signature
+                // Insert the signature without forcing a draft to exist: the
+                // server resolves placeholders from the mailbox/user context,
+                // and the messageId is patched once a draft is created from
+                // real user content.
                 const newBlock = {
                     id: "signature",
                     type: "signature" as const,
                     props: {
                         templateId: template.id,
                         mailboxId: mailboxId,
-                        messageId: resolvedMessageId,
+                        messageId: messageId,
                     }
                 };
 
@@ -205,35 +206,37 @@ export const BlockSignature = createReactBlockSpec(
         render: ({ block : { props }}) => {
             const enabled = !!props.mailboxId && !!props.templateId;
 
+            // The server renders the template with placeholders already
+            // resolved from the mailbox/user context. A draft (messageId) is
+            // only needed for message-level placeholders (recipient_name), so
+            // the signature renders correctly even before a draft exists.
+            // keepPreviousData avoids a spinner flash when messageId appears
+            // (draft creation) and the query re-runs with recipient_name.
             // eslint-disable-next-line react-hooks/rules-of-hooks
-            const { data: { data: template = null } = {}, isFetching: isLoadingTemplate } = useMailboxesMessageTemplatesRetrieve(
+            const { data: { data: rendered = null } = {}, isLoading } = useMailboxesMessageTemplatesRenderRetrieve(
                 props.mailboxId,
                 props.templateId,
-                { bodies: "html" },
-                { query: { enabled } },
+                props.messageId ? { message_id: props.messageId } : undefined,
+                { query: { enabled, placeholderData: keepPreviousData } },
             );
-
-            // eslint-disable-next-line react-hooks/rules-of-hooks
-            const { data: { data: placeholders = {} } = {}, isFetching: isLoadingPlaceholders } = useDraftPlaceholdersRetrieve(
-                props.messageId,
-                { query: { enabled: enabled && !!props.messageId } },
-            );
-
-            const isLoading = isLoadingTemplate || isLoadingPlaceholders;
 
             // eslint-disable-next-line react-hooks/rules-of-hooks
             const sanitizedHtml = useMemo(() => {
-                if (isLoading || !template?.html_body) return null;
-                let html = template.html_body;
-                for (const [key, value] of Object.entries(placeholders as DraftPlaceholdersRetrieve200)) {
-                    html = html.replaceAll(`{${key}}`, value);
-                }
+                if (!rendered?.html_body) return null;
                 const domPurify = DomPurify();
-                const sanitized = domPurify.sanitize(html);
+                const sanitized = domPurify.sanitize(rendered.html_body);
                 // Replace layout tables with flex divs to prevent BlockNote from
                 // parsing them as table blocks (which causes a crash).
-                return replaceLayoutTablesWithDivs(sanitized);
-            }, [template?.html_body, placeholders, isLoading]);
+                const transformed = replaceLayoutTablesWithDivs(sanitized);
+                // Re-sanitize after the rewrite: replaceLayoutTablesWithDivs
+                // reparses and re-serializes via innerHTML, and the result is
+                // injected into the app origin with dangerouslySetInnerHTML (no
+                // iframe boundary). A second pass guarantees the DOM rewrite
+                // can't reintroduce anything unsafe. cid: image refs survive
+                // here; the cid->blob: object-URL swap runs afterwards on
+                // already-clean HTML.
+                return domPurify.sanitize(transformed);
+            }, [rendered?.html_body]);
 
             // eslint-disable-next-line react-hooks/rules-of-hooks
             const html = useHtmlWithObjectUrls(sanitizedHtml);

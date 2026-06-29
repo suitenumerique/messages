@@ -343,6 +343,33 @@ class TestSubmitValidation:
         )
         assert response.status_code == 400
 
+    def test_bcc_header_returns_400(self, client, auth_header, mailbox):
+        """A Bcc header in the submitted MIME is rejected: blind recipients
+        belong in the X-Rcpt-To envelope, not in the (signed, delivered)
+        headers."""
+        mime_with_bcc = (
+            b"From: contact@company.com\r\n"
+            b"To: attendee@example.com\r\n"
+            b"Bcc: secret@example.com\r\n"
+            b"Subject: With Bcc\r\n"
+            b"Message-ID: <bcc-reject@company.com>\r\n"
+            b"Date: Mon, 30 Mar 2026 10:00:00 +0000\r\n"
+            b"MIME-Version: 1.0\r\n"
+            b"Content-Type: text/plain; charset=utf-8\r\n"
+            b"\r\n"
+            b"Hello world\r\n"
+        )
+        response = client.post(
+            SUBMIT_URL,
+            data=mime_with_bcc,
+            content_type="message/rfc822",
+            HTTP_X_MAIL_FROM=str(mailbox.id),
+            HTTP_X_RCPT_TO="attendee@example.com",
+            **auth_header,
+        )
+        assert response.status_code == 400
+        assert "Bcc" in response.json()["detail"]
+
 
 # =============================================================================
 # Message creation + DKIM signing + async dispatch
@@ -364,19 +391,29 @@ class TestSubmitDispatch:
     @patch(PREPARE_MOCK, return_value=True)
     @patch(CREATE_MSG_MOCK)
     def test_accepted(
-        self, mock_create, mock_prepare, mock_task, client, auth_header, mailbox
+        self,
+        mock_create,
+        mock_prepare,
+        mock_task,
+        client,
+        auth_header,
+        mailbox,
+        django_capture_on_commit_callbacks,
     ):
         fake_message = self._fake_message()
         mock_create.return_value = fake_message
 
-        response = client.post(
-            SUBMIT_URL,
-            data=MINIMAL_MIME,
-            content_type="message/rfc822",
-            HTTP_X_MAIL_FROM=str(mailbox.id),
-            HTTP_X_RCPT_TO="attendee@example.com",
-            **auth_header,
-        )
+        # The delivery task is dispatched via transaction.on_commit, so capture
+        # and run the callbacks to observe the dispatch.
+        with django_capture_on_commit_callbacks(execute=True) as callbacks:
+            response = client.post(
+                SUBMIT_URL,
+                data=MINIMAL_MIME,
+                content_type="message/rfc822",
+                HTTP_X_MAIL_FROM=str(mailbox.id),
+                HTTP_X_RCPT_TO="attendee@example.com",
+                **auth_header,
+            )
 
         assert response.status_code == 202
         data = response.json()
@@ -392,7 +429,8 @@ class TestSubmitDispatch:
         mock_prepare.assert_called_once()
         assert mock_prepare.call_args[1]["raw_mime"] == MINIMAL_MIME
 
-        # Async task dispatched
+        # Async task dispatched, and only after the transaction committed.
+        assert len(callbacks) == 1
         mock_task.delay.assert_called_once_with(str(fake_message.id))
 
     @patch(TASK_MOCK)
@@ -450,20 +488,28 @@ class TestSubmitIntegration:
     signing, blob storage) and only mock the final async SMTP task."""
 
     @patch(TASK_MOCK)
-    def test_full_pipeline(self, mock_task, client, auth_header, mailbox):
+    def test_full_pipeline(
+        self,
+        mock_task,
+        client,
+        auth_header,
+        mailbox,
+        django_capture_on_commit_callbacks,
+    ):
         """Submit creates a Message with thread, recipients, blob, and dispatches delivery."""
         mailbox_email = str(mailbox)
         # X-Rcpt-To matches the To: header in MINIMAL_MIME (attendee@example.com)
         rcpt_to = "attendee@example.com"
 
-        response = client.post(
-            SUBMIT_URL,
-            data=MINIMAL_MIME,
-            content_type="message/rfc822",
-            HTTP_X_MAIL_FROM=str(mailbox.id),
-            HTTP_X_RCPT_TO=rcpt_to,
-            **auth_header,
-        )
+        with django_capture_on_commit_callbacks(execute=True):
+            response = client.post(
+                SUBMIT_URL,
+                data=MINIMAL_MIME,
+                content_type="message/rfc822",
+                HTTP_X_MAIL_FROM=str(mailbox.id),
+                HTTP_X_RCPT_TO=rcpt_to,
+                **auth_header,
+            )
 
         assert response.status_code == 202
         data = response.json()
@@ -574,6 +620,49 @@ class TestSubmitIntegration:
             contact__email="hidden@example.com",
             type=MessageRecipientTypeChoices.BCC,
         ).exists()
+
+    @patch(TASK_MOCK)
+    def test_to_less_submission_gets_undisclosed_recipients(
+        self, mock_task, client, auth_header, mailbox
+    ):
+        """A submission with no To/Cc header (every recipient travels via
+        X-Rcpt-To) gets the empty-group placeholder in the stored blob, so it
+        isn't flagged for a missing To."""
+        mailbox_email = str(mailbox)
+        # No To/Cc header at all.
+        mime = (
+            f"From: {mailbox_email}\r\n"
+            f"Subject: No To header\r\n"
+            f"Message-ID: <noto@example.com>\r\n"
+            f"Date: Mon, 30 Mar 2026 10:00:00 +0000\r\n"
+            f"MIME-Version: 1.0\r\n"
+            f"Content-Type: text/plain\r\n"
+            f"\r\n"
+            f"body\r\n"
+        ).encode()
+
+        response = client.post(
+            SUBMIT_URL,
+            data=mime,
+            content_type="message/rfc822",
+            HTTP_X_MAIL_FROM=str(mailbox.id),
+            HTTP_X_RCPT_TO="hidden@example.com",
+            **auth_header,
+        )
+
+        assert response.status_code == 202, response.content
+        from core.enums import MessageRecipientTypeChoices
+        from core.models import Message
+
+        message = Message.objects.get(id=response.json()["message_id"])
+        # The envelope-only recipient is stored as BCC, never in the MIME.
+        assert message.recipients.filter(
+            contact__email="hidden@example.com",
+            type=MessageRecipientTypeChoices.BCC,
+        ).exists()
+        content = message.blob.get_content()
+        assert b"To: undisclosed-recipients:;" in content
+        assert b"hidden@example.com" not in content
 
     @patch(TASK_MOCK)
     def test_cc_recipients_created(self, mock_task, client, auth_header, mailbox):

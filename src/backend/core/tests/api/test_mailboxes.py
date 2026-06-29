@@ -396,6 +396,7 @@ class TestMailboxViewSet:
         # Check response data
         assert response.data["id"] == str(mailbox.id)
         assert response.data["email"] == str(mailbox)
+        assert response.data["domain_id"] == str(mailbox.domain_id)
         assert response.data["role"] == "editor"
         assert response.data["count_unread_threads"] == 1
         assert response.data["count_threads"] == 1
@@ -786,3 +787,128 @@ class TestMailboxAbilitiesAPI:
         response = api_client.get(url)
         assert response.status_code == status.HTTP_200_OK
         assert response.data["role"] == "editor"
+
+
+@pytest.mark.django_db
+class TestMailboxPartialUpdate:
+    """Test renaming a mailbox via PATCH /mailboxes/{id}/ (mailbox admins)."""
+
+    def _grant(self, mailbox, user, role):
+        return factories.MailboxAccessFactory(mailbox=mailbox, user=user, role=role)
+
+    def test_admin_can_rename_and_creates_missing_contact(
+        self, api_client, user, mailbox
+    ):
+        """A mailbox admin can rename a mailbox; a missing contact is created."""
+        self._grant(mailbox, user, models.MailboxRoleChoices.ADMIN)
+        assert mailbox.contact_id is None
+        api_client.force_authenticate(user=user)
+
+        url = reverse("mailboxes-detail", args=[mailbox.id])
+        response = api_client.patch(url, data={"name": "Helpdesk"}, format="json")
+
+        assert response.status_code == status.HTTP_200_OK
+        assert response.data["name"] == "Helpdesk"
+        mailbox.refresh_from_db()
+        assert mailbox.contact is not None
+        assert mailbox.contact.name == "Helpdesk"
+        assert mailbox.contact.email == str(mailbox)
+
+    def test_admin_can_rename_existing_contact(self, api_client, user):
+        """Renaming a mailbox that already has a contact updates its name."""
+        contact = factories.ContactFactory(name="Old")
+        mailbox = factories.MailboxFactory(contact=contact)
+        contact.mailbox = mailbox
+        contact.email = str(mailbox)
+        contact.save()
+        self._grant(mailbox, user, models.MailboxRoleChoices.ADMIN)
+        api_client.force_authenticate(user=user)
+
+        url = reverse("mailboxes-detail", args=[mailbox.id])
+        response = api_client.patch(url, data={"name": "New"}, format="json")
+
+        assert response.status_code == status.HTTP_200_OK
+        mailbox.refresh_from_db()
+        assert mailbox.contact.name == "New"
+
+    @pytest.mark.parametrize(
+        "role",
+        [models.MailboxRoleChoices.VIEWER, models.MailboxRoleChoices.EDITOR],
+    )
+    def test_non_admin_member_forbidden(self, api_client, user, mailbox, role):
+        """A non-admin member of the mailbox cannot rename it."""
+        self._grant(mailbox, user, role)
+        api_client.force_authenticate(user=user)
+
+        url = reverse("mailboxes-detail", args=[mailbox.id])
+        response = api_client.patch(url, data={"name": "Nope"}, format="json")
+
+        assert response.status_code == status.HTTP_403_FORBIDDEN
+
+    def test_non_member_not_found(self, api_client, user, mailbox):
+        """A user with no access to the mailbox gets a 404."""
+        api_client.force_authenticate(user=user)
+        url = reverse("mailboxes-detail", args=[mailbox.id])
+        response = api_client.patch(url, data={"name": "Nope"}, format="json")
+        assert response.status_code == status.HTTP_404_NOT_FOUND
+
+    def test_unauthenticated(self, api_client, mailbox):
+        """An unauthenticated request is rejected."""
+        url = reverse("mailboxes-detail", args=[mailbox.id])
+        response = api_client.patch(url, data={"name": "Nope"}, format="json")
+        assert response.status_code == status.HTTP_401_UNAUTHORIZED
+
+    def test_blank_name_rejected(self, api_client, user, mailbox):
+        """An empty name is rejected with a 400."""
+        self._grant(mailbox, user, models.MailboxRoleChoices.ADMIN)
+        api_client.force_authenticate(user=user)
+        url = reverse("mailboxes-detail", args=[mailbox.id])
+        response = api_client.patch(url, data={"name": ""}, format="json")
+        assert response.status_code == status.HTTP_400_BAD_REQUEST
+
+    def test_whitespace_only_name_rejected(self, api_client, user, mailbox):
+        """A whitespace-only name is rejected with a 400 (no blank rename)."""
+        self._grant(mailbox, user, models.MailboxRoleChoices.ADMIN)
+        api_client.force_authenticate(user=user)
+        url = reverse("mailboxes-detail", args=[mailbox.id])
+        response = api_client.patch(url, data={"name": "   "}, format="json")
+        assert response.status_code == status.HTTP_400_BAD_REQUEST
+
+    def test_only_name_is_updated(self, api_client, user):
+        """Extra fields in the payload are ignored: only ``name`` is applied."""
+        mailbox = factories.MailboxFactory(local_part="support", is_identity=False)
+        self._grant(mailbox, user, models.MailboxRoleChoices.ADMIN)
+        api_client.force_authenticate(user=user)
+
+        url = reverse("mailboxes-detail", args=[mailbox.id])
+        response = api_client.patch(
+            url,
+            data={"name": "Renamed", "local_part": "hijacked", "is_identity": True},
+            format="json",
+        )
+
+        assert response.status_code == status.HTTP_200_OK
+        assert response.data["name"] == "Renamed"
+        mailbox.refresh_from_db()
+        assert mailbox.contact.name == "Renamed"
+        # Fields outside the dedicated serializer stay untouched.
+        assert mailbox.local_part == "support"
+        assert mailbox.is_identity is False
+
+    def test_missing_name_is_noop(self, api_client, user):
+        """An empty body leaves the name untouched (partial PATCH no-op)."""
+        contact = factories.ContactFactory(name="Old")
+        mailbox = factories.MailboxFactory(contact=contact)
+        contact.mailbox = mailbox
+        contact.email = str(mailbox)
+        contact.save()
+        self._grant(mailbox, user, models.MailboxRoleChoices.ADMIN)
+        api_client.force_authenticate(user=user)
+
+        url = reverse("mailboxes-detail", args=[mailbox.id])
+        response = api_client.patch(url, data={}, format="json")
+
+        assert response.status_code == status.HTTP_200_OK
+        assert response.data["name"] == "Old"
+        mailbox.refresh_from_db()
+        assert mailbox.contact.name == "Old"

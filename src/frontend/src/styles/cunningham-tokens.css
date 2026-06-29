@@ -545,6 +545,7 @@
 	--c--contextuals--border--semantic--error--tertiary: var(--c--globals--colors--error-150);
 	--c--contextuals--border--semantic--disabled--primary: var(--c--globals--colors--gray-100);
 	--c--components--modal--width-small: 342px;
+	--c--components--modal--tab-sidebar-width: 230px;
 	--c--components--tooltip--padding: 4px 8px;
 	--c--components--button--medium-height: 40px;
 	--c--components--button--medium-text-height: 40px;
@@ -1132,6 +1133,7 @@
 	--c--contextuals--border--semantic--error--tertiary: var(--c--globals--colors--error-700);
 	--c--contextuals--border--semantic--disabled--primary: var(--c--globals--colors--gray-800);
 	--c--components--modal--width-small: 342px;
+	--c--components--modal--tab-sidebar-width: 230px;
 	--c--components--tooltip--padding: 4px 8px;
 	--c--components--button--medium-height: 40px;
 	--c--components--button--medium-text-height: 40px;
@@ -1694,6 +1696,7 @@
 	--c--contextuals--border--semantic--error--tertiary: var(--c--globals--colors--error-150);
 	--c--contextuals--border--semantic--disabled--primary: var(--c--globals--colors--gray-100);
 	--c--components--modal--width-small: 342px;
+	--c--components--modal--tab-sidebar-width: 230px;
 	--c--components--tooltip--padding: 4px 8px;
 	--c--components--button--medium-height: 40px;
 	--c--components--button--medium-text-height: 40px;
@@ -2256,6 +2259,7 @@
 	--c--contextuals--border--semantic--error--tertiary: var(--c--globals--colors--error-700);
 	--c--contextuals--border--semantic--disabled--primary: var(--c--globals--colors--gray-800);
 	--c--components--modal--width-small: 342px;
+	--c--components--modal--tab-sidebar-width: 230px;
 	--c--components--tooltip--padding: 4px 8px;
 	--c--components--button--medium-height: 40px;
 	--c--components--button--medium-text-height: 40px;
@@ -2821,6 +2825,7 @@
 	--c--contextuals--border--semantic--error--tertiary: var(--c--globals--colors--error-150);
 	--c--contextuals--border--semantic--disabled--primary: var(--c--globals--colors--gray-100);
 	--c--components--modal--width-small: 342px;
+	--c--components--modal--tab-sidebar-width: 230px;
 	--c--components--tooltip--padding: 4px 8px;
 	--c--components--button--medium-height: 40px;
 	--c--components--button--medium-text-height: 40px;
@@ -3386,6 +3391,7 @@
 	--c--contextuals--border--semantic--error--tertiary: var(--c--globals--colors--error-700);
 	--c--contextuals--border--semantic--disabled--primary: var(--c--globals--colors--gray-800);
 	--c--components--modal--width-small: 342px;
+	--c--components--modal--tab-sidebar-width: 230px;
 	--c--components--tooltip--padding: 4px 8px;
 	--c--components--button--medium-height: 40px;
 	--c--components--button--medium-text-height: 40px;

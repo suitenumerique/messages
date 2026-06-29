@@ -13,5 +13,9 @@ export default defineConfig({
     nsSeparator: false,
     primaryLanguage: "en-US",
     functions: ['t', 'i18n.t'],
+    // Keys built dynamically (e.g. AttachmentHelper.getFormatTranslationKey
+    // → ``mime.pdf``) can't be resolved by static analysis; preserve them
+    // so the extractor doesn't drop them on the next run.
+    preservePatterns: ['mime.*'],
   }
 });

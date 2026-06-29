@@ -5,6 +5,7 @@
  * This is the messages API schema.
  * OpenAPI spec version: 1.0.0 (v1.0)
  */
+import type { MailDomainAdminExpectedDnsRecordsItem } from "./mail_domain_admin_expected_dns_records_item";
 import type { MailDomainAdminAbilities } from "./mail_domain_admin_abilities";
 
 /**
@@ -18,7 +19,10 @@ export interface MailDomainAdmin {
   readonly created_at: string;
   /** date and time at which a record was last updated */
   readonly updated_at: string;
-  readonly expected_dns_records: string;
+  /** @nullable */
+  readonly expected_dns_records:
+    | readonly MailDomainAdminExpectedDnsRecordsItem[]
+    | null;
   readonly mailbox_count: string;
   /** Sync mailboxes to an identity provider. */
   readonly identity_sync: boolean;

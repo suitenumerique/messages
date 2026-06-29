@@ -1,7 +1,7 @@
 import { createContext, PropsWithChildren, useContext, useEffect, useMemo } from "react"
 import { MailDomainAdmin } from "../api/gen/models/mail_domain_admin";
 import { useMaildomainsList, useMaildomainsRetrieve } from "../api/gen";
-import { useRouter } from "next/router";
+import { useParams } from "@tanstack/react-router";
 import { usePagination } from "@gouvfr-lasuite/cunningham-react";
 import { keepPreviousData } from "@tanstack/react-query";
 import { useSearchablePagination } from "@/hooks/use-searchable-pagination";
@@ -23,7 +23,7 @@ const AdminMailDomainContext = createContext<AdminMailDomainContextType | undefi
  * It centralizes mail domain data fetching and selection.
  */
 export const AdminMailDomainProvider = ({ children }: PropsWithChildren) => {
-    const router = useRouter();
+    const routeParams = useParams({ strict: false }) as { maildomainId?: string };
     const { pagination, searchQuery, setSearchQuery } = useSearchablePagination();
     const trimmedQuery = searchQuery.trim();
     const { data: maildomainsData, isLoading: isLoadingList, error: listError } = useMaildomainsList({
@@ -33,7 +33,7 @@ export const AdminMailDomainProvider = ({ children }: PropsWithChildren) => {
         query: { placeholderData: keepPreviousData },
     });
     const { data: selectedMaildomainData, isLoading: isLoadingItem, error: itemError } = useMaildomainsRetrieve(
-        router.query.maildomainId as string, { query: { enabled: !!router.query.maildomainId } });
+        routeParams.maildomainId ?? '', { query: { enabled: !!routeParams.maildomainId } });
 
     const context = useMemo(() => ({
         selectedMailDomain: selectedMaildomainData?.data || null,

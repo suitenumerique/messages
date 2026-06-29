@@ -57,6 +57,7 @@ export const RhfColorPaletteField = (props: { name: string }) => {
                                     htmlFor="color"
                                     style={{ '--char-color': charColor } as React.CSSProperties}
                                 >
+                                    {/* eslint-disable-next-line i18next/no-literal-string */}
                                     <span className="color-palette-field__input-of-hell__icon">a</span>
                                     <input
                                     type="color"

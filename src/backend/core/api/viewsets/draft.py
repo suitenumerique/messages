@@ -3,6 +3,7 @@
 import json
 import logging
 
+from django.core.exceptions import ValidationError as DjangoValidationError
 from django.db import transaction
 
 import rest_framework as drf
@@ -190,8 +191,34 @@ class DraftMessageView(APIView):
         Return updated draft message
     """
 
-    permission_classes = [permissions.IsAllowedToCreateMessage]
-    mailbox = None
+    permission_classes = [permissions.IsAuthenticated]
+
+    @staticmethod
+    def _resolve_editable_sender_mailbox(user, sender_id):
+        """Return the ``sender_id`` mailbox the ``user`` may draft/send from.
+
+        Resolves and authorizes in one query: the mailbox is looked up scoped
+        to a ``MAILBOX_ROLES_CAN_EDIT`` access for ``user``. Raises 403 when the
+        mailbox is missing OR the user lacks an editor role on it — without
+        distinguishing the two, so the endpoint never reveals which mailboxes
+        exist. (This is the authorization that previously lived in the
+        single-use, request-shape-coupled ``IsAllowedToCreateMessage``
+        permission; create_draft still enforces parent-thread access for
+        replies, and the PUT draft lookup scopes to an editable draft thread.)
+        """
+        try:
+            mailbox = models.Mailbox.objects.filter(
+                id=sender_id,
+                accesses__user=user,
+                accesses__role__in=enums.MAILBOX_ROLES_CAN_EDIT,
+            ).first()
+        except (DjangoValidationError, ValueError, TypeError):
+            mailbox = None  # malformed senderId — treat as no access
+        if mailbox is None:
+            raise drf.exceptions.PermissionDenied(
+                "You do not have permission to send as this mailbox."
+            )
+        return mailbox
 
     @transaction.atomic
     def post(self, request):
@@ -203,13 +230,10 @@ class DraftMessageView(APIView):
 
         subject = request.data.get("subject")
 
-        # Get mailbox (permission class validates access)
-        try:
-            sender_mailbox = models.Mailbox.objects.get(id=sender_id)
-        except models.Mailbox.DoesNotExist as exc:
-            raise drf.exceptions.NotFound(
-                f"Mailbox with senderId {sender_id} not found."
-            ) from exc
+        # Resolve + authorize the sender mailbox (user must hold an editor-or-
+        # above role on it). create_draft separately enforces access to the
+        # parent thread for replies.
+        sender_mailbox = self._resolve_editable_sender_mailbox(request.user, sender_id)
 
         # Create draft
         message = create_draft(
@@ -249,13 +273,10 @@ class DraftMessageView(APIView):
                 "senderId is required in request body for update."
             )
 
-        # Get mailbox
-        try:
-            sender_mailbox = models.Mailbox.objects.get(id=sender_id)
-        except models.Mailbox.DoesNotExist as exc:
-            raise drf.exceptions.NotFound(
-                f"Mailbox with senderId {sender_id} not found."
-            ) from exc
+        # Resolve + authorize the sender mailbox (editor-or-above role). The
+        # draft lookup below additionally scopes to a draft whose thread this
+        # mailbox can edit (404 otherwise).
+        sender_mailbox = self._resolve_editable_sender_mailbox(request.user, sender_id)
 
         # Get the draft message
         try:

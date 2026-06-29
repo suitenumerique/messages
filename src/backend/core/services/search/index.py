@@ -7,12 +7,12 @@ import logging
 from django.conf import settings
 from django.db.models import Prefetch, prefetch_related_objects
 
+from jmap_email import body_text_joined, parse_email
 from opensearchpy import OpenSearch
 from opensearchpy.exceptions import NotFoundError, TransportError
 from opensearchpy.helpers import bulk
 
 from core import enums, models
-from core.mda.rfc5322 import parse_email_message
 from core.services.search.exceptions import (
     RETRYABLE_EXCEPTIONS,
     RETRYABLE_TRANSPORT_STATUS,
@@ -208,32 +208,26 @@ def _build_message_doc(message, mailbox_ids, recipients=None):
     Returns:
         dict or None if the message blob cannot be parsed.
     """
-    parsed_data = {}
-    try:
-        if message.blob:
-            parsed_data = parse_email_message(message.blob.get_content())
-    except models.Blob.DoesNotExist:
-        pass
-    # pylint: disable=broad-exception-caught
-    except Exception as e:
-        logger.error("Error parsing blob content for message %s: %s", message.id, e)
-        return None
+    parsed_data: dict = {}
+    if message.blob:
+        try:
+            raw = message.blob.get_content()
+        except models.Blob.DoesNotExist:
+            raw = None
+        except Exception as e:  # pylint: disable=broad-exception-caught
+            logger.error("Error reading blob content for message %s: %s", message.id, e)
+            return None
+        if raw is not None:
+            parsed_data = parse_email(raw)
+            if parsed_data is None:
+                logger.error("parse_email returned None for message %s", message.id)
+                return None
 
     if recipients is None:
         recipients = list(message.recipients.select_related("contact").all())
 
-    text_body = ""
-    html_body = ""
-
-    if parsed_data.get("textBody"):
-        text_body = " ".join(
-            item.get("content", "") for item in parsed_data["textBody"]
-        )
-
-    if parsed_data.get("htmlBody"):
-        html_body = " ".join(
-            item.get("content", "") for item in parsed_data["htmlBody"]
-        )
+    text_body = body_text_joined(parsed_data, "textBody")
+    html_body = body_text_joined(parsed_data, "htmlBody")
 
     return {
         "relation": {"name": "message", "parent": str(message.thread_id)},

@@ -6,16 +6,20 @@ import threading
 import time
 from unittest.mock import MagicMock, call, patch
 
+from django.conf import settings
 from django.core.cache import cache
 from django.test import TransactionTestCase, override_settings
 
 import dns.resolver
 import pytest
 import rest_framework as drf
+from dkim import verify as dkim_verify
 
 from core import enums, factories, models
 from core.mda import outbound
+from core.mda.outbound_direct import resolve_hostname_ip, send_message_via_mx
 from core.mda.signing import generate_dkim_key, sign_message_dkim
+from core.mda.smtp import SmtpProxy
 
 SCHEMA_CUSTOM_ATTRIBUTES = {
     "$schema": "https://json-schema.org/draft/2020-12/schema",
@@ -29,6 +33,9 @@ SCHEMA_CUSTOM_ATTRIBUTES = {
     },
     "required": [],
 }
+
+# Module-level DKIM keypair (1024-bit for speed) used by the signing tests.
+_TEST_DKIM_PRIVATE_KEY, _TEST_DKIM_PUBLIC_KEY = generate_dkim_key(key_size=1024)
 
 
 @pytest.fixture(name="user")
@@ -205,6 +212,7 @@ class TestSendOutboundMessage:
             message_content=draft_message.blob.get_content(),
             smtp_username="smtp_user",
             smtp_password="smtp_pass",
+            smtp_tls_security_level="may",
         )
 
         # Check message object updated
@@ -347,6 +355,14 @@ class TestSendOutboundMessage:
 
         sorted_calls = sorted(mock_smtp_send.mock_calls, key=lambda x: x[2]["smtp_ip"])
 
+        expected_proxy = SmtpProxy(
+            host="smtp.proxy",
+            port=1080,
+            username="proxyuser",
+            password="proxyuser",
+            sender_hostname="smtp.proxy",
+        )
+
         # Check first call - to@example.com, cc@example.com, cc2@example.com to mx1.example.com
         assert sorted_calls[0] == call(
             smtp_host="mx1.example.com",
@@ -355,11 +371,8 @@ class TestSendOutboundMessage:
             envelope_from=draft_message.sender.email,
             recipient_emails={"to@example.com", "cc@example.com", "cc2@example.com"},
             message_content=draft_message.blob.get_content(),
-            proxy_host="smtp.proxy",
-            proxy_port=1080,
-            proxy_username="proxyuser",
-            proxy_password="proxyuser",
-            sender_hostname="smtp.proxy",
+            smtp_tls_security_level="may",
+            proxy=expected_proxy,
         )
 
         # Check second call - cc@example.com, to@example.com retry to mx2.example.com
@@ -370,11 +383,8 @@ class TestSendOutboundMessage:
             envelope_from=draft_message.sender.email,
             recipient_emails={"cc@example.com", "to@example.com"},
             message_content=draft_message.blob.get_content(),
-            proxy_host="smtp.proxy",
-            proxy_port=1080,
-            proxy_username="proxyuser",
-            proxy_password="proxyuser",
-            sender_hostname="smtp.proxy",
+            smtp_tls_security_level="may",
+            proxy=expected_proxy,
         )
 
         # Check third call - bcc@example2.com to mx1.example2.com
@@ -385,11 +395,8 @@ class TestSendOutboundMessage:
             envelope_from=draft_message.sender.email,
             recipient_emails={"bcc@example2.com"},
             message_content=draft_message.blob.get_content(),
-            proxy_host="smtp.proxy",
-            proxy_port=1080,
-            proxy_username="proxyuser",
-            proxy_password="proxyuser",
-            sender_hostname="smtp.proxy",
+            smtp_tls_security_level="may",
+            proxy=expected_proxy,
         )
 
     @patch("core.mda.outbound_direct.dns.resolver.resolve")
@@ -431,6 +438,8 @@ class TestSendOutboundMessage:
             envelope_from=draft_message.sender.email,
             recipient_emails={"bcc@example2.com"},
             message_content=draft_message.blob.get_content(),
+            smtp_tls_security_level="may",
+            proxy=None,
         )
 
         # Check message object updated
@@ -904,6 +913,293 @@ class TestPrepareOutboundMessageReadAt:
         message.refresh_from_db()
         assert access.read_at is not None
         assert access.read_at >= message.created_at
+
+
+@pytest.mark.django_db
+class TestUndisclosedRecipientsHeader:
+    """A message with no To recipient (e.g. Bcc-only) must get an empty-group
+    ``To: undisclosed-recipients:;`` header (RFC 4356) so receivers don't
+    flag the missing To as a spam signal. Messages that already have a
+    visible To must be left untouched."""
+
+    def _make_draft(self, mailbox_sender):
+        return factories.MessageFactory(
+            thread=factories.ThreadFactory(),
+            sender=factories.ContactFactory(mailbox=mailbox_sender),
+            is_draft=True,
+            subject="Test Message",
+            signature=None,
+        )
+
+    def _add_recipient(self, message, mailbox_sender, email, kind):
+        factories.MessageRecipientFactory(
+            message=message,
+            contact=factories.ContactFactory(mailbox=mailbox_sender, email=email),
+            type=kind,
+        )
+
+    def test_bcc_only_message_gets_undisclosed_to_header(
+        self, user, mailbox_sender, mailbox_access
+    ):
+        """Bcc-only send → placeholder added, Bcc address never leaked."""
+        message = self._make_draft(mailbox_sender)
+        self._add_recipient(
+            message,
+            mailbox_sender,
+            "bcc@example.com",
+            models.MessageRecipientTypeChoices.BCC,
+        )
+
+        assert (
+            outbound.prepare_outbound_message(
+                mailbox_sender, message, "Hello", "<p>Hello</p>", user
+            )
+            is True
+        )
+
+        message.refresh_from_db()
+        content = message.blob.get_content().decode()
+        assert "To: undisclosed-recipients:;" in content
+        # The Bcc recipient must never end up in a visible header.
+        assert "bcc@example.com" not in content
+
+    def test_to_recipient_suppresses_placeholder(
+        self, user, mailbox_sender, mailbox_access
+    ):
+        """A visible To recipient → no placeholder, real To preserved."""
+        message = self._make_draft(mailbox_sender)
+        self._add_recipient(
+            message,
+            mailbox_sender,
+            "to@example.com",
+            models.MessageRecipientTypeChoices.TO,
+        )
+        self._add_recipient(
+            message,
+            mailbox_sender,
+            "bcc@example.com",
+            models.MessageRecipientTypeChoices.BCC,
+        )
+
+        outbound.prepare_outbound_message(
+            mailbox_sender, message, "Hello", "<p>Hello</p>", user
+        )
+
+        message.refresh_from_db()
+        content = message.blob.get_content().decode()
+        assert "undisclosed-recipients" not in content
+        assert "to@example.com" in content
+
+    def test_cc_only_message_gets_undisclosed_to_header(
+        self, user, mailbox_sender, mailbox_access
+    ):
+        """A Cc-only send still has no To, so it gets the placeholder while
+        keeping the visible Cc recipient."""
+        message = self._make_draft(mailbox_sender)
+        self._add_recipient(
+            message,
+            mailbox_sender,
+            "cc@example.com",
+            models.MessageRecipientTypeChoices.CC,
+        )
+
+        outbound.prepare_outbound_message(
+            mailbox_sender, message, "Hello", "<p>Hello</p>", user
+        )
+
+        message.refresh_from_db()
+        content = message.blob.get_content().decode()
+        assert "To: undisclosed-recipients:;" in content
+        assert "cc@example.com" in content
+
+    def test_raw_mime_submission_without_to_gets_placeholder(
+        self, user, mailbox_sender, mailbox_access
+    ):
+        """The raw-MIME submission path (e.g. a Bcc-only send whose MIME has no
+        To header) is normalized too, before the blob is signed."""
+        message = self._make_draft(mailbox_sender)
+        self._add_recipient(
+            message,
+            mailbox_sender,
+            "bcc@example.com",
+            models.MessageRecipientTypeChoices.BCC,
+        )
+        raw_mime = (
+            b"From: sender@example.com\r\n"
+            b"Subject: Raw MIME test\r\n"
+            b"Date: Mon, 16 Jun 2026 12:00:00 +0000\r\n"
+            b"\r\n"
+            b"Body without a To header.\r\n"
+        )
+
+        assert (
+            outbound.prepare_outbound_message(
+                mailbox_sender, message, "", "", user, raw_mime=raw_mime
+            )
+            is True
+        )
+
+        message.refresh_from_db()
+        content = message.blob.get_content().decode()
+        assert "To: undisclosed-recipients:;" in content
+        # The Bcc recipient must never end up in a visible header.
+        assert "bcc@example.com" not in content
+
+    def test_undisclosed_to_header_is_covered_by_dkim(
+        self, user, mailbox_sender, mailbox_access
+    ):
+        """The placeholder is added before signing, so DKIM (which signs To)
+        covers it — the key improvement over patching the blob afterwards."""
+        dkim_key = models.DKIMKey.objects.create(
+            selector="testselector",
+            private_key=_TEST_DKIM_PRIVATE_KEY,
+            public_key=_TEST_DKIM_PUBLIC_KEY,
+            key_size=1024,
+            is_active=True,
+            domain=mailbox_sender.domain,
+        )
+        message = self._make_draft(mailbox_sender)
+        self._add_recipient(
+            message,
+            mailbox_sender,
+            "bcc@example.com",
+            models.MessageRecipientTypeChoices.BCC,
+        )
+
+        outbound.prepare_outbound_message(
+            mailbox_sender, message, "Hello", "<p>Hello</p>", user
+        )
+
+        message.refresh_from_db()
+        email_source = message.blob.get_content()
+        assert b"To: undisclosed-recipients:;" in email_source
+        assert b"DKIM-Signature:" in email_source
+
+        domain = mailbox_sender.domain.name
+
+        def get_dns_txt(fqdn, **kwargs):
+            if fqdn == f"testselector._domainkey.{domain}.".encode():
+                return f"v=DKIM1; k=rsa; p={dkim_key.public_key}".encode()
+            return None
+
+        assert dkim_verify(email_source, dnsfunc=get_dns_txt), (
+            "DKIM verification failed"
+        )
+
+        # Tampering with the now-signed To header must break the signature,
+        # proving the placeholder is part of the signed header set.
+        tampered = email_source.replace(
+            b"To: undisclosed-recipients:;", b"To: attacker@evil.com"
+        )
+        assert not dkim_verify(tampered, dnsfunc=get_dns_txt)
+
+
+@pytest.mark.django_db
+class TestXMailerHeader:
+    """Outbound mail advertises the sending application through the
+    ``X-Mailer`` header — a small positive deliverability signal whose
+    absence reads as bulk/templated mail."""
+
+    def _make_draft(self, mailbox_sender):
+        message = factories.MessageFactory(
+            thread=factories.ThreadFactory(),
+            sender=factories.ContactFactory(mailbox=mailbox_sender),
+            is_draft=True,
+            subject="Test Message",
+            signature=None,
+        )
+        factories.MessageRecipientFactory(
+            message=message,
+            contact=factories.ContactFactory(
+                mailbox=mailbox_sender, email="to@example.com"
+            ),
+            type=models.MessageRecipientTypeChoices.TO,
+        )
+        return message
+
+    @override_settings(MDA_HEADER_XMAILER="Messages Test")
+    @override_settings(RELEASE="v6.0.0")
+    def test_header_emitted_with_release(self, user, mailbox_sender, mailbox_access):
+        """X-Mailer carries the product name and the running release."""
+        message = self._make_draft(mailbox_sender)
+
+        assert (
+            outbound.prepare_outbound_message(
+                mailbox_sender, message, "Hello", "<p>Hello</p>", user
+            )
+            is True
+        )
+
+        message.refresh_from_db()
+        content = message.blob.get_content().decode()
+        assert "X-Mailer: Messages Test v6.0.0\r\n" in content
+
+    @override_settings(RELEASE="NA")
+    def test_header_emitted_without_release(self, user, mailbox_sender, mailbox_access):
+        """With no usable release, X-Mailer carries just the product name."""
+        message = self._make_draft(mailbox_sender)
+
+        assert (
+            outbound.prepare_outbound_message(
+                mailbox_sender, message, "Hello", "<p>Hello</p>", user
+            )
+            is True
+        )
+
+        message.refresh_from_db()
+        content = message.blob.get_content().decode()
+        assert f"X-Mailer: {settings.MDA_HEADER_XMAILER}\r\n" in content
+
+    @override_settings(RELEASE="6.0.0")
+    def test_header_emitted_on_raw_mime_path(
+        self, user, mailbox_sender, mailbox_access
+    ):
+        """Raw-MIME submissions get the same X-Mailer signal as composed mail."""
+        message = self._make_draft(mailbox_sender)
+        raw_mime = (
+            b"From: sender@example.com\r\n"
+            b"To: to@example.com\r\n"
+            b"Subject: Raw MIME test\r\n"
+            b"\r\n"
+            b"Body.\r\n"
+        )
+
+        assert (
+            outbound.prepare_outbound_message(
+                mailbox_sender, message, "", "", user, raw_mime=raw_mime
+            )
+            is True
+        )
+
+        message.refresh_from_db()
+        content = message.blob.get_content().decode()
+        assert f"X-Mailer: {settings.MDA_HEADER_XMAILER} {settings.RELEASE}" in content
+
+    def test_caller_supplied_xmailer_is_preserved_on_raw_mime_path(
+        self, user, mailbox_sender, mailbox_access
+    ):
+        """A caller-set X-Mailer is kept as-is, not duplicated nor overwritten."""
+        message = self._make_draft(mailbox_sender)
+        raw_mime = (
+            b"From: sender@example.com\r\n"
+            b"To: to@example.com\r\n"
+            b"X-Mailer: CustomClient 1.0\r\n"
+            b"Subject: Raw MIME test\r\n"
+            b"\r\n"
+            b"Body.\r\n"
+        )
+
+        assert (
+            outbound.prepare_outbound_message(
+                mailbox_sender, message, "", "", user, raw_mime=raw_mime
+            )
+            is True
+        )
+
+        message.refresh_from_db()
+        content = message.blob.get_content().decode()
+        assert "X-Mailer: CustomClient 1.0" in content
+        assert content.count("X-Mailer:") == 1
 
 
 @pytest.mark.django_db
@@ -1419,3 +1715,55 @@ class TestPrepareOutboundMessageBase64Images:
         assert len(cid_refs) >= 2, (
             f"Expected at least 2 CID references (text + HTML), got {len(cid_refs)}"
         )
+
+
+class TestOutboundDirectSSRF:
+    """Resolved MX/A IPs are SSRF-validated before the SMTP worker dials them.
+
+    A recipient domain (and therefore its MX records) is attacker-controlled,
+    so a domain whose MX points at internal infrastructure must never make the
+    direct-delivery worker connect there.
+    """
+
+    @patch("core.mda.outbound_direct.dns.resolver.resolve")
+    def test_resolve_hostname_ip_rejects_internal(self, mock_resolve):
+        """An MX host whose only A record is internal yields no IP (skipped)."""
+        mock_resolve.return_value = ["10.0.0.5"]
+        assert resolve_hostname_ip("mx.evil.test") is None
+
+    @patch("core.mda.outbound_direct.dns.resolver.resolve")
+    def test_resolve_hostname_ip_allows_public(self, mock_resolve):
+        """A public A record is accepted and returned."""
+        mock_resolve.return_value = ["93.184.216.34"]
+        assert resolve_hostname_ip("mx.good.test") == "93.184.216.34"
+
+    @patch("core.mda.outbound_direct.dns.resolver.resolve")
+    def test_resolve_hostname_ip_skips_internal_returns_public(self, mock_resolve):
+        """Multi-A: the internal record is skipped, the public one is used."""
+        mock_resolve.return_value = ["10.0.0.5", "93.184.216.34"]
+        assert resolve_hostname_ip("mx.mixed.test") == "93.184.216.34"
+
+    @patch("core.mda.outbound_direct.send_smtp_mail")
+    @patch("core.mda.outbound_direct.dns.resolver.resolve")
+    def test_send_via_mx_never_dials_internal_mx(self, mock_resolve, mock_smtp_send):
+        """End to end: a domain whose MX → internal IP triggers no SMTP connect."""
+
+        def resolve_side_effect(name, record_type, **kwargs):
+            data = {
+                ("evil.test", "MX"): [
+                    MagicMock(preference=10, exchange="mx.evil.test"),
+                ],
+                ("mx.evil.test", "A"): ["10.0.0.5"],
+            }
+            return data.get((name, record_type))
+
+        mock_resolve.side_effect = resolve_side_effect
+
+        statuses = send_message_via_mx(
+            "from@ours.test", ["victim@evil.test"], b"raw mime"
+        )
+
+        # The worker was never asked to open an SMTP connection.
+        mock_smtp_send.assert_not_called()
+        # And the recipient was not delivered.
+        assert statuses["victim@evil.test"]["delivered"] is False

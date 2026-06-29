@@ -54,6 +54,27 @@ class TestBlobAPI:
         )
         return test_file
 
+    def test_upload_session_auth_requires_csrf_token(self, api_client, user_mailbox):
+        """A cookie-session upload without a CSRF token is rejected (403).
+
+        The upload action carries no ``@csrf_exempt`` and uses the default DRF
+        auth classes, so ``SessionAuthentication`` enforces CSRF on
+        cookie-authenticated requests. Unlike the other tests (which use
+        ``force_authenticate`` and bypass the auth/CSRF path entirely), this
+        logs in via a real session and asserts the request is refused without a
+        token — pinning that the endpoint is not, and was never, CSRF-exempt.
+        """
+        _, user = api_client
+        csrf_client = APIClient(enforce_csrf_checks=True)
+        csrf_client.force_login(user)  # real session → SessionAuthentication path
+        url = reverse("blob-upload", kwargs={"mailbox_id": user_mailbox.id})
+
+        response = csrf_client.post(
+            url, {"file": self._create_test_file()}, format="multipart"
+        )
+
+        assert response.status_code == status.HTTP_403_FORBIDDEN
+
     def test_upload_download_blob(
         self,
         api_client,
@@ -130,6 +151,15 @@ class TestBlobAPI:
 
         # Should be denied
         assert response.status_code == status.HTTP_403_FORBIDDEN
+
+    def test_download_malformed_blob_id_returns_400(self, api_client):
+        """Non-UUID, non-``msg_`` pk must surface as 400, not 500."""
+        client, _ = api_client
+
+        url = reverse("blob-download", kwargs={"pk": "not-a-uuid"})
+        response = client.get(url)
+
+        assert response.status_code == status.HTTP_400_BAD_REQUEST
 
     @pytest.mark.parametrize(
         "role",

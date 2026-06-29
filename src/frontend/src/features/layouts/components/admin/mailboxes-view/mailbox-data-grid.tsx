@@ -2,7 +2,7 @@ import { MailboxAdmin, MailDomainAdmin, useMaildomainsMailboxesDestroy, useMaild
 import { ModalMailboxManageAccesses } from "@/features/layouts/components/admin/modal-mailbox-manage-accesses";
 import { Banner } from "@/features/ui/components/banner";
 import useAbility, { Abilities } from "@/hooks/use-ability";
-import { IconType, DropdownMenu, Icon, IconSize, Spinner } from "@gouvfr-lasuite/ui-kit";
+import { IconType, DropdownMenu, Icon, IconSize, Spinner, DropdownMenuItem } from "@gouvfr-lasuite/ui-kit";
 import { Button, DataGrid, Switch, Tooltip, useModals, usePagination } from "@gouvfr-lasuite/cunningham-react";
 import { keepPreviousData } from "@tanstack/react-query";
 import { useEffect, useState } from "react";
@@ -185,7 +185,7 @@ export const AdminMailboxDataGrid = ({ domain, pagination, searchQuery }: AdminU
                     ? new Date(row.last_accessed_at).toLocaleDateString(i18n.resolvedLanguage)
                     : <EmptyCell />,
         },
-        ...(isMandatoryTotpEnabled ? [{
+        ...(isMandatoryTotpEnabled && domain.identity_sync ? [{
             id: "mandatory_totp",
             headerName: t("Mandatory 2FA"),
             size: 160,
@@ -240,7 +240,7 @@ export const AdminMailboxDataGrid = ({ domain, pagination, searchQuery }: AdminU
             renderCell: ({ row }: { row: MailboxAdmin }) => <ActionsRow
                 onManageAccess={() => handleManageAccess(row)}
                 onResetPassword={row.can_reset_password ? () => handleResetPassword(row) : undefined}
-                onResetTotp={isMandatoryTotpEnabled && row.has_mandatory_totp !== null && row.has_mandatory_totp !== undefined
+                onResetTotp={isMandatoryTotpEnabled && domain.identity_sync && row.has_mandatory_totp !== null && row.has_mandatory_totp !== undefined
                     ? () => handleResetTotp(row)
                     : undefined}
                 onDelete={() => handleDelete(row)}
@@ -292,7 +292,7 @@ export const AdminMailboxDataGrid = ({ domain, pagination, searchQuery }: AdminU
                 pagination={pagination}
                 enableSorting={false}
                 onSortModelChange={() => undefined}
-                emptyPlaceholderLabel={t("No addresses found")}
+                emptyPlaceholderLabel={t("No addresses")}
             />
             {canManageMailboxes && editedMailbox && (
                 <>
@@ -335,12 +335,14 @@ const ActionsRow = ({ onManageAccess, onResetPassword, onResetTotp, onDelete, on
 
     // Build options in display order, then put a separator before the last item
     // (Delete) so the destructive action is visually grouped on its own.
-    const secondaryActions = [
+    const secondaryActions: DropdownMenuItem[] = [
         { icon: <Icon name="group" size={IconSize.SMALL} />, label: t('Manage accesses'), callback: onManageAccess },
         ...(onResetPassword ? [{ icon: <Icon name="lock" size={IconSize.SMALL} />, label: t('Reset password'), callback: onResetPassword }] : []),
         ...(onResetTotp ? [{ icon: <Icon name="security" size={IconSize.SMALL} />, label: t('Reset 2FA'), callback: onResetTotp }] : []),
     ];
-    const destructive = { icon: <Icon name="delete" size={IconSize.SMALL} />, label: t('Delete'), callback: onDelete };
+    const destructive: DropdownMenuItem = {
+      icon: <Icon name="delete" size={IconSize.SMALL} />, label: t('Delete'), callback: onDelete, variant: 'danger'
+    };
     const options = [
         ...secondaryActions.map((opt, i) => ({
             ...opt,

@@ -1,76 +1,70 @@
 import { useTranslation } from "react-i18next"
-import { useState, useEffect, useRef } from "react"
-import { Button, ButtonElement } from "@gouvfr-lasuite/cunningham-react";
-import { WidgetHelper } from "@/features/utils/widget-helper";
+import { useEffect, useRef } from "react"
+import { LaGaufreV2 } from "@gouvfr-lasuite/ui-kit";
+
+const LAGAUFRE_SHADOW_HOST_ID = "lasuite-widget-lagaufre-shadow";
 
 /**
- * A button that opens the lagaufre widget
+ * A button that opens the lagaufre widget, backed by the ui-kit LaGaufreV2 component.
  */
 export const LagaufreButton = () => {
   const { t } = useTranslation()
-  const [isWidgetInitialized, setIsWidgetInitialized] = useState(false)
-  const buttonRef = useRef<ButtonElement>(null);
-  const apiUrl = process.env.NEXT_PUBLIC_LAGAUFRE_WIDGET_API_URL;
-  const widgetPath = process.env.NEXT_PUBLIC_LAGAUFRE_WIDGET_PATH;
+  const wrapperRef = useRef<HTMLDivElement>(null);
+  const apiUrl = import.meta.env.NEXT_PUBLIC_LAGAUFRE_WIDGET_API_URL;
+  const widgetPath = import.meta.env.NEXT_PUBLIC_LAGAUFRE_WIDGET_PATH;
+  const isEnabled = apiUrl && widgetPath;
 
-  const label: string = t("Other services...");
-  const closeLabel: string = t("Close the menu");
-
-  // Initialize widget on component mount
+  // TODO: temporary workaround — remove once fixed upstream in the lagaufre
+  // widget (its click-outside listener should use the capture phase).
+  // The lagaufre widget only closes its popover from a bubble-phase document
+  // click listener. Sibling popover triggers (language picker, feedback,
+  // settings menu) stop click propagation to drive their own menus, so that
+  // listener never runs and the gaufre stays open behind them. We close it from
+  // a capture-phase listener, which fires before any stopPropagation can swallow
+  // the click.
   useEffect(() => {
-    if (typeof window == "undefined" || !widgetPath || !apiUrl) return;
+    if (!isEnabled) return;
 
-    document.addEventListener("stmsg-widget-lagaufre-closed", () => {
-        // Focus the button
-        buttonRef.current?.focus();
-        buttonRef.current?.setAttribute("aria-expanded", "false");
-    });
+    let isOpen = false;
+    const onOpened = () => { isOpen = true; };
+    const onClosed = () => { isOpen = false; };
 
-    document.addEventListener("stmsg-widget-lagaufre-opened", () => {
-        buttonRef.current?.setAttribute("aria-expanded", "true");
-    });
+    const onCaptureClick = (event: MouseEvent) => {
+      if (!isOpen) return;
+      const path = event.composedPath();
+      const shadowHost = document.getElementById(LAGAUFRE_SHADOW_HOST_ID);
+      // Ignore clicks on the gaufre button (let the widget toggle it) and inside
+      // its popover, which is rendered in a shadow root appended to the body.
+      const clickedGaufre =
+        (shadowHost !== null && path.includes(shadowHost)) ||
+        (wrapperRef.current !== null && path.includes(wrapperRef.current));
+      if (clickedGaufre) return;
+      document.dispatchEvent(new CustomEvent("lasuite-widget-lagaufre-close"));
+    };
 
-    WidgetHelper.loadScript(`${widgetPath}lagaufre.js`);
-    WidgetHelper.pushCommand([
-      "lagaufre",
-      "init",
-      {
-        api: apiUrl,
-        label,
-        closeLabel,
-        position: "fixed",
-        top: 53,
-        right: 12,
-      },
-    ]);
+    document.addEventListener("lasuite-widget-lagaufre-opened", onOpened);
+    document.addEventListener("lasuite-widget-lagaufre-closed", onClosed);
+    document.addEventListener("click", onCaptureClick, true);
 
-    setIsWidgetInitialized(true);
-  }, [apiUrl, widgetPath, label, closeLabel]);
+    return () => {
+      document.removeEventListener("lasuite-widget-lagaufre-opened", onOpened);
+      document.removeEventListener("lasuite-widget-lagaufre-closed", onClosed);
+      document.removeEventListener("click", onCaptureClick, true);
+    };
+  }, [isEnabled]);
 
-  const toggleWidget = () => {
-    if (!isWidgetInitialized) return;
-    WidgetHelper.pushCommand(["lagaufre", "toggle"]);
-  }
-
-  if (!widgetPath || !apiUrl) {
+  if (!isEnabled) {
     return null;
   }
 
-  // Must include the explicit fill color here because Firefox doesn't seem to apply the CSS style (!?)
   return (
-    <Button
-          onClick={toggleWidget}
-          ref={buttonRef}
-          icon={<LaGauffreIcon />}
-          aria-label={label}
-          aria-expanded="false"
-          variant="tertiary"
-          className="lagaufre-button"
-     />
-
+    <div ref={wrapperRef} style={{ display: "contents" }}>
+      <LaGaufreV2
+        widgetPath={widgetPath}
+        apiUrl={apiUrl}
+        label={t("Other services...")}
+        closeLabel={t("Close the menu")}
+      />
+    </div>
   )
 }
-
-const LaGauffreIcon = () => (
-  <svg xmlns="http://www.w3.org/2000/svg" width="18" height="18" fill="none"><defs><path id="a" fill="currentColor" d="M2.796.5c.469 0 .704 0 .892.064.351.12.627.397.748.748.064.188.064.423.064.892v.592c0 .469 0 .704-.064.892-.12.351-.397.627-.748.748-.188.064-.423.064-.892.064h-.592c-.469 0-.704 0-.892-.064a1.201 1.201 0 0 1-.748-.748C.5 3.5.5 3.265.5 2.796v-.592c0-.469 0-.704.064-.892.12-.351.397-.627.748-.748C1.5.5 1.735.5 2.204.5h.592Z"/></defs><use href="#a"/><use href="#a" transform="translate(6.5)"/><use href="#a" transform="translate(13)"/><use href="#a" transform="translate(0 6.5)"/><use href="#a" transform="translate(6.5 6.5)"/><use href="#a" transform="translate(13 6.5)"/><use href="#a" transform="translate(0 13)"/><use href="#a" transform="translate(6.5 13)"/><use href="#a" transform="translate(13 13)"/></svg>
-)

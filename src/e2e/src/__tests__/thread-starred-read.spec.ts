@@ -25,7 +25,7 @@ test.describe("Thread starred", () => {
 
     // Open the first thread
     await page
-      .getByRole("link", { name: "Test message with delivery failure" })
+      .getByRole("option", { name: "Test message with delivery failure" })
       .first()
       .click();
     await page
@@ -63,7 +63,7 @@ test.describe("Thread starred", () => {
 
     // Open the thread (starred from previous test)
     await page
-      .getByRole("link", { name: "Test message with delivery failure" })
+      .getByRole("option", { name: "Test message with delivery failure" })
       .first()
       .click();
     await page
@@ -112,7 +112,7 @@ test.describe("Thread read / unread", () => {
 
     // Open the thread (the IntersectionObserver auto-marks messages as read)
     await page
-      .getByRole("link", { name: "Inbox thread alpha" })
+      .getByRole("option", { name: "Inbox thread alpha" })
       .first()
       .click();
     await page
@@ -154,15 +154,15 @@ test.describe("Thread read / unread", () => {
 
     // Both threads should be visible (both unread)
     await expect(
-      page.getByRole("link", { name: "Inbox thread alpha" }).first(),
+      page.getByRole("option", { name: "Inbox thread alpha" }).first(),
     ).toBeVisible();
     await expect(
-      page.getByRole("link", { name: "Inbox thread beta" }).first(),
+      page.getByRole("option", { name: "Inbox thread beta" }).first(),
     ).toBeVisible();
 
     // Open a thread — the IntersectionObserver auto-marks it as read
     await page
-      .getByRole("link", { name: "Inbox thread alpha" })
+      .getByRole("option", { name: "Inbox thread alpha" })
       .first()
       .click();
     await page
@@ -176,7 +176,7 @@ test.describe("Thread read / unread", () => {
     // The thread should still be visible in the list thanks to thread pinning logic
     // Check @/features/providers/mailbox-cache.ts
     await expect(
-      page.getByRole("link", { name: "Inbox thread alpha" }).first(),
+      page.getByRole("option", { name: "Inbox thread alpha" }).first(),
     ).toBeVisible();
   });
 
@@ -200,15 +200,15 @@ test.describe("Thread read / unread", () => {
 
     // Verify both threads are visible initially
     await expect(
-      page.getByRole("link", { name: "Inbox thread alpha" }).first(),
+      page.getByRole("option", { name: "Inbox thread alpha" }).first(),
     ).toBeVisible();
     await expect(
-      page.getByRole("link", { name: "Inbox thread beta" }).first(),
+      page.getByRole("option", { name: "Inbox thread beta" }).first(),
     ).toBeVisible();
 
     // Open the first thread to mark it as read (IntersectionObserver auto-read)
     await page
-      .getByRole("link", { name: "Inbox thread alpha" })
+      .getByRole("option", { name: "Inbox thread alpha" })
       .first()
       .click();
     await page
@@ -232,12 +232,12 @@ test.describe("Thread read / unread", () => {
 
     // The read thread should be filtered out
     await expect(
-      page.getByRole("link", { name: "Inbox thread alpha" }),
+      page.getByRole("option", { name: "Inbox thread alpha" }),
     ).not.toBeVisible();
 
     // The unread thread (not opened) should still be visible
     await expect(
-      page.getByRole("link", { name: "Inbox thread beta" }).first(),
+      page.getByRole("option", { name: "Inbox thread beta" }).first(),
     ).toBeVisible();
 
     // Click the filter button again to clear the filter
@@ -246,10 +246,10 @@ test.describe("Thread read / unread", () => {
 
     // Both threads should be visible again
     await expect(
-      page.getByRole("link", { name: "Inbox thread alpha" }).first(),
+      page.getByRole("option", { name: "Inbox thread alpha" }).first(),
     ).toBeVisible();
     await expect(
-      page.getByRole("link", { name: "Inbox thread beta" }).first(),
+      page.getByRole("option", { name: "Inbox thread beta" }).first(),
     ).toBeVisible();
   });
 });

@@ -24,7 +24,7 @@ class MailboxViewSet(
     def get_queryset(self):
         """Restrict results to the current user's mailboxes."""
         user = self.request.user
-        # For regular users, annotate with their actual role
+
         return (
             models.Mailbox.objects.filter(accesses__user=user)
             .prefetch_related("accesses__user", "domain")
@@ -37,6 +37,36 @@ class MailboxViewSet(
             )
             .order_by("-created_at")
         )
+
+    def get_permissions(self):
+        """Require mailbox-admin rights to edit; reading stays open to any
+        member of the mailbox."""
+        if self.action == "partial_update":
+            return [
+                permissions.IsAuthenticated(),
+                permissions.IsMailboxAdminObject(),
+            ]
+        return super().get_permissions()
+
+    @extend_schema(
+        tags=["mailboxes"],
+        request=serializers.MailboxNameUpdateSerializer,
+        responses=serializers.MailboxSerializer,
+    )
+    def partial_update(self, request, *args, **kwargs):
+        """Rename a mailbox (its display contact name). Mailbox admins only.
+
+        ``partial=True`` keeps true PATCH semantics: omitting ``name`` is a no-op
+        rather than a 400, so the runtime matches the optional request schema.
+        """
+        mailbox = self.get_object()
+        serializer = serializers.MailboxNameUpdateSerializer(
+            instance=mailbox, data=request.data, partial=True
+        )
+        serializer.is_valid(raise_exception=True)
+        serializer.save()
+        output = self.get_serializer(mailbox)
+        return Response(output.data)
 
     @extend_schema(
         tags=["mailboxes"],

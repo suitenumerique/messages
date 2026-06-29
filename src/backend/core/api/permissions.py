@@ -205,78 +205,6 @@ class IsAllowedToAccess(IsAuthenticated):
         return False
 
 
-class IsAllowedToCreateMessage(IsAuthenticated):
-    """Permission class for access to create a message."""
-
-    def has_permission(self, request, view):
-        """Check if user is allowed to create a message."""
-
-        if not IsAuthenticated.has_permission(self, request, view):
-            return False
-
-        # a sender mailbox is required to create/send a message
-        sender_id = request.data.get("senderId")
-        parent_id = request.data.get("parentId")
-        if not sender_id:
-            return False
-
-        # get mailbox instance from sender id
-        try:
-            # Store mailbox on the view for later use (e.g., in the view logic)
-            view.mailbox = models.Mailbox.objects.get(id=sender_id)
-        except models.Mailbox.DoesNotExist:
-            return False  # Invalid senderId
-
-        # Check if user has required role on the sender Mailbox
-        has_edit_role = view.mailbox.accesses.filter(
-            user=request.user,
-            role__in=enums.MAILBOX_ROLES_CAN_EDIT,
-        ).exists()
-
-        # if user does not have edit role with this sender mailbox, return False
-        if not has_edit_role:
-            return False
-
-        # --- Additional check for replies ---
-        # If creating a reply (parentId is provided), check access to the parent thread
-        if parent_id:
-            try:
-                parent_message = models.Message.objects.select_related("thread").get(
-                    id=parent_id
-                )
-                # Check if the user has access to the thread they are replying to
-                if models.ThreadAccess.objects.filter(
-                    thread=parent_message.thread,
-                    mailbox=view.mailbox,
-                    role=enums.ThreadAccessRoleChoices.EDITOR,
-                ).exists():
-                    return True
-            except models.Message.DoesNotExist:
-                return False  # Treat invalid parentId as permission failure
-
-        # --- Additional check for updating existing draft ---
-        # If updating (messageId is provided), check access to the draft's thread
-        message_id = request.data.get("messageId")
-        if message_id and request.method == "PUT":  # Check only needed for updates
-            try:
-                draft_message = models.Message.objects.select_related("thread").get(
-                    id=message_id, is_draft=True
-                )
-                # Check if the user has access to the thread of the draft being updated
-                if not models.ThreadAccess.objects.filter(
-                    thread=draft_message.thread,
-                    mailbox=view.mailbox,
-                    role=enums.ThreadAccessRoleChoices.EDITOR,
-                ).exists():
-                    return False
-            except models.Message.DoesNotExist:
-                # Let the view handle invalid messageId
-                return False  # Treat invalid messageId as permission failure
-
-        # If all checks pass
-        return True
-
-
 def _user_can_manage_thread_access(user, thread_id):
     """True if ``user`` has full edit rights on the thread.
 
@@ -445,6 +373,40 @@ class IsMailboxAdmin(permissions.BasePermission):
         ).exists()
 
         return is_domain_admin
+
+
+class IsMailboxAdminObject(permissions.BasePermission):
+    """Object-level permission granting access on a Mailbox instance to its
+    admins (MailboxAccess role ADMIN), its domain admins, or superusers.
+
+    Unlike :class:`IsMailboxAdmin`, this works on the resolved Mailbox object
+    (e.g. ``/mailboxes/{pk}/``) rather than a nested ``mailbox_id`` URL kwarg.
+    """
+
+    message = "You do not have administrative rights for this mailbox or its domain."
+
+    def has_object_permission(self, request, view, obj):
+        user = request.user
+        if not user or not user.is_authenticated:
+            return False
+
+        if user.is_superuser:
+            return True
+
+        is_mailbox_admin = models.MailboxAccess.objects.filter(
+            user=user, mailbox=obj, role=models.MailboxRoleChoices.ADMIN
+        ).exists()
+        if is_mailbox_admin:
+            return True
+
+        if obj.domain:
+            return models.MailDomainAccess.objects.filter(
+                user=user,
+                maildomain=obj.domain,
+                role=models.MailDomainAccessRoleChoices.ADMIN,
+            ).exists()
+
+        return False
 
 
 class HasChannelScope(permissions.BasePermission):
@@ -690,4 +652,23 @@ class HasAccessToMailbox(IsAuthenticated):
 
         return models.MailboxAccess.objects.filter(
             user=request.user, mailbox=view.kwargs.get("mailbox_id")
+        ).exists()
+
+
+class HasWriteAccessToMailbox(IsAuthenticated):
+    """Allows access only to users with an editor-or-above role on the mailbox.
+
+    Use for state-changing endpoints whose effect is observable beyond the
+    mailbox itself (e.g. writing to the mailbox's CalDAV calendar, which a
+    VIEWER access shouldn't be able to do).
+    """
+
+    def has_permission(self, request, view):
+        if not super().has_permission(request, view):
+            return False
+
+        return models.MailboxAccess.objects.filter(
+            user=request.user,
+            mailbox=view.kwargs.get("mailbox_id"),
+            role__in=enums.MAILBOX_ROLES_CAN_EDIT,
         ).exists()

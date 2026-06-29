@@ -27,10 +27,13 @@ import type {
   MailboxesImageProxyListParams,
   MailboxesMessageTemplatesAvailableListParams,
   MailboxesMessageTemplatesListParams,
+  MailboxesMessageTemplatesRenderRetrieve200,
+  MailboxesMessageTemplatesRenderRetrieveParams,
   MailboxesMessageTemplatesRetrieveParams,
   MailboxesSearchListParams,
   MessageTemplate,
   MessageTemplateRequest,
+  PatchedMailboxNameUpdateRequest,
   PatchedMessageTemplateRequest,
   ReadMessageTemplate,
 } from ".././models";
@@ -1326,6 +1329,239 @@ export const useMailboxesMessageTemplatesDestroy = <
   return useMutation(mutationOptions, queryClient);
 };
 /**
+ * Render the template's html and text bodies with placeholders resolved from the mailbox and the authenticated user (name, user_name, custom attributes). When a draft message_id is provided, message-level placeholders (recipient_name) are also resolved. Unresolved placeholders keep their {placeholder} token.
+ * @summary Render a message template
+ */
+export type mailboxesMessageTemplatesRenderRetrieveResponse200 = {
+  data: MailboxesMessageTemplatesRenderRetrieve200;
+  status: 200;
+};
+
+export type mailboxesMessageTemplatesRenderRetrieveResponseSuccess =
+  mailboxesMessageTemplatesRenderRetrieveResponse200 & {
+    headers: Headers;
+  };
+export type mailboxesMessageTemplatesRenderRetrieveResponse =
+  mailboxesMessageTemplatesRenderRetrieveResponseSuccess;
+
+export const getMailboxesMessageTemplatesRenderRetrieveUrl = (
+  mailboxId: string,
+  id: string,
+  params?: MailboxesMessageTemplatesRenderRetrieveParams,
+) => {
+  const normalizedParams = new URLSearchParams();
+
+  Object.entries(params || {}).forEach(([key, value]) => {
+    if (value !== undefined) {
+      normalizedParams.append(key, value === null ? "null" : value.toString());
+    }
+  });
+
+  const stringifiedParams = normalizedParams.toString();
+
+  return stringifiedParams.length > 0
+    ? `/api/v1.0/mailboxes/${mailboxId}/message-templates/${id}/render/?${stringifiedParams}`
+    : `/api/v1.0/mailboxes/${mailboxId}/message-templates/${id}/render/`;
+};
+
+export const mailboxesMessageTemplatesRenderRetrieve = async (
+  mailboxId: string,
+  id: string,
+  params?: MailboxesMessageTemplatesRenderRetrieveParams,
+  options?: RequestInit,
+): Promise<mailboxesMessageTemplatesRenderRetrieveResponse> => {
+  return fetchAPI<mailboxesMessageTemplatesRenderRetrieveResponse>(
+    getMailboxesMessageTemplatesRenderRetrieveUrl(mailboxId, id, params),
+    {
+      ...options,
+      method: "GET",
+    },
+  );
+};
+
+export const getMailboxesMessageTemplatesRenderRetrieveQueryKey = (
+  mailboxId?: string,
+  id?: string,
+  params?: MailboxesMessageTemplatesRenderRetrieveParams,
+) => {
+  return [
+    `/api/v1.0/mailboxes/${mailboxId}/message-templates/${id}/render/`,
+    ...(params ? [params] : []),
+  ] as const;
+};
+
+export const getMailboxesMessageTemplatesRenderRetrieveQueryOptions = <
+  TData = Awaited<ReturnType<typeof mailboxesMessageTemplatesRenderRetrieve>>,
+  TError = ErrorType<unknown>,
+>(
+  mailboxId: string,
+  id: string,
+  params?: MailboxesMessageTemplatesRenderRetrieveParams,
+  options?: {
+    query?: Partial<
+      UseQueryOptions<
+        Awaited<ReturnType<typeof mailboxesMessageTemplatesRenderRetrieve>>,
+        TError,
+        TData
+      >
+    >;
+    request?: SecondParameter<typeof fetchAPI>;
+  },
+) => {
+  const { query: queryOptions, request: requestOptions } = options ?? {};
+
+  const queryKey =
+    queryOptions?.queryKey ??
+    getMailboxesMessageTemplatesRenderRetrieveQueryKey(mailboxId, id, params);
+
+  const queryFn: QueryFunction<
+    Awaited<ReturnType<typeof mailboxesMessageTemplatesRenderRetrieve>>
+  > = ({ signal }) =>
+    mailboxesMessageTemplatesRenderRetrieve(mailboxId, id, params, {
+      signal,
+      ...requestOptions,
+    });
+
+  return {
+    queryKey,
+    queryFn,
+    enabled: !!(mailboxId && id),
+    ...queryOptions,
+  } as UseQueryOptions<
+    Awaited<ReturnType<typeof mailboxesMessageTemplatesRenderRetrieve>>,
+    TError,
+    TData
+  > & { queryKey: DataTag<QueryKey, TData, TError> };
+};
+
+export type MailboxesMessageTemplatesRenderRetrieveQueryResult = NonNullable<
+  Awaited<ReturnType<typeof mailboxesMessageTemplatesRenderRetrieve>>
+>;
+export type MailboxesMessageTemplatesRenderRetrieveQueryError =
+  ErrorType<unknown>;
+
+export function useMailboxesMessageTemplatesRenderRetrieve<
+  TData = Awaited<ReturnType<typeof mailboxesMessageTemplatesRenderRetrieve>>,
+  TError = ErrorType<unknown>,
+>(
+  mailboxId: string,
+  id: string,
+  params: undefined | MailboxesMessageTemplatesRenderRetrieveParams,
+  options: {
+    query: Partial<
+      UseQueryOptions<
+        Awaited<ReturnType<typeof mailboxesMessageTemplatesRenderRetrieve>>,
+        TError,
+        TData
+      >
+    > &
+      Pick<
+        DefinedInitialDataOptions<
+          Awaited<ReturnType<typeof mailboxesMessageTemplatesRenderRetrieve>>,
+          TError,
+          Awaited<ReturnType<typeof mailboxesMessageTemplatesRenderRetrieve>>
+        >,
+        "initialData"
+      >;
+    request?: SecondParameter<typeof fetchAPI>;
+  },
+  queryClient?: QueryClient,
+): DefinedUseQueryResult<TData, TError> & {
+  queryKey: DataTag<QueryKey, TData, TError>;
+};
+export function useMailboxesMessageTemplatesRenderRetrieve<
+  TData = Awaited<ReturnType<typeof mailboxesMessageTemplatesRenderRetrieve>>,
+  TError = ErrorType<unknown>,
+>(
+  mailboxId: string,
+  id: string,
+  params?: MailboxesMessageTemplatesRenderRetrieveParams,
+  options?: {
+    query?: Partial<
+      UseQueryOptions<
+        Awaited<ReturnType<typeof mailboxesMessageTemplatesRenderRetrieve>>,
+        TError,
+        TData
+      >
+    > &
+      Pick<
+        UndefinedInitialDataOptions<
+          Awaited<ReturnType<typeof mailboxesMessageTemplatesRenderRetrieve>>,
+          TError,
+          Awaited<ReturnType<typeof mailboxesMessageTemplatesRenderRetrieve>>
+        >,
+        "initialData"
+      >;
+    request?: SecondParameter<typeof fetchAPI>;
+  },
+  queryClient?: QueryClient,
+): UseQueryResult<TData, TError> & {
+  queryKey: DataTag<QueryKey, TData, TError>;
+};
+export function useMailboxesMessageTemplatesRenderRetrieve<
+  TData = Awaited<ReturnType<typeof mailboxesMessageTemplatesRenderRetrieve>>,
+  TError = ErrorType<unknown>,
+>(
+  mailboxId: string,
+  id: string,
+  params?: MailboxesMessageTemplatesRenderRetrieveParams,
+  options?: {
+    query?: Partial<
+      UseQueryOptions<
+        Awaited<ReturnType<typeof mailboxesMessageTemplatesRenderRetrieve>>,
+        TError,
+        TData
+      >
+    >;
+    request?: SecondParameter<typeof fetchAPI>;
+  },
+  queryClient?: QueryClient,
+): UseQueryResult<TData, TError> & {
+  queryKey: DataTag<QueryKey, TData, TError>;
+};
+/**
+ * @summary Render a message template
+ */
+
+export function useMailboxesMessageTemplatesRenderRetrieve<
+  TData = Awaited<ReturnType<typeof mailboxesMessageTemplatesRenderRetrieve>>,
+  TError = ErrorType<unknown>,
+>(
+  mailboxId: string,
+  id: string,
+  params?: MailboxesMessageTemplatesRenderRetrieveParams,
+  options?: {
+    query?: Partial<
+      UseQueryOptions<
+        Awaited<ReturnType<typeof mailboxesMessageTemplatesRenderRetrieve>>,
+        TError,
+        TData
+      >
+    >;
+    request?: SecondParameter<typeof fetchAPI>;
+  },
+  queryClient?: QueryClient,
+): UseQueryResult<TData, TError> & {
+  queryKey: DataTag<QueryKey, TData, TError>;
+} {
+  const queryOptions = getMailboxesMessageTemplatesRenderRetrieveQueryOptions(
+    mailboxId,
+    id,
+    params,
+    options,
+  );
+
+  const query = useQuery(queryOptions, queryClient) as UseQueryResult<
+    TData,
+    TError
+  > & { queryKey: DataTag<QueryKey, TData, TError> };
+
+  query.queryKey = queryOptions.queryKey;
+
+  return query;
+}
+
+/**
  * List message templates.
  */
 export type mailboxesMessageTemplatesAvailableListResponse200 = {
@@ -1722,6 +1958,113 @@ export function useMailboxesRetrieve<
   return query;
 }
 
+/**
+ * Rename a mailbox (its display contact name). Mailbox admins only.
+
+``partial=True`` keeps true PATCH semantics: omitting ``name`` is a no-op
+rather than a 400, so the runtime matches the optional request schema.
+ */
+export type mailboxesPartialUpdateResponse200 = {
+  data: Mailbox;
+  status: 200;
+};
+
+export type mailboxesPartialUpdateResponseSuccess =
+  mailboxesPartialUpdateResponse200 & {
+    headers: Headers;
+  };
+export type mailboxesPartialUpdateResponse =
+  mailboxesPartialUpdateResponseSuccess;
+
+export const getMailboxesPartialUpdateUrl = (id: string) => {
+  return `/api/v1.0/mailboxes/${id}/`;
+};
+
+export const mailboxesPartialUpdate = async (
+  id: string,
+  patchedMailboxNameUpdateRequest: PatchedMailboxNameUpdateRequest,
+  options?: RequestInit,
+): Promise<mailboxesPartialUpdateResponse> => {
+  return fetchAPI<mailboxesPartialUpdateResponse>(
+    getMailboxesPartialUpdateUrl(id),
+    {
+      ...options,
+      method: "PATCH",
+      headers: { "Content-Type": "application/json", ...options?.headers },
+      body: JSON.stringify(patchedMailboxNameUpdateRequest),
+    },
+  );
+};
+
+export const getMailboxesPartialUpdateMutationOptions = <
+  TError = ErrorType<unknown>,
+  TContext = unknown,
+>(options?: {
+  mutation?: UseMutationOptions<
+    Awaited<ReturnType<typeof mailboxesPartialUpdate>>,
+    TError,
+    { id: string; data: PatchedMailboxNameUpdateRequest },
+    TContext
+  >;
+  request?: SecondParameter<typeof fetchAPI>;
+}): UseMutationOptions<
+  Awaited<ReturnType<typeof mailboxesPartialUpdate>>,
+  TError,
+  { id: string; data: PatchedMailboxNameUpdateRequest },
+  TContext
+> => {
+  const mutationKey = ["mailboxesPartialUpdate"];
+  const { mutation: mutationOptions, request: requestOptions } = options
+    ? options.mutation &&
+      "mutationKey" in options.mutation &&
+      options.mutation.mutationKey
+      ? options
+      : { ...options, mutation: { ...options.mutation, mutationKey } }
+    : { mutation: { mutationKey }, request: undefined };
+
+  const mutationFn: MutationFunction<
+    Awaited<ReturnType<typeof mailboxesPartialUpdate>>,
+    { id: string; data: PatchedMailboxNameUpdateRequest }
+  > = (props) => {
+    const { id, data } = props ?? {};
+
+    return mailboxesPartialUpdate(id, data, requestOptions);
+  };
+
+  return { mutationFn, ...mutationOptions };
+};
+
+export type MailboxesPartialUpdateMutationResult = NonNullable<
+  Awaited<ReturnType<typeof mailboxesPartialUpdate>>
+>;
+export type MailboxesPartialUpdateMutationBody =
+  PatchedMailboxNameUpdateRequest;
+export type MailboxesPartialUpdateMutationError = ErrorType<unknown>;
+
+export const useMailboxesPartialUpdate = <
+  TError = ErrorType<unknown>,
+  TContext = unknown,
+>(
+  options?: {
+    mutation?: UseMutationOptions<
+      Awaited<ReturnType<typeof mailboxesPartialUpdate>>,
+      TError,
+      { id: string; data: PatchedMailboxNameUpdateRequest },
+      TContext
+    >;
+    request?: SecondParameter<typeof fetchAPI>;
+  },
+  queryClient?: QueryClient,
+): UseMutationResult<
+  Awaited<ReturnType<typeof mailboxesPartialUpdate>>,
+  TError,
+  { id: string; data: PatchedMailboxNameUpdateRequest },
+  TContext
+> => {
+  const mutationOptions = getMailboxesPartialUpdateMutationOptions(options);
+
+  return useMutation(mutationOptions, queryClient);
+};
 /**
  * Search mailboxes by domain, local part and contact name.
 

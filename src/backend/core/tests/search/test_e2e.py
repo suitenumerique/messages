@@ -142,6 +142,12 @@ def fixture_create_test_thread(test_mailbox, wait_for_indexing):
             message=message, contact=contact2, type=enums.MessageRecipientTypeChoices.TO
         )
 
+        # Recompute denormalized thread stats the way production does after a
+        # message lands. Without this ``messaged_at`` stays None, so the thread
+        # is never considered unread (see _compute_unread_starred_from_accesses)
+        # and is:unread search filters can't match it.
+        thread.update_stats()
+
         # Wait for indexing to complete
         wait_for_indexing()
 
@@ -317,6 +323,9 @@ class TestSearchE2E:
             contact=contact,
             type=enums.MessageRecipientTypeChoices.TO,
         )
+        # Keep the thread's denormalized stats consistent with its messages,
+        # the way production does after a message lands.
+        thread.update_stats()
         wait_for_indexing()
 
         es = get_opensearch_client()
@@ -387,6 +396,9 @@ class TestSearchE2E:
             contact=contact,
             type=enums.MessageRecipientTypeChoices.TO,
         )
+        # Keep the thread's denormalized stats consistent with its messages,
+        # the way production does after a message lands.
+        thread.update_stats()
         wait_for_indexing()
 
         es = get_opensearch_client()

@@ -1,6 +1,6 @@
 import test, { expect, Locator, Page } from "@playwright/test";
 import { resetDatabase } from "../utils";
-import { signInKeycloakIfNeeded } from "../utils-test";
+import { openMailboxSettingsModal, signInKeycloakIfNeeded } from "../utils-test";
 
 // Helper to click checkbox and wait for toast to be visible
 const clickAndWaitForToast = async (page: Page, checkbox: Locator) => {
@@ -9,6 +9,18 @@ const clickAndWaitForToast = async (page: Page, checkbox: Locator) => {
   const toast = page.getByText("Signature updated!close").first()
   await expect(toast).toBeVisible();
   await toast.getByRole("button", { name: "Close" }).click();
+};
+
+// The per-mailbox signatures view now lives as a tab inside the mailbox settings
+// modal (it used to be a dedicated /mailbox/:id/signatures page). Open the modal
+// from the header menu and select the Signatures tab. The signatures data grid
+// and its "New signature" action then render inside the settings dialog; the
+// compose/edit/confirm dialogs open on top of it, so they are addressed with
+// `getByRole("dialog").last()` (the most recently opened dialog).
+const openMailboxSignaturesTab = async (page: Page): Promise<Locator> => {
+  const settingsModal = await openMailboxSettingsModal(page);
+  await settingsModal.getByRole("tab", { name: "Signatures" }).click();
+  return settingsModal;
 };
 
 test.describe("Mailbox Signatures", () => {
@@ -27,39 +39,25 @@ test.describe("Mailbox Signatures", () => {
   test("should show empty state when no signatures exist", async ({ page, browserName }) => {
     await page.waitForLoadState("networkidle");
 
-    // Navigate to signatures page
-    const header = page.locator(".c__header");
-    const settingsButton = header.getByRole("button", { name: "More options" });
-    await settingsButton.click();
-    await page.getByRole("menuitem", { name: "Signatures" }).click();
-    await page.waitForURL("**/mailbox/*/signatures");
+    // Open the signatures tab in the mailbox settings modal
+    const settingsModal = await openMailboxSignaturesTab(page);
 
     // Wait for the data grid to load
     await page.waitForLoadState("networkidle");
 
-    // Check if empty state message exists (may or may not be visible depending on existing data)
-    const emptyLabel = page.getByText("No signatures found");
-    // There are no signatures, the empty label should be visible
+    // With no signatures, the data grid renders its empty placeholder. Scope the
+    // assertion to the grid inside the settings dialog: the "No signatures" label
+    // also appears in the section header, so a page-wide query would be ambiguous.
+    const emptyLabel = settingsModal
+      .locator(".admin-data-grid")
+      .getByText("No signatures");
     await expect(emptyLabel).toBeVisible();
   });
   test("should create a new signature", async ({ page, browserName }) => {
     await page.waitForLoadState("networkidle");
 
-    // Open the settings dropdown menu
-    const header = page.locator(".c__header");
-    const settingsButton = header.getByRole("button", { name: "More options" });
-    await expect(settingsButton).toBeVisible();
-    await settingsButton.click();
-
-    // Click on Signatures menu item
-    const signaturesMenuItem = page.getByRole("menuitem", { name: "Signatures" });
-    await expect(signaturesMenuItem).toBeVisible();
-    await signaturesMenuItem.click();
-
-    // Verify we are on the signatures page
-    await page.waitForURL("**/mailbox/*/signatures");
-    const pageTitle = page.getByRole("heading", { name: "Signatures", level: 1 });
-    await expect(pageTitle).toBeVisible();
+    // Open the signatures tab in the mailbox settings modal
+    await openMailboxSignaturesTab(page);
 
     // Click on New signature button
     const newSignatureButton = page.getByRole("button", { name: "New signature" });
@@ -67,7 +65,7 @@ test.describe("Mailbox Signatures", () => {
     await newSignatureButton.click();
 
     // Fill in the signature form
-    const modal = page.getByRole("dialog");
+    const modal = page.getByRole("dialog").last();
     await expect(modal).toBeVisible();
     await expect(modal.getByText("Create a new signature")).toBeVisible();
 
@@ -91,16 +89,12 @@ test.describe("Mailbox Signatures", () => {
   test("should edit a signature", async ({ page, browserName }) => {
     await page.waitForLoadState("networkidle");
 
-    // Navigate to signatures page
-    const header = page.locator(".c__header");
-    const settingsButton = header.getByRole("button", { name: "More options" });
-    await settingsButton.click();
-    await page.getByRole("menuitem", { name: "Signatures" }).click();
-    await page.waitForURL("**/mailbox/*/signatures");
+    // Open the signatures tab in the mailbox settings modal
+    await openMailboxSignaturesTab(page);
 
     // First create a signature to edit
     await page.getByRole("button", { name: "New signature" }).click();
-    const createModal = page.getByRole("dialog");
+    const createModal = page.getByRole("dialog").last();
     await createModal.getByRole("textbox", { name: "Name" }).fill("Signature to Edit");
     await createModal.locator(".ProseMirror").click();
     await createModal.locator(".ProseMirror").pressSequentially("Original content");
@@ -115,7 +109,7 @@ test.describe("Mailbox Signatures", () => {
     await signatureRow.getByRole("button", { name: "Modify" }).click();
 
     // Edit the signature
-    const editModal = page.getByRole("dialog");
+    const editModal = page.getByRole("dialog").last();
     await expect(editModal).toBeVisible();
     await expect(editModal.getByText('Edit signature "Signature to Edit"')).toBeVisible();
 
@@ -136,16 +130,12 @@ test.describe("Mailbox Signatures", () => {
   test("should delete a signature", async ({ page, browserName }) => {
     await page.waitForLoadState("networkidle");
 
-    // Navigate to signatures page
-    const header = page.locator(".c__header");
-    const settingsButton = header.getByRole("button", { name: "More options" });
-    await settingsButton.click();
-    await page.getByRole("menuitem", { name: "Signatures" }).click();
-    await page.waitForURL("**/mailbox/*/signatures");
+    // Open the signatures tab in the mailbox settings modal
+    await openMailboxSignaturesTab(page);
 
     // First create a signature to delete
     await page.getByRole("button", { name: "New signature" }).click();
-    const createModal = page.getByRole("dialog");
+    const createModal = page.getByRole("dialog").last();
     await createModal.getByRole("textbox", { name: "Name" }).fill("Signature to Delete");
     await createModal.locator(".ProseMirror").click();
     await createModal.locator(".ProseMirror").pressSequentially("This will be deleted");
@@ -160,7 +150,7 @@ test.describe("Mailbox Signatures", () => {
     await signatureRow.getByRole("button", { name: "Delete" }).click();
 
     // Confirm deletion in the confirmation modal
-    const confirmModal = page.getByRole("dialog");
+    const confirmModal = page.getByRole("dialog").last();
     await expect(confirmModal).toBeVisible();
     await expect(confirmModal.getByText(/Are you sure you want to delete this signature/)).toBeVisible();
     await confirmModal.getByRole("button", { name: "Delete" }).click();
@@ -175,16 +165,12 @@ test.describe("Mailbox Signatures", () => {
   test("should set a signature as default via checkbox", async ({ page, browserName }) => {
     await page.waitForLoadState("networkidle");
 
-    // Navigate to signatures page
-    const header = page.locator(".c__header");
-    const settingsButton = header.getByRole("button", { name: "More options" });
-    await settingsButton.click();
-    await page.getByRole("menuitem", { name: "Signatures" }).click();
-    await page.waitForURL("**/mailbox/*/signatures");
+    // Open the signatures tab in the mailbox settings modal
+    await openMailboxSignaturesTab(page);
 
     // Create a signature
     await page.getByRole("button", { name: "New signature" }).click();
-    const createModal = page.getByRole("dialog");
+    const createModal = page.getByRole("dialog").last();
     await createModal.getByRole("textbox", { name: "Name" }).fill("Default Signature Test");
     await createModal.locator(".ProseMirror").click();
     await createModal.locator(".ProseMirror").pressSequentially("This is my default signature");
@@ -210,16 +196,12 @@ test.describe("Mailbox Signatures", () => {
   test("should create a signature as default via modal checkbox", async ({ page, browserName }) => {
     await page.waitForLoadState("networkidle");
 
-    // Navigate to signatures page
-    const header = page.locator(".c__header");
-    const settingsButton = header.getByRole("button", { name: "More options" });
-    await settingsButton.click();
-    await page.getByRole("menuitem", { name: "Signatures" }).click();
-    await page.waitForURL("**/mailbox/*/signatures");
+    // Open the signatures tab in the mailbox settings modal
+    await openMailboxSignaturesTab(page);
 
     // Create a signature with default checkbox checked
     await page.getByRole("button", { name: "New signature" }).click();
-    const createModal = page.getByRole("dialog");
+    const createModal = page.getByRole("dialog").last();
     await createModal.getByRole("textbox", { name: "Name" }).fill("Modal Default Signature");
 
     // Check the default signature checkbox in the modal
@@ -240,16 +222,12 @@ test.describe("Mailbox Signatures", () => {
   test("should load default signature when composing a new message", async ({ page, browserName }) => {
     await page.waitForLoadState("networkidle");
 
-    // Navigate to signatures page
-    const header = page.locator(".c__header");
-    const settingsButton = header.getByRole("button", { name: "More options" });
-    await settingsButton.click();
-    await page.getByRole("menuitem", { name: "Signatures" }).click();
-    await page.waitForURL("**/mailbox/*/signatures");
+    // Open the signatures tab in the mailbox settings modal
+    await openMailboxSignaturesTab(page);
 
     // Create a default signature
     await page.getByRole("button", { name: "New signature" }).click();
-    const createModal = page.getByRole("dialog");
+    const createModal = page.getByRole("dialog").last();
     await createModal.getByRole("textbox", { name: "Name" }).fill("Auto Load Signature");
     await createModal.getByRole("checkbox", { name: "Default signature" }).click();
     await createModal.locator(".ProseMirror").click();
@@ -257,9 +235,8 @@ test.describe("Mailbox Signatures", () => {
     await createModal.getByRole("button", { name: "Save" }).click();
     await expect(page.getByText("Signature created!")).toBeVisible();
 
-    // Go back to inbox
-    await page.getByRole("link", { name: /Inbox/ }).click();
-    await page.waitForURL("**/mailbox/*");
+    // Close the settings modal before navigating away
+    await page.keyboard.press("Escape");
 
     // Click new message button
     const newMessageButton = page.getByRole('link', { name: 'New message' })
@@ -276,16 +253,12 @@ test.describe("Mailbox Signatures", () => {
   test("should only have one default signature at a time", async ({ page, browserName }) => {
     await page.waitForLoadState("networkidle");
 
-    // Navigate to signatures page
-    const header = page.locator(".c__header");
-    const settingsButton = header.getByRole("button", { name: "More options" });
-    await settingsButton.click();
-    await page.getByRole("menuitem", { name: "Signatures" }).click();
-    await page.waitForURL("**/mailbox/*/signatures");
+    // Open the signatures tab in the mailbox settings modal
+    await openMailboxSignaturesTab(page);
 
     // Create first signature and set as default
     await page.getByRole("button", { name: "New signature" }).click();
-    let createModal = page.getByRole("dialog");
+    let createModal = page.getByRole("dialog").last();
     await createModal.getByRole("textbox", { name: "Name" }).fill("First Default");
     await createModal.getByRole("checkbox", { name: "Default signature" }).click();
     await createModal.locator(".ProseMirror").click();
@@ -295,7 +268,7 @@ test.describe("Mailbox Signatures", () => {
 
     // Create second signature and set as default
     await page.getByRole("button", { name: "New signature" }).click();
-    createModal = page.getByRole("dialog");
+    createModal = page.getByRole("dialog").last();
     await createModal.getByRole("textbox", { name: "Name" }).fill("Second Default");
     await createModal.getByRole("checkbox", { name: "Default signature" }).click();
     await createModal.locator(".ProseMirror").click();
@@ -324,16 +297,13 @@ test.describe("Mailbox Signatures", () => {
     await signInKeycloakIfNeeded({ page, username: `user.e2e.${browserName}` });
     await page.waitForLoadState("networkidle");
 
-    // Navigate to mailbox signatures page
+    // Open the signatures tab in the mailbox settings modal
     const header = page.locator(".c__header");
-    const userSettingsButton = header.getByRole("button", { name: "More options" });
-    await userSettingsButton.click();
-    await page.getByRole("menuitem", { name: "Signatures" }).click();
-    await page.waitForURL("**/mailbox/*/signatures");
+    await openMailboxSignaturesTab(page);
 
     // Create a mailbox signature WITH is_default
     await page.getByRole("button", { name: "New signature" }).click();
-    let createModal = page.getByRole("dialog");
+    let createModal = page.getByRole("dialog").last();
     await createModal.getByRole("textbox", { name: "Name" }).fill("Mailbox Default Sig");
     await createModal.locator(".ProseMirror").click();
     await createModal.locator(".ProseMirror").pressSequentially("-- MAILBOX SIGNATURE --");

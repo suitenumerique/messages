@@ -1,6 +1,5 @@
 import { useTranslation } from "react-i18next"
-import Link from "next/link"
-import { useParams, useSearchParams } from "next/navigation"
+import { Link, useParams } from "@tanstack/react-router"
 import { useEffect, useMemo, useRef, useState } from "react"
 import { createPortal } from "react-dom"
 import clsx from "clsx"
@@ -17,19 +16,20 @@ import { LabelBadge } from "@/features/ui/components/label-badge"
 import { useLayoutDragContext } from "@/features/layouts/components/layout-context"
 import ViewHelper from "@/features/utils/view-helper"
 import useCanEditThreads from "@/features/message/use-can-edit-threads"
+import { ThreadListboxItemProps } from "../../hooks/use-thread-listbox"
 
 type ThreadItemProps = {
     thread: Thread
     isSelected: boolean
-    onToggleSelection: (threadId: string, shiftKey: boolean, ctrlKey: boolean, arrowUpKey?: 'up' | 'down') => void
+    onToggle: (threadId: string) => void
+    onSelectRange: (threadId: string) => void
     selectedThreadIds: Set<string>
     isSelectionMode: boolean
-}
+} & ThreadListboxItemProps
 
-export const ThreadItem = ({ thread, isSelected, onToggleSelection, selectedThreadIds, isSelectionMode }: ThreadItemProps) => {
+export const ThreadItem = ({ thread, isSelected, onToggle, onSelectRange, selectedThreadIds, isSelectionMode, tabIndex, itemRef, onFocusItem }: ThreadItemProps) => {
     const { t, i18n } = useTranslation();
-    const params = useParams<{ mailboxId: string, threadId: string }>()
-    const searchParams = useSearchParams()
+    const params = useParams({ strict: false }) as { mailboxId?: string; threadId?: string }
     const [isDragging, setIsDragging] = useState(false)
     const [isExiting, setIsExiting] = useState(false)
     const { setIsDragging: setGlobalDragging, setDragAction } = useLayoutDragContext();
@@ -76,28 +76,20 @@ export const ThreadItem = ({ thread, isSelected, onToggleSelection, selectedThre
     );
     const hasEditableInDrag = useCanEditThreads(dragThreadIds);
 
-    const handleCheckboxClick = (e: React.MouseEvent) => {
-        e.stopPropagation();
-        onToggleSelection(thread.id, e.shiftKey, e.ctrlKey || e.metaKey);
-    };
-
     const handleItemClick = (e: React.MouseEvent<HTMLAnchorElement>) => {
-        // If using modifier keys or in selection mode, toggle selection instead of navigating
-        if (e.shiftKey || e.ctrlKey || e.metaKey || hasSelection) {
+        onFocusItem();
+        // Keyboard activation (Enter on the focused option) fires a click
+        // with detail === 0: let it navigate even while a selection is
+        // active, it is the only pointer-free way to open a thread.
+        if (e.detail === 0) return;
+        if (e.shiftKey) {
             e.preventDefault();
-            onToggleSelection(thread.id, e.shiftKey, e.ctrlKey || e.metaKey);
+            onSelectRange(thread.id);
+        } else if (e.ctrlKey || e.metaKey || hasSelection) {
+            e.preventDefault();
+            onToggle(thread.id);
         }
         // Otherwise, let the Link handle navigation normally
-    };
-
-    const handleKeyDown = (e: React.KeyboardEvent<HTMLAnchorElement>) => {
-        if (!hasSelection) return;
-        const arrowUpKey = e.key === 'ArrowUp';
-        const arrowDownKey = e.key === 'ArrowDown';
-        if (e.shiftKey && (arrowUpKey || arrowDownKey)) {
-            e.preventDefault();
-            onToggleSelection(thread.id, e.shiftKey, e.ctrlKey || e.metaKey, arrowUpKey ? 'up' : 'down');
-        }
     };
 
     const handleDragStart = (e: React.DragEvent<HTMLAnchorElement>) => {
@@ -150,7 +142,9 @@ export const ThreadItem = ({ thread, isSelected, onToggleSelection, selectedThre
     return (
         <>
             <Link
-                href={`/mailbox/${params?.mailboxId}/thread/${thread.id}?${searchParams}`}
+                to="/mailbox/$mailboxId/thread/$threadId"
+                params={{ mailboxId: params?.mailboxId ?? '', threadId: thread.id }}
+                search={true}
                 className={clsx(
                     'thread-item',
                     {
@@ -159,23 +153,35 @@ export const ThreadItem = ({ thread, isSelected, onToggleSelection, selectedThre
                         'thread-item--selected': isSelected,
                     },
                 )}
-                data-thread-id={thread.id}
                 data-unread={hasUnread}
                 draggable
                 onDragStart={handleDragStart}
                 onDragEnd={handleDragEnd}
                 onClick={handleItemClick}
-                onKeyDown={handleKeyDown}
-                tabIndex={0}
+                onFocus={onFocusItem}
+                tabIndex={tabIndex}
+                ref={itemRef}
+                role="option"
+                aria-selected={isSelected}
             >
                 <div>
                     {showCheckbox && (
-                        <Checkbox
-                            checked={isSelected}
-                            onClick={handleCheckboxClick}
-                            aria-label={isSelected ? t('Deselect thread') : t('Select thread')}
-                            className="thread-item__checkbox"
-                        />
+                        // Mouse-only affordance, purely presentational: the option
+                        // itself carries the selection state (aria-selected) and a
+                        // focusable checkbox would add a second tab stop, hence
+                        // aria-hidden + tabIndex=-1. pointer-events:none (see SCSS)
+                        // lets the click fall through to the Link, where
+                        // handleItemClick owns the selection logic; the checkbox
+                        // only reflects `checked`. Driving it from its own click
+                        // handler would fight handleItemClick's preventDefault and
+                        // leave it visually out of sync.
+                        <span aria-hidden="true" className="thread-item__checkbox-wrapper">
+                            <Checkbox
+                                checked={isSelected}
+                                tabIndex={-1}
+                                className="thread-item__checkbox"
+                            />
+                        </span>
                     )}
                     <div className="thread-item__read-indicator" />
                 </div>

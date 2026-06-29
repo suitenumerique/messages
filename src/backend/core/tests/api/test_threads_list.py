@@ -5,7 +5,7 @@ from datetime import timedelta
 from unittest import mock
 
 from django.db import connection
-from django.test.utils import CaptureQueriesContext
+from django.test.utils import CaptureQueriesContext, override_settings
 from django.urls import reverse
 from django.utils import timezone
 
@@ -1800,6 +1800,50 @@ class TestThreadListAPI:
             )
 
         assert response.status_code == status.HTTP_403_FORBIDDEN
+
+    @override_settings(OPENSEARCH_HOSTS=["http://opensearch:9200"])
+    def test_search_without_mailbox_id_scopes_to_accessible_mailboxes(
+        self, api_client, url
+    ):
+        """A search with no mailbox_id must be scoped to the user's own
+        mailboxes — never run cluster-wide (which would leak hit-totals /
+        content-existence across every mailbox)."""
+        user = UserFactory()
+        api_client.force_authenticate(user=user)
+
+        mbx_a = MailboxFactory(users_read=[user])
+        mbx_b = MailboxFactory(users_read=[user])
+        # A mailbox the user cannot access — must not be in the search scope.
+        MailboxFactory(users_read=[UserFactory()])
+
+        with mock.patch("core.api.viewsets.thread.search_threads") as mock_search:
+            mock_search.return_value = {"threads": [], "total": 0}
+            response = api_client.get(url, {"search": "test query"})
+
+        assert response.status_code == status.HTTP_200_OK
+        passed_mailbox_ids = mock_search.call_args.kwargs["mailbox_ids"]
+        # Scoped to exactly the user's accessible mailboxes, and never None.
+        assert passed_mailbox_ids is not None
+        assert set(passed_mailbox_ids) == {str(mbx_a.id), str(mbx_b.id)}
+
+    @override_settings(OPENSEARCH_HOSTS=["http://opensearch:9200"])
+    def test_search_without_mailbox_id_and_no_access_passes_empty_scope(
+        self, api_client, url
+    ):
+        """A user with no mailbox access searches an empty scope (not the whole
+        cluster). The viewset passes [] — which search_threads treats as
+        'no results' rather than 'all mailboxes'."""
+        user = UserFactory()
+        api_client.force_authenticate(user=user)
+        # Some other user's mailbox exists, but ours has none.
+        MailboxFactory(users_read=[UserFactory()])
+
+        with mock.patch("core.api.viewsets.thread.search_threads") as mock_search:
+            mock_search.return_value = {"threads": [], "total": 0}
+            response = api_client.get(url, {"search": "test query"})
+
+        assert response.status_code == status.HTTP_200_OK
+        assert mock_search.call_args.kwargs["mailbox_ids"] == []
 
 
 class TestThreadListEventsCount:

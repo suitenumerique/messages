@@ -214,6 +214,234 @@ export function useBlobDownloadRetrieve<
 }
 
 /**
+ * Serve a blob inline for the FilePreview viewer.
+
+Sibling of ``download`` with the same authorization model but two
+extra guarantees:
+
+- the response Content-Type is the MIME type detected from the bytes
+  (via ``python-magic``), not the value declared at upload time;
+- the detected MIME must belong to ``PREVIEWABLE_MIME_TYPES``,
+  otherwise the endpoint refuses with 415.
+
+Returning 415 (rather than 200 with the raw payload) is the security
+contract that lets the frontend render the response inline: any byte
+we send back has been re-classified server-side as one of the safe
+previewable types.
+ */
+export type blobPreviewRetrieveResponse200 = {
+  data: Blob;
+  status: 200;
+};
+
+export type blobPreviewRetrieveResponse400 = {
+  data: void;
+  status: 400;
+};
+
+export type blobPreviewRetrieveResponse403 = {
+  data: void;
+  status: 403;
+};
+
+export type blobPreviewRetrieveResponse404 = {
+  data: void;
+  status: 404;
+};
+
+export type blobPreviewRetrieveResponse415 = {
+  data: void;
+  status: 415;
+};
+
+export type blobPreviewRetrieveResponse500 = {
+  data: void;
+  status: 500;
+};
+
+export type blobPreviewRetrieveResponseSuccess =
+  blobPreviewRetrieveResponse200 & {
+    headers: Headers;
+  };
+export type blobPreviewRetrieveResponseError = (
+  | blobPreviewRetrieveResponse400
+  | blobPreviewRetrieveResponse403
+  | blobPreviewRetrieveResponse404
+  | blobPreviewRetrieveResponse415
+  | blobPreviewRetrieveResponse500
+) & {
+  headers: Headers;
+};
+
+export type blobPreviewRetrieveResponse =
+  | blobPreviewRetrieveResponseSuccess
+  | blobPreviewRetrieveResponseError;
+
+export const getBlobPreviewRetrieveUrl = (id: string) => {
+  return `/api/v1.0/blob/${id}/preview/`;
+};
+
+export const blobPreviewRetrieve = async (
+  id: string,
+  options?: RequestInit,
+): Promise<blobPreviewRetrieveResponse> => {
+  return fetchAPI<blobPreviewRetrieveResponse>(getBlobPreviewRetrieveUrl(id), {
+    ...options,
+    method: "GET",
+  });
+};
+
+export const getBlobPreviewRetrieveQueryKey = (id?: string) => {
+  return [`/api/v1.0/blob/${id}/preview/`] as const;
+};
+
+export const getBlobPreviewRetrieveQueryOptions = <
+  TData = Awaited<ReturnType<typeof blobPreviewRetrieve>>,
+  TError = ErrorType<void>,
+>(
+  id: string,
+  options?: {
+    query?: Partial<
+      UseQueryOptions<
+        Awaited<ReturnType<typeof blobPreviewRetrieve>>,
+        TError,
+        TData
+      >
+    >;
+    request?: SecondParameter<typeof fetchAPI>;
+  },
+) => {
+  const { query: queryOptions, request: requestOptions } = options ?? {};
+
+  const queryKey = queryOptions?.queryKey ?? getBlobPreviewRetrieveQueryKey(id);
+
+  const queryFn: QueryFunction<
+    Awaited<ReturnType<typeof blobPreviewRetrieve>>
+  > = ({ signal }) => blobPreviewRetrieve(id, { signal, ...requestOptions });
+
+  return {
+    queryKey,
+    queryFn,
+    enabled: !!id,
+    ...queryOptions,
+  } as UseQueryOptions<
+    Awaited<ReturnType<typeof blobPreviewRetrieve>>,
+    TError,
+    TData
+  > & { queryKey: DataTag<QueryKey, TData, TError> };
+};
+
+export type BlobPreviewRetrieveQueryResult = NonNullable<
+  Awaited<ReturnType<typeof blobPreviewRetrieve>>
+>;
+export type BlobPreviewRetrieveQueryError = ErrorType<void>;
+
+export function useBlobPreviewRetrieve<
+  TData = Awaited<ReturnType<typeof blobPreviewRetrieve>>,
+  TError = ErrorType<void>,
+>(
+  id: string,
+  options: {
+    query: Partial<
+      UseQueryOptions<
+        Awaited<ReturnType<typeof blobPreviewRetrieve>>,
+        TError,
+        TData
+      >
+    > &
+      Pick<
+        DefinedInitialDataOptions<
+          Awaited<ReturnType<typeof blobPreviewRetrieve>>,
+          TError,
+          Awaited<ReturnType<typeof blobPreviewRetrieve>>
+        >,
+        "initialData"
+      >;
+    request?: SecondParameter<typeof fetchAPI>;
+  },
+  queryClient?: QueryClient,
+): DefinedUseQueryResult<TData, TError> & {
+  queryKey: DataTag<QueryKey, TData, TError>;
+};
+export function useBlobPreviewRetrieve<
+  TData = Awaited<ReturnType<typeof blobPreviewRetrieve>>,
+  TError = ErrorType<void>,
+>(
+  id: string,
+  options?: {
+    query?: Partial<
+      UseQueryOptions<
+        Awaited<ReturnType<typeof blobPreviewRetrieve>>,
+        TError,
+        TData
+      >
+    > &
+      Pick<
+        UndefinedInitialDataOptions<
+          Awaited<ReturnType<typeof blobPreviewRetrieve>>,
+          TError,
+          Awaited<ReturnType<typeof blobPreviewRetrieve>>
+        >,
+        "initialData"
+      >;
+    request?: SecondParameter<typeof fetchAPI>;
+  },
+  queryClient?: QueryClient,
+): UseQueryResult<TData, TError> & {
+  queryKey: DataTag<QueryKey, TData, TError>;
+};
+export function useBlobPreviewRetrieve<
+  TData = Awaited<ReturnType<typeof blobPreviewRetrieve>>,
+  TError = ErrorType<void>,
+>(
+  id: string,
+  options?: {
+    query?: Partial<
+      UseQueryOptions<
+        Awaited<ReturnType<typeof blobPreviewRetrieve>>,
+        TError,
+        TData
+      >
+    >;
+    request?: SecondParameter<typeof fetchAPI>;
+  },
+  queryClient?: QueryClient,
+): UseQueryResult<TData, TError> & {
+  queryKey: DataTag<QueryKey, TData, TError>;
+};
+
+export function useBlobPreviewRetrieve<
+  TData = Awaited<ReturnType<typeof blobPreviewRetrieve>>,
+  TError = ErrorType<void>,
+>(
+  id: string,
+  options?: {
+    query?: Partial<
+      UseQueryOptions<
+        Awaited<ReturnType<typeof blobPreviewRetrieve>>,
+        TError,
+        TData
+      >
+    >;
+    request?: SecondParameter<typeof fetchAPI>;
+  },
+  queryClient?: QueryClient,
+): UseQueryResult<TData, TError> & {
+  queryKey: DataTag<QueryKey, TData, TError>;
+} {
+  const queryOptions = getBlobPreviewRetrieveQueryOptions(id, options);
+
+  const query = useQuery(queryOptions, queryClient) as UseQueryResult<
+    TData,
+    TError
+  > & { queryKey: DataTag<QueryKey, TData, TError> };
+
+  query.queryKey = queryOptions.queryKey;
+
+  return query;
+}
+
+/**
  * Upload binary data and create a Blob record.
         This endpoint accepts multipart/form-data containing a file and returns a
         blob ID and other metadata. The blob is associated with the specified mailbox.

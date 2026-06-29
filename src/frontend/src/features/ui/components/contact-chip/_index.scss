@@ -254,7 +254,7 @@
     pre {
         margin: var(--c--globals--spacings--2xs) 0 0;
         white-space: pre-wrap;
-        word-break: break-word;
+        overflow-wrap: break-word;
         font-size: var(--c--globals--font--sizes--2xs);
         background-color: var(--c--contextuals--background--surface--tertiary);
         padding: var(--c--globals--spacings--xs);

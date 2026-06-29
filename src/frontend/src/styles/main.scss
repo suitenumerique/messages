@@ -15,6 +15,7 @@
 // Application Components
 @use "./../features/layouts/components/main";
 @use "./../features/ui/components/breadcrumbs";
+@use "./../features/ui/components/lagaufre";
 @use "./../features/ui/components/skip-link";
 @use "./../features/ui/components/toaster";
 @use "./../features/ui/components/badge";
@@ -29,6 +30,7 @@
 @use "./../features/ui/components/suggestion-input";
 @use "./../features/ui/components/transient-tooltip";
 @use "./../features/ui/components/assignees-avatar-group";
+@use "./../features/layouts/components/mailbox-selector";
 @use "./../features/layouts/components/mailbox-panel";
 @use "./../features/layouts/components/mailbox-panel/components/mailbox-actions";
 @use "./../features/layouts/components/mailbox-panel/components/mailbox-list";
@@ -44,6 +46,7 @@
 @use "./../features/layouts/components/thread-view/components/thread-summary";
 @use "./../features/layouts/components/thread-view/components/message-reply-form";
 @use "./../features/layouts/components/thread-view/components/thread-attachment-list";
+@use "./../features/layouts/components/thread-view/components/attachment-preview-modal";
 @use "./../features/layouts/components/thread-view/components/calendar-invite";
 @use "./../features/layouts/components/thread-view/components/thread-accesses-widget";
 @use "./../features/layouts/components/thread-view/components/share-modal-extensions";
@@ -53,6 +56,7 @@
 @use "./../features/forms/components/search-input";
 @use "./../features/forms/components/search-filters-form";
 @use "./../features/controlled-modals/message-importer";
+@use "./../features/layouts/components/mailbox-settings/modal-mailbox-settings";
 @use "./../features/layouts/components/mailbox-settings/modal-compose-integration";
 @use "./../features/layouts/components/admin/mailbox-credentials";
 @use "./../features/layouts/components/admin/modal-create-update-mailbox";
@@ -64,6 +68,7 @@
 @use "./../features/forms/components/combobox";
 @use "./../features/layouts/components/mailbox-panel/components/mailbox-labels/components/label-form-modal/components/color-palette-field";
 @use "./../features/layouts/components/admin/signatures-view";
+@use "./../features/layouts/components/mailbox-settings/autoreplies-view";
 
 // Blocknote custom blocks and components
 @use "./../features/blocknote/blocknote-view-field";
@@ -73,7 +78,7 @@
 @use "./../features/blocknote/column-layout-block";
 
 // Application views
-@use "./../pages";
-@use "./../pages/mailbox";
-@use "./../pages/mailbox/[mailboxId]/new";
-@use "./../pages/domain";
+@use "./views";
+@use "./views/mailbox";
+@use "./views/mailbox/new";
+@use "./views/domain";

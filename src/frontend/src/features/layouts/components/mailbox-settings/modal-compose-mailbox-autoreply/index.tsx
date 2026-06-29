@@ -1,8 +1,7 @@
-import { ReadMessageTemplate, MessageTemplateTypeChoices, useMailboxesMessageTemplatesCreate, useMailboxesMessageTemplatesUpdate, useMailboxesMessageTemplatesRetrieve, useMailboxesMessageTemplatesList } from "@/features/api/gen";
+import { Mailbox, ReadMessageTemplate, MessageTemplateTypeChoices, useMailboxesMessageTemplatesCreate, useMailboxesMessageTemplatesUpdate, useMailboxesMessageTemplatesRetrieve, useMailboxesMessageTemplatesList } from "@/features/api/gen";
 import { RhfInput } from "@/features/forms/components/react-hook-form/rhf-input";
 import { RhfCheckbox } from "@/features/forms/components/react-hook-form/rhf-checkbox";
 import { RhfSelect } from "@/features/forms/components/react-hook-form/rhf-select";
-import { useMailboxContext } from "@/features/providers/mailbox";
 import { zodResolver } from "@hookform/resolvers/zod";
 import { Button, Modal, ModalSize } from "@gouvfr-lasuite/cunningham-react";
 import { Spinner } from "@gouvfr-lasuite/ui-kit";
@@ -24,24 +23,20 @@ import { TemplateComposer } from "../modal-compose-template/template-composer";
 type ModalComposeMailboxAutoreplyProps = {
     isOpen: boolean;
     onClose: () => void;
+    mailbox: Mailbox;
     autoreply?: ReadMessageTemplate;
 }
 
-export const ModalComposeMailboxAutoreply = ({ isOpen, onClose, autoreply }: ModalComposeMailboxAutoreplyProps) => {
+export const ModalComposeMailboxAutoreply = ({ isOpen, onClose, mailbox, autoreply }: ModalComposeMailboxAutoreplyProps) => {
     const { t } = useTranslation();
-    const { selectedMailbox } = useMailboxContext();
     const queryClient = useQueryClient();
     const [isDirty, setIsDirty] = useState(false);
     const guardedOnClose = useConfirmBeforeClose(isDirty, onClose);
     const { queryKey } = useMailboxesMessageTemplatesList(
-        selectedMailbox?.id ?? "",
+        mailbox.id,
         { type: [MessageTemplateTypeChoices.autoreply] },
         { query: { enabled: false } }
     );
-
-    if (!selectedMailbox) {
-        return null;
-    }
 
     const invalidateAutoreplies = async () => {
         await queryClient.invalidateQueries({ queryKey, exact: true });
@@ -69,14 +64,14 @@ export const ModalComposeMailboxAutoreply = ({ isOpen, onClose, autoreply }: Mod
             <div className="modal-compose-template">
                 {autoreply ? (
                     <AutoreplyComposeFormWithRetrieve
-                        mailboxId={selectedMailbox.id}
+                        mailboxId={mailbox.id}
                         autoreply={autoreply}
                         onSuccess={handleSuccess}
                         onDirtyChange={setIsDirty}
                     />
                 ) : (
                     <AutoreplyComposeForm
-                        mailboxId={selectedMailbox.id}
+                        mailboxId={mailbox.id}
                         onSuccess={handleSuccess}
                         onDirtyChange={setIsDirty}
                     />

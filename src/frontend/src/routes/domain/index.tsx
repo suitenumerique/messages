@@ -1,0 +1,195 @@
+import { createFileRoute, useNavigate } from "@tanstack/react-router";
+import { useEffect, useState } from "react";
+import { Button, DataGrid, usePagination } from "@gouvfr-lasuite/cunningham-react";
+import { Trans, useTranslation } from "react-i18next";
+import { Icon, IconType, Spinner } from "@gouvfr-lasuite/ui-kit";
+import { useQueryClient } from "@tanstack/react-query";
+
+import { AdminLayout } from "@/features/layouts/components/admin/admin-layout";
+import { getMaildomainsListQueryOptions, MailDomainAdmin, MailDomainAdminWrite } from "@/features/api/gen";
+import { useAdminMailDomain } from "@/features/providers/admin-maildomain";
+import useAbility, { Abilities } from "@/hooks/use-ability";
+import { FEATURE_KEYS, useFeatureFlag } from "@/hooks/use-feature";
+import { Banner } from "@/features/ui/components/banner";
+import { CreateDomainAction } from "@/features/layouts/components/admin/domains-view/create-domain-action";
+import { addToast, ToasterItem } from "@/features/ui/components/toaster";
+import { ModalMaildomainManageAccesses } from "@/features/layouts/components/admin/modal-maildomain-manage-accesses";
+import { AdminSearchInput } from "@/features/forms/components/admin-search-input";
+type AdminDataGridProps = {
+  pagination: ReturnType<typeof usePagination>;
+  domains: MailDomainAdmin[];
+}
+
+enum MailDomainEditAction {
+  MANAGE_ACCESS = 'manageAccess',
+}
+
+function AdminDataGrid({ domains, pagination }: AdminDataGridProps) {
+  const navigate = useNavigate();
+  const { t, i18n } = useTranslation();
+  const hasManageAbility = useAbility(Abilities.CAN_MANAGE_SOME_MAILDOMAIN_ACCESSES);
+  const isManageAccessesEnabled = useFeatureFlag(FEATURE_KEYS.MAILDOMAIN_MANAGE_ACCESSES);
+  const canManageMaildomainAccesses = hasManageAbility && isManageAccessesEnabled;
+  const [editedDomain, setEditedDomain] = useState<MailDomainAdmin | null>(null);
+  const [editAction, setEditAction] = useState<MailDomainEditAction | null>(null);
+  const columns = [
+    {
+      id: "name",
+      headerName: t("Domain"),
+      renderCell: ({ row }: { row: MailDomainAdmin }) => (
+        <span
+          style={{ cursor: "pointer", fontWeight: 700 }}
+          onClick={() => navigate({ to: '/domain/$maildomainId', params: { maildomainId: row.id } })}
+        >
+          {row.name}
+        </span>
+      ),
+    },
+    {
+      id: "created_at",
+      size: 160,
+      headerName: t("Created at"),
+      renderCell: ({ row }: { row: MailDomainAdmin }) => new Date(row.created_at).toLocaleDateString(i18n.resolvedLanguage),
+    },
+    {
+      id: "updated_at",
+      size: 160,
+      headerName: t("Updated at"),
+      renderCell: ({ row }: { row: MailDomainAdmin }) => new Date(row.updated_at).toLocaleDateString(i18n.resolvedLanguage),
+    },
+    {
+      id: "mailbox_count",
+      size: 160,
+      headerName: t("Mailbox count"),
+      renderCell: ({ row }: { row: MailDomainAdmin }) => row.mailbox_count,
+    },
+    ...(canManageMaildomainAccesses ? [{
+      id: "actions",
+      size: 200,
+      renderCell: ({ row }: { row: MailDomainAdmin }) => (
+        <ActionsCell
+          domain={row}
+          onManageAccess={() => {
+            setEditAction(MailDomainEditAction.MANAGE_ACCESS)
+            setEditedDomain(row)
+          }} />
+      )
+    }] : []),
+  ];
+
+  return (
+    <div className="admin-data-grid">
+      <DataGrid
+        columns={columns}
+        rows={domains}
+        pagination={pagination}
+        enableSorting={false}
+        onSortModelChange={() => undefined}
+      />
+      {canManageMaildomainAccesses && editedDomain && (
+        <ModalMaildomainManageAccesses
+          domain={editedDomain!}
+          isOpen={!!editedDomain && editAction === MailDomainEditAction.MANAGE_ACCESS}
+          onClose={() => {
+            setEditedDomain(null)
+            setEditAction(null)
+          }}
+        />
+      )}
+    </div>
+  );
+}
+
+const AdminPageContent = () => {
+  const navigate = useNavigate();
+  const { t } = useTranslation();
+  const { mailDomains, isLoading, error, pagination, searchQuery, setSearchQuery } = useAdminMailDomain();
+  const canCreateMaildomain = useAbility(Abilities.CAN_CREATE_MAILDOMAINS);
+  const hasManageAbility = useAbility(Abilities.CAN_MANAGE_SOME_MAILDOMAIN_ACCESSES);
+  const isManageAccessesEnabled = useFeatureFlag(FEATURE_KEYS.MAILDOMAIN_MANAGE_ACCESSES);
+  const canManageMaildomainAccesses = hasManageAbility && isManageAccessesEnabled;
+  const normalizedSearchQuery = (searchQuery || '').trim();
+  const shouldRedirect = !canCreateMaildomain && !canManageMaildomainAccesses && !isLoading && !normalizedSearchQuery && mailDomains.length === 1;
+
+  useEffect(() => {
+    if (shouldRedirect) {
+      navigate({ to: '/domain/$maildomainId', params: { maildomainId: mailDomains[0].id }, replace: true });
+    }
+  }, [navigate, shouldRedirect, mailDomains]);
+
+  if (shouldRedirect || (isLoading && !normalizedSearchQuery)) {
+    return (
+      <div className="admin-page__loading">
+        <Spinner />
+      </div>
+    )
+  }
+
+  if (error) {
+    return (
+      <Banner type="error">
+        {t("An error occurred while loading maildomains.")}
+      </Banner>
+    );
+  }
+
+  return (
+    <>
+      <div className="admin-page__bar">
+        <h1>{t("Maildomains management")}</h1>
+      </div>
+      <div className="admin-page__search">
+        <AdminSearchInput
+          label={t("Search a domain")}
+          placeholder={t("Search by domain name…")}
+          initialValue={searchQuery}
+          onChange={setSearchQuery}
+        />
+      </div>
+      <AdminDataGrid domains={mailDomains} pagination={pagination} />
+    </>
+  )
+}
+
+const AdminPage = () => {
+  const queryClient = useQueryClient();
+
+  const handleCreateDomain = (domain: MailDomainAdminWrite) => {
+    queryClient.invalidateQueries({
+      queryKey: getMaildomainsListQueryOptions().queryKey,
+      exact: false,
+    });
+    addToast(
+      <ToasterItem>
+        <Trans i18nKey="The domain <strong>{{domain}}</strong> has been created successfully." values={{ domain: domain.name }} components={{ strong: <strong /> }} />
+      </ToasterItem>, {
+      toastId: `create-domain-success:${domain.id}`,
+    })
+  };
+
+  return (
+    <AdminLayout currentTab="addresses" actions={<CreateDomainAction onCreate={handleCreateDomain} />}>
+      <AdminPageContent />
+    </AdminLayout>
+  );
+};
+
+const ActionsCell = ({ domain, onManageAccess }: { domain: MailDomainAdmin, onManageAccess: () => void }) => {
+  const { t } = useTranslation();
+  const canManageAccesses = useAbility(Abilities.CAN_MANAGE_MAILDOMAIN_ACCESSES, domain);
+  if (!canManageAccesses) return null;
+
+  return (
+    <Button
+      size="nano"
+      variant="tertiary"
+      icon={<Icon name="group" type={IconType.FILLED} />}
+      onClick={onManageAccess}
+      style={{ paddingInline: "var(--c--globals--spacings--xs)" }}
+    >{t("Manage accesses")}</Button>
+  )
+}
+
+export const Route = createFileRoute("/domain/")({
+  component: AdminPage,
+});

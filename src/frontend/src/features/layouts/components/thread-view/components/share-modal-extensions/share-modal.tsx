@@ -30,6 +30,7 @@ import {
     type QuickSearchData,
     QuickSearchGroup,
     QuickSearchItemTemplate,
+    Icon,
     ShareInvitationItem,
     type DropdownMenuOption,
     type UserData,
@@ -71,7 +72,7 @@ const SearchUserItem = <UserType,>({ user }: SearchUserItemProps<UserType>) => {
             right={
                 <div className="c__search-user-item-right">
                     <span>{tc("components.share.item.add")}</span>
-                    <span className="material-icons">add</span>
+                    <Icon name="add" />
                 </div>
             }
         />
@@ -533,7 +534,7 @@ const ShowMoreButton = ({ show, onShowMore }: ShowMoreButtonProps) => {
             <Button
                 variant="tertiary"
                 size="small"
-                icon={<span className="material-icons">arrow_downward</span>}
+                icon={<Icon name="arrow_downward" />}
                 onClick={onShowMore}
             >
                 {tc("components.share.members.load_more")}

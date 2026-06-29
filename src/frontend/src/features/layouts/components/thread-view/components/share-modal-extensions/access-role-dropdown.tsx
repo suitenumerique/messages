@@ -9,6 +9,7 @@ import {
     type DropdownMenuOption,
     type DropdownMenuProps,
 } from "@gouvfr-lasuite/ui-kit";
+import { ChevronDown, ChevronUp } from "@gouvfr-lasuite/ui-kit/icons";
 
 type AccessRoleDropdownProps = {
     selectedRole: string;
@@ -82,11 +83,7 @@ export const AccessRoleDropdown = ({
                 size="small"
                 color="neutral"
                 variant="tertiary"
-                icon={
-                    <span className="material-icons">
-                        {isOpen ? "arrow_drop_up" : "arrow_drop_down"}
-                    </span>
-                }
+                icon={isOpen ? <ChevronUp /> : <ChevronDown />}
                 iconPosition="right"
                 onClick={() => {
                     onOpenChange?.(!isOpen);

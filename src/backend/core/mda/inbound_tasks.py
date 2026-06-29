@@ -3,7 +3,7 @@
 # pylint: disable=unused-argument, broad-exception-raised, broad-exception-caught, too-many-lines
 
 import re
-from typing import Any, Dict, Optional, Tuple
+from typing import Any
 
 from django.conf import settings
 from django.core.cache import cache
@@ -11,6 +11,12 @@ from django.utils import timezone
 
 import requests
 from celery.utils.log import get_task_logger
+from jmap_email import (
+    JmapEmail,
+    first_address_email,
+    has_header,
+    parse_email,
+)
 
 from core import models
 from core.mda.inbound_auth import (
@@ -18,14 +24,14 @@ from core.mda.inbound_auth import (
     get_inbound_auth_mode,
 )
 from core.mda.inbound_create import _create_message_from_inbound
-from core.mda.rfc5322 import parse_email_message
+from core.mda.utils import headers_blocks
 
 from messages.celery_app import app as celery_app
 
 logger = get_task_logger(__name__)
 
 
-def _is_selfcheck_message(parsed_email: Dict[str, Any], recipient_email: str) -> bool:
+def _is_selfcheck_message(parsed_email: JmapEmail, recipient_email: str) -> bool:
     """Return True when this message is the self-check probe.
 
     Match is strict on both envelope ends: the From address must equal
@@ -37,7 +43,7 @@ def _is_selfcheck_message(parsed_email: Dict[str, Any], recipient_email: str) ->
     if not selfcheck_from or not selfcheck_to:
         return False
 
-    from_email = ((parsed_email.get("from") or {}).get("email") or "").strip().lower()
+    from_email = first_address_email(parsed_email.get("from")).strip().lower()
     if from_email != selfcheck_from:
         return False
 
@@ -45,8 +51,8 @@ def _is_selfcheck_message(parsed_email: Dict[str, Any], recipient_email: str) ->
 
 
 def _check_spam_with_hardcoded_rules(
-    parsed_email: Dict[str, Any], spam_config: Dict[str, Any]
-) -> Optional[bool]:
+    parsed_email: JmapEmail, spam_config: dict[str, Any]
+) -> bool | None:
     """Check if a message is spam using hardcoded rules.
 
     Args:
@@ -57,7 +63,6 @@ def _check_spam_with_hardcoded_rules(
         is_spam: True if the message is spam, False otherwise. None if no rules matched.
     """
     rules = spam_config.get("rules", [])
-    headers = parsed_email.get("headers", {})
 
     for rule in rules:
         if rule.get("header_match") or rule.get("header_match_regex"):
@@ -73,33 +78,45 @@ def _check_spam_with_hardcoded_rules(
             key = key.lower().strip()
             value = value.lower().strip()
 
-            # Get header value(s) - can be a string or list
-            header_value = headers.get(key)
-            if header_value is None:
+            # Existence check first — the actual value is read from
+            # ``headersBlocks`` below to apply the trusted-relays cut.
+            if not has_header(parsed_email, key):
                 continue
 
-            # Use headers_blocks to identify which headers to trust based on trusted_relays config.
-            # Each block ends with a Received header, marking everything above it as trusted.
-            # Block 0: headers before first Received (ours from MTA), ending with first Received
-            # Block 1: headers between first and second Received, ending with second Received (relay 1)
-            # Block 2+: headers after second Received, ending with third Received (relay 2+)
-            headers_blocks = parsed_email.get("headers_blocks", [])
+            # Use ``ext.headersBlocks`` to identify which headers to
+            # trust based on the trusted_relays config. Each block ends
+            # with a Received header, marking everything above it as
+            # trusted.
+            #   Block 0: headers before first Received (ours from MTA),
+            #            ending with first Received.
+            #   Block 1: headers between first and second Received,
+            #            ending with second Received (relay 1).
+            #   Block 2+: headers after second Received, ending with
+            #             third Received (relay 2+).
+            blocks = headers_blocks(parsed_email)
 
-            # Get number of trusted relays (default: 1, meaning we trust block 0 and block 1)
-            trusted_relays = spam_config.get("trusted_relays", 1)
-            # Number of blocks to check: block 0 (before our Received) + trusted_relays blocks
+            # Default trusted_relays = 0: trust only block 0 (the Received our
+            # own MTA prepends, plus the headers above it). A sender can prepend
+            # their own Received lines, which land in block 1+ — trusting those
+            # by default would let them slip a forged header (e.g. an
+            # action="ham" allowlist match) into the trusted slice. Operators
+            # with real upstream relays opt in by setting trusted_relays to the
+            # number of hops they actually control.
+            trusted_relays = spam_config.get("trusted_relays", 0)
+            # block 0 (our Received) + trusted_relays upstream blocks.
             blocks_to_check = trusted_relays + 1
 
-            # Check only the trusted blocks (slicing beyond list length just returns all blocks)
-            # Blocks are ordered from most recent to oldest, so we want the first match (most recent)
+            # Check only the trusted blocks (slicing beyond list length
+            # just returns all blocks). Blocks are ordered most recent
+            # to oldest, so we want the first match (most recent).
             found_value = None
-            for block in headers_blocks[:blocks_to_check]:
+            for block in blocks[:blocks_to_check]:
                 if key in block:
                     block_value = block[key]
-                    # Values are always lists in headers_blocks, use the first one (most recent in that block)
+                    # Values inside a block are always lists; first entry
+                    # is the most recent occurrence within that block.
                     if block_value:
                         found_value = block_value[0]
-                    # Break after first match since blocks are ordered most recent to oldest
                     break
 
             if found_value is None:
@@ -131,8 +148,8 @@ def _check_spam_with_hardcoded_rules(
 
 
 def _check_spam_with_rspamd(
-    raw_data: bytes, spam_config: Dict[str, Any]
-) -> Tuple[bool, Optional[str], Optional[Dict[str, Any]]]:
+    raw_data: bytes, spam_config: dict[str, Any]
+) -> tuple[bool, str | None, dict[str, Any] | None]:
     """Check if a message is spam using rspamd.
 
     Args:
@@ -230,18 +247,9 @@ def process_inbound_message_task(self, inbound_message_id: str):
 
         # Parse the email from raw_data
         raw_data_bytes = bytes(inbound_message.raw_data)
-        try:
-            parsed_email = parse_email_message(raw_data_bytes)
-        except Exception as e:
-            error_msg = f"Failed to parse email message: {e}"
-            logger.error(error_msg)
-            inbound_message.error_message = error_msg
-            inbound_message.save(update_fields=["error_message"])
-            # Keep the message for retry
-            return {"success": False, "error": error_msg}
-
-        if not parsed_email:
-            error_msg = "Failed to parse email message (returned None)"
+        parsed_email = parse_email(raw_data_bytes)
+        if parsed_email is None:
+            error_msg = "Failed to parse email message"
             logger.error(error_msg)
             inbound_message.error_message = error_msg
             inbound_message.save(update_fields=["error_message"])
@@ -251,7 +259,7 @@ def process_inbound_message_task(self, inbound_message_id: str):
         # Get spam config from maildomain (includes global settings + domain-specific overrides)
         spam_config = mailbox.domain.get_spam_config()
 
-        rspamd_result: Optional[Dict[str, Any]] = None
+        rspamd_result: dict[str, Any] | None = None
         if _is_selfcheck_message(parsed_email, recipient_email):
             logger.debug(
                 "Bypassing spam checks for selfcheck message %s", inbound_message_id
@@ -286,18 +294,18 @@ def process_inbound_message_task(self, inbound_message_id: str):
                 f"X-StMsg-Sender-Auth: {auth_verdict}\r\n".encode("ascii")
                 + raw_data_bytes
             )
-            try:
-                parsed_email = parse_email_message(prepended)
+            reparsed = parse_email(prepended)
+            if reparsed is not None:
+                parsed_email = reparsed
                 raw_data_bytes = prepended
-            except Exception as e:  # pylint: disable=broad-exception-caught
+            else:
                 # Keep raw_data_bytes / parsed_email in lockstep: if the
                 # re-parse breaks, store the original bytes so the blob stays
                 # parseable for display (subject/body/recipients). The
                 # sender-auth banner is sacrificed in this rare case.
                 logger.warning(
                     "Failed to re-parse email after prepending auth header, "
-                    "dropping the prepend: %s",
-                    e,
+                    "dropping the prepend"
                 )
 
         # Create the message using the extracted function

@@ -7,7 +7,7 @@ import time
 
 import pytest
 
-from core.mda.smtp import send_smtp_mail
+from core.mda.smtp import SmtpProxy, send_smtp_mail
 
 logger = logging.getLogger(__name__)
 
@@ -21,6 +21,8 @@ class MixedResponseSMTPHandler:
         self.mail_from_response = None  # Configure MAIL FROM response
         self.data_response = None  # Configure DATA command response
         self.ehlo_sleep = None  # Configure EHLO timeout
+        self.advertise_starttls = False  # Add STARTTLS to EHLO extensions
+        self.starttls_break_handshake = False  # Reply 220 then close socket
         self.server_socket = None
         self.server_thread = None
         self.running = False
@@ -42,7 +44,7 @@ class MixedResponseSMTPHandler:
         """Configure EHLO sleep time."""
         self.ehlo_sleep = sleep_time
 
-    def start(self):
+    def start(self):  # pylint: disable=too-many-statements
         """Start the SMTP server."""
         self.server_socket = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
         self.server_socket.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
@@ -51,7 +53,7 @@ class MixedResponseSMTPHandler:
         self.server_socket.listen(1)
         self.running = True
 
-        def handle_client(client_socket):
+        def handle_client(client_socket):  # pylint: disable=too-many-branches,too-many-statements
             try:
                 # Send welcome message
                 client_socket.send(b"220 Test SMTP Server\r\n")
@@ -68,7 +70,18 @@ class MixedResponseSMTPHandler:
                     if command in {"EHLO", "HELO"}:
                         if self.ehlo_sleep:
                             time.sleep(self.ehlo_sleep)
-                        client_socket.send(b"250 OK\r\n")
+                        if self.advertise_starttls:
+                            client_socket.send(
+                                b"250-mock.example\r\n250-STARTTLS\r\n250 OK\r\n"
+                            )
+                        else:
+                            client_socket.send(b"250 OK\r\n")
+                    elif command == "STARTTLS":
+                        client_socket.send(b"220 Ready to start TLS\r\n")
+                        if self.starttls_break_handshake:
+                            # Don't speak TLS — client handshake will fail.
+                            client_socket.close()
+                            break
                     elif command == "MAIL" and rest.upper().startswith("FROM:"):
                         rest = rest[5:].strip()
                         if self.mail_from_response:
@@ -249,7 +262,8 @@ class TestSMTPClient:
             smtp_handler.stop()
 
     def test_mixed_recipient_responses(self):
-        """Test mixed delivery scenarios using a real SMTP server that returns different responses."""
+        """Test mixed delivery scenarios using a real SMTP server with
+        different responses per recipient."""
         # Create and start the custom SMTP server
         smtp_handler = MixedResponseSMTPHandler()
         smtp_handler.configure_recipient_response(
@@ -340,10 +354,12 @@ class TestSMTPClient:
             recipient_emails=recipients,
             message_content=message,
             timeout=1,
-            proxy_host="proxy.example.com",
-            proxy_port=1080,
-            proxy_username="proxyuser",
-            proxy_password="proxypass",
+            proxy=SmtpProxy(
+                host="proxy.example.com",
+                port=1080,
+                username="proxyuser",
+                password="proxypass",
+            ),
         )
 
         assert len(result) == 1
@@ -382,6 +398,81 @@ class TestSMTPClient:
                 result["user1@example.com"]["retry"] is False
             )  # 550 is permanent error
 
+        finally:
+            smtp_handler.stop()
+
+    def test_secure_defers_when_starttls_not_advertised(self):
+        """At smtp_tls_security_level=secure, a server that doesn't advertise
+        STARTTLS must cause delivery to defer rather than fall through to
+        cleartext."""
+        smtp_handler = MixedResponseSMTPHandler()
+        smtp_handler.start()
+
+        try:
+            time.sleep(0.1)
+            result = send_smtp_mail(
+                smtp_host="127.0.0.1",
+                smtp_port=smtp_handler.port,
+                envelope_from="sender@example.com",
+                recipient_emails={"user1@example.com"},
+                message_content=b"Subject: Test\n\nHello",
+                timeout=5,
+                smtp_tls_security_level="secure",
+            )
+
+            assert result["user1@example.com"]["delivered"] is False
+            assert result["user1@example.com"]["retry"] is True
+            assert "STARTTLS" in result["user1@example.com"]["error"]
+        finally:
+            smtp_handler.stop()
+
+    def test_may_falls_back_when_starttls_handshake_fails(self):
+        """At smtp_tls_security_level=may, a TLS handshake failure (e.g. cert
+        mismatch) must transparently fall back to cleartext and deliver.
+        Reproduces the Mandrill/SES regression that motivated this code path."""
+        smtp_handler = MixedResponseSMTPHandler()
+        smtp_handler.advertise_starttls = True
+        smtp_handler.starttls_break_handshake = True
+        smtp_handler.start()
+
+        try:
+            time.sleep(0.1)
+            result = send_smtp_mail(
+                smtp_host="127.0.0.1",
+                smtp_port=smtp_handler.port,
+                envelope_from="sender@example.com",
+                recipient_emails={"user1@example.com"},
+                message_content=b"Subject: Test\n\nHello",
+                timeout=5,
+                smtp_tls_security_level="may",
+            )
+
+            assert result["user1@example.com"]["delivered"] is True
+        finally:
+            smtp_handler.stop()
+
+    def test_secure_fails_on_starttls_handshake_failure(self):
+        """At smtp_tls_security_level=secure, a STARTTLS handshake failure must
+        defer delivery rather than fall through to cleartext."""
+        smtp_handler = MixedResponseSMTPHandler()
+        smtp_handler.advertise_starttls = True
+        smtp_handler.starttls_break_handshake = True
+        smtp_handler.start()
+
+        try:
+            time.sleep(0.1)
+            result = send_smtp_mail(
+                smtp_host="127.0.0.1",
+                smtp_port=smtp_handler.port,
+                envelope_from="sender@example.com",
+                recipient_emails={"user1@example.com"},
+                message_content=b"Subject: Test\n\nHello",
+                timeout=5,
+                smtp_tls_security_level="secure",
+            )
+
+            assert result["user1@example.com"]["delivered"] is False
+            assert result["user1@example.com"]["retry"] is True
         finally:
             smtp_handler.stop()
 

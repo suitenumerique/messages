@@ -1,10 +1,8 @@
 import { BlockSchema, InlineContentSchema, StyleSchema } from "@blocknote/core";
 import { BlockNoteView } from "@blocknote/mantine";
-import { FilePanelController } from "@blocknote/react";
 import { Field, FieldProps } from "@gouvfr-lasuite/cunningham-react";
 import clsx from "clsx";
 import { PropsWithChildren } from "react";
-import { createPortal } from "react-dom";
 
 import { CustomSideMenuController } from "../custom-side-menu";
 import { CustomSlashMenu } from "../custom-slash-menu";
@@ -24,30 +22,20 @@ export const BlockNoteViewField = <BSchema extends BlockSchema, ISchema extends 
                 sideMenu={false}
                 slashMenu={false}
                 formattingToolbar={false}
-                filePanel={false}
                 {...composerProps}
                 className={clsx(composerProps.className, "composer-field-input")}
                 editable={!disabled}
+                portalElements={{
+                    // Render BlockNote floating UI (slash menu, file panel…) in a
+                    // body-level portal so popovers escape the editor overflow
+                    // context instead of being clipped (e.g. inside modal scrollers).
+                    default: document.body,
+                }}
             >
                 <CustomSideMenuController />
                 <CustomSlashMenu />
-                <PortalledFilePanel />
                 {children}
             </BlockNoteView>
         </Field>
     )
-}
-
-/**
- * Renders the BlockNote file panel (image upload popover) in a React portal
- * at document.body level. This prevents the popover from being clipped by
- * ancestor overflow containers (e.g. modal scrollers).
- */
-const PortalledFilePanel = () => {
-    return createPortal(
-        <div className="bn-container bn-mantine" data-mantine-color-scheme="light">
-            <FilePanelController />
-        </div>,
-        document.body,
-    );
 }

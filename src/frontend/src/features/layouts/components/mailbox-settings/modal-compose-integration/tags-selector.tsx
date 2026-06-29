@@ -1,4 +1,4 @@
-import { TreeLabel, ThreadLabel, useLabelsList } from "@/features/api/gen";
+import { Mailbox, TreeLabel, ThreadLabel, useLabelsList } from "@/features/api/gen";
 import { Icon, IconType, IconSize, Spinner } from "@gouvfr-lasuite/ui-kit";
 import { Button, Checkbox, Field, Input, LabelledBox, useModal } from "@gouvfr-lasuite/cunningham-react";
 import { useState, useMemo, useRef } from "react";
@@ -12,6 +12,7 @@ import { ColorHelper } from "@/features/utils/color-helper";
 import { usePopupPosition } from "@/hooks/use-popup-position";
 
 type TagsSelectorProps = {
+    mailbox: Mailbox;
     selectedTags: string[];
     onTagsChange: (tags: string[]) => void;
 };
@@ -38,9 +39,9 @@ const flattenLabels = (labels: TreeLabel[]): TreeLabel[] => {
     return result;
 };
 
-export const TagsSelector = ({ selectedTags, onTagsChange }: TagsSelectorProps) => {
+export const TagsSelector = ({ mailbox, selectedTags, onTagsChange }: TagsSelectorProps) => {
     const { t } = useTranslation();
-    const { selectedMailbox, invalidateLabels } = useMailboxContext();
+    const { invalidateLabels } = useMailboxContext();
     const { open, close, isOpen } = useModal();
     const [searchQuery, setSearchQuery] = useState('');
     const [isPopupOpen, setIsPopupOpen] = useState(false);
@@ -56,8 +57,8 @@ export const TagsSelector = ({ selectedTags, onTagsChange }: TagsSelectorProps) 
     });
 
     const { data: labelsList, isLoading } = useLabelsList(
-        { mailbox_id: selectedMailbox?.id ?? '' },
-        { query: { enabled: !!selectedMailbox } }
+        { mailbox_id: mailbox.id },
+        { query: { enabled: !!mailbox.id } }
     );
 
     const allLabels = useMemo(() => flattenLabels(labelsList?.data || []), [labelsList?.data]);
@@ -220,6 +221,7 @@ export const TagsSelector = ({ selectedTags, onTagsChange }: TagsSelectorProps) 
                                 <LabelModal
                                     isOpen={isOpen}
                                     onClose={close}
+                                    mailbox={mailbox}
                                     label={{ display_name: searchQuery }}
                                     onSuccess={handleCreateLabel}
                                 />
