@@ -29,7 +29,9 @@ requires-python = ">=3.14.4,<4.0"
 dependencies = [
     "requests==2.32.3",
     "PyJWT==2.10.1",
-    "pymilter==1.0.5"
+    "aiosmtpd==1.4.6",
+    "httpx==0.28.1",
+    "prometheus-client==0.24.1",
 ]
 
 [project.urls]
@@ -39,9 +41,15 @@ dependencies = [
 "Repository" = "https://github.com/suitenumerique/st-messages"
 
 [project.optional-dependencies]
+# pymilter is a C extension that needs libmilter-dev at install time. Keep it
+# behind an extra so the pure-Python pymta image can build without libmilter.
+postfix = [
+    "pymilter==1.0.5",
+]
 dev = [
     "pytest==8.3.5",
     "pytest-cov==6.0.0",
+    "pytest-asyncio==0.24.0",
     "fastapi==0.115.12",
     "uvicorn==0.34.1",
     "ruff==0.9.3",
@@ -92,7 +100,11 @@ sections = { django=["django"] }
 extra-standard-library = ["tomllib"]
 
 [tool.ruff.lint.per-file-ignores]
-"**/tests/*" = ["S", "SLF"]
+"**/tests/*" = ["S", "SLF", "C405", "PLR0913"]
+# The Postfix milter predates the pure-Python pymta module and intentionally
+# uses bare except + print for stdout-based logging in the libmilter
+# sync callback context.
+"src/delivery_milter.py" = ["BLE001", "T201"]
 
 [tool.pytest.ini_options]
 addopts = [

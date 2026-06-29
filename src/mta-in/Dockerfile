@@ -37,8 +37,10 @@ COPY pyproject.toml uv.lock ./
 
 ENV PATH="/venv/bin:$PATH"
 
-# Install dependencies
-RUN --mount=type=cache,target=/root/.cache/uv uv sync --locked --no-install-project --no-dev
+# Install dependencies. The postfix extra pulls in pymilter (C extension needing
+# libmilter-dev at install time); it lives behind an extra so the pure-Python
+# pymta image can build without libmilter-dev.
+RUN --mount=type=cache,target=/root/.cache/uv uv sync --locked --no-install-project --no-dev --extra postfix
 
 # ---- Base image with dependencies installed for development ----
 FROM base-with-deps AS base-with-deps-dev

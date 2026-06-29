@@ -263,6 +263,8 @@ services:
       - EXEC_CMD=true
       - MDA_API_BASE_URL=http://localhost:8000/api/mail/
       - MTA_HOST=localhost
+      - MTA_PORT=25
+      - MTA_IMPL=postfix
     command: pytest -vvs tests/
     volumes:
       - ./src/mta-in:/app
@@ -276,6 +278,71 @@ services:
       context: src/mta-in
       target: uv
     pull_policy: build
+
+  # ---- Pure-Python (aiosmtpd) inbound MTA --------------------------------
+  # Runs side-by-side with the Postfix-based `mta-in` service on a different
+  # host port (8920 vs 8910). Both implementations share the same MDA
+  # contract, env vars, and test suite. Toggle which one is the public-facing
+  # MTA at the edge by switching the upstream pool.
+
+  mta-in-py:
+    build:
+      context: src/mta-in
+      dockerfile: Dockerfile.pymta
+      target: runtime-distroless-prod
+      args:
+        DOCKER_USER: ${DOCKER_USER:-65532}
+    user: ${DOCKER_USER:-65532}
+    env_file:
+      - env.d/development/mta-in.defaults
+      - env.d/development/mta-in.local
+      - env.d/development/mta-in-py.defaults
+      - env.d/development/mta-in-py.local
+    ports:
+      - "8920:25"
+      - "9120:9100"  # Prometheus metrics
+    # Defence-in-depth: pymta needs no on-disk writes at runtime. Read-only
+    # rootfs + dropped capabilities + no-new-privileges mirror the posture
+    # a production k8s pod-spec should run with.
+    read_only: true
+    cap_drop:
+      - ALL
+    security_opt:
+      - no-new-privileges:true
+    tmpfs:
+      - /tmp:rw,noexec,nosuid,size=16m
+    depends_on:
+      - backend-dev
+
+  mta-in-py-test:
+    profiles:
+      - tools
+    build:
+      context: src/mta-in
+      dockerfile: Dockerfile.pymta
+      target: runtime-dev
+      args:
+        DOCKER_USER: ${DOCKER_USER:-65532}
+    user: ${DOCKER_USER:-65532}
+    cap_drop:
+      - ALL
+    security_opt:
+      - no-new-privileges:true
+    env_file:
+      - env.d/development/mta-in.defaults
+      - env.d/development/mta-in.local
+      - env.d/development/mta-in-py.defaults
+      - env.d/development/mta-in-py.local
+    environment:
+      - EXEC_CMD=true
+      - MDA_API_BASE_URL=http://localhost:8000/api/mail/
+      - MTA_HOST=localhost
+      - MTA_PORT=25
+      - MTA_IMPL=pymta
+      - MTA_METRICS_URL=http://localhost:9100/metrics
+    command: pytest -vvs tests/
+    volumes:
+      - ./src/mta-in:/app
 
   mta-out:
     build:

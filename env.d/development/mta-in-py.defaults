@@ -1,0 +1,34 @@
+# Defaults for the pure-Python (aiosmtpd) inbound MTA. The Postfix-based
+# `mta-in` service does not consume these.
+
+# PYMTA_HOSTNAME is intentionally left unset so the shared MYHOSTNAME env
+# wins (matching the Postfix variant). Set explicitly to override.
+PYMTA_SMTP_HOST=0.0.0.0
+PYMTA_SMTP_PORT=25
+PYMTA_METRICS_HOST=0.0.0.0
+PYMTA_METRICS_PORT=9100
+PYMTA_LOG_LEVEL=INFO
+
+# Match the existing Postfix dev config: per-IP cap off (the dev/test load
+# all comes from loopback), large global cap for `test_connection_limits`.
+PYMTA_MAX_SESSIONS_PER_IP=0
+PYMTA_MAX_SESSIONS_TOTAL=2000
+
+# Inbound limits.
+PYMTA_MAX_RECIPIENTS=100
+PYMTA_MAX_ENVELOPES_PER_CONNECTION=20
+
+# Timeouts (seconds).
+PYMTA_COMMAND_TIMEOUT=120
+PYMTA_DATA_TIMEOUT=600
+
+# STARTTLS off by default in dev (no cert wired).
+PYMTA_TLS_CERT_FILE=
+PYMTA_TLS_KEY_FILE=
+
+# SMTPUTF8 advertised — the MDA accepts UTF-8 envelope addresses.
+PYMTA_ENABLE_SMTPUTF8=true
+
+# PROXY protocol off in dev. In production set ENABLE_PROXY_PROTOCOL=haproxy
+# (same env var the Postfix entrypoint already consumes) when behind HAProxy.
+PYMTA_ENABLE_PROXY_PROTOCOL=false

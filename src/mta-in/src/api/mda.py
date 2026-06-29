@@ -33,6 +33,7 @@ def mda_api_call(path, content_type, body, metadata):
     now = datetime.datetime.now(datetime.timezone.utc)
     jwt_token = jwt.encode(
         {
+            **metadata,
             "exp": now + datetime.timedelta(seconds=MDA_API_JWT_TTL),
             # The channel is authenticated by the HMAC signature over the shared
             # MDA_API_SECRET; body_hash binds the token to its payload (sha256 of
@@ -41,7 +42,6 @@ def mda_api_call(path, content_type, body, metadata):
             # No jti/nonce: retries (and urllib3's) resend the same token, and
             # the backend trusts the secret rather than tracking single use.
             "body_hash": hashlib.sha256(body).hexdigest(),
-            **metadata,
         },
         MDA_API_SECRET,
         algorithm="HS256",
