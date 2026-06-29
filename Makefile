@@ -126,6 +126,17 @@ test-back-distroless: build-back-distroless ## build and smoke-test the distrole
 		print(f'OK: Python {sys.version.split()[0]}, {ssl.OPENSSL_VERSION}')"
 .PHONY: test-back-distroless
 
+build-pymta-distroless: ## build the pymta distroless production image
+	@docker build --target runtime-distroless-prod -t messages-pymta-distroless -f src/mta-in/Dockerfile.pymta src/mta-in/
+.PHONY: build-pymta-distroless
+
+test-pymta-distroless: build-pymta-distroless ## build and smoke-test the pymta distroless production image
+	@docker run --rm messages-pymta-distroless python -c " \
+		import sys, ssl; \
+		import pymta.settings; \
+		print(f'OK: Python {sys.version.split()[0]}, {ssl.OPENSSL_VERSION}, pymta.settings loaded')"
+.PHONY: test-pymta-distroless
+
 down: ## stop and remove containers, networks, images, and volumes
 	@$(COMPOSE) down
 .PHONY: down

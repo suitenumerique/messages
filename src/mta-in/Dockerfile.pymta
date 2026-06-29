@@ -125,6 +125,8 @@ FROM runtime-base AS runtime-dev
 COPY --from=uv /opt/python /opt/python
 COPY --from=base-with-deps-dev /venv /venv
 
+ENV PYTHONPATH="/app/src"
+
 # /app will be mounted as a volume in the development container
 
 
