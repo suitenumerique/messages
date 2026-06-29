@@ -14,6 +14,7 @@ from faker import Faker
 
 from core import enums, models
 from core.enums import UserEventTypeChoices
+from core.mda.utils import generate_mime_id
 from core.services.blob_gc import upload_and_reserve_blob
 
 fake = Faker()
@@ -235,7 +236,7 @@ class MessageFactory(factory.django.DjangoModelFactory):
     subject = factory.Faker("sentence")
     sender = factory.SubFactory(ContactFactory)
     created_at = factory.LazyAttribute(lambda o: timezone.now())
-    mime_id = factory.Sequence(lambda n: f"message{n!s}@_lst.test.example.com")
+    mime_id = factory.LazyFunction(lambda: generate_mime_id("test.example.com"))
 
     @factory.post_generation
     def raw_mime(self, create, extracted, **kwargs):

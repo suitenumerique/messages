@@ -5,18 +5,16 @@ This command does not write to the database and works even without any mailboxes
 Usage examples:
     # Send a simple email (works without any mailboxes)
     python manage.py send_mail --to recipient@example.com --subject "Test" --body "Hello World"
-    
+
     # Send with custom sender
     python manage.py send_mail --to recipient@example.com --subject "Test" --body "Hello World" \
         --from sender@mydomain.com
-    
+
     # Dry run to see what would be sent
     python manage.py send_mail --to recipient@example.com --subject "Test" --body "Hello World" --dry-run
 """
 
-import base64
 import logging
-import uuid
 
 from django.core.management.base import BaseCommand, CommandError
 
@@ -25,7 +23,7 @@ from jmap_email import compose_email, parse_address
 from core import models
 from core.mda.outbound import send_outbound_email
 from core.mda.signing import sign_message_dkim
-from core.mda.utils import current_sent_at
+from core.mda.utils import current_sent_at, generate_mime_id
 
 logger = logging.getLogger(__name__)
 
@@ -125,11 +123,7 @@ class Command(BaseCommand):
         )
         logger.info("Subject length: %d", len(subject or ""))
 
-        # Generate MIME ID
-        mime_id = (
-            base64.urlsafe_b64encode(uuid.uuid4().bytes).rstrip(b"=").decode("ascii")
-        )
-        mime_id = f"{mime_id}@_lst.{from_email.split('@')[1]}"
+        mime_id = generate_mime_id(from_email.split("@")[1])
 
         mime_data = {
             "from": [{"name": from_name, "email": from_email}],

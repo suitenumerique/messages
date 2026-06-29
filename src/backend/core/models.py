@@ -3,7 +3,6 @@ Declare and configure the models for the messages core application
 """
 # pylint: disable=too-many-lines,too-many-instance-attributes
 
-import base64
 import hashlib
 import json
 import re
@@ -56,6 +55,7 @@ from core.enums import (
     user_event_type_choices,
 )
 from core.mda.signing import generate_dkim_key as _generate_dkim_key
+from core.mda.utils import generate_mime_id
 from core.services.tiered_storage import TieredStorageService, sha256_advisory_lock
 from core.utils import validate_json_schema
 
@@ -2067,9 +2067,12 @@ class Message(BaseModel):
         return result
 
     def generate_mime_id(self) -> str:
-        """Get the RFC 5322 Message-ID of the message."""
-        _id = base64.urlsafe_b64encode(uuid.uuid4().bytes).rstrip(b"=").decode("ascii")
-        return f"{_id}@_lst.{self.sender.email.split('@')[1]}"
+        """Generate this message's Message-ID in bare JMAP form.
+
+        Delegates to :func:`core.mda.utils.generate_mime_id` so the format
+        stays uniform across every Message-ID minting path.
+        """
+        return generate_mime_id(self.sender.email.split("@")[1])
 
     def get_all_recipient_contacts(self) -> Dict[str, List[Contact]]:
         """Get all recipients of the message."""

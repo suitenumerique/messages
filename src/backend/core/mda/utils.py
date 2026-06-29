@@ -18,6 +18,7 @@ Three groups of helpers live here:
 import re
 import shlex
 from collections import defaultdict
+from email.utils import make_msgid
 
 from django.utils import timezone
 
@@ -26,6 +27,7 @@ from jmap_email import JmapEmail, body_part_text, decode_rfc2047_header
 __all__ = [
     "SNIPPET_MAX_LENGTH",
     "current_sent_at",
+    "generate_mime_id",
     "gmail_labels",
     "headers_blocks",
     "thread_snippet",
@@ -49,6 +51,19 @@ def current_sent_at() -> str:
     is uniform — currently ``timezone.now().isoformat()``.
     """
     return timezone.now().isoformat()
+
+
+def generate_mime_id(domain: str) -> str:
+    """Return a fresh Message-ID in bare JMAP form (no angle brackets).
+
+    `make_msgid` yields the wire form `<id@domain>`; we strip the
+    brackets so the value matches the JMAP convention used everywhere
+    else — inbound parsing strips them (see `jmap_email.first_msgid`)
+    and :func:`jmap_email.compose_email` re-adds them on the wire. Every
+    backend path that mints a Message-ID routes through this helper so
+    the stored shape stays uniform.
+    """
+    return make_msgid(domain=domain).strip("<>")
 
 
 # ────────────────────────────────────────────────────────────────────
