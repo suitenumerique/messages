@@ -45,6 +45,14 @@ if not settings.DISABLE_CELERY_BEAT_SCHEDULE:
             "schedule": 300.0,  # Every 5 minutes
             "options": {"queue": "inbound"},
         },
+        "purge-abandoned-inbound-messages": {
+            # Reclaim inbound rows abandoned past the 7-day retention window
+            # (kept until then for inspection/replay). Daily; housekeeping, so
+            # the default queue like the other GC sweeps.
+            "task": "core.mda.inbound_tasks.purge_abandoned_inbound_messages_task",
+            "schedule": 86400.0,  # daily
+            "options": {"queue": "default"},
+        },
         "process-pending-reindex": {
             "task": "core.services.search.tasks.process_pending_reindex_task",
             "schedule": settings.SEARCH_REINDEX_TASKS_INTERVAL,

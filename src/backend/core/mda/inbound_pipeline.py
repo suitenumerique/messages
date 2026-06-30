@@ -135,6 +135,18 @@ class InboundContext:  # pylint: disable=too-many-instance-attributes
     # the symbols (DKIM/DMARC verdicts) without a second HTTP call.
     rspamd_result: Optional[Dict[str, Any]] = None
 
+    # Memoised results of blocking webhook steps, keyed by
+    # ``(channel_id, phase)``. Pre-loaded from Redis at the start of a
+    # *retry* attempt so an already-succeeded blocking webhook is replayed
+    # from cache instead of re-POSTed — without this, a sustained rspamd
+    # outage (which RETRYs after the before-spam webhooks have run) would
+    # re-fire every before-spam webhook on each 5-min sweep, hundreds of
+    # times. Empty on the happy path; the task persists it back only when it
+    # decides to RETRY. Values are opaque ``_HttpResult`` objects owned by
+    # ``dispatch_webhooks`` — carried here, not interpreted, to avoid an
+    # import cycle.
+    blocking_webhook_results: Dict[Tuple[str, str], Any] = field(default_factory=dict)
+
 
 # A Step is just a callable. It MUST have a ``.name`` attribute so
 # logs and the task return value can report which step aborted.

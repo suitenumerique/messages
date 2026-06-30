@@ -846,3 +846,52 @@ class TestWebhookChannelSettings:
         channel.refresh_from_db()
         # Old secret untouched — rotation never ran.
         assert channel.encrypted_settings["secret"] == "whsec_original"
+
+    @override_settings(FEATURE_MAILBOX_ADMIN_CHANNELS=["webhook"])
+    def test_rejects_missing_url(self, api_client, mailbox):
+        """A webhook channel without settings.url is rejected with 400."""
+        response = self._post(
+            api_client,
+            mailbox,
+            {"trigger": "message.delivered", "auth_method": "jwt"},
+        )
+        assert response.status_code == status.HTTP_400_BAD_REQUEST
+
+    @override_settings(FEATURE_MAILBOX_ADMIN_CHANNELS=["webhook"])
+    @pytest.mark.parametrize(
+        "bad_url",
+        [
+            "ftp://host/x",  # non-http(s) scheme
+            "javascript:alert(1)",  # script scheme
+            "https:///no-host",  # no host
+        ],
+    )
+    def test_rejects_invalid_url_scheme_or_host(self, api_client, mailbox, bad_url):
+        """Non-http(s) schemes, script URLs and host-less URLs are rejected
+        up front — the create-time check the SSRF guard backstops at
+        dispatch."""
+        response = self._post(
+            api_client,
+            mailbox,
+            {
+                "url": bad_url,
+                "trigger": "message.delivered",
+                "auth_method": "jwt",
+            },
+        )
+        assert response.status_code == status.HTTP_400_BAD_REQUEST, response.content
+
+    @override_settings(FEATURE_MAILBOX_ADMIN_CHANNELS=["webhook"], DEBUG=False)
+    def test_rejects_plain_http_outside_debug(self, api_client, mailbox):
+        """Plain http would leak the HMAC/JWT signing headers in transit, so
+        it is rejected unless running under DEBUG (local-dev escape hatch)."""
+        response = self._post(
+            api_client,
+            mailbox,
+            {
+                "url": "http://hook.example.com/in",
+                "trigger": "message.delivered",
+                "auth_method": "jwt",
+            },
+        )
+        assert response.status_code == status.HTTP_400_BAD_REQUEST, response.content

@@ -258,7 +258,7 @@ optional; unknown keys are ignored.
 
 | Key              | Type           | Meaning                                                                                                          |
 | ---------------- | -------------- | ---------------------------------------------------------------------------------------------------------------- |
-| `action`         | `"drop"` / `"retry"` | `"drop"` drops the message at this phase; `"retry"` re-queues the inbound task (bounded by the 48h quarantine window). Any other value (or omission) is treated as accept. Case-insensitive. |
+| `action`         | `"drop"`       | `"drop"` drops the message at this phase. Any other value (or omission) is treated as accept. Case-insensitive. There is no body-driven `"retry"`: a 2xx is a successful response. If you need the message redelivered later, return a non-2xx status (e.g. `429`/`503`) — it is held for retry, bounded by the 48h quarantine window. |
 | `is_spam`        | bool           | Override the spam verdict. Acts as a full antispam: for a `message.inbound` webhook this **skips rspamd**. |
 | `add_labels`     | string[]       | UUIDs of `Label` rows in the destination mailbox to attach to the thread once it is created.                     |
 | `assign_to`      | string[]       | OIDC emails of users to assign to the resulting thread (one `ThreadEvent ASSIGN` per webhook, channel-attributed). |

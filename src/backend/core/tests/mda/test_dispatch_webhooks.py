@@ -16,6 +16,7 @@ from unittest.mock import Mock, patch
 from django.test import override_settings
 from django.utils import timezone as dj_timezone
 
+import jwt
 import pytest
 import requests as requests_lib
 
@@ -27,10 +28,16 @@ from core.mda.dispatch_webhooks import (
     FORMAT_JMAP,
     PHASE_AFTER_SPAM,
     PHASE_BEFORE_SPAM,
+    WEBHOOK_CONNECT_TIMEOUT,
+    WEBHOOK_TIMEOUT,
+    UserWebhookStep,
     _classify_response_body,
+    _HttpResult,
     build_jmap_email,
     dispatch_webhook_task,
     find_webhook_channels_for_mailbox,
+    load_cached_webhook_results,
+    persist_cached_webhook_results,
     webhook_steps_for_mailbox,
 )
 from core.mda.inbound_pipeline import (
@@ -38,7 +45,11 @@ from core.mda.inbound_pipeline import (
     Decision,
     InboundContext,
 )
-from core.mda.inbound_tasks import process_inbound_message_task
+from core.mda.inbound_tasks import (
+    process_inbound_message_task,
+    process_inbound_messages_queue_task,
+    purge_abandoned_inbound_messages_task,
+)
 from core.services.ssrf import SSRFValidationError
 
 
@@ -1185,6 +1196,112 @@ class TestWebhookSigning:
         assert outcome.decision == Decision.RETRY
         mock_session.return_value.post.assert_not_called()
 
+    @patch("core.mda.dispatch_webhooks.SSRFSafeSession")
+    def test_jwt_bearer_token_verifies_and_binds_body(
+        self, mock_session, mailbox, parsed_email
+    ):
+        """The ``Authorization: Bearer`` JWT must actually verify with the
+        channel secret (HS256) and carry the documented claims, including
+        ``body_sha256`` bound to the exact bytes POSTed — a receiver
+        relying on the standard JWT verify path depends on this."""
+        channel = factories.ChannelFactory(
+            type=enums.ChannelTypes.WEBHOOK,
+            mailbox=mailbox,
+            settings={
+                "url": "https://hook.example.com",
+                "trigger": "message.delivering",
+                "auth_method": "jwt",
+            },
+        )
+        mock_session.return_value.post.return_value = _make_response(200)
+        dispatch_webhooks(
+            phase=PHASE_AFTER_SPAM,
+            mailbox=mailbox,
+            recipient_email=str(mailbox),
+            parsed_email=parsed_email,
+            raw_data=b"From: a\r\n\r\nbody",
+            is_spam=False,
+        )
+        kwargs = mock_session.return_value.post.call_args.kwargs
+        body_bytes = kwargs["data"]
+        auth = kwargs["headers"]["Authorization"]
+        assert auth.startswith("Bearer ")
+        token = auth.split(" ", 1)[1]
+
+        # Decoding with the right secret succeeds (signature + exp valid).
+        claims = jwt.decode(token, self.SECRET, algorithms=["HS256"])
+        assert claims["iss"] == "messages-webhook"
+        assert claims["exp"] == claims["iat"] + 300
+        assert claims["cid"] == str(channel.id)
+        assert claims["jti"]  # replay nonce present
+        # The JWT binds to the exact posted bytes.
+        assert claims["body_sha256"] == hashlib.sha256(body_bytes).hexdigest()
+
+        # A wrong secret must fail the signature check — the token is
+        # genuinely keyed, not merely well-formed.
+        with pytest.raises(jwt.InvalidSignatureError):
+            jwt.decode(token, "wrong-secret", algorithms=["HS256"])
+
+    @patch("core.mda.dispatch_webhooks.SSRFSafeSession")
+    def test_rotation_changes_signing_secret(self, mock_session, mailbox, parsed_email):
+        """``rotate_secret`` invalidates the old secret immediately: the
+        next dispatch signs with the NEW secret, and a signature recomputed
+        with the OLD secret no longer matches."""
+        channel = factories.ChannelFactory(
+            type=enums.ChannelTypes.WEBHOOK,
+            mailbox=mailbox,
+            settings={
+                "url": "https://hook.example.com",
+                "trigger": "message.delivering",
+                "auth_method": "jwt",
+                "format": "eml",
+            },
+        )
+        raw = b"From: a\r\n\r\nbody"
+        old_secret = channel.encrypted_settings["secret"]
+
+        mock_session.return_value.post.return_value = _make_response(200)
+        dispatch_webhooks(
+            phase=PHASE_AFTER_SPAM,
+            mailbox=mailbox,
+            recipient_email=str(mailbox),
+            parsed_email=parsed_email,
+            raw_data=raw,
+            is_spam=False,
+        )
+
+        # Rotate: a fresh secret is persisted; the dispatcher re-reads the
+        # channel from the DB on the next sweep.
+        new_secret = channel.rotate_secret()
+        assert new_secret != old_secret
+
+        mock_session.return_value.post.reset_mock()
+        mock_session.return_value.post.return_value = _make_response(200)
+        dispatch_webhooks(
+            phase=PHASE_AFTER_SPAM,
+            mailbox=mailbox,
+            recipient_email=str(mailbox),
+            parsed_email=parsed_email,
+            raw_data=raw,
+            is_spam=False,
+        )
+        headers = mock_session.return_value.post.call_args.kwargs["headers"]
+        ts = headers["X-StMsg-Webhook-Timestamp"]
+        sig = headers["X-StMsg-Webhook-Signature"].split("=", 1)[1]
+
+        expected_new = hmac.new(
+            new_secret.encode("utf-8"),
+            ts.encode("ascii") + b"." + raw,
+            hashlib.sha256,
+        ).hexdigest()
+        expected_old = hmac.new(
+            old_secret.encode("utf-8"),
+            ts.encode("ascii") + b"." + raw,
+            hashlib.sha256,
+        ).hexdigest()
+        assert hmac.compare_digest(sig, expected_new)
+        assert not hmac.compare_digest(sig, expected_old)
+
 
 # --- integration with process_inbound_message_task --- #
 
@@ -1325,14 +1442,20 @@ class TestPipelineIntegration:
         assert result["error"] == "retry"
         assert models.InboundMessage.objects.filter(id=inbound_message.id).exists()
 
-        # Aged past the window → abandoned, row deleted (loop stops).
+        # Aged past the window → abandoned. The row is KEPT (its raw bytes
+        # are the only copy of the mail) but stamped terminally failed so
+        # the sweep stops re-running the pipeline + webhooks on it.
         models.InboundMessage.objects.filter(id=inbound_message.id).update(
             created_at=dj_timezone.now() - QUARANTINE_AFTER - QUARANTINE_AFTER
         )
         with patch.object(process_inbound_message_task, "update_state", Mock()):
             result = process_inbound_message_task.run(str(inbound_message.id))
         assert result["error"] == "abandoned"
-        assert not models.InboundMessage.objects.filter(id=inbound_message.id).exists()
+        assert models.InboundMessage.objects.filter(id=inbound_message.id).exists()
+        inbound_message.refresh_from_db()
+        # Terminally marked via the typed field; error_message keeps the reason.
+        assert inbound_message.abandoned_at is not None
+        assert inbound_message.error_message
 
 
 # --- non-blocking dispatch isolation --- #
@@ -1752,6 +1875,14 @@ class TestClassifyResponseBody:
         outcome = _classify_response_body(b'{"action": "quarantine"}')
         assert outcome.decision == Decision.CONTINUE
 
+    def test_action_retry_is_continue(self):
+        """A 2xx body can no longer request a retry: ``action == "retry"``
+        is treated like any other unknown action → CONTINUE. A 2xx is
+        success; redelivery is signalled only by a non-2xx status, so the
+        body cannot ask a successful response to be re-POSTed."""
+        outcome = _classify_response_body(b'{"action": "retry"}')
+        assert outcome.decision == Decision.CONTINUE
+
     def test_is_spam_true_sets_override(self):
         outcome = _classify_response_body(b'{"is_spam": true}')
         assert outcome.decision == Decision.CONTINUE
@@ -2139,6 +2270,71 @@ class TestDispatchActionBody:
         assert consumed["bytes"] <= MAX_RESPONSE_BODY + len(oversize_chunk)
         # And the connection was returned to the pool.
         response.close.assert_called_once()
+
+    @patch("core.mda.dispatch_webhooks.SSRFSafeSession")
+    def test_blocking_retries_on_response_read_timeout(
+        self, mock_session, mailbox, parsed_email
+    ):
+        """A receiver that drip-feeds the body just under the per-read
+        socket timeout trips the total-exchange deadline mid-read. That
+        must surface as RETRY (transport failure), NOT a benign empty-body
+        CONTINUE — otherwise a slow-loris receiver could silently deliver
+        every message as accept."""
+        factories.ChannelFactory(
+            type=enums.ChannelTypes.WEBHOOK,
+            mailbox=mailbox,
+            settings={
+                "url": "https://hook.example.com",
+                "trigger": "message.delivering",
+                "auth_method": "jwt",
+            },
+        )
+        response = _make_response(200)
+        # Reading the streamed body exceeds the time budget.
+        response.iter_content = Mock(side_effect=TimeoutError("slow drip"))
+        mock_session.return_value.post.return_value = response
+
+        outcome = dispatch_webhooks(
+            phase=PHASE_AFTER_SPAM,
+            mailbox=mailbox,
+            recipient_email=str(mailbox),
+            parsed_email=parsed_email,
+            raw_data=b"raw",
+            is_spam=False,
+        )
+        assert outcome.decision == Decision.RETRY
+        # The streamed response is still released back to the pool.
+        response.close.assert_called_once()
+
+    @patch("core.mda.dispatch_webhooks.SSRFSafeSession")
+    def test_post_uses_bounded_timeout_and_streaming(
+        self, mock_session, mailbox, parsed_email
+    ):
+        """The POST must pass the (connect, read) timeout tuple and
+        ``stream=True`` so a hostile receiver can't pin a worker on connect
+        or OOM it on a giant unread body. Asserted explicitly so neither
+        bound can be dropped silently."""
+        factories.ChannelFactory(
+            type=enums.ChannelTypes.WEBHOOK,
+            mailbox=mailbox,
+            settings={
+                "url": "https://hook.example.com",
+                "trigger": "message.delivering",
+                "auth_method": "jwt",
+            },
+        )
+        mock_session.return_value.post.return_value = _make_response(200)
+        dispatch_webhooks(
+            phase=PHASE_AFTER_SPAM,
+            mailbox=mailbox,
+            recipient_email=str(mailbox),
+            parsed_email=parsed_email,
+            raw_data=b"raw",
+            is_spam=False,
+        )
+        kwargs = mock_session.return_value.post.call_args.kwargs
+        assert kwargs["timeout"] == (WEBHOOK_CONNECT_TIMEOUT, WEBHOOK_TIMEOUT)
+        assert kwargs["stream"] is True
 
 
 # --- pipeline integration: RETRY, label apply, antispam override --- #
@@ -3120,3 +3316,467 @@ class TestQuarantineDelivery:
         blob_content = message.blob.get_content()
         assert b"X-StMsg-Processing-Failed: true" in blob_content
         mock_autoreply.assert_not_called()
+
+
+@pytest.mark.django_db
+class TestAbandonedRowHandling:
+    """A row that fails to be CREATED past the quarantine window is
+    abandoned: kept (its raw bytes are the only copy of the mail) but
+    stamped via ``abandoned_at`` so neither the 5-min sweep nor a direct
+    re-dispatch ever re-runs the pipeline (and re-fires every webhook)
+    on it again."""
+
+    def test_sweep_skips_abandoned_rows(self):
+        """The retry sweep must not re-queue an abandoned row."""
+        mailbox = factories.MailboxFactory()
+        abandoned = models.InboundMessage.objects.create(
+            mailbox=mailbox,
+            raw_data=b"From: s@example.com\r\nSubject: t\r\n\r\nbody",
+            error_message="persistent failure",
+            abandoned_at=dj_timezone.now(),
+        )
+        # Age it past the 5-minute retry threshold so it would otherwise
+        # be picked up by the sweep.
+        models.InboundMessage.objects.filter(id=abandoned.id).update(
+            created_at=dj_timezone.now() - timedelta(minutes=10)
+        )
+
+        with patch(
+            "core.mda.inbound_tasks.process_inbound_message_task.delay"
+        ) as mock_delay:
+            process_inbound_messages_queue_task.run()
+
+        dispatched = [call.args[0] for call in mock_delay.call_args_list]
+        assert str(abandoned.id) not in dispatched
+
+    @patch("core.mda.inbound_tasks._create_message_from_inbound")
+    @patch("core.mda.inbound_pipeline._call_rspamd")
+    def test_redispatch_of_abandoned_row_early_returns(self, mock_rspamd, mock_create):
+        """A direct re-dispatch of an abandoned row early-returns
+        ``{"error": "abandoned"}`` without ever running the pipeline —
+        rspamd is never consulted and no creation is attempted."""
+        mailbox = factories.MailboxFactory()
+        abandoned = models.InboundMessage.objects.create(
+            mailbox=mailbox,
+            raw_data=b"From: s@example.com\r\nSubject: t\r\n\r\nbody",
+            error_message="persistent failure",
+            abandoned_at=dj_timezone.now(),
+        )
+
+        with patch.object(process_inbound_message_task, "update_state", Mock()):
+            result = process_inbound_message_task.run(str(abandoned.id))
+
+        assert result["error"] == "abandoned"
+        mock_rspamd.assert_not_called()
+        mock_create.assert_not_called()
+        # Row preserved for operator inspection / replay.
+        assert models.InboundMessage.objects.filter(id=abandoned.id).exists()
+
+    def test_purge_deletes_old_abandoned_rows(self):
+        """The retention purge reclaims rows abandoned past the window."""
+        mailbox = factories.MailboxFactory()
+        old = models.InboundMessage.objects.create(
+            mailbox=mailbox,
+            raw_data=b"x",
+            error_message="persistent failure",
+            abandoned_at=dj_timezone.now() - timedelta(days=8),
+        )
+
+        result = purge_abandoned_inbound_messages_task.run()
+
+        assert result["purged"] == 1
+        assert not models.InboundMessage.objects.filter(id=old.id).exists()
+
+    def test_purge_keeps_recent_abandoned_rows(self):
+        """Rows abandoned within the retention window are kept."""
+        mailbox = factories.MailboxFactory()
+        recent = models.InboundMessage.objects.create(
+            mailbox=mailbox,
+            raw_data=b"x",
+            error_message="persistent failure",
+            abandoned_at=dj_timezone.now() - timedelta(days=1),
+        )
+
+        result = purge_abandoned_inbound_messages_task.run()
+
+        assert result["purged"] == 0
+        assert models.InboundMessage.objects.filter(id=recent.id).exists()
+
+    def test_purge_ignores_live_rows(self):
+        """A non-abandoned row is never touched by the purge, however old."""
+        mailbox = factories.MailboxFactory()
+        live = models.InboundMessage.objects.create(
+            mailbox=mailbox,
+            raw_data=b"x",
+        )
+        models.InboundMessage.objects.filter(id=live.id).update(
+            created_at=dj_timezone.now() - timedelta(days=30)
+        )
+
+        result = purge_abandoned_inbound_messages_task.run()
+
+        assert result["purged"] == 0
+        assert models.InboundMessage.objects.filter(id=live.id).exists()
+
+
+@pytest.mark.django_db
+class TestPipelineIdempotency:
+    """A duplicate inbound email — most often an upstream MTA redelivering
+    the same Message-ID (SMTP retry / greylisting / relay double-send), so a
+    second ``InboundMessage`` is processed later — must hit the
+    ``(mailbox, mime_id)`` dedup branch in ``_create_message_from_inbound``
+    (``_created_now=False``) and skip the one-shot finalize side effects (IM
+    events, draft replies, autoreply, the non-blocking ``message.delivered``
+    webhook) that already ran for the original create — re-running them would
+    duplicate them."""
+
+    @patch("core.mda.autoreply.try_send_autoreply")
+    @patch("core.mda.inbound_pipeline._call_rspamd")
+    @patch("core.mda.dispatch_webhooks.SSRFSafeSession")
+    def test_dedup_hit_skips_finalize_side_effects(
+        self, mock_session, mock_rspamd, mock_autoreply
+    ):
+        mailbox = factories.MailboxFactory()
+        template = factories.MessageTemplateFactory(
+            mailbox=mailbox,
+            type=enums.MessageTemplateTypeChoices.MESSAGE,
+            is_active=True,
+            html_body="<p>Thanks!</p>",
+            text_body="Thanks!",
+            raw_body={"type": "doc", "content": [{"type": "paragraph"}]},
+        )
+        factories.ChannelFactory(
+            type=enums.ChannelTypes.WEBHOOK,
+            mailbox=mailbox,
+            settings={
+                "url": "https://hook.example.com",
+                "trigger": "message.delivering",
+                "auth_method": "jwt",
+            },
+        )
+        mock_rspamd.return_value = (False, None, None)
+        action_body = json.dumps(
+            {
+                "add_event": [{"type": "im", "content": "AI: urgent"}],
+                "reply_draft": {"template": str(template.id)},
+            }
+        ).encode("utf-8")
+        mock_session.return_value.post.return_value = _make_response(
+            200, body=action_body
+        )
+
+        mime = "idem-1@example.com"
+        raw_data = (
+            b"From: customer@example.com\r\n"
+            b"To: " + str(mailbox).encode() + b"\r\n"
+            b"Subject: help\r\n"
+            b"Message-ID: <" + mime.encode() + b">\r\n\r\nbody"
+        )
+
+        # --- First pass: creates the message + all side effects. ---
+        im1 = models.InboundMessage.objects.create(mailbox=mailbox, raw_data=raw_data)
+        with patch.object(process_inbound_message_task, "update_state", Mock()):
+            r1 = process_inbound_message_task.run(str(im1.id))
+        assert r1["success"] is True
+
+        message = models.Message.objects.get(mime_id=mime)
+        thread = message.thread
+
+        def im_event_count():
+            return models.ThreadEvent.objects.filter(
+                thread=thread, type=enums.ThreadEventTypeChoices.IM
+            ).count()
+
+        def draft_count():
+            return models.Message.objects.filter(thread=thread, is_draft=True).count()
+
+        assert im_event_count() == 1
+        assert draft_count() == 1
+        assert mock_autoreply.call_count == 1  # fired once, on create
+
+        # --- Second pass: SAME Message-ID → dedup hit (_created_now=False). ---
+        im2 = models.InboundMessage.objects.create(mailbox=mailbox, raw_data=raw_data)
+        with patch.object(process_inbound_message_task, "update_state", Mock()):
+            process_inbound_message_task.run(str(im2.id))
+
+        # The pipeline DID run again (the blocking webhook fired a 2nd time),
+        # proving the skip is gated on _created_now, not on the pipeline
+        # being short-circuited.
+        assert mock_session.return_value.post.call_count == 2
+        # ...but NO finalize side effect was repeated.
+        assert im_event_count() == 1
+        assert draft_count() == 1
+        assert mock_autoreply.call_count == 1  # still just the original
+        # The duplicate queue row was still consumed (one Message exists).
+        assert models.Message.objects.filter(mime_id=mime).count() == 1
+        assert not models.InboundMessage.objects.filter(id=im2.id).exists()
+
+    @patch("core.mda.dispatch_webhooks.dispatch_webhook_task.delay")
+    @patch("core.mda.inbound_pipeline._call_rspamd")
+    def test_dedup_hit_does_not_refire_nonblocking_webhook(
+        self, mock_rspamd, mock_delay
+    ):
+        """A duplicate delivery must not re-enqueue the non-blocking
+        ``message.delivered`` webhook — its dispatch is one of the finalize
+        side effects gated on ``_created_now`` (and ``message.delivered`` is
+        already at-least-once at the Celery layer, so a duplicate *enqueue*
+        here would compound that)."""
+        mailbox = factories.MailboxFactory()
+        factories.ChannelFactory(
+            type=enums.ChannelTypes.WEBHOOK,
+            mailbox=mailbox,
+            settings={
+                "url": "https://hook.example.com",
+                "trigger": "message.delivered",
+                "auth_method": "jwt",
+            },
+        )
+        mock_rspamd.return_value = (False, None, None)
+
+        mime = "idem-nb@example.com"
+        raw_data = (
+            b"From: customer@example.com\r\n"
+            b"To: " + str(mailbox).encode() + b"\r\n"
+            b"Subject: help\r\n"
+            b"Message-ID: <" + mime.encode() + b">\r\n\r\nbody"
+        )
+
+        im1 = models.InboundMessage.objects.create(mailbox=mailbox, raw_data=raw_data)
+        with patch.object(process_inbound_message_task, "update_state", Mock()):
+            process_inbound_message_task.run(str(im1.id))
+        # Enqueued exactly once, on the original create.
+        assert mock_delay.call_count == 1
+
+        # Duplicate delivery: same Message-ID, separate queue row.
+        im2 = models.InboundMessage.objects.create(mailbox=mailbox, raw_data=raw_data)
+        with patch.object(process_inbound_message_task, "update_state", Mock()):
+            process_inbound_message_task.run(str(im2.id))
+
+        # Still 1 — the dedup hit skipped the non-blocking dispatch.
+        assert mock_delay.call_count == 1
+        assert models.Message.objects.filter(mime_id=mime).count() == 1
+
+
+# --- cross-retry blocking-webhook result cache --- #
+
+
+class TestHttpResultCacheSerialization:
+    """``_HttpResult.to_cache`` / ``from_cache`` are the JSON-able bridge
+    for the cross-retry result cache. They must round-trip every field and
+    tolerate partial/old data (a deploy that changes the dataclass must not
+    fail to load 48h-old entries)."""
+
+    def test_roundtrip_preserves_every_field(self):
+        original = _HttpResult(
+            decision=Decision.DROP,
+            is_spam_override=True,
+            labels={str(uuid.uuid4()), str(uuid.uuid4())},
+            assign_to=["alice@example.org", "bob@example.org"],
+            mark_starred=True,
+            mark_read=True,
+            mark_trashed=True,
+            mark_archived=True,
+            skip_autoreply=True,
+            events=[{"type": "im", "content": "x", "mentions": []}],
+            reply_draft_template_id=str(uuid.uuid4()),
+        )
+        # The intermediate form is a plain JSON-able dict (no enums/sets).
+        cached = original.to_cache()
+        assert isinstance(cached, dict)
+        assert cached["decision"] == int(Decision.DROP)
+        assert isinstance(cached["labels"], list)
+
+        restored = _HttpResult.from_cache(cached)
+        assert restored.decision == original.decision
+        assert restored.is_spam_override == original.is_spam_override
+        assert restored.labels == original.labels
+        assert restored.assign_to == original.assign_to
+        assert restored.mark_starred == original.mark_starred
+        assert restored.mark_read == original.mark_read
+        assert restored.mark_trashed == original.mark_trashed
+        assert restored.mark_archived == original.mark_archived
+        assert restored.skip_autoreply == original.skip_autoreply
+        assert restored.events == original.events
+        assert restored.reply_draft_template_id == original.reply_draft_template_id
+        # Dataclass equality covers all fields at once.
+        assert restored == original
+
+    def test_from_cache_empty_yields_defaults(self):
+        """Missing keys (old/partial entry) degrade to a default CONTINUE
+        result, never an exception."""
+        restored = _HttpResult.from_cache({})
+        assert restored == _HttpResult()
+        assert restored.decision == Decision.CONTINUE
+        assert restored.is_spam_override is None
+        assert restored.labels == set()
+
+
+@pytest.mark.django_db
+class TestWebhookResultCachePersistence:
+    """``load_cached_webhook_results`` / ``persist_cached_webhook_results``
+    against the real Django cache. The cache is a best-effort optimisation:
+    every miss/error must degrade to an empty map (re-fire)."""
+
+    def test_load_miss_returns_empty(self):
+        assert load_cached_webhook_results(str(uuid.uuid4())) == {}
+
+    def test_persist_then_load_roundtrip(self):
+        inbound_id = str(uuid.uuid4())
+        cid = str(uuid.uuid4())
+        label = str(uuid.uuid4())
+        results = {
+            (cid, PHASE_BEFORE_SPAM): _HttpResult(
+                decision=Decision.DROP,
+                is_spam_override=True,
+                labels={label},
+                assign_to=["a@example.org"],
+                skip_autoreply=True,
+            ),
+        }
+        persist_cached_webhook_results(inbound_id, results)
+
+        loaded = load_cached_webhook_results(inbound_id)
+        assert set(loaded.keys()) == {(cid, PHASE_BEFORE_SPAM)}
+        got = loaded[(cid, PHASE_BEFORE_SPAM)]
+        want = results[(cid, PHASE_BEFORE_SPAM)]
+        assert got.decision == want.decision
+        assert got.is_spam_override == want.is_spam_override
+        assert got.labels == want.labels
+        assert got.assign_to == want.assign_to
+        assert got.skip_autoreply == want.skip_autoreply
+
+    def test_persist_noops_on_empty(self):
+        inbound_id = str(uuid.uuid4())
+        persist_cached_webhook_results(inbound_id, {})
+        # Nothing was written → still a clean miss.
+        assert load_cached_webhook_results(inbound_id) == {}
+
+
+@pytest.mark.django_db
+class TestBlockingWebhookResultCache:
+    """The ``UserWebhookStep`` blocking branch replays a memoised result
+    instead of re-POSTing, while still applying its side effects."""
+
+    @patch("core.mda.dispatch_webhooks.SSRFSafeSession")
+    def test_cache_hit_skips_post_but_applies_side_effects(
+        self, mock_session, mailbox, parsed_email
+    ):
+        channel = factories.ChannelFactory(
+            type=enums.ChannelTypes.WEBHOOK,
+            mailbox=mailbox,
+            settings={
+                "url": "https://hook.example.com",
+                "trigger": "message.inbound",  # before-spam, blocking
+                "auth_method": "jwt",
+            },
+        )
+        label_id = str(uuid.uuid4())
+        cached = _HttpResult(is_spam_override=True, labels={label_id})
+        ctx = InboundContext(
+            mailbox=mailbox,
+            inbound_message=Mock(id="im", created_at=dj_timezone.now()),
+            recipient_email=str(mailbox),
+            raw_data=b"raw",
+            parsed_email=parsed_email,
+            spam_config={},
+            is_spam=None,
+            blocking_webhook_results={
+                (str(channel.id), PHASE_BEFORE_SPAM): cached,
+            },
+        )
+
+        step = UserWebhookStep(channel, phase=PHASE_BEFORE_SPAM)
+        decision = step(ctx)
+
+        # The memoised result short-circuits the network call entirely...
+        assert decision == Decision.CONTINUE
+        mock_session.return_value.post.assert_not_called()
+        # ...yet its side effects are still replayed onto the context.
+        assert ctx.is_spam is True
+        assert label_id in ctx.labels
+
+    @patch("core.mda.inbound_pipeline._call_rspamd")
+    @patch("core.mda.dispatch_webhooks.SSRFSafeSession")
+    def test_blocking_webhook_not_refired_across_retries(
+        self, mock_session, mock_rspamd
+    ):
+        """The core storm-fix regression guard: a before-spam blocking
+        webhook that succeeded on attempt 1 is NOT re-POSTed on attempt 2
+        when a sustained rspamd outage keeps the message in RETRY."""
+        mailbox = factories.MailboxFactory()
+        raw_data = (
+            b"From: sender@example.com\r\n"
+            b"To: " + str(mailbox).encode() + b"\r\n"
+            b"Subject: storm\r\n"
+            b"Message-ID: <storm-1@example.com>\r\n\r\nbody"
+        )
+        inbound_message = models.InboundMessage.objects.create(
+            mailbox=mailbox, raw_data=raw_data
+        )
+        factories.ChannelFactory(
+            type=enums.ChannelTypes.WEBHOOK,
+            mailbox=mailbox,
+            settings={
+                "url": "https://hook.example.com",
+                "trigger": "message.inbound",  # before-spam, blocking
+                "auth_method": "jwt",
+            },
+        )
+        # Webhook succeeds (empty 200 → no is_spam opinion, so the later
+        # rspamd step still runs); rspamd is erroring → pipeline RETRYs.
+        mock_session.return_value.post.return_value = _make_response(200)
+        mock_rspamd.return_value = (False, "rspamd unreachable", None)
+
+        # Attempt 1: webhook POSTed once, message held for retry.
+        with patch.object(process_inbound_message_task, "update_state", Mock()):
+            r1 = process_inbound_message_task.run(str(inbound_message.id))
+        assert r1["error"] == "retry"
+        assert mock_session.return_value.post.call_count == 1
+        # The success was memoised to Redis on the retry path.
+        inbound_message.refresh_from_db()
+        assert inbound_message.error_message  # marks this as a retry attempt
+
+        # Attempt 2 on the SAME row: the cached result is replayed, so the
+        # webhook is NOT POSTed again — still RETRYs (rspamd still down).
+        with patch.object(process_inbound_message_task, "update_state", Mock()):
+            r2 = process_inbound_message_task.run(str(inbound_message.id))
+        assert r2["error"] == "retry"
+        assert mock_session.return_value.post.call_count == 1  # served from cache
+
+    @patch("core.mda.inbound_tasks.persist_cached_webhook_results")
+    @patch("core.mda.inbound_tasks.load_cached_webhook_results")
+    @patch("core.mda.inbound_pipeline._call_rspamd")
+    @patch("core.mda.dispatch_webhooks.SSRFSafeSession")
+    def test_happy_path_does_not_touch_cache(
+        self, mock_session, mock_rspamd, mock_load, mock_persist
+    ):
+        """A normal single-pass delivery never reads (first attempt → no
+        ``error_message``) nor writes (no RETRY) the result cache."""
+        mailbox = factories.MailboxFactory()
+        raw_data = (
+            b"From: sender@example.com\r\n"
+            b"To: " + str(mailbox).encode() + b"\r\n"
+            b"Subject: happy\r\n"
+            b"Message-ID: <happy-1@example.com>\r\n\r\nbody"
+        )
+        inbound_message = models.InboundMessage.objects.create(
+            mailbox=mailbox, raw_data=raw_data
+        )
+        factories.ChannelFactory(
+            type=enums.ChannelTypes.WEBHOOK,
+            mailbox=mailbox,
+            settings={
+                "url": "https://hook.example.com",
+                "trigger": "message.delivering",  # after-spam, blocking
+                "auth_method": "jwt",
+            },
+        )
+        mock_rspamd.return_value = (False, None, None)
+        mock_session.return_value.post.return_value = _make_response(200)
+
+        with patch.object(process_inbound_message_task, "update_state", Mock()):
+            result = process_inbound_message_task.run(str(inbound_message.id))
+
+        assert result["success"] is True
+        mock_load.assert_not_called()
+        mock_persist.assert_not_called()

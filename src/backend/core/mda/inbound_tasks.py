@@ -12,13 +12,19 @@ from typing import Any, Dict, Optional
 
 from django.conf import settings
 from django.core.cache import cache
+from django.db import transaction
 from django.utils import timezone
 
+from celery.exceptions import SoftTimeLimitExceeded
 from celery.utils.log import get_task_logger
 from jmap_email import JmapEmail, first_address_email, parse_email
 
 from core import models
-from core.mda.dispatch_webhooks import dispatch_recorded_webhooks
+from core.mda.dispatch_webhooks import (
+    dispatch_recorded_webhooks,
+    load_cached_webhook_results,
+    persist_cached_webhook_results,
+)
 from core.mda.inbound_create import _create_message_from_inbound
 from core.mda.inbound_pipeline import (
     QUARANTINE_AFTER,
@@ -36,6 +42,24 @@ from core.mda.inbound_pipeline import (
 from messages.celery_app import app as celery_app
 
 logger = get_task_logger(__name__)
+
+
+# Hard ceiling on one inbound task's wall-clock (Celery kills the task here).
+# A deliberately non-configurable constant: it's an internal safety bound
+# sized to the worst-case blocking-webhook budget (each up to 30s, fired for
+# every matching channel across both pipeline phases), not an operator knob.
+# The soft limit fires 60s earlier, raising ``SoftTimeLimitExceeded`` inside
+# the task so it bails out gracefully (releases the lock, holds for retry)
+# instead of being hard-killed mid-flight.
+_INBOUND_TASK_TIME_LIMIT = 600  # seconds (10 min)
+_INBOUND_TASK_SOFT_TIME_LIMIT = max(_INBOUND_TASK_TIME_LIMIT - 60, 1)
+# The per-message lock must outlive the hard limit. On a clean (or soft-limit)
+# exit the ``finally`` releases it immediately; on a hard-kill / worker OOM the
+# lock is freed only by this TTL. Setting it just past the hard limit means a
+# *live* task can never have its lock stolen (Celery kills the task before the
+# lock expires), while a *dead* task's lock frees ~a minute later so the 5-min
+# sweep can retry.
+_INBOUND_TASK_LOCK_TTL = _INBOUND_TASK_TIME_LIMIT + 60
 
 
 def _is_selfcheck(parsed_email: JmapEmail, recipient_email: str) -> bool:
@@ -120,10 +144,13 @@ def _retry_or_abandon(
 
     Within ``QUARANTINE_AFTER`` the row is kept so the 5-min sweep retries
     it (a transient DB error or constraint hiccup clears on its own). Past
-    the window the attempt is abandoned and the row deleted: otherwise a
-    poison message (one that parses but can never be created) loops
-    forever, re-running the whole pipeline — and re-firing every user
-    webhook — on each sweep.
+    the window the attempt is abandoned: ``abandoned_at`` is stamped so the
+    sweep skips the row and stops re-running the whole pipeline — and
+    re-firing every user webhook — on it, but the row is NOT deleted. The
+    raw bytes (``raw_data`` or the referenced ``blob``) are the only copy of
+    the message, so deleting would silently lose mail; instead an operator
+    can inspect and replay the row from the Django admin, and ``logger.error``
+    raises a Sentry alert. ``error_message`` keeps the human-readable reason.
     """
     age = timezone.now() - inbound_message.created_at
     if age <= QUARANTINE_AFTER:
@@ -141,7 +168,11 @@ def _retry_or_abandon(
         age,
         reason,
     )
-    inbound_message.delete()
+    # Keep the row (and its bytes) — stamp it terminally failed so the sweep
+    # skips it instead of deleting and losing the only copy of the mail.
+    inbound_message.error_message = reason
+    inbound_message.abandoned_at = timezone.now()
+    inbound_message.save(update_fields=["error_message", "abandoned_at"])
     return {
         "success": False,
         "inbound_message_id": str(inbound_message.id),
@@ -172,7 +203,11 @@ def _stamp_processing_failed(ctx: InboundContext) -> None:
         logger.warning("Failed to re-parse after prepending X-StMsg-Processing-Failed")
 
 
-@celery_app.task(bind=True)
+@celery_app.task(
+    bind=True,
+    time_limit=_INBOUND_TASK_TIME_LIMIT,
+    soft_time_limit=_INBOUND_TASK_SOFT_TIME_LIMIT,
+)
 def process_inbound_message_task(self, inbound_message_id: str):
     """Process an inbound message: run the pipeline, persist the result.
 
@@ -180,11 +215,13 @@ def process_inbound_message_task(self, inbound_message_id: str):
     messages still need work. On DROP, the ``InboundMessage`` row is
     deleted (we're done with it) and the task reports success.
     """
-    # Redis lock keyed on the message id prevents two workers from
-    # racing on the same row. Auto-expires after 5 min so a hung worker
-    # doesn't block the next sweep.
+    # Redis lock keyed on the message id prevents two workers from racing on
+    # the same row. Its TTL is the task's hard time limit + 60s, so a live
+    # task (which Celery kills at the hard limit) can never have its lock
+    # stolen, while a crashed/OOM'd worker's lock still auto-frees for the
+    # next sweep.
     lock_key = f"process_inbound_message_lock:{inbound_message_id}"
-    if not cache.add(lock_key, "locked", 300):
+    if not cache.add(lock_key, "locked", _INBOUND_TASK_LOCK_TTL):
         logger.warning(
             "InboundMessage %s is already being processed — skipping",
             inbound_message_id,
@@ -199,6 +236,16 @@ def process_inbound_message_task(self, inbound_message_id: str):
             error_msg = f"InboundMessage with ID '{inbound_message_id}' does not exist"
             logger.error(error_msg)
             return {"success": False, "error": error_msg}
+
+        if inbound_message.abandoned_at is not None:
+            # Terminally failed on an earlier attempt. The sweep already
+            # excludes these; this guards a direct re-dispatch so a poison
+            # message can never resume looping the pipeline.
+            return {
+                "success": False,
+                "inbound_message_id": str(inbound_message_id),
+                "error": "abandoned",
+            }
 
         raw_data_bytes = inbound_message.get_raw_bytes()
         parsed_email = parse_email(raw_data_bytes)
@@ -232,6 +279,16 @@ def process_inbound_message_task(self, inbound_message_id: str):
                 inbound_message_id,
             )
 
+        # On a retry attempt (the row has been processed before, so it carries
+        # an ``error_message``) replay the blocking-webhook results memoised on
+        # the previous attempt — so a sustained downstream failure (e.g. rspamd
+        # down) doesn't re-POST every already-succeeded blocking webhook on
+        # each 5-min sweep. The happy path (first attempt) skips this read.
+        if inbound_message.error_message:
+            ctx.blocking_webhook_results = load_cached_webhook_results(
+                str(inbound_message.id)
+            )
+
         decision, aborted_by = run_inbound_pipeline(build_inbound_pipeline(ctx), ctx)
 
         if decision == Decision.DROP:
@@ -250,6 +307,13 @@ def process_inbound_message_task(self, inbound_message_id: str):
         if decision == Decision.RETRY:
             age = timezone.now() - inbound_message.created_at
             if age <= QUARANTINE_AFTER:
+                # About to hold for retry: persist the blocking webhooks that
+                # DID succeed this round so the next attempt replays them
+                # instead of re-POSTing. Written only here, on the retry path —
+                # the happy path never touches Redis.
+                persist_cached_webhook_results(
+                    str(inbound_message.id), ctx.blocking_webhook_results
+                )
                 return _handle_retry(inbound_message, aborted_by)
             # Past the quarantine window: a processing step (blocking
             # webhook, rspamd, …) has failed persistently. Stop holding —
@@ -278,21 +342,53 @@ def process_inbound_message_task(self, inbound_message_id: str):
             # vet — suppress it for quarantined messages.
             ctx.skip_autoreply = True
 
-        inbound_msg = _create_message_from_inbound(
-            recipient_email=ctx.recipient_email,
-            parsed_email=ctx.parsed_email,
-            raw_data=ctx.raw_data,
-            mailbox=mailbox,
-            channel=inbound_message.channel,
-            is_spam=False if quarantined else bool(ctx.is_spam),
-            is_trashed=ctx.mark_trashed,
-            is_archived=ctx.mark_archived,
-        )
+        # Create the Message and drop the queue row as one unit: either the
+        # message persists and the InboundMessage is gone, or neither is. This
+        # closes the crash window where the message committed but the queue row
+        # survived, leaving the 5-min sweep to reprocess and re-run the
+        # one-shot finalize side effects below.
+        with transaction.atomic():
+            inbound_msg = _create_message_from_inbound(
+                recipient_email=ctx.recipient_email,
+                parsed_email=ctx.parsed_email,
+                raw_data=ctx.raw_data,
+                mailbox=mailbox,
+                channel=inbound_message.channel,
+                is_spam=False if quarantined else bool(ctx.is_spam),
+                is_trashed=ctx.mark_trashed,
+                is_archived=ctx.mark_archived,
+            )
+            if inbound_msg:
+                inbound_message.delete()
 
         if inbound_msg:
-            inbound_message.delete()
+            # Run the finalize side effects only when THIS call created the
+            # message. ``_create_message_from_inbound`` returns the existing
+            # row with ``_created_now=False`` whenever it dedups on
+            # ``(mailbox, mime_id)`` — most commonly a DUPLICATE INBOUND EMAIL:
+            # an upstream MTA redelivers the same Message-ID (SMTP retry,
+            # greylisting, a relay double-sending), so we get a second
+            # ``InboundMessage`` and process it later. (A concurrent second
+            # task could also land here, but is structurally prevented in
+            # practice — the prefork hard ``time_limit`` kills a task before
+            # its lock TTL frees; see ``process_inbound_message_task``.) Either
+            # way the side effects already ran for the original create, so
+            # repeating them here would duplicate them.
+            #
+            # The gate (not any inherent idempotency) is what makes this safe:
+            # events create a ThreadEvent, drafts create a Message, the
+            # autoreply SENDS an email, and the non-blocking webhook POSTs
+            # ``message.delivered`` to the receiver — all external, none
+            # idempotent. (Labels / assigns / flags happen to be idempotent and
+            # could run unconditionally, but are gated with the rest for
+            # simplicity — there is nothing new to apply on a dedup hit anyway.)
+            # NB: ``message.delivered`` is independently at-least-once at the
+            # Celery layer; this only stops a duplicate *enqueue* on reprocess.
+            created_now = isinstance(inbound_msg, models.Message) and getattr(
+                inbound_msg, "_created_now", False
+            )
 
-            if isinstance(inbound_msg, models.Message):
+            if created_now:
                 # Each finalize step is isolated — a failure in one
                 # (DB hiccup, race with admin deletion) must not skip
                 # the others. The message has landed; best effort.
@@ -348,7 +444,7 @@ def process_inbound_message_task(self, inbound_message_id: str):
                     ),
                 )
 
-            if isinstance(inbound_msg, models.Message) and not ctx.skip_autoreply:
+            if created_now and not ctx.skip_autoreply:
                 from core.mda.autoreply import (  # pylint: disable=import-outside-toplevel
                     try_send_autoreply,
                 )
@@ -392,6 +488,26 @@ def process_inbound_message_task(self, inbound_message_id: str):
             inbound_message, "Failed to create message from inbound message"
         )
 
+    except SoftTimeLimitExceeded:
+        # The task ran past its soft time limit (almost always a slow chain of
+        # blocking webhooks). Bail out gracefully while we still can — before
+        # the hard limit SIGKILLs us — so the ``finally`` below releases the
+        # lock cleanly. Hold for retry: a message that *always* overruns
+        # (e.g. far too many slow blocking webhooks) is bounded by the same
+        # 48h quarantine and ends up abandoned (kept + marked) rather than
+        # looping forever.
+        logger.warning(
+            "Inbound message %s exceeded the %ss soft time limit — holding for retry",
+            inbound_message_id,
+            _INBOUND_TASK_SOFT_TIME_LIMIT,
+        )
+        if inbound_message:
+            return _retry_or_abandon(
+                inbound_message,
+                f"Processing exceeded the {_INBOUND_TASK_SOFT_TIME_LIMIT}s "
+                "soft time limit",
+            )
+        return {"success": False, "error": "soft_time_limit"}
     except Exception as e:
         logger.exception(
             "Error processing inbound message %s: %s", inbound_message_id, e
@@ -422,7 +538,11 @@ def process_inbound_messages_queue_task(self, batch_size: int = 10):
     # Only retry messages older than 5 minutes
     retry_threshold = timezone.now() - timezone.timedelta(minutes=5)
     old_messages = models.InboundMessage.objects.filter(
-        created_at__lt=retry_threshold
+        created_at__lt=retry_threshold,
+        # Terminally-failed rows are kept for inspection/replay but must
+        # not be retried — otherwise the poison message loops the pipeline
+        # (and re-fires every user webhook) every 5 minutes forever.
+        abandoned_at__isnull=True,
     ).order_by("created_at")[:batch_size]
 
     total = len(old_messages)
@@ -455,3 +575,54 @@ def process_inbound_messages_queue_task(self, batch_size: int = 10):
         "errors": errors,
         "total": total,
     }
+
+
+# How long an abandoned InboundMessage (``abandoned_at`` set) is kept before
+# the purge sweep reclaims it: long enough for an operator to act on the
+# Sentry alert (inspect / replay from the admin), short enough that a stream
+# of poison mail can't grow the transient queue table without bound.
+_ABANDONED_RETENTION = timezone.timedelta(days=7)
+
+
+@celery_app.task(bind=True)
+def purge_abandoned_inbound_messages_task(
+    self, batch_size: int = 500, max_batches: int = 200
+):
+    """Reclaim inbound messages abandoned more than ``_ABANDONED_RETENTION`` ago.
+
+    Abandoned rows are deliberately kept (never deleted at abandon time) so the
+    mail stays inspectable / replayable — see ``_retry_or_abandon``. But they
+    must not accumulate forever: a sustained stream of unparseable / uncreatable
+    mail would otherwise grow this transient queue table (and its inline
+    ``raw_data`` bytes) without bound. This daily sweep deletes rows past the
+    retention window.
+
+    Deletes in batches through ``QuerySet.delete()`` (not ``_raw_delete``) so
+    the ``post_delete`` signal fires per row and any referenced blob is
+    scheduled for GC. ``max_batches`` caps a single run, so a large backlog
+    (e.g. after an abuse spike) drains over a few days instead of one giant
+    locking transaction.
+    """
+    cutoff = timezone.now() - _ABANDONED_RETENTION
+    purged = 0
+    for _ in range(max_batches):
+        ids = list(
+            models.InboundMessage.objects.filter(
+                abandoned_at__isnull=False,
+                abandoned_at__lt=cutoff,
+            )
+            .order_by("abandoned_at")
+            .values_list("id", flat=True)[:batch_size]
+        )
+        if not ids:
+            break
+        models.InboundMessage.objects.filter(id__in=ids).delete()
+        purged += len(ids)
+
+    if purged:
+        logger.info(
+            "Purged %s abandoned inbound message(s) older than %s",
+            purged,
+            _ABANDONED_RETENTION,
+        )
+    return {"success": True, "purged": purged}

@@ -669,6 +669,28 @@ def send_message(message: models.Message, force_mta_out: bool = False):
                         # "handed off to the recipient's inbound queue" —
                         # the recipient's webhook outcome plays out on their
                         # side and never feeds back into the sender's status.
+                        #
+                        # DESIGN TRADEOFF (intentional): the sender's recipient
+                        # is marked SENT_INTERNAL on handoff, before the
+                        # recipient pipeline actually creates (or DROPs) the
+                        # Message. So "delivered" is really "accepted for
+                        # delivery" — it can be a white lie if a recipient-side
+                        # blocking webhook DROPs the message or creation fails.
+                        # We deliberately do NOT add a QUEUED status that later
+                        # resolves to SENT_INTERNAL / FAILED, because doing it
+                        # honestly needs a cross-mailbox callback we don't have:
+                        # the recipient's inbound finalizer would have to reach
+                        # back and update THIS sender's MessageRecipient. That
+                        # means threading the sender's MessageRecipient id
+                        # through InboundMessage (a new nullable FK), new
+                        # QUEUED->SENT_INTERNAL/FAILED transitions in the
+                        # delivery-status state machine, a frontend "pending"
+                        # rendering, and a new metrics label. Same-instance
+                        # delivery lands in milliseconds, so the gain is a
+                        # sub-second "queued" flicker that only matters in the
+                        # rare recipient-DROP/failure case. If that accuracy is
+                        # ever needed, build it as a focused follow-up with the
+                        # callback above — not as a status flip here.
                         delivered = deliver_inbound_message(
                             recipient_email,
                             parsed_email,

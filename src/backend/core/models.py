@@ -2288,6 +2288,24 @@ class InboundMessage(BaseModel):
         blank=True,
         help_text="Error message if processing failed",
     )
+    # Terminal-failure marker. Set when processing is permanently given up
+    # after the quarantine window (a poison message that can never be
+    # parsed/created). The row and its bytes are KEPT — never deleted at
+    # abandon time — so the mail stays recoverable; the retry sweep skips
+    # rows with this set, so the pipeline (and user webhooks) stop re-firing.
+    # Doubles as the audit timestamp ("when did it die") and the cutoff key
+    # for ``purge_abandoned_inbound_messages_task``, which reclaims rows once
+    # they pass the retention window. NULL = still live (pending or retrying).
+    abandoned_at = models.DateTimeField(
+        "abandoned at",
+        null=True,
+        blank=True,
+        help_text=(
+            "Set when processing was permanently abandoned after the retry "
+            "window; the row is kept for inspection/replay and skipped by the "
+            "retry sweep."
+        ),
+    )
 
     class Meta:
         db_table = "messages_inboundmessage"

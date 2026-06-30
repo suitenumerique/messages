@@ -1552,17 +1552,26 @@ class InboundMessageAdmin(admin.ModelAdmin):
         "mailbox",
         "channel",
         "has_error",
+        "is_abandoned",
         "created_at",
     )
-    list_filter = ("created_at",)
+    list_filter = ("created_at", "abandoned_at")
     search_fields = (
         "mailbox__local_part",
         "mailbox__domain__name",
         "error_message",
     )
     autocomplete_fields = ("mailbox", "channel")
-    readonly_fields = ("created_at", "updated_at")
-    fields = ("mailbox", "channel", "error_message", "created_at", "updated_at")
+    readonly_fields = ("created_at", "updated_at", "abandoned_at")
+    fields = (
+        "mailbox",
+        "channel",
+        "error_message",
+        "abandoned_at",
+        "created_at",
+        "updated_at",
+    )
+    actions = ("replay_abandoned",)
 
     def has_error(self, obj):
         """Return whether the message has an error."""
@@ -1570,6 +1579,34 @@ class InboundMessageAdmin(admin.ModelAdmin):
 
     has_error.boolean = True
     has_error.short_description = "Error"
+
+    def is_abandoned(self, obj):
+        """Return whether processing was permanently abandoned."""
+        return obj.abandoned_at is not None
+
+    is_abandoned.boolean = True
+    is_abandoned.short_description = "Abandoned"
+
+    @admin.action(description="Replay abandoned messages (clear + re-queue)")
+    def replay_abandoned(self, request, queryset):
+        """Re-queue abandoned inbound messages for processing.
+
+        Clears the terminal ``abandoned_at`` marker (and the stale
+        ``error_message``) and re-dispatches the per-message task, so an
+        operator can retry a poison message after fixing whatever caused it
+        to fail. No-op for rows that aren't abandoned.
+        """
+        # pylint: disable-next=import-outside-toplevel
+        from core.mda.inbound_tasks import process_inbound_message_task
+
+        replayed = 0
+        for inbound_message in queryset.filter(abandoned_at__isnull=False):
+            inbound_message.abandoned_at = None
+            inbound_message.error_message = ""
+            inbound_message.save(update_fields=["abandoned_at", "error_message"])
+            process_inbound_message_task.delay(str(inbound_message.id))
+            replayed += 1
+        self.message_user(request, f"Re-queued {replayed} abandoned message(s).")
 
     def get_queryset(self, request):
         """Optimize queryset with select_related for better performance."""

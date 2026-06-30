@@ -259,6 +259,18 @@ def _create_message_from_inbound(  # pylint: disable=too-many-arguments
                     mime_id,
                     mailbox.id,
                 )
+                # Dedup hit on ``(mailbox, mime_id)``: this call did NOT create
+                # the row. The common cause is a DUPLICATE INBOUND EMAIL — an
+                # upstream MTA redelivered the same Message-ID (SMTP retry /
+                # greylisting / relay double-send), so the original ``Message``
+                # already exists; a concurrent reprocess could land here too,
+                # but the prefork ``time_limit`` / lock-TTL coupling makes that
+                # structurally rare. Signal the caller so it skips the
+                # non-idempotent finalize side effects (events, draft replies,
+                # autoreply, the ``message.delivered`` webhook) that already
+                # ran for the original create — re-running would duplicate them.
+                # pylint: disable-next=protected-access
+                existing_message._created_now = False  # noqa: SLF001
                 return existing_message
 
         # --- 3. Find or Create Thread --- #
@@ -640,6 +652,10 @@ def _create_message_from_inbound(  # pylint: disable=too-many-arguments
         mailbox.id,
         thread.id,
     )
+    # Freshly created this call — the caller may run the one-shot finalize
+    # side effects (see the dedup branch above for why this matters).
+    # pylint: disable-next=protected-access
+    message._created_now = True  # noqa: SLF001
     return message  # Return created Message on success (truthy), None on failure
 
 

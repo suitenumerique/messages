@@ -7,8 +7,9 @@ matches the destination mailbox (``scope_level=MAILBOX``), its domain
 (``scope_level=GLOBAL``). A single ``settings.trigger`` lifecycle event
 (see ``enums.WebhookTrigger`` and ``docs/webhooks.md``) describes a webhook:
 ``message.inbound`` (before spam) and ``message.delivering`` (after spam)
-run inline and can abort delivery (DROP), request retry (RETRY), override
-the spam verdict, or attach labels via their JSON response body;
+run inline and can abort delivery (DROP), override the spam verdict, or
+attach labels via their JSON response body (a transient failure / non-2xx
+status holds the message for RETRY, but that is not a body-driven action);
 ``message.delivered`` is fire-and-forget after the message is created.
 
 This file is webhook-specific: HTTP plumbing, signing (HMAC + JWT or
@@ -45,13 +46,19 @@ from typing import Any, Dict, List, Optional, Set, Tuple
 from urllib.parse import urlparse
 
 from django.conf import settings
+from django.core.cache import cache
 from django.db.models import Q
 
 import jwt
 from jmap_email import JmapEmail, parse_email
 
 from core import enums, models
-from core.mda.inbound_pipeline import Decision, InboundContext, Step
+from core.mda.inbound_pipeline import (
+    QUARANTINE_AFTER,
+    Decision,
+    InboundContext,
+    Step,
+)
 from core.mda.webhook_payload import build_jmap_email
 from core.services.ssrf import SSRFSafeSession, SSRFValidationError
 
@@ -120,6 +127,131 @@ class _HttpResult:  # pylint: disable=too-many-instance-attributes
     # reply_draft: receiver-supplied MessageTemplate UUID. Resolved +
     # scope-checked + drafted in the pipeline finalize step.
     reply_draft_template_id: Optional[str] = None
+
+    def to_cache(self) -> Dict[str, Any]:
+        """Plain JSON-able dict for the cross-retry result cache.
+
+        Explicit (not pickle) so a deploy that changes this dataclass mid-
+        flight can't fail to load 48h-old entries — ``from_cache`` simply
+        ignores unknown/missing keys and the webhook re-fires. ``decision``
+        is stored as its int value; ``labels`` as a sorted list.
+        """
+        return {
+            "decision": int(self.decision),
+            "is_spam_override": self.is_spam_override,
+            "labels": sorted(self.labels),
+            "assign_to": list(self.assign_to),
+            "mark_starred": self.mark_starred,
+            "mark_read": self.mark_read,
+            "mark_trashed": self.mark_trashed,
+            "mark_archived": self.mark_archived,
+            "skip_autoreply": self.skip_autoreply,
+            "events": list(self.events),
+            "reply_draft_template_id": self.reply_draft_template_id,
+        }
+
+    @classmethod
+    def from_cache(cls, data: Dict[str, Any]) -> "_HttpResult":
+        """Rebuild from ``to_cache`` output. Tolerant of partial/old data."""
+        return cls(
+            decision=Decision(data.get("decision", int(Decision.CONTINUE))),
+            is_spam_override=data.get("is_spam_override"),
+            labels=set(data.get("labels") or []),
+            assign_to=list(data.get("assign_to") or []),
+            mark_starred=bool(data.get("mark_starred")),
+            mark_read=bool(data.get("mark_read")),
+            mark_trashed=bool(data.get("mark_trashed")),
+            mark_archived=bool(data.get("mark_archived")),
+            skip_autoreply=bool(data.get("skip_autoreply")),
+            events=list(data.get("events") or []),
+            reply_draft_template_id=data.get("reply_draft_template_id"),
+        )
+
+
+# --- cross-retry result cache --- #
+#
+# A blocking webhook runs *before* the spam step, so a step that later RETRYs
+# (rspamd outage, a different blocking webhook failing) re-runs the whole
+# pipeline on every 5-min sweep — re-POSTing every already-succeeded blocking
+# webhook hundreds of times over the 48h window. To avoid that we memoise each
+# successful blocking result in Redis and replay it on the next attempt.
+#
+# Deliberately lossy: the cache is only read on a retry attempt and only
+# written when the task decides to RETRY (never on the happy path), and any
+# miss / eviction / deploy-time schema drift simply re-fires the webhook. The
+# webhook contract is already at-least-once (receivers dedupe on ``jti``), so a
+# rare extra delivery is fine — we only need to turn "hundreds" into "a few".
+
+_WEBHOOK_RESULT_CACHE_VERSION = 1
+# Cover the whole quarantine window so a result cached on attempt 1 is still
+# served on the last retry before the message is delivered/abandoned.
+_WEBHOOK_RESULT_CACHE_TTL = int(QUARANTINE_AFTER.total_seconds())
+
+
+def _webhook_results_cache_key(inbound_message_id: str) -> str:
+    return f"inbound_webhook_results:{inbound_message_id}"
+
+
+def load_cached_webhook_results(
+    inbound_message_id: str,
+) -> Dict[Tuple[str, str], _HttpResult]:
+    """Load memoised blocking-webhook results for one inbound message.
+
+    Returns ``{(channel_id, phase): _HttpResult}``, or ``{}`` on a miss or
+    ANY deserialisation problem — the cache is a best-effort optimisation,
+    never a source of truth, so every error path degrades to "re-fire".
+    """
+    try:
+        blob = cache.get(_webhook_results_cache_key(inbound_message_id))
+        if (
+            not isinstance(blob, dict)
+            or blob.get("version") != _WEBHOOK_RESULT_CACHE_VERSION
+        ):
+            return {}
+        out: Dict[Tuple[str, str], _HttpResult] = {}
+        for entry in blob.get("results") or []:
+            channel_id = entry.get("channel")
+            phase = entry.get("phase")
+            if not channel_id or not phase:
+                continue
+            out[(str(channel_id), str(phase))] = _HttpResult.from_cache(
+                entry.get("result") or {}
+            )
+        return out
+    except Exception:  # pylint: disable=broad-exception-caught
+        # Corrupt entry, schema drift across a deploy, cache backend hiccup —
+        # all degrade to "re-fire", never an error on the inbound path.
+        return {}
+
+
+def persist_cached_webhook_results(
+    inbound_message_id: str,
+    results: Dict[Tuple[str, str], _HttpResult],
+) -> None:
+    """Persist blocking-webhook results so the next retry replays them.
+
+    Best-effort: a write failure just means the webhooks re-fire next attempt.
+    Called only when the task decides to RETRY, so the happy path never writes.
+    """
+    if not results:
+        return
+    try:
+        blob = {
+            "version": _WEBHOOK_RESULT_CACHE_VERSION,
+            "results": [
+                {"channel": channel_id, "phase": phase, "result": result.to_cache()}
+                for (channel_id, phase), result in results.items()
+            ],
+        }
+        cache.set(
+            _webhook_results_cache_key(inbound_message_id),
+            blob,
+            timeout=_WEBHOOK_RESULT_CACHE_TTL,
+        )
+    except Exception:  # pylint: disable=broad-exception-caught
+        logger.warning(
+            "Failed to persist webhook result cache for %s", inbound_message_id
+        )
 
 
 def _read_capped_body(response, deadline: Optional[float] = None) -> bytes:
@@ -200,9 +332,11 @@ def _classify_response_body(body_bytes: bytes) -> _HttpResult:
     Empty body or non-JSON body → plain CONTINUE.
 
     JSON shape (all keys optional):
-      - ``action``: ``"drop"`` short-circuits delivery; ``"retry"`` asks
-        us to re-queue the inbound task; anything else (``"accept"``,
-        missing) → CONTINUE.
+      - ``action``: ``"drop"`` short-circuits delivery; anything else
+        (``"accept"``, missing, or an unknown value) → CONTINUE. A 2xx is
+        a *successful* response, so it can't ask to be retried — a receiver
+        that needs redelivery returns a non-2xx status (e.g. 429/503),
+        handled as a transient failure → RETRY.
       - ``is_spam``: bool; overrides the pipeline's spam verdict.
       - ``add_labels``: list of label UUID strings; the pipeline
         validates them against the destination mailbox.
@@ -224,12 +358,12 @@ def _classify_response_body(body_bytes: bytes) -> _HttpResult:
     result = _HttpResult()
 
     action = payload.get("action")
-    if isinstance(action, str):
-        action = action.lower()
-        if action == "drop":
-            result.decision = Decision.DROP
-        elif action == "retry":
-            result.decision = Decision.RETRY
+    if isinstance(action, str) and action.lower() == "drop":
+        # ``drop`` is the only receiver-chosen decision on a 2xx: discard the
+        # mail. There is deliberately no body-driven "retry" — a successful
+        # (2xx) response can't ask to be retried; redelivery is signalled by
+        # a non-2xx status (handled as a transient failure → RETRY).
+        result.decision = Decision.DROP
 
     is_spam = payload.get("is_spam")
     if isinstance(is_spam, bool):
@@ -526,7 +660,6 @@ class UserWebhookStep:
         only logged)
       - blocking:
           * 2xx + ``{"action":"drop"}`` → DROP (the *only* path to DROP)
-          * 2xx + ``{"action":"retry"}`` → RETRY
           * 2xx + anything else → CONTINUE (with optional side effects)
           * any non-2xx (4xx / 5xx / 3xx) → RETRY
           * SSRF / missing secret / unknown auth_method → RETRY
@@ -539,6 +672,7 @@ class UserWebhookStep:
 
     def __init__(self, channel: models.Channel, phase: str):
         self.channel = channel
+        self.phase = phase
         # Phase suffix in the name lets the task return value carry
         # "which phase did this drop happen at" without a separate field.
         self.name = f"webhook[{channel.id}]:{phase}"
@@ -570,20 +704,31 @@ class UserWebhookStep:
             ctx.pending_webhooks.append((self.channel.id, ctx.is_spam))
             return Decision.CONTINUE
 
-        body_format = cfg.get("format", DEFAULT_FORMAT)
-        content_type, body_bytes = _resolve_body(
-            body_format, ctx.raw_data, ctx.parsed_email
-        )
-
-        result = _dispatch_webhook(
-            channel=self.channel,
-            mailbox=ctx.mailbox,
-            is_spam=ctx.is_spam,
-            recipient_email=ctx.recipient_email,
-            content_type=content_type,
-            body_bytes=body_bytes,
-            blocking=True,
-        )
+        # Replay a memoised result from a previous attempt instead of
+        # re-POSTing (see the cross-retry result cache above). The map is only
+        # pre-loaded on a retry attempt, so on the happy path this is always a
+        # miss and we fire normally.
+        cache_key = (str(self.channel.id), self.phase)
+        result = ctx.blocking_webhook_results.get(cache_key)
+        if result is None:
+            body_format = cfg.get("format", DEFAULT_FORMAT)
+            content_type, body_bytes = _resolve_body(
+                body_format, ctx.raw_data, ctx.parsed_email
+            )
+            result = _dispatch_webhook(
+                channel=self.channel,
+                mailbox=ctx.mailbox,
+                is_spam=ctx.is_spam,
+                recipient_email=ctx.recipient_email,
+                content_type=content_type,
+                body_bytes=body_bytes,
+                blocking=True,
+            )
+            # Memoise only terminal (non-RETRY) outcomes — a webhook that
+            # failed must re-fire next attempt, not be served from cache. The
+            # task persists this map to Redis iff it ends up RETRYing.
+            if result.decision != Decision.RETRY:
+                ctx.blocking_webhook_results[cache_key] = result
         if result.is_spam_override is not None:
             ctx.is_spam = result.is_spam_override
         ctx.labels |= result.labels

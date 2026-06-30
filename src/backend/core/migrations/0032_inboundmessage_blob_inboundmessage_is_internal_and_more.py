@@ -13,6 +13,11 @@ class Migration(migrations.Migration):
     operations = [
         migrations.AddField(
             model_name='inboundmessage',
+            name='abandoned_at',
+            field=models.DateTimeField(blank=True, help_text='Set when processing was permanently abandoned after the retry window; the row is kept for inspection/replay and skipped by the retry sweep.', null=True, verbose_name='abandoned at'),
+        ),
+        migrations.AddField(
+            model_name='inboundmessage',
             name='blob',
             field=models.ForeignKey(blank=True, help_text='Existing blob holding the message bytes (internal mail)', null=True, on_delete=django.db.models.deletion.PROTECT, related_name='inbound_messages', to='core.blob'),
         ),
