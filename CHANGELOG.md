@@ -11,6 +11,10 @@ and this project adheres to
 - Bump keycloak to 26.6.3
 - Bump keycloak to 26.6.4
 
+### Fixed
+
+- 🐛(mta-out) fix relay block indentation breaking SASL auth #733
+
 ## [0.8.0] - 2026-06-18
 
 ### Added
