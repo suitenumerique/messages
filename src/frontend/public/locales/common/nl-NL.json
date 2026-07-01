@@ -19,6 +19,7 @@
   "This value is shown only once. Configure your receiver with it before closing — you can rotate it later if you need a new one.": "Deze waarde wordt slechts eenmaal getoond. Configureer je ontvanger ermee voordat je sluit — je kunt deze later roteren als je een nieuwe nodig hebt.",
   "URL": "URL",
   "URL is required.": "URL is vereist.",
+  "URL must include a valid host.": "De URL moet een geldige host bevatten.",
   "URL must start with http:// or https://": "URL moet beginnen met http:// of https://",
   "Webhook": "Webhook",
   "Webhook API key": "Webhook API-sleutel",

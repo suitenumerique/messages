@@ -250,6 +250,15 @@ class SSRFSafeSession:
         re-issue the same verb rather than downgrading a 30x to GET), so a
         POST body reaches the final, validated destination intact.
 
+        ``kwargs`` (including any ``Authorization`` header and the POST body)
+        are re-sent verbatim on every hop, so a cross-host redirect forwards
+        the caller's credentials + payload to the redirect target. This is
+        intentional for webhook delivery — a receiver that 3xx-redirects (LB /
+        canonicaliser) must still get the signed body and its auth — and safe
+        because every hop is SSRF-validated to a public host and an HTTPS→HTTP
+        downgrade is refused. Callers that must not leak credentials across
+        hosts should not send a bearer credential through this session.
+
         ``method`` is the lowercase session method name (``"get"`` /
         ``"post"``) — we call that bound method directly rather than
         ``Session.request`` so each verb keeps a distinct, individually
@@ -276,6 +285,17 @@ class SSRFSafeSession:
                 return response
 
             next_url = urljoin(current_url, location)
+            # Refuse an HTTPS→HTTP downgrade: a redirect must not silently drop
+            # the connection from TLS to cleartext. Same-scheme or an HTTP→HTTPS
+            # upgrade is fine.
+            if (
+                urlparse(current_url).scheme == "https"
+                and urlparse(next_url).scheme == "http"
+            ):
+                response.close()
+                raise SSRFValidationError(
+                    "Refusing to follow HTTPS→HTTP redirect downgrade"
+                )
             response.close()
             current_url = next_url
 

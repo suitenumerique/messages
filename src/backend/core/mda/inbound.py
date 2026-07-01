@@ -10,7 +10,7 @@ from django.db.utils import Error as DjangoDbError
 
 from jmap_email import JmapEmail, first_msgid
 
-from core import models
+from core import enums, models
 from core.mda.inbound_tasks import process_inbound_message_task
 from core.services.importer.labels import (
     handle_duplicate_message,
@@ -161,8 +161,6 @@ def deliver_inbound_message(
     (see ``InboundMessage.envelope``); its ``origin`` key is the explicit
     trust discriminator that drives ``is_internal`` — internal mail skips the
     spam steps while still firing user webhooks.
-
-    raw_data is not parsed again, just stored as is.
     """
     # --- 1. Find or Create Mailbox --- #
     try:
@@ -215,7 +213,7 @@ def deliver_inbound_message(
         return bool(result)
 
     envelope = envelope or {}
-    is_internal = envelope.get("origin") == "internal"
+    is_internal = envelope.get("origin") == enums.InboundOrigin.INTERNAL
 
     # Internal mail is expected to reference the sender's already-committed
     # blob — that's the whole point (no second plaintext copy). Enforce the
@@ -241,9 +239,9 @@ def deliver_inbound_message(
             channel=channel,
         )
         logger.info(
-            "Queued inbound message %s (recipient: %s, origin: %s)",
+            "Queued inbound message %s (mailbox: %s, origin: %s)",
             inbound_message.id,
-            recipient_email,
+            mailbox.id,
             envelope.get("origin"),
         )
         # Queue the task immediately for processing (no lag)

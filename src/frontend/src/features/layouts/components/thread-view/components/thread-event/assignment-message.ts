@@ -12,10 +12,10 @@ export type AssignmentEvent = ThreadEventType & {
  * Returns the localised sentence describing an ASSIGN/UNASSIGN event.
  *
  * Picks a wording variant based on who acts and who is impacted so the result
- * stays grammatically correct when the current user is involved — the previous
- * single-template approach produced sentences like "Vous a assigné Vous" once
- * self-substitution kicked in, and "User Un a assigné User Un" when a user
- * self-assigned.
+ * stays grammatically correct when the current user is involved: a single
+ * template would produce sentences like "Vous a assigné Vous" once
+ * self-substitution kicks in, or "User Un a assigné User Un" when a user
+ * self-assigns.
  *
  * Cases (for each of assign/unassign):
  *   A.  author = me, assignees = [me]                        → "You assigned yourself"

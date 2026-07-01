@@ -925,6 +925,7 @@
   "Uploading... {{progress}}%": "Téléversement en cours... {{progress}}%",
   "URL": "URL",
   "URL is required.": "L'URL est obligatoire.",
+  "URL must include a valid host.": "L'URL doit inclure un hôte valide.",
   "URL must start with http:// or https://": "L'URL doit commencer par http:// ou https://",
   "Use \"Send and archive\" by default": "Utiliser \"Envoyer et archiver\" par défaut",
   "Use {referer_domain} to include the website domain in the subject.": "Utilisez {referer_domain} pour inclure le domaine du site web dans l'objet.",

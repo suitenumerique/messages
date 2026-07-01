@@ -1,7 +1,7 @@
 """Inbound sender authentication checks (DKIM / DMARC).
 
-Returns the verdict the caller should stamp as ``X-StMsg-Sender-Auth``:
-  - ``None``: verified, do not add the header.
+Returns the verdict the caller records in ``postmark["auth"]``:
+  - ``None``: verified, record nothing.
   - ``"none"``: cannot verify (missing DKIM, backend unreachable, no AR
     header from a trusted relay). Frontend shows a yellow "unverified" hint.
   - ``"fail"``: explicit forgery signal (DMARC fail). Frontend shows a red
@@ -235,7 +235,7 @@ def check_inbound_authentication(
     spam_config: dict[str, Any],
     rspamd_result: dict[str, Any] | None = None,
 ) -> str | None:
-    """Return the ``X-StMsg-Sender-Auth`` verdict for this message.
+    """Return the sender-auth verdict for this message (``postmark["auth"]``).
 
     See module docstring for the rule set and supported backends.
     """

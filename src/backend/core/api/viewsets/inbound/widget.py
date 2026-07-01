@@ -15,7 +15,7 @@ from rest_framework.exceptions import AuthenticationFailed
 from rest_framework.response import Response
 from rest_framework.throttling import SimpleRateThrottle
 
-from core import models
+from core import enums, models
 from core.api.permissions import IsAuthenticated
 from core.mda.inbound import deliver_inbound_message
 from core.mda.utils import current_sent_at
@@ -242,7 +242,7 @@ class InboundWidgetViewSet(viewsets.GenericViewSet):
             compose_email(parsed_email, prepend_headers=prepend_headers),
             channel=channel,
             envelope={
-                "origin": "widget",
+                "origin": enums.InboundOrigin.WIDGET,
                 "mail_from": sender_email,
                 "rcpt_to": target_email,
                 "ip": request.META.get("REMOTE_ADDR", ""),

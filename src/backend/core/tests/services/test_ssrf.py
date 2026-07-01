@@ -210,12 +210,28 @@ class TestSSRFSafeSessionRedirects:
     @patch("core.services.ssrf.requests.Session.get")
     @patch("core.services.ssrf.socket.getaddrinfo")
     def test_blocks_redirect_to_ip_literal(self, mock_dns, mock_get):
-        """Redirect whose Location is a raw IP is rejected (domains only)."""
+        """Redirect whose Location is a raw IP is rejected (domains only).
+
+        Same-scheme (https→https) so this isolates the IP-literal check from
+        the HTTPS→HTTP downgrade guard (covered separately below)."""
         mock_dns.return_value = _addrinfo(PUBLIC_IP)
-        mock_get.return_value = _mock_response(302, location="http://203.0.113.5/stuff")
+        mock_get.return_value = _mock_response(
+            302, location="https://203.0.113.5/stuff"
+        )
 
         with pytest.raises(SSRFValidationError, match="IP addresses are not allowed"):
             SSRFSafeSession().get("https://legit.com/", timeout=10)
+
+    @patch("core.services.ssrf.requests.Session.get")
+    @patch("core.services.ssrf.socket.getaddrinfo")
+    def test_blocks_https_to_http_downgrade(self, mock_dns, mock_get):
+        """A redirect that drops from HTTPS to cleartext HTTP is refused, even
+        to an otherwise-valid public host."""
+        mock_dns.return_value = _addrinfo(PUBLIC_IP)
+        mock_get.return_value = _mock_response(302, location="http://cdn.legit.com/img")
+
+        with pytest.raises(SSRFValidationError, match="downgrade"):
+            SSRFSafeSession().get("https://legit.com/img.png", timeout=10)
 
     @patch("core.services.ssrf.requests.Session.get")
     @patch("core.services.ssrf.socket.getaddrinfo")

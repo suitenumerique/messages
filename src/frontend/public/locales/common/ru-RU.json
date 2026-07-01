@@ -851,6 +851,7 @@
   "This value is shown only once. Configure your receiver with it before closing — you can rotate it later if you need a new one.": "Это значение показывается только один раз. Настройте получателя с ним перед закрытием — позже вы сможете сгенерировать новое, если потребуется.",
   "URL": "URL",
   "URL is required.": "URL обязателен.",
+  "URL must include a valid host.": "URL-адрес должен содержать действительный хост.",
   "URL must start with http:// or https://": "URL должен начинаться с http:// или https://",
   "Webhook": "Вебхук",
   "Webhook API key": "API-ключ вебхука",

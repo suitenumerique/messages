@@ -874,6 +874,13 @@ class TestSendAutoreplyForMessage:
             html_body="<p>away</p>",
             text_body="away",
         )
+        # Address the composed reply to other_mailbox so the RFC 5230
+        # recipient-explicit check passes; this leaves the auto-reply header
+        # detection (step 2) as the only path to None, keeping the assertion a
+        # genuine loop-prevention check rather than a recipient-shape artifact.
+        parsed["to"] = (parsed.get("to") or []) + [
+            {"email": str(other_mailbox), "name": "Other"}
+        ]
         assert should_send_autoreply(other_mailbox, parsed) is None
 
     @override_settings(MAX_OUTGOING_ATTACHMENT_SIZE=10)

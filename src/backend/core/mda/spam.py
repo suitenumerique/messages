@@ -45,6 +45,20 @@ def check_hardcoded_rules(
         key = key.lower().strip()
         value = value.lower().strip()
 
+        # ``Return-Path`` is baked into block 0 by the MDA from the *envelope*
+        # MAIL FROM, which is unauthenticated (a spammer sets it freely at SMTP
+        # time; the widget uses a raw form field) and unverified at this layer
+        # (no SPF/DMARC). Matching it as a trusted header would let a spoofed
+        # sender satisfy an ``action: ham`` allowlist and bypass the spam
+        # steps, so it is never eligible for a hardcoded-rule match.
+        if key == "return-path":
+            logger.warning(
+                "Ignoring spam rule #%d: 'return-path' is a spoofable envelope "
+                "value and cannot be used as a trusted header_match",
+                idx,
+            )
+            continue
+
         # Existence check first; the trusted value is read from the
         # Received-bounded blocks below.
         if not has_header(parsed_email, key):
@@ -144,10 +158,13 @@ def call_rspamd(
         # error_message channel and let the caller decide (the inbound step
         # RETRYs rather than failing open).
         logger.exception("Error calling rspamd: %s", exc)
-        return None, str(exc), None
+        # Return a stable, sanitized token (exception class name only) — the
+        # full detail is logged locally above; the message can carry the
+        # endpoint URL / other details and is echoed downstream.
+        return None, type(exc).__name__, None
     except Exception as exc:
         logger.exception("Unexpected error calling rspamd: %s", exc)
-        return None, str(exc), None
+        return None, type(exc).__name__, None
 
     if not isinstance(result, dict):
         logger.warning("rspamd returned non-object body: %r", result)

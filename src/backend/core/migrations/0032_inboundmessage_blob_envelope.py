@@ -40,7 +40,11 @@ class Migration(migrations.Migration):
         migrations.AddField(
             model_name='inboundmessage',
             name='abandoned_at',
-            field=models.DateTimeField(blank=True, help_text='Set when processing was permanently abandoned after the retry window; the row is kept for inspection/replay and skipped by the retry sweep.', null=True, verbose_name='abandoned at'),
+            field=models.DateTimeField(blank=True, help_text='When processing was permanently abandoned; NULL while live.', null=True, verbose_name='abandoned at'),
+        ),
+        migrations.AddIndex(
+            model_name='inboundmessage',
+            index=models.Index(condition=models.Q(('abandoned_at__isnull', False)), fields=['abandoned_at'], name='messages_in_abandon_partial'),
         ),
         migrations.AddField(
             model_name='inboundmessage',

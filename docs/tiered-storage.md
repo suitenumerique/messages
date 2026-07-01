@@ -61,8 +61,8 @@ blob_id survives until the follow-up attach call lands; the attach
 flow drops it once the ``Attachment`` row exists.
 
 When a reference source is deleted (Message, Attachment,
-MessageTemplate ``post_delete``), the affected blob_id is pushed
-into a Redis candidate set. A periodic Celery task —
+MessageTemplate, InboundMessage ``post_delete``), the affected blob_id
+is pushed into a Redis candidate set. A periodic Celery task —
 ``gc_orphan_blobs_task`` in ``core/services/blob_gc.py`` — drains the
 set, re-checks the reference graph under the per-sha advisory lock,
 deletes the row if no references remain, and cleans up the S3

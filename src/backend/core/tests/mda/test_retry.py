@@ -53,6 +53,9 @@ class TestRetryMessagesTask:
         bcc_contact = factories.ContactFactory(
             mailbox=mailbox_sender, email="bcc@example.com"
         )
+        internal_contact = factories.ContactFactory(
+            mailbox=mailbox_sender, email="internal@example.com"
+        )
 
         # Recipient with RETRY status
         factories.MessageRecipientFactory(
@@ -74,12 +77,21 @@ class TestRetryMessagesTask:
             retry_count=0,
         )
 
-        # Recipient with SENT status (should not be retried)
+        # Recipient with SENT_EXTERNAL status (should not be retried)
         factories.MessageRecipientFactory(
             message=message,
             contact=bcc_contact,
             type=models.MessageRecipientTypeChoices.BCC,
             delivery_status=enums.MessageDeliveryStatusChoices.SENT_EXTERNAL,
+            delivered_at=timezone.now(),
+        )
+
+        # Recipient with SENT_INTERNAL status (delivered-class, should not be retried)
+        factories.MessageRecipientFactory(
+            message=message,
+            contact=internal_contact,
+            type=models.MessageRecipientTypeChoices.BCC,
+            delivery_status=enums.MessageDeliveryStatusChoices.SENT_INTERNAL,
             delivered_at=timezone.now(),
         )
 

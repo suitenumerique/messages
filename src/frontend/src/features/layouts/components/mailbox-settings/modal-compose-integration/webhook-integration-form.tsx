@@ -70,7 +70,17 @@ const createFormSchema = (
                 error: allowInsecureUrl
                     ? t("URL must start with http:// or https://")
                     : t("URL must start with https://"),
-            }),
+            })
+            .refine(
+                (value) => {
+                    try {
+                        return new URL(value).hostname !== "";
+                    } catch {
+                        return false;
+                    }
+                },
+                { error: t("URL must include a valid host.") },
+            ),
         trigger: z.enum([
             "message.inbound",
             "message.delivering",
@@ -299,8 +309,6 @@ export const WebhookIntegrationForm = ({
                         state={errors.url ? "error" : "default"}
                         fullWidth
                     />
-                    {/* One flat trigger: a lifecycle event whose name says
-                        both when it fires and whether it blocks delivery. */}
                     <RhfSelect
                         label={t("Trigger")}
                         name="trigger"

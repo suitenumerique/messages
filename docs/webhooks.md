@@ -105,8 +105,13 @@ Every call is:
 ### Authentication
 
 Every webhook channel has **one root secret**, minted server-side,
-returned exactly once at create time and rotatable via
-`POST /channels/{id}/regenerate-secret/`. The `auth_method`
+returned exactly once at create time and rotatable by POSTing to the
+channel's `regenerate-secret/` action. That action's path prefix
+depends on the channel's scope: a mailbox-scoped channel is reached via
+the mailbox route as `POST
+/mailboxes/{mailbox_id}/channels/{id}/regenerate-secret/`, while a
+caller's own channels are at `POST
+/users/me/channels/{id}/regenerate-secret/`. The `auth_method`
 setting picks how that root is presented on each POST. The root itself
 never travels on the wire.
 
@@ -136,7 +141,8 @@ derivation) on other receivers stays unforgeable.
 PATCH the channel's `settings.auth_method`. The root secret is **not**
 rotated — only the wire presentation changes — but the receiver was
 given the old method's credential at creation. To get the new method's
-credential, call `POST /channels/{id}/regenerate-secret/`: the
+credential, call the channel's `regenerate-secret/` action (scoped path
+as above): the
 response returns either `secret` (jwt) or `api_key` (api_key),
 matching the channel's current method. Rotation invalidates
 the previous credential, so update the receiver before the next inbound

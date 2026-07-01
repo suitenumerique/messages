@@ -8,11 +8,12 @@
 
 {% block object-tools-items %}
 {% if original and original.type == "api_key" or original and original.type == "webhook" %}
+{% blocktranslate asvar regenerate_confirm %}Regenerate the secret for this channel? The previous secret will stop working immediately.{% endblocktranslate %}
 <li>
     <form method="post"
           action="{% url 'admin:core_channel_regenerate_secret' original.pk %}"
           style="display: inline;"
-          onsubmit="return confirm('{% blocktranslate %}Regenerate the secret for this channel? The previous secret will stop working immediately.{% endblocktranslate %}');">
+          onsubmit="return confirm('{{ regenerate_confirm|escapejs }}');">
         {% csrf_token %}
         <button type="submit" class="historylink">
             {% translate "Regenerate secret" %}

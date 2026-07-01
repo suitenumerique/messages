@@ -41,6 +41,7 @@ from core.enums import (
     CompressionTypeChoices,
     CRUDAbilities,
     DKIMAlgorithmChoices,
+    InboundOrigin,
     MailboxAbilities,
     MailboxRoleChoices,
     MailDomainAbilities,
@@ -2287,13 +2288,12 @@ class InboundMessage(BaseModel):
         related_name="inbound_messages",
     )
     # Sole byte source: a content-addressed, encrypted, deduped Blob created
-    # at ingest. (External mail used to be stored inline as a plaintext
-    # ``raw_data`` BinaryField; now every path is blob-backed, so a message to
-    # N recipients shares ONE blob from the moment it's queued, and nothing
-    # sits in plaintext.) PROTECT mirrors ``Message.blob``: only the GC sweep
-    # deletes, and it clears references first; ``is_referenced`` counts this
-    # FK. Nullable at the DB level for migration safety, but always set by the
-    # ingest paths (``deliver_inbound_message``).
+    # at ingest, so a message to N recipients shares ONE blob from the moment
+    # it's queued and nothing sits in plaintext. PROTECT mirrors
+    # ``Message.blob``: only the GC sweep deletes, and it clears references
+    # first; ``is_referenced`` counts this FK. Nullable at the DB level for
+    # migration safety, but always set by the ingest paths
+    # (``deliver_inbound_message``).
     blob = models.ForeignKey(
         "Blob",
         on_delete=models.PROTECT,
@@ -2343,11 +2343,7 @@ class InboundMessage(BaseModel):
         "abandoned at",
         null=True,
         blank=True,
-        help_text=(
-            "Set when processing was permanently abandoned after the retry "
-            "window; the row is kept for inspection/replay and skipped by the "
-            "retry sweep."
-        ),
+        help_text="When processing was permanently abandoned; NULL while live.",
     )
 
     class Meta:
@@ -2357,6 +2353,14 @@ class InboundMessage(BaseModel):
         ordering = ["-created_at"]
         indexes = [
             models.Index(fields=["created_at"]),
+            # Partial: only the rare abandoned rows are indexed (the column is
+            # NULL for every live/in-flight message), so live INSERTs skip it
+            # and the purge/retry sweeps still get a tiny index to scan.
+            models.Index(
+                fields=["abandoned_at"],
+                condition=models.Q(abandoned_at__isnull=False),
+                name="messages_in_abandon_partial",
+            ),
         ]
 
     def __str__(self):
@@ -2372,7 +2376,7 @@ class InboundMessage(BaseModel):
         fields, which would fail open to "trusted" for a stripped external
         message.
         """
-        return (self.envelope or {}).get("origin") == "internal"
+        return (self.envelope or {}).get("origin") == InboundOrigin.INTERNAL
 
     def get_raw_bytes(self) -> bytes:
         """Return the raw message bytes from the backing blob.

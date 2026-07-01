@@ -4,7 +4,7 @@ Every "thing we do with an incoming message before it lands as a
 ``Message`` row" is a **Step**: a callable that takes an
 ``InboundContext`` and returns a ``Decision``. Steps may also mutate
 the context — set ``is_spam``, add ``labels``, cache ``rspamd_result``,
-prepend an authentication header, etc.
+record an auth verdict in ``postmark``, etc.
 
 ``build_inbound_pipeline`` assembles the ordered step list for a message —
 before-spam user webhooks, the hardcoded-rules and rspamd spam checks, the
@@ -195,9 +195,12 @@ def _make_rspamd_step(spam_config: Dict[str, Any]) -> Step:
     (https://docs.rspamd.com/configuration/metrics/):
 
     * ``no action`` → deliver (is_spam=False).
-    * ``add header`` / ``rewrite subject`` / ``quarantine`` / ``reject`` →
-      spam verdict (is_spam=True → Junk). We can't honour ``reject`` at SMTP
-      time (already accepted), so it lands in Junk like the other markers.
+    * ``add header`` / ``rewrite subject`` → deliver to the inbox with a
+      graded ``postmark["spam"]`` marker (possible / likely) for the UI, not
+      hidden in Junk.
+    * ``quarantine`` / ``reject`` → spam verdict (is_spam=True → Junk). We
+      can't honour ``reject`` at SMTP time (already accepted), so it lands in
+      Junk.
     * ``greylist`` / ``soft reject`` → temporary failures, NOT verdicts: route
       onto our deferral path (RETRY). The condition (rate-limit, greylist,
       transient DNS) usually clears within the 5-min sweep; a persistent one
@@ -293,14 +296,13 @@ def _make_inbound_auth_step(spam_config: Dict[str, Any]) -> Step:
             # Widget submissions arrive over an unauthenticated web form, so
             # they carry the "none" baseline even when DKIM/DMARC verification
             # is disabled instance-wide (which is when ``verdict`` is falsy).
-            if (ctx.inbound_message.envelope or {}).get("origin") == "widget":
+            if (ctx.inbound_message.envelope or {}).get(
+                "origin"
+            ) == enums.InboundOrigin.WIDGET:
                 ctx.postmark["auth"] = "none"
             return Decision.CONTINUE
-        # Record the verdict structurally instead of prepending it to the
-        # bytes: the ingest blob stays untouched (reused as Message.blob) and
-        # ``get_stmsg_headers`` surfaces it. ``verdict`` is already "none"
-        # (unverified) or "fail" (forged); a verified message returns no
-        # verdict and leaves ``auth`` absent.
+        # ``verdict`` is already "none" (unverified) or "fail" (forged); a
+        # verified message returns no verdict and leaves ``auth`` absent.
         ctx.postmark["auth"] = verdict
         return Decision.CONTINUE
 
@@ -340,10 +342,9 @@ def build_inbound_pipeline(ctx: InboundContext) -> List[Step]:
     # Internal mailbox-to-mailbox mail is trusted and not externally
     # authenticated: run only the user-webhook steps. The spam steps
     # would no-op anyway (the task pre-sets is_spam=False), and the auth
-    # step would prepend a meaningless X-StMsg-Sender-Auth banner — which
-    # also mutates the bytes and defeats blob dedup with the sender — plus
-    # do needless DNS/rspamd work. Webhooks still fire on both phases so
-    # internal mail is indistinguishable from external to a consumer.
+    # step would record a meaningless auth verdict plus do needless
+    # DNS/rspamd work. Webhooks still fire on both phases so internal mail
+    # is indistinguishable from external to a consumer.
     if ctx.inbound_message.is_internal:
         return [
             *webhook_steps_for_mailbox(
@@ -449,15 +450,19 @@ def _resolve_assignable_users(
     for email in target_emails:
         bucket = by_email.get(email) or []
         if not bucket:
+            # Don't log the raw webhook-supplied email (PII) — reference the
+            # thread instead.
             logger.warning(
-                "Webhook assignee email %s does not resolve to any user — skipping",
-                email,
+                "Webhook assignee email does not resolve to any user on "
+                "thread %s — skipping",
+                thread.id,
             )
             continue
         if len(bucket) > 1:
             logger.warning(
-                "Webhook assignee email %s is ambiguous (multiple matches) — skipping",
-                email,
+                "Webhook assignee email is ambiguous (multiple matches) on "
+                "thread %s — skipping",
+                thread.id,
             )
             continue
         user = bucket[0]
@@ -474,9 +479,10 @@ def _resolve_assignable_users(
     )
     for uid in candidate_ids:
         if uid not in assignable_ids:
+            # Reference the thread, not the user's email (PII).
             logger.warning(
-                "Webhook assignee %s lacks an assignable role on the thread — skipping",
-                candidate_users[uid].email,
+                "Webhook assignee lacks an assignable role on thread %s — skipping",
+                thread.id,
             )
 
     return [

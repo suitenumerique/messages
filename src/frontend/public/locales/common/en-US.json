@@ -838,6 +838,7 @@
   "Uploading... {{progress}}%": "Uploading... {{progress}}%",
   "URL": "URL",
   "URL is required.": "URL is required.",
+  "URL must include a valid host.": "URL must include a valid host.",
   "URL must start with http:// or https://": "URL must start with http:// or https://",
   "Use \"Send and archive\" by default": "Use \"Send and archive\" by default",
   "Use {referer_domain} to include the website domain in the subject.": "Use {referer_domain} to include the website domain in the subject.",

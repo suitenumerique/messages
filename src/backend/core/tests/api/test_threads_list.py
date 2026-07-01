@@ -1518,10 +1518,15 @@ class TestThreadStatsAPI:
             is_trashed=False,
         )
 
-        # SENT - should not affect flags
+        # SENT_EXTERNAL - should not affect flags
         MessageRecipientFactory(
             message=message,
             delivery_status=enums.MessageDeliveryStatusChoices.SENT_EXTERNAL,
+        )
+        # SENT_INTERNAL - delivered-class, should behave identically (no flags)
+        MessageRecipientFactory(
+            message=message,
+            delivery_status=enums.MessageDeliveryStatusChoices.SENT_INTERNAL,
         )
         # FAILED - should set has_delivery_failed
         MessageRecipientFactory(

@@ -85,6 +85,27 @@ class MessageDeliveryStatusChoices(models.IntegerChoices):
     CANCELLED = 5, "cancelled"
 
 
+# Single source of truth for the "delivered"-class terminal statuses, so the
+# SENT_INTERNAL/SENT_EXTERNAL footgun documented above is encoded once instead
+# of re-derived (and mis-derived) at every call site.
+DELIVERED_STATUSES = frozenset(
+    {
+        MessageDeliveryStatusChoices.SENT_INTERNAL,
+        MessageDeliveryStatusChoices.SENT_EXTERNAL,
+    }
+)
+
+
+def is_delivered(status) -> bool:
+    """Whether a delivery status is a terminal "delivered" one.
+
+    Treats SENT_INTERNAL and SENT_EXTERNAL identically — the only correct way
+    to answer "did it send?" (see the FOOTGUN note on
+    ``MessageDeliveryStatusChoices``).
+    """
+    return status in DELIVERED_STATUSES
+
+
 class MailDomainAccessRoleChoices(models.IntegerChoices):
     """Defines the unique roles a user can have to access a mail domain."""
 
@@ -233,6 +254,26 @@ class ChannelTypes(StrEnum):
     API_KEY = "api_key"
     WEBHOOK = "webhook"
     CALDAV = "caldav"
+
+
+class InboundOrigin(StrEnum):
+    """Known ``InboundMessage.envelope["origin"]`` values — the trust
+    discriminator each ingest path sets EXPLICITLY (see ``is_internal``).
+
+    ``StrEnum`` (not a Django ``TextChoices``): origin is a free-form key in a
+    JSONField, so adding one never requires a migration. Members ARE strings
+    (``InboundOrigin.MTA == "mta"``) so comparisons and dict values work
+    transparently.
+
+    ``IMPORT`` is a known/reserved value: imports bypass the inbound queue and
+    so no producer sets it today, but it is kept here as the documented origin
+    for that path.
+    """
+
+    MTA = "mta"
+    INTERNAL = "internal"
+    WIDGET = "widget"
+    IMPORT = "import"
 
 
 class WebhookTrigger(StrEnum):

@@ -19,7 +19,7 @@ from jmap_email import (
 )
 
 from core import models
-from core.enums import MessageDeliveryStatusChoices
+from core.enums import InboundOrigin, MessageDeliveryStatusChoices
 from core.mda.inbound import check_local_recipient, deliver_inbound_message
 from core.mda.inline_images import (
     extract_inline_images_html,
@@ -696,7 +696,7 @@ def send_message(message: models.Message, force_mta_out: bool = False):
                             parsed_email,
                             blob_content,
                             envelope={
-                                "origin": "internal",
+                                "origin": InboundOrigin.INTERNAL,
                                 "mail_from": message.sender.email,
                                 "rcpt_to": recipient_email,
                             },

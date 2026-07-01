@@ -1601,10 +1601,20 @@ class InboundMessageAdmin(admin.ModelAdmin):
 
         replayed = 0
         for inbound_message in queryset.filter(abandoned_at__isnull=False):
+            # Publish to the broker *before* clearing the terminal markers: if
+            # the publish fails, leave the row abandoned (with its error) so the
+            # operator can retry, rather than erasing the state without a re-queue.
+            try:
+                process_inbound_message_task.delay(str(inbound_message.id))
+            except Exception:  # pylint: disable=broad-except
+                logging.exception(
+                    "Failed to re-queue abandoned inbound message %s",
+                    inbound_message.id,
+                )
+                continue
             inbound_message.abandoned_at = None
             inbound_message.error_message = ""
             inbound_message.save(update_fields=["abandoned_at", "error_message"])
-            process_inbound_message_task.delay(str(inbound_message.id))
             replayed += 1
         self.message_user(request, f"Re-queued {replayed} abandoned message(s).")
 
@@ -1614,7 +1624,6 @@ class InboundMessageAdmin(admin.ModelAdmin):
             super()
             .get_queryset(request)
             .select_related("mailbox", "mailbox__domain", "channel")
-            .defer("raw_data")  # Exclude large binary content from list view
         )
 
 

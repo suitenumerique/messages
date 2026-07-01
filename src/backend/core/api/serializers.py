@@ -2380,13 +2380,13 @@ class ChannelSerializer(CreateOnlyFieldsMixin, serializers.ModelSerializer):
         explicit mailbox or maildomain.
         """
         if self.context.get("mailbox") or self.context.get("user_channel"):
-            # On CREATE, ``type`` MUST be supplied explicitly. The model
-            # field used to default to "mta", which let a caller omit
-            # ``type`` from the body and bypass FEATURE_MAILBOX_ADMIN_CHANNELS
-            # even when "mta" was not in the allowlist. On UPDATE, ``type``
-            # is made read-only by ``CreateOnlyFieldsMixin`` so it's never
-            # in ``attrs`` — fall through to the other validators which
-            # read the instance's existing type.
+            # On CREATE, ``type`` MUST be supplied explicitly: a default
+            # would let a caller omit ``type`` from the body and slip past
+            # FEATURE_MAILBOX_ADMIN_CHANNELS even when that default type
+            # isn't in the allowlist. On UPDATE, ``type`` is made read-only
+            # by ``CreateOnlyFieldsMixin`` so it's never in ``attrs`` — fall
+            # through to the other validators which read the instance's
+            # existing type.
             if self.instance is None and "type" not in attrs:
                 raise serializers.ValidationError(
                     {

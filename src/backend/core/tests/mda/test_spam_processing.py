@@ -834,6 +834,24 @@ class TestProcessInboundMessageTask:
         call_kwargs = mock_create_message.call_args[1]
         assert call_kwargs["is_spam"] is True
 
+    @override_settings(SPAM_CONFIG={"rspamd_url": "http://rspamd:8010/_api"})
+    @patch("core.mda.spam.call_rspamd")
+    def test_discard_action_blackholes_message(self, mock_call):
+        """rspamd 'discard' drops the message end-to-end: no Message is
+        created, the queue row is consumed, and the task reports it dropped."""
+        mailbox = factories.MailboxFactory()
+        inbound_message = _queue_inbound(
+            mailbox, b"From: s@example.com\r\nSubject: t\r\n\r\nbody"
+        )
+        mock_call.return_value = ("discard", None, {"action": "discard"})
+
+        with patch.object(process_inbound_message_task, "update_state", Mock()):
+            result = process_inbound_message_task.run(str(inbound_message.id))
+
+        assert result["dropped_by"] == "rspamd"
+        assert not models.InboundMessage.objects.filter(id=inbound_message.id).exists()
+        assert models.Message.objects.count() == 0
+
         # Check that inbound message was deleted after successful processing
         assert not models.InboundMessage.objects.filter(id=inbound_message.id).exists()
 
@@ -972,6 +990,9 @@ class TestRspamdStepFailureHandling:
             ("greylist", Decision.RETRY, None, None),
             ("soft reject", Decision.RETRY, None, None),
             ("discard", Decision.DROP, None, None),
+            # An unknown/future action is delivered to the inbox (not Junk),
+            # unmarked — safest default.
+            ("telephone", Decision.CONTINUE, False, None),
         ],
     )
     @patch("core.mda.spam.call_rspamd")

@@ -313,8 +313,15 @@ def _sanitize_url(url: str) -> str:
     if not parsed.hostname:
         return "<no-host>"
     host = parsed.hostname
-    if parsed.port:
-        host = f"{host}:{parsed.port}"
+    try:
+        # ``.port`` re-parses the netloc and raises ValueError on a malformed
+        # port even though ``urlparse`` itself succeeded — swallow it and log
+        # host-only rather than let a bad URL crash the logging path.
+        port = parsed.port
+    except ValueError:
+        port = None
+    if port:
+        host = f"{host}:{port}"
     return f"{parsed.scheme}://{host}"
 
 
@@ -1084,8 +1091,8 @@ def dispatch_webhook_task(
     Non-blocking webhooks can't influence delivery, so their network I/O
     runs here (default queue) instead of pinning the time-sensitive
     inbound pipeline worker. Best-effort and at-least-once: the message
-    is already handled, so any failure is logged and swallowed (matching
-    the previous inline non-blocking contract). The request is re-signed
+    is already handled, so any failure is logged and swallowed (a
+    non-blocking webhook never affects delivery). The request is re-signed
     here at send time, so the root secret never travels through the
     broker and the JWT TTL is measured from the actual POST.
 
@@ -1099,6 +1106,25 @@ def dispatch_webhook_task(
         channel = models.Channel.objects.filter(id=channel_id).first()
         mailbox = models.Mailbox.objects.filter(id=mailbox_id).first()
         if channel is None or mailbox is None:
+            return
+        # Re-validate the channel at send time: it may have been retyped,
+        # re-triggered, or re-scoped between the pipeline recording it and this
+        # task running. Skip (rather than post) if it no longer applies. The
+        # scope-matcher already filters to type=webhook channels covering this
+        # mailbox, so channel membership subsumes the type + mailbox checks.
+        applicable = {c.id for c in find_webhook_channels_for_mailbox(mailbox)}
+        trigger = (channel.settings or {}).get("trigger")
+        if (
+            channel.id not in applicable
+            or trigger != enums.WebhookTrigger.MESSAGE_DELIVERED
+        ):
+            logger.warning(
+                "Webhook channel %s no longer applies to mailbox %s "
+                "(trigger=%r) — skipping dispatch",
+                channel_id,
+                mailbox_id,
+                trigger,
+            )
             return
         message = models.Message.objects.filter(id=message_id).first()
         if message is None or message.blob_id is None:

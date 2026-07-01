@@ -124,7 +124,7 @@ def find_thread_for_inbound_message(
             return parent.thread  # Found a match!
 
     # Strategy 2 (Fallback): If no subject match, return thread of the most recent parent message
-    # The list is ordered by -sent_at, so the first element is the latest match.
+    # The list is ordered by -created_at, so the first element is the latest match.
     return None  # potential_parents.first().thread
 
 

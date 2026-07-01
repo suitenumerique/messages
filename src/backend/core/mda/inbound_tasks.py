@@ -87,9 +87,11 @@ def _safe_finalize(label, inbound_message_id, gate, fn):
 
     ``gate`` short-circuits the call when the input collection is
     empty/false — same semantics as the inline ``if ctx.labels:``
-    guards, just lifted out. Exceptions are logged but never
-    propagated: the message has already landed; failing the whole
-    task here would only confuse operators."""
+    guards, just lifted out. ALL exceptions (including a Celery
+    ``SoftTimeLimitExceeded``) are logged and swallowed, never propagated:
+    these run AFTER the message has landed and its queue row is deleted, so
+    re-raising would make the task-level handler retry/abandon a row that no
+    longer exists. A dropped finalize side effect is the acceptable cost."""
     if not gate:
         return
     try:
@@ -139,7 +141,9 @@ def _handle_retry(
 
 
 def _retry_or_abandon(
-    inbound_message: models.InboundMessage, reason: str
+    inbound_message: models.InboundMessage,
+    reason: str,
+    blocking_webhook_results: Optional[Dict[Any, Any]] = None,
 ) -> Dict[str, Any]:
     """Bounded handling for a message that failed to be created/processed.
 
@@ -152,9 +156,17 @@ def _retry_or_abandon(
     silently lose mail; instead an operator
     can inspect and replay the row from the Django admin, and ``logger.error``
     raises a Sentry alert. ``error_message`` keeps the human-readable reason.
+
+    ``blocking_webhook_results`` (when the failure happened AFTER the pipeline
+    already ran the blocking webhooks) is persisted on the retry path so the
+    next sweep replays those successes from cache instead of re-POSTing them.
     """
     age = timezone.now() - inbound_message.created_at
     if age <= DEFERRAL_MAX_AGE:
+        if blocking_webhook_results:
+            persist_cached_webhook_results(
+                str(inbound_message.id), blocking_webhook_results
+            )
         inbound_message.error_message = reason
         inbound_message.save(update_fields=["error_message"])
         return {
@@ -220,6 +232,9 @@ def process_inbound_message_task(self, inbound_message_id: str):
         return {"success": False, "error": "Message already being processed"}
 
     inbound_message: Optional[models.InboundMessage] = None
+    # Bound up-front so the except handlers below can safely read it even if a
+    # timeout/error fires before the pipeline builds it.
+    ctx: Optional[InboundContext] = None
     try:
         try:
             inbound_message = models.InboundMessage.objects.get(id=inbound_message_id)
@@ -348,7 +363,7 @@ def process_inbound_message_task(self, inbound_message_id: str):
                 is_spam=False if deferral_expired else bool(ctx.is_spam),
                 is_trashed=ctx.mark_trashed,
                 is_archived=ctx.mark_archived,
-                # Reuse the ingest blob (the bytes are never mutated now that
+                # Reuse the ingest blob (the bytes are never mutated —
                 # verdicts go to postmark) and carry the pipeline's postmark.
                 blob=inbound_message.blob,
                 postmark=ctx.postmark,
@@ -479,9 +494,12 @@ def process_inbound_message_task(self, inbound_message_id: str):
             }
 
         # Creation failed (transient DB error, constraint, …). Hold for a
-        # bounded retry rather than keeping the row forever.
+        # bounded retry rather than keeping the row forever — carrying the
+        # already-run blocking webhooks so the retry doesn't re-POST them.
         return _retry_or_abandon(
-            inbound_message, "Failed to create message from inbound message"
+            inbound_message,
+            "Failed to create message from inbound message",
+            blocking_webhook_results=ctx.blocking_webhook_results,
         )
 
     except SoftTimeLimitExceeded:
@@ -502,6 +520,7 @@ def process_inbound_message_task(self, inbound_message_id: str):
                 inbound_message,
                 f"Processing exceeded the {_INBOUND_TASK_SOFT_TIME_LIMIT}s "
                 "soft time limit",
+                blocking_webhook_results=ctx.blocking_webhook_results if ctx else None,
             )
         return {"success": False, "error": "soft_time_limit"}
     except Exception as e:
@@ -511,7 +530,11 @@ def process_inbound_message_task(self, inbound_message_id: str):
         if inbound_message:
             # Same bounded-retry policy as a failed creation: a persistent
             # error must not pin the row (and re-fire webhooks) forever.
-            return _retry_or_abandon(inbound_message, str(e))
+            return _retry_or_abandon(
+                inbound_message,
+                str(e),
+                blocking_webhook_results=ctx.blocking_webhook_results if ctx else None,
+            )
         return {"success": False, "error": str(e)}
     finally:
         # Always release the lock
@@ -589,8 +612,8 @@ def purge_abandoned_inbound_messages_task(
     Abandoned rows are deliberately kept (never deleted at abandon time) so the
     mail stays inspectable / replayable — see ``_retry_or_abandon``. But they
     must not accumulate forever: a sustained stream of unparseable / uncreatable
-    mail would otherwise grow this transient queue table (and its inline
-    ``raw_data`` bytes) without bound. This daily sweep deletes rows past the
+    mail would otherwise grow this transient queue table (and pin the blobs
+    it references) without bound. This daily sweep deletes rows past the
     retention window.
 
     Deletes in batches through ``QuerySet.delete()`` (not ``_raw_delete``) so

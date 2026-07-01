@@ -16,7 +16,7 @@ from rest_framework.exceptions import AuthenticationFailed
 from rest_framework.permissions import IsAuthenticated
 from rest_framework.response import Response
 
-from core import models
+from core import enums, models
 from core.mda.inbound import check_local_recipients, deliver_inbound_message
 from core.mda.raw_mime import remove_mime_headers
 
@@ -238,7 +238,7 @@ class InboundMTAViewSet(viewsets.GenericViewSet):
         # are the connecting SMTP peer (forwarded by the MTA). ``rcpt_to`` is
         # the actual RCPT TO and is set per recipient inside the loop.
         base_envelope = {
-            "origin": "mta",
+            "origin": enums.InboundOrigin.MTA,
             "mail_from": mta_metadata.get("sender", ""),
             "ip": mta_metadata.get("client_address", ""),
             "helo": mta_metadata.get("client_helo", ""),

@@ -244,7 +244,7 @@ _Those settings are deprecated and will be removed in the future._
 | `CORS_ALLOWED_ORIGINS` | `[]` | Specific allowed CORS origins | Optional |
 | `CORS_ALLOWED_ORIGIN_REGEXES` | `[]` | Regex patterns for allowed origins | Optional |
 | `CSRF_TRUSTED_ORIGINS` | `["http://localhost:8900", "http://localhost:8901"]` | Trusted origins for CSRF | Optional |
-| `ALLOWED_HOSTS` | `[]` | Host/domain allow-list (Production configuration; the Development class sets this from `DJANGO_ALLOWED_HOSTS`). | Optional |
+| `ALLOWED_HOSTS` | `[]` | Django host/domain allow-list setting (`settings.ALLOWED_HOSTS`). In the Base/Production configurations it is populated from the `DJANGO_ALLOWED_HOSTS` env var (see above); the Development configuration hardcodes `["*"]`. The `bucket_cors` management command also reads it to build S3 CORS origins. | Optional |
 | `SERVER_TO_SERVER_API_TOKENS` | `[]` | API tokens for server-to-server auth | Optional |
 | `SALT_KEY` | `[]` | Key(s) for Django Fernet-encrypted model fields. Accepts a list for rotation (`["new_key", "old_key"]`); the first is used to encrypt, all are tried to decrypt. | Optional |
 

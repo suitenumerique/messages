@@ -13,6 +13,7 @@ from django.utils import timezone
 from jmap_email import body_text_joined
 
 from core import models
+from core.enums import is_delivered
 from core.mda.draft import create_draft
 from core.mda.outbound import prepare_outbound_message, send_message
 from core.mda.selfcheck_reporting import (
@@ -91,13 +92,12 @@ def create_and_send_draft(
     # Check message delivery status
     recipient_status = message.recipients.first().delivery_status  # pylint: disable=no-member
 
-    # ``!= SENT_EXTERNAL`` is safe here ONLY because
-    # ``send_message(force_mta_out=True)`` above forces the external MTA path,
-    # which yields SENT_EXTERNAL. A same-instance recipient delivered
-    # internally would be SENT_INTERNAL (also "delivered") and would wrongly
-    # fail this check — see the footgun note on MessageDeliveryStatusChoices.
-    # Don't drop force_mta_out without also accepting SENT_INTERNAL here.
-    if recipient_status != models.MessageDeliveryStatusChoices.SENT_EXTERNAL:
+    # Accept either "delivered"-class status via ``is_delivered``: the
+    # ``send_message(force_mta_out=True)`` above forces the external MTA path
+    # (SENT_EXTERNAL) today, but SENT_INTERNAL is equally "delivered", so the
+    # predicate stays correct even if force_mta_out is ever dropped — see the
+    # footgun note on MessageDeliveryStatusChoices.
+    if not is_delivered(recipient_status):
         raise SelfCheckError("Message not delivered")
 
     return message
