@@ -23,9 +23,10 @@ def _raw_data_to_blob(apps, schema_editor):
         raw = bytes(inbound.raw_data) if inbound.raw_data else b""
         if not raw:
             continue
-        inbound.blob = Blob.objects.create_blob(
-            content=raw, content_type="message/rfc822"
-        )
+        blob = Blob.objects.create_blob(content=raw, content_type="message/rfc822")
+        # Assign by id: the real Blob instance isn't an instance of the
+        # historical Blob model ``apps.get_model`` gave InboundMessage.blob.
+        inbound.blob_id = blob.id
         inbound.save(update_fields=["blob"])
 
 

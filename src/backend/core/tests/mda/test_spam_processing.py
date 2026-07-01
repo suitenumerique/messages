@@ -16,14 +16,13 @@ from core.mda.inbound import deliver_inbound_message
 from core.mda.inbound_pipeline import (
     Decision,
     InboundContext,
-    _call_rspamd,
-    _check_hardcoded_rules,
     _make_rspamd_step,
 )
 from core.mda.inbound_tasks import (
     process_inbound_message_task,
     process_inbound_messages_queue_task,
 )
+from core.mda.spam import call_rspamd, check_hardcoded_rules
 
 
 def _queue_inbound(mailbox, content=b"raw", envelope=None):
@@ -107,7 +106,7 @@ class TestRspamdSpamCheck:
     """Test rspamd spam checking functionality."""
 
     @override_settings(SPAM_CONFIG={"rspamd_url": "http://rspamd:8010/_api"})
-    @patch("core.mda.inbound_pipeline.requests.post")
+    @patch("core.mda.spam.requests.post")
     def test_check_spam_with_rspamd_spam(self, mock_post):
         """Test that spam messages are correctly identified."""
         spam_config = {"rspamd_url": "http://rspamd:8010/_api"}
@@ -121,9 +120,9 @@ class TestRspamdSpamCheck:
         mock_post.return_value = mock_response
 
         raw_data = b"Spam email content"
-        action, error, rspamd_result = _call_rspamd(raw_data, spam_config)
+        action, error, rspamd_result = call_rspamd(raw_data, spam_config)
 
-        # _call_rspamd returns the raw action; the action -> verdict mapping
+        # call_rspamd returns the raw action; the action -> verdict mapping
         # lives in the step (see TestRspamdStepFailureHandling).
         assert action == "reject"
         assert error is None
@@ -134,7 +133,7 @@ class TestRspamdSpamCheck:
         assert call_args[1]["data"] == raw_data
 
     @override_settings(SPAM_CONFIG={"rspamd_url": "http://rspamd:8010/_api"})
-    @patch("core.mda.inbound_pipeline.requests.post")
+    @patch("core.mda.spam.requests.post")
     def test_check_spam_with_rspamd_not_spam(self, mock_post):
         """Test that non-spam messages are correctly identified."""
         spam_config = {"rspamd_url": "http://rspamd:8010/_api"}
@@ -148,13 +147,13 @@ class TestRspamdSpamCheck:
         mock_post.return_value = mock_response
 
         raw_data = b"Legitimate email content"
-        action, error, _rspamd_result = _call_rspamd(raw_data, spam_config)
+        action, error, _rspamd_result = call_rspamd(raw_data, spam_config)
 
         assert action == "no action"
         assert error is None
 
     @override_settings(SPAM_CONFIG={"rspamd_url": "http://rspamd:8010/_api"})
-    @patch("core.mda.inbound_pipeline.requests.post")
+    @patch("core.mda.spam.requests.post")
     def test_call_rspamd_forwards_smtp_envelope_headers(self, mock_post):
         """The SMTP envelope is forwarded via rspamd's scan headers, and
         CR/LF in attacker-influenced fields (HELO/hostname) is stripped."""
@@ -172,7 +171,7 @@ class TestRspamdSpamCheck:
             "helo": "evil\r\nX-Injected: 1",
             "hostname": "mail.example.com",
         }
-        _call_rspamd(b"content", spam_config, envelope=envelope)
+        call_rspamd(b"content", spam_config, envelope=envelope)
 
         headers = mock_post.call_args[1]["headers"]
         assert headers["From"] == "sender@example.com"
@@ -184,7 +183,7 @@ class TestRspamdSpamCheck:
         assert "\r" not in headers["Helo"] and "\n" not in headers["Helo"]
 
     @override_settings(SPAM_CONFIG={"rspamd_url": "http://rspamd:8010/_api"})
-    @patch("core.mda.inbound_pipeline.requests.post")
+    @patch("core.mda.spam.requests.post")
     def test_call_rspamd_omits_absent_envelope_headers(self, mock_post):
         """Fields we don't have (widget/internal mail has no HELO/rDNS) are
         omitted rather than sent empty, which would skew scoring."""
@@ -194,7 +193,7 @@ class TestRspamdSpamCheck:
         mock_response.raise_for_status = Mock()
         mock_post.return_value = mock_response
 
-        _call_rspamd(
+        call_rspamd(
             b"content",
             spam_config,
             envelope={"origin": "widget", "mail_from": "u@example.com"},
@@ -213,7 +212,7 @@ class TestRspamdSpamCheck:
             "rspamd_auth": "Bearer token123",
         }
     )
-    @patch("core.mda.inbound_pipeline.requests.post")
+    @patch("core.mda.spam.requests.post")
     def test_check_spam_with_rspamd_auth_header(self, mock_post):
         """Test that Authorization header is included when configured."""
         spam_config = {
@@ -230,7 +229,7 @@ class TestRspamdSpamCheck:
         mock_post.return_value = mock_response
 
         raw_data = b"Email content"
-        _call_rspamd(raw_data, spam_config)
+        call_rspamd(raw_data, spam_config)
 
         call_args = mock_post.call_args
         assert call_args[1]["headers"]["Authorization"] == "Bearer token123"
@@ -242,14 +241,14 @@ class TestRspamdSpamCheck:
         verdict instead of silently marking the message as ham."""
         spam_config = {}
         raw_data = b"Email content"
-        action, error, rspamd_result = _call_rspamd(raw_data, spam_config)
+        action, error, rspamd_result = call_rspamd(raw_data, spam_config)
 
         assert action is None
         assert error is None
         assert rspamd_result is None
 
     @override_settings(SPAM_CONFIG={"rspamd_url": "http://rspamd:8010/_api"})
-    @patch("core.mda.inbound_pipeline.requests.post")
+    @patch("core.mda.spam.requests.post")
     def test_check_spam_with_rspamd_error(self, mock_post):
         """On error, ``action`` is None and the error is surfaced separately;
         the step turns that into a RETRY (never fails open)."""
@@ -257,7 +256,7 @@ class TestRspamdSpamCheck:
         mock_post.side_effect = requests.exceptions.RequestException("Connection error")
 
         raw_data = b"Email content"
-        action, error, rspamd_result = _call_rspamd(raw_data, spam_config)
+        action, error, rspamd_result = call_rspamd(raw_data, spam_config)
 
         assert action is None
         assert error is not None
@@ -269,7 +268,7 @@ class TestRspamdSpamCheck:
             "rspamd_auth": "Bearer global",
         }
     )
-    @patch("core.mda.inbound_pipeline.requests.post")
+    @patch("core.mda.spam.requests.post")
     def test_check_spam_with_maildomain_override(self, mock_post):
         """Test that maildomain custom_settings can override SPAM_CONFIG."""
         # Create a maildomain with custom spam config
@@ -294,7 +293,7 @@ class TestRspamdSpamCheck:
 
         spam_config = mailbox.domain.get_spam_config()
         raw_data = b"Email content"
-        _call_rspamd(raw_data, spam_config)
+        call_rspamd(raw_data, spam_config)
 
         # Verify that the domain-specific URL was used
         call_args = mock_post.call_args
@@ -318,7 +317,7 @@ This is a test email body.
         parsed_email = parse_email(raw_email)
         spam_config = {"rules": [{"header_match": "X-Spam:yes", "action": "spam"}]}
 
-        result = _check_hardcoded_rules(parsed_email, spam_config)
+        result = check_hardcoded_rules(parsed_email, spam_config)
 
         assert result is True
 
@@ -334,7 +333,7 @@ This is a test email body.
         parsed_email = parse_email(raw_email)
         spam_config = {"rules": [{"header_match": "X-Spam:no", "action": "ham"}]}
 
-        result = _check_hardcoded_rules(parsed_email, spam_config)
+        result = check_hardcoded_rules(parsed_email, spam_config)
 
         assert result is False
 
@@ -350,7 +349,7 @@ This is a test email body.
         parsed_email = parse_email(raw_email)
         spam_config = {"rules": [{"header_match": "X-Spam:yes", "action": "spam"}]}
 
-        result = _check_hardcoded_rules(parsed_email, spam_config)
+        result = check_hardcoded_rules(parsed_email, spam_config)
 
         assert result is None
 
@@ -366,7 +365,7 @@ This is a test email body.
         parsed_email = parse_email(raw_email)
         spam_config = {}
 
-        result = _check_hardcoded_rules(parsed_email, spam_config)
+        result = check_hardcoded_rules(parsed_email, spam_config)
 
         assert result is None
 
@@ -387,7 +386,7 @@ This is a test email body.
         parsed_email = parse_email(raw_email)
         spam_config = {"rules": [{"header_match": "X-Spam:no", "action": "ham"}]}
 
-        result = _check_hardcoded_rules(parsed_email, spam_config)
+        result = check_hardcoded_rules(parsed_email, spam_config)
 
         assert result is False
 
@@ -403,7 +402,7 @@ This is a test email body.
         parsed_email = parse_email(raw_email)
         spam_config = {"rules": [{"header_match": "X-Spam:yes", "action": "spam"}]}
 
-        result = _check_hardcoded_rules(parsed_email, spam_config)
+        result = check_hardcoded_rules(parsed_email, spam_config)
 
         assert result is True
 
@@ -421,7 +420,7 @@ This is a test email body.
             "rules": [{"header_match": "X-Custom:value:with:colons", "action": "spam"}]
         }
 
-        result = _check_hardcoded_rules(parsed_email, spam_config)
+        result = check_hardcoded_rules(parsed_email, spam_config)
 
         assert result is True
 
@@ -439,7 +438,7 @@ This is a test email body.
             "rules": [{"header_match_regex": "X-Spam:.*spam.*", "action": "spam"}]
         }
 
-        result = _check_hardcoded_rules(parsed_email, spam_config)
+        result = check_hardcoded_rules(parsed_email, spam_config)
 
         assert result is True
 
@@ -457,7 +456,7 @@ This is a test email body.
             "rules": [{"header_match_regex": "X-Spam:spam", "action": "spam"}]
         }
 
-        result = _check_hardcoded_rules(parsed_email, spam_config)
+        result = check_hardcoded_rules(parsed_email, spam_config)
 
         assert result is None
 
@@ -475,7 +474,7 @@ This is a test email body.
             "rules": [{"header_match_regex": "X-Spam:.*spam.*", "action": "spam"}]
         }
 
-        result = _check_hardcoded_rules(parsed_email, spam_config)
+        result = check_hardcoded_rules(parsed_email, spam_config)
 
         assert result is True
 
@@ -493,7 +492,7 @@ This is a test email body.
             "rules": [{"header_match_regex": "X-Spam-Level:[4-9]", "action": "spam"}]
         }
 
-        result = _check_hardcoded_rules(parsed_email, spam_config)
+        result = check_hardcoded_rules(parsed_email, spam_config)
 
         assert result is True
 
@@ -513,7 +512,7 @@ This is a test email body.
             ]
         }
 
-        result = _check_hardcoded_rules(parsed_email, spam_config)
+        result = check_hardcoded_rules(parsed_email, spam_config)
 
         assert result is True
 
@@ -529,7 +528,7 @@ This is a test email body.
         parsed_email = parse_email(raw_email)
         spam_config = {"rules": [{"header_match": "X-Spam:yes", "action": "reject"}]}
 
-        result = _check_hardcoded_rules(parsed_email, spam_config)
+        result = check_hardcoded_rules(parsed_email, spam_config)
 
         assert result is True
 
@@ -545,7 +544,7 @@ This is a test email body.
         parsed_email = parse_email(raw_email)
         spam_config = {"rules": [{"header_match": "X-Spam:no", "action": "no action"}]}
 
-        result = _check_hardcoded_rules(parsed_email, spam_config)
+        result = check_hardcoded_rules(parsed_email, spam_config)
 
         assert result is False
 
@@ -571,7 +570,7 @@ This is a test email body.
             ]
         }
 
-        result = _check_hardcoded_rules(parsed_email, spam_config)
+        result = check_hardcoded_rules(parsed_email, spam_config)
 
         # Should return False (ham) because second rule matched first
         # Third rule should not be evaluated
@@ -596,7 +595,7 @@ This is a test email body.
             ]
         }
 
-        result = _check_hardcoded_rules(parsed_email, spam_config)
+        result = check_hardcoded_rules(parsed_email, spam_config)
 
         # Should return True (spam) because first rule matched
         # Second rule should not be evaluated
@@ -624,7 +623,7 @@ This is a test email body.
             "trusted_relays": 1,  # Trust block 0 and block 1
         }
 
-        result = _check_hardcoded_rules(parsed_email, spam_config)
+        result = check_hardcoded_rules(parsed_email, spam_config)
 
         assert result is True
 
@@ -663,7 +662,7 @@ This is a test email body.
             "trusted_relays": 1,  # Trust block 0 and block 1
         }
 
-        result = _check_hardcoded_rules(parsed_email, spam_config)
+        result = check_hardcoded_rules(parsed_email, spam_config)
 
         # Should return None (no match) because sender's X-Spam is in block 2, not in trusted blocks
         assert result is None
@@ -707,7 +706,7 @@ This is a test email body.
             "trusted_relays": 1,  # Trust block 0 and block 1
         }
 
-        result = _check_hardcoded_rules(parsed_email, spam_config)
+        result = check_hardcoded_rules(parsed_email, spam_config)
 
         # Should match the first X-Spam header (No from last relay), not the sender's (Yes)
         assert result is False  # ham = False (not spam)
@@ -766,7 +765,7 @@ This is a test email body.
             "trusted_relays": trusted_relays_setting,
         }
 
-        result = _check_hardcoded_rules(parsed_email, spam_config)
+        result = check_hardcoded_rules(parsed_email, spam_config)
         assert result is expected_result
 
     def test_default_ignores_sender_injected_ham_header(self):
@@ -800,7 +799,7 @@ This is a test email body.
             ],
         }
 
-        result = _check_hardcoded_rules(parsed_email, spam_config)
+        result = check_hardcoded_rules(parsed_email, spam_config)
         assert result is None  # forged ham not honoured
 
 
@@ -809,7 +808,7 @@ class TestProcessInboundMessageTask:
     """Test the process_inbound_message_task."""
 
     @override_settings(SPAM_CONFIG={"rspamd_url": "http://rspamd:8010/_api"})
-    @patch("core.mda.inbound_pipeline._call_rspamd")
+    @patch("core.mda.spam.call_rspamd")
     @patch("core.mda.inbound_tasks._create_message_from_inbound")
     def test_process_inbound_message_task_spam(
         self, mock_create_message, mock_check_spam
@@ -820,7 +819,7 @@ class TestProcessInboundMessageTask:
 
         inbound_message = _queue_inbound(mailbox, raw_data)
 
-        mock_check_spam.return_value = (True, None, None)  # is_spam=True
+        mock_check_spam.return_value = ("reject", None, None)  # spam
         mock_create_message.return_value = True
 
         # Call the bound task directly using .run() method
@@ -839,7 +838,7 @@ class TestProcessInboundMessageTask:
         assert not models.InboundMessage.objects.filter(id=inbound_message.id).exists()
 
     @override_settings(SPAM_CONFIG={"rspamd_url": "http://rspamd:8010/_api"})
-    @patch("core.mda.inbound_pipeline._call_rspamd")
+    @patch("core.mda.spam.call_rspamd")
     @patch("core.mda.inbound_tasks._create_message_from_inbound")
     def test_process_inbound_message_task_not_spam(
         self, mock_create_message, mock_check_spam
@@ -850,7 +849,7 @@ class TestProcessInboundMessageTask:
 
         inbound_message = _queue_inbound(mailbox, raw_data)
 
-        mock_check_spam.return_value = (False, None, None)  # is_spam=False
+        mock_check_spam.return_value = ("no action", None, None)  # ham
         mock_create_message.return_value = True
 
         # Call the bound task directly using .run() method
@@ -865,7 +864,7 @@ class TestProcessInboundMessageTask:
         assert call_kwargs["is_spam"] is False
 
     @override_settings(SPAM_CONFIG={"rspamd_url": "http://rspamd:8010/_api"})
-    @patch("core.mda.inbound_pipeline._call_rspamd")
+    @patch("core.mda.spam.call_rspamd")
     @patch("core.mda.inbound_tasks._create_message_from_inbound")
     def test_process_inbound_message_task_failure(
         self, mock_create_message, mock_check_spam
@@ -876,7 +875,7 @@ class TestProcessInboundMessageTask:
 
         inbound_message = _queue_inbound(mailbox, raw_data)
 
-        mock_check_spam.return_value = (False, None, None)
+        mock_check_spam.return_value = ("no action", None, None)
         mock_create_message.return_value = False  # Creation failed
 
         # Call the bound task directly using .run() method
@@ -937,11 +936,11 @@ class TestRspamdStepFailureHandling:
             spam_config=spam_config,
         )
 
-    @patch("core.mda.inbound_pipeline._call_rspamd")
+    @patch("core.mda.spam.call_rspamd")
     def test_error_holds_for_retry(self, mock_call):
         """On rspamd error, never fail open — hold the message for retry."""
         spam_config = {"rspamd_url": "http://rspamd:11334"}
-        # On error _call_rspamd returns action=None + an error message.
+        # On error call_rspamd returns action=None + an error message.
         mock_call.return_value = (None, "connection refused", None)
 
         decision = _make_rspamd_step(spam_config)(self._ctx(spam_config))
@@ -949,7 +948,7 @@ class TestRspamdStepFailureHandling:
         # Never fail open — hold, don't deliver unchecked.
         assert decision == Decision.RETRY
 
-    @patch("core.mda.inbound_pipeline._call_rspamd")
+    @patch("core.mda.spam.call_rspamd")
     def test_not_configured_continues(self, mock_call):
         """When rspamd isn't configured, continue without a verdict."""
         # rspamd absent is "no opinion" (action=None, no error) → keep moving.
@@ -975,7 +974,7 @@ class TestRspamdStepFailureHandling:
             ("discard", Decision.DROP, None, None),
         ],
     )
-    @patch("core.mda.inbound_pipeline._call_rspamd")
+    @patch("core.mda.spam.call_rspamd")
     def test_action_mapping(self, mock_call, action, decision, is_spam, marker):
         """Every rspamd action maps to (decision, Junk verdict, spam marker):
         isolate → Junk, flag → inbox+marker, defer → RETRY, discard → DROP."""

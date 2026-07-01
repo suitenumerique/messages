@@ -52,7 +52,7 @@ def victim_mailbox():
 class TestInboundSpoofedSender:
     """Inbound delivery with ``From == To`` must not flag ``is_sender=True``."""
 
-    @patch("core.mda.inbound_pipeline._call_rspamd")
+    @patch("core.mda.spam.call_rspamd")
     def test_inbound_spoofed_sender_not_marked_as_sender(
         self, mock_rspamd, victim_mailbox
     ):
@@ -63,7 +63,7 @@ class TestInboundSpoofedSender:
         message because of the ``sender_email == recipient_email`` shortcut.
         """
         # Rspamd doesn't catch this kind of spoof in the current config.
-        mock_rspamd.return_value = (False, None, None)
+        mock_rspamd.return_value = ("no action", None, None)
 
         recipient = str(victim_mailbox)
         raw = _build_spoofed_raw(recipient)
@@ -92,7 +92,7 @@ class TestInboundSpoofedSender:
             "as is_sender=True; otherwise retry_messages_task re-emits them."
         )
 
-    @patch("core.mda.inbound_pipeline._call_rspamd")
+    @patch("core.mda.spam.call_rspamd")
     @patch("core.mda.outbound_tasks.send_message")
     def test_inbound_spoofed_sender_not_picked_up_by_retry(
         self, mock_send_message, mock_rspamd, victim_mailbox
@@ -103,7 +103,7 @@ class TestInboundSpoofedSender:
         the retry pipeline must not invoke ``send_message`` on it, because
         that would DKIM-sign and re-emit the spam.
         """
-        mock_rspamd.return_value = (False, None, None)
+        mock_rspamd.return_value = ("no action", None, None)
 
         recipient = str(victim_mailbox)
         raw = _build_spoofed_raw(recipient)

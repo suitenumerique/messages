@@ -670,7 +670,7 @@ class TestProcessInboundMessageAuthIntegration:
             "inbound_auth": "rspamd",
         }
     )
-    @patch("core.mda.inbound_pipeline.requests.post")
+    @patch("core.mda.spam.requests.post")
     @patch("core.mda.inbound_tasks._create_message_from_inbound")
     def test_rspamd_response_reused_by_auth_check(self, mock_create_message, mock_post):
         """Single rspamd call feeds both spam and auth."""
@@ -700,7 +700,7 @@ class TestProcessInboundMessageAuthIntegration:
             "inbound_auth": "rspamd",
         }
     )
-    @patch("core.mda.inbound_pipeline.requests.post")
+    @patch("core.mda.spam.requests.post")
     @patch("core.mda.inbound_tasks._create_message_from_inbound")
     def test_dmarc_fail_injects_fail_header_end_to_end(
         self, mock_create_message, mock_post
@@ -734,7 +734,7 @@ class TestProcessInboundMessageAuthIntegration:
             "rules": [{"header_match": "X-Spam:yes", "action": "ham"}],
         }
     )
-    @patch("core.mda.inbound_pipeline.requests.post")
+    @patch("core.mda.spam.requests.post")
     @patch("core.mda.inbound_tasks._create_message_from_inbound")
     def test_rspamd_fetched_on_demand_when_spam_skipped_rspamd(
         self, mock_create_message, mock_post

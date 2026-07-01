@@ -1423,7 +1423,7 @@ class TestWebhookSigning:
 @pytest.mark.django_db
 class TestPipelineIntegration:
     @patch("core.mda.inbound_tasks._create_message_from_inbound")
-    @patch("core.mda.inbound_pipeline._call_rspamd")
+    @patch("core.mda.spam.call_rspamd")
     @patch("core.mda.dispatch_webhooks.SSRFSafeSession")
     def test_before_spam_blocking_retries_message(
         self, mock_session, mock_check_spam, mock_create_message
@@ -1458,7 +1458,7 @@ class TestPipelineIntegration:
         assert models.InboundMessage.objects.filter(id=inbound_message.id).exists()
 
     @patch("core.mda.inbound_tasks._create_message_from_inbound")
-    @patch("core.mda.inbound_pipeline._call_rspamd")
+    @patch("core.mda.spam.call_rspamd")
     @patch("core.mda.dispatch_webhooks.SSRFSafeSession")
     def test_after_spam_blocking_retries_message(
         self, mock_session, mock_check_spam, mock_create_message
@@ -1479,7 +1479,7 @@ class TestPipelineIntegration:
                 "auth_method": "jwt",
             },
         )
-        mock_check_spam.return_value = (False, None, None)
+        mock_check_spam.return_value = ("no action", None, None)
         # 4xx is a webhook error, not an explicit drop → hold for RETRY.
         mock_session.return_value.post.return_value = _make_response(403)
 
@@ -1492,7 +1492,7 @@ class TestPipelineIntegration:
         mock_create_message.assert_not_called()
 
     @patch("core.mda.inbound_tasks._create_message_from_inbound")
-    @patch("core.mda.inbound_pipeline._call_rspamd")
+    @patch("core.mda.spam.call_rspamd")
     @patch("core.mda.dispatch_webhooks.SSRFSafeSession")
     def test_after_spam_is_spam_header(
         self, mock_session, mock_check_spam, mock_create_message
@@ -1514,7 +1514,7 @@ class TestPipelineIntegration:
                 "auth_method": "jwt",
             },
         )
-        mock_check_spam.return_value = (True, None, None)
+        mock_check_spam.return_value = ("reject", None, None)
         mock_session.return_value.post.return_value = _make_response(200)
         mock_create_message.return_value = True
 
@@ -1527,12 +1527,12 @@ class TestPipelineIntegration:
         assert headers["X-StMsg-Trigger"] == "message.delivering"
 
     @patch("core.mda.inbound_tasks._create_message_from_inbound")
-    @patch("core.mda.inbound_pipeline._call_rspamd")
+    @patch("core.mda.spam.call_rspamd")
     def test_creation_failure_retries_then_abandons(self, mock_rspamd, mock_create):
         """A message that parses but can never be created is held for a
         bounded retry, then abandoned — it must not loop (re-firing the
         pipeline + webhooks) forever."""
-        mock_rspamd.return_value = (False, None, None)
+        mock_rspamd.return_value = ("no action", None, None)
         mock_create.return_value = None  # creation always fails
         mailbox = factories.MailboxFactory()
         raw_data = (
@@ -1791,7 +1791,7 @@ class TestInternalDeliveryWebhooks:
         )
         return message
 
-    @patch("core.mda.inbound_pipeline._call_rspamd")
+    @patch("core.mda.spam.call_rspamd")
     @patch("core.mda.dispatch_webhooks.SSRFSafeSession")
     def test_internal_delivery_fires_recipient_webhook(
         self, mock_session, _mock_rspamd
@@ -1833,7 +1833,7 @@ class TestInternalDeliveryWebhooks:
             == enums.MessageDeliveryStatusChoices.SENT_INTERNAL
         )
 
-    @patch("core.mda.inbound_pipeline._call_rspamd")
+    @patch("core.mda.spam.call_rspamd")
     @patch("core.mda.dispatch_webhooks.SSRFSafeSession")
     def test_recipient_webhook_failure_does_not_affect_sender(
         self, mock_session, _mock_rspamd
@@ -1877,7 +1877,7 @@ class TestInternalDeliveryWebhooks:
             thread__accesses__mailbox=recipient_mailbox
         ).exists()
 
-    @patch("core.mda.inbound_pipeline._call_rspamd")
+    @patch("core.mda.spam.call_rspamd")
     @patch("core.mda.dispatch_webhooks.SSRFSafeSession")
     def test_internal_delivery_skips_spam_scan(self, mock_session, mock_rspamd):
         """Internal mail is trusted: the spam steps are skipped (rspamd is
@@ -2449,7 +2449,7 @@ class TestDispatchActionBody:
 @pytest.mark.django_db
 class TestPipelineRetry:
     @patch("core.mda.inbound_tasks._create_message_from_inbound")
-    @patch("core.mda.inbound_pipeline._call_rspamd")
+    @patch("core.mda.spam.call_rspamd")
     @patch("core.mda.dispatch_webhooks.SSRFSafeSession")
     def test_5xx_retries_and_keeps_inbound_message(
         self, mock_session, mock_check_spam, mock_create_message
@@ -2485,7 +2485,7 @@ class TestPipelineRetry:
         mock_create_message.assert_not_called()
 
     @patch("core.mda.inbound_tasks._create_message_from_inbound")
-    @patch("core.mda.inbound_pipeline._call_rspamd")
+    @patch("core.mda.spam.call_rspamd")
     @patch("core.mda.dispatch_webhooks.SSRFSafeSession")
     def test_timeout_retries_and_keeps_inbound_message(
         self, mock_session, mock_check_spam, mock_create_message
@@ -2518,7 +2518,7 @@ class TestPipelineRetry:
         mock_create_message.assert_not_called()
 
     @patch("core.mda.inbound_tasks._create_message_from_inbound")
-    @patch("core.mda.inbound_pipeline._call_rspamd")
+    @patch("core.mda.spam.call_rspamd")
     @patch("core.mda.dispatch_webhooks.SSRFSafeSession")
     def test_blocking_webhook_deferral_delivers_flagged_after_window(
         self, mock_session, mock_check_spam, mock_create_message
@@ -2569,7 +2569,7 @@ class TestPipelineRetry:
         assert not models.InboundMessage.objects.filter(id=inbound_message.id).exists()
 
     @patch("core.mda.autoreply.try_send_autoreply")
-    @patch("core.mda.inbound_pipeline._call_rspamd")
+    @patch("core.mda.spam.call_rspamd")
     @patch("core.mda.dispatch_webhooks.SSRFSafeSession")
     def test_blocking_webhook_deferral_suppresses_autoreply(
         self, mock_session, _mock_rspamd, mock_autoreply
@@ -2615,7 +2615,7 @@ class TestPipelineRetry:
 @pytest.mark.django_db
 class TestPipelineWebhookAntispam:
     @patch("core.mda.inbound_tasks._create_message_from_inbound")
-    @patch("core.mda.inbound_pipeline._call_rspamd")
+    @patch("core.mda.spam.call_rspamd")
     @patch("core.mda.dispatch_webhooks.SSRFSafeSession")
     def test_before_spam_is_spam_override_short_circuits_rspamd(
         self, mock_session, mock_check_spam, mock_create_message
@@ -2652,7 +2652,7 @@ class TestPipelineWebhookAntispam:
         assert mock_create_message.call_args.kwargs["is_spam"] is True
 
     @patch("core.mda.inbound_tasks._create_message_from_inbound")
-    @patch("core.mda.inbound_pipeline._call_rspamd")
+    @patch("core.mda.spam.call_rspamd")
     @patch("core.mda.dispatch_webhooks.SSRFSafeSession")
     def test_after_spam_is_spam_override_replaces_verdict(
         self, mock_session, mock_check_spam, mock_create_message
@@ -2676,7 +2676,7 @@ class TestPipelineWebhookAntispam:
             },
         )
         # rspamd says ham; webhook says spam.
-        mock_check_spam.return_value = (False, None, None)
+        mock_check_spam.return_value = ("no action", None, None)
         mock_session.return_value.post.return_value = _make_response(
             200, body=b'{"is_spam": true}'
         )
@@ -2691,7 +2691,7 @@ class TestPipelineWebhookAntispam:
 
 @pytest.mark.django_db
 class TestPipelineWebhookLabels:
-    @patch("core.mda.inbound_pipeline._call_rspamd")
+    @patch("core.mda.spam.call_rspamd")
     @patch("core.mda.dispatch_webhooks.SSRFSafeSession")
     def test_webhook_label_attached_to_thread(self, mock_session, mock_check_spam):
         """Labels from a blocking webhook are attached to the new thread,
@@ -2719,7 +2719,7 @@ class TestPipelineWebhookLabels:
                 "auth_method": "jwt",
             },
         )
-        mock_check_spam.return_value = (False, None, None)
+        mock_check_spam.return_value = ("no action", None, None)
         mock_session.return_value.post.return_value = _make_response(
             200,
             body=json.dumps(
@@ -2750,7 +2750,7 @@ class TestPipelineWebhookAssign:
     ambiguous, and non-assignable users are silently skipped — delivery
     is never blocked because of an assign hiccup."""
 
-    @patch("core.mda.inbound_pipeline._call_rspamd")
+    @patch("core.mda.spam.call_rspamd")
     @patch("core.mda.dispatch_webhooks.SSRFSafeSession")
     def test_assign_to_resolves_email_and_attributes_channel(
         self, mock_session, mock_check_spam
@@ -2779,7 +2779,7 @@ class TestPipelineWebhookAssign:
                 "auth_method": "jwt",
             },
         )
-        mock_check_spam.return_value = (False, None, None)
+        mock_check_spam.return_value = ("no action", None, None)
         # Email case differs from User.email to exercise iexact.
         mock_session.return_value.post.return_value = _make_response(
             200,
@@ -2811,7 +2811,7 @@ class TestPipelineWebhookAssign:
             type=enums.UserEventTypeChoices.ASSIGN,
         ).exists()
 
-    @patch("core.mda.inbound_pipeline._call_rspamd")
+    @patch("core.mda.spam.call_rspamd")
     @patch("core.mda.dispatch_webhooks.SSRFSafeSession")
     def test_assign_to_skips_unknown_ambiguous_and_viewer(
         self, mock_session, mock_check_spam
@@ -2852,7 +2852,7 @@ class TestPipelineWebhookAssign:
                 "auth_method": "jwt",
             },
         )
-        mock_check_spam.return_value = (False, None, None)
+        mock_check_spam.return_value = ("no action", None, None)
         mock_session.return_value.post.return_value = _make_response(
             200,
             body=json.dumps(
@@ -2879,7 +2879,7 @@ class TestPipelineWebhookAssign:
         )
         assert assignees == [editor_user.id]
 
-    @patch("core.mda.inbound_pipeline._call_rspamd")
+    @patch("core.mda.spam.call_rspamd")
     @patch("core.mda.dispatch_webhooks.SSRFSafeSession")
     def test_two_webhooks_each_produce_own_threadevent(
         self, mock_session, mock_check_spam
@@ -2923,7 +2923,7 @@ class TestPipelineWebhookAssign:
                 "auth_method": "jwt",
             },
         )
-        mock_check_spam.return_value = (False, None, None)
+        mock_check_spam.return_value = ("no action", None, None)
         # Each webhook returns a distinct assignee. The mock fires both
         # in order (dispatcher iterates channels in DB order).
         mock_session.return_value.post.side_effect = [
@@ -2979,10 +2979,10 @@ class TestPipelineWebhookFlagActions:
             },
         )
         with (
-            patch("core.mda.inbound_pipeline._call_rspamd") as mock_rspamd,
+            patch("core.mda.spam.call_rspamd") as mock_rspamd,
             patch("core.mda.dispatch_webhooks.SSRFSafeSession") as mock_session,
         ):
-            mock_rspamd.return_value = (False, None, None)
+            mock_rspamd.return_value = ("no action", None, None)
             mock_session.return_value.post.return_value = _make_response(
                 200, body=action_body
             )
@@ -3012,7 +3012,7 @@ class TestPipelineWebhookFlagActions:
         assert message.is_archived is True
 
     @patch("core.mda.autoreply.try_send_autoreply")
-    @patch("core.mda.inbound_pipeline._call_rspamd")
+    @patch("core.mda.spam.call_rspamd")
     @patch("core.mda.dispatch_webhooks.SSRFSafeSession")
     def test_skip_autoreply_suppresses_autoreply_call(
         self, mock_session, mock_rspamd, mock_autoreply
@@ -3037,7 +3037,7 @@ class TestPipelineWebhookFlagActions:
                 "auth_method": "jwt",
             },
         )
-        mock_rspamd.return_value = (False, None, None)
+        mock_rspamd.return_value = ("no action", None, None)
         mock_session.return_value.post.return_value = _make_response(
             200, body=b'{"skip_autoreply": true}'
         )
@@ -3055,7 +3055,7 @@ class TestPipelineWebhookAddEvent:
     are silently skipped at the classifier (the contract stays forward-
     compatible for future ``type=iframe``)."""
 
-    @patch("core.mda.inbound_pipeline._call_rspamd")
+    @patch("core.mda.spam.call_rspamd")
     @patch("core.mda.dispatch_webhooks.SSRFSafeSession")
     def test_add_event_im_creates_threadevent(self, mock_session, mock_rspamd):
         mailbox = factories.MailboxFactory()
@@ -3075,7 +3075,7 @@ class TestPipelineWebhookAddEvent:
                 "auth_method": "jwt",
             },
         )
-        mock_rspamd.return_value = (False, None, None)
+        mock_rspamd.return_value = ("no action", None, None)
         mock_session.return_value.post.return_value = _make_response(
             200,
             body=json.dumps(
@@ -3116,7 +3116,7 @@ class TestPipelineWebhookReplyDraft:
     user can refine the draft inline before sending — same UI affordance
     as a hand-composed draft."""
 
-    @patch("core.mda.inbound_pipeline._call_rspamd")
+    @patch("core.mda.spam.call_rspamd")
     @patch("core.mda.dispatch_webhooks.SSRFSafeSession")
     def test_reply_draft_creates_draft_with_template_body(
         self, mock_session, mock_rspamd
@@ -3146,7 +3146,7 @@ class TestPipelineWebhookReplyDraft:
                 "auth_method": "jwt",
             },
         )
-        mock_rspamd.return_value = (False, None, None)
+        mock_rspamd.return_value = ("no action", None, None)
         mock_session.return_value.post.return_value = _make_response(
             200,
             body=json.dumps({"reply_draft": {"template": str(template.id)}}).encode(
@@ -3176,7 +3176,7 @@ class TestPipelineWebhookReplyDraft:
         # And the bytes are exactly the template's raw_body json.
         assert draft.draft_blob.get_content() == template.raw_body.encode("utf-8")
 
-    @patch("core.mda.inbound_pipeline._call_rspamd")
+    @patch("core.mda.spam.call_rspamd")
     @patch("core.mda.dispatch_webhooks.SSRFSafeSession")
     def test_reply_draft_out_of_scope_template_skipped(self, mock_session, mock_rspamd):
         """A template belonging to a different mailbox / maildomain
@@ -3205,7 +3205,7 @@ class TestPipelineWebhookReplyDraft:
                 "auth_method": "jwt",
             },
         )
-        mock_rspamd.return_value = (False, None, None)
+        mock_rspamd.return_value = ("no action", None, None)
         mock_session.return_value.post.return_value = _make_response(
             200,
             body=json.dumps({"reply_draft": {"template": str(template.id)}}).encode(
@@ -3232,7 +3232,7 @@ class TestFinalizeStepIsolation:
     log loudly rather than swallow other receiver-requested changes."""
 
     @patch("core.mda.inbound_tasks.apply_pending_assigns")
-    @patch("core.mda.inbound_pipeline._call_rspamd")
+    @patch("core.mda.spam.call_rspamd")
     @patch("core.mda.dispatch_webhooks.SSRFSafeSession")
     def test_assign_failure_does_not_skip_labels(
         self, mock_session, mock_rspamd, mock_apply_assigns
@@ -3265,7 +3265,7 @@ class TestFinalizeStepIsolation:
                 "auth_method": "jwt",
             },
         )
-        mock_rspamd.return_value = (False, None, None)
+        mock_rspamd.return_value = ("no action", None, None)
         mock_session.return_value.post.return_value = _make_response(
             200,
             body=json.dumps(
@@ -3295,7 +3295,7 @@ class TestDeferralDelivery:
     autoreply is suppressed."""
 
     @patch("core.mda.autoreply.try_send_autoreply")
-    @patch("core.mda.inbound_pipeline._call_rspamd")
+    @patch("core.mda.spam.call_rspamd")
     @patch("core.mda.dispatch_webhooks.SSRFSafeSession")
     def test_deferral_delivers_message_past_window(
         self, mock_session, mock_rspamd, mock_autoreply
@@ -3324,7 +3324,7 @@ class TestDeferralDelivery:
                 "auth_method": "jwt",
             },
         )
-        mock_rspamd.return_value = (False, None, None)
+        mock_rspamd.return_value = ("no action", None, None)
         # Non-2xx triggers RETRY from the blocking webhook.
         mock_session.return_value.post.return_value = _make_response(503)
 
@@ -3346,7 +3346,7 @@ class TestDeferralDelivery:
         mock_autoreply.assert_not_called()
 
     @patch("core.mda.autoreply.try_send_autoreply")
-    @patch("core.mda.inbound_pipeline._call_rspamd")
+    @patch("core.mda.spam.call_rspamd")
     @patch("core.mda.dispatch_webhooks.SSRFSafeSession")
     def test_deferral_force_is_spam_false(
         self, mock_session, mock_rspamd, mock_autoreply
@@ -3379,7 +3379,7 @@ class TestDeferralDelivery:
         )
         # Rspamd votes spam, webhook errors → RETRY → force-delivery (once the
         # deferral window expires) should still force is_spam=False.
-        mock_rspamd.return_value = (True, None, None)
+        mock_rspamd.return_value = ("reject", None, None)
         mock_session.return_value.post.return_value = _make_response(503)
 
         with patch.object(process_inbound_message_task, "update_state", Mock()):
@@ -3426,7 +3426,7 @@ class TestAbandonedRowHandling:
         assert str(abandoned.id) not in dispatched
 
     @patch("core.mda.inbound_tasks._create_message_from_inbound")
-    @patch("core.mda.inbound_pipeline._call_rspamd")
+    @patch("core.mda.spam.call_rspamd")
     def test_redispatch_of_abandoned_row_early_returns(self, mock_rspamd, mock_create):
         """A direct re-dispatch of an abandoned row early-returns
         ``{"error": "abandoned"}`` without ever running the pipeline —
@@ -3504,7 +3504,7 @@ class TestPipelineIdempotency:
     duplicate them."""
 
     @patch("core.mda.autoreply.try_send_autoreply")
-    @patch("core.mda.inbound_pipeline._call_rspamd")
+    @patch("core.mda.spam.call_rspamd")
     @patch("core.mda.dispatch_webhooks.SSRFSafeSession")
     def test_dedup_hit_skips_finalize_side_effects(
         self, mock_session, mock_rspamd, mock_autoreply
@@ -3527,7 +3527,7 @@ class TestPipelineIdempotency:
                 "auth_method": "jwt",
             },
         )
-        mock_rspamd.return_value = (False, None, None)
+        mock_rspamd.return_value = ("no action", None, None)
         action_body = json.dumps(
             {
                 "add_event": [{"type": "im", "content": "AI: urgent"}],
@@ -3585,7 +3585,7 @@ class TestPipelineIdempotency:
         assert not models.InboundMessage.objects.filter(id=im2.id).exists()
 
     @patch("core.mda.dispatch_webhooks.dispatch_webhook_task.delay")
-    @patch("core.mda.inbound_pipeline._call_rspamd")
+    @patch("core.mda.spam.call_rspamd")
     def test_dedup_hit_does_not_refire_nonblocking_webhook(
         self, mock_rspamd, mock_delay
     ):
@@ -3604,7 +3604,7 @@ class TestPipelineIdempotency:
                 "auth_method": "jwt",
             },
         )
-        mock_rspamd.return_value = (False, None, None)
+        mock_rspamd.return_value = ("no action", None, None)
 
         mime = "idem-nb@example.com"
         raw_data = (
@@ -3768,7 +3768,7 @@ class TestBlockingWebhookResultCache:
         assert ctx.is_spam is True
         assert label_id in ctx.labels
 
-    @patch("core.mda.inbound_pipeline._call_rspamd")
+    @patch("core.mda.spam.call_rspamd")
     @patch("core.mda.dispatch_webhooks.SSRFSafeSession")
     def test_blocking_webhook_not_refired_across_retries(
         self, mock_session, mock_rspamd
@@ -3796,7 +3796,7 @@ class TestBlockingWebhookResultCache:
         # Webhook succeeds (empty 200 → no is_spam opinion, so the later
         # rspamd step still runs); rspamd is erroring → pipeline RETRYs.
         mock_session.return_value.post.return_value = _make_response(200)
-        mock_rspamd.return_value = (False, "rspamd unreachable", None)
+        mock_rspamd.return_value = (None, "rspamd unreachable", None)
 
         # Attempt 1: webhook POSTed once, message held for retry.
         with patch.object(process_inbound_message_task, "update_state", Mock()):
@@ -3816,7 +3816,7 @@ class TestBlockingWebhookResultCache:
 
     @patch("core.mda.inbound_tasks.persist_cached_webhook_results")
     @patch("core.mda.inbound_tasks.load_cached_webhook_results")
-    @patch("core.mda.inbound_pipeline._call_rspamd")
+    @patch("core.mda.spam.call_rspamd")
     @patch("core.mda.dispatch_webhooks.SSRFSafeSession")
     def test_happy_path_does_not_touch_cache(
         self, mock_session, mock_rspamd, mock_load, mock_persist
@@ -3840,7 +3840,7 @@ class TestBlockingWebhookResultCache:
                 "auth_method": "jwt",
             },
         )
-        mock_rspamd.return_value = (False, None, None)
+        mock_rspamd.return_value = ("no action", None, None)
         mock_session.return_value.post.return_value = _make_response(200)
 
         with patch.object(process_inbound_message_task, "update_state", Mock()):
