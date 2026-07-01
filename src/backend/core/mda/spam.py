@@ -41,9 +41,16 @@ def check_hardcoded_rules(
                 "Invalid header_match format (missing colon) in spam rule #%d", idx
             )
             continue
-        key, value = header_match.split(":", 1)
+        key, raw_value = header_match.split(":", 1)
         key = key.lower().strip()
-        value = value.lower().strip()
+        # For a literal ``header_match`` we compare case-insensitively by
+        # lowercasing both sides. For ``header_match_regex`` we must NOT
+        # lowercase the pattern (it would change semantics, e.g. ``\D``→``\d``);
+        # the regex is matched against the original header value with
+        # ``re.IGNORECASE`` instead.
+        is_regex = not rule.get("header_match")
+        pattern = raw_value.strip()
+        value = pattern.lower()
 
         # ``Return-Path`` is baked into block 0 by the MDA from the *envelope*
         # MAIL FROM, which is unauthenticated (a spammer sets it freely at SMTP
@@ -80,15 +87,23 @@ def check_hardcoded_rules(
         if found_value is None:
             continue
 
-        header_value = (
-            found_value.lower().strip()
-            if isinstance(found_value, str)
-            else str(found_value).lower().strip()
-        )
-        if rule.get("header_match"):
-            is_match = header_value == value
+        header_value_original = (
+            found_value if isinstance(found_value, str) else str(found_value)
+        ).strip()
+        if not is_regex:
+            is_match = header_value_original.lower() == value
         else:  # header_match_regex
-            is_match = re.fullmatch(value, header_value) is not None
+            try:
+                is_match = (
+                    re.fullmatch(pattern, header_value_original, re.IGNORECASE)
+                    is not None
+                )
+            except re.error:
+                # Skip a malformed rule rather than aborting the whole spam
+                # check. Log the rule position only, never the value —
+                # ``spam_config`` may carry secrets.
+                logger.warning("Invalid regex in spam rule #%d — skipping", idx)
+                continue
         if is_match:
             action = rule.get("action") or "spam"
             if action in ("spam", "reject"):

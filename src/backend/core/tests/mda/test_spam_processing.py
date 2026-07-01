@@ -496,6 +496,53 @@ This is a test email body.
 
         assert result is True
 
+    def test_check_spam_regex_uppercase_metacharacter_preserved(self):
+        """Regression: the regex pattern must NOT be lowercased. Lowercasing
+        would flip an uppercase metaclass like ``\\D`` (non-digit) into ``\\d``
+        (digit) and silently change what the rule matches."""
+        raw_email = b"""From: sender@example.com
+To: recipient@example.com
+Subject: Test Email
+X-Token: abc
+
+This is a test email body.
+"""
+        parsed_email = parse_email(raw_email)
+        # ``\D+`` matches the non-digit "abc"; if the pattern were lowercased
+        # to ``\d+`` it would not match and the rule would be missed.
+        spam_config = {
+            "rules": [{"header_match_regex": r"X-Token:\D+", "action": "spam"}]
+        }
+
+        result = check_hardcoded_rules(parsed_email, spam_config)
+
+        assert result is True
+
+    def test_check_spam_regex_invalid_pattern_is_skipped(self):
+        """Regression: a malformed regex must be skipped (logged), not raise
+        and abort the whole hardcoded-rule check."""
+        raw_email = b"""From: sender@example.com
+To: recipient@example.com
+Subject: Test Email
+X-Token: abc
+X-Spam: yes
+
+This is a test email body.
+"""
+        parsed_email = parse_email(raw_email)
+        spam_config = {
+            "rules": [
+                # Unbalanced "[" — an invalid pattern that must be skipped.
+                {"header_match_regex": "X-Token:[", "action": "spam"},
+                # A later valid rule still gets evaluated.
+                {"header_match": "X-Spam:yes", "action": "spam"},
+            ]
+        }
+
+        result = check_hardcoded_rules(parsed_email, spam_config)
+
+        assert result is True
+
     def test_check_spam_with_hardcoded_rules_default_action(self):
         """Test that default action is spam when not specified."""
         raw_email = b"""From: sender@example.com

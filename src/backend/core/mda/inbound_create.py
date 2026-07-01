@@ -454,13 +454,9 @@ def _create_message_from_inbound(  # pylint: disable=too-many-arguments
             # so the GC sweep never sees the Blob row without its
             # referencing FK on ``Message.blob``. Outbound messages have
             # no blob yet — ``prepare_outbound_message`` adds it later.
-            # Per-recipient postmark: record the envelope RCPT TO only when it
-            # diverges from the MIME To/Cc (BCC / alias / catch-all) — the
-            # "you were BCC'd / reached via <alias>" signal. Structured, never
-            # in the bytes, so it can't break blob dedup across recipients.
-            postmark = dict(postmark or {})
-            _record_divergent_rcpt(postmark, recipient_email, parsed_email)
-
+            # ``postmark`` is assembled by the caller (the inbound task builds
+            # the pipeline verdicts + envelope-RCPT divergence); here we only
+            # persist it.
             with transaction.atomic():
                 # Reuse the ingest blob (inbound queue path) so a message has
                 # ONE blob from ingest through to here — no second plaintext

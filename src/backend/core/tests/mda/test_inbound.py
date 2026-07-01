@@ -341,6 +341,70 @@ class TestDeliverInboundMessage:
         assert msg_recipient.contact.name == "Recipient Name"
         assert msg_recipient.contact.mailbox == target_mailbox
 
+    def test_divergent_envelope_rcpt_recorded_in_postmark(self, target_mailbox):
+        """Regression: the divergence check must see the *envelope* RCPT TO,
+        not the canonical mailbox address. A BCC/alias delivery (RCPT not in
+        the visible To/Cc) is the only record of how the mail was addressed, so
+        it lands in ``postmark["rcpt_to"]``. Passing the canonical address here
+        (the pre-fix bug) would always match To and silently drop it."""
+        recipient_addr = f"{target_mailbox.local_part}@{target_mailbox.domain.name}"
+        alias = f"bcc-victim@{target_mailbox.domain.name}"
+        raw = (
+            b"From: sender@test.com\r\n"
+            b"To: " + recipient_addr.encode() + b"\r\n"
+            b"Subject: Divergent rcpt\r\n"
+            b"Message-ID: <divergent.rcpt.1@example.com>\r\n\r\nbody"
+        )
+        blob = models.Blob.objects.create_blob(
+            content=raw, content_type="message/rfc822"
+        )
+
+        success = deliver_inbound_message(
+            recipient_addr,
+            parse_email(raw),
+            raw,
+            envelope={
+                "origin": "mta",
+                "mail_from": "sender@test.com",
+                "rcpt_to": alias,
+            },
+            blob=blob,
+        )
+
+        assert success is True
+        message = models.Message.objects.get(mime_id="divergent.rcpt.1@example.com")
+        assert message.postmark["rcpt_to"] == alias
+
+    def test_matching_envelope_rcpt_leaves_postmark_null(self, target_mailbox):
+        """When the envelope RCPT is one of the visible To addresses (the happy
+        path), nothing is recorded and ``postmark`` stays NULL."""
+        recipient_addr = f"{target_mailbox.local_part}@{target_mailbox.domain.name}"
+        raw = (
+            b"From: sender@test.com\r\n"
+            b"To: " + recipient_addr.encode() + b"\r\n"
+            b"Subject: Matching rcpt\r\n"
+            b"Message-ID: <matching.rcpt.1@example.com>\r\n\r\nbody"
+        )
+        blob = models.Blob.objects.create_blob(
+            content=raw, content_type="message/rfc822"
+        )
+
+        success = deliver_inbound_message(
+            recipient_addr,
+            parse_email(raw),
+            raw,
+            envelope={
+                "origin": "mta",
+                "mail_from": "sender@test.com",
+                "rcpt_to": recipient_addr,
+            },
+            blob=blob,
+        )
+
+        assert success is True
+        message = models.Message.objects.get(mime_id="matching.rcpt.1@example.com")
+        assert message.postmark is None
+
     @pytest.mark.parametrize(
         "role",
         [

@@ -1601,9 +1601,16 @@ class InboundMessageAdmin(admin.ModelAdmin):
 
         replayed = 0
         for inbound_message in queryset.filter(abandoned_at__isnull=False):
-            # Publish to the broker *before* clearing the terminal markers: if
-            # the publish fails, leave the row abandoned (with its error) so the
-            # operator can retry, rather than erasing the state without a re-queue.
+            # Un-abandon *before* publishing: ``process_inbound_message_task``
+            # skips any row whose ``abandoned_at`` is still set, so a fast
+            # worker running before the clear commits would silently no-op.
+            # Clearing first makes the row live for the worker.
+            inbound_message.abandoned_at = None
+            inbound_message.error_message = ""
+            inbound_message.save(update_fields=["abandoned_at", "error_message"])
+            # If the publish fails, do NOT revert the clear: the row is now
+            # live (abandoned_at NULL) so the 5-min retry sweep
+            # (``process_inbound_messages_queue_task``) will re-queue it.
             try:
                 process_inbound_message_task.delay(str(inbound_message.id))
             except Exception:  # pylint: disable=broad-except
@@ -1611,10 +1618,6 @@ class InboundMessageAdmin(admin.ModelAdmin):
                     "Failed to re-queue abandoned inbound message %s",
                     inbound_message.id,
                 )
-                continue
-            inbound_message.abandoned_at = None
-            inbound_message.error_message = ""
-            inbound_message.save(update_fields=["abandoned_at", "error_message"])
             replayed += 1
         self.message_user(request, f"Re-queued {replayed} abandoned message(s).")
 

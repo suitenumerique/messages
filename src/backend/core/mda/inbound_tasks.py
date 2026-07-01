@@ -25,7 +25,10 @@ from core.mda.dispatch_webhooks import (
     load_cached_webhook_results,
     persist_cached_webhook_results,
 )
-from core.mda.inbound_create import _create_message_from_inbound
+from core.mda.inbound_create import (
+    _create_message_from_inbound,
+    _record_divergent_rcpt,
+)
 from core.mda.inbound_pipeline import (
     DEFERRAL_MAX_AGE,
     Decision,
@@ -353,6 +356,19 @@ def process_inbound_message_task(self, inbound_message_id: str):
         # closes the crash window where the message committed but the queue row
         # survived, leaving the 5-min sweep to reprocess and re-run the
         # one-shot finalize side effects below.
+        # Record the envelope RCPT TO in postmark when it diverges from the MIME
+        # To/Cc (alias / BCC / catch-all). This is an inbound-only signal — it
+        # needs the real SMTP envelope, which only this queue path has — so it's
+        # built here alongside the pipeline's other postmark verdicts, not down
+        # in the shared ``_create_message_from_inbound`` (which also serves
+        # imports and outbound, where no envelope RCPT exists). Fall back to the
+        # canonical address only when the envelope is absent (old in-flight rows).
+        _record_divergent_rcpt(
+            ctx.postmark,
+            (inbound_message.envelope or {}).get("rcpt_to") or ctx.recipient_email,
+            ctx.parsed_email,
+        )
+
         with transaction.atomic():
             inbound_msg = _create_message_from_inbound(
                 recipient_email=ctx.recipient_email,

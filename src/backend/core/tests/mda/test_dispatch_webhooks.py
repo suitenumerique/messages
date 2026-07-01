@@ -1113,8 +1113,10 @@ class TestWebhookSigning:
     def test_missing_auth_method_fails_closed(
         self, mock_session, mailbox, parsed_email
     ):
-        """A row with auth_method missing/unknown is misconfigured —
-        the dispatcher fails closed rather than POST with no auth."""
+        """A row with auth_method missing is misconfigured — the dispatcher
+        fails closed (no POST) rather than sign with no method. A *blocking*
+        trigger is used so the step actually reaches the inline signing path;
+        a non-blocking trigger would never sign inline and pass trivially."""
         # Bypass the factory's auto-fill so settings has no auth_method.
         models.Channel.objects.create(
             name="no-auth-method",
@@ -1123,8 +1125,7 @@ class TestWebhookSigning:
             mailbox=mailbox,
             settings={
                 "url": "https://hook.example.com",
-                "trigger": "message.delivered",
-                "auth_method": "jwt",
+                "trigger": "message.delivering",
             },
             encrypted_settings={"secret": "whsec_test"},
         )
@@ -1649,7 +1650,15 @@ class TestNonBlockingDispatch:
         )
         mock_session.return_value.post.return_value = _make_response(200)
 
-        message = factories.MessageFactory(raw_mime=b"raw mime")
+        # A delivered message always belongs to the recipient mailbox via a
+        # ThreadAccess on its thread; the dispatcher re-checks that ownership.
+        thread = factories.ThreadFactory()
+        factories.ThreadAccessFactory(
+            mailbox=mailbox,
+            thread=thread,
+            role=enums.ThreadAccessRoleChoices.EDITOR,
+        )
+        message = factories.MessageFactory(thread=thread, raw_mime=b"raw mime")
         dispatch_webhook_task(
             str(message.id),
             str(channel.id),
@@ -1668,6 +1677,36 @@ class TestNonBlockingDispatch:
         # for receiver-side API callbacks.
         assert headers["X-StMsg-Message-Id"] == str(message.id)
         assert headers["X-StMsg-Thread-Id"] == str(message.thread_id)
+
+    @patch("core.mda.dispatch_webhooks.SSRFSafeSession")
+    def test_dispatch_skips_message_not_owned_by_mailbox(self, mock_session, mailbox):
+        # A stale/mismatched task pointing at a message that does NOT belong to
+        # this mailbox (no ThreadAccess for it) must not leak that message's
+        # body: the dispatcher skips it, no POST.
+        channel = factories.ChannelFactory(
+            type=enums.ChannelTypes.WEBHOOK,
+            mailbox=mailbox,
+            settings={
+                "url": "https://hook.example.com",
+                "trigger": "message.delivered",
+                "auth_method": "jwt",
+            },
+        )
+        # Message whose thread is owned by a *different* mailbox.
+        other_thread = factories.ThreadFactory()
+        factories.ThreadAccessFactory(
+            mailbox=factories.MailboxFactory(),
+            thread=other_thread,
+            role=enums.ThreadAccessRoleChoices.EDITOR,
+        )
+        message = factories.MessageFactory(thread=other_thread, raw_mime=b"secret")
+        dispatch_webhook_task(
+            str(message.id),
+            str(channel.id),
+            str(mailbox.id),
+            False,
+        )
+        mock_session.return_value.post.assert_not_called()
 
     @patch("core.mda.dispatch_webhooks.SSRFSafeSession")
     def test_dispatch_webhook_task_no_ops_when_channel_gone(

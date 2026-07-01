@@ -2207,6 +2207,10 @@ class Message(BaseModel):
             # UI renders a "suspected spam" marker while the message stays in
             # the inbox.
             result["spam"] = postmark["spam"]
+        if postmark.get("rcpt_to"):
+            # The divergent envelope RCPT TO (alias/BCC/catch-all) recorded by
+            # ``_record_divergent_rcpt`` — surfaces the recipient's own alias.
+            result["rcpt_to"] = postmark["rcpt_to"]
         return result
 
     def generate_mime_id(self) -> str:

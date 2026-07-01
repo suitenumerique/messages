@@ -1134,6 +1134,19 @@ def dispatch_webhook_task(
                 channel_id,
             )
             return
+        # Confirm the message actually belongs to this mailbox before posting
+        # its body: a stale/mismatched task must not leak another mailbox's
+        # content. A Message links to a mailbox only via its thread's
+        # ThreadAccess rows, so check for one covering ``mailbox_id``.
+        if not message.thread.accesses.filter(mailbox_id=mailbox_id).exists():
+            logger.warning(
+                "Webhook source message %s does not belong to mailbox %s — "
+                "skipping dispatch (channel=%s)",
+                message_id,
+                mailbox_id,
+                channel_id,
+            )
+            return
         body_format = (channel.settings or {}).get("format", DEFAULT_FORMAT)
         content_type, body_bytes = _resolve_body_from_message(body_format, message)
         _dispatch_webhook(

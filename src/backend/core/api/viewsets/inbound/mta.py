@@ -207,12 +207,16 @@ class InboundMTAViewSet(viewsets.GenericViewSet):
         #    bytes still dedup to one blob.
         sender = mta_metadata.get("sender") or ""
         prepend_headers = [("Return-Path", f"<{sender}>" if sender else "<>")]
-        if "client_helo" in mta_metadata:
+        client_helo = mta_metadata.get("client_helo")
+        client_hostname = mta_metadata.get("client_hostname")
+        client_address = mta_metadata.get("client_address")
+
+        # Only emit the Received trace when the MTA forwarded all three parts
+        if client_helo and client_hostname and client_address:
             prepend_headers.append(
                 (
                     "Received",
-                    f"from {mta_metadata['client_helo']} ("
-                    + f"{mta_metadata['client_hostname']} [{mta_metadata['client_address']}]);",
+                    f"from {client_helo} ({client_hostname} [{client_address}]);",
                 )
             )
 

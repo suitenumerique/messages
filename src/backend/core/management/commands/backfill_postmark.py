@@ -22,6 +22,7 @@ import datetime
 import logging
 
 from django.core.management.base import BaseCommand
+from django.db.models import Q
 from django.utils.dateparse import parse_datetime
 
 from core import models
@@ -79,7 +80,7 @@ class Command(BaseCommand):
         batch_size = options["batch_size"]
         dry_run = options["dry_run"]
 
-        qs = models.Message.objects.filter(postmark__isnull=True)
+        base_qs = models.Message.objects.filter(postmark__isnull=True)
         if options["before"]:
             cutoff = parse_datetime(options["before"])
             if cutoff is None:
@@ -87,22 +88,39 @@ class Command(BaseCommand):
                 cutoff = datetime.datetime.fromisoformat(options["before"]).replace(
                     tzinfo=datetime.UTC
                 )
-            qs = qs.filter(created_at__lt=cutoff)
+            base_qs = base_qs.filter(created_at__lt=cutoff)
 
         scanned = 0
         populated = 0
         errors = 0
+        # Keyset cursor over ``(created_at, id)``. Paging is driven by this
+        # cursor, NOT by rows leaving the ``postmark__isnull=True`` set: in
+        # --dry-run (no save) and on a read error (no save) a scanned row stays
+        # NULL, so relying on the isnull filter to shrink would re-fetch the same
+        # first batch every iteration and never make forward progress. Advancing
+        # the cursor past every *scanned* row (written or not) keeps the run
+        # bounded and resumable regardless of ``dry_run`` or read failures.
+        last_ct = None
+        last_id = None
 
         while scanned < limit:
             take = min(batch_size, limit - scanned)
-            # Processed rows leave the ``postmark__isnull=True`` set, so the next
-            # slice is always fresh work — no cursor/offset needed.
-            batch = list(qs.order_by("created_at")[:take])
+            qs = base_qs
+            if last_ct is not None:
+                qs = qs.filter(
+                    Q(created_at__gt=last_ct) | Q(created_at=last_ct, id__gt=last_id)
+                )
+            batch = list(qs.order_by("created_at", "id")[:take])
             if not batch:
                 break
 
+            to_update = []
             for message in batch:
                 scanned += 1
+                # Advance the cursor for *every* scanned row up front, so a
+                # dry-run or a read failure below still moves us forward.
+                last_ct = message.created_at
+                last_id = message.id
                 try:
                     postmark = _postmark_from_stmsg(message.get_stmsg_headers())
                 except Exception:  # pylint: disable=broad-exception-caught
@@ -113,12 +131,19 @@ class Command(BaseCommand):
 
                 if postmark:
                     populated += 1
-                if dry_run:
-                    continue
                 # ``{}`` marks the row scanned (won't be re-read) and reads back
                 # the same as NULL through ``get_stmsg_headers``.
                 message.postmark = postmark
-                message.save(update_fields=["postmark"])
+                to_update.append(message)
+
+            # ``bulk_update`` in one write per batch, NOT per-row ``save()``:
+            # ``Message``'s ``post_save`` signal schedules a thread reindex, so
+            # saving each row would fire one OpenSearch reindex per message to
+            # populate a field OpenSearch doesn't even index. ``bulk_update``
+            # emits no signals, so the backlog is backfilled without touching
+            # the search index.
+            if not dry_run and to_update:
+                models.Message.objects.bulk_update(to_update, ["postmark"])
 
         self.stdout.write(
             self.style.SUCCESS(

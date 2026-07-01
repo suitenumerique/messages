@@ -525,6 +525,10 @@ class TestSubmitIntegration:
         assert message.is_draft is False  # finalized by prepare_outbound_message
         assert message.sender.email == mailbox_email
         assert message.blob is not None  # DKIM-signed MIME stored
+        # Outbound has no SMTP envelope RCPT, so no divergent-rcpt postmark is
+        # stamped (the sender's own address is never in the visible To/Cc — a
+        # naive divergence check would spuriously record it here).
+        assert message.postmark is None
 
         # Thread was created and mailbox has access
         assert message.thread is not None

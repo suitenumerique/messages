@@ -247,6 +247,40 @@ class TestMTAInboundEmail:
 
     @patch("core.api.viewsets.inbound.mta.deliver_inbound_message")
     @patch("core.api.viewsets.inbound.mta.parse_email")
+    def test_partial_client_metadata_skips_received_no_error(
+        self, mock_parse, mock_deliver, api_client, valid_jwt_token
+    ):
+        """Regression: ``client_helo`` present but ``client_hostname`` /
+        ``client_address`` absent must not raise a KeyError. The partial trace
+        is skipped (no ``Received`` baked), delivery still succeeds."""
+        mock_parse.return_value = {"subject": "t"}
+        mock_deliver.return_value = True
+        raw = b"From: s@example.com\r\nSubject: t\r\n\r\nbody"
+        token = valid_jwt_token(
+            raw,
+            {
+                "original_recipients": ["rcpt@example.com"],
+                "sender": "real@example.com",
+                "client_helo": "mail.example.com",
+                # client_hostname / client_address deliberately omitted.
+            },
+        )
+
+        response = api_client.post(
+            "/api/v1.0/inbound/mta/deliver/",
+            data=raw,
+            content_type="message/rfc822",
+            HTTP_AUTHORIZATION=f"Bearer {token}",
+        )
+
+        assert response.status_code == status.HTTP_200_OK
+        baked = mock_parse.call_args[0][0]
+        # Return-Path is still baked; no malformed Received line was added.
+        assert baked.startswith(b"Return-Path: <real@example.com>\r\n")
+        assert b"Received:" not in baked
+
+    @patch("core.api.viewsets.inbound.mta.deliver_inbound_message")
+    @patch("core.api.viewsets.inbound.mta.parse_email")
     def test_email_parse_failure(
         self,
         mock_parse,
