@@ -1,5 +1,7 @@
 """Tests for spam processing with rspamd."""
 
+# pylint: disable=too-many-lines
+
 from unittest.mock import Mock, patch
 
 from django.test import override_settings
@@ -22,6 +24,16 @@ from core.mda.inbound_tasks import (
     process_inbound_message_task,
     process_inbound_messages_queue_task,
 )
+
+
+def _queue_inbound(mailbox, content=b"raw", envelope=None):
+    """Create a queued InboundMessage backed by a blob (blob-at-ingest)."""
+    blob = models.Blob.objects.create_blob(
+        content=content, content_type="message/rfc822"
+    )
+    return models.InboundMessage.objects.create(
+        mailbox=mailbox, blob=blob, envelope=envelope or {}
+    )
 
 
 @pytest.mark.django_db
@@ -50,9 +62,11 @@ class TestDeliverInboundMessageQueueing:
 
         assert result is True
 
-        # Check that an InboundMessage was created
+        # Check that an InboundMessage was created, with the bytes committed
+        # to a blob at ingest (blob-at-ingest; no inline plaintext).
         inbound_message = models.InboundMessage.objects.get(mailbox=mailbox)
-        assert inbound_message.raw_data == raw_data
+        assert inbound_message.blob is not None
+        assert inbound_message.get_raw_bytes() == raw_data
         assert inbound_message.mailbox == mailbox
 
         # Check that the task was queued
@@ -107,9 +121,11 @@ class TestRspamdSpamCheck:
         mock_post.return_value = mock_response
 
         raw_data = b"Spam email content"
-        is_spam, error, rspamd_result = _call_rspamd(raw_data, spam_config)
+        action, error, rspamd_result = _call_rspamd(raw_data, spam_config)
 
-        assert is_spam is True
+        # _call_rspamd returns the raw action; the action -> verdict mapping
+        # lives in the step (see TestRspamdStepFailureHandling).
+        assert action == "reject"
         assert error is None
         assert rspamd_result is not None
         mock_post.assert_called_once()
@@ -132,10 +148,64 @@ class TestRspamdSpamCheck:
         mock_post.return_value = mock_response
 
         raw_data = b"Legitimate email content"
-        is_spam, error, _rspamd_result = _call_rspamd(raw_data, spam_config)
+        action, error, _rspamd_result = _call_rspamd(raw_data, spam_config)
 
-        assert is_spam is False
+        assert action == "no action"
         assert error is None
+
+    @override_settings(SPAM_CONFIG={"rspamd_url": "http://rspamd:8010/_api"})
+    @patch("core.mda.inbound_pipeline.requests.post")
+    def test_call_rspamd_forwards_smtp_envelope_headers(self, mock_post):
+        """The SMTP envelope is forwarded via rspamd's scan headers, and
+        CR/LF in attacker-influenced fields (HELO/hostname) is stripped."""
+        spam_config = {"rspamd_url": "http://rspamd:8010/_api"}
+        mock_response = Mock()
+        mock_response.json.return_value = {"action": "no action", "score": 0.0}
+        mock_response.raise_for_status = Mock()
+        mock_post.return_value = mock_response
+
+        envelope = {
+            "origin": "mta",
+            "mail_from": "sender@example.com",
+            "rcpt_to": "rcpt@example.com",
+            "ip": "203.0.113.7",
+            "helo": "evil\r\nX-Injected: 1",
+            "hostname": "mail.example.com",
+        }
+        _call_rspamd(b"content", spam_config, envelope=envelope)
+
+        headers = mock_post.call_args[1]["headers"]
+        assert headers["From"] == "sender@example.com"
+        assert headers["Rcpt"] == "rcpt@example.com"
+        assert headers["IP"] == "203.0.113.7"
+        assert headers["Hostname"] == "mail.example.com"
+        # CR/LF stripped: no header injection into the rspamd request.
+        assert headers["Helo"] == "evilX-Injected: 1"
+        assert "\r" not in headers["Helo"] and "\n" not in headers["Helo"]
+
+    @override_settings(SPAM_CONFIG={"rspamd_url": "http://rspamd:8010/_api"})
+    @patch("core.mda.inbound_pipeline.requests.post")
+    def test_call_rspamd_omits_absent_envelope_headers(self, mock_post):
+        """Fields we don't have (widget/internal mail has no HELO/rDNS) are
+        omitted rather than sent empty, which would skew scoring."""
+        spam_config = {"rspamd_url": "http://rspamd:8010/_api"}
+        mock_response = Mock()
+        mock_response.json.return_value = {"action": "no action", "score": 0.0}
+        mock_response.raise_for_status = Mock()
+        mock_post.return_value = mock_response
+
+        _call_rspamd(
+            b"content",
+            spam_config,
+            envelope={"origin": "widget", "mail_from": "u@example.com"},
+        )
+
+        headers = mock_post.call_args[1]["headers"]
+        assert headers["From"] == "u@example.com"
+        assert "Helo" not in headers
+        assert "Hostname" not in headers
+        assert "IP" not in headers
+        assert "Rcpt" not in headers
 
     @override_settings(
         SPAM_CONFIG={
@@ -167,30 +237,29 @@ class TestRspamdSpamCheck:
 
     @override_settings(SPAM_CONFIG={})
     def test_check_spam_without_rspamd_config(self):
-        """When rspamd isn't configured the call returns ``is_spam=None``
-        (= "no opinion"), so the pipeline falls through to whatever
-        verdict is already in the context instead of silently marking
-        the message as ham."""
+        """When rspamd isn't configured the call returns ``action=None``
+        (= "no opinion"), so the step falls through without deciding a
+        verdict instead of silently marking the message as ham."""
         spam_config = {}
         raw_data = b"Email content"
-        is_spam, error, rspamd_result = _call_rspamd(raw_data, spam_config)
+        action, error, rspamd_result = _call_rspamd(raw_data, spam_config)
 
-        assert is_spam is None
+        assert action is None
         assert error is None
         assert rspamd_result is None
 
     @override_settings(SPAM_CONFIG={"rspamd_url": "http://rspamd:8010/_api"})
     @patch("core.mda.inbound_pipeline.requests.post")
     def test_check_spam_with_rspamd_error(self, mock_post):
-        """Test that errors in rspamd check are handled gracefully."""
+        """On error, ``action`` is None and the error is surfaced separately;
+        the step turns that into a RETRY (never fails open)."""
         spam_config = {"rspamd_url": "http://rspamd:8010/_api"}
         mock_post.side_effect = requests.exceptions.RequestException("Connection error")
 
         raw_data = b"Email content"
-        is_spam, error, rspamd_result = _call_rspamd(raw_data, spam_config)
+        action, error, rspamd_result = _call_rspamd(raw_data, spam_config)
 
-        # On error, treat as not spam to avoid blocking legitimate messages
-        assert is_spam is False
+        assert action is None
         assert error is not None
         assert rspamd_result is None
 
@@ -749,10 +818,7 @@ class TestProcessInboundMessageTask:
         mailbox = factories.MailboxFactory()
         raw_data = b"Spam content"
 
-        inbound_message = models.InboundMessage.objects.create(
-            mailbox=mailbox,
-            raw_data=raw_data,
-        )
+        inbound_message = _queue_inbound(mailbox, raw_data)
 
         mock_check_spam.return_value = (True, None, None)  # is_spam=True
         mock_create_message.return_value = True
@@ -782,10 +848,7 @@ class TestProcessInboundMessageTask:
         mailbox = factories.MailboxFactory()
         raw_data = b"Legitimate content"
 
-        inbound_message = models.InboundMessage.objects.create(
-            mailbox=mailbox,
-            raw_data=raw_data,
-        )
+        inbound_message = _queue_inbound(mailbox, raw_data)
 
         mock_check_spam.return_value = (False, None, None)  # is_spam=False
         mock_create_message.return_value = True
@@ -811,10 +874,7 @@ class TestProcessInboundMessageTask:
         mailbox = factories.MailboxFactory()
         raw_data = b"Test content"
 
-        inbound_message = models.InboundMessage.objects.create(
-            mailbox=mailbox,
-            raw_data=raw_data,
-        )
+        inbound_message = _queue_inbound(mailbox, raw_data)
 
         mock_check_spam.return_value = (False, None, None)
         mock_create_message.return_value = False  # Creation failed
@@ -842,11 +902,9 @@ class TestProcessInboundMessagesQueueTask:
 
         # Create multiple pending messages older than 5 minutes (for retry processing)
         old_time = timezone.now() - timezone.timedelta(minutes=6)
-        for _ in range(3):
-            inbound_message = models.InboundMessage.objects.create(
-                mailbox=mailbox,
-                raw_data=b"Content",
-            )
+        for i in range(3):
+            # Distinct bytes per row so blob dedup doesn't collapse them.
+            inbound_message = _queue_inbound(mailbox, f"Content {i}".encode())
             # Update created_at to make it old enough for retry
             models.InboundMessage.objects.filter(id=inbound_message.id).update(
                 created_at=old_time
@@ -865,11 +923,11 @@ class TestProcessInboundMessagesQueueTask:
 @pytest.mark.django_db
 class TestRspamdStepFailureHandling:
     """rspamd never fails open: an error holds the message for retry
-    (feeding the quarantine path) rather than delivering it unchecked."""
+    (deferring it) rather than delivering it unchecked."""
 
     def _ctx(self, spam_config):
         mailbox = factories.MailboxFactory()
-        inbound = models.InboundMessage.objects.create(mailbox=mailbox, raw_data=b"raw")
+        inbound = _queue_inbound(mailbox, b"raw")
         return InboundContext(
             mailbox=mailbox,
             inbound_message=inbound,
@@ -883,8 +941,8 @@ class TestRspamdStepFailureHandling:
     def test_error_holds_for_retry(self, mock_call):
         """On rspamd error, never fail open — hold the message for retry."""
         spam_config = {"rspamd_url": "http://rspamd:11334"}
-        # _call_rspamd returns is_spam=False on error.
-        mock_call.return_value = (False, "connection refused", None)
+        # On error _call_rspamd returns action=None + an error message.
+        mock_call.return_value = (None, "connection refused", None)
 
         decision = _make_rspamd_step(spam_config)(self._ctx(spam_config))
 
@@ -894,7 +952,7 @@ class TestRspamdStepFailureHandling:
     @patch("core.mda.inbound_pipeline._call_rspamd")
     def test_not_configured_continues(self, mock_call):
         """When rspamd isn't configured, continue without a verdict."""
-        # rspamd absent is "no opinion", not an error → keep moving.
+        # rspamd absent is "no opinion" (action=None, no error) → keep moving.
         mock_call.return_value = (None, None, None)
         ctx = self._ctx({})
 
@@ -903,14 +961,28 @@ class TestRspamdStepFailureHandling:
         assert decision == Decision.CONTINUE
         assert ctx.is_spam is None
 
+    # The single source of truth for the rspamd action -> outcome mapping.
+    @pytest.mark.parametrize(
+        "action,decision,is_spam,marker",
+        [
+            ("no action", Decision.CONTINUE, False, None),
+            ("add header", Decision.CONTINUE, False, "possible"),
+            ("rewrite subject", Decision.CONTINUE, False, "likely"),
+            ("quarantine", Decision.CONTINUE, True, None),
+            ("reject", Decision.CONTINUE, True, None),
+            ("greylist", Decision.RETRY, None, None),
+            ("soft reject", Decision.RETRY, None, None),
+            ("discard", Decision.DROP, None, None),
+        ],
+    )
     @patch("core.mda.inbound_pipeline._call_rspamd")
-    def test_success_sets_verdict(self, mock_call):
-        """A successful rspamd call sets the spam verdict and continues."""
+    def test_action_mapping(self, mock_call, action, decision, is_spam, marker):
+        """Every rspamd action maps to (decision, Junk verdict, spam marker):
+        isolate → Junk, flag → inbox+marker, defer → RETRY, discard → DROP."""
         spam_config = {"rspamd_url": "http://rspamd:11334"}
-        mock_call.return_value = (True, None, {"action": "reject"})
+        mock_call.return_value = (action, None, {"action": action})
         ctx = self._ctx(spam_config)
 
-        decision = _make_rspamd_step(spam_config)(ctx)
-
-        assert decision == Decision.CONTINUE
-        assert ctx.is_spam is True
+        assert _make_rspamd_step(spam_config)(ctx) == decision
+        assert ctx.is_spam is is_spam
+        assert ctx.postmark.get("spam") == marker

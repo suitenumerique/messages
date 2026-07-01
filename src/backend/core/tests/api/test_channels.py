@@ -1,8 +1,9 @@
 """Tests for the channel API endpoints."""
 
-# pylint: disable=redefined-outer-name, unused-argument, too-many-public-methods, import-outside-toplevel
+# pylint: disable=redefined-outer-name, unused-argument, too-many-public-methods, import-outside-toplevel, too-many-lines
 
 import uuid
+from unittest.mock import patch
 
 from django.test import override_settings
 from django.urls import reverse
@@ -20,6 +21,7 @@ from core.factories import (
     MailDomainFactory,
     UserFactory,
 )
+from core.services.ssrf import SSRFValidationError
 
 
 @pytest.fixture
@@ -570,7 +572,15 @@ class TestChannelReservedSettingsKeys:
 
 @pytest.mark.django_db
 class TestWebhookChannelSettings:
-    """Validation of the outbound-webhook-specific settings fields."""
+    """Validation of the outbound-webhook-specific settings fields.
+
+    These target the non-SSRF settings validation (format / trigger /
+    auth_method / secret rotation) with placeholder hosts like
+    ``hook.example.com`` that don't resolve. The Test config runs DEBUG=False,
+    under which the serializer does a live ``validate_hostname`` DNS lookup and
+    400s on an unresolvable host — so the create/update tests pin DEBUG=True to
+    skip that config-time SSRF layer (covered on its own in
+    ``TestWebhookChannelCreateSSRF``)."""
 
     URL_KEY = "url"
 
@@ -586,7 +596,7 @@ class TestWebhookChannelSettings:
             format="json",
         )
 
-    @override_settings(FEATURE_MAILBOX_ADMIN_CHANNELS=["webhook"])
+    @override_settings(FEATURE_MAILBOX_ADMIN_CHANNELS=["webhook"], DEBUG=True)
     def test_create_minimal_webhook(self, api_client, mailbox):
         """A JWT webhook surfaces its one-time ``secret`` on create."""
         response = self._post(
@@ -603,7 +613,7 @@ class TestWebhookChannelSettings:
         assert response.data.get("secret")
         assert "api_key" not in response.data
 
-    @override_settings(FEATURE_MAILBOX_ADMIN_CHANNELS=["webhook"])
+    @override_settings(FEATURE_MAILBOX_ADMIN_CHANNELS=["webhook"], DEBUG=True)
     def test_create_minimal_webhook_api_key(self, api_client, mailbox):
         """An api_key webhook surfaces its one-time ``api_key``."""
         response = self._post(
@@ -620,7 +630,7 @@ class TestWebhookChannelSettings:
         assert response.data.get("api_key")
         assert "secret" not in response.data
 
-    @override_settings(FEATURE_MAILBOX_ADMIN_CHANNELS=["webhook"])
+    @override_settings(FEATURE_MAILBOX_ADMIN_CHANNELS=["webhook"], DEBUG=True)
     def test_regenerate_secret_jwt_webhook(self, api_client, mailbox):
         """Rotating a JWT webhook returns a fresh ``secret``."""
         create = self._post(
@@ -648,7 +658,7 @@ class TestWebhookChannelSettings:
         assert new_secret != original_secret
         assert "api_key" not in response.data
 
-    @override_settings(FEATURE_MAILBOX_ADMIN_CHANNELS=["webhook"])
+    @override_settings(FEATURE_MAILBOX_ADMIN_CHANNELS=["webhook"], DEBUG=True)
     def test_regenerate_secret_api_key_webhook(self, api_client, mailbox):
         """Rotating an api_key webhook returns a fresh ``api_key``."""
         create = self._post(
@@ -676,7 +686,7 @@ class TestWebhookChannelSettings:
         assert new_key != original_key
         assert "secret" not in response.data
 
-    @override_settings(FEATURE_MAILBOX_ADMIN_CHANNELS=["webhook"])
+    @override_settings(FEATURE_MAILBOX_ADMIN_CHANNELS=["webhook"], DEBUG=True)
     def test_create_with_all_dispatcher_options(self, api_client, mailbox):
         """A webhook channel accepts the full set of dispatcher options."""
         response = self._post(
@@ -694,7 +704,7 @@ class TestWebhookChannelSettings:
         assert channel.settings["trigger"] == "message.inbound"
         assert channel.settings["format"] == "jmap"
 
-    @override_settings(FEATURE_MAILBOX_ADMIN_CHANNELS=["webhook"])
+    @override_settings(FEATURE_MAILBOX_ADMIN_CHANNELS=["webhook"], DEBUG=True)
     def test_rejects_invalid_format(self, api_client, mailbox):
         """An unknown webhook ``format`` is rejected with HTTP 400."""
         response = self._post(
@@ -709,7 +719,7 @@ class TestWebhookChannelSettings:
         )
         assert response.status_code == status.HTTP_400_BAD_REQUEST
 
-    @override_settings(FEATURE_MAILBOX_ADMIN_CHANNELS=["webhook"])
+    @override_settings(FEATURE_MAILBOX_ADMIN_CHANNELS=["webhook"], DEBUG=True)
     def test_accepts_jmap_metadata_format(self, api_client, mailbox):
         """The ``jmap_metadata`` format is a valid webhook format."""
         response = self._post(
@@ -724,7 +734,7 @@ class TestWebhookChannelSettings:
         )
         assert response.status_code == status.HTTP_201_CREATED, response.content
 
-    @override_settings(FEATURE_MAILBOX_ADMIN_CHANNELS=["webhook"])
+    @override_settings(FEATURE_MAILBOX_ADMIN_CHANNELS=["webhook"], DEBUG=True)
     def test_rejects_invalid_trigger(self, api_client, mailbox):
         """An unknown webhook ``trigger`` is rejected with HTTP 400."""
         response = self._post(
@@ -738,7 +748,7 @@ class TestWebhookChannelSettings:
         )
         assert response.status_code == status.HTTP_400_BAD_REQUEST
 
-    @override_settings(FEATURE_MAILBOX_ADMIN_CHANNELS=["webhook"])
+    @override_settings(FEATURE_MAILBOX_ADMIN_CHANNELS=["webhook"], DEBUG=True)
     def test_rejects_missing_trigger(self, api_client, mailbox):
         """A webhook channel without a ``trigger`` is rejected with HTTP 400."""
         response = self._post(
@@ -751,7 +761,7 @@ class TestWebhookChannelSettings:
         )
         assert response.status_code == status.HTTP_400_BAD_REQUEST
 
-    @override_settings(FEATURE_MAILBOX_ADMIN_CHANNELS=["webhook"])
+    @override_settings(FEATURE_MAILBOX_ADMIN_CHANNELS=["webhook"], DEBUG=True)
     def test_rejects_patch_with_invalid_trigger(self, api_client, mailbox):
         """A PATCH that touches only ``settings`` must still re-run the
         webhook validator (same airtight rule as api_key scopes)."""
@@ -782,7 +792,7 @@ class TestWebhookChannelSettings:
         )
         assert response.status_code == status.HTTP_400_BAD_REQUEST
 
-    @override_settings(FEATURE_MAILBOX_ADMIN_CHANNELS=["webhook"])
+    @override_settings(FEATURE_MAILBOX_ADMIN_CHANNELS=["webhook"], DEBUG=True)
     def test_partial_patch_preserves_auth_method(self, api_client, mailbox):
         """A settings PATCH that omits ``auth_method`` keeps the existing
         one instead of being rejected — auth_method pairs with the stored
@@ -820,7 +830,7 @@ class TestWebhookChannelSettings:
         assert channel.settings["url"] == "https://hook.example.com/changed"
         assert channel.settings["auth_method"] == "api_key"
 
-    @override_settings(FEATURE_MAILBOX_ADMIN_CHANNELS=["webhook"])
+    @override_settings(FEATURE_MAILBOX_ADMIN_CHANNELS=["webhook"], DEBUG=True)
     def test_regenerate_secret_rejects_unknown_auth_method(self, api_client, mailbox):
         """Rotating a webhook whose auth_method we can't surface is rejected
         up front, so the old secret is never invalidated for a new one the
@@ -847,7 +857,7 @@ class TestWebhookChannelSettings:
         # Old secret untouched — rotation never ran.
         assert channel.encrypted_settings["secret"] == "whsec_original"
 
-    @override_settings(FEATURE_MAILBOX_ADMIN_CHANNELS=["webhook"])
+    @override_settings(FEATURE_MAILBOX_ADMIN_CHANNELS=["webhook"], DEBUG=True)
     def test_rejects_missing_url(self, api_client, mailbox):
         """A webhook channel without settings.url is rejected with 400."""
         response = self._post(
@@ -857,7 +867,7 @@ class TestWebhookChannelSettings:
         )
         assert response.status_code == status.HTTP_400_BAD_REQUEST
 
-    @override_settings(FEATURE_MAILBOX_ADMIN_CHANNELS=["webhook"])
+    @override_settings(FEATURE_MAILBOX_ADMIN_CHANNELS=["webhook"], DEBUG=True)
     @pytest.mark.parametrize(
         "bad_url",
         [
@@ -895,3 +905,117 @@ class TestWebhookChannelSettings:
             },
         )
         assert response.status_code == status.HTTP_400_BAD_REQUEST, response.content
+
+
+@pytest.mark.django_db
+class TestWebhookChannelCreateSSRF:
+    """Create/update-time SSRF validation of webhook ``settings.url``.
+
+    A fail-fast UX layer (NOT the security boundary — ``SSRFSafeSession``
+    re-validates with IP pinning on every POST): outside DEBUG, the
+    serializer resolves the host via ``validate_hostname`` and 400s on an
+    internal / IP-literal / unresolvable target. Under DEBUG (the Test
+    default) it is skipped so local-dev receivers work.
+    """
+
+    def _post(self, api_client, mailbox, settings):
+        url = reverse("mailbox-channels-list", kwargs={"mailbox_id": mailbox.id})
+        return api_client.post(
+            url,
+            data={"name": "wh", "type": "webhook", "settings": settings},
+            format="json",
+        )
+
+    _SETTINGS = {
+        "url": "https://hook.example.com/in",
+        "trigger": "message.delivered",
+        "auth_method": "jwt",
+    }
+
+    @override_settings(FEATURE_MAILBOX_ADMIN_CHANNELS=["webhook"], DEBUG=False)
+    @patch("core.api.serializers.validate_hostname")
+    def test_rejects_internal_host(self, mock_validate, api_client, mailbox):
+        """A host resolving to a private/internal address is a 400 with a
+        ``settings`` error."""
+        mock_validate.side_effect = SSRFValidationError(
+            "hook.example.com resolves to private IP address"
+        )
+        response = self._post(api_client, mailbox, self._SETTINGS)
+        assert response.status_code == status.HTTP_400_BAD_REQUEST, response.content
+        assert "settings" in response.data
+        mock_validate.assert_called_once_with("hook.example.com")
+
+    @override_settings(FEATURE_MAILBOX_ADMIN_CHANNELS=["webhook"], DEBUG=False)
+    @patch("core.api.serializers.validate_hostname")
+    def test_rejects_unresolvable_host(self, mock_validate, api_client, mailbox):
+        """A host that doesn't resolve is rejected (would silently stall mail
+        at dispatch otherwise)."""
+        mock_validate.side_effect = SSRFValidationError("Unable to resolve hostname")
+        response = self._post(api_client, mailbox, self._SETTINGS)
+        assert response.status_code == status.HTTP_400_BAD_REQUEST, response.content
+        assert "settings" in response.data
+
+    @override_settings(FEATURE_MAILBOX_ADMIN_CHANNELS=["webhook"], DEBUG=False)
+    @patch("core.api.serializers.validate_hostname")
+    def test_accepts_public_host(self, mock_validate, api_client, mailbox):
+        """A host that validates to a public IP is accepted (201)."""
+        mock_validate.return_value = ["93.184.216.34"]
+        response = self._post(api_client, mailbox, self._SETTINGS)
+        assert response.status_code == status.HTTP_201_CREATED, response.content
+        mock_validate.assert_called_once_with("hook.example.com")
+
+    @override_settings(FEATURE_MAILBOX_ADMIN_CHANNELS=["webhook"], DEBUG=True)
+    @patch("core.api.serializers.validate_hostname")
+    def test_skipped_under_debug(self, mock_validate, api_client, mailbox):
+        """Under DEBUG the SSRF lookup is skipped entirely — creation with an
+        unresolvable fake host still 201s and ``validate_hostname`` is never
+        called. (The Test config runs DEBUG=False, so this pins DEBUG=True to
+        exercise the local-dev escape hatch.)"""
+        response = self._post(
+            api_client,
+            mailbox,
+            {
+                "url": "https://totally-fake-host.invalid/in",
+                "trigger": "message.delivered",
+                "auth_method": "jwt",
+            },
+        )
+        assert response.status_code == status.HTTP_201_CREATED, response.content
+        mock_validate.assert_not_called()
+
+    @override_settings(FEATURE_MAILBOX_ADMIN_CHANNELS=["webhook"], DEBUG=False)
+    @patch("core.api.serializers.validate_hostname")
+    def test_validation_runs_on_patch(self, mock_validate, api_client, mailbox):
+        """A settings PATCH that changes the url must re-run the SSRF check —
+        otherwise an admin could PATCH past the create-time guard."""
+        # Build the channel directly so creation doesn't itself invoke the
+        # (patched) validator we want to scope to the PATCH.
+        channel = ChannelFactory(
+            type="webhook",
+            mailbox=mailbox,
+            settings={
+                "url": "https://hook.example.com/in",
+                "trigger": "message.delivered",
+                "auth_method": "jwt",
+            },
+        )
+        mock_validate.side_effect = SSRFValidationError(
+            "evil.internal resolves to private IP address"
+        )
+        url = reverse(
+            "mailbox-channels-detail",
+            kwargs={"mailbox_id": mailbox.id, "pk": channel.id},
+        )
+        response = api_client.patch(
+            url,
+            data={
+                "settings": {
+                    "url": "https://evil.internal/in",
+                    "trigger": "message.delivered",
+                    "auth_method": "jwt",
+                }
+            },
+            format="json",
+        )
+        assert response.status_code == status.HTTP_400_BAD_REQUEST, response.content
+        assert "settings" in response.data

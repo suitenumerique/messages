@@ -246,11 +246,11 @@ class WebhookTrigger(StrEnum):
     delivery is the spec in ``docs/webhooks.md``:
 
       - ``MESSAGE_INBOUND`` — the message just arrived, **before** the spam
-        check. Synchronous (blocking): the receiver can DROP / RETRY /
-        mutate it and sees no spam verdict yet.
+        check. Synchronous (blocking): the receiver can DROP / mutate it
+        and sees no spam verdict yet.
       - ``MESSAGE_DELIVERING`` — **after** the spam check, while delivery
-        is still in flight. Synchronous (blocking): can DROP / RETRY /
-        mutate and sees the verdict.
+        is still in flight. Synchronous (blocking): can DROP / mutate
+        and sees the verdict.
       - ``MESSAGE_DELIVERED`` — the message has landed in the mailbox.
         Asynchronous (fire-and-forget): a notification that can't influence
         delivery, always reflecting the final spam verdict.

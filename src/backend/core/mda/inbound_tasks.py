@@ -27,7 +27,7 @@ from core.mda.dispatch_webhooks import (
 )
 from core.mda.inbound_create import _create_message_from_inbound
 from core.mda.inbound_pipeline import (
-    QUARANTINE_AFTER,
+    DEFERRAL_MAX_AGE,
     Decision,
     InboundContext,
     apply_labels_to_thread,
@@ -110,10 +110,11 @@ def _handle_retry(
 
     The InboundMessage row is kept in place — the 5-min sweep
     (``process_inbound_messages_queue_task``) re-fires the task on the
-    next cycle. We never drop here: a persistently-failing blocking
-    webhook is bounded instead by ``QUARANTINE_AFTER`` (the message is
-    then delivered flagged, see ``_stamp_processing_failed``), and the
-    webhook step is the only thing that produces a RETRY.
+    next cycle. We never drop here: a persistently-failing processing step
+    (a blocking webhook, or rspamd being unreachable) is bounded instead by
+    ``DEFERRAL_MAX_AGE`` (the message is then delivered flagged, see
+    ``_stamp_processing_failed``). The blocking webhook steps and the rspamd
+    step are the producers of a RETRY.
     """
     age = timezone.now() - inbound_message.created_at
     logger.info(
@@ -142,18 +143,18 @@ def _retry_or_abandon(
 ) -> Dict[str, Any]:
     """Bounded handling for a message that failed to be created/processed.
 
-    Within ``QUARANTINE_AFTER`` the row is kept so the 5-min sweep retries
+    Within ``DEFERRAL_MAX_AGE`` the row is kept so the 5-min sweep retries
     it (a transient DB error or constraint hiccup clears on its own). Past
     the window the attempt is abandoned: ``abandoned_at`` is stamped so the
     sweep skips the row and stops re-running the whole pipeline — and
     re-firing every user webhook — on it, but the row is NOT deleted. The
-    raw bytes (``raw_data`` or the referenced ``blob``) are the only copy of
-    the message, so deleting would silently lose mail; instead an operator
+    referenced ``blob`` is the only copy of the message, so deleting would
+    silently lose mail; instead an operator
     can inspect and replay the row from the Django admin, and ``logger.error``
     raises a Sentry alert. ``error_message`` keeps the human-readable reason.
     """
     age = timezone.now() - inbound_message.created_at
-    if age <= QUARANTINE_AFTER:
+    if age <= DEFERRAL_MAX_AGE:
         inbound_message.error_message = reason
         inbound_message.save(update_fields=["error_message"])
         return {
@@ -182,25 +183,15 @@ def _retry_or_abandon(
 
 
 def _stamp_processing_failed(ctx: InboundContext) -> None:
-    """Prepend the ``X-StMsg-Processing-Failed`` marker to the message.
+    """Record the ``processing`` failure marker in ``ctx.postmark``.
 
-    Mirrors the ``X-StMsg-Sender-Auth`` prepend in the pipeline: the
-    header rides in the stored MIME, ``Message.get_stmsg_headers()``
-    surfaces it as ``processing-failed``, and the frontend renders a
-    warning banner. Deliberately generic — any processing step that
-    fails persistently (a blocking webhook, rspamd, …) lands here.
-    Sender-supplied ``X-StMsg-*`` headers are stripped at ingest, so this
-    namespace is ours alone — the flag can't be forged.
+    Written structurally (not prepended to the bytes), so the ingest blob is
+    reused untouched as ``Message.blob``. ``Message.get_stmsg_headers()``
+    surfaces it as ``processing-failed`` and the frontend renders a warning
+    banner. Deliberately generic — any processing step that fails
+    persistently (a blocking webhook, rspamd, …) lands here.
     """
-    prepended = b"X-StMsg-Processing-Failed: true\r\n" + ctx.raw_data
-    reparsed = parse_email(prepended)
-    if reparsed is not None:
-        ctx.parsed_email = reparsed
-        ctx.raw_data = prepended
-    else:
-        # Keep raw_data / parsed_email in lockstep — drop the marker
-        # rather than corrupt the blob (same fallback as Sender-Auth).
-        logger.warning("Failed to re-parse after prepending X-StMsg-Processing-Failed")
+    ctx.postmark["processing"] = "fail"
 
 
 @celery_app.task(
@@ -252,7 +243,7 @@ def process_inbound_message_task(self, inbound_message_id: str):
         if parsed_email is None:
             # A deterministic parse failure never succeeds on retry —
             # route through ``_retry_or_abandon`` so it's bounded by the
-            # quarantine window instead of looping on every 5-min sweep.
+            # deferral window instead of looping on every 5-min sweep.
             return _retry_or_abandon(inbound_message, "Failed to parse email message")
 
         mailbox = inbound_message.mailbox
@@ -303,10 +294,10 @@ def process_inbound_message_task(self, inbound_message_id: str):
                 "inbound_message_id": str(inbound_message_id),
                 "dropped_by": aborted_by,
             }
-        quarantined = False
+        deferral_expired = False
         if decision == Decision.RETRY:
             age = timezone.now() - inbound_message.created_at
-            if age <= QUARANTINE_AFTER:
+            if age <= DEFERRAL_MAX_AGE:
                 # About to hold for retry: persist the blocking webhooks that
                 # DID succeed this round so the next attempt replays them
                 # instead of re-POSTing. Written only here, on the retry path —
@@ -315,31 +306,31 @@ def process_inbound_message_task(self, inbound_message_id: str):
                     str(inbound_message.id), ctx.blocking_webhook_results
                 )
                 return _handle_retry(inbound_message, aborted_by)
-            # Past the quarantine window: a processing step (blocking
+            # The deferral window has expired: a processing step (blocking
             # webhook, rspamd, …) has failed persistently. Stop holding —
             # deliver the message anyway so it's never lost, but stamp it
             # so the UI warns the recipient it bypassed a processing step,
             # and land it in the inbox (is_spam=False) so the warning is
             # actually seen rather than buried in the spam folder.
             logger.warning(
-                "Inbound message %s quarantine-delivered after persistent "
-                "failure at step=%s (age=%s)",
+                "Inbound message %s force-delivered (deferral window expired) "
+                "after persistent failure at step=%s (age=%s)",
                 inbound_message_id,
                 aborted_by,
                 age,
             )
             _stamp_processing_failed(ctx)
-            quarantined = True
+            deferral_expired = True
             # The message is being forced to the inbox, so it is no longer
             # treated as spam. Normalize ctx.is_spam so downstream consumers
             # (autoreply gate, task result) agree with where it actually lands.
             ctx.is_spam = False
-            # ...but a quarantine delivery means a processing step never
-            # completed: the forced is_spam=False is a placement decision,
-            # not a real spam verdict, and a blocking step that wanted to
-            # suppress the reply (or classify the sender as spam) never got
-            # to run. Don't fire an autoreply to a sender we couldn't fully
-            # vet — suppress it for quarantined messages.
+            # ...but force-delivering past an expired deferral means a
+            # processing step never completed: the forced is_spam=False is a
+            # placement decision, not a real spam verdict, and a blocking step
+            # that wanted to suppress the reply (or classify the sender as
+            # spam) never got to run. Don't fire an autoreply to a sender we
+            # couldn't fully vet — suppress it when the deferral window expired.
             ctx.skip_autoreply = True
 
         # Create the Message and drop the queue row as one unit: either the
@@ -354,9 +345,13 @@ def process_inbound_message_task(self, inbound_message_id: str):
                 raw_data=ctx.raw_data,
                 mailbox=mailbox,
                 channel=inbound_message.channel,
-                is_spam=False if quarantined else bool(ctx.is_spam),
+                is_spam=False if deferral_expired else bool(ctx.is_spam),
                 is_trashed=ctx.mark_trashed,
                 is_archived=ctx.mark_archived,
+                # Reuse the ingest blob (the bytes are never mutated now that
+                # verdicts go to postmark) and carry the pipeline's postmark.
+                blob=inbound_message.blob,
+                postmark=ctx.postmark,
             )
             if inbound_msg:
                 inbound_message.delete()
@@ -464,6 +459,7 @@ def process_inbound_message_task(self, inbound_message_id: str):
                         ctx.parsed_email,
                         inbound_msg,
                         is_spam=bool(ctx.is_spam),
+                        envelope=inbound_message.envelope,
                     )
                 except Exception:  # pylint: disable=broad-exception-caught
                     logger.exception(
@@ -494,7 +490,7 @@ def process_inbound_message_task(self, inbound_message_id: str):
         # the hard limit SIGKILLs us — so the ``finally`` below releases the
         # lock cleanly. Hold for retry: a message that *always* overruns
         # (e.g. far too many slow blocking webhooks) is bounded by the same
-        # 48h quarantine and ends up abandoned (kept + marked) rather than
+        # deferral window and ends up abandoned (kept + marked) rather than
         # looping forever.
         logger.warning(
             "Inbound message %s exceeded the %ss soft time limit — holding for retry",

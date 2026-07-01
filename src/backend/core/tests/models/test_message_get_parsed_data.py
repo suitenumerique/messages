@@ -57,3 +57,86 @@ class TestMessageGetParsedData:
             models.Message, "blob", new_callable=PropertyMock, return_value=None
         ):
             assert not message.get_parsed_data()
+
+
+class TestGetStmsgHeaders:
+    """``get_stmsg_headers`` unions legacy baked ``X-StMsg-*`` bytes with the
+    structured ``postmark``; the structured value wins on overlap."""
+
+    def _headers(self, parsed_headers):
+        return patch.object(
+            models.Message, "get_parsed_data", return_value={"headers": parsed_headers}
+        )
+
+    def test_legacy_bytes_only(self):
+        """Pre-postmark message: verdicts come from the baked X-StMsg headers."""
+        message = models.Message()
+        message.postmark = None
+        with self._headers([{"name": "X-StMsg-Sender-Auth", "value": "fail"}]):
+            assert message.get_stmsg_headers() == {"sender-auth": "fail"}
+
+    def test_postmark_only(self):
+        """New message: bytes carry no verdict header; postmark supplies it."""
+        message = models.Message()
+        message.postmark = {"auth": "none", "processing": "fail"}
+        with self._headers([]):
+            assert message.get_stmsg_headers() == {
+                "sender-auth": "none",
+                "processing-failed": "true",
+            }
+
+    def test_suspected_spam_marker_projected(self):
+        """``postmark["spam"]`` (graded: possible/likely) surfaces verbatim as
+        a ``spam`` marker for the inbox banner."""
+        message = models.Message()
+        message.postmark = {"spam": "likely"}
+        with self._headers([]):
+            assert message.get_stmsg_headers() == {"spam": "likely"}
+
+    def test_widget_referer_stays_a_header(self):
+        """widget-referer is a permanent header, surfaced from bytes alongside
+        the structured postmark auth."""
+        message = models.Message()
+        message.postmark = {"auth": "none"}
+        with self._headers([{"name": "X-StMsg-Widget-Referer", "value": "https://x"}]):
+            assert message.get_stmsg_headers() == {
+                "widget-referer": "https://x",
+                "sender-auth": "none",
+            }
+
+    def test_postmark_wins_over_legacy(self):
+        """On overlap the authoritative postmark value overrides a residual
+        (or forged, though stripped at ingest) legacy header."""
+        message = models.Message()
+        message.postmark = {"auth": "fail"}
+        with self._headers([{"name": "X-StMsg-Sender-Auth", "value": "none"}]):
+            assert message.get_stmsg_headers()["sender-auth"] == "fail"
+
+    def test_legacy_and_postmark_projections_agree(self):
+        """The transition invariant: a legacy-bytes message and a de-baked
+        message with the same verdicts are INDISTINGUISHABLE through
+        ``get_stmsg_headers`` — same keys AND same values. This is what pins
+        ``processing-failed`` to "true" from both sources (the postmark reason
+        "fail" must not leak into the projected value).
+        """
+        legacy = models.Message()
+        legacy.postmark = None
+        legacy_bytes = [
+            {"name": "X-StMsg-Sender-Auth", "value": "fail"},
+            {"name": "X-StMsg-Processing-Failed", "value": "true"},
+        ]
+        with patch.object(
+            models.Message, "get_parsed_data", return_value={"headers": legacy_bytes}
+        ):
+            legacy_out = legacy.get_stmsg_headers()
+
+        new = models.Message()
+        new.postmark = {"auth": "fail", "processing": "fail"}
+        with self._headers([]):
+            new_out = new.get_stmsg_headers()
+
+        assert (
+            legacy_out
+            == new_out
+            == {"sender-auth": "fail", "processing-failed": "true"}
+        )

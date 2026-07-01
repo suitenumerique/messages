@@ -30,10 +30,9 @@ import { handle } from "@/features/utils/errors";
 // URLs; everywhere else https is required, so mirror that client-side.
 const DEV_ENVIRONMENTS = ["development", "developmentminimal", "e2e"];
 
-// A single flat trigger lifecycle event replaces the old (events, phase,
-// blocking) triple — the event name itself says when it fires and whether
-// it blocks, so only valid combinations are representable. Mirrors
-// enums.WebhookTrigger.
+// A webhook fires on a single lifecycle trigger. The trigger name itself
+// says when it fires and whether it blocks delivery, so only valid
+// combinations are representable. Mirrors enums.WebhookTrigger.
 type WebhookTrigger =
     | "message.inbound"
     | "message.delivering"

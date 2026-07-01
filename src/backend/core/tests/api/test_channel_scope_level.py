@@ -1008,7 +1008,13 @@ class TestUserChannelViewSet:
         created = models.Channel.objects.get(pk=response.data["id"])
         assert created.user_id == alice.id
 
-    @override_settings(FEATURE_MAILBOX_ADMIN_CHANNELS=["api_key", "webhook"])
+    # DEBUG=True skips the create-time SSRF DNS lookup (Test runs DEBUG=False),
+    # so the placeholder ``hook.example.com`` host doesn't 400 on resolution —
+    # this test covers the scope/serializer path, not SSRF (see
+    # TestWebhookChannelCreateSSRF in test_channels.py for that).
+    @override_settings(
+        FEATURE_MAILBOX_ADMIN_CHANNELS=["api_key", "webhook"], DEBUG=True
+    )
     def test_personal_webhook_channel(self, api_client):
         """Webhooks ARE creatable as personal channels — once the type is
         enabled in FEATURE_MAILBOX_ADMIN_CHANNELS. The type is intentionally

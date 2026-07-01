@@ -77,17 +77,25 @@ def _is_recipient_explicit(mailbox_email: str, parsed_email: JmapEmail) -> bool:
     return False
 
 
-def _is_auto_reply_message(parsed_email: JmapEmail) -> bool:
+def _is_auto_reply_message(
+    parsed_email: JmapEmail, envelope: Optional[dict] = None
+) -> bool:
     """Detect whether the inbound message is itself an automatic reply.
 
-    Checks Auto-Submitted, Precedence, List-Id, X-Auto-Response-Suppress,
-    X-Autoreply, X-Autorespond, and Return-Path bounce indicators.
+    Checks the SMTP envelope MAIL FROM (bounce indicator) plus the
+    Auto-Submitted, Precedence, List-Id, X-Auto-Response-Suppress,
+    X-Autoreply, and X-Autorespond headers.
     """
-    # Return-Path empty or <> means bounce (RFC 3834). Walk every
-    # occurrence so a benign duplicate can't mask a bounce indicator.
-    for return_path in find_headers(parsed_email, "Return-Path"):
-        if return_path.strip() in ("", "<>"):
-            return True
+    # A null envelope sender (MAIL FROM ``<>`` or empty) marks a bounce /
+    # notification we must never reply to (RFC 3834 §2). We read the
+    # authoritative SMTP envelope rather than a ``Return-Path`` header: the
+    # delivering MTA never writes one on our inbound path, and any header in
+    # the body is sender-forgeable. Only an explicitly-present null value
+    # counts — an absent ``mail_from`` key means "no envelope info supplied"
+    # (e.g. a caller that doesn't carry one), not "null sender".
+    mail_from = (envelope or {}).get("mail_from")
+    if mail_from is not None and mail_from.strip() in ("", "<>"):
+        return True
 
     # Auto-Submitted (max=1 per RFC 3834 §5). Parameters after ``;``
     # (e.g. ``auto-replied; owner-email=...``) are stripped before
@@ -111,6 +119,7 @@ def should_send_autoreply(
     mailbox: models.Mailbox,
     parsed_email: JmapEmail,
     is_spam: bool = False,
+    envelope: Optional[dict] = None,
 ) -> Optional[models.MessageTemplate]:
     """Determine whether we should send an autoreply and return the template.
 
@@ -121,8 +130,8 @@ def should_send_autoreply(
     if is_spam:
         return None
 
-    # 2. Skip auto-generated messages (loop prevention)
-    if _is_auto_reply_message(parsed_email):
+    # 2. Skip auto-generated messages and bounces (loop prevention)
+    if _is_auto_reply_message(parsed_email, envelope):
         return None
 
     # 3. Self-reply prevention: skip if sender == mailbox email
@@ -362,14 +371,19 @@ def try_send_autoreply(
     parsed_email: JmapEmail,
     message: models.Message,
     is_spam: bool = False,
+    envelope: Optional[dict] = None,
 ):
     """Evaluate autoreply conditions and send if appropriate.
 
     Safe to call from any delivery path (MTA inbound, internal delivery).
+    ``envelope`` carries the SMTP envelope (see ``InboundMessage.envelope``)
+    so the null-sender bounce check reads the authoritative MAIL FROM.
     Exceptions are logged but never propagated.
     """
     try:
-        template = should_send_autoreply(mailbox, parsed_email, is_spam=is_spam)
+        template = should_send_autoreply(
+            mailbox, parsed_email, is_spam=is_spam, envelope=envelope
+        )
         if template:
             send_autoreply_for_message(template, mailbox, message)
     except Exception:  # pylint: disable=broad-exception-caught

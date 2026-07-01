@@ -14,8 +14,53 @@ from core import enums, factories, models
 from core.mda.inbound import deliver_inbound_message
 from core.mda.inbound_create import (
     _create_message_from_inbound,
+    _record_divergent_rcpt,
     find_thread_for_inbound_message,
 )
+
+
+class TestRecordDivergentRcpt:
+    """``postmark["rcpt_to"]`` is written only when the envelope RCPT diverges
+    from the visible MIME To/Cc — the BCC / alias / catch-all signal."""
+
+    def _parsed(self, to=None, cc=None):
+        return {"to": to or [], "cc": cc or []}
+
+    def test_rcpt_in_to_not_recorded(self):
+        """RCPT present in To → not recorded (happy path)."""
+        postmark = {}
+        _record_divergent_rcpt(
+            postmark,
+            "user@example.com",
+            self._parsed(to=[{"email": "user@example.com"}]),
+        )
+        assert "rcpt_to" not in postmark
+
+    def test_rcpt_in_cc_not_recorded(self):
+        """RCPT present in Cc (case-insensitively) → not recorded."""
+        postmark = {}
+        _record_divergent_rcpt(
+            postmark,
+            "User@Example.com",
+            self._parsed(cc=[{"email": "user@example.com"}]),
+        )
+        assert "rcpt_to" not in postmark
+
+    def test_bcc_recipient_recorded(self):
+        """RCPT absent from To/Cc (BCC / alias) → recorded."""
+        postmark = {}
+        _record_divergent_rcpt(
+            postmark,
+            "hidden@example.com",
+            self._parsed(to=[{"email": "list@example.com"}]),
+        )
+        assert postmark["rcpt_to"] == "hidden@example.com"
+
+    def test_empty_rcpt_is_noop(self):
+        """An empty RCPT is a no-op (nothing to record)."""
+        postmark = {}
+        _record_divergent_rcpt(postmark, "", self._parsed())
+        assert not postmark
 
 
 @pytest.mark.django_db
@@ -919,7 +964,11 @@ class TestInboundAutoreplyIntegration:
             recipient_addr,
             parse_email(raw),
             raw,
-            is_internal=True,
+            envelope={
+                "origin": "internal",
+                "mail_from": "sender@test.com",
+                "rcpt_to": recipient_addr,
+            },
             blob=blob,
         )
 

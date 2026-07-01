@@ -139,7 +139,7 @@ def deliver_inbound_message(
     imap_labels: list[str] | None = None,
     imap_flags: list[str] | None = None,
     channel: models.Channel | None = None,
-    is_internal: bool = False,
+    envelope: dict | None = None,
     blob: "models.Blob | None" = None,
 ) -> bool:  # Return True on success, False on failure
     """Deliver a parsed inbound email message.
@@ -149,12 +149,18 @@ def deliver_inbound_message(
     Warning: messages imported here could be is_sender=True.
 
     Everything else is queued for the inbound pipeline via
-    ``process_inbound_message_task`` (spam steps + user webhooks).
-    Internal mailbox-to-mailbox delivery sets ``is_internal=True`` so the
-    pipeline skips spam checking while still firing webhooks, and passes
-    the sender's already-committed ``blob`` so the queue row references
-    the encrypted bytes instead of copying them. ``raw_data`` is stored
-    inline only when no ``blob`` is supplied (the external MTA path).
+    ``process_inbound_message_task`` (spam steps + user webhooks). The bytes
+    are committed to an encrypted, content-addressed ``Blob`` at ingest: the
+    caller may pass an already-committed ``blob`` (internal mail reuses the
+    sender's ``Message.blob``), otherwise one is created from ``raw_data``
+    (external MTA / widget). Because ``create_blob`` dedups by content hash,
+    a message delivered to N recipients shares ONE blob and nothing sits in
+    plaintext.
+
+    ``envelope`` is the structured SMTP/provenance record for this delivery
+    (see ``InboundMessage.envelope``); its ``origin`` key is the explicit
+    trust discriminator that drives ``is_internal`` — internal mail skips the
+    spam steps while still firing user webhooks.
 
     raw_data is not parsed again, just stored as is.
     """
@@ -208,28 +214,37 @@ def deliver_inbound_message(
         )
         return bool(result)
 
+    envelope = envelope or {}
+    is_internal = envelope.get("origin") == "internal"
+
     # Internal mail is expected to reference the sender's already-committed
     # blob — that's the whole point (no second plaintext copy). Enforce the
-    # contract so a future caller can't silently fall back to inline bytes.
+    # contract so a future caller can't silently fall back to re-ingesting.
     if is_internal and blob is None:
         raise ValueError("internal delivery requires a blob")
 
-    # External and internal messages: queue for the inbound pipeline.
-    # Internal mail references the sender's existing blob (no second
-    # plaintext copy); external mail stores its MTA bytes inline.
+    # External and internal messages: queue for the inbound pipeline. Commit
+    # the bytes to an encrypted, content-addressed blob at ingest — internal
+    # mail already carries the sender's committed blob; external/widget mail
+    # is ingested here. create_blob dedups by SHA-256, so N recipients of the
+    # same message end up sharing one blob.
     try:
+        if blob is None:
+            blob = models.Blob.objects.create_blob(
+                content=raw_data,
+                content_type="message/rfc822",
+            )
         inbound_message = models.InboundMessage.objects.create(
             mailbox=mailbox,
-            raw_data=None if blob is not None else raw_data,
             blob=blob,
+            envelope=envelope,
             channel=channel,
-            is_internal=is_internal,
         )
         logger.info(
-            "Queued inbound message %s (recipient: %s, internal: %s)",
+            "Queued inbound message %s (recipient: %s, origin: %s)",
             inbound_message.id,
             recipient_email,
-            is_internal,
+            envelope.get("origin"),
         )
         # Queue the task immediately for processing (no lag)
         process_inbound_message_task.delay(str(inbound_message.id))

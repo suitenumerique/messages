@@ -22,15 +22,16 @@ so invalid combinations can't be expressed:
 | `message.delivering`  | After the spam verdict, while delivery is in flight | yes (sync) | known  |
 | `message.delivered`   | After the message has landed in the mailbox       | no (async)  | final   |
 
-This flat list replaces the older `(events, phase, blocking)` triple.
-Future lifecycle events (e.g. `message.sent`) extend it with new
+Future lifecycle events (e.g. `message.sent`) are added as new
 `trigger` values.
 
 **`message.inbound`** and **`message.delivering`** are *synchronous*: they
 run **inline** on the pipeline worker and get to shape delivery — drop the
-message, ask to be retried later, or return a small JSON body that
-overrides the spam verdict and/or attaches labels to the resulting thread
-(see [Response contract](#response-contract)).
+message, or return a small JSON body that overrides the spam verdict
+and/or attaches labels to the resulting thread (see
+[Response contract](#response-contract)). They can't *ask* to be retried
+through the body: a webhook that needs the message redelivered returns a
+non-2xx status, which is treated as a transient failure → RETRY.
 
 **`message.delivered`** is *asynchronous* — fire-and-forget; failures are
 logged and the pipeline continues unchanged. Because it can't influence
@@ -76,7 +77,7 @@ A webhook channel stores its configuration in `Channel.settings`
 
 | Key           | Type     | Default        | Description                                                                 |
 | ------------- | -------- | -------------- | --------------------------------------------------------------------------- |
-| `url`         | string   | **required**   | `https://` endpoint, validated by the SSRF guard at each call. `http://` is accepted only when Django `DEBUG` is on (the local-dev escape hatch). |
+| `url`         | string   | **required**   | `https://` endpoint. **Rejected at create/update** if it resolves to an internal address or doesn't resolve, and re-validated by the SSRF guard (with IP pinning) at each call. `http://` is accepted only when Django `DEBUG` is on (the local-dev escape hatch). |
 | `trigger`     | string   | **required**   | `message.inbound`, `message.delivering`, or `message.delivered` (see [When does it fire?](#when-does-it-fire)). |
 | `format`      | string   | `eml`          | `eml`, `jmap`, or `jmap_metadata` (see [Payload formats](#payload-formats)). |
 | `auth_method` | string   | **required**   | `jwt` or `api_key` (see [Authentication](#authentication)).                 |
@@ -109,25 +110,26 @@ returned exactly once at create time and rotatable via
 setting picks how that root is presented on each POST. The root itself
 never travels on the wire.
 
-| `auth_method` | Headers sent                                                                                                | Wire value                                                | Receiver verifies                                                              |
-| ------------- | ----------------------------------------------------------------------------------------------------------- | --------------------------------------------------------- | ------------------------------------------------------------------------------ |
-| `jwt`         | `X-StMsg-Webhook-Timestamp`, `X-StMsg-Webhook-Signature: v1=<hex>`, `Authorization: Bearer <HS256 JWT>`     | HMAC sig + JWT, both **keyed** by the root                | HMAC-SHA256 of `f"{timestamp}.{body}"` with the root, **or** the HS256 JWT.    |
-| `api_key`     | `X-StMsg-Api-Key: <whk_…>`                                                                                  | `whk_` + `HMAC-SHA256(root, "messages.webhook.api_key.v1").hex()`  | Constant-time compare of the header against the receiver's stored copy.        |
+| `auth_method` | Headers sent                                       | Wire value                                                        | Receiver verifies                                                                              |
+| ------------- | -------------------------------------------------- | ---------------------------------------------------------------- | ---------------------------------------------------------------------------------------------- |
+| `jwt`         | `Authorization: Bearer <HS256 JWT>`                | HS256 JWT **keyed** by the root                                   | Verify the JWT with the root using any JWT library; it binds the exact body via the `body_sha256` claim and expires (`exp`, 5 min) with a `jti` nonce. |
+| `api_key`     | `Authorization: Bearer <whk_…>`                    | `whk_` + `HMAC-SHA256(root, "messages.webhook.api_key.v1").hex()`  | Constant-time compare of the Bearer token against the receiver's stored copy (an opaque static key, not a JWT). |
 
 A channel sends **only** the headers for its configured method — the
 unused presentation never rides on the wire, so it can't leak through
 receiver-side proxies or debug panes. The API-key value is a
 **one-way derivation** of the root, so a receiver-side leak of the API
-key reveals nothing about the root: HMAC/JWT verification on other
-receivers stays unforgeable.
+key reveals nothing about the root: JWT verification (and the API-key
+derivation) on other receivers stays unforgeable.
 
 #### Picking a method
 
 - `jwt` — best when the receiver controls a server (n8n, your own
-  Lambda, a Flask/Express app, Cloudflare Worker). Body integrity is
-  proven by the HMAC; JWT lets receivers verify with stock libraries.
-- `api_key` — for low-code receivers that can only check a header
-  (Zapier "API key in header" trigger, IFTTT, a Zap webhook step).
+  Lambda, a Flask/Express app, Cloudflare Worker). Verify with stock JWT
+  libraries; the token binds the exact body (`body_sha256`) and expires.
+- `api_key` — for low-code receivers that can only do a static
+  header-equals-value check (Zapier, IFTTT, a Zap webhook step): they just
+  compare `Authorization` against the stored `Bearer <whk_…>` value.
 
 #### Switching methods on an existing channel
 
@@ -185,27 +187,42 @@ The three possible **decisions** are about the inbound email itself:
   delivery, so "the `InboundMessage` is deleted" is not what makes DROP
   special; **the email never landing** is.
 * **RETRY** — keep the email queued and re-fire the webhook on the next
-  5-minute sweep (bounded by the **quarantine window** below).
+  5-minute sweep (bounded by the **deferral window** below).
 
 **A webhook error never drops the email.** The *only* way a blocking
 webhook discards a message is by **explicitly** returning
 `{"action": "drop"}` with an HTTP `2xx` (see
-[JSON action body](#json-action-body)). Every transport- or status-level
-failure is held for RETRY — a receiver bug that answers `4xx`, an
-endpoint that is down, or a config error on our side must never cost the
-user their mail.
+[JSON action body](#json-action-body)). Other failures split two ways:
 
-| Outcome                               | Decision   | What happens                                                                    |
-| ------------------------------------- | ---------- | ------------------------------------------------------------------------------- |
-| HTTP `2xx`, empty / non-JSON body     | CONTINUE   | Email delivered normally.                                                       |
-| HTTP `2xx` + `{"action": "drop"}`     | DROP       | The **only** path to DROP — the receiver deliberately discards the email.        |
-| HTTP `2xx` + other JSON action body   | see below  | Body parsed for `action` / `is_spam` / `add_labels`; default is CONTINUE.       |
-| Any non-2xx (`4xx`, `5xx`, `3xx`)     | RETRY      | The email stays queued; the 5-min sweep re-fires the webhook.                   |
-| Connection error, timeout, DNS, etc.  | RETRY      | Transient.                                                                      |
-| SSRF rejection                        | RETRY      | Config error on our side (bad URL) — held until fixed, never dropped.           |
-| Missing signing secret (misconfig)    | RETRY      | Can't sign the POST — held until the channel is fixed, never dropped.           |
+* A **transient** failure — a `4xx`/`5xx`, a timeout, a connection error,
+  a receiver that is temporarily down — is held for **RETRY** and re-fired
+  by the sweep until it recovers (bounded by the deferral window).
+* A **config** failure that waiting cannot fix — the URL is refused by the
+  [SSRF guard](#security-notes) (resolves to an internal address, or won't
+  resolve), or the channel is missing its secret / url / auth_method —
+  delivers the mail **past** the broken webhook (**CONTINUE**) and logs an
+  `ERROR` so an admin fixes or disables the channel. We never POST the
+  internal target (the guard already blocked it); we just don't stall a
+  whole scope's inbound — instance-wide for a GLOBAL blocking webhook — for
+  48h on a config that has never worked. Create/update validation rejects
+  internal/unresolvable URLs up front, so at dispatch this is only a DNS
+  rebinding or a hand-edited row.
 
-`RETRY` is bounded by a **quarantine window** so a persistently-failing
+Either way the user never loses mail. Note the config path is **fail-open**
+for that one webhook: a hard spam/security gate is bypassed during the
+failure (the rest of the pipeline, incl. rspamd, still runs) — a conscious
+trade against stalling all inbound; the `ERROR` log is your signal to fix it.
+
+| Outcome                                         | Decision        | What happens                                                                 |
+| ----------------------------------------------- | --------------- | ---------------------------------------------------------------------------- |
+| HTTP `2xx`, empty / non-JSON body               | CONTINUE        | Email delivered normally.                                                    |
+| HTTP `2xx` + `{"action": "drop"}`               | DROP            | The **only** path to DROP — the receiver deliberately discards the email.    |
+| HTTP `2xx` + other JSON action body             | see below       | Body parsed for `action` / `is_spam` / `add_labels`; default is CONTINUE.    |
+| Any non-2xx (`4xx`/`5xx`/`3xx`), timeout, conn. | RETRY           | Transient — held, re-fired by the sweep, bounded by the deferral window.   |
+| SSRF rejection (internal / unresolvable URL)    | CONTINUE + alert | Config error retry can't fix; deliver past it, `log.error`. URL never dialed.|
+| Missing secret / url / auth_method (misconfig)  | CONTINUE + alert | Non-DRF misconfig retry can't fix; deliver past it, `log.error`.             |
+
+`RETRY` is bounded by a **deferral window** so a persistently-failing
 processing step can neither pin a row forever nor lose mail. If a step
 is still failing **48 hours** after the message arrived, we stop holding
 and **deliver the message anyway** — landed in the inbox (`is_spam=False`
@@ -214,11 +231,14 @@ marker. The web UI reads that marker and shows a prominent warning banner
 (the same surface as the unverified-sender warning), so the recipient
 knows the message bypassed a processing step and can review it with
 caution. Nothing is ever silently dropped; if the step recovers within
-the window, the next sweep delivers normally with no marker.
+the window, the next sweep delivers normally with no marker. (That
+`X-StMsg-Processing-Failed` marker rides in the stored MIME as an
+`X-StMsg-*` header; sender-supplied `X-StMsg-*` headers are stripped at
+ingest, so a malicious **sender** can't forge it to fake a bypassed check.)
 
 The mechanism is generic: a blocking webhook is the trigger today, but
 any step that returns `RETRY` (e.g. a persistently-unreachable spam
-checker) is quarantined the same way.
+checker) is deferred the same way.
 
 > **Delivery is at-least-once — make your receiver idempotent.** A
 > `RETRY` re-fires the webhook on the next sweep, and a worker crash
@@ -227,10 +247,6 @@ checker) is quarantined the same way.
 > `Message-ID`), but your endpoint may legitimately see the *same*
 > message more than once. Key on the `Message-ID` (or the
 > `X-StMsg-*` envelope headers) and treat repeats as no-ops.
-
-(The marker rides in the stored MIME as an `X-StMsg-*` header. Sender-
-supplied `X-StMsg-*` headers are stripped at ingest, so receivers can't
-forge it.)
 
 #### JSON action body
 
@@ -258,11 +274,11 @@ optional; unknown keys are ignored.
 
 | Key              | Type           | Meaning                                                                                                          |
 | ---------------- | -------------- | ---------------------------------------------------------------------------------------------------------------- |
-| `action`         | `"drop"`       | `"drop"` drops the message at this phase. Any other value (or omission) is treated as accept. Case-insensitive. There is no body-driven `"retry"`: a 2xx is a successful response. If you need the message redelivered later, return a non-2xx status (e.g. `429`/`503`) — it is held for retry, bounded by the 48h quarantine window. |
+| `action`         | `"drop"`       | `"drop"` drops the message at this phase. Any other value (or omission) is treated as accept. Case-insensitive. There is no body-driven `"retry"`: a 2xx is a successful response. If you need the message redelivered later, return a non-2xx status (e.g. `429`/`503`) — it is held for retry, bounded by the 48h deferral window. |
 | `is_spam`        | bool           | Override the spam verdict. Acts as a full antispam: for a `message.inbound` webhook this **skips rspamd**. |
 | `add_labels`     | string[]       | UUIDs of `Label` rows in the destination mailbox to attach to the thread once it is created.                     |
 | `assign_to`      | string[]       | OIDC emails of users to assign to the resulting thread (one `ThreadEvent ASSIGN` per webhook, channel-attributed). |
-|  `mark_starred`  | bool (true only) | Star the resulting thread for the destination mailbox.                                                         |
+| `mark_starred`   | bool (true only) | Star the resulting thread for the destination mailbox.                                                         |
 | `mark_read`      | bool (true only) | Mark the resulting thread as read for the destination mailbox.                                                 |
 | `mark_trashed`   | bool (true only) | Land the message with `is_trashed=true`. (Distinct from `action: "drop"` — the row stays, just hidden.)        |
 | `mark_archived`  | bool (true only) | Land the message with `is_archived=true`.                                                                      |
@@ -315,6 +331,10 @@ Supported types:
 | `type` | Required fields    | Effect                                                                              |
 | ------ | ------------------ | ----------------------------------------------------------------------------------- |
 | `"im"` | `content` (string) | Persists as an internal-message ThreadEvent — the same surface humans post into.    |
+
+The `im` `content` is stored on every inbound, so it is capped at
+**32 KiB** (UTF-8) — longer content is truncated. At most **20**
+`add_event` entries are processed per response; extras are dropped.
 
 Unknown types are silently skipped at the classifier — the contract
 stays forward-compatible so receivers can begin emitting new types
@@ -449,11 +469,16 @@ metadata lives in the headers above.
 #### Fields omitted on purpose
 
 JMAP defines a few `Email` properties that only make sense once the
-message is **stored** in a JMAP server. The webhook fires *before* the
-`Message` row exists (and may abort delivery in the blocking case), so
-these are intentionally absent:
+message is **stored**:
 
-* `id`, `blobId`, `threadId`, `mailboxIds`, `keywords`.
+* `id` and `threadId` are included **only** on `message.delivered` — it
+  fires *after* the `Message` row exists, so we stamp them (the same values
+  also ride in the `X-StMsg-Message-Id` / `X-StMsg-Thread-Id` headers). The
+  blocking triggers (`message.inbound` / `message.delivering`) fire *before*
+  the row exists — there is no id yet, so both are absent.
+* `blobId`, `mailboxIds`, `keywords` are absent on **every** trigger:
+  `blobId` would imply a JMAP blob-download endpoint we don't expose, and
+  `mailboxIds` / `keywords` need a folder/flag mapping we haven't designed.
 
 Attachment **bytes** are also intentionally omitted: JMAP keeps
 attachment content behind a `blobId` and a separate fetch, which has no

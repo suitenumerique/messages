@@ -56,8 +56,6 @@ export interface ChannelCreateResponse {
   readonly updated_at: string;
   /** Plaintext API key — api_key channels and webhook channels with auth_method=api_key. */
   api_key?: string;
-  /** Plaintext password, when the channel type mints one. */
-  password?: string;
   /** webhook channels with auth_method=jwt — the HMAC/JWT signing secret. */
   secret?: string;
 }

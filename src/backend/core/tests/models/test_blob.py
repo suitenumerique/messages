@@ -94,7 +94,7 @@ class TestInboundMessageBlobReference:
             content=b"internal mime bytes", content_type="message/rfc822"
         )
         inbound = models.InboundMessage.objects.create(
-            mailbox=mailbox, blob=blob, is_internal=True
+            mailbox=mailbox, blob=blob, envelope={"origin": "internal"}
         )
 
         # Referenced solely by the in-flight queue row → still alive.
@@ -107,17 +107,3 @@ class TestInboundMessageBlobReference:
         assert models.Blob.objects.is_referenced(blob.id) is False
         gc_orphan_blobs_task(mode="full")
         assert not models.Blob.objects.filter(id=blob.id).exists()
-
-    def test_exactly_one_source_constraint(self):
-        """An InboundMessage must carry raw_data XOR a blob, never both."""
-        mailbox = factories.MailboxFactory()
-        blob = models.Blob.objects.create_blob(
-            content=b"bytes", content_type="message/rfc822"
-        )
-
-        # Both set → rejected (full_clean surfaces the check constraint
-        # as a ValidationError before the INSERT reaches the DB).
-        with pytest.raises(ValidationError):
-            models.InboundMessage.objects.create(
-                mailbox=mailbox, raw_data=b"bytes", blob=blob
-            )

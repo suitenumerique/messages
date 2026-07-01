@@ -22,6 +22,7 @@ from core.mda.dispatch_webhooks import (
 from core.mda.inline_images import extract_inline_images_html
 from core.services.blob_gc import schedule_for_gc
 from core.services.identity import keycloak as keycloak_service
+from core.services.ssrf import SSRFValidationError, validate_hostname
 
 
 class CreateOnlyFieldsMixin:
@@ -2259,7 +2260,7 @@ class ChannelSerializer(CreateOnlyFieldsMixin, serializers.ModelSerializer):
         Runs on CREATE and on every PATCH/PUT touching ``type`` or
         ``settings``. Same airtight rule as ``_validate_api_key_scopes``:
         a settings-only PATCH on an existing webhook channel must hit the
-        URL/events validators, otherwise a mailbox admin could PATCH
+        URL/trigger validators, otherwise a mailbox admin could PATCH
         ``{"settings": {"url": "javascript:..."}}`` past the create-time
         check.
         """
@@ -2299,6 +2300,23 @@ class ChannelSerializer(CreateOnlyFieldsMixin, serializers.ModelSerializer):
             raise serializers.ValidationError(
                 {"settings": "webhook settings.url must use https://."}
             )
+
+        # Reject internal / unresolvable webhook URLs up front, so a misconfig
+        # is a clear 400 at config time instead of silently-stalled mail later.
+        # This is a fail-fast UX layer, NOT the security boundary: a hostname
+        # can resolve public now and be rebound to internal at dispatch, so
+        # ``SSRFSafeSession`` re-validates with IP pinning on every POST
+        # regardless. ``validate_hostname`` does a DNS lookup (a config
+        # endpoint, not a hot path) and rejects IP literals, private/internal
+        # targets, and names that don't resolve. Skipped under DEBUG, the
+        # local-dev escape hatch where operators point at local receivers.
+        if not settings.DEBUG:
+            try:
+                validate_hostname(host)
+            except SSRFValidationError as exc:
+                raise serializers.ValidationError(
+                    {"settings": f"webhook settings.url is not allowed: {exc}"}
+                ) from exc
 
         # A single ``trigger`` lifecycle event describes the webhook — it
         # encodes the event, the pipeline phase, and whether it blocks
@@ -2435,10 +2453,6 @@ class ChannelCreateResponseSerializer(ChannelSerializer):
             "with auth_method=api_key."
         ),
     )
-    password = serializers.CharField(
-        required=False,
-        help_text="Plaintext password, when the channel type mints one.",
-    )
     secret = serializers.CharField(
         required=False,
         help_text="webhook channels with auth_method=jwt — the HMAC/JWT signing secret.",
@@ -2447,7 +2461,6 @@ class ChannelCreateResponseSerializer(ChannelSerializer):
     class Meta(ChannelSerializer.Meta):
         fields = ChannelSerializer.Meta.fields + [
             "api_key",
-            "password",
             "secret",
         ]
 

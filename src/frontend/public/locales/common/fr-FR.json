@@ -874,6 +874,8 @@
   "This message has not been delivered. You cancelled the delivery.": "Ce message n'a pas pu être délivré. Vous avez annulé l'envoi.",
   "This message has not yet been delivered to all recipients.": "Ce message n'a pas encore été délivré à tous les destinataires.",
   "This message is being delivered.": "Ce message est en cours d'envoi.",
+  "This message is likely spam. Review it with caution.": "Ce message est probablement un spam. Examinez-le avec prudence.",
+  "This message may be spam. Review it with caution.": "Ce message est peut-être un spam. Examinez-le avec prudence.",
   "This message was delivered without our usual safety checks. Please review it with caution.": "Ce message a été délivré sans nos vérifications de sécurité habituelles. Veuillez l'examiner avec prudence.",
   "This name is for internal use only and will not be visible to users.": "Ce nom est réservé à un usage interne et ne sera pas visible par les utilisateurs.",
   "This signature is forced": "Cette signature est forcée",

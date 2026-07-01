@@ -185,17 +185,32 @@ class TestIsAutoReplyMessage:
 
 
 class TestIsAutoReplyMessageExtended:
-    """Tests for _is_auto_reply_message: Return-Path, List-*, and loop headers."""
+    """Tests for _is_auto_reply_message: null envelope sender, List-*, loop
+    headers."""
 
-    def test_return_path_null(self):
-        """Return-Path: <> (null sender) is detected."""
+    def test_envelope_null_sender_is_bounce(self):
+        """Envelope MAIL FROM ``<>`` (null sender) is detected as a bounce."""
+        assert _is_auto_reply_message({}, {"mail_from": "<>"}) is True
+
+    def test_envelope_empty_sender_is_bounce(self):
+        """An explicitly empty envelope MAIL FROM is a bounce too."""
+        assert _is_auto_reply_message({}, {"mail_from": ""}) is True
+
+    def test_envelope_real_sender_is_not_bounce(self):
+        """A real envelope sender is not a bounce (authoritative, not a
+        forgeable Return-Path header)."""
+        # A forged Return-Path header must NOT flip the verdict — only the
+        # SMTP envelope is trusted.
         parsed_email = {"headers": [{"name": "Return-Path", "value": "<>"}]}
-        assert _is_auto_reply_message(parsed_email) is True
+        assert (
+            _is_auto_reply_message(parsed_email, {"mail_from": "user@example.com"})
+            is False
+        )
 
-    def test_return_path_empty(self):
-        """Return-Path with empty value is detected."""
-        parsed_email = {"headers": [{"name": "Return-Path", "value": ""}]}
-        assert _is_auto_reply_message(parsed_email) is True
+    def test_absent_envelope_mail_from_is_not_flagged(self):
+        """No envelope / no ``mail_from`` key → not treated as a bounce."""
+        assert _is_auto_reply_message({}, {}) is False
+        assert _is_auto_reply_message({}, None) is False
 
     def test_list_post_header(self):
         """List-Post header is detected."""
@@ -544,6 +559,18 @@ class TestShouldSendAutoreply:
             "headers": [],
         }
         assert should_send_autoreply(mailbox, parsed) is None
+
+    def test_skip_null_envelope_sender_bounce(self, mailbox, autoreply_template):
+        """A null envelope sender (MAIL FROM ``<>``) suppresses the autoreply,
+        even when the MIME From looks like a normal address (RFC 3834)."""
+        parsed = {
+            "from": [{"email": "real-looking@example.com"}],
+            "to": [{"email": str(mailbox)}],
+            "headers": [],
+        }
+        assert (
+            should_send_autoreply(mailbox, parsed, envelope={"mail_from": "<>"}) is None
+        )
 
     def test_skip_owner_prefix_sender(self, mailbox, autoreply_template):
         """owner-list@ sender does not trigger autoreply."""

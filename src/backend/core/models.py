@@ -2084,6 +2084,24 @@ class Message(BaseModel):
         blank=True,
         related_name="messages",
     )
+    # Sparse structured record of what our inbound pipeline determined about
+    # this delivery — NULL in the happy path. Holds only data that is either
+    # computed AFTER the bytes are committed (so baking it would fork the blob)
+    # or per-recipient (so baking it would break blob dedup). Flat, short keys:
+    #   "auth":       "none" | "fail"   sender-auth verdict (verified ⇒ absent)
+    #   "processing": "fail"            force-delivered past the deferral window
+    #   "rcpt_to":    "<addr>"          envelope RCPT TO, only when it diverges
+    #                                   from the MIME To/Cc (BCC / alias / catch-all)
+    # Immutable ingest-time facts (ip/helo/hostname, MAIL FROM, widget referer)
+    # live in headers in the blob instead — see the ingest paths. Keep values
+    # small and bounded; large/regenerated data (e.g. AI summaries) belongs in
+    # its own field, never here. Surfaced via ``get_stmsg_headers``.
+    postmark = models.JSONField(
+        "postmark",
+        null=True,
+        blank=True,
+        help_text="Sparse per-delivery pipeline record.",
+    )
 
     objects = MessageManager()
 
@@ -2150,17 +2168,44 @@ class Message(BaseModel):
         return self.get_parsed_data().get("headers", [])
 
     def get_stmsg_headers(self) -> Dict[str, str]:
-        """Return the ``X-StMsg-*`` headers as ``{suffix_lower: value}``.
+        """Return the pipeline hint headers as ``{suffix_lower: value}``.
 
-        ``X-StMsg-*`` headers are stamped by our MTA pipeline (one per
-        message) and any sender-supplied copies are stripped before
-        parsing; first occurrence wins on duplicates.
+        Two sources, unioned, during the transition away from MIME-baked
+        verdicts:
+
+        * **Legacy (bytes):** ``X-StMsg-*`` headers parsed from the stored
+          MIME. Serves every message written before ``postmark`` existed
+          (never backfilled in bulk), plus ``widget-referer``, which stays a
+          header permanently. Sender-supplied copies are stripped at ingest,
+          so this namespace is ours; first occurrence wins on duplicates.
+        * **Structured (``postmark``):** verdicts computed after the bytes are
+          committed now live here. Projected onto the same suffix shape and
+          overlaid LAST so the authoritative structured value wins over any
+          residual/legacy header.
+
+        A future release drops the legacy branch once ``postmark`` is fully
+        backfilled (see the ``backfill_postmark`` management command).
         """
         result: Dict[str, str] = {}
         for h in self.get_parsed_data().get("headers", []):
             name = h.get("name", "")
             if name.lower().startswith("x-stmsg-"):
                 result.setdefault(name[len("x-stmsg-") :].lower(), h.get("value", ""))
+
+        postmark = self.postmark or {}
+        if postmark.get("auth"):
+            # ``sender-auth`` carries the verdict value verbatim ("none"/"fail"),
+            # matching the legacy header.
+            result["sender-auth"] = postmark["auth"]
+        if postmark.get("processing"):
+            # ``processing-failed`` is a boolean flag; normalise to the legacy
+            # header value ("true") regardless of the structured reason.
+            result["processing-failed"] = "true"
+        if postmark.get("spam"):
+            # rspamd flagged probable spam but below the Junk threshold — the
+            # UI renders a "suspected spam" marker while the message stays in
+            # the inbox.
+            result["spam"] = postmark["spam"]
         return result
 
     def generate_mime_id(self) -> str:
@@ -2241,40 +2286,38 @@ class InboundMessage(BaseModel):
         on_delete=models.CASCADE,
         related_name="inbound_messages",
     )
-    # Two mutually-exclusive sources for the message bytes (enforced by
-    # the ``inboundmessage_exactly_one_source`` constraint below):
-    #   - ``raw_data``: external mail arrives from the MTA as loose
-    #     bytes with no Blob yet, so we store them inline (plaintext,
-    #     transient — deleted once the message is created).
-    #   - ``blob``: internal mail already has a committed, encrypted,
-    #     deduped Blob (the sender's ``Message.blob``). We reference it
-    #     instead of copying the bytes — no second plaintext copy, and
-    #     ``get_content()`` reads it back transparently.
-    raw_data = models.BinaryField(
-        "raw data",
-        null=True,
-        blank=True,
-        help_text="Raw email message bytes (external mail; null when backed by blob)",
-    )
-    # PROTECT mirrors ``Message.blob``: the GC sweep is the only
-    # authorised deleter and clears references first. ``is_referenced``
-    # counts this FK, so a referenced blob is never collected.
+    # Sole byte source: a content-addressed, encrypted, deduped Blob created
+    # at ingest. (External mail used to be stored inline as a plaintext
+    # ``raw_data`` BinaryField; now every path is blob-backed, so a message to
+    # N recipients shares ONE blob from the moment it's queued, and nothing
+    # sits in plaintext.) PROTECT mirrors ``Message.blob``: only the GC sweep
+    # deletes, and it clears references first; ``is_referenced`` counts this
+    # FK. Nullable at the DB level for migration safety, but always set by the
+    # ingest paths (``deliver_inbound_message``).
     blob = models.ForeignKey(
         "Blob",
         on_delete=models.PROTECT,
         null=True,
         blank=True,
         related_name="inbound_messages",
-        help_text="Existing blob holding the message bytes (internal mail)",
+        help_text="Content-addressed blob holding the raw message bytes.",
     )
-    # Internal mail (mailbox-to-mailbox) is trusted: the task pre-sets
-    # ``is_spam=False`` so the spam steps no-op while the user-webhook
-    # steps still run. Kept explicit rather than inferred from ``blob``
-    # so storage mechanism stays decoupled from trust semantics.
-    is_internal = models.BooleanField(
-        "is internal",
-        default=False,
-        help_text="Internal mailbox-to-mailbox delivery (skips spam checking)",
+    # Structured SMTP / provenance envelope for this delivery — carried as
+    # data, NOT injected into the message bytes, so the blob stays pristine and
+    # shared across recipients. Shape:
+    #   {"origin": "mta"|"internal"|"widget"|"import",
+    #    "mail_from": <envelope sender>, "rcpt_to": <envelope recipient>,
+    #    "ip": <client ip>, "helo": <HELO>, "hostname": <client rDNS>}
+    # SMTP fields are present only for ``origin="mta"``. Consumed by the spam
+    # pipeline (rspamd envelope) and the autoreply bounce check. ``origin`` is
+    # the trust discriminator (see ``is_internal``) and is set EXPLICITLY by
+    # each ingest path — never inferred from which fields happen to be present
+    # (inferring "internal" from missing SMTP data would fail open to trusted).
+    envelope = models.JSONField(
+        "envelope",
+        default=dict,
+        blank=True,
+        help_text="Structured SMTP/provenance envelope for this delivery.",
     )
     channel = models.ForeignKey(
         "Channel",
@@ -2289,7 +2332,7 @@ class InboundMessage(BaseModel):
         help_text="Error message if processing failed",
     )
     # Terminal-failure marker. Set when processing is permanently given up
-    # after the quarantine window (a poison message that can never be
+    # after the deferral window (a poison message that can never be
     # parsed/created). The row and its bytes are KEPT — never deleted at
     # abandon time — so the mail stays recoverable; the retry sweep skips
     # rows with this set, so the pipeline (and user webhooks) stop re-firing.
@@ -2315,30 +2358,29 @@ class InboundMessage(BaseModel):
         indexes = [
             models.Index(fields=["created_at"]),
         ]
-        constraints = [
-            # Exactly one byte source: inline raw_data XOR a blob FK.
-            models.CheckConstraint(
-                check=(
-                    models.Q(raw_data__isnull=False, blob__isnull=True)
-                    | models.Q(raw_data__isnull=True, blob__isnull=False)
-                ),
-                name="inboundmessage_exactly_one_source",
-            ),
-        ]
 
     def __str__(self):
         return f"InboundMessage {self.id} - {self.mailbox}"
 
-    def get_raw_bytes(self) -> bytes:
-        """Return the message bytes regardless of storage backing.
+    @property
+    def is_internal(self) -> bool:
+        """Whether this is a trusted same-instance mailbox-to-mailbox delivery
+        (the spam steps no-op for it while user webhooks still run).
 
-        Internal mail references an existing (encrypted, deduped) blob;
-        external mail stores the bytes inline. ``Blob.get_content()``
-        transparently decrypts and handles tiered storage.
+        Derived from the EXPLICIT ``envelope["origin"]`` discriminator set by
+        the internal-delivery path — never inferred from the absence of SMTP
+        fields, which would fail open to "trusted" for a stripped external
+        message.
         """
-        if self.blob_id is not None:
-            return self.blob.get_content()
-        return bytes(self.raw_data)
+        return (self.envelope or {}).get("origin") == "internal"
+
+    def get_raw_bytes(self) -> bytes:
+        """Return the raw message bytes from the backing blob.
+
+        ``Blob.get_content()`` transparently decrypts and handles tiered
+        storage.
+        """
+        return self.blob.get_content()
 
 
 class BlobManager(models.Manager):

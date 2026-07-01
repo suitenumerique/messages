@@ -2982,7 +2982,7 @@
                                 }
                             }
                         },
-                        "description": "Channel created successfully. The response carries the one-time plaintext credentials (api_key / secret / password) which are never returned again."
+                        "description": "Channel created successfully. The response carries the one-time plaintext credential (api_key / secret) which is never returned again."
                     },
                     "400": {
                         "description": "Invalid input data"
@@ -6944,7 +6944,7 @@
                                 }
                             }
                         },
-                        "description": "Channel created successfully. The response carries the one-time plaintext credentials (api_key / secret / password) which are never returned again."
+                        "description": "Channel created successfully. The response carries the one-time plaintext credential (api_key / secret) which is never returned again."
                     },
                     "400": {
                         "description": "Invalid input data"
@@ -7581,10 +7581,6 @@
                     "api_key": {
                         "type": "string",
                         "description": "Plaintext API key — api_key channels and webhook channels with auth_method=api_key."
-                    },
-                    "password": {
-                        "type": "string",
-                        "description": "Plaintext password, when the channel type mints one."
                     },
                     "secret": {
                         "type": "string",
@@ -9812,7 +9808,7 @@
                     },
                     "api_key": {
                         "type": "string",
-                        "description": "Present for ``api_key`` channels and webhook channels with ``auth_method='api_key'`` — the plaintext API key presented in a request header (X-API-Key / X-StMsg-Api-Key). Returned ONCE; for api_key webhooks it changes whenever the root rotates."
+                        "description": "Present for ``api_key`` channels and webhook channels with ``auth_method='api_key'`` — the plaintext API key. api_key channels send it as ``X-API-Key`` on inbound API calls; api_key webhooks present it as ``Authorization: Bearer``. Returned ONCE; for api_key webhooks it changes whenever the root rotates."
                     },
                     "secret": {
                         "type": "string",

@@ -188,7 +188,12 @@ class InboundWidgetViewSet(viewsets.GenericViewSet):
         def sanitize_header(header: str) -> str:
             return header.replace("\r", "").replace("\n", "")[0:1000]
 
-        prepend_headers = [("X-StMsg-Sender-Auth", "none")]
+        # ``Return-Path`` (envelope MAIL FROM) and the widget ``Received`` are
+        # immutable ingest facts → baked as headers in the one blob. The
+        # sender-auth "none" baseline for widget mail is set structurally in the
+        # pipeline (``postmark["auth"]``), not baked here. ``X-StMsg-Widget-
+        # Referer`` stays a header (immutable ingest provenance).
+        prepend_headers = [("Return-Path", f"<{sender_email}>")]
         source_name = "widget"
         if request.META.get("HTTP_REFERER"):
             referer = sanitize_header(request.META.get("HTTP_REFERER"))
@@ -236,6 +241,12 @@ class InboundWidgetViewSet(viewsets.GenericViewSet):
             parsed_email,
             compose_email(parsed_email, prepend_headers=prepend_headers),
             channel=channel,
+            envelope={
+                "origin": "widget",
+                "mail_from": sender_email,
+                "rcpt_to": target_email,
+                "ip": request.META.get("REMOTE_ADDR", ""),
+            },
         )
 
         if not delivered:

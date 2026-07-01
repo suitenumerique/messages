@@ -177,7 +177,16 @@ class TestInboundSpoofedSender:
         }
 
         assert (
-            deliver_inbound_message(recipient, parsed_email, b"raw", is_internal=True)
+            deliver_inbound_message(
+                recipient,
+                parsed_email,
+                b"raw",
+                envelope={
+                    "origin": "internal",
+                    "mail_from": recipient,
+                    "rcpt_to": recipient,
+                },
+            )
             is True
         )
 

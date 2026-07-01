@@ -27,6 +27,14 @@ RAW_EMAIL = (
 )
 
 
+def _queue_inbound(mailbox, content=RAW_EMAIL):
+    """Create a queued InboundMessage backed by a blob (blob-at-ingest)."""
+    blob = models.Blob.objects.create_blob(
+        content=content, content_type="message/rfc822"
+    )
+    return models.InboundMessage.objects.create(mailbox=mailbox, blob=blob)
+
+
 class TestCheckInboundAuthenticationDisabled:
     """When inbound_auth is absent or empty the check is a no-op."""
 
@@ -600,19 +608,16 @@ class TestCheckInboundAuthenticationResultsScrubbing:
 
 @pytest.mark.django_db
 class TestProcessInboundMessageAuthIntegration:
-    """End-to-end: a verdict prepends X-StMsg-Sender-Auth with its value."""
+    """End-to-end: a verdict is recorded in ``postmark["auth"]``, off the bytes."""
 
     @override_settings(SPAM_CONFIG={"inbound_auth": "native"})
     @patch("core.mda.inbound_pipeline.check_inbound_authentication")
     @patch("core.mda.inbound_tasks._create_message_from_inbound")
-    def test_unverified_verdict_injects_none_header(
+    def test_unverified_verdict_recorded_in_postmark(
         self, mock_create_message, mock_auth_check
     ):
         mailbox = factories.MailboxFactory()
-        inbound_message = models.InboundMessage.objects.create(
-            mailbox=mailbox,
-            raw_data=RAW_EMAIL,
-        )
+        inbound_message = _queue_inbound(mailbox)
         mock_auth_check.return_value = VERDICT_UNVERIFIED
         mock_create_message.return_value = True
 
@@ -621,25 +626,18 @@ class TestProcessInboundMessageAuthIntegration:
 
         assert mock_create_message.called
         call_kwargs = mock_create_message.call_args[1]
-        assert call_kwargs["raw_data"].startswith(b"X-StMsg-Sender-Auth: none\r\n")
-        parsed = call_kwargs["parsed_email"]
-        assert [
-            h["value"]
-            for h in parsed["headers"]
-            if h["name"].lower() == "x-stmsg-sender-auth"
-        ] == ["none"]
+        # Verdict is structured, not baked into the bytes.
+        assert call_kwargs["postmark"]["auth"] == "none"
+        assert not call_kwargs["raw_data"].startswith(b"X-StMsg-Sender-Auth")
 
     @override_settings(SPAM_CONFIG={"inbound_auth": "rspamd"})
     @patch("core.mda.inbound_pipeline.check_inbound_authentication")
     @patch("core.mda.inbound_tasks._create_message_from_inbound")
-    def test_forged_verdict_injects_fail_header(
+    def test_forged_verdict_recorded_in_postmark(
         self, mock_create_message, mock_auth_check
     ):
         mailbox = factories.MailboxFactory()
-        inbound_message = models.InboundMessage.objects.create(
-            mailbox=mailbox,
-            raw_data=RAW_EMAIL,
-        )
+        inbound_message = _queue_inbound(mailbox)
         mock_auth_check.return_value = VERDICT_FORGED
         mock_create_message.return_value = True
 
@@ -647,25 +645,15 @@ class TestProcessInboundMessageAuthIntegration:
             process_inbound_message_task.run(str(inbound_message.id))
 
         call_kwargs = mock_create_message.call_args[1]
-        assert call_kwargs["raw_data"].startswith(b"X-StMsg-Sender-Auth: fail\r\n")
-        parsed = call_kwargs["parsed_email"]
-        assert [
-            h["value"]
-            for h in parsed["headers"]
-            if h["name"].lower() == "x-stmsg-sender-auth"
-        ] == ["fail"]
+        assert call_kwargs["postmark"]["auth"] == "fail"
+        assert not call_kwargs["raw_data"].startswith(b"X-StMsg-Sender-Auth")
 
     @override_settings(SPAM_CONFIG={"inbound_auth": "native"})
     @patch("core.mda.inbound_pipeline.check_inbound_authentication")
     @patch("core.mda.inbound_tasks._create_message_from_inbound")
-    def test_verified_does_not_inject_header(
-        self, mock_create_message, mock_auth_check
-    ):
+    def test_verified_records_no_auth(self, mock_create_message, mock_auth_check):
         mailbox = factories.MailboxFactory()
-        inbound_message = models.InboundMessage.objects.create(
-            mailbox=mailbox,
-            raw_data=RAW_EMAIL,
-        )
+        inbound_message = _queue_inbound(mailbox)
         mock_auth_check.return_value = None
         mock_create_message.return_value = True
 
@@ -673,6 +661,7 @@ class TestProcessInboundMessageAuthIntegration:
             process_inbound_message_task.run(str(inbound_message.id))
 
         call_kwargs = mock_create_message.call_args[1]
+        assert "auth" not in (call_kwargs.get("postmark") or {})
         assert not call_kwargs["raw_data"].startswith(b"X-StMsg-Sender-Auth")
 
     @override_settings(
@@ -686,10 +675,7 @@ class TestProcessInboundMessageAuthIntegration:
     def test_rspamd_response_reused_by_auth_check(self, mock_create_message, mock_post):
         """Single rspamd call feeds both spam and auth."""
         mailbox = factories.MailboxFactory()
-        inbound_message = models.InboundMessage.objects.create(
-            mailbox=mailbox,
-            raw_data=RAW_EMAIL,
-        )
+        inbound_message = _queue_inbound(mailbox)
         mock_response = Mock()
         mock_response.json.return_value = {
             "action": "no action",
@@ -706,7 +692,7 @@ class TestProcessInboundMessageAuthIntegration:
 
         assert mock_post.call_count == 1
         call_kwargs = mock_create_message.call_args[1]
-        assert call_kwargs["raw_data"].startswith(b"X-StMsg-Sender-Auth: none\r\n")
+        assert call_kwargs["postmark"]["auth"] == "none"
 
     @override_settings(
         SPAM_CONFIG={
@@ -720,10 +706,7 @@ class TestProcessInboundMessageAuthIntegration:
         self, mock_create_message, mock_post
     ):
         mailbox = factories.MailboxFactory()
-        inbound_message = models.InboundMessage.objects.create(
-            mailbox=mailbox,
-            raw_data=RAW_EMAIL,
-        )
+        inbound_message = _queue_inbound(mailbox)
         mock_response = Mock()
         mock_response.json.return_value = {
             "action": "no action",
@@ -742,7 +725,7 @@ class TestProcessInboundMessageAuthIntegration:
             process_inbound_message_task.run(str(inbound_message.id))
 
         call_kwargs = mock_create_message.call_args[1]
-        assert call_kwargs["raw_data"].startswith(b"X-StMsg-Sender-Auth: fail\r\n")
+        assert call_kwargs["postmark"]["auth"] == "fail"
 
     @override_settings(
         SPAM_CONFIG={
@@ -759,10 +742,7 @@ class TestProcessInboundMessageAuthIntegration:
         """Hardcoded spam rule short-circuits spam; rspamd still fetched for auth."""
         mailbox = factories.MailboxFactory()
         raw = b"X-Spam: yes\r\n" + RAW_EMAIL
-        inbound_message = models.InboundMessage.objects.create(
-            mailbox=mailbox,
-            raw_data=raw,
-        )
+        inbound_message = _queue_inbound(mailbox, raw)
         mock_response = Mock()
         mock_response.json.return_value = {
             "action": "no action",
@@ -779,7 +759,8 @@ class TestProcessInboundMessageAuthIntegration:
 
         assert mock_post.call_count == 1
         call_kwargs = mock_create_message.call_args[1]
-        assert not call_kwargs["raw_data"].startswith(b"X-StMsg-Sender-Auth")
+        # DKIM_ALLOW → verified → no auth verdict recorded.
+        assert "auth" not in (call_kwargs.get("postmark") or {})
 
     def test_maildomain_override(self):
         """custom_settings.SPAM_CONFIG overrides the global default."""
@@ -791,8 +772,9 @@ class TestProcessInboundMessageAuthIntegration:
         config = maildomain.get_spam_config()
         assert config.get("inbound_auth") == "rspamd"
 
-    def test_header_injection_propagates_to_stmsg(self):
-        """After prepending, the parser exposes the header via x-stmsg-*."""
+    def test_legacy_stmsg_header_still_parsed(self):
+        """The parser still exposes legacy baked ``X-StMsg-*`` headers, which
+        ``get_stmsg_headers`` reads for pre-``postmark`` messages."""
         tagged = b"X-StMsg-Sender-Auth: fail\r\n" + RAW_EMAIL
         parsed = parse_email(tagged)
         values = [
@@ -801,50 +783,3 @@ class TestProcessInboundMessageAuthIntegration:
             if h["name"].lower() == "x-stmsg-sender-auth"
         ]
         assert values == ["fail"]
-
-    @override_settings(SPAM_CONFIG={"inbound_auth": "native"})
-    @patch("core.mda.inbound_pipeline.parse_email")
-    @patch("core.mda.inbound_tasks.parse_email")
-    @patch("core.mda.inbound_pipeline.check_inbound_authentication")
-    @patch("core.mda.inbound_tasks._create_message_from_inbound")
-    def test_reparse_failure_after_prepend_keeps_views_in_sync(
-        self,
-        mock_create_message,
-        mock_auth_check,
-        mock_parse_tasks,
-        mock_parse_pipeline,
-    ):
-        """If re-parsing the prepended bytes blows up, the prepend is dropped.
-
-        Otherwise raw_data (with the new header) and parsed_email (without it)
-        diverge, and `Message.get_parsed_data()` later returns {} for the
-        whole message because the same bytes fail to parse at display time.
-        """
-        # Initial parse (inbound_tasks) succeeds; re-parse in the
-        # inbound_auth_step (inbound_pipeline) raises.
-        original_parsed = {
-            "headers": [{"name": "from", "value": "a@b"}],
-            "from": [{"email": "a@b"}],
-        }
-        # Initial parse (inbound_tasks) succeeds; the inbound_auth_step
-        # re-parse (inbound_pipeline) returns None — parse_email signals
-        # failure with None rather than raising.
-        mock_parse_tasks.return_value = original_parsed
-        mock_parse_pipeline.return_value = None
-        mock_auth_check.return_value = VERDICT_UNVERIFIED
-        mock_create_message.return_value = True
-
-        mailbox = factories.MailboxFactory()
-        inbound_message = models.InboundMessage.objects.create(
-            mailbox=mailbox,
-            raw_data=RAW_EMAIL,
-        )
-
-        with patch.object(process_inbound_message_task, "update_state", Mock()):
-            process_inbound_message_task.run(str(inbound_message.id))
-
-        call_kwargs = mock_create_message.call_args[1]
-        # Prepend was reverted: raw_data is the original bytes.
-        assert call_kwargs["raw_data"] == RAW_EMAIL
-        # parsed_email is the original parse, also without the header.
-        assert call_kwargs["parsed_email"] is original_parsed

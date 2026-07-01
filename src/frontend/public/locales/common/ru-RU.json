@@ -736,6 +736,8 @@
   "This message has not been delivered. You cancelled the delivery.": "Это сообщение не было доставлено. Вы отменили доставку.",
   "This message has not yet been delivered to all recipients.": "Это сообщение ещё не доставлено всем получателям.",
   "This message is being delivered.": "Это сообщение доставлено.",
+  "This message is likely spam. Review it with caution.": "Это письмо, вероятно, является спамом. Будьте осторожны.",
+  "This message may be spam. Review it with caution.": "Это письмо может быть спамом. Будьте осторожны.",
   "This message was delivered without our usual safety checks. Please review it with caution.": "Это сообщение было доставлено без наших обычных проверок безопасности. Будьте с ним осторожны.",
   "This name is for internal use only and will not be visible to users.": "Это имя только для внутреннего использования и не будет видно пользователям.",
   "This signature is forced": "Эта подпись обязательна",

@@ -39,7 +39,11 @@ def _strip_body_part(part: Dict[str, Any]) -> Dict[str, Any]:
 
 
 def build_jmap_email(
-    parsed_email: JmapEmail, *, include_body: bool = True
+    parsed_email: JmapEmail,
+    *,
+    include_body: bool = True,
+    message_id: Optional[str] = None,
+    thread_id: Optional[str] = None,
 ) -> Dict[str, Any]:
     """Project the parsed JMAP ``Email`` object into the webhook payload.
 
@@ -47,9 +51,16 @@ def build_jmap_email(
     (RFC 8621 §4.1), so this is mostly a copy. We stamp ``receivedAt``
     (the moment the webhook fires) and strip the parser's project
     extensions (``_ext`` and per-part ``content`` / ``sha256``) so the
-    body is strict JMAP. Storage-time fields (``id``, ``blobId``,
-    ``threadId``, ``mailboxIds``, ``keywords``) don't exist at
-    webhook-fire time and are simply absent.
+    body is strict JMAP.
+
+    Storage-time fields are populated only when the persisted ``Message``
+    exists — i.e. the non-blocking ``message.delivered`` path, which fires
+    after creation and passes ``message_id`` / ``thread_id`` (also sent as
+    ``X-StMsg-Message-Id`` / ``X-StMsg-Thread-Id`` headers). The blocking
+    ``message.inbound`` / ``message.delivering`` paths fire *before* the row
+    exists, pass neither, and so omit them. ``blobId`` / ``mailboxIds`` /
+    ``keywords`` stay absent everywhere: they'd need a JMAP blob endpoint we
+    don't expose and a folder/flag mapping we haven't designed.
 
     With ``include_body=False`` the body parts, ``bodyValues`` and
     ``attachments`` are dropped — receivers get a notification-only
@@ -61,6 +72,11 @@ def build_jmap_email(
     email: Dict[str, Any] = dict(parsed_email)
     email.pop("_ext", None)  # project extension, not strict JMAP
     email["receivedAt"] = _utcdate(datetime.now(timezone.utc))
+    # Present only on the post-creation (``message.delivered``) path.
+    if message_id is not None:
+        email["id"] = message_id
+    if thread_id is not None:
+        email["threadId"] = thread_id
 
     if include_body:
         email["textBody"] = [

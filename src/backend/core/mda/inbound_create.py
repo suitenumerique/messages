@@ -200,6 +200,30 @@ def _find_thread_by_message_ids(
     return None
 
 
+def _record_divergent_rcpt(
+    postmark: dict, recipient_email: str, parsed_email: JmapEmail
+) -> None:
+    """Record the envelope RCPT TO in ``postmark`` when it diverges from the
+    MIME addressees.
+
+    In the happy path the RCPT is one of the visible To/Cc addresses and we
+    store nothing (keeps ``postmark`` NULL). When it isn't — a BCC'd copy, an
+    alias/catch-all, or plus-addressed delivery — the RCPT is the only record
+    of how this mailbox actually received the mail, so we keep it. Matching is
+    case-insensitive on the address.
+    """
+    rcpt = (recipient_email or "").strip().lower()
+    if not rcpt:
+        return
+    visible = {
+        (entry.get("email") or "").strip().lower()
+        for field_name in ("to", "cc")
+        for entry in (parsed_email.get(field_name) or [])
+    }
+    if rcpt not in visible:
+        postmark["rcpt_to"] = recipient_email
+
+
 def _create_message_from_inbound(  # pylint: disable=too-many-arguments
     recipient_email: str,
     parsed_email: JmapEmail,
@@ -214,6 +238,8 @@ def _create_message_from_inbound(  # pylint: disable=too-many-arguments
     is_trashed: bool = False,
     is_archived: bool = False,
     is_outbound: bool = False,
+    blob: "models.Blob | None" = None,
+    postmark: dict | None = None,
 ) -> models.Message | None:
     """Create a message and thread from parsed email data.
 
@@ -428,15 +454,26 @@ def _create_message_from_inbound(  # pylint: disable=too-many-arguments
             # so the GC sweep never sees the Blob row without its
             # referencing FK on ``Message.blob``. Outbound messages have
             # no blob yet — ``prepare_outbound_message`` adds it later.
+            # Per-recipient postmark: record the envelope RCPT TO only when it
+            # diverges from the MIME To/Cc (BCC / alias / catch-all) — the
+            # "you were BCC'd / reached via <alias>" signal. Structured, never
+            # in the bytes, so it can't break blob dedup across recipients.
+            postmark = dict(postmark or {})
+            _record_divergent_rcpt(postmark, recipient_email, parsed_email)
+
             with transaction.atomic():
-                blob = None
-                if not is_outbound:
+                # Reuse the ingest blob (inbound queue path) so a message has
+                # ONE blob from ingest through to here — no second plaintext
+                # copy, no re-encrypt. Imports have no ingest blob and pass
+                # raw bytes; outbound gets its blob later from the send path.
+                if blob is None and not is_outbound:
                     blob = models.Blob.objects.create_blob(
                         content=raw_data,
                         content_type="message/rfc822",
                     )
 
                 message = models.Message.objects.create(
+                    postmark=postmark or None,
                     thread=thread,
                     sender=sender_contact,
                     subject=subject,

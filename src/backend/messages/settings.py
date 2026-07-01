@@ -552,6 +552,22 @@ class Base(Configuration):
         environ_prefix=None,
     )
 
+    # How long an inbound message is deferred (held and retried) when a
+    # processing step keeps failing, before the pipeline stops holding it. A
+    # message whose step keeps failing (rspamd unreachable, a blocking
+    # webhook erroring) is re-attempted every 5 minutes up to this age, then
+    # delivered anyway — flagged ``X-StMsg-Processing-Failed`` — so mail is
+    # never lost, only delayed. A parse/create failure that never clears is
+    # marked abandoned at this age instead. Operators trade delivery latency
+    # (longer = more time for a flaky dependency to recover before we deliver
+    # unchecked) against how long unchecked mail can sit held during an
+    # outage. See ``DEFERRAL_MAX_AGE`` in ``core/mda/inbound_pipeline.py``.
+    MESSAGES_INBOUND_DEFERRAL_MAX_AGE = values.PositiveIntegerValue(
+        48 * 60 * 60,  # 48 hours in seconds
+        environ_name="MESSAGES_INBOUND_DEFERRAL_MAX_AGE",
+        environ_prefix=None,
+    )
+
     # Default compression for new blobs.
     # Format: "<algo>" or "<algo>:<level>". Examples: "none", "zstd", "zstd:7".
     MESSAGES_BLOBS_COMPRESS = values.Value(

@@ -12,8 +12,8 @@ attach labels via their JSON response body (a transient failure / non-2xx
 status holds the message for RETRY, but that is not a body-driven action);
 ``message.delivered`` is fire-and-forget after the message is created.
 
-This file is webhook-specific: HTTP plumbing, signing (HMAC + JWT or
-API key), JMAP body building, SSRF-safe POST, response classification.
+This file is webhook-specific: HTTP plumbing, signing (JWT or API key),
+JMAP body building, SSRF-safe POST, response classification.
 The pipeline-side glue is ``UserWebhookStep`` + ``webhook_steps_for_mailbox``.
 
 The HTTP client is the shared ``SSRFSafeSession`` — webhook URLs are
@@ -35,7 +35,6 @@ Two body formats are supported (see ``docs/webhooks.md``):
 from __future__ import annotations
 
 import hashlib
-import hmac
 import json
 import logging
 import secrets
@@ -54,7 +53,7 @@ from jmap_email import JmapEmail, parse_email
 
 from core import enums, models
 from core.mda.inbound_pipeline import (
-    QUARANTINE_AFTER,
+    DEFERRAL_MAX_AGE,
     Decision,
     InboundContext,
     Step,
@@ -87,7 +86,7 @@ MAX_RESPONSE_BODY = 64 * 1024  # 64 KiB
 MAX_LABELS_PER_RESPONSE = 50
 MAX_ASSIGN_TO_PER_RESPONSE = 50
 MAX_EVENTS_PER_RESPONSE = 20
-MAX_IM_CONTENT_BYTES = 8 * 1024  # 8 KiB per internal-message comment
+MAX_IM_CONTENT_BYTES = 32 * 1024  # 32 KiB per internal-message comment
 
 PHASE_BEFORE_SPAM = "before_spam"
 PHASE_AFTER_SPAM = "after_spam"
@@ -183,9 +182,9 @@ class _HttpResult:  # pylint: disable=too-many-instance-attributes
 # rare extra delivery is fine — we only need to turn "hundreds" into "a few".
 
 _WEBHOOK_RESULT_CACHE_VERSION = 1
-# Cover the whole quarantine window so a result cached on attempt 1 is still
+# Cover the whole deferral window so a result cached on attempt 1 is still
 # served on the last retry before the message is delivered/abandoned.
-_WEBHOOK_RESULT_CACHE_TTL = int(QUARANTINE_AFTER.total_seconds())
+_WEBHOOK_RESULT_CACHE_TTL = int(DEFERRAL_MAX_AGE.total_seconds())
 
 
 def _webhook_results_cache_key(inbound_message_id: str) -> str:
@@ -324,6 +323,30 @@ def _failure(blocking: bool, decision: Decision) -> _HttpResult:
     RETRY); non-blocking → CONTINUE (fire-and-forget, never stalls
     delivery)."""
     return _HttpResult(decision=decision if blocking else Decision.CONTINUE)
+
+
+def _config_skip() -> _HttpResult:
+    """Result for a misconfiguration that waiting can't fix: a missing
+    secret / url / auth_method, or a URL the SSRF guard refuses at dispatch
+    time. Create/update validation rejects internal or unresolvable URLs and
+    guarantees a secret + valid auth_method, so at dispatch these mean either
+    a hand-edited (non-DRF) row or a malicious DNS rebinding — none of which a
+    48h retry would ever clear.
+
+    So CONTINUE: deliver the mail past the broken webhook rather than stall a
+    whole scope's inbound (instance-wide for a GLOBAL blocking webhook) for up
+    to 48 hours waiting for a config that has never worked. The SSRF guard
+    itself is unchanged — ``SSRFSafeSession`` still refuses to POST to an
+    internal address — so only this one webhook's gatekeeping is skipped (the
+    rest of the pipeline, incl. rspamd, still runs). Every caller logs at
+    ERROR so an admin is paged to fix or disable the channel. (A future
+    ``channel.is_active`` will let an operator disable it outright.)
+
+    NB this is fail-OPEN for that webhook: a hard spam/security gate is
+    bypassed during the failure. Acceptable because it's a rare edge, the
+    breakage is loud, and stalling all inbound is the worse outcome — see
+    docs/webhooks.md."""
+    return _HttpResult()  # Decision.CONTINUE
 
 
 def _classify_response_body(body_bytes: bytes) -> _HttpResult:
@@ -467,21 +490,24 @@ DEFAULT_FORMAT = FORMAT_EML
 
 USER_AGENT = "Messages-Webhook/1.0"
 
-# Signature scheme tag. Bumped when the algorithm changes so receivers
-# can pin the version they accept.
-SIGNATURE_SCHEME = "v1"
-
-# JWT in the Authorization header is a short-lived HS256 token covering
-# the same envelope as the raw HMAC, intended for receivers that prefer
-# a standard JWT verify path (e.g. n8n, Zapier, Make).
+# ``auth_method=jwt``: a short-lived HS256 JWT in the Authorization header.
+# It is HMAC-based (HS256), binds the exact request body via the
+# ``body_sha256`` claim, and carries ``exp`` (replay window) + ``jti``
+# (nonce) — a complete, self-contained signature a receiver verifies with
+# any standard JWT library and the channel secret. (A separate raw-HMAC
+# scheme, if ever wanted, would be its own ``auth_method`` — not bolted on
+# here; the JWT already subsumes it.)
 JWT_ISSUER = "messages-webhook"
-JWT_TTL_SECONDS = 300  # 5 min — same window receivers should accept on the raw HMAC
+JWT_TTL_SECONDS = 300  # 5 min — receivers SHOULD reject older tokens (exp)
 
 
 def _resolve_body(
     body_format: str,
     raw_data: bytes,
     parsed_email: JmapEmail,
+    *,
+    message_id: Optional[str] = None,
+    thread_id: Optional[str] = None,
 ) -> Tuple[str, bytes]:
     """Compute (Content-Type, raw bytes to sign and POST).
 
@@ -492,11 +518,21 @@ def _resolve_body(
     JSON is serialised here once so the signature and the wire bytes
     cannot drift (``requests`` would otherwise re-serialise with
     different separators/ordering).
+
+    ``message_id`` / ``thread_id`` are passed only on the post-creation
+    (``message.delivered``) path, where they populate the JMAP body's
+    ``id`` / ``threadId``; the blocking paths fire before the row exists
+    and omit them (see ``build_jmap_email``).
     """
     if body_format == FORMAT_EML:
         return "message/rfc822", raw_data
     include_body = body_format == FORMAT_JMAP
-    payload = build_jmap_email(parsed_email, include_body=include_body)
+    payload = build_jmap_email(
+        parsed_email,
+        include_body=include_body,
+        message_id=message_id,
+        thread_id=thread_id,
+    )
     # ``separators=(",", ":")`` produces the compact bytes we sign.
     # Hand the same bytes to ``requests`` via ``data=`` so what we sign
     # is exactly what we POST.
@@ -504,16 +540,6 @@ def _resolve_body(
         "utf-8"
     )
     return "application/json", body_bytes
-
-
-def _sign(secret: str, timestamp: str, body_bytes: bytes) -> str:
-    """Stripe-style HMAC: HMAC-SHA256 over ``{timestamp}.{body}``.
-
-    Returns hex digest. Receivers MUST compute the same and compare
-    constant-time, and SHOULD reject timestamps older than ~5 minutes.
-    """
-    msg = timestamp.encode("ascii") + b"." + body_bytes
-    return hmac.new(secret.encode("utf-8"), msg, hashlib.sha256).hexdigest()
 
 
 def _sign_jwt(
@@ -661,13 +687,17 @@ class UserWebhookStep:
       - blocking:
           * 2xx + ``{"action":"drop"}`` → DROP (the *only* path to DROP)
           * 2xx + anything else → CONTINUE (with optional side effects)
-          * any non-2xx (4xx / 5xx / 3xx) → RETRY
-          * SSRF / missing secret / unknown auth_method → RETRY
-          * timeout / connection / generic transport → RETRY
+          * TRANSIENT failure — any non-2xx (4xx / 5xx / 3xx), timeout,
+            connection, generic transport, response-read budget → RETRY
+            (recoverable; bounded by the 48h deferral window)
+          * CONFIG failure — SSRF reject / missing secret / url /
+            auth_method → CONTINUE past the broken webhook + ``log.error``
+            (retry can't fix it; see ``_config_skip``)
 
     A webhook error never drops the user's email — only an explicit
-    ``{"action": "drop"}`` does. Every failure is held for retry,
-    bounded by the pipeline's 48-hour quarantine window.
+    ``{"action": "drop"}`` does. A *transient* failure is held for retry
+    (bounded by the 48h deferral window); a *config* failure delivers
+    the mail past the broken webhook and pages an admin.
     """
 
     def __init__(self, channel: models.Channel, phase: str):
@@ -767,31 +797,26 @@ def _build_auth_headers(
     auth_method = (channel.settings or {}).get("auth_method")
 
     if auth_method == enums.WebhookAuthMethod.API_KEY:
-        # Derived from the root secret via HMAC. The raw root never
-        # touches the wire — a receiver-side log leak of this value
-        # reveals nothing about the root, so HMAC/JWT verification
-        # remains unforgeable.
-        return {"X-StMsg-Api-Key": channel.get_webhook_api_key()}
+        # Static key derived from the root via HMAC, presented as an opaque
+        # Bearer token (RFC 6750 — a Bearer token need not be a JWT). Sent via
+        # ``Authorization`` like the jwt method, so logging / proxy / APM
+        # tooling auto-redacts it — which matters for a long-lived static
+        # credential. The raw root never touches the wire; a receiver-side leak
+        # of this derived value reveals nothing about the root.
+        return {"Authorization": f"Bearer {channel.get_webhook_api_key()}"}
 
     if auth_method == enums.WebhookAuthMethod.JWT:
-        # HMAC signature over the body + short-TTL HS256 JWT, both keyed
-        # by the root secret. Signed at send time (here / in the task),
-        # so the JWT TTL is measured from the actual POST, not enqueue.
-        now = int(time.time())
-        timestamp = str(now)
-        signature = _sign(secret, timestamp, body_bytes)
+        # Short-TTL HS256 JWT keyed by the root secret, binding the exact
+        # body via ``body_sha256``. Signed at send time (here / in the task),
+        # so the TTL is measured from the actual POST, not enqueue.
         bearer = _sign_jwt(
             secret,
             channel=channel,
             mailbox=mailbox,
             body_bytes=body_bytes,
-            issued_at=now,
+            issued_at=int(time.time()),
         )
-        return {
-            "X-StMsg-Webhook-Timestamp": timestamp,
-            "X-StMsg-Webhook-Signature": f"{SIGNATURE_SCHEME}={signature}",
-            "Authorization": f"Bearer {bearer}",
-        }
+        return {"Authorization": f"Bearer {bearer}"}
 
     # Settings validator forbids creating a webhook channel without a
     # valid auth_method; an existing row with a missing/unknown value is
@@ -822,23 +847,27 @@ def _deliver_signed_webhook(
     """
     secret = (channel.encrypted_settings or {}).get("secret")
     if not secret:
-        # The create path always mints a secret; a row without one is
-        # misconfigured. We can't sign the POST, so we hold for RETRY
-        # rather than drop the user's mail — re-minting the secret lets
-        # the next sweep deliver. A webhook failure must never silently
-        # discard the email (only an explicit ``{"action": "drop"}`` on
-        # a 2xx does that).
-        logger.warning(
-            "Webhook channel %s has no secret — holding for retry",
+        # The create path always mints a secret; a row without one is a
+        # (non-DRF) misconfiguration that retry can't fix — CONTINUE past it
+        # rather than stall the scope's inbound (see ``_config_skip``).
+        logger.error(
+            "Webhook channel %s has no secret — delivering past it; "
+            "fix or disable the channel",
             channel.id,
         )
-        return _failure(blocking, Decision.RETRY)
+        return _config_skip()
 
     auth_headers = _build_auth_headers(channel, secret, body_bytes, mailbox)
     if auth_headers is None:
-        # Unknown/misconfigured auth_method — same reasoning: hold for
-        # retry, never drop the email on our config error.
-        return _failure(blocking, Decision.RETRY)
+        # Unknown/missing auth_method. Create-time validation requires a valid
+        # one, so this is a non-DRF row; retry can't fix it — CONTINUE past it.
+        # ``_build_auth_headers`` logged the detail; surface it at ERROR here.
+        logger.error(
+            "Webhook channel %s has an unusable auth_method — delivering past "
+            "it; fix or disable the channel",
+            channel.id,
+        )
+        return _config_skip()
 
     signed_headers = {
         **envelope_headers,
@@ -860,20 +889,24 @@ def _deliver_signed_webhook(
             data=body_bytes,
         )
     except SSRFValidationError as exc:
-        # SSRF block is a config error on our side (the URL points at a
-        # disallowed address). Hold for RETRY rather than drop — fixing
-        # the URL lets the next sweep deliver. We never discard the user's
-        # mail because of a webhook/config failure.
-        logger.warning(
-            "Webhook channel %s rejected by SSRF for url=%s: %s",
+        # The URL resolves to a disallowed (internal) address or won't
+        # resolve. Create/update validation already rejects internal /
+        # unresolvable URLs, so at dispatch this is a DNS rebinding (or a
+        # non-DRF row) — retry can't fix it, and the guard already (correctly)
+        # refused to POST to the internal target. CONTINUE past it rather than
+        # stall inbound. (``exc`` carries only the hostname, never the
+        # secret-bearing path/query, so it's safe to log.)
+        logger.error(
+            "Webhook channel %s rejected by SSRF for url=%s: %s — delivering "
+            "past it; fix or disable the channel",
             channel.id,
             _sanitize_url(url),
             exc,
         )
-        return _failure(blocking, Decision.RETRY)
+        return _config_skip()
     except Exception as exc:
         # Timeout, connection refused, DNS, unknown transport-level
-        # failure: all transient. The 48-hour quarantine window in the
+        # failure: all transient. The 48-hour deferral window in the
         # pipeline runner bounds the retries. Log only the exception
         # *type*, not its message or traceback: requests/urllib3 errors
         # embed the full request URL (path + query), which is exactly
@@ -925,7 +958,7 @@ def _deliver_signed_webhook(
         # webhook DROPs an email *only* when it explicitly returns
         # ``{"action": "drop"}`` with a 2xx (handled above). A receiver
         # bug that answers 4xx must never cost the user their mail — the
-        # 48-hour quarantine window bounds the hold.
+        # 48-hour deferral window bounds the hold.
         return _failure(blocking, Decision.RETRY)
     finally:
         response.close()
@@ -952,11 +985,15 @@ def _dispatch_webhook(
     """
     url = (channel.settings or {}).get("url")
     if not url:
-        # The serializer guarantees a url on create; a row without one is
-        # misconfigured. Hold for retry rather than drop (blocking); for
-        # the non-blocking task this collapses to a no-op CONTINUE.
-        logger.warning("Webhook channel %s has no url — skipping", channel.id)
-        return _failure(blocking, Decision.RETRY)
+        # The serializer guarantees a url on create; a row without one is a
+        # (non-DRF) misconfiguration retry can't fix — CONTINUE past it rather
+        # than stall inbound (see ``_config_skip``).
+        logger.error(
+            "Webhook channel %s has no url — delivering past it; "
+            "fix or disable the channel",
+            channel.id,
+        )
+        return _config_skip()
     envelope_headers = _envelope_headers(
         channel=channel,
         mailbox=mailbox,
@@ -1003,7 +1040,14 @@ def _resolve_body_from_message(
             f"cannot parse stored blob for message {message.id} into "
             f"webhook format {body_format!r}"
         )
-    return _resolve_body(body_format, raw_data, parsed_email or {})
+    # Post-creation path: stamp the persisted ids into the JMAP body.
+    return _resolve_body(
+        body_format,
+        raw_data,
+        parsed_email or {},
+        message_id=str(message.id),
+        thread_id=str(message.thread_id),
+    )
 
 
 def dispatch_recorded_webhooks(

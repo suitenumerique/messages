@@ -6,21 +6,12 @@ Every "thing we do with an incoming message before it lands as a
 the context — set ``is_spam``, add ``labels``, cache ``rspamd_result``,
 prepend an authentication header, etc.
 
-  pipeline = [
-      *user_webhook_steps(mailbox, phase="before_spam"),
-      hardcoded_rules_step(spam_config),
-      rspamd_step(spam_config),
-      inbound_auth_step(spam_config),
-      *user_webhook_steps(mailbox, phase="after_spam"),
-  ]
-  for step in pipeline:
-      d = step(ctx)
-      if d != Decision.CONTINUE:
-          break
-
-The orchestrator (``run_inbound_pipeline``) iterates and aborts on the
-first ``DROP`` / ``RETRY``. The caller turns that decision into a
-task-level return value.
+``build_inbound_pipeline`` assembles the ordered step list for a message —
+before-spam user webhooks, the hardcoded-rules and rspamd spam checks, the
+inbound-auth (DKIM/DMARC) step, then after-spam user webhooks.
+``run_inbound_pipeline`` iterates that list and aborts on the first step
+that returns a non-``CONTINUE`` ``Decision`` (``DROP`` / ``RETRY``); the
+caller turns that decision into a task-level return value.
 
 This file deliberately knows nothing about HTTP, JWT, or JMAP — those
 live in ``dispatch_webhooks.py`` behind ``UserWebhookStep``. The
@@ -38,11 +29,12 @@ from datetime import timedelta
 from enum import IntEnum
 from typing import Any, Callable, Dict, List, Optional, Set, Tuple
 
+from django.conf import settings
 from django.db.models import Q
 from django.utils import timezone
 
 import requests
-from jmap_email import JmapEmail, has_header, parse_email
+from jmap_email import JmapEmail, has_header
 
 from core import enums, models
 from core.mda.inbound_auth import (
@@ -87,6 +79,12 @@ class InboundContext:  # pylint: disable=too-many-instance-attributes
     # - None: undecided (no spam step has run, or none had an opinion)
     # - True/False: the last decisive step wins
     is_spam: Optional[bool] = None
+
+    # Sparse pipeline record written to ``Message.postmark`` at finalize time.
+    # Steps add flat keys ("auth", "processing", ...) rather than prepending
+    # X-StMsg-* to the bytes, so the ingest blob is reused untouched. Empty on
+    # the happy path (finalize stores NULL, not {}).
+    postmark: Dict[str, Any] = field(default_factory=dict)
 
     # Labels webhook receivers have asked us to attach to the thread.
     # Validated against the destination mailbox at finalize time;
@@ -154,19 +152,21 @@ Step = Callable[[InboundContext], Decision]
 
 
 # Inbound messages held by a transient RETRY get one more chance every
-# 5 minutes via ``process_inbound_messages_queue_task``. The webhook step
-# is the only producer of a RETRY, and it is bounded by the quarantine
-# window below — so a held message is never dropped, only delivered
-# (flagged) once it gives up.
+# 5 minutes via ``process_inbound_messages_queue_task``. RETRY is produced
+# by a blocking webhook step (transport failure / non-2xx) or by the rspamd
+# step (spam-check outage), and is bounded by the deferral window below —
+# so a held message is never dropped, only delivered (flagged) once it
+# gives up.
 #
-# A processing step that keeps failing (a blocking webhook today; rspamd
-# or any future RETRY-returning step tomorrow) must not hold a message
+# A processing step that keeps failing (a blocking webhook or rspamd today,
+# any future RETRY-returning step tomorrow) must not hold a message
 # forever *or* silently lose it. After this window the task stops holding
 # and delivers the message anyway, stamped with ``X-StMsg-Processing-
 # Failed`` so the UI warns the recipient it bypassed a processing step.
 # Generic on purpose — see the RETRY branch in
-# ``process_inbound_message_task``.
-QUARANTINE_AFTER = timedelta(hours=48)
+# ``process_inbound_message_task``. Operator-tunable via
+# ``MESSAGES_INBOUND_DEFERRAL_MAX_AGE`` (seconds; default 48h).
+DEFERRAL_MAX_AGE = timedelta(seconds=settings.MESSAGES_INBOUND_DEFERRAL_MAX_AGE)
 
 
 # ---------------------------------------------------------------------------
@@ -237,14 +237,26 @@ def _check_hardcoded_rules(
 
 
 def _call_rspamd(
-    raw_data: bytes, spam_config: Dict[str, Any]
-) -> Tuple[Optional[bool], Optional[str], Optional[Dict[str, Any]]]:
+    raw_data: bytes,
+    spam_config: Dict[str, Any],
+    envelope: Optional[Dict[str, Any]] = None,
+) -> Tuple[Optional[str], Optional[str], Optional[Dict[str, Any]]]:
     """POST raw RFC-822 bytes to rspamd's ``/checkv2``.
 
-    Returns ``(is_spam_or_None, error_message, result_dict)``. is_spam
-    is ``None`` only when rspamd is not configured. Errors are
-    swallowed and surfaced via the error_message channel so a flaky
-    rspamd never blocks delivery (mirroring the old behaviour).
+    The SMTP ``envelope`` (MAIL FROM, RCPT TO, connecting IP / HELO / rDNS)
+    is forwarded via rspamd's documented scan headers
+    (``From``/``Rcpt``/``IP``/``Helo``/``Hostname``) so envelope-based checks
+    — SPF, DNS RBLs, the Return-Path-vs-From mismatch symbols — score against
+    the real peer. Without them rspamd sees an empty envelope and SPF/RBL
+    degrade to no-ops.
+
+    Returns ``(action, error_message, result_dict)``. ``action`` is the raw
+    rspamd action string (e.g. "no action", "add header", "reject", …) — this
+    function does NOT interpret it; the whole action → verdict/decision mapping
+    lives in a single place, ``_make_rspamd_step``. ``action`` is ``None`` when
+    rspamd is not configured or on error (the ``error_message`` channel
+    distinguishes the two); errors are swallowed so a flaky rspamd never blocks
+    delivery.
     """
     url = spam_config.get("rspamd_url")
     if not url:
@@ -255,6 +267,22 @@ def _call_rspamd(
     auth = spam_config.get("rspamd_auth")
     if auth:
         headers["Authorization"] = auth
+
+    # Forward the SMTP envelope as rspamd scan headers. Only send the fields
+    # we actually have (widget/internal mail carry no HELO/rDNS); an empty
+    # value would read as a genuinely empty envelope and skew scoring. HELO
+    # and hostname are attacker-influenced, so strip CR/LF to prevent header
+    # injection into the rspamd request.
+    for header_name, envelope_key in (
+        ("From", "mail_from"),
+        ("Rcpt", "rcpt_to"),
+        ("IP", "ip"),
+        ("Helo", "helo"),
+        ("Hostname", "hostname"),
+    ):
+        value = (envelope or {}).get(envelope_key)
+        if value:
+            headers[header_name] = str(value).replace("\r", "").replace("\n", "")
 
     try:
         response = requests.post(
@@ -269,27 +297,19 @@ def _call_rspamd(
         # is_spam=False so the pipeline keeps moving. The
         # error_message channel lets the caller log loudly.
         logger.exception("Error calling rspamd: %s", exc)
-        return False, str(exc), None
+        return None, str(exc), None
     except Exception as exc:
         logger.exception("Unexpected error calling rspamd: %s", exc)
-        return False, str(exc), None
+        return None, str(exc), None
 
     if not isinstance(result, dict):
         logger.warning("rspamd returned non-object body: %r", result)
-        return False, "rspamd returned non-object body", None
+        return None, "rspamd returned non-object body", None
 
     action = result.get("action", "")
     score = result.get("score", 0.0)
-    required = result.get("required_score", 15.0)
-    is_spam = action == "reject"
-    logger.info(
-        "Rspamd: action=%s score=%.2f required=%.2f is_spam=%s",
-        action,
-        score,
-        required,
-        is_spam,
-    )
-    return is_spam, None, result
+    logger.info("Rspamd: action=%s score=%.2f", action, score)
+    return action, None, result
 
 
 # ---------------------------------------------------------------------------
@@ -314,16 +334,27 @@ def _make_hardcoded_rules_step(spam_config: Dict[str, Any]) -> Step:
 def _make_rspamd_step(spam_config: Dict[str, Any]) -> Step:
     """Rspamd as a step.
 
-    Sets ``is_spam`` if no earlier step decided. Always caches the
-    full ``rspamd_result`` dict on the context — ``inbound_auth_step``
-    reuses the symbols (DKIM/DMARC) without a second HTTP call.
+    Maps the rspamd action onto a pipeline decision. Always caches the full
+    ``rspamd_result`` dict on the context — ``inbound_auth_step`` reuses the
+    symbols (DKIM/DMARC) without a second HTTP call. The full action set
+    (https://docs.rspamd.com/configuration/metrics/):
 
-    An rspamd *error* never fails open: we don't deliver mail that
-    couldn't be spam-checked. The step RETRYs instead, so the message is
-    held and retried; if the outage lasts past ``QUARANTINE_AFTER`` the
-    quarantine path delivers it flagged rather than silently unchecked.
-    (rspamd simply not being configured is not an error — ``_call_rspamd``
-    returns no opinion and the pipeline moves on.)
+    * ``no action`` → deliver (is_spam=False).
+    * ``add header`` / ``rewrite subject`` / ``quarantine`` / ``reject`` →
+      spam verdict (is_spam=True → Junk). We can't honour ``reject`` at SMTP
+      time (already accepted), so it lands in Junk like the other markers.
+    * ``greylist`` / ``soft reject`` → temporary failures, NOT verdicts: route
+      onto our deferral path (RETRY). The condition (rate-limit, greylist,
+      transient DNS) usually clears within the 5-min sweep; a persistent one
+      force-delivers flagged past ``DEFERRAL_MAX_AGE`` (postmark processing).
+    * ``discard`` → rspamd asks us to accept-and-silently-drop (blackhole, no
+      bounce). Honour it as DROP — the message is consumed, nothing created.
+
+    An rspamd *error* never fails open: we don't deliver mail that couldn't be
+    spam-checked. The step RETRYs, so the message is held; if the outage lasts
+    past ``DEFERRAL_MAX_AGE`` it is force-delivered flagged rather than
+    silently unchecked. (rspamd not being configured is not an error —
+    ``_call_rspamd`` returns no opinion and the pipeline moves on.)
     """
 
     def rspamd(ctx: InboundContext) -> Decision:
@@ -332,10 +363,12 @@ def _make_rspamd_step(spam_config: Dict[str, Any]) -> Step:
             # rspamd's symbols for inbound_auth. The auth step has its
             # own fallback so we can cheaply skip rspamd entirely here.
             return Decision.CONTINUE
-        is_spam, err, result = _call_rspamd(ctx.raw_data, spam_config)
+        action, err, result = _call_rspamd(
+            ctx.raw_data, spam_config, envelope=ctx.inbound_message.envelope
+        )
         if err:
             # Don't fail open — hold for retry rather than deliver
-            # unchecked. A sustained outage is bounded by the quarantine
+            # unchecked. A sustained outage is bounded by the deferral
             # window (the message is then delivered flagged).
             logger.warning(
                 "rspamd error on inbound message %s: %s (holding for retry)",
@@ -344,8 +377,40 @@ def _make_rspamd_step(spam_config: Dict[str, Any]) -> Step:
             )
             return Decision.RETRY
         ctx.rspamd_result = result
-        if is_spam is not None:
-            ctx.is_spam = is_spam
+        if action is None:
+            # rspamd not configured — no opinion, leave the verdict undecided.
+            return Decision.CONTINUE
+
+        # --- The single source of truth for rspamd action → outcome. ---
+        if action in ("greylist", "soft reject"):
+            # Temporary failure, not a verdict — defer and re-evaluate on the
+            # sweep (converges on the same deferral-expiry force-delivery as
+            # any persistent processing failure).
+            logger.info(
+                "rspamd '%s' on inbound message %s — holding for retry",
+                action,
+                ctx.inbound_message.id,
+            )
+            return Decision.RETRY
+        if action == "discard":
+            # rspamd blackhole: accept-and-drop, no delivery, no bounce.
+            logger.info(
+                "rspamd 'discard' on inbound message %s — dropping",
+                ctx.inbound_message.id,
+            )
+            return Decision.DROP
+        # Milder flag actions deliver to the INBOX with a graded "suspected
+        # spam" marker for the UI (like the suspicious-sender banner) — not
+        # hidden in Junk. rspamd scores "add header" below "rewrite subject",
+        # so preserve that gradient: possible < likely.
+        if action == "add header":
+            ctx.postmark["spam"] = "possible"
+        elif action == "rewrite subject":
+            ctx.postmark["spam"] = "likely"
+        # Junk only for the high-confidence isolate actions; everything else
+        # (no action, the flagged-but-delivered actions above, unknown) is
+        # delivered to the inbox.
+        ctx.is_spam = action in ("quarantine", "reject")
         return Decision.CONTINUE
 
     rspamd.name = "rspamd"
@@ -356,28 +421,32 @@ def _make_inbound_auth_step(spam_config: Dict[str, Any]) -> Step:
     """DKIM / DMARC verdict via ``check_inbound_authentication``.
 
     Reuses ``ctx.rspamd_result`` if populated; otherwise calls rspamd
-    itself when ``auth_mode='rspamd'``. On a verdict, prepends an
-    ``X-StMsg-Sender-Auth`` header to both ``raw_data`` and
-    ``parsed_email`` so subsequent steps + downstream consumers see it.
+    itself when ``auth_mode='rspamd'``. On a verdict, records it in
+    ``ctx.postmark["auth"]`` (structured, off the bytes) so the ingest blob
+    is reused untouched; ``get_stmsg_headers`` surfaces it downstream.
     """
 
     def inbound_auth(ctx: InboundContext) -> Decision:
         if ctx.rspamd_result is None and get_inbound_auth_mode(spam_config) == "rspamd":
-            _, _, ctx.rspamd_result = _call_rspamd(ctx.raw_data, spam_config)
+            _, _, ctx.rspamd_result = _call_rspamd(
+                ctx.raw_data, spam_config, envelope=ctx.inbound_message.envelope
+            )
         verdict = check_inbound_authentication(
             ctx.raw_data, ctx.parsed_email, spam_config, ctx.rspamd_result
         )
         if not verdict:
+            # Widget submissions arrive over an unauthenticated web form, so
+            # they carry the "none" baseline even when DKIM/DMARC verification
+            # is disabled instance-wide (which is when ``verdict`` is falsy).
+            if (ctx.inbound_message.envelope or {}).get("origin") == "widget":
+                ctx.postmark["auth"] = "none"
             return Decision.CONTINUE
-        prepended = f"X-StMsg-Sender-Auth: {verdict}\r\n".encode("ascii") + ctx.raw_data
-        reparsed = parse_email(prepended)
-        if reparsed is not None:
-            ctx.parsed_email = reparsed
-            ctx.raw_data = prepended
-        else:
-            # Keep raw_data / parsed_email in lockstep: if re-parse breaks,
-            # we sacrifice the auth banner rather than corrupting the blob.
-            logger.warning("Failed to re-parse after prepending X-StMsg-Sender-Auth")
+        # Record the verdict structurally instead of prepending it to the
+        # bytes: the ingest blob stays untouched (reused as Message.blob) and
+        # ``get_stmsg_headers`` surfaces it. ``verdict`` is already "none"
+        # (unverified) or "fail" (forged); a verified message returns no
+        # verdict and leaves ``auth`` absent.
+        ctx.postmark["auth"] = verdict
         return Decision.CONTINUE
 
     inbound_auth.name = "inbound_auth"

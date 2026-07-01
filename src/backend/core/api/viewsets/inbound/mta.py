@@ -184,27 +184,42 @@ class InboundMTAViewSet(viewsets.GenericViewSet):
             mta_metadata["original_recipients"],  # Log all intended recipients
         )
 
-        # Drop any sender-supplied X-StMsg-* headers so only values we prepend
-        # further down the pipeline (sender-auth verdict, widget-referer, ...)
-        # are visible to storage and the frontend.
-        raw_data = remove_mime_headers(raw_data, prefixes=["x-stmsg-"])
+        # Strip sender-supplied headers we own or authoritatively rewrite:
+        #  - ``X-StMsg-*``: our pipeline namespace (sender-auth etc.) — must not
+        #    be forgeable.
+        #  - ``Return-Path``: only the delivering MTA may write it (RFC 5321
+        #    §4.4); we rewrite it below from the real envelope MAIL FROM, so any
+        #    inbound copy is forged and must go first.
+        raw_data = remove_mime_headers(
+            raw_data, prefixes=["x-stmsg-"], names=["return-path"]
+        )
 
         def sanitize_header(header: str) -> str:
             return header.replace("\r", "").replace("\n", "")[0:255]
 
+        # Bake the immutable envelope facts as standard headers at ingest, on
+        # top of the received bytes and BEFORE the blob is created, so they ride
+        # in the single stored blob:
+        #  - ``Return-Path``: the envelope MAIL FROM (``<>`` for a null sender /
+        #    bounce). Durable home for what the autoreply/bounce logic reads.
+        #  - ``Received``: the SMTP trace (HELO / rDNS / IP), when the MTA
+        #    forwarded it. Shared across recipients (one prepend), so identical
+        #    bytes still dedup to one blob.
+        sender = mta_metadata.get("sender") or ""
+        prepend_headers = [("Return-Path", f"<{sender}>" if sender else "<>")]
         if "client_helo" in mta_metadata:
-            prepend_headers = [
+            prepend_headers.append(
                 (
                     "Received",
                     f"from {mta_metadata['client_helo']} ("
                     + f"{mta_metadata['client_hostname']} [{mta_metadata['client_address']}]);",
-                ),
-            ]
+                )
+            )
 
-            raw_data = (
-                "\r\n".join([f"{k}: {sanitize_header(v)}" for k, v in prepend_headers])
-                + "\r\n"
-            ).encode("utf-8") + raw_data
+        raw_data = (
+            "\r\n".join([f"{k}: {sanitize_header(v)}" for k, v in prepend_headers])
+            + "\r\n"
+        ).encode("utf-8") + raw_data
 
         # Parse the email message once
         parsed_email = parse_email(raw_data)
@@ -217,6 +232,19 @@ class InboundMTAViewSet(viewsets.GenericViewSet):
                 status=status.HTTP_400_BAD_REQUEST,  # Bad request as email is malformed
             )
 
+        # Structured SMTP envelope carried alongside the bytes (never injected
+        # into them, so the blob stays byte-identical across recipients and
+        # dedups to one row). ``sender`` is the MAIL FROM; the client_* fields
+        # are the connecting SMTP peer (forwarded by the MTA). ``rcpt_to`` is
+        # the actual RCPT TO and is set per recipient inside the loop.
+        base_envelope = {
+            "origin": "mta",
+            "mail_from": mta_metadata.get("sender", ""),
+            "ip": mta_metadata.get("client_address", ""),
+            "helo": mta_metadata.get("client_helo", ""),
+            "hostname": mta_metadata.get("client_hostname", ""),
+        }
+
         # Deliver the parsed email to each original recipient
         success_count = 0
         failure_count = 0
@@ -225,7 +253,12 @@ class InboundMTAViewSet(viewsets.GenericViewSet):
         for recipient in mta_metadata["original_recipients"]:
             try:
                 # Call the refactored delivery function which returns True/False
-                delivered = deliver_inbound_message(recipient, parsed_email, raw_data)
+                delivered = deliver_inbound_message(
+                    recipient,
+                    parsed_email,
+                    raw_data,
+                    envelope={**base_envelope, "rcpt_to": recipient},
+                )
                 if delivered:
                     success_count += 1
                     delivery_results[recipient] = "Success"

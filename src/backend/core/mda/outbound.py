@@ -695,7 +695,11 @@ def send_message(message: models.Message, force_mta_out: bool = False):
                             recipient_email,
                             parsed_email,
                             blob_content,
-                            is_internal=True,
+                            envelope={
+                                "origin": "internal",
+                                "mail_from": message.sender.email,
+                                "rcpt_to": recipient_email,
+                            },
                             blob=message.blob,
                         )
                         _mark_delivered(recipient_email, delivered, True)

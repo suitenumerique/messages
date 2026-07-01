@@ -42,9 +42,16 @@ const ThreadMessageHeader = ({
     const isForgedSender = senderAuth === 'fail';
 
     // A processing step (a blocking integration/webhook, spam check, …)
-    // failed repeatedly, so the message was delivered without it (see the
-    // quarantine path in the inbound pipeline). Warn prominently.
+    // failed repeatedly, so the message was force-delivered without it once
+    // the inbound deferral window expired. Warn prominently.
     const processingFailed = Boolean(message.stmsg_headers?.['processing-failed']);
+
+    // Spam scanning flagged the message as probable spam but below the Junk
+    // threshold, so it was delivered to the inbox with a graded marker
+    // ('possible' < 'likely'). Show an inline caution banner.
+    const suspectedSpam = message.stmsg_headers?.['spam'];
+    const isPossibleSpam = suspectedSpam === 'possible';
+    const isLikelySpam = suspectedSpam === 'likely';
 
     const isUserSender = useMemo(() => {
         if (!message.is_sender) return false;
@@ -175,6 +182,15 @@ const ThreadMessageHeader = ({
                         <Banner type="error" compact fullWidth>
                             <div className="thread-message__header-banner__content">
                                 <p>{t("This message was delivered without our usual safety checks. Please review it with caution.")}</p>
+                            </div>
+                        </Banner>
+                    )}
+                    {(isPossibleSpam || isLikelySpam) && (
+                        <Banner type="warning" compact fullWidth>
+                            <div className="thread-message__header-banner__content">
+                                <p>{isLikelySpam
+                                    ? t("This message is likely spam. Review it with caution.")
+                                    : t("This message may be spam. Review it with caution.")}</p>
                             </div>
                         </Banner>
                     )}

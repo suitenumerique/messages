@@ -118,8 +118,8 @@ class ChannelViewSet(
                 response=serializers.ChannelCreateResponseSerializer,
                 description=(
                     "Channel created successfully. The response carries the "
-                    "one-time plaintext credentials (api_key / secret / "
-                    "password) which are never returned again."
+                    "one-time plaintext credential (api_key / secret) which "
+                    "is never returned again."
                 ),
             ),
             400: OpenApiResponse(description="Invalid input data"),
@@ -143,10 +143,8 @@ class ChannelViewSet(
         instance = serializer.save(**self.get_save_kwargs())
         data = serializer.data
 
-        # Surface plaintext credentials exactly once on creation —
-        # subsequent GETs never return them.
-        if password := getattr(instance, "_generated_password", None):
-            data["password"] = password
+        # Surface the freshly-minted plaintext credential exactly once on
+        # creation — subsequent GETs never return it.
         _attach_credential(data, instance)
         return Response(data, status=status.HTTP_201_CREATED)
 
@@ -198,10 +196,11 @@ class ChannelViewSet(
                                 "Present for ``api_key`` channels and "
                                 "webhook channels with "
                                 "``auth_method='api_key'`` — the plaintext "
-                                "API key presented in a request header "
-                                "(X-API-Key / X-StMsg-Api-Key). Returned "
-                                "ONCE; for api_key webhooks it changes "
-                                "whenever the root rotates."
+                                "API key. api_key channels send it as "
+                                "``X-API-Key`` on inbound API calls; api_key "
+                                "webhooks present it as ``Authorization: "
+                                "Bearer``. Returned ONCE; for api_key webhooks "
+                                "it changes whenever the root rotates."
                             ),
                         ),
                         "secret": drf_serializers.CharField(

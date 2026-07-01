@@ -188,12 +188,16 @@ Content-Disposition: attachment; filename="{attachment_data["filename"]}"
         )
         message_id = message_data["id"]
 
-        # Check message EML
+        # Check message EML. The stored blob is the ingest blob reused as
+        # Message.blob: the received bytes with our authoritative Return-Path
+        # (envelope MAIL FROM; "<>" for the null sender) and Received baked on
+        # at ingest — and, crucially, NO X-StMsg-* verdict headers (those are
+        # de-baked into postmark now), proving the single-blob reuse.
         response = client.get(reverse("messages-eml", kwargs={"id": message_id}))
         assert response.status_code == status.HTTP_200_OK
-        assert (
-            response.content
-            == b"Received: from client.helo (client.hostname [127.1.2.3]);\r\n"
+        assert response.content == (
+            b"Return-Path: <>\r\n"
+            b"Received: from client.helo (client.hostname [127.1.2.3]);\r\n"
             + multipart_email_with_attachment
         )
 

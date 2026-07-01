@@ -736,6 +736,8 @@
   "This message has not been delivered. You cancelled the delivery.": "Це повідомлення не було доставлено. Ви скасували доставлення.",
   "This message has not yet been delivered to all recipients.": "Це повідомлення ще не було доставлено усім отримувачам.",
   "This message is being delivered.": "Це повідомлення доставлено.",
+  "This message is likely spam. Review it with caution.": "Цей лист, імовірно, є спамом. Будьте обережні.",
+  "This message may be spam. Review it with caution.": "Цей лист може бути спамом. Будьте обережні.",
   "This message was delivered without our usual safety checks. Please review it with caution.": "Це повідомлення було доставлено без наших звичайних перевірок безпеки. Будьте обачні.",
   "This name is for internal use only and will not be visible to users.": "Це ім'я тільки для внутрішнього використання та не буде видимим користувачам.",
   "This signature is forced": "Цей підпис є обов'язковим",

@@ -152,16 +152,98 @@ class TestMTAInboundEmail:
         assert response.status_code == status.HTTP_200_OK
         assert response.json() == {"status": "ok", "delivered": len(recipients)}
 
-        mock_parse.assert_called_once_with(sample_email)
+        # The MTA path bakes an authoritative Return-Path (envelope MAIL FROM;
+        # "<>" for the null sender here) onto the bytes before parsing.
+        mock_parse.assert_called_once_with(b"Return-Path: <>\r\n" + sample_email)
 
         assert mock_deliver.call_count == len(recipients)
-        mock_deliver.assert_any_call(email, ANY, sample_email)
-        mock_deliver.assert_any_call("another@example.com", ANY, sample_email)
+        # Each recipient gets the SMTP envelope (origin=mta + per-recipient
+        # RCPT TO); the SMTP fields default to "" when the MTA omits them.
+        for rcpt in recipients:
+            mock_deliver.assert_any_call(
+                rcpt,
+                ANY,
+                b"Return-Path: <>\r\n" + sample_email,
+                envelope={
+                    "origin": "mta",
+                    "mail_from": "",
+                    "ip": "",
+                    "helo": "",
+                    "hostname": "",
+                    "rcpt_to": rcpt,
+                },
+            )
 
         first_call_args = mock_deliver.call_args_list[0][0]
         second_call_args = mock_deliver.call_args_list[1][0]
         assert first_call_args[1]["subject"] == "Test Email"
         assert second_call_args[1]["subject"] == "Test Email"
+
+    @patch("core.mda.inbound.process_inbound_message_task.delay")
+    def test_multi_recipient_delivery_shares_one_blob(
+        self, _mock_delay, api_client, valid_jwt_token
+    ):
+        """One body delivered to N recipients dedups to a single blob — E2E
+        through the MTA endpoint.
+
+        The endpoint fans one ``deliver`` (N ``original_recipients``, one body)
+        out to N ``InboundMessage`` rows; blob-at-ingest dedups the identical
+        bytes by content hash to ONE blob, while each row keeps its own
+        per-recipient RCPT envelope. Nothing duplicated, nothing in plaintext.
+        """
+        mailboxes = [factories.MailboxFactory() for _ in range(3)]
+        recipients = [f"{m.local_part}@{m.domain.name}" for m in mailboxes]
+        raw = b"From: sender@example.com\r\nSubject: shared\r\n\r\nbody"
+        token = valid_jwt_token(raw, {"original_recipients": recipients})
+
+        response = api_client.post(
+            "/api/v1.0/inbound/mta/deliver/",
+            data=raw,
+            content_type="message/rfc822",
+            HTTP_AUTHORIZATION=f"Bearer {token}",
+        )
+
+        assert response.status_code == status.HTTP_200_OK
+        rows = list(models.InboundMessage.objects.all())
+        assert len(rows) == 3
+        assert len({r.blob_id for r in rows}) == 1  # one shared blob
+        assert {r.envelope["rcpt_to"] for r in rows} == set(recipients)
+
+    @patch("core.api.viewsets.inbound.mta.deliver_inbound_message")
+    @patch("core.api.viewsets.inbound.mta.parse_email")
+    def test_forged_return_path_stripped_and_rewritten(
+        self, mock_parse, mock_deliver, api_client, valid_jwt_token
+    ):
+        """A sender-supplied Return-Path is stripped and replaced with our
+        authoritative one (the real envelope MAIL FROM) at ingest."""
+        mock_parse.return_value = {"subject": "t"}
+        mock_deliver.return_value = True
+        forged = (
+            b"Return-Path: <evil@attacker.test>\r\n"
+            b"From: s@example.com\r\nSubject: t\r\n\r\nbody"
+        )
+        token = valid_jwt_token(
+            forged,
+            {
+                "original_recipients": ["rcpt@example.com"],
+                "sender": "real@example.com",
+            },
+        )
+
+        response = api_client.post(
+            "/api/v1.0/inbound/mta/deliver/",
+            data=forged,
+            content_type="message/rfc822",
+            HTTP_AUTHORIZATION=f"Bearer {token}",
+        )
+
+        assert response.status_code == status.HTTP_200_OK
+        baked = mock_parse.call_args[0][0]
+        # Our authoritative Return-Path is first; the forged one is gone.
+        assert baked.startswith(b"Return-Path: <real@example.com>\r\n")
+        assert b"evil@attacker.test" not in baked
+        # The MAIL FROM also reaches the envelope for the pipeline.
+        assert mock_deliver.call_args[1]["envelope"]["mail_from"] == "real@example.com"
 
     @patch("core.api.viewsets.inbound.mta.deliver_inbound_message")
     @patch("core.api.viewsets.inbound.mta.parse_email")
@@ -188,7 +270,9 @@ class TestMTAInboundEmail:
 
         assert response.status_code == status.HTTP_400_BAD_REQUEST
         assert response.json() == {"status": "error", "detail": "Failed to parse email"}
-        mock_parse.assert_called_once_with(sample_email)
+        # The MTA path bakes an authoritative Return-Path (envelope MAIL FROM;
+        # "<>" for the null sender here) onto the bytes before parsing.
+        mock_parse.assert_called_once_with(b"Return-Path: <>\r\n" + sample_email)
         mock_deliver.assert_not_called()  # Delivery should not be attempted
 
     @patch("core.api.viewsets.inbound.mta.deliver_inbound_message")
@@ -230,7 +314,9 @@ class TestMTAInboundEmail:
             "failed": 1,
             "results": expected_results,
         }
-        mock_parse.assert_called_once_with(sample_email)
+        # The MTA path bakes an authoritative Return-Path (envelope MAIL FROM;
+        # "<>" for the null sender here) onto the bytes before parsing.
+        mock_parse.assert_called_once_with(b"Return-Path: <>\r\n" + sample_email)
         assert mock_deliver.call_count == 2  # Called for both recipients
 
     @patch("core.api.viewsets.inbound.mta.deliver_inbound_message")
@@ -268,7 +354,9 @@ class TestMTAInboundEmail:
             "detail": "Failed to deliver message to any recipient",
             "results": expected_results,
         }
-        mock_parse.assert_called_once_with(sample_email)
+        # The MTA path bakes an authoritative Return-Path (envelope MAIL FROM;
+        # "<>" for the null sender here) onto the bytes before parsing.
+        mock_parse.assert_called_once_with(b"Return-Path: <>\r\n" + sample_email)
         assert mock_deliver.call_count == 2  # Called for both
 
     def test_invalid_content_type(
