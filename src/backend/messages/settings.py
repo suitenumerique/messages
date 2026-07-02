@@ -886,6 +886,15 @@ class Base(Configuration):
                 environ_name="API_WIDGET_INBOUND_IP_THROTTLE_RATE",
                 environ_prefix=None,
             ),
+            # Anonymous mobile token → session exchange, keyed per IP (there
+            # is no user yet). Legitimate use is one call per login (plus the
+            # odd retry), so this only caps brute-force guessing of the
+            # one-time token without getting in the way of real devices.
+            "mobile_auth_exchange": values.Value(
+                default="10/minute",
+                environ_name="API_MOBILE_AUTH_EXCHANGE_THROTTLE_RATE",
+                environ_prefix=None,
+            ),
         },
     }
 
@@ -1051,8 +1060,20 @@ class Base(Configuration):
     OIDC_RP_SCOPES = values.Value(
         "openid email", environ_name="OIDC_RP_SCOPES", environ_prefix=None
     )
-    OIDC_AUTHENTICATE_CLASS = "lasuite.oidc_login.views.OIDCAuthenticationRequestView"
-    OIDC_CALLBACK_CLASS = "lasuite.oidc_login.views.OIDCAuthenticationCallbackView"
+    OIDC_AUTHENTICATE_CLASS = "core.authentication.views.OIDCAuthenticationRequestView"
+    OIDC_CALLBACK_CLASS = "core.authentication.views.OIDCAuthenticationCallbackView"
+
+    # Mobile apps (Capacitor) session handoff.
+    # Deep-link schemes the OIDC callback is allowed to redirect to after a
+    # mobile-initiated login. An empty list disables the mobile handoff.
+    MOBILE_AUTH_CALLBACK_SCHEMES = JSONValue(
+        default=[], environ_name="MOBILE_AUTH_CALLBACK_SCHEMES", environ_prefix=None
+    )
+    # Lifetime (seconds) of the one-time token a mobile app exchanges for its
+    # Django session cookie.
+    MOBILE_AUTH_TOKEN_TTL = values.PositiveIntegerValue(
+        default=60, environ_name="MOBILE_AUTH_TOKEN_TTL", environ_prefix=None
+    )
     LOGIN_REDIRECT_URL = values.Value(
         None, environ_name="LOGIN_REDIRECT_URL", environ_prefix=None
     )
