@@ -1,3 +1,5 @@
+import { getWebCsrfToken } from "./csrf";
+
 export const errorCauses = async (response: Response, data?: unknown) => {
   const errorsBody = (await response.json()) as Record<
     string,
@@ -61,14 +63,14 @@ export const getHeaders = (headers: HeadersInit = {}, isMultipartFormData: boole
 };
 
 /**
-* Retrieves the CSRF token from the document's cookies.
+* Retrieves the CSRF token to echo in the X-CSRFToken header.
 *
-* @returns {string|null} The CSRF token if found in the cookies, or null if not present.
+* With CSRF_USE_SESSIONS the secret lives in the server-side session and there
+* is no readable `csrftoken` cookie: the token is delivered over the
+* authenticated `/users/me/` response and cached in memory.
+*
+* @returns {string|undefined} The CSRF token if known, or undefined otherwise.
 */
 export function getCSRFToken() {
-  return document.cookie
-    .split(";")
-    .filter((cookie) => cookie.trim().startsWith("csrftoken="))
-    .map((cookie) => cookie.split("=")[1])
-    .pop();
+  return getWebCsrfToken();
 }

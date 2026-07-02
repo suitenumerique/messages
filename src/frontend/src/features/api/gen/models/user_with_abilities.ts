@@ -21,6 +21,12 @@ export interface UserWithAbilities {
   readonly full_name: string | null;
   /** Get custom attributes for the instance. */
   readonly custom_attributes: UserWithAbilitiesCustomAttributes;
+  /** Return the session-bound CSRF token for the SPA to echo as X-CSRFToken.
+
+With ``CSRF_USE_SESSIONS`` the secret lives in the session and is no
+longer exposed as a cookie, so the token is delivered here over the
+authenticated ``/users/me/`` channel. */
+  readonly csrf_token: string;
   /** Instance permissions and capabilities */
   readonly abilities: UserWithAbilitiesAbilities;
 }

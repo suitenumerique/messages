@@ -36,6 +36,11 @@ class TestUsersGetMe:
 
         assert response.status_code == 200
         data = response.json()
+        # The CSRF token (session-bound, masked per request) is delivered here so
+        # the SPA can echo it as X-CSRFToken under CSRF_USE_SESSIONS; its value is
+        # non-deterministic, so assert its presence and drop it before comparing.
+        csrf_token = data.pop("csrf_token")
+        assert isinstance(csrf_token, str) and csrf_token != ""
         assert data == {
             "id": str(user.id),
             "email": user.email,

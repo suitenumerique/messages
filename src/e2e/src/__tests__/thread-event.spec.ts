@@ -54,6 +54,24 @@ async function navigateToSharedThread(page: Page, browserName: BrowserName) {
   await page.waitForLoadState("networkidle");
 }
 
+/**
+ * Fetch the current user through the API session.
+ *
+ * Also the source of the CSRF token expected by DRF on unsafe verbs: with
+ * `CSRF_USE_SESSIONS` the backend no longer exposes a readable `csrftoken`
+ * cookie — the session-bound token is delivered in the authenticated
+ * /users/me/ payload instead, exactly how the SPA obtains it.
+ */
+async function fetchCurrentUser(page: Page) {
+  const meResponse = await page.request.get(`${API_URL}/api/v1.0/users/me/`);
+  expect(meResponse.ok()).toBeTruthy();
+  return (await meResponse.json()) as {
+    id: string;
+    full_name: string;
+    csrf_token: string;
+  };
+}
+
 test.describe("Thread Events (Internal Messages)", () => {
   test.beforeAll(async () => {
     await resetDatabase();
@@ -421,17 +439,12 @@ test.describe("Thread Events (Internal Messages)", () => {
     const threadId = threadMatch?.[1];
     expect(threadId, "thread id should be present in URL").toBeTruthy();
 
-    // Reuse the existing browser session cookies — they carry both the
-    // session id and the CSRF token expected by DRF on unsafe verbs.
-    const cookies = await page.context().cookies();
-    const csrfToken = cookies.find((c) => c.name === "csrftoken")?.value ?? "";
-
-    // Fetch the current user so we can mention ourselves. The UI filters
+    // Fetch the current user so we can mention ourselves (the UI filters
     // out self-mentions, but the backend allows them — POSTing directly is
-    // the simplest way to create an unread mention visible to the test user.
-    const meResponse = await page.request.get(`${API_URL}/api/v1.0/users/me/`);
-    expect(meResponse.ok()).toBeTruthy();
-    const me = (await meResponse.json()) as { id: string; full_name: string };
+    // the simplest way to create an unread mention visible to the test user)
+    // along with the session-bound CSRF token carried in the same payload.
+    const me = await fetchCurrentUser(page);
+    const csrfToken = me.csrf_token;
 
     // Create an IM mentioning the current user. sync_mention_user_events
     // runs in the post_save signal and materialises the UserEvent MENTION
@@ -547,8 +560,7 @@ test.describe("Thread Events (Internal Messages)", () => {
     const eventId = eventDomId?.replace(/^thread-event-/, "");
     expect(eventId, "event id should be present on aged bubble").toBeTruthy();
 
-    const cookies = await page.context().cookies();
-    const csrfToken = cookies.find((c) => c.name === "csrftoken")?.value ?? "";
+    const { csrf_token: csrfToken } = await fetchCurrentUser(page);
     const threadMatch = page.url().match(/\/thread\/([0-9a-f-]+)/i);
     const threadId = threadMatch?.[1];
     const updateResponse = await page.request.patch(
@@ -615,11 +627,8 @@ test.describe("Thread Events (Assignations)", () => {
     const threadMatch = page.url().match(/\/thread\/([0-9a-f-]+)/i);
     const threadId = threadMatch?.[1];
     expect(threadId, "thread id should be present in URL").toBeTruthy();
-    const cookies = await page.context().cookies();
-    const csrfToken = cookies.find((c) => c.name === "csrftoken")?.value ?? "";
-    const meResponse = await page.request.get(`${API_URL}/api/v1.0/users/me/`);
-    expect(meResponse.ok()).toBeTruthy();
-    const me = (await meResponse.json()) as { id: string; full_name: string };
+    const me = await fetchCurrentUser(page);
+    const csrfToken = me.csrf_token;
     await page.request.post(
       `${API_URL}/api/v1.0/threads/${threadId}/events/`,
       {
@@ -721,18 +730,14 @@ test.describe("Thread Events (Assignations)", () => {
     await navigateToSharedThread(page, browserName);
 
     // Drive the assignment through the API to keep this test independent
-    // of the popover flow exercised above. The cookies set during sign-in
-    // carry both the session id and the CSRF token DRF expects on POST.
+    // of the popover flow exercised above. The sign-in cookies carry the
+    // session id; the CSRF token comes from the /users/me/ payload.
     const threadMatch = page.url().match(/\/thread\/([0-9a-f-]+)/i);
     const threadId = threadMatch?.[1];
     expect(threadId, "thread id should be present in URL").toBeTruthy();
 
-    const cookies = await page.context().cookies();
-    const csrfToken = cookies.find((c) => c.name === "csrftoken")?.value ?? "";
-
-    const meResponse = await page.request.get(`${API_URL}/api/v1.0/users/me/`);
-    expect(meResponse.ok()).toBeTruthy();
-    const me = (await meResponse.json()) as { id: string; full_name: string };
+    const me = await fetchCurrentUser(page);
+    const csrfToken = me.csrf_token;
 
     const assignResponse = await page.request.post(
       `${API_URL}/api/v1.0/threads/${threadId}/events/`,

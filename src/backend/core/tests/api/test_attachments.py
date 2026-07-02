@@ -75,6 +75,33 @@ class TestBlobAPI:
 
         assert response.status_code == status.HTTP_403_FORBIDDEN
 
+    def test_upload_session_auth_accepts_session_csrf_token(
+        self, api_client, user_mailbox
+    ):
+        """A cookie-session upload succeeds when echoing the session CSRF token.
+
+        With ``CSRF_USE_SESSIONS`` the token is validated against the secret held
+        in the session (no ``csrftoken`` cookie). ``GET /users/me/`` both returns
+        the token and persists the secret in the session (via the CSRF
+        middleware), exactly as the SPA bootstrap does; echoing that token in the
+        ``X-CSRFToken`` header is then accepted.
+        """
+        _, user = api_client
+        csrf_client = APIClient(enforce_csrf_checks=True)
+        csrf_client.force_login(user)  # real session → SessionAuthentication path
+
+        token = csrf_client.get(reverse("users-me")).data["csrf_token"]
+
+        url = reverse("blob-upload", kwargs={"mailbox_id": user_mailbox.id})
+        response = csrf_client.post(
+            url,
+            {"file": self._create_test_file()},
+            format="multipart",
+            HTTP_X_CSRFTOKEN=token,
+        )
+
+        assert response.status_code == status.HTTP_201_CREATED
+
     def test_upload_download_blob(
         self,
         api_client,
