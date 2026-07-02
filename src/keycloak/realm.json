@@ -683,7 +683,7 @@
       "oidc.ciba.grant.enabled" : "false",
       "backchannel.logout.session.required" : "true",
       "client_credentials.use_refresh_token" : "false",
-      "acr.loa.map" : "{}",
+      "acr.loa.map" : "{\"eidas1\":1}",
       "require.pushed.authorization.requests" : "false",
       "display.on.consent.screen" : "false",
       "client.session.idle.timeout" : "-1",
@@ -2151,7 +2151,7 @@
     "parRequestUriLifespan" : "60",
     "clientSessionMaxLifespan" : "0",
     "frontendUrl" : "",
-    "acr.loa.map" : "{}",
+    "acr.loa.map" : "{\"eidas1\":1}",
     "darkMode" : "false"
   },
   "keycloakVersion" : "26.2.5",
