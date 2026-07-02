@@ -2,6 +2,7 @@ import { createRoot } from "react-dom/client";
 import { createRouter, parseSearchWith, RouterProvider, stringifySearchWith } from "@tanstack/react-router";
 
 import { routeTree } from "./routes.gen";
+import { isNativePlatform } from "./features/native/platform";
 import { configRetrieve, configRetrieveResponse, getConfigRetrieveQueryKey } from "@/features/api/gen";
 import { queryClient } from "@/features/api/query-client";
 import { resolveConfig } from "@/features/config/resolve";
@@ -9,6 +10,23 @@ import { initI18n } from "@/features/i18n/initI18n";
 import { installThemeFavicons } from "@/features/providers/theme-favicons";
 import { initSentry } from "@/features/sentry";
 import { handle } from '@/features/utils/errors';
+
+// Tag the document on the Capacitor native app so the stylesheet can opt into
+// mobile-only chrome (compact header, floating bottom bars) without each
+// component re-deriving the platform.
+if (isNativePlatform()) {
+  document.documentElement.classList.add("native");
+
+  // Pinch-zooming the whole shell makes it feel like a website, not an app, so
+  // lock the viewport scale — but only here: on the web the index.html viewport
+  // stays zoomable (accessibility, WCAG 1.4.4).
+  document
+    .querySelector('meta[name="viewport"]')
+    ?.setAttribute(
+      "content",
+      "width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no, viewport-fit=cover",
+    );
+}
 
 // Default TSR encoding JSON-wraps every search value (`?key=1` → `?key=%221%22`).
 // The rest of the app builds URLs via `URLSearchParams.toString()` and the

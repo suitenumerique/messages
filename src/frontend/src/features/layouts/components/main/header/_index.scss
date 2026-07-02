@@ -66,6 +66,14 @@
   }
 }
 
+// On the native app the header is pinned at the physical top of an
+// edge-to-edge webview: keep its background under the status bar / notch but
+// push its content below. --header-height grows by the same amount (see
+// globals.scss), so the content zone keeps its nominal height (border-box).
+.native .c__header {
+  padding-top: var(--safe-area-inset-top);
+}
+
 .user-menu__footer-action {
   display: flex;
   flex-direction: row;
