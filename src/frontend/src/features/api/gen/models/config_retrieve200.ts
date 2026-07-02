@@ -59,4 +59,6 @@ export type ConfigRetrieve200 = {
   readonly FRONTEND_FEEDBACK_WIDGET_CONFIG?: ConfigRetrieve200FRONTENDFEEDBACKWIDGETCONFIG;
   /** Configuration of the Lagaufre widget */
   readonly FRONTEND_LAGAUFRE_WIDGET_CONFIG?: ConfigRetrieve200FRONTENDLAGAUFREWIDGETCONFIG;
+  /** OTA channel manifest URL the mobile apps poll at startup; unset disables OTA updates */
+  readonly MOBILE_OTA_MANIFEST_URL?: string;
 };

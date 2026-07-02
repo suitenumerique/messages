@@ -176,6 +176,42 @@ blob stays in PG.
 | `MESSAGES_BLOBS_ENCRYPT_KEYS` | `{}` | JSON dict mapping `key_id` → entry. Each entry must be `{"algo": "aes-gcm", "secret": "<32+ chars>", "active": <bool>}`. Add `"active": true` to exactly one entry to make it the key new blobs are encrypted with; entries without `active` (or with `active=false`) stay readable for legacy ciphertext. The secret is SHA-256'd to a 32-byte AEAD key, so its strength is whatever entropy the operator supplied — use `openssl rand -base64 32` (or equivalent). Startup emits a warning when a secret is shorter than 32 characters; that floor is a length check only, not an entropy measurement. | Optional |
 | `MESSAGES_BLOBS_VERIFY_HASH` | `False` | When True, `Blob.get_content()` re-hashes plaintext and rejects mismatches. One SHA-256 over the plaintext per read; main value is for `key_id=0` blobs (encrypted blobs are already AAD-bound). | Optional |
 
+### Mobile OTA Bundles
+
+Public (anonymous read) bucket holding the mobile OTA artifacts, one
+self-contained folder per release channel (`channels/<channel>/manifest.json` +
+`channels/<channel>/bundles/<version>.zip`). Created with `make mobile-ota-bucket`;
+bundles are published with `make ota-publish [CHANNEL=…]`. Channels are fully
+independent: `NEXT_PUBLIC_*` vars are inlined into the bundle at build time, so
+each channel ships its own build — never copy a bundle across channels.
+
+Except for `MOBILE_OTA_MANIFEST_URL` (a **backend** setting served to the apps
+through the `/config` endpoint), these are **frontend-toolchain / publish-time**
+variables (read by `src/frontend/scripts/*-ota*.mjs`, not by Django). They live
+in the frontend env files; in CI they come from secrets.
+
+> **Opt-in in dev**: they ship **commented out** in
+> `env.d/development/frontend.defaults` (the values below are the working
+> dev-stack ones) — uncomment them, along with `MOBILE_OTA_MANIFEST_URL` in
+> `backend.local`, to exercise the OTA chain locally.
+> Hot reload (`MOBILE_DEV_SERVER_URL`, on by default in dev) skips the startup
+> OTA check; disable it to test OTA end to end.
+
+| Variable | Default | Description | Required |
+|----------|---------|-------------|----------|
+| `MOBILE_OTA_S3_ENDPOINT` | `http://objectstorage:9000` | S3 endpoint the script **writes** to (compose network in dev; target S3 in CI) | Optional |
+| `MOBILE_OTA_S3_BUCKET` | `messages-ota` | S3 bucket name for OTA bundles | Optional |
+| `MOBILE_OTA_S3_ACCESS_KEY` | `st-messages` | S3 access key | Optional |
+| `MOBILE_OTA_S3_SECRET_KEY` | `password` | S3 secret key | Optional |
+| `MOBILE_OTA_S3_REGION` | `us-east-1` | S3 region | Optional |
+| `MOBILE_OTA_S3_KEY_PREFIX` | `` (empty) | Object key prefix; empty for a dedicated bucket root, `messages/mobileapp/` for a shared bucket. Must stay consistent with `MOBILE_OTA_PUBLIC_BASE_URL` | Optional |
+| `MOBILE_OTA_CHANNEL` | `dev` (dev env) | Release channel `mobile:ota:publish` targets (`channels/<channel>/…`); overridable per run with `--channel` / `make ota-publish CHANNEL=…`. The deploy pipeline uses `staging` and `prod`, each publishing its own build. Must match the channel segment of the `MOBILE_OTA_MANIFEST_URL` served by the backend this deployment's apps talk to | Optional |
+| `MOBILE_OTA_MANIFEST_URL` | None (**backend** env) | OTA channel manifest URL the apps poll at startup, served through the `/config` endpoint — so the followed channel can change without shipping a new native build. Must point to the channel this deployment publishes to. Unset disables OTA | Optional |
+| `MOBILE_OTA_PUBLIC_BASE_URL` | `http://localhost:8906/messages-ota` | Device-reachable **read** base URL written into the manifest | Optional |
+| `MOBILE_OTA_SIGNING_PRIVATE_KEY_B64` | None | Base64-encoded (single-line) RSA private-key PEM signing/encrypting each bundle at publish time (`publish-ota.mjs`). CI secret only — never commit. Unset ⇒ publish fails. See [mobile.md](./mobile.md#generating-the-signing-key-pair) | Optional |
+| `MOBILE_OTA_SIGNING_PUBLIC_KEY_B64` | None | Base64-encoded (single-line) RSA public-key PEM baked into the app at `cap sync` time (`capacitor.config.ts`, native verification) **and** inlined by Vite into the JS bundle (`ota.ts` refuses a server-provided manifest URL on a key-less build). Read by the builds, not the publish scripts — an OTA-enabled build can never apply an unsigned bundle | Required if OTA enabled |
+| `MOBILE_OTA_BUILD_ID` | `<count>-<sha>` (git-derived) | Hybrid release id stamped into the builtin bundle version at `cap sync` (`capacitor.config.ts`) and used as the default OTA `VERSION`. Computed by the Makefile from git; override in CI to pin a build. See [mobile.md](./mobile.md#bundle-versioning) | Optional |
+
 ### Static Files
 
 | Variable | Default | Description | Required |
@@ -242,6 +278,7 @@ _Those settings are deprecated and will be removed in the future._
 |----------|---------|-------------|----------|
 | `MOBILE_APP_ID` | `local.suitenumerique.messages` | Store/OS bundle identifier of the native app. The repo ships a neutral placeholder; an organisation publishing to the App Store / Play Store overrides it with its own signed id. Read by `cap sync` (container) **and** the native builds — gradle `applicationId`, iOS `PRODUCT_BUNDLE_IDENTIFIER` — so it must be exported in **both** the container env and the host/CI env. Independent of the auth callback scheme (`stmessages`). | Optional |
 | `MOBILE_DEV_SERVER_URL` | `http://localhost:8900` (dev env, `frontend.defaults`) | **Dev only.** URL of the Vite dev server baked as Capacitor `server.url` at `cap sync` (`capacitor.config.ts`): the WebView then loads the app from Vite with hot reload instead of the embedded bundle. To disable (embedded bundle / OTA testing), set it **empty** in `frontend.local` and rerun `make mobile-build`. Must never be set for a release build — a gradle guard fails Android release builds carrying it. See [mobile.md](./mobile.md#hot-reload-on-by-default-in-dev) | Optional |
+| `MOBILE_ALLOW_CLEARTEXT_FOR_DEV` | `1` (dev env, `frontend.defaults`) | **Dev only.** Baked as Capacitor `server.cleartext` at `cap sync` (`capacitor.config.ts`), i.e. `android:usesCleartextTraffic` in the Android manifest: allows plain HTTP for the whole app — the WebView reaching the Vite dev server and the native fetch/OTA layer reaching the `http://localhost:8901` backend and the RustFS OTA bucket (needed even with hot reload disabled). Must never be set for a release build — the manifest then stays cleartext-free. iOS equivalent: `NSAllowsLocalNetworking` (`Info.plist`, manual). | Optional |
 
 > **Note**: overriding `MOBILE_APP_ID` only changes the app identity; it does **not** touch the OIDC deep-link scheme (`stmessages`), which is fixed and declared in the iOS `Info.plist` (`CFBundleURLTypes`) and the Android manifest.
 
@@ -339,6 +376,7 @@ The following build-time variables are **deprecated**: they only act as fallback
 | `NEXT_PUBLIC_LAGAUFRE_WIDGET_PATH` | `FRONTEND_LAGAUFRE_WIDGET_CONFIG` (`path` key) |
 | `NEXT_PUBLIC_SENTRY_DSN` | `SENTRY_DSN` |
 | `NEXT_PUBLIC_SENTRY_ENVIRONMENT` | `ENVIRONMENT` (backend environment) |
+| `NEXT_PUBLIC_MOBILE_OTA_MANIFEST_URL` | `MOBILE_OTA_MANIFEST_URL` |
 
 ## Development Tools
 
