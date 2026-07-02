@@ -1,5 +1,40 @@
 import type { CapacitorConfig } from "@capacitor/cli";
 
+// OTA signing public key, per-instance and injected at `cap sync` time from a
+// base64-encoded PEM (single line, so it survives docker env_file / CI secrets).
+// The matching private key signs bundles at publish time (see publish-ota.mjs);
+// baking the public half here lets the native updater verify each downloaded
+// bundle. Unset is only allowed when OTA itself is off (no manifest URL, e.g.
+// a web-only build) — see the guard below.
+const otaPublicKeyB64 = process.env.MOBILE_OTA_SIGNING_PUBLIC_KEY_B64;
+const otaPublicKey = otaPublicKeyB64
+  ? Buffer.from(otaPublicKeyB64, "base64").toString("utf8")
+  : undefined;
+
+// An OTA-enabled app without a baked-in verification key would apply any
+// unsigned bundle from the world-readable bucket — refuse to build. Publishing
+// already requires the private half (publish-ota.mjs), so a key-less OTA build
+// could never receive a legitimate update anyway. This sync-time guard only
+// sees the deprecated baked manifest URL: the nominal path (URL served by the
+// backend MOBILE_OTA_MANIFEST_URL setting through /config) is covered by the
+// equivalent runtime refusal in src/features/native/ota.ts.
+if (process.env.NEXT_PUBLIC_MOBILE_OTA_MANIFEST_URL && !otaPublicKey) {
+  throw new Error(
+    "NEXT_PUBLIC_MOBILE_OTA_MANIFEST_URL is set but " +
+      "MOBILE_OTA_SIGNING_PUBLIC_KEY_B64 is missing: an OTA-enabled build " +
+      "must embed the signing public key (run `make mobile-ota-keygen`, see " +
+      "env.d/development/frontend.defaults).",
+  );
+}
+
+// Release id stamped into the *builtin* bundle so a fresh store install reports
+// the same version an OTA manifest advertises — otherwise the builtin reports
+// the literal "builtin" and the first launch always re-downloads (see
+// docs/mobile.md, "Bundle versioning"). Derived from git at build time
+// (Makefile MOBILE_OTA_BUILD_ID); unset (e.g. web-only build) ⇒ the plugin falls back
+// to the native versionName.
+const otaBuildId = process.env.MOBILE_OTA_BUILD_ID;
+
 // Dev-only hot reload: when set, the WebView loads the app straight from the
 // Vite dev server instead of the embedded dist/, so JS/CSS changes apply
 // through HMR without rebuilding or reinstalling the app. Set by default in
@@ -19,8 +54,15 @@ const config: CapacitorConfig = {
   appName: "Messages",
   webDir: "dist",
   server: {
-    // Dev only: allows the Android WebView to reach http://localhost:8901.
-    cleartext: true,
+    // Dev only: `cap sync` turns this into android:usesCleartextTraffic in the
+    // Android manifest, allowing plain HTTP for the whole app process — the
+    // WebView loading the Vite dev server as well as the native HTTP layer
+    // reaching the http://localhost:8901 backend and the RustFS OTA bucket
+    // (needed even with hot reload disabled, hence the dedicated flag). Unset
+    // for release builds: the manifest then stays cleartext-free.
+    cleartext: Boolean(
+      devServerUrl || process.env.MOBILE_ALLOW_CLEARTEXT_FOR_DEV,
+    ),
     ...(devServerUrl ? { url: devServerUrl } : {}),
   },
   plugins: {
@@ -42,6 +84,18 @@ const config: CapacitorConfig = {
     // resolves natively there.
     SystemBars: {
         insetsHandling: "disable",
+    },
+    // OTA live updates driven entirely from JS against an S3-hosted manifest
+    // (see src/features/native/ota.ts). autoUpdate is off so the plugin never
+    // talks to a Capgo server: we only use its native download/set/reload.
+    CapacitorUpdater: {
+      autoUpdate: false,
+      resetWhenUpdate: true,
+      // Verify each OTA bundle against the per-instance signing key (v2, RSA+AES).
+      ...(otaPublicKey ? { publicKey: otaPublicKey } : {}),
+      // Report this id (not "builtin") for the shipped bundle, so the OTA
+      // freshness check can match a manifest published from the same commit.
+      ...(otaBuildId ? { version: otaBuildId } : {}),
     },
   },
 };

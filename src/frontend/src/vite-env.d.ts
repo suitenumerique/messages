@@ -30,6 +30,15 @@ interface ImportMetaEnv {
   readonly NEXT_PUBLIC_SENTRY_DSN?: string;
   /** @deprecated the frontend now uses the backend ENVIRONMENT */
   readonly NEXT_PUBLIC_SENTRY_ENVIRONMENT?: string;
+  /** @deprecated use the MOBILE_OTA_MANIFEST_URL backend setting */
+  readonly NEXT_PUBLIC_MOBILE_OTA_MANIFEST_URL?: string;
+  // Mobile hot reload: Vite dev server URL baked as the WebView's server.url
+  // (capacitor.config.ts). Exposed so ota.ts can skip OTA during such a session.
+  readonly MOBILE_DEV_SERVER_URL?: string;
+  // OTA bundle-verification public key, also baked natively at `cap sync`
+  // (capacitor.config.ts). Exposed so ota.ts can refuse a server-provided
+  // manifest URL on a build that embeds no key.
+  readonly MOBILE_OTA_SIGNING_PUBLIC_KEY_B64?: string;
 }
 
 interface ImportMeta {

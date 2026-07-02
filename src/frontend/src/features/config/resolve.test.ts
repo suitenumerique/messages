@@ -41,6 +41,8 @@ const API_CONFIG = {
     api_url: "https://lagaufre.example.com",
     path: "https://lagaufre.example.com/static/",
   },
+  MOBILE_OTA_MANIFEST_URL:
+    "https://static.example.com/ota/channels/prod/manifest.json",
 } as unknown as ConfigRetrieve200;
 
 // The module keeps a warn-once registry, so each test imports a fresh copy.
@@ -55,6 +57,10 @@ describe("resolveConfig", () => {
 
   it("uses API values first and normalizes languages to BCP 47", async () => {
     vi.stubEnv("NEXT_PUBLIC_HELP_CENTER_URL", "https://deprecated.example.com");
+    vi.stubEnv(
+      "NEXT_PUBLIC_MOBILE_OTA_MANIFEST_URL",
+      "https://deprecated.example.com/manifest.json",
+    );
     const { resolveConfig } = await importResolve();
 
     const config = resolveConfig(API_CONFIG);
@@ -74,6 +80,9 @@ describe("resolveConfig", () => {
     expect(config.HELP_CENTER_URL).toBe("https://help.example.com");
     expect(config.FEEDBACK_WIDGET.channel).toBe("support");
     expect(config.LAGAUFRE_WIDGET.api_url).toBe("https://lagaufre.example.com");
+    expect(config.MOBILE_OTA_MANIFEST_URL).toBe(
+      "https://static.example.com/ota/channels/prod/manifest.json",
+    );
   });
 
   it("falls back on deprecated env vars when the API is unreachable", async () => {
@@ -87,6 +96,10 @@ describe("resolveConfig", () => {
     vi.stubEnv("NEXT_PUBLIC_MULTIPART_UPLOAD_CHUNK_SIZE", "50");
     vi.stubEnv("NEXT_PUBLIC_HELP_CENTER_URL", "https://help.example.com");
     vi.stubEnv("NEXT_PUBLIC_FEEDBACK_WIDGET_CHANNEL", "support");
+    vi.stubEnv(
+      "NEXT_PUBLIC_MOBILE_OTA_MANIFEST_URL",
+      "http://localhost:8906/messages-ota/channels/dev/manifest.json",
+    );
     const { resolveConfig } = await importResolve();
 
     const config = resolveConfig(undefined);
@@ -100,6 +113,9 @@ describe("resolveConfig", () => {
     expect(config.MULTIPART_UPLOAD_CHUNK_SIZE_MB).toBe(50);
     expect(config.HELP_CENTER_URL).toBe("https://help.example.com");
     expect(config.FEEDBACK_WIDGET.channel).toBe("support");
+    expect(config.MOBILE_OTA_MANIFEST_URL).toBe(
+      "http://localhost:8906/messages-ota/channels/dev/manifest.json",
+    );
     expect(warn).toHaveBeenCalledWith(
       expect.stringContaining("NEXT_PUBLIC_THEME_CONFIG is deprecated"),
     );
@@ -162,6 +178,7 @@ describe("resolveConfig", () => {
     expect(config.MULTIPART_UPLOAD_CHUNK_SIZE_MB).toBe(100);
     expect(config.HELP_CENTER_URL).toBeUndefined();
     expect(config.FEEDBACK_WIDGET).toEqual({});
+    expect(config.MOBILE_OTA_MANIFEST_URL).toBeUndefined();
     expect(config.RELEASE).toBe("NA");
   });
 

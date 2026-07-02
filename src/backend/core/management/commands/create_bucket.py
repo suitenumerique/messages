@@ -1,5 +1,7 @@
 """Management command to create storage buckets and configure lifecycle rules."""
 
+import json
+
 from django.core.files.storage import storages
 from django.core.management.base import BaseCommand
 
@@ -23,6 +25,11 @@ class Command(BaseCommand):
             type=int,
             default=0,
             help="Auto-expire objects after this many days (0 = no expiration)",
+        )
+        parser.add_argument(
+            "--public",
+            action="store_true",
+            help="Grant anonymous read access to all objects (public bucket)",
         )
 
     def handle(self, *args, **options):
@@ -58,4 +65,28 @@ class Command(BaseCommand):
                 self.style.SUCCESS(
                     f"Lifecycle rule set: objects expire after {expire_days} day(s)."
                 )
+            )
+
+        # Grant anonymous read access (e.g. mobile OTA bundles served directly
+        # from the bucket). Only intended for non-sensitive, public artifacts.
+        if options["public"]:
+            s3_client.put_bucket_policy(
+                Bucket=bucket,
+                Policy=json.dumps(
+                    {
+                        "Version": "2012-10-17",
+                        "Statement": [
+                            {
+                                "Sid": "PublicRead",
+                                "Effect": "Allow",
+                                "Principal": "*",
+                                "Action": "s3:GetObject",
+                                "Resource": f"arn:aws:s3:::{bucket}/*",
+                            }
+                        ],
+                    }
+                ),
+            )
+            self.stdout.write(
+                self.style.SUCCESS(f"Bucket '{bucket}' is now publicly readable.")
             )

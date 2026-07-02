@@ -10,6 +10,7 @@ import { initI18n } from "@/features/i18n/initI18n";
 import { installThemeFavicons } from "@/features/providers/theme-favicons";
 import { initSentry } from "@/features/sentry";
 import { handle } from '@/features/utils/errors';
+import { checkAndApplyOtaUpdate, notifyOtaAppReady } from "./features/native/ota";
 
 // Tag the document on the Capacitor native app so the stylesheet can opt into
 // mobile-only chrome (compact header, floating bottom bars) without each
@@ -68,6 +69,9 @@ export const bootstrap = async () => {
     }
 
     const config = resolveConfig(response?.data);
+    // Fire-and-forget: a pending update reloads the WebView once downloaded;
+    // until then the current bundle renders normally.
+    void checkAndApplyOtaUpdate(config.MOBILE_OTA_MANIFEST_URL);
     initSentry(config);
     initI18n(config);
     installThemeFavicons(config.THEME_CONFIG.theme);
@@ -81,5 +85,8 @@ export const bootstrap = async () => {
     handle(error);
     container.innerHTML =
       "<p>Something went wrong while starting the application. Please try again later.</p>";
+    return;
   }
+
+  void notifyOtaAppReady();
 };

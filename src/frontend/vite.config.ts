@@ -60,7 +60,15 @@ export default defineConfig({
   // build-time env vars left are NEXT_PUBLIC_API_ORIGIN and the deprecated
   // NEXT_PUBLIC_* fallbacks (see features/config/resolve.ts). envPrefix tells
   // Vite which env vars to expose to client code at build time.
-  envPrefix: 'NEXT_PUBLIC_',
+  // MOBILE_DEV_SERVER_URL (exact-name "prefix") lets ota.ts detect a mobile
+  // hot reload session (see capacitor.config.ts) and skip the OTA check there.
+  // MOBILE_OTA_SIGNING_PUBLIC_KEY_B64 (public key, safe to inline) lets ota.ts
+  // refuse a server-provided manifest URL on a build that can't verify bundles.
+  envPrefix: [
+    'NEXT_PUBLIC_',
+    'MOBILE_DEV_SERVER_URL',
+    'MOBILE_OTA_SIGNING_PUBLIC_KEY_B64',
+  ],
   build: {
     outDir: 'dist',
     sourcemap: false,
