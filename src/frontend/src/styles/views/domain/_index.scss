@@ -94,7 +94,7 @@
   }
 }
 
-@media (max-width: 768px) {
+@media (max-width: breakpoint("mobile")) {
   .admin-page {
     padding: var(--c--globals--spacings--sm);
 

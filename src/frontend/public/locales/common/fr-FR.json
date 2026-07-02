@@ -474,6 +474,7 @@
   "Failed to delete integration.": "Erreur lors de la suppression de l'intégration.",
   "Failed to delete signature.": "Erreur lors de la suppression de la signature.",
   "Failed to delete template.": "Erreur lors de la suppression du modèle.",
+  "Failed to download {{name}}.": "Échec du téléchargement de {{name}}.",
   "Failed to load auto-reply. Please try again.": "Impossible de charger la réponse automatique. Veuillez réessayer.",
   "Failed to load calendar invite": "Impossible de charger l'invitation calendrier",
   "Failed to load signature. Please try again.": "Impossible de charger la signature. Veuillez réessayer.",

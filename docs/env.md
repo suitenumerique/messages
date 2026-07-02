@@ -236,6 +236,15 @@ _Those settings are deprecated and will be removed in the future._
 | `LOGOUT_REDIRECT_URL` | `http://localhost:8900` | Post-logout redirect URL | Optional |
 | `ALLOW_LOGOUT_GET_METHOD` | `True` | Allow GET method for logout | Optional |
 
+### Mobile App Build (Capacitor)
+
+| Variable | Default | Description | Required |
+|----------|---------|-------------|----------|
+| `MOBILE_APP_ID` | `local.suitenumerique.messages` | Store/OS bundle identifier of the native app. The repo ships a neutral placeholder; an organisation publishing to the App Store / Play Store overrides it with its own signed id. Read by `cap sync` (container) **and** the native builds — gradle `applicationId`, iOS `PRODUCT_BUNDLE_IDENTIFIER` — so it must be exported in **both** the container env and the host/CI env. Independent of the auth callback scheme (`stmessages`). | Optional |
+| `MOBILE_DEV_SERVER_URL` | `http://localhost:8900` (dev env, `frontend.defaults`) | **Dev only.** URL of the Vite dev server baked as Capacitor `server.url` at `cap sync` (`capacitor.config.ts`): the WebView then loads the app from Vite with hot reload instead of the embedded bundle. To disable (embedded bundle / OTA testing), set it **empty** in `frontend.local` and rerun `make mobile-build`. Must never be set for a release build — a gradle guard fails Android release builds carrying it. See [mobile.md](./mobile.md#hot-reload-on-by-default-in-dev) | Optional |
+
+> **Note**: overriding `MOBILE_APP_ID` only changes the app identity; it does **not** touch the OIDC deep-link scheme (`stmessages`), which is fixed and declared in the iOS `Info.plist` (`CFBundleURLTypes`) and the Android manifest.
+
 ### Mobile App Authentication (Capacitor)
 
 | Variable | Default | Description | Required |

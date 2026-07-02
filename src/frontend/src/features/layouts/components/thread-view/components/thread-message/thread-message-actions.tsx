@@ -4,6 +4,8 @@ import { Button, Tooltip, useModals } from "@gouvfr-lasuite/cunningham-react";
 import { DropdownMenu, Icon, IconType } from "@gouvfr-lasuite/ui-kit";
 import { getMessagesEmlRetrieveUrl } from "@/features/api/gen/messages/messages";
 import { getRequestUrl } from "@/features/api/utils";
+import { isNativePlatform } from "@/features/native/platform";
+import { useNativeDownload } from "@/features/native/use-native-download";
 import { useMailboxContext } from "@/features/providers/mailbox";
 import usePrint from "@/features/message/use-print";
 import useRead from "@/features/message/use-read";
@@ -34,6 +36,7 @@ const ThreadMessageActions = ({
     const { splitThread } = useSplitThread();
     const { print } = usePrint();
     const modals = useModals();
+    const downloadNatively = useNativeDownload();
     const isThreadSplitEnabled = useFeatureFlag(FEATURE_KEYS.THREAD_SPLIT);
     // Full edit rights on the thread — required for reply/forward/delete/split.
     // Mark read/unread, print and download are either read-only
@@ -88,15 +91,22 @@ const ThreadMessageActions = ({
         splitThread({ threadId: selectedThread.id, messageId: message.id });
     }, [selectedThread, splitThread, message.id, t, modals]);
 
-    const handleDownloadRawEmail = useCallback(() => {
+    const handleDownloadRawEmail = useCallback(async () => {
         const downloadUrl = getRequestUrl(getMessagesEmlRetrieveUrl(message.id));
+        const filename = `message-${message.id}.eml`;
+        // Native shell: an <a download> escapes the WebView to the system
+        // browser (no session → 401), so fetch through the native HTTP layer.
+        if (isNativePlatform()) {
+            await downloadNatively(downloadUrl, filename);
+            return;
+        }
         const link = document.createElement('a');
         link.href = downloadUrl;
-        link.download = `message-${message.id}.eml`;
+        link.download = filename;
         document.body.appendChild(link);
         link.click();
         document.body.removeChild(link);
-    }, [message.id]);
+    }, [message.id, downloadNatively]);
 
     const dropdownOptions = [
         ...(canReply && hasSeveralRecipients ? [{

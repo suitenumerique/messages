@@ -1,0 +1,95 @@
+// Based on the Capacitor android-template (scaffolded by `cap add android`,
+// never regenerated) — keep divergences from upstream minimal.
+apply plugin: 'com.android.application'
+
+android {
+    // namespace is the fixed Java/R package (an internal detail, never published);
+    // it stays neutral in the repo. The store identity is applicationId below.
+    namespace = "local.suitenumerique.messages"
+    compileSdk = rootProject.ext.compileSdkVersion
+    defaultConfig {
+        // Store/OS identity. Neutral placeholder by default; an organisation
+        // publishing the app overrides it at build time with its own signed id
+        // via MOBILE_APP_ID (kept out of this open-source repo). It may differ
+        // from the namespace above.
+        applicationId System.getenv("MOBILE_APP_ID") ?: "local.suitenumerique.messages"
+        minSdkVersion rootProject.ext.minSdkVersion
+        targetSdkVersion rootProject.ext.targetSdkVersion
+        versionCode 1
+        versionName "1.0"
+        testInstrumentationRunner "androidx.test.runner.AndroidJUnitRunner"
+        aaptOptions {
+             // Files and dirs to omit from the packaged assets dir, modified to accommodate modern web apps.
+             // Default: https://android.googlesource.com/platform/frameworks/base/+/282e181b58cf72b6ca770dc7ca5f91f135444502/tools/aapt/AaptAssets.cpp#61
+            ignoreAssetsPattern = '!.svn:!.git:!.ds_store:!*.scc:.*:!CVS:!thumbs.db:!picasa.ini:!*~'
+        }
+    }
+    buildTypes {
+        release {
+            minifyEnabled false
+            proguardFiles getDefaultProguardFile('proguard-android.txt'), 'proguard-rules.pro'
+        }
+    }
+    buildFeatures {
+        // AGP 8 stopped generating BuildConfig by default; the instrumented
+        // test asserts against BuildConfig.APPLICATION_ID to follow the
+        // MOBILE_APP_ID override above.
+        buildConfig = true
+    }
+}
+
+// A dev `cap sync` bakes dev-only settings into assets/capacitor.config.json:
+// server.url (hot reload, MOBILE_DEV_SERVER_URL) would ship an app that loads
+// localhost, and server.cleartext (MOBILE_ALLOW_CLEARTEXT_FOR_DEV) would ship
+// android:usesCleartextTraffic="true" through the generated cordova-plugins
+// manifest. Fail release builds early instead of letting such a config through.
+tasks.configureEach { task ->
+    if (task.name == 'preReleaseBuild') {
+        task.doFirst {
+            def capConfig = file('src/main/assets/capacitor.config.json')
+            def server = capConfig.exists()
+                    ? new groovy.json.JsonSlurper().parse(capConfig)?.server
+                    : null
+            if (server?.url) {
+                throw new GradleException(
+                    "capacitor.config.json contains a dev server.url (hot reload). " +
+                    "Rerun a bare 'make mobile-build' before building a release.")
+            }
+            if (server?.cleartext) {
+                throw new GradleException(
+                    "capacitor.config.json allows cleartext traffic " +
+                    "(MOBILE_ALLOW_CLEARTEXT_FOR_DEV). " +
+                    "Rerun a bare 'make mobile-build' before building a release.")
+            }
+        }
+    }
+}
+
+repositories {
+    flatDir{
+        dirs '../capacitor-cordova-android-plugins/src/main/libs', 'libs'
+    }
+}
+
+dependencies {
+    implementation fileTree(include: ['*.jar'], dir: 'libs')
+    implementation "androidx.appcompat:appcompat:$androidxAppCompatVersion"
+    implementation "androidx.coordinatorlayout:coordinatorlayout:$androidxCoordinatorLayoutVersion"
+    implementation "androidx.core:core-splashscreen:$coreSplashScreenVersion"
+    implementation project(':capacitor-android')
+    testImplementation "junit:junit:$junitVersion"
+    androidTestImplementation "androidx.test.ext:junit:$androidxJunitVersion"
+    androidTestImplementation "androidx.test.espresso:espresso-core:$androidxEspressoCoreVersion"
+    implementation project(':capacitor-cordova-android-plugins')
+}
+
+apply from: 'capacitor.build.gradle'
+
+try {
+    def servicesJSON = file('google-services.json')
+    if (servicesJSON.text) {
+        apply plugin: 'com.google.gms.google-services'
+    }
+} catch(Exception e) {
+    logger.info("google-services.json not found, google-services plugin not applied. Push Notifications won't work")
+}
