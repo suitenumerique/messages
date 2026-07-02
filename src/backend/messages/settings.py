@@ -1000,6 +1000,16 @@ class Base(Configuration):
     SESSION_CACHE_ALIAS = "default"
     SESSION_COOKIE_AGE = 60 * 60 * 12
 
+    # Keep the CSRF secret in the server-side session instead of a readable
+    # `csrftoken` cookie. The SPA reads its token from the authenticated
+    # /users/me/ response, and the native shell from the session exchange — both
+    # echo it in the X-CSRFToken header, validated against the session secret.
+    # The native HTTP jar (CapacitorHttp) replays the session cookie reliably
+    # but not the csrf cookie, so this is what makes mobile mutations work; on
+    # web it is equivalent-or-safer (secret no longer JS-readable, immune to
+    # cross-subdomain cookie tossing).
+    CSRF_USE_SESSIONS = True
+
     # OIDC - Authorization Code Flow
     OIDC_CREATE_USER = values.BooleanValue(
         default=False, environ_name="OIDC_CREATE_USER", environ_prefix=None
