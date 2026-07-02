@@ -228,6 +228,38 @@ services:
     extends: frontend-tools
     platform: linux/amd64
 
+  # Mobile (Capacitor) web build: like frontend-tools but with the env_file, so
+  # the NEXT_PUBLIC_* vars Vite inlines at build time are present (frontend-tools
+  # has none). The native projects (android/, ios/) are written back to the host
+  # through the mount; the native compile (gradle/xcode) stays a host step.
+  frontend-mobile:
+    extends: frontend-base
+    profiles:
+      - frontend-tools
+    # Run in the root group and register the (arbitrary) host uid in /etc/passwd
+    # before exec'ing the command, so the Capacitor CLI's os.userInfo() call does
+    # not throw ENOENT under musl. See the chmod in src/frontend/Dockerfile.
+    # Use DOCKER_UID (uid only) and not DOCKER_USER (uid:gid): appending ":0" to
+    # the latter yields a malformed "uid:gid:0" spec that drops the root group,
+    # leaving /etc/passwd read-only and breaking the registration above.
+    user: "${DOCKER_UID:-1000}:0"
+    entrypoint:
+      - /bin/sh
+      - -c
+      - 'grep -q ":x:$$(id -u):" /etc/passwd || echo "builder:x:$$(id -u):0::/home/frontend:/bin/sh" >> /etc/passwd; exec "$$@"'
+      - --
+    # The Capacitor CLI writes its config under $HOME/.config. HOME is unset for
+    # the arbitrary uid, so it falls back to "/" and fails with EACCES on
+    # mkdir /.config. Point it at a writable, non-mounted path (keeps the CLI's
+    # throwaway config out of the bind-mounted repo).
+    environment:
+      HOME: /tmp
+    env_file:
+      - env.d/development/frontend.defaults
+      - env.d/development/frontend.local
+    volumes:
+      - ./src/frontend/:/home/frontend/
+
   crowdin:
     image: crowdin/cli:4.11.0
     volumes:

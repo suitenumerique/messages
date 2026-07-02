@@ -9,6 +9,12 @@ WORKDIR /home/frontend/
 
 RUN mkdir -p /tmp/npm-cache && chown -R ${DOCKER_USER} /tmp/npm-cache /home/frontend
 
+# Let a process running with an arbitrary uid (the host uid on bind mounts) and
+# group root register itself in /etc/passwd at runtime. The Capacitor CLI calls
+# os.userInfo(), which throws ENOENT under musl when the uid has no passwd entry
+# (see the frontend-mobile entrypoint in compose.yaml). Harmless otherwise.
+RUN chmod g=u /etc/passwd
+
 # Install deps and run all npm commands as the user running the container
 USER ${DOCKER_USER}
 COPY --chown=${DOCKER_USER} package*.json ./

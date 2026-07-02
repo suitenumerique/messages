@@ -23,12 +23,20 @@
     "prets:check": "npm run routes:generate",
     "ts:check": "tsc --noEmit",
     "i18n:extract": "i18next-cli extract",
-    "analyze": "ANALYZE=1 vite build && node ./scripts/print-bundle-stats.mjs"
+    "analyze": "ANALYZE=1 vite build && node ./scripts/print-bundle-stats.mjs",
+    "mobile:build": "npm run build && npx cap sync",
+    "mobile:assets": "capacitor-assets generate --ios --android --pwa --iconBackgroundColor '#ffffff' --iconBackgroundColorDark '#161B28' --splashBackgroundColor '#ffffff' --splashBackgroundColorDark '#161B28'"
   },
   "dependencies": {
     "@blocknote/core": "0.51.4",
     "@blocknote/mantine": "0.51.4",
     "@blocknote/react": "0.51.4",
+    "@capacitor/app": "8.1.0",
+    "@capacitor/browser": "8.0.3",
+    "@capacitor/core": "8.4.0",
+    "@capacitor/filesystem": "8.1.2",
+    "@capacitor/share": "8.0.1",
+    "@capgo/capacitor-updater": "8.50.1",
     "@gouvfr-lasuite/cunningham-react": "4.3.0",
     "@gouvfr-lasuite/drive-sdk": "0.0.2",
     "@gouvfr-lasuite/ui-kit": "0.23.2",
@@ -60,6 +68,12 @@
     "zod-from-json-schema": "0.5.2"
   },
   "devDependencies": {
+    "@aws-sdk/client-s3": "3.1077.0",
+    "@capacitor/android": "8.4.0",
+    "@capacitor/assets": "3.0.5",
+    "@capacitor/cli": "8.4.0",
+    "@capacitor/ios": "8.4.0",
+    "@capgo/cli": "8.24.0",
     "@tanstack/eslint-plugin-query": "5.91.4",
     "@tanstack/router-cli": "1.167.13",
     "@tanstack/router-plugin": "1.168.11",

@@ -24,7 +24,7 @@ BLUE := \033[1;34m
 DOCKER_UID          = $(shell id -u)
 DOCKER_GID          = $(shell id -g)
 DOCKER_USER         = $(DOCKER_UID):$(DOCKER_GID)
-COMPOSE             = DOCKER_USER=$(DOCKER_USER) docker compose
+COMPOSE             = DOCKER_USER=$(DOCKER_USER) DOCKER_UID=$(DOCKER_UID) docker compose
 COMPOSE_E2E         = DOCKER_USER=$(DOCKER_USER) docker compose -f src/e2e/compose.yaml
 COMPOSE_EXEC        = $(COMPOSE) exec
 COMPOSE_EXEC_APP    = $(COMPOSE_EXEC) backend-dev
@@ -608,6 +608,57 @@ install-frozen-front-amd64: ## install the frontend locally, following the froze
 build-front: ## build the frontend locally
 	@$(COMPOSE) run --rm --build frontend-tools npm run build
 .PHONY: build-front
+
+# Mobile (Capacitor). The web bundle is built in a container (frontend-mobile,
+# which carries the env_file so the NEXT_PUBLIC_* vars are inlined) and synced
+# into the native projects. The sync (not a bare copy) also regenerates the
+# gitignored capacitor-cordova-android-plugins/ scaffolding that Gradle needs,
+# so always run `make mobile-build` after a fresh checkout. The native compile /
+# IDE / device steps are macOS- and SDK-bound, so they stay on the host.
+#
+# Hot reload: MOBILE_DEV_SERVER_URL (frontend env files, set by default in dev)
+# is baked as the WebView's server.url at `cap sync` — see docs/mobile.md.
+mobile-build: ## build the web bundle and sync it + native plugins into the projects (container, env-aware)
+	@$(COMPOSE) run --rm --build frontend-mobile npm run mobile:build
+.PHONY: mobile-build
+
+# Regenerate the native app icons and splashscreens from src/frontend/assets/
+# (icon-only/icon-foreground/logo PNGs). Idempotent; run it after changing the
+# source assets, then commit the regenerated android/ and ios/ resources.
+mobile-assets: ## (re)generate native app icons & splashscreens (container)
+	@$(COMPOSE) run --rm --build frontend-mobile npm run mobile:assets
+.PHONY: mobile-assets
+
+mobile-android: mobile-build ## build the bundle (container) then open the Android project in Android Studio (host)
+	@if command -v studio.sh >/dev/null 2>&1; then studio.sh src/frontend/android; \
+	elif command -v android-studio >/dev/null 2>&1; then android-studio src/frontend/android; \
+	elif [ "$$(uname)" = "Darwin" ]; then open -a "Android Studio" src/frontend/android; \
+	else echo "Android Studio introuvable : ouvre src/frontend/android manuellement." && exit 1; fi
+.PHONY: mobile-android
+
+mobile-ios: mobile-build ## build the bundle (container) then open the iOS project in Xcode (host, macOS)
+	@open src/frontend/ios/App/App.xcodeproj
+.PHONY: mobile-ios
+
+# adb/gradlew drive the Android SDK and a USB-attached device, so — unlike the
+# web build — they run on the HOST, not in a container (same as mobile-android
+# above). We call them directly (never `npm run …`, which is container-only
+# here), so this Makefile is the single source of truth for the port list and
+# the gradle task.
+# Ports the in-app WebView reaches through the device→host adb tunnel:
+# 8900 dev frontend, 8901 backend, 8902 Keycloak.
+ANDROID_REVERSE_PORTS = 8900 8901 8902
+ANDROID_DEBUG_APK = src/frontend/android/app/build/outputs/apk/debug/app-debug.apk
+
+mobile-android-reverse: ## (host) map device ports to the dev stack via adb reverse
+	@$(foreach port,$(ANDROID_REVERSE_PORTS),adb reverse tcp:$(port) tcp:$(port);)
+.PHONY: mobile-android-reverse
+
+mobile-android-run: mobile-build ## (host) build+install the debug APK on a device then adb reverse
+	@cd src/frontend/android && ./gradlew assembleDebug
+	@adb install -r $(ANDROID_DEBUG_APK)
+	@$(MAKE) mobile-android-reverse
+.PHONY: mobile-android-run
 
 i18n-generate-front: ## Extract the frontend translation inside a json to be used for crowdin
 	@$(COMPOSE) run --rm --build frontend-tools npm run i18n:extract

@@ -399,6 +399,7 @@
   "Failed to delete integration.": "Failed to delete integration.",
   "Failed to delete signature.": "Failed to delete signature.",
   "Failed to delete template.": "Failed to delete template.",
+  "Failed to download {{name}}.": "Failed to download {{name}}.",
   "Failed to load auto-reply. Please try again.": "Failed to load auto-reply. Please try again.",
   "Failed to load calendar invite": "Failed to load calendar invite",
   "Failed to load signature. Please try again.": "Failed to load signature. Please try again.",

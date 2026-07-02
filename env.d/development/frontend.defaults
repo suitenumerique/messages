@@ -1,3 +1,35 @@
 # The API origin is the only build-time variable left: it is needed to reach
 # the backend /config endpoint that provides the rest of the configuration.
 NEXT_PUBLIC_API_ORIGIN=http://localhost:8901
+NEXT_PUBLIC_FEEDBACK_WIDGET_API_URL=
+NEXT_PUBLIC_FEEDBACK_WIDGET_PATH=
+NEXT_PUBLIC_FEEDBACK_WIDGET_CHANNEL=
+NEXT_PUBLIC_FEEDBACK_WIDGET_HOME_CHANNEL=
+NEXT_PUBLIC_HELP_CENTER_URL=
+NEXT_PUBLIC_LANGUAGES=[["en-US","English"],["fr-FR","Français"],["nl-NL","Nederlands"]]
+NEXT_PUBLIC_DEFAULT_LANGUAGE=en-US
+## Chunk size for multipart upload in MB
+NEXT_PUBLIC_MULTIPART_UPLOAD_CHUNK_SIZE=100
+
+## Sentry
+NEXT_PUBLIC_SENTRY_DSN=
+NEXT_PUBLIC_SENTRY_ENVIRONMENT=
+
+## Theme Customization
+NEXT_PUBLIC_THEME_CONFIG='{
+    "theme": "white-label"
+}'
+
+## Mobile app build identity (Capacitor). Neutral placeholder shared by the repo;
+## read by `cap sync` (container) and by the native builds (host: gradle / Xcode).
+## An organisation publishing to the stores overrides it — in BOTH contexts — with
+## its own signed bundle id, which never lands in this open-source repo.
+MOBILE_APP_ID=local.suitenumerique.messages
+
+## Mobile hot reload (Capacitor). Baked as the WebView's server.url at
+## `cap sync` (capacitor.config.ts): the app loads the JS straight from the
+## Vite dev server — changes apply through HMR, no rebuild/reinstall. The
+## device reaches localhost:8900 via adb reverse (Android) or the simulator
+## loopback (iOS). To disable (embedded bundle, e.g. before a release build),
+## set it EMPTY in frontend.local: MOBILE_DEV_SERVER_URL=
+MOBILE_DEV_SERVER_URL=http://localhost:8900
