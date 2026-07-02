@@ -185,6 +185,31 @@ shell-objectstorage: ## open a shell in the objectstorage container
 	@$(COMPOSE) run --rm --build objectstorage bash
 .PHONY: shell-objectstorage
 
+# Generate a per-instance OTA signing key pair. Prints the base64 PEMs to stdout:
+# MOBILE_OTA_SIGNING_PUBLIC_KEY_B64 (baked into the app) + MOBILE_OTA_SIGNING_PRIVATE_KEY_B64
+# (publish secret). Each deployment runs it once; the private half is a CI secret,
+# never committed. No object storage needed — pure key generation.
+mobile-ota-keygen: ## generate a per-instance OTA signing key pair (base64 PEMs)
+	@$(COMPOSE_RUN) --no-deps frontend-mobile npm run --silent mobile:ota:keygen
+.PHONY: mobile-ota-keygen
+
+mobile-ota-bucket: ## create the public mobile OTA bucket in objectstorage
+	@$(COMPOSE) up -d objectstorage --wait
+	@$(COMPOSE_RUN) frontend-mobile npm run mobile:ota:bucket
+.PHONY: mobile-ota-bucket
+
+# Build the web bundle in the env-aware container (dist lands on the host via the
+# bind mount), then zip + upload it and the channel manifest to the public
+# bucket. Both steps run in the frontend toolchain: the OTA release is a
+# frontend artifact, Django is not involved. VERSION defaults to the git-derived
+# MOBILE_OTA_BUILD_ID (the hybrid <count>-<sha> id); override it to pin a specific
+# release. CHANNEL defaults to the MOBILE_OTA_CHANNEL env var (frontend env files).
+ota-publish: VERSION ?= $(MOBILE_OTA_BUILD_ID)
+ota-publish: ## build and publish a mobile OTA bundle (VERSION defaults to <count>-<sha>, CHANNEL to MOBILE_OTA_CHANNEL)
+	@$(COMPOSE) up -d objectstorage --wait
+	@$(COMPOSE_RUN) frontend-mobile sh -c "npm run build && npm run mobile:ota:publish -- --version $(VERSION)$(if $(CHANNEL), --channel $(CHANNEL))"
+.PHONY: ota-publish
+
 # -- Linters
 
 lint: ## run all linters
@@ -609,17 +634,25 @@ build-front: ## build the frontend locally
 	@$(COMPOSE) run --rm --build frontend-tools npm run build
 .PHONY: build-front
 
+# Hybrid OTA/build version: a monotonic commit count (for ordering — enables a
+# future downgrade check) plus the short SHA (for traceability). Computed on the
+# HOST (git is not in the container) and injected; CI may override it.
+MOBILE_OTA_BUILD_ID ?= $(shell git rev-list --count HEAD)-$(shell git rev-parse --short HEAD)
+
 # Mobile (Capacitor). The web bundle is built in a container (frontend-mobile,
 # which carries the env_file so the NEXT_PUBLIC_* vars are inlined) and synced
 # into the native projects. The sync (not a bare copy) also regenerates the
 # gitignored capacitor-cordova-android-plugins/ scaffolding that Gradle needs,
 # so always run `make mobile-build` after a fresh checkout. The native compile /
 # IDE / device steps are macOS- and SDK-bound, so they stay on the host.
+# MOBILE_OTA_BUILD_ID is passed so `cap sync` stamps it as the builtin bundle version
+# (capacitor.config.ts), letting the OTA freshness check match a same-commit
+# manifest instead of re-downloading on first launch.
 #
 # Hot reload: MOBILE_DEV_SERVER_URL (frontend env files, set by default in dev)
 # is baked as the WebView's server.url at `cap sync` — see docs/mobile.md.
 mobile-build: ## build the web bundle and sync it + native plugins into the projects (container, env-aware)
-	@$(COMPOSE) run --rm --build frontend-mobile npm run mobile:build
+	@$(COMPOSE) run --rm --build -e MOBILE_OTA_BUILD_ID=$(MOBILE_OTA_BUILD_ID) frontend-mobile npm run mobile:build
 .PHONY: mobile-build
 
 # Regenerate the native app icons and splashscreens from src/frontend/assets/
@@ -646,8 +679,8 @@ mobile-ios: mobile-build ## build the bundle (container) then open the iOS proje
 # here), so this Makefile is the single source of truth for the port list and
 # the gradle task.
 # Ports the in-app WebView reaches through the device→host adb tunnel:
-# 8900 dev frontend, 8901 backend, 8902 Keycloak.
-ANDROID_REVERSE_PORTS = 8900 8901 8902
+# 8900 dev frontend, 8901 backend, 8902 Keycloak, 8906 object storage (OTA).
+ANDROID_REVERSE_PORTS = 8900 8901 8902 8906
 ANDROID_DEBUG_APK = src/frontend/android/app/build/outputs/apk/debug/app-debug.apk
 
 mobile-android-reverse: ## (host) map device ports to the dev stack via adb reverse

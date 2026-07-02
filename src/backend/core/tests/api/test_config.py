@@ -83,6 +83,7 @@ def test_api_config(is_authenticated):
     assert "FRONTEND_HELP_CENTER_URL" not in response.json()
     assert "FRONTEND_FEEDBACK_WIDGET_CONFIG" not in response.json()
     assert "FRONTEND_LAGAUFRE_WIDGET_CONFIG" not in response.json()
+    assert "MOBILE_OTA_MANIFEST_URL" not in response.json()
 
 
 @override_settings(
@@ -126,6 +127,7 @@ def test_api_config_with_external_services():
         "api_url": "https://lagaufre.example.com",
         "path": "https://lagaufre.example.com/static/",
     },
+    MOBILE_OTA_MANIFEST_URL="https://static.example.com/ota/channels/prod/manifest.json",
 )
 def test_api_config_frontend_settings():
     """Frontend settings configured on the backend should be exposed as-is."""
@@ -145,6 +147,9 @@ def test_api_config_frontend_settings():
     assert config["FRONTEND_FEEDBACK_WIDGET_CONFIG"]["channel"] == "support"
     assert config["FRONTEND_LAGAUFRE_WIDGET_CONFIG"]["api_url"] == (
         "https://lagaufre.example.com"
+    )
+    assert config["MOBILE_OTA_MANIFEST_URL"] == (
+        "https://static.example.com/ota/channels/prod/manifest.json"
     )
 
 

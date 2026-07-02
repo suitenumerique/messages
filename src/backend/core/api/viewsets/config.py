@@ -220,6 +220,17 @@ CONFIG_ENTRIES = (
         },
         required=False,
     ),
+    ConfigEntry(
+        "MOBILE_OTA_MANIFEST_URL",
+        {
+            "type": "string",
+            "description": (
+                "OTA channel manifest URL the mobile apps poll at startup; "
+                "unset disables OTA updates"
+            ),
+        },
+        required=False,
+    ),
 )
 
 

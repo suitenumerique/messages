@@ -1062,6 +1062,14 @@ class Base(Configuration):
     MOBILE_AUTH_TOKEN_TTL = values.PositiveIntegerValue(
         default=60, environ_name="MOBILE_AUTH_TOKEN_TTL", environ_prefix=None
     )
+    # OTA channel manifest the mobile apps poll at startup, served through the
+    # /config endpoint so the followed channel can change without shipping a
+    # new native build. Must point to the channel `mobile:ota:publish` writes
+    # to for this deployment. Unset disables OTA (unless a build still bakes
+    # the deprecated NEXT_PUBLIC_MOBILE_OTA_MANIFEST_URL fallback).
+    MOBILE_OTA_MANIFEST_URL = values.Value(
+        None, environ_name="MOBILE_OTA_MANIFEST_URL", environ_prefix=None
+    )
     LOGIN_REDIRECT_URL = values.Value(
         None, environ_name="LOGIN_REDIRECT_URL", environ_prefix=None
     )

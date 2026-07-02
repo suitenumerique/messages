@@ -284,6 +284,13 @@ export const resolveConfig = (api?: ConfigRetrieve200): AppConfig => {
         "FRONTEND_HELP_CENTER_URL",
         import.meta.env.NEXT_PUBLIC_HELP_CENTER_URL,
       ),
+    MOBILE_OTA_MANIFEST_URL:
+      api?.MOBILE_OTA_MANIFEST_URL ??
+      deprecatedEnv(
+        "NEXT_PUBLIC_MOBILE_OTA_MANIFEST_URL",
+        "MOBILE_OTA_MANIFEST_URL",
+        import.meta.env.NEXT_PUBLIC_MOBILE_OTA_MANIFEST_URL,
+      ),
     FEEDBACK_WIDGET: resolveFeedbackWidget(api),
     LAGAUFRE_WIDGET: resolveLagaufreWidget(api),
   };

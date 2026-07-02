@@ -77,6 +77,12 @@ OIDC_AUTH_REQUEST_EXTRA_PARAMS={"acr_values": "eidas1"}
 # Mobile apps (Capacitor) session handoff
 MOBILE_AUTH_CALLBACK_SCHEMES=["stmessages"]
 
+# Mobile apps (Capacitor) OTA — OPT-IN in dev: channel manifest URL served to
+# the apps through /config (see ota.ts). Uncomment (working dev-stack value,
+# device-reachable via adb reverse) together with the publishing block in
+# frontend.defaults to exercise the OTA chain.
+# MOBILE_OTA_MANIFEST_URL=http://localhost:8906/messages-ota/channels/dev/manifest.json
+
 # keycloak
 IDENTITY_PROVIDER=keycloak
 KEYCLOAK_REALM=messages

@@ -33,3 +33,53 @@ MOBILE_APP_ID=local.suitenumerique.messages
 ## loopback (iOS). To disable (embedded bundle, e.g. before a release build),
 ## set it EMPTY in frontend.local: MOBILE_DEV_SERVER_URL=
 MOBILE_DEV_SERVER_URL=http://localhost:8900
+
+## Mobile cleartext transport (Capacitor, Android). Baked as server.cleartext
+## at `cap sync` (capacitor.config.ts) — i.e. android:usesCleartextTraffic in
+## the app manifest — so plain HTTP works in dev: the WebView reaching the Vite
+## dev server AND the native fetch/OTA layer reaching http://localhost:8901 /
+## RustFS (required even with hot reload disabled, e.g. when testing the OTA
+## chain). Must NEVER be set for a release build. To disable, set it EMPTY in
+## frontend.local: MOBILE_ALLOW_CLEARTEXT_FOR_DEV=
+MOBILE_ALLOW_CLEARTEXT_FOR_DEV=1
+
+## Mobile OTA (Capacitor) — OPT-IN in dev: uncomment the publishing vars below
+## (values are the working dev-stack ones) to exercise the OTA chain. The
+## channel manifest URL the app polls at startup is served by the backend
+## /config endpoint: set MOBILE_OTA_MANIFEST_URL in backend.local (dev value:
+## http://localhost:8906/messages-ota/channels/dev/manifest.json). Its channel
+## segment must match MOBILE_OTA_CHANNEL below — the app follows one channel,
+## publishing writes to one channel. Note: during a hot reload session
+## (MOBILE_DEV_SERVER_URL set), the startup OTA check is skipped even when the
+## manifest URL is configured.
+
+## Mobile OTA publishing (used by `make mobile-ota-bucket` / `make ota-publish`, i.e.
+## scripts/*-ota*.mjs — NOT inlined by Vite). The S3 endpoint is where the
+## script writes (compose network); MOBILE_OTA_PUBLIC_BASE_URL is the device-reachable
+## read URL written into the manifest (RustFS host port, see adb reverse).
+## MOBILE_OTA_S3_KEY_PREFIX stays empty for a dedicated bucket root. MOBILE_OTA_CHANNEL is the
+## default publish target: `dev` locally so experiments never look like a real
+## release; the deploy pipeline uses `staging` and `prod`, each with its own
+## build (NEXT_PUBLIC_* vars are inlined at build time — bundles are never
+## copied across channels).
+# MOBILE_OTA_CHANNEL=dev
+# MOBILE_OTA_S3_ENDPOINT=http://objectstorage:9000
+# MOBILE_OTA_S3_BUCKET=messages-ota
+# MOBILE_OTA_S3_ACCESS_KEY=st-messages
+# MOBILE_OTA_S3_SECRET_KEY=password
+# MOBILE_OTA_S3_KEY_PREFIX=
+# MOBILE_OTA_PUBLIC_BASE_URL=http://localhost:8906/messages-ota
+
+## Mobile OTA signing (Capgo v2, RSA+AES). Bundles are signed at publish time and
+## verified natively against the public key baked into the app, so a substituted
+## zip on the public bucket is rejected. Both are base64-encoded PEMs (single
+## line, to survive env_file / CI secrets): PUBLIC is read by capacitor.config.ts
+## at `cap sync`, PRIVATE by scripts/publish-ota.mjs.
+## NO VALUE IS COMMITTED — even a worthless throwaway private key in git keeps
+## tripping secret scanners and risks being copied into a real env. This is the
+## one OTA block you can't just uncomment: run `make mobile-ota-keygen` once and
+## paste both printed values into frontend.local. Each deployment likewise
+## generates its own pair and stores the private half as a CI secret.
+# MOBILE_OTA_SIGNING_PUBLIC_KEY_B64=
+# MOBILE_OTA_SIGNING_PRIVATE_KEY_B64=
+
