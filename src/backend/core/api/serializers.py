@@ -10,6 +10,7 @@ from django.conf import settings
 from django.core.exceptions import ValidationError as DjangoValidationError
 from django.db import transaction
 from django.db.models import Count, Max, Q
+from django.middleware.csrf import get_token
 
 from drf_spectacular.utils import PolymorphicProxySerializer, extend_schema_field
 from rest_framework import serializers
@@ -318,6 +319,20 @@ class UserWithAbilitiesSerializer(UserSerializer):
     """
 
     exclude_abilities = False
+    csrf_token = serializers.SerializerMethodField(read_only=True)
+
+    class Meta(UserSerializer.Meta):
+        fields = UserSerializer.Meta.fields + ["csrf_token"]
+        read_only_fields = fields
+
+    def get_csrf_token(self, _instance) -> str:
+        """Return the session-bound CSRF token for the SPA to echo as X-CSRFToken.
+
+        With ``CSRF_USE_SESSIONS`` the secret lives in the session and is no
+        longer exposed as a cookie, so the token is delivered here over the
+        authenticated ``/users/me/`` channel.
+        """
+        return get_token(self.context["request"])
 
 
 class UserWithoutAbilitiesSerializer(UserSerializer):
