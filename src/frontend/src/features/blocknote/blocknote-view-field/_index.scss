@@ -126,6 +126,11 @@
                 color: var(--c--globals--colors--gray-550);
                 border-color: var(--c--globals--colors--gray-550);
             }
+            
+            // Undo text-wrap: pretty; and text-wrap: balance; from reset.scss to avoid breaking long words in the editor
+            p {
+                text-wrap: wrap;
+            }
         }
 
         .tiptap > .bn-block-group {
