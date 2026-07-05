@@ -13,6 +13,7 @@ and this project adheres to
 
 ### Fixed
 
+- 🐛(frontend) fix silent paste failure in composer on Chromium ≤ 109 #741
 - 🐛(mta-out) fix relay block indentation breaking SASL auth #733
 
 ## [0.8.0] - 2026-06-18

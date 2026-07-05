@@ -1,3 +1,7 @@
+// Must stay first: shims APIs missing from Chromium <= 109 (Windows 7)
+// that dependencies below rely on.
+import "./polyfills";
+
 import "@blocknote/mantine/style.css";
 import "./styles/main.scss";
 import "./features/i18n/initI18n";
