@@ -1,19 +1,7 @@
 import styled, { css, keyframes } from 'styled-components';
 
-export const APP_COLOR = '#F10656';
-export const APP_GRADIENT_END = '#be185d';
-
-export const float = keyframes`
-  0%, 100% {
-    transform: translate(0, 0) scale(1);
-  }
-  33% {
-    transform: translate(20px, -20px) scale(1.05);
-  }
-  66% {
-    transform: translate(-15px, 15px) scale(0.95);
-  }
-`;
+export const APP_COLOR = '#F8497B';
+export const APP_GRADIENT_END = '#A0033A';
 
 export const fadeIn = keyframes`
   from {
@@ -23,6 +11,15 @@ export const fadeIn = keyframes`
   to {
     opacity: 1;
     transform: translateY(0);
+  }
+`;
+
+export const pulse = keyframes`
+  0%, 100% {
+    transform: translate(-50%, -50%) scale(1);
+  }
+  50% {
+    transform: translate(-50%, -50%) scale(1.1);
   }
 `;
 
@@ -74,59 +71,41 @@ export const GridOverlay = styled.div`
   position: absolute;
   inset: 0;
   background-image:
-    linear-gradient(rgba(255, 255, 255, 0.16) 1px, transparent 1px),
-    linear-gradient(90deg, rgba(255, 255, 255, 0.16) 1px, transparent 1px);
-  background-size: 40px 40px;
+    linear-gradient(rgba(255, 255, 255, 0.13) 1px, transparent 1px),
+    linear-gradient(90deg, rgba(255, 255, 255, 0.13) 1px, transparent 1px);
+  background-size: 64px 64px;
+  background-position: left center;
   mask-image: radial-gradient(
-    ellipse at center,
+    ellipse 68% 65% at 0% 50%,
     rgba(0, 0, 0, 1) 0%,
-    rgba(0, 0, 0, 0) 70%
+    rgba(0, 0, 0, 0) 100%
   );
   -webkit-mask-image: radial-gradient(
-    ellipse at center,
+    ellipse 68% 65% at 0% 50%,
     rgba(0, 0, 0, 1) 0%,
-    rgba(0, 0, 0, 0) 70%
+    rgba(0, 0, 0, 0) 100%
   );
 `;
 
-interface OrbProps {
-  $delay?: string;
+interface AccentDotProps {
+  $left: string;
+  $top: string;
   $size: string;
-  $top?: string;
-  $bottom?: string;
-  $left?: string;
-  $right?: string;
+  $opacity: number;
+  $delay?: string;
 }
 
-export const Orb = styled.div<OrbProps>`
+export const AccentDot = styled.div<AccentDotProps>`
   position: absolute;
   border-radius: 50%;
-  background: rgba(255, 255, 255, 0.1);
-  filter: blur(40px);
-  animation: ${float} 20s ease-in-out infinite;
-  width: ${(props: OrbProps) => props.$size};
-  height: ${(props: OrbProps) => props.$size};
-  ${(props: OrbProps) =>
-    props.$top &&
-    css`
-      top: ${props.$top};
-    `}
-  ${(props: OrbProps) =>
-    props.$bottom &&
-    css`
-      bottom: ${props.$bottom};
-    `}
-  ${(props: OrbProps) =>
-    props.$left &&
-    css`
-      left: ${props.$left};
-    `}
-  ${(props: OrbProps) =>
-    props.$right &&
-    css`
-      right: ${props.$right};
-    `}
-  ${(props: OrbProps) =>
+  transform: translate(-50%, -50%);
+  background: rgba(255, 255, 255, ${(props: AccentDotProps) => props.$opacity});
+  left: ${(props: AccentDotProps) => props.$left};
+  top: ${(props: AccentDotProps) => props.$top};
+  width: ${(props: AccentDotProps) => props.$size};
+  height: ${(props: AccentDotProps) => props.$size};
+  animation: ${pulse} 6s ease-in-out infinite;
+  ${(props: AccentDotProps) =>
     props.$delay &&
     css`
       animation-delay: ${props.$delay};
@@ -144,51 +123,28 @@ export const BrandContent = styled.div`
   z-index: 1;
   animation: ${fadeIn} 0.6s ease-out;
 
+  img {
+    display: block;
+    width: 32rem;
+    max-width: 80%;
+    height: auto;
+    margin: 0 auto;
+  }
+
   @media (prefers-reduced-motion: reduce) {
     animation: none;
   }
 `;
 
-export const AppIcon = styled.div`
-  width: 88px;
-  height: 88px;
-  margin: 0 auto 0.75rem;
-  border-radius: 50%;
-  display: flex;
-  align-items: center;
-  justify-content: center;
-
-  img {
-    width: 88px;
-    height: 88px;
-    border-radius: 50%;
-    object-fit: contain;
-    filter: brightness(0) invert(1);
-  }
-`;
-
-export const BrandTitle = styled.h1`
-  font-family: var(--font-heading);
-  font-size: 2.75rem;
-  font-weight: 700;
-  margin: 0 0 0.75rem;
-  letter-spacing: -0.02em;
-`;
-
-export const BrandTagline = styled.p`
-  font-size: 1.125rem;
-  opacity: 0.9;
-  margin: 0;
-  max-width: 300px;
-  line-height: 1.6;
-`;
-
 export const BrandFooter = styled.div`
   position: absolute;
   bottom: 2.5rem;
+  left: 0;
+  right: 0;
   z-index: 1;
   display: flex;
   align-items: center;
+  justify-content: center;
   gap: 0.5rem;
 
   span {
@@ -199,30 +155,55 @@ export const BrandFooter = styled.div`
 
 export const EuFlag = styled.div`
   width: 32px;
-  height: 24px;
+  height: 22px;
   background: rgba(255, 255, 255, 0.15);
   border-radius: 4px;
   display: flex;
   align-items: center;
   justify-content: center;
-  color: rgba(255, 255, 255, 0.7);
+  color: rgba(255, 255, 255, 0.8);
 `;
 
 export const FormPanel = styled.div`
-  background: white;
+  position: relative;
   display: flex;
   flex-direction: column;
   justify-content: center;
-  position: relative;
+  overflow: hidden;
+  background: #f7f8fa;
 
   @media (max-width: 900px) {
     min-height: 100vh;
     justify-content: flex-start;
-    overflow: hidden;
     background: linear-gradient(
       180deg,
-      color-mix(in srgb, var(--app-color) 3%, white) 0%,
-      white 50%
+      rgba(248, 73, 123, 0.03) 0%,
+      #f7f8fa 50%
+    );
+  }
+`;
+
+export const MobileAccents = styled.div`
+  display: none;
+
+  @media (max-width: 900px) {
+    display: block;
+    position: absolute;
+    inset: 0;
+    pointer-events: none;
+    background-image:
+      linear-gradient(rgba(248, 73, 123, 0.08) 1px, transparent 1px),
+      linear-gradient(90deg, rgba(248, 73, 123, 0.08) 1px, transparent 1px);
+    background-size: 64px 64px;
+    mask-image: radial-gradient(
+      ellipse at center,
+      rgba(0, 0, 0, 0.6) 0%,
+      rgba(0, 0, 0, 0) 70%
+    );
+    -webkit-mask-image: radial-gradient(
+      ellipse at center,
+      rgba(0, 0, 0, 0.6) 0%,
+      rgba(0, 0, 0, 0) 70%
     );
   }
 `;
@@ -232,11 +213,6 @@ export const LanguageSelectorWrapper = styled.div`
   top: 1.5rem;
   right: 1.5rem;
   z-index: 10;
-
-  @media (max-width: 900px) {
-    top: 1rem;
-    right: 1rem;
-  }
 `;
 
 export const LangSelectorContainer = styled.div`
@@ -247,20 +223,20 @@ export const LangButton = styled.button`
   display: flex;
   align-items: center;
   gap: 0.375rem;
-  padding: 0.5rem 0.75rem;
-  font-size: 0.8125rem;
-  font-weight: 500;
-  color: #4b5563;
-  background: #f3f4f6;
-  border: 1px solid #e5e7eb;
+  height: 36px;
+  padding: 0 12px;
+  font-size: 13px;
+  font-weight: 600;
+  color: #495057;
+  background: #f1f3f5;
+  border: 1px solid #e9ecef;
   border-radius: 8px;
   cursor: pointer;
   transition: all 0.15s ease;
   font-family: var(--font-body);
 
   &:hover {
-    background: #e5e7eb;
-    color: #374151;
+    background: #e9ecef;
   }
 
   svg {
@@ -274,7 +250,7 @@ export const LangDropdown = styled.div`
   right: 0;
   min-width: 100%;
   background: white;
-  border: 1px solid #e5e7eb;
+  border: 1px solid #e9ecef;
   border-radius: 8px;
   box-shadow: 0 4px 12px rgba(0, 0, 0, 0.1);
   overflow: hidden;
@@ -292,7 +268,7 @@ export const LangOption = styled.button<LangOptionProps>`
   font-size: 0.8125rem;
   font-weight: 500;
   color: ${(props: LangOptionProps) =>
-    props.$selected ? APP_COLOR : '#4b5563'};
+    props.$selected ? APP_COLOR : '#495057'};
   background: ${(props: LangOptionProps) =>
     props.$selected
       ? `color-mix(in srgb, ${APP_COLOR} 8%, transparent)`
@@ -304,39 +280,7 @@ export const LangOption = styled.button<LangOptionProps>`
   font-family: var(--font-body);
 
   &:hover {
-    background: #f3f4f6;
-  }
-`;
-
-export const MobileAccents = styled.div`
-  display: none;
-
-  @media (max-width: 900px) {
-    display: block;
-    position: absolute;
-    inset: 0;
-    pointer-events: none;
-    background-image:
-      linear-gradient(
-        color-mix(in srgb, var(--app-color) 8%, transparent) 1px,
-        transparent 1px
-      ),
-      linear-gradient(
-        90deg,
-        color-mix(in srgb, var(--app-color) 8%, transparent) 1px,
-        transparent 1px
-      );
-    background-size: 40px 40px;
-    mask-image: radial-gradient(
-      ellipse at center,
-      rgba(0, 0, 0, 0.6) 0%,
-      rgba(0, 0, 0, 0) 70%
-    );
-    -webkit-mask-image: radial-gradient(
-      ellipse at center,
-      rgba(0, 0, 0, 0.6) 0%,
-      rgba(0, 0, 0, 0) 70%
-    );
+    background: #f1f3f5;
   }
 `;
 
@@ -346,111 +290,78 @@ export const MobileHeader = styled.div`
   @media (max-width: 900px) {
     display: flex;
     align-items: center;
-    gap: 0.625rem;
-    position: absolute;
-    top: 1.25rem;
-    left: 1rem;
-    z-index: 10;
+    justify-content: center;
+    padding: 1.5rem;
+
+    img {
+      height: 1.75rem;
+      width: auto;
+    }
   }
 `;
 
-export const MobileLogo = styled.div`
-  width: 28px;
-  height: 28px;
-  background: linear-gradient(
-    135deg,
-    var(--app-color) 0%,
-    var(--app-gradient-end) 100%
-  );
-  mask-image: url('/images/mosa/mosa.svg');
-  mask-size: contain;
-  mask-repeat: no-repeat;
-  mask-position: center;
-  -webkit-mask-image: url('/images/mosa/mosa.svg');
-  -webkit-mask-size: contain;
-  -webkit-mask-repeat: no-repeat;
-  -webkit-mask-position: center;
+export const FormContainer = styled.div`
+  display: flex;
+  flex-direction: column;
+  margin: 0 auto;
+  width: 100%;
+  max-width: 440px;
+  padding: 2rem 1.5rem;
+
+  @media (min-width: 901px) {
+    padding: 2rem 3rem;
+  }
+
+  @media (max-width: 900px) {
+    flex: 1;
+    justify-content: center;
+  }
 `;
 
-export const MobileBrand = styled.span`
-  font-family: var(--font-heading);
-  font-size: 1.25rem;
-  font-weight: 700;
+export const FormHeader = styled.div`
+  margin-bottom: 2rem;
+  text-align: center;
+
+  .eyebrow {
+    font-family: var(--font-heading);
+    margin: 0 0 0.75rem;
+    font-size: 0.75rem;
+    font-weight: 600;
+    text-transform: uppercase;
+    letter-spacing: 0.2em;
+    color: #5a6577;
+  }
+
+  h2 {
+    font-family: var(--font-heading);
+    font-size: 1.75rem;
+    font-weight: 700;
+    color: #333333;
+    margin: 0;
+  }
+`;
+
+export const ProductHighlight = styled.span`
   background: linear-gradient(
     135deg,
     var(--app-color) 0%,
     var(--app-gradient-end) 100%
   );
   -webkit-background-clip: text;
-  -webkit-text-fill-color: transparent;
   background-clip: text;
+  -webkit-text-fill-color: transparent;
+  color: transparent;
 `;
 
-export const MobileFooter = styled.div`
-  display: none;
+export const Divider = styled.div`
+  margin: 0 auto 2rem;
+  height: 1px;
+  width: 14rem;
+  background: #e6eaf1;
 
   @media (max-width: 900px) {
-    display: flex;
-    align-items: center;
-    justify-content: center;
-    gap: 0.5rem;
-    padding: 2rem 1.5rem;
-    margin-top: auto;
-
-    span {
-      font-size: 0.8125rem;
-      color: #9ca3af;
-    }
+    background: transparent;
   }
-`;
-
-export const MobileEuFlag = styled.div`
-  width: 32px;
-  height: 24px;
-  background: #e5e7eb;
-  border-radius: 4px;
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  color: #9ca3af;
-`;
-
-export const FormContainer = styled.div`
-  display: flex;
-  flex-direction: column;
-  padding: 2rem 3rem;
-  max-width: 440px;
-  margin: 0 auto;
-  width: 100%;
-
-  @media (max-width: 900px) {
-    flex: 1;
-    justify-content: center;
-    padding: 2rem 1.5rem;
-  }
-`;
-
-export const FormHeader = styled.div`
-  margin-bottom: 2.5rem;
-  text-align: center;
-
-  h2 {
-    font-family: var(--font-heading);
-    font-size: 1.75rem;
-    font-weight: 700;
-    color: #111827;
-    margin: 0 0 0.5rem;
-  }
-
-  p {
-    font-size: 0.9375rem;
-    color: #6b7280;
-    margin: 0;
-  }
-`;
-
-export const ProductHighlight = styled.span`
-  color: var(--app-color);
 `;
 
 export const Actions = styled.div`
@@ -478,12 +389,12 @@ export const PrimaryButton = styled.button`
   border-radius: 12px;
   cursor: pointer;
   transition: all 0.2s ease;
-  box-shadow: 0 4px 12px color-mix(in srgb, var(--app-color) 30%, transparent);
+  box-shadow: 0 4px 12px rgba(248, 73, 123, 0.3);
   font-family: var(--font-body);
 
   &:hover {
     transform: translateY(-2px);
-    box-shadow: 0 6px 20px color-mix(in srgb, var(--app-color) 40%, transparent);
+    box-shadow: 0 6px 20px rgba(248, 73, 123, 0.4);
   }
 
   svg {
@@ -494,8 +405,8 @@ export const PrimaryButton = styled.button`
 export const SignupPrompt = styled.p`
   text-align: center;
   font-size: 0.875rem;
-  color: #6b7280;
-  margin: 1rem 0 0;
+  color: #41506b;
+  margin: 2rem 0 0;
 
   a {
     color: var(--app-color);
@@ -506,4 +417,34 @@ export const SignupPrompt = styled.p`
       text-decoration: underline;
     }
   }
+`;
+
+export const MobileFooter = styled.div`
+  display: none;
+
+  @media (max-width: 900px) {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    gap: 0.5rem;
+    padding: 1.5rem;
+    margin-top: auto;
+
+    span {
+      font-size: 0.8125rem;
+      color: #adb5bd;
+    }
+  }
+`;
+
+export const MobileEuFlag = styled.div`
+  width: 32px;
+  height: 22px;
+  background: #e9ecef;
+  border-radius: 4px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  color: #adb5bd;
+  opacity: 0.5;
 `;

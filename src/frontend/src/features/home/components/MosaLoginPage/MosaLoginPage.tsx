@@ -11,14 +11,13 @@ import {
   GlobeIcon,
 } from './MosaLoginPage.icons';
 import {
+  AccentDot,
   Actions,
-  AppIcon,
   BrandBg,
   BrandContent,
   BrandFooter,
   BrandPanel,
-  BrandTagline,
-  BrandTitle,
+  Divider,
   EuFlag,
   FormContainer,
   FormHeader,
@@ -32,12 +31,9 @@ import {
   LanguageSelectorWrapper,
   LoginContainer,
   MobileAccents,
-  MobileBrand,
   MobileEuFlag,
   MobileFooter,
   MobileHeader,
-  MobileLogo,
-  Orb,
   PrimaryButton,
   ProductHighlight,
   SignupPrompt,
@@ -130,17 +126,44 @@ export const MosaLoginPage = ({ next }: MosaLoginPageProps) => {
           <BrandBg>
             <GradientBase />
             <GridOverlay />
-            <Orb $size='300px' $top='-10%' $right='-10%' />
-            <Orb $size='200px' $bottom='20%' $left='-5%' $delay='-7s' />
-            <Orb $size='150px' $bottom='-5%' $right='20%' $delay='-14s' />
+            <AccentDot
+              $left='64px'
+              $top='calc(50% - 160px)'
+              $size='4px'
+              $opacity={0.5}
+            />
+            <AccentDot
+              $left='256px'
+              $top='calc(50% - 224px)'
+              $size='12px'
+              $opacity={0.7}
+              $delay='-1s'
+            />
+            <AccentDot
+              $left='64px'
+              $top='calc(50% + 96px)'
+              $size='5px'
+              $opacity={0.55}
+              $delay='-2s'
+            />
+            <AccentDot
+              $left='192px'
+              $top='calc(50% + 224px)'
+              $size='6px'
+              $opacity={0.55}
+              $delay='-3s'
+            />
+            <AccentDot
+              $left='384px'
+              $top='calc(50% + 160px)'
+              $size='4px'
+              $opacity={0.4}
+              $delay='-4s'
+            />
           </BrandBg>
 
           <BrandContent>
-            <AppIcon>
-              <img src='/images/mosa/mosa.svg' alt='mosa.cloud' />
-            </AppIcon>
-            <BrandTitle>mosa.cloud</BrandTitle>
-            <BrandTagline>{t('Collaborate without compromise')}</BrandTagline>
+            <img src='/logos/mosa-cloud-logo-white.svg' alt='mosa.cloud' />
           </BrandContent>
 
           <BrandFooter>
@@ -159,17 +182,18 @@ export const MosaLoginPage = ({ next }: MosaLoginPageProps) => {
           <MobileAccents />
 
           <MobileHeader>
-            <MobileLogo aria-label='mosa.cloud logo' />
-            <MobileBrand>mosa.cloud</MobileBrand>
+            <img src='/logos/mosa-cloud-logo.svg' alt='mosa.cloud' />
           </MobileHeader>
 
           <FormContainer>
             <FormHeader>
+              <p className='eyebrow'>{t('Professional email')}</p>
               <h2>
                 {t('Welcome to')} <ProductHighlight>Mail</ProductHighlight>
               </h2>
-              <p>{t('Email without boundaries')}</p>
             </FormHeader>
+
+            <Divider />
 
             <Actions>
               <PrimaryButton onClick={handleLogin}>
