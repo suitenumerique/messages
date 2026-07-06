@@ -123,6 +123,8 @@
   "{{count}} threads have been unarchived._other": "{{count}} threads have been unarchived.",
   "{{count}} threads have been updated._one": "The thread has been updated.",
   "{{count}} threads have been updated._other": "{{count}} threads have been updated.",
+  "{{count}} unread_one": "{{count}} unread",
+  "{{count}} unread_other": "{{count}} unread",
   "{{count}} unread messages_one": "{{count}} unread message",
   "{{count}} unread messages_other": "{{count}} unread messages",
   "{{count}} unread messages mentioning you_one": "{{count}} unread message mentioning you",

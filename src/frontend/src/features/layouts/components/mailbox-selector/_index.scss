@@ -97,3 +97,42 @@
         white-space: nowrap;
     }
 }
+
+.mailbox-selector__option-label {
+    display: flex;
+    justify-content: space-between;
+    align-items: baseline;
+    gap: var(--c--globals--spacings--sm);
+
+    & > .mailbox-selector__option-name {
+        font-size: var(--c--globals--font--sizes--sm);
+        overflow: hidden;
+        text-overflow: ellipsis;
+        white-space: nowrap;
+    }
+
+    & > .mailbox-selector__option-unread-count {
+        display: inline-flex;
+        align-items: center;
+        flex-shrink: 0;
+        font-size: var(--c--globals--font--sizes--xs);
+        color: var(--c--contextuals--content--semantic--neutral--tertiary);
+        gap: var(--c--globals--spacings--3xs);
+        line-height: 1;
+
+        &:before {
+            content: '';
+            display: inline-block;
+            --size: 0.5rem;
+            flex-shrink: 0;
+            width: var(--size);
+            height: var(--size);
+            border-radius: 50%;
+            box-sizing: border-box;
+            border: 0.5px solid var(--c--contextuals--border--semantic--contextual--primary);
+            background-color: var(--c--contextuals--background--semantic--brand--primary);
+        }
+
+
+    }
+}

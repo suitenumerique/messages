@@ -2,6 +2,7 @@ import { DropdownMenu, UserAvatar } from "@gouvfr-lasuite/ui-kit";
 import { ChevronDown } from "@gouvfr-lasuite/ui-kit/icons";
 import { Button } from "@gouvfr-lasuite/cunningham-react";
 import { useState } from "react";
+import { useTranslation } from "react-i18next";
 import { Mailbox } from "@/features/api/gen";
 import MailboxHelper from "@/features/utils/mailbox-helper";
 
@@ -30,6 +31,7 @@ export const MailboxSelector = ({
   selectedMailbox,
   onSelect,
 }: MailboxSelectorProps) => {
+  const { t } = useTranslation();
   const [isOpen, setIsOpen] = useState(false);
 
   const label = getMailboxLabel(selectedMailbox);
@@ -66,16 +68,31 @@ export const MailboxSelector = ({
 
   const sortedMailboxes = MailboxHelper.sortByKind(mailboxes);
   const options = sortedMailboxes.map((mailbox, index) => ({
-    label: getMailboxLabel(mailbox),
+    label: (<div className="mailbox-selector__option-label">
+      <span className="mailbox-selector__option-name">
+        {getMailboxLabel(mailbox)}
+      </span>
+      {mailbox.id !== selectedMailbox.id && mailbox.count_unread_threads > 0 && (
+            <span
+              className="mailbox-selector__option-unread-count"
+              aria-label={t("{{count}} unread", { count: mailbox.count_unread_threads })}
+            >
+              {mailbox.count_unread_threads > 9999 ? "9999+" : mailbox.count_unread_threads}
+            </span>
+          )}
+      </div>) as unknown as string,
     subText: mailbox.name?.trim() ? mailbox.email : undefined,
     value: mailbox.id,
+    // The dropdown option type has no right-side slot (label/subText are plain
+    // strings), so the unread counter piggybacks on the icon ReactNode and is
+    // moved to the trailing edge in CSS.
     icon: (
-      <span
-        className="mailbox-selector__option-avatar"
-        data-shared={!mailbox.is_identity}
-      >
-        <UserAvatar fullName={getMailboxLabel(mailbox)} size="small" />
-      </span>
+        <span
+          className="mailbox-selector__option-avatar"
+          data-shared={!mailbox.is_identity}
+        >
+          <UserAvatar fullName={getMailboxLabel(mailbox)} size="small" />
+        </span>
     ),
     showSeparator: MailboxHelper.showSeparatorAfter(sortedMailboxes, index),
   }));
