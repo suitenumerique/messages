@@ -1524,6 +1524,29 @@ class Base(Configuration):
         "preview_url": "/media/preview/item",
     }
 
+    # App switcher URLs — set to enable the app in the switcher panel.
+    APP_URL_EPICENTRE = values.Value(
+        default=None, environ_name="APP_URL_EPICENTRE", environ_prefix=None
+    )
+    APP_URL_DOCS = values.Value(
+        default=None, environ_name="APP_URL_DOCS", environ_prefix=None
+    )
+    APP_URL_DRIVE = values.Value(
+        default=None, environ_name="APP_URL_DRIVE", environ_prefix=None
+    )
+    APP_URL_MEET = values.Value(
+        default=None, environ_name="APP_URL_MEET", environ_prefix=None
+    )
+    APP_URL_CALENDAR = values.Value(
+        default=None, environ_name="APP_URL_CALENDAR", environ_prefix=None
+    )
+    APP_URL_CHAT = values.Value(
+        default=None, environ_name="APP_URL_CHAT", environ_prefix=None
+    )
+    APP_URL_COMMANDER = values.Value(
+        default=None, environ_name="APP_URL_COMMANDER", environ_prefix=None
+    )
+
     # pylint: disable=invalid-name
     def __init__(self, *args, **kwargs):
         super().__init__(*args, **kwargs)

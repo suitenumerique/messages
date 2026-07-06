@@ -79,6 +79,7 @@ def test_api_config(is_authenticated):
         "MESSAGES_MANUAL_RETRY_MAX_AGE": 86400,
         "FRONTEND_SILENT_LOGIN_ENABLED": True,
         "PUSH_ENABLED": False,
+        "APP_URLS": {},
     }
     # Optional settings left unconfigured must be omitted, not null nor
     # defaulted: the frontend falls back on its deprecated NEXT_PUBLIC_*

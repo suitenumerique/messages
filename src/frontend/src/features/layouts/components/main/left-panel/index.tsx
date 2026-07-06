@@ -3,8 +3,6 @@ import { useAuth } from "@/features/auth";
 import { HeaderRight } from "../header/authenticated";
 import { MailboxPanel } from "../../mailbox-panel";
 import { LanguagePicker } from "../language-picker";
-import { LagaufreButton } from "@/features/ui/components/lagaufre";
-
 export const LeftPanel = ({ hasNoMailbox = true }: { hasNoMailbox?: boolean }) => {
     const { user } = useAuth();
     const { isTablet } = useResponsive();
@@ -18,10 +16,7 @@ export const LeftPanel = ({ hasNoMailbox = true }: { hasNoMailbox?: boolean }) =
             </div>
             {isTablet &&
                 <div className="left-panel__footer">
-                    {user ? <HeaderRight /> : <>
-                        <LanguagePicker />
-                        <LagaufreButton />
-                    </>}
+                    {user ? <HeaderRight /> : <LanguagePicker />}
                 </div>
             }
         </div>

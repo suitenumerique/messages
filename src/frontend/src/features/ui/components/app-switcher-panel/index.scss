@@ -1,0 +1,158 @@
+/* Mosa brand tokens */
+$mosa-surface:       #ffffff;
+$mosa-bg:            #f7f8fa;
+$mosa-border:        #e6eaf1;
+$mosa-ink:           #333333;
+$mosa-slate:         #41506b;
+$mosa-graphite:      #5a6577;
+$mosa-shadow-card:   0 2px 4px rgba(0,0,0,.02), 0 4px 8px rgba(0,0,0,.03), 0 8px 16px rgba(0,0,0,.04), 0 16px 32px rgba(0,0,0,.05);
+$mosa-shadow-elev:   #{$mosa-shadow-card}, 0 32px 64px rgba(0,0,0,.08);
+$mosa-ease:          cubic-bezier(0.4, 0, 0.2, 1);
+
+/* ── Trigger ─────────────────────────────────────────────── */
+.app-switcher-panel {
+  position: relative;
+  display: flex;
+  align-items: center;
+  margin-left: 4px;
+}
+
+.app-switcher-panel__trigger-grid {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  border: 1px solid $mosa-border;
+  border-radius: 6px;
+  padding: 5px;
+}
+
+/* ── Dropdown card ───────────────────────────────────────── */
+.app-switcher-panel__dropdown {
+  position: absolute;
+  top: calc(100% + 8px);
+  right: 0;
+
+  &--up {
+    top: auto;
+    bottom: calc(100% + 8px);
+  }
+  width: 312px;
+  background: $mosa-surface;
+  border: 1px solid $mosa-border;
+  border-radius: 16px;
+  box-shadow: $mosa-shadow-elev;
+  padding: 14px;
+  z-index: 2000;
+  animation: mosa-panel-in 150ms $mosa-ease both;
+}
+
+@keyframes mosa-panel-in {
+  from { opacity: 0; transform: translateY(-4px) scale(0.98); }
+  to   { opacity: 1; transform: translateY(0)    scale(1);    }
+}
+
+/* ── "You're in" header ──────────────────────────────────── */
+.app-switcher-panel__current {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  padding: 2px 4px 10px;
+}
+
+.app-switcher-panel__current-text {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+
+.app-switcher-panel__you-are-in {
+  font-family: 'Poppins', system-ui, sans-serif;
+  font-size: 0.6875rem;
+  font-weight: 700;
+  letter-spacing: 0.16em;
+  text-transform: uppercase;
+  color: $mosa-graphite;
+}
+
+.app-switcher-panel__app-name {
+  font-family: 'Poppins', system-ui, sans-serif;
+  font-size: 1rem;
+  font-weight: 700;
+  letter-spacing: -0.01em;
+  color: $mosa-ink;
+}
+
+/* ── Divider ─────────────────────────────────────────────── */
+.app-switcher-panel__divider {
+  height: 1px;
+  background: $mosa-border;
+  margin: 4px -14px 14px;
+}
+
+/* ── "Jump to" section ───────────────────────────────────── */
+.app-switcher-panel__section-label {
+  display: block;
+  font-family: 'Poppins', system-ui, sans-serif;
+  font-size: 0.6875rem;
+  font-weight: 700;
+  letter-spacing: 0.16em;
+  text-transform: uppercase;
+  color: $mosa-graphite;
+  padding: 0 4px;
+  margin-bottom: 8px;
+}
+
+.app-switcher-panel__grid {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 4px;
+}
+
+/* ── App tile ────────────────────────────────────────────── */
+.app-switcher-panel__app {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 8px;
+  border-radius: 8px;
+  text-decoration: none;
+  transition: background 150ms $mosa-ease;
+  min-width: 0;
+
+  &:hover {
+    background: $mosa-bg;
+  }
+}
+
+.app-switcher-panel__app-info {
+  display: flex;
+  flex-direction: column;
+  gap: 1px;
+  min-width: 0;
+}
+
+.app-switcher-panel__app-label {
+  font-family: 'Poppins', system-ui, sans-serif;
+  font-size: 0.8125rem;
+  font-weight: 600;
+  color: $mosa-ink;
+}
+
+.app-switcher-panel__app-subtitle {
+  font-size: 0.6875rem; 
+  color: $mosa-graphite;
+  white-space: nowrap;
+}
+
+/* ── App icon ────────────────────────────────────────────── */
+.app-switcher-panel__icon {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  flex-shrink: 0;
+
+  img {
+    filter: brightness(0) invert(1);
+    display: block;
+  }
+}

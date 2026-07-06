@@ -27,6 +27,24 @@ def _get_drive_config():
     }
 
 
+def _get_app_urls():
+    """Build the app switcher's root URLs from the configured APP_URL_* settings."""
+    app_urls = {}
+    for app_id, setting_name in [
+        ("epicentre", "APP_URL_EPICENTRE"),
+        ("docs", "APP_URL_DOCS"),
+        ("drive", "APP_URL_DRIVE"),
+        ("meet", "APP_URL_MEET"),
+        ("calendar", "APP_URL_CALENDAR"),
+        ("chat", "APP_URL_CHAT"),
+        ("commander", "APP_URL_COMMANDER"),
+    ]:
+        url = getattr(settings, setting_name, None)
+        if url:
+            app_urls[app_id] = url
+    return app_urls
+
+
 @dataclass(frozen=True)
 class ConfigEntry:
     """A public setting exposed to the frontend through the config endpoint."""
@@ -161,6 +179,20 @@ CONFIG_ENTRIES = (
             "type": "boolean",
             "description": "Whether silent OIDC login is enabled",
         },
+    ),
+    ConfigEntry(
+        "APP_URLS",
+        {
+            "type": "object",
+            "description": (
+                "Root URLs of enabled Mosa apps for the app switcher. "
+                "Keys: epicentre, docs, drive, meet, calendar, chat, "
+                "commander."
+            ),
+            "additionalProperties": {"type": "string"},
+        },
+        getter=_get_app_urls,
+        required=False,
     ),
     ConfigEntry(
         "SENTRY_DSN",

@@ -257,6 +257,7 @@ export const resolveConfig = (api?: ConfigRetrieve200): AppConfig => {
     FEATURE_THREAD_SNIPPET: api?.FEATURE_THREAD_SNIPPET ?? false,
     MESSAGES_MANUAL_RETRY_MAX_AGE: api?.MESSAGES_MANUAL_RETRY_MAX_AGE ?? 7 * 24 * 60 ** 2,
     FRONTEND_SILENT_LOGIN_ENABLED: api?.FRONTEND_SILENT_LOGIN_ENABLED ?? false,
+    APP_URLS: api?.APP_URLS ?? {},
     DRIVE: api?.DRIVE ?? DEFAULT_DRIVE_CONFIG,
     LANGUAGES: languages,
     BASE_LANGUAGE: baseLanguage,

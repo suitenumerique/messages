@@ -81,6 +81,14 @@ export const AppLayout = ({
   };
 
   useEffect(() => {
+    const handlePageShow = (e: PageTransitionEvent) => {
+      if (e.persisted) window.location.reload();
+    };
+    window.addEventListener("pageshow", handlePageShow);
+    return () => window.removeEventListener("pageshow", handlePageShow);
+  }, []);
+
+  useEffect(() => {
     const updatePanelSize = () => {
       const min = Math.round(calculateDefaultSize(250, isDesktop));
       const max = Math.round(

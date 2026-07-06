@@ -9,7 +9,7 @@ import useAbility, { Abilities } from "@/hooks/use-ability";
 import { useFeatureFlag, FEATURE_KEYS } from "@/hooks/use-feature";
 import { useAuth, logout } from "@/features/auth";
 import { LanguagePicker } from "@/features/layouts/components/main/language-picker";
-import { LagaufreButton } from "@/features/ui/components/lagaufre";
+import { AppSwitcherButton } from "@/features/ui/components/app-switcher-panel";
 import { SurveyButton } from "@/features/ui/components/feedback-button";
 import { useMailboxContext } from "@/features/providers/mailbox";
 import { ImportRun, MessageTemplateTypeChoices, useMailboxesImportsList, useMailboxesMessageTemplatesList } from "@/features/api/gen";
@@ -209,7 +209,7 @@ export const HeaderRight = () => {
         <SurveyButton iconOnly color="brand" variant="tertiary" />
         <ApplicationMenu />
         {isDesktop && <VerticalSeparator size="24px" withPadding={false} />}
-        {!isNativePlatform() && <LagaufreButton />}
+        {!isNativePlatform() && <AppSwitcherButton />}
       </div>
       <UserMenu
         user={user ? {

@@ -1,3 +1,22 @@
 {
-  "Log in": "Iniciar sesión"
+  "Log in": "Iniciar sesión",
+  "app_switcher.you_are_in": "ESTÁS EN",
+  "app_switcher.jump_to": "IR A",
+  "app_switcher.switch_app": "Cambiar app",
+  "app_switcher.apps.epicentre.label": "Epicentre",
+  "app_switcher.apps.epicentre.subtitle": "Inicio",
+  "app_switcher.apps.docs.label": "Docs",
+  "app_switcher.apps.docs.subtitle": "Documentos",
+  "app_switcher.apps.drive.label": "Drive",
+  "app_switcher.apps.drive.subtitle": "Archivos",
+  "app_switcher.apps.meet.label": "Meet",
+  "app_switcher.apps.meet.subtitle": "Videollamadas",
+  "app_switcher.apps.mail.label": "Mail",
+  "app_switcher.apps.mail.subtitle": "Correo",
+  "app_switcher.apps.calendar.label": "Calendar",
+  "app_switcher.apps.calendar.subtitle": "Agenda",
+  "app_switcher.apps.chat.label": "Chat",
+  "app_switcher.apps.chat.subtitle": "Mensajería",
+  "app_switcher.apps.commander.label": "Commander",
+  "app_switcher.apps.commander.subtitle": "Admin"
 }
