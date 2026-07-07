@@ -1,6 +1,7 @@
 import { useTranslation } from "react-i18next"
 import { useEffect, useRef } from "react"
 import { LaGaufreV2 } from "@gouvfr-lasuite/ui-kit";
+import { useConfig } from "@/features/providers/config";
 
 const LAGAUFRE_SHADOW_HOST_ID = "lasuite-widget-lagaufre-shadow";
 
@@ -9,9 +10,9 @@ const LAGAUFRE_SHADOW_HOST_ID = "lasuite-widget-lagaufre-shadow";
  */
 export const LagaufreButton = () => {
   const { t } = useTranslation()
+  const { LAGAUFRE_WIDGET } = useConfig();
   const wrapperRef = useRef<HTMLDivElement>(null);
-  const apiUrl = import.meta.env.NEXT_PUBLIC_LAGAUFRE_WIDGET_API_URL;
-  const widgetPath = import.meta.env.NEXT_PUBLIC_LAGAUFRE_WIDGET_PATH;
+  const { api_url: apiUrl, path: widgetPath } = LAGAUFRE_WIDGET;
   const isEnabled = apiUrl && widgetPath;
 
   // TODO: temporary workaround — remove once fixed upstream in the lagaufre

@@ -5,7 +5,7 @@ export default defineConfig({
   test: {
     globals: true,
     environment: 'jsdom',
-    setupFiles: [],
+    setupFiles: ['./vitest.setup.ts'],
     include: ['**/*.test.{ts,tsx}'],
     coverage: {
       provider: 'v8',
@@ -18,7 +18,7 @@ export default defineConfig({
       '@': path.resolve(__dirname, './src'),
     },
   },
-  // Keep parity with vite.config.ts so tests see NEXT_PUBLIC_* via
-  // import.meta.env.
+  // Keep parity with vite.config.ts so tests can stub the NEXT_PUBLIC_*
+  // deprecated fallbacks via import.meta.env.
   envPrefix: 'NEXT_PUBLIC_',
 });

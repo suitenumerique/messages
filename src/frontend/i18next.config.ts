@@ -1,8 +1,8 @@
 import { defineConfig } from 'i18next-cli';
-import { LANGUAGES_ALLOWED } from './src/features/i18n/conf';
+import { SUPPORTED_LOCALES } from './src/features/i18n/conf';
 
 export default defineConfig({
-  locales: LANGUAGES_ALLOWED,
+  locales: SUPPORTED_LOCALES,
   extract: {
     defaultNS: "common",
     input: ['src/**/*.{js,jsx,ts,tsx}'],

@@ -1,12 +1,7 @@
 import { fetchAPI } from "@/features/api/fetch-api";
+import { useConfig } from "@/features/providers/config";
 import { handle } from "@/features/utils/errors";
 import { useEffect, useMemo, useRef, useState } from "react";
-
-
-// Threshold to use multipart upload (object storage allows chunks of 10MB at least)
-const CHUNK_SIZE_MB = import.meta.env.NEXT_PUBLIC_MULTIPART_UPLOAD_CHUNK_SIZE ? parseInt(import.meta.env.NEXT_PUBLIC_MULTIPART_UPLOAD_CHUNK_SIZE) : 100;
-const CHUNK_SIZE = CHUNK_SIZE_MB * 1024 * 1024;
-const MULTIPART_THRESHOLD = CHUNK_SIZE;
 
 interface PartUpload {
   PartNumber: number;
@@ -172,6 +167,7 @@ const directUploadFile = (
  */
 const multiPartUploadFile = async (
   file: File,
+  chunkSize: number,
   onUploadCreated: (args: string) => void,
   onUploadInit: (xhr: XMLHttpRequest) => void,
   onUploadCompleting: () => void,
@@ -201,7 +197,7 @@ const multiPartUploadFile = async (
     }
 
     // Step 2: Split file into chunks and upload each part
-    const totalChunks = Math.ceil(file.size / CHUNK_SIZE);
+    const totalChunks = Math.ceil(file.size / chunkSize);
 
     let uploadedBytes = 0;
     // const parts: PartUpload[] = await Promise.all<PartUpload>(Array.from({ length: totalChunks }, async (_, index) => {
@@ -210,8 +206,8 @@ const multiPartUploadFile = async (
     for (let index = 0; index < totalChunks; index++) {
         try {
           const partNumber = index + 1;
-          const start = index * CHUNK_SIZE;
-          const end = Math.min(start + CHUNK_SIZE, file.size);
+          const start = index * chunkSize;
+          const end = Math.min(start + chunkSize, file.size);
           const chunk = file.slice(start, end);
 
           const partResponse = await fetchAPI<MultipartPartResponse>(
@@ -281,6 +277,9 @@ const abortUpload = async (uploadId: string, filename: string) => {
 export const useBucketUpload = (
   { onSuccess, onError }: { onSuccess?: (manager: BucketUploadManager) => void, onError?: (error: string) => void }
 ): BucketUploadManager => {
+  const { MULTIPART_UPLOAD_CHUNK_SIZE_MB } = useConfig();
+  // Threshold to use multipart upload (object storage allows chunks of 10MB at least)
+  const chunkSize = MULTIPART_UPLOAD_CHUNK_SIZE_MB * 1024 * 1024;
   const [file, setFile] = useState<File | null>(null);
   const uploadIdRef = useRef<string | null>(null);
   const [state, setState] = useState<BucketUploadState>(BucketUploadState.IDLE);
@@ -312,7 +311,7 @@ export const useBucketUpload = (
 
     try {
       // Use multipart upload for large files
-      if (file.size > MULTIPART_THRESHOLD) {
+      if (file.size > chunkSize) {
         const handleUploadCreated = (uploadId: string) => {
           setUploadId(uploadId);
           setState(BucketUploadState.IMPORTING);
@@ -321,6 +320,7 @@ export const useBucketUpload = (
         setState(BucketUploadState.INITIATING);
         await multiPartUploadFile(
           file,
+          chunkSize,
           handleUploadCreated,
           setXhr,
           handleUploadCompleting,

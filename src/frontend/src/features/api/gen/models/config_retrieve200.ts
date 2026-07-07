@@ -8,10 +8,16 @@
 import type { ConfigRetrieve200DRIVE } from "./config_retrieve200_driv_e";
 import type { ConfigRetrieve200SCHEMACUSTOMATTRIBUTESUSER } from "./config_retrieve200_schemacustomattributesuse_r";
 import type { ConfigRetrieve200SCHEMACUSTOMATTRIBUTESMAILDOMAIN } from "./config_retrieve200_schemacustomattributesmaildomai_n";
+import type { ConfigRetrieve200FRONTENDTHEMECONFIG } from "./config_retrieve200_frontendthemeconfi_g";
+import type { ConfigRetrieve200FRONTENDFEEDBACKWIDGETCONFIG } from "./config_retrieve200_frontendfeedbackwidgetconfi_g";
+import type { ConfigRetrieve200FRONTENDLAGAUFREWIDGETCONFIG } from "./config_retrieve200_frontendlagaufrewidgetconfi_g";
 
 export type ConfigRetrieve200 = {
   readonly ENVIRONMENT: string;
-  readonly LANGUAGES: readonly string[];
+  /** Version of the application */
+  readonly RELEASE: string;
+  /** Available languages, as (code, label) pairs */
+  readonly LANGUAGES: readonly string[][];
   readonly LANGUAGE_CODE: string;
   readonly AI_ENABLED: boolean;
   readonly FEATURE_AI_SUMMARY: boolean;
@@ -23,10 +29,6 @@ export type ConfigRetrieve200 = {
   readonly SCHEMA_CUSTOM_ATTRIBUTES_MAILDOMAIN: ConfigRetrieve200SCHEMACUSTOMATTRIBUTESMAILDOMAIN;
   /** Maximum size in bytes for outgoing email attachments */
   readonly MAX_OUTGOING_ATTACHMENT_SIZE: number;
-  /** Maximum size in bytes for outgoing email body (text + HTML) */
-  readonly MAX_OUTGOING_BODY_SIZE: number;
-  /** Maximum size in bytes for incoming email (including attachments and body) */
-  readonly MAX_INCOMING_EMAIL_SIZE: number;
   /** Maximum number of recipients per message (to + cc + bcc) */
   readonly MAX_RECIPIENTS_PER_MESSAGE: number;
   /** Maximum size in bytes for images embedded in templates and signatures */
@@ -41,4 +43,18 @@ export type ConfigRetrieve200 = {
   readonly MESSAGES_MANUAL_RETRY_MAX_AGE: number;
   /** Whether silent OIDC login is enabled */
   readonly FRONTEND_SILENT_LOGIN_ENABLED: boolean;
+  /** Sentry DSN shared with the frontend */
+  readonly SENTRY_DSN?: string;
+  /** Theme configuration for the frontend (theme, terms_of_service_url, footer) */
+  readonly FRONTEND_THEME_CONFIG?: ConfigRetrieve200FRONTENDTHEMECONFIG;
+  /** Whether the frontend should fall back to LANGUAGE_CODE instead of the browser language */
+  readonly FRONTEND_FORCED_DEFAULT_LANGUAGE?: boolean;
+  /** Chunk size in MB for frontend multipart uploads */
+  readonly FRONTEND_MULTIPART_UPLOAD_CHUNK_SIZE_MB?: number;
+  /** Help center URL */
+  readonly FRONTEND_HELP_CENTER_URL?: string;
+  /** Configuration of the feedback widget */
+  readonly FRONTEND_FEEDBACK_WIDGET_CONFIG?: ConfigRetrieve200FRONTENDFEEDBACKWIDGETCONFIG;
+  /** Configuration of the Lagaufre widget */
+  readonly FRONTEND_LAGAUFRE_WIDGET_CONFIG?: ConfigRetrieve200FRONTENDLAGAUFREWIDGETCONFIG;
 };

@@ -14,6 +14,7 @@ import {
     getMailboxesChannelsListUrl,
 } from "@/features/api/gen";
 import { RhfInput } from "@/features/forms/components/react-hook-form";
+import { useConfig } from "@/features/providers/config";
 import { addToast, ToasterItem } from "@/features/ui/components/toaster";
 import { Banner } from "@/features/ui/components/banner";
 import { handle } from "@/features/utils/errors";
@@ -47,6 +48,7 @@ export const WidgetIntegrationForm = ({
 }: WidgetIntegrationFormProps) => {
     const { t } = useTranslation();
     const queryClient = useQueryClient();
+    const { FEEDBACK_WIDGET } = useConfig();
     const [error, setError] = useState<string | null>(null);
     const widgetSettings = (channel?.settings as WidgetChannelSettings | undefined);
     const [selectedTags, setSelectedTags] = useState<string[]>(
@@ -128,15 +130,15 @@ export const WidgetIntegrationForm = ({
         }
     };
 
-    const widgetSnippet = channel ? `<script src="${import.meta.env.NEXT_PUBLIC_FEEDBACK_WIDGET_PATH}loader.js" async></script>
+    const widgetSnippet = channel && FEEDBACK_WIDGET.path && FEEDBACK_WIDGET.api_url ? `<script src="${FEEDBACK_WIDGET.path}loader.js" async></script>
 <script>
 window._lasuite_widget = window._lasuite_widget || [];
 _lasuite_widget.push(["loader", "init", {
   "params": {
-    "api": "${import.meta.env.NEXT_PUBLIC_FEEDBACK_WIDGET_API_URL}",
+    "api": "${FEEDBACK_WIDGET.api_url}",
     "channel": "${channel.id}"
   },
-  "script": "${import.meta.env.NEXT_PUBLIC_FEEDBACK_WIDGET_PATH}feedback.js",
+  "script": "${FEEDBACK_WIDGET.path}feedback.js",
   "widget": "feedback",
 }]);
 </script>` : "";

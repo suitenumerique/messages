@@ -194,9 +194,7 @@ def _retry_or_abandon(
     # skips it instead of deleting and losing the only copy of the mail.
     inbound_message.error_message = reason
     inbound_message.abandoned_at = timezone.now()
-    inbound_message.save(
-        update_fields=["error_message", "abandoned_at", "updated_at"]
-    )
+    inbound_message.save(update_fields=["error_message", "abandoned_at", "updated_at"])
     return {
         "success": False,
         "inbound_message_id": str(inbound_message.id),

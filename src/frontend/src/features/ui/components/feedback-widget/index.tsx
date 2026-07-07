@@ -1,6 +1,7 @@
 import { useEffect } from "react";
 import { useTranslation } from "react-i18next";
 import { useAuth } from "@/features/auth";
+import { useConfig } from "@/features/providers/config";
 import { WidgetHelper } from "@/features/utils/widget-helper";
 
 interface FeedbackWidgetProps {
@@ -12,12 +13,10 @@ export function FeedbackWidget({
 }: FeedbackWidgetProps) {
   const { t } = useTranslation();
   const { user } = useAuth();
+  const { FEEDBACK_WIDGET } = useConfig();
 
-  const apiUrl = import.meta.env.NEXT_PUBLIC_FEEDBACK_WIDGET_API_URL;
-  const widgetPath = import.meta.env.NEXT_PUBLIC_FEEDBACK_WIDGET_PATH;
-  const channel =
-    import.meta.env.NEXT_PUBLIC_FEEDBACK_WIDGET_HOME_CHANNEL ||
-    import.meta.env.NEXT_PUBLIC_FEEDBACK_WIDGET_CHANNEL;
+  const { api_url: apiUrl, path: widgetPath } = FEEDBACK_WIDGET;
+  const channel = FEEDBACK_WIDGET.home_channel || FEEDBACK_WIDGET.channel;
 
   const title: string = t("Do you have any feedback?");
   const placeholder: string = t("Share your feedback here...");

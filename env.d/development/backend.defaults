@@ -83,7 +83,12 @@ KEYCLOAK_CLIENT_SECRET=ServiceAccountClientSecretForDev
 KEYCLOAK_GROUP_PATH_PREFIX=/maildomain-
 
 # Frontend
-FRONTEND_THEME=dsfr
+# FRONTEND_THEME_CONFIG={"theme": "white-label"}
+# FRONTEND_FORCED_DEFAULT_LANGUAGE=false
+# FRONTEND_MULTIPART_UPLOAD_CHUNK_SIZE_MB=100
+# FRONTEND_HELP_CENTER_URL=https://help.example.com
+# FRONTEND_FEEDBACK_WIDGET_CONFIG={"api_url": "", "path": "", "channel": "", "home_channel": ""}
+# FRONTEND_LAGAUFRE_WIDGET_CONFIG={"api_url": "", "path": ""}
 
 # Messages
 MESSAGES_TESTDOMAIN=example.local

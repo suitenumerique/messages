@@ -1,57 +1,22 @@
-import { ConfigRetrieve200, useConfigRetrieve } from "@/features/api/gen";
+import { useConfigRetrieve } from "@/features/api/gen";
+import { AppConfig, resolveConfig } from "@/features/config/resolve";
 import { Spinner } from "@gouvfr-lasuite/ui-kit";
 import { PropsWithChildren, createContext, useContext, useMemo } from "react";
 
-type AppConfig = Omit<ConfigRetrieve200, 'DRIVE'> & Required<Pick<ConfigRetrieve200, 'DRIVE'>>;
-
-const DEFAULT_DRIVE_CONFIG: NonNullable<ConfigRetrieve200['DRIVE']> = {
-    sdk_url: "",
-    api_url: "",
-    file_url: "",
-    preview_url: "",
-    app_name: "Drive",
-}
-
-const DEFAULT_CONFIG: AppConfig = {
-    ENVIRONMENT: "",
-    LANGUAGES: [],
-    LANGUAGE_CODE: "",
-    AI_ENABLED: false,
-    FEATURE_AI_SUMMARY: false,
-    FEATURE_AI_AUTOLABELS: false,
-    FEATURE_MAILBOX_ADMIN_CHANNELS: [],
-    SCHEMA_CUSTOM_ATTRIBUTES_USER: {},
-    SCHEMA_CUSTOM_ATTRIBUTES_MAILDOMAIN: {},
-    MAX_OUTGOING_ATTACHMENT_SIZE: 0,
-    MAX_OUTGOING_BODY_SIZE: 0,
-    MAX_INCOMING_EMAIL_SIZE: 0,
-    MAX_RECIPIENTS_PER_MESSAGE: 0,
-    MAX_TEMPLATE_IMAGE_SIZE: 0,
-    IMAGE_PROXY_ENABLED: false,
-    FEATURE_MAILDOMAIN_CREATE: true,
-    FEATURE_MAILDOMAIN_MANAGE_ACCESSES: true,
-    FEATURE_MAILDOMAIN_MANAGE_TOTP: false,
-    FEATURE_THREAD_SPLIT: true,
-    DRIVE: DEFAULT_DRIVE_CONFIG,
-    MESSAGES_MANUAL_RETRY_MAX_AGE: 0,
-    FRONTEND_SILENT_LOGIN_ENABLED: false,
-}
-
-const ConfigContext = createContext<AppConfig>(DEFAULT_CONFIG)
+const ConfigContext = createContext<AppConfig | undefined>(undefined)
 
 /**
- * A global provider in charge of fetching the config at first load
- * and sharing it to the app.
+ * A global provider in charge of sharing the app configuration.
+ * The query cache is primed during bootstrap (see `bootstrap.tsx`);
+ * `staleTime: Infinity` keeps that primed data fresh so no second fetch
+ * happens on mount. When the bootstrap fetch failed, the cache is empty and
+ * the query retries here, letting the React tree recover a live config.
  */
 export const ConfigProvider = ({ children }: PropsWithChildren) => {
-    const { data: config, isFetched } = useConfigRetrieve();
-    const configValue = useMemo(() => {
-      if (!config) return DEFAULT_CONFIG;
-      return {
-        ...config?.data,
-        DRIVE: config?.data?.DRIVE ?? DEFAULT_DRIVE_CONFIG,
-      }
-    }, [config])
+    const { data: config, isFetched } = useConfigRetrieve({
+      query: { staleTime: Infinity },
+    });
+    const configValue = useMemo(() => resolveConfig(config?.data), [config])
 
     if (!isFetched) {
         return (

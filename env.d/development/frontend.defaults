@@ -1,20 +1,3 @@
+# The API origin is the only build-time variable left: it is needed to reach
+# the backend /config endpoint that provides the rest of the configuration.
 NEXT_PUBLIC_API_ORIGIN=http://localhost:8901
-NEXT_PUBLIC_FEEDBACK_WIDGET_API_URL=
-NEXT_PUBLIC_FEEDBACK_WIDGET_PATH=
-NEXT_PUBLIC_FEEDBACK_WIDGET_CHANNEL=
-NEXT_PUBLIC_FEEDBACK_WIDGET_HOME_CHANNEL=
-NEXT_PUBLIC_HELP_CENTER_URL=
-NEXT_PUBLIC_LANGUAGES=[["en-US","English"],["fr-FR","Français"],["nl-NL","Nederlands"]]
-NEXT_PUBLIC_DEFAULT_LANGUAGE=en-US
-## Chunk size for multipart upload in MB
-NEXT_PUBLIC_MULTIPART_UPLOAD_CHUNK_SIZE=100
-
-## Sentry
-NEXT_PUBLIC_SENTRY_DSN=
-NEXT_PUBLIC_SENTRY_ENVIRONMENT=
-
-## Theme Customization
-NEXT_PUBLIC_THEME_CONFIG='{
-    "theme": "white-label"
-}'
-

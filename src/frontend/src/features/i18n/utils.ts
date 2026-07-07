@@ -1,18 +1,17 @@
-import {
-  BASE_LANGUAGE,
-  IS_LANGUAGE_FORCED,
-  LANGUAGES_ALLOWED,
-  LANGUAGE_LOCAL_STORAGE,
-} from './conf';
+import { LANGUAGE_LOCAL_STORAGE } from './conf';
 
-export const getLanguage = () => {
+export const getLanguage = (
+  languagesAllowed: string[],
+  baseLanguage: string,
+  isLanguageForced: boolean,
+) => {
   if (typeof window === 'undefined') {
-    return BASE_LANGUAGE;
+    return baseLanguage;
   }
 
   const storedLanguage = localStorage.getItem(LANGUAGE_LOCAL_STORAGE);
   const languageStore =
-    storedLanguage || (IS_LANGUAGE_FORCED ? BASE_LANGUAGE : navigator?.language);
+    storedLanguage || (isLanguageForced ? baseLanguage : navigator?.language);
 
-  return LANGUAGES_ALLOWED.includes(languageStore) ? languageStore : BASE_LANGUAGE;
+  return languagesAllowed.includes(languageStore) ? languageStore : baseLanguage;
 };

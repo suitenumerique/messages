@@ -1,20 +1,17 @@
 import { createContext, PropsWithChildren, useContext, useEffect, useState } from "react";
 import { useTranslation } from "react-i18next";
-import { CunninghamProvider, ContextMenuProvider, FooterProps } from "@gouvfr-lasuite/ui-kit";
+import { CunninghamProvider, ContextMenuProvider } from "@gouvfr-lasuite/ui-kit";
 import { THEME_KEY } from "../config/constants";
 import { tokens } from '@/styles/cunningham-tokens'
+import { ThemeConfig as AppThemeConfig } from "@/features/config/resolve";
+import { useConfig } from "./config";
 
 type CunninghamTheme = keyof typeof tokens.themes;
 type ColorScheme = "system" | "light" | "dark";
-type Theme = "white-label" | "anct" | "dsfr";
+type Theme = AppThemeConfig["theme"];
 type ThemeVariant = "light" | "dark";
 type ThemeWithVariant = 'white-label-light' | 'white-label-dark' | 'anct-light' | 'anct-dark' | 'dsfr-light' | 'dsfr-dark';
-type ThemeConfigMap = {
-    theme: Theme;
-    terms_of_service_url?: string;
-    footer?: FooterProps;
-}
-type ThemeConfig = Omit<ThemeConfigMap, "theme">;
+type ThemeConfig = Omit<AppThemeConfig, "theme">;
 
 const ThemeContext = createContext<undefined | {
     colorScheme: ColorScheme;
@@ -25,12 +22,6 @@ const ThemeContext = createContext<undefined | {
     themeConfig: ThemeConfig;
     cunninghamTheme: CunninghamTheme;
 }>(undefined)
-
-const THEME_CONFIG_ENV: ThemeConfigMap = import.meta.env.NEXT_PUBLIC_THEME_CONFIG
-    ? JSON.parse(import.meta.env.NEXT_PUBLIC_THEME_CONFIG) as ThemeConfigMap
-    : { theme: "white-label" };
-
-const { theme = 'white-label', ...themeConfig } = THEME_CONFIG_ENV;
 
 const CUNNINGHAM_THEME_MAP: Record<ThemeWithVariant, CunninghamTheme> = {
     "white-label-light": "default",
@@ -44,6 +35,8 @@ const CUNNINGHAM_THEME_MAP: Record<ThemeWithVariant, CunninghamTheme> = {
 
 const ThemeProvider = ({ children }: PropsWithChildren) => {
     const { i18n } = useTranslation();
+    const { THEME_CONFIG } = useConfig();
+    const { theme = 'white-label', ...themeConfig } = THEME_CONFIG;
     const defaultScheme = window.matchMedia("(prefers-color-scheme: dark)")
         .matches
         ? 'dark'

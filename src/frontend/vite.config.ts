@@ -33,8 +33,10 @@ export default defineConfig({
       '@': path.resolve(__dirname, './src'),
     },
   },
-  // App env vars are read via `import.meta.env.NEXT_PUBLIC_*`. envPrefix
-  // tells Vite which env vars to expose to client code at build time.
+  // Runtime configuration comes from the backend /config endpoint; the only
+  // build-time env vars left are NEXT_PUBLIC_API_ORIGIN and the deprecated
+  // NEXT_PUBLIC_* fallbacks (see features/config/resolve.ts). envPrefix tells
+  // Vite which env vars to expose to client code at build time.
   envPrefix: 'NEXT_PUBLIC_',
   build: {
     outDir: 'dist',

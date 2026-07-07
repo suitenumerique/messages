@@ -255,9 +255,9 @@ _Those settings are deprecated and will be removed in the future._
 
 | Variable | Default | Description | Required |
 |----------|---------|-------------|----------|
-| `SENTRY_DSN` | None | Sentry DSN for error tracking | Optional |
-| `NEXT_PUBLIC_SENTRY_DSN` | None | Sentry DSN for error tracking | Optional |
-| `NEXT_PUBLIC_SENTRY_ENVIRONMENT` | None | Sentry environment for error tracking | Optional ('production', 'development', 'staging') |
+| `SENTRY_DSN` | None | Sentry DSN for error tracking, shared with the frontend through the `/config` endpoint | Optional |
+| `NEXT_PUBLIC_SENTRY_DSN` | None | **Deprecated** (build-time fallback, will be removed) — use `SENTRY_DSN` | Optional |
+| `NEXT_PUBLIC_SENTRY_ENVIRONMENT` | None | **Deprecated** (build-time fallback, will be removed) — the frontend now uses the backend `ENVIRONMENT` | Optional |
 
 ### Selfcheck
 
@@ -296,18 +296,30 @@ End-to-end mail delivery probe — see [selfcheck.md](selfcheck.md) for details.
 
 ## Frontend Configuration
 
+The frontend is configured at runtime through the backend `/api/v1.0/config/` endpoint (see the backend [Frontend settings](#frontend) section). The only build-time variable left is the API origin, needed to reach that endpoint.
+
 | Variable | Default | Description | Required |
 |----------|---------|-------------|----------|
 | `NEXT_PUBLIC_API_ORIGIN` | `http://localhost:8901` | Frontend API origin | Dev |
-| `NEXT_PUBLIC_LANGUAGES` | `[["en-US","English"],["fr-FR","Français"],["nl-NL","Nederlands"]]` | Languages available for frontend | Optional |
-| `NEXT_PUBLIC_DEFAULT_LANGUAGE` | `en-US` | Default language for frontend | Optional |
-| `NEXT_PUBLIC_FORCED_DEFAULT_LANGUAGE` | `false` | When `true`, the default language fallback is `NEXT_PUBLIC_DEFAULT_LANGUAGE` instead of the browser language. | Optional |
-| `NEXT_PUBLIC_THEME_CONFIG` | `{theme: "white-label"}` | Theme configuration for frontend | Optional |
-| `NEXT_PUBLIC_FEEDBACK_WIDGET_API_URL` || Feedback widget API URL | Optional |
-| `NEXT_PUBLIC_FEEDBACK_WIDGET_PATH` || Feedback widget path | Optional |
-| `NEXT_PUBLIC_FEEDBACK_WIDGET_CHANNEL` || Feedback widget channel used by the in-app survey button (authenticated header) | Optional |
-| `NEXT_PUBLIC_FEEDBACK_WIDGET_HOME_CHANNEL` || Feedback widget channel used on the unauthenticated home page. Falls back to `NEXT_PUBLIC_FEEDBACK_WIDGET_CHANNEL` when unset | Optional |
-| `NEXT_PUBLIC_HELP_CENTER_URL` || Help center URL | Optional |
+
+The following build-time variables are **deprecated**: they only act as fallbacks when the backend does not provide the corresponding setting, and will be removed in a future release.
+
+| Deprecated variable | Replaced by (backend setting) |
+|----------|---------|
+| `NEXT_PUBLIC_LANGUAGES` | `LANGUAGES` |
+| `NEXT_PUBLIC_DEFAULT_LANGUAGE` | `LANGUAGE_CODE` |
+| `NEXT_PUBLIC_FORCED_DEFAULT_LANGUAGE` | `FRONTEND_FORCED_DEFAULT_LANGUAGE` |
+| `NEXT_PUBLIC_THEME_CONFIG` | `FRONTEND_THEME_CONFIG` |
+| `NEXT_PUBLIC_MULTIPART_UPLOAD_CHUNK_SIZE` | `FRONTEND_MULTIPART_UPLOAD_CHUNK_SIZE_MB` |
+| `NEXT_PUBLIC_FEEDBACK_WIDGET_API_URL` | `FRONTEND_FEEDBACK_WIDGET_CONFIG` (`api_url` key) |
+| `NEXT_PUBLIC_FEEDBACK_WIDGET_PATH` | `FRONTEND_FEEDBACK_WIDGET_CONFIG` (`path` key) |
+| `NEXT_PUBLIC_FEEDBACK_WIDGET_CHANNEL` | `FRONTEND_FEEDBACK_WIDGET_CONFIG` (`channel` key) |
+| `NEXT_PUBLIC_FEEDBACK_WIDGET_HOME_CHANNEL` | `FRONTEND_FEEDBACK_WIDGET_CONFIG` (`home_channel` key) |
+| `NEXT_PUBLIC_HELP_CENTER_URL` | `FRONTEND_HELP_CENTER_URL` |
+| `NEXT_PUBLIC_LAGAUFRE_WIDGET_API_URL` | `FRONTEND_LAGAUFRE_WIDGET_CONFIG` (`api_url` key) |
+| `NEXT_PUBLIC_LAGAUFRE_WIDGET_PATH` | `FRONTEND_LAGAUFRE_WIDGET_CONFIG` (`path` key) |
+| `NEXT_PUBLIC_SENTRY_DSN` | `SENTRY_DSN` |
+| `NEXT_PUBLIC_SENTRY_ENVIRONMENT` | `ENVIRONMENT` (backend environment) |
 
 ## Development Tools
 
@@ -410,10 +422,19 @@ it can lead to memory exhaustion, increase at your own risk.
 
 ### Frontend
 
+These settings are unset by default: an unset setting is omitted from the `/config` payload and the frontend then falls back on its deprecated `NEXT_PUBLIC_*` build-time variable (if any), then on its built-in default. Setting a value here always takes precedence over the frontend fallbacks.
+
 | Variable | Default | Description | Required |
 |----------|---------|-------------|----------|
-| `FRONTEND_THEME` | `white-label` | Theme for the frontend | Optional |
 | `FRONTEND_SILENT_LOGIN_ENABLED` | `False` | Whether silent login is enabled | Optional |
+| `FRONTEND_THEME_CONFIG` | None (frontend defaults to `{"theme": "white-label"}`) | Theme configuration served to the frontend (`theme`, `terms_of_service_url`, `footer`), as JSON | Optional |
+| `FRONTEND_FORCED_DEFAULT_LANGUAGE` | None (frontend defaults to `False`) | When `True`, the frontend default language fallback is `LANGUAGE_CODE` instead of the browser language | Optional |
+| `FRONTEND_MULTIPART_UPLOAD_CHUNK_SIZE_MB` | None (frontend defaults to `100`) | Chunk size in MB for frontend multipart uploads | Optional |
+| `FRONTEND_HELP_CENTER_URL` | None | Help center URL | Optional |
+| `FRONTEND_FEEDBACK_WIDGET_CONFIG` | None | Feedback widget configuration (`api_url`, `path`, `channel`, `home_channel`), as JSON | Optional |
+| `FRONTEND_LAGAUFRE_WIDGET_CONFIG` | None | Lagaufre widget configuration (`api_url`, `path`), as JSON | Optional |
+
+Note: every language listed in `LANGUAGES` must have its translation files in the frontend (`/locales/*/xx-XX.json`), otherwise the UI falls back to `en-US`.
 
 ### Third-party Services
 

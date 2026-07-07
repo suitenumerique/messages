@@ -224,6 +224,27 @@ class JSONValue(values.Value):
             raise ImproperlyConfigured(f"{name} is not valid JSON") from None
 
 
+class OptionalBooleanValue(values.BooleanValue):
+    """
+    A BooleanValue that also accepts ``None`` as default, to distinguish a
+    setting deliberately left unconfigured from an explicit True/False.
+    """
+
+    def __init__(self, *args, **kwargs):
+        default = kwargs.get("default", args[0] if args else None)
+        if default is None:
+            # BooleanValue's __init__ rejects a None default: initialize
+            # with a placeholder then restore None afterwards.
+            if args:
+                args = (False, *args[1:])
+            else:
+                kwargs["default"] = False
+            super().__init__(*args, **kwargs)
+            self.default = None
+        else:
+            super().__init__(*args, **kwargs)
+
+
 class ThrottleRateValue(values.Value):
     """
     A custom value class that parses and validates throttle rate strings

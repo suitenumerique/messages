@@ -1,7 +1,5 @@
 import * as Sentry from "@sentry/react";
 
-const isSentryEnabled = import.meta.env.NEXT_PUBLIC_SENTRY_DSN && import.meta.env.NEXT_PUBLIC_SENTRY_ENVIRONMENT;
-
 type CaptureExceptionContext = Parameters<typeof Sentry.captureException>[1];
 
 /**
@@ -9,7 +7,7 @@ type CaptureExceptionContext = Parameters<typeof Sentry.captureException>[1];
  * Passes errors to Sentry if available, logs the error to the console otherwise.
  */
 export const handle = (error: unknown, context?: CaptureExceptionContext) => {
-    if (isSentryEnabled) {
+    if (Sentry.isInitialized()) {
       Sentry.captureException(error, context);
     } else {
       console.error(error, context);

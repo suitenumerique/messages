@@ -203,10 +203,19 @@
                                             "type": "string",
                                             "readOnly": true
                                         },
+                                        "RELEASE": {
+                                            "type": "string",
+                                            "description": "Version of the application",
+                                            "readOnly": true
+                                        },
                                         "LANGUAGES": {
                                             "type": "array",
+                                            "description": "Available languages, as (code, label) pairs",
                                             "items": {
-                                                "type": "string"
+                                                "type": "array",
+                                                "items": {
+                                                    "type": "string"
+                                                }
                                             },
                                             "readOnly": true
                                         },
@@ -238,34 +247,29 @@
                                             "description": "The URLs of the Drive external service.",
                                             "properties": {
                                                 "sdk_url": {
-                                                    "type": "string",
-                                                    "readOnly": true
+                                                    "type": "string"
                                                 },
                                                 "api_url": {
-                                                    "type": "string",
-                                                    "readOnly": true
+                                                    "type": "string"
                                                 },
                                                 "file_url": {
-                                                    "type": "string",
-                                                    "readOnly": true
+                                                    "type": "string"
                                                 },
                                                 "preview_url": {
-                                                    "type": "string",
-                                                    "readOnly": true
+                                                    "type": "string"
                                                 },
                                                 "app_name": {
-                                                    "type": "string",
-                                                    "readOnly": true
+                                                    "type": "string"
                                                 }
                                             },
-                                            "readOnly": true,
                                             "required": [
                                                 "sdk_url",
                                                 "api_url",
                                                 "file_url",
                                                 "preview_url",
                                                 "app_name"
-                                            ]
+                                            ],
+                                            "readOnly": true
                                         },
                                         "SCHEMA_CUSTOM_ATTRIBUTES_USER": {
                                             "type": "object",
@@ -278,16 +282,6 @@
                                         "MAX_OUTGOING_ATTACHMENT_SIZE": {
                                             "type": "integer",
                                             "description": "Maximum size in bytes for outgoing email attachments",
-                                            "readOnly": true
-                                        },
-                                        "MAX_OUTGOING_BODY_SIZE": {
-                                            "type": "integer",
-                                            "description": "Maximum size in bytes for outgoing email body (text + HTML)",
-                                            "readOnly": true
-                                        },
-                                        "MAX_INCOMING_EMAIL_SIZE": {
-                                            "type": "integer",
-                                            "description": "Maximum size in bytes for incoming email (including attachments and body)",
                                             "readOnly": true
                                         },
                                         "MAX_RECIPIENTS_PER_MESSAGE": {
@@ -330,10 +324,68 @@
                                             "type": "boolean",
                                             "description": "Whether silent OIDC login is enabled",
                                             "readOnly": true
+                                        },
+                                        "SENTRY_DSN": {
+                                            "type": "string",
+                                            "description": "Sentry DSN shared with the frontend",
+                                            "readOnly": true
+                                        },
+                                        "FRONTEND_THEME_CONFIG": {
+                                            "type": "object",
+                                            "description": "Theme configuration for the frontend (theme, terms_of_service_url, footer)",
+                                            "readOnly": true
+                                        },
+                                        "FRONTEND_FORCED_DEFAULT_LANGUAGE": {
+                                            "type": "boolean",
+                                            "description": "Whether the frontend should fall back to LANGUAGE_CODE instead of the browser language",
+                                            "readOnly": true
+                                        },
+                                        "FRONTEND_MULTIPART_UPLOAD_CHUNK_SIZE_MB": {
+                                            "type": "integer",
+                                            "description": "Chunk size in MB for frontend multipart uploads",
+                                            "readOnly": true
+                                        },
+                                        "FRONTEND_HELP_CENTER_URL": {
+                                            "type": "string",
+                                            "description": "Help center URL",
+                                            "readOnly": true
+                                        },
+                                        "FRONTEND_FEEDBACK_WIDGET_CONFIG": {
+                                            "type": "object",
+                                            "description": "Configuration of the feedback widget",
+                                            "properties": {
+                                                "api_url": {
+                                                    "type": "string"
+                                                },
+                                                "path": {
+                                                    "type": "string"
+                                                },
+                                                "channel": {
+                                                    "type": "string"
+                                                },
+                                                "home_channel": {
+                                                    "type": "string"
+                                                }
+                                            },
+                                            "readOnly": true
+                                        },
+                                        "FRONTEND_LAGAUFRE_WIDGET_CONFIG": {
+                                            "type": "object",
+                                            "description": "Configuration of the Lagaufre widget",
+                                            "properties": {
+                                                "api_url": {
+                                                    "type": "string"
+                                                },
+                                                "path": {
+                                                    "type": "string"
+                                                }
+                                            },
+                                            "readOnly": true
                                         }
                                     },
                                     "required": [
                                         "ENVIRONMENT",
+                                        "RELEASE",
                                         "LANGUAGES",
                                         "LANGUAGE_CODE",
                                         "AI_ENABLED",
@@ -343,8 +395,6 @@
                                         "SCHEMA_CUSTOM_ATTRIBUTES_USER",
                                         "SCHEMA_CUSTOM_ATTRIBUTES_MAILDOMAIN",
                                         "MAX_OUTGOING_ATTACHMENT_SIZE",
-                                        "MAX_OUTGOING_BODY_SIZE",
-                                        "MAX_INCOMING_EMAIL_SIZE",
                                         "MAX_RECIPIENTS_PER_MESSAGE",
                                         "MAX_TEMPLATE_IMAGE_SIZE",
                                         "IMAGE_PROXY_ENABLED",

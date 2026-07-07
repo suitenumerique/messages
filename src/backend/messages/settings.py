@@ -21,7 +21,7 @@ import sentry_sdk
 from configurations import Configuration, values
 from sentry_sdk.integrations.django import DjangoIntegration
 
-from core.utils import JSONValue, ThrottleRateValue
+from core.utils import JSONValue, OptionalBooleanValue, ThrottleRateValue
 
 logger = logging.getLogger(__name__)
 
@@ -752,8 +752,8 @@ class Base(Configuration):
     LANGUAGES = values.SingleNestedTupleValue(
         (
             ("en-us", "English"),
-            ("fr-fr", "French"),
-            ("nl-nl", "Dutch"),
+            ("fr-fr", "Français"),
+            ("nl-nl", "Nederlands"),
         )
     )
 
@@ -909,11 +909,36 @@ class Base(Configuration):
     SENTRY_DSN = values.Value(None, environ_name="SENTRY_DSN", environ_prefix=None)
 
     # Frontend
-    FRONTEND_THEME = values.Value(
-        None, environ_name="FRONTEND_THEME", environ_prefix=None
-    )
+    # These settings default to None ("not configured") on purpose: the config
+    # endpoint omits unset entries so the frontend can still fall back on its
+    # deprecated NEXT_PUBLIC_* build-time variables during the migration.
+    # Sending backend defaults instead would silently override those variables.
     FRONTEND_SILENT_LOGIN_ENABLED = values.BooleanValue(
         default=False, environ_name="FRONTEND_SILENT_LOGIN_ENABLED", environ_prefix=None
+    )
+    FRONTEND_THEME_CONFIG = JSONValue(
+        None, environ_name="FRONTEND_THEME_CONFIG", environ_prefix=None
+    )
+    FRONTEND_FORCED_DEFAULT_LANGUAGE = OptionalBooleanValue(
+        None,
+        environ_name="FRONTEND_FORCED_DEFAULT_LANGUAGE",
+        environ_prefix=None,
+    )
+    FRONTEND_MULTIPART_UPLOAD_CHUNK_SIZE_MB = values.PositiveIntegerValue(
+        None,
+        environ_name="FRONTEND_MULTIPART_UPLOAD_CHUNK_SIZE_MB",
+        environ_prefix=None,
+    )
+    FRONTEND_HELP_CENTER_URL = values.Value(
+        None, environ_name="FRONTEND_HELP_CENTER_URL", environ_prefix=None
+    )
+    # Expected keys: api_url, path, channel, home_channel
+    FRONTEND_FEEDBACK_WIDGET_CONFIG = JSONValue(
+        None, environ_name="FRONTEND_FEEDBACK_WIDGET_CONFIG", environ_prefix=None
+    )
+    # Expected keys: api_url, path
+    FRONTEND_LAGAUFRE_WIDGET_CONFIG = JSONValue(
+        None, environ_name="FRONTEND_LAGAUFRE_WIDGET_CONFIG", environ_prefix=None
     )
 
     # Celery
@@ -1308,7 +1333,7 @@ class Base(Configuration):
                 f"Invalid MTA_OUT_SMTP_TLS_SECURITY_LEVEL: {self.MTA_OUT_SMTP_TLS_SECURITY_LEVEL}"
             )
 
-        # OIDC Deprecated fields mapping
+        # Deprecated fields mapping
         deprecated_settings_mapping = (
             (
                 "USER_OIDC_ESSENTIAL_CLAIMS",
@@ -1321,6 +1346,9 @@ class Base(Configuration):
                 values.ListValue(),
             ),
             ("USER_OIDC_FIELD_TO_SHORTNAME", None, None),
+            # FRONTEND_THEME was never honored; FRONTEND_THEME_CONFIG is the
+            # intentional replacement, so the old value is not mapped over.
+            ("FRONTEND_THEME", None, None),
         )
 
         for deprecated_setting, new_setting, Parser in deprecated_settings_mapping:

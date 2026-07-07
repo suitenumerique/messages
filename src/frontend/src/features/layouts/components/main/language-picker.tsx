@@ -1,15 +1,15 @@
 import { LanguagePicker as BaseLanguagePicker, LanguagePickerProps } from "@gouvfr-lasuite/ui-kit";
 import { useTranslation } from "react-i18next";
-import { LANGUAGES } from "@/features/i18n/conf";
+import { useConfig } from "@/features/providers/config";
 import { handle } from "@/features/utils/errors";
 
 /**
- * @MARK: Those languages should be retrieved from the backend through conf API
- * Furthermore, this component should be moved to the UI Kit
+ * @MARK: This component should be moved to the UI Kit
  */
 export const LanguagePicker = (props: Pick<LanguagePickerProps, "size" | "color" | "variant" | "fullWidth" | "compact">) => {
   const { i18n } = useTranslation();
-  const languages = LANGUAGES.map((language: [string, string]) => ({
+  const { LANGUAGES } = useConfig();
+  const languages = LANGUAGES.map((language) => ({
     value: language[0],
     label: language[1],
     isChecked: i18n.language === language[0]

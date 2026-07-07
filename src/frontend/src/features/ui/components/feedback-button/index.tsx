@@ -2,6 +2,7 @@ import { DropdownMenu, Icon, IconType } from "@gouvfr-lasuite/ui-kit"
 import { Button, ButtonProps, Tooltip } from "@gouvfr-lasuite/cunningham-react"
 import { useTranslation } from "react-i18next"
 import { useAuth } from "@/features/auth";
+import { useConfig } from "@/features/providers/config";
 import { useState } from "react";
 import { WidgetHelper } from "@/features/utils/widget-helper";
 
@@ -16,12 +17,11 @@ type SurveyButtonProps = ButtonProps & {
 export const SurveyButton = ({ iconOnly = false, ...props }: SurveyButtonProps) => {
   const { t } = useTranslation()
   const { user } = useAuth();
+  const { FEEDBACK_WIDGET, HELP_CENTER_URL } = useConfig();
   const [isDropdownOpen, setIsDropdownOpen] = useState(false);
 
-  const apiUrl = import.meta.env.NEXT_PUBLIC_FEEDBACK_WIDGET_API_URL;
-  const widgetPath = import.meta.env.NEXT_PUBLIC_FEEDBACK_WIDGET_PATH;
-  const channel = import.meta.env.NEXT_PUBLIC_FEEDBACK_WIDGET_CHANNEL;
-  const helpCenterUrl = import.meta.env.NEXT_PUBLIC_HELP_CENTER_URL;
+  const { api_url: apiUrl, path: widgetPath, channel } = FEEDBACK_WIDGET;
+  const helpCenterUrl = HELP_CENTER_URL;
 
   const hasWidget = !!(channel && apiUrl && widgetPath);
   const hasHelpCenter = !!helpCenterUrl;
