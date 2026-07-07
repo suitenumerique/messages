@@ -1,7 +1,7 @@
-import { useNavigate } from "@tanstack/react-router";
 import { useTranslation } from "react-i18next";
 import { Button } from "@gouvfr-lasuite/cunningham-react";
 import { useMailboxContext } from "@/features/providers/mailbox";
+import { useComposeWindows } from "@/features/providers/compose-windows";
 import { useLayoutContext } from "@/features/layouts/components/layout-context";
 import useAbility, { Abilities } from "@/hooks/use-ability";
 import { Icon, IconType } from "@gouvfr-lasuite/ui-kit";
@@ -13,8 +13,8 @@ const MIN_ANIMATION_MS = 700;
 
 export const MailboxPanelActions = () => {
     const { t } = useTranslation();
-    const navigate = useNavigate();
     const { selectedMailbox, refetchMailboxes } = useMailboxContext();
+    const { openComposeWindow } = useComposeWindows();
     const { closeLeftPanel } = useLayoutContext();
     const canWriteMessages = useAbility(Abilities.CAN_WRITE_MESSAGES, selectedMailbox);
     const [isRefreshing, setIsRefreshing] = useState(false);
@@ -51,11 +51,11 @@ export const MailboxPanelActions = () => {
         }
     };
 
-    const goToNewMessageForm = (event: React.MouseEvent<HTMLButtonElement | HTMLAnchorElement>) => {
+    const openNewMessageWindow = (event: React.MouseEvent<HTMLButtonElement | HTMLAnchorElement>) => {
         event.preventDefault();
         if (!canWriteMessages) return;
         closeLeftPanel();
-        navigate({ to: '/mailbox/$mailboxId/new', params: { mailboxId: selectedMailbox!.id } });
+        openComposeWindow({ mode: "new", mailboxId: selectedMailbox!.id });
     };
 
     if (!selectedMailbox) return null;
@@ -64,8 +64,7 @@ export const MailboxPanelActions = () => {
         <div className="mailbox-panel-actions">
             <div>
                 <Button
-                    onClick={goToNewMessageForm}
-                    href={`/mailbox/${selectedMailbox.id}/new`}
+                    onClick={openNewMessageWindow}
                     icon={<Icon name="edit_note" type={IconType.OUTLINED} aria-hidden="true" />}
                     disabled={!canWriteMessages}
                 >

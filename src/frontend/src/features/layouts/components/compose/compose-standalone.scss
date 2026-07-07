@@ -1,0 +1,34 @@
+// Standalone pop-out compose page (no app shell).
+.compose-standalone {
+    display: flex;
+    flex-direction: column;
+    height: 100dvh;
+    background-color: var(--c--contextuals--background--surface--primary);
+}
+
+.compose-standalone__header {
+    display: flex;
+    align-items: center;
+    padding: var(--c--globals--spacings--2xs) var(--c--globals--spacings--base);
+    border-bottom: 1px solid var(--c--contextuals--border--surface--primary);
+    flex-shrink: 0;
+}
+
+.compose-standalone__main {
+    flex: 1;
+    min-height: 0;
+    overflow-y: auto;
+    padding: var(--c--globals--spacings--base);
+    max-width: 960px;
+    width: 100%;
+    margin: 0 auto;
+    box-sizing: border-box;
+}
+
+.compose-standalone__loading,
+.compose-standalone__empty {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    height: 50vh;
+}

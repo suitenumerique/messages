@@ -1,6 +1,6 @@
 import test, { expect, type Page } from "@playwright/test";
 import { getMailboxEmail } from "../utils";
-import { signInKeycloakIfNeeded } from "../utils-test";
+import { openNewMessageWindow, signInKeycloakIfNeeded } from "../utils-test";
 import path from "path";
 import { FIXTURES_PATH } from "../constants";
 
@@ -32,9 +32,7 @@ test.describe("Attachment preview", () => {
     fixtures: string[],
   ): Promise<void> {
     await page.waitForLoadState("networkidle");
-    await page.getByRole("link", { name: "New message" }).click();
-    await page.waitForURL("/mailbox/*/new");
-    await page.getByRole("heading", { name: "New message" }).waitFor({ state: "visible" });
+    await openNewMessageWindow(page);
 
     await page.getByRole("combobox", { name: "To" }).fill(getMailboxEmail("shared"));
     await page.getByRole("textbox", { name: "Subject" }).fill(subject);

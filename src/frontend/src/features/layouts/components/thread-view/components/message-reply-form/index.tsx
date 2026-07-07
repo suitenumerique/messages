@@ -3,9 +3,12 @@ import { Message } from "@/features/api/gen";
 import { MessageForm, MessageFormHandle, MessageFormMode } from "@/features/forms/components/message-form";
 import { useQueryClient } from "@tanstack/react-query";
 import { Icon, IconType } from "@gouvfr-lasuite/ui-kit";
+import { Button, Tooltip } from "@gouvfr-lasuite/cunningham-react";
 import { useTranslation } from "react-i18next";
 import clsx from "clsx";
 import { DateHelper } from "@/features/utils/date-helper";
+import { useComposeWindows } from "@/features/providers/compose-windows";
+import { useMailboxContext } from "@/features/providers/mailbox";
 import DraftActionsMenu from "./draft-actions-menu";
 
 type MessageReplyFormProps = {
@@ -21,10 +24,27 @@ type MessageReplyFormProps = {
 const MessageReplyForm = ({ handleClose, message, mode, detached = false }: MessageReplyFormProps) => {
     const { t, i18n } = useTranslation();
     const queryClient = useQueryClient();
+    const { openComposeWindow } = useComposeWindows();
+    const { selectedMailbox } = useMailboxContext();
     const formRef = useRef<MessageFormHandle>(null);
     // Sourced from MessageForm so the menu mirrors the exact mailbox + thread
     // permission check that gates the in-form delete button.
     const [canDelete, setCanDelete] = useState(false);
+
+    const handleOpenInWindow = async () => {
+        // The floating window needs a server-side id to load and track the
+        // draft (banner matching, persistence), so materialize it first.
+        const draftId = await formRef.current?.ensureDraftId();
+        if (!draftId || !selectedMailbox) return;
+        openComposeWindow({
+            mode: mode ?? "reply",
+            draftId,
+            mailboxId: selectedMailbox.id,
+            threadId: message.thread_id ?? undefined,
+            parentMessageId: message.is_draft ? (message.parent_id ?? undefined) : message.id,
+        });
+        handleClose();
+    };
 
     return (
         <div
@@ -43,14 +63,25 @@ const MessageReplyForm = ({ handleClose, message, mode, detached = false }: Mess
                             {DateHelper.formatDate(message.created_at, i18n.resolvedLanguage)}
                         </span>
                     )}
-                    {message.is_draft && (
-                        <div className="message-reply-form-container__header-actions">
+                    <div className="message-reply-form-container__header-actions">
+                        <Tooltip content={t("Open in a window")} placement="left">
+                            <Button
+                                type="button"
+                                variant="tertiary"
+                                color="brand"
+                                size="small"
+                                aria-label={t("Open in a window")}
+                                icon={<Icon name="open_in_new" type={IconType.OUTLINED} />}
+                                onClick={handleOpenInWindow}
+                            />
+                        </Tooltip>
+                        {message.is_draft && (
                             <DraftActionsMenu
                                 message={message}
                                 onDelete={canDelete ? () => formRef.current?.deleteDraft() : undefined}
                             />
-                        </div>
-                    )}
+                        )}
+                    </div>
                 </div>
             )}
             <div className="message-reply-form-container__body">

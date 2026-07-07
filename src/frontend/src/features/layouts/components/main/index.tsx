@@ -11,6 +11,8 @@ import { AttachmentPreviewProvider } from "@/features/providers/attachment-previ
 import { useTheme } from "@/features/providers/theme";
 import { LayoutProvider, useLayoutDragContext } from "@/features/layouts/components/layout-context";
 import { AttachmentPreviewModal } from "@/features/layouts/components/thread-view/components/attachment-preview-modal";
+import { ComposeWindowsProvider } from "@/features/providers/compose-windows";
+import { ComposeWindowsLayer } from "@/features/layouts/components/compose/compose-windows-layer";
 import { Link } from "@tanstack/react-router";
 import { useTranslation } from "react-i18next";
 
@@ -20,14 +22,17 @@ export const MainLayout = ({ children }: PropsWithChildren) => {
             <ScrollRestoreProvider>
                 <MailboxProvider>
                     <SentBoxProvider>
-                        <ModalStoreProvider>
-                            <AttachmentPreviewProvider>
-                                <LayoutProvider draggable>
-                                    <MainLayoutContent>{children}</MainLayoutContent>
-                                    <AttachmentPreviewModal />
-                                </LayoutProvider>
-                            </AttachmentPreviewProvider>
-                        </ModalStoreProvider>
+                        <ComposeWindowsProvider>
+                            <ModalStoreProvider>
+                                <AttachmentPreviewProvider>
+                                    <LayoutProvider draggable>
+                                        <MainLayoutContent>{children}</MainLayoutContent>
+                                        <AttachmentPreviewModal />
+                                        <ComposeWindowsLayer />
+                                    </LayoutProvider>
+                                </AttachmentPreviewProvider>
+                            </ModalStoreProvider>
+                        </ComposeWindowsProvider>
                     </SentBoxProvider>
                 </MailboxProvider>
             </ScrollRestoreProvider>
