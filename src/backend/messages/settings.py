@@ -224,6 +224,18 @@ class Base(Configuration):
         environ_prefix=None,
     )
 
+    # External-link confirmation allowlist: hostnames whose links open without
+    # the "you are about to leave this page" confirmation modal. A lone ``*``
+    # entry trusts every host (disables the modal). A leading ``*.`` wildcard
+    # matches a domain and all its subdomains (``*.gouv.fr`` matches ``gouv.fr``
+    # and ``impots.gouv.fr``); any other entry matches the host exactly
+    # (case-insensitive). Masked links, whose display text points to a different
+    # host than the real target, always prompt even when their target is listed
+    # here — that is the phishing case the modal exists for.
+    MESSAGE_TRUSTED_LINK_DOMAINS = values.ListValue(
+        [], environ_name="MESSAGE_TRUSTED_LINK_DOMAINS", environ_prefix=None
+    )
+
     # Security
     ALLOWED_HOSTS = values.ListValue([])
     SECRET_KEY = values.Value(None)

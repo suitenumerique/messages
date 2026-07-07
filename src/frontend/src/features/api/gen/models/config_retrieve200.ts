@@ -35,6 +35,8 @@ export type ConfigRetrieve200 = {
   readonly MAX_TEMPLATE_IMAGE_SIZE: number;
   /** Whether external images should be proxied */
   readonly IMAGE_PROXY_ENABLED: boolean;
+  /** Hostnames whose external links skip the redirect confirmation modal (a leading *. wildcard also matches subdomains) */
+  readonly MESSAGE_TRUSTED_LINK_DOMAINS: readonly string[];
   readonly FEATURE_MAILDOMAIN_CREATE: boolean;
   readonly FEATURE_MAILDOMAIN_MANAGE_ACCESSES: boolean;
   readonly FEATURE_THREAD_SPLIT: boolean;

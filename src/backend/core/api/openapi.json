@@ -299,6 +299,14 @@
                                             "description": "Whether external images should be proxied",
                                             "readOnly": true
                                         },
+                                        "MESSAGE_TRUSTED_LINK_DOMAINS": {
+                                            "type": "array",
+                                            "items": {
+                                                "type": "string"
+                                            },
+                                            "description": "Hostnames whose external links skip the redirect confirmation modal (a leading *. wildcard also matches subdomains)",
+                                            "readOnly": true
+                                        },
                                         "FEATURE_MAILDOMAIN_CREATE": {
                                             "type": "boolean",
                                             "readOnly": true
@@ -398,6 +406,7 @@
                                         "MAX_RECIPIENTS_PER_MESSAGE",
                                         "MAX_TEMPLATE_IMAGE_SIZE",
                                         "IMAGE_PROXY_ENABLED",
+                                        "MESSAGE_TRUSTED_LINK_DOMAINS",
                                         "FEATURE_MAILDOMAIN_CREATE",
                                         "FEATURE_MAILDOMAIN_MANAGE_ACCESSES",
                                         "FEATURE_THREAD_SPLIT",

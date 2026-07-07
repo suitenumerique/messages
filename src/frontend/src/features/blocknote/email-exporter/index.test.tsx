@@ -276,7 +276,6 @@ describe('EmailExporter', () => {
       ]);
       expect(html).toContain('<a');
       expect(html).toContain('href="https://example.com/"');
-      expect(html).toContain('text-decoration:underline');
       expect(html).toContain('Click here');
     });
 
@@ -289,13 +288,6 @@ describe('EmailExporter', () => {
       const html = exportBlocks([paragraph([styledLink])]);
       expect(html).toContain('font-weight:bold');
       expect(html).toContain('href="https://example.com/"');
-    });
-
-    it('defaults the <a> color to link blue when the text has no color', () => {
-      const html = exportBlocks([
-        paragraph([link('https://example.com/', 'Click here')]),
-      ]);
-      expect(html).toContain('color:#0b6e99');
     });
 
     it('mirrors the text color onto the <a> so the underline matches', () => {

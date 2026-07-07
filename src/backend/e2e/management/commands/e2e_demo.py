@@ -10,6 +10,8 @@ from django.core.management.base import BaseCommand
 from django.db import transaction
 from django.utils import timezone
 
+from jmap_email import parse_email
+
 from core import models
 from core.enums import (
     MailboxRoleChoices,
@@ -18,6 +20,7 @@ from core.enums import (
     ThreadAccessRoleChoices,
     ThreadEventTypeChoices,
 )
+from core.mda.inbound import deliver_inbound_message
 from core.services.identity.keycloak import get_keycloak_admin_client
 
 BROWSERS = ["chromium", "firefox", "webkit"]
@@ -382,9 +385,10 @@ class Command(BaseCommand):
             "Inbox thread beta",
         ]
 
-        # Clean up existing inbox test threads
+        # Clean up existing inbox test threads (bodyless seeds + the link
+        # thread delivered separately below).
         existing = models.Thread.objects.filter(
-            subject__in=inbox_subjects,
+            subject__in=[*inbox_subjects, "Spam link inbox thread"],
             accesses__mailbox=mailbox,
         )
         deleted_count = existing.count()
@@ -418,9 +422,34 @@ class Command(BaseCommand):
             )
             thread.update_stats()
 
+        self._create_inbox_link_thread(mailbox, browser)
+
         self.stdout.write(
             self.style.SUCCESS(f"  ✓ Inbox test data created for {browser}")
         )
+
+    def _create_inbox_link_thread(self, mailbox, browser):
+        """Deliver a real inbound message with an HTML body carrying a bare
+        external URL, so the link-preview E2E test has a genuine received thread
+        to report as spam and check that its links get disabled.
+        """
+        recipient = f"{mailbox.local_part}@{mailbox.domain.name}"
+        raw = (
+            f"From: External Sender {browser} "
+            f"<external.{browser}@external.invalid>\r\n"
+            f"To: {recipient}\r\n"
+            f"Subject: Spam link inbox thread\r\n"
+            f"Message-ID: <spam-link-{browser}@external.invalid>\r\n"
+            "MIME-Version: 1.0\r\n"
+            "Content-Type: text/html; charset=utf-8\r\n"
+            "\r\n"
+            f"<html><body><p>Do not click https://external-link.example/promo please</p>"
+            "</body></html>\r\n"
+        ).encode()
+
+        # is_import bypasses the spam pipeline so the thread lands in the inbox
+        # (the test is the one that reports it as spam).
+        deliver_inbound_message(recipient, parse_email(raw), raw, is_import=True)
 
     def _create_thread_with_message(self, mailbox, sender_contact, subject, recipients):
         """

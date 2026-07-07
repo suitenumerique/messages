@@ -121,6 +121,17 @@ CONFIG_ENTRIES = (
             "description": "Whether external images should be proxied",
         },
     ),
+    ConfigEntry(
+        "MESSAGE_TRUSTED_LINK_DOMAINS",
+        {
+            "type": "array",
+            "items": {"type": "string"},
+            "description": (
+                "Hostnames whose external links skip the redirect confirmation "
+                "modal (a leading *. wildcard also matches subdomains)"
+            ),
+        },
+    ),
     ConfigEntry("FEATURE_MAILDOMAIN_CREATE", {"type": "boolean"}),
     ConfigEntry("FEATURE_MAILDOMAIN_MANAGE_ACCESSES", {"type": "boolean"}),
     ConfigEntry("FEATURE_THREAD_SPLIT", {"type": "boolean"}),

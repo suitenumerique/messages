@@ -13,6 +13,9 @@ import { Banner } from "@/features/ui/components/banner";
 import { getMailboxesImageProxyListUrl } from "@/features/api/gen/mailboxes/mailboxes";
 import { EXTERNAL_IMAGES_CONSENT_KEY } from "@/features/config/constants";
 import { renderBodyParts } from "./renderers";
+import { linkifyHtml } from "./renderers/linkify";
+import { isHostTrusted } from "./is-host-trusted";
+import { useLinkConfirmation } from "./use-link-confirmation";
 import { ThreadMessageBodyProps } from "./types";
 
 const CSP = [
@@ -43,12 +46,38 @@ const CSP = [
     "frame-ancestors 'none'",
 ].join('; ');
 
+/**
+ * Detect link masking: the link text pretends to be a URL but points to a
+ * different host than the real target, a common phishing technique
+ * (e.g. <a href="http://malicious.com">http://safe.fr</a>).
+ */
+const isLinkMasked = (href: string, text: string): boolean => {
+    const trimmedText = text.trim();
+    if (!/^(https?:\/\/|www\.)/i.test(trimmedText)) {
+        return false;
+    }
+    try {
+        const textUrl = new URL(/^https?:\/\//i.test(trimmedText) ? trimmedText : `https://${trimmedText}`);
+        const hrefUrl = new URL(href);
+        return textUrl.host.replace(/^www\./, "") !== hrefUrl.host.replace(/^www\./, "");
+    } catch {
+        // The text pretends to be a URL but one side cannot be parsed, stay cautious.
+        return true;
+    }
+};
+
 const ThreadMessageBody = ({ bodyParts, attachments = [], isHidden = false, messageId, onLoad }: ThreadMessageBodyProps) => {
     const { t } = useTranslation();
     const iframeRef = useRef<HTMLIFrameElement>(null);
     const { cunninghamTheme, variant } = useTheme();
-    const { selectedMailbox } = useMailboxContext();
-    const { IMAGE_PROXY_ENABLED: canDisplayExternalImages } = useConfig();
+    const { selectedMailbox, selectedThread } = useMailboxContext();
+    const confirmLinkOpening = useLinkConfirmation();
+    // Links of spam messages are inert. A ref keeps the iframe click handler
+    // in sync without having to re-attach listeners when the flag changes.
+    const areLinksDisabled = Boolean(selectedThread?.is_spam);
+    const areLinksDisabledRef = useRef(areLinksDisabled);
+    areLinksDisabledRef.current = areLinksDisabled;
+    const { IMAGE_PROXY_ENABLED: canDisplayExternalImages, MESSAGE_TRUSTED_LINK_DOMAINS: trustedLinkDomains } = useConfig();
     const [displayExternalImages, setDisplayExternalImages] = useState(() => {
         const consentMessageIds = sessionStorage.getItem(EXTERNAL_IMAGES_CONSENT_KEY);
         if (consentMessageIds) {
@@ -98,6 +127,8 @@ const ThreadMessageBody = ({ bodyParts, attachments = [], isHidden = false, mess
         const hasHtmlPart = bodyParts.some(part => part.type === "text/html");
         const hasOnlyPlainText = bodyParts.every(part => part.type === "text/plain");
 
+        let htmlContent = renderedContent;
+
         if (hasHtmlPart) {
             // Process HTML content with UnquoteMessage for quote detection
             const unquoteMessage = new UnquoteMessage(renderedContent, '', {
@@ -105,10 +136,8 @@ const ThreadMessageBody = ({ bodyParts, attachments = [], isHidden = false, mess
                 ignoreFirstForward: true,
                 depth: 0,
             });
-            return unquoteMessage.getHtml().content;
-        }
-
-        if (hasOnlyPlainText) {
+            htmlContent = unquoteMessage.getHtml().content;
+        } else if (hasOnlyPlainText) {
             // Pure plain text - process original content through UnquoteMessage for quote detection
             const rawTextContent = bodyParts.map(part => part.content).join("\n");
             const unquoteMessage = new UnquoteMessage('', rawTextContent, {
@@ -118,11 +147,12 @@ const ThreadMessageBody = ({ bodyParts, attachments = [], isHidden = false, mess
             });
             const unquotedText = unquoteMessage.getText().content;
 
-            return renderToStaticMarkup(<p className="text-plain-content">{unquotedText}</p>);
+            htmlContent = renderToStaticMarkup(<p className="text-plain-content">{unquotedText}</p>);
         }
+        // Otherwise, mixed content (plain text + images, etc.) - use rendered content directly
 
-        // Mixed content (plain text + images, etc.) - use rendered content directly
-        return renderedContent;
+        // Turn bare URLs (text not already wrapped in a link) into anchors
+        return linkifyHtml(htmlContent);
     }, [bodyParts, cidToBlobUrlMap, externalImageOptions]);
 
     const wrappedHtml = useMemo(() => {
@@ -170,6 +200,14 @@ const ThreadMessageBody = ({ bodyParts, attachments = [], isHidden = false, mess
                     text-decoration: none;
                 }
                 a:hover { text-decoration: underline; }
+                ${areLinksDisabled ? `
+                /* Spam: links are inert and rendered as plain text */
+                a, a:hover {
+                    pointer-events: none;
+                    color: inherit !important;
+                    text-decoration: none !important;
+                    cursor: default;
+                }` : ''}
 
                 blockquote {
                     padding: 0 ${tokens.themes[cunninghamTheme].globals.spacings.base} !important;
@@ -303,7 +341,7 @@ const ThreadMessageBody = ({ bodyParts, attachments = [], isHidden = false, mess
             </body>
             </html>
       `;
-    }, [sanitizedHtmlBody, cunninghamTheme, variant]);
+    }, [sanitizedHtmlBody, cunninghamTheme, variant, areLinksDisabled]);
 
     const resizeIframe = useCallback(() => {
         if (iframeRef.current?.contentWindow?.document.documentElement) {
@@ -311,6 +349,51 @@ const ThreadMessageBody = ({ bodyParts, attachments = [], isHidden = false, mess
             iframeRef.current.style.height = `${height}px`;
         }
     }, [iframeRef]);
+
+    // Delegated handler for link activations inside the iframe (mouse click,
+    // keyboard activation and middle click through the auxclick event).
+    const handleLinkActivation = useCallback((event: MouseEvent) => {
+        const target = event.target as Element | null;
+        const link = target?.closest?.('a[href]') as HTMLAnchorElement | null;
+        if (!link) {
+            return;
+        }
+
+        // In-page anchors are safe and stay within the iframe
+        if (link.getAttribute('href')?.startsWith('#')) {
+            return;
+        }
+
+        if (areLinksDisabledRef.current) {
+            event.preventDefault();
+            return;
+        }
+
+        // Let other protocols (mailto:, tel:, ...) follow their default behavior
+        if (!/^https?:/i.test(link.href)) {
+            return;
+        }
+
+        event.preventDefault();
+        // Middle clicks are only blocked, the confirmation flow targets primary clicks
+        if (event.type === 'auxclick') {
+            return;
+        }
+
+        const url = link.href;
+        const isMasked = isLinkMasked(url, link.textContent ?? '');
+        // Trusted domains skip the confirmation, unless the link is masked: a
+        // masked link is exactly the phishing case the confirmation exists for.
+        if (!isMasked && isHostTrusted(new URL(url).hostname, trustedLinkDomains)) {
+            window.open(url, '_blank', 'noopener,noreferrer');
+            return;
+        }
+        void confirmLinkOpening(url, isMasked).then((confirmed) => {
+            if (confirmed) {
+                window.open(url, '_blank', 'noopener,noreferrer');
+            }
+        });
+    }, [confirmLinkOpening, trustedLinkDomains]);
 
     const handleIframeLoad = useCallback(() => {
         resizeIframe();
@@ -321,9 +404,13 @@ const ThreadMessageBody = ({ bodyParts, attachments = [], isHidden = false, mess
             doc.querySelectorAll('details.email-quoted-content').forEach(node => {
                 node.addEventListener('toggle', resizeIframe);
             });
+
+            // Intercept link activations to reveal the real target before opening it
+            doc.addEventListener('click', handleLinkActivation);
+            doc.addEventListener('auxclick', handleLinkActivation);
         }
         onLoad?.();
-    }, [onLoad, resizeIframe]);
+    }, [onLoad, resizeIframe, handleLinkActivation]);
 
     useEffect(() => {
         const handleMessage = (event: MessageEvent) => {

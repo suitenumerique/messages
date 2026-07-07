@@ -206,13 +206,13 @@ function renderInlineContent(content: AnyInlineContent[]): React.ReactNode[] {
             const textColor = link.content
                 .map((st) => st.styles?.textColor as string | undefined)
                 .find((color) => color && color !== 'default');
-            const linkColor = textColor ? (COLORS[textColor]?.text || textColor) : '#0b6e99';
+            const linkColor = textColor && (COLORS[textColor]?.text || textColor);
             return (
                 <a
                     key={i}
                     href={safeHref}
                     rel="noopener noreferrer"
-                    style={{ color: linkColor, textDecoration: 'underline' }}
+                    style={styleOrUndefined({ color: linkColor })}
                 >
                     {renderedContent}
                 </a>

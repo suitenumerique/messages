@@ -67,12 +67,15 @@
 }
 
 .banner--compact {
-    padding: var(--c--globals--spacings--xs);
-    font-size: var(--c--globals--font--sizes--sm);
-
+    padding: var(--c--globals--spacings--2xs);
+    
     .banner__icon {
         font-size: 1rem;
         height: 16px;
+    }
+    
+    .banner__content {
+        font-size: var(--c--globals--font--sizes--sm);
     }
 }
 

@@ -34,6 +34,7 @@ pytestmark = pytest.mark.django_db
     MAX_RECIPIENTS_PER_MESSAGE=42,
     MAX_TEMPLATE_IMAGE_SIZE=2097152,  # 2MB
     IMAGE_PROXY_ENABLED=False,
+    MESSAGE_TRUSTED_LINK_DOMAINS=[],
     MESSAGES_MANUAL_RETRY_MAX_AGE=86400,  # 1 day in seconds
     FRONTEND_SILENT_LOGIN_ENABLED=True,
     RELEASE="1.2.3",
@@ -68,6 +69,7 @@ def test_api_config(is_authenticated):
         "MAX_RECIPIENTS_PER_MESSAGE": 42,
         "MAX_TEMPLATE_IMAGE_SIZE": 2097152,
         "IMAGE_PROXY_ENABLED": False,
+        "MESSAGE_TRUSTED_LINK_DOMAINS": [],
         "MESSAGES_MANUAL_RETRY_MAX_AGE": 86400,
         "FRONTEND_SILENT_LOGIN_ENABLED": True,
     }
@@ -146,6 +148,14 @@ def test_api_config_frontend_settings():
     assert config["FRONTEND_LAGAUFRE_WIDGET_CONFIG"]["api_url"] == (
         "https://lagaufre.example.com"
     )
+
+
+@override_settings(MESSAGE_TRUSTED_LINK_DOMAINS=["gouv.fr", "*.example.com"])
+def test_api_config_trusted_link_domains():
+    """The trusted-link-domains allowlist should be exposed to the frontend."""
+    response = APIClient().get("/api/v1.0/config/")
+    assert response.status_code == HTTP_200_OK
+    assert response.json()["MESSAGE_TRUSTED_LINK_DOMAINS"] == ["gouv.fr", "*.example.com"]
 
 
 @override_settings(

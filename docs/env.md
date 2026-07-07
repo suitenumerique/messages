@@ -419,6 +419,7 @@ it can lead to memory exhaustion, increase at your own risk.
 | `IMAGE_PROXY_ENABLED` | `False` | Whether external images should be proxied | Optional |
 | `IMAGE_PROXY_MAX_SIZE` | `5242880` (5MB) | Maximum size in bytes for external images | Optional |
 | `IMAGE_PROXY_CACHE_TTL` | `2592000` (30 days) | Cache TTL in seconds for external images | Optional |
+| `MESSAGE_TRUSTED_LINK_DOMAINS` | `[]` | Comma-separated list of hostnames whose external links open without the redirect confirmation modal. A lone `*` trusts every host (disables the modal). A leading `*.` wildcard also matches subdomains (`*.gouv.fr` matches `gouv.fr` and `impots.gouv.fr`); any other entry matches the host exactly (case-insensitive). Masked links (display text pointing to a different host than the real target) always prompt, even when their target is listed here. | Optional |
 
 ### Frontend
 

@@ -266,3 +266,23 @@
     margin-top: calc(var(--c--globals--spacings--xs) * -1);
     margin-bottom: var(--c--globals--spacings--xs);
 }
+
+// Link confirmation modal (rendered in a portal, hence the global scope).
+// Same layout as the ui-kit file preview external link modal.
+.link-preview__content {
+    display: flex;
+    flex-direction: column;
+    gap: var(--c--globals--spacings--xs);
+    text-align: left;
+
+    .link-preview__url {
+        margin: 0;
+        white-space: pre-wrap;
+        word-break: break-all;
+        padding: var(--c--globals--spacings--2xs);
+        background-color: var(--c--contextuals--background--semantic--neutral--tertiary);
+        border-radius: 4px;
+        font-family: SFMono-Regular, Consolas, "Liberation Mono", Menlo, monospace;
+        font-size: var(--c--globals--font--sizes--sm);
+    }
+}
