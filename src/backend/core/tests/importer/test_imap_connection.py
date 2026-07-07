@@ -24,6 +24,7 @@ from core.services.importer.imap import (
     uid_fetch_message,
     uid_search_all,
 )
+from core.services.importer.utils import TransientImportError
 from core.services.ssrf import SSRFValidationError
 
 
@@ -74,10 +75,10 @@ class TestImapHelperHardening:
         assert state["n"] == 2  # one retry, then success
         assert raw == b"abc"
 
-    def test_uid_fetch_message_raises_after_retry_budget_exhausted(self, settings):
-        """A persistent timeout must escape after IMAP_MAX_RETRIES attempts —
-        the caller treats it as transient and parks the run resumable."""
-        settings.IMAP_MAX_RETRIES = 3
+    def test_uid_fetch_message_raises_after_retry_budget_exhausted(self):
+        """A persistent timeout must escape after UID_FETCH_MAX_RETRIES (3)
+        attempts — the caller treats it as transient and parks the run
+        resumable."""
         conn = MagicMock()
         conn.uid.side_effect = socket.timeout("still down")
         with patch("core.services.importer.imap.time.sleep"):
@@ -151,19 +152,72 @@ class TestUidSearchAll:
         with patch("core.services.importer.imap.select_imap_folder", return_value=True):
             assert uid_search_all(conn, "INBOX") == [1, 2, 3]
 
-    def test_incremental_empty_result_is_no_new_mail(self):
-        """An empty *incremental* search is the normal case — no fallback."""
+    def test_incremental_empty_result_is_no_new_mail_when_uidnext_agrees(self):
+        """An empty *incremental* search is the normal case — but it is only
+        trusted after a cheap UIDNEXT cross-check confirms no UIDs exist above
+        the watermark (buggy servers answer ranged searches empty too)."""
         conn = self._conn([("OK", [b""])])
+        conn.status.return_value = ("OK", [b'"INBOX" (UIDNEXT 11)'])
         with patch("core.services.importer.imap.select_imap_folder", return_value=True):
             assert uid_search_all(conn, "INBOX", since_uid=10) == []
-        assert conn.uid.call_count == 1
+        assert conn.uid.call_count == 1  # no full-scan fallback was needed
 
-    def test_unselectable_folder_returns_empty(self):
+    def test_incremental_empty_result_falls_back_when_uidnext_disagrees(self):
+        """A bogus empty ranged answer must not read as 'no new mail' when the
+        server's own UIDNEXT says UIDs exist above the watermark — that would
+        silently end a resume early / freeze a continuous poller forever."""
+        conn = self._conn(
+            [
+                ("OK", [b""]),  # UID 11:* -> bogus empty
+                ("OK", [b"1 5 12"]),  # ALL -> the truth
+            ]
+        )
+        conn.status.return_value = ("OK", [b'"INBOX" (UIDNEXT 13)'])
+        with patch("core.services.importer.imap.select_imap_folder", return_value=True):
+            # The caller filters ``> since_uid``; returning low UIDs is fine.
+            assert uid_search_all(conn, "INBOX", since_uid=10) == [1, 5, 12]
+
+    def test_incremental_empty_result_falls_back_when_status_denied(self):
+        """An unreadable STATUS means the empty answer can't be verified —
+        fall back to the full scan rather than trusting it."""
+        conn = self._conn(
+            [
+                ("OK", [b""]),  # UID 11:* -> empty
+                ("OK", [b"12"]),  # ALL
+            ]
+        )
+        conn.status.return_value = ("NO", [b""])
+        with patch("core.services.importer.imap.select_imap_folder", return_value=True):
+            assert uid_search_all(conn, "INBOX", since_uid=10) == [12]
+
+    def test_incremental_empty_result_reaches_criteria_union_fallback(self):
+        """When even the full ALL answers empty, the alternative-criteria
+        union (the original buggy-server workaround) applies to resumes too."""
+        conn = self._conn(
+            [
+                ("OK", [b""]),  # UID 11:* -> empty
+                ("OK", [b""]),  # ALL -> empty too
+                ("OK", [b"3"]),  # RECENT
+                ("OK", [b"12 13"]),  # UNSEEN
+                ("OK", [b""]),  # SEEN
+                ("OK", [b""]),  # NEW
+                ("OK", [b""]),  # OLD
+            ]
+        )
+        conn.status.return_value = ("OK", [b'"INBOX" (UIDNEXT 14)'])
+        with patch("core.services.importer.imap.select_imap_folder", return_value=True):
+            assert uid_search_all(conn, "INBOX", since_uid=10) == [3, 12, 13]
+
+    def test_unselectable_folder_raises_transient(self):
+        """An unselectable folder must not read as empty — a oneshot run would
+        complete with the folder's mail silently missing. Raising keeps the
+        run resumable; a persistent failure surfaces via the stall budget."""
         conn = self._conn([])
         with patch(
             "core.services.importer.imap.select_imap_folder", return_value=False
         ):
-            assert uid_search_all(conn, "Ghost") == []
+            with pytest.raises(TransientImportError):
+                uid_search_all(conn, "Ghost")
         conn.uid.assert_not_called()
 
 

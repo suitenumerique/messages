@@ -6,6 +6,7 @@ import { Button } from "@gouvfr-lasuite/cunningham-react";
 import { Icon, Spinner } from "@gouvfr-lasuite/ui-kit";
 import { useTranslation } from "react-i18next";
 import { ImportRun, useMailboxesImportsCreate } from "@/features/api/gen";
+import { APIError, errorToString } from "@/features/api/api-error";
 import MailHelper, { IMAP_DOMAIN_REGEXES } from "@/features/utils/mail-helper";
 import { RhfInput } from "../../forms/components/react-hook-form";
 import { RhfFileUploader } from "../../forms/components/react-hook-form/rhf-file-uploader";
@@ -62,11 +63,20 @@ export const StepForm = ({ mailboxId, onUploading, onSuccess, onError, error, st
     const importsMutation = useMailboxesImportsCreate({
         mutation: {
             meta: { noGlobalError: true },
-            onError: () => onError(t('An error occurred while importing messages.')),
+            // Surface the backend's discriminated detail (file too large, bad
+            // format, upload not found…) — collapsing it to a generic message
+            // would send the user re-trying the same doomed upload with no way
+            // to learn why it fails.
+            onError: (error) => onError(
+                error instanceof APIError && error.data
+                    ? errorToString(error)
+                    : t('An error occurred while importing messages.')
+            ),
             onSuccess: (data) => onSuccess((data.data as ImportRun).id),
         }
     });
     const bucketUploadManager = useBucketUpload({
+        mailboxId,
         onSuccess: (manager) => importsMutation.mutate({
             mailboxId,
             data: {
@@ -160,7 +170,8 @@ export const StepForm = ({ mailboxId, onUploading, onSuccess, onError, error, st
     /**
      * According to the form data,
      * exec the mutation to import emails from an IMAP server or an Archive file.
-     * We assume that all mutation returns a celery task id as response.
+     * The unified endpoint returns the created ImportRun; its `id` is what the
+     * loader step polls (see the mutation's onSuccess above).
      */
     const handleSubmit = async (data: FormFields) => {
         onError(null);
@@ -199,9 +210,9 @@ export const StepForm = ({ mailboxId, onUploading, onSuccess, onError, error, st
                         </div>
                         <div className="form-field-row">
                             <RhfInput
-                                label={t('Email address')}
+                                label={t('Email address or username')}
                                 name="username"
-                                type="email"
+                                type="text"
                                 text={form.formState.errors.username ? t(form.formState.errors.username.message as string) : undefined}
                                 onBlur={discoverImapServer}
                                 fullWidth

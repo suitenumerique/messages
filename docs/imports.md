@@ -107,7 +107,22 @@ The two resume paths are deliberately asymmetric:
   ends as `TransientImportError` — left `is_active`, so the scheduler
   re-dispatches and resumes at that UID rather than silently skipping it. Single
   `FETCH` timeouts are absorbed in-line by a bounded exponential-backoff retry
-  (`IMAP_MAX_RETRIES`).
+  (a fixed few attempts on the same connection). Connect-time network failures and unselectable folders
+  map to the same `TransientImportError` (never a silent skip — an unselectable
+  folder would otherwise let a oneshot complete with its mail missing).
+
+  Transient is not forever: `run_import_task` keeps a **cross-run stuck
+  budget** (`STUCK_RETRY_LIMITS`) — too many consecutive runs dying at the
+  *same* watermark turn the run into a durable `FAILED` with the underlying
+  error, so a permanently broken source surfaces instead of retrying invisibly.
+  Any progress (or a completed pass, or a re-arm) resets the budget. The budget
+  is **sized by source**: file imports get a few tries (`FILE_STUCK_RETRIES`,
+  a brief storage/S3 blip); IMAP is sized from the poll cadence
+  (`IMAP_STUCK_TIMEOUT ÷ MESSAGES_IMPORT_IMAP_POLL_INTERVAL`, ~5 days of
+  polls) so a continuous poller rides out a multi-day server outage instead of
+  disabling itself. (Storage/S3 errors during a *file* import are mapped to the
+  same `TransientImportError`, so a bucket blip resumes rather than failing the
+  run on the first hiccup.)
 
 ### Scope: an importer, not a (full) syncer
 
@@ -181,6 +196,13 @@ instead of running to completion and overwriting `cancelled` with `completed`.
 snapshot, so no orphaned messages survive. Both the deletion task and the purge
 are idempotent.
 
+A cancelled run also disappears from `/imports/` entirely: once the purge has
+settled, its channel row is deleted (`_finish_cancelled_run`). Whoever ends the
+run removes it — the live worker after its own post-cancel purge, or
+`cancel_import_task` when no worker holds the run lock (the row must survive
+while a worker is mid-abort, or its late deliveries would be orphaned). A row a
+crashed worker leaves behind is harmless (`is_active=False`, hidden by the UI).
+
 The purge spares imported messages whose thread has gathered *non-import*
 activity since the import (a reply that arrived, a draft or sent reply from the
 app): cancelling undoes the import, but deleting the anchor of a live
@@ -195,8 +217,8 @@ Imports are a mailbox-nested viewset — `IsMailboxAdmin` required:
 |---|---|
 | `POST /api/v1.0/mailboxes/{mailbox_id}/imports/` | Start an import. `source=file` needs the `file_key` from the upload endpoint plus `filename`; `source=imap` needs the connection fields. `202` |
 | `GET  …/imports/` · `GET …/imports/{id}/` | List / read run state (from `merged_state`) |
-| `POST …/imports/{id}/cancel/` | Cancel + purge messages (async). `202` |
-| `PATCH …/imports/{id}/` | Change how it runs: `{"mode": "continuous"}` (re-)arms an IMAP poller, `{"mode": "oneshot"}` demotes one, `{"is_active": false}` pauses one |
+| `POST …/imports/{id}/cancel/` | Cancel + purge messages, then remove the run from the list (async). `202` |
+| `PATCH …/imports/{id}/` | Change how it runs: `{"mode": "continuous"}` (re-)arms an IMAP poller (add `"is_active": false` to arm it paused), `{"mode": "oneshot"}` demotes one, `{"is_active": false}` pauses one (continuous only — pausing a one-shot would strand a running import with no way to resume it) |
 | `DELETE …/imports/{id}/` | Forget a settled run, **keeping** its messages (opposite of cancel). Rejects a running or still-polling run. `204` |
 
 Continuous mode is only valid for `source=imap`: the create serializer rejects
@@ -207,9 +229,11 @@ not settable per import.
 ### Uploading a file first
 
 A file import is two steps. The client uploads the archive to the
-`message-imports` bucket via `POST /api/v1.0/import/file/upload/` (direct
-presigned PUT, or `?multipart` for large files with `part/`, complete, abort
-sub-calls), then passes the returned `file_key` to `POST …/imports/`. The key
+`message-imports` bucket via `POST /api/v1.0/mailboxes/{mailbox_id}/imports/upload/`
+(direct presigned PUT, or `?multipart` for large files with `part/`, complete,
+abort sub-calls) — nested under the same mailbox and gated by the same
+`IsMailboxAdmin` as the import it feeds — then passes the returned `file_key`
+to `POST …/imports/`. The key
 is **server-minted and unique per upload** (`<user-prefix>/<uuid>`): nothing in
 the bucket is ever overwritten, so a re-upload can't swap the bytes under a
 resumable import, and every endpoint re-validates that the key was minted for

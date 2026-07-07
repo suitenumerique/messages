@@ -619,7 +619,6 @@ def export_mailbox_task(self, mailbox_id: str, user_id: str) -> Dict[str, Any]: 
         return {"status": "SUCCESS", "result": result, "error": None}
 
     except Exception as e:  # pylint: disable=broad-exception-caught
-        capture_exception(e)
         error_msg = str(e)
         logger.exception(
             "Error exporting mailbox %s: %s",

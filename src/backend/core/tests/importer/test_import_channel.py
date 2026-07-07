@@ -316,6 +316,92 @@ class TestCancel:
             channel.settings["import"]["status"] == enums.ImportStatus.CANCELLED.value
         )
 
+    def test_cancel_preserves_recorded_total(self, mailbox, user):
+        """Cancelling must not clobber the durable total snapshot with None:
+        the list UI still shows how far the run had gotten."""
+        channel = create_import_channel(
+            recipient=mailbox, user=user, source_type=enums.ImportSource.MBOX.value
+        )
+        mark_started(channel.id, total=42)
+        cancel_import(channel)
+        channel.refresh_from_db()
+        assert (
+            channel.settings["import"]["status"] == enums.ImportStatus.CANCELLED.value
+        )
+        assert channel.settings["import"]["total"] == 42
+        assert merged_state(channel)["total"] == 42
+
+    def test_rearm_cancelled_import_resets_terminal_snapshot(self, mailbox, user):
+        """Re-arming a cancelled import must clear its durable CANCELLED
+        snapshot (and stale Redis state): ``run_import_task``'s completion
+        backstop purges — and deletes the row of — any run whose durable
+        status still reads CANCELLED, destroying the re-armed run's mail."""
+        channel = create_import_channel(
+            recipient=mailbox,
+            user=user,
+            source_type=enums.ImportSource.IMAP.value,
+            imap_credentials={"username": "u", "password": "p"},
+        )
+        mark_started(channel.id, total=10)
+        cancel_import(channel)
+        channel.refresh_from_db()
+        assert (
+            channel.settings["import"]["status"] == enums.ImportStatus.CANCELLED.value
+        )
+
+        enable_continuous(channel)
+        channel.refresh_from_db()
+        run = channel.settings["import"]
+        assert run["status"] == enums.ImportStatus.PENDING.value
+        assert run["error"] is None
+        assert run["total"] is None
+        # The stale Redis state (counts/watermark of the purged mail) is gone.
+        assert read_state(channel.id) == {}
+        assert channel_module.is_cancel_requested(channel.id) is False
+
+    def test_enable_continuous_resets_stall_budget(self, mailbox, user):
+        """Re-arming grants a fresh retry allowance: a previously FAILED
+        import (whose Redis state survives, unlike the cancelled path) must
+        not insta-fail on its first post-re-arm blip."""
+        channel = create_import_channel(
+            recipient=mailbox,
+            user=user,
+            source_type=enums.ImportSource.IMAP.value,
+            imap_credentials={"username": "u", "password": "p"},
+        )
+        channel_module.write_state(
+            channel.id, stuck_marker=[0, 0, None, None], stuck_count=4
+        )
+        enable_continuous(channel)
+        assert not read_state(channel.id).get("stuck_count")
+
+    def test_mark_finished_does_not_clobber_concurrent_rearm(self, mailbox, user):
+        """The terminal write re-reads the row under a lock: a re-arm
+        (PATCH mode=continuous) that landed after the worker loaded its stale
+        channel copy must survive mark_finished, not be reverted to a disabled
+        oneshot."""
+        channel = create_import_channel(
+            recipient=mailbox,
+            user=user,
+            source_type=enums.ImportSource.IMAP.value,
+            imap_credentials={"username": "u", "password": "p"},
+        )
+        worker_copy = models.Channel.objects.get(pk=channel.pk)
+        enable_continuous(channel)  # the user's PATCH lands mid-run
+        mark_finished(
+            worker_copy,
+            status=enums.ImportStatus.COMPLETED.value,
+            success=1,
+            failure=0,
+            total=1,
+        )
+        channel.refresh_from_db()
+        assert channel.settings["import"]["mode"] == enums.ImportMode.CONTINUOUS.value
+        assert channel.is_active is True  # the poller stays armed
+        assert (
+            channel.settings["import"]["status"] == enums.ImportStatus.COMPLETED.value
+        )
+
     def test_cancel_keeps_imported_message_in_thread_with_a_reply(self, mailbox, user):
         """Cancelling undoes the *import* — but an imported message whose
         thread has since gathered real activity (a reply) anchors a live

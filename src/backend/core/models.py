@@ -519,7 +519,6 @@ class Channel(BaseModel):
         "last used at",
         null=True,
         blank=True,
-        db_index=True,
         help_text=(
             "Operational timestamp updated (throttled) whenever the channel is used."
         ),

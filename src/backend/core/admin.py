@@ -17,14 +17,11 @@ from django.urls import path
 from django.utils.html import escape, format_html
 from django.utils.text import slugify
 
-from sentry_sdk import capture_exception
-
 from core.mda.outbound_tasks import retry_messages_task
 from core.services import thread_events as thread_events_service
 from core.services.dns.provisioning import provision_domain_dns
 from core.services.exporter.tasks import export_mailbox_task
 from core.services.throttle import get_throttle_status
-from core.utils import register_task_owner
 
 from . import enums, models
 from .enums import MessageDeliveryStatusChoices
@@ -453,12 +450,10 @@ class MailboxAdmin(admin.ModelAdmin):
         # Start the export task
         try:
             task = export_mailbox_task.delay(str(mailbox_obj.id), str(request.user.id))
-            register_task_owner(task.id, request.user.id)
         except Exception:  # pylint: disable=broad-exception-caught
             logging.exception(
                 "Failed to queue export task for mailbox %s", mailbox_obj.id
             )
-            capture_exception()
             messages.error(
                 request, "Failed to queue export task. Please try again later."
             )
@@ -1168,7 +1163,6 @@ class MessageAdmin(admin.ModelAdmin):
         "trashed_at",
     )
     search_fields = ("subject", "sender__name", "sender__email", "mime_id")
-    change_list_template = "admin/core/message/change_list.html"
     change_form_template = "admin/core/message/change_form.html"
     raw_id_fields = ("thread", "blob", "draft_blob", "parent", "channel")
     autocomplete_fields = ("sender", "sender_user", "signature")
@@ -1380,7 +1374,6 @@ class BlobAdmin(admin.ModelAdmin):
             content = blob.get_content()
         except Exception as exc:  # pylint: disable=broad-exception-caught
             logging.exception("Failed to fetch blob %s for admin download", blob.id)
-            capture_exception()
             messages.error(request, f"Failed to download blob: {exc}")
             # Bounce back to the change view; "." would re-target the
             # POST-only download endpoint and 405.

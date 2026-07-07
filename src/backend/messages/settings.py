@@ -508,14 +508,6 @@ class Base(Configuration):
         environ_prefix=None,
     )
 
-    # IMAP importer settings
-    IMAP_TIMEOUT = values.PositiveIntegerValue(
-        60, environ_name="IMAP_TIMEOUT", environ_prefix=None
-    )
-    IMAP_MAX_RETRIES = values.PositiveIntegerValue(
-        3, environ_name="IMAP_MAX_RETRIES", environ_prefix=None
-    )
-
     # Self-check settings
     MESSAGES_SELFCHECK_FROM = values.Value(
         None,
@@ -636,6 +628,17 @@ class Base(Configuration):
         environ_name="MESSAGES_IMPORT_IMAP_POLL_INTERVAL",
         environ_prefix=None,
     )
+    # Socket timeout (seconds) for IMAP import connections — applied to the
+    # connect and to each subsequent command (login, SEARCH, FETCH). A slow or
+    # unresponsive server trips it; the failure surfaces as a transient error
+    # the run resumes from (a single FETCH also gets a few in-line retries
+    # first, see ``UID_FETCH_MAX_RETRIES``).
+    MESSAGES_IMPORT_IMAP_TIMEOUT = values.PositiveIntegerValue(
+        default=60,  # seconds
+        environ_name="MESSAGES_IMPORT_IMAP_TIMEOUT",
+        environ_prefix=None,
+    )
+
     # Largest archive (bytes) an import will accept — checked before a worker is
     # spent on it. 0 disables the cap.
     MESSAGES_IMPORT_MAX_FILE_SIZE = values.PositiveIntegerValue(

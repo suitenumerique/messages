@@ -19,4 +19,15 @@ class Migration(migrations.Migration):
             model_name='channel',
             index=models.Index(fields=['type', 'is_active'], name='channel_type_active_idx'),
         ),
+        # Drop the field-level index on last_used_at: the column is rewritten
+        # by every (throttled) heartbeat and API-key auth, and indexing it
+        # defeats PostgreSQL HOT updates on that hot write path. Nothing needs
+        # it — the import scheduler's due-scan narrows on
+        # channel_type_active_idx and evaluates the staleness residually (see
+        # Channel.Meta).
+        migrations.AlterField(
+            model_name='channel',
+            name='last_used_at',
+            field=models.DateTimeField(blank=True, help_text='Operational timestamp updated (throttled) whenever the channel is used.', null=True, verbose_name='last used at'),
+        ),
     ]

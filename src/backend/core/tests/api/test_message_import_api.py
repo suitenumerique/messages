@@ -13,6 +13,7 @@ from rest_framework.test import APIClient
 from core import enums, factories, models
 from core.services.importer.channel import (
     create_import_channel,
+    enable_continuous,
     mark_finished,
     mark_started,
 )
@@ -308,8 +309,11 @@ class TestImportUpdate:
         assert response.status_code == status.HTTP_400_BAD_REQUEST
         assert "mode" in response.data  # rejected for the right reason
 
-    def test_patch_is_active_false_pauses_import(self, api_client, mailbox, user):
+    def test_patch_is_active_false_pauses_continuous_import(
+        self, api_client, mailbox, user
+    ):
         channel = self._imap_import(mailbox, user)
+        enable_continuous(channel)
         with patch("core.api.viewsets.imports.run_import_task.delay") as mock_delay:
             response = api_client.patch(
                 self._url(mailbox, channel),
@@ -322,6 +326,43 @@ class TestImportUpdate:
         channel.refresh_from_db()
         assert channel.is_active is False
         mock_delay.assert_not_called()
+
+    def test_patch_is_active_false_on_oneshot_rejected(self, api_client, mailbox, user):
+        """Pausing a one-shot is rejected: it would disable crash-recovery for
+        a running run, and (re-activation being rejected too) strand it as
+        'running' forever with cancel as the only exit."""
+        channel = self._imap_import(mailbox, user)  # default mode: oneshot
+        response = api_client.patch(
+            self._url(mailbox, channel), {"is_active": False}, format="json"
+        )
+        assert response.status_code == status.HTTP_400_BAD_REQUEST
+        assert "is_active" in response.data
+        channel.refresh_from_db()
+        assert channel.is_active is True  # crash-recovery still armed
+
+    def test_patch_continuous_with_pause_persists_mode(self, api_client, mailbox, user):
+        """{mode: continuous, is_active: false} means "arm as a poller but
+        start it paused": the mode must be persisted (not silently dropped)
+        and no run dispatched, so a later is_active=true can resume it."""
+        channel = self._imap_import(mailbox, user)
+        with patch("core.api.viewsets.imports.run_import_task.delay") as mock_delay:
+            response = api_client.patch(
+                self._url(mailbox, channel),
+                {"mode": "continuous", "is_active": False},
+                format="json",
+            )
+        assert response.status_code == status.HTTP_200_OK
+        assert response.data["mode"] == enums.ImportMode.CONTINUOUS.value
+        assert response.data["is_active"] is False
+        mock_delay.assert_not_called()
+        # And the paused poller can now actually be resumed.
+        with patch("core.api.viewsets.imports.run_import_task.delay") as mock_delay:
+            response = api_client.patch(
+                self._url(mailbox, channel), {"is_active": True}, format="json"
+            )
+        assert response.status_code == status.HTTP_200_OK
+        assert response.data["is_active"] is True
+        mock_delay.assert_called_once_with(str(channel.id))
 
     def test_patch_empty_body_rejected(self, api_client, mailbox, user):
         channel = self._imap_import(mailbox, user)
@@ -598,8 +639,8 @@ class TestImportCreate:
         assert "file_key" in response.data
 
     def test_create_file_rejects_foreign_file_key(self, api_client, mailbox):
-        """A key minted for another user — or hand-crafted — is refused: an
-        import must never be pointed at someone else's upload."""
+        """A key minted for another user is refused: an import must never be
+        pointed at someone else's upload."""
         from core.api.utils import (
             generate_file_key,  # pylint: disable=import-outside-toplevel
         )
@@ -612,6 +653,10 @@ class TestImportCreate:
         )
         assert response.status_code == status.HTTP_400_BAD_REQUEST
         assert "file_key" in response.data
+
+    def test_create_file_rejects_crafted_file_key(self, api_client, mailbox):
+        """A hand-crafted key (path traversal, arbitrary bucket location) is
+        refused before it can reach S3."""
         crafted = "../../blobs/0/abc"
         response = api_client.post(
             reverse("mailbox-imports-list", kwargs={"mailbox_id": mailbox.id}),
@@ -619,6 +664,7 @@ class TestImportCreate:
             format="json",
         )
         assert response.status_code == status.HTTP_400_BAD_REQUEST
+        assert "file_key" in response.data
 
     def test_create_rejects_unknown_source_with_field_error(self, api_client, mailbox):
         response = api_client.post(

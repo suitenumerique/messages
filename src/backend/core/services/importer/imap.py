@@ -30,6 +30,12 @@ from .utils import FLUSH_EVERY, TransientImportError, beat, deliver, error_text
 
 logger = get_task_logger(__name__)
 
+# In-line retries for a single ``UID FETCH`` that hits a socket timeout (same
+# connection, exponential backoff). An implementation detail of the fetch, not
+# an operational knob: a persistent failure is handled a layer up (the run is
+# parked resumable, then re-dispatched), so this only smooths a momentary blip.
+UID_FETCH_MAX_RETRIES = 3
+
 
 class IMAPSecurityError(RuntimeError):
     """
@@ -170,7 +176,7 @@ class IMAPConnectionManager:
                         self.server,
                         self.port,
                         connect_ip=connect_ip,
-                        timeout=settings.IMAP_TIMEOUT,
+                        timeout=settings.MESSAGES_IMPORT_IMAP_TIMEOUT,
                     )
                 except ssl.SSLError as e:
                     # SSL handshake failed - likely wrong port or server doesn't support SSL
@@ -187,7 +193,7 @@ class IMAPConnectionManager:
                     self.server,
                     self.port,
                     connect_ip=connect_ip,
-                    timeout=settings.IMAP_TIMEOUT,
+                    timeout=settings.MESSAGES_IMPORT_IMAP_TIMEOUT,
                 )
 
                 if use_starttls:
@@ -235,6 +241,11 @@ class IMAPConnectionManager:
 
             success = True
             return self.connection
+        except (IMAPAuthError, IMAPSecurityError):
+            # Expected, already logged where they were raised (warning for a
+            # rejected login, error for the security checks) — re-logging here
+            # would double-report them at ERROR level.
+            raise
         except Exception as e:
             logger.error(
                 "Failed to connect to IMAP server %s:%d: %s", self.server, self.port, e
@@ -463,29 +474,24 @@ def get_folder_uidvalidity(imap_connection, folder: str) -> int | None:
         return None
 
 
-def uid_search_all(imap_connection, folder: str, since_uid: int = 0) -> list[int]:
-    """Select ``folder`` and return its message UIDs above ``since_uid``, ascending.
+def _folder_uidnext(imap_connection, folder: str) -> int | None:
+    """Read a folder's UIDNEXT (the next UID the server would assign) via
+    STATUS, or ``None`` when denied/unparsable."""
+    try:
+        status, data = imap_connection.status(f'"{folder}"', "(UIDNEXT)")
+        if status != "OK" or not data or not data[0]:
+            return None
+        raw = data[0] if isinstance(data[0], bytes) else str(data[0]).encode()
+        match = re.search(rb"UIDNEXT\s+(\d+)", raw)
+        return int(match.group(1)) if match else None
+    except Exception as e:  # pylint: disable=broad-exception-caught
+        logger.debug("Failed to read UIDNEXT for folder %s: %s", folder, e)
+        return None
 
-    Uses ``UID SEARCH`` (not sequence numbers): UIDs are stable for the life of
-    a UIDVALIDITY, so a resumed run can skip everything at or below its stored
-    high-water UID and fetch only what is new. When ``since_uid`` is given the
-    range is pushed to the server (``UID SEARCH UID <since+1>:*``) so a
-    continuous poll of a large mailbox doesn't drag back every UID each time.
-    """
-    if not select_imap_folder(imap_connection, folder):
-        return []
-    if since_uid and since_uid > 0:
-        status, data = imap_connection.uid("SEARCH", None, f"UID {since_uid + 1}:*")
-    else:
-        status, data = imap_connection.uid("SEARCH", None, "ALL")
-    if status == "OK" and data and data[0]:
-        return sorted(int(tok) for tok in data[0].split())
-    if since_uid:
-        # An empty incremental result is the normal "no new mail" case.
-        return []
-    # Some servers answer a full ``UID SEARCH ALL`` with an empty result on a
-    # non-empty folder. Before concluding the folder is empty (and silently
-    # importing nothing), retry with alternative criteria and take the union.
+
+def _uid_search_fallback(imap_connection, folder: str) -> list[int]:
+    """Union of alternative SEARCH criteria, for servers whose ``UID SEARCH``
+    answers empty on a non-empty folder."""
     found: set[int] = set()
     for criteria in ("RECENT", "UNSEEN", "SEEN", "NEW", "OLD"):
         try:
@@ -498,6 +504,68 @@ def uid_search_all(imap_connection, folder: str, since_uid: int = 0) -> list[int
     return sorted(found)
 
 
+def uid_search_all(imap_connection, folder: str, since_uid: int = 0) -> list[int]:
+    """Select ``folder`` and return its message UIDs above ``since_uid``, ascending.
+
+    Uses ``UID SEARCH`` (not sequence numbers): UIDs are stable for the life of
+    a UIDVALIDITY, so a resumed run can skip everything at or below its stored
+    high-water UID and fetch only what is new. When ``since_uid`` is given the
+    range is pushed to the server (``UID SEARCH UID <since+1>:*``) so a
+    continuous poll of a large mailbox doesn't drag back every UID each time.
+
+    Raises ``TransientImportError`` when the folder cannot be selected:
+    treating it as empty would let a oneshot run end COMPLETED while silently
+    never importing this folder's mail. Raising keeps the watermark untouched
+    and the run resumable; a persistent select failure becomes a *visible*
+    FAILED through the cross-run stall budget.
+    """
+    if not select_imap_folder(imap_connection, folder):
+        raise TransientImportError(f"Cannot select IMAP folder {folder}")
+    if since_uid and since_uid > 0:
+        status, data = imap_connection.uid("SEARCH", None, f"UID {since_uid + 1}:*")
+        if status == "OK" and data and data[0]:
+            return sorted(int(tok) for tok in data[0].split())
+        # An empty incremental result is normally just "no new mail" — but the
+        # same buggy servers that answer a full ``UID SEARCH ALL`` with a bogus
+        # empty result (see below) do it for ranges too, which here would
+        # silently end a resume early or freeze a continuous poller forever.
+        # Cross-check with UIDNEXT (one cheap STATUS): only when the server
+        # itself claims UIDs above the watermark exist do we pay for the full
+        # search path. An unreadable STATUS means the empty answer can't be
+        # trusted either — fall through too.
+        uidnext = _folder_uidnext(imap_connection, folder)
+        if uidnext is not None and uidnext <= since_uid + 1:
+            return []
+        # Fall through to the full scan; the caller filters ``> since_uid``,
+        # so returning already-imported low UIDs is harmless.
+    status, data = imap_connection.uid("SEARCH", None, "ALL")
+    if status == "OK" and data and data[0]:
+        return sorted(int(tok) for tok in data[0].split())
+    # Some servers answer a full ``UID SEARCH ALL`` with an empty result on a
+    # non-empty folder. Before concluding the folder is empty (and silently
+    # importing nothing), retry with alternative criteria and take the union.
+    return _uid_search_fallback(imap_connection, folder)
+
+
+def _uid_fetch_separate_flags(imap_connection, uid: int) -> list[str]:
+    """FLAGS-only fallback for servers that return FLAGS in a separate
+    untagged response instead of inline with the ``BODY.PEEK[]`` fetch —
+    without it every message from such a server imports flagless (all
+    unread). Best-effort: a failure just means no flags."""
+    try:
+        status, flags_data = imap_connection.uid("FETCH", str(uid), "(FLAGS)")
+        if status == "OK" and flags_data:
+            for part in flags_data:
+                raw = part[0] if isinstance(part, tuple) else part
+                if isinstance(raw, bytes):
+                    flags = _extract_flags_from_metadata(raw)
+                    if flags:
+                        return flags
+    except Exception as exc:  # pylint: disable=broad-exception-caught
+        logger.debug("Separate FLAGS fetch failed for uid %s: %s", uid, exc)
+    return []
+
+
 def uid_fetch_message(imap_connection, uid: int) -> tuple[list[str], bytes | None]:
     """Fetch one message by UID, returning ``(flags, raw_email)``.
 
@@ -505,7 +573,7 @@ def uid_fetch_message(imap_connection, uid: int) -> tuple[list[str], bytes | Non
     Retries transient socket timeouts with exponential backoff — a single
     blip must not make the caller skip (and permanently lose) the message.
     """
-    max_retries = max(1, settings.IMAP_MAX_RETRIES)
+    max_retries = UID_FETCH_MAX_RETRIES
     for attempt in range(max_retries):
         try:
             status, msg_data = imap_connection.uid(
@@ -516,6 +584,8 @@ def uid_fetch_message(imap_connection, uid: int) -> tuple[list[str], bytes | Non
             flags, raw_email = _extract_imap_flags_and_content(msg_data)
             if raw_email is None:
                 raise RuntimeError(f"No raw email found for UID {uid}")
+            if not flags:
+                flags = _uid_fetch_separate_flags(imap_connection, uid)
             return flags, raw_email
         except socket.timeout:
             if attempt >= max_retries - 1:
@@ -552,6 +622,27 @@ def _imap_credentials(channel: models.Channel) -> dict[str, Any]:
 
 
 def run_imap(channel, state) -> tuple[int, int, int]:
+    """Transient-network guard around :func:`_run_imap`.
+
+    Connect-time failures (DNS, socket timeouts, dropped connections — raised
+    before or between fetches, where ``uid_fetch_message``'s own retry budget
+    doesn't apply) are exactly as transient as a mid-run fetch failure: without
+    this translation they'd land in ``run_import_task``'s generic handler and
+    terminally FAIL the run — permanently disabling a continuous poller over
+    one network blip. ``OSError`` covers the socket/ssl/connection family;
+    ``imaplib.IMAP4.abort`` is the protocol-level "connection dropped".
+    Auth/security errors (``IMAPAuthError``/``IMAPSecurityError``) are
+    RuntimeErrors and deliberately stay permanent.
+    """
+    try:
+        return _run_imap(channel, state)
+    except (OSError, imaplib.IMAP4.abort) as exc:
+        # A TransientImportError raised inside ``_run_imap`` is not an ``OSError``,
+        # so it propagates unchanged past this handler (stays transient).
+        raise TransientImportError(f"IMAP connection error: {error_text(exc)}") from exc
+
+
+def _run_imap(channel, state) -> tuple[int, int, int]:
     """Resumable IMAP pass with a per-folder UID watermark.
 
     Fetches only ``uid > last_uid`` per folder (guarded by ``uidvalidity``), so a
@@ -574,10 +665,13 @@ def run_imap(channel, state) -> tuple[int, int, int]:
     recipient = channel.mailbox
     creds = _imap_credentials(channel)
     username = creds["username"]
-    # Per-folder watermark: {folder: {"uidvalidity": v, "last_uid": u}}.
+    # Resume watermark for IMAP: {folder: {"uidvalidity": v, "last_uid": u}}.
+    # Per folder, "everything up to and including UID last_uid is delivered", so
+    # the pass fetches only uid > last_uid — but only while ``uidvalidity`` still
+    # matches (a mismatch means the server renumbered UIDs, voiding the bookmark
+    # for that folder and forcing last_uid=0, i.e. a full re-scan of it).
     folders_wm: dict[str, Any] = dict(state.get("folders") or {})
     success, failure = state.get("success", 0), state.get("failure", 0)
-    total = state.get("total", 0)
     mark_started(channel.id)
     processed_since_flush = 0
 
@@ -594,7 +688,13 @@ def run_imap(channel, state) -> tuple[int, int, int]:
     ):
         folders = sorted(get_selectable_folders(conn, username, creds["imap_server"]))
         mapping = create_folder_mapping(folders, username, creds["imap_server"])
+        # Plan every folder up front (UIDVALIDITY check + UID SEARCH above the
+        # watermark) so the run knows its TOTAL before delivering the first
+        # message — a total that merely trails success+failure would pin the
+        # UI's progress at 100% for the whole run.
+        plan: list[tuple[str, Any, list[int]]] = []
         for folder in folders:
+            beat(channel)
             uidvalidity = get_folder_uidvalidity(conn, folder)
             wm = folders_wm.get(folder) or {}
             if uidvalidity is None:
@@ -622,6 +722,37 @@ def run_imap(channel, state) -> tuple[int, int, int]:
                 for u in uid_search_all(conn, folder, since_uid=last_uid)
                 if u > last_uid
             ]
+            plan.append((folder, uidvalidity, uids))
+
+        # Already-processed counts carry across resumes/polls; this run adds
+        # the pending UIDs it just discovered.
+        total = success + failure + sum(len(uids) for _, _, uids in plan)
+        record_progress(
+            channel.id,
+            success=success,
+            failure=failure,
+            folders=folders_wm,
+            total=total,
+        )
+
+        for folder, uidvalidity, uids in plan:
+            if not uids:
+                continue
+            # The planning pass left the last-searched folder selected;
+            # re-select this one (``uid_fetch_message`` assumes it). Skipping a
+            # folder that fails to re-select would let a oneshot run end
+            # COMPLETED with the folder's mail silently missing — raise as
+            # transient instead (watermark untouched, run resumable, and a
+            # persistent failure surfaces via the cross-run stall budget).
+            if not select_imap_folder(conn, folder):
+                record_progress(
+                    channel.id,
+                    success=success,
+                    failure=failure,
+                    folders=folders_wm,
+                    total=total,
+                )
+                raise TransientImportError(f"Cannot re-select IMAP folder {folder}")
             display_name = mapping.get(folder, folder)
             for uid in uids:
                 beat(channel)
@@ -673,7 +804,6 @@ def run_imap(channel, state) -> tuple[int, int, int]:
                         "import: error delivering IMAP uid %s in %s", uid, folder
                     )
                     failure += 1
-                total += 1
                 # Only checkpoint a UID we actually handled (fetched + delivered
                 # or permanently rejected). A raised *fetch* broke out above
                 # without touching the watermark.

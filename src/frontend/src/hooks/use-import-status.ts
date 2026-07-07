@@ -1,3 +1,4 @@
+import { APIError } from "@/features/api/api-error";
 import { ImportRun, useMailboxesImportsRetrieve } from "@/features/api/gen";
 import { useEffect, useRef, useState } from "react";
 import { useTranslation } from "react-i18next";
@@ -5,9 +6,9 @@ import { useTranslation } from "react-i18next";
 const MAX_POLL_ERRORS = 10;
 
 // Backend import statuses (Channel.settings["import"]["status"] / Redis).
-const STATUS_COMPLETED = "completed";
-const STATUS_FAILED = "failed";
-const STATUS_CANCELLED = "cancelled";
+export const STATUS_COMPLETED = "completed";
+export const STATUS_FAILED = "failed";
+export const STATUS_CANCELLED = "cancelled";
 
 /**
  * The state the importer UI reacts to. A deliberate cancel is its own state,
@@ -16,7 +17,9 @@ const STATUS_CANCELLED = "cancelled";
  */
 export type ImportState = "progress" | "success" | "failed" | "cancelled";
 
-const isTerminal = (status: string | null | undefined) =>
+/** True once a run can no longer make progress (the one terminal-status list —
+ * shared with the imports settings grid). */
+export const isTerminal = (status: string | null | undefined) =>
   status === STATUS_COMPLETED ||
   status === STATUS_FAILED ||
   status === STATUS_CANCELLED;
@@ -65,6 +68,11 @@ export function useImportStatus(
 
   const data = query.data?.data as ImportRun | undefined;
   const status = data?.status;
+  // A 404 means the run's row is gone: a cancelled import is removed
+  // server-side once its purge settles (the cancel may have come from the
+  // Imports settings tab or another window). Treat it as cancelled instead of
+  // burning through the poll-error budget towards a misleading "failed".
+  const isGone = query.error instanceof APIError && query.error.code === 404;
   const totalMessages = data?.total_messages ?? 0;
   const hasKnownTotal = totalMessages > 0;
   const successCount = data?.success_count ?? 0;
@@ -83,19 +91,19 @@ export function useImportStatus(
   }, [query.dataUpdatedAt, query.errorUpdatedAt]);
 
   useEffect(() => {
-    if (!enabled || isTerminal(status) || hasExhaustedRetries) {
+    if (!enabled || isTerminal(status) || hasExhaustedRetries || isGone) {
       setQueryEnabled(false);
     } else {
       setQueryEnabled(true);
     }
-  }, [status, enabled, hasExhaustedRetries]);
+  }, [status, enabled, hasExhaustedRetries, isGone]);
 
   if (!importId) return null;
 
   let state: ImportState = "progress";
-  if (hasExhaustedRetries || status === STATUS_FAILED) state = "failed";
+  if (isGone || status === STATUS_CANCELLED) state = "cancelled";
+  else if (hasExhaustedRetries || status === STATUS_FAILED) state = "failed";
   else if (status === STATUS_COMPLETED) state = "success";
-  else if (status === STATUS_CANCELLED) state = "cancelled";
 
   // Show an indeterminate bar (null) while the run is still indexing (no total
   // yet); a known total drives the resource-computed percentage.
@@ -111,7 +119,7 @@ export function useImportStatus(
     state,
     loading: query.isPending || (state === "progress" && progress === null),
     error: hasExhaustedRetries
-      ? (exhaustedError ?? t("Unable to check task status."))
+      ? (exhaustedError ?? t("Unable to check the import status."))
       : (data?.error ?? null),
     hasKnownTotal,
     currentMessage,

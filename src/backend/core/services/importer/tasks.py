@@ -27,6 +27,7 @@ from django.conf import settings
 from django.db.models import Q
 from django.utils import timezone
 
+from botocore.exceptions import BotoCoreError, ClientError
 from celery.utils.log import get_task_logger
 
 from core import enums, models
@@ -37,12 +38,14 @@ from .channel import (
     ImportCancelled,
     acquire_run_lock,
     cancel_import,
+    clear_state,
     get_import_channel,
     is_cancel_requested,
     mark_finished,
     purge_import_messages,
     read_state,
     release_run_lock,
+    write_state,
 )
 from .eml import run_eml
 from .imap import run_imap
@@ -59,6 +62,43 @@ _RUNNERS = {
     enums.ImportSource.PST.value: run_pst,
     enums.ImportSource.IMAP.value: run_imap,
 }
+
+# Consecutive stuck re-dispatches (same watermark, zero forward progress)
+# tolerated before a run is declared FAILED, per source. File sources ride out a
+# brief storage/S3 blip; IMAP is sized from the poll cadence so a continuous
+# poller survives a multi-day server outage (~5 days of polls). Any forward
+# progress resets the count. Resolved at import — the poll interval is fixed at
+# startup.
+FILE_STUCK_RETRIES = 3
+IMAP_STUCK_TIMEOUT = 5 * 24 * 3600  # seconds (~5 days)
+STUCK_RETRY_LIMITS = {
+    enums.ImportSource.MBOX.value: FILE_STUCK_RETRIES,
+    enums.ImportSource.EML.value: FILE_STUCK_RETRIES,
+    enums.ImportSource.PST.value: FILE_STUCK_RETRIES,
+    enums.ImportSource.IMAP.value: IMAP_STUCK_TIMEOUT
+    // settings.MESSAGES_IMPORT_IMAP_POLL_INTERVAL,
+}
+
+
+def _finish_cancelled_run(channel: models.Channel) -> None:
+    """Post-purge: delete the row of a settled cancelled run.
+
+    A cancel makes the import disappear from ``/imports/`` entirely — its
+    messages are already purged, so the row has nothing left to describe.
+    Deleted only once the durable CANCELLED write has landed: a cancel seen
+    flag-only (the API's ``mark_cancelled`` still in flight) leaves the row
+    alone — deleting it here would race the API's own save — and the API's
+    ``cancel_import_task`` finishes the removal as soon as the run lock is
+    free.
+    """
+    try:
+        channel.refresh_from_db(fields=["settings"])
+    except models.Channel.DoesNotExist:
+        return
+    status = (channel.settings or {}).get("import", {}).get("status")
+    if status == enums.ImportStatus.CANCELLED.value:
+        clear_state(channel.id)
+        channel.delete()
 
 
 @celery_app.task(bind=True)
@@ -98,13 +138,32 @@ def run_import_task(self, channel_id: str) -> dict[str, Any]:
 
     try:
         state = read_state(channel_id)
-        success, failure, total = runner(channel, state)
+        try:
+            success, failure, total = runner(channel, state)
+        except (BotoCoreError, ClientError) as exc:
+            # File runners read the archive straight from S3; a storage blip
+            # should leave the run resumable (as ``run_imap`` does for its socket
+            # errors) rather than terminally fail on the first hiccup.
+            raise TransientImportError(f"storage error: {error_text(exc)}") from exc
+        # A full pass just completed: any accumulated stuck budget is
+        # stale. Without this reset a quiet continuous poller (whose progress
+        # marker never changes) would sum unrelated transient blips weeks apart
+        # into a permanent FAILED.
+        if read_state(channel_id).get("stuck_count"):
+            write_state(channel_id, stuck_marker=None, stuck_count=0)
         # Re-read the durable row before declaring the run complete. A cancel (or
         # pause) flips is_active/status in the DB, and the Redis cancel flag can
         # be evicted under memory pressure — so trust the durable CANCELLED
         # status, not only the ephemeral flag, or an evicted flag would let a
         # cancelled import overwrite CANCELLED with COMPLETED.
-        channel.refresh_from_db(fields=["is_active", "settings"])
+        try:
+            channel.refresh_from_db(fields=["is_active", "settings"])
+        except models.Channel.DoesNotExist:
+            # Deleted mid-run (e.g. from the admin): Message.channel is
+            # SET_NULL so the delivered mail is already unlinked — there is
+            # nothing left to mark or purge.
+            logger.warning("run_import_task: import %s deleted mid-run", channel_id)
+            return {"status": "NOT_FOUND"}
         durable_status = (channel.settings or {}).get("import", {}).get("status")
         if (
             is_cancel_requested(channel_id)
@@ -114,6 +173,7 @@ def run_import_task(self, channel_id: str) -> dict[str, Any]:
                 "run_import_task: import %s cancelled at completion", channel_id
             )
             purge_import_messages(channel)
+            _finish_cancelled_run(channel)
             return {"status": "CANCELLED"}
         mode = (channel.settings or {}).get("import", {}).get("mode")
         if (
@@ -158,12 +218,43 @@ def run_import_task(self, channel_id: str) -> dict[str, Any]:
         # so no orphaned messages survive the cancel.
         logger.info("run_import_task: import %s cancelled mid-run", channel_id)
         purge_import_messages(channel)
+        _finish_cancelled_run(channel)
         return {"status": "CANCELLED"}
     except TransientImportError as exc:
         # Recoverable — leave the channel active + resumable (watermark already
-        # persisted below the failed item) so the scheduler re-dispatches it.
+        # persisted below the failed item) so the scheduler re-dispatches it —
+        # but under a cross-run budget: too many consecutive re-dispatches with
+        # stuck at the same watermark mean the error is permanent, not
+        # transient. The budget is much larger for IMAP (ride out a multi-day
+        # server outage) than for file/S3 (a quick storage blip).
+        st = read_state(channel_id)
+        marker = [
+            st.get("success", 0),
+            st.get("failure", 0),
+            st.get("cursor"),
+            st.get("folders"),
+        ]
+        stuck = st.get("stuck_count", 0) + 1 if marker == st.get("stuck_marker") else 1
+        write_state(channel_id, stuck_marker=marker, stuck_count=stuck)
+        limit = STUCK_RETRY_LIMITS[source_type]
+        if stuck >= limit:
+            error = f"{exc} — gave up after {stuck} runs stuck at the same position."
+            logger.warning("run_import_task: import %s failed: %s", channel_id, error)
+            mark_finished(
+                channel,
+                status=enums.ImportStatus.FAILED.value,
+                success=st.get("success", 0),
+                failure=st.get("failure", 0),
+                total=st.get("total"),
+                error=error,
+            )
+            return {"status": "FAILURE", "error": error}
         logger.warning(
-            "run_import_task: import %s paused on transient error: %s", channel_id, exc
+            "run_import_task: import %s paused on transient error (stuck %d/%d): %s",
+            channel_id,
+            stuck,
+            limit,
+            exc,
         )
         return {"status": "RETRY", "error": str(exc)}
     except Exception as exc:
@@ -172,7 +263,12 @@ def run_import_task(self, channel_id: str) -> dict[str, Any]:
         # while the runner was failing. Re-check the durable status before
         # writing FAILED so a cancelled run stays cancelled (and anything it
         # delivered after the API's purge snapshot is cleaned up).
-        channel.refresh_from_db(fields=["is_active", "settings"])
+        try:
+            channel.refresh_from_db(fields=["is_active", "settings"])
+        except models.Channel.DoesNotExist:
+            # Same deleted-mid-run guard as the success path.
+            logger.warning("run_import_task: import %s deleted mid-run", channel_id)
+            return {"status": "NOT_FOUND"}
         durable_status = (channel.settings or {}).get("import", {}).get("status")
         if (
             is_cancel_requested(channel_id)
@@ -182,6 +278,7 @@ def run_import_task(self, channel_id: str) -> dict[str, Any]:
                 "run_import_task: import %s cancelled during failure", channel_id
             )
             purge_import_messages(channel)
+            _finish_cancelled_run(channel)
             return {"status": "CANCELLED"}
         st = read_state(channel_id)
         error = error_text(exc)
@@ -200,7 +297,8 @@ def run_import_task(self, channel_id: str) -> dict[str, Any]:
 
 @celery_app.task(bind=True)
 def cancel_import_task(self, channel_id: str) -> dict[str, int]:
-    """Delete a cancelled import's messages + clean orphan threads off-request.
+    """Delete a cancelled import's messages + clean orphan threads off-request,
+    then remove the run's row so it disappears from ``/imports/``.
 
     The API already flipped the run to ``cancelled`` (``mark_cancelled``); this
     does the potentially-large deletion in the background. Idempotent — safe to
@@ -209,7 +307,23 @@ def cancel_import_task(self, channel_id: str) -> dict[str, int]:
     channel = get_import_channel(channel_id)
     if channel is None:
         return {"messages_deleted": 0, "messages_kept": 0, "threads_deleted": 0}
-    return cancel_import(channel)
+    try:
+        result = cancel_import(channel)
+    except models.Channel.DoesNotExist:
+        # The live worker finished its own cancel handling (purge + row
+        # deletion) between our load and here — nothing left to do.
+        return {"messages_deleted": 0, "messages_kept": 0, "threads_deleted": 0}
+    # Remove the row only once the run is settled: a worker still holding the
+    # run lock is mid-abort, and deleting now would orphan the messages it
+    # delivers before unwinding — it deletes the row itself after its own purge
+    # (``_finish_cancelled_run``). A crashed worker's lock self-expires, and a
+    # row it left behind stays harmless (is_active=False, hidden by the UI).
+    if acquire_run_lock(channel_id):
+        try:
+            _finish_cancelled_run(channel)
+        finally:
+            release_run_lock(channel_id)
+    return result
 
 
 @celery_app.task(bind=True)

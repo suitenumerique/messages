@@ -122,7 +122,6 @@ def mbox_key(user, mbox_file):
 def test_import_file_eml_by_superuser(admin_user, mailbox, eml_key):
     """Test successful EML file import for superuser."""
     with patch("core.services.importer.service.run_import_task.delay") as mock_task:
-        mock_task.return_value.id = "fake-task-id"
         success, response_data = start_file_import(
             file_key=eml_key,
             recipient=mailbox,
@@ -131,7 +130,6 @@ def test_import_file_eml_by_superuser(admin_user, mailbox, eml_key):
 
         assert success is True
         assert response_data["type"] == "eml"
-        assert response_data["task_id"] == "fake-task-id"
         assert "import_id" in response_data
         mock_task.assert_called_once()
 
@@ -160,7 +158,6 @@ def test_import_file_mbox_by_superuser_task(admin_user, mailbox, mbox_key):
     """Test successful MBOX file import by superuser."""
 
     with patch("core.services.importer.service.run_import_task.delay") as mock_task:
-        mock_task.return_value.id = "fake-task-id"
         success, response_data = start_file_import(
             file_key=mbox_key,
             recipient=mailbox,
@@ -169,7 +166,6 @@ def test_import_file_mbox_by_superuser_task(admin_user, mailbox, mbox_key):
 
         assert success is True
         assert response_data["type"] == "mbox"
-        assert response_data["task_id"] == "fake-task-id"
         assert "import_id" in response_data
         mock_task.assert_called_once()
 
@@ -290,7 +286,6 @@ def test_import_file_mbox_misclassified_by_libmagic(admin_user, mailbox):
             ) as mock_magic,
             patch("core.services.importer.service.run_import_task.delay") as mock_task,
         ):
-            mock_task.return_value.id = "fake-task-id"
             success, response_data = start_file_import(
                 file_key=file_key,
                 recipient=mailbox,
@@ -319,7 +314,6 @@ def test_import_imap_by_regular_user(user, mailbox):
     path is gated by IsMailboxAdmin and the Django admin path is trusted
     operator tooling — so any caller-approved user goes through."""
     with patch("core.services.importer.service.run_import_task.delay") as mock_task:
-        mock_task.return_value.id = "fake-task-id"
         success, response_data = start_imap_import(
             imap_server="imap.example.com",
             imap_port=993,

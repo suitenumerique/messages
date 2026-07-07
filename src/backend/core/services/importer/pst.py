@@ -30,6 +30,7 @@ from jmap_email import (
 
 from core.services.s3_seekable import BUFFER_NONE, S3SeekableReader
 
+from .channel import ImportCancelled
 from .utils import beat, deliver, imports_storage, run_plan
 
 logger = logging.getLogger(__name__)
@@ -127,6 +128,13 @@ FOLDER_TYPE_DRAFTS = "drafts"
 _CHARSET_RE = re.compile(rb'<meta[^>]+charset=["\']?([^"\';>\s]+)', re.IGNORECASE)
 
 
+# Part of the UI contract: the import modal matches this marker in the run's
+# error to show the dedicated "archive is corrupt, retrying will not help"
+# message instead of the generic one (see step-loader.tsx). Shared by every
+# ``PSTFileUnreadableError`` raise site so the copies can't drift apart.
+PST_UNREADABLE_MARKER = "PST_UNREADABLE"
+
+
 class PSTFileUnreadableError(RuntimeError):
     """The PST file cannot be parsed.
 
@@ -160,12 +168,9 @@ def assert_pst_readable(pst_file) -> None:
         store = pst_file.get_message_store()
         _ = store.number_of_record_sets
     except Exception as exc:
-        # The ``PST_UNREADABLE`` marker is part of the UI contract: the import
-        # modal matches it in the run's error to show the dedicated "archive is
-        # corrupt, retrying will not help" message instead of the generic one.
         raise PSTFileUnreadableError(
-            "PST_UNREADABLE: the archive is missing its root folder or "
-            "message store (corrupt or truncated file)."
+            f"{PST_UNREADABLE_MARKER}: the archive is missing its root folder "
+            "or message store (corrupt or truncated file)."
         ) from exc
 
 
@@ -1394,6 +1399,12 @@ def _collect_pst_plan(
                     logger.debug(
                         "Failed to read message %d in folder %s", i, folder_path
                     )
+        except ImportCancelled:
+            # ``on_progress`` is the runner's beat(): a cancel raised there
+            # must unwind the whole pre-scan, not be swallowed as a corrupt
+            # folder — the worker would otherwise keep scanning (and holding
+            # the run lock) for the rest of the archive.
+            raise
         except Exception:
             logger.debug("Failed to iterate sub_messages in folder %s", folder_path)
 
@@ -1415,6 +1426,8 @@ def _collect_pst_plan(
                 else:
                     child_path = child_name or folder_path
                 _collect_folder(child, folder_type, child_path, depth + 1)
+        except ImportCancelled:
+            raise
         except Exception:
             logger.debug("Failed to iterate sub_folders in folder %s", folder_path)
 
@@ -1437,6 +1450,8 @@ def _collect_pst_plan(
             # starting from just their own name.
             folder_path = "" if folder_type != FOLDER_TYPE_NORMAL else name
             _collect_folder(subfolder, folder_type, folder_path)
+    except ImportCancelled:
+        raise
     except Exception:
         logger.debug("Failed to iterate root sub_folders")
 
@@ -1463,6 +1478,14 @@ def _reconstruct_plan_item(
         eml_bytes = reconstruct_eml(
             message, store_email=store_email, recipient_email=recipient_email
         )
+    except OversizedAttachmentError as exc:
+        # An expected import outcome (the archive holds a message we refuse to
+        # deliver), not a bug: count it as a failure without the Sentry-visible
+        # traceback ``logger.exception`` would emit.
+        logger.warning(
+            "Skipping message %d in folder %s: %s", msg_idx, folder_path, exc
+        )
+        return folder_type, folder_path, flags, flag_status, None
     except Exception:
         logger.exception(
             "Failed to reconstruct EML for message %d in folder %s",
@@ -1535,8 +1558,8 @@ def run_pst(channel, state) -> tuple[int, int, int]:
             # open (bad signature, truncated) must carry the marker too, not a
             # raw libpff error.
             raise PSTFileUnreadableError(
-                "PST_UNREADABLE: the file is not a readable PST archive "
-                "(invalid signature or truncated file)."
+                f"{PST_UNREADABLE_MARKER}: the file is not a readable PST "
+                "archive (invalid signature or truncated file)."
             ) from exc
         try:
             assert_pst_readable(pst)

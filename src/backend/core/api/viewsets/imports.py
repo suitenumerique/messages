@@ -17,6 +17,7 @@ from django.db.models.functions import Coalesce
 from django.shortcuts import get_object_or_404
 from django.utils.functional import cached_property
 
+from botocore.exceptions import ClientError
 from drf_spectacular.utils import (
     OpenApiResponse,
     extend_schema,
@@ -187,7 +188,8 @@ class ImportViewSet(
 
         Flips it to ``cancelled`` synchronously (so the run stops and the
         scheduler won't resume it) and offloads the potentially-large message
-        deletion + orphan-thread cleanup to an idempotent background task.
+        deletion + orphan-thread cleanup to an idempotent background task —
+        which also removes the run from ``/imports/`` once it has settled.
         """
         channel = self.get_object()
         mark_cancelled(channel)
@@ -226,6 +228,13 @@ class ImportViewSet(
         # contradictory mode=oneshot + is_active=true combination, so each
         # branch below is unambiguous.
         if data.get("is_active") is False:
+            if data.get("mode") == enums.ImportMode.CONTINUOUS.value:
+                # "Arm as a poller but start it paused": persist the mode
+                # (enable_continuous also clears a stale cancelled snapshot)
+                # before pausing, without dispatching a run. Silently dropping
+                # the mode here would strand the import as a oneshot that a
+                # later is_active=true PATCH refuses to re-activate.
+                enable_continuous(channel)
             pause_import(channel)
             if data.get("mode") == enums.ImportMode.ONESHOT.value:
                 disable_continuous(channel)
@@ -261,9 +270,9 @@ class ImportViewSet(
 
         Deletes the Channel row (``Message.channel`` is SET_NULL, so the
         messages survive) — the opposite of ``cancel``, which deletes the
-        messages. Only a settled run can be forgotten: cancel a running import
-        first, and pause (or demote) a continuous poller so a live worker
-        never loses its channel row mid-run.
+        messages (and then the row too). Only a settled run can be forgotten:
+        cancel a running import first, and pause (or demote) a continuous
+        poller so a live worker never loses its channel row mid-run.
         """
         channel = self.get_object()
         run = merged_state(channel)
@@ -284,14 +293,23 @@ class ImportViewSet(
 
 class MessagesArchiveUploadViewSet(viewsets.ViewSet):
     """Upload a message archive into the imports bucket (direct or multipart),
-    used before ``POST /imports/`` with ``source=file``."""
+    used before ``POST .../imports/`` with ``source=file``.
 
-    permission_classes = [permissions.IsAuthenticated]
+    Nested under the same mailbox as the imports it feeds and gated by the same
+    ``IsMailboxAdmin`` — so only someone who could start the import can mint
+    presigned writes into the bucket. The minted keys stay *user*-scoped (an
+    upload can feed an import into any mailbox the user administers); the URL
+    mailbox is the authorization target. Abandoned uploads (completed or
+    dangling multipart) are reclaimed by the bucket lifecycle rule set by
+    ``create_bucket`` (see docs/imports.md).
+    """
+
+    permission_classes = [permissions.IsMailboxAdmin]
     storage = storages["message-imports"]
     lookup_url_kwarg = "upload_id"
     lookup_field = "upload_id"
 
-    def create(self, request):
+    def create(self, request, **kwargs):
         """Create a multipart upload (returns ``upload_id``) or a direct
         presigned PUT url for a file in the imports bucket."""
         serializer = ImportFileUploadSerializer(data=request.data)
@@ -334,7 +352,7 @@ class MessagesArchiveUploadViewSet(viewsets.ViewSet):
         )
 
     @action(detail=True, methods=["post"], url_path="part")
-    def create_part_upload(self, request, upload_id=None):
+    def create_part_upload(self, request, upload_id=None, **kwargs):
         """Create a presigned url to upload one part of a multipart upload."""
         data = request.data.copy()
         data.update({"upload_id": upload_id})
@@ -366,7 +384,7 @@ class MessagesArchiveUploadViewSet(viewsets.ViewSet):
             status=status.HTTP_201_CREATED,
         )
 
-    def update(self, request, upload_id=None):
+    def update(self, request, upload_id=None, **kwargs):
         """Complete a multipart upload by providing all part ETags."""
         data = request.data.copy()
         data.update({"upload_id": upload_id})
@@ -388,7 +406,7 @@ class MessagesArchiveUploadViewSet(viewsets.ViewSet):
         )
         return Response(status=status.HTTP_204_NO_CONTENT)
 
-    def destroy(self, request, upload_id=None):
+    def destroy(self, request, upload_id=None, **kwargs):
         """Abort a multipart upload."""
         data = request.data.copy()
         data.update({"upload_id": upload_id})
@@ -400,7 +418,15 @@ class MessagesArchiveUploadViewSet(viewsets.ViewSet):
         upload_id = serializer.validated_data["upload_id"]
 
         s3_client = self.storage.connection.meta.client
-        s3_client.abort_multipart_upload(
-            Bucket=self.storage.bucket_name, Key=file_key, UploadId=upload_id
-        )
+        try:
+            s3_client.abort_multipart_upload(
+                Bucket=self.storage.bucket_name, Key=file_key, UploadId=upload_id
+            )
+        except ClientError as exc:
+            # Idempotent: the upload may already be gone (aborted by the
+            # client's unmount cleanup racing its explicit abort, or already
+            # completed). A duplicate abort is a no-op, not a 500.
+            code = (exc.response or {}).get("Error", {}).get("Code")
+            if code not in ("NoSuchUpload", "NotFound", "404"):
+                raise
         return Response(status=status.HTTP_204_NO_CONTENT)

@@ -116,11 +116,10 @@ def calendar_rsvp_task(
             "result": None,
             "error": str(e),
         }
-    except Exception as e:  # pylint: disable=broad-exception-caught
+    except Exception:  # pylint: disable=broad-exception-caught
         # Anything else is unexpected. Stack to Sentry, generic copy to
         # the client — raw ``str(e)`` from ``requests``/``icalendar`` can
         # leak the CalDAV URL or other internal details.
-        capture_exception(e)
         logger.exception("Error responding to calendar event")
         return {
             "status": "FAILURE",
@@ -190,8 +189,7 @@ def calendar_add_event_task(
             "result": None,
             "error": str(e),
         }
-    except Exception as e:  # pylint: disable=broad-exception-caught
-        capture_exception(e)
+    except Exception:  # pylint: disable=broad-exception-caught
         logger.exception("Error adding calendar event")
         return {
             "status": "FAILURE",

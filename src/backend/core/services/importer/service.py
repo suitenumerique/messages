@@ -15,11 +15,9 @@ from django.conf import settings
 from django.core.files.storage import storages
 
 import magic
-from sentry_sdk import capture_exception
 
 from core import enums
 from core.models import Mailbox
-from core.utils import register_task_owner
 
 from .channel import create_import_channel
 from .tasks import run_import_task
@@ -120,15 +118,12 @@ def start_file_import(
             file_key=file_key,
             name=f"Import {filename}" if filename else f"Import {label}",
         )
-        task = run_import_task.delay(str(channel.id))
-        register_task_owner(task.id, user.id)
+        run_import_task.delay(str(channel.id))
         return True, {
-            "task_id": task.id,
             "type": source.value,
             "import_id": str(channel.id),
         }
     except Exception as e:  # pylint: disable=broad-exception-caught
-        capture_exception(e)
         logger.exception("Error processing file: %s", e)
         return False, {
             "detail": "An error occurred while processing the file.",
@@ -181,16 +176,13 @@ def start_imap_import(
                 "use_ssl": use_ssl,
             },
         )
-        task = run_import_task.delay(str(channel.id))
-        register_task_owner(task.id, user.id)
+        run_import_task.delay(str(channel.id))
         return True, {
-            "task_id": task.id,
             "type": "imap",
             "import_id": str(channel.id),
         }
 
     except Exception as e:  # pylint: disable=broad-exception-caught
-        capture_exception(e)
         logger.exception("Error starting IMAP import: %s", e)
         return False, {
             "detail": "An error occurred while starting the IMAP import.",

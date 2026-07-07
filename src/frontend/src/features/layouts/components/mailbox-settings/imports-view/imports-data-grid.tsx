@@ -17,13 +17,12 @@ import ProgressBar from "@/features/ui/components/progress-bar";
 import { addToast, ToasterItem } from "@/features/ui/components/toaster";
 import { handle } from "@/features/utils/errors";
 import { DateHelper } from "@/features/utils/date-helper";
+import { isTerminal, STATUS_CANCELLED } from "@/hooks/use-import-status";
 
 type ImportsDataGridProps = {
     mailbox: Mailbox;
 };
 
-const TERMINAL = ["completed", "failed", "cancelled"];
-const isTerminal = (status?: string | null) => !!status && TERMINAL.includes(status);
 const isRunning = (row: ImportRun) => !isTerminal(row.status);
 const isImap = (row: ImportRun) => row.source_type === "imap";
 const isContinuous = (row: ImportRun) => row.mode === "continuous";
@@ -127,16 +126,21 @@ export const ImportsDataGrid = ({ mailbox }: ImportsDataGridProps) => {
                 const active = rows.some(
                     (r) => r.status === "pending" || r.status === "running",
                 );
-                return active ? 2000 : false;
+                return active ? 15000 : false;
             },
         },
+        // Background status poll: let foreground requests win the wire.
+        request: { priority: "low" },
     });
 
     const cancelMutation = useMailboxesImportsCancelCreate();
     const updateMutation = useMailboxesImportsPartialUpdate();
     const forgetMutation = useMailboxesImportsDestroy();
 
-    const rows = data?.data ?? [];
+    // A cancelled run is removed server-side once its purge settles; filter
+    // out any row still (or left) in the cancelled state so cancelling makes
+    // the import disappear from the list immediately.
+    const rows = (data?.data ?? []).filter((row) => row.status !== STATUS_CANCELLED);
 
     const invalidate = async () => {
         await queryClient.invalidateQueries({

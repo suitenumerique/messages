@@ -51,6 +51,9 @@ interface UploadResource {
   url: string;
 }
 
+const isUserAbort = (error: unknown) =>
+  error instanceof Error && error.message === "Aborted";
+
 export enum BucketUploadState {
   IDLE = "idle",
   INITIATING = "initiating",
@@ -85,6 +88,7 @@ const uploadPart = (
   url: string,
   chunk: Blob,
   onInit: (xhr: XMLHttpRequest) => void,
+  isAborted: () => boolean,
   progressHandler: (progress: number) => void
 ): Promise<string> =>
   new Promise((resolve, reject) => {
@@ -94,7 +98,7 @@ const uploadPart = (
     // See directUploadFile: distinguish a real user abort from a network
     // failure (status 0 without an abort event).
     xhr.addEventListener("error", () => reject(new Error('Upload failed')));
-    xhr.addEventListener("abort", () => reject('Aborted'));
+    xhr.addEventListener("abort", () => reject(new Error('Aborted')));
     onInit(xhr);
 
     xhr.addEventListener("readystatechange", () => {
@@ -109,6 +113,12 @@ const uploadPart = (
           return resolve(etag);
         }
         if (xhr.status === 0) {
+          // xhr.abort() lands here BEFORE the 'abort' event fires; the flag
+          // set by the manager's abort() is the only reliable discriminator.
+          if (isAborted()) {
+            reject(new Error('Aborted'));
+            return;
+          }
           reject(new Error('Upload failed: could not reach the storage server.'));
           return;
         }
@@ -134,6 +144,7 @@ const directUploadFile = (
   url: string,
   file: File,
   onInit: (xhr: XMLHttpRequest) => void,
+  isAborted: () => boolean,
   progressHandler: (progress: number) => void
 ) =>
   new Promise((resolve, reject) => {
@@ -141,12 +152,12 @@ const directUploadFile = (
     xhr.open("PUT", url);
     xhr.setRequestHeader("Content-Type", file.type || "application/octet-stream");
 
-    // Only a genuine user abort fires the "abort" event → surface it as
-    // 'Aborted'. A network failure (object storage down, CORS, DNS) fires
-    // "error" and/or lands here with status 0 — that is NOT a user cancel, so
-    // report it as an upload failure, not "you aborted".
+    // Only a genuine user abort is surfaced as 'Aborted'. A network failure
+    // (object storage down, CORS, DNS) fires "error" and/or lands here with
+    // status 0 — that is NOT a user cancel, so report it as an upload
+    // failure, not "you aborted".
     xhr.addEventListener("error", () => reject(new Error('Upload failed')));
-    xhr.addEventListener("abort", () => reject('Aborted'));
+    xhr.addEventListener("abort", () => reject(new Error('Aborted')));
     onInit(xhr);
 
     xhr.addEventListener("readystatechange", () => {
@@ -155,6 +166,12 @@ const directUploadFile = (
           return resolve(true);
         }
         if (xhr.status === 0) {
+          // xhr.abort() lands here BEFORE the 'abort' event fires; the flag
+          // set by the manager's abort() is the only reliable discriminator.
+          if (isAborted()) {
+            reject(new Error('Aborted'));
+            return;
+          }
           reject(new Error(`Upload failed: could not reach ${url}.`));
           return;
         }
@@ -177,11 +194,13 @@ const directUploadFile = (
  * Upload a file using multipart upload (for large files).
  */
 const multiPartUploadFile = async (
+  mailboxId: string,
   file: File,
   chunkSize: number,
   onUploadCreated: (uploadId: string, fileKey: string) => void,
   onUploadInit: (xhr: XMLHttpRequest) => void,
   onUploadCompleting: () => void,
+  isAborted: () => boolean,
   progressHandler: (progress: number) => void
 ): Promise<UploadResource> => {
   let uploadId: string | null = null;
@@ -191,7 +210,7 @@ const multiPartUploadFile = async (
   try {
     // Step 1: Initiate multipart upload
     const initResponse = await fetchAPI<MultipartInitResponse>(
-      "/api/v1.0/import/file/upload/?multipart",
+      `/api/v1.0/mailboxes/${mailboxId}/imports/upload/?multipart`,
       {
         method: "POST",
         body: JSON.stringify({
@@ -203,20 +222,27 @@ const multiPartUploadFile = async (
 
     uploadId = initResponse.data.upload_id;
     fileKey = initResponse.data.file_key;
-    onUploadCreated(uploadId, fileKey);
 
+    // Validate before handing the values to React state (same pattern as the
+    // direct-upload path).
     if (!uploadId || !fileKey) {
       throw new Error("Failed to initiate multipart upload");
     }
+    onUploadCreated(uploadId, fileKey);
 
     // Step 2: Split file into chunks and upload each part
     const totalChunks = Math.ceil(file.size / chunkSize);
 
     let uploadedBytes = 0;
-    // const parts: PartUpload[] = await Promise.all<PartUpload>(Array.from({ length: totalChunks }, async (_, index) => {
     const parts: PartUpload[] = [];
-    // Array.from({ length: totalChunks }, async (_, index) => {
     for (let index = 0; index < totalChunks; index++) {
+        // An abort can land BETWEEN chunks (during the presign fetch, or just
+        // after a part resolved): without this gate the loop would keep
+        // uploading against the aborted server-side upload and surface the
+        // resulting NoSuchUpload as a generic error instead of a user cancel.
+        if (isAborted()) {
+          throw new Error("Aborted");
+        }
         try {
           const partNumber = index + 1;
           const start = index * chunkSize;
@@ -224,7 +250,7 @@ const multiPartUploadFile = async (
           const chunk = file.slice(start, end);
 
           const partResponse = await fetchAPI<MultipartPartResponse>(
-            `/api/v1.0/import/file/upload/${uploadId}/part/`,
+            `/api/v1.0/mailboxes/${mailboxId}/imports/upload/${uploadId}/part/`,
             {
               method: "POST",
               body: JSON.stringify({ file_key: fileKey, part_number: partNumber }),
@@ -238,7 +264,7 @@ const multiPartUploadFile = async (
           }
 
           // Upload the part
-          const etag = await uploadPart(presignedUrl, chunk, onUploadInit, (partProgress) => {
+          const etag = await uploadPart(presignedUrl, chunk, onUploadInit, isAborted, (partProgress) => {
             const partBytes = Math.floor((chunk.size * partProgress) / 100);
             const totalProgress = Math.floor(((uploadedBytes + partBytes) / file.size) * 100);
             progressHandler(totalProgress);
@@ -255,10 +281,14 @@ const multiPartUploadFile = async (
         }
     };
 
-    // Step 3: Complete multipart upload
+    // Step 3: Complete multipart upload — unless the user aborted while the
+    // last part was in flight (completing would resurrect a cancelled upload).
+    if (isAborted()) {
+      throw new Error("Aborted");
+    }
     onUploadCompleting();
     const completeResponse = await fetchAPI<UploadCompleteResponse>(
-      `/api/v1.0/import/file/upload/${uploadId}/`,
+      `/api/v1.0/mailboxes/${mailboxId}/imports/upload/${uploadId}/`,
       {
         method: "PUT",
         body: JSON.stringify({ file_key: fileKey, parts }),
@@ -267,18 +297,24 @@ const multiPartUploadFile = async (
 
     return completeResponse.data;
   } catch (error) {
-    handle(new Error("Failed to upload file."), { extra: { error } });
-    // If something went wrong, try to abort the multipart upload
-    if (uploadId && fileKey) {
-      await abortUpload(uploadId, fileKey);
+    // A deliberate user abort is neither a Sentry report nor ours to clean
+    // up: the manager's abort() already sent the server-side abort, and
+    // sending a second one would 404.
+    if (!isUserAbort(error)) {
+      handle(new Error("Failed to upload file."), { extra: { error } });
+      // Something went wrong server-side or on the wire: try to abort the
+      // multipart upload so its parts don't linger until the lifecycle rule.
+      if (uploadId && fileKey) {
+        await abortUpload(mailboxId, uploadId, fileKey);
+      }
     }
     throw error;
   }
 };
 
-const abortUpload = async (uploadId: string, fileKey: string) => {
+const abortUpload = async (mailboxId: string, uploadId: string, fileKey: string) => {
   try {
-    await fetchAPI(`/api/v1.0/import/file/upload/${uploadId}/`, {
+    await fetchAPI(`/api/v1.0/mailboxes/${mailboxId}/imports/upload/${uploadId}/`, {
       method: "DELETE",
       body: JSON.stringify({ file_key: fileKey }),
     });
@@ -288,7 +324,7 @@ const abortUpload = async (uploadId: string, fileKey: string) => {
 };
 
 export const useBucketUpload = (
-  { onSuccess, onError }: { onSuccess?: (manager: BucketUploadManager) => void, onError?: (error: string) => void }
+  { mailboxId, onSuccess, onError }: { mailboxId: string, onSuccess?: (manager: BucketUploadManager) => void, onError?: (error: string) => void }
 ): BucketUploadManager => {
   const { MULTIPART_UPLOAD_CHUNK_SIZE_MB } = useConfig();
   // Threshold to use multipart upload (object storage allows chunks of 10MB at least)
@@ -297,10 +333,15 @@ export const useBucketUpload = (
   const [fileKey, setFileKey] = useState<string | null>(null);
   const uploadIdRef = useRef<string | null>(null);
   const fileKeyRef = useRef<string | null>(null);
+  // Set by abort() BEFORE xhr.abort(): the status-0 readystatechange fires
+  // before the 'abort' event, so this is how the xhr helpers tell a deliberate
+  // user cancel from a network failure.
+  const userAbortedRef = useRef(false);
   const [state, setState] = useState<BucketUploadState>(BucketUploadState.IDLE);
   const [progress, setProgress] = useState<number>(0);
   const [uploadId, setUploadId] = useState<string | null>(null);
   const [xhr, setXhr] = useState<XMLHttpRequest | null>(null);
+  const xhrRef = useRef<XMLHttpRequest | null>(null);
 
   const reset = () => {
     setFile(null);
@@ -312,9 +353,12 @@ export const useBucketUpload = (
   }
 
   const abort = async () => {
-    if (!uploadId || !fileKey) return;
+    userAbortedRef.current = true;
     if (xhr) xhr.abort();
-    await abortUpload(uploadId, fileKey);
+    // Only a multipart upload has server-side state to abort; a direct PUT
+    // (uploadId is never set on that path) just stops with its XHR — the
+    // orphaned object is reclaimed by the bucket lifecycle.
+    if (uploadId && fileKey) await abortUpload(mailboxId, uploadId, fileKey);
     reset();
   }
 
@@ -325,6 +369,8 @@ export const useBucketUpload = (
     setProgress(0);
     setUploadId(null);
     setFileKey(null);
+    userAbortedRef.current = false;
+    const isAborted = () => userAbortedRef.current;
 
     // Track the resolved key locally: onSuccess fires synchronously at the end
     // of this function, before React has necessarily flushed setFileKey, so we
@@ -343,18 +389,20 @@ export const useBucketUpload = (
         const handleUploadCompleting = () => setState(BucketUploadState.COMPLETING);
         setState(BucketUploadState.INITIATING);
         await multiPartUploadFile(
+          mailboxId,
           file,
           chunkSize,
           handleUploadCreated,
           setXhr,
           handleUploadCompleting,
+          isAborted,
           (progress) => setProgress(progress)
       );
       } else {
         // Use simple upload for small files
         setState(BucketUploadState.INITIATING);
         const response = await fetchAPI<DirectUploadResponse>(
-          "/api/v1.0/import/file/upload/",
+          `/api/v1.0/mailboxes/${mailboxId}/imports/upload/`,
           {
             method: "POST",
             body: JSON.stringify({ filename: file.name, content_type: file.type || "application/octet-stream" }),
@@ -367,10 +415,10 @@ export const useBucketUpload = (
         setFileKey(file_key);
         resolvedFileKey = file_key;
         setState(BucketUploadState.IMPORTING);
-        await directUploadFile(url, file, setXhr, setProgress);
+        await directUploadFile(url, file, setXhr, isAborted, setProgress);
       }
     } catch(error) {
-      if (error instanceof Error && error.message === 'Aborted') {
+      if (isUserAbort(error)) {
         onError?.('Aborted');
         return;
       };
@@ -400,12 +448,21 @@ export const useBucketUpload = (
   }, [fileKey]);
 
   useEffect(() => {
+    xhrRef.current = xhr;
+  }, [xhr]);
+
+  useEffect(() => {
     if (file) {
       upload(file);
 
       return () => {
+        // Stop the in-flight transfer too (a direct upload has no multipart
+        // state to abort server-side, but its XHR would otherwise keep
+        // uploading after the modal is gone).
+        userAbortedRef.current = true;
+        xhrRef.current?.abort();
         if (uploadIdRef.current && fileKeyRef.current) {
-          abortUpload(uploadIdRef.current, fileKeyRef.current);
+          abortUpload(mailboxId, uploadIdRef.current, fileKeyRef.current);
         }
       }
     }

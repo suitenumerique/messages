@@ -13,21 +13,38 @@ lives is deliberate:
   is disabled). ``last_used_at`` is the throttled heartbeat, updated via the
   model's own ``mark_used()``.
 * **Ephemeral, in Redis** (``import:{id}``) — the fast-changing progress:
-  live status, counts, and the resume *watermark* (a positional ``cursor`` for
-  file sources, per-folder ``{uidvalidity,last_uid}`` for IMAP). Losing it is
-  safe: the run resumes from the start and dedup (mime_id, else blob sha256)
-  keeps re-delivery idempotent.
+  live status, counts, and the resume *watermark*.
+
+  The **watermark** is the run's bookmark: the high-water mark separating the
+  source items already delivered from those not yet reached, so an interrupted
+  run (crash, stall, redeploy, or a continuous poller between passes) re-reads
+  only what lies *past* it instead of replaying the whole source. Its shape is
+  per-source, because "how far did I get" differs by source:
+    - file sources (mbox/eml/pst) — a single positional ``cursor`` (an integer
+      index into the ordered message list): every item before it is done.
+    - IMAP — a per-folder ``{uidvalidity, last_uid}`` map: each folder resumes
+      at ``uid > last_uid``, and ``uidvalidity`` invalidates the bookmark if the
+      server renumbered the folder (forcing a full re-scan of just that folder).
+  The watermark only ever advances past *successfully delivered* mail, so a
+  failed item is retried on resume, not skipped.
+
+  Losing it is safe: the run resumes from the start and dedup (mime_id, else
+  blob sha256) keeps re-delivery idempotent. So the watermark is a resume
+  *optimization*, not a correctness-critical ledger.
 
 Credentials are never scrubbed on completion — they stay (encrypted) for the
 channel's life so a oneshot can be re-enabled as continuous later, and are
 freed only when the channel row is deleted.
 """
 
+import contextvars
 import logging
+import uuid
 from typing import Any
 
 from django.conf import settings
 from django.core.cache import cache
+from django.db import transaction
 from django.db.models import Q
 from django.utils import timezone
 
@@ -138,6 +155,7 @@ def write_state(channel_id: Any, **fields: Any) -> dict[str, Any]:
 
 
 def clear_state(channel_id: Any) -> None:
+    """Drop the run's live Redis state and any pending cancel flag."""
     cache.delete(_state_key(channel_id))
     cache.delete(_cancel_key(channel_id))
 
@@ -192,7 +210,13 @@ def record_progress(
     folders: dict[str, Any] | None = None,
     total: int | None = None,
 ) -> None:
-    """Persist a progress tick to Redis (counts + resume watermark)."""
+    """Persist a progress tick to Redis: running counts plus the resume
+    watermark (see the module docstring). The watermark is whichever of
+    ``cursor`` (file sources — a positional index) or ``folders`` (IMAP — the
+    per-folder ``{uidvalidity, last_uid}`` map) the caller passes; only fields
+    that are not ``None`` are written, so each runner advances just its own kind
+    of bookmark.
+    """
     fields: dict[str, Any] = {"success": success, "failure": failure}
     if cursor is not None:
         fields["cursor"] = cursor
@@ -221,57 +245,67 @@ def mark_finished(
     """
     # The caller's in-memory row may be stale (a runner loads its channel once,
     # at task start) while a concurrent cancel already wrote its own terminal
-    # snapshot. Re-read the durable row before the read-modify-write and never
-    # downgrade CANCELLED: resurrecting a pre-cancel status would defeat the
-    # durable backstop ``run_import_task`` relies on when the Redis cancel flag
-    # has been evicted.
-    channel.refresh_from_db(fields=["settings", "is_active"])
-    run = dict((channel.settings or {}).get("import") or {})
-    if (
-        run.get("status") == enums.ImportStatus.CANCELLED.value
-        and status != enums.ImportStatus.CANCELLED.value
-    ):
-        logger.info(
-            "mark_finished: import %s already cancelled; not overwriting with %s",
-            channel.id,
-            status,
+    # snapshot, or a concurrent PATCH just re-armed the import. Do the whole
+    # read-modify-write under a row lock: a plain refresh-then-save would let
+    # an ``enable_continuous`` landing in between be silently clobbered (its
+    # mode=continuous/is_active=True reverted by our rebuilt settings dict).
+    # And never downgrade CANCELLED: resurrecting a pre-cancel status would
+    # defeat the durable backstop ``run_import_task`` relies on when the Redis
+    # cancel flag has been evicted.
+    with transaction.atomic():
+        locked = (
+            models.Channel.objects.select_for_update()
+            .only("settings", "is_active")
+            .get(pk=channel.pk)
         )
-        return
+        channel.settings = locked.settings
+        channel.is_active = locked.is_active
+        run = dict((channel.settings or {}).get("import") or {})
+        if (
+            run.get("status") == enums.ImportStatus.CANCELLED.value
+            and status != enums.ImportStatus.CANCELLED.value
+        ):
+            logger.info(
+                "mark_finished: import %s already cancelled; not overwriting with %s",
+                channel.id,
+                status,
+            )
+            return
 
-    now = timezone.now().isoformat()
-    write_state(
-        channel.id,
-        status=status,
-        success=success,
-        failure=failure,
-        total=total,
-        error=error,
-        finished_at=now,
-    )
+        now = timezone.now().isoformat()
+        write_state(
+            channel.id,
+            status=status,
+            success=success,
+            failure=failure,
+            total=total,
+            error=error,
+            finished_at=now,
+        )
 
-    run = _patch_import_run(
-        channel,
-        status=status,
-        success=success,
-        failure=failure,
-        total=total,
-        finished_at=now,
-        # Persist the failure reason durably too: the Redis copy is evicted
-        # after STATE_TTL, and a silently-disabled continuous poller must
-        # still be able to explain *why* it stopped days later.
-        error=error,
-    )
+        run = _patch_import_run(
+            channel,
+            status=status,
+            success=success,
+            failure=failure,
+            total=total,
+            finished_at=now,
+            # Persist the failure reason durably too: the Redis copy is evicted
+            # after STATE_TTL, and a silently-disabled continuous poller must
+            # still be able to explain *why* it stopped days later.
+            error=error,
+        )
 
-    is_continuous = run.get("mode") == enums.ImportMode.CONTINUOUS.value
-    # A continuous run that merely finished a poll stays active; only a real
-    # terminal state (failed/cancelled) disables it.
-    stays_active = is_continuous and status == enums.ImportStatus.COMPLETED.value
+        is_continuous = run.get("mode") == enums.ImportMode.CONTINUOUS.value
+        # A continuous run that merely finished a poll stays active; only a real
+        # terminal state (failed/cancelled) disables it.
+        stays_active = is_continuous and status == enums.ImportStatus.COMPLETED.value
 
-    update_fields = ["settings"]
-    if not stays_active and channel.is_active:
-        channel.is_active = False
-        update_fields.append("is_active")
-    channel.save(update_fields=update_fields)
+        update_fields = ["settings"]
+        if not stays_active and channel.is_active:
+            channel.is_active = False
+            update_fields.append("is_active")
+        channel.save(update_fields=update_fields)
 
 
 def heartbeat(channel: models.Channel) -> None:
@@ -288,15 +322,40 @@ def enable_continuous(channel: models.Channel) -> None:
     later (its credentials were kept, so no re-auth is needed). The poll cadence
     is the global ``MESSAGES_IMPORT_IMAP_POLL_INTERVAL``, not stored per-channel.
     """
-    _patch_import_run(channel, mode=enums.ImportMode.CONTINUOUS.value)
+    fields: dict[str, Any] = {"mode": enums.ImportMode.CONTINUOUS.value}
+    run = (channel.settings or {}).get("import") or {}
+    if run.get("status") == enums.ImportStatus.CANCELLED.value:
+        # Re-arming a previously *cancelled* run must clear its terminal
+        # snapshot, not just the Redis cancel flag: ``mark_finished`` never
+        # downgrades a durable CANCELLED and ``run_import_task``'s completion
+        # backstop purges (and deletes the row of) any run whose durable
+        # status still reads CANCELLED — the re-armed run's freshly imported
+        # mail would be destroyed at the end of every pass. Reset the snapshot
+        # to a fresh PENDING and drop the old Redis state entirely (its counts
+        # and watermark described mail the cancel purged; a full re-scan is
+        # exactly what recovers it, and dedup keeps that idempotent).
+        fields.update(
+            status=enums.ImportStatus.PENDING.value,
+            error=None,
+            finished_at=None,
+            success=None,
+            failure=None,
+            total=None,
+        )
+        clear_state(channel.id)
+    _patch_import_run(channel, **fields)
     channel.is_active = True
     # Clear the heartbeat so ``schedule_imports_task`` dispatches it promptly.
     channel.last_used_at = None
     channel.save(update_fields=["settings", "is_active", "last_used_at"])
-    # A previously *cancelled* run can be re-armed too: drop the stale cancel
-    # flag (it outlives the cancel by STATE_TTL) or the first ``beat`` of the
-    # new run would insta-cancel it — and purge its messages — on every poll.
+    # Drop any stale cancel flag (it outlives the cancel by STATE_TTL) or the
+    # first ``beat`` of the new run would insta-cancel it on every poll.
     clear_cancel_request(channel.id)
+    # A re-armed run also starts with a fresh stuck budget: a previously
+    # FAILED import (whose state survives, unlike the cancelled path above)
+    # must get its full retry allowance, not insta-fail on the first blip.
+    if read_state(channel.id).get("stuck_count"):
+        write_state(channel.id, stuck_marker=None, stuck_count=0)
 
 
 def disable_continuous(channel: models.Channel) -> None:
@@ -335,6 +394,29 @@ def _lock_ttl(ttl: int | None) -> int:
     return ttl or settings.MESSAGES_IMPORT_STALL_TIMEOUT
 
 
+# The token each acquisition stored as the lock value, keyed by channel, for
+# THIS execution. Acquire, renew and release all happen inside one task run, so
+# we only need per-execution ownership proof — not a durable or shared store.
+#
+# A ``ContextVar`` (not a plain module dict) so the scope is the *execution*,
+# not the *process*: under a shared-process worker pool (gevent/eventlet/
+# threads) two runs of the same channel can co-execute in one process, and a
+# module dict — keyed by channel_id — would let the later acquirer overwrite
+# the earlier one's token, so a stale holder could then renew or release the
+# live holder's lock. Each execution gets its own context, so its token map is
+# private; under prefork (one run per process) this behaves exactly as before.
+# Copy-on-write on every mutation (``set`` a fresh dict) keeps contexts that
+# inherited the same dict object from sharing mutations. Default is ``None``
+# (never a shared mutable) — read via ``_tokens()`` which coerces it to ``{}``.
+_run_lock_tokens: contextvars.ContextVar[dict[str, str] | None] = (
+    contextvars.ContextVar("import_run_lock_tokens", default=None)
+)
+
+
+def _tokens() -> dict[str, str]:
+    return _run_lock_tokens.get() or {}
+
+
 def acquire_run_lock(channel_id: Any, *, ttl: int | None = None) -> bool:
     """Best-effort "only one worker runs this import at a time" lock.
 
@@ -342,18 +424,50 @@ def acquire_run_lock(channel_id: Any, *, ttl: int | None = None) -> bool:
     can't double-dispatch the same channel. A live run refreshes it via
     ``renew_run_lock`` (so it never expires mid-run); a crashed holder's lock
     self-expires within the stall window so the resume can re-acquire it.
+
+    The lock value is a per-acquisition token: a stale holder — one that
+    outlived its TTL and was superseded by a re-dispatch — can no longer renew
+    or delete the lock the new worker owns.
     """
-    return bool(cache.add(_lock_key(channel_id), "1", timeout=_lock_ttl(ttl)))
+    token = uuid.uuid4().hex
+    if cache.add(_lock_key(channel_id), token, timeout=_lock_ttl(ttl)):
+        # Copy-on-write: never mutate the (possibly inherited/shared) dict in
+        # place, or a sibling context that started from the same object would
+        # see this token too.
+        _run_lock_tokens.set({**_tokens(), str(channel_id): token})
+        return True
+    return False
 
 
 def renew_run_lock(channel_id: Any, *, ttl: int | None = None) -> None:
     """Refresh the run lock's TTL — called on each progress flush so a long,
-    healthy run keeps the lock while a crashed one lets it lapse."""
-    cache.set(_lock_key(channel_id), "1", timeout=_lock_ttl(ttl))
+    healthy run keeps the lock while a crashed one lets it lapse.
+
+    Only the owning holder renews: if the lock now carries another worker's
+    token this holder is stale and must not extend it. The get/compare/set is
+    not atomic, but the race window is milliseconds against a TTL of minutes —
+    consistent with the lock's documented best-effort contract.
+    """
+    token = _tokens().get(str(channel_id))
+    if token is None:
+        return
+    current = cache.get(_lock_key(channel_id))
+    if current is None or current == token:
+        cache.set(_lock_key(channel_id), token, timeout=_lock_ttl(ttl))
 
 
 def release_run_lock(channel_id: Any) -> None:
-    cache.delete(_lock_key(channel_id))
+    """Drop the lock — but never another worker's: a stale holder finishing
+    late must not free the lock a re-dispatched run is relying on."""
+    tokens = _tokens()
+    token = tokens.get(str(channel_id))
+    if token is not None:
+        # Copy-on-write drop (mirrors ``acquire_run_lock``'s set).
+        remaining = {k: v for k, v in tokens.items() if k != str(channel_id)}
+        _run_lock_tokens.set(remaining)
+    current = cache.get(_lock_key(channel_id))
+    if current is None or token is None or current == token:
+        cache.delete(_lock_key(channel_id))
 
 
 # --- cancellation -----------------------------------------------------------
@@ -391,12 +505,16 @@ def mark_cancelled(channel: models.Channel) -> None:
     (rather than finishing and overwriting the cancelled status with completed).
     """
     request_cancel(channel.id)
-    st = read_state(channel.id)
+    # Carry the recorded counts *and* total into the terminal snapshot:
+    # ``mark_finished`` writes every field it is given, so omitting the total
+    # here would clobber the durable one with None.
+    st = merged_state(channel)
     mark_finished(
         channel,
         status=enums.ImportStatus.CANCELLED.value,
         success=st.get("success", 0),
         failure=st.get("failure", 0),
+        total=st.get("total"),
     )
 
 
@@ -417,22 +535,32 @@ def purge_import_messages(channel: models.Channel) -> dict[str, int]:
     ``post_delete`` signals.
     """
     message_qs = models.Message.objects.filter(channel=channel)
-    imported_thread_ids = set(message_qs.values_list("thread_id", flat=True))
     # A thread is "active" when it holds any message that is not import
     # payload: channel is NULL (normal mail, app replies, or mail kept from a
     # forgotten import) or a non-import channel (widget/API-key deliveries).
-    active_thread_ids = set(
-        models.Message.objects.filter(thread_id__in=imported_thread_ids)
+    # Kept as subqueries so a large import (hundreds of thousands of threads)
+    # never materializes its id sets in Python or ships them back as IN lists.
+    active_thread_qs = (
+        models.Message.objects.filter(thread_id__in=message_qs.values("thread_id"))
         .filter(
             Q(channel__isnull=True) | ~Q(channel__type=enums.ChannelTypes.IMPORT.value)
         )
-        .values_list("thread_id", flat=True)
+        .values("thread_id")
     )
 
-    purge_qs = message_qs.exclude(thread_id__in=active_thread_ids)
+    purge_qs = message_qs.exclude(thread_id__in=active_thread_qs)
     message_count = purge_qs.count()
     messages_kept = message_qs.count() - message_count
-    touched_thread_ids = imported_thread_ids - active_thread_ids
+    # Snapshot the threads the purge touches BEFORE deleting: once the import's
+    # messages are gone they can no longer be found via the channel FK. Ids
+    # only — the one purge-sized list this function keeps.
+    touched_thread_ids = list(
+        models.Thread.objects.filter(messages__channel=channel)
+        .exclude(id__in=active_thread_qs)
+        .order_by()
+        .values_list("id", flat=True)
+        .distinct()
+    )
 
     purge_qs.delete()
 
@@ -442,7 +570,11 @@ def purge_import_messages(channel: models.Channel) -> dict[str, int]:
             id__in=touched_thread_ids, messages__isnull=True
         ).delete()
         threads_deleted = deleted_by_model.get("core.Thread", 0)
-        for thread in models.Thread.objects.filter(id__in=touched_thread_ids):
+        # Refresh stats for the touched threads that survived (they still hold
+        # another import's messages); stream them rather than loading them all.
+        for thread in models.Thread.objects.filter(id__in=touched_thread_ids).iterator(
+            chunk_size=500
+        ):
             try:
                 thread.update_stats()
             except Exception:  # pylint: disable=broad-exception-caught

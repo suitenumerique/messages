@@ -1685,110 +1685,6 @@
                 }
             }
         },
-        "/api/v1.0/import/file/upload/": {
-            "post": {
-                "operationId": "import_file_upload_create",
-                "description": "Create a multipart upload (returns ``upload_id``) or a direct\npresigned PUT url for a file in the imports bucket.",
-                "tags": [
-                    "import"
-                ],
-                "security": [
-                    {
-                        "cookieAuth": []
-                    }
-                ],
-                "responses": {
-                    "201": {
-                        "description": "No response body"
-                    }
-                }
-            }
-        },
-        "/api/v1.0/import/file/upload/{upload_id}/": {
-            "put": {
-                "operationId": "import_file_upload_update",
-                "description": "Complete a multipart upload by providing all part ETags.",
-                "parameters": [
-                    {
-                        "in": "path",
-                        "name": "upload_id",
-                        "schema": {
-                            "type": "string"
-                        },
-                        "required": true
-                    }
-                ],
-                "tags": [
-                    "import"
-                ],
-                "security": [
-                    {
-                        "cookieAuth": []
-                    }
-                ],
-                "responses": {
-                    "200": {
-                        "description": "No response body"
-                    }
-                }
-            },
-            "delete": {
-                "operationId": "import_file_upload_destroy",
-                "description": "Abort a multipart upload.",
-                "parameters": [
-                    {
-                        "in": "path",
-                        "name": "upload_id",
-                        "schema": {
-                            "type": "string"
-                        },
-                        "required": true
-                    }
-                ],
-                "tags": [
-                    "import"
-                ],
-                "security": [
-                    {
-                        "cookieAuth": []
-                    }
-                ],
-                "responses": {
-                    "204": {
-                        "description": "No response body"
-                    }
-                }
-            }
-        },
-        "/api/v1.0/import/file/upload/{upload_id}/part/": {
-            "post": {
-                "operationId": "import_file_upload_part_create",
-                "description": "Create a presigned url to upload one part of a multipart upload.",
-                "parameters": [
-                    {
-                        "in": "path",
-                        "name": "upload_id",
-                        "schema": {
-                            "type": "string"
-                        },
-                        "required": true
-                    }
-                ],
-                "tags": [
-                    "import"
-                ],
-                "security": [
-                    {
-                        "cookieAuth": []
-                    }
-                ],
-                "responses": {
-                    "200": {
-                        "description": "No response body"
-                    }
-                }
-            }
-        },
         "/api/v1.0/labels/": {
             "get": {
                 "operationId": "labels_list",
@@ -3445,7 +3341,7 @@
             },
             "delete": {
                 "operationId": "mailboxes_imports_destroy",
-                "description": "Forget an import run, keeping the mail it imported.\n\nDeletes the Channel row (``Message.channel`` is SET_NULL, so the\nmessages survive) — the opposite of ``cancel``, which deletes the\nmessages. Only a settled run can be forgotten: cancel a running import\nfirst, and pause (or demote) a continuous poller so a live worker\nnever loses its channel row mid-run.",
+                "description": "Forget an import run, keeping the mail it imported.\n\nDeletes the Channel row (``Message.channel`` is SET_NULL, so the\nmessages survive) — the opposite of ``cancel``, which deletes the\nmessages (and then the row too). Only a settled run can be forgotten:\ncancel a running import first, and pause (or demote) a continuous\npoller so a live worker never loses its channel row mid-run.",
                 "parameters": [
                     {
                         "in": "path",
@@ -3492,7 +3388,7 @@
         "/api/v1.0/mailboxes/{mailbox_id}/imports/{id}/cancel/": {
             "post": {
                 "operationId": "mailboxes_imports_cancel_create",
-                "description": "Cancel an import.\n\nFlips it to ``cancelled`` synchronously (so the run stops and the\nscheduler won't resume it) and offloads the potentially-large message\ndeletion + orphan-thread cleanup to an idempotent background task.",
+                "description": "Cancel an import.\n\nFlips it to ``cancelled`` synchronously (so the run stops and the\nscheduler won't resume it) and offloads the potentially-large message\ndeletion + orphan-thread cleanup to an idempotent background task —\nwhich also removes the run from ``/imports/`` once it has settled.",
                 "parameters": [
                     {
                         "in": "path",
@@ -3536,6 +3432,148 @@
                     },
                     "404": {
                         "description": "Import not found"
+                    }
+                }
+            }
+        },
+        "/api/v1.0/mailboxes/{mailbox_id}/imports/upload/": {
+            "post": {
+                "operationId": "mailboxes_imports_upload_create",
+                "description": "Create a multipart upload (returns ``upload_id``) or a direct\npresigned PUT url for a file in the imports bucket.",
+                "parameters": [
+                    {
+                        "in": "path",
+                        "name": "mailbox_id",
+                        "schema": {
+                            "type": "string",
+                            "format": "uuid"
+                        },
+                        "required": true
+                    }
+                ],
+                "tags": [
+                    "mailboxes"
+                ],
+                "security": [
+                    {
+                        "cookieAuth": []
+                    }
+                ],
+                "responses": {
+                    "201": {
+                        "description": "No response body"
+                    }
+                }
+            }
+        },
+        "/api/v1.0/mailboxes/{mailbox_id}/imports/upload/{upload_id}/": {
+            "put": {
+                "operationId": "mailboxes_imports_upload_update",
+                "description": "Complete a multipart upload by providing all part ETags.",
+                "parameters": [
+                    {
+                        "in": "path",
+                        "name": "mailbox_id",
+                        "schema": {
+                            "type": "string",
+                            "format": "uuid"
+                        },
+                        "required": true
+                    },
+                    {
+                        "in": "path",
+                        "name": "upload_id",
+                        "schema": {
+                            "type": "string"
+                        },
+                        "required": true
+                    }
+                ],
+                "tags": [
+                    "mailboxes"
+                ],
+                "security": [
+                    {
+                        "cookieAuth": []
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "No response body"
+                    }
+                }
+            },
+            "delete": {
+                "operationId": "mailboxes_imports_upload_destroy",
+                "description": "Abort a multipart upload.",
+                "parameters": [
+                    {
+                        "in": "path",
+                        "name": "mailbox_id",
+                        "schema": {
+                            "type": "string",
+                            "format": "uuid"
+                        },
+                        "required": true
+                    },
+                    {
+                        "in": "path",
+                        "name": "upload_id",
+                        "schema": {
+                            "type": "string"
+                        },
+                        "required": true
+                    }
+                ],
+                "tags": [
+                    "mailboxes"
+                ],
+                "security": [
+                    {
+                        "cookieAuth": []
+                    }
+                ],
+                "responses": {
+                    "204": {
+                        "description": "No response body"
+                    }
+                }
+            }
+        },
+        "/api/v1.0/mailboxes/{mailbox_id}/imports/upload/{upload_id}/part/": {
+            "post": {
+                "operationId": "mailboxes_imports_upload_part_create",
+                "description": "Create a presigned url to upload one part of a multipart upload.",
+                "parameters": [
+                    {
+                        "in": "path",
+                        "name": "mailbox_id",
+                        "schema": {
+                            "type": "string",
+                            "format": "uuid"
+                        },
+                        "required": true
+                    },
+                    {
+                        "in": "path",
+                        "name": "upload_id",
+                        "schema": {
+                            "type": "string"
+                        },
+                        "required": true
+                    }
+                ],
+                "tags": [
+                    "mailboxes"
+                ],
+                "security": [
+                    {
+                        "cookieAuth": []
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "No response body"
                     }
                 }
             }

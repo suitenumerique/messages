@@ -4,8 +4,8 @@
 
 from django.core.files.storage import storages
 from django.core.files.uploadedfile import SimpleUploadedFile
-from django.urls import reverse
 from django.db.models import F, Q
+from django.urls import reverse
 
 import pytest
 from rest_framework import status

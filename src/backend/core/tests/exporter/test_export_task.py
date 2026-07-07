@@ -290,10 +290,7 @@ def test_admin_export_view_starts_task(admin_client, mailbox_fixture):
     """Test that POST to export view starts the celery task."""
     url = reverse("admin:core_mailbox_export", args=[mailbox_fixture.pk])
 
-    with (
-        patch("core.admin.export_mailbox_task") as mock_task,
-        patch("core.admin.register_task_owner"),
-    ):
+    with patch("core.admin.export_mailbox_task") as mock_task:
         mock_task.delay.return_value = Mock(id="test-task-id")
 
         response = admin_client.post(url)

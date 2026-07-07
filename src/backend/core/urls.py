@@ -69,11 +69,6 @@ router.register("threads", ThreadViewSet, basename="threads")
 router.register("labels", LabelViewSet, basename="labels")
 router.register("mailboxes", MailboxViewSet, basename="mailboxes")
 router.register("maildomains", AdminMailDomainViewSet, basename="admin-maildomains")
-router.register(
-    "import/file/upload",
-    MessagesArchiveUploadViewSet,
-    basename="messages-archive-upload",
-)
 
 # Router for /threads/{thread_id}/accesses/
 thread_access_nested_router = DefaultRouter()
@@ -152,8 +147,16 @@ mailbox_channel_nested_router.register(
     basename="mailbox-channels",
 )
 
-# Router for /mailboxes/{mailbox_id}/imports/ — start/track/manage imports
+# Router for /mailboxes/{mailbox_id}/imports/ — start/track/manage imports.
+# The upload helper is registered FIRST: its literal ``imports/upload`` prefix
+# must win URL resolution over the import-run detail route, whose ``{pk}``
+# segment would otherwise swallow "upload".
 mailbox_import_nested_router = DefaultRouter()
+mailbox_import_nested_router.register(
+    r"imports/upload",
+    MessagesArchiveUploadViewSet,
+    basename="mailbox-imports-upload",
+)
 mailbox_import_nested_router.register(
     r"imports",
     ImportViewSet,

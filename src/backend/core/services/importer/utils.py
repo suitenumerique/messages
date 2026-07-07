@@ -135,6 +135,10 @@ def run_plan(channel, state, plan, deliver_item) -> tuple[int, int, int]:
     differ only in how they build ``plan`` and deliver a single item.
     """
     total = len(plan)
+    # Resume watermark for file sources: a positional index into ``plan``. Items
+    # [0, cursor) are already delivered, so the loop restarts at ``cursor`` (0 on
+    # a fresh run or after a Redis eviction — a from-scratch replay dedup makes
+    # safe).
     cursor = state.get("cursor", 0)
     success, failure = state.get("success", 0), state.get("failure", 0)
     mark_started(channel.id, total=total)

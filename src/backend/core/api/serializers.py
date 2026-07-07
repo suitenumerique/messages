@@ -1980,7 +1980,7 @@ class ImportFileUploadAbortSerializer(ImportBaseSerializer):
         fields = ["file_key", "upload_id"]
 
 
-class ImportCreateSerializer(serializers.Serializer):
+class ImportCreateSerializer(serializers.Serializer):  # pylint: disable=abstract-method
     """Body of ``POST /mailboxes/{id}/imports/`` — starts a file or IMAP import.
 
     The target mailbox comes from the URL. ``source`` discriminates: ``file``
@@ -2104,45 +2104,65 @@ class ImportRunSerializer(serializers.ModelSerializer):
 
     @staticmethod
     def _run(obj):
-        return merged_state(obj)
+        # One Redis read per serialized object, not one per field: the imports
+        # list is polled every 1-2s by the grid and the header indicator while
+        # a run is live, so the ~11 method fields must share one merged_state.
+        # Stashed on the row instance (not the serializer) because ``many=True``
+        # reuses a single child serializer for every row.
+        cached = getattr(obj, "_merged_import_state", None)
+        if cached is None:
+            cached = merged_state(obj)
+            obj._merged_import_state = cached  # noqa: SLF001  # pylint: disable=protected-access
+        return cached
 
     @extend_schema_field(serializers.CharField(allow_null=True))
     def get_status(self, obj):
+        """Live run status (pending/running/completed/failed/cancelled)."""
         return self._run(obj).get("status")
 
     @extend_schema_field(serializers.CharField(allow_null=True))
     def get_source_type(self, obj):
+        """Import source: mbox/eml/pst/imap."""
         return self._run(obj).get("source_type")
 
     @extend_schema_field(serializers.CharField(allow_null=True))
     def get_mode(self, obj):
+        """Run mode: oneshot or continuous."""
         return self._run(obj).get("mode")
 
     @extend_schema_field(serializers.IntegerField(allow_null=True))
     def get_poll_interval(self, obj):
-        # The cadence is a global operator setting, not stored per-import; only
-        # a continuous run actually polls, so surface it (in seconds) just then.
+        """Poll cadence (seconds) — only for a continuous (polling) IMAP run.
+
+        The cadence is a global operator setting, not stored per-import; only a
+        continuous run actually polls, so surface it just then.
+        """
         if self._run(obj).get("mode") != enums.ImportMode.CONTINUOUS.value:
             return None
         return settings.MESSAGES_IMPORT_IMAP_POLL_INTERVAL
 
     @extend_schema_field(serializers.CharField(allow_null=True))
     def get_imap_username(self, obj):
-        # The account identity shown in the imports UI. Only the (non-secret)
-        # login is ever exposed — never the rest of the stored credentials.
-        # ``None`` for file imports.
+        """The IMAP login shown in the imports UI (``None`` for file imports).
+
+        Only the (non-secret) login is ever exposed — never the rest of the
+        stored credentials.
+        """
         return ((obj.encrypted_settings or {}).get("imap") or {}).get("username")
 
     @extend_schema_field(serializers.IntegerField())
     def get_total_messages(self, obj):
+        """Total messages the run expects to process."""
         return self._run(obj).get("total") or 0
 
     @extend_schema_field(serializers.IntegerField())
     def get_success_count(self, obj):
+        """Messages delivered so far."""
         return self._run(obj).get("success") or 0
 
     @extend_schema_field(serializers.IntegerField())
     def get_failure_count(self, obj):
+        """Messages that failed so far."""
         return self._run(obj).get("failure") or 0
 
     @extend_schema_field(serializers.FloatField())
@@ -2157,18 +2177,21 @@ class ImportRunSerializer(serializers.ModelSerializer):
 
     @extend_schema_field(serializers.CharField(allow_null=True))
     def get_error(self, obj):
+        """The run's error message, if it failed."""
         return self._run(obj).get("error")
 
     @extend_schema_field(serializers.CharField(allow_null=True))
     def get_started_at(self, obj):
+        """ISO timestamp the run started, or ``None``."""
         return self._run(obj).get("started_at")
 
     @extend_schema_field(serializers.CharField(allow_null=True))
     def get_finished_at(self, obj):
+        """ISO timestamp the run finished, or ``None``."""
         return self._run(obj).get("finished_at")
 
 
-class ImportUpdateSerializer(serializers.Serializer):
+class ImportUpdateSerializer(serializers.Serializer):  # pylint: disable=abstract-method
     """Body of ``PATCH /mailboxes/{id}/imports/{id}/`` — change how a run runs.
 
     Both fields optional (partial). ``mode=continuous`` (re-)arms an IMAP import
@@ -2225,6 +2248,20 @@ class ImportUpdateSerializer(serializers.Serializer):
                         "mode=continuous to re-enable it as a poller."
                     )
                 }
+            )
+        # ``is_active=false`` only means "pause the poller". On a one-shot it
+        # is meaningless — and actively harmful on a running one: it would
+        # disable the crash-recovery reaper, and with re-activation rejected
+        # above the run would be stranded "running" forever (the only exit
+        # being a cancel that deletes the delivered mail). The arm-paused
+        # combination (mode=continuous + is_active=false) stays allowed.
+        if (
+            attrs.get("is_active") is False
+            and not arming_continuous
+            and current_mode != enums.ImportMode.CONTINUOUS.value
+        ):
+            raise serializers.ValidationError(
+                {"is_active": "Only a continuous import can be paused."}
             )
         return attrs
 

@@ -8,7 +8,8 @@ against real sample archives and a mocked IMAP server.
 
 # pylint: disable=redefined-outer-name, unused-argument
 
-from unittest.mock import patch
+import socket
+from unittest.mock import MagicMock, patch
 
 from django.core.files.storage import storages
 
@@ -481,6 +482,12 @@ def _patch_imap(uid_map, folders=("INBOX",), uidvalidity=1):
             "core.services.importer.imap.get_folder_uidvalidity",
             return_value=uidvalidity,
         ),
+        # run_imap re-selects each folder before its fetch pass (the planning
+        # pass leaves the last-searched folder selected).
+        patch(
+            "core.services.importer.imap.select_imap_folder",
+            return_value=True,
+        ),
         patch(
             "core.services.importer.imap.uid_search_all",
             side_effect=_uid_search_all,
@@ -666,3 +673,68 @@ class TestRunImap:
             recipient.delivery_status
             == enums.MessageDeliveryStatusChoices.SENT_EXTERNAL
         )
+
+    def test_reselect_failure_is_transient_not_silent(self, mailbox, user):
+        """A folder that fails to re-select before its fetch pass must raise
+        (transient) rather than be skipped: skipping would let a oneshot run
+        end COMPLETED with the folder's mail silently missing forever."""
+        raw = _eml_bytes(frm="sender@example.com", subject="X", message_id="<rs@x>")
+        uid_map = {"INBOX": {1: ([], raw)}}
+        channel = _imap_channel(mailbox, user)
+
+        def run():
+            with patch(
+                "core.services.importer.imap.select_imap_folder",
+                return_value=False,
+            ):
+                with pytest.raises(TransientImportError):
+                    run_imap(channel, {})
+
+        _run_with_patches(_patch_imap(uid_map), run)
+        # Nothing delivered, watermark untouched: the retry loses nothing.
+        assert not models.Message.objects.filter(channel=channel).exists()
+
+    def test_connection_error_is_transient(self, mailbox, user):
+        """A connect-time network failure (DNS, socket timeout) is exactly as
+        transient as a mid-run fetch failure: it must map to
+        TransientImportError (retry budget) rather than terminally FAILING —
+        and permanently disabling — a continuous poller over one blip."""
+        channel = _imap_channel(mailbox, user)
+        with patch("core.services.importer.imap.IMAPConnectionManager") as mgr:
+            mgr.return_value.__enter__.side_effect = socket.gaierror("dns down")
+            with pytest.raises(TransientImportError):
+                run_imap(channel, {})
+
+
+# --- _collect_pst_plan cancellation -----------------------------------------
+
+
+def test_collect_pst_plan_propagates_cancel():
+    """The cancel raised by beat()/on_progress during the PST pre-scan must
+    unwind the run — not be swallowed by the corrupt-folder except blocks,
+    which would keep the worker scanning (and holding the run lock) for the
+    rest of the archive."""
+    from core.services.importer import pst as pst_module
+    from core.services.importer.channel import ImportCancelled
+
+    folder = MagicMock()
+    folder.number_of_sub_messages = 3
+    folder.number_of_sub_folders = 0
+    folder.name = "Inbox"
+    root = MagicMock()
+    root.number_of_sub_folders = 1
+    root.get_sub_folder.return_value = folder
+
+    def cancelling_beat():
+        raise ImportCancelled()
+
+    with (
+        patch.object(pst_module, "_find_ipm_subtree", return_value=root),
+        patch.object(pst_module, "build_well_known_folder_map", return_value={}),
+        patch.object(pst_module, "_is_email_folder", return_value=True),
+        patch.object(
+            pst_module, "_get_folder_type", return_value=pst_module.FOLDER_TYPE_NORMAL
+        ),
+    ):
+        with pytest.raises(ImportCancelled):
+            pst_module._collect_pst_plan(MagicMock(), {}, on_progress=cancelling_beat)
