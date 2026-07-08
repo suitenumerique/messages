@@ -62,7 +62,7 @@ dependencies = [
     "python-magic==0.4.27",
     "pyzstd==0.19.1",
     "redis==6.4.0",
-    "requests==2.33.0",
+    "requests==2.34.2",
     "sentry-sdk[django]==2.53.0",
     "libpff-python==20231205",
     "url-normalize==2.2.1",

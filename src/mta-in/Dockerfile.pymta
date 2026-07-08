@@ -115,7 +115,7 @@ CMD ["python", "-m", "pymta.server"]
 # Liveness probe: TCP-connect the SMTP listener. Uses stdlib socket — works in
 # both slim and distroless variants without curl/nc.
 HEALTHCHECK --interval=30s --timeout=2s --start-period=15s \
-  CMD ["python", "-c", "import os, socket; s=socket.socket(); s.settimeout(1); s.connect(('127.0.0.1', int(os.getenv('PYMTA_SMTP_PORT', '25')))); s.close()"]
+    CMD ["python", "-c", "import os, socket; s=socket.socket(); s.settimeout(1); s.connect(('127.0.0.1', int(os.getenv('PYMTA_SMTP_PORT', '25')))); s.close()"]
 
 
 # ---- Distroless production runtime ----
@@ -144,4 +144,4 @@ ENV PYTHONPATH="/app/src"
 CMD ["python", "-m", "pymta.server"]
 
 HEALTHCHECK --interval=30s --timeout=2s --start-period=15s \
-  CMD ["python", "-c", "import os, socket; s=socket.socket(); s.settimeout(1); s.connect(('127.0.0.1', int(os.getenv('PYMTA_SMTP_PORT', '25')))); s.close()"]
+    CMD ["python", "-c", "import os, socket; s=socket.socket(); s.settimeout(1); s.connect(('127.0.0.1', int(os.getenv('PYMTA_SMTP_PORT', '25')))); s.close()"]

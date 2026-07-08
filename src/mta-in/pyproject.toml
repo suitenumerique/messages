@@ -2,7 +2,7 @@
 # st-messages-mta-in package
 #
 [build-system]
-requires = ["uv_build>=0.10.0,<0.11.0"]
+requires = ["uv_build>=0.11.0,<0.12.0"]
 build-backend = "uv_build"
 
 [project]
@@ -27,11 +27,11 @@ requires-python = ">=3.14.6,<4.0"
 
 # Note: after changing this list you must re-run `make deps-lock-mta-in`
 dependencies = [
-    "requests==2.33.0",
+    "requests==2.34.2",
     "PyJWT==2.13.0",
     "aiosmtpd==1.4.6",
     "httpx==0.28.1",
-    "prometheus-client==0.24.1",
+    "prometheus-client==0.25.0",
 ]
 
 [project.urls]
@@ -54,7 +54,7 @@ dev = [
     "uvicorn==0.34.1",
     "ruff==0.9.3",
     "pylint==3.3.4",
-    "types-requests==2.32.0.20241016",
+    "types-requests==2.33.0.20260518",
 ]
 
 [tool.uv.build-backend]
