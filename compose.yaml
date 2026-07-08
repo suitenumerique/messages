@@ -10,6 +10,27 @@ x-nofile-ulimits: &nofile-ulimits
     soft: 262144
     hard: 262144
 
+# Shared config for the Celery workers. worker-dev (full stack) and
+# worker-dev-light (light stack) differ only in their profiles / depends_on /
+# environment; everything else lives here. Note that ``environment`` is a list,
+# so the ``<<`` merge does NOT combine it — each service repeats the full list.
+x-worker-base: &worker-base
+  build:
+    context: src/backend
+    target: runtime-dev
+    args:
+      DOCKER_USER: ${DOCKER_USER:-1000}
+  user: ${DOCKER_USER:-1000}
+  ulimits: *nofile-ulimits
+  command: ["python", "worker.py", "--loglevel=DEBUG"]
+  env_file:
+    - env.d/development/backend.defaults
+    - env.d/development/backend.local
+  volumes:
+    - ./src/backend:/app
+    - ./data/static:/data/static
+  mem_limit: 2G
+
 services:
   postgresql:
     image: postgres:16.6@sha256:557fea37a744d5f4c8faab304b0a90858b53ab119735a88c131fd19dab802f36
@@ -248,23 +269,9 @@ services:
     pull_policy: build
 
   worker-dev:
-    build:
-      context: src/backend
-      target: runtime-dev
-      args:
-        DOCKER_USER: ${DOCKER_USER:-1000}
-    user: ${DOCKER_USER:-1000}
-    ulimits: *nofile-ulimits
-    command: ["python", "worker.py", "--loglevel=DEBUG"]
+    <<: *worker-base
     environment:
       - DJANGO_CONFIGURATION=Development
-    env_file:
-      - env.d/development/backend.defaults
-      - env.d/development/backend.local
-    volumes:
-      - ./src/backend:/app
-      - ./data/static:/data/static
-    mem_limit: 2G
     depends_on:
       - backend-dev
 
@@ -274,26 +281,12 @@ services:
   # service's ``depends_on: [backend-dev]``, which would pull the full backend
   # (and its OpenSearch / object-storage deps) back into the light stack.
   worker-dev-light:
+    <<: *worker-base
     profiles:
       - light
-    build:
-      context: src/backend
-      target: runtime-dev
-      args:
-        DOCKER_USER: ${DOCKER_USER:-1000}
-    user: ${DOCKER_USER:-1000}
-    ulimits: *nofile-ulimits
-    command: ["python", "worker.py", "--loglevel=DEBUG"]
     environment:
       - DJANGO_CONFIGURATION=Development
       - OPENSEARCH_INDEX_THREADS=False
-    env_file:
-      - env.d/development/backend.defaults
-      - env.d/development/backend.local
-    volumes:
-      - ./src/backend:/app
-      - ./data/static:/data/static
-    mem_limit: 2G
     depends_on:
       postgresql:
         condition: service_healthy

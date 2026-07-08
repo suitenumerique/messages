@@ -20,17 +20,17 @@ description = "A Django MDA"
 keywords = ["Django", "Contacts", "Templates", "RBAC"]
 license = "MIT"
 readme = "README.md"
-requires-python = ">=3.14.5,<4.0"
+requires-python = ">=3.14.6,<4.0"
 
 # Note: after changing this list you must re-run `make deps-lock-back`
 dependencies = [
     "boto3==1.42.53",
     "botocore==1.42.53",
     "celery[redis]==5.6.2",
-    "cryptography==46.0.5",
+    "cryptography==48.0.1",
     "defusedxml==0.7.1",
     "dj-database-url==3.1.2",
-    "django==5.2.11",
+    "django==5.2.15",
     "django-celery-beat==2.8.1",
     "django-celery-results==2.6.0",
     "django-configurations==2.5.1",
@@ -56,13 +56,13 @@ dependencies = [
     "nested-multipart-parser==1.6.0",
     "openai==2.21.0",
     "psycopg[binary]==3.3.3",
-    "PyJWT==2.11.0",
+    "PyJWT==2.13.0",
     "PySocks==1.7.1",
     "python-keycloak==5.5.1",
     "python-magic==0.4.27",
     "pyzstd==0.19.1",
     "redis==6.4.0",
-    "requests==2.32.5",
+    "requests==2.33.0",
     "sentry-sdk[django]==2.53.0",
     "libpff-python==20231205",
     "url-normalize==2.2.1",
@@ -88,7 +88,7 @@ dev = [
     "pylint==4.0.4",
     "pytest-cov==7.0.0",
     "pytest-django==4.12.0",
-    "pytest==9.0.2",
+    "pytest==9.0.3",
     "pytest-icdiff==0.9",
     "pytest-repeat==0.9.4",
     "pytest-xdist==3.8.0",

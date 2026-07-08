@@ -9,7 +9,23 @@ name: Build and publish OCI images
 
 jobs:
 
+  # Shared base (debian-trixie + uv + managed CPython 3.14.6), built + pushed once
+  # from docker/python-uv/Dockerfile, then referenced by digest via
+  # PYTHON_UV_IMAGE in the backend and MTA builds below.
+  docker-publish-python-uv:
+    uses: ./.github/workflows/docker-publish.yml
+    permissions:
+      contents: read
+      packages: write
+      attestations: write
+      id-token: write
+    secrets: inherit
+    with:
+      image_name: "python-uv"
+      context: "docker/python-uv"
+
   docker-publish-mta-in:
+    needs: docker-publish-python-uv
     uses: ./.github/workflows/docker-publish.yml
     permissions:
       contents: read
@@ -21,8 +37,30 @@ jobs:
       image_name: "mta-in"
       context: "src/mta-in"
       target: runtime-prod
+      build_args: |
+        PYTHON_UV_IMAGE=${{ needs.docker-publish-python-uv.outputs.image_ref }}
+
+  # Pure-Python (aiosmtpd) inbound MTA — built from Dockerfile.pymta, published
+  # alongside the Postfix mta-in image while the two run side-by-side.
+  docker-publish-mta-in-py:
+    needs: docker-publish-python-uv
+    uses: ./.github/workflows/docker-publish.yml
+    permissions:
+      contents: read
+      packages: write
+      attestations: write
+      id-token: write
+    secrets: inherit
+    with:
+      image_name: "mta-in-py"
+      context: "src/mta-in"
+      dockerfile: "src/mta-in/Dockerfile.pymta"
+      target: runtime-prod
+      build_args: |
+        PYTHON_UV_IMAGE=${{ needs.docker-publish-python-uv.outputs.image_ref }}
 
   docker-publish-mta-out:
+    needs: docker-publish-python-uv
     uses: ./.github/workflows/docker-publish.yml
     permissions:
       contents: read
@@ -34,6 +72,8 @@ jobs:
       image_name: "mta-out"
       context: "src/mta-out"
       target: runtime-prod
+      build_args: |
+        PYTHON_UV_IMAGE=${{ needs.docker-publish-python-uv.outputs.image_ref }}
 
   docker-publish-socks-proxy:
     uses: ./.github/workflows/docker-publish.yml
@@ -62,6 +102,7 @@ jobs:
       arm64_reuse_amd64_build_arg: "FRONTEND_IMAGE"
 
   docker-publish-backend:
+    needs: docker-publish-python-uv
     uses: ./.github/workflows/docker-publish.yml
     permissions:
       contents: read
@@ -73,6 +114,8 @@ jobs:
       image_name: "backend"
       context: "src/backend"
       target: runtime-prod
+      build_args: |
+        PYTHON_UV_IMAGE=${{ needs.docker-publish-python-uv.outputs.image_ref }}
 
   docker-publish-keycloak:
     uses: ./.github/workflows/docker-publish.yml

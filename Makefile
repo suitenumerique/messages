@@ -25,6 +25,9 @@ DOCKER_UID          = $(shell id -u)
 DOCKER_GID          = $(shell id -g)
 DOCKER_USER         = $(DOCKER_UID):$(DOCKER_GID)
 COMPOSE             = DOCKER_USER=$(DOCKER_USER) docker compose
+# Shared base image (docker/python-uv) that the backend + MTA Dockerfiles inherit
+# from via the PYTHON_UV_IMAGE build arg. Overridable for CI.
+PYTHON_UV_IMAGE     ?= messages-python-uv:local
 COMPOSE_E2E         = DOCKER_USER=$(DOCKER_USER) docker compose -f src/e2e/compose.yaml
 COMPOSE_EXEC        = $(COMPOSE) exec
 COMPOSE_EXEC_APP    = $(COMPOSE_EXEC) backend-dev
@@ -128,11 +131,11 @@ update-full: \
 .PHONY: update-full
 
 # -- Docker/compose
-build: ## build the project containers
+build: build-python-base ## build the project containers
 	@$(COMPOSE) build
 .PHONY: build
 
-build-back-distroless: ## build the distroless production image
+build-back-distroless: build-python-base ## build the distroless production image
 	@docker buildx build --load --target runtime-distroless-prod -t messages-distroless \
 		-f src/backend/Dockerfile \
 		src/backend/
@@ -146,7 +149,7 @@ test-back-distroless: build-back-distroless ## build and smoke-test the distrole
 		print(f'OK: Python {sys.version.split()[0]}, {ssl.OPENSSL_VERSION}')"
 .PHONY: test-back-distroless
 
-build-pymta-distroless: ## build the pymta distroless production image
+build-pymta-distroless: build-python-base ## build the pymta distroless production image
 	@docker build --target runtime-distroless-prod -t messages-pymta-distroless -f src/mta-in/Dockerfile.pymta src/mta-in/
 .PHONY: build-pymta-distroless
 
@@ -165,12 +168,16 @@ logs: ## display all services logs (follow mode)
 	@$(COMPOSE) logs -f
 .PHONY: logs
 
+build-python-base: ## build the shared python+uv base image (docker/python-uv) that the backend and MTA images inherit from
+	@docker build -t $(PYTHON_UV_IMAGE) docker/python-uv
+.PHONY: build-python-base
+
 start-deps: ## start the slow infra deps (postgres, redis, keycloak) in the background so they warm up while the rest of bootstrap runs
 	@$(COMPOSE) up -d --no-recreate postgresql redis keycloak
 .PHONY: start-deps
 
-start: ## start the light dev stack (backend, worker, frontend, keycloak, postgresql, redis)
-	@$(COMPOSE) stop backend-dev worker-dev worker-ui >/dev/null 2>&1 || true
+start: build-python-base ## start the light dev stack (backend, worker, frontend, keycloak, postgresql, redis)
+	@$(COMPOSE) stop backend-dev worker-dev worker-ui opensearch objectstorage mailcatcher mta-in-py mpa >/dev/null 2>&1 || true
 	@$(COMPOSE) up --build -d --wait \
 		postgresql \
 		redis \
@@ -180,7 +187,7 @@ start: ## start the light dev stack (backend, worker, frontend, keycloak, postgr
 		worker-dev-light
 .PHONY: start
 
-start-full: ## start the full dev stack (adds OpenSearch, object storage, mailcatcher and the MTAs)
+start-full: build-python-base ## start the full dev stack (adds OpenSearch, object storage, mailcatcher and the MTAs)
 	@$(COMPOSE) stop backend-dev-light worker-dev-light >/dev/null 2>&1 || true
 	@$(COMPOSE) up --build -d --wait \
 		postgresql \
@@ -246,7 +253,7 @@ lint-check: \
   lint-front
 .PHONY: lint-check
 
-lint-back: ## run back-end linters (with auto-fix)
+lint-back: build-python-base ## run back-end linters (with auto-fix)
 lint-back: \
   format-back \
   check-back \
@@ -311,22 +318,22 @@ test: \
   test-socks-proxy
 .PHONY: test
 
-test-back: ## run back-end tests
+test-back: build-python-base ## run back-end tests
 	@args="$(filter-out $@,$(MAKECMDGOALS))" && \
 	bin/pytest $${args:-${1}}
 .PHONY: test-back
 
-test-back-parallel: ## run all back-end tests in parallel
+test-back-parallel: build-python-base ## run all back-end tests in parallel
 	@args="$(filter-out $@,$(MAKECMDGOALS))" && \
 	bin/pytest -n auto $${args:-${1}}
 .PHONY: test-back-parallel
 
-fuzz-back: ## run back-end fuzz tests
+fuzz-back: build-python-base ## run back-end fuzz tests
 	@args="$(filter-out $@,$(MAKECMDGOALS))" && \
 	bin/pytest -m fuzz $${args:-${1}}
 .PHONY: fuzz-back
 
-fuzz-back-intensive: ## run back-end fuzz tests with 10x more examples (~20-30 min)
+fuzz-back-intensive: build-python-base ## run back-end fuzz tests with 10x more examples (~20-30 min)
 	@args="$(filter-out $@,$(MAKECMDGOALS))" && \
 	rm -rf src/backend/.hypothesis/examples && \
 	FUZZ_EXAMPLES=20000 bin/pytest -m fuzz $${args:-${1}}
@@ -346,15 +353,15 @@ test-front-amd64: ## run the frontend tests in amd64
 	$(COMPOSE) run --rm frontend-tools-amd64 npm run test -- $${args:-${1}}
 .PHONY: test-front-amd64
 
-test-mta-in: ## run the mta-in tests against the Postfix milter implementation
+test-mta-in: build-python-base ## run the mta-in tests against the Postfix milter implementation
 	@$(COMPOSE) run --build --rm mta-in-test
 .PHONY: test-mta-in
 
-test-mta-in-py: ## run the mta-in tests against the pure-Python (aiosmtpd) implementation
+test-mta-in-py: build-python-base ## run the mta-in tests against the pure-Python (aiosmtpd) implementation
 	@$(COMPOSE) run --build --rm mta-in-py-test
 .PHONY: test-mta-in-py
 
-test-mta-out: ## run the mta-out tests
+test-mta-out: build-python-base ## run the mta-out tests
 	@$(COMPOSE) run --build --rm mta-out-test
 .PHONY: test-mta-out
 
@@ -409,7 +416,7 @@ test-e2e-dev: ## Setup, run and teardown e2e tests in UI mode with dev frontend
 	@$(MAKE) stop-e2e
 .PHONY: test-e2e-dev
 
-test-e2e-ci: ## Setup and run e2e tests in CI mode
+test-e2e-ci: build-python-base ## Setup and run e2e tests in CI mode
 	@$(MAKE) start-e2e
 	@$(MAKE) test-e2e-bare args="$(args)"
 .PHONY: test-e2e-ci
@@ -485,7 +492,7 @@ migrations-check:  ## check that all model changes have corresponding migrations
 	@$(COMPOSE_RUN_APP_TOOLS) python manage.py makemigrations --check --dry-run
 .PHONY: migrations-check
 
-migrate:  ## run django migrations for the messages project.
+migrate: build-python-base ## run django migrations for the messages project.
 	@echo "$(BOLD)Running migrations$(RESET)"
 	@$(MANAGE_DB) migrate
 .PHONY: migrate
@@ -494,7 +501,7 @@ showmigrations: ## show all migrations for the messages project.
 	@$(MANAGE_DB) showmigrations
 .PHONY: showmigrations
 
-superuser: ## Create an admin superuser with password "admin" and promote user1 as superuser
+superuser: build-python-base ## Create an admin superuser with password "admin" and promote user1 as superuser
 	@echo "$(BOLD)Creating a Django superuser$(RESET)"
 	@$(MANAGE_DB) createsuperuser --email admin@admin.local --password admin
 	@$(MANAGE_DB) createsuperuser --email user1@example.local --password user1
@@ -512,7 +519,7 @@ exec-back: ## open a shell in the running backend-dev container
 	@$(COMPOSE) exec backend-dev /bin/bash
 .PHONY: exec-back
 
-deps-lock-back: ## lock the dependencies
+deps-lock-back: build-python-base ## lock the dependencies
 	@$(COMPOSE) run --rm --build backend-uv uv lock
 	@$(MAKE) deps-audit
 .PHONY: deps-lock-back
@@ -537,7 +544,7 @@ deps-audit-back: ## audit back-end dependencies for vulnerabilities
 deps-audit: deps-audit-back ## alias for deps-audit-back
 .PHONY: deps-audit
 
-collectstatic: ## collect static files
+collectstatic: build-python-base ## collect static files
 	@$(MANAGE_DB) collectstatic --noinput
 .PHONY: collectstatic
 
@@ -696,10 +703,10 @@ test-keycloak: ## run all Keycloak provider tests (builds JARs, brings up Keyclo
 	@bin/test-keycloak
 .PHONY: test-keycloak
 
-deps-lock-mta-in: ## lock the dependencies for mta-in (shared between both implementations)
+deps-lock-mta-in: build-python-base ## lock the dependencies for mta-in (shared between both implementations)
 	@$(COMPOSE) run --rm --build mta-in-uv uv lock
 .PHONY: deps-lock-mta-in
 
-deps-lock-mta-out: ## lock the dependencies
+deps-lock-mta-out: build-python-base ## lock the dependencies
 	@$(COMPOSE) run --rm --build mta-out-uv uv lock
 .PHONY: deps-lock-mta-out

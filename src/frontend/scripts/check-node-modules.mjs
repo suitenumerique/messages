@@ -2,20 +2,25 @@
 // Guardrail for the frozen dependency install.
 //
 // Fails loudly if node_modules regresses to the pre-cleanup bloat, i.e. if:
-//   1. the tree grows past NODE_MODULES_LIMIT_GB (default 1.0 GB), or
+//   1. the tree grows past LIMIT_GB (see below), or
 //   2. any Adobe React Spectrum package reappears (@adobe/react-spectrum,
 //      @react-spectrum/*, @spectrum-icons/*). These are dragged in only by
 //      mispackaged @react-types/* deps and are removed via package.json
 //      "overrides" — this check is what keeps them removed.
 //
-// Runs after `npm ci` (see `npm run check:deps`, Makefile install-frozen-front,
-// and the frontend Dockerfile). Exit non-zero => the install fails.
+// Only relevant at *freeze* time, when the lockfile can actually change: `make
+// install-front` runs `npm install` then `npm run check:deps`. Plain `npm ci`
+// (install-frozen-front, the Dockerfile) just reproduces an already-validated
+// lockfile, so it deliberately does NOT re-run this. Exit non-zero => freeze fails.
 
 import { readdirSync, lstatSync } from 'node:fs';
 import { join, sep } from 'node:path';
 
 const ROOT = 'node_modules';
-const LIMIT_GB = Number(process.env.NODE_MODULES_LIMIT_GB ?? 1.0);
+
+// Size ceiling for node_modules. Bump this deliberately (with review) if the
+// tree legitimately needs to grow; the point is to catch accidental bloat.
+const LIMIT_GB = 1.0;
 const LIMIT_BYTES = LIMIT_GB * 1024 ** 3;
 
 // Package names that must never come back.
@@ -25,6 +30,9 @@ const FORBIDDEN_STORE = [/^@adobe\+react-spectrum@/, /^@react-spectrum\+/, /^@sp
 
 let bytes = 0;
 const offenders = new Set();
+// Directories we failed to read. A truncated scan could hide bloat and make an
+// over-limit tree look fine, so these are surfaced as a hard failure below.
+const scanErrors = [];
 
 function flagIfForbidden(fullPath, entryName) {
   const posix = fullPath.split(sep).join('/');
@@ -40,7 +48,10 @@ function walk(dir) {
   let entries;
   try {
     entries = readdirSync(dir, { withFileTypes: true });
-  } catch {
+  } catch (err) {
+    // Record and keep going so the scan covers as much as possible, but mark it
+    // incomplete so the result can't be trusted as "under limit".
+    scanErrors.push(`${dir}: ${err.code ?? err.message}`);
     return;
   }
   for (const e of entries) {
@@ -68,6 +79,14 @@ if (bytes > LIMIT_BYTES) {
 }
 if (offenders.size) {
   problems.push(`forbidden packages present: ${[...offenders].sort().join(', ')}`);
+}
+if (scanErrors.length) {
+  const shown = scanErrors.slice(0, 5).join('; ');
+  const more = scanErrors.length > 5 ? ` (+${scanErrors.length - 5} more)` : '';
+  problems.push(
+    `scan incomplete — ${scanErrors.length} director${scanErrors.length === 1 ? 'y' : 'ies'} ` +
+      `could not be read, so the ${gb.toFixed(2)} GB total may be understated: ${shown}${more}`,
+  );
 }
 
 if (problems.length) {

@@ -85,6 +85,36 @@ jobs:
       - name: Run E2E tests only for Chromium browser to speed up the tests
         run: make test-e2e-ci args="--project chromium"
 
+  test-mta-in:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v6
+      - name: Create env files
+        run: make create-env-files
+      - name: Run mta-in (Postfix milter) tests
+        run: make test-mta-in
+
+  test-mta-in-py:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v6
+      - name: Create env files
+        run: make create-env-files
+      - name: Run mta-in pymta (aiosmtpd) tests
+        run: make test-mta-in-py
+
+  test-mta-out:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v6
+      - name: Create env files
+        run: make create-env-files
+      - name: Run mta-out tests
+        run: make test-mta-out
+
   lint-front:
     runs-on: ubuntu-latest
     steps:

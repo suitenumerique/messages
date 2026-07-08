@@ -14,16 +14,17 @@ a regression test under `tests/`.
 > conforms to RFC 8621 §4 today; future 0.1.x releases will only add
 > fields, never remove or rename them.
 
-## Why a Python 3.14.5 floor?
+## Why a Python 3.14.6 floor?
 
 The standard library `email` package receives frequent bug fixes
 between patch releases, and this library wraps it directly — every fix
 to header parsing, RFC 2047 encoded-words, address-list defects, etc.
-surfaces immediately in our output. The 3.14.5 floor is not arbitrary:
+surfaces immediately in our output. The 3.14.6 floor is not arbitrary:
 it carries
 [gh-128110](https://github.com/python/cpython/issues/128110)
 (RFC 2047 §6.2 encoded-word adjacent-pair spacing under modern
-policies), which materially affects the composer.
+policies), which materially affects the composer, plus the further
+`email` fixes shipped in 3.14.6.
 
 **Aligning on the latest 3.14.x patch is recommended for any
 production deployment.** Each CPython patch release that touches
@@ -363,7 +364,7 @@ below. See the `tests/` directory for regression coverage of each.
 
 ## Compatibility
 
-- **Python** 3.14.5+ (see [Why a Python 3.14.5 floor?](#why-a-python-3145-floor))
+- **Python** 3.14.6+ (see [Why a Python 3.14.6 floor?](#why-a-python-3146-floor))
 - **Platforms tested in CI:** Linux on x86_64 and arm64
 - **macOS / Windows / PyPy / free-threaded build:** untested; expected
   to work since the package has zero compiled extensions and zero

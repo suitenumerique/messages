@@ -21,7 +21,7 @@ make typecheck-jmap-email   # ty (Astral)
 These spin up the same container image CI uses, so the only divergence
 between local results and CI is the host architecture (arm64 vs x86_64).
 
-### Native Python 3.14.5+
+### Native Python 3.14.6+
 
 ```bash
 cd src/jmap-email
@@ -56,7 +56,7 @@ Every PR should:
 
 - **PEP 585 / PEP 604 typing.** Use `list[X]` / `dict[K, V]` /
   `X | None` rather than `typing.List[X]` etc. No `from __future__
-  import annotations` — the supported floor is 3.14.5.
+  import annotations` — the supported floor is 3.14.6.
 - **No legacy stdlib imports inside hot paths.** If a regex or
   `email.utils` helper is the wrong tool, write the loop.
 - **Module-private symbols** are prefixed with `_`. Anything in
