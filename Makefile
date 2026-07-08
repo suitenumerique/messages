@@ -678,7 +678,7 @@ i18n-generate-front: ## Extract the frontend translation inside a json to be use
 	@$(COMPOSE) run --rm --build frontend-tools npm run i18n:extract
 .PHONY: i18n-generate-front
 
-api-update-back: ## Update the OpenAPI schema
+api-update-back: build-python-base ## Update the OpenAPI schema
 	bin/update_openapi_schema
 .PHONY: api-update-back
 
