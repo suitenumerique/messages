@@ -1194,6 +1194,12 @@ class Base(Configuration):
         default=True, environ_name="FEATURE_THREAD_SPLIT", environ_prefix=None
     )
 
+    # Kill-switch for the mailbox Statistics settings tab (and its stats
+    # endpoints in the UI). Instance-wide; not overridable per domain.
+    FEATURE_MAILBOX_STATS = values.BooleanValue(
+        default=True, environ_name="FEATURE_MAILBOX_STATS", environ_prefix=None
+    )
+
     # Mandatory TOTP admin column. When True, the mailbox admin DataGrid shows
     # a "Mandatory 2FA" column with a per-mailbox switch and a "Reset 2FA"
     # row action. Both rely on KEYCLOAK_TOTP_ROLE_ID.

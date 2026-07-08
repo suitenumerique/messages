@@ -20,6 +20,8 @@ import { MailboxSettingsSignaturesTab } from "./signatures-tab";
 import { MailboxSettingsMessageTemplatesTab } from "./message-templates-tab";
 import { MailboxSettingsAutorepliesTab } from "./autoreplies-tab";
 import { MailboxSettingsIntegrationsTab } from "./integrations-tab";
+import { MailboxSettingsStorageTab } from "./storage-tab";
+import { MailboxSettingsStatisticsTab } from "./statistics-tab";
 
 export type SettingsTabId =
   | "general"
@@ -27,7 +29,9 @@ export type SettingsTabId =
   | "signatures"
   | "message-templates"
   | "autoreplies"
-  | "integrations";
+  | "integrations"
+  | "storage"
+  | "statistics";
 
 type ModalMailboxSettingsProps = {
   isOpen: boolean;
@@ -66,6 +70,7 @@ export const ModalMailboxSettings = ({
   const { t } = useTranslation();
   const { mailboxes, selectedMailbox } = useMailboxContext();
   const isIntegrationsEnabled = useFeatureFlag(FEATURE_KEYS.MAILBOX_ADMIN_CHANNELS);
+  const isStatsEnabled = useFeatureFlag(FEATURE_KEYS.MAILBOX_STATS);
 
   // Every mailbox the user can configure: admins (rename + accesses) plus any
   // mailbox where the user can manage message templates (signatures, templates,
@@ -147,8 +152,15 @@ export const ModalMailboxSettings = ({
         ids.push("integrations");
       }
     }
+    // Storage and statistics sit last, after every other category.
+    if (manage_accesses) {
+      ids.push("storage");
+      if (isStatsEnabled) {
+        ids.push("statistics");
+      }
+    }
     return ids;
-  }, [settingsMailbox, isIntegrationsEnabled]);
+  }, [settingsMailbox, isIntegrationsEnabled, isStatsEnabled]);
 
   // When the user drops their own admin rights from inside the modal (e.g. they
   // demote or remove their own admin access), the mailbox leaves the eligible
@@ -291,6 +303,37 @@ export const ModalMailboxSettings = ({
             }</p>,
             content: (
               <MailboxSettingsIntegrationsTab
+                key={settingsMailbox.id}
+                mailbox={settingsMailbox}
+              />
+            ),
+          },
+        ]
+      : []),
+    ...(availableTabIds.includes("storage")
+      ? [
+          {
+            id: "storage",
+            label: t("Storage"),
+            title: t("Storage"),
+            content: (
+              <MailboxSettingsStorageTab
+                key={settingsMailbox.id}
+                mailbox={settingsMailbox}
+                onClose={onClose}
+              />
+            ),
+          },
+        ]
+      : []),
+    ...(availableTabIds.includes("statistics")
+      ? [
+          {
+            id: "statistics",
+            label: t("Statistics"),
+            title: t("Statistics"),
+            content: (
+              <MailboxSettingsStatisticsTab
                 key={settingsMailbox.id}
                 mailbox={settingsMailbox}
               />

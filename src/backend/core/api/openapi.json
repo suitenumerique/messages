@@ -311,6 +311,10 @@
                                             "type": "boolean",
                                             "readOnly": true
                                         },
+                                        "FEATURE_MAILBOX_STATS": {
+                                            "type": "boolean",
+                                            "readOnly": true
+                                        },
                                         "FEATURE_MAILDOMAIN_MANAGE_TOTP": {
                                             "type": "boolean",
                                             "readOnly": true
@@ -401,6 +405,7 @@
                                         "FEATURE_MAILDOMAIN_CREATE",
                                         "FEATURE_MAILDOMAIN_MANAGE_ACCESSES",
                                         "FEATURE_THREAD_SPLIT",
+                                        "FEATURE_MAILBOX_STATS",
                                         "FEATURE_MAILDOMAIN_MANAGE_TOTP",
                                         "MESSAGES_MANUAL_RETRY_MAX_AGE",
                                         "FRONTEND_SILENT_LOGIN_ENABLED"
@@ -3931,6 +3936,192 @@
                                     "items": {
                                         "$ref": "#/components/schemas/MailboxLight"
                                     }
+                                }
+                            }
+                        },
+                        "description": ""
+                    }
+                }
+            }
+        },
+        "/api/v1.0/mailboxes/{id}/stats/overview/": {
+            "get": {
+                "operationId": "mailboxes_stats_overview_retrieve",
+                "description": "Headline counts for the mailbox over the given timeframe: active\nconversations, messages, and sent emails.",
+                "parameters": [
+                    {
+                        "in": "path",
+                        "name": "id",
+                        "schema": {
+                            "type": "string"
+                        },
+                        "required": true
+                    },
+                    {
+                        "in": "query",
+                        "name": "timeframe",
+                        "schema": {
+                            "type": "string",
+                            "enum": [
+                                "last_30_days",
+                                "last_90_days",
+                                "last_month",
+                                "this_month"
+                            ]
+                        },
+                        "description": "Period to aggregate over. One of `this_month` (default), `last_month`, `last_30_days`, `last_90_days`."
+                    }
+                ],
+                "tags": [
+                    "mailboxes"
+                ],
+                "security": [
+                    {
+                        "cookieAuth": []
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "$ref": "#/components/schemas/MailboxStatsOverview"
+                                }
+                            }
+                        },
+                        "description": ""
+                    }
+                }
+            }
+        },
+        "/api/v1.0/mailboxes/{id}/stats/response_times/": {
+            "get": {
+                "operationId": "mailboxes_stats_response_times_retrieve",
+                "description": "Average time between an incoming email and its first external reply,\nglobally and per author.\n\nFor each incoming email received in the period, the reply is the first\noutgoing (non-draft, non-trashed) message in the same thread sent after\nit — chronological matching by ``created_at``, the authoritative order\neverywhere in the codebase. Emails with no later reply count as\nunreplied. Authorship comes from ``Message.sender_user`` (the user who\nsent the reply), falling back to the sender contact.",
+                "parameters": [
+                    {
+                        "in": "path",
+                        "name": "id",
+                        "schema": {
+                            "type": "string"
+                        },
+                        "required": true
+                    },
+                    {
+                        "in": "query",
+                        "name": "timeframe",
+                        "schema": {
+                            "type": "string",
+                            "enum": [
+                                "last_30_days",
+                                "last_90_days",
+                                "last_month",
+                                "this_month"
+                            ]
+                        },
+                        "description": "Period to aggregate over. One of `this_month` (default), `last_month`, `last_30_days`, `last_90_days`."
+                    }
+                ],
+                "tags": [
+                    "mailboxes"
+                ],
+                "security": [
+                    {
+                        "cookieAuth": []
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "$ref": "#/components/schemas/MailboxResponseTimes"
+                                }
+                            }
+                        },
+                        "description": ""
+                    }
+                }
+            }
+        },
+        "/api/v1.0/mailboxes/{id}/stats/response_times_by_label/": {
+            "get": {
+                "operationId": "mailboxes_stats_response_times_by_label_retrieve",
+                "description": "Reply-time totals grouped by label.\n\nSame incoming/reply model as ``stats/response_times`` but each incoming\nemail is counted once per label on its thread. Returns raw totals per\nlabel (received, replied, summed response seconds); the client rolls\nthem up the label tree and derives averages and no-reply counts.",
+                "parameters": [
+                    {
+                        "in": "path",
+                        "name": "id",
+                        "schema": {
+                            "type": "string"
+                        },
+                        "required": true
+                    },
+                    {
+                        "in": "query",
+                        "name": "timeframe",
+                        "schema": {
+                            "type": "string",
+                            "enum": [
+                                "last_30_days",
+                                "last_90_days",
+                                "last_month",
+                                "this_month"
+                            ]
+                        },
+                        "description": "Period to aggregate over. One of `this_month` (default), `last_month`, `last_30_days`, `last_90_days`."
+                    }
+                ],
+                "tags": [
+                    "mailboxes"
+                ],
+                "security": [
+                    {
+                        "cookieAuth": []
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "$ref": "#/components/schemas/MailboxResponseTimesByLabel"
+                                }
+                            }
+                        },
+                        "description": ""
+                    }
+                }
+            }
+        },
+        "/api/v1.0/mailboxes/{id}/stats/storage/": {
+            "get": {
+                "operationId": "mailboxes_stats_storage_retrieve",
+                "description": "Return total storage and top-100 largest threads for the mailbox.\n\nStorage is computed using the same formula as the metrics endpoints:\n``message_count * OVERHEAD + mime_blobs + draft_blobs\n+ attachment_blobs + template_blobs``.\n\nLives under ``stats/`` for URL consistency, but backs the Storage\nsettings tab — which is not behind ``FEATURE_MAILBOX_STATS`` — so unlike\nthe sibling actions it deliberately omits ``_require_stats_feature()``.\nThe flag is enforced in code, not by the URL prefix.",
+                "parameters": [
+                    {
+                        "in": "path",
+                        "name": "id",
+                        "schema": {
+                            "type": "string"
+                        },
+                        "required": true
+                    }
+                ],
+                "tags": [
+                    "mailboxes"
+                ],
+                "security": [
+                    {
+                        "cookieAuth": []
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "$ref": "#/components/schemas/MailboxStorageStats"
                                 }
                             }
                         },
@@ -8049,6 +8240,48 @@
                     "name"
                 ]
             },
+            "LargestThread": {
+                "type": "object",
+                "description": "Serializer for a thread entry in the mailbox storage stats.",
+                "properties": {
+                    "id": {
+                        "type": "string",
+                        "format": "uuid",
+                        "description": "Thread UUID"
+                    },
+                    "subject": {
+                        "type": "string",
+                        "nullable": true,
+                        "description": "Thread subject"
+                    },
+                    "size": {
+                        "type": "integer",
+                        "description": "Total compressed blob size of the thread in bytes"
+                    },
+                    "message_count": {
+                        "type": "integer",
+                        "description": "Number of messages in the thread"
+                    },
+                    "messaged_at": {
+                        "type": "string",
+                        "format": "date-time",
+                        "nullable": true,
+                        "description": "Date of the last message in the thread"
+                    },
+                    "is_unread": {
+                        "type": "boolean",
+                        "description": "Whether the thread is unread for this mailbox"
+                    }
+                },
+                "required": [
+                    "id",
+                    "is_unread",
+                    "message_count",
+                    "messaged_at",
+                    "size",
+                    "subject"
+                ]
+            },
             "MailDomainAccessRoleChoices": {
                 "type": "string",
                 "enum": [
@@ -8853,6 +9086,59 @@
                     "name"
                 ]
             },
+            "MailboxResponseTimes": {
+                "type": "object",
+                "description": "Serializer for the mailbox response-times statistics response.",
+                "properties": {
+                    "incoming": {
+                        "type": "integer",
+                        "description": "Total incoming emails received in the period"
+                    },
+                    "replied": {
+                        "type": "integer",
+                        "description": "Incoming emails that got an external reply"
+                    },
+                    "unreplied": {
+                        "type": "integer",
+                        "description": "Incoming emails still unanswered"
+                    },
+                    "average_response_seconds": {
+                        "type": "integer",
+                        "nullable": true,
+                        "description": "Global average response time in seconds"
+                    },
+                    "authors": {
+                        "type": "array",
+                        "items": {
+                            "$ref": "#/components/schemas/ResponseTimeAuthor"
+                        },
+                        "description": "Per-author breakdown, busiest first"
+                    }
+                },
+                "required": [
+                    "authors",
+                    "average_response_seconds",
+                    "incoming",
+                    "replied",
+                    "unreplied"
+                ]
+            },
+            "MailboxResponseTimesByLabel": {
+                "type": "object",
+                "description": "Serializer for the response-times-by-label statistics response.",
+                "properties": {
+                    "labels": {
+                        "type": "array",
+                        "items": {
+                            "$ref": "#/components/schemas/ResponseTimeLabel"
+                        },
+                        "description": "Per-label totals (labels with activity only)"
+                    }
+                },
+                "required": [
+                    "labels"
+                ]
+            },
             "MailboxRoleChoices": {
                 "type": "string",
                 "enum": [
@@ -8860,6 +9146,100 @@
                     "editor",
                     "sender",
                     "admin"
+                ]
+            },
+            "MailboxStatsOverview": {
+                "type": "object",
+                "description": "Serializer for the mailbox overview statistics response.",
+                "properties": {
+                    "conversations": {
+                        "type": "integer",
+                        "description": "Number of conversations active in the period"
+                    },
+                    "messages": {
+                        "type": "integer",
+                        "description": "Number of messages in the period"
+                    },
+                    "sent": {
+                        "type": "integer",
+                        "description": "Number of emails sent in the period"
+                    },
+                    "unreplied": {
+                        "type": "integer",
+                        "description": "Incoming emails in the period still without a reply"
+                    },
+                    "unreplied_assigned": {
+                        "type": "integer",
+                        "description": "Unreplied emails whose conversation is assigned"
+                    },
+                    "unreplied_unassigned": {
+                        "type": "integer",
+                        "description": "Unreplied emails whose conversation is not assigned"
+                    },
+                    "unread": {
+                        "type": "integer",
+                        "description": "Conversations active in the period still unread"
+                    },
+                    "unread_assigned": {
+                        "type": "integer",
+                        "description": "Unread conversations that are assigned"
+                    },
+                    "unread_unassigned": {
+                        "type": "integer",
+                        "description": "Unread conversations that are not assigned"
+                    }
+                },
+                "required": [
+                    "conversations",
+                    "messages",
+                    "sent",
+                    "unread",
+                    "unread_assigned",
+                    "unread_unassigned",
+                    "unreplied",
+                    "unreplied_assigned",
+                    "unreplied_unassigned"
+                ]
+            },
+            "MailboxStorageStats": {
+                "type": "object",
+                "description": "Serializer for mailbox storage statistics response.",
+                "properties": {
+                    "total_storage": {
+                        "type": "integer",
+                        "description": "Total storage used by the mailbox in bytes"
+                    },
+                    "trashed_storage": {
+                        "type": "integer",
+                        "description": "Storage used by trashed conversations in bytes"
+                    },
+                    "spam_storage": {
+                        "type": "integer",
+                        "description": "Storage used by spam conversations in bytes"
+                    },
+                    "message_count": {
+                        "type": "integer",
+                        "description": "Total number of messages in the mailbox"
+                    },
+                    "thread_count": {
+                        "type": "integer",
+                        "description": "Total number of threads in the mailbox"
+                    },
+                    "largest_threads": {
+                        "type": "array",
+                        "items": {
+                            "$ref": "#/components/schemas/LargestThread"
+                        },
+                        "description": "Top 100 threads by storage size, ordered descending."
+                    }
+                },
+                "required": [
+                    "largest_threads",
+                    "message_count",
+                    "spam_storage",
+                    "thread_count",
+                    "total_storage",
+                    "trashed_storage"
                 ]
             },
             "MaildomainAccessRead": {
@@ -9921,6 +10301,64 @@
                 ],
                 "type": "string",
                 "description": "* `ACCEPTED` - ACCEPTED\n* `DECLINED` - DECLINED\n* `TENTATIVE` - TENTATIVE"
+            },
+            "ResponseTimeAuthor": {
+                "type": "object",
+                "description": "Per-author entry in the response-times statistics.",
+                "properties": {
+                    "author": {
+                        "type": "string",
+                        "description": "Author display name"
+                    },
+                    "replied": {
+                        "type": "integer",
+                        "description": "Number of incoming emails this author replied to"
+                    },
+                    "average_response_seconds": {
+                        "type": "integer",
+                        "nullable": true,
+                        "description": "Average response time for this author, in seconds"
+                    },
+                    "unanswered": {
+                        "type": "integer",
+                        "description": "Conversations assigned to this author with an unanswered incoming email"
+                    }
+                },
+                "required": [
+                    "author",
+                    "average_response_seconds",
+                    "replied",
+                    "unanswered"
+                ]
+            },
+            "ResponseTimeLabel": {
+                "type": "object",
+                "description": "Per-label entry in the response-times-by-label statistics.\n\nRaw totals only — the client rolls them up the label tree and derives the\naverage (``response_seconds_total / replied``) and the count without a reply\n(``received - replied``).",
+                "properties": {
+                    "label": {
+                        "type": "string",
+                        "format": "uuid",
+                        "description": "Label id"
+                    },
+                    "received": {
+                        "type": "integer",
+                        "description": "Incoming emails in threads carrying this label"
+                    },
+                    "replied": {
+                        "type": "integer",
+                        "description": "Those incoming emails that got a reply"
+                    },
+                    "response_seconds_total": {
+                        "type": "integer",
+                        "description": "Sum of response times, in seconds, over replied emails"
+                    }
+                },
+                "required": [
+                    "label",
+                    "received",
+                    "replied",
+                    "response_seconds_total"
+                ]
             },
             "ScopeEnum": {
                 "enum": [

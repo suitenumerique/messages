@@ -126,27 +126,29 @@ export class AttachmentHelper {
             { divisor: 1, unit: 'byte' },
         ];
 
+        // `unitDisplay: "narrow"` keeps the compact symbol (B, kB, Mo…) but
+        // glues it to the number ("56,3Mo"). Rebuild from parts so a space sits
+        // between the value and the unit ("56,3 Mo") as SI/typography expects,
+        // without falling back to the spelled-out "short" form ("500 byte").
+        const format = (value: number, unit: Intl.NumberFormatOptions['unit']) =>
+            new Intl.NumberFormat(language, {
+                notation: "compact",
+                style: "unit",
+                unit,
+                unitDisplay: "narrow",
+            })
+                .formatToParts(value)
+                .map((part) => (part.type === "unit" ? ` ${part.value}` : part.value))
+                .join("");
+
         for (const { divisor, unit } of units) {
             if (size >= divisor) {
-                const value = size / divisor;
-                const formatter = new Intl.NumberFormat(language, {
-                    notation: "compact",
-                    style: "unit",
-                    unit: unit,
-                    unitDisplay: "narrow",
-                });
-                return formatter.format(value);
+                return format(size / divisor, unit);
             }
         }
 
         // Fallback for 0 bytes
-        const formatter = new Intl.NumberFormat(language, {
-            notation: "compact",
-            style: "unit",
-            unit: "byte",
-            unitDisplay: "narrow",
-        });
-        return formatter.format(size);
+        return format(size, "byte");
     }
 
     static getFormattedTotalSize(attachments: readonly (DriveFile | Attachment | File)[], language: string = 'en') {
