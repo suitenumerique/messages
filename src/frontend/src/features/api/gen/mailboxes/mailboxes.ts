@@ -24,6 +24,10 @@ import type {
 import type {
   Mailbox,
   MailboxLight,
+  MailboxResponseTimes,
+  MailboxResponseTimesByLabel,
+  MailboxStatsOverview,
+  MailboxStorageStats,
   MailboxesImageProxyListParams,
   MailboxesMessageTemplatesAvailableListParams,
   MailboxesMessageTemplatesListParams,
@@ -31,6 +35,9 @@ import type {
   MailboxesMessageTemplatesRenderRetrieveParams,
   MailboxesMessageTemplatesRetrieveParams,
   MailboxesSearchListParams,
+  MailboxesStatsOverviewRetrieveParams,
+  MailboxesStatsResponseTimesByLabelRetrieveParams,
+  MailboxesStatsResponseTimesRetrieveParams,
   MessageTemplate,
   MessageTemplateRequest,
   PatchedMailboxNameUpdateRequest,
@@ -2267,6 +2274,886 @@ export function useMailboxesSearchList<
   queryKey: DataTag<QueryKey, TData, TError>;
 } {
   const queryOptions = getMailboxesSearchListQueryOptions(id, params, options);
+
+  const query = useQuery(queryOptions, queryClient) as UseQueryResult<
+    TData,
+    TError
+  > & { queryKey: DataTag<QueryKey, TData, TError> };
+
+  query.queryKey = queryOptions.queryKey;
+
+  return query;
+}
+
+/**
+ * Headline counts for the mailbox over the given timeframe: active
+conversations, messages, and sent emails.
+ */
+export type mailboxesStatsOverviewRetrieveResponse200 = {
+  data: MailboxStatsOverview;
+  status: 200;
+};
+
+export type mailboxesStatsOverviewRetrieveResponseSuccess =
+  mailboxesStatsOverviewRetrieveResponse200 & {
+    headers: Headers;
+  };
+export type mailboxesStatsOverviewRetrieveResponse =
+  mailboxesStatsOverviewRetrieveResponseSuccess;
+
+export const getMailboxesStatsOverviewRetrieveUrl = (
+  id: string,
+  params?: MailboxesStatsOverviewRetrieveParams,
+) => {
+  const normalizedParams = new URLSearchParams();
+
+  Object.entries(params || {}).forEach(([key, value]) => {
+    if (value !== undefined) {
+      normalizedParams.append(key, value === null ? "null" : value.toString());
+    }
+  });
+
+  const stringifiedParams = normalizedParams.toString();
+
+  return stringifiedParams.length > 0
+    ? `/api/v1.0/mailboxes/${id}/stats/overview/?${stringifiedParams}`
+    : `/api/v1.0/mailboxes/${id}/stats/overview/`;
+};
+
+export const mailboxesStatsOverviewRetrieve = async (
+  id: string,
+  params?: MailboxesStatsOverviewRetrieveParams,
+  options?: RequestInit,
+): Promise<mailboxesStatsOverviewRetrieveResponse> => {
+  return fetchAPI<mailboxesStatsOverviewRetrieveResponse>(
+    getMailboxesStatsOverviewRetrieveUrl(id, params),
+    {
+      ...options,
+      method: "GET",
+    },
+  );
+};
+
+export const getMailboxesStatsOverviewRetrieveQueryKey = (
+  id?: string,
+  params?: MailboxesStatsOverviewRetrieveParams,
+) => {
+  return [
+    `/api/v1.0/mailboxes/${id}/stats/overview/`,
+    ...(params ? [params] : []),
+  ] as const;
+};
+
+export const getMailboxesStatsOverviewRetrieveQueryOptions = <
+  TData = Awaited<ReturnType<typeof mailboxesStatsOverviewRetrieve>>,
+  TError = ErrorType<unknown>,
+>(
+  id: string,
+  params?: MailboxesStatsOverviewRetrieveParams,
+  options?: {
+    query?: Partial<
+      UseQueryOptions<
+        Awaited<ReturnType<typeof mailboxesStatsOverviewRetrieve>>,
+        TError,
+        TData
+      >
+    >;
+    request?: SecondParameter<typeof fetchAPI>;
+  },
+) => {
+  const { query: queryOptions, request: requestOptions } = options ?? {};
+
+  const queryKey =
+    queryOptions?.queryKey ??
+    getMailboxesStatsOverviewRetrieveQueryKey(id, params);
+
+  const queryFn: QueryFunction<
+    Awaited<ReturnType<typeof mailboxesStatsOverviewRetrieve>>
+  > = ({ signal }) =>
+    mailboxesStatsOverviewRetrieve(id, params, { signal, ...requestOptions });
+
+  return {
+    queryKey,
+    queryFn,
+    enabled: !!id,
+    ...queryOptions,
+  } as UseQueryOptions<
+    Awaited<ReturnType<typeof mailboxesStatsOverviewRetrieve>>,
+    TError,
+    TData
+  > & { queryKey: DataTag<QueryKey, TData, TError> };
+};
+
+export type MailboxesStatsOverviewRetrieveQueryResult = NonNullable<
+  Awaited<ReturnType<typeof mailboxesStatsOverviewRetrieve>>
+>;
+export type MailboxesStatsOverviewRetrieveQueryError = ErrorType<unknown>;
+
+export function useMailboxesStatsOverviewRetrieve<
+  TData = Awaited<ReturnType<typeof mailboxesStatsOverviewRetrieve>>,
+  TError = ErrorType<unknown>,
+>(
+  id: string,
+  params: undefined | MailboxesStatsOverviewRetrieveParams,
+  options: {
+    query: Partial<
+      UseQueryOptions<
+        Awaited<ReturnType<typeof mailboxesStatsOverviewRetrieve>>,
+        TError,
+        TData
+      >
+    > &
+      Pick<
+        DefinedInitialDataOptions<
+          Awaited<ReturnType<typeof mailboxesStatsOverviewRetrieve>>,
+          TError,
+          Awaited<ReturnType<typeof mailboxesStatsOverviewRetrieve>>
+        >,
+        "initialData"
+      >;
+    request?: SecondParameter<typeof fetchAPI>;
+  },
+  queryClient?: QueryClient,
+): DefinedUseQueryResult<TData, TError> & {
+  queryKey: DataTag<QueryKey, TData, TError>;
+};
+export function useMailboxesStatsOverviewRetrieve<
+  TData = Awaited<ReturnType<typeof mailboxesStatsOverviewRetrieve>>,
+  TError = ErrorType<unknown>,
+>(
+  id: string,
+  params?: MailboxesStatsOverviewRetrieveParams,
+  options?: {
+    query?: Partial<
+      UseQueryOptions<
+        Awaited<ReturnType<typeof mailboxesStatsOverviewRetrieve>>,
+        TError,
+        TData
+      >
+    > &
+      Pick<
+        UndefinedInitialDataOptions<
+          Awaited<ReturnType<typeof mailboxesStatsOverviewRetrieve>>,
+          TError,
+          Awaited<ReturnType<typeof mailboxesStatsOverviewRetrieve>>
+        >,
+        "initialData"
+      >;
+    request?: SecondParameter<typeof fetchAPI>;
+  },
+  queryClient?: QueryClient,
+): UseQueryResult<TData, TError> & {
+  queryKey: DataTag<QueryKey, TData, TError>;
+};
+export function useMailboxesStatsOverviewRetrieve<
+  TData = Awaited<ReturnType<typeof mailboxesStatsOverviewRetrieve>>,
+  TError = ErrorType<unknown>,
+>(
+  id: string,
+  params?: MailboxesStatsOverviewRetrieveParams,
+  options?: {
+    query?: Partial<
+      UseQueryOptions<
+        Awaited<ReturnType<typeof mailboxesStatsOverviewRetrieve>>,
+        TError,
+        TData
+      >
+    >;
+    request?: SecondParameter<typeof fetchAPI>;
+  },
+  queryClient?: QueryClient,
+): UseQueryResult<TData, TError> & {
+  queryKey: DataTag<QueryKey, TData, TError>;
+};
+
+export function useMailboxesStatsOverviewRetrieve<
+  TData = Awaited<ReturnType<typeof mailboxesStatsOverviewRetrieve>>,
+  TError = ErrorType<unknown>,
+>(
+  id: string,
+  params?: MailboxesStatsOverviewRetrieveParams,
+  options?: {
+    query?: Partial<
+      UseQueryOptions<
+        Awaited<ReturnType<typeof mailboxesStatsOverviewRetrieve>>,
+        TError,
+        TData
+      >
+    >;
+    request?: SecondParameter<typeof fetchAPI>;
+  },
+  queryClient?: QueryClient,
+): UseQueryResult<TData, TError> & {
+  queryKey: DataTag<QueryKey, TData, TError>;
+} {
+  const queryOptions = getMailboxesStatsOverviewRetrieveQueryOptions(
+    id,
+    params,
+    options,
+  );
+
+  const query = useQuery(queryOptions, queryClient) as UseQueryResult<
+    TData,
+    TError
+  > & { queryKey: DataTag<QueryKey, TData, TError> };
+
+  query.queryKey = queryOptions.queryKey;
+
+  return query;
+}
+
+/**
+ * Average time between an incoming email and its first external reply,
+globally and per author.
+
+For each incoming email received in the period, the reply is the first
+outgoing (non-draft, non-trashed) message in the same thread sent after
+it — chronological matching by ``created_at``, the authoritative order
+everywhere in the codebase. Emails with no later reply count as
+unreplied. Authorship comes from ``Message.sender_user`` (the user who
+sent the reply), falling back to the sender contact.
+ */
+export type mailboxesStatsResponseTimesRetrieveResponse200 = {
+  data: MailboxResponseTimes;
+  status: 200;
+};
+
+export type mailboxesStatsResponseTimesRetrieveResponseSuccess =
+  mailboxesStatsResponseTimesRetrieveResponse200 & {
+    headers: Headers;
+  };
+export type mailboxesStatsResponseTimesRetrieveResponse =
+  mailboxesStatsResponseTimesRetrieveResponseSuccess;
+
+export const getMailboxesStatsResponseTimesRetrieveUrl = (
+  id: string,
+  params?: MailboxesStatsResponseTimesRetrieveParams,
+) => {
+  const normalizedParams = new URLSearchParams();
+
+  Object.entries(params || {}).forEach(([key, value]) => {
+    if (value !== undefined) {
+      normalizedParams.append(key, value === null ? "null" : value.toString());
+    }
+  });
+
+  const stringifiedParams = normalizedParams.toString();
+
+  return stringifiedParams.length > 0
+    ? `/api/v1.0/mailboxes/${id}/stats/response_times/?${stringifiedParams}`
+    : `/api/v1.0/mailboxes/${id}/stats/response_times/`;
+};
+
+export const mailboxesStatsResponseTimesRetrieve = async (
+  id: string,
+  params?: MailboxesStatsResponseTimesRetrieveParams,
+  options?: RequestInit,
+): Promise<mailboxesStatsResponseTimesRetrieveResponse> => {
+  return fetchAPI<mailboxesStatsResponseTimesRetrieveResponse>(
+    getMailboxesStatsResponseTimesRetrieveUrl(id, params),
+    {
+      ...options,
+      method: "GET",
+    },
+  );
+};
+
+export const getMailboxesStatsResponseTimesRetrieveQueryKey = (
+  id?: string,
+  params?: MailboxesStatsResponseTimesRetrieveParams,
+) => {
+  return [
+    `/api/v1.0/mailboxes/${id}/stats/response_times/`,
+    ...(params ? [params] : []),
+  ] as const;
+};
+
+export const getMailboxesStatsResponseTimesRetrieveQueryOptions = <
+  TData = Awaited<ReturnType<typeof mailboxesStatsResponseTimesRetrieve>>,
+  TError = ErrorType<unknown>,
+>(
+  id: string,
+  params?: MailboxesStatsResponseTimesRetrieveParams,
+  options?: {
+    query?: Partial<
+      UseQueryOptions<
+        Awaited<ReturnType<typeof mailboxesStatsResponseTimesRetrieve>>,
+        TError,
+        TData
+      >
+    >;
+    request?: SecondParameter<typeof fetchAPI>;
+  },
+) => {
+  const { query: queryOptions, request: requestOptions } = options ?? {};
+
+  const queryKey =
+    queryOptions?.queryKey ??
+    getMailboxesStatsResponseTimesRetrieveQueryKey(id, params);
+
+  const queryFn: QueryFunction<
+    Awaited<ReturnType<typeof mailboxesStatsResponseTimesRetrieve>>
+  > = ({ signal }) =>
+    mailboxesStatsResponseTimesRetrieve(id, params, {
+      signal,
+      ...requestOptions,
+    });
+
+  return {
+    queryKey,
+    queryFn,
+    enabled: !!id,
+    ...queryOptions,
+  } as UseQueryOptions<
+    Awaited<ReturnType<typeof mailboxesStatsResponseTimesRetrieve>>,
+    TError,
+    TData
+  > & { queryKey: DataTag<QueryKey, TData, TError> };
+};
+
+export type MailboxesStatsResponseTimesRetrieveQueryResult = NonNullable<
+  Awaited<ReturnType<typeof mailboxesStatsResponseTimesRetrieve>>
+>;
+export type MailboxesStatsResponseTimesRetrieveQueryError = ErrorType<unknown>;
+
+export function useMailboxesStatsResponseTimesRetrieve<
+  TData = Awaited<ReturnType<typeof mailboxesStatsResponseTimesRetrieve>>,
+  TError = ErrorType<unknown>,
+>(
+  id: string,
+  params: undefined | MailboxesStatsResponseTimesRetrieveParams,
+  options: {
+    query: Partial<
+      UseQueryOptions<
+        Awaited<ReturnType<typeof mailboxesStatsResponseTimesRetrieve>>,
+        TError,
+        TData
+      >
+    > &
+      Pick<
+        DefinedInitialDataOptions<
+          Awaited<ReturnType<typeof mailboxesStatsResponseTimesRetrieve>>,
+          TError,
+          Awaited<ReturnType<typeof mailboxesStatsResponseTimesRetrieve>>
+        >,
+        "initialData"
+      >;
+    request?: SecondParameter<typeof fetchAPI>;
+  },
+  queryClient?: QueryClient,
+): DefinedUseQueryResult<TData, TError> & {
+  queryKey: DataTag<QueryKey, TData, TError>;
+};
+export function useMailboxesStatsResponseTimesRetrieve<
+  TData = Awaited<ReturnType<typeof mailboxesStatsResponseTimesRetrieve>>,
+  TError = ErrorType<unknown>,
+>(
+  id: string,
+  params?: MailboxesStatsResponseTimesRetrieveParams,
+  options?: {
+    query?: Partial<
+      UseQueryOptions<
+        Awaited<ReturnType<typeof mailboxesStatsResponseTimesRetrieve>>,
+        TError,
+        TData
+      >
+    > &
+      Pick<
+        UndefinedInitialDataOptions<
+          Awaited<ReturnType<typeof mailboxesStatsResponseTimesRetrieve>>,
+          TError,
+          Awaited<ReturnType<typeof mailboxesStatsResponseTimesRetrieve>>
+        >,
+        "initialData"
+      >;
+    request?: SecondParameter<typeof fetchAPI>;
+  },
+  queryClient?: QueryClient,
+): UseQueryResult<TData, TError> & {
+  queryKey: DataTag<QueryKey, TData, TError>;
+};
+export function useMailboxesStatsResponseTimesRetrieve<
+  TData = Awaited<ReturnType<typeof mailboxesStatsResponseTimesRetrieve>>,
+  TError = ErrorType<unknown>,
+>(
+  id: string,
+  params?: MailboxesStatsResponseTimesRetrieveParams,
+  options?: {
+    query?: Partial<
+      UseQueryOptions<
+        Awaited<ReturnType<typeof mailboxesStatsResponseTimesRetrieve>>,
+        TError,
+        TData
+      >
+    >;
+    request?: SecondParameter<typeof fetchAPI>;
+  },
+  queryClient?: QueryClient,
+): UseQueryResult<TData, TError> & {
+  queryKey: DataTag<QueryKey, TData, TError>;
+};
+
+export function useMailboxesStatsResponseTimesRetrieve<
+  TData = Awaited<ReturnType<typeof mailboxesStatsResponseTimesRetrieve>>,
+  TError = ErrorType<unknown>,
+>(
+  id: string,
+  params?: MailboxesStatsResponseTimesRetrieveParams,
+  options?: {
+    query?: Partial<
+      UseQueryOptions<
+        Awaited<ReturnType<typeof mailboxesStatsResponseTimesRetrieve>>,
+        TError,
+        TData
+      >
+    >;
+    request?: SecondParameter<typeof fetchAPI>;
+  },
+  queryClient?: QueryClient,
+): UseQueryResult<TData, TError> & {
+  queryKey: DataTag<QueryKey, TData, TError>;
+} {
+  const queryOptions = getMailboxesStatsResponseTimesRetrieveQueryOptions(
+    id,
+    params,
+    options,
+  );
+
+  const query = useQuery(queryOptions, queryClient) as UseQueryResult<
+    TData,
+    TError
+  > & { queryKey: DataTag<QueryKey, TData, TError> };
+
+  query.queryKey = queryOptions.queryKey;
+
+  return query;
+}
+
+/**
+ * Reply-time totals grouped by label.
+
+Same incoming/reply model as ``stats/response_times`` but each incoming
+email is counted once per label on its thread. Returns raw totals per
+label (received, replied, summed response seconds); the client rolls
+them up the label tree and derives averages and no-reply counts.
+ */
+export type mailboxesStatsResponseTimesByLabelRetrieveResponse200 = {
+  data: MailboxResponseTimesByLabel;
+  status: 200;
+};
+
+export type mailboxesStatsResponseTimesByLabelRetrieveResponseSuccess =
+  mailboxesStatsResponseTimesByLabelRetrieveResponse200 & {
+    headers: Headers;
+  };
+export type mailboxesStatsResponseTimesByLabelRetrieveResponse =
+  mailboxesStatsResponseTimesByLabelRetrieveResponseSuccess;
+
+export const getMailboxesStatsResponseTimesByLabelRetrieveUrl = (
+  id: string,
+  params?: MailboxesStatsResponseTimesByLabelRetrieveParams,
+) => {
+  const normalizedParams = new URLSearchParams();
+
+  Object.entries(params || {}).forEach(([key, value]) => {
+    if (value !== undefined) {
+      normalizedParams.append(key, value === null ? "null" : value.toString());
+    }
+  });
+
+  const stringifiedParams = normalizedParams.toString();
+
+  return stringifiedParams.length > 0
+    ? `/api/v1.0/mailboxes/${id}/stats/response_times_by_label/?${stringifiedParams}`
+    : `/api/v1.0/mailboxes/${id}/stats/response_times_by_label/`;
+};
+
+export const mailboxesStatsResponseTimesByLabelRetrieve = async (
+  id: string,
+  params?: MailboxesStatsResponseTimesByLabelRetrieveParams,
+  options?: RequestInit,
+): Promise<mailboxesStatsResponseTimesByLabelRetrieveResponse> => {
+  return fetchAPI<mailboxesStatsResponseTimesByLabelRetrieveResponse>(
+    getMailboxesStatsResponseTimesByLabelRetrieveUrl(id, params),
+    {
+      ...options,
+      method: "GET",
+    },
+  );
+};
+
+export const getMailboxesStatsResponseTimesByLabelRetrieveQueryKey = (
+  id?: string,
+  params?: MailboxesStatsResponseTimesByLabelRetrieveParams,
+) => {
+  return [
+    `/api/v1.0/mailboxes/${id}/stats/response_times_by_label/`,
+    ...(params ? [params] : []),
+  ] as const;
+};
+
+export const getMailboxesStatsResponseTimesByLabelRetrieveQueryOptions = <
+  TData = Awaited<
+    ReturnType<typeof mailboxesStatsResponseTimesByLabelRetrieve>
+  >,
+  TError = ErrorType<unknown>,
+>(
+  id: string,
+  params?: MailboxesStatsResponseTimesByLabelRetrieveParams,
+  options?: {
+    query?: Partial<
+      UseQueryOptions<
+        Awaited<ReturnType<typeof mailboxesStatsResponseTimesByLabelRetrieve>>,
+        TError,
+        TData
+      >
+    >;
+    request?: SecondParameter<typeof fetchAPI>;
+  },
+) => {
+  const { query: queryOptions, request: requestOptions } = options ?? {};
+
+  const queryKey =
+    queryOptions?.queryKey ??
+    getMailboxesStatsResponseTimesByLabelRetrieveQueryKey(id, params);
+
+  const queryFn: QueryFunction<
+    Awaited<ReturnType<typeof mailboxesStatsResponseTimesByLabelRetrieve>>
+  > = ({ signal }) =>
+    mailboxesStatsResponseTimesByLabelRetrieve(id, params, {
+      signal,
+      ...requestOptions,
+    });
+
+  return {
+    queryKey,
+    queryFn,
+    enabled: !!id,
+    ...queryOptions,
+  } as UseQueryOptions<
+    Awaited<ReturnType<typeof mailboxesStatsResponseTimesByLabelRetrieve>>,
+    TError,
+    TData
+  > & { queryKey: DataTag<QueryKey, TData, TError> };
+};
+
+export type MailboxesStatsResponseTimesByLabelRetrieveQueryResult = NonNullable<
+  Awaited<ReturnType<typeof mailboxesStatsResponseTimesByLabelRetrieve>>
+>;
+export type MailboxesStatsResponseTimesByLabelRetrieveQueryError =
+  ErrorType<unknown>;
+
+export function useMailboxesStatsResponseTimesByLabelRetrieve<
+  TData = Awaited<
+    ReturnType<typeof mailboxesStatsResponseTimesByLabelRetrieve>
+  >,
+  TError = ErrorType<unknown>,
+>(
+  id: string,
+  params: undefined | MailboxesStatsResponseTimesByLabelRetrieveParams,
+  options: {
+    query: Partial<
+      UseQueryOptions<
+        Awaited<ReturnType<typeof mailboxesStatsResponseTimesByLabelRetrieve>>,
+        TError,
+        TData
+      >
+    > &
+      Pick<
+        DefinedInitialDataOptions<
+          Awaited<
+            ReturnType<typeof mailboxesStatsResponseTimesByLabelRetrieve>
+          >,
+          TError,
+          Awaited<ReturnType<typeof mailboxesStatsResponseTimesByLabelRetrieve>>
+        >,
+        "initialData"
+      >;
+    request?: SecondParameter<typeof fetchAPI>;
+  },
+  queryClient?: QueryClient,
+): DefinedUseQueryResult<TData, TError> & {
+  queryKey: DataTag<QueryKey, TData, TError>;
+};
+export function useMailboxesStatsResponseTimesByLabelRetrieve<
+  TData = Awaited<
+    ReturnType<typeof mailboxesStatsResponseTimesByLabelRetrieve>
+  >,
+  TError = ErrorType<unknown>,
+>(
+  id: string,
+  params?: MailboxesStatsResponseTimesByLabelRetrieveParams,
+  options?: {
+    query?: Partial<
+      UseQueryOptions<
+        Awaited<ReturnType<typeof mailboxesStatsResponseTimesByLabelRetrieve>>,
+        TError,
+        TData
+      >
+    > &
+      Pick<
+        UndefinedInitialDataOptions<
+          Awaited<
+            ReturnType<typeof mailboxesStatsResponseTimesByLabelRetrieve>
+          >,
+          TError,
+          Awaited<ReturnType<typeof mailboxesStatsResponseTimesByLabelRetrieve>>
+        >,
+        "initialData"
+      >;
+    request?: SecondParameter<typeof fetchAPI>;
+  },
+  queryClient?: QueryClient,
+): UseQueryResult<TData, TError> & {
+  queryKey: DataTag<QueryKey, TData, TError>;
+};
+export function useMailboxesStatsResponseTimesByLabelRetrieve<
+  TData = Awaited<
+    ReturnType<typeof mailboxesStatsResponseTimesByLabelRetrieve>
+  >,
+  TError = ErrorType<unknown>,
+>(
+  id: string,
+  params?: MailboxesStatsResponseTimesByLabelRetrieveParams,
+  options?: {
+    query?: Partial<
+      UseQueryOptions<
+        Awaited<ReturnType<typeof mailboxesStatsResponseTimesByLabelRetrieve>>,
+        TError,
+        TData
+      >
+    >;
+    request?: SecondParameter<typeof fetchAPI>;
+  },
+  queryClient?: QueryClient,
+): UseQueryResult<TData, TError> & {
+  queryKey: DataTag<QueryKey, TData, TError>;
+};
+
+export function useMailboxesStatsResponseTimesByLabelRetrieve<
+  TData = Awaited<
+    ReturnType<typeof mailboxesStatsResponseTimesByLabelRetrieve>
+  >,
+  TError = ErrorType<unknown>,
+>(
+  id: string,
+  params?: MailboxesStatsResponseTimesByLabelRetrieveParams,
+  options?: {
+    query?: Partial<
+      UseQueryOptions<
+        Awaited<ReturnType<typeof mailboxesStatsResponseTimesByLabelRetrieve>>,
+        TError,
+        TData
+      >
+    >;
+    request?: SecondParameter<typeof fetchAPI>;
+  },
+  queryClient?: QueryClient,
+): UseQueryResult<TData, TError> & {
+  queryKey: DataTag<QueryKey, TData, TError>;
+} {
+  const queryOptions =
+    getMailboxesStatsResponseTimesByLabelRetrieveQueryOptions(
+      id,
+      params,
+      options,
+    );
+
+  const query = useQuery(queryOptions, queryClient) as UseQueryResult<
+    TData,
+    TError
+  > & { queryKey: DataTag<QueryKey, TData, TError> };
+
+  query.queryKey = queryOptions.queryKey;
+
+  return query;
+}
+
+/**
+ * Return total storage and top-100 largest threads for the mailbox.
+
+Storage is computed using the same formula as the metrics endpoints:
+``message_count * OVERHEAD + mime_blobs + draft_blobs
++ attachment_blobs + template_blobs``.
+
+Lives under ``stats/`` for URL consistency, but backs the Storage
+settings tab — which is not behind ``FEATURE_MAILBOX_STATS`` — so unlike
+the sibling actions it deliberately omits ``_require_stats_feature()``.
+The flag is enforced in code, not by the URL prefix.
+ */
+export type mailboxesStatsStorageRetrieveResponse200 = {
+  data: MailboxStorageStats;
+  status: 200;
+};
+
+export type mailboxesStatsStorageRetrieveResponseSuccess =
+  mailboxesStatsStorageRetrieveResponse200 & {
+    headers: Headers;
+  };
+export type mailboxesStatsStorageRetrieveResponse =
+  mailboxesStatsStorageRetrieveResponseSuccess;
+
+export const getMailboxesStatsStorageRetrieveUrl = (id: string) => {
+  return `/api/v1.0/mailboxes/${id}/stats/storage/`;
+};
+
+export const mailboxesStatsStorageRetrieve = async (
+  id: string,
+  options?: RequestInit,
+): Promise<mailboxesStatsStorageRetrieveResponse> => {
+  return fetchAPI<mailboxesStatsStorageRetrieveResponse>(
+    getMailboxesStatsStorageRetrieveUrl(id),
+    {
+      ...options,
+      method: "GET",
+    },
+  );
+};
+
+export const getMailboxesStatsStorageRetrieveQueryKey = (id?: string) => {
+  return [`/api/v1.0/mailboxes/${id}/stats/storage/`] as const;
+};
+
+export const getMailboxesStatsStorageRetrieveQueryOptions = <
+  TData = Awaited<ReturnType<typeof mailboxesStatsStorageRetrieve>>,
+  TError = ErrorType<unknown>,
+>(
+  id: string,
+  options?: {
+    query?: Partial<
+      UseQueryOptions<
+        Awaited<ReturnType<typeof mailboxesStatsStorageRetrieve>>,
+        TError,
+        TData
+      >
+    >;
+    request?: SecondParameter<typeof fetchAPI>;
+  },
+) => {
+  const { query: queryOptions, request: requestOptions } = options ?? {};
+
+  const queryKey =
+    queryOptions?.queryKey ?? getMailboxesStatsStorageRetrieveQueryKey(id);
+
+  const queryFn: QueryFunction<
+    Awaited<ReturnType<typeof mailboxesStatsStorageRetrieve>>
+  > = ({ signal }) =>
+    mailboxesStatsStorageRetrieve(id, { signal, ...requestOptions });
+
+  return {
+    queryKey,
+    queryFn,
+    enabled: !!id,
+    ...queryOptions,
+  } as UseQueryOptions<
+    Awaited<ReturnType<typeof mailboxesStatsStorageRetrieve>>,
+    TError,
+    TData
+  > & { queryKey: DataTag<QueryKey, TData, TError> };
+};
+
+export type MailboxesStatsStorageRetrieveQueryResult = NonNullable<
+  Awaited<ReturnType<typeof mailboxesStatsStorageRetrieve>>
+>;
+export type MailboxesStatsStorageRetrieveQueryError = ErrorType<unknown>;
+
+export function useMailboxesStatsStorageRetrieve<
+  TData = Awaited<ReturnType<typeof mailboxesStatsStorageRetrieve>>,
+  TError = ErrorType<unknown>,
+>(
+  id: string,
+  options: {
+    query: Partial<
+      UseQueryOptions<
+        Awaited<ReturnType<typeof mailboxesStatsStorageRetrieve>>,
+        TError,
+        TData
+      >
+    > &
+      Pick<
+        DefinedInitialDataOptions<
+          Awaited<ReturnType<typeof mailboxesStatsStorageRetrieve>>,
+          TError,
+          Awaited<ReturnType<typeof mailboxesStatsStorageRetrieve>>
+        >,
+        "initialData"
+      >;
+    request?: SecondParameter<typeof fetchAPI>;
+  },
+  queryClient?: QueryClient,
+): DefinedUseQueryResult<TData, TError> & {
+  queryKey: DataTag<QueryKey, TData, TError>;
+};
+export function useMailboxesStatsStorageRetrieve<
+  TData = Awaited<ReturnType<typeof mailboxesStatsStorageRetrieve>>,
+  TError = ErrorType<unknown>,
+>(
+  id: string,
+  options?: {
+    query?: Partial<
+      UseQueryOptions<
+        Awaited<ReturnType<typeof mailboxesStatsStorageRetrieve>>,
+        TError,
+        TData
+      >
+    > &
+      Pick<
+        UndefinedInitialDataOptions<
+          Awaited<ReturnType<typeof mailboxesStatsStorageRetrieve>>,
+          TError,
+          Awaited<ReturnType<typeof mailboxesStatsStorageRetrieve>>
+        >,
+        "initialData"
+      >;
+    request?: SecondParameter<typeof fetchAPI>;
+  },
+  queryClient?: QueryClient,
+): UseQueryResult<TData, TError> & {
+  queryKey: DataTag<QueryKey, TData, TError>;
+};
+export function useMailboxesStatsStorageRetrieve<
+  TData = Awaited<ReturnType<typeof mailboxesStatsStorageRetrieve>>,
+  TError = ErrorType<unknown>,
+>(
+  id: string,
+  options?: {
+    query?: Partial<
+      UseQueryOptions<
+        Awaited<ReturnType<typeof mailboxesStatsStorageRetrieve>>,
+        TError,
+        TData
+      >
+    >;
+    request?: SecondParameter<typeof fetchAPI>;
+  },
+  queryClient?: QueryClient,
+): UseQueryResult<TData, TError> & {
+  queryKey: DataTag<QueryKey, TData, TError>;
+};
+
+export function useMailboxesStatsStorageRetrieve<
+  TData = Awaited<ReturnType<typeof mailboxesStatsStorageRetrieve>>,
+  TError = ErrorType<unknown>,
+>(
+  id: string,
+  options?: {
+    query?: Partial<
+      UseQueryOptions<
+        Awaited<ReturnType<typeof mailboxesStatsStorageRetrieve>>,
+        TError,
+        TData
+      >
+    >;
+    request?: SecondParameter<typeof fetchAPI>;
+  },
+  queryClient?: QueryClient,
+): UseQueryResult<TData, TError> & {
+  queryKey: DataTag<QueryKey, TData, TError>;
+} {
+  const queryOptions = getMailboxesStatsStorageRetrieveQueryOptions(
+    id,
+    options,
+  );
 
   const query = useQuery(queryOptions, queryClient) as UseQueryResult<
     TData,

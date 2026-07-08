@@ -9,6 +9,7 @@ export enum FEATURE_KEYS {
     MAILDOMAIN_MANAGE_ACCESSES = 'maildomain_manage_accesses',
     MAILDOMAIN_MANAGE_TOTP = 'maildomain_manage_totp',
     THREAD_SPLIT = 'thread_split',
+    MAILBOX_STATS = 'mailbox_stats',
 }
 
 /**
@@ -38,6 +39,8 @@ export const useFeatureFlag = (featureKey: FEATURE_KEYS) => {
             return config.FEATURE_MAILDOMAIN_MANAGE_TOTP === true;
         case FEATURE_KEYS.THREAD_SPLIT:
             return config.FEATURE_THREAD_SPLIT === true;
+        case FEATURE_KEYS.MAILBOX_STATS:
+            return config.FEATURE_MAILBOX_STATS === true;
         default:
             throw new Error(`Unknown feature key: ${featureKey}`);
     }

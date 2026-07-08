@@ -111,24 +111,24 @@ describe("AttachmentHelper", () => {
 
     describe("getFormattedSize", () => {
         it("should format size in bytes", () => {
-            expect(AttachmentHelper.getFormattedSize(500)).toBe("500B");
+            expect(AttachmentHelper.getFormattedSize(500)).toBe("500 B");
         });
 
         it("should format size in kilobytes", () => {
-            expect(AttachmentHelper.getFormattedSize(1500)).toBe("1.5kB");
+            expect(AttachmentHelper.getFormattedSize(1500)).toBe("1.5 kB");
         });
 
         it("should format size in megabytes", () => {
-            expect(AttachmentHelper.getFormattedSize(1500*1024)).toBe("1.5MB");
+            expect(AttachmentHelper.getFormattedSize(1500*1024)).toBe("1.5 MB");
         });
 
         it("should format size in gigabytes", () => {
-            expect(AttachmentHelper.getFormattedSize(1500*1024*1024)).toBe("1.5GB");
+            expect(AttachmentHelper.getFormattedSize(1500*1024*1024)).toBe("1.5 GB");
         });
 
         it("should use specified language for formatting", () => {
             // French uses comma as decimal separator
-            expect(AttachmentHelper.getFormattedSize(1500, 'fr')).toBe("1,5ko");
+            expect(AttachmentHelper.getFormattedSize(1500, 'fr')).toBe("1,5 ko");
         });
     });
 
@@ -139,11 +139,11 @@ describe("AttachmentHelper", () => {
                 { size: 2*1024 } as Attachment,
                 { size: 3*1024 } as Attachment
             ];
-            expect(AttachmentHelper.getFormattedTotalSize(attachments)).toBe("6kB");
+            expect(AttachmentHelper.getFormattedTotalSize(attachments)).toBe("6 kB");
         });
 
         it("should handle empty array of attachments", () => {
-            expect(AttachmentHelper.getFormattedTotalSize([])).toBe("0B");
+            expect(AttachmentHelper.getFormattedTotalSize([])).toBe("0 B");
         });
 
         it("should use specified language for formatting", () => {
@@ -151,7 +151,7 @@ describe("AttachmentHelper", () => {
                 { size: 1*1024 } as Attachment,
                 { size: 3*1024 } as Attachment
             ];
-            expect(AttachmentHelper.getFormattedTotalSize(attachments, 'fr')).toBe("4ko");
+            expect(AttachmentHelper.getFormattedTotalSize(attachments, 'fr')).toBe("4 ko");
         });
     });
 }); 

@@ -89,4 +89,379 @@
     flex-direction: column;
     gap: var(--c--globals--spacings--2xs);
   }
+
+  // Storage tab: headline metric cards (total used / messages / conversations /
+  // trash+spam) kept on a single row, each shrinking to fit.
+  &__storage-summary {
+    display: flex;
+    flex-wrap: nowrap;
+    gap: var(--c--globals--spacings--xs);
+  }
+
+  &__storage-metric {
+    display: flex;
+    flex-direction: column;
+    gap: var(--c--globals--spacings--3xs);
+    flex: 1 1 0;
+    min-width: 0;
+    padding: var(--c--globals--spacings--s);
+    border: 1px solid var(--c--contextuals--border--semantic--neutral--tertiary);
+    border-radius: var(--c--globals--radius--sm);
+  }
+
+  &__storage-metric-value {
+    font-size: var(--c--globals--font--sizes--xl);
+    font-weight: 700;
+  }
+
+  &__storage-metric-label {
+    font-size: var(--c--globals--font--sizes--sm);
+    color: var(--c--contextuals--content--semantic--neutral--secondary);
+  }
+
+  // Largest-conversations list: one borderless row per thread, subject on the
+  // left with a muted message-count/date line, size right-aligned.
+  &__storage-list {
+    list-style: none;
+    margin: 0;
+    padding: 0;
+    display: flex;
+    flex-direction: column;
+    gap: var(--c--globals--spacings--4xs);
+  }
+
+  // Row wrapper (a real <li>). Mirrors the thread-list rows (see `.thread-item`):
+  // a transparent 1px border that fills in on hover/focus over the same
+  // neutral-tertiary surface. Holds the deep-link anchor plus the trash action.
+  &__storage-item {
+    display: flex;
+    align-items: center;
+    gap: var(--c--globals--spacings--2xs);
+    padding: var(--c--globals--spacings--xs);
+    border: 1px solid transparent;
+    border-radius: 4px;
+
+    &:hover,
+    &:focus-within {
+      background-color: var(
+        --c--contextuals--background--semantic--neutral--tertiary
+      );
+      border-color: var(--c--contextuals--border--semantic--neutral--tertiary);
+    }
+  }
+
+  // The clickable info area: subject/meta on the left, size on the right.
+  &__storage-item-link {
+    display: flex;
+    flex: 1;
+    min-width: 0;
+    align-items: center;
+    justify-content: space-between;
+    gap: var(--c--globals--spacings--s);
+    color: inherit;
+    text-decoration: none;
+    border-radius: 4px;
+
+    &:focus-visible {
+      outline: 2px solid var(--c--contextuals--border--focus);
+      outline-offset: -2px;
+    }
+  }
+
+  &__storage-item-trash {
+    flex-shrink: 0;
+  }
+
+  // Read/unread bullet on the left of each row (mirrors the thread-list
+  // `.thread-item__read-indicator`): a filled brand dot when unread, an empty
+  // slot when read so rows stay aligned.
+  &__storage-item-status {
+    flex-shrink: 0;
+    width: 0.5rem;
+    height: 0.5rem;
+    border-radius: 50%;
+    background-color: transparent;
+    // Align with the subject (the row's first line) rather than the centre of
+    // the two-line block: pin to the top and drop to the subject line's centre
+    // ((1.25rem line − 0.5rem dot) / 2 = 0.375rem).
+    align-self: flex-start;
+    margin-top: 0.375rem;
+  }
+
+  // Unread rows: filled status dot and a bolder subject.
+  &__storage-item--unread {
+    .mailbox-settings__storage-item-status {
+      background-color: var(
+        --c--contextuals--background--semantic--brand--primary
+      );
+    }
+
+    .mailbox-settings__storage-item-subject {
+      font-weight: 700;
+    }
+  }
+
+  &__storage-item-main {
+    display: flex;
+    flex-direction: column;
+    gap: var(--c--globals--spacings--3xs);
+    min-width: 0;
+  }
+
+  &__storage-item-subject {
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+    line-height: 1.25rem;
+  }
+
+  &__storage-item-meta {
+    font-size: var(--c--globals--font--sizes--sm);
+    color: var(--c--contextuals--content--semantic--neutral--secondary);
+  }
+
+  &__storage-item-size {
+    font-variant-numeric: tabular-nums;
+    white-space: nowrap;
+    color: var(--c--contextuals--content--semantic--neutral--secondary);
+  }
+
+  // Shown when the mailbox has never stored anything: a centered message
+  // instead of empty metric tiles and an empty list.
+  &__storage-empty {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    gap: var(--c--globals--spacings--2xs);
+    padding: var(--c--globals--spacings--2xl) var(--c--globals--spacings--md);
+    text-align: center;
+  }
+
+  &__storage-empty-title {
+    margin: 0;
+    font-weight: 700;
+  }
+
+  &__storage-empty-description {
+    margin: 0;
+    font-size: var(--c--globals--font--sizes--sm);
+    color: var(--c--contextuals--content--semantic--neutral--secondary);
+  }
+
+  // Statistics tab ---------------------------------------------------------
+
+  // The two dropdowns (statistics type + period) sit side by side above the
+  // selected view.
+  &__statistics-controls {
+    display: flex;
+    flex-wrap: wrap;
+    gap: var(--c--globals--spacings--s);
+    margin-bottom: var(--c--globals--spacings--md);
+
+    & > * {
+      flex: 1 1 12rem;
+    }
+  }
+
+  // Headline metric cards, shared by the overview and the response-time
+  // summary. Same look as the storage tiles.
+  &__stat-cards {
+    display: flex;
+    flex-wrap: wrap;
+    gap: var(--c--globals--spacings--xs);
+  }
+
+  &__stat-card {
+    display: flex;
+    flex-direction: column;
+    gap: var(--c--globals--spacings--3xs);
+    flex: 1 1 0;
+    min-width: 6rem;
+    padding: var(--c--globals--spacings--s);
+    border: 1px solid var(--c--contextuals--border--semantic--neutral--tertiary);
+    border-radius: var(--c--globals--radius--sm);
+  }
+
+  &__stat-card-value {
+    font-size: var(--c--globals--font--sizes--xl);
+    font-weight: 700;
+  }
+
+  &__stat-card-label {
+    font-size: var(--c--globals--font--sizes--sm);
+    color: var(--c--contextuals--content--semantic--neutral--secondary);
+  }
+
+  // Assigned/unassigned breakdown under an Unanswered / Unread tile.
+  &__stat-card-sub {
+    font-size: var(--c--globals--font--sizes--xs);
+    color: var(--c--contextuals--content--semantic--neutral--tertiary);
+  }
+
+  // Custom SVG response-times chart.
+  // Reply-speed chart. Fixed columns (label | gauge | avg | count) so every
+  // gauge shares the exact same track width; the gauge fill length encodes the
+  // average response time. Generous row spacing keeps ~12 rows legible.
+  &__chart {
+    list-style: none;
+    margin: var(--c--globals--spacings--md) 0 0;
+    padding: 0;
+    display: flex;
+    flex-direction: column;
+    gap: var(--c--globals--spacings--s);
+    font-size: var(--c--globals--font--sizes--sm);
+  }
+
+  &__chart-row {
+    display: flex;
+    align-items: center;
+    gap: var(--c--globals--spacings--s);
+
+    &--global {
+      font-weight: 700;
+      padding-bottom: var(--c--globals--spacings--2xs);
+      border-bottom: 1px solid
+        var(--c--contextuals--border--semantic--neutral--tertiary);
+    }
+  }
+
+  &__chart-label {
+    flex: 0 0 8rem;
+    min-width: 0;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+  }
+
+  // Same track for every row, capped around half the row width (the scale caps
+  // at 100% = 2× average, so the bar reads fine narrower); the fill rect is
+  // sized in JS. `margin-right: auto` keeps the avg/count columns right-aligned.
+  &__chart-gauge {
+    flex: 0 1 50%;
+    height: 0.375rem;
+    min-width: 0;
+    margin-right: auto;
+    background-color: var(
+      --c--contextuals--background--semantic--neutral--tertiary
+    );
+    border-radius: 3px;
+    overflow: hidden;
+  }
+
+  // Fill colour reads as speed relative to the average: blue = the global
+  // average anchor, green = faster than average, orange = up to 2× average,
+  // red = 2× or slower, neutral = no data.
+  &__chart-gauge-fill {
+    fill: var(--c--contextuals--background--semantic--brand--primary);
+
+    &--avg {
+      fill: var(--c--contextuals--background--semantic--brand--primary);
+    }
+
+    &--fast {
+      fill: var(--c--contextuals--background--semantic--success--primary);
+    }
+
+    &--ok {
+      fill: var(--c--contextuals--background--semantic--warning--primary);
+    }
+
+    &--slow {
+      fill: var(--c--contextuals--background--semantic--error--primary);
+    }
+
+    &--none {
+      fill: var(--c--contextuals--background--semantic--neutral--tertiary);
+    }
+  }
+
+  // Tick at the 50% mark = the global average reference line.
+  &__chart-gauge-marker {
+    fill: var(--c--contextuals--content--semantic--neutral--secondary);
+    opacity: 0.5;
+  }
+
+  &__chart-avg {
+    flex: 0 0 4.5rem;
+    text-align: right;
+    font-variant-numeric: tabular-nums;
+    white-space: nowrap;
+  }
+
+  &__chart-count {
+    flex: 0 0 5rem;
+    text-align: right;
+    font-variant-numeric: tabular-nums;
+    white-space: nowrap;
+    color: var(--c--contextuals--content--semantic--neutral--secondary);
+  }
+
+  // Assigned-but-unanswered backlog (global: all unanswered).
+  &__chart-pending {
+    flex: 0 0 5.5rem;
+    text-align: right;
+    font-variant-numeric: tabular-nums;
+    white-space: nowrap;
+    color: var(--c--contextuals--content--semantic--neutral--secondary);
+
+    &--empty {
+      color: var(--c--contextuals--content--semantic--neutral--tertiary);
+    }
+  }
+
+  // Response-times-by-label table: the label tree on the left, three numeric
+  // columns on the right.
+  &__label-stats {
+    display: flex;
+    flex-direction: column;
+    font-size: var(--c--globals--font--sizes--sm);
+  }
+
+  &__label-stats-head {
+    display: flex;
+    align-items: center;
+    gap: var(--c--globals--spacings--s);
+    padding-bottom: var(--c--globals--spacings--2xs);
+    border-bottom: 1px solid
+      var(--c--contextuals--border--semantic--neutral--tertiary);
+    color: var(--c--contextuals--content--semantic--neutral--secondary);
+    font-size: var(--c--globals--font--sizes--xs);
+  }
+
+  &__label-stats-row {
+    display: flex;
+    align-items: center;
+    gap: var(--c--globals--spacings--s);
+    padding: var(--c--globals--spacings--3xs) 0;
+
+    &:not(:last-child) {
+      border-bottom: 1px solid
+        var(--c--contextuals--border--semantic--neutral--tertiary);
+    }
+  }
+
+  &__label-stats-label {
+    display: flex;
+    align-items: center;
+    gap: var(--c--globals--spacings--2xs);
+    flex: 1 1 auto;
+    min-width: 0;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+  }
+
+  &__label-stats-dot {
+    flex-shrink: 0;
+    width: 0.625rem;
+    height: 0.625rem;
+    border-radius: 3px;
+  }
+
+  &__label-stats-num {
+    flex: 0 0 5.5rem;
+    text-align: right;
+    font-variant-numeric: tabular-nums;
+    white-space: nowrap;
+  }
 }

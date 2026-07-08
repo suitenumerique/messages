@@ -2817,3 +2817,216 @@ class ThreadBulkDeleteRequestSerializer(serializers.Serializer):
 
     def update(self, instance, validated_data):
         """This serializer is only used to validate the data, not to create or update."""
+
+
+class LargestThreadSerializer(serializers.Serializer):
+    """Serializer for a thread entry in the mailbox storage stats."""
+
+    id = serializers.UUIDField(help_text="Thread UUID")
+    subject = serializers.CharField(allow_null=True, help_text="Thread subject")
+    size = serializers.IntegerField(
+        help_text="Total compressed blob size of the thread in bytes"
+    )
+    message_count = serializers.IntegerField(
+        help_text="Number of messages in the thread"
+    )
+    messaged_at = serializers.DateTimeField(
+        allow_null=True, help_text="Date of the last message in the thread"
+    )
+    is_unread = serializers.BooleanField(
+        help_text="Whether the thread is unread for this mailbox"
+    )
+
+    def create(self, validated_data):
+        raise NotImplementedError(
+            f"{self.__class__.__name__} does not support create method"
+        )
+
+    def update(self, instance, validated_data):
+        raise NotImplementedError(
+            f"{self.__class__.__name__} does not support update method"
+        )
+
+
+class MailboxStorageStatsSerializer(serializers.Serializer):
+    """Serializer for mailbox storage statistics response."""
+
+    total_storage = serializers.IntegerField(
+        help_text="Total storage used by the mailbox in bytes"
+    )
+    trashed_storage = serializers.IntegerField(
+        help_text="Storage used by trashed conversations in bytes"
+    )
+    spam_storage = serializers.IntegerField(
+        help_text="Storage used by spam conversations in bytes"
+    )
+    message_count = serializers.IntegerField(
+        help_text="Total number of messages in the mailbox"
+    )
+    thread_count = serializers.IntegerField(
+        help_text="Total number of threads in the mailbox"
+    )
+    largest_threads = LargestThreadSerializer(
+        many=True,
+        help_text="Top 100 threads by storage size, ordered descending.",
+    )
+
+    def create(self, validated_data):
+        raise NotImplementedError(
+            f"{self.__class__.__name__} does not support create method"
+        )
+
+    def update(self, instance, validated_data):
+        raise NotImplementedError(
+            f"{self.__class__.__name__} does not support update method"
+        )
+
+
+class MailboxStatsOverviewSerializer(serializers.Serializer):
+    """Serializer for the mailbox overview statistics response."""
+
+    conversations = serializers.IntegerField(
+        help_text="Number of conversations active in the period"
+    )
+    messages = serializers.IntegerField(
+        help_text="Number of messages in the period"
+    )
+    sent = serializers.IntegerField(
+        help_text="Number of emails sent in the period"
+    )
+    unreplied = serializers.IntegerField(
+        help_text="Incoming emails in the period still without a reply"
+    )
+    unreplied_assigned = serializers.IntegerField(
+        help_text="Unreplied emails whose conversation is assigned"
+    )
+    unreplied_unassigned = serializers.IntegerField(
+        help_text="Unreplied emails whose conversation is not assigned"
+    )
+    unread = serializers.IntegerField(
+        help_text="Conversations active in the period still unread"
+    )
+    unread_assigned = serializers.IntegerField(
+        help_text="Unread conversations that are assigned"
+    )
+    unread_unassigned = serializers.IntegerField(
+        help_text="Unread conversations that are not assigned"
+    )
+
+    def create(self, validated_data):
+        raise NotImplementedError(
+            f"{self.__class__.__name__} does not support create method"
+        )
+
+    def update(self, instance, validated_data):
+        raise NotImplementedError(
+            f"{self.__class__.__name__} does not support update method"
+        )
+
+
+class ResponseTimeAuthorSerializer(serializers.Serializer):
+    """Per-author entry in the response-times statistics."""
+
+    author = serializers.CharField(help_text="Author display name")
+    replied = serializers.IntegerField(
+        help_text="Number of incoming emails this author replied to"
+    )
+    average_response_seconds = serializers.IntegerField(
+        allow_null=True,
+        help_text="Average response time for this author, in seconds",
+    )
+    unanswered = serializers.IntegerField(
+        help_text=(
+            "Conversations assigned to this author with an unanswered "
+            "incoming email"
+        )
+    )
+
+    def create(self, validated_data):
+        raise NotImplementedError(
+            f"{self.__class__.__name__} does not support create method"
+        )
+
+    def update(self, instance, validated_data):
+        raise NotImplementedError(
+            f"{self.__class__.__name__} does not support update method"
+        )
+
+
+class MailboxResponseTimesSerializer(serializers.Serializer):
+    """Serializer for the mailbox response-times statistics response."""
+
+    incoming = serializers.IntegerField(
+        help_text="Total incoming emails received in the period"
+    )
+    replied = serializers.IntegerField(
+        help_text="Incoming emails that got an external reply"
+    )
+    unreplied = serializers.IntegerField(
+        help_text="Incoming emails still unanswered"
+    )
+    average_response_seconds = serializers.IntegerField(
+        allow_null=True,
+        help_text="Global average response time in seconds",
+    )
+    authors = ResponseTimeAuthorSerializer(
+        many=True, help_text="Per-author breakdown, busiest first"
+    )
+
+    def create(self, validated_data):
+        raise NotImplementedError(
+            f"{self.__class__.__name__} does not support create method"
+        )
+
+    def update(self, instance, validated_data):
+        raise NotImplementedError(
+            f"{self.__class__.__name__} does not support update method"
+        )
+
+
+class ResponseTimeLabelSerializer(serializers.Serializer):
+    """Per-label entry in the response-times-by-label statistics.
+
+    Raw totals only — the client rolls them up the label tree and derives the
+    average (``response_seconds_total / replied``) and the count without a reply
+    (``received - replied``).
+    """
+
+    label = serializers.UUIDField(help_text="Label id")
+    received = serializers.IntegerField(
+        help_text="Incoming emails in threads carrying this label"
+    )
+    replied = serializers.IntegerField(
+        help_text="Those incoming emails that got a reply"
+    )
+    response_seconds_total = serializers.IntegerField(
+        help_text="Sum of response times, in seconds, over replied emails"
+    )
+
+    def create(self, validated_data):
+        raise NotImplementedError(
+            f"{self.__class__.__name__} does not support create method"
+        )
+
+    def update(self, instance, validated_data):
+        raise NotImplementedError(
+            f"{self.__class__.__name__} does not support update method"
+        )
+
+
+class MailboxResponseTimesByLabelSerializer(serializers.Serializer):
+    """Serializer for the response-times-by-label statistics response."""
+
+    labels = ResponseTimeLabelSerializer(
+        many=True, help_text="Per-label totals (labels with activity only)"
+    )
+
+    def create(self, validated_data):
+        raise NotImplementedError(
+            f"{self.__class__.__name__} does not support create method"
+        )
+
+    def update(self, instance, validated_data):
+        raise NotImplementedError(
+            f"{self.__class__.__name__} does not support update method"
+        )

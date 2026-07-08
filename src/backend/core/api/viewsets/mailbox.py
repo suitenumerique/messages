@@ -10,10 +10,14 @@ from rest_framework.response import Response
 from core import models
 
 from .. import permissions, serializers
+from .mailbox_stats import MailboxStatsMixin
 
 
 class MailboxViewSet(
-    viewsets.GenericViewSet, mixins.ListModelMixin, mixins.RetrieveModelMixin
+    MailboxStatsMixin,
+    viewsets.GenericViewSet,
+    mixins.ListModelMixin,
+    mixins.RetrieveModelMixin,
 ):
     """ViewSet for Mailbox model."""
 
