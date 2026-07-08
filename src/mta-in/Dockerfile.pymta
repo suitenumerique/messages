@@ -12,7 +12,7 @@
 #   * `runtime-prod` (slim) and `runtime-distroless-prod` (cc-debian13:nonroot)
 #     both available; the distroless variant is the security target.
 #
-# Shared base image (docker/python-uv/Dockerfile): debian-trixie + apt upgrade +
+# Shared base image (deploy/python-uv/Dockerfile): debian-trixie + apt upgrade +
 # ca-certificates + uv (digest-pinned) + uv-managed CPython at /opt/python.
 # Global ARG so it can be used in `FROM` below. Built by `make build-python-base`;
 # overridden in CI.
@@ -48,7 +48,7 @@ FROM base-with-deps AS base-with-deps-dev
 RUN --mount=type=cache,target=/root/.cache/uv uv sync --locked --no-install-project --no-editable --extra dev
 
 
-# ---- Strip Python for the distroless image (see docker/python-uv/strip-python.sh) ----
+# ---- Strip Python for the distroless image (see deploy/python-uv/strip-python.sh) ----
 # Only runtime-distroless-prod (the real production target) uses this. The slim
 # runtime-prod inherits the full managed Python from the shared base instead.
 FROM ${PYTHON_UV_IMAGE} AS python-runtime

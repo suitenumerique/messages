@@ -1,6 +1,6 @@
 # Outbound MTA image (Postfix + SASL relay).
 #
-# Python comes from the shared uv-managed base (docker/python-uv/Dockerfile:
+# Python comes from the shared uv-managed base (deploy/python-uv/Dockerfile:
 # debian-trixie + uv 0.11.28 digest-pinned + CPython 3.14.6), NOT the official
 # python image — so the interpreter matches the backend and mta-in images.
 #

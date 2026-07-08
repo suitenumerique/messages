@@ -1,8 +1,14 @@
-FROM python:3.13-slim@sha256:eb43ff125d8d58d7449dcba7d336c23bcac412f526d861db493b9994d8010280
+# Test harness for the rspamd MPA. Inherits the shared python-uv base
+# (managed CPython 3.14.6 + uv); built by `make build-python-base`.
+ARG PYTHON_UV_IMAGE=messages-python-uv:local
+FROM ${PYTHON_UV_IMAGE}
 
 WORKDIR /app
 
+# The shared base ships uv (no bundled pip on PATH); install into a venv.
+ENV VIRTUAL_ENV=/venv
+ENV PATH="/venv/bin:$PATH"
 COPY requirements.txt .
-RUN pip install --no-cache-dir -r requirements.txt
+RUN uv venv /venv && uv pip install --no-cache -r requirements.txt
 
 COPY . .

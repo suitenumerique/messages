@@ -45,7 +45,7 @@ Caddy is used as a reverse proxy to serve the frontend and the backend on the sa
 
 ### Environment variables
 
-E2E configuration files are located in `env.d/development/*.e2e`:
+E2E configuration files are located in `deploy/env/*.e2e`:
 - `backend.e2e`: Backend configuration for tests
 - `frontend.e2e`: Frontend configuration for tests
 - `keycloak.e2e`: Keycloak configuration for tests

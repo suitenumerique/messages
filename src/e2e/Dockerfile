@@ -22,7 +22,7 @@ WORKDIR /app
 
 
 # Install deps and run all npm commands as the user running the container
-COPY package*.json ./
+COPY package*.json .npmrc ./
 
 # Install dependencies and postinstall playwright with deps
 RUN npm install

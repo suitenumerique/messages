@@ -1,4 +1,4 @@
-# Shared base image (docker/python-uv/Dockerfile): debian-trixie + apt upgrade +
+# Shared base image (deploy/python-uv/Dockerfile): debian-trixie + apt upgrade +
 # ca-certificates + uv 0.11.28 (digest-pinned) + uv-managed CPython 3.14.6 at
 # /opt/python. Global ARG so it can be used in `FROM` below. Built by
 # `make build-python-base`; overridden in CI.
@@ -148,7 +148,7 @@ RUN mkdir -p /shared-libs/usr/lib /shared-libs/usr/share/misc && \
     cp /usr/share/misc/magic.mgc /shared-libs/usr/share/misc/
 
 
-# ---- Strip Python for the distroless image (see docker/python-uv/strip-python.sh) ----
+# ---- Strip Python for the distroless image (see deploy/python-uv/strip-python.sh) ----
 # Only runtime-distroless-prod (the real production target) uses this. The slim
 # runtime-prod inherits the full managed Python from the shared base instead.
 FROM ${PYTHON_UV_IMAGE} AS python-stripped-runtime

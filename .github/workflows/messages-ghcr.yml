@@ -10,7 +10,7 @@ name: Build and publish OCI images
 jobs:
 
   # Shared base (debian-trixie + uv + managed CPython 3.14.6), built + pushed once
-  # from docker/python-uv/Dockerfile, then referenced by digest via
+  # from deploy/python-uv/Dockerfile, then referenced by digest via
   # PYTHON_UV_IMAGE in the backend and MTA builds below.
   docker-publish-python-uv:
     uses: ./.github/workflows/docker-publish.yml
@@ -22,7 +22,7 @@ jobs:
     secrets: inherit
     with:
       image_name: "python-uv"
-      context: "docker/python-uv"
+      context: "deploy/python-uv"
 
   docker-publish-mta-in:
     needs: docker-publish-python-uv

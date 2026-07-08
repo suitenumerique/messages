@@ -25,8 +25,11 @@ DOCKER_UID          = $(shell id -u)
 DOCKER_GID          = $(shell id -g)
 DOCKER_USER         = $(DOCKER_UID):$(DOCKER_GID)
 COMPOSE             = DOCKER_USER=$(DOCKER_USER) docker compose
-# Shared base image (docker/python-uv) that the backend + MTA Dockerfiles inherit
-# from via the PYTHON_UV_IMAGE build arg. Overridable for CI.
+# Local tag for the shared base image (deploy/python-uv). `build-python-base`
+# builds it, and the Dockerfiles default `FROM ${PYTHON_UV_IMAGE}` to this same
+# tag, so compose builds resolve it. (CI publishes/overrides the base via the
+# docker-publish workflow build-args, not this variable — overriding it here
+# would only retag the local build, leaving the compose `FROM` unchanged.)
 PYTHON_UV_IMAGE     ?= messages-python-uv:local
 COMPOSE_E2E         = DOCKER_USER=$(DOCKER_USER) docker compose -f src/e2e/compose.yaml
 COMPOSE_EXEC        = $(COMPOSE) exec
@@ -57,15 +60,15 @@ data/static:
 
 create-env-files: ## Create empty .local env files for local development
 create-env-files: \
-	env.d/development/crowdin.local \
-	env.d/development/postgresql.local \
-	env.d/development/keycloak.local \
-	env.d/development/backend.local \
-	env.d/development/frontend.local \
-	env.d/development/mta-in.local \
-	env.d/development/mta-in-py.local \
-	env.d/development/mta-out.local \
-	env.d/development/socks-proxy.local
+	deploy/env/crowdin.local \
+	deploy/env/postgresql.local \
+	deploy/env/keycloak.local \
+	deploy/env/backend.local \
+	deploy/env/frontend.local \
+	deploy/env/mta-in.local \
+	deploy/env/mta-in-py.local \
+	deploy/env/mta-out.local \
+	deploy/env/socks-proxy.local
 .PHONY: create-env-files
 
 bootstrap: ## Prepare the project for local development
@@ -89,6 +92,7 @@ bootstrap: ## Prepare the project for local development
 	@echo "$(RESET)"
 	@echo "$(GREEN)Starting bootstrap process...$(RESET)"
 	@echo ""
+	@$(MAKE) create-env-files
 	@$(MAKE) start-deps
 	@$(MAKE) update
 	@$(MAKE) superuser
@@ -106,6 +110,7 @@ bootstrap: ## Prepare the project for local development
 bootstrap-full: ## Prepare the project for local development with the full stack
 	@echo "$(GREEN)Starting full bootstrap process...$(RESET)"
 	@echo ""
+	@$(MAKE) create-env-files
 	@$(MAKE) start-deps
 	@$(MAKE) update-full
 	@$(MAKE) superuser
@@ -168,15 +173,25 @@ logs: ## display all services logs (follow mode)
 	@$(COMPOSE) logs -f
 .PHONY: logs
 
-build-python-base: ## build the shared python+uv base image (docker/python-uv) that the backend and MTA images inherit from
-	@docker build -t $(PYTHON_UV_IMAGE) docker/python-uv
+build-python-base: ## build the shared python+uv base image (deploy/python-uv) that the backend and MTA images inherit from
+	@docker build -t $(PYTHON_UV_IMAGE) deploy/python-uv
 .PHONY: build-python-base
 
 start-deps: ## start the slow infra deps (postgres, redis, keycloak) in the background so they warm up while the rest of bootstrap runs
 	@$(COMPOSE) up -d --no-recreate postgresql redis keycloak
 .PHONY: start-deps
 
-start: build-python-base ## start the light dev stack (backend, worker, frontend, keycloak, postgresql, redis)
+# Fail fast (before booting a broken stack) when the project has not been
+# bootstrapped: `make bootstrap` creates the gitignored env files and the
+# frontend node_modules volume. start/start-full depend on this.
+check-bootstrapped:
+	@test -f deploy/env/backend.local || { \
+		printf "\n$(BOLD)✗ Not bootstrapped$(RESET): env files are missing.\n  Run $(BOLD)make bootstrap$(RESET) first.\n\n" >&2; exit 1; }
+	@docker volume inspect st-messages_frontend-node-modules >/dev/null 2>&1 || { \
+		printf "\n$(BOLD)✗ Not bootstrapped$(RESET): frontend dependencies are not installed.\n  Run $(BOLD)make bootstrap$(RESET) first.\n\n" >&2; exit 1; }
+.PHONY: check-bootstrapped
+
+start: check-bootstrapped build-python-base ## start the light dev stack (backend, worker, frontend, keycloak, postgresql, redis)
 	@$(COMPOSE) stop backend-dev worker-dev worker-ui opensearch objectstorage mailcatcher mta-in-py mpa >/dev/null 2>&1 || true
 	@$(COMPOSE) up --build -d --wait \
 		postgresql \
@@ -187,7 +202,7 @@ start: build-python-base ## start the light dev stack (backend, worker, frontend
 		worker-dev-light
 .PHONY: start
 
-start-full: build-python-base ## start the full dev stack (adds OpenSearch, object storage, mailcatcher and the MTAs)
+start-full: check-bootstrapped build-python-base ## start the full dev stack (adds OpenSearch, object storage, mailcatcher and the MTAs)
 	@$(COMPOSE) stop backend-dev-light worker-dev-light >/dev/null 2>&1 || true
 	@$(COMPOSE) up --build -d --wait \
 		postgresql \
@@ -365,25 +380,25 @@ test-mta-out: build-python-base ## run the mta-out tests
 	@$(COMPOSE) run --build --rm mta-out-test
 .PHONY: test-mta-out
 
-test-mpa: ## run the mpa tests
+test-mpa: build-python-base ## run the mpa tests
 	@$(COMPOSE) run --build --rm mpa-test
 .PHONY: test-mpa
 
-test-jmap-email: ## run the jmap-email package tests (zero infrastructure deps)
+test-jmap-email: build-python-base ## run the jmap-email package tests (zero infrastructure deps)
 	@$(COMPOSE) run --build --rm jmap-email-test
 .PHONY: test-jmap-email
 
-fuzz-jmap-email: ## run the jmap-email Hypothesis fuzz suite
+fuzz-jmap-email: build-python-base ## run the jmap-email Hypothesis fuzz suite
 	@$(COMPOSE) run --build --rm jmap-email-test pytest -m fuzz tests/
 .PHONY: fuzz-jmap-email
 
-lint-jmap-email: ## lint the jmap-email library (ruff check + format check + pylint)
+lint-jmap-email: build-python-base ## lint the jmap-email library (ruff check + format check + pylint)
 	@$(COMPOSE) run --build --rm --entrypoint ruff jmap-email-test check jmap_email tests
 	@$(COMPOSE) run --build --rm --entrypoint ruff jmap-email-test format --check jmap_email tests
 	@$(COMPOSE) run --build --rm --entrypoint pylint jmap-email-test jmap_email tests
 .PHONY: lint-jmap-email
 
-typecheck-jmap-email: ## type-check the jmap-email library with ty (Astral, Rust)
+typecheck-jmap-email: build-python-base ## type-check the jmap-email library with ty (Astral, Rust)
 	@$(COMPOSE) run --build --rm --entrypoint ty jmap-email-test check
 .PHONY: typecheck-jmap-email
 
@@ -391,7 +406,7 @@ release-jmap-email: ## publish jmap-email to PyPI (interactive: TestPyPI → smo
 	@bin/release-jmap-email.sh
 .PHONY: release-jmap-email
 
-test-socks-proxy: ## run the socks-proxy tests
+test-socks-proxy: build-python-base ## run the socks-proxy tests
 	@$(COMPOSE) run --build --rm socks-proxy-test
 .PHONY: test-socks-proxy
 
@@ -574,7 +589,7 @@ reset-db-full: build ## flush database, including schema
 	$(MANAGE_DB) migrate
 .PHONY: reset-db-full
 
-env.d/development/%.local:
+deploy/env/%.local:
 	@echo "# Local development overrides for $(notdir $*)" > $@
 	@echo "# Add your local-specific environment variables below:" >> $@
 	@echo "# Example: DJANGO_DEBUG=True" >> $@

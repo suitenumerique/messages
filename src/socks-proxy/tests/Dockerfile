@@ -1,19 +1,21 @@
-FROM python:3.13-slim-bookworm@sha256:fcbd8dfc2605ba7c2eca646846c5e892b2931e41f6227985154a596f26ab8ed7
+# Test harness for the socks-proxy (dante). Inherits the shared python-uv base
+# (managed CPython 3.14.6 + uv); built by `make build-python-base`.
+ARG PYTHON_UV_IMAGE=messages-python-uv:local
+FROM ${PYTHON_UV_IMAGE}
 
-# Install system dependencies
+# netcat for the proxy connectivity checks.
 RUN apt-get update && apt-get install -y --no-install-recommends \
     netcat-openbsd \
     && rm -rf /var/lib/apt/lists/*
 
-# Set working directory
 WORKDIR /app
 
-# Copy requirements and install Python dependencies
+# The shared base ships uv (no bundled pip on PATH); install into a venv.
+ENV VIRTUAL_ENV=/venv
+ENV PATH="/venv/bin:$PATH"
 COPY requirements.txt .
-RUN pip install --no-cache-dir -r requirements.txt
+RUN uv venv /venv && uv pip install --no-cache -r requirements.txt
 
-# Copy test files
 COPY . .
 
-# Default command (can be overridden)
 CMD ["pytest", "-v"]

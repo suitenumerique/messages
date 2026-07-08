@@ -24,8 +24,8 @@ x-worker-base: &worker-base
   ulimits: *nofile-ulimits
   command: ["python", "worker.py", "--loglevel=DEBUG"]
   env_file:
-    - env.d/development/backend.defaults
-    - env.d/development/backend.local
+    - deploy/env/backend.defaults
+    - deploy/env/backend.local
   volumes:
     - ./src/backend:/app
     - ./data/static:/data/static
@@ -42,8 +42,8 @@ services:
       timeout: 2s
       retries: 300
     env_file:
-      - env.d/development/postgresql.defaults
-      - env.d/development/postgresql.local
+      - deploy/env/postgresql.defaults
+      - deploy/env/postgresql.local
 
   redis:
     image: redis:5
@@ -133,8 +133,8 @@ services:
       # healthcheck below can tell when Keycloak is actually serving.
       - --health-enabled=true
     env_file:
-      - env.d/development/keycloak.defaults
-      - env.d/development/keycloak.local
+      - deploy/env/keycloak.defaults
+      - deploy/env/keycloak.local
     ports:
       - "8902:8802"
     # Without a healthcheck, `--wait` / `depends_on: service_started` consider
@@ -192,8 +192,8 @@ services:
       - PYLINTHOME=/app/.pylint.d
       - DJANGO_CONFIGURATION=Development
     env_file:
-      - env.d/development/backend.defaults
-      - env.d/development/backend.local
+      - deploy/env/backend.defaults
+      - deploy/env/backend.local
     ports:
       - "8901:8000"
     depends_on:
@@ -230,8 +230,8 @@ services:
       # start-full feature).
       - OPENSEARCH_INDEX_THREADS=False
     env_file:
-      - env.d/development/backend.defaults
-      - env.d/development/backend.local
+      - deploy/env/backend.defaults
+      - deploy/env/backend.local
     ports:
       - "8901:8000"
     depends_on:
@@ -249,8 +249,8 @@ services:
     environment:
       - DJANGO_CONFIGURATION=DevelopmentMinimal
     env_file:
-      - env.d/development/backend.defaults
-      - env.d/development/backend.local
+      - deploy/env/backend.defaults
+      - deploy/env/backend.local
     ports:
       - "8901:8000"
     depends_on:
@@ -306,8 +306,8 @@ services:
       - FLOWER_UNAUTHENTICATED_API=true
       - DJANGO_CONFIGURATION=Development
     env_file:
-      - env.d/development/backend.defaults
-      - env.d/development/backend.local
+      - deploy/env/backend.defaults
+      - deploy/env/backend.local
     volumes:
       - ./src/backend:/app
     ports:
@@ -328,8 +328,8 @@ services:
   frontend-dev:
     extends: frontend-base
     env_file:
-      - env.d/development/frontend.defaults
-      - env.d/development/frontend.local
+      - deploy/env/frontend.defaults
+      - deploy/env/frontend.local
     command: ["npm", "run", "dev"]
     volumes:
       - ./src/frontend/:/home/frontend/
@@ -363,8 +363,8 @@ services:
     volumes:
       - ".:/app"
     env_file:
-      - env.d/development/crowdin.defaults
-      - env.d/development/crowdin.local
+      - deploy/env/crowdin.defaults
+      - deploy/env/crowdin.local
     user: "${DOCKER_USER:-1000}"
     working_dir: /app
 
@@ -373,8 +373,8 @@ services:
       context: src/mta-in
       target: runtime-prod
     env_file:
-      - env.d/development/mta-in.defaults
-      - env.d/development/mta-in.local
+      - deploy/env/mta-in.defaults
+      - deploy/env/mta-in.local
     ports:
       - "8910:25"
     depends_on:
@@ -387,8 +387,8 @@ services:
       context: src/mta-in
       target: runtime-dev
     env_file:
-      - env.d/development/mta-in.defaults
-      - env.d/development/mta-in.local
+      - deploy/env/mta-in.defaults
+      - deploy/env/mta-in.local
     environment:
       - EXEC_CMD=true
       - MDA_API_BASE_URL=http://localhost:8000/api/mail/
@@ -424,10 +424,10 @@ services:
         DOCKER_USER: ${DOCKER_USER:-65532}
     user: ${DOCKER_USER:-65532}
     env_file:
-      - env.d/development/mta-in.defaults
-      - env.d/development/mta-in.local
-      - env.d/development/mta-in-py.defaults
-      - env.d/development/mta-in-py.local
+      - deploy/env/mta-in.defaults
+      - deploy/env/mta-in.local
+      - deploy/env/mta-in-py.defaults
+      - deploy/env/mta-in-py.local
     ports:
       - "8920:25"
       - "9120:9100"  # Prometheus metrics
@@ -459,10 +459,10 @@ services:
     security_opt:
       - no-new-privileges:true
     env_file:
-      - env.d/development/mta-in.defaults
-      - env.d/development/mta-in.local
-      - env.d/development/mta-in-py.defaults
-      - env.d/development/mta-in-py.local
+      - deploy/env/mta-in.defaults
+      - deploy/env/mta-in.local
+      - deploy/env/mta-in-py.defaults
+      - deploy/env/mta-in-py.local
     environment:
       - EXEC_CMD=true
       - MDA_API_BASE_URL=http://localhost:8000/api/mail/
@@ -479,8 +479,8 @@ services:
       context: src/mta-out
       target: runtime-prod
     env_file:
-      - env.d/development/mta-out.defaults
-      - env.d/development/mta-out.local
+      - deploy/env/mta-out.defaults
+      - deploy/env/mta-out.local
     ports:
       - "8911:587"
     depends_on:
@@ -494,8 +494,8 @@ services:
       context: src/mta-out
       target: runtime-dev
     env_file:
-      - env.d/development/mta-out.defaults
-      - env.d/development/mta-out.local
+      - deploy/env/mta-out.defaults
+      - deploy/env/mta-out.local
     environment:
       - EXEC_CMD=true
       - MTA_OUT_SMTP_HOST=localhost:587
@@ -521,8 +521,8 @@ services:
       context: src/socks-proxy
       target: runtime
     env_file:
-      - env.d/development/socks-proxy.defaults
-      - env.d/development/socks-proxy.local
+      - deploy/env/socks-proxy.defaults
+      - deploy/env/socks-proxy.local
     ports:
       - "8916:1080"
 

@@ -1,6 +1,6 @@
 ARG FRONTEND_IMAGE=frontend-build-output
 
-FROM node:24.18.0-alpine@sha256:a0b9bf06e4e6193cf7a0f58816cc935ff8c2a908f81e6f1a95432d679c54fbfd AS frontend-dev-base
+FROM node:24.18.0-slim@sha256:cb4e8f7c443347358b7875e717c29e27bf9befc8f5a26cf18af3c3dec80e58c5 AS frontend-dev-base
 
 ENV npm_config_cache=/tmp/npm-cache
 

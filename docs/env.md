@@ -539,7 +539,7 @@ _Set only to receive a startup deprecation warning; otherwise ignored._
 
 ## Environment Files
 
-The application uses environment files located in `env.d/development/` for different services:
+The application uses environment files located in `deploy/env/` for different services:
 
 - `backend.defaults` - Main Django application settings
 - `common.defaults` - Shared settings across services
