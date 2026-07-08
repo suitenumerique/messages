@@ -1,6 +1,6 @@
 ARG FRONTEND_IMAGE=frontend-build-output
 
-FROM node:22-alpine AS frontend-deps
+FROM node:24.18.0-alpine@sha256:a0b9bf06e4e6193cf7a0f58816cc935ff8c2a908f81e6f1a95432d679c54fbfd AS frontend-dev-base
 
 ENV npm_config_cache=/tmp/npm-cache
 
@@ -9,10 +9,16 @@ WORKDIR /home/frontend/
 
 RUN mkdir -p /tmp/npm-cache && chown -R ${DOCKER_USER} /tmp/npm-cache /home/frontend
 
-# Install deps and run all npm commands as the user running the container
+# Run all npm commands as the user running the container.
 USER ${DOCKER_USER}
-COPY --chown=${DOCKER_USER} package*.json ./
-RUN npm install
+
+# ---- Production dependency install (ONLY for the prod build below) ----
+# frontend-build runs `npm run build`, which needs node_modules present in the
+# image; the dev/tools services use the lean frontend-dev-base above instead.
+# .npmrc sets install-strategy=linked (symlinked/deduplicated node_modules).
+FROM frontend-dev-base AS frontend-deps
+COPY --chown=${DOCKER_USER} package*.json .npmrc ./
+RUN npm ci
 
 FROM frontend-deps AS frontend-build
 
@@ -33,7 +39,7 @@ COPY --from=frontend-build /home/frontend/dist /app
 # frontend-deps, frontend-build, and frontend-build-output entirely
 FROM ${FRONTEND_IMAGE} AS frontend-source
 
-FROM alpine:3.21 AS tools-download
+FROM alpine:3.21@sha256:48b0309ca019d89d40f670aa1bc06e426dc0931948452e8491e3d65087abc07d AS tools-download
 ARG TARGETARCH
 
 ARG CADDY_VERSION=2.9.1

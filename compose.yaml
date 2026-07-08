@@ -1,8 +1,18 @@
 name: st-messages
 
+# Raise the open-file limit for the Django dev server + import workers. The
+# Docker default (1024) is too low: the dev ``runserver`` keeps inbound HTTP
+# keep-alive connections open with no idle timeout, so a long UI session polling
+# the API (plus large imports opening S3 connections) exhausts FDs and wedges
+# the backend with "Too many open files".
+x-nofile-ulimits: &nofile-ulimits
+  nofile:
+    soft: 262144
+    hard: 262144
+
 services:
   postgresql:
-    image: postgres:16.6
+    image: postgres:16.6@sha256:557fea37a744d5f4c8faab304b0a90858b53ab119735a88c131fd19dab802f36
     ports:
       - "8912:5432"
     healthcheck:
@@ -20,7 +30,7 @@ services:
       - "8913:6379"
 
   opensearch:
-    image: opensearchproject/opensearch:2.19.2
+    image: opensearchproject/opensearch:2.19.2@sha256:69588c664014fa3d3260ed5dd337f8538fec94790dad00bfbe92301eaaaac240
     environment:
       - discovery.type=single-node
       - bootstrap.memory_lock=true
@@ -46,14 +56,14 @@ services:
         hard: 65536
 
   mailcatcher:
-    image: maildev/maildev:2.2.1
+    image: maildev/maildev:2.2.1@sha256:180ef51f65eefebb0e7122d8308813c1fd7bff164bc440ce5a3c2feee167a810
     ports:
       - "8904:1080"
       - "8917:1025"
 
   objectstorage:
     # user: ${DOCKER_USER:-1000}
-    image: rustfs/rustfs:1.0.0-alpha.83
+    image: rustfs/rustfs:1.0.0-alpha.83@sha256:1cfa82fb394a7c6a4ffc24f5333b52afee608d258503f94b37fcce5cc965c896
     environment:
       - RUSTFS_ACCESS_KEY=st-messages
       - RUSTFS_SECRET_KEY=password
@@ -80,6 +90,56 @@ services:
     volumes:
       - objectstorage-data:/data
 
+  keycloak:
+    image: quay.io/keycloak/keycloak:26.6.4@sha256:0aae0de7fca85525f727d3354df17896092de8bb26ae4c12d89c77e5df8cbce4
+    volumes:
+      - ./src/keycloak/realm.json:/opt/keycloak/data/import/realm.json:ro
+      - ./src/keycloak/themes/dsfr-2.3.4.jar:/opt/keycloak/providers/keycloak-theme.jar:ro
+      - ./src/keycloak/bulk-role-membership/bulk-role-membership.jar:/opt/keycloak/providers/bulk-role-membership.jar:ro
+    environment:
+      - HOST=http://localhost:8902
+      - ADMIN_HOST=http://localhost:8902
+    command:
+      - start-dev
+      - --features=preview
+      - --import-realm
+      - --proxy-headers=xforwarded
+      - --http-enabled=true
+      - --hostname=$${HOST}
+      - --hostname-admin=$${ADMIN_HOST}
+      - --http-port=8802
+      # Expose the management health endpoints (:9000/health/*) so the
+      # healthcheck below can tell when Keycloak is actually serving.
+      - --health-enabled=true
+    env_file:
+      - env.d/development/keycloak.defaults
+      - env.d/development/keycloak.local
+    ports:
+      - "8902:8802"
+    # Without a healthcheck, `--wait` / `depends_on: service_started` consider
+    # Keycloak ready the instant the container process launches — but the JVM is
+    # still booting + importing the realm for several seconds, so :8902 500s.
+    # The image ships no curl/wget, so probe the management readiness endpoint
+    # (:9000/health/ready, 200 only once the realm import + DB are up) with
+    # bash's /dev/tcp.
+    healthcheck:
+      test:
+        - CMD
+        - bash
+        - -c
+        - "exec 3<>/dev/tcp/localhost/9000; printf 'GET /health/ready HTTP/1.1\\r\\nHost: localhost\\r\\nConnection: close\\r\\n\\r\\n' >&3; head -n1 <&3 | grep -q ' 200'"
+      interval: 3s
+      timeout: 5s
+      retries: 40
+      # During start-up, probe every second (instead of `interval`) so Keycloak
+      # is detected healthy within ~1s of actually serving. start_period is set
+      # to comfortably cover a cold JVM boot + realm import so those early
+      # failures stay in the grace window.
+      start_period: 25s
+      start_interval: 1s
+    depends_on:
+      - postgresql
+
   backend-base:
     build:
       context: src/backend
@@ -98,6 +158,7 @@ services:
       # environment when the backend's Python floor moves. Comment this mount
       # out to run exactly what CI/prod install from PyPI.
       - ./src/jmap-email/jmap_email:/venv/lib/${PYTHON_VERSION:-python3.14}/site-packages/jmap_email
+    ulimits: *nofile-ulimits
     healthcheck:
       test: ["CMD", "python", "-c", "import urllib.request as u; u.urlopen('http://localhost:8000/__heartbeat__/', timeout=1)"]
       interval: 3s
@@ -125,9 +186,40 @@ services:
       opensearch:
         condition: service_healthy
       keycloak:
-        condition: service_started
+        condition: service_healthy
       mailcatcher:
         condition: service_started
+
+  # Lean backend for the default `make start`: same Development config (Redis
+  # cache + Celery broker, real worker) but WITHOUT OpenSearch, object storage
+  # or the MTAs — so a plain dev loop boots a handful of containers. Under the
+  # `light` profile so a bare `docker compose up` (make start-full) skips it;
+  # `make start` names it explicitly. `backend-dev` is left untouched because
+  # `make test-back` (docker compose run backend-dev) relies on its OpenSearch /
+  # object-storage deps to provision those for the search/storage test suites.
+  backend-dev-light:
+    extends: backend-base
+    profiles:
+      - light
+    environment:
+      - PYLINTHOME=/app/.pylint.d
+      - DJANGO_CONFIGURATION=Development
+      # No OpenSearch container in this stack: skip the per-delivery reindex
+      # enqueue so the worker isn't logging connection errors (search is a
+      # start-full feature).
+      - OPENSEARCH_INDEX_THREADS=False
+    env_file:
+      - env.d/development/backend.defaults
+      - env.d/development/backend.local
+    ports:
+      - "8901:8000"
+    depends_on:
+      postgresql:
+        condition: service_healthy
+      redis:
+        condition: service_started
+      keycloak:
+        condition: service_healthy
 
   backend-db:
     extends: backend-base
@@ -162,6 +254,7 @@ services:
       args:
         DOCKER_USER: ${DOCKER_USER:-1000}
     user: ${DOCKER_USER:-1000}
+    ulimits: *nofile-ulimits
     command: ["python", "worker.py", "--loglevel=DEBUG"]
     environment:
       - DJANGO_CONFIGURATION=Development
@@ -174,6 +267,38 @@ services:
     mem_limit: 2G
     depends_on:
       - backend-dev
+
+  # Worker for the light stack (see backend-dev-light). Needs only the
+  # broker (Redis) + DB — not the web backend, not OpenSearch. Defined inline
+  # rather than via ``extends: worker-dev`` because ``extends`` drags in that
+  # service's ``depends_on: [backend-dev]``, which would pull the full backend
+  # (and its OpenSearch / object-storage deps) back into the light stack.
+  worker-dev-light:
+    profiles:
+      - light
+    build:
+      context: src/backend
+      target: runtime-dev
+      args:
+        DOCKER_USER: ${DOCKER_USER:-1000}
+    user: ${DOCKER_USER:-1000}
+    ulimits: *nofile-ulimits
+    command: ["python", "worker.py", "--loglevel=DEBUG"]
+    environment:
+      - DJANGO_CONFIGURATION=Development
+      - OPENSEARCH_INDEX_THREADS=False
+    env_file:
+      - env.d/development/backend.defaults
+      - env.d/development/backend.local
+    volumes:
+      - ./src/backend:/app
+      - ./data/static:/data/static
+    mem_limit: 2G
+    depends_on:
+      postgresql:
+        condition: service_healthy
+      redis:
+        condition: service_started
 
   worker-ui:
     build:
@@ -201,7 +326,9 @@ services:
     build:
       context: ./src/frontend
       dockerfile: Dockerfile
-      target: frontend-deps
+      # Lean image with no node_modules baked in — deps live in the
+      # frontend-node-modules volume, installed by `make install-frozen-front`.
+      target: frontend-dev-base
       args:
         DOCKER_USER: ${DOCKER_USER:-1000}
 
@@ -213,6 +340,12 @@ services:
     command: ["npm", "run", "dev"]
     volumes:
       - ./src/frontend/:/home/frontend/
+      # Keep node_modules on a fast Docker volume instead of the (slow,
+      # virtualized) host bind mount above. Writing ~thousands of files to a
+      # bind mount is what made installs take minutes; a named volume lives on
+      # the container filesystem, so `npm ci` runs in ~20s. Populated by
+      # `make install-frozen-front`.
+      - frontend-node-modules:/home/frontend/node_modules
     ports:
       - "8900:3000"
 
@@ -223,13 +356,17 @@ services:
     volumes:
       - ./src/backend/core/api/openapi.json:/home/backend/core/api/openapi.json
       - ./src/frontend/:/home/frontend/
+      # Share the same fast node_modules volume as frontend-dev so that
+      # `make install-frozen-front` (which runs here) installs into the volume
+      # that frontend-dev consumes.
+      - frontend-node-modules:/home/frontend/node_modules
 
   frontend-tools-amd64:
     extends: frontend-tools
     platform: linux/amd64
 
   crowdin:
-    image: crowdin/cli:4.11.0
+    image: crowdin/cli:4.11.0@sha256:9b32eafcfd8ba4b5183bd601bfeb8a65b0d338f2d2fc36df155f4845ee244eff
     volumes:
       - ".:/app"
     env_file:
@@ -376,6 +513,16 @@ services:
     volumes:
       - ./src/mta-out:/app
 
+  mta-out-uv:
+    profiles:
+      - tools
+    volumes:
+      - ./src/mta-out:/app
+    build:
+      context: src/mta-out
+      target: uv
+    pull_policy: build
+
   socks-proxy:
     build:
       context: src/socks-proxy
@@ -397,42 +544,6 @@ services:
     depends_on:
       socks-proxy:
         condition: service_started
-
-  mta-out-uv:
-    profiles:
-      - tools
-    volumes:
-      - ./src/mta-out:/app
-    build:
-      context: src/mta-out
-      target: uv
-    pull_policy: build
-
-  keycloak:
-    image: quay.io/keycloak/keycloak:26.6.4
-    volumes:
-      - ./src/keycloak/realm.json:/opt/keycloak/data/import/realm.json:ro
-      - ./src/keycloak/themes/dsfr-2.3.4.jar:/opt/keycloak/providers/keycloak-theme.jar:ro
-      - ./src/keycloak/bulk-role-membership/bulk-role-membership.jar:/opt/keycloak/providers/bulk-role-membership.jar:ro
-    environment:
-      - HOST=http://localhost:8902
-      - ADMIN_HOST=http://localhost:8902
-    command:
-      - start-dev
-      - --features=preview
-      - --import-realm
-      - --proxy-headers=xforwarded
-      - --http-enabled=true
-      - --hostname=$${HOST}
-      - --hostname-admin=$${ADMIN_HOST}
-      - --http-port=8802
-    env_file:
-      - env.d/development/keycloak.defaults
-      - env.d/development/keycloak.local
-    ports:
-      - "8902:8802"
-    depends_on:
-      - postgresql
 
   mpa:
     build:
@@ -480,3 +591,4 @@ services:
 
 volumes:
   objectstorage-data:
+  frontend-node-modules:

@@ -1,4 +1,4 @@
-FROM debian:12.10-slim
+FROM debian:12.10-slim@sha256:4b50eb66f977b4062683ff434ef18ac191da862dbe966961bc11990cf5791a8d
 
 RUN apt-get update && \
     apt-get install -y lsb-release wget gpg ruby nginx netcat-openbsd procps && \

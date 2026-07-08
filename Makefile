@@ -86,6 +86,7 @@ bootstrap: ## Prepare the project for local development
 	@echo "$(RESET)"
 	@echo "$(GREEN)Starting bootstrap process...$(RESET)"
 	@echo ""
+	@$(MAKE) start-deps
 	@$(MAKE) update
 	@$(MAKE) superuser
 	@$(MAKE) start
@@ -95,19 +96,36 @@ bootstrap: ## Prepare the project for local development
 	@echo "$(BOLD)Next steps:$(RESET)"
 	@echo "  • Visit http://localhost:8900 to access the application"
 	@echo "  • Run 'make help' to see all available commands"
+	@echo "  • Need search, object storage or the MTAs? Run 'make bootstrap-full'"
 	@echo ""
 .PHONY: bootstrap
 
-update:  ## Update the project with latest changes
+bootstrap-full: ## Prepare the project for local development with the full stack
+	@echo "$(GREEN)Starting full bootstrap process...$(RESET)"
+	@echo ""
+	@$(MAKE) start-deps
+	@$(MAKE) update-full
+	@$(MAKE) superuser
+	@$(MAKE) start-full
+	@echo ""
+	@echo "$(GREEN)🎉 Full bootstrap completed successfully!$(RESET)"
+	@echo ""
+.PHONY: bootstrap-full
+
+update:  ## Update the project with latest changes (light stack; run this when pulling code)
 	@$(MAKE) data/media
 	@$(MAKE) data/static
 	@$(MAKE) create-env-files
-	@$(MAKE) create-buckets
-	@$(MAKE) build
 	@$(MAKE) collectstatic
 	@$(MAKE) migrate
 	@$(MAKE) install-frozen-front
 .PHONY: update
+
+update-full:  ## Update the project with latest changes incl. object-storage buckets (full stack)
+update-full: \
+	update \
+	create-buckets
+.PHONY: update-full
 
 # -- Docker/compose
 build: ## build the project containers
@@ -147,13 +165,37 @@ logs: ## display all services logs (follow mode)
 	@$(COMPOSE) logs -f
 .PHONY: logs
 
-start: ## start all development services
-	@$(COMPOSE) up --force-recreate --build -d frontend-dev backend-dev worker-dev mta-in --wait
+start-deps: ## start the slow infra deps (postgres, redis, keycloak) in the background so they warm up while the rest of bootstrap runs
+	@$(COMPOSE) up -d --no-recreate postgresql redis keycloak
+.PHONY: start-deps
+
+start: ## start the light dev stack (backend, worker, frontend, keycloak, postgresql, redis)
+	@$(COMPOSE) stop backend-dev worker-dev worker-ui >/dev/null 2>&1 || true
+	@$(COMPOSE) up --build -d --wait \
+		postgresql \
+		redis \
+		keycloak \
+		frontend-dev \
+		backend-dev-light \
+		worker-dev-light
 .PHONY: start
 
-start-minimal: ## start minimal services (backend, frontend, keycloak and DB)
-	@$(COMPOSE) up --force-recreate --build -d backend-db frontend-dev keycloak --wait
-.PHONY: start-minimal
+start-full: ## start the full dev stack (adds OpenSearch, object storage, mailcatcher and the MTAs)
+	@$(COMPOSE) stop backend-dev-light worker-dev-light >/dev/null 2>&1 || true
+	@$(COMPOSE) up --build -d --wait \
+		postgresql \
+		redis \
+		opensearch \
+		objectstorage \
+		mailcatcher \
+		keycloak \
+		frontend-dev \
+		backend-dev \
+		worker-dev \
+		worker-ui \
+		mta-in-py \
+		mpa
+.PHONY: start-full
 
 status: ## an alias for "docker compose ps"
 	@$(COMPOSE) ps
@@ -163,21 +205,21 @@ stop: ## stop all development services
 	@$(COMPOSE) --profile "*" stop
 .PHONY: stop
 
-restart: ## restart all development services
+restart: ## restart the light dev stack
 restart: \
 	stop \
 	start
 .PHONY: restart
 
-restart-minimal: ## restart minimal services
-restart-minimal: \
+restart-full: ## restart the full dev stack
+restart-full: \
 	stop \
-	start-minimal
-.PHONY: restart-minimal
+	start-full
+.PHONY: restart-full
 
 create-buckets: ## create the message imports & blobs buckets in objectstorage
 	@$(COMPOSE) up -d objectstorage --wait
-	@$(MANAGE_DB) create_bucket --storage message-imports --expire-days 1
+	@$(MANAGE_DB) create_bucket --storage message-imports --expire-days 7
 	@$(MANAGE_DB) create_bucket --storage message-blobs
 .PHONY: create-buckets
 
@@ -591,9 +633,10 @@ shell-front: ## open a shell in the frontend container
 .PHONY: shell-front
 
 # Front
-install-front: ## install the frontend locally
+install-front: ## install the frontend locally (freezes the lockfile, then runs the dependency guardrail)
 	@args="$(filter-out $@,$(MAKECMDGOALS))" && \
 	$(COMPOSE) run --rm --build frontend-tools npm install $${args:-${1}}
+	@$(COMPOSE) run --rm frontend-tools npm run check:deps
 .PHONY: install-front
 
 install-frozen-front: ## install the frontend locally, following the frozen lockfile
