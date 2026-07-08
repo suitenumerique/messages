@@ -7,7 +7,13 @@ ENV npm_config_cache=/tmp/npm-cache
 ARG DOCKER_USER=1000
 WORKDIR /home/frontend/
 
-RUN mkdir -p /tmp/npm-cache && chown -R ${DOCKER_USER} /tmp/npm-cache /home/frontend
+# Pre-create an empty node_modules owned by DOCKER_USER. The runtime mounts a
+# named volume there (see compose.yaml); Docker initializes an empty volume from
+# the image's directory *including its ownership*, so this is what makes the
+# volume writable by the non-root container user. Without it the fresh volume is
+# root-owned and `npm ci` fails with EACCES.
+RUN mkdir -p /tmp/npm-cache /home/frontend/node_modules \
+    && chown -R ${DOCKER_USER} /tmp/npm-cache /home/frontend
 
 # Run all npm commands as the user running the container.
 USER ${DOCKER_USER}
