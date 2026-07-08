@@ -1,8 +1,8 @@
 # https://hub.docker.com/_/python
-FROM python:3.14.4-slim-trixie AS base
+FROM python:3.14.6-slim-trixie AS base
 
 # Bump this to force an update of the apt repositories
-ENV MIN_UPDATE_DATE="2026-02-20"
+ENV MIN_UPDATE_DATE="2026-07-08"
 
 WORKDIR /app
 
@@ -23,7 +23,9 @@ RUN apt-get update && apt-get upgrade -y && apt-get install -y --no-install-reco
 # ---- uv package manager ----
 FROM base AS uv
 
-COPY --from=ghcr.io/astral-sh/uv:0.10.4 /uv /uvx /bin/
+# Pin uv by SHA256 digest for supply chain security.
+# Verify with: gh attestation verify --owner astral-sh oci://ghcr.io/astral-sh/uv:0.11.28
+COPY --from=ghcr.io/astral-sh/uv@sha256:0f36cb9361a3346885ca3677e3767016687b5a170c1a6b88465ec14aefec90aa /uv /uvx /bin/
 
 ENV UV_COMPILE_BYTECODE=1
 ENV UV_LINK_MODE=copy
