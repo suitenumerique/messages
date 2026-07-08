@@ -79,7 +79,7 @@ ENV VIRTUAL_ENV_PROMPT=venv
 # We wrap commands run in this container by the following entrypoint that
 # creates a user on-the-fly with the container user ID (see USER) and root group
 # ID.
-COPY ./entrypoint /usr/local/bin/entrypoint
+COPY --chmod=755 ./entrypoint /usr/local/bin/entrypoint
 ENTRYPOINT [ "/usr/local/bin/entrypoint" ]
 
 
