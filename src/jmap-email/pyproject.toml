@@ -5,7 +5,7 @@ description = "A strict-JMAP RFC 8621 Email object library for Python 3.14+ with
 readme = "README.md"
 license = "MIT"
 authors = [{ name = "ANCT", email = "contact@suite.anct.gouv.fr" }]
-requires-python = ">=3.14.5,<4.0"
+requires-python = ">=3.14.6,<4.0"
 keywords = ["jmap", "rfc5322", "rfc8621", "email", "mime", "parser", "composer"]
 classifiers = [
     "Development Status :: 4 - Beta",

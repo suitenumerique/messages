@@ -4,7 +4,7 @@
   "private": true,
   "type": "module",
   "engines": {
-    "node": ">=22.0.0 <23.0.0"
+    "node": "24.18.0"
   },
   "scripts": {
     "dev": "vite",
@@ -28,7 +28,8 @@
     "mobile:ota:bucket": "node scripts/create-ota-bucket.mjs",
     "mobile:ota:keygen": "node scripts/generate-ota-keys.mjs",
     "mobile:ota:publish": "node scripts/publish-ota.mjs",
-    "mobile:assets": "capacitor-assets generate --ios --android --pwa --iconBackgroundColor '#ffffff' --iconBackgroundColorDark '#161B28' --splashBackgroundColor '#ffffff' --splashBackgroundColorDark '#161B28'"
+    "mobile:assets": "capacitor-assets generate --ios --android --pwa --iconBackgroundColor '#ffffff' --iconBackgroundColorDark '#161B28' --splashBackgroundColor '#ffffff' --splashBackgroundColorDark '#161B28'",
+    "check:deps": "node scripts/check-node-modules.mjs"
   },
   "dependencies": {
     "@blocknote/core": "0.51.4",
@@ -40,9 +41,9 @@
     "@capacitor/filesystem": "8.1.2",
     "@capacitor/share": "8.0.1",
     "@capgo/capacitor-updater": "8.50.1",
-    "@gouvfr-lasuite/cunningham-react": "4.3.0",
+    "@gouvfr-lasuite/cunningham-react": "4.3.1",
     "@gouvfr-lasuite/drive-sdk": "0.0.2",
-    "@gouvfr-lasuite/ui-kit": "0.23.2",
+    "@gouvfr-lasuite/ui-kit": "0.26.0",
     "@hookform/resolvers": "5.2.2",
     "@sentry/react": "10.53.1",
     "@tanstack/react-query": "5.90.20",
@@ -50,6 +51,8 @@
     "@tanstack/react-router": "1.170.8",
     "@tanstack/react-router-devtools": "1.167.0",
     "@tanstack/react-table": "8.21.3",
+    "@tiptap/core": "^3.27.3",
+    "@tiptap/pm": "^3.27.3",
     "@viselect/react": "3.9.0",
     "clsx": "2.1.1",
     "date-fns": "4.1.0",
@@ -58,10 +61,12 @@
     "i18next": "25.7.4",
     "i18next-http-backend": "3.0.2",
     "react": "19.2.4",
+    "react-aria-components": "1.19.0",
     "react-dom": "19.2.4",
     "react-dropzone": "14.4.0",
     "react-hook-form": "7.71.1",
     "react-i18next": "16.5.4",
+    "react-icons": "5.7.0",
     "react-markdown": "10.1.0",
     "react-resizable-panels": "4.2.2",
     "react-toastify": "11.0.5",
@@ -80,7 +85,7 @@
     "@tanstack/eslint-plugin-query": "5.91.4",
     "@tanstack/router-cli": "1.167.13",
     "@tanstack/router-plugin": "1.168.11",
-    "@types/node": "25.2.0",
+    "@types/node": "24.13.2",
     "@types/react": "19.2.10",
     "@types/react-dom": "19.2.3",
     "@vitejs/plugin-legacy": "8.2.1",
@@ -106,7 +111,18 @@
     "@rollup/rollup-linux-x64-musl": "4.57.1"
   },
   "overrides": {
-    "zod": "4.3.6"
+    "zod": "4.3.6",
+    "@types/node": "24.13.2",
+    "@gouvfr-lasuite/cunningham-react": "4.3.1",
+    "react-aria": "3.50.0",
+    "react-stately": "3.48.0",
+    "react-aria-components": "1.19.0",
+    "@internationalized/date": "3.12.2",
+    "@react-aria/calendar": "3.10.1",
+    "@react-aria/datepicker": "3.17.1",
+    "@react-aria/i18n": "3.13.1",
+    "@react-stately/calendar": "3.10.1",
+    "@react-stately/datepicker": "3.17.1"
   },
   "browserslist": [
     "defaults",

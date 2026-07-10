@@ -25,6 +25,12 @@ DOCKER_UID          = $(shell id -u)
 DOCKER_GID          = $(shell id -g)
 DOCKER_USER         = $(DOCKER_UID):$(DOCKER_GID)
 COMPOSE             = DOCKER_USER=$(DOCKER_USER) DOCKER_UID=$(DOCKER_UID) docker compose
+# Local tag for the shared base image (deploy/python-uv). `build-python-base`
+# builds it, and the Dockerfiles default `FROM ${PYTHON_UV_IMAGE}` to this same
+# tag, so compose builds resolve it. (CI publishes/overrides the base via the
+# docker-publish workflow build-args, not this variable — overriding it here
+# would only retag the local build, leaving the compose `FROM` unchanged.)
+PYTHON_UV_IMAGE     ?= messages-python-uv:local
 COMPOSE_E2E         = DOCKER_USER=$(DOCKER_USER) docker compose -f src/e2e/compose.yaml
 COMPOSE_EXEC        = $(COMPOSE) exec
 COMPOSE_EXEC_APP    = $(COMPOSE_EXEC) backend-dev
@@ -54,15 +60,15 @@ data/static:
 
 create-env-files: ## Create empty .local env files for local development
 create-env-files: \
-	env.d/development/crowdin.local \
-	env.d/development/postgresql.local \
-	env.d/development/keycloak.local \
-	env.d/development/backend.local \
-	env.d/development/frontend.local \
-	env.d/development/mta-in.local \
-	env.d/development/mta-in-py.local \
-	env.d/development/mta-out.local \
-	env.d/development/socks-proxy.local
+	deploy/env/crowdin.local \
+	deploy/env/postgresql.local \
+	deploy/env/keycloak.local \
+	deploy/env/backend.local \
+	deploy/env/frontend.local \
+	deploy/env/mta-in.local \
+	deploy/env/mta-in-py.local \
+	deploy/env/mta-out.local \
+	deploy/env/socks-proxy.local
 .PHONY: create-env-files
 
 bootstrap: ## Prepare the project for local development
@@ -86,6 +92,8 @@ bootstrap: ## Prepare the project for local development
 	@echo "$(RESET)"
 	@echo "$(GREEN)Starting bootstrap process...$(RESET)"
 	@echo ""
+	@$(MAKE) create-env-files
+	@$(MAKE) start-deps
 	@$(MAKE) update
 	@$(MAKE) superuser
 	@$(MAKE) start
@@ -95,26 +103,44 @@ bootstrap: ## Prepare the project for local development
 	@echo "$(BOLD)Next steps:$(RESET)"
 	@echo "  • Visit http://localhost:8900 to access the application"
 	@echo "  • Run 'make help' to see all available commands"
+	@echo "  • Need search, object storage or the MTAs? Run 'make bootstrap-full'"
 	@echo ""
 .PHONY: bootstrap
 
-update:  ## Update the project with latest changes
+bootstrap-full: ## Prepare the project for local development with the full stack
+	@echo "$(GREEN)Starting full bootstrap process...$(RESET)"
+	@echo ""
+	@$(MAKE) create-env-files
+	@$(MAKE) start-deps
+	@$(MAKE) update-full
+	@$(MAKE) superuser
+	@$(MAKE) start-full
+	@echo ""
+	@echo "$(GREEN)🎉 Full bootstrap completed successfully!$(RESET)"
+	@echo ""
+.PHONY: bootstrap-full
+
+update:  ## Update the project with latest changes (light stack; run this when pulling code)
 	@$(MAKE) data/media
 	@$(MAKE) data/static
 	@$(MAKE) create-env-files
-	@$(MAKE) create-buckets
-	@$(MAKE) build
 	@$(MAKE) collectstatic
 	@$(MAKE) migrate
 	@$(MAKE) install-frozen-front
 .PHONY: update
 
+update-full:  ## Update the project with latest changes incl. object-storage buckets (full stack)
+update-full: \
+	update \
+	create-buckets
+.PHONY: update-full
+
 # -- Docker/compose
-build: ## build the project containers
+build: build-python-base ## build the project containers
 	@$(COMPOSE) build
 .PHONY: build
 
-build-back-distroless: ## build the distroless production image
+build-back-distroless: build-python-base ## build the distroless production image
 	@docker buildx build --load --target runtime-distroless-prod -t messages-distroless \
 		-f src/backend/Dockerfile \
 		src/backend/
@@ -128,7 +154,7 @@ test-back-distroless: build-back-distroless ## build and smoke-test the distrole
 		print(f'OK: Python {sys.version.split()[0]}, {ssl.OPENSSL_VERSION}')"
 .PHONY: test-back-distroless
 
-build-pymta-distroless: ## build the pymta distroless production image
+build-pymta-distroless: build-python-base ## build the pymta distroless production image
 	@docker build --target runtime-distroless-prod -t messages-pymta-distroless -f src/mta-in/Dockerfile.pymta src/mta-in/
 .PHONY: build-pymta-distroless
 
@@ -147,13 +173,51 @@ logs: ## display all services logs (follow mode)
 	@$(COMPOSE) logs -f
 .PHONY: logs
 
-start: ## start all development services
-	@$(COMPOSE) up --force-recreate --build -d frontend-dev backend-dev worker-dev mta-in --wait
+build-python-base: ## build the shared python+uv base image (deploy/python-uv) that the backend and MTA images inherit from
+	@docker build -t $(PYTHON_UV_IMAGE) deploy/python-uv
+.PHONY: build-python-base
+
+start-deps: ## start the slow infra deps (postgres, redis, keycloak) in the background so they warm up while the rest of bootstrap runs
+	@$(COMPOSE) up -d --no-recreate postgresql redis keycloak
+.PHONY: start-deps
+
+# Fail fast (before booting a broken stack) when the project has not been
+# bootstrapped: `make bootstrap` creates the gitignored env files and the
+# frontend node_modules volume. start/start-full depend on this.
+check-bootstrapped:
+	@test -f deploy/env/backend.local || { \
+		printf "\n$(BOLD)✗ Not bootstrapped$(RESET): env files are missing.\n  Run $(BOLD)make bootstrap$(RESET) first.\n\n" >&2; exit 1; }
+	@docker volume inspect st-messages_frontend-node-modules >/dev/null 2>&1 || { \
+		printf "\n$(BOLD)✗ Not bootstrapped$(RESET): frontend dependencies are not installed.\n  Run $(BOLD)make bootstrap$(RESET) first.\n\n" >&2; exit 1; }
+.PHONY: check-bootstrapped
+
+start: check-bootstrapped build-python-base ## start the light dev stack (backend, worker, frontend, keycloak, postgresql, redis)
+	@$(COMPOSE) stop backend-dev worker-dev worker-ui opensearch objectstorage mailcatcher mta-in-py mpa >/dev/null 2>&1 || true
+	@$(COMPOSE) up --build -d --wait \
+		postgresql \
+		redis \
+		keycloak \
+		frontend-dev \
+		backend-dev-light \
+		worker-dev-light
 .PHONY: start
 
-start-minimal: ## start minimal services (backend, frontend, keycloak and DB)
-	@$(COMPOSE) up --force-recreate --build -d backend-db frontend-dev keycloak --wait
-.PHONY: start-minimal
+start-full: check-bootstrapped build-python-base ## start the full dev stack (adds OpenSearch, object storage, mailcatcher and the MTAs)
+	@$(COMPOSE) stop backend-dev-light worker-dev-light >/dev/null 2>&1 || true
+	@$(COMPOSE) up --build -d --wait \
+		postgresql \
+		redis \
+		opensearch \
+		objectstorage \
+		mailcatcher \
+		keycloak \
+		frontend-dev \
+		backend-dev \
+		worker-dev \
+		worker-ui \
+		mta-in-py \
+		mpa
+.PHONY: start-full
 
 status: ## an alias for "docker compose ps"
 	@$(COMPOSE) ps
@@ -163,21 +227,21 @@ stop: ## stop all development services
 	@$(COMPOSE) --profile "*" stop
 .PHONY: stop
 
-restart: ## restart all development services
+restart: ## restart the light dev stack
 restart: \
 	stop \
 	start
 .PHONY: restart
 
-restart-minimal: ## restart minimal services
-restart-minimal: \
+restart-full: ## restart the full dev stack
+restart-full: \
 	stop \
-	start-minimal
-.PHONY: restart-minimal
+	start-full
+.PHONY: restart-full
 
 create-buckets: ## create the message imports & blobs buckets in objectstorage
 	@$(COMPOSE) up -d objectstorage --wait
-	@$(MANAGE_DB) create_bucket --storage message-imports --expire-days 1
+	@$(MANAGE_DB) create_bucket --storage message-imports --expire-days 7
 	@$(MANAGE_DB) create_bucket --storage message-blobs
 .PHONY: create-buckets
 
@@ -229,7 +293,7 @@ lint-check: \
   lint-front
 .PHONY: lint-check
 
-lint-back: ## run back-end linters (with auto-fix)
+lint-back: build-python-base ## run back-end linters (with auto-fix)
 lint-back: \
   format-back \
   check-back \
@@ -294,22 +358,22 @@ test: \
   test-socks-proxy
 .PHONY: test
 
-test-back: ## run back-end tests
+test-back: build-python-base ## run back-end tests
 	@args="$(filter-out $@,$(MAKECMDGOALS))" && \
 	bin/pytest $${args:-${1}}
 .PHONY: test-back
 
-test-back-parallel: ## run all back-end tests in parallel
+test-back-parallel: build-python-base ## run all back-end tests in parallel
 	@args="$(filter-out $@,$(MAKECMDGOALS))" && \
 	bin/pytest -n auto $${args:-${1}}
 .PHONY: test-back-parallel
 
-fuzz-back: ## run back-end fuzz tests
+fuzz-back: build-python-base ## run back-end fuzz tests
 	@args="$(filter-out $@,$(MAKECMDGOALS))" && \
 	bin/pytest -m fuzz $${args:-${1}}
 .PHONY: fuzz-back
 
-fuzz-back-intensive: ## run back-end fuzz tests with 10x more examples (~20-30 min)
+fuzz-back-intensive: build-python-base ## run back-end fuzz tests with 10x more examples (~20-30 min)
 	@args="$(filter-out $@,$(MAKECMDGOALS))" && \
 	rm -rf src/backend/.hypothesis/examples && \
 	FUZZ_EXAMPLES=20000 bin/pytest -m fuzz $${args:-${1}}
@@ -329,37 +393,37 @@ test-front-amd64: ## run the frontend tests in amd64
 	$(COMPOSE) run --rm frontend-tools-amd64 npm run test -- $${args:-${1}}
 .PHONY: test-front-amd64
 
-test-mta-in: ## run the mta-in tests against the Postfix milter implementation
+test-mta-in: build-python-base ## run the mta-in tests against the Postfix milter implementation
 	@$(COMPOSE) run --build --rm mta-in-test
 .PHONY: test-mta-in
 
-test-mta-in-py: ## run the mta-in tests against the pure-Python (aiosmtpd) implementation
+test-mta-in-py: build-python-base ## run the mta-in tests against the pure-Python (aiosmtpd) implementation
 	@$(COMPOSE) run --build --rm mta-in-py-test
 .PHONY: test-mta-in-py
 
-test-mta-out: ## run the mta-out tests
+test-mta-out: build-python-base ## run the mta-out tests
 	@$(COMPOSE) run --build --rm mta-out-test
 .PHONY: test-mta-out
 
-test-mpa: ## run the mpa tests
+test-mpa: build-python-base ## run the mpa tests
 	@$(COMPOSE) run --build --rm mpa-test
 .PHONY: test-mpa
 
-test-jmap-email: ## run the jmap-email package tests (zero infrastructure deps)
+test-jmap-email: build-python-base ## run the jmap-email package tests (zero infrastructure deps)
 	@$(COMPOSE) run --build --rm jmap-email-test
 .PHONY: test-jmap-email
 
-fuzz-jmap-email: ## run the jmap-email Hypothesis fuzz suite
+fuzz-jmap-email: build-python-base ## run the jmap-email Hypothesis fuzz suite
 	@$(COMPOSE) run --build --rm jmap-email-test pytest -m fuzz tests/
 .PHONY: fuzz-jmap-email
 
-lint-jmap-email: ## lint the jmap-email library (ruff check + format check + pylint)
+lint-jmap-email: build-python-base ## lint the jmap-email library (ruff check + format check + pylint)
 	@$(COMPOSE) run --build --rm --entrypoint ruff jmap-email-test check jmap_email tests
 	@$(COMPOSE) run --build --rm --entrypoint ruff jmap-email-test format --check jmap_email tests
 	@$(COMPOSE) run --build --rm --entrypoint pylint jmap-email-test jmap_email tests
 .PHONY: lint-jmap-email
 
-typecheck-jmap-email: ## type-check the jmap-email library with ty (Astral, Rust)
+typecheck-jmap-email: build-python-base ## type-check the jmap-email library with ty (Astral, Rust)
 	@$(COMPOSE) run --build --rm --entrypoint ty jmap-email-test check
 .PHONY: typecheck-jmap-email
 
@@ -367,7 +431,7 @@ release-jmap-email: ## publish jmap-email to PyPI (interactive: TestPyPI → smo
 	@bin/release-jmap-email.sh
 .PHONY: release-jmap-email
 
-test-socks-proxy: ## run the socks-proxy tests
+test-socks-proxy: build-python-base ## run the socks-proxy tests
 	@$(COMPOSE) run --build --rm socks-proxy-test
 .PHONY: test-socks-proxy
 
@@ -392,7 +456,7 @@ test-e2e-dev: ## Setup, run and teardown e2e tests in UI mode with dev frontend
 	@$(MAKE) stop-e2e
 .PHONY: test-e2e-dev
 
-test-e2e-ci: ## Setup and run e2e tests in CI mode
+test-e2e-ci: build-python-base ## Setup and run e2e tests in CI mode
 	@$(MAKE) start-e2e
 	@$(MAKE) test-e2e-bare args="$(args)"
 .PHONY: test-e2e-ci
@@ -468,7 +532,7 @@ migrations-check:  ## check that all model changes have corresponding migrations
 	@$(COMPOSE_RUN_APP_TOOLS) python manage.py makemigrations --check --dry-run
 .PHONY: migrations-check
 
-migrate:  ## run django migrations for the messages project.
+migrate: build-python-base ## run django migrations for the messages project.
 	@echo "$(BOLD)Running migrations$(RESET)"
 	@$(MANAGE_DB) migrate
 .PHONY: migrate
@@ -477,7 +541,7 @@ showmigrations: ## show all migrations for the messages project.
 	@$(MANAGE_DB) showmigrations
 .PHONY: showmigrations
 
-superuser: ## Create an admin superuser with password "admin" and promote user1 as superuser
+superuser: build-python-base ## Create an admin superuser with password "admin" and promote user1 as superuser
 	@echo "$(BOLD)Creating a Django superuser$(RESET)"
 	@$(MANAGE_DB) createsuperuser --email admin@admin.local --password admin
 	@$(MANAGE_DB) createsuperuser --email user1@example.local --password user1
@@ -495,7 +559,7 @@ exec-back: ## open a shell in the running backend-dev container
 	@$(COMPOSE) exec backend-dev /bin/bash
 .PHONY: exec-back
 
-deps-lock-back: ## lock the dependencies
+deps-lock-back: build-python-base ## lock the dependencies
 	@$(COMPOSE) run --rm --build backend-uv uv lock
 	@$(MAKE) deps-audit
 .PHONY: deps-lock-back
@@ -520,7 +584,7 @@ deps-audit-back: ## audit back-end dependencies for vulnerabilities
 deps-audit: deps-audit-back ## alias for deps-audit-back
 .PHONY: deps-audit
 
-collectstatic: ## collect static files
+collectstatic: build-python-base ## collect static files
 	@$(MANAGE_DB) collectstatic --noinput
 .PHONY: collectstatic
 
@@ -550,7 +614,7 @@ reset-db-full: build ## flush database, including schema
 	$(MANAGE_DB) migrate
 .PHONY: reset-db-full
 
-env.d/development/%.local:
+deploy/env/%.local:
 	@echo "# Local development overrides for $(notdir $*)" > $@
 	@echo "# Add your local-specific environment variables below:" >> $@
 	@echo "# Example: DJANGO_DEBUG=True" >> $@
@@ -616,9 +680,10 @@ shell-front: ## open a shell in the frontend container
 .PHONY: shell-front
 
 # Front
-install-front: ## install the frontend locally
+install-front: ## install the frontend locally (freezes the lockfile, then runs the dependency guardrail)
 	@args="$(filter-out $@,$(MAKECMDGOALS))" && \
 	$(COMPOSE) run --rm --build frontend-tools npm install $${args:-${1}}
+	@$(COMPOSE) run --rm frontend-tools npm run check:deps
 .PHONY: install-front
 
 install-frozen-front: ## install the frontend locally, following the frozen lockfile
@@ -697,7 +762,7 @@ i18n-generate-front: ## Extract the frontend translation inside a json to be use
 	@$(COMPOSE) run --rm --build frontend-tools npm run i18n:extract
 .PHONY: i18n-generate-front
 
-api-update-back: ## Update the OpenAPI schema
+api-update-back: build-python-base ## Update the OpenAPI schema
 	bin/update_openapi_schema
 .PHONY: api-update-back
 
@@ -737,10 +802,10 @@ test-keycloak: ## run all Keycloak provider tests (builds JARs, brings up Keyclo
 	@bin/test-keycloak
 .PHONY: test-keycloak
 
-deps-lock-mta-in: ## lock the dependencies for mta-in (shared between both implementations)
+deps-lock-mta-in: build-python-base ## lock the dependencies for mta-in (shared between both implementations)
 	@$(COMPOSE) run --rm --build mta-in-uv uv lock
 .PHONY: deps-lock-mta-in
 
-deps-lock-mta-out: ## lock the dependencies
+deps-lock-mta-out: build-python-base ## lock the dependencies
 	@$(COMPOSE) run --rm --build mta-out-uv uv lock
 .PHONY: deps-lock-mta-out

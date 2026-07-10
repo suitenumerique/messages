@@ -1,34 +1,27 @@
-# https://hub.docker.com/_/python
-FROM python:3.14.4-slim-trixie AS base
+# Postfix + milter inbound MTA image — counterpart to ./Dockerfile.pymta
+# (pure-Python aiosmtpd). This is the production default for now.
+#
+# Python comes from the shared uv-managed base (deploy/python-uv/Dockerfile:
+# debian-trixie + uv 0.11.28 digest-pinned + CPython 3.14.6), NOT the official
+# python image — so the interpreter matches the backend and pymta images.
+#
+# Global ARG so PYTHON_UV_IMAGE can be used in `FROM`. Built by
+# `make build-python-base`; overridden in CI.
+ARG PYTHON_UV_IMAGE=messages-python-uv:local
 
-# Bump this to force an update of the apt repositories
-ENV MIN_UPDATE_DATE="2026-02-20"
+# ---- uv build stage: shared base + pymilter build deps ----
+FROM ${PYTHON_UV_IMAGE} AS uv
 
-WORKDIR /app
-
-RUN apt-get update && apt-get upgrade -y && apt-get install -y --no-install-recommends \
-    ca-certificates \
-    postfix \
-    postfix-pcre \
-    curl \
-    procps \
-    net-tools \
-    mailutils \
-    libmilter-dev \
+# build-essential + libmilter headers are needed only to compile the pymilter
+# C extension (pulled by the `postfix` extra) during `uv sync`. They stay in
+# this build-only stage and never reach the runtime image.
+RUN <<EOR
+apt-get update
+DEBIAN_FRONTEND="noninteractive" apt-get install -y --no-install-recommends \
     build-essential \
-    iproute2 \
-    iputils-ping \
-    && rm -rf /var/lib/apt/lists/*
-
-# ---- uv package manager ----
-FROM base AS uv
-
-COPY --from=ghcr.io/astral-sh/uv:0.10.4 /uv /uvx /bin/
-
-ENV UV_COMPILE_BYTECODE=1
-ENV UV_LINK_MODE=copy
-ENV UV_PYTHON_DOWNLOADS=never
-ENV UV_PROJECT_ENVIRONMENT=/venv
+    libmilter-dev
+rm -rf /var/lib/apt/lists/*
+EOR
 
 # ---- Base image with dependencies installed ----
 FROM uv AS base-with-deps
@@ -52,8 +45,26 @@ ENV PYTHONIOENCODING=utf-8
 ENV PYTHONUNBUFFERED=1
 
 
-# ---- Base runtime image ----
-FROM base AS runtime-base
+# ---- Base runtime image: shared base (managed Python) + postfix runtime deps ----
+FROM ${PYTHON_UV_IMAGE} AS runtime-base
+
+# Runtime packages only — no build-essential/libmilter-dev. libmilter1.0.1 is
+# the runtime shared library the compiled pymilter extension links against.
+# (ca-certificates comes from the shared base.)
+RUN <<EOR
+apt-get update
+DEBIAN_FRONTEND="noninteractive" apt-get install -y --no-install-recommends \
+    postfix \
+    postfix-pcre \
+    curl \
+    procps \
+    net-tools \
+    mailutils \
+    libmilter1.0.1 \
+    iproute2 \
+    iputils-ping
+rm -rf /var/lib/apt/lists/*
+EOR
 
 COPY ./entrypoint.sh /usr/local/bin/entrypoint.sh
 RUN chmod +x /usr/local/bin/entrypoint.sh
@@ -69,10 +80,19 @@ FROM runtime-base AS runtime-dev
 
 COPY --from=base-with-deps-dev /venv /venv
 
+# The package lives at /app/src (mounted as a volume in dev); put it on the path
+# so the shared test suite can `import pymta` — matching Dockerfile.pymta.
+ENV PYTHONPATH="/app/src"
+
 # /app will be mounted as a volume in the development container
 
 # ---- Base runtime image for production ----
 FROM runtime-base AS runtime-prod
+
+# Hardening: whiteout pip/tkinter/tests/headers from the runtime (see
+# strip-python). Not a size change (full Python is in an inherited layer), just
+# keeps those tools out of the running container.
+RUN strip-python
 
 COPY --from=base-with-deps /venv /venv
 

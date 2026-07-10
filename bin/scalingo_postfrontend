@@ -1,23 +1,6 @@
 #!/bin/bash
-
-set -o errexit    # always exit on error
-set -o pipefail   # don't ignore exit codes when piping output
-
-echo "-----> Running post-frontend script"
-
-# Move the frontend build to the app root and clean up
-mkdir -p build/
-mv src/frontend/dist build/frontend-out
-
-mv src/backend/* ./
-mkdir -p messages_backend && touch messages_backend/__init__.py
-
-# Download Caddy binary
-CADDY_VERSION="2.9.1"
-curl -fsSL "https://github.com/caddyserver/caddy/releases/download/v${CADDY_VERSION}/caddy_${CADDY_VERSION}_linux_amd64.tar.gz" | tar -xz -C bin/ caddy
-chmod +x bin/caddy
-
-# Copy Caddyfile (uses {$ENV} vars natively, no ERB needed)
-cp src/frontend/caddy/Caddyfile ./Caddyfile
-
-echo "3.14" > .python-version
+# DEPRECATED shim — the Scalingo scripts moved to deploy/paas/. This passthrough
+# keeps external Scalingo hooks that still reference bin/scalingo_postfrontend working; update the
+# hook to deploy/paas/scalingo_postfrontend and delete this shim.
+echo "⚠️  bin/scalingo_postfrontend is DEPRECATED → use deploy/paas/scalingo_postfrontend (update your Scalingo hook)" >&2
+exec bash "$(dirname "$0")/../deploy/paas/scalingo_postfrontend" "$@"

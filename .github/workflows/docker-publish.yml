@@ -26,11 +26,27 @@ name: Build and Push Container Image
         required: false
         default: ""
         description: "Build arg name to pass first amd64 tag to arm64 build (skips arch-independent build steps)"
+      build_args:
+        type: string
+        required: false
+        default: ""
+        description: "Newline-separated KEY=value build args passed to both platform builds (e.g. PYTHON_UV_IMAGE=...)."
+      dockerfile:
+        type: string
+        required: false
+        default: ""
+        description: "Path to the Dockerfile (defaults to <context>/Dockerfile). E.g. src/mta-in/Dockerfile.pymta."
+    outputs:
+      image_ref:
+        description: "registry/name@sha256:digest of the published multi-arch image (for downstream `FROM`)."
+        value: ${{ jobs.docker-build-push.outputs.image_ref }}
 
 # see https://docs.github.com/en/enterprise-cloud@latest/actions/how-tos/use-cases-and-examples/publishing-packages/publishing-docker-images#publishing-images-to-github-packages
 jobs:
   docker-build-push:
     runs-on: ubuntu-latest
+    outputs:
+      image_ref: "${{ inputs.registry }}/${{ github.repository }}-${{ inputs.image_name }}@${{ steps.create-manifest.outputs.digest }}"
     permissions:
       contents: read
       packages: write
@@ -77,16 +93,19 @@ jobs:
         uses: docker/build-push-action@v6
         with:
           context: ${{ inputs.context }}
+          file: ${{ inputs.dockerfile || format('{0}/Dockerfile', inputs.context) }}
           target: ${{ inputs.target }}
           platforms: linux/amd64
           push: true
           provenance: false
           tags: ${{ steps.platform-tags.outputs.amd64 }}
           labels: ${{ steps.meta.outputs.labels }}
+          build-args: ${{ inputs.build_args }}
       - name: Build and push (arm64)
         uses: docker/build-push-action@v6
         with:
           context: ${{ inputs.context }}
+          file: ${{ inputs.dockerfile || format('{0}/Dockerfile', inputs.context) }}
           target: ${{ inputs.target }}
           platforms: linux/arm64
           push: true
@@ -94,6 +113,7 @@ jobs:
           tags: ${{ steps.platform-tags.outputs.arm64 }}
           labels: ${{ steps.meta.outputs.labels }}
           build-args: |
+            ${{ inputs.build_args }}
             ${{ inputs.arm64_reuse_amd64_build_arg && format('{0}={1}', inputs.arm64_reuse_amd64_build_arg, steps.platform-tags.outputs.amd64_first) || '' }}
       - name: Create multi-arch manifests
         id: create-manifest

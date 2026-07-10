@@ -12,52 +12,22 @@
 #   * `runtime-prod` (slim) and `runtime-distroless-prod` (cc-debian13:nonroot)
 #     both available; the distroless variant is the security target.
 #
-# ---- Base OS ----
-FROM debian:trixie-slim AS base
-
-# Bump this to force an update of the apt repositories
-ENV MIN_UPDATE_DATE="2026-06-05"
-
-RUN <<EOR
-apt-get update
-DEBIAN_FRONTEND="noninteractive" apt-get upgrade -y
-DEBIAN_FRONTEND="noninteractive" apt-get install -y --no-install-recommends \
-    ca-certificates
-rm -rf /var/lib/apt/lists/*
-EOR
-
-ENV PYTHONUNBUFFERED=1 PYTHONDONTWRITEBYTECODE=1
-
-WORKDIR /app
-
+# Shared base image (deploy/python-uv/Dockerfile): debian-trixie + apt upgrade +
+# ca-certificates + uv (digest-pinned) + uv-managed CPython at /opt/python.
+# Global ARG so it can be used in `FROM` below. Built by `make build-python-base`;
+# overridden in CI.
+ARG PYTHON_UV_IMAGE=messages-python-uv:local
 
 # ---- uv + managed Python + build system deps ----
-FROM base AS uv
+FROM ${PYTHON_UV_IMAGE} AS uv
 
-# Pin uv by SHA256 digest for supply chain security. We pull a newer uv than
-# src/backend/Dockerfile (0.11.10): uv 0.11.10 only knows Python 3.14.5rc1,
-# and python-build-standalone shipped 3.14.5 final on 2026-05-10 — which
-# only landed in uv from 0.11.16 onward.
-# Verify with: gh attestation verify --owner astral-sh oci://ghcr.io/astral-sh/uv:0.11.19
-COPY --from=ghcr.io/astral-sh/uv@sha256:b46b03ddfcfbf8f547af7e9eaefdf8a39c8cebcba7c98858d3162bd28cf536f6 /uv /uvx /bin/
-
+# Build deps for compiling any C-extension wheels during `uv sync`.
 RUN <<EOR
 apt-get update
 DEBIAN_FRONTEND="noninteractive" apt-get install -y --no-install-recommends \
-    ca-certificates \
     build-essential
 rm -rf /var/lib/apt/lists/*
 EOR
-
-ENV UV_COMPILE_BYTECODE=1
-ENV UV_LINK_MODE=copy
-ENV UV_PYTHON_PREFERENCE=only-managed
-ENV UV_PYTHON_INSTALL_DIR=/opt/python
-ENV UV_PROJECT_ENVIRONMENT=/venv
-
-# Install Python via uv — integrity verified against SHA256 checksums embedded in the uv binary.
-# Uses python-build-standalone: most C deps (ssl, ffi, sqlite, zlib, lzma, bz2) are statically linked.
-RUN uv python install 3.14.5
 
 
 # ---- Production dependencies ----
@@ -78,28 +48,16 @@ FROM base-with-deps AS base-with-deps-dev
 RUN --mount=type=cache,target=/root/.cache/uv uv sync --locked --no-install-project --no-editable --extra dev
 
 
-# ---- Strip Python for production (remove pip, idle, tkinter, tcl, headers, tests) ----
-FROM uv AS python-runtime
-RUN <<EOR
-set -e
-PYDIR=$(dirname $(dirname $(uv python find 3.14.5)))
-rm -rf \
-    $PYDIR/bin/idle* $PYDIR/bin/pip* $PYDIR/bin/pydoc* $PYDIR/bin/*-config \
-    $PYDIR/include $PYDIR/share \
-    $PYDIR/lib/pkgconfig $PYDIR/lib/itcl* $PYDIR/lib/libtcl* \
-    $PYDIR/lib/tcl* $PYDIR/lib/tk* $PYDIR/lib/thread* \
-    $PYDIR/lib/python3.14/idlelib \
-    $PYDIR/lib/python3.14/ensurepip \
-    $PYDIR/lib/python3.14/tkinter \
-    $PYDIR/lib/python3.14/turtledemo \
-    $PYDIR/lib/python3.14/lib-dynload/_tkinter* \
-    $PYDIR/lib/python3.14/lib-dynload/_ctypes_test* \
-    /opt/python/.gitignore /opt/python/.lock /opt/python/.temp
-EOR
+# ---- Strip Python for the distroless image (see deploy/python-uv/strip-python.sh) ----
+# Only runtime-distroless-prod (the real production target) uses this. The slim
+# runtime-prod inherits the full managed Python from the shared base instead.
+FROM ${PYTHON_UV_IMAGE} AS python-runtime
+RUN strip-python
 
 
 # ---- Base runtime image (slim) ----
-FROM base AS runtime-base
+# Inherits the shared base directly (full managed Python at /opt/python).
+FROM ${PYTHON_UV_IMAGE} AS runtime-base
 
 # Give the "root" group the same permissions as the "root" user on /etc/passwd
 # to allow a user belonging to the root group to add new users; mirrors the
@@ -121,8 +79,7 @@ ENTRYPOINT [ "/usr/local/bin/entrypoint.sh" ]
 # ---- Development runtime ----
 FROM runtime-base AS runtime-dev
 
-# Full Python installation (with headers, pip — useful for debugging)
-COPY --from=uv /opt/python /opt/python
+# Full managed Python (with headers, pip) is already present from the shared base.
 COPY --from=base-with-deps-dev /venv /venv
 
 ENV PYTHONPATH="/app/src"
@@ -131,14 +88,23 @@ ENV PYTHONPATH="/app/src"
 
 
 # ---- Production application source (strip tests, dev tooling, build files) ----
-FROM base AS app-prod
+FROM ${PYTHON_UV_IMAGE} AS app-prod
 COPY ./src /app/src
 
 
 # ---- Production runtime (slim) ----
 FROM runtime-base AS runtime-prod
+ARG DOCKER_USER=65532
 
-COPY --from=python-runtime /opt/python /opt/python
+# Hardening: whiteout pip/tkinter/tests/headers from the runtime (see
+# strip-python). Does NOT shrink the image (full Python is in an inherited layer)
+# but keeps those tools out of the running container. Strip as root so
+# /opt/python stays root-owned (not writable by the app user), then restore it.
+USER root
+RUN strip-python
+USER ${DOCKER_USER}
+
+# The distroless target below copies in an already-stripped Python instead.
 COPY --from=base-with-deps /venv /venv
 COPY --from=app-prod /app/src /app/src
 
@@ -149,7 +115,7 @@ CMD ["python", "-m", "pymta.server"]
 # Liveness probe: TCP-connect the SMTP listener. Uses stdlib socket — works in
 # both slim and distroless variants without curl/nc.
 HEALTHCHECK --interval=30s --timeout=2s --start-period=15s \
-  CMD ["python", "-c", "import os, socket; s=socket.socket(); s.settimeout(1); s.connect(('127.0.0.1', int(os.getenv('PYMTA_SMTP_PORT', '25')))); s.close()"]
+    CMD ["python", "-c", "import os, socket; s=socket.socket(); s.settimeout(1); s.connect(('127.0.0.1', int(os.getenv('PYMTA_SMTP_PORT', '25')))); s.close()"]
 
 
 # ---- Distroless production runtime ----
@@ -178,4 +144,4 @@ ENV PYTHONPATH="/app/src"
 CMD ["python", "-m", "pymta.server"]
 
 HEALTHCHECK --interval=30s --timeout=2s --start-period=15s \
-  CMD ["python", "-c", "import os, socket; s=socket.socket(); s.settimeout(1); s.connect(('127.0.0.1', int(os.getenv('PYMTA_SMTP_PORT', '25')))); s.close()"]
+    CMD ["python", "-c", "import os, socket; s=socket.socket(); s.settimeout(1); s.connect(('127.0.0.1', int(os.getenv('PYMTA_SMTP_PORT', '25')))); s.close()"]
