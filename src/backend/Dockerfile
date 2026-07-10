@@ -1,30 +1,17 @@
-# ---- Base OS ----
-FROM debian:trixie-slim AS base
-
-# Bump this to force an update of the apt repositories
-ENV MIN_UPDATE_DATE="2026-02-20"
-
-RUN <<EOR
-apt-get update
-DEBIAN_FRONTEND="noninteractive" apt-get upgrade -y
-rm -rf /var/lib/apt/lists/*
-EOR
-
-ENV PYTHONUNBUFFERED=1 PYTHONDONTWRITEBYTECODE=1
-
-WORKDIR /app
+# Shared base image (deploy/python-uv/Dockerfile): debian-trixie + apt upgrade +
+# ca-certificates + uv 0.11.28 (digest-pinned) + uv-managed CPython 3.14.6 at
+# /opt/python. Global ARG so it can be used in `FROM` below. Built by
+# `make build-python-base`; overridden in CI.
+ARG PYTHON_UV_IMAGE=messages-python-uv:local
 
 # ---- uv + managed Python + build system deps ----
-FROM base AS uv
+FROM ${PYTHON_UV_IMAGE} AS uv
 
-# Pin uv by SHA256 digest for supply chain security.
-# Verify with: gh attestation verify --owner astral-sh oci://ghcr.io/astral-sh/uv:0.11.19
-COPY --from=ghcr.io/astral-sh/uv@sha256:b46b03ddfcfbf8f547af7e9eaefdf8a39c8cebcba7c98858d3162bd28cf536f6 /uv /uvx /bin/
-
+# Backend-specific build/collectstatic deps (libmagic1 is needed at build time
+# because collectstatic imports the app, which imports python-magic).
 RUN <<EOR
 apt-get update
 DEBIAN_FRONTEND="noninteractive" apt-get install -y --no-install-recommends \
-    ca-certificates \
     curl \
     git \
     rdfind \
@@ -33,16 +20,6 @@ DEBIAN_FRONTEND="noninteractive" apt-get install -y --no-install-recommends \
     zlib1g-dev
 rm -rf /var/lib/apt/lists/*
 EOR
-
-ENV UV_COMPILE_BYTECODE=1
-ENV UV_LINK_MODE=copy
-ENV UV_PYTHON_PREFERENCE=only-managed
-ENV UV_PYTHON_INSTALL_DIR=/opt/python
-ENV UV_PROJECT_ENVIRONMENT=/venv
-
-# Install Python via uv — integrity verified against SHA256 checksums embedded in the uv binary.
-# Uses python-build-standalone: most C deps (ssl, ffi, sqlite, zlib, lzma, bz2) are statically linked.
-RUN uv python install 3.14.5
 
 # ---- Production dependencies ----
 FROM uv AS base-with-deps
@@ -74,27 +51,9 @@ DJANGO_CONFIGURATION=Build python manage.py collectstatic --noinput
 rdfind -makesymlinks true -followsymlinks true -makeresultsfile false ${MESSAGES_STATIC_ROOT}
 EOR
 
-# ---- Strip Python for production (remove pip, idle, tkinter, tcl, headers, tests) ----
-FROM uv AS python-runtime
-RUN <<EOR
-set -e
-PYDIR=$(dirname $(dirname $(uv python find 3.14.5)))
-rm -rf \
-    $PYDIR/bin/idle* $PYDIR/bin/pip* $PYDIR/bin/pydoc* $PYDIR/bin/*-config \
-    $PYDIR/include $PYDIR/share \
-    $PYDIR/lib/pkgconfig $PYDIR/lib/itcl* $PYDIR/lib/libtcl* \
-    $PYDIR/lib/tcl* $PYDIR/lib/tk* $PYDIR/lib/thread* \
-    $PYDIR/lib/python3.14/idlelib \
-    $PYDIR/lib/python3.14/ensurepip \
-    $PYDIR/lib/python3.14/tkinter \
-    $PYDIR/lib/python3.14/turtledemo \
-    $PYDIR/lib/python3.14/lib-dynload/_tkinter* \
-    $PYDIR/lib/python3.14/lib-dynload/_ctypes_test* \
-    /opt/python/.gitignore /opt/python/.lock /opt/python/.temp
-EOR
-
 # ---- Base runtime image ----
-FROM base AS runtime-base
+# Inherits the shared base directly (full managed Python at /opt/python).
+FROM ${PYTHON_UV_IMAGE} AS runtime-base
 
 # Give the "root" group the same permissions as the "root" user on /etc/passwd
 # to allow a user belonging to the root group to add new users; typically the
@@ -120,15 +79,14 @@ ENV VIRTUAL_ENV_PROMPT=venv
 # We wrap commands run in this container by the following entrypoint that
 # creates a user on-the-fly with the container user ID (see USER) and root group
 # ID.
-COPY ./entrypoint /usr/local/bin/entrypoint
+COPY --chmod=755 ./entrypoint /usr/local/bin/entrypoint
 ENTRYPOINT [ "/usr/local/bin/entrypoint" ]
 
 
 # ---- Development runtime ----
 FROM runtime-base AS runtime-dev
 
-# Full Python installation (with headers, pip — useful for debugging)
-COPY --from=uv /opt/python /opt/python
+# Full managed Python (with headers, pip) is already present from the shared base.
 COPY --from=base-with-deps-dev /venv /venv
 
 # /app will be mounted as a volume in the development container
@@ -138,7 +96,7 @@ CMD ["python", "manage.py", "runserver", "0.0.0.0:8000"]
 
 
 # ---- Production application source (strip tests, dev tooling, build files) ----
-FROM base AS app-prod
+FROM ${PYTHON_UV_IMAGE} AS app-prod
 COPY . /app/
 RUN rm -rf \
     /app/core/tests \
@@ -154,9 +112,20 @@ RUN rm -rf \
 
 # ---- Production runtime ----
 FROM runtime-base AS runtime-prod
+ARG DOCKER_USER
 ARG MESSAGES_STATIC_ROOT=/data/static
 
-COPY --from=python-runtime /opt/python /opt/python
+# Hardening: whiteout pip/tkinter/tests/headers from the runtime (see
+# strip-python). This does NOT shrink the image — the full Python sits in an
+# inherited layer — but keeps those tools out of the running container. Strip as
+# root so /opt/python stays root-owned (not writable by the unprivileged app
+# user), then restore that user.
+USER root
+RUN strip-python
+USER ${DOCKER_USER}
+
+# Full managed Python is inherited from the shared base (runtime-base). The
+# distroless target below copies in an already-stripped Python instead.
 COPY --from=base-with-deps /venv /venv
 COPY --from=link-collector ${MESSAGES_STATIC_ROOT} ${MESSAGES_STATIC_ROOT}
 COPY --from=app-prod /app/ /app/
@@ -179,6 +148,13 @@ RUN mkdir -p /shared-libs/usr/lib /shared-libs/usr/share/misc && \
     cp /usr/share/misc/magic.mgc /shared-libs/usr/share/misc/
 
 
+# ---- Strip Python for the distroless image (see deploy/python-uv/strip-python.sh) ----
+# Only runtime-distroless-prod (the real production target) uses this. The slim
+# runtime-prod inherits the full managed Python from the shared base instead.
+FROM ${PYTHON_UV_IMAGE} AS python-stripped-runtime
+RUN strip-python
+
+
 # ---- Distroless production runtime ----
 # Uses cc-debian13 (C runtime only) + python-build-standalone from uv.
 # Debug with: docker run --entrypoint='' gcr.io/distroless/cc-debian13:debug-nonroot sh
@@ -188,7 +164,7 @@ ARG MESSAGES_STATIC_ROOT=/data/static
 WORKDIR /app
 
 # Stripped Python installation (python-build-standalone via uv)
-COPY --from=python-runtime /opt/python /opt/python
+COPY --from=python-stripped-runtime /opt/python /opt/python
 # Python dependencies
 COPY --from=base-with-deps /venv /venv
 # libmagic shared library + magic database

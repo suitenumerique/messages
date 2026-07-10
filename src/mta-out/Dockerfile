@@ -1,33 +1,24 @@
-# https://hub.docker.com/_/python
-FROM python:3.14.4-slim-trixie AS base
+# Outbound MTA image (Postfix + SASL relay).
+#
+# Python comes from the shared uv-managed base (deploy/python-uv/Dockerfile:
+# debian-trixie + uv 0.11.28 digest-pinned + CPython 3.14.6), NOT the official
+# python image — so the interpreter matches the backend and mta-in images.
+#
+# Global ARG so PYTHON_UV_IMAGE can be used in `FROM`. Built by
+# `make build-python-base`; overridden in CI.
+ARG PYTHON_UV_IMAGE=messages-python-uv:local
 
-# Bump this to force an update of the apt repositories
-ENV MIN_UPDATE_DATE="2026-02-20"
+# ---- uv build stage: shared base + build deps ----
+FROM ${PYTHON_UV_IMAGE} AS uv
 
-WORKDIR /app
-
-RUN apt-get update && apt-get upgrade -y && apt-get install -y --no-install-recommends \
-    ca-certificates \
-    postfix \
-    sasl2-bin \
-    libsasl2-modules \
-    ssl-cert \
-    procps \
-    curl \
-    dnsutils \
-    iproute2 \
-    iputils-ping \
-    && rm -rf /var/lib/apt/lists/*
-
-# ---- uv package manager ----
-FROM base AS uv
-
-COPY --from=ghcr.io/astral-sh/uv:0.10.4 /uv /uvx /bin/
-
-ENV UV_COMPILE_BYTECODE=1
-ENV UV_LINK_MODE=copy
-ENV UV_PYTHON_DOWNLOADS=never
-ENV UV_PROJECT_ENVIRONMENT=/venv
+# build-essential only to compile any C-extension wheels during `uv sync`.
+# Build-only: it never reaches the runtime image.
+RUN <<EOR
+apt-get update
+DEBIAN_FRONTEND="noninteractive" apt-get install -y --no-install-recommends \
+    build-essential
+rm -rf /var/lib/apt/lists/*
+EOR
 
 # ---- Base image with dependencies installed ----
 FROM uv AS base-with-deps
@@ -49,17 +40,30 @@ ENV PYTHONIOENCODING=utf-8
 ENV PYTHONUNBUFFERED=1
 
 
-# ---- Base runtime image ----
-FROM base AS runtime-base
+# ---- Base runtime image: shared base (managed Python) + postfix/SASL runtime ----
+FROM ${PYTHON_UV_IMAGE} AS runtime-base
+
+# Runtime packages only (ca-certificates comes from the shared base).
+RUN <<EOR
+apt-get update
+DEBIAN_FRONTEND="noninteractive" apt-get install -y --no-install-recommends \
+    postfix \
+    sasl2-bin \
+    libsasl2-modules \
+    ssl-cert \
+    procps \
+    curl \
+    dnsutils \
+    iproute2 \
+    iputils-ping
+rm -rf /var/lib/apt/lists/*
+EOR
 
 COPY ./entrypoint.sh /usr/local/bin/entrypoint.sh
 RUN chmod +x /usr/local/bin/entrypoint.sh
 
 # Create directories for Postfix queues and SASL socket area
 RUN mkdir -p /etc/postfix/sasl /var/spool/postfix/private /var/spool/postfix/public
-
-# Create directories for Postfix queues
-RUN mkdir -p /var/spool/postfix/private /var/spool/postfix/public
 
 # Ensure self-signed certificates are available (can be overridden by env vars/mounts)
 RUN make-ssl-cert generate-default-snakeoil
@@ -82,6 +86,11 @@ COPY --from=base-with-deps-dev /venv /venv
 
 # ---- Base runtime image for production ----
 FROM runtime-base AS runtime-prod
+
+# Hardening: whiteout pip/tkinter/tests/headers from the runtime (see
+# strip-python). Not a size change (full Python is in an inherited layer), just
+# keeps those tools out of the running container.
+RUN strip-python
 
 COPY --from=base-with-deps /venv /venv
 

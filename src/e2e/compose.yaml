@@ -20,8 +20,8 @@ services:
     environment:
       - DJANGO_CONFIGURATION=E2E
     env_file:
-      - ../../env.d/development/backend.defaults
-      - ../../env.d/development/backend.e2e
+      - ../../deploy/env/backend.defaults
+      - ../../deploy/env/backend.e2e
     depends_on: !override
       - backend
 
@@ -55,8 +55,8 @@ services:
       - --hostname-admin=$${ADMIN_HOST}
       - --http-port=8802
     env_file:
-      - ../../env.d/development/keycloak.defaults
-      - ../../env.d/development/keycloak.e2e
+      - ../../deploy/env/keycloak.defaults
+      - ../../deploy/env/keycloak.e2e
     ports: !reset []
     depends_on: !override
       - postgresql
@@ -68,8 +68,8 @@ services:
     environment:
       - DJANGO_CONFIGURATION=E2E
     env_file:
-      - ../../env.d/development/backend.defaults
-      - ../../env.d/development/backend.e2e
+      - ../../deploy/env/backend.defaults
+      - ../../deploy/env/backend.e2e
     depends_on: !override
       postgresql:
         condition: service_healthy
@@ -87,8 +87,8 @@ services:
       file: ../../compose.yaml
       service: mta-in
     env_file:
-      - ../../env.d/development/mta-in.defaults
-      - ../../env.d/development/mta-in.e2e
+      - ../../deploy/env/mta-in.defaults
+      - ../../deploy/env/mta-in.e2e
     ports: !reset []
     depends_on: !override
       - backend
@@ -128,8 +128,8 @@ services:
       service: frontend-base
     command: ["npm", "run", "dev"]
     env_file:
-      - ../../env.d/development/frontend.defaults
-      - ../../env.d/development/frontend.e2e
+      - ../../deploy/env/frontend.defaults
+      - ../../deploy/env/frontend.e2e
     volumes:
       - ../frontend/:/home/frontend/
     ports: !reset []
@@ -159,7 +159,7 @@ services:
     volumes:
       - ./src:/app/src
       - ./playwright.config.ts:/app/playwright.config.ts
-      - ../../env.d/development:/app/env.d/development:ro
+      - ../../deploy/env:/app/deploy/env:ro
     depends_on:
       docker-sock-proxy:
         condition: service_started

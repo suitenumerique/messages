@@ -1,11 +1,6 @@
 #!/bin/bash
-
-set -o errexit    # always exit on error
-set -o pipefail   # don't ignore exit codes when piping output
-
-echo "-----> Running post-compile script"
-
-# Remove all the files we don't need
-rm -rf src docker env.d .cursor .github compose.yaml README.md .cache
-
-chmod +x bin/scalingo_run_web
+# DEPRECATED shim — the Scalingo scripts moved to deploy/paas/. This passthrough
+# keeps external Scalingo hooks that still reference bin/scalingo_postcompile working; update the
+# hook to deploy/paas/scalingo_postcompile and delete this shim.
+echo "⚠️  bin/scalingo_postcompile is DEPRECATED → use deploy/paas/scalingo_postcompile (update your Scalingo hook)" >&2
+exec bash "$(dirname "$0")/../deploy/paas/scalingo_postcompile" "$@"

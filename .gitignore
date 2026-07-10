@@ -38,9 +38,9 @@ venv/
 ENV/
 env.bak/
 venv.bak/
-env.d/development/*
-!env.d/development/*.defaults
-!env.d/development/*.e2e
+deploy/env/*
+!deploy/env/*.defaults
+!deploy/env/*.e2e
 env.d/terraform
 
 # npm

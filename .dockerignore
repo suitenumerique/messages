@@ -12,7 +12,7 @@ venv
 
 # Docker
 compose.*
-env.d
+deploy/env
 
 # Docs
 docs

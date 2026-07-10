@@ -85,6 +85,36 @@ jobs:
       - name: Run E2E tests only for Chromium browser to speed up the tests
         run: make test-e2e-ci args="--project chromium"
 
+  test-mta-in:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v6
+        with:
+          persist-credentials: false
+      - name: Create env files
+        run: make create-env-files
+      - name: Run mta-in (Postfix milter) tests
+        run: make test-mta-in
+
+  test-mta-in-py:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v6
+        with:
+          persist-credentials: false
+      - name: Create env files
+        run: make create-env-files
+      - name: Run mta-in pymta (aiosmtpd) tests
+        run: make test-mta-in-py
+
+  # NOTE: no test-mta-out job — the mta-out suite is an integration test that
+  # needs a live Postfix + SASL relay (its entrypoint runs `saslpasswd2`, which
+  # fails in the ephemeral CI container: "saslpasswd2: generic failure"). It
+  # stays a local/manual target (`make test-mta-out`) until it can be run
+  # hermetically.
+
   lint-front:
     runs-on: ubuntu-latest
     steps:

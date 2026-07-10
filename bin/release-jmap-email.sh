@@ -2,7 +2,7 @@
 #
 # Interactive PyPI release for the jmap-email package.
 #
-# Hermetic: every step runs inside the python:3.14.5-slim image, so a
+# Hermetic: every step runs inside the python:3.14.6-slim image, so a
 # clean VM only needs Docker. The host never touches pip or twine.
 #
 # Flow:
@@ -21,7 +21,7 @@ set -eo pipefail
 
 REPO_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 PKG_DIR="${REPO_DIR}/src/jmap-email"
-PYTHON_IMAGE="python:3.14.5-slim"
+PYTHON_IMAGE="python:3.14.6-slim"
 
 BOLD=$'\033[1m'
 GREEN=$'\033[1;32m'

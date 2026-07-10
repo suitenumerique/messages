@@ -17,11 +17,11 @@
 #
 # or define new variables in an environment file to use with docker or docker compose:
 #
-#     # env.d/production
+#     # deploy/env
 #     USER_NAME=foo
 #     HOME=/home/foo
 #
-#     docker run --rm --env-file env.d/production st-messages-backend:latest python manage.py migrate
+#     docker run --rm --env-file deploy/env st-messages-backend:latest python manage.py migrate
 #
 
 echo "🐳(entrypoint) creating user running in the container..."

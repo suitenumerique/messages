@@ -383,7 +383,7 @@ class Base(Configuration):
     # No default on purpose: the MTA-to-MDA channel is authenticated solely by
     # an HS256 JWT signed with this shared secret, so a hardcoded fallback would
     # be internet-spoofable in production. The development value is supplied via
-    # env.d/development/backend.defaults (and the matching mta-in.defaults), the
+    # deploy/env/backend.defaults (and the matching mta-in.defaults), the
     # same way DJANGO_SECRET_KEY is handled. Unset → None → all MTA auth fails
     # closed.
     MDA_API_SECRET = values.Value(
