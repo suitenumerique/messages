@@ -97,6 +97,49 @@ Content-Disposition: attachment; filename="{attachment_data["filename"]}"
 """
         return email_template.encode("utf-8")
 
+    @pytest.fixture
+    def multipart_email_with_unnamed_calendar_attachment(self, recipient_email):
+        """Multipart email with a ``text/calendar`` part carrying no filename.
+
+        Mirrors real-world meeting invites (e.g. Outlook/Teams): the ICS
+        part has neither a ``Content-Disposition`` filename nor a
+        ``Content-Type`` ``name=`` param.
+        """
+        boundary = "------------boundary987654321"
+        ics_content = (
+            "BEGIN:VCALENDAR\r\n"
+            "VERSION:2.0\r\n"
+            "METHOD:REQUEST\r\n"
+            "BEGIN:VEVENT\r\n"
+            "UID:test-event@example.com\r\n"
+            "DTSTART:20260101T100000Z\r\n"
+            "DTEND:20260101T110000Z\r\n"
+            "SUMMARY:Test Meeting\r\n"
+            "END:VEVENT\r\n"
+            "END:VCALENDAR\r\n"
+        )
+        email_template = f"""From: sender@example.com
+To: {recipient_email}
+Subject: Test E2E Inbound with Unnamed Calendar Attachment
+Message-ID: <e2e-test-{uuid.uuid4()}@example.com>
+MIME-Version: 1.0
+Content-Type: multipart/mixed; boundary="{boundary}"
+
+--{boundary}
+Content-Type: text/plain; charset="UTF-8"
+Content-Transfer-Encoding: 7bit
+
+This is the plain text body of the test email.
+
+--{boundary}
+Content-Type: text/calendar; method=REQUEST; charset="UTF-8"
+Content-Transfer-Encoding: 7bit
+
+{ics_content}
+--{boundary}--
+"""
+        return email_template.encode("utf-8")
+
     @pytest.fixture(name="valid_jwt_token")
     def fixture_valid_jwt_token(self):
         """Return a valid JWT token for the sample email."""
@@ -247,3 +290,87 @@ Content-Disposition: attachment; filename="{attachment_data["filename"]}"
             response["Content-Disposition"]
             == f'attachment; filename="{attachment_data["filename"]}"'
         )
+
+    def test_e2e_inbound_with_unnamed_calendar_attachment(
+        self,
+        api_client,
+        api_client_service_account,
+        mailbox,
+        recipient_email,
+        multipart_email_with_unnamed_calendar_attachment,
+        valid_jwt_token,
+    ):
+        """A calendar invite part with no filename must not break the API.
+
+        ``jmap_email`` intentionally leaves ``name`` as ``None`` for parts
+        without a filename (JMAP allows ``String | null``) — the API is
+        responsible for synthesizing a default so the OpenAPI-documented
+        ``string`` contract holds and consumers that assume a non-null
+        name (e.g. the thread view) don't crash on it.
+        """
+        client, _ = api_client
+
+        token = valid_jwt_token(
+            multipart_email_with_unnamed_calendar_attachment,
+            {
+                "original_recipients": [recipient_email],
+                "client_helo": "client.helo",
+                "client_hostname": "client.hostname",
+                "client_address": "127.1.2.3",
+            },
+        )
+
+        response = api_client_service_account.post(
+            "/api/v1.0/inbound/mta/deliver/",
+            data=multipart_email_with_unnamed_calendar_attachment,
+            content_type="message/rfc822",
+            HTTP_AUTHORIZATION=f"Bearer {token}",
+        )
+        assert response.status_code == status.HTTP_200_OK
+        assert response.json() == {"status": "ok", "delivered": 1}
+
+        response = client.get(reverse("threads-list"), {"mailbox_id": str(mailbox.id)})
+        assert response.status_code == status.HTTP_200_OK
+        thread_data = next(
+            (
+                t
+                for t in response.data["results"]
+                if t["subject"]
+                == "Test E2E Inbound with Unnamed Calendar Attachment"
+            ),
+            None,
+        )
+        assert thread_data is not None, (
+            "Thread with expected subject not found in API response"
+        )
+
+        response = client.get(
+            reverse("messages-list"), {"thread_id": thread_data["id"]}
+        )
+        assert response.status_code == status.HTTP_200_OK
+        message_data = next(
+            (
+                m
+                for m in response.data
+                if m["subject"]
+                == "Test E2E Inbound with Unnamed Calendar Attachment"
+            ),
+            None,
+        )
+        assert message_data is not None, (
+            "Message with expected subject not found in API response"
+        )
+        assert message_data["has_attachments"] is True
+        assert len(message_data["attachments"]) == 1
+
+        attachment = message_data["attachments"][0]
+        assert attachment["name"] == "unnamed"
+        assert attachment["type"] == "text/calendar"
+
+        # The detail endpoint (used by the frontend thread view) must
+        # expose the same synthesized name.
+        response = client.get(
+            reverse("messages-detail", kwargs={"id": message_data["id"]})
+        )
+        assert response.status_code == status.HTTP_200_OK
+        assert response.data["attachments"][0]["name"] == "unnamed"
