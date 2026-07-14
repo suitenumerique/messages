@@ -24,6 +24,7 @@ export * from "./channel";
 export * from "./channel_create_response";
 export * from "./channel_request";
 export * from "./config_retrieve200";
+export * from "./config_retrieve200_appurl_s";
 export * from "./config_retrieve200_driv_e";
 export * from "./config_retrieve200_frontendfeedbackwidgetconfi_g";
 export * from "./config_retrieve200_frontendlagaufrewidgetconfi_g";

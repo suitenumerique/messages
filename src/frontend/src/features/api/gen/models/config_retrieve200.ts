@@ -11,6 +11,7 @@ import type { ConfigRetrieve200SCHEMACUSTOMATTRIBUTESMAILDOMAIN } from "./config
 import type { ConfigRetrieve200FRONTENDTHEMECONFIG } from "./config_retrieve200_frontendthemeconfi_g";
 import type { ConfigRetrieve200FRONTENDFEEDBACKWIDGETCONFIG } from "./config_retrieve200_frontendfeedbackwidgetconfi_g";
 import type { ConfigRetrieve200FRONTENDLAGAUFREWIDGETCONFIG } from "./config_retrieve200_frontendlagaufrewidgetconfi_g";
+import type { ConfigRetrieve200APPURLS } from "./config_retrieve200_appurl_s";
 
 export type ConfigRetrieve200 = {
   readonly ENVIRONMENT: string;
@@ -47,7 +48,7 @@ export type ConfigRetrieve200 = {
   /** Whether silent OIDC login is enabled */
   readonly FRONTEND_SILENT_LOGIN_ENABLED: boolean;
   /** Root URLs of enabled Mosa apps for the app switcher. Keys: epicentre, docs, drive, meet, calendar, chat, commander. */
-  readonly APP_URLS?: Record<string, string>;
+  readonly APP_URLS?: ConfigRetrieve200APPURLS;
   /** Sentry DSN shared with the frontend */
   readonly SENTRY_DSN?: string;
   /** Theme configuration for the frontend (theme, terms_of_service_url, footer) */
