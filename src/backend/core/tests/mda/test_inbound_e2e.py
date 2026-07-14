@@ -156,6 +156,81 @@ Content-Transfer-Encoding: 7bit
 
         return _get_jwt_token
 
+    def _deliver_and_get_message(
+        self,
+        api_client,
+        api_client_service_account,
+        mailbox,
+        recipient_email,
+        email_bytes,
+        subject,
+        valid_jwt_token,
+    ):
+        """Deliver ``email_bytes`` via the MTA API and return the resulting
+        message dict for ``subject``.
+
+        Shared by every ``test_e2e_inbound_*`` test below: each submits an
+        email, finds the resulting thread by subject, then the message
+        within it — only the attachment-specific assertions differ per test.
+        """
+        client, _ = api_client
+
+        # Step 1: Submit email to MTA API with real JWT
+        token = valid_jwt_token(
+            email_bytes,
+            {
+                "original_recipients": [recipient_email],
+                "client_helo": "client.helo",
+                "client_hostname": "client.hostname",
+                "client_address": "127.1.2.3",
+            },
+        )
+
+        response = api_client_service_account.post(
+            "/api/v1.0/inbound/mta/deliver/",
+            data=email_bytes,
+            content_type="message/rfc822",
+            HTTP_AUTHORIZATION=f"Bearer {token}",
+        )
+
+        # Verify API response
+        assert response.status_code == status.HTTP_200_OK
+        assert response.json() == {"status": "ok", "delivered": 1}
+
+        # Step 2: Use the thread list API to find our new thread
+        response = client.get(reverse("threads-list"), {"mailbox_id": str(mailbox.id)})
+        assert response.status_code == status.HTTP_200_OK
+        assert response.data["count"] >= 1
+
+        # Find the thread with our subject
+        thread_data = None
+        for t in response.data["results"]:
+            if t["subject"] == subject:
+                thread_data = t
+                break
+
+        assert thread_data is not None, (
+            "Thread with expected subject not found in API response"
+        )
+        thread_id = thread_data["id"]
+
+        # Step 3: Use the message list API to get messages in this thread
+        response = client.get(reverse("messages-list"), {"thread_id": thread_id})
+        assert response.status_code == status.HTTP_200_OK
+        assert len(response.data) >= 1
+
+        # Find our message
+        message_data = None
+        for m in response.data:
+            if m["subject"] == subject:
+                message_data = m
+                break
+
+        assert message_data is not None, (
+            "Message with expected subject not found in API response"
+        )
+        return message_data
+
     def test_e2e_inbound_with_attachment(
         self,
         api_client,
@@ -175,59 +250,14 @@ Content-Transfer-Encoding: 7bit
         """
         client, _ = api_client
 
-        # Step 1: Submit email to MTA API with real JWT
-        token = valid_jwt_token(
+        message_data = self._deliver_and_get_message(
+            api_client,
+            api_client_service_account,
+            mailbox,
+            recipient_email,
             multipart_email_with_attachment,
-            {
-                "original_recipients": [recipient_email],
-                "client_helo": "client.helo",
-                "client_hostname": "client.hostname",
-                "client_address": "127.1.2.3",
-            },
-        )
-
-        response = api_client_service_account.post(
-            "/api/v1.0/inbound/mta/deliver/",
-            data=multipart_email_with_attachment,
-            content_type="message/rfc822",
-            HTTP_AUTHORIZATION=f"Bearer {token}",
-        )
-
-        # Verify API response
-        assert response.status_code == status.HTTP_200_OK
-        assert response.json() == {"status": "ok", "delivered": 1}
-
-        # Step 2: Use the thread list API to find our new thread
-        response = client.get(reverse("threads-list"), {"mailbox_id": str(mailbox.id)})
-        assert response.status_code == status.HTTP_200_OK
-        assert response.data["count"] >= 1
-
-        # Find the thread with our subject
-        thread_data = None
-        for t in response.data["results"]:
-            if t["subject"] == "Test E2E Inbound with Attachment":
-                thread_data = t
-                break
-
-        assert thread_data is not None, (
-            "Thread with expected subject not found in API response"
-        )
-        thread_id = thread_data["id"]
-
-        # Step 3: Use the message list API to get messages in this thread
-        response = client.get(reverse("messages-list"), {"thread_id": thread_id})
-        assert response.status_code == status.HTTP_200_OK
-        assert len(response.data) >= 1
-
-        # Find our message
-        message_data = None
-        for m in response.data:
-            if m["subject"] == "Test E2E Inbound with Attachment":
-                message_data = m
-                break
-
-        assert message_data is not None, (
-            "Message with expected subject not found in API response"
+            "Test E2E Inbound with Attachment",
+            valid_jwt_token,
         )
         message_id = message_data["id"]
 
@@ -310,55 +340,14 @@ Content-Transfer-Encoding: 7bit
         """
         client, _ = api_client
 
-        token = valid_jwt_token(
+        message_data = self._deliver_and_get_message(
+            api_client,
+            api_client_service_account,
+            mailbox,
+            recipient_email,
             multipart_email_with_unnamed_calendar_attachment,
-            {
-                "original_recipients": [recipient_email],
-                "client_helo": "client.helo",
-                "client_hostname": "client.hostname",
-                "client_address": "127.1.2.3",
-            },
-        )
-
-        response = api_client_service_account.post(
-            "/api/v1.0/inbound/mta/deliver/",
-            data=multipart_email_with_unnamed_calendar_attachment,
-            content_type="message/rfc822",
-            HTTP_AUTHORIZATION=f"Bearer {token}",
-        )
-        assert response.status_code == status.HTTP_200_OK
-        assert response.json() == {"status": "ok", "delivered": 1}
-
-        response = client.get(reverse("threads-list"), {"mailbox_id": str(mailbox.id)})
-        assert response.status_code == status.HTTP_200_OK
-        thread_data = next(
-            (
-                t
-                for t in response.data["results"]
-                if t["subject"]
-                == "Test E2E Inbound with Unnamed Calendar Attachment"
-            ),
-            None,
-        )
-        assert thread_data is not None, (
-            "Thread with expected subject not found in API response"
-        )
-
-        response = client.get(
-            reverse("messages-list"), {"thread_id": thread_data["id"]}
-        )
-        assert response.status_code == status.HTTP_200_OK
-        message_data = next(
-            (
-                m
-                for m in response.data
-                if m["subject"]
-                == "Test E2E Inbound with Unnamed Calendar Attachment"
-            ),
-            None,
-        )
-        assert message_data is not None, (
-            "Message with expected subject not found in API response"
+            "Test E2E Inbound with Unnamed Calendar Attachment",
+            valid_jwt_token,
         )
         assert message_data["has_attachments"] is True
         assert len(message_data["attachments"]) == 1

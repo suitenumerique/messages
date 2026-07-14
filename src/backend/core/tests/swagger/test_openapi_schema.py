@@ -47,6 +47,7 @@ def test_openapi_client_schema():
     [
         # Mailbox.contact is a SET_NULL FK (an alias mailbox has none).
         ("MailboxAdmin", "contact"),
+        ("MailboxAdminCreate", "contact"),
         # get_expected_dns_records returns None outside the retrieve action.
         ("MailDomainAdmin", "expected_dns_records"),
         # get_role / get_user_role return None when the user has no role in
