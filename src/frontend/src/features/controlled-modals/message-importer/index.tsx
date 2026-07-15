@@ -7,8 +7,10 @@ import { StepLoader } from "./step-loader";
 import { StepCompleted } from "./step-completed";
 import clsx from "clsx";
 import { useEffect, useRef, useState } from "react";
+import { useQueryClient } from "@tanstack/react-query";
+import { getMailboxesImportsListQueryKey } from "@/features/api/gen";
 import { TaskImportCacheHelper } from "@/features/utils/task-import-cache";
-import { ImportTaskRecap } from "@/hooks/use-task-status";
+import { ImportRecap } from "@/hooks/use-import-status";
 
 
 export const MODAL_MESSAGE_IMPORTER_ID = "modal-message-importer";
@@ -27,11 +29,20 @@ export const ModalMessageImporter = () => {
     const { invalidateMailbox, invalidateThreadsStats, invalidateLabels, refetchMailboxes, selectedMailbox } = useMailboxContext();
     const { t } = useTranslation();
     const modals = useModals();
+    const queryClient = useQueryClient();
+    // Refresh the mailbox's imports list (Imports settings tab) whenever a run
+    // is created/finished/cancelled here — its grid stops polling when it has no
+    // active row, so it would otherwise miss a newly created import.
+    const invalidateImports = () =>
+        queryClient.invalidateQueries({
+            queryKey: getMailboxesImportsListQueryKey(selectedMailbox?.id),
+            exact: false,
+        });
     const taskImportCacheHelper = new TaskImportCacheHelper(selectedMailbox?.id);
-    const [taskId, setTaskId] = useState<string | null>(taskImportCacheHelper.get());
-    const [step, setStep] = useState<IMPORT_STEP>(taskId ? 'importing' : 'idle');
+    const [importId, setImportId] = useState<string | null>(taskImportCacheHelper.get());
+    const [step, setStep] = useState<IMPORT_STEP>(importId ? 'importing' : 'idle');
     const [error, setError] = useState<string | null>(null);
-    const [recap, setRecap] = useState<ImportTaskRecap | null>(null);
+    const [recap, setRecap] = useState<ImportRecap | null>(null);
     const { closeModal } = useModalStore();
 
     // Track Alt key for force-reset on alt+close
@@ -52,7 +63,7 @@ export const ModalMessageImporter = () => {
     const handleClose = () => {
         if (altKeyRef.current && step === 'importing') {
             taskImportCacheHelper.remove();
-            setTaskId(null);
+            setImportId(null);
             setStep('idle');
         }
     };
@@ -61,9 +72,9 @@ export const ModalMessageImporter = () => {
         closeModal(MODAL_MESSAGE_IMPORTER_ID);
     }
 
-    const handleImportingStepComplete = async (taskRecap: ImportTaskRecap) => {
+    const handleImportingStepComplete = async (taskRecap: ImportRecap) => {
         taskImportCacheHelper.remove();
-        setTaskId(null);
+        setImportId(null);
         setRecap(taskRecap);
         setStep('completed');
         await Promise.all([
@@ -71,26 +82,45 @@ export const ModalMessageImporter = () => {
             invalidateThreadsStats(),
             invalidateMailbox(),
             invalidateLabels(),
+            invalidateImports(),
+        ]);
+    }
+
+    // The import was cancelled: its messages were deleted server-side, so go
+    // back to the form and refresh the mailbox to drop them from the UI.
+    const handleImportCancelled = async () => {
+        taskImportCacheHelper.remove();
+        setImportId(null);
+        setError(null);
+        setStep('idle');
+        await Promise.all([
+            refetchMailboxes(),
+            invalidateThreadsStats(),
+            invalidateMailbox(),
+            invalidateLabels(),
+            invalidateImports(),
         ]);
     }
 
 
     const handleArchiveUploading = () => {
         setStep('uploading');
-        setTaskId(null);
+        setImportId(null);
         setError(null);
         taskImportCacheHelper.remove();
     }
 
-    const handleFormSuccess = (taskId: string) => {
-        setTaskId(taskId);
+    const handleFormSuccess = (importId: string) => {
+        setImportId(importId);
         setStep('importing');
-        taskImportCacheHelper.set(taskId);
+        taskImportCacheHelper.set(importId);
+        // New run just created — surface it in the Imports tab immediately.
+        invalidateImports();
     }
 
     const handleError = (error: string | null) => {
         setStep('idle');
-        setTaskId(null);
+        setImportId(null);
         taskImportCacheHelper.remove();
         setError(error);
     }
@@ -134,6 +164,7 @@ export const ModalMessageImporter = () => {
                         style={{ gap: 'var(--c--globals--spacings--xl)' }}
                     >
                         <StepForm
+                            mailboxId={selectedMailbox.id}
                             onUploading={handleArchiveUploading}
                             onSuccess={handleFormSuccess}
                             onError={handleError}
@@ -144,9 +175,11 @@ export const ModalMessageImporter = () => {
                 )}
                 {step === 'importing' && (
                     <StepLoader
-                        taskId={taskId!}
+                        mailboxId={selectedMailbox.id}
+                        importId={importId!}
                         onComplete={handleImportingStepComplete}
                         onError={handleError}
+                        onCancelled={handleImportCancelled}
                     />
                 )}
                 {step === 'completed' && (

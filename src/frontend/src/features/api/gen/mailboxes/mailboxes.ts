@@ -439,6 +439,427 @@ export function useMailboxesImageProxyList<
 }
 
 /**
+ * Create a multipart upload (returns ``upload_id``) or a direct
+presigned PUT url for a file in the imports bucket.
+ */
+export type mailboxesImportsUploadCreateResponse201 = {
+  data: void;
+  status: 201;
+};
+
+export type mailboxesImportsUploadCreateResponseSuccess =
+  mailboxesImportsUploadCreateResponse201 & {
+    headers: Headers;
+  };
+export type mailboxesImportsUploadCreateResponse =
+  mailboxesImportsUploadCreateResponseSuccess;
+
+export const getMailboxesImportsUploadCreateUrl = (mailboxId: string) => {
+  return `/api/v1.0/mailboxes/${mailboxId}/imports/upload/`;
+};
+
+export const mailboxesImportsUploadCreate = async (
+  mailboxId: string,
+  options?: RequestInit,
+): Promise<mailboxesImportsUploadCreateResponse> => {
+  return fetchAPI<mailboxesImportsUploadCreateResponse>(
+    getMailboxesImportsUploadCreateUrl(mailboxId),
+    {
+      ...options,
+      method: "POST",
+    },
+  );
+};
+
+export const getMailboxesImportsUploadCreateMutationOptions = <
+  TError = ErrorType<unknown>,
+  TContext = unknown,
+>(options?: {
+  mutation?: UseMutationOptions<
+    Awaited<ReturnType<typeof mailboxesImportsUploadCreate>>,
+    TError,
+    { mailboxId: string },
+    TContext
+  >;
+  request?: SecondParameter<typeof fetchAPI>;
+}): UseMutationOptions<
+  Awaited<ReturnType<typeof mailboxesImportsUploadCreate>>,
+  TError,
+  { mailboxId: string },
+  TContext
+> => {
+  const mutationKey = ["mailboxesImportsUploadCreate"];
+  const { mutation: mutationOptions, request: requestOptions } = options
+    ? options.mutation &&
+      "mutationKey" in options.mutation &&
+      options.mutation.mutationKey
+      ? options
+      : { ...options, mutation: { ...options.mutation, mutationKey } }
+    : { mutation: { mutationKey }, request: undefined };
+
+  const mutationFn: MutationFunction<
+    Awaited<ReturnType<typeof mailboxesImportsUploadCreate>>,
+    { mailboxId: string }
+  > = (props) => {
+    const { mailboxId } = props ?? {};
+
+    return mailboxesImportsUploadCreate(mailboxId, requestOptions);
+  };
+
+  return { mutationFn, ...mutationOptions };
+};
+
+export type MailboxesImportsUploadCreateMutationResult = NonNullable<
+  Awaited<ReturnType<typeof mailboxesImportsUploadCreate>>
+>;
+
+export type MailboxesImportsUploadCreateMutationError = ErrorType<unknown>;
+
+export const useMailboxesImportsUploadCreate = <
+  TError = ErrorType<unknown>,
+  TContext = unknown,
+>(
+  options?: {
+    mutation?: UseMutationOptions<
+      Awaited<ReturnType<typeof mailboxesImportsUploadCreate>>,
+      TError,
+      { mailboxId: string },
+      TContext
+    >;
+    request?: SecondParameter<typeof fetchAPI>;
+  },
+  queryClient?: QueryClient,
+): UseMutationResult<
+  Awaited<ReturnType<typeof mailboxesImportsUploadCreate>>,
+  TError,
+  { mailboxId: string },
+  TContext
+> => {
+  const mutationOptions =
+    getMailboxesImportsUploadCreateMutationOptions(options);
+
+  return useMutation(mutationOptions, queryClient);
+};
+/**
+ * Complete a multipart upload by providing all part ETags.
+ */
+export type mailboxesImportsUploadUpdateResponse200 = {
+  data: void;
+  status: 200;
+};
+
+export type mailboxesImportsUploadUpdateResponseSuccess =
+  mailboxesImportsUploadUpdateResponse200 & {
+    headers: Headers;
+  };
+export type mailboxesImportsUploadUpdateResponse =
+  mailboxesImportsUploadUpdateResponseSuccess;
+
+export const getMailboxesImportsUploadUpdateUrl = (
+  mailboxId: string,
+  uploadId: string,
+) => {
+  return `/api/v1.0/mailboxes/${mailboxId}/imports/upload/${uploadId}/`;
+};
+
+export const mailboxesImportsUploadUpdate = async (
+  mailboxId: string,
+  uploadId: string,
+  options?: RequestInit,
+): Promise<mailboxesImportsUploadUpdateResponse> => {
+  return fetchAPI<mailboxesImportsUploadUpdateResponse>(
+    getMailboxesImportsUploadUpdateUrl(mailboxId, uploadId),
+    {
+      ...options,
+      method: "PUT",
+    },
+  );
+};
+
+export const getMailboxesImportsUploadUpdateMutationOptions = <
+  TError = ErrorType<unknown>,
+  TContext = unknown,
+>(options?: {
+  mutation?: UseMutationOptions<
+    Awaited<ReturnType<typeof mailboxesImportsUploadUpdate>>,
+    TError,
+    { mailboxId: string; uploadId: string },
+    TContext
+  >;
+  request?: SecondParameter<typeof fetchAPI>;
+}): UseMutationOptions<
+  Awaited<ReturnType<typeof mailboxesImportsUploadUpdate>>,
+  TError,
+  { mailboxId: string; uploadId: string },
+  TContext
+> => {
+  const mutationKey = ["mailboxesImportsUploadUpdate"];
+  const { mutation: mutationOptions, request: requestOptions } = options
+    ? options.mutation &&
+      "mutationKey" in options.mutation &&
+      options.mutation.mutationKey
+      ? options
+      : { ...options, mutation: { ...options.mutation, mutationKey } }
+    : { mutation: { mutationKey }, request: undefined };
+
+  const mutationFn: MutationFunction<
+    Awaited<ReturnType<typeof mailboxesImportsUploadUpdate>>,
+    { mailboxId: string; uploadId: string }
+  > = (props) => {
+    const { mailboxId, uploadId } = props ?? {};
+
+    return mailboxesImportsUploadUpdate(mailboxId, uploadId, requestOptions);
+  };
+
+  return { mutationFn, ...mutationOptions };
+};
+
+export type MailboxesImportsUploadUpdateMutationResult = NonNullable<
+  Awaited<ReturnType<typeof mailboxesImportsUploadUpdate>>
+>;
+
+export type MailboxesImportsUploadUpdateMutationError = ErrorType<unknown>;
+
+export const useMailboxesImportsUploadUpdate = <
+  TError = ErrorType<unknown>,
+  TContext = unknown,
+>(
+  options?: {
+    mutation?: UseMutationOptions<
+      Awaited<ReturnType<typeof mailboxesImportsUploadUpdate>>,
+      TError,
+      { mailboxId: string; uploadId: string },
+      TContext
+    >;
+    request?: SecondParameter<typeof fetchAPI>;
+  },
+  queryClient?: QueryClient,
+): UseMutationResult<
+  Awaited<ReturnType<typeof mailboxesImportsUploadUpdate>>,
+  TError,
+  { mailboxId: string; uploadId: string },
+  TContext
+> => {
+  const mutationOptions =
+    getMailboxesImportsUploadUpdateMutationOptions(options);
+
+  return useMutation(mutationOptions, queryClient);
+};
+/**
+ * Abort a multipart upload.
+ */
+export type mailboxesImportsUploadDestroyResponse204 = {
+  data: void;
+  status: 204;
+};
+
+export type mailboxesImportsUploadDestroyResponseSuccess =
+  mailboxesImportsUploadDestroyResponse204 & {
+    headers: Headers;
+  };
+export type mailboxesImportsUploadDestroyResponse =
+  mailboxesImportsUploadDestroyResponseSuccess;
+
+export const getMailboxesImportsUploadDestroyUrl = (
+  mailboxId: string,
+  uploadId: string,
+) => {
+  return `/api/v1.0/mailboxes/${mailboxId}/imports/upload/${uploadId}/`;
+};
+
+export const mailboxesImportsUploadDestroy = async (
+  mailboxId: string,
+  uploadId: string,
+  options?: RequestInit,
+): Promise<mailboxesImportsUploadDestroyResponse> => {
+  return fetchAPI<mailboxesImportsUploadDestroyResponse>(
+    getMailboxesImportsUploadDestroyUrl(mailboxId, uploadId),
+    {
+      ...options,
+      method: "DELETE",
+    },
+  );
+};
+
+export const getMailboxesImportsUploadDestroyMutationOptions = <
+  TError = ErrorType<unknown>,
+  TContext = unknown,
+>(options?: {
+  mutation?: UseMutationOptions<
+    Awaited<ReturnType<typeof mailboxesImportsUploadDestroy>>,
+    TError,
+    { mailboxId: string; uploadId: string },
+    TContext
+  >;
+  request?: SecondParameter<typeof fetchAPI>;
+}): UseMutationOptions<
+  Awaited<ReturnType<typeof mailboxesImportsUploadDestroy>>,
+  TError,
+  { mailboxId: string; uploadId: string },
+  TContext
+> => {
+  const mutationKey = ["mailboxesImportsUploadDestroy"];
+  const { mutation: mutationOptions, request: requestOptions } = options
+    ? options.mutation &&
+      "mutationKey" in options.mutation &&
+      options.mutation.mutationKey
+      ? options
+      : { ...options, mutation: { ...options.mutation, mutationKey } }
+    : { mutation: { mutationKey }, request: undefined };
+
+  const mutationFn: MutationFunction<
+    Awaited<ReturnType<typeof mailboxesImportsUploadDestroy>>,
+    { mailboxId: string; uploadId: string }
+  > = (props) => {
+    const { mailboxId, uploadId } = props ?? {};
+
+    return mailboxesImportsUploadDestroy(mailboxId, uploadId, requestOptions);
+  };
+
+  return { mutationFn, ...mutationOptions };
+};
+
+export type MailboxesImportsUploadDestroyMutationResult = NonNullable<
+  Awaited<ReturnType<typeof mailboxesImportsUploadDestroy>>
+>;
+
+export type MailboxesImportsUploadDestroyMutationError = ErrorType<unknown>;
+
+export const useMailboxesImportsUploadDestroy = <
+  TError = ErrorType<unknown>,
+  TContext = unknown,
+>(
+  options?: {
+    mutation?: UseMutationOptions<
+      Awaited<ReturnType<typeof mailboxesImportsUploadDestroy>>,
+      TError,
+      { mailboxId: string; uploadId: string },
+      TContext
+    >;
+    request?: SecondParameter<typeof fetchAPI>;
+  },
+  queryClient?: QueryClient,
+): UseMutationResult<
+  Awaited<ReturnType<typeof mailboxesImportsUploadDestroy>>,
+  TError,
+  { mailboxId: string; uploadId: string },
+  TContext
+> => {
+  const mutationOptions =
+    getMailboxesImportsUploadDestroyMutationOptions(options);
+
+  return useMutation(mutationOptions, queryClient);
+};
+/**
+ * Create a presigned url to upload one part of a multipart upload.
+ */
+export type mailboxesImportsUploadPartCreateResponse200 = {
+  data: void;
+  status: 200;
+};
+
+export type mailboxesImportsUploadPartCreateResponseSuccess =
+  mailboxesImportsUploadPartCreateResponse200 & {
+    headers: Headers;
+  };
+export type mailboxesImportsUploadPartCreateResponse =
+  mailboxesImportsUploadPartCreateResponseSuccess;
+
+export const getMailboxesImportsUploadPartCreateUrl = (
+  mailboxId: string,
+  uploadId: string,
+) => {
+  return `/api/v1.0/mailboxes/${mailboxId}/imports/upload/${uploadId}/part/`;
+};
+
+export const mailboxesImportsUploadPartCreate = async (
+  mailboxId: string,
+  uploadId: string,
+  options?: RequestInit,
+): Promise<mailboxesImportsUploadPartCreateResponse> => {
+  return fetchAPI<mailboxesImportsUploadPartCreateResponse>(
+    getMailboxesImportsUploadPartCreateUrl(mailboxId, uploadId),
+    {
+      ...options,
+      method: "POST",
+    },
+  );
+};
+
+export const getMailboxesImportsUploadPartCreateMutationOptions = <
+  TError = ErrorType<unknown>,
+  TContext = unknown,
+>(options?: {
+  mutation?: UseMutationOptions<
+    Awaited<ReturnType<typeof mailboxesImportsUploadPartCreate>>,
+    TError,
+    { mailboxId: string; uploadId: string },
+    TContext
+  >;
+  request?: SecondParameter<typeof fetchAPI>;
+}): UseMutationOptions<
+  Awaited<ReturnType<typeof mailboxesImportsUploadPartCreate>>,
+  TError,
+  { mailboxId: string; uploadId: string },
+  TContext
+> => {
+  const mutationKey = ["mailboxesImportsUploadPartCreate"];
+  const { mutation: mutationOptions, request: requestOptions } = options
+    ? options.mutation &&
+      "mutationKey" in options.mutation &&
+      options.mutation.mutationKey
+      ? options
+      : { ...options, mutation: { ...options.mutation, mutationKey } }
+    : { mutation: { mutationKey }, request: undefined };
+
+  const mutationFn: MutationFunction<
+    Awaited<ReturnType<typeof mailboxesImportsUploadPartCreate>>,
+    { mailboxId: string; uploadId: string }
+  > = (props) => {
+    const { mailboxId, uploadId } = props ?? {};
+
+    return mailboxesImportsUploadPartCreate(
+      mailboxId,
+      uploadId,
+      requestOptions,
+    );
+  };
+
+  return { mutationFn, ...mutationOptions };
+};
+
+export type MailboxesImportsUploadPartCreateMutationResult = NonNullable<
+  Awaited<ReturnType<typeof mailboxesImportsUploadPartCreate>>
+>;
+
+export type MailboxesImportsUploadPartCreateMutationError = ErrorType<unknown>;
+
+export const useMailboxesImportsUploadPartCreate = <
+  TError = ErrorType<unknown>,
+  TContext = unknown,
+>(
+  options?: {
+    mutation?: UseMutationOptions<
+      Awaited<ReturnType<typeof mailboxesImportsUploadPartCreate>>,
+      TError,
+      { mailboxId: string; uploadId: string },
+      TContext
+    >;
+    request?: SecondParameter<typeof fetchAPI>;
+  },
+  queryClient?: QueryClient,
+): UseMutationResult<
+  Awaited<ReturnType<typeof mailboxesImportsUploadPartCreate>>,
+  TError,
+  { mailboxId: string; uploadId: string },
+  TContext
+> => {
+  const mutationOptions =
+    getMailboxesImportsUploadPartCreateMutationOptions(options);
+
+  return useMutation(mutationOptions, queryClient);
+};
+/**
  * List message templates for a mailbox.
  */
 export type mailboxesMessageTemplatesListResponse200 = {

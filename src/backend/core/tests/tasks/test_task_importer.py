@@ -1,38 +1,29 @@
-"""Tests for importer tasks."""
+"""Tests for importer indexing helpers."""
 # pylint: disable=redefined-outer-name, no-value-for-parameter
 
-import uuid
 from io import BytesIO
-from unittest.mock import MagicMock, patch
-
-from django.core.exceptions import ValidationError
-from django.core.files.storage import storages
 
 import pytest
 
-from core import models
-from core.factories import MailboxFactory, UserFactory
-from core.mda.inbound import deliver_inbound_message
-from core.models import Message
-from core.services.importer.mbox_tasks import (
+from core.services.importer.mbox import (
     extract_date_from_headers,
     index_mbox_messages,
-    process_mbox_file_task,
 )
 
 
-@pytest.fixture
-def mailbox(user):
-    """Create a test mailbox with admin access for the user."""
-    mailbox = MailboxFactory()
-    mailbox.accesses.create(user=user, role=models.MailboxRoleChoices.ADMIN)
-    return mailbox
-
-
-@pytest.fixture
-def user():
-    """Create a test user."""
-    return UserFactory()
+def test_index_mbox_messages_calls_on_progress(sample_mbox_content):
+    """index_mbox_messages beats on_progress during the scan so the runner can
+    renew its lock through a long full-file index (C1). A small chunk size
+    forces several reads."""
+    calls = []
+    index_mbox_messages(
+        BytesIO(sample_mbox_content),
+        chunk_size=16,
+        on_progress=lambda: calls.append(1),
+    )
+    # chunk_size=16 over a multi-hundred-byte mbox forces several reads, so a
+    # single beat would mean the per-chunk hook regressed to per-file.
+    assert len(calls) > 1, "on_progress should beat once per chunk read"
 
 
 @pytest.fixture
@@ -70,26 +61,6 @@ References: <msg1@example.com>
 
 This is test message 2.
 """
-
-
-@pytest.fixture
-def mock_task():
-    """Create a mock task instance."""
-    task = MagicMock()
-    task.update_state = MagicMock()
-    return task
-
-
-def _upload_to_s3(content, file_key="test-mbox-key"):
-    """Upload content to the message-imports S3 bucket (real object storage)."""
-    storage = storages["message-imports"]
-    s3_client = storage.connection.meta.client
-    s3_client.put_object(
-        Bucket=storage.bucket_name,
-        Key=file_key,
-        Body=content,
-    )
-    return file_key, storage, s3_client
 
 
 @pytest.mark.django_db
@@ -197,242 +168,3 @@ Body
         indices = index_mbox_messages(file)
         assert len(indices) == 1
         assert indices[0].date is None
-
-
-@pytest.mark.django_db
-class TestProcessMboxFileTask:
-    """Test suite for process_mbox_file_task."""
-
-    def test_task_process_mbox_file_success(self, mailbox, sample_mbox_content):
-        """Test successful MBOX file processing."""
-        file_key, storage, s3_client = _upload_to_s3(sample_mbox_content)
-
-        try:
-            mock_task = MagicMock()
-            mock_task.update_state = MagicMock()
-
-            with patch.object(
-                process_mbox_file_task, "update_state", mock_task.update_state
-            ):
-                task_result = process_mbox_file_task(
-                    file_key=file_key, recipient_id=str(mailbox.id)
-                )
-
-                assert task_result["status"] == "SUCCESS"
-                assert (
-                    task_result["result"]["message_status"]
-                    == "Completed processing messages"
-                )
-                assert task_result["result"]["type"] == "mbox"
-                assert task_result["result"]["total_messages"] == 3
-                assert task_result["result"]["success_count"] == 3
-                assert task_result["result"]["failure_count"] == 0
-                assert task_result["result"]["current_message"] == 3
-
-                # 1 "Indexing" + 3 per-message PROGRESS = 4
-                assert mock_task.update_state.call_count == 4
-
-                # Verify "Indexing messages" update
-                mock_task.update_state.assert_any_call(
-                    state="PROGRESS",
-                    meta={
-                        "result": {
-                            "message_status": "Indexing messages",
-                            "total_messages": None,
-                            "success_count": 0,
-                            "failure_count": 0,
-                            "type": "mbox",
-                            "current_message": 0,
-                        },
-                        "error": None,
-                    },
-                )
-
-                # Verify per-message progress
-                for i in range(1, 4):
-                    mock_task.update_state.assert_any_call(
-                        state="PROGRESS",
-                        meta={
-                            "result": {
-                                "message_status": f"Processing message {i} of 3",
-                                "total_messages": 3,
-                                "success_count": i - 1,
-                                "failure_count": 0,
-                                "type": "mbox",
-                                "current_message": i,
-                            },
-                            "error": None,
-                        },
-                    )
-
-                # Verify messages were created in chronological order
-                message_count = Message.objects.count()
-                assert message_count == 3, f"Expected 3 messages, got {message_count}"
-                messages = Message.objects.order_by("created_at")
-                # Sorted by date: Jan 1, Jan 2, Jan 3
-                assert messages[0].subject == "Test Message 1"
-                assert messages[1].subject == "Test Message 2"
-                assert messages[2].subject == "Test Message 3"
-
-                # Verify threading: msg2 replies to msg1
-                assert messages[1].thread == messages[0].thread
-        finally:
-            s3_client.delete_object(Bucket=storage.bucket_name, Key=file_key)
-
-    def test_task_process_mbox_file_partial_success(self, mailbox, sample_mbox_content):
-        """Test MBOX processing with some messages failing."""
-
-        original_deliver = deliver_inbound_message
-
-        def mock_deliver(recipient_email, parsed_email, raw_data, **kwargs):
-            if parsed_email.get("subject") == "Test Message 2":
-                return False
-            return original_deliver(recipient_email, parsed_email, raw_data, **kwargs)
-
-        file_key, storage, s3_client = _upload_to_s3(sample_mbox_content)
-
-        try:
-            mock_task = MagicMock()
-            mock_task.update_state = MagicMock()
-
-            with (
-                patch.object(
-                    process_mbox_file_task, "update_state", mock_task.update_state
-                ),
-                patch(
-                    "core.services.importer.mbox_tasks.deliver_inbound_message",
-                    side_effect=mock_deliver,
-                ),
-            ):
-                task_result = process_mbox_file_task(file_key, str(mailbox.id))
-
-                assert task_result["status"] == "SUCCESS"
-                assert task_result["result"]["total_messages"] == 3
-                assert task_result["result"]["success_count"] == 2
-                assert task_result["result"]["failure_count"] == 1
-                assert task_result["result"]["current_message"] == 3
-
-                # 1 indexing + 3 per-message PROGRESS = 4
-                assert mock_task.update_state.call_count == 4
-
-                # Verify messages: msg1 and msg3 created, msg2 failed
-                assert Message.objects.count() == 2
-                subjects = sorted(Message.objects.values_list("subject", flat=True))
-                assert "Test Message 1" in subjects
-                assert "Test Message 3" in subjects
-        finally:
-            s3_client.delete_object(Bucket=storage.bucket_name, Key=file_key)
-
-    def test_task_process_mbox_file_mailbox_not_found(self, sample_mbox_content):  # pylint: disable=unused-argument
-        """Test MBOX processing with non-existent mailbox."""
-        mock_task = MagicMock()
-        mock_task.update_state = MagicMock()
-
-        non_existent_id = str(uuid.uuid4())
-
-        with patch.object(
-            process_mbox_file_task, "update_state", mock_task.update_state
-        ):
-            task_result = process_mbox_file_task(
-                file_key="test-file-key.mbox", recipient_id=non_existent_id
-            )
-
-            assert task_result["status"] == "FAILURE"
-            assert (
-                task_result["result"]["message_status"] == "Failed to process messages"
-            )
-            assert task_result["result"]["type"] == "mbox"
-            assert task_result["result"]["total_messages"] == 0
-            assert task_result["result"]["success_count"] == 0
-            assert task_result["result"]["failure_count"] == 0
-            assert task_result["result"]["current_message"] == 0
-            assert (
-                f"Recipient mailbox {non_existent_id} not found" in task_result["error"]
-            )
-
-            # No update_state calls — failure status is in the returned dict
-            mock_task.update_state.assert_not_called()
-
-            assert Message.objects.count() == 0
-
-    def test_task_process_mbox_file_parse_error(self, mailbox, sample_mbox_content):
-        """Test MBOX processing with message parsing error."""
-
-        def mock_parse(*args, **kwargs):
-            raise ValidationError("Invalid message format")
-
-        file_key, storage, s3_client = _upload_to_s3(sample_mbox_content)
-
-        try:
-            mock_task = MagicMock()
-            mock_task.update_state = MagicMock()
-
-            with (
-                patch(
-                    "core.services.importer.mbox_tasks.parse_email",
-                    side_effect=mock_parse,
-                ),
-                patch.object(
-                    process_mbox_file_task, "update_state", mock_task.update_state
-                ),
-            ):
-                task_result = process_mbox_file_task(file_key, str(mailbox.id))
-
-                assert task_result["status"] == "SUCCESS"
-                assert task_result["result"]["total_messages"] == 3
-                assert task_result["result"]["success_count"] == 0
-                assert task_result["result"]["failure_count"] == 3
-
-                # 1 indexing + 3 per-message PROGRESS = 4
-                assert mock_task.update_state.call_count == 4
-
-                assert Message.objects.count() == 0
-        finally:
-            s3_client.delete_object(Bucket=storage.bucket_name, Key=file_key)
-
-    def test_task_process_mbox_file_empty(self, mailbox):
-        """Test processing an empty MBOX file — returns success with zero messages."""
-        file_key, storage, s3_client = _upload_to_s3(b"")
-
-        try:
-            mock_task = MagicMock()
-            mock_task.update_state = MagicMock()
-
-            with patch.object(
-                process_mbox_file_task, "update_state", mock_task.update_state
-            ):
-                task_result = process_mbox_file_task(
-                    file_key=file_key, recipient_id=str(mailbox.id)
-                )
-
-                assert task_result["status"] == "SUCCESS"
-                assert task_result["result"]["total_messages"] == 0
-                assert Message.objects.count() == 0
-        finally:
-            s3_client.delete_object(Bucket=storage.bucket_name, Key=file_key)
-
-    def test_task_process_mbox_invalid_file(self, mailbox):
-        """Test processing a non-text file (JPEG) — no messages found, returns success."""
-        # JPEG magic bytes
-        jpeg_content = b"\xff\xd8\xff\xe0" + b"\x00" * 100
-
-        file_key, storage, s3_client = _upload_to_s3(jpeg_content)
-
-        try:
-            mock_task = MagicMock()
-            mock_task.update_state = MagicMock()
-
-            with patch.object(
-                process_mbox_file_task, "update_state", mock_task.update_state
-            ):
-                task_result = process_mbox_file_task(
-                    file_key=file_key, recipient_id=str(mailbox.id)
-                )
-
-                # MIME validation is done upstream in service.py;
-                # the task just finds zero messages in invalid content
-                assert task_result["status"] == "SUCCESS"
-                assert task_result["result"]["total_messages"] == 0
-                assert Message.objects.count() == 0
-        finally:
-            s3_client.delete_object(Bucket=storage.bucket_name, Key=file_key)
