@@ -124,7 +124,7 @@ const ImportIndicator = () => {
       // importer modal's invalidations wake this query up on a new run.
       refetchInterval: (query) => {
         const rows = (query.state.data?.data as ImportRun[] | undefined) ?? [];
-        return rows.some((r) => !isTerminal(r.status)) ? 60000 : false;
+        return rows.some((r) => r.is_active && !isTerminal(r.status)) ? 60000 : false;
       },
     },
     // Background status poll: let foreground requests win the wire.
@@ -134,21 +134,29 @@ const ImportIndicator = () => {
   const activeRuns = useMemo(
     () =>
       ((data?.data as ImportRun[] | undefined) ?? []).filter(
-        (r) => !isTerminal(r.status),
+        (r) => r.is_active && !isTerminal(r.status),
       ),
     [data],
   );
 
   if (!selectedMailbox || activeRuns.length === 0) return null;
 
-  // Average across the runs that already know their total; indeterminate until
-  // at least one does. Capped below 100 — the button disappears on completion.
+  // Weighted average across the runs that already know their total, so a small
+  // run can't dominate the badge; indeterminate until at least one knows its
+  // total. Capped below 100 — the button disappears on completion.
   const withTotal = activeRuns.filter((r) => (r.total_messages ?? 0) > 0);
+  const totalMessages = withTotal.reduce(
+    (sum, r) => sum + (r.total_messages ?? 0),
+    0,
+  );
   const progress = withTotal.length
     ? Math.min(
         99,
         Math.round(
-          withTotal.reduce((sum, r) => sum + (r.progress ?? 0), 0) / withTotal.length,
+          withTotal.reduce(
+            (sum, r) => sum + (r.progress ?? 0) * (r.total_messages ?? 0),
+            0,
+          ) / totalMessages,
         ),
       )
     : null;

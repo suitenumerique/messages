@@ -343,7 +343,7 @@ class TestImportUpdate:
     def test_patch_continuous_with_pause_persists_mode(self, api_client, mailbox, user):
         """{mode: continuous, is_active: false} means "arm as a poller but
         start it paused": the mode must be persisted (not silently dropped)
-        and no run dispatched, so a later is_active=true can resume it."""
+        and no run dispatched."""
         channel = self._imap_import(mailbox, user)
         with patch("core.api.viewsets.imports.run_import_task.delay") as mock_delay:
             response = api_client.patch(
@@ -355,7 +355,16 @@ class TestImportUpdate:
         assert response.data["mode"] == enums.ImportMode.CONTINUOUS.value
         assert response.data["is_active"] is False
         mock_delay.assert_not_called()
-        # And the paused poller can now actually be resumed.
+
+    def test_patch_resumes_paused_continuous_import(self, api_client, mailbox, user):
+        """A poller armed but paused via {mode: continuous, is_active: false} can
+        later be resumed by is_active=true, which dispatches exactly one run."""
+        channel = self._imap_import(mailbox, user)
+        api_client.patch(
+            self._url(mailbox, channel),
+            {"mode": "continuous", "is_active": False},
+            format="json",
+        )
         with patch("core.api.viewsets.imports.run_import_task.delay") as mock_delay:
             response = api_client.patch(
                 self._url(mailbox, channel), {"is_active": True}, format="json"
