@@ -5,19 +5,26 @@
  * This is the messages API schema.
  * OpenAPI spec version: 1.0.0 (v1.0)
  */
-import { useMutation } from "@tanstack/react-query";
+import { useMutation, useQuery } from "@tanstack/react-query";
 import type {
+  DataTag,
+  DefinedInitialDataOptions,
+  DefinedUseQueryResult,
   MutationFunction,
   QueryClient,
+  QueryFunction,
+  QueryKey,
+  UndefinedInitialDataOptions,
   UseMutationOptions,
   UseMutationResult,
+  UseQueryOptions,
+  UseQueryResult,
 } from "@tanstack/react-query";
 
 import type {
-  ImportFileCreate202,
-  ImportFileRequest,
-  ImportIMAPRequest,
-  ImportImapCreate202,
+  ImportCreateRequest,
+  ImportRun,
+  PatchedImportUpdateRequest,
 } from ".././models";
 
 import { fetchAPI } from "../../fetch-api";
@@ -26,141 +33,8 @@ import type { ErrorType } from "../../fetch-api";
 type SecondParameter<T extends (...args: never) => unknown> = Parameters<T>[1];
 
 /**
- * 
-        Import messages by uploading an EML, MBOX, or PST file.
-
-        The import is processed asynchronously and returns a task ID for tracking.
-        The file must be a valid EML, MBOX, or PST format. The recipient mailbox must exist
-        and the user must have access to it.
-        
- */
-export type importFileCreateResponse202 = {
-  data: ImportFileCreate202;
-  status: 202;
-};
-
-export type importFileCreateResponse400 = {
-  data: void;
-  status: 400;
-};
-
-export type importFileCreateResponse403 = {
-  data: void;
-  status: 403;
-};
-
-export type importFileCreateResponse404 = {
-  data: void;
-  status: 404;
-};
-
-export type importFileCreateResponseSuccess = importFileCreateResponse202 & {
-  headers: Headers;
-};
-export type importFileCreateResponseError = (
-  | importFileCreateResponse400
-  | importFileCreateResponse403
-  | importFileCreateResponse404
-) & {
-  headers: Headers;
-};
-
-export type importFileCreateResponse =
-  | importFileCreateResponseSuccess
-  | importFileCreateResponseError;
-
-export const getImportFileCreateUrl = () => {
-  return `/api/v1.0/import/file/`;
-};
-
-export const importFileCreate = async (
-  importFileRequest: ImportFileRequest,
-  options?: RequestInit,
-): Promise<importFileCreateResponse> => {
-  const formData = new FormData();
-  formData.append(`filename`, importFileRequest.filename);
-  formData.append(`recipient`, importFileRequest.recipient);
-
-  return fetchAPI<importFileCreateResponse>(getImportFileCreateUrl(), {
-    ...options,
-    method: "POST",
-    body: formData,
-  });
-};
-
-export const getImportFileCreateMutationOptions = <
-  TError = ErrorType<void>,
-  TContext = unknown,
->(options?: {
-  mutation?: UseMutationOptions<
-    Awaited<ReturnType<typeof importFileCreate>>,
-    TError,
-    { data: ImportFileRequest },
-    TContext
-  >;
-  request?: SecondParameter<typeof fetchAPI>;
-}): UseMutationOptions<
-  Awaited<ReturnType<typeof importFileCreate>>,
-  TError,
-  { data: ImportFileRequest },
-  TContext
-> => {
-  const mutationKey = ["importFileCreate"];
-  const { mutation: mutationOptions, request: requestOptions } = options
-    ? options.mutation &&
-      "mutationKey" in options.mutation &&
-      options.mutation.mutationKey
-      ? options
-      : { ...options, mutation: { ...options.mutation, mutationKey } }
-    : { mutation: { mutationKey }, request: undefined };
-
-  const mutationFn: MutationFunction<
-    Awaited<ReturnType<typeof importFileCreate>>,
-    { data: ImportFileRequest }
-  > = (props) => {
-    const { data } = props ?? {};
-
-    return importFileCreate(data, requestOptions);
-  };
-
-  return { mutationFn, ...mutationOptions };
-};
-
-export type ImportFileCreateMutationResult = NonNullable<
-  Awaited<ReturnType<typeof importFileCreate>>
->;
-export type ImportFileCreateMutationBody = ImportFileRequest;
-export type ImportFileCreateMutationError = ErrorType<void>;
-
-export const useImportFileCreate = <
-  TError = ErrorType<void>,
-  TContext = unknown,
->(
-  options?: {
-    mutation?: UseMutationOptions<
-      Awaited<ReturnType<typeof importFileCreate>>,
-      TError,
-      { data: ImportFileRequest },
-      TContext
-    >;
-    request?: SecondParameter<typeof fetchAPI>;
-  },
-  queryClient?: QueryClient,
-): UseMutationResult<
-  Awaited<ReturnType<typeof importFileCreate>>,
-  TError,
-  { data: ImportFileRequest },
-  TContext
-> => {
-  const mutationOptions = getImportFileCreateMutationOptions(options);
-
-  return useMutation(mutationOptions, queryClient);
-};
-/**
- * Create a multipart upload or a direct upload for a file to the message imports bucket.
-- In case of a multipart upload, the upload_id is returned to be used for subsequent part uploads.
-- In case of a direct upload, a signed url is returned to directly upload
-  the file to the message imports bucket.
+ * Create a multipart upload (returns ``upload_id``) or a direct
+presigned PUT url for a file in the imports bucket.
  */
 export type importFileUploadCreateResponse201 = {
   data: void;
@@ -257,7 +131,7 @@ export const useImportFileUploadCreate = <
   return useMutation(mutationOptions, queryClient);
 };
 /**
- * Update a multipart upload to complete it by providing all part ETags.
+ * Complete a multipart upload by providing all part ETags.
  */
 export type importFileUploadUpdateResponse200 = {
   data: void;
@@ -357,7 +231,7 @@ export const useImportFileUploadUpdate = <
   return useMutation(mutationOptions, queryClient);
 };
 /**
- * Abort a multipart upload of a file to the message imports bucket.
+ * Abort a multipart upload.
  */
 export type importFileUploadDestroyResponse204 = {
   data: void;
@@ -457,7 +331,7 @@ export const useImportFileUploadDestroy = <
   return useMutation(mutationOptions, queryClient);
 };
 /**
- * Create a presigned url to upload a part of a file to the message imports bucket.
+ * Create a presigned url to upload one part of a multipart upload.
  */
 export type importFileUploadPartCreateResponse200 = {
   data: void;
@@ -557,101 +431,270 @@ export const useImportFileUploadPartCreate = <
   return useMutation(mutationOptions, queryClient);
 };
 /**
- * 
-        Import messages from an IMAP server.
+ * Start, list, retrieve and manage import runs for one mailbox.
 
-        This endpoint initiates an asynchronous import process from an IMAP server.
-        The import is processed in the background and returns a task ID for tracking.
-
-        Required parameters:
-        - imap_server: Hostname of the IMAP server
-        - imap_port: Port number for the IMAP server
-        - username: IMAP account username
-        - password: IMAP account password
-        - recipient: ID of the mailbox to import messages into
-
-        Optional parameters:
-        - use_ssl: Whether to use SSL for the connection (default: true)
-        
+Mailbox-nested and gated by ``IsMailboxAdmin`` on the URL mailbox — imports
+bulk-load mail into a mailbox, so they are an admin operation (matching the
+``import_messages`` ability that gates the UI).
  */
-export type importImapCreateResponse202 = {
-  data: ImportImapCreate202;
+export type mailboxesImportsListResponse200 = {
+  data: ImportRun[];
+  status: 200;
+};
+
+export type mailboxesImportsListResponseSuccess =
+  mailboxesImportsListResponse200 & {
+    headers: Headers;
+  };
+export type mailboxesImportsListResponse = mailboxesImportsListResponseSuccess;
+
+export const getMailboxesImportsListUrl = (mailboxId: string) => {
+  return `/api/v1.0/mailboxes/${mailboxId}/imports/`;
+};
+
+export const mailboxesImportsList = async (
+  mailboxId: string,
+  options?: RequestInit,
+): Promise<mailboxesImportsListResponse> => {
+  return fetchAPI<mailboxesImportsListResponse>(
+    getMailboxesImportsListUrl(mailboxId),
+    {
+      ...options,
+      method: "GET",
+    },
+  );
+};
+
+export const getMailboxesImportsListQueryKey = (mailboxId?: string) => {
+  return [`/api/v1.0/mailboxes/${mailboxId}/imports/`] as const;
+};
+
+export const getMailboxesImportsListQueryOptions = <
+  TData = Awaited<ReturnType<typeof mailboxesImportsList>>,
+  TError = ErrorType<unknown>,
+>(
+  mailboxId: string,
+  options?: {
+    query?: Partial<
+      UseQueryOptions<
+        Awaited<ReturnType<typeof mailboxesImportsList>>,
+        TError,
+        TData
+      >
+    >;
+    request?: SecondParameter<typeof fetchAPI>;
+  },
+) => {
+  const { query: queryOptions, request: requestOptions } = options ?? {};
+
+  const queryKey =
+    queryOptions?.queryKey ?? getMailboxesImportsListQueryKey(mailboxId);
+
+  const queryFn: QueryFunction<
+    Awaited<ReturnType<typeof mailboxesImportsList>>
+  > = ({ signal }) =>
+    mailboxesImportsList(mailboxId, { signal, ...requestOptions });
+
+  return {
+    queryKey,
+    queryFn,
+    enabled: !!mailboxId,
+    ...queryOptions,
+  } as UseQueryOptions<
+    Awaited<ReturnType<typeof mailboxesImportsList>>,
+    TError,
+    TData
+  > & { queryKey: DataTag<QueryKey, TData, TError> };
+};
+
+export type MailboxesImportsListQueryResult = NonNullable<
+  Awaited<ReturnType<typeof mailboxesImportsList>>
+>;
+export type MailboxesImportsListQueryError = ErrorType<unknown>;
+
+export function useMailboxesImportsList<
+  TData = Awaited<ReturnType<typeof mailboxesImportsList>>,
+  TError = ErrorType<unknown>,
+>(
+  mailboxId: string,
+  options: {
+    query: Partial<
+      UseQueryOptions<
+        Awaited<ReturnType<typeof mailboxesImportsList>>,
+        TError,
+        TData
+      >
+    > &
+      Pick<
+        DefinedInitialDataOptions<
+          Awaited<ReturnType<typeof mailboxesImportsList>>,
+          TError,
+          Awaited<ReturnType<typeof mailboxesImportsList>>
+        >,
+        "initialData"
+      >;
+    request?: SecondParameter<typeof fetchAPI>;
+  },
+  queryClient?: QueryClient,
+): DefinedUseQueryResult<TData, TError> & {
+  queryKey: DataTag<QueryKey, TData, TError>;
+};
+export function useMailboxesImportsList<
+  TData = Awaited<ReturnType<typeof mailboxesImportsList>>,
+  TError = ErrorType<unknown>,
+>(
+  mailboxId: string,
+  options?: {
+    query?: Partial<
+      UseQueryOptions<
+        Awaited<ReturnType<typeof mailboxesImportsList>>,
+        TError,
+        TData
+      >
+    > &
+      Pick<
+        UndefinedInitialDataOptions<
+          Awaited<ReturnType<typeof mailboxesImportsList>>,
+          TError,
+          Awaited<ReturnType<typeof mailboxesImportsList>>
+        >,
+        "initialData"
+      >;
+    request?: SecondParameter<typeof fetchAPI>;
+  },
+  queryClient?: QueryClient,
+): UseQueryResult<TData, TError> & {
+  queryKey: DataTag<QueryKey, TData, TError>;
+};
+export function useMailboxesImportsList<
+  TData = Awaited<ReturnType<typeof mailboxesImportsList>>,
+  TError = ErrorType<unknown>,
+>(
+  mailboxId: string,
+  options?: {
+    query?: Partial<
+      UseQueryOptions<
+        Awaited<ReturnType<typeof mailboxesImportsList>>,
+        TError,
+        TData
+      >
+    >;
+    request?: SecondParameter<typeof fetchAPI>;
+  },
+  queryClient?: QueryClient,
+): UseQueryResult<TData, TError> & {
+  queryKey: DataTag<QueryKey, TData, TError>;
+};
+
+export function useMailboxesImportsList<
+  TData = Awaited<ReturnType<typeof mailboxesImportsList>>,
+  TError = ErrorType<unknown>,
+>(
+  mailboxId: string,
+  options?: {
+    query?: Partial<
+      UseQueryOptions<
+        Awaited<ReturnType<typeof mailboxesImportsList>>,
+        TError,
+        TData
+      >
+    >;
+    request?: SecondParameter<typeof fetchAPI>;
+  },
+  queryClient?: QueryClient,
+): UseQueryResult<TData, TError> & {
+  queryKey: DataTag<QueryKey, TData, TError>;
+} {
+  const queryOptions = getMailboxesImportsListQueryOptions(mailboxId, options);
+
+  const query = useQuery(queryOptions, queryClient) as UseQueryResult<
+    TData,
+    TError
+  > & { queryKey: DataTag<QueryKey, TData, TError> };
+
+  query.queryKey = queryOptions.queryKey;
+
+  return query;
+}
+
+/**
+ * Start an import into the URL mailbox (``source=file`` from an
+uploaded archive, or ``source=imap`` from a live server).
+ */
+export type mailboxesImportsCreateResponse202 = {
+  data: ImportRun;
   status: 202;
 };
 
-export type importImapCreateResponse400 = {
+export type mailboxesImportsCreateResponse400 = {
   data: void;
   status: 400;
 };
 
-export type importImapCreateResponse403 = {
+export type mailboxesImportsCreateResponse403 = {
   data: void;
   status: 403;
 };
 
-export type importImapCreateResponse404 = {
+export type mailboxesImportsCreateResponse404 = {
   data: void;
   status: 404;
 };
 
-export type importImapCreateResponseSuccess = importImapCreateResponse202 & {
-  headers: Headers;
-};
-export type importImapCreateResponseError = (
-  | importImapCreateResponse400
-  | importImapCreateResponse403
-  | importImapCreateResponse404
+export type mailboxesImportsCreateResponseSuccess =
+  mailboxesImportsCreateResponse202 & {
+    headers: Headers;
+  };
+export type mailboxesImportsCreateResponseError = (
+  | mailboxesImportsCreateResponse400
+  | mailboxesImportsCreateResponse403
+  | mailboxesImportsCreateResponse404
 ) & {
   headers: Headers;
 };
 
-export type importImapCreateResponse =
-  | importImapCreateResponseSuccess
-  | importImapCreateResponseError;
+export type mailboxesImportsCreateResponse =
+  | mailboxesImportsCreateResponseSuccess
+  | mailboxesImportsCreateResponseError;
 
-export const getImportImapCreateUrl = () => {
-  return `/api/v1.0/import/imap/`;
+export const getMailboxesImportsCreateUrl = (mailboxId: string) => {
+  return `/api/v1.0/mailboxes/${mailboxId}/imports/`;
 };
 
-export const importImapCreate = async (
-  importIMAPRequest: ImportIMAPRequest,
+export const mailboxesImportsCreate = async (
+  mailboxId: string,
+  importCreateRequest: ImportCreateRequest,
   options?: RequestInit,
-): Promise<importImapCreateResponse> => {
-  const formData = new FormData();
-  formData.append(`recipient`, importIMAPRequest.recipient);
-  formData.append(`imap_server`, importIMAPRequest.imap_server);
-  formData.append(`imap_port`, importIMAPRequest.imap_port.toString());
-  formData.append(`username`, importIMAPRequest.username);
-  formData.append(`password`, importIMAPRequest.password);
-  if (importIMAPRequest.use_ssl !== undefined) {
-    formData.append(`use_ssl`, importIMAPRequest.use_ssl.toString());
-  }
-
-  return fetchAPI<importImapCreateResponse>(getImportImapCreateUrl(), {
-    ...options,
-    method: "POST",
-    body: formData,
-  });
+): Promise<mailboxesImportsCreateResponse> => {
+  return fetchAPI<mailboxesImportsCreateResponse>(
+    getMailboxesImportsCreateUrl(mailboxId),
+    {
+      ...options,
+      method: "POST",
+      headers: { "Content-Type": "application/json", ...options?.headers },
+      body: JSON.stringify(importCreateRequest),
+    },
+  );
 };
 
-export const getImportImapCreateMutationOptions = <
+export const getMailboxesImportsCreateMutationOptions = <
   TError = ErrorType<void>,
   TContext = unknown,
 >(options?: {
   mutation?: UseMutationOptions<
-    Awaited<ReturnType<typeof importImapCreate>>,
+    Awaited<ReturnType<typeof mailboxesImportsCreate>>,
     TError,
-    { data: ImportIMAPRequest },
+    { mailboxId: string; data: ImportCreateRequest },
     TContext
   >;
   request?: SecondParameter<typeof fetchAPI>;
 }): UseMutationOptions<
-  Awaited<ReturnType<typeof importImapCreate>>,
+  Awaited<ReturnType<typeof mailboxesImportsCreate>>,
   TError,
-  { data: ImportIMAPRequest },
+  { mailboxId: string; data: ImportCreateRequest },
   TContext
 > => {
-  const mutationKey = ["importImapCreate"];
+  const mutationKey = ["mailboxesImportsCreate"];
   const { mutation: mutationOptions, request: requestOptions } = options
     ? options.mutation &&
       "mutationKey" in options.mutation &&
@@ -661,44 +704,631 @@ export const getImportImapCreateMutationOptions = <
     : { mutation: { mutationKey }, request: undefined };
 
   const mutationFn: MutationFunction<
-    Awaited<ReturnType<typeof importImapCreate>>,
-    { data: ImportIMAPRequest }
+    Awaited<ReturnType<typeof mailboxesImportsCreate>>,
+    { mailboxId: string; data: ImportCreateRequest }
   > = (props) => {
-    const { data } = props ?? {};
+    const { mailboxId, data } = props ?? {};
 
-    return importImapCreate(data, requestOptions);
+    return mailboxesImportsCreate(mailboxId, data, requestOptions);
   };
 
   return { mutationFn, ...mutationOptions };
 };
 
-export type ImportImapCreateMutationResult = NonNullable<
-  Awaited<ReturnType<typeof importImapCreate>>
+export type MailboxesImportsCreateMutationResult = NonNullable<
+  Awaited<ReturnType<typeof mailboxesImportsCreate>>
 >;
-export type ImportImapCreateMutationBody = ImportIMAPRequest;
-export type ImportImapCreateMutationError = ErrorType<void>;
+export type MailboxesImportsCreateMutationBody = ImportCreateRequest;
+export type MailboxesImportsCreateMutationError = ErrorType<void>;
 
-export const useImportImapCreate = <
+export const useMailboxesImportsCreate = <
   TError = ErrorType<void>,
   TContext = unknown,
 >(
   options?: {
     mutation?: UseMutationOptions<
-      Awaited<ReturnType<typeof importImapCreate>>,
+      Awaited<ReturnType<typeof mailboxesImportsCreate>>,
       TError,
-      { data: ImportIMAPRequest },
+      { mailboxId: string; data: ImportCreateRequest },
       TContext
     >;
     request?: SecondParameter<typeof fetchAPI>;
   },
   queryClient?: QueryClient,
 ): UseMutationResult<
-  Awaited<ReturnType<typeof importImapCreate>>,
+  Awaited<ReturnType<typeof mailboxesImportsCreate>>,
   TError,
-  { data: ImportIMAPRequest },
+  { mailboxId: string; data: ImportCreateRequest },
   TContext
 > => {
-  const mutationOptions = getImportImapCreateMutationOptions(options);
+  const mutationOptions = getMailboxesImportsCreateMutationOptions(options);
+
+  return useMutation(mutationOptions, queryClient);
+};
+/**
+ * Start, list, retrieve and manage import runs for one mailbox.
+
+Mailbox-nested and gated by ``IsMailboxAdmin`` on the URL mailbox — imports
+bulk-load mail into a mailbox, so they are an admin operation (matching the
+``import_messages`` ability that gates the UI).
+ */
+export type mailboxesImportsRetrieveResponse200 = {
+  data: ImportRun;
+  status: 200;
+};
+
+export type mailboxesImportsRetrieveResponseSuccess =
+  mailboxesImportsRetrieveResponse200 & {
+    headers: Headers;
+  };
+export type mailboxesImportsRetrieveResponse =
+  mailboxesImportsRetrieveResponseSuccess;
+
+export const getMailboxesImportsRetrieveUrl = (
+  mailboxId: string,
+  id: string,
+) => {
+  return `/api/v1.0/mailboxes/${mailboxId}/imports/${id}/`;
+};
+
+export const mailboxesImportsRetrieve = async (
+  mailboxId: string,
+  id: string,
+  options?: RequestInit,
+): Promise<mailboxesImportsRetrieveResponse> => {
+  return fetchAPI<mailboxesImportsRetrieveResponse>(
+    getMailboxesImportsRetrieveUrl(mailboxId, id),
+    {
+      ...options,
+      method: "GET",
+    },
+  );
+};
+
+export const getMailboxesImportsRetrieveQueryKey = (
+  mailboxId?: string,
+  id?: string,
+) => {
+  return [`/api/v1.0/mailboxes/${mailboxId}/imports/${id}/`] as const;
+};
+
+export const getMailboxesImportsRetrieveQueryOptions = <
+  TData = Awaited<ReturnType<typeof mailboxesImportsRetrieve>>,
+  TError = ErrorType<unknown>,
+>(
+  mailboxId: string,
+  id: string,
+  options?: {
+    query?: Partial<
+      UseQueryOptions<
+        Awaited<ReturnType<typeof mailboxesImportsRetrieve>>,
+        TError,
+        TData
+      >
+    >;
+    request?: SecondParameter<typeof fetchAPI>;
+  },
+) => {
+  const { query: queryOptions, request: requestOptions } = options ?? {};
+
+  const queryKey =
+    queryOptions?.queryKey ??
+    getMailboxesImportsRetrieveQueryKey(mailboxId, id);
+
+  const queryFn: QueryFunction<
+    Awaited<ReturnType<typeof mailboxesImportsRetrieve>>
+  > = ({ signal }) =>
+    mailboxesImportsRetrieve(mailboxId, id, { signal, ...requestOptions });
+
+  return {
+    queryKey,
+    queryFn,
+    enabled: !!(mailboxId && id),
+    ...queryOptions,
+  } as UseQueryOptions<
+    Awaited<ReturnType<typeof mailboxesImportsRetrieve>>,
+    TError,
+    TData
+  > & { queryKey: DataTag<QueryKey, TData, TError> };
+};
+
+export type MailboxesImportsRetrieveQueryResult = NonNullable<
+  Awaited<ReturnType<typeof mailboxesImportsRetrieve>>
+>;
+export type MailboxesImportsRetrieveQueryError = ErrorType<unknown>;
+
+export function useMailboxesImportsRetrieve<
+  TData = Awaited<ReturnType<typeof mailboxesImportsRetrieve>>,
+  TError = ErrorType<unknown>,
+>(
+  mailboxId: string,
+  id: string,
+  options: {
+    query: Partial<
+      UseQueryOptions<
+        Awaited<ReturnType<typeof mailboxesImportsRetrieve>>,
+        TError,
+        TData
+      >
+    > &
+      Pick<
+        DefinedInitialDataOptions<
+          Awaited<ReturnType<typeof mailboxesImportsRetrieve>>,
+          TError,
+          Awaited<ReturnType<typeof mailboxesImportsRetrieve>>
+        >,
+        "initialData"
+      >;
+    request?: SecondParameter<typeof fetchAPI>;
+  },
+  queryClient?: QueryClient,
+): DefinedUseQueryResult<TData, TError> & {
+  queryKey: DataTag<QueryKey, TData, TError>;
+};
+export function useMailboxesImportsRetrieve<
+  TData = Awaited<ReturnType<typeof mailboxesImportsRetrieve>>,
+  TError = ErrorType<unknown>,
+>(
+  mailboxId: string,
+  id: string,
+  options?: {
+    query?: Partial<
+      UseQueryOptions<
+        Awaited<ReturnType<typeof mailboxesImportsRetrieve>>,
+        TError,
+        TData
+      >
+    > &
+      Pick<
+        UndefinedInitialDataOptions<
+          Awaited<ReturnType<typeof mailboxesImportsRetrieve>>,
+          TError,
+          Awaited<ReturnType<typeof mailboxesImportsRetrieve>>
+        >,
+        "initialData"
+      >;
+    request?: SecondParameter<typeof fetchAPI>;
+  },
+  queryClient?: QueryClient,
+): UseQueryResult<TData, TError> & {
+  queryKey: DataTag<QueryKey, TData, TError>;
+};
+export function useMailboxesImportsRetrieve<
+  TData = Awaited<ReturnType<typeof mailboxesImportsRetrieve>>,
+  TError = ErrorType<unknown>,
+>(
+  mailboxId: string,
+  id: string,
+  options?: {
+    query?: Partial<
+      UseQueryOptions<
+        Awaited<ReturnType<typeof mailboxesImportsRetrieve>>,
+        TError,
+        TData
+      >
+    >;
+    request?: SecondParameter<typeof fetchAPI>;
+  },
+  queryClient?: QueryClient,
+): UseQueryResult<TData, TError> & {
+  queryKey: DataTag<QueryKey, TData, TError>;
+};
+
+export function useMailboxesImportsRetrieve<
+  TData = Awaited<ReturnType<typeof mailboxesImportsRetrieve>>,
+  TError = ErrorType<unknown>,
+>(
+  mailboxId: string,
+  id: string,
+  options?: {
+    query?: Partial<
+      UseQueryOptions<
+        Awaited<ReturnType<typeof mailboxesImportsRetrieve>>,
+        TError,
+        TData
+      >
+    >;
+    request?: SecondParameter<typeof fetchAPI>;
+  },
+  queryClient?: QueryClient,
+): UseQueryResult<TData, TError> & {
+  queryKey: DataTag<QueryKey, TData, TError>;
+} {
+  const queryOptions = getMailboxesImportsRetrieveQueryOptions(
+    mailboxId,
+    id,
+    options,
+  );
+
+  const query = useQuery(queryOptions, queryClient) as UseQueryResult<
+    TData,
+    TError
+  > & { queryKey: DataTag<QueryKey, TData, TError> };
+
+  query.queryKey = queryOptions.queryKey;
+
+  return query;
+}
+
+/**
+ * Arm or pause a continuous import via ``mode`` / ``is_active``.
+
+* ``mode=continuous`` (IMAP only) (re-)arms the import as a poller —
+  flips ``is_active=True`` and dispatches a run now. Also the "re-enable
+  a finished oneshot as continuous" path: stored credentials are reused,
+  no re-auth.
+* ``mode=oneshot`` demotes a continuous poller back to a one-shot —
+  polling stops (``is_active=False``); credentials and watermark are
+  kept so it can be re-armed later.
+* ``is_active=false`` pauses a continuous poller (credentials are kept).
+
+The poll cadence is the global ``MESSAGES_IMPORT_IMAP_POLL_INTERVAL``
+setting, not settable here.
+ */
+export type mailboxesImportsPartialUpdateResponse200 = {
+  data: ImportRun;
+  status: 200;
+};
+
+export type mailboxesImportsPartialUpdateResponseSuccess =
+  mailboxesImportsPartialUpdateResponse200 & {
+    headers: Headers;
+  };
+export type mailboxesImportsPartialUpdateResponse =
+  mailboxesImportsPartialUpdateResponseSuccess;
+
+export const getMailboxesImportsPartialUpdateUrl = (
+  mailboxId: string,
+  id: string,
+) => {
+  return `/api/v1.0/mailboxes/${mailboxId}/imports/${id}/`;
+};
+
+export const mailboxesImportsPartialUpdate = async (
+  mailboxId: string,
+  id: string,
+  patchedImportUpdateRequest: PatchedImportUpdateRequest,
+  options?: RequestInit,
+): Promise<mailboxesImportsPartialUpdateResponse> => {
+  return fetchAPI<mailboxesImportsPartialUpdateResponse>(
+    getMailboxesImportsPartialUpdateUrl(mailboxId, id),
+    {
+      ...options,
+      method: "PATCH",
+      headers: { "Content-Type": "application/json", ...options?.headers },
+      body: JSON.stringify(patchedImportUpdateRequest),
+    },
+  );
+};
+
+export const getMailboxesImportsPartialUpdateMutationOptions = <
+  TError = ErrorType<unknown>,
+  TContext = unknown,
+>(options?: {
+  mutation?: UseMutationOptions<
+    Awaited<ReturnType<typeof mailboxesImportsPartialUpdate>>,
+    TError,
+    { mailboxId: string; id: string; data: PatchedImportUpdateRequest },
+    TContext
+  >;
+  request?: SecondParameter<typeof fetchAPI>;
+}): UseMutationOptions<
+  Awaited<ReturnType<typeof mailboxesImportsPartialUpdate>>,
+  TError,
+  { mailboxId: string; id: string; data: PatchedImportUpdateRequest },
+  TContext
+> => {
+  const mutationKey = ["mailboxesImportsPartialUpdate"];
+  const { mutation: mutationOptions, request: requestOptions } = options
+    ? options.mutation &&
+      "mutationKey" in options.mutation &&
+      options.mutation.mutationKey
+      ? options
+      : { ...options, mutation: { ...options.mutation, mutationKey } }
+    : { mutation: { mutationKey }, request: undefined };
+
+  const mutationFn: MutationFunction<
+    Awaited<ReturnType<typeof mailboxesImportsPartialUpdate>>,
+    { mailboxId: string; id: string; data: PatchedImportUpdateRequest }
+  > = (props) => {
+    const { mailboxId, id, data } = props ?? {};
+
+    return mailboxesImportsPartialUpdate(mailboxId, id, data, requestOptions);
+  };
+
+  return { mutationFn, ...mutationOptions };
+};
+
+export type MailboxesImportsPartialUpdateMutationResult = NonNullable<
+  Awaited<ReturnType<typeof mailboxesImportsPartialUpdate>>
+>;
+export type MailboxesImportsPartialUpdateMutationBody =
+  PatchedImportUpdateRequest;
+export type MailboxesImportsPartialUpdateMutationError = ErrorType<unknown>;
+
+export const useMailboxesImportsPartialUpdate = <
+  TError = ErrorType<unknown>,
+  TContext = unknown,
+>(
+  options?: {
+    mutation?: UseMutationOptions<
+      Awaited<ReturnType<typeof mailboxesImportsPartialUpdate>>,
+      TError,
+      { mailboxId: string; id: string; data: PatchedImportUpdateRequest },
+      TContext
+    >;
+    request?: SecondParameter<typeof fetchAPI>;
+  },
+  queryClient?: QueryClient,
+): UseMutationResult<
+  Awaited<ReturnType<typeof mailboxesImportsPartialUpdate>>,
+  TError,
+  { mailboxId: string; id: string; data: PatchedImportUpdateRequest },
+  TContext
+> => {
+  const mutationOptions =
+    getMailboxesImportsPartialUpdateMutationOptions(options);
+
+  return useMutation(mutationOptions, queryClient);
+};
+/**
+ * Forget an import run, keeping the mail it imported.
+
+Deletes the Channel row (``Message.channel`` is SET_NULL, so the
+messages survive) — the opposite of ``cancel``, which deletes the
+messages. Only a settled run can be forgotten: cancel a running import
+first, and pause (or demote) a continuous poller so a live worker
+never loses its channel row mid-run.
+ */
+export type mailboxesImportsDestroyResponse204 = {
+  data: void;
+  status: 204;
+};
+
+export type mailboxesImportsDestroyResponse400 = {
+  data: void;
+  status: 400;
+};
+
+export type mailboxesImportsDestroyResponse403 = {
+  data: void;
+  status: 403;
+};
+
+export type mailboxesImportsDestroyResponse404 = {
+  data: void;
+  status: 404;
+};
+
+export type mailboxesImportsDestroyResponseSuccess =
+  mailboxesImportsDestroyResponse204 & {
+    headers: Headers;
+  };
+export type mailboxesImportsDestroyResponseError = (
+  | mailboxesImportsDestroyResponse400
+  | mailboxesImportsDestroyResponse403
+  | mailboxesImportsDestroyResponse404
+) & {
+  headers: Headers;
+};
+
+export type mailboxesImportsDestroyResponse =
+  | mailboxesImportsDestroyResponseSuccess
+  | mailboxesImportsDestroyResponseError;
+
+export const getMailboxesImportsDestroyUrl = (
+  mailboxId: string,
+  id: string,
+) => {
+  return `/api/v1.0/mailboxes/${mailboxId}/imports/${id}/`;
+};
+
+export const mailboxesImportsDestroy = async (
+  mailboxId: string,
+  id: string,
+  options?: RequestInit,
+): Promise<mailboxesImportsDestroyResponse> => {
+  return fetchAPI<mailboxesImportsDestroyResponse>(
+    getMailboxesImportsDestroyUrl(mailboxId, id),
+    {
+      ...options,
+      method: "DELETE",
+    },
+  );
+};
+
+export const getMailboxesImportsDestroyMutationOptions = <
+  TError = ErrorType<void>,
+  TContext = unknown,
+>(options?: {
+  mutation?: UseMutationOptions<
+    Awaited<ReturnType<typeof mailboxesImportsDestroy>>,
+    TError,
+    { mailboxId: string; id: string },
+    TContext
+  >;
+  request?: SecondParameter<typeof fetchAPI>;
+}): UseMutationOptions<
+  Awaited<ReturnType<typeof mailboxesImportsDestroy>>,
+  TError,
+  { mailboxId: string; id: string },
+  TContext
+> => {
+  const mutationKey = ["mailboxesImportsDestroy"];
+  const { mutation: mutationOptions, request: requestOptions } = options
+    ? options.mutation &&
+      "mutationKey" in options.mutation &&
+      options.mutation.mutationKey
+      ? options
+      : { ...options, mutation: { ...options.mutation, mutationKey } }
+    : { mutation: { mutationKey }, request: undefined };
+
+  const mutationFn: MutationFunction<
+    Awaited<ReturnType<typeof mailboxesImportsDestroy>>,
+    { mailboxId: string; id: string }
+  > = (props) => {
+    const { mailboxId, id } = props ?? {};
+
+    return mailboxesImportsDestroy(mailboxId, id, requestOptions);
+  };
+
+  return { mutationFn, ...mutationOptions };
+};
+
+export type MailboxesImportsDestroyMutationResult = NonNullable<
+  Awaited<ReturnType<typeof mailboxesImportsDestroy>>
+>;
+
+export type MailboxesImportsDestroyMutationError = ErrorType<void>;
+
+export const useMailboxesImportsDestroy = <
+  TError = ErrorType<void>,
+  TContext = unknown,
+>(
+  options?: {
+    mutation?: UseMutationOptions<
+      Awaited<ReturnType<typeof mailboxesImportsDestroy>>,
+      TError,
+      { mailboxId: string; id: string },
+      TContext
+    >;
+    request?: SecondParameter<typeof fetchAPI>;
+  },
+  queryClient?: QueryClient,
+): UseMutationResult<
+  Awaited<ReturnType<typeof mailboxesImportsDestroy>>,
+  TError,
+  { mailboxId: string; id: string },
+  TContext
+> => {
+  const mutationOptions = getMailboxesImportsDestroyMutationOptions(options);
+
+  return useMutation(mutationOptions, queryClient);
+};
+/**
+ * Cancel an import.
+
+Flips it to ``cancelled`` synchronously (so the run stops and the
+scheduler won't resume it) and offloads the potentially-large message
+deletion + orphan-thread cleanup to an idempotent background task.
+ */
+export type mailboxesImportsCancelCreateResponse202 = {
+  data: ImportRun;
+  status: 202;
+};
+
+export type mailboxesImportsCancelCreateResponse403 = {
+  data: void;
+  status: 403;
+};
+
+export type mailboxesImportsCancelCreateResponse404 = {
+  data: void;
+  status: 404;
+};
+
+export type mailboxesImportsCancelCreateResponseSuccess =
+  mailboxesImportsCancelCreateResponse202 & {
+    headers: Headers;
+  };
+export type mailboxesImportsCancelCreateResponseError = (
+  | mailboxesImportsCancelCreateResponse403
+  | mailboxesImportsCancelCreateResponse404
+) & {
+  headers: Headers;
+};
+
+export type mailboxesImportsCancelCreateResponse =
+  | mailboxesImportsCancelCreateResponseSuccess
+  | mailboxesImportsCancelCreateResponseError;
+
+export const getMailboxesImportsCancelCreateUrl = (
+  mailboxId: string,
+  id: string,
+) => {
+  return `/api/v1.0/mailboxes/${mailboxId}/imports/${id}/cancel/`;
+};
+
+export const mailboxesImportsCancelCreate = async (
+  mailboxId: string,
+  id: string,
+  options?: RequestInit,
+): Promise<mailboxesImportsCancelCreateResponse> => {
+  return fetchAPI<mailboxesImportsCancelCreateResponse>(
+    getMailboxesImportsCancelCreateUrl(mailboxId, id),
+    {
+      ...options,
+      method: "POST",
+    },
+  );
+};
+
+export const getMailboxesImportsCancelCreateMutationOptions = <
+  TError = ErrorType<void>,
+  TContext = unknown,
+>(options?: {
+  mutation?: UseMutationOptions<
+    Awaited<ReturnType<typeof mailboxesImportsCancelCreate>>,
+    TError,
+    { mailboxId: string; id: string },
+    TContext
+  >;
+  request?: SecondParameter<typeof fetchAPI>;
+}): UseMutationOptions<
+  Awaited<ReturnType<typeof mailboxesImportsCancelCreate>>,
+  TError,
+  { mailboxId: string; id: string },
+  TContext
+> => {
+  const mutationKey = ["mailboxesImportsCancelCreate"];
+  const { mutation: mutationOptions, request: requestOptions } = options
+    ? options.mutation &&
+      "mutationKey" in options.mutation &&
+      options.mutation.mutationKey
+      ? options
+      : { ...options, mutation: { ...options.mutation, mutationKey } }
+    : { mutation: { mutationKey }, request: undefined };
+
+  const mutationFn: MutationFunction<
+    Awaited<ReturnType<typeof mailboxesImportsCancelCreate>>,
+    { mailboxId: string; id: string }
+  > = (props) => {
+    const { mailboxId, id } = props ?? {};
+
+    return mailboxesImportsCancelCreate(mailboxId, id, requestOptions);
+  };
+
+  return { mutationFn, ...mutationOptions };
+};
+
+export type MailboxesImportsCancelCreateMutationResult = NonNullable<
+  Awaited<ReturnType<typeof mailboxesImportsCancelCreate>>
+>;
+
+export type MailboxesImportsCancelCreateMutationError = ErrorType<void>;
+
+export const useMailboxesImportsCancelCreate = <
+  TError = ErrorType<void>,
+  TContext = unknown,
+>(
+  options?: {
+    mutation?: UseMutationOptions<
+      Awaited<ReturnType<typeof mailboxesImportsCancelCreate>>,
+      TError,
+      { mailboxId: string; id: string },
+      TContext
+    >;
+    request?: SecondParameter<typeof fetchAPI>;
+  },
+  queryClient?: QueryClient,
+): UseMutationResult<
+  Awaited<ReturnType<typeof mailboxesImportsCancelCreate>>,
+  TError,
+  { mailboxId: string; id: string },
+  TContext
+> => {
+  const mutationOptions =
+    getMailboxesImportsCancelCreateMutationOptions(options);
 
   return useMutation(mutationOptions, queryClient);
 };

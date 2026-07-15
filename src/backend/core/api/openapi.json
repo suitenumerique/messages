@@ -1685,75 +1685,10 @@
                 }
             }
         },
-        "/api/v1.0/import/file/": {
-            "post": {
-                "operationId": "import_file_create",
-                "description": "\n        Import messages by uploading an EML, MBOX, or PST file.\n\n        The import is processed asynchronously and returns a task ID for tracking.\n        The file must be a valid EML, MBOX, or PST format. The recipient mailbox must exist\n        and the user must have access to it.\n        ",
-                "tags": [
-                    "import"
-                ],
-                "requestBody": {
-                    "content": {
-                        "multipart/form-data": {
-                            "schema": {
-                                "$ref": "#/components/schemas/ImportFileRequest"
-                            }
-                        },
-                        "application/x-www-form-urlencoded": {
-                            "schema": {
-                                "$ref": "#/components/schemas/ImportFileRequest"
-                            }
-                        },
-                        "application/json": {
-                            "schema": {
-                                "$ref": "#/components/schemas/ImportFileRequest"
-                            }
-                        }
-                    },
-                    "required": true
-                },
-                "security": [
-                    {
-                        "cookieAuth": []
-                    }
-                ],
-                "responses": {
-                    "202": {
-                        "content": {
-                            "application/json": {
-                                "schema": {
-                                    "type": "object",
-                                    "properties": {
-                                        "task_id": {
-                                            "type": "string",
-                                            "description": "Task ID for tracking the import"
-                                        },
-                                        "type": {
-                                            "type": "string",
-                                            "description": "Type of import (eml, mbox, or pst)"
-                                        }
-                                    }
-                                }
-                            }
-                        },
-                        "description": "Import started. Returns Celery task ID for tracking."
-                    },
-                    "400": {
-                        "description": "Invalid input data or file format"
-                    },
-                    "403": {
-                        "description": "User does not have access to the specified mailbox"
-                    },
-                    "404": {
-                        "description": "Specified mailbox not found"
-                    }
-                }
-            }
-        },
         "/api/v1.0/import/file/upload/": {
             "post": {
                 "operationId": "import_file_upload_create",
-                "description": "Create a multipart upload or a direct upload for a file to the message imports bucket.\n- In case of a multipart upload, the upload_id is returned to be used for subsequent part uploads.\n- In case of a direct upload, a signed url is returned to directly upload\n  the file to the message imports bucket.",
+                "description": "Create a multipart upload (returns ``upload_id``) or a direct\npresigned PUT url for a file in the imports bucket.",
                 "tags": [
                     "import"
                 ],
@@ -1772,7 +1707,7 @@
         "/api/v1.0/import/file/upload/{upload_id}/": {
             "put": {
                 "operationId": "import_file_upload_update",
-                "description": "Update a multipart upload to complete it by providing all part ETags.",
+                "description": "Complete a multipart upload by providing all part ETags.",
                 "parameters": [
                     {
                         "in": "path",
@@ -1799,7 +1734,7 @@
             },
             "delete": {
                 "operationId": "import_file_upload_destroy",
-                "description": "Abort a multipart upload of a file to the message imports bucket.",
+                "description": "Abort a multipart upload.",
                 "parameters": [
                     {
                         "in": "path",
@@ -1828,7 +1763,7 @@
         "/api/v1.0/import/file/upload/{upload_id}/part/": {
             "post": {
                 "operationId": "import_file_upload_part_create",
-                "description": "Create a presigned url to upload a part of a file to the message imports bucket.",
+                "description": "Create a presigned url to upload one part of a multipart upload.",
                 "parameters": [
                     {
                         "in": "path",
@@ -1850,71 +1785,6 @@
                 "responses": {
                     "200": {
                         "description": "No response body"
-                    }
-                }
-            }
-        },
-        "/api/v1.0/import/imap/": {
-            "post": {
-                "operationId": "import_imap_create",
-                "description": "\n        Import messages from an IMAP server.\n\n        This endpoint initiates an asynchronous import process from an IMAP server.\n        The import is processed in the background and returns a task ID for tracking.\n\n        Required parameters:\n        - imap_server: Hostname of the IMAP server\n        - imap_port: Port number for the IMAP server\n        - username: IMAP account username\n        - password: IMAP account password\n        - recipient: ID of the mailbox to import messages into\n\n        Optional parameters:\n        - use_ssl: Whether to use SSL for the connection (default: true)\n        ",
-                "tags": [
-                    "import"
-                ],
-                "requestBody": {
-                    "content": {
-                        "multipart/form-data": {
-                            "schema": {
-                                "$ref": "#/components/schemas/ImportIMAPRequest"
-                            }
-                        },
-                        "application/x-www-form-urlencoded": {
-                            "schema": {
-                                "$ref": "#/components/schemas/ImportIMAPRequest"
-                            }
-                        },
-                        "application/json": {
-                            "schema": {
-                                "$ref": "#/components/schemas/ImportIMAPRequest"
-                            }
-                        }
-                    },
-                    "required": true
-                },
-                "security": [
-                    {
-                        "cookieAuth": []
-                    }
-                ],
-                "responses": {
-                    "202": {
-                        "content": {
-                            "application/json": {
-                                "schema": {
-                                    "type": "object",
-                                    "properties": {
-                                        "task_id": {
-                                            "type": "string",
-                                            "description": "Task ID for tracking the import"
-                                        },
-                                        "type": {
-                                            "type": "string",
-                                            "description": "Type of import (imap)"
-                                        }
-                                    }
-                                }
-                            }
-                        },
-                        "description": "IMAP import started. Returns Celery task ID for tracking the import progress."
-                    },
-                    "400": {
-                        "description": "Invalid input data or IMAP connection parameters"
-                    },
-                    "403": {
-                        "description": "User does not have access to the specified mailbox or IMAP credentials are invalid"
-                    },
-                    "404": {
-                        "description": "Specified mailbox not found"
                     }
                 }
             }
@@ -3369,6 +3239,303 @@
                     },
                     "502": {
                         "description": "Failed to fetch external image"
+                    }
+                }
+            }
+        },
+        "/api/v1.0/mailboxes/{mailbox_id}/imports/": {
+            "get": {
+                "operationId": "mailboxes_imports_list",
+                "description": "Start, list, retrieve and manage import runs for one mailbox.\n\nMailbox-nested and gated by ``IsMailboxAdmin`` on the URL mailbox — imports\nbulk-load mail into a mailbox, so they are an admin operation (matching the\n``import_messages`` ability that gates the UI).",
+                "parameters": [
+                    {
+                        "in": "path",
+                        "name": "mailbox_id",
+                        "schema": {
+                            "type": "string",
+                            "format": "uuid"
+                        },
+                        "required": true
+                    }
+                ],
+                "tags": [
+                    "import"
+                ],
+                "security": [
+                    {
+                        "cookieAuth": []
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "type": "array",
+                                    "items": {
+                                        "$ref": "#/components/schemas/ImportRun"
+                                    }
+                                }
+                            }
+                        },
+                        "description": ""
+                    }
+                }
+            },
+            "post": {
+                "operationId": "mailboxes_imports_create",
+                "description": "Start an import into the URL mailbox (``source=file`` from an\nuploaded archive, or ``source=imap`` from a live server).",
+                "parameters": [
+                    {
+                        "in": "path",
+                        "name": "mailbox_id",
+                        "schema": {
+                            "type": "string",
+                            "format": "uuid"
+                        },
+                        "required": true
+                    }
+                ],
+                "tags": [
+                    "import"
+                ],
+                "requestBody": {
+                    "content": {
+                        "application/json": {
+                            "schema": {
+                                "$ref": "#/components/schemas/ImportCreateRequest"
+                            }
+                        },
+                        "multipart/form-data": {
+                            "schema": {
+                                "$ref": "#/components/schemas/ImportCreateRequest"
+                            }
+                        }
+                    },
+                    "required": true
+                },
+                "security": [
+                    {
+                        "cookieAuth": []
+                    }
+                ],
+                "responses": {
+                    "202": {
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "$ref": "#/components/schemas/ImportRun"
+                                }
+                            }
+                        },
+                        "description": "Import started; returns the import run to poll."
+                    },
+                    "400": {
+                        "description": "Invalid input data or file format"
+                    },
+                    "403": {
+                        "description": "No access to the mailbox"
+                    },
+                    "404": {
+                        "description": "Mailbox not found"
+                    }
+                }
+            }
+        },
+        "/api/v1.0/mailboxes/{mailbox_id}/imports/{id}/": {
+            "get": {
+                "operationId": "mailboxes_imports_retrieve",
+                "description": "Start, list, retrieve and manage import runs for one mailbox.\n\nMailbox-nested and gated by ``IsMailboxAdmin`` on the URL mailbox — imports\nbulk-load mail into a mailbox, so they are an admin operation (matching the\n``import_messages`` ability that gates the UI).",
+                "parameters": [
+                    {
+                        "in": "path",
+                        "name": "id",
+                        "schema": {
+                            "type": "string"
+                        },
+                        "required": true
+                    },
+                    {
+                        "in": "path",
+                        "name": "mailbox_id",
+                        "schema": {
+                            "type": "string",
+                            "format": "uuid"
+                        },
+                        "required": true
+                    }
+                ],
+                "tags": [
+                    "import"
+                ],
+                "security": [
+                    {
+                        "cookieAuth": []
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "$ref": "#/components/schemas/ImportRun"
+                                }
+                            }
+                        },
+                        "description": ""
+                    }
+                }
+            },
+            "patch": {
+                "operationId": "mailboxes_imports_partial_update",
+                "description": "Arm or pause a continuous import via ``mode`` / ``is_active``.\n\n* ``mode=continuous`` (IMAP only) (re-)arms the import as a poller —\n  flips ``is_active=True`` and dispatches a run now. Also the \"re-enable\n  a finished oneshot as continuous\" path: stored credentials are reused,\n  no re-auth.\n* ``mode=oneshot`` demotes a continuous poller back to a one-shot —\n  polling stops (``is_active=False``); credentials and watermark are\n  kept so it can be re-armed later.\n* ``is_active=false`` pauses a continuous poller (credentials are kept).\n\nThe poll cadence is the global ``MESSAGES_IMPORT_IMAP_POLL_INTERVAL``\nsetting, not settable here.",
+                "parameters": [
+                    {
+                        "in": "path",
+                        "name": "id",
+                        "schema": {
+                            "type": "string"
+                        },
+                        "required": true
+                    },
+                    {
+                        "in": "path",
+                        "name": "mailbox_id",
+                        "schema": {
+                            "type": "string",
+                            "format": "uuid"
+                        },
+                        "required": true
+                    }
+                ],
+                "tags": [
+                    "import"
+                ],
+                "requestBody": {
+                    "content": {
+                        "application/json": {
+                            "schema": {
+                                "$ref": "#/components/schemas/PatchedImportUpdateRequest"
+                            }
+                        },
+                        "multipart/form-data": {
+                            "schema": {
+                                "$ref": "#/components/schemas/PatchedImportUpdateRequest"
+                            }
+                        }
+                    }
+                },
+                "security": [
+                    {
+                        "cookieAuth": []
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "$ref": "#/components/schemas/ImportRun"
+                                }
+                            }
+                        },
+                        "description": ""
+                    }
+                }
+            },
+            "delete": {
+                "operationId": "mailboxes_imports_destroy",
+                "description": "Forget an import run, keeping the mail it imported.\n\nDeletes the Channel row (``Message.channel`` is SET_NULL, so the\nmessages survive) — the opposite of ``cancel``, which deletes the\nmessages. Only a settled run can be forgotten: cancel a running import\nfirst, and pause (or demote) a continuous poller so a live worker\nnever loses its channel row mid-run.",
+                "parameters": [
+                    {
+                        "in": "path",
+                        "name": "id",
+                        "schema": {
+                            "type": "string"
+                        },
+                        "required": true
+                    },
+                    {
+                        "in": "path",
+                        "name": "mailbox_id",
+                        "schema": {
+                            "type": "string",
+                            "format": "uuid"
+                        },
+                        "required": true
+                    }
+                ],
+                "tags": [
+                    "import"
+                ],
+                "security": [
+                    {
+                        "cookieAuth": []
+                    }
+                ],
+                "responses": {
+                    "204": {
+                        "description": "Import forgotten. Its imported messages are kept."
+                    },
+                    "400": {
+                        "description": "The import is still running or still polling."
+                    },
+                    "403": {
+                        "description": "Permission denied"
+                    },
+                    "404": {
+                        "description": "Import not found"
+                    }
+                }
+            }
+        },
+        "/api/v1.0/mailboxes/{mailbox_id}/imports/{id}/cancel/": {
+            "post": {
+                "operationId": "mailboxes_imports_cancel_create",
+                "description": "Cancel an import.\n\nFlips it to ``cancelled`` synchronously (so the run stops and the\nscheduler won't resume it) and offloads the potentially-large message\ndeletion + orphan-thread cleanup to an idempotent background task.",
+                "parameters": [
+                    {
+                        "in": "path",
+                        "name": "id",
+                        "schema": {
+                            "type": "string"
+                        },
+                        "required": true
+                    },
+                    {
+                        "in": "path",
+                        "name": "mailbox_id",
+                        "schema": {
+                            "type": "string",
+                            "format": "uuid"
+                        },
+                        "required": true
+                    }
+                ],
+                "tags": [
+                    "import"
+                ],
+                "security": [
+                    {
+                        "cookieAuth": []
+                    }
+                ],
+                "responses": {
+                    "202": {
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "$ref": "#/components/schemas/ImportRun"
+                                }
+                            }
+                        },
+                        "description": "Import cancelled. The run is marked cancelled immediately; its imported messages are deleted (and empty threads cleaned) in the background. Imported messages in threads with non-import activity (e.g. a reply) are kept."
+                    },
+                    "403": {
+                        "description": "Permission denied"
+                    },
+                    "404": {
+                        "description": "Import not found"
                     }
                 }
             }
@@ -7512,6 +7679,11 @@
                         ],
                         "readOnly": true
                     },
+                    "is_active": {
+                        "type": "boolean",
+                        "title": "Active",
+                        "description": "Uncheck to pause this channel without deleting it."
+                    },
                     "settings": {
                         "description": "Channel-specific configuration settings"
                     },
@@ -7598,6 +7770,11 @@
                         ],
                         "readOnly": true
                     },
+                    "is_active": {
+                        "type": "boolean",
+                        "title": "Active",
+                        "description": "Uncheck to pause this channel without deleting it."
+                    },
                     "settings": {
                         "description": "Channel-specific configuration settings"
                     },
@@ -7679,6 +7856,11 @@
                         "minLength": 1,
                         "description": "Type of channel",
                         "maxLength": 255
+                    },
+                    "is_active": {
+                        "type": "boolean",
+                        "title": "Active",
+                        "description": "Uncheck to pause this channel without deleting it."
                     },
                     "settings": {
                         "description": "Channel-specific configuration settings"
@@ -7891,69 +8073,190 @@
                 "type": "string",
                 "description": "* `unread` - unread\n* `starred` - starred\n* `trashed` - trashed\n* `archived` - archived\n* `spam` - spam"
             },
-            "ImportFileRequest": {
+            "ImportCreateRequest": {
                 "type": "object",
-                "description": "Serializer for importing email files.",
+                "description": "Body of ``POST /mailboxes/{id}/imports/`` — starts a file or IMAP import.\n\nThe target mailbox comes from the URL. ``source`` discriminates: ``file``\nneeds the ``file_key`` returned by the upload endpoint (unique per upload —\nnothing in the bucket is ever overwritten) plus the original ``filename``\n(display + MIME-type hint); ``imap`` needs the connection fields.\n``continuous`` mode is IMAP-only. Read-only run state is returned via\n``ImportRunSerializer``.",
                 "properties": {
+                    "source": {
+                        "allOf": [
+                            {
+                                "$ref": "#/components/schemas/SourceEnum"
+                            }
+                        ],
+                        "description": "'file' (an uploaded archive — the backend sniffs eml/mbox/pst) or 'imap' (a live server).\n\n* `file` - file\n* `imap` - imap"
+                    },
+                    "file_key": {
+                        "type": "string",
+                        "minLength": 1,
+                        "description": "Storage key returned when the archive was uploaded."
+                    },
                     "filename": {
                         "type": "string",
                         "minLength": 1,
-                        "description": "Filename"
-                    },
-                    "recipient": {
-                        "type": "string",
-                        "format": "uuid",
-                        "description": "UUID of the recipient mailbox"
-                    }
-                },
-                "required": [
-                    "filename",
-                    "recipient"
-                ]
-            },
-            "ImportIMAPRequest": {
-                "type": "object",
-                "description": "Serializer for importing messages from IMAP server via API.",
-                "properties": {
-                    "recipient": {
-                        "type": "string",
-                        "format": "uuid",
-                        "description": "UUID of the recipient mailbox"
+                        "description": "Original archive filename (display + MIME-type hint)."
                     },
                     "imap_server": {
                         "type": "string",
-                        "minLength": 1,
-                        "description": "IMAP server hostname"
+                        "minLength": 1
                     },
                     "imap_port": {
                         "type": "integer",
-                        "minimum": 0,
-                        "description": "IMAP server port"
+                        "maximum": 65535,
+                        "minimum": 1
                     },
                     "username": {
                         "type": "string",
-                        "format": "email",
-                        "minLength": 1,
-                        "description": "Email address for IMAP login"
+                        "minLength": 1
                     },
                     "password": {
                         "type": "string",
                         "writeOnly": true,
-                        "minLength": 1,
-                        "description": "IMAP password"
+                        "minLength": 1
                     },
                     "use_ssl": {
                         "type": "boolean",
-                        "default": true,
-                        "description": "Use SSL for IMAP connection"
+                        "default": true
+                    },
+                    "mode": {
+                        "allOf": [
+                            {
+                                "$ref": "#/components/schemas/ModeEnum"
+                            }
+                        ],
+                        "default": "oneshot"
                     }
                 },
                 "required": [
-                    "imap_port",
-                    "imap_server",
-                    "password",
-                    "recipient",
-                    "username"
+                    "source"
+                ]
+            },
+            "ImportRun": {
+                "type": "object",
+                "description": "Read-only view of an import run (a ``Channel`` with type=import).\n\nProgress lives in Redis and terminal state on the channel; the serializer\nreads the merged view so the frontend can poll the import resource\n(``GET /mailboxes/{id}/imports/{id}/``) instead of the raw Celery task state.",
+                "properties": {
+                    "id": {
+                        "type": "string",
+                        "format": "uuid",
+                        "readOnly": true,
+                        "description": "primary key for the record as UUID"
+                    },
+                    "name": {
+                        "type": "string",
+                        "readOnly": true,
+                        "description": "Human-readable name for this channel"
+                    },
+                    "mailbox": {
+                        "type": "string",
+                        "format": "uuid",
+                        "description": "Mailbox that receives messages from this channel",
+                        "readOnly": true,
+                        "nullable": true
+                    },
+                    "is_active": {
+                        "type": "boolean",
+                        "readOnly": true,
+                        "title": "Active",
+                        "description": "Uncheck to pause this channel without deleting it."
+                    },
+                    "status": {
+                        "type": "string",
+                        "nullable": true,
+                        "readOnly": true
+                    },
+                    "source_type": {
+                        "type": "string",
+                        "nullable": true,
+                        "readOnly": true
+                    },
+                    "mode": {
+                        "type": "string",
+                        "nullable": true,
+                        "readOnly": true
+                    },
+                    "poll_interval": {
+                        "type": "integer",
+                        "nullable": true,
+                        "readOnly": true
+                    },
+                    "imap_username": {
+                        "type": "string",
+                        "nullable": true,
+                        "readOnly": true
+                    },
+                    "total_messages": {
+                        "type": "integer",
+                        "readOnly": true
+                    },
+                    "success_count": {
+                        "type": "integer",
+                        "readOnly": true
+                    },
+                    "failure_count": {
+                        "type": "integer",
+                        "readOnly": true
+                    },
+                    "progress": {
+                        "type": "number",
+                        "format": "double",
+                        "readOnly": true
+                    },
+                    "error": {
+                        "type": "string",
+                        "nullable": true,
+                        "readOnly": true
+                    },
+                    "started_at": {
+                        "type": "string",
+                        "nullable": true,
+                        "readOnly": true
+                    },
+                    "finished_at": {
+                        "type": "string",
+                        "nullable": true,
+                        "readOnly": true
+                    },
+                    "last_used_at": {
+                        "type": "string",
+                        "format": "date-time",
+                        "readOnly": true,
+                        "nullable": true,
+                        "description": "Operational timestamp updated (throttled) whenever the channel is used."
+                    },
+                    "created_at": {
+                        "type": "string",
+                        "format": "date-time",
+                        "readOnly": true,
+                        "title": "Created on",
+                        "description": "date and time at which a record was created"
+                    },
+                    "updated_at": {
+                        "type": "string",
+                        "format": "date-time",
+                        "readOnly": true,
+                        "title": "Updated on",
+                        "description": "date and time at which a record was last updated"
+                    }
+                },
+                "required": [
+                    "created_at",
+                    "error",
+                    "failure_count",
+                    "finished_at",
+                    "id",
+                    "imap_username",
+                    "is_active",
+                    "last_used_at",
+                    "mailbox",
+                    "mode",
+                    "name",
+                    "poll_interval",
+                    "progress",
+                    "source_type",
+                    "started_at",
+                    "status",
+                    "success_count",
+                    "total_messages",
+                    "updated_at"
                 ]
             },
             "Label": {
@@ -9416,6 +9719,14 @@
                     "autoreply"
                 ]
             },
+            "ModeEnum": {
+                "enum": [
+                    "oneshot",
+                    "continuous"
+                ],
+                "type": "string",
+                "description": "* `oneshot` - oneshot\n* `continuous` - continuous"
+            },
             "PaginatedDriveItemResponse": {
                 "type": "object",
                 "properties": {
@@ -9609,8 +9920,25 @@
                         "description": "Type of channel",
                         "maxLength": 255
                     },
+                    "is_active": {
+                        "type": "boolean",
+                        "title": "Active",
+                        "description": "Uncheck to pause this channel without deleting it."
+                    },
                     "settings": {
                         "description": "Channel-specific configuration settings"
+                    }
+                }
+            },
+            "PatchedImportUpdateRequest": {
+                "type": "object",
+                "description": "Body of ``PATCH /mailboxes/{id}/imports/{id}/`` — change how a run runs.\n\nBoth fields optional (partial). ``mode=continuous`` (re-)arms an IMAP import\nas a poller; ``mode=oneshot`` demotes a continuous poller (stops polling);\n``is_active=false`` pauses a continuous poller (credentials are kept). The\npoll cadence itself is a global operator setting, not settable here.\nValidation is source-aware: only IMAP imports can go continuous.",
+                "properties": {
+                    "mode": {
+                        "$ref": "#/components/schemas/ModeEnum"
+                    },
+                    "is_active": {
+                        "type": "boolean"
                     }
                 }
             },
@@ -9993,6 +10321,14 @@
                 "required": [
                     "task_id"
                 ]
+            },
+            "SourceEnum": {
+                "enum": [
+                    "file",
+                    "imap"
+                ],
+                "type": "string",
+                "description": "* `file` - file\n* `imap` - imap"
             },
             "StatusEnum": {
                 "enum": [

@@ -85,6 +85,19 @@ class TestChannelApiKeyAuth:
         )
         assert response.status_code == 401
 
+    def test_paused_channel_returns_401(self, client):
+        """A paused (is_active=False) api_key channel must not authenticate,
+        with the same generic 401 as an unknown channel."""
+        channel, plaintext = _make_channel()
+        channel.is_active = False
+        channel.save()
+        response = client.post(
+            SUBMIT_URL,
+            HTTP_X_CHANNEL_ID=str(channel.id),
+            HTTP_X_API_KEY=plaintext,
+        )
+        assert response.status_code == 401
+
     def test_last_used_at_updates_on_success(self, client):
         """A successful auth call updates last_used_at within the throttle window."""
         channel, plaintext = _make_channel()

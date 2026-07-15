@@ -39,10 +39,9 @@ Tasks are automatically routed to queues based on their module:
 |-------------|-------|
 | `core.mda.inbound_tasks.*` | `inbound` |
 | `core.mda.outbound_tasks.*` | `outbound` |
-| `core.services.importer.mbox_tasks.*` | `imports` |
-| `core.services.importer.eml_tasks.*` | `imports` |
-| `core.services.importer.imap_tasks.*` | `imports` |
-| `core.services.importer.pst_tasks.*` | `imports` |
+| `core.services.importer.tasks.run_import_task` | `imports` |
+| `core.services.importer.tasks.schedule_imports_task` | `default` |
+| `core.services.importer.tasks.cancel_import_task` | `default` |
 | `core.services.search.tasks.*` | `reindex` |
 | Everything else | `default` |
 

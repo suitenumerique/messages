@@ -8,7 +8,6 @@ import mimetypes
 from django import forms
 from django.contrib import admin, messages
 from django.contrib.auth import admin as auth_admin
-from django.core.files.storage import storages
 from django.db import transaction
 from django.db.models import Exists, JSONField, OuterRef, Q
 from django.http import HttpResponse, HttpResponseNotAllowed
@@ -20,18 +19,15 @@ from django.utils.text import slugify
 
 from sentry_sdk import capture_exception
 
-from core.api.utils import get_file_key
-from core.api.viewsets.task import register_task_owner
 from core.mda.outbound_tasks import retry_messages_task
 from core.services import thread_events as thread_events_service
 from core.services.dns.provisioning import provision_domain_dns
 from core.services.exporter.tasks import export_mailbox_task
-from core.services.importer.service import ImportService
 from core.services.throttle import get_throttle_status
+from core.utils import register_task_owner
 
 from . import enums, models
 from .enums import MessageDeliveryStatusChoices
-from .forms import IMAPImportForm, MessageImportForm
 
 
 # Lock the entire Django admin to superusers. ``AdminSite.has_permission``
@@ -517,12 +513,13 @@ class ChannelAdmin(admin.ModelAdmin):
         "name",
         "type",
         "scope_level",
+        "is_active",
         "mailbox",
         "maildomain",
         "user",
         "created_at",
     )
-    list_filter = ("type", "scope_level", "created_at")
+    list_filter = ("type", "scope_level", "is_active", "created_at")
     list_select_related = ("mailbox", "maildomain", "user")
     search_fields = ("name", "type")
     readonly_fields = ("created_at", "updated_at", "last_used_at")
@@ -530,7 +527,7 @@ class ChannelAdmin(admin.ModelAdmin):
     change_form_template = "admin/core/channel/change_form.html"
 
     fieldsets = (
-        (None, {"fields": ("name", "type", "scope_level", "settings")}),
+        (None, {"fields": ("name", "type", "scope_level", "is_active", "settings")}),
         (
             "Target",
             {
@@ -1185,102 +1182,12 @@ class MessageAdmin(admin.ModelAdmin):
         urls = super().get_urls()
         custom_urls = [
             path(
-                "import-messages/",
-                self.admin_site.admin_view(self.import_messages_view),
-                name="core_message_import_messages",
-            ),
-            path(
-                "import-imap/",
-                self.admin_site.admin_view(self.import_imap_view),
-                name="core_message_import_imap",
-            ),
-            path(
                 "<path:object_id>/retry/",
                 self.admin_site.admin_view(self.retry_message_view),
                 name="core_message_retry",
             ),
         ]
         return custom_urls + urls
-
-    def import_messages_view(self, request):
-        """View for importing EML or MBOX files."""
-        if request.method == "POST":
-            form = MessageImportForm(request.POST, request.FILES)
-            if form.is_valid():
-                import_file = request.FILES["import_file"]
-                recipient = form.cleaned_data["recipient"]
-
-                # Create a Blob from the uploaded file
-                file_content = import_file.read()
-                storage = storages["message-imports"]
-                s3_client = storage.connection.meta.client
-                file_key = get_file_key(recipient.id, import_file.name)
-                s3_client.put_object(
-                    Bucket=storage.bucket_name,
-                    Key=file_key,
-                    Body=file_content,
-                    ContentType=import_file.content_type,
-                )
-
-                success, _response_data = ImportService.import_file(
-                    file_key=file_key,
-                    recipient=recipient,
-                    user=request.user,
-                    request=request,
-                    filename=import_file.name,
-                )
-                if success:
-                    return redirect("..")
-        else:
-            form = MessageImportForm()
-
-        context = dict(
-            self.admin_site.each_context(request),
-            title="Import Messages",
-            form=form,
-            opts=self.model._meta,  # noqa: SLF001
-        )
-        return TemplateResponse(
-            request, "admin/core/message/import_messages.html", context
-        )
-
-    def import_imap_view(self, request):
-        """View for importing messages from IMAP server."""
-        if request.method == "POST":
-            form = IMAPImportForm(request.POST)
-            if form.is_valid():
-                success, _response_data = ImportService.import_imap(
-                    imap_server=form.cleaned_data["imap_server"],
-                    imap_port=form.cleaned_data["imap_port"],
-                    username=form.cleaned_data["username"],
-                    password=form.cleaned_data["password"],
-                    recipient=form.cleaned_data["recipient"],
-                    user=request.user,
-                    use_ssl=form.cleaned_data["use_ssl"],
-                    request=request,
-                )
-                if success:
-                    return redirect("..")
-        else:
-            form = IMAPImportForm()
-
-        context = dict(
-            self.admin_site.each_context(request),
-            title="Import Messages from IMAP",
-            form=form,
-            opts=self.model._meta,  # noqa: SLF001
-        )
-        return TemplateResponse(
-            request,
-            "admin/core/message/import_imap.html",
-            context,
-        )
-
-    def changelist_view(self, request, extra_context=None):
-        """Add import permission to the changelist context."""
-        extra_context = extra_context or {}
-        extra_context["has_import_permission"] = self.has_add_permission(request)
-        return super().changelist_view(request, extra_context=extra_context)
 
     def change_view(self, request, object_id, form_url="", extra_context=None):
         """Add retry availability context to the change form."""

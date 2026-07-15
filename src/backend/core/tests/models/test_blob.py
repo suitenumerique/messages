@@ -1,11 +1,14 @@
 """Tests for blob compression functionality."""
 
+from unittest.mock import patch
+
 from django.core.exceptions import ValidationError
 from django.test import override_settings
 
 import pytest
 
 from core import enums, factories, models
+from core.services.tiered_storage import TieredStorageService
 
 
 @pytest.mark.django_db
@@ -107,3 +110,95 @@ class TestInboundMessageBlobReference:
         assert models.Blob.objects.is_referenced(blob.id) is False
         gc_orphan_blobs_task(mode="full")
         assert not models.Blob.objects.filter(id=blob.id).exists()
+
+
+@pytest.mark.django_db
+class TestCreateBlobPreferOffloaded:
+    """``create_blob(prefer_offloaded=True)`` writes bytes straight to the
+    object-storage tier (used by bulk imports so archives never park their
+    bytes in Postgres), falling back to the PG tier on any storage trouble."""
+
+    CONTENT = b"imported mime bytes " * 64
+
+    def test_lands_in_object_storage(self):
+        blob = models.Blob.objects.create_blob(
+            content=self.CONTENT,
+            content_type="message/rfc822",
+            prefer_offloaded=True,
+        )
+        assert blob.storage_location == enums.BlobStorageLocationChoices.OBJECT_STORAGE
+        assert blob.raw_content is None
+        assert blob.size == len(self.CONTENT)
+        assert blob.size_compressed > 0
+        # Round-trips transparently through the tiered read path.
+        assert blob.get_content() == self.CONTENT
+
+    def test_default_stays_in_postgres(self):
+        blob = models.Blob.objects.create_blob(
+            content=self.CONTENT, content_type="message/rfc822"
+        )
+        assert blob.storage_location == enums.BlobStorageLocationChoices.POSTGRES
+        assert blob.raw_content is not None
+
+    def test_dedups_against_existing_pg_blob(self):
+        first = models.Blob.objects.create_blob(
+            content=self.CONTENT, content_type="message/rfc822"
+        )
+        second = models.Blob.objects.create_blob(
+            content=self.CONTENT,
+            content_type="message/rfc822",
+            prefer_offloaded=True,
+        )
+        # Hash-first dedup wins over the tier preference: same row, still PG.
+        assert second.id == first.id
+        assert second.storage_location == enums.BlobStorageLocationChoices.POSTGRES
+
+    def test_upload_failure_falls_back_to_postgres(self):
+        with patch.object(
+            TieredStorageService, "upload_blob", side_effect=OSError("s3 down")
+        ):
+            blob = models.Blob.objects.create_blob(
+                content=self.CONTENT,
+                content_type="message/rfc822",
+                prefer_offloaded=True,
+            )
+        # Degrades to exactly today's behavior; the offload task retries later.
+        assert blob.storage_location == enums.BlobStorageLocationChoices.POSTGRES
+        assert blob.raw_content is not None
+        assert blob.get_content() == self.CONTENT
+
+    @override_settings(MESSAGES_BLOBS_OFFLOAD_ENABLED=False)
+    def test_offload_policy_off_skips_object_tier(self):
+        """The operator's master offload switch also governs direct writes:
+        prefer_offloaded silently skips when offloading is not in scope."""
+        blob = models.Blob.objects.create_blob(
+            content=self.CONTENT,
+            content_type="message/rfc822",
+            prefer_offloaded=True,
+        )
+        assert blob.storage_location == enums.BlobStorageLocationChoices.POSTGRES
+        assert blob.raw_content is not None
+
+    @override_settings(MESSAGES_BLOBS_OFFLOAD_MIN_SIZE=10**9)
+    def test_under_offload_min_size_skips_object_tier(self):
+        blob = models.Blob.objects.create_blob(
+            content=self.CONTENT,
+            content_type="message/rfc822",
+            prefer_offloaded=True,
+        )
+        assert blob.storage_location == enums.BlobStorageLocationChoices.POSTGRES
+        assert blob.raw_content is not None
+
+    def test_disabled_storage_falls_back_to_postgres(self):
+        # Same pattern as the offload-task tests: no configured object
+        # storage backend makes ``TieredStorageService.enabled`` False.
+        with patch("core.services.tiered_storage.settings") as mock_settings:
+            mock_settings.STORAGES = {}
+            mock_settings.MESSAGES_BLOBS_ENCRYPT_KEYS = {}
+            blob = models.Blob.objects.create_blob(
+                content=self.CONTENT,
+                content_type="message/rfc822",
+                prefer_offloaded=True,
+            )
+        assert blob.storage_location == enums.BlobStorageLocationChoices.POSTGRES
+        assert blob.raw_content is not None

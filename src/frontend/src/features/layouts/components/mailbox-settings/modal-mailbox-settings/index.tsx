@@ -20,6 +20,7 @@ import { MailboxSettingsSignaturesTab } from "./signatures-tab";
 import { MailboxSettingsMessageTemplatesTab } from "./message-templates-tab";
 import { MailboxSettingsAutorepliesTab } from "./autoreplies-tab";
 import { MailboxSettingsIntegrationsTab } from "./integrations-tab";
+import { MailboxSettingsImportsTab } from "./imports-tab";
 
 export type SettingsTabId =
   | "general"
@@ -27,7 +28,8 @@ export type SettingsTabId =
   | "signatures"
   | "message-templates"
   | "autoreplies"
-  | "integrations";
+  | "integrations"
+  | "imports";
 
 type ModalMailboxSettingsProps = {
   isOpen: boolean;
@@ -135,7 +137,7 @@ export const ModalMailboxSettings = ({
     if (!settingsMailbox) {
       return [];
     }
-    const { manage_accesses, manage_message_templates } =
+    const { manage_accesses, manage_message_templates, import_messages } =
       settingsMailbox.abilities;
     const ids: SettingsTabId[] = [];
     if (manage_accesses) {
@@ -143,6 +145,13 @@ export const ModalMailboxSettings = ({
     }
     if (manage_message_templates) {
       ids.push("message-templates", "autoreplies", "signatures");
+    }
+    // Imports are gated by their own ability (is_admin && FEATURE_IMPORT_MESSAGES),
+    // shown before Integrations.
+    if (import_messages) {
+      ids.push("imports");
+    }
+    if (manage_message_templates) {
       if (isIntegrationsEnabled) {
         ids.push("integrations");
       }
@@ -271,6 +280,26 @@ export const ModalMailboxSettings = ({
             }</p>,
             content: (
               <MailboxSettingsSignaturesTab
+                key={settingsMailbox.id}
+                mailbox={settingsMailbox}
+              />
+            ),
+          },
+        ]
+      : []),
+    ...(availableTabIds.includes("imports")
+      ? [
+          {
+            id: "imports",
+            label: t("Imports"),
+            title: t("Imports"),
+            subtitle: <p className="mb-base mr-base">{
+              t(
+                "Import mail into this mailbox from an archive (PST, MBOX, EML) or an IMAP account, and track or cancel running imports.",
+              )
+            }</p>,
+            content: (
+              <MailboxSettingsImportsTab
                 key={settingsMailbox.id}
                 mailbox={settingsMailbox}
               />

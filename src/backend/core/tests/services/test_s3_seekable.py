@@ -5,7 +5,7 @@ from unittest.mock import Mock
 
 import pytest
 
-from core.services.importer.s3_seekable import (
+from core.services.s3_seekable import (
     BUFFER_CENTERED,
     BUFFER_FORWARD,
     S3SeekableReader,

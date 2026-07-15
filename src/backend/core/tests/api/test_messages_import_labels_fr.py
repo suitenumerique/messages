@@ -4,6 +4,7 @@
 
 from django.core.files.storage import storages
 from django.core.files.uploadedfile import SimpleUploadedFile
+from django.urls import reverse
 from django.db.models import F, Q
 
 import pytest
@@ -11,10 +12,12 @@ from rest_framework import status
 from rest_framework.test import APIClient
 
 from core import models
-from core.api.utils import get_file_key
+from core.api.utils import generate_file_key
 from core.factories import MailboxFactory, UserFactory
 
-IMPORT_FILE_URL = "/api/v1.0/import/file/"
+
+def _import_url(mailbox):
+    return reverse("mailbox-imports-list", kwargs={"mailbox_id": mailbox.id})
 
 
 @pytest.fixture
@@ -62,7 +65,8 @@ def mbox_file(user, mbox_file_path):
         file = SimpleUploadedFile(
             "test.mbox", file_content, content_type="application/mbox"
         )
-        file_key = get_file_key(user.id, file.name)
+        file_key = generate_file_key(user.id)
+        file.s3_key = file_key
         s3_client.put_object(
             Bucket=storage.bucket_name,
             Key=file_key,
@@ -80,13 +84,16 @@ def mbox_file(user, mbox_file_path):
 
 
 def upload_mbox_file(client, mailbox, mbox_file):
-    """Helper function to upload mbox file via API."""
-    response = client.post(
-        IMPORT_FILE_URL,
-        {"filename": mbox_file.name, "recipient": str(mailbox.id)},
-        format="multipart",
+    """Helper function to start the mbox import via the imports API."""
+    return client.post(
+        _import_url(mailbox),
+        {
+            "source": "file",
+            "filename": mbox_file.name,
+            "file_key": mbox_file.s3_key,
+        },
+        format="json",
     )
-    return response
 
 
 @pytest.mark.django_db
@@ -102,8 +109,8 @@ def test_api_import_labels_french_import_mbox_with_labels_and_flags(
 
     # Check that the import was accepted
     assert response.status_code == status.HTTP_202_ACCEPTED
-    assert response.data["type"] == "mbox"
-    assert "task_id" in response.data
+    assert response.data["source_type"] == "mbox"
+    assert "id" in response.data
 
     # Wait for the task to complete (in a real scenario, you'd poll the task status)
     # For now, we'll assume the task completes and check the results
@@ -326,9 +333,13 @@ def test_api_import_labels_french_api_authentication_required(
 ):
     """Test that API authentication is required for French mbox import."""
     response = api_client.post(
-        IMPORT_FILE_URL,
-        {"filename": mbox_file.name, "recipient": str(mailbox.id)},
-        format="multipart",
+        _import_url(mailbox),
+        {
+            "source": "file",
+            "filename": mbox_file.name,
+            "file_key": mbox_file.s3_key,
+        },
+        format="json",
     )
 
     assert response.status_code == status.HTTP_401_UNAUTHORIZED
@@ -344,9 +355,13 @@ def test_api_import_labels_french_mailbox_access_required(
     api_client.force_authenticate(user=other_user)
 
     response = api_client.post(
-        IMPORT_FILE_URL,
-        {"filename": mbox_file.name, "recipient": str(mailbox.id)},
-        format="multipart",
+        _import_url(mailbox),
+        {
+            "source": "file",
+            "filename": mbox_file.name,
+            "file_key": mbox_file.s3_key,
+        },
+        format="json",
     )
 
     assert response.status_code == status.HTTP_403_FORBIDDEN

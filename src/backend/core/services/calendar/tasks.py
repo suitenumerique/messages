@@ -31,7 +31,11 @@ def _get_caldav_service(channel_id: str | None, user_email: str):
     self-contained so the email is ignored there.
     """
     if channel_id:
-        channel = Channel.objects.get(id=channel_id, type=ChannelTypes.CALDAV)
+        # Only resolve active channels: a paused CalDAV channel must not
+        # sync, so it raises DoesNotExist here just like an unknown id.
+        channel = Channel.objects.get(
+            id=channel_id, type=ChannelTypes.CALDAV, is_active=True
+        )
         return CalDAVService.from_channel(channel)
 
     return CalDAVService.from_instance_config(user_email)

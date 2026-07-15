@@ -135,10 +135,7 @@ set. On the outermost scope exit, a single `bulk_reindex_threads_task` is
 enqueued for all collected threads.
 
 Used by:
-- `core/services/importer/mbox_tasks.py`
-- `core/services/importer/eml_tasks.py`
-- `core/services/importer/imap_tasks.py`
-- `core/services/importer/pst_tasks.py`
+- the `run_mbox`/`run_eml`/`run_pst`/`run_imap` runners in `core/services/importer/` (`mbox.py`/`eml.py`/`pst.py`/`imap.py`)
 
 This bypasses the pending-set round-trip and avoids Celery saturation when
 delivering thousands of inbound messages in a single job. It composes with

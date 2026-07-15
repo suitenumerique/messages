@@ -525,11 +525,34 @@ class Channel(BaseModel):
         ),
     )
 
+    # Pause switch. When False the channel is treated as if it did not
+    # exist for message flow — inbound api_key/widget auth is refused,
+    # outbound webhooks stop firing, and caldav sync is skipped — without
+    # deleting the row (secrets and config are preserved for later resume).
+    # Enforced at each Channel lookup on the hot paths; see
+    # dispatch_webhooks.find_webhook_channels_for_mailbox, the auth classes
+    # and calendar viewset/tasks.
+    is_active = models.BooleanField(
+        "active",
+        default=True,
+        help_text="Uncheck to pause this channel without deleting it.",
+    )
+
     class Meta:
         db_table = "messages_channel"
         verbose_name = "channel"
         verbose_name_plural = "channels"
         ordering = ["-created_at"]
+        indexes = [
+            # The import scheduler scans (type=import, is_active=True) every few
+            # minutes; index that predicate so the scan stays cheap as channels
+            # accumulate. ``last_used_at`` is deliberately NOT indexed: it is
+            # rewritten by every (throttled) heartbeat and API-key auth, and
+            # indexing it would defeat HOT updates on that hot write path — for
+            # a residual staleness filter the 5-minute scan evaluates over the
+            # few rows this index already narrows to.
+            models.Index(fields=["type", "is_active"], name="channel_type_active_idx"),
+        ]
         constraints = [
             models.CheckConstraint(
                 check=(
@@ -2403,6 +2426,7 @@ class BlobManager(models.Manager):
         self,
         content: bytes,
         content_type: str,
+        prefer_offloaded: bool = False,
         **kwargs,
     ) -> "Blob":
         """Hash-first create-or-dedup.
@@ -2413,9 +2437,23 @@ class BlobManager(models.Manager):
         (with sha as AAD), and inserts a fresh row under the per-sha
         advisory lock so concurrent inserts can't produce duplicates.
 
+        With ``prefer_offloaded=True`` the fresh row is written straight
+        to the object-storage tier (``raw_content=NULL``), skipping the
+        PG hot tier — used by bulk imports so a large archive never
+        parks its bytes in Postgres waiting for the offload task. The
+        operator's offload policy still applies: nothing is written to
+        the object tier when ``MESSAGES_BLOBS_OFFLOAD_ENABLED`` is off
+        or the content is under ``MESSAGES_BLOBS_OFFLOAD_MIN_SIZE``.
+        Best effort: when object storage is unconfigured or the upload
+        fails (transient S3 blip or misconfiguration), the blob falls
+        back to the PG tier — exactly today's behavior — and the
+        periodic offload moves it later.
+
         Args:
             content: Raw binary content.
             content_type: MIME type.
+            prefer_offloaded: Try to store bytes directly in the
+                object-storage tier instead of Postgres.
         Returns:
             A ``Blob`` row (newly created or existing).
         """
@@ -2505,6 +2543,49 @@ class BlobManager(models.Manager):
             existing = self.filter(sha256=sha256_hash).first()
             if existing is not None:
                 return existing
+
+            if (
+                prefer_offloaded
+                # Respect the operator's offload policy, not just whether S3
+                # is configured: with the master switch off (or the blob under
+                # the size floor) the periodic offload would never move this
+                # blob, so writing it to the object tier directly would bypass
+                # the stated policy.
+                and service.enabled
+                and settings.MESSAGES_BLOBS_OFFLOAD_ENABLED
+                and original_size >= settings.MESSAGES_BLOBS_OFFLOAD_MIN_SIZE
+            ):
+                # Upload under the same lock/ordering as ``offload_one_blob``:
+                # the content-addressed object lands first, then the row that
+                # points at it commits. A crash in between leaves only an
+                # idempotently-overwritable object for ``verify_blobs`` to
+                # reconcile. Any upload failure falls back to the PG tier.
+                try:
+                    staged = self.model(
+                        sha256=sha256_hash,
+                        raw_content=encrypted_content,
+                        encryption_key_id=encryption_key_id,
+                        compression=compression,
+                    )
+                    key_id, compression_used = service.upload_blob(staged)
+                    return self.create(
+                        sha256=sha256_hash,
+                        size=original_size,
+                        size_compressed=len(encrypted_content),
+                        content_type=content_type,
+                        compression=compression_used,
+                        raw_content=None,
+                        storage_location=BlobStorageLocationChoices.OBJECT_STORAGE,
+                        encryption_key_id=key_id,
+                        **kwargs,
+                    )
+                except Exception:  # pylint: disable=broad-exception-caught
+                    logger.warning(
+                        "Direct-to-object-storage write failed; storing blob "
+                        "in the PG tier instead (offload will retry later)",
+                        exc_info=True,
+                    )
+
             blob = self.create(
                 sha256=sha256_hash,
                 size=original_size,

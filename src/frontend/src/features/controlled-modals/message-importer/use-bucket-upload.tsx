@@ -12,8 +12,8 @@ interface MultipartInitResponse {
   status: number;
   data: {
     filename: string;
+    file_key: string;
     upload_id: string;
-    key: string;
   };
   headers: Headers;
 }
@@ -40,6 +40,7 @@ interface DirectUploadResponse {
   status: number;
   data: {
     filename: string;
+    file_key: string;
     url: string;
   };
   headers: Headers;
@@ -61,6 +62,10 @@ export enum BucketUploadState {
 
 export type BucketUploadManager = {
   file: File | null;
+  /** Server-minted storage key, unique per upload — pass it to POST /imports/.
+   *  The onSuccess callback receives a manager whose fileKey is already set (it
+   *  can't rely on React state having flushed by the time the upload resolves). */
+  fileKey: string | null;
   state: BucketUploadState;
   progress: number;
   upload: (file: File) => void;
@@ -86,8 +91,10 @@ const uploadPart = (
     const xhr = new XMLHttpRequest();
     xhr.open("PUT", url);
 
-    xhr.addEventListener("error", reject);
-    xhr.addEventListener("abort", reject);
+    // See directUploadFile: distinguish a real user abort from a network
+    // failure (status 0 without an abort event).
+    xhr.addEventListener("error", () => reject(new Error('Upload failed')));
+    xhr.addEventListener("abort", () => reject('Aborted'));
     onInit(xhr);
 
     xhr.addEventListener("readystatechange", () => {
@@ -102,7 +109,7 @@ const uploadPart = (
           return resolve(etag);
         }
         if (xhr.status === 0) {
-          reject(new Error('Aborted'));
+          reject(new Error('Upload failed: could not reach the storage server.'));
           return;
         }
         reject(new Error(`Failed to upload part. Status: ${xhr.status}`));
@@ -134,7 +141,11 @@ const directUploadFile = (
     xhr.open("PUT", url);
     xhr.setRequestHeader("Content-Type", file.type || "application/octet-stream");
 
-    xhr.addEventListener("error", reject);
+    // Only a genuine user abort fires the "abort" event → surface it as
+    // 'Aborted'. A network failure (object storage down, CORS, DNS) fires
+    // "error" and/or lands here with status 0 — that is NOT a user cancel, so
+    // report it as an upload failure, not "you aborted".
+    xhr.addEventListener("error", () => reject(new Error('Upload failed')));
     xhr.addEventListener("abort", () => reject('Aborted'));
     onInit(xhr);
 
@@ -144,7 +155,7 @@ const directUploadFile = (
           return resolve(true);
         }
         if (xhr.status === 0) {
-          reject(new Error('Aborted'));
+          reject(new Error(`Upload failed: could not reach ${url}.`));
           return;
         }
         reject(new Error(`Failed to perform the upload on ${url}.`));
@@ -168,12 +179,13 @@ const directUploadFile = (
 const multiPartUploadFile = async (
   file: File,
   chunkSize: number,
-  onUploadCreated: (args: string) => void,
+  onUploadCreated: (uploadId: string, fileKey: string) => void,
   onUploadInit: (xhr: XMLHttpRequest) => void,
   onUploadCompleting: () => void,
   progressHandler: (progress: number) => void
 ): Promise<UploadResource> => {
   let uploadId: string | null = null;
+  let fileKey: string | null = null;
   const filename = file.name;
 
   try {
@@ -190,9 +202,10 @@ const multiPartUploadFile = async (
     );
 
     uploadId = initResponse.data.upload_id;
-    onUploadCreated(uploadId);
+    fileKey = initResponse.data.file_key;
+    onUploadCreated(uploadId, fileKey);
 
-    if (!uploadId) {
+    if (!uploadId || !fileKey) {
       throw new Error("Failed to initiate multipart upload");
     }
 
@@ -214,7 +227,7 @@ const multiPartUploadFile = async (
             `/api/v1.0/import/file/upload/${uploadId}/part/`,
             {
               method: "POST",
-              body: JSON.stringify({ filename, part_number: partNumber }),
+              body: JSON.stringify({ file_key: fileKey, part_number: partNumber }),
             }
           );
 
@@ -248,7 +261,7 @@ const multiPartUploadFile = async (
       `/api/v1.0/import/file/upload/${uploadId}/`,
       {
         method: "PUT",
-        body: JSON.stringify({ filename, parts }),
+        body: JSON.stringify({ file_key: fileKey, parts }),
       }
     );
 
@@ -256,18 +269,18 @@ const multiPartUploadFile = async (
   } catch (error) {
     handle(new Error("Failed to upload file."), { extra: { error } });
     // If something went wrong, try to abort the multipart upload
-    if (uploadId) {
-      await abortUpload(uploadId, filename);
+    if (uploadId && fileKey) {
+      await abortUpload(uploadId, fileKey);
     }
     throw error;
   }
 };
 
-const abortUpload = async (uploadId: string, filename: string) => {
+const abortUpload = async (uploadId: string, fileKey: string) => {
   try {
     await fetchAPI(`/api/v1.0/import/file/upload/${uploadId}/`, {
       method: "DELETE",
-      body: JSON.stringify({ filename }),
+      body: JSON.stringify({ file_key: fileKey }),
     });
   } catch (error) {
     handle(new Error("Failed to abort multipart upload."), { extra: { error } });
@@ -281,7 +294,9 @@ export const useBucketUpload = (
   // Threshold to use multipart upload (object storage allows chunks of 10MB at least)
   const chunkSize = MULTIPART_UPLOAD_CHUNK_SIZE_MB * 1024 * 1024;
   const [file, setFile] = useState<File | null>(null);
+  const [fileKey, setFileKey] = useState<string | null>(null);
   const uploadIdRef = useRef<string | null>(null);
+  const fileKeyRef = useRef<string | null>(null);
   const [state, setState] = useState<BucketUploadState>(BucketUploadState.IDLE);
   const [progress, setProgress] = useState<number>(0);
   const [uploadId, setUploadId] = useState<string | null>(null);
@@ -289,6 +304,7 @@ export const useBucketUpload = (
 
   const reset = () => {
     setFile(null);
+    setFileKey(null);
     setState(BucketUploadState.IDLE);
     setProgress(0);
     setUploadId(null);
@@ -296,24 +312,32 @@ export const useBucketUpload = (
   }
 
   const abort = async () => {
-    if (!uploadId || !file) return;
+    if (!uploadId || !fileKey) return;
     if (xhr) xhr.abort();
-    await abortUpload(uploadId, file.name);
+    await abortUpload(uploadId, fileKey);
     reset();
   }
 
-  const manager = useMemo(() => ({ file, state, progress, upload: setFile, reset, abort }), [file, state, progress, uploadId, xhr]);
+  const manager = useMemo(() => ({ file, fileKey, state, progress, upload: setFile, reset, abort }), [file, fileKey, state, progress, uploadId, xhr]);
 
   const upload = async (file: File) => {
     setState(BucketUploadState.IDLE);
     setProgress(0);
     setUploadId(null);
+    setFileKey(null);
+
+    // Track the resolved key locally: onSuccess fires synchronously at the end
+    // of this function, before React has necessarily flushed setFileKey, so we
+    // must not read it back off component state.
+    let resolvedFileKey: string | null = null;
 
     try {
       // Use multipart upload for large files
       if (file.size > chunkSize) {
-        const handleUploadCreated = (uploadId: string) => {
+        const handleUploadCreated = (uploadId: string, key: string) => {
           setUploadId(uploadId);
+          setFileKey(key);
+          resolvedFileKey = key;
           setState(BucketUploadState.IMPORTING);
         };
         const handleUploadCompleting = () => setState(BucketUploadState.COMPLETING);
@@ -336,10 +360,12 @@ export const useBucketUpload = (
             body: JSON.stringify({ filename: file.name, content_type: file.type || "application/octet-stream" }),
           }
         );
-        const { url } = response.data;
-        if (!url) {
+        const { url, file_key } = response.data;
+        if (!url || !file_key) {
           throw new Error("Failed to generate upload url.");
         }
+        setFileKey(file_key);
+        resolvedFileKey = file_key;
         setState(BucketUploadState.IMPORTING);
         await directUploadFile(url, file, setXhr, setProgress);
       }
@@ -360,7 +386,9 @@ export const useBucketUpload = (
     setState(BucketUploadState.COMPLETED);
     setUploadId(null);
     setXhr(null);
-    onSuccess?.(manager);
+    // Hand onSuccess a manager carrying the just-resolved key (the memoized
+    // ``manager`` closes over a possibly-stale fileKey from this render).
+    onSuccess?.({ ...manager, fileKey: resolvedFileKey });
   };
 
   useEffect(() => {
@@ -368,12 +396,16 @@ export const useBucketUpload = (
   }, [uploadId]);
 
   useEffect(() => {
+    fileKeyRef.current = fileKey;
+  }, [fileKey]);
+
+  useEffect(() => {
     if (file) {
       upload(file);
 
       return () => {
-        if (uploadIdRef.current) {
-          abortUpload(uploadIdRef.current, file.name);
+        if (uploadIdRef.current && fileKeyRef.current) {
+          abortUpload(uploadIdRef.current, fileKeyRef.current);
         }
       }
     }

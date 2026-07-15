@@ -13,9 +13,13 @@ import logging
 import re
 import struct
 import uuid
+from collections.abc import Callable, Generator
+from datetime import timezone
 from email import message_from_string
-from typing import Generator
 
+from django.conf import settings
+
+import pypff
 from jmap_email import (
     EmailAddress,
     compose_email,
@@ -23,6 +27,10 @@ from jmap_email import (
     parse_address,
     parse_addresses,
 )
+
+from core.services.s3_seekable import BUFFER_NONE, S3SeekableReader
+
+from .utils import beat, deliver, imports_storage, run_plan
 
 logger = logging.getLogger(__name__)
 
@@ -129,6 +137,15 @@ class PSTFileUnreadableError(RuntimeError):
     """
 
 
+class OversizedAttachmentError(RuntimeError):
+    """A PST attachment exceeds the per-message size budget.
+
+    Raised out of ``reconstruct_eml`` so the whole message is counted as a
+    visible failure (``_reconstruct_plan_item`` logs it and returns ``None``)
+    rather than delivered without some attachments as an apparent success.
+    """
+
+
 def assert_pst_readable(pst_file) -> None:
     """Probe the PST for the structures the walk relies on.
 
@@ -143,8 +160,12 @@ def assert_pst_readable(pst_file) -> None:
         store = pst_file.get_message_store()
         _ = store.number_of_record_sets
     except Exception as exc:
+        # The ``PST_UNREADABLE`` marker is part of the UI contract: the import
+        # modal matches it in the run's error to show the dedicated "archive is
+        # corrupt, retrying will not help" message instead of the generic one.
         raise PSTFileUnreadableError(
-            "PST archive is unreadable: missing root folder or message store."
+            "PST_UNREADABLE: the archive is missing its root folder or "
+            "message store (corrupt or truncated file)."
         ) from exc
 
 
@@ -523,18 +544,23 @@ def _detect_folder_type_by_name(folder_name: str) -> str:
 
 
 def _get_message_timestamp(message):
-    """Get a sortable timestamp from a message for chronological ordering."""
+    """Get a sortable, tz-aware timestamp from a message for chronological order."""
+    dt = None
     try:
-        if message.delivery_time:
-            return message.delivery_time
+        dt = message.delivery_time or None
     except Exception:
         logger.debug("Failed to read delivery_time")
-    try:
-        if message.client_submit_time:
-            return message.client_submit_time
-    except Exception:
-        logger.debug("Failed to read client_submit_time")
-    return None
+    if dt is None:
+        try:
+            dt = message.client_submit_time or None
+        except Exception:
+            logger.debug("Failed to read client_submit_time")
+    # pypff can return naive datetimes; assume UTC so a mix of naive and
+    # tz-aware values from one PST stays mutually comparable when we sort
+    # chronologically (a bare compare would raise TypeError).
+    if dt is not None and dt.tzinfo is None:
+        dt = dt.replace(tzinfo=timezone.utc)
+    return dt
 
 
 def _get_message_flags(message) -> int:
@@ -1150,13 +1176,28 @@ def reconstruct_eml(
 
     # Attachments
     attachments = []
+    # Bound peak memory: never materialize an attachment (or the running total
+    # of them) beyond the per-message size limit. A crafted PST could otherwise
+    # hold a multi-GB attachment that OOMs the worker before ``deliver`` — which
+    # would reject the oversized message anyway — ever gets to check the size.
+    attachment_budget = settings.MAX_INCOMING_EMAIL_SIZE
     try:
         num_attachments = message.number_of_attachments
         for i in range(num_attachments):
             try:
                 attachment = message.get_attachment(i)
                 att_size = attachment.get_size()
+                if att_size > attachment_budget:
+                    # Fail the whole message visibly (it lands in failure_count
+                    # via ``_reconstruct_plan_item``) rather than silently
+                    # delivering a truncated copy as a "success" — deliver()
+                    # would reject the assembled oversized EML anyway.
+                    raise OversizedAttachmentError(
+                        f"attachment of {att_size} bytes exceeds the remaining "
+                        f"per-message budget ({attachment_budget} bytes)"
+                    )
                 att_data = attachment.read_buffer(att_size)
+                attachment_budget -= len(att_data)
 
                 # Skip empty / whitespace-only parts. DSN and read-receipt
                 # reports routinely expose blank diagnostic parts (e.g. an empty
@@ -1210,8 +1251,12 @@ def reconstruct_eml(
                     att_dict["cid"] = content_id
 
                 attachments.append(att_dict)
+            except OversizedAttachmentError:
+                raise
             except Exception:
                 logger.debug("Failed to process attachment %d", i)
+    except OversizedAttachmentError:
+        raise
     except Exception:
         logger.debug("Failed to read attachments")
 
@@ -1285,30 +1330,20 @@ def count_pst_messages(pst_file, special_folder_map: dict | None = None) -> int:
     return count
 
 
-def walk_pst_messages(
+def _collect_pst_plan(
     pst_file,
     special_folder_map: dict,
-    store_email: str | None = None,
-    recipient_email: str | None = None,
-) -> Generator[tuple[str, str, int, int | None, bytes | None], None, None]:
-    """Walk all email messages in a PST file, yielding them in chronological order.
+    on_progress: Callable[[], None] | None = None,
+) -> list[tuple]:
+    """Collect + chronologically sort every email message's locator in a PST.
 
-    First pass: collect lightweight metadata (folder ref + message index).
-    Sort by delivery_time (oldest first) for proper threading.
-    Second pass: reconstruct EML one at a time to limit memory usage.
-
-    Args:
-        pst_file: An opened pypff file object.
-        special_folder_map: Mapping from folder identifiers to folder types.
-        store_email: Mailbox owner's email for sender fallback.
-        recipient_email: Import target mailbox email, used as ultimate sender
-            fallback domain when no sender can be extracted.
-
-    Yields:
-        (folder_type, folder_path, message_flags, flag_status, eml_bytes) tuples
-        sorted chronologically. ``eml_bytes`` is ``None`` when the message
-        could not be read from libpff or when EML reconstruction raised; the
-        caller is expected to count those as failures rather than skip them.
+    Returns ``(folder_ref, msg_idx, folder_type, folder_path, flags,
+    flag_status)`` tuples, oldest-first (for threading). Only lightweight
+    per-message metadata is read here — EML reconstruction is deferred to
+    :func:`_reconstruct_plan_item` so only one message is ever held in memory.
+    ``len()`` of the result is the authoritative message total. ``on_progress``
+    is invoked periodically so the runner can beat its heartbeat through this
+    (potentially long) traversal.
     """
     start_folder = _find_ipm_subtree(pst_file)
 
@@ -1337,6 +1372,8 @@ def walk_pst_messages(
 
         try:
             for i in range(folder.number_of_sub_messages):
+                if on_progress:
+                    on_progress()
                 try:
                     message = folder.get_sub_message(i)
                     flags = _get_message_flags(message)
@@ -1403,40 +1440,136 @@ def walk_pst_messages(
     except Exception:
         logger.debug("Failed to iterate root sub_folders")
 
-    # Sort by timestamp (oldest first), None timestamps go last
+    # Sort by timestamp (oldest first), None timestamps go last, then drop the
+    # sort key — the caller only needs the locator + metadata.
     collected.sort(key=lambda x: (x[0] is None, x[0] or 0))
+    return [item[1:] for item in collected]
 
-    # Second pass: reconstruct EML one at a time
-    for (
-        _timestamp,
-        folder_ref,
-        msg_idx,
-        folder_type,
-        folder_path,
-        flags,
-        flag_status,
-    ) in collected:
+
+def _reconstruct_plan_item(
+    item, store_email: str | None = None, recipient_email: str | None = None
+) -> tuple[str, str, int, int | None, bytes | None]:
+    """Reconstruct one plan item into ``(folder_type, folder_path, flags,
+    flag_status, eml_bytes)``. ``eml_bytes`` is ``None`` when the message cannot
+    be read from libpff or reconstruction raised — the caller counts those as
+    failures rather than silently dropping them."""
+    folder_ref, msg_idx, folder_type, folder_path, flags, flag_status = item
+    try:
+        message = folder_ref.get_sub_message(msg_idx)
+    except Exception:
+        logger.warning("Failed to read message %d in folder %s", msg_idx, folder_path)
+        return folder_type, folder_path, flags, flag_status, None
+    try:
+        eml_bytes = reconstruct_eml(
+            message, store_email=store_email, recipient_email=recipient_email
+        )
+    except Exception:
+        logger.exception(
+            "Failed to reconstruct EML for message %d in folder %s",
+            msg_idx,
+            folder_path,
+        )
+        return folder_type, folder_path, flags, flag_status, None
+    return folder_type, folder_path, flags, flag_status, eml_bytes
+
+
+def walk_pst_messages(
+    pst_file,
+    special_folder_map: dict,
+    store_email: str | None = None,
+    recipient_email: str | None = None,
+) -> Generator[tuple[str, str, int, int | None, bytes | None], None, None]:
+    """Walk all email messages in a PST, chronologically, yielding reconstructed
+    EML one at a time. Thin composition of :func:`_collect_pst_plan` (metadata +
+    sort) and :func:`_reconstruct_plan_item` (per-message reconstruction)."""
+    for item in _collect_pst_plan(pst_file, special_folder_map):
+        yield _reconstruct_plan_item(item, store_email, recipient_email)
+
+
+def _pst_labels_flags(folder_type, folder_path, message_flags, flag_status):
+    """Map PST folder/message metadata to IMAP-style labels/flags/sender."""
+    imap_flags = []
+    if message_flags & MSGFLAG_READ:
+        imap_flags.append("\\Seen")
+    if message_flags & MSGFLAG_UNSENT or folder_type == FOLDER_TYPE_DRAFTS:
+        imap_flags.append("\\Draft")
+    if flag_status is not None and flag_status >= FLAG_STATUS_FOLLOWUP:
+        imap_flags.append("\\Flagged")
+
+    imap_labels = []
+    if folder_type == FOLDER_TYPE_SENT:
+        imap_labels.append("Sent")
+    elif folder_type == FOLDER_TYPE_DELETED:
+        imap_labels.append("Trash")
+    elif folder_type == FOLDER_TYPE_OUTBOX:
+        imap_labels.append("OUTBOX")
+    elif folder_type in (FOLDER_TYPE_INBOX, FOLDER_TYPE_DRAFTS):
+        pass
+    elif folder_path:
+        imap_labels.append(sanitize_folder_name(folder_path))
+    if folder_path and folder_type != FOLDER_TYPE_NORMAL:
+        imap_labels.append(sanitize_folder_name(folder_path))
+
+    is_sender = folder_type in (FOLDER_TYPE_SENT, FOLDER_TYPE_OUTBOX)
+    return imap_labels, imap_flags, is_sender
+
+
+def run_pst(channel, state) -> tuple[int, int, int]:
+    """Resumable PST pass: walk folders/messages, deliver from ``cursor``."""
+    recipient = channel.mailbox
+    file_key = (channel.settings or {})["import"]["file_key"]
+    storage, s3_client = imports_storage()
+    with S3SeekableReader(
+        s3_client,
+        storage.bucket_name,
+        file_key,
+        buffer_strategy=BUFFER_NONE,
+        buffer_size=64 * 1024,
+        buffer_count=2048,
+    ) as reader:
+        pst = pypff.file()
         try:
-            message = folder_ref.get_sub_message(msg_idx)
-        except Exception:
-            # Cannot even read the message back from libpff — non-recoverable.
-            logger.warning(
-                "Failed to read message %d in folder %s", msg_idx, folder_path
-            )
-            yield folder_type, folder_path, flags, flag_status, None
-            continue
+            pst.open_file_object(reader)
+        except Exception as exc:
+            # Same UI contract as ``assert_pst_readable``: a file that fails at
+            # open (bad signature, truncated) must carry the marker too, not a
+            # raw libpff error.
+            raise PSTFileUnreadableError(
+                "PST_UNREADABLE: the file is not a readable PST archive "
+                "(invalid signature or truncated file)."
+            ) from exc
         try:
-            eml_bytes = reconstruct_eml(
-                message, store_email=store_email, recipient_email=recipient_email
+            assert_pst_readable(pst)
+            special_folder_map = build_special_folder_map(pst)
+            store_email = get_store_owner_email(pst)
+            # Building the plan is the long pre-scan: beat through it so a live
+            # run keeps renewing its lock. len(plan) is the authoritative total,
+            # so the progress bar reaches 100% (unlike a separate count that
+            # over-counted unreadable messages).
+            plan = _collect_pst_plan(
+                pst, special_folder_map, on_progress=lambda: beat(channel)
             )
-        except Exception:
-            # Yield None so pst_tasks.py counts this as a failure instead of
-            # silently dropping it.
-            logger.exception(
-                "Failed to reconstruct EML for message %d in folder %s",
-                msg_idx,
-                folder_path,
-            )
-            yield folder_type, folder_path, flags, flag_status, None
-            continue
-        yield folder_type, folder_path, flags, flag_status, eml_bytes
+
+            def deliver_item(item):
+                folder_type, folder_path, message_flags, flag_status, eml_bytes = (
+                    _reconstruct_plan_item(
+                        item, store_email=store_email, recipient_email=str(recipient)
+                    )
+                )
+                if eml_bytes is None:
+                    return False
+                labels, flags, is_sender = _pst_labels_flags(
+                    folder_type, folder_path, message_flags, flag_status
+                )
+                return deliver(
+                    eml_bytes,
+                    recipient,
+                    channel,
+                    imap_labels=labels,
+                    imap_flags=flags,
+                    is_sender=is_sender,
+                )
+
+            return run_plan(channel, state, plan, deliver_item)
+        finally:
+            pst.close()

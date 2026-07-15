@@ -11,10 +11,11 @@ from django.utils import timezone
 
 import pytest
 
-from core import factories
+from core import enums, factories
 from core.models import Blob, Label, Mailbox, MailDomain, Message, Thread, ThreadAccess
 from core.services.exporter.tasks import export_mailbox_task
-from core.services.importer.mbox_tasks import process_mbox_file_task
+from core.services.importer.channel import create_import_channel
+from core.services.importer.mbox import run_mbox
 
 
 @pytest.fixture
@@ -370,18 +371,18 @@ def test_export_reimport_roundtrip(domain, cleanup_exports):
     )
     cleanup_exports.append(import_key)
 
-    # 4. Import into mailbox B
-    mock_import_task = MagicMock()
+    # 4. Import into mailbox B via the unified mbox runner
+    channel = create_import_channel(
+        recipient=mailbox_b,
+        user=user,
+        source_type=enums.ImportSource.MBOX.value,
+        file_key=import_key,
+    )
+    success_count, failure_count, total = run_mbox(channel, {})
 
-    with patch.object(
-        process_mbox_file_task, "update_state", mock_import_task.update_state
-    ):
-        import_result = process_mbox_file_task(
-            file_key=import_key, recipient_id=str(mailbox_b.id)
-        )
-
-    assert import_result["status"] == "SUCCESS"
-    assert import_result["result"]["success_count"] == 3
+    assert total == 3
+    assert success_count == 3
+    assert failure_count == 0
 
     # 5. Verify messages in mailbox B
     imported_count = Message.objects.filter(thread__accesses__mailbox=mailbox_b).count()

@@ -1,19 +1,22 @@
-import { StatusEnum } from "@/features/api/gen";
+import { useMailboxesImportsCancelCreate } from "@/features/api/gen";
 import ProgressBar from "@/features/ui/components/progress-bar";
-import { ImportTaskRecap, useTaskStatus } from "@/hooks/use-task-status";
+import { ImportRecap, useImportStatus } from "@/hooks/use-import-status";
+import { Button } from "@gouvfr-lasuite/cunningham-react";
 import { Spinner } from "@gouvfr-lasuite/ui-kit";
 import { useEffect, useRef } from "react";
 import { useTranslation } from "react-i18next";
 
 type StepLoaderProps = {
-    taskId: string;
-    onComplete: (recap: ImportTaskRecap) => void;
+    mailboxId: string;
+    importId: string;
+    onComplete: (recap: ImportRecap) => void;
     onError: (error: string) => void;
+    onCancelled: () => void;
 }
 
 const renderProgressText = (
     t: ReturnType<typeof useTranslation>['t'],
-    importStatus: NonNullable<ReturnType<typeof useTaskStatus>>
+    importStatus: NonNullable<ReturnType<typeof useImportStatus>>
 ) => {
     if (importStatus.progress !== null && importStatus.progress > 0) {
         return <p>{t('{{progress}}% imported', { progress: importStatus.progress })}</p>;
@@ -24,9 +27,9 @@ const renderProgressText = (
     return null;
 };
 
-export const StepLoader = ({ taskId, onComplete, onError }: StepLoaderProps) => {
+export const StepLoader = ({ mailboxId, importId, onComplete, onError, onCancelled }: StepLoaderProps) => {
     const { t } = useTranslation();
-    const importStatus = useTaskStatus(taskId, {
+    const importStatus = useImportStatus(mailboxId, importId, {
         exhaustedError: t('An error occurred while importing messages.'),
     });
 
@@ -35,16 +38,30 @@ export const StepLoader = ({ taskId, onComplete, onError }: StepLoaderProps) => 
     onCompleteRef.current = onComplete;
     const onErrorRef = useRef(onError);
     onErrorRef.current = onError;
+    const onCancelledRef = useRef(onCancelled);
+    onCancelledRef.current = onCancelled;
+
+    const cancelMutation = useMailboxesImportsCancelCreate({
+        mutation: {
+            meta: { noGlobalError: true },
+            onSuccess: () => onCancelledRef.current(),
+            onError: () => onErrorRef.current(t('An error occurred while cancelling the import.')),
+        },
+    });
 
     useEffect(() => {
         if (!importStatus) return;
-        if (importStatus.state === StatusEnum.SUCCESS) {
+        if (importStatus.state === "success") {
             onCompleteRef.current({
                 successCount: importStatus.successCount,
                 failureCount: importStatus.failureCount,
                 totalMessages: importStatus.totalMessages,
             });
-        } else if (importStatus.state === StatusEnum.FAILURE) {
+        } else if (importStatus.state === "cancelled") {
+            // A deliberate cancel (possibly issued from the Imports settings
+            // tab) — route to the cancelled flow, not the error message.
+            onCancelledRef.current();
+        } else if (importStatus.state === "failed") {
             const error = importStatus.error || '';
             const isAuthError =
                 error.includes("AUTHENTICATIONFAILED") ||
@@ -88,7 +105,22 @@ export const StepLoader = ({ taskId, onComplete, onError }: StepLoaderProps) => 
                 {renderProgressText(t, importStatus)}
             </div>
             <ProgressBar progress={importStatus.progress} />
-            {importStatus.state === StatusEnum.PROGRESS && <p>{t('You can close this window and continue using the app.')}</p>}
+            {importStatus.state === "progress" && (
+                <>
+                    <p>{t('You can close this window and continue using the app.')}</p>
+                    <Button
+                        type="button"
+                        color="brand"
+                        variant="tertiary"
+                        aria-busy={cancelMutation.isPending}
+                        disabled={cancelMutation.isPending}
+                        icon={cancelMutation.isPending ? <Spinner size="sm" /> : undefined}
+                        onClick={() => cancelMutation.mutate({ mailboxId, id: importId })}
+                    >
+                        {cancelMutation.isPending ? t('Cancelling the import...') : t('Cancel the import')}
+                    </Button>
+                </>
+            )}
         </div>
     );
 }

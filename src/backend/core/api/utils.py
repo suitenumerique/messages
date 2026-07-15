@@ -40,9 +40,35 @@ def flat_to_nested(items):
     return roots[0] if roots else {}
 
 
-def get_file_key(user_id, filename):
-    """Generate the file key to store file in the message imports bucket."""
-    return hashlib.sha256(f"{user_id}-{filename}".encode("utf-8")).hexdigest()
+def _user_file_prefix(user_id) -> str:
+    """Stable, non-reversible per-user prefix for import upload keys."""
+    return hashlib.sha256(f"{user_id}".encode("utf-8")).hexdigest()[:32]
+
+
+def generate_file_key(user_id) -> str:
+    """Mint a storage key for one upload to the message-imports bucket.
+
+    Unique per call: the random segment guarantees NOTHING is ever
+    overwritten — a second upload of the same filename gets its own object,
+    so a resumable import can never see its underlying archive replaced
+    mid-run. The user-derived prefix scopes the key so ``validate_file_key``
+    can check ownership without any DB state.
+    """
+    return f"{_user_file_prefix(user_id)}/{uuid.uuid4().hex}"
+
+
+def validate_file_key(user_id, file_key) -> bool:
+    """True if ``file_key`` was minted by ``generate_file_key`` for this user.
+
+    Rejects both foreign keys (another user's prefix) and hand-crafted paths
+    (traversal, arbitrary bucket locations): the format is strictly
+    ``<32 hex>/<32 hex>``.
+    """
+    prefix = _user_file_prefix(user_id) + "/"
+    if not file_key or not file_key.startswith(prefix):
+        return False
+    suffix = file_key[len(prefix) :]
+    return len(suffix) == 32 and all(c in "0123456789abcdef" for c in suffix)
 
 
 def generate_presigned_url(storage, *args, **kwargs):

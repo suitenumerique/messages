@@ -616,6 +616,33 @@ class Base(Configuration):
     MESSAGES_BLOBS_ENCRYPT_KEYS = JSONValue(
         {}, environ_name="MESSAGES_BLOBS_ENCRYPT_KEYS", environ_prefix=None
     )
+
+    # An import whose durable heartbeat (``Channel.last_used_at``) is older than
+    # this many seconds while still active is considered stalled (worker crash /
+    # OOM mid-run): the reaper re-dispatches ``run_import_task``, which resumes
+    # from its Redis watermark. Must comfortably exceed one run's worst-case
+    # time between progress flushes. (Continuous IMAP channels use
+    # ``MESSAGES_IMPORT_IMAP_POLL_INTERVAL`` as their clock instead of this timeout.)
+    MESSAGES_IMPORT_STALL_TIMEOUT = values.PositiveIntegerValue(
+        default=900,  # 15 minutes
+        environ_name="MESSAGES_IMPORT_STALL_TIMEOUT",
+        environ_prefix=None,
+    )
+    # Poll cadence (seconds) for continuous IMAP imports: the reaper re-dispatches
+    # each active continuous channel this often to pull new mail. A global,
+    # operator-controlled setting — deliberately not exposed per-import in the API.
+    MESSAGES_IMPORT_IMAP_POLL_INTERVAL = values.PositiveIntegerValue(
+        default=900,  # 15 minutes
+        environ_name="MESSAGES_IMPORT_IMAP_POLL_INTERVAL",
+        environ_prefix=None,
+    )
+    # Largest archive (bytes) an import will accept — checked before a worker is
+    # spent on it. 0 disables the cap.
+    MESSAGES_IMPORT_MAX_FILE_SIZE = values.PositiveIntegerValue(
+        default=50 * 1024 * 1024 * 1024,  # 50 GiB
+        environ_name="MESSAGES_IMPORT_MAX_FILE_SIZE",
+        environ_prefix=None,
+    )
     # When True, ``Blob.get_content`` re-hashes the decompressed plaintext
     # and raises ``ValueError`` if it doesn't match ``blob.sha256``. Costs
     # one SHA-256 over the plaintext per read. Defense-in-depth against
@@ -984,11 +1011,15 @@ class Base(Configuration):
         "core.mda.inbound_tasks.*": {"queue": "inbound"},
         # Outbound email sending - high priority
         "core.mda.outbound_tasks.*": {"queue": "outbound"},
-        # Import tasks - lower priority than regular tasks
-        "core.services.importer.mbox_tasks.*": {"queue": "imports"},
-        "core.services.importer.eml_tasks.*": {"queue": "imports"},
-        "core.services.importer.imap_tasks.*": {"queue": "imports"},
-        "core.services.importer.pst_tasks.*": {"queue": "imports"},
+        # Import tasks - lower priority than regular tasks.
+        # The import scheduler runs on "default" (matched first, before the
+        # glob) so it can dispatch even when the single imports worker is busy
+        # or stuck on a run; the run itself goes to the imports queue.
+        "core.services.importer.tasks.schedule_imports_task": {"queue": "default"},
+        # Cancellation cleanup is housekeeping — keep it off the sequential
+        # imports worker so it isn't stuck behind a long-running import.
+        "core.services.importer.tasks.cancel_import_task": {"queue": "default"},
+        "core.services.importer.tasks.*": {"queue": "imports"},
         # Search indexing - lowest priority, can be delayed
         "core.services.search.tasks.*": {"queue": "reindex"},
     }

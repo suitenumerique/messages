@@ -1,6 +1,6 @@
 import { Icon, IconSize, IconType, Spinner } from "@gouvfr-lasuite/ui-kit";
 import { Trash } from "@gouvfr-lasuite/ui-kit/icons";
-import { Button, Column, DataGrid, useModal, useModals } from "@gouvfr-lasuite/cunningham-react";
+import { Button, Column, DataGrid, Switch, useModal, useModals } from "@gouvfr-lasuite/cunningham-react";
 import { useTranslation } from "react-i18next";
 import { useState } from "react";
 import { useQueryClient } from "@tanstack/react-query";
@@ -9,6 +9,7 @@ import {
     Channel,
     useMailboxesChannelsList,
     useMailboxesChannelsDestroy,
+    useMailboxesChannelsPartialUpdate,
     getMailboxesChannelsListUrl
 } from "@/features/api/gen";
 import { Banner } from "@/features/ui/components/banner";
@@ -59,11 +60,49 @@ export const IntegrationsDataGrid = ({ mailbox }: IntegrationsDataGridProps) => 
         }
     );
     const { mutateAsync: deleteChannel, isPending: isDeleting } = useMailboxesChannelsDestroy();
+    const { mutate: updateChannel } = useMailboxesChannelsPartialUpdate();
     const [selectedChannel, setSelectedChannel] = useState<Channel | undefined>();
+    // Channels with an in-flight pause/resume request — used to disable the
+    // toggle so it can't be double-fired while the PATCH is pending.
+    const [pendingActiveIds, setPendingActiveIds] = useState<Set<string>>(new Set());
     const queryClient = useQueryClient();
 
     const invalidateChannels = async () => {
         await queryClient.invalidateQueries({ queryKey: [getMailboxesChannelsListUrl(mailbox.id)], exact: false });
+    }
+
+    const handleToggleActive = (channel: Channel, isActive: boolean) => {
+        setPendingActiveIds((prev) => new Set(prev).add(channel.id));
+        updateChannel(
+            { mailboxId: mailbox.id, id: channel.id, data: { is_active: isActive } },
+            {
+                onSuccess: async () => {
+                    await invalidateChannels();
+                    addToast(
+                        <ToasterItem type="info">
+                            <span>
+                                {isActive
+                                    ? t('Integration "{{name}}" resumed.', { name: channel.name })
+                                    : t('Integration "{{name}}" paused.', { name: channel.name })}
+                            </span>
+                        </ToasterItem>,
+                    );
+                },
+                onError: (error) => {
+                    handle(error);
+                    addToast(
+                        <ToasterItem type="error">
+                            <span>{t("Failed to update integration.")}</span>
+                        </ToasterItem>,
+                    );
+                },
+                onSettled: () => setPendingActiveIds((prev) => {
+                    const next = new Set(prev);
+                    next.delete(channel.id);
+                    return next;
+                }),
+            },
+        );
     }
 
     const handleModifyRow = (channel: Channel) => {
@@ -100,8 +139,13 @@ export const IntegrationsDataGrid = ({ mailbox }: IntegrationsDataGridProps) => 
         {
             id: "name",
             headerName: t("Name"),
+            // Paused channels are dimmed so an at-a-glance scan tells active
+            // from paused. The whole cell content carries the muted opacity.
             renderCell: ({ row }) => (
-                <div className="flex-row flex-align-center" style={{ gap: "var(--c--globals--spacings--xs)" }}>
+                <div
+                    className="flex-row flex-align-center"
+                    style={{ gap: "var(--c--globals--spacings--xs)", opacity: row.is_active === false ? 0.5 : 1 }}
+                >
                     <Icon name={getChannelTypeIcon(row.type)} type={IconType.OUTLINED} size={IconSize.SMALL} />
                     <span>{row.name}</span>
                 </div>
@@ -111,7 +155,24 @@ export const IntegrationsDataGrid = ({ mailbox }: IntegrationsDataGridProps) => 
             id: "type",
             headerName: t("Type"),
             size: 150,
-            renderCell: ({ row }) => getChannelTypeLabel(row.type, t),
+            renderCell: ({ row }) => (
+                <span style={{ opacity: row.is_active === false ? 0.5 : 1 }}>
+                    {getChannelTypeLabel(row.type, t)}
+                </span>
+            ),
+        },
+        {
+            id: "is_active",
+            headerName: t("Active"),
+            size: 110,
+            renderCell: ({ row }) => (
+                <Switch
+                    checked={row.is_active !== false}
+                    disabled={pendingActiveIds.has(row.id)}
+                    onChange={(event) => handleToggleActive(row, event.target.checked)}
+                    aria-label={row.is_active !== false ? t("Pause integration") : t("Resume integration")}
+                />
+            ),
         },
         {
             id: "actions",

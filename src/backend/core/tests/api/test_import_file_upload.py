@@ -10,8 +10,8 @@ from rest_framework import status
 from rest_framework.test import APIClient
 
 from core import enums, factories
-from core.api.utils import get_file_key
-from core.api.viewsets.task import register_task_owner
+from core.api.utils import generate_file_key, validate_file_key
+from core.utils import register_task_owner
 
 pytestmark = pytest.mark.django_db
 
@@ -134,7 +134,8 @@ class TestImportViewSetPermissions:
     """Test that ImportViewSet enforces proper role checks."""
 
     def test_api_import_file_viewer_should_be_forbidden(self, user):
-        """Test that a user with only VIEWER access cannot import, but EDITOR can."""
+        """A VIEWER cannot import into a mailbox; an ADMIN can. The endpoint is
+        gated by ``IsMailboxAdmin`` (the mailbox id comes from the URL)."""
         client = APIClient()
         client.force_authenticate(user=user)
         mailbox = factories.MailboxFactory()
@@ -143,12 +144,22 @@ class TestImportViewSetPermissions:
             user=user, mailbox=mailbox, role=enums.MailboxRoleChoices.VIEWER
         )
 
-        url = reverse("import-file")
-        data = {"recipient": str(mailbox.id), "filename": "test.eml"}
+        url = reverse("mailbox-imports-list", kwargs={"mailbox_id": mailbox.id})
+        data = {
+            "source": "file",
+            "filename": "test.eml",
+            "file_key": generate_file_key(user.id),
+        }
 
-        with mock.patch("core.services.importer.service.storages") as mock_storages:
+        with (
+            mock.patch("core.services.importer.service.storages") as mock_storages,
+            mock.patch("core.services.importer.service.run_import_task"),
+        ):
             mock_storage = mock.MagicMock()
             mock_storage.exists.return_value = True
+            mock_storage.connection.meta.client.head_object.return_value = {
+                "ContentLength": 100
+            }
             # Mock get_object to return EML-like content for magic detection
             eml_body = mock.MagicMock()
             eml_body.read.return_value = (
@@ -159,13 +170,12 @@ class TestImportViewSetPermissions:
             }
             mock_storages.__getitem__.return_value = mock_storage
 
-            response = client.post(url, data, format="json")
-
             # A VIEWER should not be allowed to import - expect 403
+            response = client.post(url, data, format="json")
             assert response.status_code == status.HTTP_403_FORBIDDEN
 
-            # Elevate to EDITOR and verify import is accepted
-            access.role = enums.MailboxRoleChoices.EDITOR
+            # Elevate to ADMIN and verify import is accepted
+            access.role = enums.MailboxRoleChoices.ADMIN
             access.save()
             response = client.post(url, data, format="json")
             assert response.status_code == status.HTTP_202_ACCEPTED
@@ -183,7 +193,7 @@ class TestMessagesArchiveUploadViewSet:
         data = {"filename": "test.eml", "content_type": "message/rfc822"}
 
         with mock.patch(
-            "core.api.viewsets.import_message.generate_presigned_url",
+            "core.api.viewsets.imports.generate_presigned_url",
             return_value="https://s3.example.com/presigned-url?signature=abc123",
         ) as mock_generate_presigned_url:
             response = api_client.post(url, data, format="json")
@@ -199,7 +209,50 @@ class TestMessagesArchiveUploadViewSet:
             mock_generate_presigned_url.assert_called_once()
             call_args = mock_generate_presigned_url.call_args
             assert call_args[1]["ClientMethod"] == "put_object"
-            assert call_args[1]["Params"]["Key"] == get_file_key(user.id, "test.eml")
+            assert call_args[1]["Params"]["Key"] == response.data["file_key"]
+            assert validate_file_key(user.id, response.data["file_key"])
+
+    def test_api_messages_archive_upload_keys_are_unique_per_upload(self):
+        """EVERY upload gets its own key — same user, same filename, twice:
+        nothing in the bucket is ever overwritten (a re-upload during a
+        resumable import must not swap the bytes under the running import)."""
+        user = factories.UserFactory()
+        client = APIClient()
+        client.force_authenticate(user=user)
+        keys = []
+        for _ in range(2):
+            with mock.patch(
+                "core.api.viewsets.imports.generate_presigned_url"
+            ) as mock_presign:
+                mock_presign.return_value = "https://example.com/presigned"
+                response = client.post(
+                    reverse("messages-archive-upload-list"),
+                    {"filename": "same-name.mbox", "content_type": "application/mbox"},
+                    format="json",
+                )
+            assert response.status_code == status.HTTP_201_CREATED
+            assert (
+                mock_presign.call_args.kwargs["Params"]["Key"]
+                == response.data["file_key"]
+            )
+            keys.append(response.data["file_key"])
+        assert keys[0] != keys[1]
+        assert all(validate_file_key(user.id, key) for key in keys)
+
+    def test_api_messages_archive_part_upload_rejects_foreign_key(self, api_client):
+        """A key minted for another user (or hand-crafted) is refused."""
+        other = factories.UserFactory()
+        foreign_key = generate_file_key(other.id)
+        response = api_client.post(
+            reverse(
+                "messages-archive-upload-create-part-upload",
+                kwargs={"upload_id": "up-1"},
+            ),
+            {"file_key": foreign_key, "part_number": 1},
+            format="json",
+        )
+        assert response.status_code == status.HTTP_400_BAD_REQUEST
+        assert "file_key" in response.data
 
     def test_api_messages_archive_create_multipart_upload(self, api_client):
         """Test creating a multipart upload (returns upload_id)."""
@@ -207,7 +260,7 @@ class TestMessagesArchiveUploadViewSet:
         data = {"filename": "large-file.mbox", "content_type": "application/mbox"}
 
         with mock.patch(
-            "core.api.viewsets.import_message.MessagesArchiveUploadViewSet.storage.connection.meta.client.create_multipart_upload",  # pylint: disable=line-too-long
+            "core.api.viewsets.imports.MessagesArchiveUploadViewSet.storage.connection.meta.client.create_multipart_upload",  # pylint: disable=line-too-long
             return_value={"UploadId": "test-upload-id-12345"},
         ) as mock_create_multipart_upload:
             response = api_client.post(url, data, format="json")
@@ -275,6 +328,8 @@ class TestMessagesArchiveUploadViewSet:
         response = api_client.post(url, data, format="json")
 
         assert response.status_code == status.HTTP_201_CREATED
+        assert response.data["filename"] == "test-file"
+        assert "url" in response.data  # a usable presigned PUT came back
 
     def test_api_messages_archive_create_part_upload(self, api_client, user):
         """Test creating a presigned URL for a part upload."""
@@ -283,16 +338,17 @@ class TestMessagesArchiveUploadViewSet:
             "messages-archive-upload-create-part-upload",
             kwargs={"upload_id": upload_id},
         )
-        data = {"filename": "large-file.mbox", "part_number": 1}
+        file_key = generate_file_key(user.id)
+        data = {"file_key": file_key, "part_number": 1}
 
         with mock.patch(
-            "core.api.viewsets.import_message.generate_presigned_url",
+            "core.api.viewsets.imports.generate_presigned_url",
             return_value="https://s3.example.com/presigned-url?signature=abc123&part_number=1",
         ) as mock_generate_presigned_url:
             response = api_client.post(url, data, format="json")
 
         assert response.status_code == status.HTTP_201_CREATED
-        assert response.data["filename"] == "large-file.mbox"
+        assert response.data["file_key"] == file_key
         assert response.data["part_number"] == 1
         assert response.data["upload_id"] == upload_id
         assert (
@@ -304,12 +360,15 @@ class TestMessagesArchiveUploadViewSet:
         mock_generate_presigned_url.assert_called_once()
         call_args = mock_generate_presigned_url.call_args
         assert call_args[1]["ClientMethod"] == "upload_part"
-        assert call_args[1]["Params"]["Key"] == get_file_key(user.id, "large-file.mbox")
+        assert call_args[1]["Params"]["Key"] == file_key
         assert call_args[1]["Params"]["UploadId"] == upload_id
         assert call_args[1]["Params"]["PartNumber"] == 1
 
-    def test_api_messages_archive_create_part_upload_multiple_parts(self, api_client):
+    def test_api_messages_archive_create_part_upload_multiple_parts(
+        self, api_client, user
+    ):
         """Test creating presigned URLs for multiple parts."""
+        file_key = generate_file_key(user.id)
         upload_id = "test-upload-id-12345"
         url = reverse(
             "messages-archive-upload-create-part-upload",
@@ -317,10 +376,10 @@ class TestMessagesArchiveUploadViewSet:
         )
 
         for part_number in [1, 2, 3]:
-            data = {"filename": "large-file.mbox", "part_number": part_number}
+            data = {"file_key": file_key, "part_number": part_number}
 
             with mock.patch(
-                "core.api.viewsets.import_message.generate_presigned_url",
+                "core.api.viewsets.imports.generate_presigned_url",
                 return_value=f"https://s3.example.com/presigned-url?signature=abc123&part_number={part_number}",
             ):
                 response = api_client.post(url, data, format="json")
@@ -332,8 +391,8 @@ class TestMessagesArchiveUploadViewSet:
                 == f"https://s3.example.com/presigned-url?signature=abc123&part_number={part_number}"
             )
 
-    def test_api_messages_archive_create_part_upload_missing_filename(self, api_client):
-        """Test creating part upload without filename."""
+    def test_api_messages_archive_create_part_upload_missing_file_key(self, api_client):
+        """Test creating part upload without a file_key."""
         upload_id = "test-upload-id-12345"
         url = reverse(
             "messages-archive-upload-create-part-upload",
@@ -344,7 +403,7 @@ class TestMessagesArchiveUploadViewSet:
         response = api_client.post(url, data, format="json")
 
         assert response.status_code == status.HTTP_400_BAD_REQUEST
-        assert response.data["filename"] == ["This field is required."]
+        assert response.data["file_key"] == ["This field is required."]
 
     def test_api_messages_archive_create_part_upload_unauthenticated(self):
         """Test creating part upload without authentication."""
@@ -354,7 +413,10 @@ class TestMessagesArchiveUploadViewSet:
             "messages-archive-upload-create-part-upload",
             kwargs={"upload_id": upload_id},
         )
-        data = {"filename": "large-file.mbox", "part_number": 1}
+        data = {
+            "file_key": generate_file_key(factories.UserFactory().id),
+            "part_number": 1,
+        }
 
         response = client.post(url, data, format="json")
 
@@ -364,8 +426,9 @@ class TestMessagesArchiveUploadViewSet:
         """Test completing a multipart upload."""
         upload_id = "test-upload-id-12345"
         url = reverse("messages-archive-upload-detail", kwargs={"upload_id": upload_id})
+        file_key = generate_file_key(user.id)
         data = {
-            "filename": "large-file.mbox",
+            "file_key": file_key,
             "parts": [
                 {"ETag": "etag1", "PartNumber": 1},
                 {"ETag": "etag2", "PartNumber": 2},
@@ -374,7 +437,7 @@ class TestMessagesArchiveUploadViewSet:
         }
 
         with mock.patch(
-            "core.api.viewsets.import_message.MessagesArchiveUploadViewSet.storage.connection.meta.client.complete_multipart_upload",  # pylint: disable=line-too-long
+            "core.api.viewsets.imports.MessagesArchiveUploadViewSet.storage.connection.meta.client.complete_multipart_upload",  # pylint: disable=line-too-long
             return_value=None,
         ) as mock_complete_multipart_upload:
             response = api_client.put(url, data, format="json")
@@ -384,7 +447,7 @@ class TestMessagesArchiveUploadViewSet:
         # Verify complete_multipart_upload was called correctly
         mock_complete_multipart_upload.assert_called_once()
         call_args = mock_complete_multipart_upload.call_args
-        assert call_args[1]["Key"] == get_file_key(user.id, "large-file.mbox")
+        assert call_args[1]["Key"] == file_key
         assert call_args[1]["UploadId"] == upload_id
         assert call_args[1]["MultipartUpload"]["Parts"] == [
             {"ETag": "etag1", "PartNumber": 1},
@@ -395,7 +458,7 @@ class TestMessagesArchiveUploadViewSet:
     def test_api_messages_archive_complete_multipart_upload_missing_filename(
         self, api_client
     ):
-        """Test completing upload without filename."""
+        """Test completing upload without a file_key."""
         upload_id = "test-upload-id-12345"
         url = reverse("messages-archive-upload-detail", kwargs={"upload_id": upload_id})
         data = {"parts": [{"ETag": "etag1", "PartNumber": 1}]}
@@ -403,7 +466,7 @@ class TestMessagesArchiveUploadViewSet:
         response = api_client.put(url, data, format="json")
 
         assert response.status_code == status.HTTP_400_BAD_REQUEST
-        assert response.data["filename"] == ["This field is required."]
+        assert response.data["file_key"] == ["This field is required."]
 
     def test_api_messages_archive_complete_multipart_upload_missing_parts(
         self, api_client
@@ -411,7 +474,7 @@ class TestMessagesArchiveUploadViewSet:
         """Test completing upload without parts."""
         upload_id = "test-upload-id-12345"
         url = reverse("messages-archive-upload-detail", kwargs={"upload_id": upload_id})
-        data = {"filename": "large-file.mbox"}
+        data = {"file_key": generate_file_key(factories.UserFactory().id)}
 
         response = api_client.put(url, data, format="json")
 
@@ -424,7 +487,7 @@ class TestMessagesArchiveUploadViewSet:
         upload_id = "test-upload-id-12345"
         url = reverse("messages-archive-upload-detail", kwargs={"upload_id": upload_id})
         data = {
-            "filename": "large-file.mbox",
+            "file_key": generate_file_key(factories.UserFactory().id),
             "parts": [{"ETag": "etag1", "PartNumber": 1}],
         }
 
@@ -436,10 +499,11 @@ class TestMessagesArchiveUploadViewSet:
         """Test aborting a multipart upload."""
         upload_id = "test-upload-id-12345"
         url = reverse("messages-archive-upload-detail", kwargs={"upload_id": upload_id})
-        data = {"filename": "large-file.mbox"}
+        file_key = generate_file_key(user.id)
+        data = {"file_key": file_key}
 
         with mock.patch(
-            "core.api.viewsets.import_message.MessagesArchiveUploadViewSet.storage.connection.meta.client.abort_multipart_upload",  # pylint: disable=line-too-long
+            "core.api.viewsets.imports.MessagesArchiveUploadViewSet.storage.connection.meta.client.abort_multipart_upload",  # pylint: disable=line-too-long
             return_value=None,
         ) as mock_abort_multipart_upload:
             response = api_client.delete(url, data, format="json")
@@ -449,13 +513,13 @@ class TestMessagesArchiveUploadViewSet:
         # Verify abort_multipart_upload was called correctly
         mock_abort_multipart_upload.assert_called_once()
         call_args = mock_abort_multipart_upload.call_args
-        assert call_args[1]["Key"] == get_file_key(user.id, "large-file.mbox")
+        assert call_args[1]["Key"] == file_key
         assert call_args[1]["UploadId"] == upload_id
 
     def test_api_messages_archive_abort_multipart_upload_missing_filename(
         self, api_client
     ):
-        """Test aborting upload without filename."""
+        """Test aborting upload without a file_key."""
         upload_id = "test-upload-id-12345"
         url = reverse("messages-archive-upload-detail", kwargs={"upload_id": upload_id})
         data = {}
@@ -463,14 +527,14 @@ class TestMessagesArchiveUploadViewSet:
         response = api_client.delete(url, data, format="json")
 
         assert response.status_code == status.HTTP_400_BAD_REQUEST
-        assert response.data["filename"] == ["This field is required."]
+        assert response.data["file_key"] == ["This field is required."]
 
     def test_api_messages_archive_abort_multipart_upload_unauthenticated(self):
         """Test aborting upload without authentication."""
         client = APIClient()
         upload_id = "test-upload-id-12345"
         url = reverse("messages-archive-upload-detail", kwargs={"upload_id": upload_id})
-        data = {"filename": "large-file.mbox"}
+        data = {"file_key": generate_file_key(factories.UserFactory().id)}
 
         response = client.delete(url, data, format="json")
 
