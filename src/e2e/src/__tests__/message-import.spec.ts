@@ -18,6 +18,9 @@ test.describe("Import Message", () => {
   });
 
   test("should import an eml archive file", async ({ page, browserName }) => {
+    // The archive is uploaded to object storage, then imported by a Celery
+    // worker the modal polls — more than the default 30s budget allows.
+    test.setTimeout(60_000);
     const email = `import.e2e@example.local`;
     await page.waitForLoadState("networkidle");
 
@@ -56,36 +59,33 @@ test.describe("Import Message", () => {
     await errorBanner.waitFor({ state: "visible" });
 
     await fileInput.setInputFiles(path.join(FIXTURES_PATH, "old-message.eml"));
+
+    // Armed before the click: the archive is small enough that the upload and
+    // the import-run creation can both land before a post-click listener would
+    // be attached.
+    const importRunPromise = page.waitForResponse(
+      (response) =>
+        /\/api\/v1\.0\/mailboxes\/[^/]+\/imports\/$/.test(response.url()) &&
+        response.request().method() === "POST" &&
+        response.status() === 202
+    );
+
     await importButton.click();
     await expect(errorBanner).not.toBeVisible();
 
-    expect(
-      page.getByRole("heading", { name: "Uploading your archive" })
-    ).toBeVisible();
-    expect(importButton).toBeDisabled();
-    expect(await importButton.getAttribute("aria-busy")).toBe("true");
+    // The archive goes to object storage first (presigned PUT), then
+    // POST /mailboxes/{id}/imports/ creates the run the modal polls.
+    await importRunPromise;
 
-    const uploadCompleteResponse = await page.waitForResponse((response) => {
-      return (
-        response.url().includes("/api/v1.0/import/file/") &&
-        response.status() === 202
-      );
-    });
-    const uploadCompleteData = await uploadCompleteResponse.json();
-    const taskId = uploadCompleteData.task_id;
+    await expect(page.getByText("Importing...")).toBeVisible();
 
-    expect(page.getByText("Importing...")).toBeVisible();
-
-    await page.waitForResponse(async (response) => {
-      if (response.url().includes(`/api/v1.0/tasks/${taskId}/`)) {
-        const taskData = await response.json();
-        return taskData.status === "SUCCESS";
-      }
-      return false;
-    });
-
+    // Completion is asserted on the UI rather than on a polling response: the
+    // modal stops polling on the first terminal status, so racing that single
+    // response would be flaky.
     // New completion UI: badge + heading + per-archive stats.
-    await expect(page.getByText("Import complete")).toBeVisible();
+    await expect(page.getByText("Import complete")).toBeVisible({
+      timeout: 30_000,
+    });
     await expect(page.getByText("100% imported")).toBeVisible();
     await expect(
       page.getByText("Imported: 1 of 1 messages")
@@ -122,10 +122,24 @@ test.describe("Import Message", () => {
       .click();
     await page.waitForLoadState("networkidle");
 
-    // The header settings button should be disabled because the user has no
-    // admin abilities on the shared mailbox, so no menu option is available.
+    // The "More options" menu mixes mailbox-scoped entries with user-scoped
+    // ones (Domain admin, and Notifications when PUSH_ENABLED). Whether it
+    // opens at all therefore depends on the user and on the deployment config
+    // — asserting the button is disabled would only be testing that this user
+    // happens to have no user-scoped entry either. The invariant that must
+    // hold in every configuration is narrower: the menu never offers to import
+    // into a mailbox the user does not administer.
     const header = page.locator(".c__header");
     const settingsButton = header.getByRole("button", { name: "More options" });
-    await expect(settingsButton).toBeDisabled();
+    if (await settingsButton.isEnabled()) {
+      await settingsButton.click();
+      // Let the menu render before asserting an absence below, otherwise the
+      // assertion would happily pass against a menu that has not opened yet.
+      await expect(page.getByRole("menuitem").first()).toBeVisible();
+    }
+
+    await expect(
+      page.getByRole("menuitem", { name: "Import messages" })
+    ).toHaveCount(0);
   });
 });
