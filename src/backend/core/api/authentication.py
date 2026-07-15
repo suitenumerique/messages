@@ -49,9 +49,13 @@ class ChannelApiKeyAuthentication(BaseAuthentication):
             return None
 
         try:
+            # is_active=True is part of the lookup on purpose: a paused
+            # channel must be indistinguishable from a non-existent one, so
+            # it fails with the same generic error rather than leaking that
+            # the channel exists but is disabled.
             channel = models.Channel.objects.select_related(
                 "mailbox", "maildomain", "user"
-            ).get(pk=channel_id, type=ChannelTypes.API_KEY)
+            ).get(pk=channel_id, type=ChannelTypes.API_KEY, is_active=True)
         except (models.Channel.DoesNotExist, ValueError, DjangoValidationError) as exc:
             # ValueError / ValidationError handle malformed UUIDs.
             raise AuthenticationFailed("Invalid channel or API key.") from exc

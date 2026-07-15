@@ -10,7 +10,10 @@ import pipeline reads messages from a PST file stored in S3, converts them to
 RFC 5322 (EML) format, and delivers them through the standard inbound message
 pipeline with `is_import=True`.
 
-**Entry point:** `process_pst_file_task` in `core/services/importer/pst_tasks.py`
+**Entry point:** the `run_pst` runner in `core/services/importer/pst.py`
+(dispatched by the resumable `run_import_task` in
+`core/services/importer/tasks.py`; see
+[imports.md](imports.md)).
 
 ## Architecture
 
@@ -27,7 +30,7 @@ pypff (libpff) ── reads PST B-tree structures
 pst.py ── folder detection, message extraction, EML reconstruction
   │
   ▼
-pst_tasks.py ── Celery task, flag/label mapping, progress reporting
+pst.run_pst ── runner: flag/label mapping, progress reporting, resume
   │
   ▼
 deliver_inbound_message(is_import=True)
@@ -36,7 +39,7 @@ deliver_inbound_message(is_import=True)
 ## S3 Seekable Reader
 
 PST files are read directly from S3 without downloading to disk. The
-`S3SeekableReader` class (`core/services/importer/s3_seekable.py`) implements
+`S3SeekableReader` class (`core/services/s3_seekable.py`) implements
 a seekable file-like object backed by S3 range requests.
 
 For PST files, the reader uses `BUFFER_NONE` strategy with a **block-aligned
@@ -198,13 +201,30 @@ Messages are collected in a first pass (lightweight metadata only), sorted by
 EML one at a time in the second pass. This ensures proper threading while
 limiting memory usage.
 
+### Failure handling
+
+- **Unreadable archive.** A corrupt/truncated PST (bad signature, or a MAPI
+  tree missing its root folder / message store) fails the whole run with a
+  `PSTFileUnreadableError` whose message carries the **`PST_UNREADABLE`** marker
+  — the importer modal matches that marker to show a "retrying won't help,
+  re-generate the archive" message instead of the generic error. Checked
+  up-front (`assert_pst_readable`) so a bad file fails fast, not deep in the
+  walk.
+- **Oversized attachment.** An attachment beyond the per-message size budget
+  (`MAX_INCOMING_EMAIL_SIZE`) fails the **whole message** (raised as
+  `OversizedAttachmentError`, counted in `failure_count`) rather than silently
+  delivering a truncated copy that looks like a success.
+- **Unreadable single message.** A message libpff can't read, or whose EML
+  reconstruction raises, is counted as one failure (`eml_bytes=None`) and the
+  walk continues — one bad message never aborts the import.
+
 ## Key Files
 
 | File | Description |
 |------|-------------|
-| `core/services/importer/pst.py` | PST parsing, folder detection, EML reconstruction |
-| `core/services/importer/pst_tasks.py` | Celery task, flag/label logic, progress reporting |
-| `core/services/importer/s3_seekable.py` | S3-backed seekable file reader with LRU cache |
+| `core/services/importer/pst.py` | PST parsing, folder detection, EML reconstruction; `run_pst` runner: flag/label logic, progress reporting, resume |
+| `core/services/importer/tasks.py` | `run_import_task` orchestration: guards, run lock, watermark hand-off, terminal transition |
+| `core/services/s3_seekable.py` | S3-backed seekable file reader with LRU cache |
 | `core/tests/importer/test_pst_import.py` | Unit and integration tests |
 
 ## Dependencies

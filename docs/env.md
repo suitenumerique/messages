@@ -551,14 +551,19 @@ Pluggable backend deciding what a user/domain is entitled to.
 | `ENTITLEMENTS_BACKEND_PARAMETERS` | `{}` | JSON parameters passed to the backend. | Optional |
 | `ENTITLEMENTS_CACHE_TIMEOUT` | `300` | Cache TTL (seconds) for entitlement lookups. | Optional |
 
-### Message Import (IMAP)
+### Message Import
 
-Tuning for the IMAP-based message importer (see also `FEATURE_IMPORT_MESSAGES`).
+Tuning for the resumable message importer (EML / MBOX / PST files and IMAP;
+see also `FEATURE_IMPORT_MESSAGES`). Imports are modelled as `type=import`
+channels and resumed from a Redis watermark by `run_import_task`. See
+[docs/imports.md](imports.md) for the design.
 
 | Variable | Default | Description | Required |
 |----------|---------|-------------|----------|
-| `IMAP_TIMEOUT` | `60` | Socket timeout (seconds) for IMAP connections during import. | Optional |
-| `IMAP_MAX_RETRIES` | `3` | Retry budget for transient IMAP failures during import. | Optional |
+| `MESSAGES_IMPORT_IMAP_TIMEOUT` | `60` | Socket timeout (seconds) for IMAP import connections — applied to the connect and to each subsequent command (login, SEARCH, FETCH). Tripping it surfaces as a transient error the run resumes from. Replaces `IMAP_TIMEOUT`. | Optional |
+| `MESSAGES_IMPORT_STALL_TIMEOUT` | `900` | Seconds of heartbeat silence after which the scheduler treats a running import as crashed and re-dispatches it (which resumes from its watermark). Also the run-lock TTL. Must comfortably exceed the worst-case time between progress flushes. Continuous IMAP channels use `MESSAGES_IMPORT_IMAP_POLL_INTERVAL` as their clock instead. | Optional |
+| `MESSAGES_IMPORT_IMAP_POLL_INTERVAL` | `900` | Poll cadence (seconds) for continuous IMAP imports: the scheduler re-dispatches each active continuous channel this often to pull new mail. Global (not settable per import); must be a positive integer. | Optional |
+| `MESSAGES_IMPORT_MAX_FILE_SIZE` | `53687091200` | Largest archive (bytes) an import will accept (50 GiB); checked before a worker is spent on it. `0` disables the cap. | Optional |
 
 ### Spam Filtering
 
@@ -582,12 +587,16 @@ Tuning for the IMAP-based message importer (see also `FEATURE_IMPORT_MESSAGES`).
 
 ### Deprecated
 
-_Set only to receive a startup deprecation warning; otherwise ignored._
+_Read by nothing any more. Unset them: a stale value silently does nothing._
 
 | Variable | Default | Description | Required | ⚠️ Deprecated |
 |----------|---------|-------------|----------|----------|
 | `PROVISIONING_API_KEY` | None | Ignored since global `api_key` Channels landed. Migrate to a global `api_key` Channel. | Optional | Removed in a future release |
 | `METRICS_API_KEY` | None | Ignored since global `api_key` Channels landed. Migrate to a global `api_key` Channel. | Optional | Removed in a future release |
+| `MESSAGES_TESTDOMAIN` | None | The TESTDOMAIN feature (catch-all domain, email mapping, auto-creation) has been removed. Use a `MailDomain` with `oidc_autojoin=True` instead. Logs a `[REMOVED]` warning at startup while still set. | Optional | Removed |
+| `MESSAGES_TESTDOMAIN_MAPPING_BASEDOMAIN` | None | Same as above. | Optional | Removed |
+| `IMAP_TIMEOUT` | None | Renamed — use `MESSAGES_IMPORT_IMAP_TIMEOUT`. No startup warning: a value left here is ignored silently. | Optional | Removed |
+| `IMAP_MAX_RETRIES` | None | Removed with the resumable importer: a failed run now resumes from its watermark instead of burning a retry budget. No startup warning. | Optional | Removed |
 
 ## Legend
 

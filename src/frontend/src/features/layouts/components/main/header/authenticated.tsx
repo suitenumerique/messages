@@ -1,4 +1,4 @@
-import { DropdownMenu, HeaderProps, Icon, IconType, useResponsive, UserMenu, VerticalSeparator } from "@gouvfr-lasuite/ui-kit";
+import { DropdownMenu, HeaderProps, Icon, useResponsive, UserMenu, VerticalSeparator } from "@gouvfr-lasuite/ui-kit";
 import { Controls, GearRounded, Upload } from "@gouvfr-lasuite/ui-kit/icons";
 import { Button, Tooltip, useCunningham } from "@gouvfr-lasuite/cunningham-react";
 import { useMemo, useState } from "react";
@@ -12,12 +12,12 @@ import { LanguagePicker } from "@/features/layouts/components/main/language-pick
 import { LagaufreButton } from "@/features/ui/components/lagaufre";
 import { SurveyButton } from "@/features/ui/components/feedback-button";
 import { useMailboxContext } from "@/features/providers/mailbox";
-import { useTaskStatus } from "@/hooks/use-task-status";
-import { MessageTemplateTypeChoices, StatusEnum, useMailboxesMessageTemplatesList } from "@/features/api/gen";
+import { ImportRun, MessageTemplateTypeChoices, useMailboxesImportsList, useMailboxesMessageTemplatesList } from "@/features/api/gen";
+import { isTerminal } from "@/hooks/import-status";
 import { CircularProgress } from "@/features/ui/components/circular-progress";
-import { TaskImportCacheHelper } from "@/features/utils/task-import-cache";
 import { useTheme } from "@/features/providers/theme";
 import { MODAL_MAILBOX_SETTINGS_ID } from "@/features/layouts/components/mailbox-settings/modal-mailbox-settings";
+import { useOpenImporter } from "@/features/layouts/components/mailbox-settings/imports-view/use-open-importer";
 import { useModalStore } from "@/features/providers/modal-store";
 
 
@@ -105,6 +105,84 @@ const AutoreplyIndicator = () => {
   );
 };
 
+/**
+ * Same strategy as the auto-reply indicator: while at least one import run is in
+ * progress for the selected mailbox, show a live progress button in the header
+ * that opens the mailbox settings modal on the Imports tab. Several imports can
+ * run at once, so the badge shows their combined (total-weighted) progress and
+ * the tab lists them individually.
+ */
+const ImportIndicator = () => {
+  const { selectedMailbox } = useMailboxContext();
+  const { openModal } = useModalStore();
+  const { t } = useTranslation();
+  const canImportMessages = useAbility(Abilities.CAN_IMPORT_MESSAGES, selectedMailbox);
+
+  const { data } = useMailboxesImportsList(selectedMailbox?.id ?? "", {
+    query: {
+      enabled: !!selectedMailbox?.id && canImportMessages,
+      // Poll while a run is live so the progress stays fresh; when idle the
+      // importer modal's invalidations wake this query up on a new run.
+      refetchInterval: (query) => {
+        const rows = (query.state.data?.data as ImportRun[] | undefined) ?? [];
+        return rows.some((r) => r.is_active && !isTerminal(r.status)) ? 60000 : false;
+      },
+    },
+    // Background status poll: let foreground requests win the wire.
+    request: { priority: "low" },
+  });
+
+  const activeRuns = useMemo(
+    () =>
+      ((data?.data as ImportRun[] | undefined) ?? []).filter(
+        (r) => r.is_active && !isTerminal(r.status),
+      ),
+    [data],
+  );
+
+  if (!selectedMailbox || activeRuns.length === 0) return null;
+
+  // Weighted average across the runs that already know their total, so a small
+  // run can't dominate the badge; indeterminate until at least one knows its
+  // total. Capped below 100 — the button disappears on completion.
+  const withTotal = activeRuns.filter((r) => (r.total_messages ?? 0) > 0);
+  const totalMessages = withTotal.reduce(
+    (sum, r) => sum + (r.total_messages ?? 0),
+    0,
+  );
+  const progress = withTotal.length
+    ? Math.min(
+        99,
+        Math.round(
+          withTotal.reduce(
+            (sum, r) => sum + (r.progress ?? 0) * (r.total_messages ?? 0),
+            0,
+          ) / totalMessages,
+        ),
+      )
+    : null;
+
+  return (
+    <Tooltip content={t("Import in progress")}>
+      <Button
+        className="import-indicator-button"
+        color="brand"
+        variant="tertiary"
+        size="medium"
+        icon={
+          progress === null ? (
+            <CircularProgress loading />
+          ) : (
+            <CircularProgress progress={progress} withLabel />
+          )
+        }
+        aria-label={t("Import in progress")}
+        onClick={() => openModal(MODAL_MAILBOX_SETTINGS_ID, { initialTab: "imports" })}
+      />
+    </Tooltip>
+  );
+};
+
 export const HeaderRight = () => {
   const { user } = useAuth();
   const { isDesktop } = useResponsive();
@@ -113,6 +191,7 @@ export const HeaderRight = () => {
   return (
     <>
       <div className="flex-row flex-align-center">
+        <ImportIndicator />
         <AutoreplyIndicator />
         <SurveyButton iconOnly color="brand" variant="tertiary" />
         <ApplicationMenu />
@@ -139,6 +218,7 @@ export const HeaderRight = () => {
 const ApplicationMenu = () => {
   const [isDropdownOpen, setIsDropdownOpen] = useState(false);
   const { openModal } = useModalStore();
+  const openImporter = useOpenImporter();
   const { selectedMailbox } = useMailboxContext();
   const canAccessDomainAdmin = useAbility(Abilities.CAN_VIEW_DOMAIN_ADMIN);
   const canImportMessages = useAbility(Abilities.CAN_IMPORT_MESSAGES, selectedMailbox);
@@ -149,42 +229,16 @@ const ApplicationMenu = () => {
   const canOpenMailboxSettings = canAdministrateSelectedMailbox || canManageMessageTemplates || canManageIntegrations;
   const { t } = useTranslation();
   const navigate = useNavigate();
-  const taskId = useMemo(() => {
-    const taskImportCacheHelper = new TaskImportCacheHelper(selectedMailbox?.id);
-    return taskImportCacheHelper.get();
-  }, [isDropdownOpen, selectedMailbox?.id]);
 
-  const taskStatus = useTaskStatus(taskId, { enabled: canImportMessages && isDropdownOpen });
   const hasOptions = canAccessDomainAdmin || canImportMessages || canOpenMailboxSettings;
-  const importMessageOption = useMemo(() => {
-    let label = t("Import messages");
-    let icon = <Upload />;
-
-    if (taskStatus) {
-      if (taskStatus.state === StatusEnum.PROGRESS) {
-        label = t("Importing messages...");
-        if (taskStatus.loading || taskStatus.progress === null) icon = <CircularProgress loading />;
-        else icon = <CircularProgress progress={taskStatus.progress} withLabel />;
-      }
-      if (taskStatus.state === StatusEnum.SUCCESS) {
-        label = t("Imported messages");
-        icon = <CircularProgress progress={100} />;
-      }
-      if (taskStatus.state === StatusEnum.FAILURE) {
-        label = t("Import failed");
-          icon = <Icon name="error" type={IconType.OUTLINED} style={{ color: "var(--c--contextuals--content--semantic--error--primary)" }} />;
-      }
-    }
-
-    return {
-      label,
-      icon,
-      callback: () => {
-        window.location.hash = `#modal-message-importer`;
-      },
-      showSeparator: canAccessDomainAdmin
-    }
-  }, [t, taskStatus]);
+  // Live progress moved to the header ImportIndicator (which reads the imports
+  // resource); the menu entry just opens the importer.
+  const importMessageOption = {
+    label: t("Import messages"),
+    icon: <Upload />,
+    callback: openImporter,
+    showSeparator: canAccessDomainAdmin
+  };
 
   if (!hasOptions) {
     return (

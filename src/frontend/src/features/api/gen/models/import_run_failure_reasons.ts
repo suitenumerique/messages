@@ -6,9 +6,7 @@
  * OpenAPI spec version: 1.0.0 (v1.0)
  */
 
-export type ImportImapCreate202 = {
-  /** Task ID for tracking the import */
-  task_id?: string;
-  /** Type of import (imap) */
-  type?: string;
-};
+/**
+ * @nullable
+ */
+export type ImportRunFailureReasons = { [key: string]: number } | null;

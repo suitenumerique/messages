@@ -3,6 +3,7 @@ import {
   ModalMailboxSettings,
   SettingsTabId,
 } from "@/features/layouts/components/mailbox-settings/modal-mailbox-settings";
+import { ImportsTabView } from "@/features/layouts/components/mailbox-settings/modal-mailbox-settings/imports-tab";
 import { useModalStore } from "@/features/providers/modal-store";
 
 /**
@@ -15,7 +16,7 @@ import { useModalStore } from "@/features/providers/modal-store";
 export const ControlledMailboxSettings = () => {
   const { isModalOpen, closeModal, getModalPayload } = useModalStore();
   const payload = getModalPayload(MODAL_MAILBOX_SETTINGS_ID) as
-    | { initialTab?: SettingsTabId }
+    | { initialTab?: SettingsTabId; initialImportsView?: ImportsTabView }
     | undefined;
   const initialTab = payload?.initialTab;
 
@@ -24,6 +25,7 @@ export const ControlledMailboxSettings = () => {
       isOpen={isModalOpen(MODAL_MAILBOX_SETTINGS_ID)}
       onClose={() => closeModal(MODAL_MAILBOX_SETTINGS_ID)}
       initialTab={initialTab}
+      initialImportsView={payload?.initialImportsView}
     />
   );
 };

@@ -21,9 +21,9 @@ from rest_framework.views import APIView
 
 from core import enums, models
 from core.api.permissions import HasAccessToMailbox, HasWriteAccessToMailbox
-from core.api.viewsets.task import register_task_owner
 from core.services.calendar.service import CalDAVError, CalDAVService
 from core.services.calendar.tasks import calendar_add_event_task, calendar_rsvp_task
+from core.utils import register_task_owner
 
 logger = logging.getLogger(__name__)
 
@@ -46,9 +46,14 @@ class CalDAVChannelMixin:
 
     @cached_property
     def caldav_channel(self):
-        """The CalDAV channel for the mailbox, if any."""
+        """The active CalDAV channel for the mailbox, if any.
+
+        A paused (is_active=False) channel is ignored, so the mailbox falls
+        back to the deployment-default config (or no calendar) just as if the
+        channel had not been configured.
+        """
         return models.Channel.objects.filter(
-            mailbox=self.mailbox, type=enums.ChannelTypes.CALDAV
+            mailbox=self.mailbox, type=enums.ChannelTypes.CALDAV, is_active=True
         ).first()
 
     def get_caldav_service(self):

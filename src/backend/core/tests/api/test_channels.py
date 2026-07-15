@@ -346,6 +346,28 @@ class TestChannelUpdate:
         assert response.data["name"] == "Partially Updated Name"
 
     @override_settings(FEATURE_MAILBOX_ADMIN_CHANNELS=["widget"])
+    def test_pause_and_resume_channel(self, api_client, mailbox, channel):
+        """is_active is writable via PATCH so an admin can pause/resume a
+        channel without deleting it."""
+        assert channel.is_active is True
+        url = reverse(
+            "mailbox-channels-detail",
+            kwargs={"mailbox_id": mailbox.id, "pk": channel.id},
+        )
+
+        response = api_client.patch(url, {"is_active": False}, format="json")
+        assert response.status_code == status.HTTP_200_OK
+        assert response.data["is_active"] is False
+        channel.refresh_from_db()
+        assert channel.is_active is False
+
+        response = api_client.patch(url, {"is_active": True}, format="json")
+        assert response.status_code == status.HTTP_200_OK
+        assert response.data["is_active"] is True
+        channel.refresh_from_db()
+        assert channel.is_active is True
+
+    @override_settings(FEATURE_MAILBOX_ADMIN_CHANNELS=["widget"])
     def test_update_channel_no_access(self, api_client, mailbox, channel):
         """Test updating a channel for a mailbox the user has no admin access to."""
         # Remove admin access

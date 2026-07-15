@@ -106,6 +106,18 @@ Shared ORM helpers (`core/models.py`):
 - `ThreadAccess.objects.editable_by(user, mailbox_id=None)` — rows matching the full-edit-rights rule.
 - `ThreadAccess.objects.editor_user_ids(thread_id, user_ids=None)` — user ids with full edit rights on a thread.
 
+## Django Admin
+
+The Django admin (`/admin/`) is **instance-operator tooling only**. `is_staff`
+accounts are trusted operators of the deployment — real users are never given
+staff access and interact exclusively through the API/frontend, where the DRF
+permission classes above are the authorization layer.
+
+Consequently, admin-only code paths (and the service functions they call) do
+not re-check per-mailbox roles: a staff operator may act on any mailbox by
+design. Authorization for end users lives in the API permission classes, not
+in the service layer.
+
 ## Key Design Principles
 
 1. **Two-level permission model.** User→Mailbox (`MailboxAccess`) and Mailbox→Thread (`ThreadAccess`) are independent and composed for every access check. Edit-level actions always verify **both** sides.
