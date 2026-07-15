@@ -76,9 +76,13 @@ class WidgetAuthentication(BaseAuthentication):
         if not channel_id:
             raise AuthenticationFailed("Missing channel_id")
 
-        # Only allow widget-type channels
+        # Only allow widget-type channels. A paused (is_active=False) widget
+        # is treated as invalid so it stops accepting messages without
+        # revealing that the channel merely exists but is disabled.
         try:
-            channel = models.Channel.objects.get(id=channel_id, type="widget")
+            channel = models.Channel.objects.get(
+                id=channel_id, type="widget", is_active=True
+            )
         except models.Channel.DoesNotExist as e:
             raise AuthenticationFailed("Invalid channel_id") from e
 

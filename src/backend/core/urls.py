@@ -19,7 +19,7 @@ from core.api.viewsets.draft import DraftMessageView
 from core.api.viewsets.drive import DriveAPIView
 from core.api.viewsets.flag import ChangeFlagView
 from core.api.viewsets.image_proxy import ImageProxyViewSet
-from core.api.viewsets.import_message import ImportViewSet, MessagesArchiveUploadViewSet
+from core.api.viewsets.imports import ImportViewSet, MessagesArchiveUploadViewSet
 from core.api.viewsets.inbound.mta import InboundMTAViewSet
 from core.api.viewsets.inbound.widget import InboundWidgetViewSet
 from core.api.viewsets.label import LabelViewSet
@@ -69,11 +69,6 @@ router.register("threads", ThreadViewSet, basename="threads")
 router.register("labels", LabelViewSet, basename="labels")
 router.register("mailboxes", MailboxViewSet, basename="mailboxes")
 router.register("maildomains", AdminMailDomainViewSet, basename="admin-maildomains")
-router.register(
-    "import/file/upload",
-    MessagesArchiveUploadViewSet,
-    basename="messages-archive-upload",
-)
 
 # Router for /threads/{thread_id}/accesses/
 thread_access_nested_router = DefaultRouter()
@@ -151,6 +146,22 @@ mailbox_channel_nested_router.register(
     ChannelViewSet,
     basename="mailbox-channels",
 )
+
+# Router for /mailboxes/{mailbox_id}/imports/ — start/track/manage imports.
+# The upload helper is registered FIRST: its literal ``imports/upload`` prefix
+# must win URL resolution over the import-run detail route, whose ``{pk}``
+# segment would otherwise swallow "upload".
+mailbox_import_nested_router = DefaultRouter()
+mailbox_import_nested_router.register(
+    r"imports/upload",
+    MessagesArchiveUploadViewSet,
+    basename="mailbox-imports-upload",
+)
+mailbox_import_nested_router.register(
+    r"imports",
+    ImportViewSet,
+    basename="mailbox-imports",
+)
 # /users/me/channels/ is registered directly on the main `router` above —
 # no nested router needed for a single viewset.
 
@@ -189,6 +200,12 @@ urlpatterns = [
                     include(
                         mailbox_channel_nested_router.urls
                     ),  # Includes /mailboxes/{id}/channels/
+                ),
+                path(
+                    "mailboxes/<uuid:mailbox_id>/",
+                    include(
+                        mailbox_import_nested_router.urls
+                    ),  # Includes /mailboxes/{id}/imports/
                 ),
                 path(
                     "mailboxes/<uuid:mailbox_id>/calendar/rsvp/",
@@ -268,16 +285,6 @@ urlpatterns = [
         f"api/{settings.API_VERSION}/tasks/<str:task_id>/",
         TaskDetailView.as_view(),
         name="task-detail",
-    ),
-    path(
-        f"api/{settings.API_VERSION}/import/file/",
-        ImportViewSet.as_view({"post": "import_file"}),
-        name="import-file",
-    ),
-    path(
-        f"api/{settings.API_VERSION}/import/imap/",
-        ImportViewSet.as_view({"post": "import_imap"}),
-        name="import-imap",
     ),
     path(
         f"api/{settings.API_VERSION}/placeholders/",

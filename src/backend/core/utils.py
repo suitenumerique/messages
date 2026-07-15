@@ -5,12 +5,23 @@ import logging
 from contextlib import contextmanager
 from contextvars import ContextVar
 
+from django.core.cache import cache
 from django.core.exceptions import ImproperlyConfigured, ValidationError
 
 import jsonschema
 from configurations import values
 
 logger = logging.getLogger(__name__)
+
+# How long the "who started this task" record lives, gating the task-status
+# endpoint's ownership check. Lives here (not in the API layer) so the service
+# layer can register owners without importing back up into ``core.api``.
+TASK_OWNER_CACHE_TTL = 86400  # 24 hours
+
+
+def register_task_owner(task_id, user_id):
+    """Register the owner of a task for permission checks."""
+    cache.set(f"task_owner:{task_id}", str(user_id), timeout=TASK_OWNER_CACHE_TTL)
 
 
 def get_redis_client():

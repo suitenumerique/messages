@@ -9,7 +9,6 @@ from drf_spectacular.utils import extend_schema
 from rest_framework import status
 from rest_framework.response import Response
 from rest_framework.views import APIView
-from sentry_sdk import capture_exception
 
 from core import models
 from core.api.authentication import ChannelApiKeyAuthentication
@@ -72,8 +71,7 @@ class ProvisioningMailDomainView(IsGlobalChannelMixin, APIView):
                     existing.append(domain_name)
             except ValidationError as e:
                 errors.append({"domain": domain_name, "error": str(e)})
-            except IntegrityError as exc:
-                capture_exception(exc)
+            except IntegrityError:
                 logger.exception(
                     "IntegrityError while provisioning domain %s", domain_name
                 )

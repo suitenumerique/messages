@@ -2,6 +2,7 @@
 
 # pylint: disable=broad-exception-caught
 
+import hashlib
 import logging
 import re
 import uuid
@@ -273,10 +274,23 @@ def _create_message_from_inbound(  # pylint: disable=too-many-arguments
         # processing path and concurrent deliveries can still reach here twice
         # for the same Message-ID; this makes creation idempotent per
         # (mailbox, mime_id).
-        if not is_outbound and mime_id:
-            existing_message = models.Message.objects.filter(
-                mime_id=mime_id, thread__accesses__mailbox=mailbox
-            ).first()
+        # Dedup key: the message's own Message-ID when it has one, else the
+        # raw-bytes sha256 (== the blob's sha256). The fallback matters on the
+        # import path — Drafts and locally-generated mail often carry no
+        # Message-ID, and without it a resumed/re-run import would re-deliver
+        # them. sha256 only matches byte-identical copies (the same message
+        # imported twice), so it can't collapse genuinely distinct mail.
+        existing_message = None
+        if not is_outbound:
+            if mime_id:
+                existing_message = models.Message.objects.filter(
+                    mime_id=mime_id, thread__accesses__mailbox=mailbox
+                ).first()
+            elif is_import:
+                raw_sha256 = hashlib.sha256(raw_data).digest()
+                existing_message = models.Message.objects.filter(
+                    blob__sha256=raw_sha256, thread__accesses__mailbox=mailbox
+                ).first()
             if existing_message:
                 logger.info(
                     "Duplicate inbound message %s (MIME ID: %s) in mailbox %s; "
@@ -462,10 +476,14 @@ def _create_message_from_inbound(  # pylint: disable=too-many-arguments
                 # ONE blob from ingest through to here — no second plaintext
                 # copy, no re-encrypt. Imports have no ingest blob and pass
                 # raw bytes; outbound gets its blob later from the send path.
+                # Import bodies go straight to the object-storage tier (best
+                # effort): bulk archives must not park gigabytes in Postgres
+                # waiting for the periodic offload.
                 if blob is None and not is_outbound:
                     blob = models.Blob.objects.create_blob(
                         content=raw_data,
                         content_type="message/rfc822",
+                        prefer_offloaded=is_import,
                     )
 
                 message = models.Message.objects.create(

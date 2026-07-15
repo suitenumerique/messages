@@ -5,19 +5,27 @@ import { FormProvider, useForm, useWatch } from "react-hook-form";
 import { Button } from "@gouvfr-lasuite/cunningham-react";
 import { Icon, Spinner } from "@gouvfr-lasuite/ui-kit";
 import { useTranslation } from "react-i18next";
-import { useParams } from "@tanstack/react-router";
-import { importFileCreateResponse202, importImapCreateResponse202, useImportFileCreate, useImportImapCreate } from "@/features/api/gen";
+import { ImportRun, useMailboxesImportsCreate } from "@/features/api/gen";
+import { APIError, errorToString } from "@/features/api/api-error";
 import MailHelper, { IMAP_DOMAIN_REGEXES } from "@/features/utils/mail-helper";
-import { RhfInput } from "../../forms/components/react-hook-form";
-import { RhfFileUploader } from "../../forms/components/react-hook-form/rhf-file-uploader";
-import { RhfCheckbox } from "../../forms/components/react-hook-form/rhf-checkbox";
+import { RhfInput } from "@/features/forms/components/react-hook-form";
+import { RhfFileUploader } from "@/features/forms/components/react-hook-form/rhf-file-uploader";
+import { RhfCheckbox } from "@/features/forms/components/react-hook-form/rhf-checkbox";
 import { Banner } from "@/features/ui/components/banner";
 import i18n from "@/features/i18n/initI18n";
 import { BucketUploadState, useBucketUpload } from "./use-bucket-upload";
 import ProgressBar from "@/features/ui/components/progress-bar";
-import { IMPORT_STEP } from ".";
 
-const usernameSchema = z.email({ error: i18n.t('The email address is invalid.') });
+// The form only distinguishes "collecting the import details" (idle) from
+// "pushing the archive to storage" (uploading). Once the import run is created,
+// the caller returns to the imports list, which tracks server-side progress.
+export type ImporterFormStep = "idle" | "uploading";
+
+// An IMAP username is a login (usually, but not necessarily, an email), so we
+// only require it to be non-empty rather than a strict email — the backend
+// stores it as a free string too. (Auto-discovery below still keys off the
+// domain when the username happens to look like an email.)
+const usernameSchema = z.string().min(1, { error: i18n.t('Username is required.') });
 
 const importerFormSchema = z.object({
     archive_file: z.array(z.instanceof(File)),
@@ -43,36 +51,42 @@ const importerFormSchema = z.object({
 type FormFields = z.infer<typeof importerFormSchema>;
 
 type StepFormProps = {
+    mailboxId: string;
     onUploading: () => void;
-    onSuccess: (taskId: string) => void;
+    onSuccess: (importId: string) => void;
     onError: (error: string | null) => void;
     error: string | null;
-    step: IMPORT_STEP;
+    step: ImporterFormStep;
 }
-export const StepForm = ({ onUploading, onSuccess, onError, error, step }: StepFormProps) => {
+export const StepForm = ({ mailboxId, onUploading, onSuccess, onError, error, step }: StepFormProps) => {
     const { t } = useTranslation();
-    const routeParams = useParams({ strict: false }) as { mailboxId?: string };
     const [showAdvancedImapFields, setShowAdvancedImapFields] = useState(false);
     const [emailDomain, setEmailDomain] = useState<string | undefined>(undefined);
-    const imapMutation = useImportImapCreate({
+    // Single unified create endpoint (POST /mailboxes/{id}/imports/) for both
+    // file and IMAP; it returns the import run to poll (its `id`).
+    const importsMutation = useMailboxesImportsCreate({
         mutation: {
             meta: { noGlobalError: true },
-            onError: () => onError(t('An error occurred while importing messages.')),
-            onSuccess: (data) => onSuccess((data as importImapCreateResponse202).data.task_id!)
-        }
-    });
-    const archiveMutation = useImportFileCreate({
-        mutation: {
-            meta: { noGlobalError: true },
-            onError: () => onError(t('An error occurred while importing messages.')),
-            onSuccess: (data) => onSuccess((data as importFileCreateResponse202).data.task_id!)
+            // Surface the backend's discriminated detail (file too large, bad
+            // format, upload not found…) — collapsing it to a generic message
+            // would send the user re-trying the same doomed upload with no way
+            // to learn why it fails.
+            onError: (error) => onError(
+                error instanceof APIError && error.data
+                    ? errorToString(error)
+                    : t('An error occurred while importing messages.')
+            ),
+            onSuccess: (data) => onSuccess((data.data as ImportRun).id),
         }
     });
     const bucketUploadManager = useBucketUpload({
-        onSuccess: (manager) => archiveMutation.mutate({
+        mailboxId,
+        onSuccess: (manager) => importsMutation.mutate({
+            mailboxId,
             data: {
+                source: "file",
                 filename: manager.file!.name,
-                recipient: routeParams.mailboxId ?? '',
+                file_key: manager.fileKey!,
             }
         }, {
             onSettled: manager.reset,
@@ -83,7 +97,7 @@ export const StepForm = ({ onUploading, onSuccess, onError, error, step }: StepF
         },
     });
     const isBucketUploading = [BucketUploadState.INITIATING, BucketUploadState.IMPORTING, BucketUploadState.COMPLETING].includes(bucketUploadManager.state);
-    const isPending = imapMutation.isPending || archiveMutation.isPending || isBucketUploading;
+    const isPending = importsMutation.isPending || isBucketUploading;
 
     const defaultValues = {
         imap_server: '',
@@ -105,7 +119,16 @@ export const StepForm = ({ onUploading, onSuccess, onError, error, step }: StepF
         control: form.control,
         name: 'archive_file'
     });
+    // The two import methods are mutually exclusive: picking a file hides the
+    // IMAP form, and typing into either IMAP field hides the archive drop zone —
+    // so the submit sits right under whichever half the user is filling in.
+    const imapValues = useWatch({ control: form.control, name: ['username', 'password'] });
+    const isImapStarted = useMemo(
+        () => imapValues.some((value) => !!value?.trim()),
+        [imapValues],
+    );
     const showImapForm = useMemo(() => archiveFileInputValue.length === 0, [archiveFileInputValue]);
+    const showArchiveUpload = !isImapStarted;
 
     /**
      * Try to guess the imap server from the email address
@@ -137,15 +160,15 @@ export const StepForm = ({ onUploading, onSuccess, onError, error, step }: StepF
      */
     const importFromImap = async (data: FormFields) => {
         const payload = {
+            source: "imap" as const,
             imap_server: data.imap_server!,
             imap_port: data.imap_port!,
             use_ssl: data.use_ssl!,
             username: data.username!,
             password: data.password!,
-            recipient: routeParams.mailboxId ?? '',
         }
-        return imapMutation.mutateAsync(
-            { data: payload }
+        return importsMutation.mutateAsync(
+            { mailboxId, data: payload }
         );
     }
 
@@ -160,7 +183,8 @@ export const StepForm = ({ onUploading, onSuccess, onError, error, step }: StepF
     /**
      * According to the form data,
      * exec the mutation to import emails from an IMAP server or an Archive file.
-     * We assume that all mutation returns a celery task id as response.
+     * The unified endpoint returns the created ImportRun; its `id` is what the
+     * loader step polls (see the mutation's onSuccess above).
      */
     const handleSubmit = async (data: FormFields) => {
         onError(null);
@@ -181,27 +205,36 @@ export const StepForm = ({ onUploading, onSuccess, onError, error, step }: StepF
         }
     }, [showImapForm]);
 
+    // Autodiscovery reveals the manual IMAP server fields on blur; clearing the
+    // address must take them (and the "allow IMAP access" hint) back down rather
+    // than stranding them on screen.
+    useEffect(() => {
+        if (!imapValues[0]?.trim()) {
+            setShowAdvancedImapFields(false);
+            setEmailDomain(undefined);
+        }
+    }, [imapValues]);
+
     return (
         <FormProvider {...form}>
             <form
-                className="modal-importer-form"
+                className="import-form"
                 onSubmit={form.handleSubmit(handleSubmit)}
                 noValidate
             >
-                {step === 'uploading'
-                    ? <h2>{t('Uploading your archive')}</h2>
-                    : <h2>{t('First, we need some information about your old mailbox')}</h2>
-                }
+                {/* The heading comes from the settings tab title ("Start a new
+                    import"), so the form itself stays chrome-free — one less
+                    thing pushing the submit off-screen. */}
                 {showImapForm === true && (
                     <>
-                        <div className="form-field-row flex-justify-center">
-                            <p>{t('Indicate your old email address and your password.')}</p>
+                        <div className="form-field-row">
+                            <p>{t('Indicate your old email address and your IMAP password.')}</p>
                         </div>
                         <div className="form-field-row">
                             <RhfInput
-                                label={t('Email address')}
+                                label={t('Email address or username')}
                                 name="username"
-                                type="email"
+                                type="text"
                                 text={form.formState.errors.username ? t(form.formState.errors.username.message as string) : undefined}
                                 onBlur={discoverImapServer}
                                 fullWidth
@@ -219,8 +252,8 @@ export const StepForm = ({ onUploading, onSuccess, onError, error, step }: StepF
                         {
                             showAdvancedImapFields ? (
                                 <>
-                                    <div className="form-field-row flex-justify-center">
-                                        <p>{t('Indicate your old email address and your password.')}</p>
+                                    <div className="form-field-row">
+                                        <p>{t("We couldn't detect your IMAP server. Please enter it manually.")}</p>
                                     </div>
                                     <div className="form-field-row">
                                         <RhfInput
@@ -263,39 +296,56 @@ export const StepForm = ({ onUploading, onSuccess, onError, error, step }: StepF
                                 </Banner>
                             )
                         }
-                        <div className="form-field-row flex-justify-center modal-importer-form__or-separator">
-                            <p>{t('Or')}</p>
+                        {showArchiveUpload && (
+                            <div className="form-field-row flex-justify-center import-form__or-separator">
+                                <p>{t('Or')}</p>
+                            </div>
+                        )}
+                    </>
+                )}
+                {showArchiveUpload && (
+                    <>
+                        {step !== 'uploading' && (
+                        <div className="form-field-row">
+                            <p>{t('Upload an archive')}</p>
+                        </div>
+                        )}
+                        <div className="form-field-row import-form__archive">
+                            <RhfFileUploader
+                                name="archive_file"
+                                accept=".eml,.mbox,.pst"
+                                icon={<Icon name="inventory_2" />}
+                                fileSelectedIcon={<Icon name="inventory_2" />}
+                                bigText={t('Drag and drop an archive here')}
+                                text={t('EML, MBOX or PST')}
+                                fullWidth
+                            />
+                            {[BucketUploadState.INITIATING, BucketUploadState.IMPORTING, BucketUploadState.COMPLETING, BucketUploadState.COMPLETED].includes(bucketUploadManager.state) && (
+                                <div className="progress-bar-container">
+                                    <ProgressBar progress={bucketUploadManager.progress} />
+                                    <p>{t('Uploading... {{progress}}%', { progress: bucketUploadManager.progress })}</p>
+                                </div>
+                            )}
                         </div>
                     </>
                 )}
-                {step !== 'uploading' && (
-                <div className="form-field-row flex-justify-center">
-                    <p>{t('Upload an archive')}</p>
-                </div>
-                )}
-                <div className="form-field-row archive_file_field">
-                    <RhfFileUploader
-                        name="archive_file"
-                        accept=".eml,.mbox,.pst"
-                        icon={<Icon name="inventory_2" />}
-                        fileSelectedIcon={<Icon name="inventory_2" />}
-                        bigText={t('Drag and drop an archive here')}
-                        text={t('EML, MBOX or PST')}
-                        fullWidth
-                    />
-                    {[BucketUploadState.INITIATING, BucketUploadState.IMPORTING, BucketUploadState.COMPLETING, BucketUploadState.COMPLETED].includes(bucketUploadManager.state) && (
-                        <div className="progress-bar-container">
-                            <ProgressBar progress={bucketUploadManager.progress} />
-                            <p>{t('Uploading... {{progress}}%', { progress: bucketUploadManager.progress })}</p>
-                        </div>
-                    )}
-                </div>
                 {error && (<Banner type="error"><p>{t(error)}</p></Banner>)}
                 <div className="form-field-row">
                     {[BucketUploadState.IMPORTING].includes(bucketUploadManager.state) ? (
+                        // Distinct `key` from the submit button below: without it React
+                        // reuses the same <button> DOM node across the ternary and merely
+                        // patches its `type`. Aborting leaves IMPORTING synchronously
+                        // (discrete-event flush), so the node's `type` flips to "submit"
+                        // *during* this very click — the browser then fires the form's
+                        // default submit, which restarts the upload from 0%. preventDefault
+                        // is the belt-and-suspenders guard against that default action.
                         <Button
+                            key="abort"
                             type="button"
-                            onClick={bucketUploadManager.abort}
+                            onClick={(e) => {
+                                e.preventDefault();
+                                bucketUploadManager.abort();
+                            }}
                             color="brand"
                             variant="tertiary"
                             fullWidth
@@ -305,6 +355,7 @@ export const StepForm = ({ onUploading, onSuccess, onError, error, step }: StepF
 
                     ) : (
                         <Button
+                            key="import"
                             type="submit"
                             aria-busy={isPending}
                             disabled={isPending}

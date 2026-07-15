@@ -12,10 +12,12 @@ import { useMailboxContext } from "@/features/providers/mailbox";
 import { useUrlSearchParams } from "@/hooks/use-url-search-params";
 import useAbility, { Abilities } from "@/hooks/use-ability";
 import ViewHelper from "@/features/utils/view-helper";
+import { useOpenImporter } from "@/features/layouts/components/mailbox-settings/imports-view/use-open-importer";
 
 const Mailbox = () => {
   const { t } = useTranslation();
   const { selectedMailbox, threads } = useMailboxContext();
+  const openImporter = useOpenImporter();
   const canImportMessages = useAbility(Abilities.CAN_IMPORT_MESSAGES, selectedMailbox);
   const { selectedThreadIds } = useThreadSelection();
   const searchParams = useUrlSearchParams();
@@ -41,7 +43,7 @@ const Mailbox = () => {
           <img src="/images/svg/read-mail.svg" alt="" width={60} height={60} />
           <p>{t('No threads')}</p>
           {showImportButton && (
-            <Button href="#modal-message-importer">{t('Import messages')}</Button>
+            <Button onClick={openImporter}>{t('Import messages')}</Button>
           )}
         </div>
       </div>

@@ -605,6 +605,7 @@ def find_webhook_channels_for_mailbox(
     return list(
         models.Channel.objects.filter(
             Q(type=enums.ChannelTypes.WEBHOOK)
+            & Q(is_active=True)
             & (
                 Q(
                     scope_level=enums.ChannelScopeLevel.MAILBOX,

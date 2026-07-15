@@ -17,9 +17,9 @@ from rest_framework.response import Response
 from rest_framework.views import APIView
 
 from core import enums, models
-from core.api.viewsets.task import register_task_owner
 from core.mda.outbound import prepare_outbound_message
 from core.mda.outbound_tasks import send_message_task
+from core.utils import register_task_owner
 
 from .. import permissions, serializers
 

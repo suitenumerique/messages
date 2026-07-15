@@ -23,7 +23,12 @@
         }
     }
 
-    &__label {
+    // Qualified with the element + parent (specificity 0,2,1) on purpose: this
+    // ring renders inside a cunningham Button icon slot in the header, where
+    // `.c__button--medium .c__button__icon *` (0,2,0) would otherwise win and
+    // resize the percentage to the button's icon font-size. The plain
+    // `&__label` class (0,1,0) loses that fight; this selector wins it.
+    span.circular-progress__label {
         font-size: 0.65rem;
         font-weight: bold;
         color: var(--c--contextuals--background--semantic--brand--primary);

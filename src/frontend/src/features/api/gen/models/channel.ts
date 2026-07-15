@@ -24,6 +24,8 @@ export interface Channel {
    */
   type: string;
   readonly scope_level: ScopeLevelEnum;
+  /** Uncheck to pause this channel without deleting it. */
+  is_active?: boolean;
   /** Channel-specific configuration settings */
   settings?: unknown;
   /**

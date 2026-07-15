@@ -90,3 +90,61 @@
     gap: var(--c--globals--spacings--2xs);
   }
 }
+
+// --- Imports tab -------------------------------------------------------------
+// Status cell: one compact line — colored status, date, account — or an inline
+// progress bar + percent while the run is still going. Colors reuse the
+// design-system state tokens.
+.import-status {
+  font-size: 0.9em;
+
+  &--success {
+    color: var(--c--globals--colors--success-600, #1f8b4c);
+  }
+  &--error {
+    color: var(--c--globals--colors--danger-600, #b42318);
+  }
+  &--muted {
+    color: var(--c--globals--colors--greyscale-500, #666);
+  }
+  // Signals the "N failed" count carries a hoverable breakdown tooltip.
+  &--has-tooltip {
+    text-decoration: underline dotted;
+    text-underline-offset: 2px;
+    cursor: help;
+  }
+  &--running {
+    display: flex;
+    align-items: center;
+    gap: var(--c--globals--spacings--xs);
+    width: 100%;
+
+    .progress-bar {
+      flex: 1;
+      max-width: 200px;
+    }
+
+    span {
+      white-space: nowrap;
+    }
+  }
+}
+
+.import-status-line {
+  display: flex;
+  align-items: center;
+  gap: var(--c--globals--spacings--2xs);
+  min-width: 0;
+  white-space: nowrap;
+  overflow: hidden;
+
+  &__separator {
+    color: var(--c--globals--colors--greyscale-400, #999);
+  }
+
+  // The trailing item (usually the account) gives way first.
+  > :last-child {
+    overflow: hidden;
+    text-overflow: ellipsis;
+  }
+}

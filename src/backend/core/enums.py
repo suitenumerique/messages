@@ -254,6 +254,53 @@ class ChannelTypes(StrEnum):
     API_KEY = "api_key"
     WEBHOOK = "webhook"
     CALDAV = "caldav"
+    IMPORT = "import"
+
+
+class ImportSource(StrEnum):
+    """Source of an import run — ``Channel.settings["import"]["source_type"]``.
+
+    Plain strings (no model / migration): the run's state lives in the import
+    Channel's JSON settings + Redis, not in its own table.
+    """
+
+    PST = "pst"
+    MBOX = "mbox"
+    EML = "eml"
+    IMAP = "imap"
+
+
+class ImportStatus(StrEnum):
+    """Lifecycle of an import run — held in Redis (live) and mirrored into
+    ``Channel.settings["import"]["status"]`` once terminal so it survives a
+    cache eviction.
+
+    ``pending`` → ``running`` → terminal (``completed`` / ``failed`` /
+    ``cancelled``). A ``continuous`` IMAP run cycles pending→running→completed
+    and back to running on the next poll; it only becomes terminal when the
+    channel is disabled or deleted.
+    """
+
+    PENDING = "pending"
+    RUNNING = "running"
+    COMPLETED = "completed"
+    FAILED = "failed"
+    CANCELLED = "cancelled"
+
+
+class ImportMode(StrEnum):
+    """Whether an import runs once or keeps polling —
+    ``Channel.settings["import"]["mode"]``.
+
+    ``oneshot`` flips ``is_active=False`` when it completes (terminal, like a
+    file import). ``continuous`` (IMAP only) leaves ``is_active=True`` and is
+    re-dispatched by the reaper on the global ``MESSAGES_IMPORT_IMAP_POLL_INTERVAL``
+    cadence to pull new mail; there ``is_active`` means enabled/disabled, like
+    an integration.
+    """
+
+    ONESHOT = "oneshot"
+    CONTINUOUS = "continuous"
 
 
 class InboundOrigin(StrEnum):
