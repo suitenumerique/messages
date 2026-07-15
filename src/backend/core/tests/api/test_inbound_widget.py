@@ -147,6 +147,26 @@ class TestWidgetAuthentication:
         with pytest.raises(ValidationError):
             auth.authenticate(request)
 
+    def test_inbound_widget_authenticate_with_paused_channel(self, channel):
+        """A paused (is_active=False) widget must not authenticate — same
+        generic failure as an unknown channel id."""
+        channel.is_active = False
+        channel.save()
+        auth = WidgetAuthentication()
+
+        class MockRequest:
+            """Mock request."""
+
+            def __init__(self, channel_id):
+                """Initialize the mock request."""
+                self.headers = {"X-Channel-ID": str(channel_id)}
+                self.META = {}  # pylint: disable=invalid-name
+
+        request = MockRequest(channel.id)
+
+        with pytest.raises(AuthenticationFailed, match="Invalid channel_id"):
+            auth.authenticate(request)
+
 
 @pytest.mark.django_db
 class TestInboundWidgetConfig:

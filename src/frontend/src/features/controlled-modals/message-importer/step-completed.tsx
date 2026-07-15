@@ -1,12 +1,12 @@
 import { Button } from "@gouvfr-lasuite/cunningham-react";
 import { Icon } from "@gouvfr-lasuite/ui-kit";
 import { useTranslation } from "react-i18next";
-import { ImportTaskRecap } from "@/hooks/use-task-status";
+import { ImportRecap } from "@/hooks/use-import-status";
 import clsx from "clsx";
 
 type StepCompletedProps = {
     onClose: () => void;
-    recap: ImportTaskRecap | null;
+    recap: ImportRecap | null;
 }
 
 const FAILURE_WARNING_THRESHOLD = 0.5;

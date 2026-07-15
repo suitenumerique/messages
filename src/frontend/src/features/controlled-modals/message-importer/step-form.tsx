@@ -5,8 +5,8 @@ import { FormProvider, useForm, useWatch } from "react-hook-form";
 import { Button } from "@gouvfr-lasuite/cunningham-react";
 import { Icon, Spinner } from "@gouvfr-lasuite/ui-kit";
 import { useTranslation } from "react-i18next";
-import { useParams } from "@tanstack/react-router";
-import { importFileCreateResponse202, importImapCreateResponse202, useImportFileCreate, useImportImapCreate } from "@/features/api/gen";
+import { ImportRun, useMailboxesImportsCreate } from "@/features/api/gen";
+import { APIError, errorToString } from "@/features/api/api-error";
 import MailHelper, { IMAP_DOMAIN_REGEXES } from "@/features/utils/mail-helper";
 import { RhfInput } from "../../forms/components/react-hook-form";
 import { RhfFileUploader } from "../../forms/components/react-hook-form/rhf-file-uploader";
@@ -17,7 +17,11 @@ import { BucketUploadState, useBucketUpload } from "./use-bucket-upload";
 import ProgressBar from "@/features/ui/components/progress-bar";
 import { IMPORT_STEP } from ".";
 
-const usernameSchema = z.email({ error: i18n.t('The email address is invalid.') });
+// An IMAP username is a login (usually, but not necessarily, an email), so we
+// only require it to be non-empty rather than a strict email — the backend
+// stores it as a free string too. (Auto-discovery below still keys off the
+// domain when the username happens to look like an email.)
+const usernameSchema = z.string().min(1, { error: i18n.t('Username is required.') });
 
 const importerFormSchema = z.object({
     archive_file: z.array(z.instanceof(File)),
@@ -43,36 +47,42 @@ const importerFormSchema = z.object({
 type FormFields = z.infer<typeof importerFormSchema>;
 
 type StepFormProps = {
+    mailboxId: string;
     onUploading: () => void;
-    onSuccess: (taskId: string) => void;
+    onSuccess: (importId: string) => void;
     onError: (error: string | null) => void;
     error: string | null;
     step: IMPORT_STEP;
 }
-export const StepForm = ({ onUploading, onSuccess, onError, error, step }: StepFormProps) => {
+export const StepForm = ({ mailboxId, onUploading, onSuccess, onError, error, step }: StepFormProps) => {
     const { t } = useTranslation();
-    const routeParams = useParams({ strict: false }) as { mailboxId?: string };
     const [showAdvancedImapFields, setShowAdvancedImapFields] = useState(false);
     const [emailDomain, setEmailDomain] = useState<string | undefined>(undefined);
-    const imapMutation = useImportImapCreate({
+    // Single unified create endpoint (POST /mailboxes/{id}/imports/) for both
+    // file and IMAP; it returns the import run to poll (its `id`).
+    const importsMutation = useMailboxesImportsCreate({
         mutation: {
             meta: { noGlobalError: true },
-            onError: () => onError(t('An error occurred while importing messages.')),
-            onSuccess: (data) => onSuccess((data as importImapCreateResponse202).data.task_id!)
-        }
-    });
-    const archiveMutation = useImportFileCreate({
-        mutation: {
-            meta: { noGlobalError: true },
-            onError: () => onError(t('An error occurred while importing messages.')),
-            onSuccess: (data) => onSuccess((data as importFileCreateResponse202).data.task_id!)
+            // Surface the backend's discriminated detail (file too large, bad
+            // format, upload not found…) — collapsing it to a generic message
+            // would send the user re-trying the same doomed upload with no way
+            // to learn why it fails.
+            onError: (error) => onError(
+                error instanceof APIError && error.data
+                    ? errorToString(error)
+                    : t('An error occurred while importing messages.')
+            ),
+            onSuccess: (data) => onSuccess((data.data as ImportRun).id),
         }
     });
     const bucketUploadManager = useBucketUpload({
-        onSuccess: (manager) => archiveMutation.mutate({
+        mailboxId,
+        onSuccess: (manager) => importsMutation.mutate({
+            mailboxId,
             data: {
+                source: "file",
                 filename: manager.file!.name,
-                recipient: routeParams.mailboxId ?? '',
+                file_key: manager.fileKey!,
             }
         }, {
             onSettled: manager.reset,
@@ -83,7 +93,7 @@ export const StepForm = ({ onUploading, onSuccess, onError, error, step }: StepF
         },
     });
     const isBucketUploading = [BucketUploadState.INITIATING, BucketUploadState.IMPORTING, BucketUploadState.COMPLETING].includes(bucketUploadManager.state);
-    const isPending = imapMutation.isPending || archiveMutation.isPending || isBucketUploading;
+    const isPending = importsMutation.isPending || isBucketUploading;
 
     const defaultValues = {
         imap_server: '',
@@ -137,15 +147,15 @@ export const StepForm = ({ onUploading, onSuccess, onError, error, step }: StepF
      */
     const importFromImap = async (data: FormFields) => {
         const payload = {
+            source: "imap" as const,
             imap_server: data.imap_server!,
             imap_port: data.imap_port!,
             use_ssl: data.use_ssl!,
             username: data.username!,
             password: data.password!,
-            recipient: routeParams.mailboxId ?? '',
         }
-        return imapMutation.mutateAsync(
-            { data: payload }
+        return importsMutation.mutateAsync(
+            { mailboxId, data: payload }
         );
     }
 
@@ -160,7 +170,8 @@ export const StepForm = ({ onUploading, onSuccess, onError, error, step }: StepF
     /**
      * According to the form data,
      * exec the mutation to import emails from an IMAP server or an Archive file.
-     * We assume that all mutation returns a celery task id as response.
+     * The unified endpoint returns the created ImportRun; its `id` is what the
+     * loader step polls (see the mutation's onSuccess above).
      */
     const handleSubmit = async (data: FormFields) => {
         onError(null);
@@ -199,9 +210,9 @@ export const StepForm = ({ onUploading, onSuccess, onError, error, step }: StepF
                         </div>
                         <div className="form-field-row">
                             <RhfInput
-                                label={t('Email address')}
+                                label={t('Email address or username')}
                                 name="username"
-                                type="email"
+                                type="text"
                                 text={form.formState.errors.username ? t(form.formState.errors.username.message as string) : undefined}
                                 onBlur={discoverImapServer}
                                 fullWidth

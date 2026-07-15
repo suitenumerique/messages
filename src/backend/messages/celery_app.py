@@ -74,4 +74,18 @@ if not settings.DISABLE_CELERY_BEAT_SCHEDULE:
             "schedule": 3600.0,
             "options": {"queue": "default"},
         },
+        "schedule-imports": {
+            # Dispatch every active import that is due: resume runs whose
+            # heartbeat went stale (worker crash mid-run) and poll continuous
+            # IMAP channels on their interval. Idempotent + lock-guarded:
+            # a re-dispatched run resumes from its watermark and dedup prevents
+            # duplicates.
+            "task": "core.services.importer.tasks.schedule_imports_task",
+            "schedule": 300.0,  # Every 5 minutes
+            "options": {"queue": "default"},
+        },
+        # (Orphaned import uploads / dangling multipart uploads are reclaimed by
+        # the message-imports bucket's own lifecycle rule — object Expiration +
+        # AbortIncompleteMultipartUpload, set in ``create_bucket`` — not an app
+        # task, so there is no gc-import-uploads beat entry.)
     }

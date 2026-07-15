@@ -21,13 +21,6 @@ from messages.celery_app import app as celery_app
 
 logger = logging.getLogger(__name__)
 
-TASK_OWNER_CACHE_TTL = 86400  # 24 hours
-
-
-def register_task_owner(task_id, user_id):
-    """Register the owner of a task for permission checks."""
-    cache.set(f"task_owner:{task_id}", str(user_id), timeout=TASK_OWNER_CACHE_TTL)
-
 
 @extend_schema(
     tags=["tasks"],

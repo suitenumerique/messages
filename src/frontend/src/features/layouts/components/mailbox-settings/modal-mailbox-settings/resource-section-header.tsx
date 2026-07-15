@@ -7,8 +7,12 @@ type ResourceSectionHeaderProps = {
    * does not flash an inaccurate "none" before the count arrives.
    */
   label?: ReactNode;
-  /** Create-resource action (a nano button) shown on the trailing edge. */
-  action: ReactNode;
+  /**
+   * Create-resource action (a nano button) shown on the trailing edge.
+   * Optional: tabs without a create action (e.g. Imports, started from the
+   * composer) omit it.
+   */
+  action?: ReactNode;
 };
 
 /**

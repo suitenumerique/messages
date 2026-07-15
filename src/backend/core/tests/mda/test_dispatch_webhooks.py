@@ -271,6 +271,20 @@ class TestFindWebhookChannels:
         )
         assert not list(find_webhook_channels_for_mailbox(mailbox))
 
+    def test_excludes_paused_channel(self, mailbox):
+        """A paused (is_active=False) webhook must not fire."""
+        factories.ChannelFactory(
+            type=enums.ChannelTypes.WEBHOOK,
+            mailbox=mailbox,
+            is_active=False,
+            settings={
+                "url": "https://hook.example.com/paused",
+                "trigger": "message.delivered",
+                "auth_method": "jwt",
+            },
+        )
+        assert not list(find_webhook_channels_for_mailbox(mailbox))
+
 
 # --- JMAP body builder --- #
 

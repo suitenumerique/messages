@@ -551,14 +551,20 @@ Pluggable backend deciding what a user/domain is entitled to.
 | `ENTITLEMENTS_BACKEND_PARAMETERS` | `{}` | JSON parameters passed to the backend. | Optional |
 | `ENTITLEMENTS_CACHE_TIMEOUT` | `300` | Cache TTL (seconds) for entitlement lookups. | Optional |
 
-### Message Import (IMAP)
+### Message Import
 
-Tuning for the IMAP-based message importer (see also `FEATURE_IMPORT_MESSAGES`).
+Tuning for the resumable message importer (EML / MBOX / PST files and IMAP;
+see also `FEATURE_IMPORT_MESSAGES`). Imports are modelled as `type=import`
+channels and resumed from a Redis watermark by `run_import_task`. See
+[docs/imports.md](imports.md) for the design.
 
 | Variable | Default | Description | Required |
 |----------|---------|-------------|----------|
 | `IMAP_TIMEOUT` | `60` | Socket timeout (seconds) for IMAP connections during import. | Optional |
 | `IMAP_MAX_RETRIES` | `3` | Retry budget for transient IMAP failures during import. | Optional |
+| `MESSAGES_IMPORT_STALL_TIMEOUT` | `900` | Seconds of heartbeat silence after which the scheduler treats a running import as crashed and re-dispatches it (which resumes from its watermark). Also the run-lock TTL. Must comfortably exceed the worst-case time between progress flushes. Continuous IMAP channels use `MESSAGES_IMPORT_IMAP_POLL_INTERVAL` as their clock instead. | Optional |
+| `MESSAGES_IMPORT_IMAP_POLL_INTERVAL` | `900` | Poll cadence (seconds) for continuous IMAP imports: the scheduler re-dispatches each active continuous channel this often to pull new mail. Global (not settable per import); must be a positive integer. | Optional |
+| `MESSAGES_IMPORT_MAX_FILE_SIZE` | `53687091200` | Largest archive (bytes) an import will accept (50 GiB); checked before a worker is spent on it. `0` disables the cap. | Optional |
 
 ### Spam Filtering
 

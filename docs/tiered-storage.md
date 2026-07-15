@@ -6,6 +6,19 @@ a periodic celery task moves its bytes to S3 and clears the PG row's
 `raw_content`. Reads transparently fetch from whichever location the
 row points at — application code only ever calls `blob.get_content()`.
 
+One exception skips the PG hot tier entirely: **bulk imports** create
+their blobs with `create_blob(prefer_offloaded=True)`, which uploads
+the (compressed, encrypted) bytes straight to the object tier and
+inserts the row with `raw_content=NULL` — a multi-gigabyte archive
+never parks its bytes in Postgres waiting for the offload tick. The
+offload policy still governs: when `MESSAGES_BLOBS_OFFLOAD_ENABLED`
+is off or the content is under `MESSAGES_BLOBS_OFFLOAD_MIN_SIZE`, the
+preference is silently skipped. Best effort: if object storage is
+unconfigured or the upload fails, the blob falls back to the PG tier
+and the periodic offload moves it later. The upload happens under the same per-sha advisory lock and
+object-before-row ordering as `offload_one_blob`, so crash recovery
+and `verify_blobs` semantics are unchanged.
+
 ## Architecture
 
 - **Storage path**: `blobs/{key_id}/{sha[:3]}/{sha}`. The leading
