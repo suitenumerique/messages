@@ -1,5 +1,6 @@
 import { Button } from "@gouvfr-lasuite/cunningham-react";
 import { useTranslation } from "react-i18next";
+import { useOpenImporter } from "@/features/layouts/components/mailbox-settings/imports-view/use-open-importer";
 
 type ThreadViewEmptyProps = {
     showImportButton?: boolean;
@@ -14,6 +15,7 @@ type ThreadViewEmptyProps = {
  */
 export const ThreadViewEmpty = ({ showImportButton = false, label }: ThreadViewEmptyProps) => {
     const { t } = useTranslation();
+    const openImporter = useOpenImporter();
 
     return (
         <div className="thread-view thread-view--empty">
@@ -21,7 +23,7 @@ export const ThreadViewEmpty = ({ showImportButton = false, label }: ThreadViewE
                 <img src="/images/svg/read-mail.svg" alt="" width={60} height={60} />
                 <p>{label ?? t('Select a thread')}</p>
                 {showImportButton && (
-                    <Button href="#modal-message-importer">{t('Import messages')}</Button>
+                    <Button onClick={openImporter}>{t('Import messages')}</Button>
                 )}
             </div>
         </div>

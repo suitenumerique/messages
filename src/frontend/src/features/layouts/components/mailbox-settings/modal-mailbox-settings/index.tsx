@@ -20,6 +20,8 @@ import { MailboxSettingsSignaturesTab } from "./signatures-tab";
 import { MailboxSettingsMessageTemplatesTab } from "./message-templates-tab";
 import { MailboxSettingsAutorepliesTab } from "./autoreplies-tab";
 import { MailboxSettingsIntegrationsTab } from "./integrations-tab";
+import { MailboxSettingsImportsTab, ImportsTabView } from "./imports-tab";
+import { ImportNewTitle } from "../imports-view/import-new-title";
 
 export type SettingsTabId =
   | "general"
@@ -27,12 +29,16 @@ export type SettingsTabId =
   | "signatures"
   | "message-templates"
   | "autoreplies"
-  | "integrations";
+  | "integrations"
+  | "imports";
 
 type ModalMailboxSettingsProps = {
   isOpen: boolean;
   onClose: () => void;
   initialTab?: SettingsTabId;
+  // When opening on the Imports tab, which sub-view to show ("new" drops the
+  // user straight onto the new-import form; defaults to the list).
+  initialImportsView?: ImportsTabView;
 };
 
 export const MODAL_MAILBOX_SETTINGS_ID = "modal-mailbox-settings";
@@ -62,6 +68,7 @@ export const ModalMailboxSettings = ({
   isOpen,
   onClose,
   initialTab,
+  initialImportsView,
 }: ModalMailboxSettingsProps) => {
   const { t } = useTranslation();
   const { mailboxes, selectedMailbox } = useMailboxContext();
@@ -83,6 +90,13 @@ export const ModalMailboxSettings = ({
 
   const [selectedMailboxId, setSelectedMailboxId] = useState<string | null>(
     null,
+  );
+
+  // Owned here (not in the tab) so the tab header can collapse to a compact
+  // form title when starting a new import — the list description would otherwise
+  // push the submit button below the modal's scroll on shorter viewports.
+  const [importsView, setImportsView] = useState<ImportsTabView>(
+    initialImportsView ?? "list",
   );
 
   const [isActiveTabDirty, setIsActiveTabDirty] = useState(false);
@@ -135,7 +149,7 @@ export const ModalMailboxSettings = ({
     if (!settingsMailbox) {
       return [];
     }
-    const { manage_accesses, manage_message_templates } =
+    const { manage_accesses, manage_message_templates, import_messages } =
       settingsMailbox.abilities;
     const ids: SettingsTabId[] = [];
     if (manage_accesses) {
@@ -143,6 +157,13 @@ export const ModalMailboxSettings = ({
     }
     if (manage_message_templates) {
       ids.push("message-templates", "autoreplies", "signatures");
+    }
+    // Imports are gated by their own ability (is_admin && FEATURE_IMPORT_MESSAGES),
+    // shown before Integrations.
+    if (import_messages) {
+      ids.push("imports");
+    }
+    if (manage_message_templates) {
       if (isIntegrationsEnabled) {
         ids.push("integrations");
       }
@@ -273,6 +294,39 @@ export const ModalMailboxSettings = ({
               <MailboxSettingsSignaturesTab
                 key={settingsMailbox.id}
                 mailbox={settingsMailbox}
+              />
+            ),
+          },
+        ]
+      : []),
+    ...(availableTabIds.includes("imports")
+      ? [
+          {
+            id: "imports",
+            label: t("Imports"),
+            // In the new-import sub-view the header becomes a compact
+            // back-link + form title (no description); the list keeps the full
+            // context. The back-link lives here, above the title, on purpose.
+            title:
+              importsView === "new" ? (
+                <ImportNewTitle onBack={() => setImportsView("list")} />
+              ) : (
+                t("Imports")
+              ),
+            subtitle:
+              importsView === "new" ? undefined : (
+                <p className="mb-base mr-base">
+                  {t(
+                    "Import mail into this mailbox from an archive (PST, MBOX, EML) or an IMAP account, and track or cancel running imports.",
+                  )}
+                </p>
+              ),
+            content: (
+              <MailboxSettingsImportsTab
+                key={settingsMailbox.id}
+                mailbox={settingsMailbox}
+                view={importsView}
+                onViewChange={setImportsView}
               />
             ),
           },

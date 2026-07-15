@@ -31,7 +31,11 @@ def _get_caldav_service(channel_id: str | None, user_email: str):
     self-contained so the email is ignored there.
     """
     if channel_id:
-        channel = Channel.objects.get(id=channel_id, type=ChannelTypes.CALDAV)
+        # Only resolve active channels: a paused CalDAV channel must not
+        # sync, so it raises DoesNotExist here just like an unknown id.
+        channel = Channel.objects.get(
+            id=channel_id, type=ChannelTypes.CALDAV, is_active=True
+        )
         return CalDAVService.from_channel(channel)
 
     return CalDAVService.from_instance_config(user_email)
@@ -112,11 +116,10 @@ def calendar_rsvp_task(
             "result": None,
             "error": str(e),
         }
-    except Exception as e:  # pylint: disable=broad-exception-caught
+    except Exception:  # pylint: disable=broad-exception-caught
         # Anything else is unexpected. Stack to Sentry, generic copy to
         # the client — raw ``str(e)`` from ``requests``/``icalendar`` can
         # leak the CalDAV URL or other internal details.
-        capture_exception(e)
         logger.exception("Error responding to calendar event")
         return {
             "status": "FAILURE",
@@ -186,8 +189,7 @@ def calendar_add_event_task(
             "result": None,
             "error": str(e),
         }
-    except Exception as e:  # pylint: disable=broad-exception-caught
-        capture_exception(e)
+    except Exception:  # pylint: disable=broad-exception-caught
         logger.exception("Error adding calendar event")
         return {
             "status": "FAILURE",

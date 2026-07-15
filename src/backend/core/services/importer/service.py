@@ -1,207 +1,190 @@
-"""Service layer for importing messages via EML, MBOX, PST, or IMAP."""
+"""Start an import run: validate/detect the source, create its channel,
+dispatch the task.
+
+Deliberately does NOT authorize: the only caller is the imports API, which
+gates on the ``IsMailboxAdmin`` permission for the URL mailbox (see
+``docs/permissions.md``). Failure dicts carry an HTTP-ish ``status`` so the
+viewset can map "your upload is wrong" (400) vs "missing" (404) vs "broke"
+(500).
+"""
 
 import logging
-from typing import Any, Dict, Optional, Tuple
+from typing import Any
 
-from django.contrib import messages
+from django.conf import settings
 from django.core.files.storage import storages
-from django.http import HttpRequest
 
 import magic
-from sentry_sdk import capture_exception
 
 from core import enums
-from core.api.viewsets.task import register_task_owner
 from core.models import Mailbox
 
-from .eml_tasks import process_eml_file_task
-from .imap_tasks import import_imap_messages_task
-from .mbox_tasks import process_mbox_file_task
-from .pst_tasks import process_pst_file_task
+from .channel import create_import_channel
+from .tasks import run_import_task
 
 logger = logging.getLogger(__name__)
 
 
-class ImportService:
-    """Service for handling message imports."""
+def start_file_import(
+    file_key: str,
+    recipient: Mailbox,
+    user: Any,
+    filename: str | None = None,
+) -> tuple[bool, dict[str, Any]]:
+    """Start an import from an uploaded EML, MBOX, or PST file.
 
-    @staticmethod
-    def import_file(
-        file_key: str,
-        recipient: Mailbox,
-        user: Any,
-        request: Optional[HttpRequest] = None,
-        filename: Optional[str] = None,
-    ) -> Tuple[bool, Dict[str, Any]]:
-        """Import messages from an EML, MBOX, or PST file.
+    Args:
+        file_key: The storage key of the uploaded file
+        recipient: The recipient mailbox
+        user: The user performing the import
+        filename: Original filename for MIME type disambiguation
 
-        Args:
-            file_key: The storage key of the uploaded file
-            recipient: The recipient mailbox
-            user: The user performing the import
-            request: Optional HTTP request for admin messages
-            filename: Original filename for MIME type disambiguation
+    Returns:
+        Tuple of (success, response_data)
+    """
+    message_imports_storage = storages["message-imports"]
 
-        Returns:
-            Tuple of (success, response_data)
-        """
-        # Check user has edit access to mailbox in case of non superuser
-        if (
-            not user.is_superuser
-            and not recipient.accesses.filter(
-                user=user, role__in=enums.MAILBOX_ROLES_CAN_EDIT
-            ).exists()
-        ):
-            return False, {"detail": "You do not have access to this mailbox."}
+    if not message_imports_storage.exists(file_key):
+        return False, {"detail": "File not found.", "status": 404}
 
-        message_imports_storage = storages["message-imports"]
+    s3_client = message_imports_storage.connection.meta.client
 
-        if not message_imports_storage.exists(file_key):
-            return False, {"detail": "File not found."}
-
-        # Detect content type from actual file bytes using python-magic
-        s3_client = message_imports_storage.connection.meta.client
-        head = s3_client.get_object(
-            Bucket=message_imports_storage.bucket_name,
-            Key=file_key,
-            Range="bytes=0-2047",
-        )["Body"].read()
-
-        # RFC 4155: an mbox file starts with a "From " envelope line at offset 0.
-        # Trust that signature first — libmagic can otherwise misclassify mbox
-        # files whose first message body contains HTML as text/html.
-        if head.startswith(b"From "):
-            content_type = "application/mbox"
-        else:
-            content_type = magic.from_buffer(head, mime=True)
-
-            # Disambiguate ambiguous MIME types using filename extension
-            if content_type in ("text/plain", "application/octet-stream") and filename:
-                ext = filename.rsplit(".", 1)[-1].lower() if "." in filename else ""
-                extension_map = {
-                    "eml": "message/rfc822",
-                    "mbox": "application/mbox",
-                    "pst": "application/vnd.ms-outlook",
-                }
-                content_type = extension_map.get(ext, content_type)
-
-        if content_type not in enums.ARCHIVE_SUPPORTED_MIME_TYPES:
+    # Reject an archive larger than the cap before spending a worker on it.
+    max_size = settings.MESSAGES_IMPORT_MAX_FILE_SIZE
+    if max_size:
+        size = s3_client.head_object(
+            Bucket=message_imports_storage.bucket_name, Key=file_key
+        ).get("ContentLength", 0)
+        if size > max_size:
             return False, {
                 "detail": (
-                    f"Invalid file format. Only EML, MBOX, "
-                    f"and PST files are supported. "
-                    f"Detected content type: {content_type}"
+                    f"File too large ({size} bytes); the maximum import size "
+                    f"is {max_size} bytes."
                 )
             }
 
-        try:
-            # Check MIME type for PST
-            if content_type in enums.PST_SUPPORTED_MIME_TYPES:
-                task = process_pst_file_task.delay(file_key, str(recipient.id))
-                register_task_owner(task.id, user.id)
-                response_data = {"task_id": task.id, "type": "pst"}
-                if request:
-                    messages.info(
-                        request,
-                        f"Started processing PST file for recipient {recipient}. "
-                        "This may take a while. You can check the status in the Celery task monitor.",
-                    )
-                return True, response_data
-            # Check MIME type for MBOX
-            if content_type in enums.MBOX_SUPPORTED_MIME_TYPES:
-                # Process MBOX file asynchronously
-                task = process_mbox_file_task.delay(file_key, str(recipient.id))
-                register_task_owner(task.id, user.id)
-                response_data = {"task_id": task.id, "type": "mbox"}
-                if request:
-                    messages.info(
-                        request,
-                        f"Started processing MBOX file for recipient {recipient}. "
-                        "This may take a while. You can check the status in the Celery task monitor.",
-                    )
-                return True, response_data
-            # Check MIME type for EML
-            if content_type in enums.EML_SUPPORTED_MIME_TYPES:
-                # Process EML file asynchronously
-                task = process_eml_file_task.delay(file_key, str(recipient.id))
-                register_task_owner(task.id, user.id)
-                response_data = {"task_id": task.id, "type": "eml"}
-                if request:
-                    messages.info(
-                        request,
-                        f"Started processing EML file for recipient {recipient}. "
-                        "This may take a while. You can check the status in the Celery task monitor.",
-                    )
-                return True, response_data
-            return False, {"detail": f"Unsupported file format: {content_type}"}
-        except Exception as e:  # pylint: disable=broad-exception-caught
-            capture_exception(e)
-            logger.exception("Error processing file: %s", e)
-            if request:
-                messages.error(request, "Error processing file.")
+    # Detect content type from actual file bytes using python-magic
+    head = s3_client.get_object(
+        Bucket=message_imports_storage.bucket_name,
+        Key=file_key,
+        Range="bytes=0-2047",
+    )["Body"].read()
 
-            return False, {"detail": "An error occurred while processing the file."}
+    # RFC 4155: an mbox file starts with a "From " envelope line at offset 0.
+    # Trust that signature first — libmagic can otherwise misclassify mbox
+    # files whose first message body contains HTML as text/html.
+    if head.startswith(b"From "):
+        content_type = "application/mbox"
+    else:
+        content_type = magic.from_buffer(head, mime=True)
 
-    @staticmethod
-    def import_imap(
-        imap_server: str,
-        imap_port: int,
-        username: str,
-        password: str,
-        recipient: Mailbox,
-        user: Any,
-        use_ssl: bool = True,
-        request: Optional[HttpRequest] = None,
-    ) -> Tuple[bool, Dict[str, Any]]:
-        """Import messages from an IMAP server.
+        # Disambiguate ambiguous MIME types using filename extension
+        if content_type in ("text/plain", "application/octet-stream") and filename:
+            ext = filename.rsplit(".", 1)[-1].lower() if "." in filename else ""
+            extension_map = {
+                "eml": "message/rfc822",
+                "mbox": "application/mbox",
+                "pst": "application/vnd.ms-outlook",
+            }
+            content_type = extension_map.get(ext, content_type)
 
-        Args:
-            imap_server: IMAP server hostname
-            imap_port: IMAP server port
-            username: Email address for login
-            password: Password for login
-            recipient: The recipient mailbox
-            user: The user performing the import
-            use_ssl: Whether to use SSL
-            request: Optional HTTP request for admin messages
-
-        Returns:
-            Tuple of (success, response_data)
-        """
-        # Check user has edit access to mailbox in case of non superuser
-        if (
-            not user.is_superuser
-            and not recipient.accesses.filter(
-                user=user, role__in=enums.MAILBOX_ROLES_CAN_EDIT
-            ).exists()
-        ):
-            return False, {"detail": "You do not have access to this mailbox."}
-
-        try:
-            # Start the import task
-            task = import_imap_messages_task.delay(
-                imap_server=imap_server,
-                imap_port=imap_port,
-                username=username,
-                password=password,
-                use_ssl=use_ssl,
-                recipient_id=str(recipient.id),
+    if content_type not in enums.ARCHIVE_SUPPORTED_MIME_TYPES:
+        return False, {
+            "detail": (
+                f"Invalid file format. Only EML, MBOX, "
+                f"and PST files are supported. "
+                f"Detected content type: {content_type}"
             )
-            register_task_owner(task.id, user.id)
-            response_data = {"task_id": task.id, "type": "imap"}
-            if request:
-                messages.info(
-                    request,
-                    f"Started importing messages from IMAP server for recipient {recipient}. "
-                    "This may take a while. You can check the status in the Celery task monitor.",
-                )
-            return True, response_data
+        }
 
-        except Exception as e:  # pylint: disable=broad-exception-caught
-            capture_exception(e)
-            logger.exception("Error starting IMAP import: %s", e)
-            if request:
-                messages.error(request, "Error starting IMAP import.")
-            return False, {
-                "detail": "An error occurred while starting the IMAP import."
-            }
+    # Map the detected MIME family to its import source type + label.
+    if content_type in enums.PST_SUPPORTED_MIME_TYPES:
+        source, label = enums.ImportSource.PST, "PST"
+    elif content_type in enums.MBOX_SUPPORTED_MIME_TYPES:
+        source, label = enums.ImportSource.MBOX, "MBOX"
+    elif content_type in enums.EML_SUPPORTED_MIME_TYPES:
+        source, label = enums.ImportSource.EML, "EML"
+    else:
+        return False, {"detail": f"Unsupported file format: {content_type}"}
+
+    try:
+        # Group every message of this import under a Channel so the run is
+        # trackable, resumable and cancellable via /imports/{id}/. The
+        # single ``run_import_task`` reads its config back off the channel.
+        channel = create_import_channel(
+            recipient=recipient,
+            user=user,
+            source_type=source.value,
+            file_key=file_key,
+            name=f"Import {filename}" if filename else f"Import {label}",
+        )
+        run_import_task.delay(str(channel.id))
+        return True, {
+            "type": source.value,
+            "import_id": str(channel.id),
+        }
+    except Exception as e:  # pylint: disable=broad-exception-caught
+        logger.exception("Error processing file: %s", e)
+        return False, {
+            "detail": "An error occurred while processing the file.",
+            "status": 500,
+        }
+
+
+def start_imap_import(
+    imap_server: str,
+    imap_port: int,
+    username: str,
+    password: str,
+    recipient: Mailbox,
+    user: Any,
+    use_ssl: bool = True,
+    mode: str = enums.ImportMode.ONESHOT.value,
+) -> tuple[bool, dict[str, Any]]:
+    """Start an import from a live IMAP account.
+
+    Args:
+        imap_server: IMAP server hostname
+        imap_port: IMAP server port
+        username: Email address for login
+        password: Password for login
+        recipient: The recipient mailbox
+        user: The user performing the import
+        use_ssl: Whether to use SSL
+        mode: ``oneshot`` (default) or ``continuous`` (re-poll on the global
+            interval); continuous is IMAP-only.
+
+    Returns:
+        Tuple of (success, response_data)
+    """
+    try:
+        # Group the run under a Channel; IMAP credentials are stored
+        # encrypted on it so the single ``run_import_task`` can read them
+        # back and resume (and, once continuous, poll) with only the
+        # channel id.
+        channel = create_import_channel(
+            recipient=recipient,
+            user=user,
+            source_type=enums.ImportSource.IMAP.value,
+            name=f"Import IMAP {imap_server}",
+            mode=mode,
+            imap_credentials={
+                "imap_server": imap_server,
+                "imap_port": imap_port,
+                "username": username,
+                "password": password,
+                "use_ssl": use_ssl,
+            },
+        )
+        run_import_task.delay(str(channel.id))
+        return True, {
+            "type": "imap",
+            "import_id": str(channel.id),
+        }
+
+    except Exception as e:  # pylint: disable=broad-exception-caught
+        logger.exception("Error starting IMAP import: %s", e)
+        return False, {
+            "detail": "An error occurred while starting the IMAP import.",
+            "status": 500,
+        }

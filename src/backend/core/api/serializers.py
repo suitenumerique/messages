@@ -23,6 +23,7 @@ from core.mda.dispatch_webhooks import (
 from core.mda.inline_images import extract_inline_images_html
 from core.services.blob_gc import schedule_for_gc
 from core.services.identity import keycloak as keycloak_service
+from core.services.importer.channel import merged_state
 from core.services.ssrf import SSRFValidationError, validate_hostname
 
 
@@ -1888,20 +1889,6 @@ class ImportBaseSerializer(serializers.Serializer):
         raise RuntimeError(f"{self.__class__.__name__} does not support update method")
 
 
-class ImportFileSerializer(ImportBaseSerializer):
-    """Serializer for importing email files."""
-
-    filename = serializers.CharField(
-        help_text="Filename",
-        required=True,
-    )
-
-    recipient = serializers.UUIDField(
-        help_text="UUID of the recipient mailbox",
-        required=True,
-    )
-
-
 class ImportFileUploadSerializer(ImportBaseSerializer):
     """Serializer for uploading files to the message imports bucket."""
 
@@ -1929,8 +1916,8 @@ class ImportFileUploadSerializer(ImportBaseSerializer):
 class ImportFileUploadPartSerializer(ImportBaseSerializer):
     """Serializer for uploading parts of a file to the message imports bucket."""
 
-    filename = serializers.CharField(
-        help_text="Filename",
+    file_key = serializers.CharField(
+        help_text="Storage key returned by the upload-create call.",
         required=True,
     )
     upload_id = serializers.CharField(
@@ -1942,7 +1929,7 @@ class ImportFileUploadPartSerializer(ImportBaseSerializer):
     )
 
     class Meta:
-        fields = ["filename", "upload_id", "part_number"]
+        fields = ["file_key", "upload_id", "part_number"]
 
 
 class UploadPartSerializer(ImportBaseSerializer):
@@ -1963,8 +1950,8 @@ class UploadPartSerializer(ImportBaseSerializer):
 class ImportFileUploadCompleteSerializer(ImportBaseSerializer):
     """Serializer for completing a multipart upload of a file to the message imports bucket."""
 
-    filename = serializers.CharField(
-        help_text="Filename",
+    file_key = serializers.CharField(
+        help_text="Storage key returned by the upload-create call.",
         required=True,
     )
     upload_id = serializers.CharField(
@@ -1974,14 +1961,14 @@ class ImportFileUploadCompleteSerializer(ImportBaseSerializer):
     parts = UploadPartSerializer(required=True, many=True)
 
     class Meta:
-        fields = ["filename", "upload_id", "parts"]
+        fields = ["file_key", "upload_id", "parts"]
 
 
 class ImportFileUploadAbortSerializer(ImportBaseSerializer):
     """Serializer for aborting a multipart upload of a file to the message imports bucket."""
 
-    filename = serializers.CharField(
-        help_text="Filename",
+    file_key = serializers.CharField(
+        help_text="Storage key returned by the upload-create call.",
         required=True,
     )
     upload_id = serializers.CharField(
@@ -1990,28 +1977,306 @@ class ImportFileUploadAbortSerializer(ImportBaseSerializer):
     )
 
     class Meta:
-        fields = ["filename", "upload_id"]
+        fields = ["file_key", "upload_id"]
 
 
-class ImportIMAPSerializer(ImportBaseSerializer):
-    """Serializer for importing messages from IMAP server via API."""
+class ImportCreateSerializer(serializers.Serializer):  # pylint: disable=abstract-method
+    """Body of ``POST /mailboxes/{id}/imports/`` — starts a file or IMAP import.
 
-    recipient = serializers.UUIDField(
-        help_text="UUID of the recipient mailbox", required=True
+    The target mailbox comes from the URL. ``source`` discriminates: ``file``
+    needs the ``file_key`` returned by the upload endpoint (unique per upload —
+    nothing in the bucket is ever overwritten) plus the original ``filename``
+    (display + MIME-type hint); ``imap`` needs the connection fields.
+    ``continuous`` mode is IMAP-only. Read-only run state is returned via
+    ``ImportRunSerializer``.
+    """
+
+    source = serializers.ChoiceField(
+        choices=["file", "imap"],
+        help_text=(
+            "'file' (an uploaded archive — the backend sniffs eml/mbox/pst) or "
+            "'imap' (a live server)."
+        ),
     )
-    imap_server = serializers.CharField(help_text="IMAP server hostname", required=True)
-    imap_port = serializers.IntegerField(
-        help_text="IMAP server port", required=True, min_value=0
+    # file source
+    file_key = serializers.CharField(
+        required=False,
+        help_text="Storage key returned when the archive was uploaded.",
     )
-    username = serializers.EmailField(
-        help_text="Email address for IMAP login", required=True
+    filename = serializers.CharField(
+        required=False,
+        help_text="Original archive filename (display + MIME-type hint).",
     )
-    password = serializers.CharField(
-        help_text="IMAP password", required=True, write_only=True
+    # imap source
+    imap_server = serializers.CharField(required=False)
+    # Kept deliberately flexible (any valid TCP port, not just 143/993) so
+    # non-standard IMAP deployments work — but bounded to a real port range.
+    imap_port = serializers.IntegerField(required=False, min_value=1, max_value=65535)
+    # CharField, not EmailField: an IMAP username is a login (often but not
+    # always an email). (Also sidesteps a platform EmailValidator regression on
+    # Python 3.14 that rejects all addresses.)
+    username = serializers.CharField(required=False)
+    password = serializers.CharField(required=False, write_only=True)
+    use_ssl = serializers.BooleanField(required=False, default=True)
+    mode = serializers.ChoiceField(
+        choices=[m.value for m in enums.ImportMode],
+        required=False,
+        default=enums.ImportMode.ONESHOT.value,
     )
-    use_ssl = serializers.BooleanField(
-        help_text="Use SSL for IMAP connection", required=False, default=True
+
+    def validate(self, attrs):
+        source = attrs.get("source")
+        if source == "file":
+            missing = [
+                f for f in ("file_key", "filename") if attrs.get(f) in (None, "")
+            ]
+            if missing:
+                raise serializers.ValidationError(
+                    dict.fromkeys(missing, "Required for a file import.")
+                )
+            # File imports are always oneshot — continuous polling only makes
+            # sense against a live IMAP server.
+            if attrs.get("mode") == enums.ImportMode.CONTINUOUS.value:
+                raise serializers.ValidationError(
+                    {"mode": "Continuous mode is only supported for IMAP imports."}
+                )
+        elif source == "imap":
+            # ``in (None, "")`` rather than a falsy check so a numeric field like
+            # imap_port isn't misreported as "missing" for an out-of-range 0
+            # (the field validator already rejects 0 with a clearer message).
+            missing = [
+                f
+                for f in ("imap_server", "imap_port", "username", "password")
+                if attrs.get(f) in (None, "")
+            ]
+            if missing:
+                raise serializers.ValidationError(
+                    dict.fromkeys(missing, "Required for an IMAP import.")
+                )
+        return attrs
+
+
+class ImportRunSerializer(serializers.ModelSerializer):
+    """Read-only view of an import run (a ``Channel`` with type=import).
+
+    Progress lives in Redis and terminal state on the channel; the serializer
+    reads the merged view so the frontend can poll the import resource
+    (``GET /mailboxes/{id}/imports/{id}/``) instead of the raw Celery task state.
+    """
+
+    status = serializers.SerializerMethodField()
+    source_type = serializers.SerializerMethodField()
+    mode = serializers.SerializerMethodField()
+    poll_interval = serializers.SerializerMethodField()
+    imap_username = serializers.SerializerMethodField()
+    total_messages = serializers.SerializerMethodField()
+    success_count = serializers.SerializerMethodField()
+    failure_count = serializers.SerializerMethodField()
+    failure_reasons = serializers.SerializerMethodField()
+    progress = serializers.SerializerMethodField()
+    error = serializers.SerializerMethodField()
+    started_at = serializers.SerializerMethodField()
+    finished_at = serializers.SerializerMethodField()
+
+    class Meta:
+        model = models.Channel
+        fields = [
+            "id",
+            "name",
+            "mailbox",
+            "is_active",
+            "status",
+            "source_type",
+            "mode",
+            "poll_interval",
+            "imap_username",
+            "total_messages",
+            "success_count",
+            "failure_count",
+            "failure_reasons",
+            "progress",
+            "error",
+            "started_at",
+            "finished_at",
+            "last_used_at",
+            "created_at",
+            "updated_at",
+        ]
+        read_only_fields = fields
+
+    @staticmethod
+    def _run(obj):
+        # One Redis read per serialized object, not one per field: the imports
+        # list is polled every 1-2s by the grid and the header indicator while
+        # a run is live, so the ~11 method fields must share one merged_state.
+        # Stashed on the row instance (not the serializer) because ``many=True``
+        # reuses a single child serializer for every row.
+        cached = getattr(obj, "_merged_import_state", None)
+        if cached is None:
+            cached = merged_state(obj)
+            obj._merged_import_state = cached  # noqa: SLF001  # pylint: disable=protected-access
+        return cached
+
+    @extend_schema_field(serializers.CharField(allow_null=True))
+    def get_status(self, obj):
+        """Live run status (pending/running/completed/failed/cancelled)."""
+        return self._run(obj).get("status")
+
+    @extend_schema_field(serializers.CharField(allow_null=True))
+    def get_source_type(self, obj):
+        """Import source: mbox/eml/pst/imap."""
+        return self._run(obj).get("source_type")
+
+    @extend_schema_field(serializers.CharField(allow_null=True))
+    def get_mode(self, obj):
+        """Run mode: oneshot or continuous."""
+        return self._run(obj).get("mode")
+
+    @extend_schema_field(serializers.IntegerField(allow_null=True))
+    def get_poll_interval(self, obj):
+        """Poll cadence (seconds) — only for a continuous (polling) IMAP run.
+
+        The cadence is a global operator setting, not stored per-import; only a
+        continuous run actually polls, so surface it just then.
+        """
+        if self._run(obj).get("mode") != enums.ImportMode.CONTINUOUS.value:
+            return None
+        return settings.MESSAGES_IMPORT_IMAP_POLL_INTERVAL
+
+    @extend_schema_field(serializers.CharField(allow_null=True))
+    def get_imap_username(self, obj):
+        """The IMAP login shown in the imports UI (``None`` for file imports).
+
+        Only the (non-secret) login is ever exposed — never the rest of the
+        stored credentials.
+        """
+        return ((obj.encrypted_settings or {}).get("imap") or {}).get("username")
+
+    @extend_schema_field(serializers.IntegerField())
+    def get_total_messages(self, obj):
+        """Total messages the run expects to process."""
+        return self._run(obj).get("total") or 0
+
+    @extend_schema_field(serializers.IntegerField())
+    def get_success_count(self, obj):
+        """Messages delivered so far."""
+        return self._run(obj).get("success") or 0
+
+    @extend_schema_field(serializers.IntegerField())
+    def get_failure_count(self, obj):
+        """Messages that failed so far."""
+        return self._run(obj).get("failure") or 0
+
+    @extend_schema_field(
+        serializers.DictField(child=serializers.IntegerField(), allow_null=True)
     )
+    def get_failure_reasons(self, obj):
+        """Breakdown of the failures by category (``{reason: count}``).
+
+        Lets the UI turn a bare "N failed" into an explanation (too large,
+        unreadable, …). ``None``/empty when nothing failed.
+        """
+        return self._run(obj).get("failure_reasons") or None
+
+    @extend_schema_field(serializers.FloatField())
+    def get_progress(self, obj):
+        """Percentage of processed (success+failure) over total, 0-100."""
+        run = self._run(obj)
+        total = run.get("total") or 0
+        if not total:
+            return 0.0
+        done = (run.get("success") or 0) + (run.get("failure") or 0)
+        return round(min(done, total) / total * 100, 1)
+
+    @extend_schema_field(serializers.CharField(allow_null=True))
+    def get_error(self, obj):
+        """The run's error message, if it failed."""
+        return self._run(obj).get("error")
+
+    @extend_schema_field(serializers.CharField(allow_null=True))
+    def get_started_at(self, obj):
+        """ISO timestamp the run started, or ``None``."""
+        return self._run(obj).get("started_at")
+
+    @extend_schema_field(serializers.CharField(allow_null=True))
+    def get_finished_at(self, obj):
+        """ISO timestamp the run finished, or ``None``."""
+        return self._run(obj).get("finished_at")
+
+
+class ImportUpdateSerializer(serializers.Serializer):  # pylint: disable=abstract-method
+    """Body of ``PATCH /mailboxes/{id}/imports/{id}/`` — change how a run runs.
+
+    Both fields optional (partial). ``mode=continuous`` (re-)arms an IMAP import
+    as a poller; ``mode=oneshot`` demotes a continuous poller (stops polling);
+    ``is_active=false`` pauses a continuous poller (credentials are kept). The
+    poll cadence itself is a global operator setting, not settable here.
+    Validation is source-aware: only IMAP imports can go continuous.
+    """
+
+    mode = serializers.ChoiceField(
+        choices=[m.value for m in enums.ImportMode], required=False
+    )
+    is_active = serializers.BooleanField(required=False)
+
+    def validate(self, attrs):
+        if not attrs:
+            raise serializers.ValidationError(
+                "Provide at least one of 'mode' or 'is_active'."
+            )
+        run = (self.instance.settings or {}).get("import", {})
+        source_type = run.get("source_type")
+        current_mode = run.get("mode")
+        arming_continuous = attrs.get("mode") == enums.ImportMode.CONTINUOUS.value
+        going_continuous = arming_continuous or (
+            attrs.get("is_active") is True
+            and current_mode == enums.ImportMode.CONTINUOUS.value
+        )
+        if going_continuous and source_type != enums.ImportSource.IMAP.value:
+            raise serializers.ValidationError(
+                {"mode": "Only IMAP imports can run continuously."}
+            )
+        # mode=oneshot means "stop polling", is_active=true means "poll" —
+        # reject the contradiction rather than picking one silently.
+        if (
+            attrs.get("mode") == enums.ImportMode.ONESHOT.value
+            and attrs.get("is_active") is True
+        ):
+            raise serializers.ValidationError(
+                {"mode": "mode=oneshot cannot be combined with is_active=true."}
+            )
+        # ``is_active=true`` only means "re-arm the poller". On a one-shot import
+        # (which just runs once and finishes) there is nothing to re-activate, so
+        # reject it rather than silently no-op — the caller must set
+        # ``mode=continuous`` to turn it into a poller.
+        if (
+            attrs.get("is_active") is True
+            and not arming_continuous
+            and current_mode != enums.ImportMode.CONTINUOUS.value
+        ):
+            raise serializers.ValidationError(
+                {
+                    "is_active": (
+                        "A one-shot import cannot be re-activated; set "
+                        "mode=continuous to re-enable it as a poller."
+                    )
+                }
+            )
+        # ``is_active=false`` only means "pause the poller". On a one-shot it
+        # is meaningless — and actively harmful on a running one: it would
+        # disable the crash-recovery reaper, and with re-activation rejected
+        # above the run would be stranded "running" forever (the only exit
+        # being a cancel that deletes the delivered mail). The arm-paused
+        # combination (mode=continuous + is_active=false) stays allowed.
+        if (
+            attrs.get("is_active") is False
+            and not arming_continuous
+            and current_mode != enums.ImportMode.CONTINUOUS.value
+        ):
+            raise serializers.ValidationError(
+                {"is_active": "Only a continuous import can be paused."}
+            )
+        return attrs
 
 
 class ChannelSerializer(CreateOnlyFieldsMixin, serializers.ModelSerializer):
@@ -2033,6 +2298,7 @@ class ChannelSerializer(CreateOnlyFieldsMixin, serializers.ModelSerializer):
             "name",
             "type",
             "scope_level",
+            "is_active",
             "settings",
             "mailbox",
             "maildomain",

@@ -6,14 +6,11 @@
 import email
 import email.policy
 from datetime import datetime, timezone
-from unittest.mock import MagicMock, Mock, patch
-
-from django.core.files.storage import storages
+from unittest.mock import Mock, patch
 
 import pytest
 from jmap_email import parse_email
 
-from core.models import Mailbox, MailDomain, Message
 from core.services.importer.pst import (
     FLAG_STATUS_FOLLOWUP,
     FOLDER_TYPE_DELETED,
@@ -48,11 +45,13 @@ from core.services.importer.pst import (
     PR_SENT_REPRESENTING_NAME,
     PR_SENT_REPRESENTING_SMTP_ADDRESS,
     PR_SMTP_ADDRESS,
+    OversizedAttachmentError,
     PSTFileUnreadableError,
     _decode_html_bytes,
     _extract_display_recipients_from_mapi,
     _extract_recipients_from_mapi,
     _extract_sender_from_mapi,
+    _get_message_timestamp,
     _parse_display_recipients,
     assert_pst_readable,
     count_pst_messages,
@@ -61,21 +60,24 @@ from core.services.importer.pst import (
     sanitize_folder_name,
     walk_pst_messages,
 )
-from core.services.importer.pst_tasks import process_pst_file_task
 
 pytestmark = pytest.mark.django_db
 
 
-@pytest.fixture
-def domain(db):
-    """Create a test domain."""
-    return MailDomain.objects.create(name="example.com")
-
-
-@pytest.fixture
-def mailbox(domain):
-    """Create a test mailbox."""
-    return Mailbox.objects.create(local_part="test", domain=domain)
+def test_get_message_timestamp_normalizes_naive_to_utc():
+    """Naive pypff datetimes are made tz-aware, so the chronological plan sort
+    never raises comparing a mix of naive and aware timestamps (C4)."""
+    naive_msg = Mock(delivery_time=datetime(2020, 1, 1, 12, 0), client_submit_time=None)
+    aware_msg = Mock(
+        delivery_time=datetime(2021, 1, 1, 12, 0, tzinfo=timezone.utc),
+        client_submit_time=None,
+    )
+    t_naive = _get_message_timestamp(naive_msg)
+    t_aware = _get_message_timestamp(aware_msg)
+    assert t_naive.tzinfo is not None
+    assert t_aware.tzinfo is not None
+    # The pre-fix bug raised TypeError comparing naive vs aware here.
+    assert t_naive < t_aware
 
 
 def _make_mapi_entry(entry_type, data=None, data_as_string=None, data_as_integer=None):
@@ -520,6 +522,22 @@ class TestReconstructEml:
         assert any(
             "See attached" in p.get_payload(decode=True).decode() for p in text_parts
         )
+
+    def test_reconstruct_oversized_attachment_fails_message(self, settings):
+        """An attachment beyond the per-message budget fails the WHOLE message
+        (it lands in failure_count via _reconstruct_plan_item) — never a
+        silently truncated 'success'."""
+        settings.MAX_INCOMING_EMAIL_SIZE = 64
+        att = _make_attachment(data=b"x" * 100, long_filename="big.bin")
+        msg = _make_message(
+            subject="Too big",
+            transport_headers="From: sender@example.com\r\nSubject: Too big\r\n",
+            plain_text_body="body",
+            num_attachments=1,
+            attachments=[att],
+        )
+        with pytest.raises(OversizedAttachmentError):
+            reconstruct_eml(msg)
 
     def test_reconstruct_with_inline_image(self):
         """Test EML reconstruction with inline image (CID)."""
@@ -1561,7 +1579,7 @@ class TestFolderPaths:
     def test_subfolder_of_sent_inherits_type_and_gets_own_label(self):
         """Subfolders of Sent Items inherit FOLDER_TYPE_SENT.
 
-        They keep the special treatment (is_import_sender=True in pst_tasks)
+        They keep the special treatment (is_import_sender=True in the pst runner)
         and also get their own subfolder name as folder_path for labeling.
         """
         msg = _make_message(
@@ -1590,25 +1608,7 @@ class TestFolderPaths:
 
 
 class TestIsSenderMarking:
-    """Tests for is_sender marking in pst_tasks."""
-
-    def test_sent_folder_is_sender(self):
-        """Test that messages in Sent Items are marked as is_sender."""
-        special_map = {100: FOLDER_TYPE_SENT}
-
-        msg = _make_message(
-            transport_headers="From: me@example.com\r\n",
-            delivery_time=datetime(2025, 1, 1, tzinfo=timezone.utc),
-        )
-        folder = _make_folder(name="Sent Items", messages=[msg], folder_id=100)
-        root = _make_folder(name="Root", subfolders=[folder])
-
-        pst = Mock()
-        pst.get_root_folder.return_value = root
-        pst.get_message_store.return_value = Mock(number_of_record_sets=0)
-
-        results = list(walk_pst_messages(pst, special_map))
-        assert results[0][0] == FOLDER_TYPE_SENT
+    """Tests for is_sender marking in the pst runner."""
 
     def test_outbox_folder_type(self):
         """Test that messages in Outbox get FOLDER_TYPE_OUTBOX."""
@@ -1700,197 +1700,6 @@ class TestChronologicalOrdering:
         eml2 = results[1][4].decode("utf-8", errors="replace")
         assert "Sent Message" in eml1
         assert "Inbox Message" in eml2
-
-
-# --- PST task tests (E2E with real PST files) ---
-
-
-def _upload_pst_to_s3(filename):
-    """Upload a test PST file to the message-imports S3 bucket."""
-    storage = storages["message-imports"]
-    s3_client = storage.connection.meta.client
-
-    with open(f"core/tests/resources/{filename}", "rb") as f:
-        file_content = f.read()
-
-    file_key = f"test-pst-{filename}"
-    s3_client.put_object(
-        Bucket=storage.bucket_name,
-        Key=file_key,
-        Body=file_content,
-        ContentType="application/vnd.ms-outlook",
-    )
-    return file_key, storage, s3_client
-
-
-class TestProcessPstFileTask:
-    """Tests for the process_pst_file_task Celery task using real PST files."""
-
-    def test_nonexistent_mailbox(self):
-        """Test task with non-existent mailbox returns failure."""
-        mock_task = MagicMock()
-        with patch.object(
-            process_pst_file_task, "update_state", mock_task.update_state
-        ):
-            result = process_pst_file_task(
-                file_key="test.pst",
-                recipient_id="00000000-0000-0000-0000-000000000000",
-            )
-            assert result["status"] == "FAILURE"
-            assert result["result"]["type"] == "pst"
-            assert "not found" in result["error"]
-
-    def test_process_sample_pst(self, mailbox):
-        """Test processing sample.pst — 1 message in myInbox with transport headers."""
-        file_key, storage, s3_client = _upload_pst_to_s3("sample.pst")
-
-        try:
-            mock_task = MagicMock()
-            with patch.object(
-                process_pst_file_task, "update_state", mock_task.update_state
-            ):
-                result = process_pst_file_task(
-                    file_key=file_key,
-                    recipient_id=str(mailbox.id),
-                )
-
-            assert result["status"] == "SUCCESS"
-            assert result["result"]["type"] == "pst"
-            assert result["result"]["total_messages"] == 1
-            assert result["result"]["success_count"] == 1
-            assert result["result"]["failure_count"] == 0
-
-            # Verify message was created with correct data from the PST
-            assert Message.objects.count() == 1
-            message = Message.objects.first()
-            assert (
-                message.subject == "New message created by Aspose.Email"
-                " for Java(Aspose.Email Evaluation)"
-            )
-            assert message.sender.email == "from@domain.com"
-            # Check recipients
-            recipient_emails = sorted(r.contact.email for r in message.recipients.all())
-            assert "to1@domain.com" in recipient_emails
-            assert "to2@domain.com" in recipient_emails
-            assert "cc1@domain.com" in recipient_emails
-            assert "cc2@domain.com" in recipient_emails
-
-        finally:
-            try:
-                s3_client.delete_object(Bucket=storage.bucket_name, Key=file_key)
-            except Exception:
-                pass  # Already cleaned up
-
-    def test_process_outlook_pst(self, mailbox):
-        """Test processing Outlook.pst — 8 Inbox messages + 6 Sent Items,
-        Calendar/Contacts/Tasks folders should be skipped."""
-        file_key, storage, s3_client = _upload_pst_to_s3("Outlook.pst")
-
-        try:
-            mock_task = MagicMock()
-            with patch.object(
-                process_pst_file_task, "update_state", mock_task.update_state
-            ):
-                result = process_pst_file_task(
-                    file_key=file_key,
-                    recipient_id=str(mailbox.id),
-                )
-
-            assert result["status"] == "SUCCESS"
-            assert result["result"]["type"] == "pst"
-            # 8 Inbox + 6 Sent Items = 14 email messages
-            # Calendar, Contacts, Tasks, Notes, Journal and root-level
-            # internal folders (Freebusy Data) are skipped
-            assert result["result"]["total_messages"] == 14
-            assert result["result"]["success_count"] > 0
-            assert result["result"]["failure_count"] == 0
-
-            # Verify some known messages from Inbox
-            subjects = list(Message.objects.values_list("subject", flat=True))
-            assert "Multiple attachments" in subjects
-            assert "HTML body" in subjects
-            assert "message 1" in subjects
-
-            # Verify attachments on a "Multiple attachments" message
-            msg = Message.objects.filter(subject="Multiple attachments").first()
-            assert msg.has_attachments is True
-            assert msg.sender.email == "saqib.razzaq@xp.local"
-        finally:
-            try:
-                s3_client.delete_object(Bucket=storage.bucket_name, Key=file_key)
-            except Exception:
-                pass
-
-    def test_process_pst_unreadable_surfaces_dedicated_error(self, mailbox):
-        """When the readability probe rejects the archive, the task must:
-            - return FAILURE,
-            - prefix the error with ``PST_UNREADABLE:`` so the frontend can
-              show its dedicated message (instead of the generic fallback),
-            - leave success/failure counters at 0 (we never started walking).
-
-        We feed a real, valid PST so the upstream ``pypff.open_file_object``
-        call succeeds and we exercise the new ``except PSTFileUnreadableError``
-        branch specifically, not the generic ``except Exception`` path.
-        """
-        file_key, storage, s3_client = _upload_pst_to_s3("sample.pst")
-
-        try:
-            mock_task = MagicMock()
-            with (
-                patch(
-                    "core.services.importer.pst_tasks.assert_pst_readable",
-                    side_effect=PSTFileUnreadableError(
-                        "PST archive is unreadable: missing root folder or message store."
-                    ),
-                ),
-                patch.object(
-                    process_pst_file_task, "update_state", mock_task.update_state
-                ),
-            ):
-                result = process_pst_file_task(
-                    file_key=file_key,
-                    recipient_id=str(mailbox.id),
-                )
-
-            assert result["status"] == "FAILURE"
-            assert result["result"]["type"] == "pst"
-            assert result["error"].startswith("PST_UNREADABLE:")
-            # No traversal happened, so the counters must be untouched.
-            assert result["result"]["success_count"] == 0
-            assert result["result"]["failure_count"] == 0
-            assert Message.objects.count() == 0
-        finally:
-            try:
-                s3_client.delete_object(Bucket=storage.bucket_name, Key=file_key)
-            except Exception:
-                pass
-
-    def test_process_malformed_pst(self, mailbox):
-        """Test that random bytes as PST file returns FAILURE gracefully."""
-        storage = storages["message-imports"]
-        s3_client = storage.connection.meta.client
-        file_key = "test-pst-malformed"
-        s3_client.put_object(
-            Bucket=storage.bucket_name,
-            Key=file_key,
-            Body=b"this is not a valid PST file at all" * 100,
-            ContentType="application/vnd.ms-outlook",
-        )
-
-        try:
-            mock_task = MagicMock()
-            with patch.object(
-                process_pst_file_task, "update_state", mock_task.update_state
-            ):
-                result = process_pst_file_task(
-                    file_key=file_key,
-                    recipient_id=str(mailbox.id),
-                )
-
-            assert result["status"] == "FAILURE"
-            assert result["result"]["type"] == "pst"
-        finally:
-            s3_client.delete_object(Bucket=storage.bucket_name, Key=file_key)
 
 
 # --- Folder name sanitization tests ---

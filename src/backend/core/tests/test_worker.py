@@ -45,14 +45,17 @@ class TestWorkerQueueConfiguration:
         assert "core.mda.outbound_tasks.*" in routes
         assert routes["core.mda.outbound_tasks.*"]["queue"] == "outbound"
 
-        assert "core.services.importer.mbox_tasks.*" in routes
-        assert routes["core.services.importer.mbox_tasks.*"]["queue"] == "imports"
-        assert "core.services.importer.eml_tasks.*" in routes
-        assert routes["core.services.importer.eml_tasks.*"]["queue"] == "imports"
-        assert "core.services.importer.imap_tasks.*" in routes
-        assert routes["core.services.importer.imap_tasks.*"]["queue"] == "imports"
-        assert "core.services.importer.pst_tasks.*" in routes
-        assert routes["core.services.importer.pst_tasks.*"]["queue"] == "imports"
+        # scheduler + cancellation housekeeping stay on "default".
+        assert "core.services.importer.tasks.*" in routes
+        assert routes["core.services.importer.tasks.*"]["queue"] == "imports"
+        assert (
+            routes["core.services.importer.tasks.schedule_imports_task"]["queue"]
+            == "default"
+        )
+        assert (
+            routes["core.services.importer.tasks.cancel_import_task"]["queue"]
+            == "default"
+        )
 
         assert "core.services.search.tasks.*" in routes
         assert routes["core.services.search.tasks.*"]["queue"] == "reindex"
