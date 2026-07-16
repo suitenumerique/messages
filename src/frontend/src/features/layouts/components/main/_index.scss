@@ -1,29 +1,34 @@
 .no-mailbox {
-    display: grid;
+    display: flex;
+    flex-direction: column;
     place-items: center;
     justify-content: center;
     text-align: center;
     height: calc(100vh - var(--header-height));
+    gap: 1rem;
 
     & > div {
-        font-size: var(--c--globals--font--sizes--h4);
         display: flex;
         flex-direction: column;
         align-items: center;
-        gap: 1rem;
+        gap: var(--c--globals--spacings--3xs);
+        max-width: 26rem;
+        padding-inline: 1rem;
 
         & > * {
             margin-block: 0;
         }
 
-        .material-icons {
-            font-size: 2.5rem;
-            color: var(--c--contextuals--content--semantic--neutral--tertiary);
+        h1 {
+            font-size: var(--c--globals--font--sizes--md);
+            font-weight: 700;
+            color: var(--c--contextuals--content--semantic--neutral--primary);
         }
 
         p {
+            font-size: var(--c--globals--font--sizes--sm);
             color: var(--c--contextuals--content--semantic--neutral--tertiary);
-            font-weight: 500;
+            font-weight: 400;
         }
     }
 }
