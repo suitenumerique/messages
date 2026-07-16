@@ -66,6 +66,7 @@
     "@types/node": "25.2.0",
     "@types/react": "19.2.10",
     "@types/react-dom": "19.2.3",
+    "@vitejs/plugin-legacy": "8.2.1",
     "@vitejs/plugin-react": "6.0.2",
     "@vitest/coverage-v8": "4.1.8",
     "@vitest/ui": "4.1.8",
@@ -80,7 +81,7 @@
     "rollup-plugin-visualizer": "7.0.1",
     "typescript": "5.9.3",
     "typescript-eslint": "8.60.0",
-    "vite": "8.0.16",
+    "vite": "8.1.5",
     "vitest": "4.1.8"
   },
   "optionalDependencies": {
@@ -89,5 +90,15 @@
   },
   "overrides": {
     "zod": "4.3.6"
-  }
+  },
+  "browserslist": [
+    "defaults",
+    "Chrome >= 109",
+    "Edge >= 109",
+    "Firefox >= 115",
+    "Safari >= 16",
+    "not dead",
+    "not op_mini all",
+    "not kaios < 3"
+  ]
 }
