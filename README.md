@@ -186,7 +186,7 @@ These examples use [swaks](https://www.jetmore.org/john/code/swaks/), a simple c
 make start
 
 # Send a test message to the MTA-in, which will relay it to the Django MDA.
-# The domain must be MESSAGES_TESTDOMAIN (default is example.local) if you want the mailbox created automatically.
+# The domain must belong to a MailDomain with oidc_autojoin=True if you want the mailbox created automatically.
 # You can then read it on the frontend at http://localhost:8900/ (login as user1/user1) and reply to it there.
 # The replies will then be sent to the mailcatcher on http://localhost:8904/
 swaks --to=user1@example.local --server localhost:8910

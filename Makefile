@@ -545,6 +545,8 @@ superuser: build-python-base ## Create an admin superuser with password "admin" 
 	@echo "$(BOLD)Creating a Django superuser$(RESET)"
 	@$(MANAGE_DB) createsuperuser --email admin@admin.local --password admin
 	@$(MANAGE_DB) createsuperuser --email user1@example.local --password user1
+	@echo "$(BOLD)Creating the example.local autojoin domain$(RESET)"
+	@$(MANAGE_DB) shell -c "from core.models import MailDomain; MailDomain.objects.get_or_create(name='example.local', defaults={'oidc_autojoin': True, 'identity_sync': True})"
 .PHONY: superuser
 
 shell-back: ## open a shell in the backend container

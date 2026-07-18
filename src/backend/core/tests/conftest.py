@@ -138,16 +138,3 @@ def _assert_user_event_thread_invariant(request):
         f"UserEvent invariant broken: {count} row(s) where "
         "thread_id != thread_event.thread_id"
     )
-
-
-# @pytest.fixture
-# @pytest.mark.django_db
-# def create_testdomain():
-#     """Create the TESTDOMAIN."""
-#     from core import models
-#     models.MailDomain.objects.get_or_create(
-#         name=settings.MESSAGES_TESTDOMAIN,
-#         defaults={
-#             "oidc_autojoin": True
-#         }
-#     )
