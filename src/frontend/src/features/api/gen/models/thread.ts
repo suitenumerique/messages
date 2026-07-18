@@ -74,6 +74,7 @@ export interface Thread {
   readonly labels: readonly ThreadLabel[];
   readonly summary: string;
   readonly events_count: number;
+  readonly message_count: number;
   readonly abilities: ThreadAbilities;
   readonly assigned_users: readonly ThreadEventUser[];
 }

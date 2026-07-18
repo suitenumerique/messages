@@ -205,6 +205,17 @@ export const ThreadItem = ({ thread, isSelected, onToggle, onSelectRange, select
                             <p className="thread-item__subject">{thread.subject || t('No subject')}</p>
                         </div>
                         <div className="thread-item__column thread-item__column--badges">
+                            {thread.message_count > 1 && (
+                                <Badge
+                                    aria-label={t('{{count}} messages', { count: thread.message_count })}
+                                    title={t('{{count}} messages', { count: thread.message_count })}
+                                    color="neutral"
+                                    variant="tertiary"
+                                    compact
+                                >
+                                    {thread.message_count}
+                                </Badge>
+                            )}
                             {thread.has_draft && (
                                 <Badge aria-label={t('Draft')} title={t('Draft')} color="neutral" variant="tertiary" compact>
                                     <Icon

@@ -11,6 +11,10 @@ and this project adheres to
 - Bump keycloak to 26.6.3
 - Bump keycloak to 26.6.4
 
+### Added
+
+- ✨(frontend+backend) show per-thread message count badge in mailbox list
+
 ### Fixed
 
 - 🐛(mta-out) fix relay block indentation breaking SASL auth #733

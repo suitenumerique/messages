@@ -1941,6 +1941,110 @@ class TestThreadListEventsCount:
         assert payload["events_count"] == 2
 
 
+class TestThreadListMessageCount:
+    """Test that ThreadSerializer exposes message_count on the list endpoint.
+
+    message_count drives the per-thread email-count badge in the mailbox list.
+    It counts non-draft messages only.
+    """
+
+    @pytest.fixture
+    def url(self):
+        """Return the URL for the list endpoint."""
+        return reverse("threads-list")
+
+    @staticmethod
+    def _setup_user_with_thread(user=None):
+        """Create a user with an admin mailbox and an editor thread access."""
+        user = user or UserFactory()
+        mailbox = MailboxFactory()
+        MailboxAccessFactory(
+            mailbox=mailbox,
+            user=user,
+            role=enums.MailboxRoleChoices.ADMIN,
+        )
+        thread = ThreadFactory()
+        ThreadAccessFactory(
+            mailbox=mailbox,
+            thread=thread,
+            role=enums.ThreadAccessRoleChoices.EDITOR,
+        )
+        return user, mailbox, thread
+
+    def test_list_threads_message_count_zero_when_no_messages(self, api_client, url):
+        """A thread without any message should expose message_count == 0."""
+        user, mailbox, thread = self._setup_user_with_thread()
+        api_client.force_authenticate(user=user)
+
+        response = api_client.get(url, {"mailbox_id": str(mailbox.id)})
+
+        assert response.status_code == status.HTTP_200_OK
+        payload = next(t for t in response.data["results"] if t["id"] == str(thread.id))
+        assert payload["message_count"] == 0
+
+    def test_list_threads_message_count_matches_messages(self, api_client, url):
+        """message_count should equal the number of non-draft messages."""
+        user, mailbox, thread = self._setup_user_with_thread()
+        api_client.force_authenticate(user=user)
+
+        MessageFactory(thread=thread)
+        MessageFactory(thread=thread)
+        MessageFactory(thread=thread)
+
+        response = api_client.get(url, {"mailbox_id": str(mailbox.id)})
+
+        assert response.status_code == status.HTTP_200_OK
+        payload = next(t for t in response.data["results"] if t["id"] == str(thread.id))
+        assert payload["message_count"] == 3
+
+    def test_list_threads_message_count_excludes_drafts(self, api_client, url):
+        """Drafts must not be counted in message_count."""
+        user, mailbox, thread = self._setup_user_with_thread()
+        api_client.force_authenticate(user=user)
+
+        MessageFactory(thread=thread)
+        MessageFactory(thread=thread, is_draft=True)
+        MessageFactory(thread=thread, is_draft=True)
+
+        response = api_client.get(url, {"mailbox_id": str(mailbox.id)})
+
+        assert response.status_code == status.HTTP_200_OK
+        payload = next(t for t in response.data["results"] if t["id"] == str(thread.id))
+        assert payload["message_count"] == 1
+
+    def test_list_threads_message_count_distinct_per_thread(self, api_client, url):
+        """message_count must use distinct counting to avoid JOIN multiplication.
+
+        The queryset joins on accesses__mailbox, so without ``distinct=True`` the
+        count would be multiplied by the number of ThreadAccess rows. Guard against
+        regressions by creating several accesses and expecting the raw message count.
+        """
+        user, mailbox, thread = self._setup_user_with_thread()
+        api_client.force_authenticate(user=user)
+
+        for _ in range(2):
+            extra_mailbox = MailboxFactory()
+            MailboxAccessFactory(
+                mailbox=extra_mailbox,
+                user=user,
+                role=enums.MailboxRoleChoices.ADMIN,
+            )
+            ThreadAccessFactory(
+                mailbox=extra_mailbox,
+                thread=thread,
+                role=enums.ThreadAccessRoleChoices.EDITOR,
+            )
+
+        MessageFactory(thread=thread)
+        MessageFactory(thread=thread)
+
+        response = api_client.get(url, {"mailbox_id": str(mailbox.id)})
+
+        assert response.status_code == status.HTTP_200_OK
+        payload = next(t for t in response.data["results"] if t["id"] == str(thread.id))
+        assert payload["message_count"] == 2
+
+
 class TestThreadListQueryCount:
     """Regression guard for N+1 queries on the thread list endpoint.
 
