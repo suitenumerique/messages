@@ -109,7 +109,7 @@
 
 - DKIM signing for outbound messages
 - SPF and DMARC policy enforcement
-- Anti-spam filtering via rspamd
+- Anti-spam filtering via rspamd — see [spam.md](spam.md) for the inbound spam & sender-authentication pipeline
 
 ### Data Protection
 
