@@ -19,6 +19,7 @@ logger = get_task_logger(__name__)
 # details we do not want to render in a toast.
 _RSVP_FAILURE = "Failed to send the RSVP."
 _ADD_FAILURE = "Failed to add the event to the calendar."
+_APPLY_REPLY_FAILURE = "Failed to apply the inbound RSVP reply."
 
 
 def _get_caldav_service(channel_id: str | None, user_email: str):
@@ -125,6 +126,82 @@ def calendar_rsvp_task(
             "status": "FAILURE",
             "result": None,
             "error": _RSVP_FAILURE,
+        }
+
+
+# ignore_result: this task is fire-and-forget from the inbound hook (never
+# polled), and its args carry the raw REPLY ICS + addresses — keeping them out
+# of the result backend avoids persisting that content there.
+@celery_app.task(bind=True, ignore_result=True)
+def calendar_apply_reply_task(
+    self,  # pylint: disable=unused-argument
+    channel_id: str | None,
+    user_email: str,
+    ics_data: str,
+    attendee_email: str,
+    organizer_email: str | None = None,
+) -> Dict[str, Any]:
+    """
+    Apply an inbound iTIP ``METHOD:REPLY`` to the organizer's calendar.
+
+    Mirror of ``calendar_rsvp_task`` for the reverse direction. Trust gating
+    happens in the inbound task before enqueue.
+
+    Args:
+        channel_id: UUID of the CalDAV channel, or None for instance config.
+        user_email: The organizer mailbox's CalDAV principal email (OIDC
+            identity / Basic Auth user for instance config).
+        ics_data: Raw REPLY ICS content.
+        attendee_email: The DMARC-verified sender (From) — the only ATTENDEE
+            ``apply_reply`` may modify.
+        organizer_email: The recipient mailbox address; only a stored copy whose
+            ORGANIZER matches it is updated.
+    """
+    try:
+        service = _get_caldav_service(channel_id, user_email)
+    except Channel.DoesNotExist as e:
+        capture_exception(e)
+        logger.warning(
+            "CalDAV channel %s vanished between enqueue and execute", channel_id
+        )
+        return {
+            "status": "FAILURE",
+            "result": None,
+            "error": "CalDAV channel not found.",
+        }
+    except ValueError as e:
+        logger.warning("CalDAV service unavailable: %s", e)
+        return {
+            "status": "FAILURE",
+            "result": None,
+            "error": "CalDAV service is not configured.",
+        }
+
+    try:
+        result = service.apply_reply(
+            ics_data=ics_data,
+            attendee_email=attendee_email,
+            organizer_email=organizer_email,
+        )
+        return {
+            "status": "SUCCESS",
+            "result": result,
+            "error": None,
+        }
+    except CalDAVError as e:
+        logger.warning("Apply-reply failed: %s", e)
+        return {
+            "status": "FAILURE",
+            "result": None,
+            "error": str(e),
+        }
+    except Exception as e:  # pylint: disable=broad-exception-caught
+        capture_exception(e)
+        logger.exception("Error applying inbound iTIP REPLY")
+        return {
+            "status": "FAILURE",
+            "result": None,
+            "error": _APPLY_REPLY_FAILURE,
         }
 
 
