@@ -17,6 +17,7 @@ from core.mda.inbound_auth import (
     VERDICT_FORGED,
     VERDICT_UNVERIFIED,
     check_inbound_authentication,
+    inbound_auth_enabled,
 )
 from core.mda.inbound_pipeline import DEFERRAL_MAX_AGE, Decision, _make_arc_step
 from core.mda.inbound_tasks import process_inbound_message_task
@@ -933,3 +934,15 @@ class TestArcStep:
         assert _make_arc_step(cfg)(ctx) == Decision.CONTINUE
         mock_arc.assert_not_called()
         assert ctx.arc is None
+
+
+def test_inbound_auth_enabled_only_for_supported_modes():
+    assert inbound_auth_enabled({"inbound_auth": "native"}) is True
+    assert inbound_auth_enabled({"inbound_auth": "rspamd"}) is True
+    assert inbound_auth_enabled({"inbound_auth": "authentication-results"}) is True
+    assert inbound_auth_enabled({"inbound_auth": "arc"}) is True
+    # A typo or unknown mode is NOT "auth ran" — check_inbound_authentication
+    # returns None (= verified) for it, so callers must treat it as disabled.
+    assert inbound_auth_enabled({"inbound_auth": "nativ"}) is False
+    assert inbound_auth_enabled({"inbound_auth": ""}) is False
+    assert inbound_auth_enabled({}) is False
