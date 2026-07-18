@@ -599,15 +599,6 @@ class Base(Configuration):
         "may", environ_name="MTA_OUT_SMTP_TLS_SECURITY_LEVEL", environ_prefix=None
     )
 
-    # Test domain settings
-    MESSAGES_TESTDOMAIN = values.Value(
-        None, environ_name="MESSAGES_TESTDOMAIN", environ_prefix=None
-    )
-    MESSAGES_TESTDOMAIN_MAPPING_BASEDOMAIN = values.Value(
-        None,
-        environ_name="MESSAGES_TESTDOMAIN_MAPPING_BASEDOMAIN",
-        environ_prefix=None,
-    )
     MESSAGES_ACCEPT_ALL_EMAILS = values.BooleanValue(
         default=False,
         environ_name="MESSAGES_ACCEPT_ALL_EMAILS",
@@ -1528,6 +1519,21 @@ class Base(Configuration):
             self.MTA_OUT_RELAY_HOST = os.environ.get("MTA_OUT_SMTP_HOST")
             self.MTA_OUT_RELAY_USERNAME = os.environ.get("MTA_OUT_SMTP_USERNAME")
             self.MTA_OUT_RELAY_PASSWORD = os.environ.get("MTA_OUT_SMTP_PASSWORD")
+
+        # The MESSAGES_TESTDOMAIN feature (catch-all domain + email mapping +
+        # auto-creation of the test domain) has been removed. Warn loudly if the
+        # env vars are still configured so operators know they now do nothing.
+        for removed_var in (
+            "MESSAGES_TESTDOMAIN",
+            "MESSAGES_TESTDOMAIN_MAPPING_BASEDOMAIN",
+        ):
+            if os.environ.get(removed_var):
+                logger.warning(
+                    "[REMOVED] %s is set but no longer used: the TESTDOMAIN "
+                    "feature has been removed. Use a MailDomain with "
+                    "oidc_autojoin=True instead. Please unset this variable.",
+                    removed_var,
+                )
 
         if self.MTA_OUT_SMTP_TLS_SECURITY_LEVEL not in {"none", "may", "secure"}:
             raise ValueError(

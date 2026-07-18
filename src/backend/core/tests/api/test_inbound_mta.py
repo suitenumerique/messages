@@ -520,7 +520,6 @@ class TestMTAInboundEmail:
 class TestMTACheckRecipients:
     """Test the MTA check recipients endpoint."""
 
-    @override_settings(MESSAGES_TESTDOMAIN="testdomain.com")
     def test_check_recipients(self, api_client, valid_jwt_token):
         """Test checking recipients with valid JWT token."""
 
@@ -532,10 +531,8 @@ class TestMTACheckRecipients:
             {
                 "addresses": [
                     "recipient@validdomain.com",
-                    "recipient@testdomain.com",
                     "recipient@invaliddomain.com",
                     "recipient@not.validdomain.com",
-                    "recipient@sub.testdomain.com",
                 ]
             }
         ).encode("utf-8")
@@ -551,10 +548,8 @@ class TestMTACheckRecipients:
         assert response.status_code == status.HTTP_200_OK
         assert response.json() == {
             "recipient@validdomain.com": True,
-            "recipient@testdomain.com": True,
             "recipient@invaliddomain.com": False,
             "recipient@not.validdomain.com": False,
-            "recipient@sub.testdomain.com": False,
         }
 
     def test_check_recipients_invalid_token(self, api_client, valid_jwt_token):

@@ -36,9 +36,6 @@ def check_local_recipient(
     # For unit testing, we accept all emails
     if settings.MESSAGES_ACCEPT_ALL_EMAILS:
         is_deliverable = True
-    # MESSAGES_TESTDOMAIN acts as a catch-all, if configured.
-    elif settings.MESSAGES_TESTDOMAIN == domain_name:
-        is_deliverable = True
     else:
         # Check if the email address exists in the database
         is_deliverable = models.Mailbox.objects.filter(
@@ -68,7 +65,6 @@ def check_local_recipients(email_addresses: list[str]) -> set[str]:
     Returns a set of email addresses that are deliverable locally.
     An email is deliverable if:
     - MESSAGES_ACCEPT_ALL_EMAILS is True (test mode), or
-    - The domain matches MESSAGES_TESTDOMAIN (catch-all), or
     - A mailbox exists for that email address
     """
     if not email_addresses:
@@ -91,14 +87,6 @@ def check_local_recipients(email_addresses: list[str]) -> set[str]:
             domains.add(domain)
         except ValueError:
             pass  # Invalid email format, not deliverable
-
-    # Handle MESSAGES_TESTDOMAIN - acts as catch-all
-    test_domain = settings.MESSAGES_TESTDOMAIN
-    if test_domain:
-        for email, (_, domain) in email_parts.items():
-            if domain == test_domain:
-                deliverable.add(email)
-        domains.discard(test_domain)
 
     # Query all mailboxes on the relevant domains in a single query
     if domains:

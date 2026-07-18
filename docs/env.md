@@ -105,8 +105,6 @@ The application uses a new environment file structure with `.defaults` and `.loc
 
 | Variable | Default | Description | Required |
 |----------|---------|-------------|----------|
-| `MESSAGES_TESTDOMAIN` | `example.local` | Test domain for development | Dev |
-| `MESSAGES_TESTDOMAIN_MAPPING_BASEDOMAIN` | `example.com` | Base domain mapping | Dev |
 | `MESSAGES_ACCEPT_ALL_EMAILS` | `False` | Accept emails to any domain | Optional |
 
 ### DKIM Configuration
