@@ -467,9 +467,7 @@ class TestDeliverInboundMessage:
         ).exists()
         assert models.Message.objects.count() == 1  # Check message was delivered
 
-    @override_settings(
-        MESSAGES_ACCEPT_ALL_EMAILS=False, MESSAGES_TESTDOMAIN="something.else"
-    )
+    @override_settings(MESSAGES_ACCEPT_ALL_EMAILS=False)
     def test_mailbox_creation_disabled(self, sample_parsed_email, raw_email_data):
         """Test delivery fails if mailbox doesn't exist and auto-creation is off."""
         recipient_addr = "nonexistent@disabled.test"
@@ -1059,7 +1057,7 @@ class TestInboundAutoreplyIntegration:
         assert result is True
         mock_try_autoreply.assert_not_called()
 
-    @override_settings(MESSAGES_ACCEPT_ALL_EMAILS=False, MESSAGES_TESTDOMAIN="")
+    @override_settings(MESSAGES_ACCEPT_ALL_EMAILS=False)
     @patch("core.mda.autoreply.try_send_autoreply")
     def test_autoreply_not_called_on_failed_delivery(
         self, mock_try_autoreply, sample_parsed_email

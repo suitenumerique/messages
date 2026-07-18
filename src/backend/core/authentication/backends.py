@@ -1,9 +1,7 @@
 """Authentication Backends for the messages core app."""
 
 import logging
-import re
 
-from django.conf import settings
 from django.core.exceptions import SuspiciousOperation
 
 from lasuite.oidc_login.backends import (
@@ -72,7 +70,6 @@ class OIDCAuthenticationBackend(LaSuiteOIDCAuthenticationBackend):
 
         # if sub is absent, try matching on email
         user = self.get_existing_user(sub, email)
-        self.create_testdomain()
 
         if user:
             if not user.is_active:
@@ -167,16 +164,6 @@ class OIDCAuthenticationBackend(LaSuiteOIDCAuthenticationBackend):
         except DuplicateEmailError as err:
             raise SuspiciousOperation(err.message) from err
 
-    def create_testdomain(self):
-        """Create the test domain if it doesn't exist."""
-
-        # Create the test domain if it doesn't exist
-        if settings.MESSAGES_TESTDOMAIN:
-            MailDomain.objects.get_or_create(
-                name=settings.MESSAGES_TESTDOMAIN,
-                defaults={"oidc_autojoin": True, "identity_sync": True},
-            )
-
     def should_create_user(self, email):
         """Check if a user should be created based on the email address."""
 
@@ -185,11 +172,6 @@ class OIDCAuthenticationBackend(LaSuiteOIDCAuthenticationBackend):
 
         # With this setting, we always create a user locally
         if self.get_settings("OIDC_CREATE_USER", True):
-            return True
-
-        # MESSAGES_TESTDOMAIN_MAPPING_BASEDOMAIN is a special case of autojoin
-        testdomain_mapped_email = self.get_testdomain_mapped_email(email)
-        if testdomain_mapped_email:
             return True
 
         # If the email address ends with a domain that has autojoin enabled
@@ -201,36 +183,11 @@ class OIDCAuthenticationBackend(LaSuiteOIDCAuthenticationBackend):
         # Don't create a user locally
         return False
 
-    def get_testdomain_mapped_email(self, email):
-        """If it exists, return the mapped email address for the test domain."""
-        if not settings.MESSAGES_TESTDOMAIN or not email:
-            return None
-
-        # Check if the email address ends with the test domain
-        if not re.search(
-            r"[@\.]"
-            + re.escape(settings.MESSAGES_TESTDOMAIN_MAPPING_BASEDOMAIN)
-            + r"$",
-            email,
-        ):
-            return None
-
-        # <x.y@z.base.domain> => <x.y-z@test.domain>
-        prefix = email.split("@")[1][
-            : -len(settings.MESSAGES_TESTDOMAIN_MAPPING_BASEDOMAIN) - 1
-        ]
-        return (
-            email.split("@")[0]
-            + ("-" + prefix if prefix else "")
-            + "@"
-            + settings.MESSAGES_TESTDOMAIN
-        )
-
     def autojoin_mailbox(self, user):
         """Setup autojoin mailbox for user."""
 
-        email = self.get_testdomain_mapped_email(user.email)
-        if not email and user.email:
+        email = None
+        if user.email:
             # TODO aliases?
             if MailDomain.objects.filter(
                 name=user.email.split("@")[1], oidc_autojoin=True
