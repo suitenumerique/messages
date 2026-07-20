@@ -233,9 +233,15 @@ def get_inbound_auth_mode(spam_config: dict[str, Any]) -> str:
 
 def trusted_arc_sealers(spam_config: dict[str, Any]) -> set[str]:
     """Normalized ``trusted_arc_sealers`` allowlist from the spam config."""
+    sealers = spam_config.get("trusted_arc_sealers")
+    if isinstance(sealers, str):
+        sealers = [sealers]
+    elif not isinstance(sealers, (list, tuple, set)):
+        sealers = []
+
     return {
         s.strip().rstrip(".").lower()
-        for s in (spam_config.get("trusted_arc_sealers") or [])
+        for s in sealers
         if isinstance(s, str) and s.strip()
     }
 
