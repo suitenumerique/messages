@@ -837,6 +837,7 @@ class ThreadSerializer(serializers.ModelSerializer):
     labels = serializers.SerializerMethodField()
     summary = serializers.CharField(read_only=True)
     events_count = serializers.IntegerField(read_only=True)
+    message_count = serializers.IntegerField(read_only=True)
     abilities = serializers.SerializerMethodField(read_only=True)
     assigned_users = serializers.SerializerMethodField(read_only=True)
 
@@ -1019,6 +1020,7 @@ class ThreadSerializer(serializers.ModelSerializer):
             "labels",
             "summary",
             "events_count",
+            "message_count",
             "abilities",
             "assigned_users",
         ]
