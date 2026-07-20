@@ -2013,6 +2013,7 @@ class Message(BaseModel):
         Thread, on_delete=models.CASCADE, related_name="messages"
     )
     subject = models.CharField("subject", max_length=255, null=True, blank=True)
+    snippet = models.TextField("snippet", blank=True)
     sender = models.ForeignKey("Contact", on_delete=models.CASCADE)
     sender_user = models.ForeignKey(
         "User",
