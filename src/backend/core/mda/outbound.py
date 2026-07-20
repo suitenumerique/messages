@@ -29,7 +29,7 @@ from core.mda.outbound_direct import send_message_via_mx
 from core.mda.replies import make_forward, make_reply
 from core.mda.signing import sign_message_dkim, verify_message_dkim
 from core.mda.smtp import send_smtp_mail
-from core.mda.utils import current_sent_at
+from core.mda.utils import current_sent_at, thread_snippet
 from core.services.blob_gc import schedule_for_gc
 from core.services.dns.check import check_spf_status
 from core.services.throttle import check_and_increment_throttle
@@ -211,6 +211,13 @@ def compose_and_sign_mime(
         "messageId": [message.mime_id] if message.mime_id else None,
     }
 
+    # Mutated in memory like mime_id/has_attachments above; the caller
+    # persists it (see _finalize_sent_message's update_fields).
+    message.snippet = thread_snippet(
+        {"textBody": mime_data["textBody"]},
+        fallback=message.subject or "",
+    )
+
     # Advertise the sending application via X-Mailer (see build_xmailer_value).
     mime_data["headers"] = [{"name": "X-Mailer", "value": build_xmailer_value()}]
 
@@ -346,6 +353,7 @@ def prepare_outbound_message(
         # unparseable input (already rejected upstream by the submit view).
         parsed = parse_email(raw_mime)
         if parsed is not None:
+            message.snippet = thread_snippet(parsed, fallback=message.subject or "")
             if not find_header(parsed, "to"):
                 raw_mime = UNDISCLOSED_RECIPIENTS_TO_HEADER + b"\r\n" + raw_mime
             # Mirror the composed-body path: advertise the sending application
@@ -371,7 +379,9 @@ def prepare_outbound_message(
     # TODO: Fetch MIME IDs of "references" from the thread
     # references = message.thread.messages.exclude(id=message.id).order_by("-created_at").all()
 
-    # TODO: set the thread snippet?
+    # Message.snippet is set inside compose_and_sign_mime, from the
+    # already-in-memory composed body.
+    # TODO: set the thread-level snippet?
 
     # Insert the validated signature
     validated_signature = mailbox_sender.get_validated_signature(
@@ -491,6 +501,7 @@ def _finalize_sent_message(
         "sender_user",
         "draft_blob",
         "created_at",
+        "snippet",
         *extra_update_fields,
     ]
     message.save(update_fields=update_fields)

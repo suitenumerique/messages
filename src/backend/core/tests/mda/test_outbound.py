@@ -916,6 +916,73 @@ class TestPrepareOutboundMessageReadAt:
 
 
 @pytest.mark.django_db
+class TestMessageSnippetOnSend:
+    """``prepare_outbound_message`` must persist a ``Message.snippet``
+    derived from the content actually sent, for both the composed-body
+    and raw-MIME paths."""
+
+    def test_composed_body_send_sets_snippet(
+        self, user, mailbox_sender, mailbox_access
+    ):
+        """The composed text body becomes the persisted snippet."""
+        message = factories.MessageFactory(
+            thread=factories.ThreadFactory(),
+            sender=factories.ContactFactory(mailbox=mailbox_sender),
+            is_draft=True,
+            subject="Test Message",
+            signature=None,
+        )
+        factories.MessageRecipientFactory(
+            message=message,
+            contact=factories.ContactFactory(
+                mailbox=mailbox_sender, email="to@example.com"
+            ),
+            type=models.MessageRecipientTypeChoices.TO,
+        )
+        text_body = "This is the composed body content used for the snippet test."
+
+        outbound.prepare_outbound_message(
+            mailbox_sender, message, text_body, "<p>irrelevant html</p>", user
+        )
+
+        message.refresh_from_db()
+        assert message.snippet != ""
+        assert message.snippet.startswith(text_body[:20])
+
+    def test_raw_mime_send_sets_snippet(self, user, mailbox_sender, mailbox_access):
+        """A caller-supplied raw MIME body also produces a persisted snippet."""
+        message = factories.MessageFactory(
+            thread=factories.ThreadFactory(),
+            sender=factories.ContactFactory(mailbox=mailbox_sender),
+            is_draft=True,
+            subject="Test Message",
+            signature=None,
+        )
+        factories.MessageRecipientFactory(
+            message=message,
+            contact=factories.ContactFactory(
+                mailbox=mailbox_sender, email="to@example.com"
+            ),
+            type=models.MessageRecipientTypeChoices.TO,
+        )
+        raw_mime = (
+            b"From: sender@example.com\r\n"
+            b"To: to@example.com\r\n"
+            b"Subject: Raw MIME snippet test\r\n"
+            b"\r\n"
+            b"This is the raw MIME body used for the snippet test.\r\n"
+        )
+
+        outbound.prepare_outbound_message(
+            mailbox_sender, message, "", "", user, raw_mime=raw_mime
+        )
+
+        message.refresh_from_db()
+        assert message.snippet != ""
+        assert "This is the raw MIME body" in message.snippet
+
+
+@pytest.mark.django_db
 class TestUndisclosedRecipientsHeader:
     """A message with no To recipient (e.g. Bcc-only) must get an empty-group
     ``To: undisclosed-recipients:;`` header (RFC 4356) so receivers don't
