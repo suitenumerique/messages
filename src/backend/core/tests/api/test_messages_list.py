@@ -664,3 +664,56 @@ class TestMessageIsUnread:
         assert response.status_code == status.HTTP_200_OK
         messages = {str(m["id"]): m for m in response.data}
         assert messages[str(msg.id)]["is_unread"] is False
+
+
+@pytest.mark.django_db
+class TestMessageListSummaryParam:
+    """?summary=true on the messages list endpoint returns the lightweight shape."""
+
+    def test_summary_true_returns_summary_fields_only(self, api_client):
+        """With summary=true, the response is the lightweight MessageSummarySerializer shape."""
+        user = factories.UserFactory()
+        mailbox = factories.MailboxFactory()
+        factories.MailboxAccessFactory(
+            mailbox=mailbox, user=user, role=enums.MailboxRoleChoices.EDITOR
+        )
+        thread = factories.ThreadFactory()
+        factories.ThreadAccessFactory(
+            mailbox=mailbox, thread=thread, role=enums.ThreadAccessRoleChoices.EDITOR
+        )
+        message = factories.MessageFactory(thread=thread, snippet="Preview text")
+        api_client.force_authenticate(user=user)
+
+        response = api_client.get(
+            reverse("messages-list"),
+            {"thread_id": str(thread.id), "summary": "true"},
+        )
+
+        assert response.status_code == status.HTTP_200_OK
+        payload = next(m for m in response.data if m["id"] == str(message.id))
+        assert set(payload.keys()) == {
+            "id", "sender", "sent_at", "is_unread", "is_draft", "has_attachments", "snippet",
+        }
+        assert payload["snippet"] == "Preview text"
+
+    def test_without_summary_param_returns_full_message(self, api_client):
+        """Without summary=true, behavior is unchanged (full MessageSerializer)."""
+        user = factories.UserFactory()
+        mailbox = factories.MailboxFactory()
+        factories.MailboxAccessFactory(
+            mailbox=mailbox, user=user, role=enums.MailboxRoleChoices.EDITOR
+        )
+        thread = factories.ThreadFactory()
+        factories.ThreadAccessFactory(
+            mailbox=mailbox, thread=thread, role=enums.ThreadAccessRoleChoices.EDITOR
+        )
+        message = factories.MessageFactory(thread=thread)
+        api_client.force_authenticate(user=user)
+
+        response = api_client.get(
+            reverse("messages-list"), {"thread_id": str(thread.id)}
+        )
+
+        assert response.status_code == status.HTTP_200_OK
+        payload = next(m for m in response.data if m["id"] == str(message.id))
+        assert "textBody" in payload

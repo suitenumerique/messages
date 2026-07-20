@@ -72,6 +72,16 @@ class MessageViewSet(
     lookup_field = "id"
     lookup_url_kwarg = "id"
 
+    def get_serializer_class(self):
+        """Use the lightweight summary serializer for ?summary=true list requests.
+
+        Powers the thread-list expand dropdown, which only needs
+        sender/date/snippet/unread per message — never the full body.
+        """
+        if self.action == "list" and self.request.GET.get("summary") == "true":
+            return serializers.MessageSummarySerializer
+        return super().get_serializer_class()
+
     def get_queryset(self):
         """Restrict results to messages in threads accessible by the current user."""
         user = self.request.user
