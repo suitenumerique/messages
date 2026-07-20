@@ -1,4 +1,5 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react"
+import { useLocation } from "@tanstack/react-router";
 import { FEATURE_KEYS, useFeatureFlag } from "@/hooks/use-feature";
 import { ThreadActionBar } from "./components/thread-action-bar"
 import { ThreadMessage } from "./components/thread-message"
@@ -58,6 +59,7 @@ const ThreadViewComponent = ({ threadItems, mailboxId, thread, showTrashedMessag
     const rootRef = useRef<HTMLDivElement>(null);
     const isAISummaryEnabled = useFeatureFlag(FEATURE_KEYS.AI_SUMMARY);
     const { isReady, reset, hasBeenInitialized, setHasBeenInitialized } = useThreadViewContext();
+    const hash = useLocation({ select: (l) => l.hash });
     // Refs for all unread messages
     const unreadRefs = useRef<Record<string, HTMLElement | null>>({});
     // Refs for thread events with unread mentions
@@ -200,108 +202,114 @@ const ThreadViewComponent = ({ threadItems, mailboxId, thread, showTrashedMessag
     });
 
     useEffect(() => {
-        if (isReady && !hasBeenInitialized) {
-            // Deep-link hash takes precedence over draft/unread heuristics:
-            // a user arriving via a shared "#thread-message-{id}" or
-            // "#thread-event-{id}" URL expects to land on that exact element,
-            // scrolled smoothly into view with a brief highlight.
-            const hash = typeof window !== 'undefined' ? window.location.hash : '';
-            const hashMatch = hash.match(/^#thread-(message|event)-([\w-]+)$/);
-            let selector = `#thread-message-${latestMessage?.id}`;
-            let scrollBehavior: ScrollBehavior = 'instant';
-            let highlightTargetId: string | null = null;
+        const hashMatch = hash.match(/^#thread-(message|event)-([\w-]+)$/);
 
-            if (hashMatch) {
-                selector = hash;
-                scrollBehavior = 'smooth';
-                highlightTargetId = hash.slice(1);
-            } else if (draftMessageIds.length > 0) {
-                selector = `#thread-message-${draftMessageIds[0]} > .thread-message__reply-form`;
-            } else {
-                const firstUnreadItem = threadItems.find((item) => {
-                    if (item.type === 'message') {
-                        return (item.data as MessageWithDraftChild).is_unread;
-                    }
-                    return (item.data as ThreadEventModel).has_unread_mention === true;
-                });
-                if (firstUnreadItem) {
-                    selector = firstUnreadItem.type === 'message'
-                        ? `#thread-message-${firstUnreadItem.data.id}`
-                        : `#thread-event-${firstUnreadItem.data.id}`;
+        // A hash-targeted jump must run every time the hash changes, even
+        // if this thread was already initialized (e.g. clicking a
+        // different message summary of the same open thread from the
+        // list). The draft/unread/latest fallback heuristics, by
+        // contrast, are meant to run only once per thread mount.
+        if (!isReady) return;
+        if (!hashMatch && hasBeenInitialized) return;
+
+        // Deep-link hash takes precedence over draft/unread heuristics:
+        // a user arriving via a shared "#thread-message-{id}" or
+        // "#thread-event-{id}" URL expects to land on that exact element,
+        // scrolled smoothly into view with a brief highlight.
+        let selector = `#thread-message-${latestMessage?.id}`;
+        let scrollBehavior: ScrollBehavior = 'instant';
+        let highlightTargetId: string | null = null;
+
+        if (hashMatch) {
+            selector = hash;
+            scrollBehavior = 'smooth';
+            highlightTargetId = hash.slice(1);
+        } else if (draftMessageIds.length > 0) {
+            selector = `#thread-message-${draftMessageIds[0]} > .thread-message__reply-form`;
+        } else {
+            const firstUnreadItem = threadItems.find((item) => {
+                if (item.type === 'message') {
+                    return (item.data as MessageWithDraftChild).is_unread;
                 }
-            }
-
-            const el = document.querySelector<HTMLElement>(selector);
-            if (el) {
-                const performScroll = (): boolean => {
-                    const refreshed = document.querySelector<HTMLElement>(selector);
-                    const target = refreshed ?? el;
-                    const root = rootRef.current;
-                    if (!root) return false;
-                    const targetTop = Math.max(target.offsetTop - 225, 0);
-                    const willScroll = Math.abs(targetTop - root.scrollTop) > 1;
-                    if (willScroll) {
-                        root.scrollTo({ top: targetTop, behavior: scrollBehavior });
-                    }
-                    return willScroll;
-                };
-
-                const startHighlight = () => {
-                    if (!highlightTargetId) return;
-                    const highlightTarget = document.getElementById(highlightTargetId);
-                    if (!highlightTarget) return;
-                    const messagesList = rootRef.current?.querySelector('.thread-view__messages-list');
-                    highlightTarget.classList.add('thread-view__highlight');
-                    messagesList?.classList.add('thread-view__messages-list--focusing');
-
-                    // Sync cleanup to the CSS animation. The timeout
-                    // guards prefers-reduced-motion, where no animation fires.
-                    let cleaned = false;
-                    const cleanup = () => {
-                        if (cleaned) return;
-                        cleaned = true;
-                        highlightTarget.classList.remove('thread-view__highlight');
-                        messagesList?.classList.remove('thread-view__messages-list--focusing');
-                        highlightTarget.removeEventListener('animationend', cleanup);
-                    };
-                    highlightTarget.addEventListener('animationend', cleanup);
-                    setTimeout(cleanup, 2200);
-                };
-
-                // Defer the highlight until the smooth scroll has actually
-                // landed. `scrollend` doesn't emit when no scroll happens
-                // nor on older browsers, so the 700ms safety acts as a fallback.
-                const scheduleHighlight = (willScroll: boolean) => {
-                    const root = rootRef.current;
-                    if (!root || scrollBehavior !== 'smooth' || !willScroll) {
-                        startHighlight();
-                        return;
-                    }
-                    let fired = false;
-                    const fire = () => {
-                        if (fired) return;
-                        fired = true;
-                        root.removeEventListener('scrollend', fire);
-                        clearTimeout(safety);
-                        startHighlight();
-                    };
-                    root.addEventListener('scrollend', fire);
-                    const safety = setTimeout(fire, 700);
-                };
-
-                if (hashMatch) {
-                    requestAnimationFrame(() => requestAnimationFrame(() => {
-                        const willScroll = performScroll();
-                        scheduleHighlight(willScroll);
-                    }));
-                } else {
-                    const willScroll = performScroll();
-                    scheduleHighlight(willScroll);
-                }
-                setHasBeenInitialized(true);
+                return (item.data as ThreadEventModel).has_unread_mention === true;
+            });
+            if (firstUnreadItem) {
+                selector = firstUnreadItem.type === 'message'
+                    ? `#thread-message-${firstUnreadItem.data.id}`
+                    : `#thread-event-${firstUnreadItem.data.id}`;
             }
         }
-    }, [isReady]);
+
+        const el = document.querySelector<HTMLElement>(selector);
+        if (el) {
+            const performScroll = (): boolean => {
+                const refreshed = document.querySelector<HTMLElement>(selector);
+                const target = refreshed ?? el;
+                const root = rootRef.current;
+                if (!root) return false;
+                const targetTop = Math.max(target.offsetTop - 225, 0);
+                const willScroll = Math.abs(targetTop - root.scrollTop) > 1;
+                if (willScroll) {
+                    root.scrollTo({ top: targetTop, behavior: scrollBehavior });
+                }
+                return willScroll;
+            };
+
+            const startHighlight = () => {
+                if (!highlightTargetId) return;
+                const highlightTarget = document.getElementById(highlightTargetId);
+                if (!highlightTarget) return;
+                const messagesList = rootRef.current?.querySelector('.thread-view__messages-list');
+                highlightTarget.classList.add('thread-view__highlight');
+                messagesList?.classList.add('thread-view__messages-list--focusing');
+
+                // Sync cleanup to the CSS animation. The timeout
+                // guards prefers-reduced-motion, where no animation fires.
+                let cleaned = false;
+                const cleanup = () => {
+                    if (cleaned) return;
+                    cleaned = true;
+                    highlightTarget.classList.remove('thread-view__highlight');
+                    messagesList?.classList.remove('thread-view__messages-list--focusing');
+                    highlightTarget.removeEventListener('animationend', cleanup);
+                };
+                highlightTarget.addEventListener('animationend', cleanup);
+                setTimeout(cleanup, 2200);
+            };
+
+            // Defer the highlight until the smooth scroll has actually
+            // landed. `scrollend` doesn't emit when no scroll happens
+            // nor on older browsers, so the 700ms safety acts as a fallback.
+            const scheduleHighlight = (willScroll: boolean) => {
+                const root = rootRef.current;
+                if (!root || scrollBehavior !== 'smooth' || !willScroll) {
+                    startHighlight();
+                    return;
+                }
+                let fired = false;
+                const fire = () => {
+                    if (fired) return;
+                    fired = true;
+                    root.removeEventListener('scrollend', fire);
+                    clearTimeout(safety);
+                    startHighlight();
+                };
+                root.addEventListener('scrollend', fire);
+                const safety = setTimeout(fire, 700);
+            };
+
+            if (hashMatch) {
+                requestAnimationFrame(() => requestAnimationFrame(() => {
+                    const willScroll = performScroll();
+                    scheduleHighlight(willScroll);
+                }));
+            } else {
+                const willScroll = performScroll();
+                scheduleHighlight(willScroll);
+            }
+            setHasBeenInitialized(true);
+        }
+    }, [isReady, hash]);
 
     const handleEventDelete = useCallback((eventId: string) => {
         if (editingEvent?.id === eventId) {
