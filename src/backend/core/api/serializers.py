@@ -1077,6 +1077,36 @@ class MessageSenderUserSerializer(serializers.ModelSerializer):
         read_only_fields = fields
 
 
+class MessageSummarySerializer(serializers.ModelSerializer):
+    """Lightweight per-message summary for the thread-list expand dropdown.
+
+    Reads only stored fields — never Message.get_parsed_data(), which hits
+    object storage and re-parses MIME on every call. Used behind the
+    ``?summary=true`` query param on MessageViewSet's list action.
+    """
+
+    sender = ContactSerializer(read_only=True)
+    is_unread = serializers.SerializerMethodField(read_only=True)
+
+    @extend_schema_field(serializers.BooleanField())
+    def get_is_unread(self, instance):
+        """Return the ``_is_unread`` annotation set by ``MessageQuerySet.with_read_state()``."""
+        return getattr(instance, "_is_unread", False)
+
+    class Meta:
+        model = models.Message
+        fields = [
+            "id",
+            "sender",
+            "sent_at",
+            "is_unread",
+            "is_draft",
+            "has_attachments",
+            "snippet",
+        ]
+        read_only_fields = fields
+
+
 class MessageSerializer(serializers.ModelSerializer):
     """
     Serialize messages, getting parsed details from the Message model.
