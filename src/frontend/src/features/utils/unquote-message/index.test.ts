@@ -375,6 +375,85 @@ describe("UnquoteMessage", () => {
         );
       });
 
+      it("should remove Microsoft Outlook Desktop quotes when the hr separator is wrapped in a div", () => {
+        const html = `
+          <div>My reply to the message</div>
+          <div class="MsoNormal" align="center" style="text-align:center"><hr size="3" width="98%" align="center"></div>
+          <div id="divRplyFwdMsg">
+            <b>De :</b> sender@example.com<br>
+            <b>Envoyé :</b> lundi 6 juillet 2026 15:45<br>
+            <b>À :</b> recipient@example.com<br>
+          </div>
+          <div>Original message body</div>
+        `;
+
+        const result = new UnquoteMessage(html).getHtml();
+
+        expect(result.hadQuotes).toBe(true);
+        expect(result.detectionMethod).toBe("handlers");
+        expect(result.content).toMatchInlineSnapshot(
+          `"<div>My reply to the message</div>"`
+        );
+      });
+
+      it("should remove Microsoft Outlook Web quotes when the header is nested in a wrapper and the body is a sibling of the wrapper", () => {
+        const html = `
+          <div>My reply</div>
+          <div>
+            <div id="content_out_sender_example.com"></div>
+            <div style="border:none;border-top:solid #E1E1E1 1.0pt;padding:3.0pt 0cm 0cm 0cm">
+              <p class="MsoNormal"><b>De :</b> sender@example.com</p>
+            </div>
+          </div>
+          <div>Original message body</div>
+        `;
+
+        const result = new UnquoteMessage(html).getHtml();
+
+        expect(result.hadQuotes).toBe(true);
+        expect(result.detectionMethod).toBe("handlers");
+        expect(result.content).toMatchInlineSnapshot(
+          `"<div>My reply</div>"`
+        );
+      });
+
+      it("should not swallow a plain-text reply preceding the Microsoft Outlook Web header inside a wrapper", () => {
+        const html = `
+          <div>
+            My plain-text reply
+            <div style="border:none;border-top:solid #E1E1E1 1.0pt;padding:3.0pt 0cm 0cm 0cm">
+              <p class="MsoNormal"><b>De :</b> sender@example.com</p>
+            </div>
+          </div>
+        `;
+
+        const result = new UnquoteMessage(html).getHtml();
+
+        expect(result.hadQuotes).toBe(true);
+        expect(result.content).toContain("My plain-text reply");
+        expect(result.content).not.toContain("sender@example.com");
+      });
+
+      it("should keep climbing when only quoted text nodes follow the Microsoft Outlook Web header", () => {
+        const html = `
+          <div>My reply</div>
+          <div>
+            <div style="border:none;border-top:solid #E1E1E1 1.0pt;padding:3.0pt 0cm 0cm 0cm">
+              <p class="MsoNormal"><b>De :</b> sender@example.com</p>
+            </div>
+            Quoted text node
+          </div>
+          <div>Original message body</div>
+        `;
+
+        const result = new UnquoteMessage(html).getHtml();
+
+        expect(result.hadQuotes).toBe(true);
+        expect(result.content).toMatchInlineSnapshot(
+          `"<div>My reply</div>"`
+        );
+      });
+
       it("should remove ZMail quotes with zmail_extra", () => {
         const html = `
           <div>New message</div>

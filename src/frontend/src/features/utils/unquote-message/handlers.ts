@@ -143,15 +143,31 @@ export const HANDLERS: CustomHandler[] = [
       const normalizedStyle = style.replaceAll(/(cm|pt|mm)/g, "in");
 
       if (normalizedStyle.endsWith(" 1.0in;padding:3.0in 0in 0in 0in")) {
-        // Check if parent has only one element child
-        if (msoRoot.parentElement) {
-          const elementChildren = Array.from(
-            msoRoot.parentElement.childNodes
-          ).filter((node) => node.nodeType === Node.ELEMENT_NODE);
-
-          if (elementChildren.length === 1) {
-            msoRoot = msoRoot.parentElement as HTMLElement;
+        // The quoted content may live at an upper level: climb out of wrapper
+        // divs while the header has no following sibling, as long as nothing
+        // meaningful precedes it inside the wrapper (to avoid swallowing the
+        // new message content)
+        while (
+          msoRoot.parentElement &&
+          msoRoot.parentElement.tagName.toLowerCase() !== "body" &&
+          !msoRoot.nextElementSibling
+        ) {
+          // Use childNodes to also catch plain-text nodes, but only those
+          // preceding the header: text nodes following it belong to the quote
+          // and must not halt the climb
+          const siblings = Array.from(msoRoot.parentElement.childNodes);
+          const previousSiblings = siblings.slice(0, siblings.indexOf(msoRoot));
+          if (
+            previousSiblings.some(
+              (node) =>
+                (node.nodeType === Node.ELEMENT_NODE ||
+                  node.nodeType === Node.TEXT_NODE) &&
+                node.textContent?.trim()
+            )
+          ) {
+            break;
           }
+          msoRoot = msoRoot.parentElement;
         }
 
         // Collect all next siblings
@@ -175,7 +191,14 @@ export const HANDLERS: CustomHandler[] = [
       const detectedElements: HTMLElement[] = [];
       let prev = element.previousElementSibling;
       while (prev) {
-        if (prev.tagName.toLowerCase() === "hr") {
+        // Outlook renders the reply separator either as a bare <hr>
+        // or as an <hr> alone inside a centering div
+        const isSeparator =
+          prev.tagName.toLowerCase() === "hr" ||
+          (prev.children.length === 1 &&
+            prev.children[0].tagName.toLowerCase() === "hr" &&
+            !prev.textContent?.trim());
+        if (isSeparator) {
           // It's a reply from Outlook!
           detectedElements.push(element, prev as HTMLElement);
           let sibling = element.nextElementSibling;
