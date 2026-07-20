@@ -554,9 +554,15 @@ class Base(Configuration):
     #                              relay hops you actually operate)
     #   rules                    : list of hardcoded header-match spam rules
     #   inbound_auth             : sender authentication backend — one of
-    #                              "native", "rspamd", "authentication-results",
-    #                              or None/absent to disable. See
-    #                              core.mda.inbound_auth for semantics.
+    #                              "native", "rspamd", "arc",
+    #                              "authentication-results", or None to disable.
+    #                              See core.mda.inbound_auth for semantics.
+    #   trusted_arc_sealers      : list of trusted ARC sealer d= domains
+    #                              (empty = any valid seal). Used by inbound_auth
+    #                              "arc" and by arc_gate.
+    #   arc_gate                 : action when a message is not sealed by a
+    #                              trusted sealer — "off" (default), "spam", or
+    #                              "drop".
     SPAM_CONFIG = values.DictValue({}, environ_name="SPAM_CONFIG", environ_prefix=None)
 
     # MTA settings

@@ -2,6 +2,7 @@
 
 # pylint: disable=missing-function-docstring,too-many-public-methods
 
+from types import SimpleNamespace
 from unittest.mock import Mock, patch
 
 from django.test import override_settings
@@ -15,6 +16,7 @@ from core.mda.inbound_auth import (
     VERDICT_UNVERIFIED,
     check_inbound_authentication,
 )
+from core.mda.inbound_pipeline import Decision, _make_arc_gate_step
 from core.mda.inbound_tasks import process_inbound_message_task
 
 RAW_EMAIL = (
@@ -410,6 +412,66 @@ class TestCheckInboundAuthenticationResults:
         assert check_inbound_authentication(b"", parsed, config) is None
 
 
+class TestCheckInboundAuthArcMode:
+    """`arc` mode: verdict from the trusted sealer's sealed AAR only; the
+    plaintext header is never read."""
+
+    CONFIG = {"inbound_auth": "arc", "trusted_arc_sealers": ["relay.example"]}
+
+    # A forged top-level header must be ignored entirely in arc mode.
+    PARSED_FORGED_HEADER = {
+        "headers": [{"name": "Authentication-Results", "value": "mx; dkim=pass"}]
+    }
+
+    def test_trusted_seal_verified(self):
+        arc = {
+            "trusted": True,
+            "sealer": "relay.example",
+            "aar": "i=2; mx; dkim=pass; dmarc=pass",
+            "dnsfail": False,
+        }
+        assert check_inbound_authentication(b"raw", {}, self.CONFIG, arc=arc) is None
+
+    def test_trusted_seal_dmarc_fail_forged(self):
+        arc = {
+            "trusted": True,
+            "sealer": "relay.example",
+            "aar": "i=2; mx; dkim=pass; dmarc=fail",
+            "dnsfail": False,
+        }
+        assert (
+            check_inbound_authentication(b"raw", {}, self.CONFIG, arc=arc)
+            == VERDICT_FORGED
+        )
+
+    def test_untrusted_ignores_forged_header(self):
+        arc = {"trusted": False, "sealer": None, "aar": None, "dnsfail": False}
+        assert (
+            check_inbound_authentication(
+                b"raw", self.PARSED_FORGED_HEADER, self.CONFIG, arc=arc
+            )
+            == VERDICT_UNVERIFIED
+        )
+
+    def test_dnsfail_unverified(self):
+        arc = {"trusted": False, "sealer": None, "aar": None, "dnsfail": True}
+        assert (
+            check_inbound_authentication(b"raw", {}, self.CONFIG, arc=arc)
+            == VERDICT_UNVERIFIED
+        )
+
+    @patch("core.mda.inbound_auth.arc_result")
+    def test_computes_arc_when_not_passed(self, mock_arc):
+        mock_arc.return_value = {
+            "trusted": True,
+            "sealer": "relay.example",
+            "aar": "i=1; mx; dkim=pass",
+            "dnsfail": False,
+        }
+        assert check_inbound_authentication(b"raw", {}, self.CONFIG) is None
+        mock_arc.assert_called_once()
+
+
 class TestCheckInboundAuthenticationResultsScrubbing:
     """`dkim=`/`dmarc=` literals inside CFWS comments or quoted strings must
     NOT be honoured — they're attacker-controlled free text."""
@@ -783,3 +845,65 @@ class TestProcessInboundMessageAuthIntegration:
             if h["name"].lower() == "x-stmsg-sender-auth"
         ]
         assert values == ["fail"]
+
+
+class TestArcGateStep:
+    """The arc_gate pipeline step marks/drops messages lacking a trusted seal."""
+
+    @staticmethod
+    def _ctx():
+        return SimpleNamespace(raw_data=b"raw", is_spam=None, arc=None)
+
+    @patch("core.mda.inbound_pipeline.arc_result")
+    def test_off_is_noop(self, mock_arc):
+        ctx = self._ctx()
+        assert _make_arc_gate_step({})(ctx) == Decision.CONTINUE
+        assert ctx.is_spam is None
+        mock_arc.assert_not_called()
+
+    @patch("core.mda.inbound_pipeline.arc_result")
+    def test_trusted_passes(self, mock_arc):
+        mock_arc.return_value = {
+            "trusted": True,
+            "dnsfail": False,
+            "sealer": "r",
+            "aar": "x",
+        }
+        ctx = self._ctx()
+        step = _make_arc_gate_step({"arc_gate": "spam"})
+        assert step(ctx) == Decision.CONTINUE
+        assert ctx.is_spam is None
+
+    @patch("core.mda.inbound_pipeline.arc_result")
+    def test_spam_marks_untrusted(self, mock_arc):
+        mock_arc.return_value = {
+            "trusted": False,
+            "dnsfail": False,
+            "sealer": None,
+            "aar": None,
+        }
+        ctx = self._ctx()
+        assert _make_arc_gate_step({"arc_gate": "spam"})(ctx) == Decision.CONTINUE
+        assert ctx.is_spam is True
+
+    @patch("core.mda.inbound_pipeline.arc_result")
+    def test_drop_untrusted(self, mock_arc):
+        mock_arc.return_value = {
+            "trusted": False,
+            "dnsfail": False,
+            "sealer": None,
+            "aar": None,
+        }
+        assert _make_arc_gate_step({"arc_gate": "drop"})(self._ctx()) == Decision.DROP
+
+    @patch("core.mda.inbound_pipeline.arc_result")
+    def test_dnsfail_no_action(self, mock_arc):
+        mock_arc.return_value = {
+            "trusted": False,
+            "dnsfail": True,
+            "sealer": None,
+            "aar": None,
+        }
+        ctx = self._ctx()
+        assert _make_arc_gate_step({"arc_gate": "drop"})(ctx) == Decision.CONTINUE
+        assert ctx.is_spam is None

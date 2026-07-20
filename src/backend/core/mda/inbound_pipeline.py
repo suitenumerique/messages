@@ -37,9 +37,11 @@ from jmap_email import JmapEmail
 
 from core import enums, models
 from core.mda import spam
+from core.mda.arc import arc_result
 from core.mda.inbound_auth import (
     check_inbound_authentication,
     get_inbound_auth_mode,
+    trusted_arc_sealers,
 )
 from core.services.thread_events import assign_users
 
@@ -132,6 +134,9 @@ class InboundContext:  # pylint: disable=too-many-instance-attributes
     # the symbols (DKIM/DMARC verdicts) without a second HTTP call.
     rspamd_result: Optional[Dict[str, Any]] = None
 
+    # Populated by ``arc_gate_step`` so ``inbound_auth_step`` can reuse it.
+    arc: Optional[Dict[str, Any]] = None
+
     # Memoised results of blocking webhook steps, keyed by
     # ``(channel_id, phase)``. Pre-loaded from Redis at the start of a
     # *retry* attempt so an already-succeeded blocking webhook is replayed
@@ -172,6 +177,30 @@ DEFERRAL_MAX_AGE = timedelta(seconds=settings.MESSAGES_INBOUND_DEFERRAL_MAX_AGE)
 # Steps. Each is callable as ``step(ctx) -> Decision`` and carries a
 # ``.name`` for log/return-value reporting.
 # ---------------------------------------------------------------------------
+
+
+def _make_arc_gate_step(spam_config: Dict[str, Any]) -> Step:
+    action = str(spam_config.get("arc_gate") or "off").strip().lower()
+
+    def arc_gate(ctx: InboundContext) -> Decision:
+        if action == "off":
+            return Decision.CONTINUE
+        ctx.arc = arc_result(ctx.raw_data, trusted_arc_sealers(spam_config))
+        if ctx.arc["trusted"] or ctx.arc["dnsfail"]:
+            return Decision.CONTINUE
+        logger.info(
+            "ARC gate: untrusted message (sealer=%s) -> %s",
+            ctx.arc["sealer"],
+            action,
+        )
+        if action == "drop":
+            return Decision.DROP
+        if action == "spam" and ctx.is_spam is None:
+            ctx.is_spam = True
+        return Decision.CONTINUE
+
+    arc_gate.name = "arc_gate"
+    return arc_gate
 
 
 def _make_hardcoded_rules_step(spam_config: Dict[str, Any]) -> Step:
@@ -291,7 +320,7 @@ def _make_inbound_auth_step(spam_config: Dict[str, Any]) -> Step:
                 ctx.raw_data, spam_config, envelope=ctx.inbound_message.envelope
             )
         verdict = check_inbound_authentication(
-            ctx.raw_data, ctx.parsed_email, spam_config, ctx.rspamd_result
+            ctx.raw_data, ctx.parsed_email, spam_config, ctx.rspamd_result, ctx.arc
         )
         if not verdict:
             # Widget submissions arrive over an unauthenticated web form, so
@@ -358,6 +387,7 @@ def build_inbound_pipeline(ctx: InboundContext) -> List[Step]:
 
     return [
         *webhook_steps_for_mailbox(ctx.mailbox, phase="before_spam", channels=channels),
+        _make_arc_gate_step(ctx.spam_config),
         _make_hardcoded_rules_step(ctx.spam_config),
         _make_rspamd_step(ctx.spam_config),
         _make_inbound_auth_step(ctx.spam_config),

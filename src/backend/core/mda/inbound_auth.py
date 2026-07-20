@@ -23,10 +23,11 @@ The backend is picked by ``SPAM_CONFIG["inbound_auth"]``:
     (we can't call it forgery without the From domain's published policy).
   - ``"rspamd"``: read DKIM / DMARC symbols from the rspamd /checkv2 result
     (reused from the spam check, or fetched on demand by the caller).
-  - ``"authentication-results"``: parse ``dkim=`` / ``dmarc=`` entries from the
-    ``Authentication-Results`` header set by a trusted upstream relay. The
-    header slice respects ``SPAM_CONFIG["trusted_relays"]`` so forged headers
-    from untrusted hops are ignored.
+  - ``"arc"``: dkim/dmarc from the ``ARC-Authentication-Results`` sealed by a
+    trusted sealer (``trusted_arc_sealers``; empty = any valid seal). Plaintext
+    headers are never read. Unsealed/untrusted -> unverified.
+  - ``"authentication-results"``: parse ``dkim=`` / ``dmarc=`` from the
+    top-level ``Authentication-Results`` sliced by ``trusted_relays``.
   - missing / ``None``: disabled, always returns ``None``.
 
 Backend failures (DNS lookup blowing up, rspamd unreachable, no AR header from
@@ -41,6 +42,7 @@ from typing import Any
 
 from jmap_email import JmapEmail, first_address_email
 
+from core.mda.arc import arc_result
 from core.mda.signing import verify_message_dkim
 from core.mda.utils import headers_blocks
 
@@ -229,16 +231,23 @@ def get_inbound_auth_mode(spam_config: dict[str, Any]) -> str:
     return (spam_config.get("inbound_auth") or "").strip().lower()
 
 
+def trusted_arc_sealers(spam_config: dict[str, Any]) -> set[str]:
+    """Normalized ``trusted_arc_sealers`` allowlist from the spam config."""
+    return {
+        s.strip().rstrip(".").lower()
+        for s in (spam_config.get("trusted_arc_sealers") or [])
+        if isinstance(s, str) and s.strip()
+    }
+
+
 def check_inbound_authentication(
     raw_data: bytes,
     parsed_email: JmapEmail,
     spam_config: dict[str, Any],
     rspamd_result: dict[str, Any] | None = None,
+    arc: dict[str, Any] | None = None,
 ) -> str | None:
-    """Return the sender-auth verdict for this message (``postmark["auth"]``).
-
-    See module docstring for the rule set and supported backends.
-    """
+    """Return the sender-auth verdict for this message (``postmark["auth"]``)."""
     mode = get_inbound_auth_mode(spam_config)
     if not mode:
         return None
@@ -249,6 +258,12 @@ def check_inbound_authentication(
     elif mode == "rspamd":
         dkim = _rspamd_outcome("dkim", rspamd_result)
         dmarc = _rspamd_outcome("dmarc", rspamd_result)
+    elif mode == "arc":
+        if arc is None:
+            arc = arc_result(raw_data, trusted_arc_sealers(spam_config))
+        ar_values = [arc["aar"]] if arc["trusted"] and arc["aar"] else []
+        dkim = _ar_outcome("dkim", ar_values)
+        dmarc = _ar_outcome("dmarc", ar_values)
     elif mode == "authentication-results":
         trusted_relays = int(spam_config.get("trusted_relays", 0))
         ar_values = _authentication_results_values(parsed_email, trusted_relays)
