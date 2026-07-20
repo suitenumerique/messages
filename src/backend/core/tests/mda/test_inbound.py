@@ -330,6 +330,7 @@ class TestDeliverInboundMessage:
         assert message.sender.mailbox == target_mailbox
         assert message.blob.get_content() == raw_email_data
         assert message.mime_id == sample_parsed_email["messageId"][0]
+        assert message.snippet == "Test body content."
 
         # Inbound message from another sender: thread should be unread
         assert access.read_at is None
