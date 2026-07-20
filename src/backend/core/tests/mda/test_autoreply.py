@@ -1075,4 +1075,4 @@ class TestSendAutoreplyForMessage:
         ).last()
         # Reload from DB to verify persisted value
         autoreply_msg.refresh_from_db()
-        assert autoreply_msg.snippet != ""
+        assert autoreply_msg.snippet == "I am out of office."
