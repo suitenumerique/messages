@@ -6,6 +6,7 @@ import clsx from "clsx"
 import { DateHelper } from "@/features/utils/date-helper"
 import { Thread } from "@/features/api/gen/models"
 import { ThreadItemSenders } from "./thread-item-senders"
+import { ThreadItemMessageSummaries } from "./thread-item-message-summaries"
 import { Badge } from "@/features/ui/components/badge"
 import { ThreadDragPreview } from "./thread-drag-preview"
 import { PORTALS } from "@/features/config/constants"
@@ -343,7 +344,10 @@ export const ThreadItem = ({ thread, isSelected, onToggle, onSelectRange, select
                 </Link>
                 {isExpanded && (
                     <div id={`thread-item-summaries-${thread.id}`}>
-                        {/* ThreadItemMessageSummaries — added in Task 10 */}
+                        <ThreadItemMessageSummaries
+                            threadId={thread.id}
+                            mailboxId={params?.mailboxId ?? ''}
+                        />
                     </div>
                 )}
             </div>

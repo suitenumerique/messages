@@ -3,12 +3,24 @@
 // same constraint documented on mailbox-list's .mailbox__item-row).
 .thread-item-row {
     display: flex;
+    // flex-wrap so the expanded summaries container (below) can be
+    // pushed onto its own line instead of squeezing in beside the
+    // chevron/Link as a third flex item.
+    flex-wrap: wrap;
     align-items: flex-start;
 
     .thread-item {
         flex: 1;
         min-width: 0;
     }
+}
+
+// Container for ThreadItemMessageSummaries — forces it onto its own row
+// below the chevron/Link pair (see flex-wrap above), spanning the full
+// width of the thread-list row.
+.thread-item-row > [id^="thread-item-summaries-"] {
+    flex-basis: 100%;
+    width: 100%;
 }
 
 // Native <button> acting as the disclosure control. Reset the browser
@@ -309,4 +321,60 @@
         scale: 0.7;
         opacity: 0;
     }
+}
+
+// Per-message summary rows shown under an expanded thread-list row
+// (ThreadItemMessageSummaries). Indented with a connecting rule,
+// Apple-Mail-style.
+.thread-item__summaries {
+    list-style: none;
+    margin: 0;
+    padding-left: var(--c--globals--spacings--xl);
+    border-left: 1px solid var(--c--contextuals--border--semantic--contextual--primary);
+}
+
+.thread-item__summaries--loading,
+.thread-item__summaries--error {
+    display: flex;
+    align-items: center;
+    gap: var(--c--globals--spacings--3xs);
+    padding: var(--c--globals--spacings--3xs) var(--c--globals--spacings--4xs);
+    color: var(--c--contextuals--content--semantic--neutral--tertiary);
+}
+
+.thread-item__summary-row {
+    display: flex;
+}
+
+.thread-item__summary-link {
+    display: flex;
+    align-items: baseline;
+    gap: var(--c--globals--spacings--3xs);
+    padding: var(--c--globals--spacings--3xs) var(--c--globals--spacings--4xs);
+    width: 100%;
+    text-decoration: none;
+    color: inherit;
+    border-radius: 4px;
+}
+
+.thread-item__summary-link--unread {
+    font-weight: 600;
+}
+
+.thread-item__summary-link--draft {
+    font-style: italic;
+}
+
+.thread-item__summary-draft-label {
+    color: var(--c--contextuals--content--semantic--neutral--tertiary);
+    font-size: var(--c--globals--font--sizes--xs);
+    text-transform: uppercase;
+}
+
+.thread-item__summary-snippet {
+    color: var(--c--contextuals--content--semantic--neutral--tertiary);
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+    flex: 1;
 }
