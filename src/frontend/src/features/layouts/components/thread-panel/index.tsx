@@ -4,7 +4,7 @@ import { ThreadItem } from "./components/thread-item";
 import { Spinner } from "@gouvfr-lasuite/ui-kit";
 import { useTranslation } from "react-i18next";
 import { Button } from "@gouvfr-lasuite/cunningham-react";
-import { useEffect, useRef, useCallback } from "react";
+import { useEffect, useRef, useCallback, useState } from "react";
 import { useUrlSearchParams } from "@/hooks/use-url-search-params";
 import ThreadPanelHeader from "./components/thread-panel-header";
 import { useThreadSelection } from "@/features/providers/thread-selection";
@@ -39,6 +39,23 @@ export const ThreadPanel = () => {
     } = useThreadSelection();
 
     const { getItemProps, onKeyDown: handleListboxKeyDown, onBlur: handleListboxBlur } = useThreadListbox(threads?.results);
+
+    // In-memory only, by design: expansion state resets on reload but
+    // survives SPA navigation (unlike mailbox-list's folder-expand state,
+    // which persists to localStorage — a deliberate product decision not
+    // to persist this one).
+    const [expandedThreadIds, setExpandedThreadIds] = useState<Set<string>>(new Set());
+    const toggleThreadExpand = useCallback((threadId: string) => {
+        setExpandedThreadIds((prev) => {
+            const next = new Set(prev);
+            if (next.has(threadId)) {
+                next.delete(threadId);
+            } else {
+                next.add(threadId);
+            }
+            return next;
+        });
+    }, []);
 
     const handleObserver = useCallback((entries: IntersectionObserverEntry[]) => {
         const target = entries[0];
@@ -137,6 +154,8 @@ export const ThreadPanel = () => {
                             onSelectRange={selectRange}
                             selectedThreadIds={selectedThreadIds}
                             isSelectionMode={isSelectionMode}
+                            isExpanded={expandedThreadIds.has(thread.id)}
+                            onToggleExpand={() => toggleThreadExpand(thread.id)}
                             {...getItemProps(thread.id)}
                         />
                     ))}
