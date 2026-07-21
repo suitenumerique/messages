@@ -1,3 +1,4 @@
+import { execSync } from 'node:child_process';
 import { defineConfig, type Plugin } from 'vite';
 import react from '@vitejs/plugin-react';
 import legacy from '@vitejs/plugin-legacy';
@@ -10,8 +11,32 @@ import pkg from './package.json';
 // Single source of truth for supported browsers; drives which polyfills the
 // legacy plugin injects (see the `legacy` plugin below).
 const browserslist = pkg.browserslist;
+// A per-build version stamp, baked in as `__SOURCE_VERSION__`. Used to cache-bust
+// the runtime-fetched locale JSONs (their URLs are otherwise fixed, so a CDN /
+// browser keeps serving a stale copy after a deploy — a half-translated UI).
+// Resolution order, most authoritative first:
+//   - SOURCE_VERSION   commit SHA — injected by Scalingo's buildpack natively,
+//                      and passed as a build-arg from our CI Docker build
+//   - `git`            local builds / any context that ships the .git dir
+//   - timestamp        last-resort, still unique from one deploy to the next
+const appVersion =
+  process.env.SOURCE_VERSION ||
+  (() => {
+    try {
+      return execSync('git rev-parse --short HEAD', {
+        stdio: ['ignore', 'pipe', 'ignore'],
+      })
+        .toString()
+        .trim();
+    } catch {
+      return `t${Date.now()}`;
+    }
+  })();
 
 export default defineConfig({
+  define: {
+    __SOURCE_VERSION__: JSON.stringify(appVersion),
+  },
   plugins: [
     // See ./tsr.config.json for tanstackRouter config
     tanstackRouter(),
