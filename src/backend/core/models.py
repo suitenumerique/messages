@@ -58,7 +58,7 @@ from core.enums import (
     user_event_type_choices,
 )
 from core.mda.signing import generate_dkim_key as _generate_dkim_key
-from core.mda.utils import generate_mime_id
+from core.mda.utils import generate_mime_id, message_snippet
 from core.services.tiered_storage import TieredStorageService, sha256_advisory_lock
 from core.utils import validate_json_schema
 
@@ -1087,6 +1087,10 @@ class Thread(BaseModel):
     """Thread model to group messages."""
 
     subject = models.CharField("subject", max_length=255, null=True, blank=True)
+    # Denormalized plain-text preview of the latest visible message,
+    # maintained exclusively by ``update_stats``. Kept as-is while the
+    # thread sits in the trash (no visible message to derive from), so the
+    # trash view keeps its preview.
     snippet = models.TextField("snippet", blank=True)
     has_trashed = models.BooleanField("has trashed", default=False)
     is_trashed = models.BooleanField(
@@ -1159,16 +1163,102 @@ class Thread(BaseModel):
         db_table = "messages_thread"
         verbose_name = "thread"
         verbose_name_plural = "threads"
+        indexes = [
+            # Serves the ``backfill_thread_snippets`` keyset scan
+            # (``snippet="" AND has_messages`` walked newest-first over
+            # ``created_at, id`` — a backward index scan, so the ascending
+            # index works for it as-is).
+            # Without it that scan has no index to walk and PostgreSQL must
+            # seq-scan the whole table and top-N sort it on *every* batch —
+            # the ``LIMIT`` allows no early exit — which on a six-figure
+            # backlog means hundreds of full scans evicting the shared buffer
+            # cache out from under live traffic.
+            #
+            # Partial on the backfill predicate: a fresh Thread enters the
+            # index (``snippet=""`` is the default) and leaves it as soon as
+            # ``update_stats`` derives a snippet, so at steady state this
+            # holds only the threads that legitimately have none — drafts and
+            # bodyless messages. Cheap to keep, so it is not dropped once the
+            # backlog is cleared: the command is designed to be re-run.
+            models.Index(
+                fields=["created_at", "id"],
+                name="thread_snippet_backfill_idx",
+                condition=models.Q(snippet="", has_messages=True),
+            ),
+        ]
 
     def __str__(self):
         return str(self.subject) if self.subject else "(no subject)"
 
-    def update_stats(self):
-        """Update the denormalized stats of the thread."""
+    def _derive_snippet(
+        self, message_id, source_message=None, source_parsed_email=None
+    ):
+        """Return the plain-text snippet of message ``message_id``.
+
+        Prefers the caller-supplied hints when they describe that very
+        message, so paths that just parsed it (inbound delivery, outbound
+        send) pay neither a refetch nor a blob read.
+
+        Never raises: the snippet is derived display data, so a corrupt blob
+        or a transient object-storage failure degrades it to ``""`` rather
+        than aborting the whole stats update.
+        """
+        is_source = source_message is not None and source_message.id == message_id
+        try:
+            if is_source and source_parsed_email is not None:
+                # Deliberately NOT written to the instance parse cache:
+                # callers parse with the library's default ``bodyValues``
+                # projection, while ``get_parsed_data`` inlines part content.
+                # ``message_snippet`` reads both shapes, other consumers of
+                # the cache do not.
+                return message_snippet(source_parsed_email)
+            message = (
+                source_message if is_source else Message.objects.get(id=message_id)
+            )
+            return message_snippet(message.get_parsed_data())
+        except Message.DoesNotExist:
+            # The message was hard-deleted between the snapshot and this
+            # refetch; the concurrent deletion triggers its own update_stats
+            # with fresh data.
+            logger.warning(
+                "Message %s vanished before snippet derivation for thread %s",
+                message_id,
+                self.id,
+            )
+        except Exception:  # pylint: disable=broad-exception-caught
+            # get_parsed_data() only shields ValueError: a corrupt blob
+            # (InvalidTag, ZstdError) or a transient object storage failure
+            # still raises.
+            logger.exception(
+                "Failed to derive snippet for message %s in thread %s",
+                message_id,
+                self.id,
+            )
+        return ""
+
+    def update_stats(
+        self, source_message=None, source_parsed_email=None, force_snippet=False
+    ):
+        """Update the denormalized stats of the thread.
+
+        ``source_message`` is the message whose change triggered this update,
+        and ``source_parsed_email`` its parsed JMAP Email, when the caller
+        already holds them. Both are pure hints for the snippet derivation:
+        they spare a refetch (and a blob read) on the hot paths that just
+        created or parsed that message, and are ignored unless it turns out to
+        be the thread's latest visible message.
+
+        ``force_snippet`` re-derives the snippet even when ``messaged_at`` did
+        not move. Callers must pass it when they changed the visible message
+        set in a way the timestamp cannot reflect — removing a message that
+        may leave a same-``created_at`` sibling (bulk imports) as the new
+        latest, i.e. a hard delete or a thread split.
+        """
         # Fetch all message metadata in a single query to avoid multiple DB hits
         message_data = list(
             self.messages.select_related("sender")
             .values(
+                "id",
                 "is_trashed",
                 "is_draft",
                 "is_sender",
@@ -1178,7 +1268,10 @@ class Thread(BaseModel):
                 "created_at",
                 "sender__name",
             )
-            .order_by("created_at")
+            # ``id`` tie-break so messages sharing a ``created_at`` (bulk
+            # imports) are ordered deterministically — the snippet derivation
+            # picks the same message ``backfill_thread_snippets`` would.
+            .order_by("created_at", "id")
         )
 
         if not message_data:
@@ -1201,6 +1294,7 @@ class Thread(BaseModel):
             self.sender_names = None
             self.has_delivery_pending = False
             self.has_delivery_failed = False
+            self.snippet = ""
         else:
             # Compute stats in Python
             self.has_trashed = any(msg["is_trashed"] for msg in message_data)
@@ -1263,16 +1357,40 @@ class Thread(BaseModel):
             )
 
             # Set messaged_at to the creation time of the most recent
-            # non-draft and non-trashed message.
+            # non-draft and non-trashed message. The snippet follows the
+            # same message: it is re-derived when ``messaged_at`` moves —
+            # flag-only updates (read, starred…) cost nothing — and the
+            # caller's hints spare the blob read (a GET to object storage
+            # once offloaded) on the paths that already hold that message.
+            #
+            # The timestamp is only a proxy for "the latest visible message
+            # changed", blind exactly where the visible set changes without
+            # moving it — that is what ``force_snippet`` is for (see the
+            # docstring).
+            #
+            # Thread fully trashed (date → None): nothing visible to derive
+            # from, and clearing would strip the preview off the trash view,
+            # so the snippet keeps describing the message it came from. The
+            # restore (None → date) re-derives like any other move: whether
+            # the surfaced latest is the message the kept snippet came from
+            # is unknowable here — a partial restore or a purge while
+            # trashed may have surfaced another one — so a bulk restore
+            # pays one blob read per thread for a snippet that is always
+            # right.
             visible_messages = [
                 msg
                 for msg in message_data
                 if not msg["is_draft"] and not msg["is_trashed"]
             ]
-            if visible_messages:
-                self.messaged_at = max(msg["created_at"] for msg in visible_messages)
-            else:
-                self.messaged_at = None
+            last_visible = visible_messages[-1] if visible_messages else None
+            new_messaged_at = last_visible["created_at"] if last_visible else None
+            if last_visible is not None and (
+                force_snippet or new_messaged_at != self.messaged_at
+            ):
+                self.snippet = self._derive_snippet(
+                    last_visible["id"], source_message, source_parsed_email
+                )
+            self.messaged_at = new_messaged_at
 
             # Compute per-view messaged_at timestamps
             active_msgs = [
@@ -1362,6 +1480,7 @@ class Thread(BaseModel):
                 "sender_messaged_at",
                 "archived_messaged_at",
                 "sender_names",
+                "snippet",
             ]
         )
 
@@ -2208,6 +2327,17 @@ class Message(BaseModel):
         else:
             self._parsed_email_cache = {}
         return self._parsed_email_cache
+
+    def discard_parsed_data(self) -> None:
+        """Drop the cached parse so a bulk reader can reclaim its memory.
+
+        ``get_parsed_data`` inlines body content on each part, so a cached
+        parse is roughly the size of the decoded message. Code that walks far
+        more messages than it can afford to hold at once (backfills, exporters,
+        reindexers) calls this once done with a message; the next
+        ``get_parsed_data`` simply re-reads and re-parses.
+        """
+        self._parsed_email_cache = None
 
     def get_parsed_field(self, field_name: str) -> Any:
         """Get a parsed field from the parsed JMAP Email object."""

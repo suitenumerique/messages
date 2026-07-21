@@ -5,7 +5,7 @@ import { BlockNoteEditor, BlockNoteEditorOptions, BlockNoteSchema, PartialBlock 
 import { MessageTemplateSelector } from '@/features/blocknote/message-template-block';
 import { imageBlockSpec, ALLOWED_IMAGE_MIME_TYPES } from '@/features/blocknote/image-block';
 import { EmailExporter } from '@/features/blocknote/email-exporter';
-import { blocksToMarkdown } from '@/features/blocknote/markdown-exporter';
+import { blocksToPlainText } from '@/features/blocknote/markdown-exporter';
 
 import { FieldProps } from '@gouvfr-lasuite/cunningham-react';
 import { useFormContext } from 'react-hook-form';
@@ -273,7 +273,7 @@ export const MessageComposer = React.forwardRef<MessageComposerHandle, MessageCo
     useImperativeHandle(ref, () => ({
         exportContent: async () => {
             const blocks = editor.document;
-            const textBody = await blocksToMarkdown(editor, blocks);
+            const textBody = await blocksToPlainText(editor, blocks);
             const htmlBody = emailExporter.exportBlocks(blocks, editor.domElement ?? null);
             return { htmlBody, textBody };
         },

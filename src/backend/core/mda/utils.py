@@ -7,9 +7,11 @@ Three groups of helpers live here:
   the library: the headers they recognise are project conventions
   (Google Takeout / Dovecot label headers; Received-bounded trust
   scopes used by the inbound auth path).
-- :func:`thread_snippet` — the thread-listing snippet derived from
-  ``parse_email``'s ``preview`` field, truncated to
-  :data:`SNIPPET_MAX_LENGTH`.
+- :func:`message_snippet` — the plain-text message preview
+  ("snippet") derived from a parsed JMAP Email. The cleaning itself
+  (HTML + markdown strip, truncate to SNIPPET_MAX_CHARS after cleaning)
+  lives in :func:`jmap_email.preview_text`; this wrapper only resolves
+  which body source to feed it.
 - :func:`current_sent_at` — single source of truth for the
   ``sentAt`` ISO-8601 string outbound paths stamp on the JMAP dict
   they hand to :func:`jmap_email.compose_email`.
@@ -22,20 +24,17 @@ from email.utils import make_msgid
 
 from django.utils import timezone
 
-from jmap_email import body_part_text, decode_rfc2047_header
+from jmap_email import body_part_text, decode_rfc2047_header, preview_text
 from jmap_email.types import JmapEmail
 
 __all__ = [
-    "SNIPPET_MAX_LENGTH",
+    "SNIPPET_MAX_CHARS",
     "current_sent_at",
     "generate_mime_id",
     "gmail_labels",
     "headers_blocks",
-    "thread_snippet",
+    "message_snippet",
 ]
-
-
-SNIPPET_MAX_LENGTH = 140
 
 
 # ────────────────────────────────────────────────────────────────────
@@ -68,24 +67,28 @@ def generate_mime_id(domain: str, namespace: str = "lstmsgs") -> str:
 
 
 # ────────────────────────────────────────────────────────────────────
-# Thread-listing snippet
+# Message snippet (plain-text preview)
 # ────────────────────────────────────────────────────────────────────
 
+SNIPPET_MAX_CHARS = 140
 
-def thread_snippet(parsed_email: JmapEmail, fallback: str = "") -> str:
-    """Return the thread-listing snippet for a parsed JMAP Email.
+
+def message_snippet(parsed_email: JmapEmail) -> str:
+    """Return the snippet for a parsed JMAP Email.
 
     Resolution order:
 
-    1. ``parsed["preview"]`` — the library's spec-default ≤256-char
-       plain-text excerpt, already HTML-stripped and whitespace-
-       normalised.
-    2. The first ``textBody`` part — used when ``parse_email`` was
-       called with ``preview=False`` or when the caller hand-built the
-       JMAP dict (importers, autoreply, MTA-in test fixtures).
-    3. ``fallback`` — when neither preview nor a text body exists.
+    1. ``parsed["preview"]`` — computed (and already cleaned) by the
+       library at parse time.
+    2. The first ``textBody`` part — for hand-built JMAP dicts
+       (importers, autoreply, MTA-in fixtures) that carry no preview.
+    3. The first ``htmlBody`` part, for HTML-only hand-built dicts.
 
-    Output is always truncated to :data:`SNIPPET_MAX_LENGTH`.
+    Every source goes through :func:`jmap_email.preview_text` (HTML +
+    markdown strip), truncate to SNIPPET_MAX_CHARS after stripping.
+    Returns ``""`` when the message has no body content — the subject
+    fallback is deliberately an app/display concern, not baked into
+    the stored snippet.
     """
     parsed = parsed_email or {}
     candidate = parsed.get("preview") or ""
@@ -94,8 +97,10 @@ def thread_snippet(parsed_email: JmapEmail, fallback: str = "") -> str:
         if text_body:
             candidate = body_part_text(parsed, text_body[0])
     if not candidate:
-        candidate = fallback or ""
-    return candidate[:SNIPPET_MAX_LENGTH]
+        html_body = parsed.get("htmlBody") or []
+        if html_body:
+            candidate = body_part_text(parsed, html_body[0])
+    return preview_text(candidate, max_chars=SNIPPET_MAX_CHARS)
 
 
 # ────────────────────────────────────────────────────────────────────

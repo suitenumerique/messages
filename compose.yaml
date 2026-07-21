@@ -272,6 +272,12 @@ services:
     <<: *worker-base
     environment:
       - DJANGO_CONFIGURATION=Development
+    volumes:
+      - ./src/backend:/app
+      - ./data/static:/data/static
+      # Same dev-only jmap-email overlay as backend-base: the worker imports
+      # the same core code, so it must see the same library source.
+      - ./src/jmap-email/jmap_email:/venv/lib/${PYTHON_VERSION:-python3.14}/site-packages/jmap_email
     depends_on:
       - backend-dev
 
@@ -310,6 +316,9 @@ services:
       - deploy/env/backend.local
     volumes:
       - ./src/backend:/app
+      # Same dev-only jmap-email overlay as backend-base: flower imports the
+      # same core code, so it must see the same library source.
+      - ./src/jmap-email/jmap_email:/venv/lib/${PYTHON_VERSION:-python3.14}/site-packages/jmap_email
     ports:
       - "8903:8803"
     command: celery -A messages.celery_app flower --port=8803

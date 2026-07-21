@@ -29,7 +29,6 @@ from core.ai.utils import (
     is_ai_summary_enabled,
     is_auto_labels_enabled,
 )
-from core.mda.utils import thread_snippet
 from core.services.importer.labels import (
     compute_labels_and_flags,
 )
@@ -143,20 +142,12 @@ def find_thread_for_message(
 def _create_thread(parsed_email: JmapEmail, mailbox: models.Mailbox) -> models.Thread:
     """Create a new thread."""
 
-    snippet = thread_snippet(
-        parsed_email,
-        fallback=parsed_email.get("subject") or "(No snippet available)",
-    )
-
     # Truncate subject to 255 characters if it exceeds max_length
     thread_subject = parsed_email.get("subject")
     if thread_subject and len(thread_subject) > 255:
         thread_subject = thread_subject[:255]
 
-    thread = models.Thread.objects.create(
-        subject=thread_subject,
-        snippet=snippet,
-    )
+    thread = models.Thread.objects.create(subject=thread_subject)
     # Create a thread access for the sender mailbox
     models.ThreadAccess.objects.create(
         thread=thread,
@@ -611,17 +602,6 @@ def _create_message_from_inbound(  # pylint: disable=too-many-arguments
 
     # --- 8. Final Updates --- #
     try:
-        # Update snippet using the new message's body if possible
-        # (This assumes the subject was used for the initial snippet if body was empty)
-        new_snippet = thread_snippet(
-            parsed_email,
-            fallback=parsed_email.get("subject", ""),
-        )
-
-        if new_snippet:
-            thread.snippet = new_snippet
-            thread.save(update_fields=["snippet"])
-
         # Do not trigger AI features on import, spam, or outbound
         if not is_import and not is_spam and not is_outbound:
             # Update summary if needed is ai is enabled
@@ -654,7 +634,10 @@ def _create_message_from_inbound(  # pylint: disable=too-many-arguments
         )
         # Don't return False here, delivery was successful
 
-    thread.update_stats()
+    # Hand over the message we just created along with its already-parsed MIME:
+    # deriving the thread snippet must not cost a refetch and a second blob
+    # read on the delivery path.
+    thread.update_stats(source_message=message, source_parsed_email=parsed_email)
 
     logger.info(
         "Successfully delivered message %s to mailbox %s (Thread: %s)",

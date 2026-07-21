@@ -403,6 +403,7 @@ without redeploying the frontend (the flag is pulled from
 | `FEATURE_MAILDOMAIN_MANAGE_ACCESSES` | `True` | Allows managing mail domain accesses (create/delete). When `False`, those actions return 403. | Optional |
 | `FEATURE_MESSAGE_TEMPLATES` | `True` | Enables the "message templates" feature. When `False`, mailbox admins lose the `CAN_MANAGE_MESSAGE_TEMPLATES` ability and the related UI is hidden. | Optional |
 | `FEATURE_THREAD_SPLIT` | `True` | Enables "split thread" feature. When `False`, the split API action returns 404 and the frontend hides the menu entry. | Optional |
+| `FEATURE_THREAD_SNIPPET` | `False` | Shows a preview line of the latest message under each subject in the thread list. Snippets are a backfilled field: enable once `python manage.py backfill_thread_snippets` has rebuilt the backlog, otherwise the list shows empty (or stale) previews. | Optional |
 | `FEATURE_MAILDOMAIN_MANAGE_TOTP` | `False` | Enables the "Mandatory 2FA" (TOTP) toggle for mail domains. Requires the Keycloak identity-provider settings and `KEYCLOAK_TOTP_ROLE_ID`. | Optional |
 
 ### Business Logic

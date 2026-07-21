@@ -55,4 +55,5 @@ export interface Message {
   readonly signature: MessageSignature;
   /** Return the STMSG headers of the message. */
   readonly stmsg_headers: MessageStmsgHeaders;
+  readonly snippet: string;
 }

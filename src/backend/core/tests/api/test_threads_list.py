@@ -13,6 +13,7 @@ import pytest
 from rest_framework import status
 
 from core import enums
+from core.api import serializers
 from core.factories import (
     ContactFactory,
     LabelFactory,
@@ -432,6 +433,62 @@ def test_list_threads_success(api_client):
     assert response.data["count"] == 1
     assert response.data["results"][0]["id"] == str(thread2.id)
     assert response.data["results"][0]["has_unread"] is False
+
+
+def test_list_threads_messages_count_excludes_drafts_and_trashed(api_client):
+    """`active_messages_count` counts the same messages the snippet is derived from.
+
+    The badge sits next to the snippet in the thread list, so both must
+    describe the same set: drafts and trashed messages are excluded, while
+    `messages` keeps returning every ID for the thread view.
+    """
+    user = UserFactory()
+    api_client.force_authenticate(user=user)
+    mailbox = MailboxFactory(users_read=[user])
+
+    thread = ThreadFactory()
+    ThreadAccessFactory(
+        mailbox=mailbox,
+        thread=thread,
+        role=enums.ThreadAccessRoleChoices.EDITOR,
+    )
+    MessageFactory(thread=thread)
+    MessageFactory(thread=thread)
+    MessageFactory(thread=thread, is_draft=True)
+    MessageFactory(thread=thread, is_trashed=True)
+    thread.update_stats()
+
+    response = api_client.get(API_URL, {"mailbox_id": str(mailbox.id)})
+
+    assert response.status_code == status.HTTP_200_OK
+    result = response.data["results"][0]
+    assert result["active_messages_count"] == 2
+    # The ID list is untouched: the thread view still needs every message.
+    assert len(result["messages"]) == 4
+
+
+def test_retrieve_thread_messages_count_without_prefetch(api_client):
+    """The no-prefetch fallback must agree with the prefetched path.
+
+    Code paths that build a thread outside the annotated queryset (the
+    ``split`` action, for instance) have no ``_ordered_messages`` cache, so
+    the count falls back to a filtered ``COUNT`` query.
+    """
+    user = UserFactory()
+    mailbox = MailboxFactory(users_read=[user])
+    thread = ThreadFactory()
+    ThreadAccessFactory(
+        mailbox=mailbox,
+        thread=thread,
+        role=enums.ThreadAccessRoleChoices.EDITOR,
+    )
+    MessageFactory(thread=thread)
+    MessageFactory(thread=thread, is_draft=True)
+    thread.update_stats()
+
+    data = serializers.ThreadSerializer(Thread.objects.get(id=thread.id)).data
+
+    assert data["active_messages_count"] == 1
 
 
 def test_list_threads_unauthorized(api_client):
@@ -1955,7 +2012,13 @@ class TestThreadListQueryCount:
         """Return the URL for the list endpoint."""
         return reverse("threads-list")
 
-    def _setup(self, thread_count, with_labels=False, with_assignees=False):
+    def _setup(
+        self,
+        thread_count,
+        with_labels=False,
+        with_assignees=False,
+        with_messages=False,
+    ):
         """Provision a user + mailbox with ``thread_count`` threads."""
         user = UserFactory()
         mailbox = MailboxFactory()
@@ -1973,6 +2036,10 @@ class TestThreadListQueryCount:
                 thread=thread,
                 role=enums.ThreadAccessRoleChoices.EDITOR,
             )
+            if with_messages:
+                MessageFactory(thread=thread)
+                MessageFactory(thread=thread, is_draft=True)
+                MessageFactory(thread=thread, is_trashed=True)
             if label is not None:
                 label.threads.add(thread)
             if assignee is not None:
@@ -2004,6 +2071,27 @@ class TestThreadListQueryCount:
 
         assert queries_5 == queries_1, (
             f"Expected constant query count (N+1 regression?), "
+            f"got 1→{queries_1} vs 5→{queries_5}"
+        )
+
+    def test_message_flags_are_prefetched(self, api_client, url):
+        """Threads carrying messages must not scale queries with N either.
+
+        ``test_base_fields_are_prefetched`` provisions threads with no
+        messages, so it never exercises the per-message field reads.
+        ``get_active_messages_count`` reads ``is_draft``/``is_trashed`` on every
+        prefetched row: were they missing from the prefetch ``only()``, each
+        read would emit its own deferred-field query.
+        """
+        user_1, mailbox_1 = self._setup(1, with_messages=True)
+        queries_1 = self._count_queries(api_client, user_1, mailbox_1, url)
+
+        user_5, mailbox_5 = self._setup(5, with_messages=True)
+        queries_5 = self._count_queries(api_client, user_5, mailbox_5, url)
+
+        assert queries_5 == queries_1, (
+            f"Expected constant query count with messages "
+            f"(deferred-field N+1 on is_draft/is_trashed?), "
             f"got 1→{queries_1} vs 5→{queries_5}"
         )
 

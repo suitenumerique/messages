@@ -151,6 +151,31 @@
     overflow: hidden;
 }
 
+.thread-item[data-unread="true"] .thread-item__subject {
+    font-weight: 500;
+}
+
+.thread-item__message-count {
+    font-size: var(--c--globals--font--sizes--xs);
+    color: var(--c--contextuals--content--semantic--neutral--tertiary);
+    font-weight: 400;
+}
+
+.thread-item__column:has(.thread-item__sender + .thread-item__message-count) {
+    align-items: baseline;
+    gap: var(--c--globals--spacings--2xs);
+}
+
+.thread-item__snippet {
+    color: var(--c--contextuals--content--semantic--neutral--tertiary);
+    font-weight: 400;
+    font-size: var(--c--globals--font--sizes--xs);
+    display: inline-block;
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+}
+
 .thread-item__column--metadata {
     align-items: center;
     gap: var(--c--globals--spacings--3xs);

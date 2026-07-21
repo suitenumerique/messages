@@ -21,7 +21,6 @@ from rest_framework.response import Response
 
 from core import enums, models
 from core.ai.thread_summarizer import summarize_thread
-from core.mda.utils import thread_snippet
 from core.services.search import search_threads
 
 from .. import permissions, serializers
@@ -235,13 +234,16 @@ class ThreadViewSet(
                 ),
                 to_attr="_accesses_with_mailbox",
             ),
-            # Feeds ThreadSerializer.get_messages. The serializer only emits
-            # message IDs in chronological order, so ordering is baked into
-            # the prefetch to avoid a re-query per thread.
+            # Feeds ThreadSerializer.get_messages and get_active_messages_count.
+            # The serializer only emits message IDs in chronological order, so
+            # ordering is baked into the prefetch to avoid a re-query per
+            # thread. `is_draft`/`is_trashed` are deferred-loaded here too:
+            # get_active_messages_count reads them on every row, and leaving
+            # them out would turn each read into its own deferred-field query.
             Prefetch(
                 "messages",
                 queryset=models.Message.objects.only(
-                    "id", "thread_id", "created_at"
+                    "id", "thread_id", "created_at", "is_draft", "is_trashed"
                 ).order_by("created_at"),
                 to_attr="_ordered_messages",
             ),
@@ -927,16 +929,9 @@ class ThreadViewSet(
 
         with transaction.atomic():
             new_subject = split_message.subject or old_thread.subject
-            snippet = thread_snippet(
-                split_message.get_parsed_data(),
-                fallback=new_subject or "",
-            )
 
             # Create new thread
-            new_thread = models.Thread.objects.create(
-                subject=new_subject,
-                snippet=snippet,
-            )
+            new_thread = models.Thread.objects.create(subject=new_subject)
 
             # Copy ThreadAccess entries
             old_accesses = models.ThreadAccess.objects.filter(thread=old_thread)
@@ -997,17 +992,12 @@ class ThreadViewSet(
                     thread=new_thread
                 )
 
-            # Recalculate old thread snippet from its most recent remaining message
-            last_remaining = old_thread.messages.order_by("-created_at").first()
-            if last_remaining:
-                old_thread.snippet = thread_snippet(
-                    last_remaining.get_parsed_data(),
-                    fallback=old_thread.subject or "",
-                )
-                old_thread.save(update_fields=["snippet"])
-
-            # Update stats on both threads
-            old_thread.update_stats()
+            # Update stats on both threads (also re-derives their snippets —
+            # forced on the old thread: the split may leave a
+            # same-``created_at`` sibling as its new latest, invisible to the
+            # ``messaged_at`` guard; the new thread starts empty and derives
+            # on its own)
+            old_thread.update_stats(force_snippet=True)
             new_thread.update_stats()
 
             # Invalidate summaries

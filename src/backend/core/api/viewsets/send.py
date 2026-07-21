@@ -176,6 +176,6 @@ class SendMessageView(APIView):
             # is_draft=False); refresh and update thread stats in the same
             # transaction so the un-drafting and stats commit atomically.
             message.refresh_from_db()
-            message.thread.update_stats()
+            message.thread.update_stats(source_message=message)
 
         return Response({"task_id": task_id}, status=status.HTTP_200_OK)

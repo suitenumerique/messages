@@ -1,6 +1,7 @@
 """Test messages delete."""
 
 from django.urls import reverse
+from django.utils import timezone
 
 import pytest
 from rest_framework import status
@@ -251,3 +252,40 @@ class TestMessagesDelete:
             assert models.Blob.objects.count() == 0
 
             assert models.ThreadAccess.objects.count() == 0
+
+    def test_delete_message_with_equal_created_at_refreshes_snippet(self):
+        """Deleting the newest message re-derives the thread snippet even when
+        the survivor shares its ``created_at`` (bulk imports): ``messaged_at``
+        does not move, so the endpoint must force the re-derivation."""
+        authenticated_user = factories.UserFactory()
+        mailbox = factories.MailboxFactory()
+        thread = factories.ThreadFactory()
+        factories.ThreadAccessFactory(
+            mailbox=mailbox, thread=thread, role=enums.ThreadAccessRoleChoices.EDITOR
+        )
+        factories.MailboxAccessFactory(
+            mailbox=mailbox,
+            user=authenticated_user,
+            role=enums.MailboxRoleChoices.EDITOR,
+        )
+        first = factories.MessageFactory(
+            thread=thread, raw_mime=b"From: a@example.com\r\n\r\nFirst body"
+        )
+        second = factories.MessageFactory(
+            thread=thread, raw_mime=b"From: a@example.com\r\n\r\nSecond body"
+        )
+        models.Message.objects.filter(id__in=[first.id, second.id]).update(
+            created_at=timezone.now()
+        )
+        thread.update_stats()
+        newest, survivor_snippet = (
+            (second, "First body") if second.id > first.id else (first, "Second body")
+        )
+
+        client = APIClient()
+        client.force_authenticate(user=authenticated_user)
+        response = client.delete(reverse("messages-detail", kwargs={"id": newest.id}))
+
+        assert response.status_code == status.HTTP_204_NO_CONTENT
+        thread.refresh_from_db()
+        assert thread.snippet == survivor_snippet

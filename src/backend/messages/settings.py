@@ -1398,6 +1398,15 @@ class Base(Configuration):
     FEATURE_THREAD_SPLIT = values.BooleanValue(
         default=True, environ_name="FEATURE_THREAD_SPLIT", environ_prefix=None
     )
+    # Whether the thread list shows a preview line under each subject.
+    # Defaults to False because the snippets are a backfilled field: on a
+    # pre-existing deployment they are empty until
+    # ``backfill_thread_snippets`` has run, or stale if they predate the
+    # current derivation. Enable once the backlog has been rebuilt, so the
+    # feature never ships a half-populated or wrong-looking list.
+    FEATURE_THREAD_SNIPPET = values.BooleanValue(
+        default=False, environ_name="FEATURE_THREAD_SNIPPET", environ_prefix=None
+    )
 
     # Mandatory TOTP admin column. When True, the mailbox admin DataGrid shows
     # a "Mandatory 2FA" column with a per-mailbox switch and a "Reset 2FA"

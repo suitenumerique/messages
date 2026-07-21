@@ -21,6 +21,7 @@ from core.mda.dispatch_webhooks import (
     VALID_FORMATS,
 )
 from core.mda.inline_images import extract_inline_images_html
+from core.mda.utils import message_snippet
 from core.services.blob_gc import schedule_for_gc
 from core.services.identity import keycloak as keycloak_service
 from core.services.importer.channel import merged_state
@@ -844,6 +845,7 @@ class ThreadSerializer(serializers.ModelSerializer):
     """Serialize threads."""
 
     messages = serializers.SerializerMethodField(read_only=True)
+    active_messages_count = serializers.SerializerMethodField(read_only=True)
     sender_names = serializers.ListField(child=serializers.CharField(), read_only=True)
     user_role = serializers.SerializerMethodField(read_only=True)
     has_unread = serializers.SerializerMethodField(read_only=True)
@@ -921,12 +923,32 @@ class ThreadSerializer(serializers.ModelSerializer):
             )
         return ThreadAccessDetailSerializer(cached, many=True).data
 
+    @extend_schema_field(serializers.ListField(child=serializers.CharField()))
     def get_messages(self, instance):
         """Return the IDs of the thread messages, chronologically ordered."""
         cached = getattr(instance, "_ordered_messages", None)
         if cached is None:
             cached = instance.messages.order_by("created_at")
         return [str(message.id) for message in cached]
+
+    @extend_schema_field(serializers.IntegerField())
+    def get_active_messages_count(self, instance):
+        """Return the number of visible messages in the thread.
+
+        "Visible" is the same definition ``Thread.update_stats`` uses to pick
+        the snippet's source message — drafts and trashed messages are
+        excluded — so the count and the preview shown next to it always
+        describe the same set.
+
+        Counted in Python over the ``_ordered_messages`` prefetch (which
+        already loads one row per message of the page) rather than through a
+        ``Count`` annotation: the thread queryset is multi-join, and a second
+        aggregate there would need its own ``distinct=True`` dance for no gain.
+        """
+        cached = getattr(instance, "_ordered_messages", None)
+        if cached is None:
+            return instance.messages.filter(is_draft=False, is_trashed=False).count()
+        return sum(1 for m in cached if not m.is_draft and not m.is_trashed)
 
     @extend_schema_field(nullable_choices_schema(models.ThreadAccessRoleChoices))
     def get_user_role(self, instance):
@@ -1008,6 +1030,7 @@ class ThreadSerializer(serializers.ModelSerializer):
             "subject",
             "snippet",
             "messages",
+            "active_messages_count",
             "has_unread",
             "has_unread_mention",
             "has_trashed",
@@ -1124,6 +1147,7 @@ class MessageSerializer(serializers.ModelSerializer):
     is_unread = serializers.SerializerMethodField(read_only=True)
     signature = serializers.SerializerMethodField()
     stmsg_headers = serializers.SerializerMethodField(read_only=True)
+    snippet = serializers.SerializerMethodField(read_only=True)
 
     @extend_schema_field(ReadMessageTemplateSerializer(allow_null=True))
     def get_signature(self, instance):
@@ -1146,6 +1170,17 @@ class MessageSerializer(serializers.ModelSerializer):
     def get_stmsg_headers(self, instance) -> dict:
         """Return the STMSG headers of the message."""
         return instance.get_stmsg_headers()
+
+    @extend_schema_field(serializers.CharField())
+    def get_snippet(self, instance):
+        """Return the plain-text preview of the message.
+
+        Computed on the fly: this endpoint already parses the MIME blob
+        (cached per instance) for ``textBody``/``htmlBody``, so the
+        extra cost is a few regex passes. Drafts have no MIME blob and
+        yield ``""``.
+        """
+        return message_snippet(instance.get_parsed_data())
 
     @extend_schema_field(MessageBodyItemSerializer(many=True))
     def get_textBody(self, instance):  # pylint: disable=invalid-name
@@ -1272,6 +1307,7 @@ class MessageSerializer(serializers.ModelSerializer):
             "mime_id",
             "signature",
             "stmsg_headers",
+            "snippet",
         ]
         read_only_fields = fields  # Mark all as read-only
 
