@@ -47,6 +47,17 @@
 			header_up X-Forwarded-For {remote_host}
 		}
 
+		# --- Cache policy for the static SPA output ---
+		# Vite fingerprints everything under /assets, so a given URL's bytes
+		# never change: cache it forever. A new deploy emits new hashed URLs.
+		@immutable path /assets/*
+		header @immutable Cache-Control "public, max-age=31536000, immutable"
+		# The SPA shell and other non-fingerprinted files (index.html, the
+		# /locales JSON, images) must revalidate every load, or a deploy's new
+		# asset hashes / translations only show up after a manual hard refresh.
+		@revalidate not path /assets/*
+		header @revalidate Cache-Control "no-cache"
+
 		# SPA fallback: any unmatched request returns index.html so the
 		# client-side router can resolve the path.
 		try_files {path} /index.html
