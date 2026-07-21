@@ -1,5 +1,7 @@
 """Test threads delete."""
 
+from unittest.mock import patch
+
 from django.urls import reverse
 from django.utils import timezone
 
@@ -207,6 +209,57 @@ def test_api_flag_untrash_single_thread_success(api_client):
     assert msg1.trashed_at is None
     assert msg2.is_trashed is False
     assert msg2.trashed_at is None
+
+
+def test_api_flag_thread_trash_round_trip_keeps_snippet(api_client):
+    """Trashing a whole thread keeps its snippet without a blob parse, and
+    restoring it re-derives the same value.
+
+    The preview must survive the stay in the trash for free (blob reads are
+    an object storage GET per thread once offloaded, and bulk trash must not
+    pay one per selected thread). The restore does re-derive: nothing records
+    which message the kept snippet came from, so keeping it blindly would go
+    stale on a partial restore or after a purge.
+    """
+    user = factories.UserFactory()
+    api_client.force_authenticate(user=user)
+    mailbox = factories.MailboxFactory(users_admin=[user])
+    thread = factories.ThreadFactory()
+    factories.ThreadAccessFactory(
+        mailbox=mailbox,
+        thread=thread,
+        role=enums.ThreadAccessRoleChoices.EDITOR,
+    )
+    factories.MessageFactory(
+        thread=thread,
+        raw_mime=b"From: a@example.com\r\nSubject: t\r\n\r\nPreserved preview",
+    )
+    thread.update_stats()
+    assert thread.snippet == "Preserved preview"
+
+    with patch.object(models.Message, "get_parsed_data") as mock_parse:
+        response = api_client.post(
+            FLAG_API_URL,
+            data={"flag": "trashed", "value": True, "thread_ids": [str(thread.id)]},
+            format="json",
+        )
+        assert response.status_code == status.HTTP_200_OK
+
+    mock_parse.assert_not_called()
+    thread.refresh_from_db()
+    assert thread.snippet == "Preserved preview"
+    assert thread.messaged_at is None
+
+    response = api_client.post(
+        FLAG_API_URL,
+        data={"flag": "trashed", "value": False, "thread_ids": [str(thread.id)]},
+        format="json",
+    )
+    assert response.status_code == status.HTTP_200_OK
+
+    thread.refresh_from_db()
+    assert thread.snippet == "Preserved preview"
+    assert thread.messaged_at is not None
 
 
 def test_api_flag_trash_multiple_threads_success(api_client):

@@ -58,6 +58,33 @@ class TestMessageGetParsedData:
         ):
             assert not message.get_parsed_data()
 
+    def test_discard_parsed_data_frees_the_cache_and_allows_reparse(self):
+        """``discard_parsed_data`` releases the cache so a bulk reader can
+        reclaim the memory, and a later read simply parses again.
+
+        The cache holds a parse with body content inlined — roughly the size of
+        the decoded message — so a caller walking a batch of them must be able
+        to let each one go. Without that release, peak memory tracks the batch
+        rather than the number of messages actually in flight.
+        """
+        raw = b"From: s@example.com\r\nSubject: t\r\n\r\nHello"
+        fake_blob = MagicMock()
+        fake_blob.get_content.return_value = raw
+        message = models.Message()
+        message.id = "test-id"
+
+        with patch.object(
+            models.Message, "blob", new_callable=PropertyMock, return_value=fake_blob
+        ):
+            assert message.get_parsed_data()["preview"] == "Hello"
+            assert fake_blob.get_content.call_count == 1
+
+            message.discard_parsed_data()
+
+            # Re-derived from scratch rather than served from the dropped cache.
+            assert message.get_parsed_data()["preview"] == "Hello"
+            assert fake_blob.get_content.call_count == 2
+
 
 @pytest.mark.django_db
 class TestUnreadableContent:

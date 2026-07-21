@@ -6,7 +6,7 @@ import { useUnreadTitlePrefix } from "@/features/providers/unread-badge";
 const TITLE_SEPARATOR = " | ";
 
 /**
- * Sets the document title to "<app name> | <segment> | …" for the current view.
+ * Sets the document title to "<segments> - <app name>" for the current view.
  * Unresolved segments (a folder name still loading, no mailbox selected…) are
  * dropped so the title never shows a dangling separator.
  *

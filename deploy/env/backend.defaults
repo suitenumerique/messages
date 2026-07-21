@@ -135,6 +135,10 @@ FEATURE_AI_AUTOLABELS=False
 # Integrations enabled in the integrations modal (mailbox admins)
 FEATURE_MAILBOX_ADMIN_CHANNELS=api_key,widget,webhook
 
+# Thread list preview line. On in dev so the feature is exercised locally;
+# ships off by default because it needs backfill_thread_snippets to have run.
+FEATURE_THREAD_SNIPPET=True
+
 # Third-party services
 # Drive - https://github.com/suitenumerique/drive
 DRIVE_BASE_URL=

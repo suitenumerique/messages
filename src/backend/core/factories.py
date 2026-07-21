@@ -132,7 +132,6 @@ class ThreadFactory(factory.django.DjangoModelFactory):
         model = models.Thread
 
     subject = factory.Faker("sentence")
-    snippet = factory.Faker("text")
 
 
 class ThreadAccessFactory(factory.django.DjangoModelFactory):

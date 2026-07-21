@@ -569,7 +569,7 @@ const EventCard = ({
                                             contact={createContactFromAttendee(
                                                 attendee,
                                             )}
-                                            displayEmail={isOrganizer}
+                                            displayOnlyEmail={!isOrganizer}
                                         />
                                         {isOrganizer ? (
                                             <span className="calendar-invite__organizer-label">

@@ -114,8 +114,12 @@ class MessageViewSet(
             # Deleting the thread will cascade delete the message
             thread.delete()
         else:
+            # Deleting a visible message can leave a same-``created_at``
+            # sibling as the new latest, which the ``messaged_at`` guard in
+            # ``update_stats`` cannot see — force the snippet re-derivation.
+            was_visible = not message.is_draft and not message.is_trashed
             message.delete()
-            thread.update_stats()
+            thread.update_stats(force_snippet=was_visible)
         return drf.response.Response(status=status.HTTP_204_NO_CONTENT)
 
     @action(detail=True, methods=["get"], url_path="eml")

@@ -11,8 +11,19 @@
 }
 
 .thread-message--folded {
+    background-color: var(--c--contextuals--background--surface--secondary);
+
     .thread-message__header {
         border-bottom: none;
+        margin-bottom: 0;
+    }
+
+    .thread-message__header-content-avatar {
+        opacity: 0.5;
+    }
+
+    .thread-message__sender-chip .contact-chip__identity-name {
+        color: var(--c--contextuals--content--semantic--neutral--secondary);
     }
 
     .thread-message__footer {
@@ -121,7 +132,7 @@
 .thread-message__header-content {
     display: flex;
     flex-direction: row;
-    gap: var(--c--globals--spacings--base);
+    gap: var(--c--globals--spacings--sm);
     width: 100%;
 
     & > .thread-message__header-content-avatar {
@@ -178,6 +189,20 @@
     text-align: right;
 }
 
+.thread-message__header-rows--snippet {
+    margin-top: var(--c--globals--spacings--sm);
+}
+
+.thread-message__snippet {
+    margin: 0;
+    font-size: var(--c--globals--font--sizes--sm);
+    color: var(--c--contextuals--content--semantic--neutral--secondary);
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    margin-right: var(--c--globals--spacings--lg);
+}
+
 .thread-message__correspondents {
     display: grid;
     grid-template-columns: max-content 1fr;
@@ -188,6 +213,7 @@
 
 .thread-message__correspondents dt {
     font-size: var(--c--globals--font--sizes--sm);
+    font-weight: 500;
 }
 .thread-message__correspondents dd {
     margin: 0;
@@ -199,6 +225,63 @@
     display: flex;
     flex-direction: row;
     flex-wrap: wrap;
+}
+
+.thread-message__recipients {
+    min-width: 0;
+}
+
+// Collapsed single-line view: items never shrink nor wrap so their measured
+// widths stay exact; anything past the computed visible count is not rendered.
+.thread-message__recipients-line {
+    display: flex;
+    flex-wrap: nowrap;
+    align-items: baseline;
+    overflow: hidden;
+    min-width: 0;
+    white-space: nowrap;
+}
+
+.thread-message__recipients-item {
+    display: inline-flex;
+    align-items: baseline;
+    flex-shrink: 0;
+    white-space: nowrap;
+}
+
+.thread-message__recipients-label {
+    font-size: var(--c--globals--font--sizes--sm);
+    font-weight: 500;
+    padding-right: var(--c--globals--spacings--2xs);
+}
+
+// Space between a group and the previous one on the collapsed line
+// (padding rather than margin/gap so it is part of the measured item width).
+.thread-message__recipients-item + .thread-message__recipients-item .thread-message__recipients-label {
+    padding-left: var(--c--globals--spacings--sm);
+}
+
+.thread-message__recipients-separator {
+    font-size: var(--c--globals--font--sizes--sm);
+    color: var(--c--contextuals--content--semantic--neutral--secondary);
+}
+
+.thread-message__recipients-more {
+    flex-shrink: 0;
+    padding-inline: var(--c--globals--spacings--3xs);
+    padding-block: var(--c--globals--spacings--3xs);
+    font-size: var(--c--globals--font--sizes--sm);
+    height: 21px; // Adjust height to match the height of the contact chips
+}
+
+.thread-message__recipients-more--ghost {
+    visibility: hidden;
+}
+
+.thread-message__recipients-toggle {
+    display: block;
+    margin-top: var(--c--globals--spacings--2xs);
+    margin-left: calc(var(--c--globals--spacings--sm) * -1);
 }
 .thread-message__body {
     width: 100%;

@@ -342,8 +342,17 @@ class TestDeliverInboundMessage:
 
     @pytest.fixture
     def raw_email_data(self):
-        """Raw email data placeholder."""
-        return b"Raw email data placeholder"
+        """Minimal raw MIME matching ``sample_parsed_email`` — the thread
+        snippet is re-derived by parsing this stored blob, so it must be a
+        real message rather than an opaque placeholder."""
+        return (
+            b"From: Test Sender <sender@test.com>\r\n"
+            b"To: Recipient Name <recipient@deliver.test>\r\n"
+            b"Subject: Delivery Test Subject\r\n"
+            b"Message-ID: <test.delivery.1@example.com>\r\n"
+            b"\r\n"
+            b"Test body content."
+        )
 
     @pytest.fixture
     def target_mailbox(self):

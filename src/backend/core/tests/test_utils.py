@@ -4,7 +4,7 @@ from datetime import datetime
 
 from jmap_email import compose_email
 
-from core.mda.utils import SNIPPET_MAX_LENGTH, current_sent_at, thread_snippet
+from core.mda.utils import SNIPPET_MAX_CHARS, current_sent_at, message_snippet
 
 
 class TestCurrentSentAt:
@@ -34,27 +34,33 @@ class TestCurrentSentAt:
         assert dt.tzinfo is not None
 
 
-class TestThreadSnippet:
-    """``thread_snippet`` is the single thread-listing snippet source —
-    it prefers the parser's ``preview``, falls back to ``textBody``,
-    then to the caller-supplied default."""
+class TestMessageSnippet:
+    """``message_snippet`` resolves preview → textBody → htmlBody, and
+    never falls back to the subject — an empty body is an empty
+    snippet, display fallbacks are the frontend's concern."""
 
     def test_uses_preview_when_present(self):
-        """The library's ``preview`` field wins over textBody / fallback —
-        it's already HTML-stripped and whitespace-normalised."""
+        """The library's ``preview`` wins over textBody: since
+        ``jmap_email.preview_text`` cleans BEFORE truncating, the
+        precomputed preview is safe to re-truncate to the snippet
+        budget."""
         parsed = {
             "preview": "Hello from preview",
             "textBody": [{"partId": "1", "content": "raw text body"}],
         }
-        assert thread_snippet(parsed, fallback="ignored") == "Hello from preview"
+        assert message_snippet(parsed) == "Hello from preview"
 
-    def test_falls_back_to_text_body(self):
-        """When ``parse_email`` was called with ``preview=False`` (or
-        the caller hand-built the dict), the first text body part wins."""
-        parsed = {
-            "textBody": [{"partId": "1", "content": "From text body"}],
-        }
-        assert thread_snippet(parsed, fallback="ignored") == "From text body"
+    def test_hand_built_dict_with_markdown_and_html(self):
+        """Hand-built dicts (importers, autoreply) carry no preview:
+        the textBody flows through the full cleaning pipeline."""
+        content = (
+            "<figcaption>Tableau de Corot</figcaption>\n\n"
+            "# Voici un message\n\n**Bold** and [link](https://ex.co)"
+        )
+        parsed = {"textBody": [{"partId": "1", "content": content}]}
+        assert message_snippet(parsed) == (
+            "Tableau de Corot Voici un message Bold and link"
+        )
 
     def test_falls_back_to_body_values_projection(self):
         """body_values=True projection: textBody[i] has no inline
@@ -69,66 +75,52 @@ class TestThreadSnippet:
                 }
             },
         }
-        assert thread_snippet(parsed) == "From bodyValues"
+        assert message_snippet(parsed) == "From bodyValues"
 
-    def test_falls_back_to_fallback_when_no_body(self):
-        """Empty parsed dict (header-only / parse failure) returns the
-        caller's fallback rather than empty."""
-        assert thread_snippet({}, fallback="default text") == "default text"
+    def test_falls_back_to_html_body(self):
+        """HTML-only hand-built dicts (importers) still get a snippet."""
+        parsed = {"htmlBody": [{"partId": "1", "content": "<p>Only <b>html</b></p>"}]}
+        assert message_snippet(parsed) == "Only html"
 
-    def test_falls_back_to_empty_when_nothing(self):
-        """With neither parsed data nor fallback, returns the empty
-        string rather than raising."""
-        assert thread_snippet({}) == ""
-
-    def test_truncates_to_snippet_max_length(self):
-        """Any candidate longer than ``SNIPPET_MAX_LENGTH`` is sliced
-        before return."""
-        long_preview = "x" * (SNIPPET_MAX_LENGTH * 2)
-        out = thread_snippet({"preview": long_preview})
-        assert len(out) == SNIPPET_MAX_LENGTH
+    def test_empty_parsed_returns_empty(self):
+        """Empty parsed dict (header-only / parse failure / draft)
+        returns ``""`` — no subject fallback baked in."""
+        assert message_snippet({}) == ""
 
     def test_handles_none_parsed_email(self):
-        """Defensive: callers passing ``None`` (e.g. parse_email
-        returned ``{}`` on error and then the caller coerced) get the
-        fallback rather than an AttributeError."""
-        assert thread_snippet(None, fallback="fb") == "fb"
+        """Defensive: ``None`` yields ``""`` rather than an
+        AttributeError."""
+        assert message_snippet(None) == ""
 
     def test_empty_text_body_list(self):
-        """An empty ``textBody`` list (no parts at all) falls through
-        to the caller-supplied fallback rather than crashing on
-        ``textBody[0]``."""
-        assert thread_snippet({"textBody": []}, fallback="fb") == "fb"
-        assert thread_snippet({"textBody": []}) == ""
+        """An empty ``textBody`` list (no parts at all) yields ``""``
+        rather than crashing on ``textBody[0]``."""
+        assert message_snippet({"textBody": []}) == ""
 
     def test_multiple_text_body_entries_uses_first(self):
-        """When ``textBody`` carries several parts (multipart/alternative
-        with text/plain + text/html copied to both arrays), only the
-        first contributes — same behaviour the search-index and snippet
-        consumers rely on."""
+        """When ``textBody`` carries several parts, only the first
+        contributes — same behaviour the search-index consumer relies
+        on."""
         parsed = {
             "textBody": [
                 {"partId": "1", "content": "first"},
                 {"partId": "2", "content": "second"},
             ],
         }
-        assert thread_snippet(parsed) == "first"
+        assert message_snippet(parsed) == "first"
 
     def test_missing_partid_in_body_values(self):
         """A truncated walk (M22 part-count cap) can emit body parts
         whose ``partId`` does not appear in ``bodyValues``. The helper
-        falls through to the caller fallback rather than KeyError."""
+        yields ``""`` rather than KeyError."""
         parsed = {
             "textBody": [{"partId": "p_missing"}],
             "bodyValues": {},
         }
-        assert thread_snippet(parsed, fallback="fb") == "fb"
-        assert thread_snippet(parsed) == ""
+        assert message_snippet(parsed) == ""
 
-    def test_exact_snippet_max_length_boundary(self):
-        """A candidate of exactly ``SNIPPET_MAX_LENGTH`` passes through
-        unchanged — the truncation slice is inclusive of the cap."""
-        content = "y" * SNIPPET_MAX_LENGTH
-        out = thread_snippet({"preview": content})
-        assert len(out) == SNIPPET_MAX_LENGTH
-        assert out == content
+    def test_truncates_to_preview_max_length(self):
+        """The snippet budget is set to 140 chars,
+        — a single shared truncation, applied after cleaning."""
+        out = message_snippet({"preview": "x" * 1024})
+        assert len(out) == SNIPPET_MAX_CHARS

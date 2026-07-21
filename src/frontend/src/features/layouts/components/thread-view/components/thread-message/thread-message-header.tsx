@@ -12,6 +12,7 @@ import useAbility, { Abilities } from "@/hooks/use-ability";
 import { useMailboxContext } from "@/features/providers/mailbox";
 import { ThreadMessageHeaderProps } from "./types";
 import ThreadMessageActions from "./thread-message-actions";
+import ThreadMessageRecipients from "./thread-message-recipients";
 import { useAuth } from "@/features/auth";
 
 const ThreadMessageHeader = ({
@@ -220,7 +221,7 @@ const ThreadMessageHeader = ({
                                     isUser={isUserSender}
                                     senderUserName={senderUserName}
                                     status={isForgedSender ? 'forged' : isUnverifiedSender ? 'unverified' : undefined}
-                                    displayEmail
+                                    displayOnlyFullName={isFolded}
                                 />
                             </div>
                             <div className="thread-message__header-column thread-message__header-column--right flex-row flex-align-center">
@@ -268,59 +269,28 @@ const ThreadMessageHeader = ({
                                 />
                             </div>
                         </div>
-                        <div className="thread-message__header-rows">
-                            <div className="thread-message__header-column thread-message__header-column--left">
-                                <dl className="thread-message__correspondents">
-                                    {sortedTo.length > 0 && (
-                                        <>
-                                            <dt>{t('To: ')}</dt>
-                                            <dd className="recipient-chip-list">
-                                                {sortedTo.map((recipient) => (
-                                                    <ContactChip
-                                                        key={`to-${recipient.id}`}
-                                                        contact={recipient.contact}
-                                                        status={getRecipientDeliveryStatus(recipient)}
-                                                        deliveryActions={getRecipientDeliveryActions(recipient)}
-                                                    />
-                                                ))}
-                                            </dd>
-                                        </>
-                                    )}
-                                    {sortedCc.length > 0 && (
-                                        <>
-                                            <dt>{t('Copy: ')}</dt>
-                                            <dd className="recipient-chip-list">
-                                                {sortedCc.map((recipient) => (
-                                                    <ContactChip
-                                                        key={`cc-${recipient.id}`}
-                                                        contact={recipient.contact}
-                                                        status={getRecipientDeliveryStatus(recipient)}
-                                                        deliveryActions={getRecipientDeliveryActions(recipient)}
-                                                    />
-                                                ))}
-                                            </dd>
-                                        </>
-                                    )}
-                                    {sortedBcc.length > 0 && (
-                                        <>
-                                            <dt>{t('BCC: ')}</dt>
-                                            <dd className="recipient-chip-list">
-                                                {sortedBcc.map((recipient) => (
-                                                    <ContactChip
-                                                        key={`bcc-${recipient.id}`}
-                                                        contact={recipient.contact}
-                                                        status={getRecipientDeliveryStatus(recipient)}
-                                                        deliveryActions={getRecipientDeliveryActions(recipient)}
-                                                    />
-                                                ))}
-                                            </dd>
-                                        </>
-                                    )}
-                                </dl>
+                        {!isFolded && (
+                            <div className="thread-message__header-rows">
+                                <div className="thread-message__header-column thread-message__header-column--left">
+                                    <ThreadMessageRecipients
+                                        to={sortedTo}
+                                        cc={sortedCc}
+                                        bcc={sortedBcc}
+                                        getDeliveryStatus={getRecipientDeliveryStatus}
+                                        getDeliveryActions={getRecipientDeliveryActions}
+                                    />
+                                </div>
                             </div>
-                        </div>
+                        )}
                     </div>
                 </div>
+                {
+                    isFolded && (
+                        <div className="thread-message__header-rows thread-message__header-rows--snippet">
+                            <p className="thread-message__snippet">{message.snippet}</p>
+                        </div>
+                    )
+                }
             </div>
         </header>
     );

@@ -24,13 +24,14 @@ export type ContactChipDeliveryAction = {
 type ContactChipProps = {
     contact: Contact;
     status?: ContactChipDeliveryStatus | ContactChipSenderStatus;
-    displayEmail?: boolean;
+    displayOnlyEmail?: boolean;
+    displayOnlyFullName?: boolean;
     isUser?: boolean;
     senderUserName?: string | null;
     deliveryActions?: ContactChipDeliveryAction[];
 } & React.HTMLAttributes<HTMLDivElement>;
 
-export const ContactChip = ({ contact, status, displayEmail = false, isUser = false, senderUserName, deliveryActions, className, ...props }: ContactChipProps) => {
+export const ContactChip = ({ contact, status, displayOnlyEmail = false, displayOnlyFullName = false, isUser = false, senderUserName, deliveryActions, className, ...props }: ContactChipProps) => {
     const { t } = useTranslation();
     const popoverTriggerRef = useRef<HTMLButtonElement | null>(null);
     const [isPopoverOpen, setIsPopoverOpen] = useState(false);
@@ -56,18 +57,17 @@ export const ContactChip = ({ contact, status, displayEmail = false, isUser = fa
                 {status instanceof Object && status.status === 'cancelled' && (
                     <Icon name="cancel" type={IconType.FILLED} size={IconSize.SMALL} className="contact-chip__icon contact-chip__icon--muted" />
                 )}
-                {displayEmail ? (
-                    (contact.name || isUser) ? (
-                        <>
-                            <strong className="contact-chip__identity-name">{isUser ? t('You') : contact.name}</strong>{' '}
+                {(!displayOnlyEmail && (contact.name || isUser)) ? (
+                    <>
+                        <strong className="contact-chip__identity-name">{isUser ? t('You') : contact.name}</strong>{' '}
+                        {!displayOnlyFullName && (
                             <span className="contact-chip__identity-email">&lt;{contact.email.toLowerCase()}&gt;</span>
-                        </>
-                    ) : (
-                        <span className="contact-chip__identity-email">{contact.email.toLowerCase()}</span>
-                    )
+                        )}
+                    </>
                 ) : (
                     <span className="contact-chip__identity-email">{contact.email.toLowerCase()}</span>
-                )}
+                )
+                }
             </button>
             <ContactPopover
                 contact={contact}
