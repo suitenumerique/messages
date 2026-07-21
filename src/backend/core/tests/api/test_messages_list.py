@@ -692,7 +692,13 @@ class TestMessageListSummaryParam:
         assert response.status_code == status.HTTP_200_OK
         payload = next(m for m in response.data if m["id"] == str(message.id))
         assert set(payload.keys()) == {
-            "id", "sender", "sent_at", "is_unread", "is_draft", "has_attachments", "snippet",
+            "id",
+            "sender",
+            "sent_at",
+            "is_unread",
+            "is_draft",
+            "has_attachments",
+            "snippet",
         }
         assert payload["snippet"] == "Preview text"
 

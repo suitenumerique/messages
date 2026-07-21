@@ -50,4 +50,5 @@ class TestMessageSummarySerializer:
 
         monkeypatch.setattr(type(message), "get_parsed_data", fail_if_called)
 
-        MessageSummarySerializer(message).data  # must not raise
+        serialized = MessageSummarySerializer(message).data  # must not raise
+        assert serialized["snippet"] == "Already computed"
