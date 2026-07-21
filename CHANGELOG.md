@@ -11,6 +11,10 @@ and this project adheres to
 - Bump keycloak to 26.6.3
 - Bump keycloak to 26.6.4
 
+### Added
+
+- Expand thread-list rows with a chevron to show per-message summaries (sender, date, snippet, read state) and jump directly to a message from its summary
+
 ### Fixed
 
 - 🐛(mta-out) fix relay block indentation breaking SASL auth #733

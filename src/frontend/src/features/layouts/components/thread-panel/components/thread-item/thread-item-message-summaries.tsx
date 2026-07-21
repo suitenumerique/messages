@@ -49,6 +49,7 @@ export const ThreadItemMessageSummaries = ({ threadId, mailboxId }: ThreadItemMe
                     <Link
                         to="/mailbox/$mailboxId/thread/$threadId"
                         params={{ mailboxId, threadId }}
+                        search={true}
                         hash={`thread-message-${message.id}`}
                         className={clsx("thread-item__summary-link", {
                             "thread-item__summary-link--unread": message.is_unread,
