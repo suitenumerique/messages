@@ -16,8 +16,13 @@ Versioning: semantic. Public API is everything exported below; anything
 prefixed with ``_`` is internal.
 """
 
-__version__ = "0.1.0"
+__version__ = "0.2.0"
 
+# The RFC 8621 ``TypedDict`` shapes are annotation-only and live in their
+# own namespace — ``from jmap_email.types import JmapEmail`` — rather than
+# cluttering the top-level (runtime) API. Re-export the submodule itself so
+# ``jmap_email.types`` is always reachable and recognised as public.
+from . import types as types
 from .composer import (
     AttachmentError,
     ComposeError,
@@ -44,7 +49,7 @@ from .helpers import (
     now_sent_at,
     sent_at_to_datetime,
 )
-from .limits import DEFAULT_PARSE_LIMITS, ParseLimits
+from .options import DEFAULT_PARSE_OPTIONS, ParseOptions
 from .parser import (
     decode_rfc2047_header,
     parse_address,
@@ -52,15 +57,7 @@ from .parser import (
     parse_date,
     parse_email,
 )
-from .types import (
-    Attachment,
-    EmailAddress,
-    EmailBodyPart,
-    EmailBodyValue,
-    EmailHeader,
-    JmapEmail,
-    JmapEmailExt,
-)
+from .preview import preview_text
 
 __all__ = [
     # Wire-format pair
@@ -89,9 +86,10 @@ __all__ = [
     "has_header",
     "body_part_text",
     "body_text_joined",
+    "preview_text",
     # Per-call resource caps
-    "ParseLimits",
-    "DEFAULT_PARSE_LIMITS",
+    "ParseOptions",
+    "DEFAULT_PARSE_OPTIONS",
     # Errors (compose-side only; parse_email returns None on failure)
     "ComposeError",
     "InvalidAddressError",
@@ -99,14 +97,8 @@ __all__ = [
     "InvalidDateError",
     "AttachmentError",
     "HeaderInjectionError",
-    # JMAP RFC 8621 type shapes
-    "Attachment",
-    "EmailAddress",
-    "EmailBodyPart",
-    "EmailBodyValue",
-    "EmailHeader",
-    "JmapEmail",
-    "JmapEmailExt",
+    # JMAP RFC 8621 type shapes live in the ``jmap_email.types`` submodule
+    "types",
     # Package version
     "__version__",
 ]

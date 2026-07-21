@@ -22,7 +22,8 @@ from email.utils import make_msgid
 
 from django.utils import timezone
 
-from jmap_email import JmapEmail, body_part_text, decode_rfc2047_header
+from jmap_email import body_part_text, decode_rfc2047_header
+from jmap_email.types import JmapEmail
 
 __all__ = [
     "SNIPPET_MAX_LENGTH",

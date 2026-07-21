@@ -384,6 +384,37 @@ class TestEmailAddressParsing:
         assert name == ""
         assert email_addr == ""
 
+    def test_group_syntax_detection_is_linear_not_quadratic(self):
+        """Regression (ReDoS): the group-syntax detection used an unanchored
+        greedy ``[^@:,]*:`` prefix that ``.search()`` re-scanned from every
+        offset — O(n^2) — on a long run with a trailing ``;`` but no matching
+        ``:``. Reachable from the public inbound widget via ``parse_address``
+        (no length cap): 100 KB took ~30 s before the anchor fix. Assert both
+        entry points stay well under a second, and a colon-in-the-middle
+        variant (which defeats a naive ``":" in s`` guard) too.
+        """
+        import time
+
+        for hostile in ("a" * 100_000 + ";", "a" * 50_000 + ":" + "b" * 50_000 + ";"):
+            start = time.perf_counter()
+            parse_address(hostile)  # widget path (uncapped)
+            parse_addresses(hostile)  # header path
+            elapsed = time.perf_counter() - start
+            assert elapsed < 1.0, f"group-syntax parse took {elapsed:.1f}s (ReDoS?)"
+
+    def test_group_syntax_anchored_after_comma(self):
+        """The group name is recognised at string-start or just after a comma
+        (its RFC position); the anchor that makes this linear must not change
+        that behaviour."""
+        assert parse_addresses("Team: a@x.com, b@y.com;") == [
+            ("", "a@x.com"),
+            ("", "b@y.com"),
+        ]
+        assert parse_addresses("u@a.com, Grp: b@c.com;") == [
+            ("", "u@a.com"),
+            ("", "b@c.com"),
+        ]
+
     def test_parse_address_malformed_group_colon_gt(self):
         """Test parsing malformed group syntax with :> instead of :;"""
         name, email_addr = parse_address("undisclosed-recipients:>")
@@ -479,6 +510,18 @@ class TestEmailAddressParsing:
         name, email = parse_address("'John's Company' <john@example.org>")
         assert name == "John's Company"
         assert email == "john@example.org"
+
+    def test_parse_address_strips_dangling_single_quote(self):
+        """Regression (fuzz-found): a single-quote-wrapped display name that
+        contains a ``;`` makes ``getaddresses`` split the leading ``';`` off
+        into its own tuple, leaving the picked name with an unbalanced
+        trailing quote. That dangling quote must still be stripped, not
+        leaked into the display name.
+        """
+        name, email = parse_address("';hello world' <test@example.com>")
+        assert email == "test@example.com"
+        assert not name.startswith("'")
+        assert not name.endswith("'")
 
     def test_parse_addresses_strips_single_quotes(self):
         """Test that single quotes are stripped from multiple addresses."""
@@ -4062,3 +4105,108 @@ class TestParserPass4Regressions:
 
 if __name__ == "__main__":
     pytest.main()
+
+
+class TestPreviewCleaning:
+    """``preview`` (RFC 8621 §4.1.4) is display-ready: HTML and
+    markdown syntax are stripped BEFORE the 256-char truncation."""
+
+    def test_preview_strips_markdown(self):
+        raw = (
+            b"From: a@b.c\r\nTo: d@e.f\r\nSubject: t\r\n\r\n"
+            b"**Bold** and [link](https://ex.co)\r\n"
+        )
+        parsed = parse_email(raw)
+        assert parsed["preview"] == "Bold and link"
+
+    def test_heavy_leading_html_does_not_eat_preview_budget(self):
+        """Regression: a text part opening with a ~200-char HTML figure
+        used to exhaust the raw 256-char budget, leaving a mid-word
+        ~40-char preview after downstream stripping."""
+        body = (
+            b'<figure><img alt="Jean-Baptiste-Camille_Corot.jpg" '
+            b'src="https://messages.example.com/api/v1.0/blob/'
+            b'cfc47b2d-eda7-4ac0-83b0-43d5e938f120/download/">'
+            b"<figcaption>Tableau de Jean-Baptiste Corot - Fontainebleau"
+            b"</figcaption></figure>\r\n\r\n"
+            b"# Voici un message\r\n\r\nJe te presente ce tableau.\r\n"
+        )
+        raw = b"From: a@b.c\r\nTo: d@e.f\r\nSubject: t\r\n\r\n" + body
+        parsed = parse_email(raw)
+        assert parsed["preview"] == (
+            "Tableau de Jean-Baptiste Corot - Fontainebleau "
+            "Voici un message Je te presente ce tableau."
+        )
+
+    def test_html_only_message_preview_is_tag_free(self):
+        raw = (
+            b"From: a@b.c\r\nTo: d@e.f\r\nSubject: t\r\n"
+            b"Content-Type: text/html\r\n\r\n"
+            b"<style>p{color:red}</style><p>Only <b>html</b> here</p>\r\n"
+        )
+        parsed = parse_email(raw)
+        assert parsed["preview"] == "Only html here"
+
+    def test_leading_inline_image_does_not_leak_base64(self):
+        """Regression: a message opening with an inline image (e.g. a
+        logo) used to preview its base64 ``content`` instead of the
+        prose. The preview must draw from the first *textual* part."""
+        png = base64.b64encode(b"\x89PNG\r\n\x1a\n" + b"A" * 4000).decode()
+        raw = (
+            b"From: a@b.c\r\nTo: d@e.f\r\nSubject: t\r\nMIME-Version: 1.0\r\n"
+            b'Content-Type: multipart/mixed; boundary="B"\r\n\r\n'
+            b"--B\r\nContent-Type: image/png\r\n"
+            b"Content-Transfer-Encoding: base64\r\n"
+            b"Content-Disposition: inline\r\nContent-ID: <logo>\r\n\r\n"
+            + png.encode()
+            + b"\r\n--B\r\nContent-Type: text/plain; charset=utf-8\r\n\r\n"
+            b"Bonjour, ceci est le vrai texte du message.\r\n--B--\r\n"
+        )
+        parsed = parse_email(raw)
+        assert parsed["preview"] == "Bonjour, ceci est le vrai texte du message."
+
+    def test_empty_html_preview_falls_back_to_text(self):
+        """A link-/image-only HTML part yields no visible text; rather than
+        ship a blank preview, fall back to the plain-text alternative (which
+        usually carries the real message). The fallback is on an empty
+        *preview*, not just an absent HTML part."""
+        raw = (
+            b"From: a@b.c\r\nTo: d@e.f\r\nSubject: t\r\nMIME-Version: 1.0\r\n"
+            b'Content-Type: multipart/alternative; boundary="B"\r\n\r\n'
+            b"--B\r\nContent-Type: text/plain; charset=utf-8\r\n\r\n"
+            b"Bonjour, voici le vrai texte du message.\r\n"
+            b"--B\r\nContent-Type: text/html; charset=utf-8\r\n\r\n"
+            b'<a href="https://x.example/t"><img src="https://x.example/p.gif"></a>'
+            b"\r\n--B--\r\n"
+        )
+        parsed = parse_email(raw)
+        assert parsed["preview"] == "Bonjour, voici le vrai texte du message."
+
+    def test_html_source_keeps_chevrons_and_asterisks_literal(self):
+        """Each source is cleaned per its own part type. The text/plain
+        conventions would delete real content from an HTML part: `&gt;`
+        decodes to `>` before the quote filter, so a chevron line would be
+        dropped whole, and `2*3=6` would lose its asterisk. Quoted history
+        still goes, because in HTML it arrives as <blockquote>."""
+        raw = (
+            b"From: a@b.c\r\nTo: d@e.f\r\nSubject: t\r\nMIME-Version: 1.0\r\n"
+            b"Content-Type: text/html; charset=utf-8\r\n\r\n"
+            b"<div>\r\n"
+            b"  <p>Offre du mois</p>\r\n"
+            b"  &gt; 100 EUR de remise, 2*3=6\r\n"
+            b"  <blockquote>vieux fil cite</blockquote>\r\n"
+            b"</div>\r\n"
+        )
+        parsed = parse_email(raw)
+        assert parsed["preview"] == "Offre du mois > 100 EUR de remise, 2*3=6"
+
+    def test_text_source_still_gets_the_plaintext_cleaning(self):
+        """The counterpart: a text/plain part keeps the quoted-line drop and
+        the markdown strip it has always had."""
+        raw = (
+            b"From: a@b.c\r\nTo: d@e.f\r\nSubject: t\r\nMIME-Version: 1.0\r\n"
+            b"Content-Type: text/plain; charset=utf-8\r\n\r\n"
+            b"Ma **reponse** fraiche\r\n> vieux fil cite\r\n"
+        )
+        parsed = parse_email(raw)
+        assert parsed["preview"] == "Ma reponse fraiche"

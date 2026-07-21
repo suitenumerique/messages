@@ -1,13 +1,13 @@
-"""Tests for the per-call :class:`ParseLimits` context.
+"""Tests for the per-call :class:`ParseOptions` context.
 
 Pin the behavior that:
 - Defaults reproduce the historical module-constant values.
-- ``ParseLimits`` is frozen (a returned dict cannot be mutated by a
+- ``ParseOptions`` is frozen (a returned dict cannot be mutated by a
   caller and have that leak across other call sites).
-- Custom ``limits=`` actually changes parser behavior — both wider
+- Custom ``options=`` actually changes parser behavior — both wider
   (a parse that would have truncated now succeeds) and tighter
   (a parse that would have succeeded now truncates).
-- Concurrent calls with different ``limits=`` do not interfere.
+- Concurrent calls with different ``options=`` do not interfere.
 """
 
 import threading
@@ -15,7 +15,7 @@ from dataclasses import FrozenInstanceError
 
 import pytest
 
-from jmap_email import DEFAULT_PARSE_LIMITS, ParseLimits, parse_addresses, parse_email
+from jmap_email import DEFAULT_PARSE_OPTIONS, ParseOptions, parse_addresses, parse_email
 from jmap_email.parser import (
     MAX_ADDRESS_LIST_BYTES,
     MAX_HEADER_VALUE_BYTES,
@@ -24,39 +24,44 @@ from jmap_email.parser import (
 )
 
 
-class TestParseLimitsShape:
+class TestParseOptionsShape:
     """The dataclass is the public contract."""
 
     def test_default_constructor_matches_module_constants(self):
-        """``ParseLimits()`` reproduces the values exposed as
+        """``ParseOptions()`` reproduces the values exposed as
         ``MAX_*`` on :mod:`jmap_email.parser`."""
-        defaults = ParseLimits()
+        defaults = ParseOptions()
         assert defaults.max_mime_nesting_depth == MAX_MIME_NESTING_DEPTH
         assert defaults.max_mime_parts == MAX_MIME_PARTS
         assert defaults.max_header_value_bytes == MAX_HEADER_VALUE_BYTES
         assert defaults.max_address_list_bytes == MAX_ADDRESS_LIST_BYTES
 
-    def test_default_singleton_is_a_parse_limits_instance(self):
-        assert isinstance(DEFAULT_PARSE_LIMITS, ParseLimits)
+    def test_default_preview_cap_is_the_rfc_ceiling(self):
+        """``max_preview_chars`` defaults to 256, the RFC 8621 §4.1.4
+        ceiling for ``preview`` (a hard MUST NOT)."""
+        assert ParseOptions().max_preview_chars == 256
+
+    def test_default_singleton_is_a_parse_options_instance(self):
+        assert isinstance(DEFAULT_PARSE_OPTIONS, ParseOptions)
 
     def test_is_frozen(self):
-        """A caller that holds a ``ParseLimits`` instance cannot mutate
+        """A caller that holds a ``ParseOptions`` instance cannot mutate
         it after construction. Defends against an accidental
-        ``limits.max_mime_parts = 5000`` leaking across other callers
+        ``options.max_mime_parts = 5000`` leaking across other callers
         that share the same instance."""
-        limits = ParseLimits()
+        options = ParseOptions()
         with pytest.raises(FrozenInstanceError):
-            limits.max_mime_parts = 5000  # type: ignore[misc]
+            options.max_mime_parts = 5000  # type: ignore[misc]
 
     def test_is_hashable(self):
         """Frozen + slots makes the instance hashable; callers can use
         it as a cache key (e.g. memoised ``parse_email``)."""
-        assert hash(ParseLimits()) == hash(ParseLimits())
-        assert hash(ParseLimits(max_mime_parts=5000)) != hash(ParseLimits())
+        assert hash(ParseOptions()) == hash(ParseOptions())
+        assert hash(ParseOptions(max_mime_parts=5000)) != hash(ParseOptions())
 
 
-class TestCustomLimitsOnParseEmail:
-    """End-to-end: ``limits=`` changes what the parser tolerates."""
+class TestCustomOptionsOnParseEmail:
+    """End-to-end: ``options=`` changes what the parser tolerates."""
 
     @staticmethod
     def _flat_multipart(n: int) -> bytes:
@@ -91,8 +96,8 @@ class TestCustomLimitsOnParseEmail:
         """A 100-part cap truncates a 200-part input even though the
         default would have walked the whole tree."""
         raw = self._flat_multipart(200)
-        tight = ParseLimits(max_mime_parts=100)
-        parsed = parse_email(raw, body_structure=True, limits=tight)
+        tight = ParseOptions(max_mime_parts=100)
+        parsed = parse_email(raw, body_structure=True, options=tight)
 
         def _count(node):
             if node is None:
@@ -108,8 +113,8 @@ class TestCustomLimitsOnParseEmail:
     def test_wider_limits_accept_more_parts(self):
         """A 5000-part cap walks past the default 1000-part ceiling."""
         raw = self._flat_multipart(1500)
-        wide = ParseLimits(max_mime_parts=5000)
-        parsed = parse_email(raw, body_structure=True, limits=wide)
+        wide = ParseOptions(max_mime_parts=5000)
+        parsed = parse_email(raw, body_structure=True, options=wide)
 
         def _count(node):
             if node is None:
@@ -137,14 +142,60 @@ class TestCustomLimitsOnParseEmail:
             b"X-Med: " + (b"y" * 10000) + b"\r\n"
             b"\r\nbody\r\n"
         )
-        tight = ParseLimits(max_header_value_bytes=500)
-        parsed = parse_email(raw, limits=tight)
+        tight = ParseOptions(max_header_value_bytes=500)
+        parsed = parse_email(raw, options=tight)
         xmed = next(h for h in parsed["headers"] if h["name"].lower() == "x-med")
         assert len(xmed["value"]) <= 500
 
 
-class TestCustomLimitsOnParseAddresses:
-    """``parse_addresses`` accepts the same ``limits=`` knob."""
+class TestPreviewCap:
+    """``max_preview_chars`` bounds the server-set ``preview`` excerpt."""
+
+    @staticmethod
+    def _with_body(body: str) -> bytes:
+        return (
+            b"From: a@b.c\r\nTo: d@e.f\r\nContent-Type: text/plain\r\n\r\n"
+            + body.encode()
+        )
+
+    # A run with no space at the 140/256 boundary, so truncation lands
+    # mid-token and ``preview_text``'s trailing ``rstrip`` is a no-op —
+    # keeps the length assertions exact.
+    _LONG_BODY = "abcdefghij" * 100
+
+    def test_default_caps_preview_at_256(self):
+        """A 1000-char body yields a 256-char preview under the default
+        cap."""
+        parsed = parse_email(self._with_body(self._LONG_BODY))
+        assert len(parsed["preview"]) == 256
+
+    def test_tighter_cap_truncates_preview_earlier(self):
+        """A 140-char cap (the Messages list-view snippet length)
+        truncates a body the default would have kept to 256."""
+        tight = ParseOptions(max_preview_chars=140)
+        parsed = parse_email(self._with_body(self._LONG_BODY), options=tight)
+        assert len(parsed["preview"]) == 140
+
+    def test_short_body_is_unaffected_by_cap(self):
+        """A body under the cap passes through whole (minus whitespace
+        normalisation) regardless of the ceiling."""
+        parsed = parse_email(self._with_body("hi there"), options=ParseOptions())
+        assert parsed["preview"] == "hi there"
+
+    def test_default_scan_cap_is_128kib(self):
+        assert ParseOptions().max_preview_scan_bytes == 128 * 1024
+
+    def test_scan_cap_bounds_the_preview_source(self):
+        """Body text past ``max_preview_scan_bytes`` is not scanned, so it
+        can't appear in the preview — the DoS bound, end-to-end."""
+        body = "<span></span>" * 200 + "TAIL_TEXT"
+        tight = ParseOptions(max_preview_scan_bytes=100)
+        parsed = parse_email(self._with_body(body), options=tight)
+        assert "TAIL_TEXT" not in parsed["preview"]
+
+
+class TestCustomOptionsOnParseAddresses:
+    """``parse_addresses`` accepts the same ``options=`` knob."""
 
     def test_default_caps_truncate_long_list(self):
         addresses = ", ".join(f"u{i}@example.com" for i in range(20_000))
@@ -154,28 +205,28 @@ class TestCustomLimitsOnParseAddresses:
 
     def test_tighter_address_cap_yields_fewer_entries(self):
         addresses = ", ".join(f"u{i}@example.com" for i in range(1_000))
-        tight = ParseLimits(max_address_list_bytes=200)
-        result = parse_addresses(addresses, limits=tight)
+        tight = ParseOptions(max_address_list_bytes=200)
+        result = parse_addresses(addresses, options=tight)
         # 200 bytes of address-list text only fits a handful of entries.
         assert len(result) < 20
 
 
 class TestNoCrossCallContamination:
-    """Threads / sequential calls with different ``limits=`` must not
+    """Threads / sequential calls with different ``options=`` must not
     leak state across each other — this is the entire reason the
-    library exposes per-call limits rather than mutable module
+    library exposes per-call options rather than mutable module
     globals."""
 
     def test_sequential_calls_do_not_leak(self):
-        raw_small = TestCustomLimitsOnParseEmail._flat_multipart(50)
-        raw_big = TestCustomLimitsOnParseEmail._flat_multipart(1500)
+        raw_small = TestCustomOptionsOnParseEmail._flat_multipart(50)
+        raw_big = TestCustomOptionsOnParseEmail._flat_multipart(1500)
 
-        tight = ParseLimits(max_mime_parts=10)
-        wide = ParseLimits(max_mime_parts=5000)
+        tight = ParseOptions(max_mime_parts=10)
+        wide = ParseOptions(max_mime_parts=5000)
 
         # Tight then wide.
-        a = parse_email(raw_small, body_structure=True, limits=tight)
-        b = parse_email(raw_big, body_structure=True, limits=wide)
+        a = parse_email(raw_small, body_structure=True, options=tight)
+        b = parse_email(raw_big, body_structure=True, options=wide)
 
         def _count(node):
             if node is None:
@@ -191,8 +242,8 @@ class TestNoCrossCallContamination:
         # Reverse order — wide then tight. The default singleton's
         # state never changes, so the second call still applies its
         # own cap.
-        c = parse_email(raw_big, body_structure=True, limits=wide)
-        d = parse_email(raw_small, body_structure=True, limits=tight)
+        c = parse_email(raw_big, body_structure=True, options=wide)
+        d = parse_email(raw_small, body_structure=True, options=tight)
         assert _count(c["bodyStructure"]) >= 1500
         assert _count(d["bodyStructure"]) <= 15
 
@@ -202,10 +253,10 @@ class TestNoCrossCallContamination:
 
         Pins the absence of a shared mutable cap variable.
         """
-        raw_big = TestCustomLimitsOnParseEmail._flat_multipart(1500)
+        raw_big = TestCustomOptionsOnParseEmail._flat_multipart(1500)
 
-        tight = ParseLimits(max_mime_parts=10)
-        wide = ParseLimits(max_mime_parts=5000)
+        tight = ParseOptions(max_mime_parts=10)
+        wide = ParseOptions(max_mime_parts=5000)
 
         results: dict[str, int] = {}
 
@@ -217,8 +268,8 @@ class TestNoCrossCallContamination:
                 c += _count(sub)
             return c
 
-        def _go(name: str, limits: ParseLimits) -> None:
-            parsed = parse_email(raw_big, body_structure=True, limits=limits)
+        def _go(name: str, options: ParseOptions) -> None:
+            parsed = parse_email(raw_big, body_structure=True, options=options)
             results[name] = _count(parsed["bodyStructure"])
 
         threads = []

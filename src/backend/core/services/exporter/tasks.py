@@ -12,7 +12,8 @@ from django.core.files.storage import storages
 from django.db.models import OuterRef, Subquery
 
 from celery.utils.log import get_task_logger
-from jmap_email import JmapEmail, compose_email, parse_email
+from jmap_email import compose_email, parse_email
+from jmap_email.types import JmapEmail
 from sentry_sdk import capture_exception
 
 from core.api.utils import generate_presigned_url

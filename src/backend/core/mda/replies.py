@@ -27,13 +27,13 @@ from email.utils import format_datetime, parsedate_to_datetime
 from typing import Any
 
 from jmap_email import (
-    JmapEmail,
     first_msgid,
     format_address,
     format_address_list,
     is_valid_msg_id,
     msgid_chain,
 )
+from jmap_email.types import JmapEmail
 
 # Bracket-aware tokeniser for a wire-form ``References`` chain. Splitting
 # on whitespace would slice ``<bad id@x>`` into ``<bad`` + ``id@x>`` and

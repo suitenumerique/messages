@@ -20,13 +20,8 @@ from email import message_from_string
 from django.conf import settings
 
 import pypff
-from jmap_email import (
-    EmailAddress,
-    compose_email,
-    is_valid_msg_id,
-    parse_address,
-    parse_addresses,
-)
+from jmap_email import compose_email, is_valid_msg_id, parse_address, parse_addresses
+from jmap_email.types import EmailAddress
 
 from core.services.s3_seekable import BUFFER_NONE, S3SeekableReader
 

@@ -35,10 +35,11 @@ from ntpath import basename as nt_basename
 from posixpath import basename as posix_basename
 from typing import Any, cast
 
-from .limits import DEFAULT_PARSE_LIMITS, ParseLimits
+from .options import DEFAULT_PARSE_OPTIONS, ParseOptions
+from .preview import preview_text
 from .types import EmailAddress, EmailBodyPart, JmapEmail
 
-# Resource limits — all chosen to match or exceed the equivalents in
+# Resource caps — all chosen to match or exceed the equivalents in
 # battle-tested mail servers. Real-world legitimate messages are well
 # below these caps; adversarial inputs that exceed them are silently
 # truncated or rejected per Postel's law.
@@ -66,15 +67,15 @@ from .types import EmailAddress, EmailBodyPart, JmapEmail
 # we serialize the wrapped sub-message in ``_decoded_part_body``.
 # That call catches ``RecursionError`` directly.
 # Module-level mirrors of the default resource caps. Authoritative
-# values live on :class:`jmap_email.limits.ParseLimits`; per-call
-# overrides go through the ``limits=`` keyword on :func:`parse_email`
+# values live on :class:`jmap_email.options.ParseOptions`; per-call
+# overrides go through the ``options=`` keyword on :func:`parse_email`
 # / :func:`parse_addresses`. Module-level reassignment is not a
 # supported tuning mechanism — it would race across threads and leak
 # across unrelated callers in the same process.
-MAX_MIME_NESTING_DEPTH = DEFAULT_PARSE_LIMITS.max_mime_nesting_depth
-MAX_MIME_PARTS = DEFAULT_PARSE_LIMITS.max_mime_parts
-MAX_HEADER_VALUE_BYTES = DEFAULT_PARSE_LIMITS.max_header_value_bytes
-MAX_ADDRESS_LIST_BYTES = DEFAULT_PARSE_LIMITS.max_address_list_bytes
+MAX_MIME_NESTING_DEPTH = DEFAULT_PARSE_OPTIONS.max_mime_nesting_depth
+MAX_MIME_PARTS = DEFAULT_PARSE_OPTIONS.max_mime_parts
+MAX_HEADER_VALUE_BYTES = DEFAULT_PARSE_OPTIONS.max_header_value_bytes
+MAX_ADDRESS_LIST_BYTES = DEFAULT_PARSE_OPTIONS.max_address_list_bytes
 
 # Characters stripped from decoded display-names before they are
 # surfaced. Header-injection vector: a downstream consumer that re-
@@ -252,13 +253,23 @@ def _strip_name_quotes(name: str) -> str:
     incorrectly use single quotes, which the parser preserves. We strip
     them for consistency.
 
+    Each end is handled independently: when the parser has already consumed
+    one side of the pair — e.g. a leading ``';`` that ``getaddresses``
+    splits off a group-looking name, leaving a dangling closing quote — the
+    surviving quote is still stripped rather than leaked into the name.
+    Only the outermost quote at each end is removed, so internal apostrophes
+    survive (``O'Brien``, ``John's``).
+
     Examples:
         "'John Doe'" -> "John Doe"
         "John Doe" -> "John Doe"
         "'John's Name'" -> "John's Name" (only strips surrounding quotes)
+        "mangled'" -> "mangled" (dangling quote from a mis-split parse)
     """
-    if name and len(name) >= 2 and name.startswith("'") and name.endswith("'"):
-        return name[1:-1]
+    if name.startswith("'"):
+        name = name[1:]
+    if name.endswith("'"):
+        name = name[:-1]
     return name
 
 
@@ -279,10 +290,13 @@ def _contains_group_syntax(address_str: str) -> bool:
     if ";" not in stripped and ":>" not in stripped:
         return False
 
-    # Use regex to find group patterns: non-@ chars followed by : then anything then ; or >
-    # This handles "undisclosed-recipients:;", "Group: addr1, addr2;", ":;", and ":>"
-    # Pattern: optional non-@ non-: chars, then :, then anything, then ; or just :>
-    group_pattern = re.compile(r"[^@:,]*:([^;]*;|>)")
+    # non-@ chars (the group name) followed by ``:`` then content then ``;``/``>``.
+    # Handles "undisclosed-recipients:;", "Group: addr1, addr2;", ":;", ":>".
+    # The name is anchored to string-start or just-after-a-comma (its documented
+    # position) — WITHOUT this anchor the leading ``[^@:,]*`` re-scans from every
+    # offset on input with a trailing ``;`` but no matching ``:``, which is
+    # quadratic (ReDoS). The ``(?<=,)`` is zero-width so nothing is consumed.
+    group_pattern = re.compile(r"(?:^|(?<=,))[^@:,]*:([^;]*;|>)")
     return bool(group_pattern.search(stripped))
 
 
@@ -303,8 +317,11 @@ def _remove_group_syntax(address_str: str) -> str:
     # Use regex to find and process group patterns
     # Group pattern: optional word(s) without @ or : or ,, followed by :, then content, then ;
     # Also handle malformed :> variant (empty group with > instead of ;)
-    # We replace "GroupName: content;" with just "content"
-    group_pattern = re.compile(r"[^@:,]*:([^;]*);")
+    # We replace "GroupName: content;" with just "content". Anchor the group
+    # name to string-start / just-after-a-comma (zero-width, so the ``.sub``
+    # doesn't eat the separator) — the unanchored ``[^@:,]*`` prefix is
+    # quadratic on hostile input (see ``_contains_group_syntax``).
+    group_pattern = re.compile(r"(?:^|(?<=,))[^@:,]*:([^;]*);")
 
     def replace_group(match):
         inner = match.group(1).strip()
@@ -312,8 +329,9 @@ def _remove_group_syntax(address_str: str) -> str:
 
     result = group_pattern.sub(replace_group, stripped)
 
-    # Handle malformed :> pattern (remove "name:>" entirely as it's an empty malformed group)
-    malformed_pattern = re.compile(r"[^@:,]*:>")
+    # Handle malformed ":>" pattern (remove "name:>" as an empty malformed
+    # group). Same anchoring as above to keep the prefix scan linear.
+    malformed_pattern = re.compile(r"(?:^|(?<=,))[^@:,]*:>")
     result = malformed_pattern.sub("", result)
 
     # Clean up: remove empty entries, extra commas, whitespace
@@ -485,7 +503,7 @@ def parse_address(
 def parse_addresses(
     addresses_str: str,
     *,
-    limits: ParseLimits = DEFAULT_PARSE_LIMITS,
+    options: ParseOptions = DEFAULT_PARSE_OPTIONS,
 ) -> list[tuple[str, str]]:
     """
     Parse multiple email addresses from a comma-separated string.
@@ -503,7 +521,7 @@ def parse_addresses(
 
     Args:
         addresses_str: Comma-separated string of email addresses.
-        limits: Per-call resource caps. See :class:`ParseLimits`. Pass
+        options: Per-call resource caps. See :class:`ParseOptions`. Pass
             a custom instance to widen / tighten the address-list byte
             cap independently of any other parse call in the process.
 
@@ -519,7 +537,7 @@ def parse_addresses(
     # CVE-2024-23184 — same anti-pattern in C). The default 100 KB cap
     # holds ~5_000 typical addresses; well above any legitimate
     # mailing-list expansion that lands in a single header.
-    cap = limits.max_address_list_bytes
+    cap = options.max_address_list_bytes
     if len(addresses_str) > cap:
         logger.warning("Address-list header exceeds %d bytes; truncating", cap)
         addresses_str = addresses_str[:cap]
@@ -976,7 +994,7 @@ def _build_attachment_from_part_info(
 
 
 def _build_body_structure(
-    message: Message, limits: ParseLimits
+    message: Message, options: ParseOptions
 ) -> EmailBodyPart | None:
     """Recursively build a JMAP ``bodyStructure`` tree.
 
@@ -990,7 +1008,7 @@ def _build_body_structure(
     """
     try:
         return _build_body_structure_node(
-            message, ["1"], counter={"parts": 0}, limits=limits
+            message, ["1"], counter={"parts": 0}, options=options
         )
     except (RecursionError, ValueError, TypeError, AttributeError):
         return None
@@ -1000,7 +1018,7 @@ def _build_body_structure_node(
     part: Message,
     path: list[str],
     *,
-    limits: ParseLimits,
+    options: ParseOptions,
     depth: int = 0,
     counter: dict[str, int] | None = None,
 ) -> EmailBodyPart:
@@ -1009,7 +1027,7 @@ def _build_body_structure_node(
     Enforces the same depth + part-count caps as the default body walk
     (``_parse_body_structure``). A flat multipart with a million sub-
     parts under one container would otherwise bypass
-    ``limits.max_mime_parts`` when the caller opted into
+    ``options.max_mime_parts`` when the caller opted into
     ``body_structure=True``.
 
     Per RFC 8621 §4.1.4: ``partId`` (and ``blobId``) MUST be ``null``
@@ -1033,8 +1051,8 @@ def _build_body_structure_node(
         leaf_part_id = None
 
     if (
-        depth > limits.max_mime_nesting_depth
-        or counter["parts"] >= limits.max_mime_parts
+        depth > options.max_mime_nesting_depth
+        or counter["parts"] >= options.max_mime_parts
     ):
         # Truncated stub: still spec-shaped (null partId/blobId for
         # multipart) so consumers don't have to special-case it.
@@ -1082,10 +1100,10 @@ def _build_body_structure_node(
         children = _subparts(part)
         sub_nodes: list[EmailBodyPart] = []
         for i, child in enumerate(children):
-            if counter["parts"] >= limits.max_mime_parts:
+            if counter["parts"] >= options.max_mime_parts:
                 logger.warning(
                     "MIME part count exceeds limit %d; truncating bodyStructure",
-                    limits.max_mime_parts,
+                    options.max_mime_parts,
                 )
                 break
             sub_nodes.append(
@@ -1094,7 +1112,7 @@ def _build_body_structure_node(
                     path + [str(i + 1)],
                     depth=depth + 1,
                     counter=counter,
-                    limits=limits,
+                    options=options,
                 )
             )
         node["subParts"] = sub_nodes
@@ -1124,7 +1142,7 @@ def _parse_body_structure(
     text_body: list[EmailBodyPart] | None,
     attachments: list[EmailBodyPart],
     *,
-    limits: ParseLimits,
+    options: ParseOptions,
     depth: int = 0,
     counter: dict[str, Any] | None = None,
     parent_boundaries: tuple[str, ...] = (),
@@ -1165,11 +1183,11 @@ def _parse_body_structure(
     # Hard depth cap to defeat MIME-bomb style inputs (deeply nested
     # multiparts crafted to exhaust CPython's recursion limit). Below
     # the cap, real-world legitimate messages are unaffected.
-    if depth > limits.max_mime_nesting_depth:
+    if depth > options.max_mime_nesting_depth:
         logger.warning(
             "MIME nesting depth %d exceeds limit %d; truncating walk",
             depth,
-            limits.max_mime_nesting_depth,
+            options.max_mime_nesting_depth,
         )
         return
 
@@ -1178,10 +1196,10 @@ def _parse_body_structure(
     html_length = len(html_body) if html_body is not None else -1
 
     for i, part in enumerate(parts):
-        if counter["parts"] >= limits.max_mime_parts:
+        if counter["parts"] >= options.max_mime_parts:
             logger.warning(
                 "MIME part count exceeds limit %d; truncating walk",
-                limits.max_mime_parts,
+                options.max_mime_parts,
             )
             return
         counter["parts"] += 1
@@ -1267,7 +1285,7 @@ def _parse_body_structure(
                 attachments,
                 depth=depth + 1,
                 counter=counter,
-                limits=limits,
+                options=options,
                 parent_boundaries=sub_parents,
             )
 
@@ -1340,7 +1358,7 @@ def _parse_body_structure(
 def _parse_message_content(
     message,
     *,
-    limits: ParseLimits = DEFAULT_PARSE_LIMITS,
+    options: ParseOptions = DEFAULT_PARSE_OPTIONS,
     defects: list[str] | None = None,
 ) -> dict[str, Any]:
     """Extract textBody / htmlBody / attachments from a message, JMAP-shaped.
@@ -1394,7 +1412,7 @@ def _parse_message_content(
             result["htmlBody"],
             result["textBody"],
             result["attachments"],
-            limits=limits,
+            options=options,
             counter=counter,
         )
     except Exception as e:  # pylint: disable=broad-exception-caught
@@ -1538,32 +1556,105 @@ def _compute_has_attachment(attachments: list[EmailBodyPart]) -> bool:
     return any(att.get("disposition") != "inline" for att in attachments)
 
 
-_PREVIEW_MAX_LEN = 256
-_PREVIEW_WS_RE = re.compile(r"\s+", re.UNICODE)
-_HTML_TAG_RE = re.compile(r"<[^>]+>", re.UNICODE)
+def _inline_text_content(part: EmailBodyPart) -> str:
+    """Return a part's inline ``content`` narrowed to ``str``.
+
+    ``EmailBodyPart.content`` is typed ``str | bytes`` because some
+    parts (e.g. inline images riding in ``textBody`` / ``htmlBody`` for
+    rendering) may carry raw bytes, while ``text/*`` parts always carry
+    ``str``. That conditional invariant cannot be expressed in the
+    TypedDict, so this accessor narrows the union at a single boundary:
+    ``bytes`` (or absence) yields ``""`` rather than leaking a
+    ``b'...'`` repr downstream.
+
+    Note: inline media in ``textBody`` / ``htmlBody`` carries base64
+    ``str`` content, so this narrowing does not exclude it — callers
+    that want prose only must additionally filter on the part ``type``
+    (see :func:`_first_textual_content`).
+    """
+    content = part.get("content")
+    return content if isinstance(content, str) else ""
+
+
+def _first_textual_content(parts: list[EmailBodyPart]) -> tuple[str, str]:
+    """Return ``(content, type)`` of the first ``text/*`` part, skipping
+    inline media.
+
+    ``textBody`` / ``htmlBody`` interleave inline media (e.g. a leading
+    logo) whose ``content`` is a base64 ``str``, not prose. Feeding that
+    to the preview would emit unreadable base64 and pay the cleaning cost
+    over a large blob, so inline-media parts are skipped in favour of the
+    first part that actually carries text.
+
+    The part's own ``type`` is returned alongside its content because the
+    preview cleaner keys off it: the ``htmlBody`` list is not *guaranteed*
+    to hold ``text/html`` (a sender can put a ``text/plain`` alternative
+    there), so inferring the type from which list we drew is a guess where
+    the part itself carries the answer.
+    """
+    for part in parts:
+        part_type = part.get("type", "")
+        if not _is_inline_media_type(part_type):
+            content = _inline_text_content(part)
+            if content:
+                return content, part_type
+    return "", ""
 
 
 def _compute_preview(
-    text_body: list[EmailBodyPart], html_body: list[EmailBodyPart]
+    text_body: list[EmailBodyPart],
+    html_body: list[EmailBodyPart],
+    max_chars: int,
+    max_scan_bytes: int,
 ) -> str:
-    """Compute the JMAP ``preview`` field: a single-line ≤ 256-char
-    excerpt drawn from the first text body (or, if absent, the HTML
-    body with tags stripped).
+    """Compute the JMAP ``preview`` field: a single-line excerpt drawn
+    from the HTML body, falling back to the plain-text body, truncated to
+    ``max_chars``.
 
-    Per RFC 8621 §4.1.4, ``preview`` is server-set, single-line,
-    truncated to <=256 chars. We compute it on demand.
+    HTML is preferred because that is the part mail clients render, so
+    the preview reflects what the user will actually see. Deriving it
+    from ``text/plain`` instead would let a ``multipart/alternative``
+    whose text and HTML parts disagree (a known preview-spoofing trick)
+    show a preview that mismatches the rendered body.
+
+    The fallback triggers on an empty *preview*, not just an absent HTML
+    part: a link-/image-only HTML body yields no visible text, and the
+    text/plain alternative usually carries the real message — so we use it
+    rather than ship a blank preview.
+
+    Per RFC 8621 §4.1.4, ``preview`` is server-set, single-line, and
+    ``MUST NOT`` exceed 256 characters; ``max_chars`` (sourced from
+    :attr:`ParseOptions.max_preview_chars`, default 256) is that cap.
+    The heavy lifting (HTML + markdown strip, then truncate) is done
+    by :func:`jmap_email.preview_text` — cleaning happens before
+    truncation so leading syntax never consumes the preview budget.
+
+    Each source is cleaned according to its own part ``type``: the
+    text/plain conventions (``>``-quoted lines, markdown syntax) would
+    delete literal content from an HTML part, so ``preview_text`` is told
+    which wire format it was handed.
     """
-    source = ""
-    if text_body:
-        source = str(text_body[0].get("content", ""))
-    elif html_body:
-        # Strip HTML tags and collapse whitespace for a cheap preview.
-        raw = str(html_body[0].get("content", ""))
-        source = _HTML_TAG_RE.sub(" ", raw)
-    if not source:
-        return ""
-    flat = _PREVIEW_WS_RE.sub(" ", source).strip()
-    return flat[:_PREVIEW_MAX_LEN]
+    html_src, html_type = _first_textual_content(html_body)
+    preview = (
+        preview_text(
+            html_src,
+            max_chars=max_chars,
+            max_scan_bytes=max_scan_bytes,
+            content_type=html_type,
+        )
+        if html_src
+        else ""
+    )
+    if not preview:
+        text_src, text_type = _first_textual_content(text_body)
+        if text_src:
+            preview = preview_text(
+                text_src,
+                max_chars=max_chars,
+                max_scan_bytes=max_scan_bytes,
+                content_type=text_type,
+            )
+    return preview
 
 
 def _build_body_values(
@@ -1597,7 +1688,7 @@ def _build_body_values(
         # error for clients reading ``bodyValues``.
         if not (part.get("type") or "").lower().startswith("text/"):
             continue
-        raw = str(part.get("content", ""))
+        raw = _inline_text_content(part)
         # Per spec §4.1.4: "CRLF, LF, and CR should be normalized to LF."
         normalised = raw.replace("\r\n", "\n").replace("\r", "\n")
         values.setdefault(
@@ -1629,7 +1720,7 @@ def parse_email(
     body_values: bool = True,
     body_structure: bool = False,
     preview: bool = True,
-    limits: ParseLimits = DEFAULT_PARSE_LIMITS,
+    options: ParseOptions = DEFAULT_PARSE_OPTIONS,
 ) -> JmapEmail | None:
     """Parse raw RFC 5322 bytes into a JMAP Email object (RFC 8621 §4).
 
@@ -1668,9 +1759,9 @@ def parse_email(
         Compute ``preview``: a single-line ≤ 256-char plain-text excerpt.
         Set to ``False`` when you don't need it; the cost is one HTML
         strip + a unicode-space normalise per message.
-    limits : ParseLimits, default :data:`DEFAULT_PARSE_LIMITS`
+    options : ParseOptions, default :data:`DEFAULT_PARSE_OPTIONS`
         Per-call resource caps (MIME nesting depth, total part count,
-        per-header byte cap). See :class:`ParseLimits` for the
+        per-header byte cap). See :class:`ParseOptions` for the
         attribute table. Pass a custom instance to widen / tighten the
         defaults independently of any other parse call in the process.
 
@@ -1694,7 +1785,7 @@ def parse_email(
         body_values=body_values,
         body_structure=body_structure,
         preview=preview,
-        limits=limits,
+        options=options,
     )
 
 
@@ -1705,7 +1796,7 @@ def _parse_email(
     body_values: bool,
     body_structure: bool,
     preview: bool,
-    limits: ParseLimits,
+    options: ParseOptions,
 ) -> JmapEmail | None:
     """Implementation of ``parse_email``. Kept separate so the public
     function carries a clean docstring and signature while this carries
@@ -1788,13 +1879,13 @@ def _parse_email(
             # (gh-136063: ``get_phrase`` / ``_parseparam`` / etc.)
             # start to hurt — truncating early keeps wall-clock
             # bounded on adversarial input.
-            if len(raw_value) > limits.max_header_value_bytes:
+            if len(raw_value) > options.max_header_value_bytes:
                 logger.warning(
                     "Header %s value exceeds %d bytes; truncating",
                     k,
-                    limits.max_header_value_bytes,
+                    options.max_header_value_bytes,
                 )
-                raw_value = raw_value[: limits.max_header_value_bytes]
+                raw_value = raw_value[: options.max_header_value_bytes]
             # NUL bytes in headers would either reach a downstream text
             # store (PostgreSQL rejects \x00 in TEXT) or smuggle past a
             # naive C-string parser. Strip before any decode + before
@@ -1861,7 +1952,7 @@ def _parse_email(
         except RecursionError:
             defects.append("RecursionError")
 
-        body_parts = _parse_message_content(message, limits=limits, defects=defects)
+        body_parts = _parse_message_content(message, options=options, defects=defects)
         text_body: list[EmailBodyPart] = body_parts["textBody"]
         html_body: list[EmailBodyPart] = body_parts["htmlBody"]
         attachments: list[EmailBodyPart] = body_parts["attachments"]
@@ -1891,7 +1982,12 @@ def _parse_email(
 
         # ─── Body content projections ───
         if preview:
-            result["preview"] = _compute_preview(text_body, html_body)
+            result["preview"] = _compute_preview(
+                text_body,
+                html_body,
+                options.max_preview_chars,
+                options.max_preview_scan_bytes,
+            )
         if body_values:
             result["bodyValues"] = _build_body_values(
                 text_body, html_body, encoding_problems
@@ -1899,7 +1995,7 @@ def _parse_email(
             result["textBody"] = _strip_body_part_content(text_body)
             result["htmlBody"] = _strip_body_part_content(html_body)
         if body_structure:
-            result["bodyStructure"] = _build_body_structure(message, limits)
+            result["bodyStructure"] = _build_body_structure(message, options)
 
         # ─── Extensions (project-specific) ───
         if extensions:

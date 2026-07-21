@@ -10,9 +10,11 @@ The codebase came out of operating an inbound mail pipeline; every CVE
 and research result in the [defense matrix](#defense-matrix) below has
 a regression test under `tests/`.
 
-> Status: **beta** while the public API stabilizes. Wire shape
-> conforms to RFC 8621 §4 today; future 0.1.x releases will only add
-> fields, never remove or rename them.
+> Status: **beta** while the public API stabilizes. The wire shape
+> conforms to RFC 8621 §4. Per SemVer, 0.x releases may still make
+> breaking API changes — 0.2.0 renamed `ParseLimits` → `ParseOptions`
+> and moved the `TypedDict` shapes to `jmap_email.types`; every breaking
+> change is called out in the [CHANGELOG](CHANGELOG.md).
 
 ## Why a Python 3.14.6 floor?
 
@@ -91,7 +93,7 @@ following defaults, matching `Email/get` `defaultProperties`:
 | `headers`           | Yes              | `[{name, value}]` ordered; `value` is RFC 8621 Raw form (byte-faithful, NOT encoded-word-decoded) |
 | `textBody` / `htmlBody` / `attachments` | Yes | `EmailBodyPart[]` per RFC 8621 §4.1.4 |
 | `hasAttachment`     | Yes              |                                        |
-| `preview`           | Yes              | ≤256-char plain-text excerpt; HTML-stripped + whitespace-normalised |
+| `preview`           | Yes              | ≤256-char plain-text excerpt; HTML/MD-stripped + whitespace-normalised |
 | `bodyValues`        | Yes              | `{partId: EmailBodyValue}` per §4.1.5; text-body parts then carry metadata only |
 | `bodyStructure`     | Opt-in           | `parse_email(raw, body_structure=True)` |
 | `_ext`               | Opt-in           | `parse_email(raw, extensions=True)` — project extensions; see below |
@@ -189,11 +191,12 @@ the contract is explicit:
   appears in the surviving body but not in `attachments`. Matches what
   Gmail / Apple Mail render; differs from a strict spec walker.
 
-## Resource limits
+## Parse options
 
-The parser enforces hard caps against adversarial input. Caps are
-passed per-call via a frozen `ParseLimits` instance; the default
-applies when no value is supplied.
+Per-call options are passed via a frozen `ParseOptions` instance; the
+default applies when no value is supplied. Most are hard caps against
+adversarial input, but the bundle also carries format policy the RFC
+leaves to the server, such as the `preview` length.
 
 | Attribute                    | Default | Source                                   |
 | ---------------------------- | ------- | ---------------------------------------- |
@@ -201,24 +204,27 @@ applies when no value is supplied.
 | `max_mime_parts`             | 1000    | Go `multipartmaxparts`                   |
 | `max_header_value_bytes`     | 102 400 | Postfix `header_size_limit`              |
 | `max_address_list_bytes`     | 100 000 | Dovecot CVE-2024-23184 analogue          |
+| `max_preview_chars`          | 256     | RFC 8621 §4.1.4 `preview` ceiling        |
+| `max_preview_scan_bytes`     | 131 072 | bound `preview` work on markup-only input |
 
 Excess input is silently truncated and logged at WARNING level.
 
-A single process can host multiple workloads with different caps —
-the limits travel with the call, never via shared module state:
+A single process can host multiple workloads with different options —
+they travel with the call, never via shared module state:
 
 ```python
-from jmap_email import ParseLimits, parse_email
+from jmap_email import ParseOptions, parse_email
 
-bulk = ParseLimits(max_mime_parts=5000, max_mime_nesting_depth=200)
-gateway = ParseLimits(max_mime_parts=500)
+bulk = ParseOptions(max_mime_parts=5000, max_mime_nesting_depth=200)
+gateway = ParseOptions(max_mime_parts=500)
 
-parse_email(big_archive_message, limits=bulk)
-parse_email(inbound_smtp_bytes,  limits=gateway)
+parse_email(big_archive_message, options=bulk)
+parse_email(inbound_smtp_bytes,  options=gateway)
 ```
 
-`ParseLimits` is frozen and hashable; instances can be reused freely
-across threads and as cache keys.
+`ParseOptions` is frozen and hashable; instances can be reused freely
+across threads and as cache keys. (Pre-0.2 this was `ParseLimits`, passed as
+`limits=`; both were renamed outright — see the [CHANGELOG](CHANGELOG.md).)
 
 ## Strict-compose, lenient-parse
 
@@ -236,6 +242,11 @@ on purpose**:
 `None` on fundamental failure (empty bytes, wrong type, stdlib
 producing no `Message`, or any unhandled internal error). All failures
 log at WARNING level. No exception escapes.
+
+The `TypedDict` shapes describing the return value (`JmapEmail`,
+`EmailAddress`, `EmailBodyPart`, `EmailBodyValue`, `EmailHeader`,
+`Attachment`, `JmapEmailExt`) are annotation-only and live in the
+`jmap_email.types` submodule — `from jmap_email.types import JmapEmail`.
 
 ```python
 parsed = parse_email(raw)
@@ -301,6 +312,60 @@ ever flips.
 About `now_sent_at()`: returns the current UTC time formatted as the
 ISO-8601 string `compose_email` expects for `sentAt`. One-liner instead
 of `datetime.now(timezone.utc).isoformat()`.
+
+## Preview extraction
+
+`preview_text` turns an HTML or html2text-style body into the single,
+display-ready line RFC 8621 §4.1.4 calls `preview`. `parse_email` already
+runs it for the `preview` field (drawn from the HTML part, falling back to
+the text part); call it directly for any other snippet need:
+
+```python
+from jmap_email import preview_text
+
+line  = preview_text(body_text)                              # ≤ 256 chars
+short = preview_text(body_text, max_chars=140)               # list-view snippet
+html  = preview_text(body_html, content_type="text/html")    # HTML part
+```
+
+It strips HTML (dropping `<script>` / `<style>` / `<title>` / `<blockquote>`
+payloads, decoding entities, unwrapping `<https://…>` autolinks), drops
+`>`-quoted lines, strips markdown (ATX + setext headers, lists, emphasis,
+links → label, …), and removes control characters, ANSI/terminal escape
+sequences, and invisible "preheader spacer" format characters — collapsing
+everything to one line. It's bounded on hostile input: the HTML strip stops
+once it has the preview's worth of visible text, and `max_scan_bytes`
+(128 KiB) caps a body that is almost entirely markup.
+
+**Pass the part's `content_type`.** Two of those stages are conventions of the
+plain-text wire format, not universal cleanups, so they are skipped for
+`text/html`:
+
+| Stage | `text/plain` | `text/html` |
+| ----- | ------------ | ----------- |
+| HTML strip (`script` / `style` / `title` / `blockquote` payloads) | yes | yes |
+| `>`-quoted lines dropped | yes | no |
+| markdown syntax stripped | yes | no |
+| control chars + ANSI escapes removed | yes | yes |
+| whitespace collapsed, truncated | yes | yes |
+
+In an HTML part, `>`, `*` and `_` are literal characters the sender meant to
+be shown, and quoted history arrives as `<blockquote>` (already suppressed
+during the strip). Running the text/plain stages there deletes real content:
+`&gt;` decodes to `>` before the quote filter sees it, so a line of prose
+opening with a chevron is dropped whole, and `2*3=6` becomes `23=6`. The
+default, `"text/plain"`, is the thorough path — an unrecognised type
+(`text/markdown`, an importer blob) is still fully cleaned, so you opt *into*
+the literal reading rather than out of the cleaning. `parse_email` passes each
+part's own type automatically.
+
+The result is **plain text, not HTML** — it may contain `<`, `>`, `&` (e.g.
+from `x < 5 & y > 3`). Escape it before rendering inside an HTML document.
+
+Cleaning is deliberately **structural and language-neutral**: quoted-reply
+history is dropped via `>` lines and `<blockquote>` only. Locale/product
+heuristics — "view in browser" boilerplate, `On … wrote:` reply
+attributions, forwarded-header blocks — are left to the application layer.
 
 ## Validators
 

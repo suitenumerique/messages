@@ -8,13 +8,8 @@ from django.conf import settings
 from django.db import transaction
 from django.utils import timezone
 
-from jmap_email import (
-    JmapEmail,
-    find_header,
-    find_headers,
-    first_address_email,
-    has_header,
-)
+from jmap_email import find_header, find_headers, first_address_email, has_header
+from jmap_email.types import JmapEmail
 
 from core import models
 from core.enums import (

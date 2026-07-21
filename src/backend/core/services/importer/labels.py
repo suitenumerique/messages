@@ -2,7 +2,7 @@
 
 import logging
 
-from jmap_email import JmapEmail
+from jmap_email.types import JmapEmail
 
 from core import models
 from core.mda.utils import gmail_labels

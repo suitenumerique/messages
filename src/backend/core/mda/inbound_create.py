@@ -14,12 +14,12 @@ from django.db.utils import Error as DjangoDbError
 from django.utils import timezone
 
 from jmap_email import (
-    JmapEmail,
     first_address_email,
     first_address_name,
     first_msgid,
     sent_at_to_datetime,
 )
+from jmap_email.types import JmapEmail
 
 from core import enums, models
 from core.ai.call_label import assign_label_to_thread

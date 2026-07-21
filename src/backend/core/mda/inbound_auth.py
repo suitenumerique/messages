@@ -39,7 +39,8 @@ import logging
 import re
 from typing import Any
 
-from jmap_email import JmapEmail, first_address_email
+from jmap_email import first_address_email
+from jmap_email.types import JmapEmail
 
 from core.mda.signing import verify_message_dkim
 from core.mda.utils import headers_blocks

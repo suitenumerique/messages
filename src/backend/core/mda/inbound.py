@@ -8,7 +8,8 @@ from django.conf import settings
 from django.core.exceptions import ValidationError
 from django.db.utils import Error as DjangoDbError
 
-from jmap_email import JmapEmail, first_msgid
+from jmap_email import first_msgid
+from jmap_email.types import JmapEmail
 
 from core import enums, models
 from core.mda.inbound_tasks import process_inbound_message_task

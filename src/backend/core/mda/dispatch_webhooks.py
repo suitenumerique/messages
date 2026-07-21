@@ -49,7 +49,8 @@ from django.core.cache import cache
 from django.db.models import Q
 
 import jwt
-from jmap_email import JmapEmail, parse_email
+from jmap_email import parse_email
+from jmap_email.types import JmapEmail
 
 from core import enums, models
 from core.mda.inbound_pipeline import (

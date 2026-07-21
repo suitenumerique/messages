@@ -30,7 +30,8 @@ from django.utils.text import slugify
 
 import pyzstd
 from encrypted_fields.fields import EncryptedJSONField, EncryptedTextField
-from jmap_email import EmailHeader, JmapEmail, body_part_text, parse_email
+from jmap_email import body_part_text, parse_email
+from jmap_email.types import EmailHeader, JmapEmail
 from timezone_field import TimeZoneField
 
 from core.enums import (

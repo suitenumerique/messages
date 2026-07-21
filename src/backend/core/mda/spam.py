@@ -15,7 +15,8 @@ import re
 from typing import Any, Dict, Optional, Tuple
 
 import requests
-from jmap_email import JmapEmail, has_header
+from jmap_email import has_header
+from jmap_email.types import JmapEmail
 
 from core.mda.utils import headers_blocks
 

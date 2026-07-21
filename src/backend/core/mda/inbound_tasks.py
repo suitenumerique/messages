@@ -17,7 +17,8 @@ from django.utils import timezone
 
 from celery.exceptions import SoftTimeLimitExceeded
 from celery.utils.log import get_task_logger
-from jmap_email import JmapEmail, first_address_email, parse_email
+from jmap_email import first_address_email, parse_email
+from jmap_email.types import JmapEmail
 
 from core import models
 from core.mda.dispatch_webhooks import (

@@ -423,6 +423,10 @@ lint-jmap-email: build-python-base ## lint the jmap-email library (ruff check + 
 	@$(COMPOSE) run --build --rm --entrypoint pylint jmap-email-test jmap_email tests
 .PHONY: lint-jmap-email
 
+format-jmap-email: build-python-base ## lint the jmap-email library (ruff check + format check + pylint)
+	@$(COMPOSE) run --build --rm --entrypoint ruff jmap-email-test format jmap_email tests
+.PHONY: format-jmap-email
+
 typecheck-jmap-email: build-python-base ## type-check the jmap-email library with ty (Astral, Rust)
 	@$(COMPOSE) run --build --rm --entrypoint ty jmap-email-test check
 .PHONY: typecheck-jmap-email

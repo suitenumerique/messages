@@ -33,7 +33,7 @@ from django.db.models import Q
 from django.db.models.functions import Lower
 from django.utils import timezone
 
-from jmap_email import JmapEmail
+from jmap_email.types import JmapEmail
 
 from core import enums, models
 from core.mda import spam

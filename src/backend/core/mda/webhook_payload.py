@@ -11,7 +11,7 @@ from __future__ import annotations
 from datetime import datetime, timezone
 from typing import Any, Dict, Optional
 
-from jmap_email import JmapEmail
+from jmap_email.types import JmapEmail
 
 
 def _utcdate(value: Any) -> Optional[str]:

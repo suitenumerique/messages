@@ -144,6 +144,7 @@ select = [
     "S", # flake8-bandit
     "SLF", # flake8-self
     "T20", # flake8-print
+    "TID251", # flake8-tidy-imports: banned-api only (not TID252 relative-imports)
     "F"  # pyflakes
 ]
 
@@ -152,6 +153,16 @@ section-order = ["future","standard-library","django","third-party","messages","
 sections = { messages=["core"], django=["django"] }
 known-third-party = ["dns"]
 extra-standard-library = ["tomllib"]
+
+[tool.ruff.lint.flake8-tidy-imports.banned-api]
+# jmap-email's public API is the top-level `jmap_email` package; the
+# TypedDict shapes live in `jmap_email.types`. Everything else is private
+# implementation — reaching into it couples us to internal layout.
+"jmap_email.parser".msg = "Import from the top-level `jmap_email` package (shapes: `jmap_email.types`)."
+"jmap_email.helpers".msg = "Import from the top-level `jmap_email` package (shapes: `jmap_email.types`)."
+"jmap_email.composer".msg = "Import from the top-level `jmap_email` package (shapes: `jmap_email.types`)."
+"jmap_email.options".msg = "Import from the top-level `jmap_email` package (shapes: `jmap_email.types`)."
+"jmap_email.preview".msg = "Import from the top-level `jmap_email` package (shapes: `jmap_email.types`)."
 
 [tool.ruff.lint.per-file-ignores]
 "**/tests/*" = ["S", "SLF"]

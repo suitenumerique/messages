@@ -13,7 +13,7 @@ from datetime import datetime
 from datetime import timezone as dt_timezone
 
 from celery.utils.log import get_task_logger
-from jmap_email.parser import parse_date
+from jmap_email import parse_date
 
 from core.services.s3_seekable import BUFFER_CENTERED, S3SeekableReader
 
