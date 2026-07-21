@@ -319,6 +319,10 @@
                                             "type": "boolean",
                                             "readOnly": true
                                         },
+                                        "FEATURE_THREAD_SNIPPET": {
+                                            "type": "boolean",
+                                            "readOnly": true
+                                        },
                                         "FEATURE_MAILDOMAIN_MANAGE_TOTP": {
                                             "type": "boolean",
                                             "readOnly": true
@@ -425,6 +429,7 @@
                                         "FEATURE_MAILDOMAIN_CREATE",
                                         "FEATURE_MAILDOMAIN_MANAGE_ACCESSES",
                                         "FEATURE_THREAD_SPLIT",
+                                        "FEATURE_THREAD_SNIPPET",
                                         "FEATURE_MAILDOMAIN_MANAGE_TOTP",
                                         "MESSAGES_MANUAL_RETRY_MAX_AGE",
                                         "FRONTEND_SILENT_LOGIN_ENABLED",
@@ -9514,6 +9519,10 @@
                         "additionalProperties": {},
                         "description": "Return the STMSG headers of the message.",
                         "readOnly": true
+                    },
+                    "snippet": {
+                        "type": "string",
+                        "readOnly": true
                     }
                 },
                 "required": [
@@ -9536,6 +9545,7 @@
                     "sender_user",
                     "sent_at",
                     "signature",
+                    "snippet",
                     "stmsg_headers",
                     "subject",
                     "textBody",
@@ -10506,7 +10516,14 @@
                         "readOnly": true
                     },
                     "messages": {
-                        "type": "string",
+                        "type": "array",
+                        "items": {
+                            "type": "string"
+                        },
+                        "readOnly": true
+                    },
+                    "active_messages_count": {
+                        "type": "integer",
                         "readOnly": true
                     },
                     "has_unread": {
@@ -10673,6 +10690,7 @@
                     "abilities",
                     "accesses",
                     "active_messaged_at",
+                    "active_messages_count",
                     "archived_messaged_at",
                     "assigned_users",
                     "draft_messaged_at",

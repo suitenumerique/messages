@@ -16,6 +16,7 @@ import { LabelBadge } from "@/features/ui/components/label-badge"
 import { useLayoutDragContext } from "@/features/layouts/components/layout-context"
 import ViewHelper from "@/features/utils/view-helper"
 import useCanEditThreads from "@/features/message/use-can-edit-threads"
+import { FEATURE_KEYS, useFeatureFlag } from "@/hooks/use-feature"
 import { ThreadListboxItemProps } from "../../hooks/use-thread-listbox"
 
 type ThreadItemProps = {
@@ -75,6 +76,8 @@ export const ThreadItem = ({ thread, isSelected, onToggle, onSelectRange, select
         [isSelectionMode, selectedThreadIds, thread.id]
     );
     const hasEditableInDrag = useCanEditThreads(dragThreadIds);
+    const snippetEnabled = useFeatureFlag(FEATURE_KEYS.THREAD_SNIPPET);
+    const showSnippet = snippetEnabled && !!thread.snippet;
 
     const handleItemClick = (e: React.MouseEvent<HTMLAnchorElement>) => {
         onFocusItem();
@@ -191,6 +194,14 @@ export const ThreadItem = ({ thread, isSelected, onToggle, onSelectRange, select
                             {thread.sender_names && thread.sender_names.length > 0 && (
                                 <ThreadItemSenders senders={thread.sender_names} />
                             )}
+                            {thread.active_messages_count > 1 &&
+                                <span
+                                    className="thread-item__message-count"
+                                    aria-label={t('{{count}} messages', { count: thread.active_messages_count })}
+                                >
+                                    {thread.active_messages_count}
+                                </span>
+                            }
                         </div>
                         <div className="thread-item__column thread-item__column--metadata">
                             {(threadDate || thread.messaged_at) && (
@@ -202,7 +213,9 @@ export const ThreadItem = ({ thread, isSelected, onToggle, onSelectRange, select
                     </div>
                     <div className="thread-item__row thread-item__row--subject">
                         <div className="thread-item__column">
-                            <p className="thread-item__subject">{thread.subject || t('No subject')}</p>
+                            <p className="thread-item__subject">
+                                {thread.subject || t('No subject')}
+                            </p>
                         </div>
                         <div className="thread-item__column thread-item__column--badges">
                             {thread.has_draft && (
@@ -309,15 +322,20 @@ export const ThreadItem = ({ thread, isSelected, onToggle, onSelectRange, select
                             )}
                         </div>
                     </div>
+                    {showSnippet && (
+                        <div className="thread-item__row thread-item__snippet">
+                            {thread.snippet}
+                        </div>
+                    )}
                     <div className="thread-item__row">
-                     {thread.labels.length > 0 && (
-                         <div className="thread-item__labels">
-                             {thread.labels.map((label) => (
-                                 <LabelBadge key={label.id} label={label} compact />
-                             ))}
-                         </div>
-                     )}
-                 </div>
+                        {thread.labels.length > 0 && (
+                            <div className="thread-item__labels">
+                                {thread.labels.map((label) => (
+                                    <LabelBadge key={label.id} label={label} compact />
+                                ))}
+                            </div>
+                        )}
+                    </div>
                 </div>
             </Link>
             {(isDragging || isExiting) && dragPreviewContainer.current && createPortal(

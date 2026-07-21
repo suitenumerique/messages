@@ -374,8 +374,6 @@ def prepare_outbound_message(
     # TODO: Fetch MIME IDs of "references" from the thread
     # references = message.thread.messages.exclude(id=message.id).order_by("-created_at").all()
 
-    # TODO: set the thread snippet?
-
     # Insert the validated signature
     validated_signature = mailbox_sender.get_validated_signature(
         message.signature.id if message.signature else None
@@ -510,7 +508,7 @@ def _finalize_sent_message(
         mailbox=mailbox_sender,
     ).update(read_at=message.created_at)
 
-    message.thread.update_stats()
+    message.thread.update_stats(source_message=message)
 
 
 def _save_recipient_status(

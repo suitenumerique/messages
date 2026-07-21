@@ -20,7 +20,8 @@ export interface Thread {
   /** @nullable */
   readonly subject: string | null;
   readonly snippet: string;
-  readonly messages: string;
+  readonly messages: readonly string[];
+  readonly active_messages_count: number;
   readonly has_unread: boolean;
   readonly has_unread_mention: boolean;
   readonly has_trashed: boolean;

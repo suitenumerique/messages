@@ -1,5 +1,7 @@
 """API ViewSet for changing flags on messages or threads."""
 
+import logging
+
 from django.db import transaction
 from django.utils import timezone
 from django.utils.dateparse import parse_datetime
@@ -17,6 +19,8 @@ from core import models
 from core.services.search.tasks import update_threads_mailbox_flags_task
 
 from .. import permissions
+
+logger = logging.getLogger(__name__)
 
 # Define allowed flag types
 ALLOWED_FLAGS = ["unread", "starred", "trashed", "archived", "spam"]
@@ -325,13 +329,26 @@ class ChangeFlagView(APIView):
                         threads_to_process
                     )  # Add the QuerySet directly
 
-            # --- Update thread counters ---
-            # Fetch threads from DB again to ensure consistency within transaction
-            threads_to_update_stats = models.Thread.objects.filter(
-                pk__in=[t.pk for t in updated_threads]
-            )
-            for thread in threads_to_update_stats:
+        # --- Update thread counters ---
+        # Outside the transaction on purpose: update_stats can read message
+        # blobs to re-derive the thread snippet (a GET to object storage per
+        # thread once blobs are offloaded), and serialising those reads under
+        # the open transaction would hold its row locks for the whole scan.
+        # update_stats is idempotent, so flags-committed-but-stats-failed is
+        # recoverable by any later call — same contract as the batching
+        # deferrer and the signal handlers, hence the same per-thread catch.
+        threads_to_update_stats = models.Thread.objects.filter(
+            pk__in=[t.pk for t in updated_threads]
+        )
+        for thread in threads_to_update_stats:
+            try:
                 thread.update_stats()
+            # pylint: disable-next=broad-exception-caught
+            except Exception:
+                logger.exception(
+                    "Failed to update stats for thread %s after flag change",
+                    thread.id,
+                )
 
         return drf.response.Response(
             {

@@ -1421,8 +1421,8 @@ class TestApiDraftAndSendReply:
         # Assert thread is updated
         thread = models.Thread.objects.get(id=updated_message.thread.id)
         assert thread.subject == updated_subject
-        # Verify thread snippet updated (Optional based on requirements)
-        # assert thread.snippet == "updated content"[:100]
+        # Drafts never contribute to the thread snippet
+        assert thread.snippet == ""
 
         # Step 3: Send the updated draft message
         with django_capture_on_commit_callbacks(execute=True):

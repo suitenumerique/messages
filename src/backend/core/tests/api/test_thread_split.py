@@ -480,11 +480,22 @@ def test_split_thread_stats_snippet_updated(api_client):
     api_client.force_authenticate(user=user)
 
     mailbox = MailboxFactory()
-    thread, messages = _create_thread_with_messages(mailbox, count=3)
-
-    # Simulate snippet set from the last message (as inbound_create does)
-    thread.snippet = "Stale snippet from moved message"
-    thread.save(update_fields=["snippet"])
+    contact = ContactFactory(mailbox=mailbox)
+    thread = ThreadFactory()
+    now = timezone.now()
+    messages = [
+        MessageFactory(
+            thread=thread,
+            sender=contact,
+            created_at=now + timedelta(minutes=i),
+            raw_mime=(
+                b"From: a@example.com\r\nSubject: t\r\n\r\nBody " + str(i + 1).encode()
+            ),
+        )
+        for i in range(3)
+    ]
+    thread.update_stats()
+    assert thread.snippet == "Body 3"
 
     _setup_editor_access(user, mailbox, thread)
 
@@ -499,9 +510,9 @@ def test_split_thread_stats_snippet_updated(api_client):
     assert thread.messaged_at is not None
     assert new_thread.messaged_at is not None
 
-    # Old thread snippet should be recalculated (no longer the stale value)
-    assert thread.snippet != "Stale snippet from moved message"
-    assert new_thread.snippet is not None
+    # Each thread derives its snippet from its own latest remaining message
+    assert thread.snippet == "Body 2"
+    assert new_thread.snippet == "Body 3"
 
 
 def test_split_thread_summaries_invalidated(api_client):

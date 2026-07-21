@@ -135,6 +135,7 @@ CONFIG_ENTRIES = (
     ConfigEntry("FEATURE_MAILDOMAIN_CREATE", {"type": "boolean"}),
     ConfigEntry("FEATURE_MAILDOMAIN_MANAGE_ACCESSES", {"type": "boolean"}),
     ConfigEntry("FEATURE_THREAD_SPLIT", {"type": "boolean"}),
+    ConfigEntry("FEATURE_THREAD_SNIPPET", {"type": "boolean"}),
     # Expose the *effective* mandatory-TOTP capability rather than the raw
     # flag: the feature also requires IDENTITY_PROVIDER == "keycloak" and a
     # populated KEYCLOAK_TOTP_ROLE_ID. Surfacing the raw flag would let the

@@ -27,6 +27,7 @@ pytestmark = pytest.mark.django_db
     FEATURE_MAILDOMAIN_CREATE=True,
     FEATURE_MAILDOMAIN_MANAGE_ACCESSES=True,
     FEATURE_THREAD_SPLIT=True,
+    FEATURE_THREAD_SNIPPET=True,
     FEATURE_MAILDOMAIN_MANAGE_TOTP=False,
     DRIVE_CONFIG={"base_url": None, "app_name": "Drive"},
     MAX_OUTGOING_ATTACHMENT_SIZE=20971520,  # 20MB
@@ -66,6 +67,7 @@ def test_api_config(is_authenticated):
         "FEATURE_MAILDOMAIN_CREATE": True,
         "FEATURE_MAILDOMAIN_MANAGE_ACCESSES": True,
         "FEATURE_THREAD_SPLIT": True,
+        "FEATURE_THREAD_SNIPPET": True,
         "FEATURE_MAILDOMAIN_MANAGE_TOTP": False,
         "SCHEMA_CUSTOM_ATTRIBUTES_USER": {},
         "SCHEMA_CUSTOM_ATTRIBUTES_MAILDOMAIN": {},
