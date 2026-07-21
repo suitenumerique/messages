@@ -44,3 +44,7 @@ interface ImportMetaEnv {
 interface ImportMeta {
   readonly env: ImportMetaEnv;
 }
+
+// Per-build version stamp injected by Vite (see vite.config.ts `define`). Used
+// to cache-bust runtime-loaded assets such as the locale JSON files.
+declare const __SOURCE_VERSION__: string;

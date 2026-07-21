@@ -100,6 +100,12 @@ jobs:
       context: "src/frontend"
       target: runtime-prod
       arm64_reuse_amd64_build_arg: "FRONTEND_IMAGE"
+      # Bakes the commit SHA into the build as the asset cache-buster
+      # (vite.config.ts → __SOURCE_VERSION__); without it the build falls back to a
+      # timestamp. The src/frontend context ships no .git, so this is the only
+      # way the image gets the real SHA. SOURCE_VERSION matches the var name
+      # Scalingo's buildpack sets natively, so both deploy paths agree.
+      build_args: "SOURCE_VERSION=${{ github.sha }}"
 
   docker-publish-backend:
     needs: docker-publish-python-uv

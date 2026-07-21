@@ -43,6 +43,10 @@ export const initI18n = (config: AppConfig) => {
       returnEmptyString: false,
       backend: {
         loadPath: "/locales/{{ns}}/{{lng}}.json",
+        // Cache-bust the static locale files on every deploy: their URLs are
+        // otherwise fixed, so a CDN/browser keeps serving a stale copy and any
+        // newly added translation falls back to English (a half-translated UI).
+        queryStringParams: { v: __SOURCE_VERSION__ },
       }
     })
     .catch((error) => {

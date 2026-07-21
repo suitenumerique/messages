@@ -41,6 +41,13 @@ COPY --chown=${DOCKER_USER} . ./
 ARG API_ORIGIN
 ENV NEXT_PUBLIC_API_ORIGIN=${API_ORIGIN}
 
+# Commit SHA (or any per-deploy version) baked in as the asset cache-buster —
+# see vite.config.ts. Named SOURCE_VERSION to match the var Scalingo's buildpack
+# sets natively. Pass `--build-arg SOURCE_VERSION=$(git rev-parse --short HEAD)`;
+# if omitted the build falls back to a timestamp (still unique per deploy).
+ARG SOURCE_VERSION
+ENV SOURCE_VERSION=${SOURCE_VERSION}
+
 RUN npm run build
 
 # Normalize output path to /app (matches the runtime-prod layout)
