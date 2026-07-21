@@ -337,32 +337,57 @@ describe("ThreadView — hash-driven scroll/highlight", () => {
     })
 
     it("does not re-run the once-only draft/unread/latest fallback after a later, unrelated hash change", () => {
-        // No hash match at all: falls back to "latest message" heuristic.
-        // This must run exactly once — the render tree does not offer a
-        // direct hook into "how many times", so this test instead documents
-        // and locks the expected fallback selection surviving a hash change
-        // that doesn't itself target any message (i.e. verifies the guard
-        // doesn't crash or reset when the hash becomes something unrelated).
-        const messages = [
-            buildMessage({ id: "m1", created_at: "2026-07-20T00:00:00Z" }),
-            buildMessage({ id: "m2", created_at: "2026-07-20T01:00:00Z" }),
-        ]
-        const { container, rerender, cleanup } = renderThreadView({ hash: "", messages })
-
-        // No hashMatch, no drafts, no unread => falls back to latestMessage (m2).
-        expect(container.querySelector("#thread-message-m1")?.classList.contains("thread-view__highlight")).toBe(false)
-        expect(container.querySelector("#thread-message-m2")?.classList.contains("thread-view__highlight")).toBe(false)
-
-        act(() => {
-            setLocationHash("#not-a-thread-hash")
+        // No hash match at all: falls back to the "latest message" heuristic,
+        // which scrolls the thread body via `rootRef.current.scrollTo(...)`.
+        // That's the actual observable side effect the once-only guard
+        // protects — asserting on it (rather than on the highlight class,
+        // which this no-hash path never sets: `highlightTargetId` is only
+        // assigned on a real hash match) is what lets this test fail if the
+        // guard is ever removed and the fallback re-runs on every render.
+        //
+        // jsdom never lays out elements, so `offsetTop` is always 0 and the
+        // effect's "am I already scrolled there" check would otherwise make
+        // `scrollTo` a permanent no-op regardless of the guard. Stub
+        // `offsetTop` so the fallback scroll actually has somewhere to go,
+        // and stub the (jsdom-unimplemented) `scrollTo` so calls can be
+        // counted instead of throwing.
+        const offsetTopDescriptor = Object.getOwnPropertyDescriptor(HTMLElement.prototype, "offsetTop")
+        Object.defineProperty(HTMLElement.prototype, "offsetTop", {
+            configurable: true,
+            get: () => 1000,
         })
-        rerender()
+        const scrollTo = vi.fn()
+        Element.prototype.scrollTo = scrollTo
 
-        // hasBeenInitialized is already true and the new hash doesn't match
-        // the deep-link pattern, so nothing re-runs and no highlight appears.
-        expect(container.querySelector("#thread-message-m1")?.classList.contains("thread-view__highlight")).toBe(false)
-        expect(container.querySelector("#thread-message-m2")?.classList.contains("thread-view__highlight")).toBe(false)
+        try {
+            const messages = [
+                buildMessage({ id: "m1", created_at: "2026-07-20T00:00:00Z" }),
+                buildMessage({ id: "m2", created_at: "2026-07-20T01:00:00Z" }),
+            ]
+            const { rerender, cleanup } = renderThreadView({ hash: "", messages })
 
-        cleanup()
+            // No hashMatch, no drafts, no unread => falls back to latestMessage
+            // (m2), scrolling to it exactly once.
+            expect(scrollTo).toHaveBeenCalledTimes(1)
+
+            act(() => {
+                setLocationHash("#not-a-thread-hash")
+            })
+            rerender()
+
+            // hasBeenInitialized is already true and the new hash doesn't
+            // match the deep-link pattern, so the guard blocks the fallback
+            // from running again — no second scroll call.
+            expect(scrollTo).toHaveBeenCalledTimes(1)
+
+            cleanup()
+        } finally {
+            if (offsetTopDescriptor) {
+                Object.defineProperty(HTMLElement.prototype, "offsetTop", offsetTopDescriptor)
+            } else {
+                delete (HTMLElement.prototype as unknown as Record<string, unknown>).offsetTop
+            }
+            delete (Element.prototype as unknown as Record<string, unknown>).scrollTo
+        }
     })
 })
