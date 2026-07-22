@@ -19,9 +19,9 @@ test.describe("Import Message", () => {
 
   test("should import an eml archive file", async ({ page, browserName }) => {
     // The archive is uploaded to object storage, then imported by a Celery
-    // worker the modal polls — more than the default 30s budget allows.
-    test.setTimeout(60_000);
-    const email = `import.e2e@example.local`;
+    // worker whose progress the imports grid polls — well over the default 30s
+    // budget.
+    test.setTimeout(120_000);
     await page.waitForLoadState("networkidle");
 
     // Go the import mailbox
@@ -29,10 +29,14 @@ test.describe("Import Message", () => {
     await page.getByRole("menuitem").filter({ hasText: getMailboxEmail('import') }).click();
     await page.waitForLoadState("networkidle");
 
-    // As the database is fresh, there should be no threads and the Import messages button should be visible
-    const noThreads = page.getByText("No threads");
-    await expect(page.getByRole("link", { name: "Import messages" })).toBeVisible();
+    // As the database is fresh, there should be no threads and the Import
+    // messages shortcut should be visible. It is a button opening the settings
+    // modal — the importer no longer has a page (nor a modal) of its own.
+    await expect(page.getByText("No threads")).toBeVisible();
+    await expect(page.getByRole("button", { name: "Import messages" })).toBeVisible();
 
+    // The importer lives in the mailbox settings modal, on the Imports tab; the
+    // header menu entry opens it directly on the "new import" sub-view.
     const header = page.locator(".c__header");
     const settingsButton = header.getByRole("button", { name: "More options" });
     await settingsButton.click();
@@ -40,16 +44,21 @@ test.describe("Import Message", () => {
     const menuItem = page.getByRole("menuitem", { name: "Import messages" });
     await menuItem.click();
 
-    const importModal = page.getByRole("dialog");
-    const modalTitle = importModal.locator(".c__modal__title");
-    expect(await modalTitle.textContent()).toBe(
-      `Import your old messages in ${email}`
+    const settingsModal = page.getByRole("dialog", { name: "Settings" });
+    await expect(settingsModal).toBeVisible();
+    await expect(settingsModal.getByText("Start a new import")).toBeVisible();
+
+    const fileInput = settingsModal.locator(
+      'input[type="file"][name="archive_file"]'
     );
 
-    const fileInput = page.locator('input[type="file"][name="archive_file"]');
-
-    // Import a wrong file type should show an error
-    const importButton = page.getByRole("button", { name: "Import" });
+    // Import a wrong file type should show an error: the upload is presigned by
+    // the backend, which only signs the archive MIME types, so a PNG never even
+    // reaches object storage.
+    const importButton = settingsModal.getByRole("button", {
+      name: "Import",
+      exact: true,
+    });
     await fileInput.setInputFiles(path.join(FIXTURES_PATH, "attachment.png"));
     await importButton.click();
 
@@ -74,37 +83,37 @@ test.describe("Import Message", () => {
     await expect(errorBanner).not.toBeVisible();
 
     // The archive goes to object storage first (presigned PUT), then
-    // POST /mailboxes/{id}/imports/ creates the run the modal polls.
+    // POST /mailboxes/{id}/imports/ creates the run.
     await importRunPromise;
 
-    await expect(page.getByText("Importing...")).toBeVisible();
+    // Creating the run hands off to the imports list: the form is replaced by
+    // the grid, which tracks the worker server-side.
+    await expect(
+      page.getByText(
+        "Import started. You can close this window — it will keep running in the background."
+      )
+    ).toBeVisible();
+
+    const importsGrid = settingsModal.locator(".admin-data-grid");
+    await expect(importsGrid.getByText("EML")).toBeVisible();
 
     // Completion is asserted on the UI rather than on a polling response: the
-    // modal stops polling on the first terminal status, so racing that single
-    // response would be flaky.
-    // New completion UI: badge + heading + per-archive stats.
-    await expect(page.getByText("Import complete")).toBeVisible({
-      timeout: 30_000,
+    // grid stops polling on the first terminal status, so racing that single
+    // response would be flaky. The archive holds one message, and a run that
+    // settled with failures would read "1 failed" next to the count.
+    await expect(importsGrid.getByText("1 message imported")).toBeVisible({
+      timeout: 60_000,
     });
-    await expect(page.getByText("100% imported")).toBeVisible();
-    await expect(
-      page.getByText("Imported: 1 of 1 messages")
-    ).toBeVisible();
-    // A single-message archive must not trip the failure warning.
-    await expect(page.getByLabel("High failure rate")).toHaveCount(0);
+    await expect(importsGrid.getByText("failed")).toHaveCount(0);
 
-    const closeButton = page.getByRole("button", {
-      name: "Close",
-      exact: true,
-    });
-    await closeButton.click();
+    await page.keyboard.press("Escape");
+    await settingsModal.waitFor({ state: "hidden" });
 
-    await importModal.waitFor({ state: "hidden" });
-
-    // Then expect the new message to be visible in the thread list
+    // Then expect the new message to be visible in the thread list. The mailbox
+    // views are invalidated when the run settles, so no reload is needed.
     await expect(
       page.getByRole("option", { name: "Sardine 18/11/2025 An old message" })
-    ).toBeVisible();
+    ).toBeVisible({ timeout: 30_000 });
   });
 
   test("should not be able to import message if not mailbox admin", async ({
