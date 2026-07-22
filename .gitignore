@@ -41,7 +41,10 @@ venv.bak/
 deploy/env/*
 !deploy/env/*.defaults
 !deploy/env/*.e2e
-env.d/terraform
+# Pre-`deploy/env` layout: a checkout updated from an older revision keeps its
+# env.d/development/*.local files behind, and they hold local secrets. Keep the
+# whole tree ignored so they can never be staged by accident.
+env.d/
 
 # npm
 node_modules
