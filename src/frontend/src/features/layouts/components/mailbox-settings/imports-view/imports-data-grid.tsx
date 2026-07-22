@@ -19,6 +19,7 @@ import { addToast, ToasterItem } from "@/features/ui/components/toaster";
 import { handle } from "@/features/utils/errors";
 import { DateHelper } from "@/features/utils/date-helper";
 import { isTerminal, STATUS_CANCELLED } from "@/hooks/import-status";
+import { useImportCompletionRefresh } from "./use-import-completion-refresh";
 
 type ImportsDataGridProps = {
     mailbox: Mailbox;
@@ -167,6 +168,8 @@ export const ImportsDataGrid = ({ mailbox }: ImportsDataGridProps) => {
         // Background status poll: let foreground requests win the wire.
         request: { priority: "low" },
     });
+
+    useImportCompletionRefresh(data?.data);
 
     const cancelMutation = useMailboxesImportsCancelCreate();
     const updateMutation = useMailboxesImportsPartialUpdate();

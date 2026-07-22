@@ -18,6 +18,7 @@ import { CircularProgress } from "@/features/ui/components/circular-progress";
 import { useTheme } from "@/features/providers/theme";
 import { MODAL_MAILBOX_SETTINGS_ID } from "@/features/layouts/components/mailbox-settings/modal-mailbox-settings";
 import { useOpenImporter } from "@/features/layouts/components/mailbox-settings/imports-view/use-open-importer";
+import { useImportCompletionRefresh } from "@/features/layouts/components/mailbox-settings/imports-view/use-import-completion-refresh";
 import { MODAL_NOTIFICATIONS_ID } from "@/features/layouts/components/notifications-settings/modal-notifications";
 import { useModalStore } from "@/features/providers/modal-store";
 import { useConfig } from "@/features/providers/config";
@@ -141,6 +142,10 @@ const ImportIndicator = () => {
       ),
     [data],
   );
+
+  // Mounted for the whole session, so this is where a run finishing while the
+  // settings modal is closed still refreshes the mailbox.
+  useImportCompletionRefresh(data?.data as ImportRun[] | undefined);
 
   if (!selectedMailbox || activeRuns.length === 0) return null;
 
