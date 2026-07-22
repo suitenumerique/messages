@@ -38,6 +38,27 @@ ReleaseKind = Literal["p", "m", "mj"]
 
 SEMVER_PATTERN = re.compile(r"^(\d+)\.(\d+)\.(\d+)$")
 
+REPO_URL = "https://github.com/suitenumerique/messages"
+
+# Sub-projects released independently, on their own versioning scheme.
+# `jmap-email` is published to PyPI through `bin/release-jmap-email.sh`.
+EXCLUDED_PACKAGES = {"jmap-email"}
+
+
+def iter_package_files(filename: str) -> list[Path]:
+    """List package manifests to bump, skipping vendored and excluded packages.
+
+    Dot-directories (`.vite`, `.venv`, …) hold build caches whose manifests
+    would be rewritten for nothing.
+    """
+    return [
+        path
+        for path in Path("src").rglob(filename)
+        if "node_modules" not in path.parts
+        and not EXCLUDED_PACKAGES.intersection(path.parts)
+        and not any(part.startswith(".") for part in path.parts)
+    ]
+
 
 def get_current_version() -> str | None:
     """Extract current version from pyproject.toml."""
@@ -105,10 +126,12 @@ def check_changelog_has_unreleased() -> bool:
 
 def update_files(version: str) -> None:
     """Update all files needed with new release version."""
+    pyproject_files = iter_package_files("pyproject.toml")
+    package_json_files = iter_package_files("package.json")
+
     # pyproject.toml
     sys.stdout.write("Updating pyproject.toml files...\n")
-    src_path = Path("src")
-    for pyproject_toml in src_path.rglob("pyproject.toml"):
+    for pyproject_toml in pyproject_files:
         content = pyproject_toml.read_text()
         content = re.sub(
             r'^(version\s*=\s*)"[^"]+"', f'\\1"{version}"', content, flags=re.MULTILINE
@@ -119,9 +142,7 @@ def update_files(version: str) -> None:
     # frontend and e2e package.json files
     sys.stdout.write("Updating package.json files...\n")
 
-    for package_json in src_path.rglob("package.json"):
-        if "node_modules" in package_json.parts or ".next" in package_json.parts:
-            continue
+    for package_json in package_json_files:
         content = package_json.read_text()
         content = re.sub(r'"version":\s*"[^"]+"', f'"version": "{version}"', content)
         package_json.write_text(content)
@@ -129,7 +150,7 @@ def update_files(version: str) -> None:
 
     # Update uv.lock files to match
     sys.stdout.write("Updating uv.lock files...\n")
-    for pyproject_toml in src_path.rglob("pyproject.toml"):
+    for pyproject_toml in pyproject_files:
         lock_file = pyproject_toml.parent / "uv.lock"
         if lock_file.exists():
             run_command(
@@ -140,9 +161,7 @@ def update_files(version: str) -> None:
 
     # Update package-lock.json files to match
     sys.stdout.write("Updating package-lock.json files...\n")
-    for package_json in src_path.rglob("package.json"):
-        if "node_modules" in package_json.parts or ".next" in package_json.parts:
-            continue
+    for package_json in package_json_files:
         package_dir = package_json.parent
         lock_file = package_dir / "package-lock.json"
         if lock_file.exists():
@@ -176,14 +195,10 @@ def update_changelog(version: str) -> None:
             )
             if last_version_match:
                 last_version = last_version_match.group(1)
-                new_unreleased_line = line.replace(last_version, version)
-                new_release_line = (
-                    lines[i + 1].replace(last_version, version)
-                    if i + 1 < len(lines)
-                    else ""
+                new_lines[-1] = f"[unreleased]: {REPO_URL}/compare/v{version}...main\n"
+                new_lines.append(
+                    f"[{version}]: {REPO_URL}/compare/v{last_version}...v{version}\n"
                 )
-                new_lines[-1] = new_unreleased_line
-                new_lines.append(new_release_line)
 
     path.write_text("".join(new_lines))
 
@@ -236,7 +251,7 @@ Continue? (y/n): \x1b[0m"""
 def print_next_steps_after_release_branch_pushed(version: str, branch_name: str) -> None:
     """Print next steps after release branch is pushed."""
     sys.stdout.write(
-        f"""\033[1;34m- Create PR: https://github.com/suitenumerique/messages/compare/{branch_name}
+        f"""\033[1;34m- Create PR: {REPO_URL}/compare/{branch_name}
 - After merge, tag the release:
    >> git checkout main
    >> git pull
