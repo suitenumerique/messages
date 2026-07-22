@@ -90,18 +90,27 @@ const warnedKeys = new Set<string>();
  * Read a deprecated `NEXT_PUBLIC_*` build-time variable as a fallback for a
  * backend-provided setting, warning once per variable. Empty strings are
  * treated as unset, matching how these variables used to behave.
+ *
+ * `jsonKey` is required whenever the replacement is a JSON object rather than a
+ * scalar (the widget configurations): several env vars then collapse into a
+ * single setting, and naming the setting alone would read as a 1:1 rename and
+ * send the operator setting it to a bare string.
  */
 const deprecatedEnv = (
   envKey: string,
   replacement: string,
   raw: string | undefined,
+  jsonKey?: string,
 ): string | undefined => {
   if (!raw) return undefined;
   if (!warnedKeys.has(envKey)) {
     warnedKeys.add(envKey);
+    const target = jsonKey
+      ? `the "${jsonKey}" key of the ${replacement} backend setting (a JSON object)`
+      : `the backend setting ${replacement}`;
     console.warn(
       `[DEPRECATED] ${envKey} is deprecated and will be removed, ` +
-        `configure the backend setting ${replacement} instead.`,
+        `configure ${target} instead.`,
     );
   }
   return raw;
@@ -166,21 +175,25 @@ const resolveFeedbackWidget = (api?: ConfigRetrieve200): FeedbackWidgetConfig =>
       "NEXT_PUBLIC_FEEDBACK_WIDGET_API_URL",
       "FRONTEND_FEEDBACK_WIDGET_CONFIG",
       import.meta.env.NEXT_PUBLIC_FEEDBACK_WIDGET_API_URL,
+      "api_url",
     ),
     path: deprecatedEnv(
       "NEXT_PUBLIC_FEEDBACK_WIDGET_PATH",
       "FRONTEND_FEEDBACK_WIDGET_CONFIG",
       import.meta.env.NEXT_PUBLIC_FEEDBACK_WIDGET_PATH,
+      "path",
     ),
     channel: deprecatedEnv(
       "NEXT_PUBLIC_FEEDBACK_WIDGET_CHANNEL",
       "FRONTEND_FEEDBACK_WIDGET_CONFIG",
       import.meta.env.NEXT_PUBLIC_FEEDBACK_WIDGET_CHANNEL,
+      "channel",
     ),
     home_channel: deprecatedEnv(
       "NEXT_PUBLIC_FEEDBACK_WIDGET_HOME_CHANNEL",
       "FRONTEND_FEEDBACK_WIDGET_CONFIG",
       import.meta.env.NEXT_PUBLIC_FEEDBACK_WIDGET_HOME_CHANNEL,
+      "home_channel",
     ),
   };
 };
@@ -194,11 +207,13 @@ const resolveLagaufreWidget = (api?: ConfigRetrieve200): LagaufreWidgetConfig =>
       "NEXT_PUBLIC_LAGAUFRE_WIDGET_API_URL",
       "FRONTEND_LAGAUFRE_WIDGET_CONFIG",
       import.meta.env.NEXT_PUBLIC_LAGAUFRE_WIDGET_API_URL,
+      "api_url",
     ),
     path: deprecatedEnv(
       "NEXT_PUBLIC_LAGAUFRE_WIDGET_PATH",
       "FRONTEND_LAGAUFRE_WIDGET_CONFIG",
       import.meta.env.NEXT_PUBLIC_LAGAUFRE_WIDGET_PATH,
+      "path",
     ),
   };
 };

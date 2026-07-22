@@ -165,6 +165,30 @@ describe("resolveConfig", () => {
     expect(helpCenterWarnings).toHaveLength(1);
   });
 
+  it("names the JSON key in the warning for object-valued settings", async () => {
+    // Several widget env vars collapse into one JSON setting, so the warning
+    // must point at the key — naming the setting alone reads as a 1:1 rename.
+    const warn = vi.spyOn(console, "warn").mockImplementation(() => {});
+    vi.stubEnv("NEXT_PUBLIC_LAGAUFRE_WIDGET_PATH", "/gaufre");
+    vi.stubEnv("NEXT_PUBLIC_HELP_CENTER_URL", "https://help.example.com");
+    const { resolveConfig } = await importResolve();
+
+    resolveConfig(undefined);
+
+    const [gaufreWarning] = warn.mock.calls
+      .map(([message]) => String(message))
+      .filter((message) => message.includes("NEXT_PUBLIC_LAGAUFRE_WIDGET_PATH"));
+    expect(gaufreWarning).toContain('"path" key');
+    expect(gaufreWarning).toContain("FRONTEND_LAGAUFRE_WIDGET_CONFIG");
+    expect(gaufreWarning).toContain("JSON object");
+
+    // A scalar replacement keeps the plain wording.
+    const [helpWarning] = warn.mock.calls
+      .map(([message]) => String(message))
+      .filter((message) => message.includes("NEXT_PUBLIC_HELP_CENTER_URL"));
+    expect(helpWarning).toContain("the backend setting FRONTEND_HELP_CENTER_URL");
+  });
+
   it("uses hardcoded defaults when neither API nor env vars are set", async () => {
     const { resolveConfig, DEFAULT_LANGUAGES } = await importResolve();
 
