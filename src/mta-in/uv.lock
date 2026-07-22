@@ -458,7 +458,7 @@ wheels = [
 
 [[package]]
 name = "st-messages-mta-in"
-version = "0.8.0"
+version = "0.9.0"
 source = { editable = "." }
 dependencies = [
     { name = "aiosmtpd" },

@@ -8,12 +8,58 @@ and this project adheres to
 
 ## [Unreleased]
 
-- Bump keycloak to 26.6.3
-- Bump keycloak to 26.6.4
+## [0.9.0] - 2026-07-22
+
+### Added
+
+- Push notification system for iOS, Android and Web
+- Bootstrap Capacitor mobile apps (iOS/Android) sharing the existing SPA
+- Self-hosted OTA update chain for mobile apps
+- Mobile OIDC session handoff via a one-time token on an allowlisted deep link
+- Inbound webhooks and message postmarks
+- Host allowlist to bypass SSRF checks on internal networks
+- Detect raw text links in HTML bodies and warn the user before redirect #744
+- Support a `next` param at login to restore the requested route after auth
+- Display unread count in the mailbox dropdown #738
+- Add `X-Mailer` header on outbound messages
+- Cache-busting source version in build
+- Full documentation on spam processing
+
+### Changed
+
+- Rewrite MTA-in in pure Python to remove the Postfix dependency #692
+- Refactor imports: retries, continuous mode, direct-to-offload storage,
+  cancellation and a list UI in the settings modal #742
+- Serve frontend configuration from the backend #734
+- Deliver the CSRF token via the session instead of a cookie
+- Generate message-id with the builtin `email.utils.make_msgid` #730
+- Set up browserslist and Vite legacy plugin to support Chrome >= 109 #741 #750
+- Reset search when switching mailbox #743
+- Clearer message on the no-mailbox view
+- Explicit feedback when a user is authenticated on the IdP but has no account
+- Improve `make bootstrap` setup time and overall DevX
+- Bump `django-lasuite` to 0.0.27
+- Upgrade Keycloak theme to 2.3.4 #732
+
+### Removed
+
+- Remove the `TESTDOMAIN` feature, superseded by autojoin domains
+- Remove the `react-email` component from outbound message rendering
 
 ### Fixed
 
-- 🐛(mta-out) fix relay block indentation breaking SASL auth #733
+- Fix relay block indentation breaking SASL auth in MTA out #733
+- Fix Outlook Web handler in the unquote logic #754
+- Fix premature line wrapping in the composer on Safari 26 #735 #740
+- Fix line break in the composer on Chrome for Android #725
+- Set an attachment name fallback
+- Fix hardcoded `lang=en` that might trigger auto-translate
+- Improve re-processing of inbound messages from the admin
+- Save the origin IP across STARTTLS restarts (pymta)
+
+### Security
+
+- Bump keycloak to 26.6.4 (CERTFR-2026-AVI-0815) #729
 
 ## [0.8.0] - 2026-06-18
 
@@ -296,7 +342,8 @@ and this project adheres to
 - Exclude `is_trashed` and `is_spam` threads from search results by default
 - `to` search modifier now looks for messages where recipient fields (to, cc, bcc) contain the given email address.
 
-[unreleased]: https://github.com/suitenumerique/messages/compare/v0.8.0...main
+[unreleased]: https://github.com/suitenumerique/messages/compare/v0.9.0...main
+[0.9.0]: https://github.com/suitenumerique/messages/compare/v0.8.0...v0.9.0
 [0.8.0]: https://github.com/suitenumerique/messages/compare/v0.7.0...v0.8.0
 [0.7.0]: https://github.com/suitenumerique/messages/compare/v0.6.0...v0.7.0
 [0.6.0]: https://github.com/suitenumerique/messages/compare/v0.5.0...v0.6.0
