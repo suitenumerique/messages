@@ -556,7 +556,8 @@ class Base(Configuration):
     #                              header_match_regex OR an "arc_verdict" trust
     #                              condition — "trusted" / "untrusted" — e.g.
     #                              {"arc_verdict": "untrusted", "action": "drop"},
-    #                              with action spam / ham / drop.
+    #                              with action spam (alias "reject") / ham
+    #                              (alias "no action") / drop.
     #   inbound_auth             : sender authentication backend — one of
     #                              "native", "rspamd", "arc",
     #                              "authentication-results", or None to disable.
@@ -566,7 +567,9 @@ class Base(Configuration):
     #                              "arc" and by "arc" spam rules. When non-empty,
     #                              a DNS failure verifying a claimed-trusted
     #                              sealer holds the message for retry rather than
-    #                              failing open or closed.
+    #                              failing open or closed; past
+    #                              MESSAGES_INBOUND_DEFERRAL_MAX_AGE the seal is
+    #                              deemed unresolvable and treated as untrusted.
     SPAM_CONFIG = values.DictValue({}, environ_name="SPAM_CONFIG", environ_prefix=None)
 
     # MTA settings

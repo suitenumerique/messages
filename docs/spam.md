@@ -232,7 +232,8 @@ apply (an `untrusted` → `drop`/`spam` rule fires) rather than force-delivering
 
 > **Fail closed:** an empty `trusted_arc_sealers` trusts nothing — with
 > `inbound_auth: "arc"` every message is then `none` (unverified), and an
-> `arc_verdict: "untrusted"` rule matches everything. **Populate the allowlist**
+> `arc_verdict: "untrusted"` rule matches every non-widget message (widget
+> submissions stay exempt, per above). **Populate the allowlist**
 > (it may list several sealers, e.g. an external relay plus an internal gateway)
 > to actually trust anything.
 
