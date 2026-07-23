@@ -37,9 +37,11 @@ from jmap_email.types import JmapEmail
 
 from core import enums, models
 from core.mda import spam
+from core.mda.arc import _sealer_trusted, arc_result
 from core.mda.inbound_auth import (
     check_inbound_authentication,
     get_inbound_auth_mode,
+    trusted_arc_sealers,
 )
 from core.services.thread_events import assign_users
 
@@ -132,6 +134,11 @@ class InboundContext:  # pylint: disable=too-many-instance-attributes
     # the symbols (DKIM/DMARC verdicts) without a second HTTP call.
     rspamd_result: Optional[Dict[str, Any]] = None
 
+    # ARC relay-trust result, computed at most once by ``ensure_arc`` and
+    # shared by the arc step (RETRY-on-dnsfail), the ``arc`` spam rules, and
+    # the ``inbound_auth: "arc"`` verdict.
+    arc: Optional[Dict[str, Any]] = None
+
     # Memoised results of blocking webhook steps, keyed by
     # ``(channel_id, phase)``. Pre-loaded from Redis at the start of a
     # *retry* attempt so an already-succeeded blocking webhook is replayed
@@ -174,13 +181,109 @@ DEFERRAL_MAX_AGE = timedelta(seconds=settings.MESSAGES_INBOUND_DEFERRAL_MAX_AGE)
 # ---------------------------------------------------------------------------
 
 
+def ensure_arc(ctx: InboundContext, spam_config: Dict[str, Any]) -> Dict[str, Any]:
+    """Compute the ARC relay-trust result once and cache it on the context.
+
+    The arc step, the ``arc`` spam rules and the ``inbound_auth: "arc"`` verdict
+    all read the same ``ctx.arc``, so the crypto + DNS work happens at most once
+    per message.
+    """
+    if ctx.arc is None:
+        ctx.arc = arc_result(ctx.raw_data, trusted_arc_sealers(spam_config))
+    return ctx.arc
+
+
+def _is_widget(ctx: InboundContext) -> bool:
+    """True for messages submitted through a widget channel's web form.
+
+    Widget submissions are unauthenticated by construction (a web form, no SMTP
+    peer, no DKIM/ARC), so ARC relay-trust does not apply to them — gating them
+    on a seal they can never carry would just drop legitimate first-party form
+    traffic.
+    """
+    return (ctx.inbound_message.envelope or {}).get(
+        "origin"
+    ) == enums.InboundOrigin.WIDGET
+
+
+def _make_arc_step(spam_config: Dict[str, Any]) -> Step:
+    """Hold (RETRY) a message whose *trusted* ARC seal we couldn't verify.
+
+    Only a populated ``trusted_arc_sealers`` allowlist is an enforcement
+    posture: there, a DNS lookup that didn't complete (timeout / SERVFAIL /
+    NXDOMAIN / empty) for a message *claiming* one of our trusted sealers is
+    indeterminate, not forged — so we hold it for retry rather than fail open
+    (deliver it unverified) or fail closed (drop it).
+
+    Once the hold exceeds ``DEFERRAL_MAX_AGE`` we stop giving the message the
+    benefit of the doubt: a seal claiming one of our sealers whose key never
+    resolved for the whole window — while our own relay's DNS works — is treated
+    as a *definite* ``untrusted`` verdict, so the ``arc_verdict`` rules apply (an
+    ``untrusted`` → ``drop``/``spam`` rule fires). This is deliberately unlike
+    the generic "force-deliver flagged" deferral fallback: an unresolvable ARC
+    seal is evidence about the message, not a transient processing outage.
+
+    With no allowlist there is nothing to hold against (and "any valid seal"
+    would make holds pathological), so we skip entirely — and skip the ARC
+    verification cost too. Widget submissions never carry ARC and are skipped.
+    Untrusted messages (a *definite* verdict) are handled by the ``arc_verdict``
+    spam rules, not held here.
+    """
+    trusted = trusted_arc_sealers(spam_config)
+
+    def arc(ctx: InboundContext) -> Decision:
+        if not trusted or _is_widget(ctx):
+            return Decision.CONTINUE
+        result = ensure_arc(ctx, spam_config)
+        if result["dnsfail"] and _sealer_trusted(result["sealer"], trusted):
+            age = timezone.now() - ctx.inbound_message.created_at
+            if age <= DEFERRAL_MAX_AGE:
+                logger.info(
+                    "ARC: key lookup for claimed-trusted sealer %s did not "
+                    "complete on inbound message %s — holding for retry",
+                    result["sealer"],
+                    ctx.inbound_message.id,
+                )
+                return Decision.RETRY
+            # Gave up: reclassify as a definite untrusted verdict so the
+            # ``arc_verdict`` rules decide (drop / spam / deliver-unverified).
+            logger.warning(
+                "ARC: sealer %s unresolved past the deferral window on inbound "
+                "message %s — treating as untrusted",
+                result["sealer"],
+                ctx.inbound_message.id,
+            )
+            result["dnsfail"] = False
+        return Decision.CONTINUE
+
+    arc.name = "arc"
+    return arc
+
+
 def _make_hardcoded_rules_step(spam_config: Dict[str, Any]) -> Step:
+    rules = spam_config.get("rules") or []
+    # Only pay the ARC verification cost when a rule actually needs it.
+    needs_arc = any(isinstance(r, dict) and r.get("arc_verdict") for r in rules)
+
     def hardcoded_rules(ctx: InboundContext) -> Decision:
         if ctx.is_spam is not None:
             return Decision.CONTINUE
-        verdict = spam.check_hardcoded_rules(ctx.parsed_email, spam_config)
-        if verdict is not None:
-            ctx.is_spam = verdict
+        # Never compute an ARC verdict for widget submissions — they carry no
+        # seal, so an ``arc_verdict`` rule must not gate them (ctx.arc stays None
+        # and matches nothing).
+        if needs_arc and ctx.arc is None and not _is_widget(ctx):
+            ensure_arc(ctx, spam_config)
+        verdict = spam.check_hardcoded_rules(ctx.parsed_email, spam_config, arc=ctx.arc)
+        if verdict == "drop":
+            logger.info(
+                "Spam rule 'drop' on inbound message %s — discarding",
+                ctx.inbound_message.id,
+            )
+            return Decision.DROP
+        if verdict == "spam":
+            ctx.is_spam = True
+        elif verdict == "ham":
+            ctx.is_spam = False
         return Decision.CONTINUE
 
     hardcoded_rules.name = "hardcoded_rules"
@@ -291,7 +394,7 @@ def _make_inbound_auth_step(spam_config: Dict[str, Any]) -> Step:
                 ctx.raw_data, spam_config, envelope=ctx.inbound_message.envelope
             )
         verdict = check_inbound_authentication(
-            ctx.raw_data, ctx.parsed_email, spam_config, ctx.rspamd_result
+            ctx.raw_data, ctx.parsed_email, spam_config, ctx.rspamd_result, ctx.arc
         )
         if not verdict:
             # Widget submissions arrive over an unauthenticated web form, so
@@ -321,11 +424,13 @@ def build_inbound_pipeline(ctx: InboundContext) -> List[Step]:
 
     Order matters:
       1. Before-spam user webhooks — may DROP, RETRY, or set is_spam.
-      2. ``hardcoded_rules`` — header-match rules per domain config.
-      3. ``rspamd`` — fills the gap if nothing decided spam yet, and
+      2. ``arc`` — holds (RETRY) a message whose *trusted* ARC seal couldn't
+         be verified due to a DNS failure (only when an allowlist is set).
+      3. ``hardcoded_rules`` — header-match and ``arc`` trust rules per config.
+      4. ``rspamd`` — fills the gap if nothing decided spam yet, and
          caches symbols for the next step.
-      4. ``inbound_auth`` — DKIM / DMARC verdict, may mutate parsed_email.
-      5. After-spam user webhooks — see the verdict, may override it,
+      5. ``inbound_auth`` — DKIM / DMARC verdict, may mutate parsed_email.
+      6. After-spam user webhooks — see the verdict, may override it,
          may add labels, may DROP/RETRY.
     """
     # Imported here to avoid the inbound_pipeline ↔ dispatch_webhooks
@@ -356,8 +461,18 @@ def build_inbound_pipeline(ctx: InboundContext) -> List[Step]:
             ),
         ]
 
+    if get_inbound_auth_mode(ctx.spam_config) == "arc" and not trusted_arc_sealers(
+        ctx.spam_config
+    ):
+        logger.warning(
+            "inbound_auth='arc' with empty trusted_arc_sealers: no sealer is "
+            "trusted, so every message is treated as unverified. Populate "
+            "trusted_arc_sealers."
+        )
+
     return [
         *webhook_steps_for_mailbox(ctx.mailbox, phase="before_spam", channels=channels),
+        _make_arc_step(ctx.spam_config),
         _make_hardcoded_rules_step(ctx.spam_config),
         _make_rspamd_step(ctx.spam_config),
         _make_inbound_auth_step(ctx.spam_config),

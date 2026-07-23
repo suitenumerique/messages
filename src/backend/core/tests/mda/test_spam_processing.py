@@ -11,12 +11,14 @@ import pytest
 import requests
 from jmap_email import parse_email
 
-from core import factories, models
+from core import enums, factories, models
 from core.mda.inbound import deliver_inbound_message
 from core.mda.inbound_pipeline import (
     Decision,
     InboundContext,
     _make_rspamd_step,
+    build_inbound_pipeline,
+    run_inbound_pipeline,
 )
 from core.mda.inbound_tasks import (
     process_inbound_message_task,
@@ -319,7 +321,7 @@ This is a test email body.
 
         result = check_hardcoded_rules(parsed_email, spam_config)
 
-        assert result is True
+        assert result == "spam"
 
     def test_check_spam_with_hardcoded_rules_ham(self):
         """Test that ham messages are correctly identified by hardcoded rules."""
@@ -335,7 +337,7 @@ This is a test email body.
 
         result = check_hardcoded_rules(parsed_email, spam_config)
 
-        assert result is False
+        assert result == "ham"
 
     def test_check_spam_with_hardcoded_rules_no_match(self):
         """Test that messages without matching rules return None."""
@@ -388,7 +390,7 @@ This is a test email body.
 
         result = check_hardcoded_rules(parsed_email, spam_config)
 
-        assert result is False
+        assert result == "ham"
 
     def test_check_spam_with_hardcoded_rules_case_insensitive(self):
         """Test that header matching is case-insensitive."""
@@ -404,7 +406,7 @@ This is a test email body.
 
         result = check_hardcoded_rules(parsed_email, spam_config)
 
-        assert result is True
+        assert result == "spam"
 
     def test_check_spam_with_hardcoded_rules_value_with_colon(self):
         """Test that header values containing colons are handled correctly."""
@@ -422,7 +424,7 @@ This is a test email body.
 
         result = check_hardcoded_rules(parsed_email, spam_config)
 
-        assert result is True
+        assert result == "spam"
 
     def test_check_spam_with_hardcoded_rules_header_match_regex_spam(self):
         """Test that spam messages are correctly identified by header_match_regex."""
@@ -440,7 +442,7 @@ This is a test email body.
 
         result = check_hardcoded_rules(parsed_email, spam_config)
 
-        assert result is True
+        assert result == "spam"
 
     def test_check_spam_with_hardcoded_rules_header_match_regex_spam_no_fullmatch(self):
         """Test that spam messages are correctly identified by header_match_regex."""
@@ -476,7 +478,7 @@ This is a test email body.
 
         result = check_hardcoded_rules(parsed_email, spam_config)
 
-        assert result is True
+        assert result == "spam"
 
     def test_check_spam_with_hardcoded_rules_header_match_regex_pattern(self):
         """Test that regex patterns work correctly with header_match_regex."""
@@ -494,7 +496,7 @@ This is a test email body.
 
         result = check_hardcoded_rules(parsed_email, spam_config)
 
-        assert result is True
+        assert result == "spam"
 
     def test_check_spam_regex_uppercase_metacharacter_preserved(self):
         """Regression: the regex pattern must NOT be lowercased. Lowercasing
@@ -516,7 +518,7 @@ This is a test email body.
 
         result = check_hardcoded_rules(parsed_email, spam_config)
 
-        assert result is True
+        assert result == "spam"
 
     def test_check_spam_regex_invalid_pattern_is_skipped(self):
         """Regression: a malformed regex must be skipped (logged), not raise
@@ -541,7 +543,7 @@ This is a test email body.
 
         result = check_hardcoded_rules(parsed_email, spam_config)
 
-        assert result is True
+        assert result == "spam"
 
     def test_check_spam_with_hardcoded_rules_default_action(self):
         """Test that default action is spam when not specified."""
@@ -561,7 +563,7 @@ This is a test email body.
 
         result = check_hardcoded_rules(parsed_email, spam_config)
 
-        assert result is True
+        assert result == "spam"
 
     def test_check_spam_with_hardcoded_rules_reject_action(self):
         """Test that reject action is treated as spam."""
@@ -577,7 +579,7 @@ This is a test email body.
 
         result = check_hardcoded_rules(parsed_email, spam_config)
 
-        assert result is True
+        assert result == "spam"
 
     def test_check_spam_with_hardcoded_rules_no_action(self):
         """Test that no action is treated as ham."""
@@ -593,7 +595,7 @@ This is a test email body.
 
         result = check_hardcoded_rules(parsed_email, spam_config)
 
-        assert result is False
+        assert result == "ham"
 
     def test_check_spam_with_hardcoded_rules_multiple_rules_order(self):
         """Test that multiple rules are evaluated in order and first match wins."""
@@ -621,7 +623,7 @@ This is a test email body.
 
         # Should return False (ham) because second rule matched first
         # Third rule should not be evaluated
-        assert result is False
+        assert result == "ham"
 
     def test_check_spam_with_hardcoded_rules_multiple_rules_first_match_wins(self):
         """Test that the first matching rule stops evaluation."""
@@ -646,7 +648,7 @@ This is a test email body.
 
         # Should return True (spam) because first rule matched
         # Second rule should not be evaluated
-        assert result is True
+        assert result == "spam"
 
     def test_check_spam_with_hardcoded_rules_x_spam_single_relay(self):
         """Test that X-Spam header from relay is trusted when relay adds its own header."""
@@ -672,7 +674,7 @@ This is a test email body.
 
         result = check_hardcoded_rules(parsed_email, spam_config)
 
-        assert result is True
+        assert result == "spam"
 
     def test_check_spam_with_hardcoded_rules_x_spam_raw_email_relay_no_header(self):
         """Test X-Spam header is ignored with raw email when relay doesn't add header.
@@ -756,10 +758,10 @@ This is a test email body.
         result = check_hardcoded_rules(parsed_email, spam_config)
 
         # Should match the first X-Spam header (No from last relay), not the sender's (Yes)
-        assert result is False  # ham = False (not spam)
+        assert result == "ham"  # matched the trusted X-Spam: No -> ham
 
     @pytest.mark.parametrize(
-        "trusted_relays_setting, expected_result", [(0, None), (1, False), (2, False)]
+        "trusted_relays_setting, expected_result", [(0, None), (1, "ham"), (2, "ham")]
     )
     def test_check_spam_with_hardcoded_rules_trusted_relays(
         self, trusted_relays_setting, expected_result
@@ -813,7 +815,7 @@ This is a test email body.
         }
 
         result = check_hardcoded_rules(parsed_email, spam_config)
-        assert result is expected_result
+        assert result == expected_result
 
     def test_default_ignores_sender_injected_ham_header(self):
         """By default (no trusted_relays) a sender cannot whitelist itself.
@@ -848,6 +850,125 @@ This is a test email body.
 
         result = check_hardcoded_rules(parsed_email, spam_config)
         assert result is None  # forged ham not honoured
+
+
+class TestArcRules:
+    """The ``arc_verdict`` rule condition (binary trusted/untrusted) + ``drop``."""
+
+    RAW = b"From: a@sender.example\r\nTo: b@rcpt.example\r\nSubject: hi\r\n\r\nbody"
+
+    @staticmethod
+    def _arc(trusted=False, dnsfail=False, sealer=None, aar=None):
+        return {"trusted": trusted, "dnsfail": dnsfail, "sealer": sealer, "aar": aar}
+
+    def test_untrusted_drops(self):
+        parsed = parse_email(self.RAW)
+        cfg = {"rules": [{"arc_verdict": "untrusted", "action": "drop"}]}
+        assert check_hardcoded_rules(parsed, cfg, arc=self._arc()) == "drop"
+
+    def test_untrusted_marks_spam(self):
+        parsed = parse_email(self.RAW)
+        cfg = {"rules": [{"arc_verdict": "untrusted", "action": "spam"}]}
+        assert check_hardcoded_rules(parsed, cfg, arc=self._arc()) == "spam"
+
+    def test_trusted_matches_trusted(self):
+        parsed = parse_email(self.RAW)
+        cfg = {"rules": [{"arc_verdict": "trusted", "action": "ham"}]}
+        arc = self._arc(trusted=True, sealer="relay.example")
+        assert check_hardcoded_rules(parsed, cfg, arc=arc) == "ham"
+
+    def test_trusted_does_not_match_untrusted_rule(self):
+        parsed = parse_email(self.RAW)
+        cfg = {"rules": [{"arc_verdict": "untrusted", "action": "drop"}]}
+        arc = self._arc(trusted=True, sealer="relay.example")
+        assert check_hardcoded_rules(parsed, cfg, arc=arc) is None
+
+    def test_dnsfail_matches_no_verdict(self):
+        # A DNS blip is indeterminate — it matches NEITHER trusted nor untrusted
+        # (the arc pipeline step holds a claimed-trusted one for retry instead).
+        parsed = parse_email(self.RAW)
+        arc = self._arc(dnsfail=True, sealer="relay.example")
+        for verdict in ("untrusted", "trusted"):
+            cfg = {"rules": [{"arc_verdict": verdict, "action": "drop"}]}
+            assert check_hardcoded_rules(parsed, cfg, arc=arc) is None
+
+    def test_no_arc_computed_never_matches(self):
+        parsed = parse_email(self.RAW)
+        cfg = {"rules": [{"arc_verdict": "untrusted", "action": "drop"}]}
+        assert check_hardcoded_rules(parsed, cfg, arc=None) is None
+
+    def test_unknown_verdict_skipped(self):
+        parsed = parse_email(self.RAW)
+        cfg = {"rules": [{"arc_verdict": "missing", "action": "drop"}]}
+        assert check_hardcoded_rules(parsed, cfg, arc=self._arc()) is None
+
+    def test_rules_evaluated_in_order(self):
+        parsed = parse_email(self.RAW)
+        cfg = {
+            "rules": [
+                {"arc_verdict": "untrusted", "action": "drop"},
+                {"header_match": "Subject:hi", "action": "spam"},
+            ]
+        }
+        # trusted -> arc rule doesn't match, falls through to the header rule.
+        arc = self._arc(trusted=True, sealer="relay.example")
+        assert check_hardcoded_rules(parsed, cfg, arc=arc) == "spam"
+        # untrusted -> arc rule fires first, header rule never reached.
+        assert check_hardcoded_rules(parsed, cfg, arc=self._arc()) == "drop"
+
+    def test_drop_action_on_header_rule(self):
+        # ``drop`` is a first-class action for any rule, not only arc rules.
+        parsed = parse_email(self.RAW)
+        cfg = {"rules": [{"header_match": "Subject:hi", "action": "drop"}]}
+        assert check_hardcoded_rules(parsed, cfg) == "drop"
+
+
+@pytest.mark.django_db
+class TestArcPipelineIntegration:
+    """End-to-end: an ``arc_verdict`` rule drops an unsealed message through the
+    real ``build_inbound_pipeline`` / ``run_inbound_pipeline``."""
+
+    # No ARC headers -> untrusted verdict, no crypto/DNS needed.
+    RAW = b"From: a@evil.example\r\nTo: b@rcpt.example\r\nSubject: hi\r\n\r\nbody"
+
+    def _ctx(self, spam_config, origin=None):
+        return InboundContext(
+            mailbox=factories.MailboxFactory(),
+            inbound_message=Mock(
+                id="i1",
+                created_at=timezone.now(),
+                is_internal=False,
+                envelope={"origin": origin} if origin else None,
+            ),
+            recipient_email="b@rcpt.example",
+            raw_data=self.RAW,
+            parsed_email=parse_email(self.RAW),
+            spam_config=spam_config,
+        )
+
+    def test_untrusted_arc_rule_drops_through_full_pipeline(self):
+        ctx = self._ctx(
+            {
+                "trusted_arc_sealers": ["relay.example"],
+                "rules": [{"arc_verdict": "untrusted", "action": "drop"}],
+            }
+        )
+        decision, step = run_inbound_pipeline(build_inbound_pipeline(ctx), ctx)
+        assert decision == Decision.DROP
+        assert step == "hardcoded_rules"
+
+    def test_widget_submission_not_dropped_by_arc_rule(self):
+        # The same drop rule must NOT discard a widget-origin submission.
+        ctx = self._ctx(
+            {
+                "trusted_arc_sealers": ["relay.example"],
+                "rules": [{"arc_verdict": "untrusted", "action": "drop"}],
+            },
+            origin=enums.InboundOrigin.WIDGET,
+        )
+        decision, _step = run_inbound_pipeline(build_inbound_pipeline(ctx), ctx)
+        assert decision == Decision.CONTINUE
+        assert ctx.arc is None  # ARC never computed for widget
 
 
 @pytest.mark.django_db

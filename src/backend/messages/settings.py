@@ -552,11 +552,24 @@ class Base(Configuration):
     #                              own MTA prepends; a sender can forge any block
     #                              above that, so only raise this to the number of
     #                              relay hops you actually operate)
-    #   rules                    : list of hardcoded header-match spam rules
+    #   rules                    : list of spam rules; each is a header_match /
+    #                              header_match_regex OR an "arc_verdict" trust
+    #                              condition — "trusted" / "untrusted" — e.g.
+    #                              {"arc_verdict": "untrusted", "action": "drop"},
+    #                              with action spam (alias "reject") / ham
+    #                              (alias "no action") / drop.
     #   inbound_auth             : sender authentication backend — one of
-    #                              "native", "rspamd", "authentication-results",
-    #                              or None/absent to disable. See
-    #                              core.mda.inbound_auth for semantics.
+    #                              "native", "rspamd", "arc",
+    #                              "authentication-results", or None to disable.
+    #                              See core.mda.inbound_auth for semantics.
+    #   trusted_arc_sealers      : list of trusted ARC sealer d= domains
+    #                              (empty = trust nothing). Used by inbound_auth
+    #                              "arc" and by "arc" spam rules. When non-empty,
+    #                              a DNS failure verifying a claimed-trusted
+    #                              sealer holds the message for retry rather than
+    #                              failing open or closed; past
+    #                              MESSAGES_INBOUND_DEFERRAL_MAX_AGE the seal is
+    #                              deemed unresolvable and treated as untrusted.
     SPAM_CONFIG = values.DictValue({}, environ_name="SPAM_CONFIG", environ_prefix=None)
 
     # MTA settings
