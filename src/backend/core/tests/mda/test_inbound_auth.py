@@ -14,6 +14,7 @@ from core.mda.inbound_auth import (
     VERDICT_FORGED,
     VERDICT_UNVERIFIED,
     check_inbound_authentication,
+    inbound_auth_enabled,
 )
 from core.mda.inbound_tasks import process_inbound_message_task
 
@@ -783,3 +784,14 @@ class TestProcessInboundMessageAuthIntegration:
             if h["name"].lower() == "x-stmsg-sender-auth"
         ]
         assert values == ["fail"]
+
+
+def test_inbound_auth_enabled_only_for_supported_modes():
+    assert inbound_auth_enabled({"inbound_auth": "native"}) is True
+    assert inbound_auth_enabled({"inbound_auth": "rspamd"}) is True
+    assert inbound_auth_enabled({"inbound_auth": "authentication-results"}) is True
+    # A typo or unknown mode is NOT "auth ran" — check_inbound_authentication
+    # returns None (= verified) for it, so callers must treat it as disabled.
+    assert inbound_auth_enabled({"inbound_auth": "nativ"}) is False
+    assert inbound_auth_enabled({"inbound_auth": ""}) is False
+    assert inbound_auth_enabled({}) is False

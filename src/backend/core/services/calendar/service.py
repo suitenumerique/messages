@@ -6,10 +6,12 @@ events, add event, RSVP) directly over HTTP using ``requests`` and
 library's dependency surface.
 """
 
+# pylint: disable=too-many-lines
+
 import logging
 import re
 import uuid
-from datetime import datetime, timezone
+from datetime import datetime, timedelta, timezone
 from urllib.parse import quote, unquote, urljoin, urlparse
 
 from django.conf import settings as django_settings
@@ -511,6 +513,72 @@ class CalDAVService:  # pylint: disable=too-many-instance-attributes
             if (data := r.findtext(data_key))
         ]
 
+    def _calendar_query_detailed(self, calendar_url, start, end):
+        """Like ``_calendar_query`` but yields ``(href, etag, calendar_data)``.
+
+        The href is the event's real resource path and the etag its version —
+        both needed to write back to the right resource with If-Match.
+        """
+        body = (
+            '<?xml version="1.0"?>'
+            '<c:calendar-query xmlns:d="DAV:" xmlns:c="urn:ietf:params:xml:ns:caldav">'
+            "<d:prop><d:getetag/><c:calendar-data/></d:prop>"
+            "<c:filter>"
+            '<c:comp-filter name="VCALENDAR">'
+            '<c:comp-filter name="VEVENT">'
+            f'<c:time-range start="{_format_utc(start)}" end="{_format_utc(end)}"/>'
+            "</c:comp-filter>"
+            "</c:comp-filter>"
+            "</c:filter>"
+            "</c:calendar-query>"
+        )
+        resp = self._request(
+            "REPORT",
+            calendar_url,
+            data=body.encode("utf-8"),
+            headers={
+                "Depth": "1",
+                "Content-Type": "application/xml; charset=utf-8",
+            },
+        )
+        root = ET.fromstring(resp.text)
+        data_key = f".//{_q(CALDAV_NS, 'calendar-data')}"
+        etag_key = f".//{_q(DAV_NS, 'getetag')}"
+        out = []
+        for r in root.findall(_q(DAV_NS, "response")):
+            href = r.findtext(_q(DAV_NS, "href"))
+            data = r.findtext(data_key)
+            if href and data:
+                # REPORT hrefs are relative to the request URI; resolve against
+                # the queried calendar URL (absolute hrefs pass through unchanged)
+                # so the follow-up GET/PUT hits the right resource.
+                resource_url = urljoin(calendar_url, href.strip())
+                out.append((resource_url, (r.findtext(etag_key) or "").strip(), data))
+        return out
+
+    def _put_resource(self, resource_url, ics_data, etag=None):
+        """PUT to an existing resource URL, optionally If-Match ``etag``.
+
+        Raises ``CalDAVError(status_code=412)`` when the precondition fails.
+        """
+        data = ics_data.encode("utf-8") if isinstance(ics_data, str) else ics_data
+        headers = {"Content-Type": "text/calendar; charset=utf-8"}
+        if etag:
+            headers["If-Match"] = etag
+        self._request("PUT", resource_url, data=data, headers=headers)
+
+    def _get_resource(self, resource_url):
+        """Return ``(ics_text, etag)`` for a resource, or ``(None, None)`` if gone."""
+        try:
+            resp = self._request(
+                "GET", resource_url, headers={"Accept": "text/calendar"}
+            )
+        except CalDAVError as exc:
+            if exc.status_code == 404:
+                return None, None
+            raise
+        return resp.text, (resp.headers.get("ETag") or "").strip()
+
     @staticmethod
     def _summarize_event(ics_text, calendar_name):
         try:
@@ -622,6 +690,310 @@ class CalDAVService:  # pylint: disable=too-many-instance-attributes
             cal.to_ical().decode("utf-8"),
         )
         return True
+
+    _REPLY_DTSTAMP_PARAM = "X-STMSG-REPLY-DTSTAMP"
+
+    # How far a recorded reply DTSTAMP may sit in the future (clock skew) before
+    # it's clamped — stops a far-future DTSTAMP bricking that attendee's updates.
+    _REPLY_DTSTAMP_SKEW = timedelta(minutes=5)
+
+    # Max span of the (attacker-controlled) reply time-range REPORT window.
+    _MAX_QUERY_SPAN_DAYS = 366
+
+    @staticmethod
+    def _parse_reply(ics_data, attendee_email):
+        """Reply fields for the verified attendee → ``(dict, None)``, else
+        ``(None, reason)``.
+
+        Reads the PARTSTAT of the ATTENDEE matching ``attendee_email`` (never
+        another line), + UID/time/SEQUENCE/DTSTAMP and whether it's a recurrence
+        instance. reason is ``unparseable-reply`` (bad ICS or no VEVENT with a
+        UID) or ``attendee-mismatch`` (a UID event exists but that attendee has
+        no PARTSTAT there).
+        """
+        target = (attendee_email or "").strip().lower()
+        if not target:
+            return None, "attendee-mismatch"
+        try:
+            cal = ICalendar.from_ical(ics_data)
+        except Exception:  # pylint: disable=broad-exception-caught
+            logger.warning("Could not parse inbound iTIP REPLY", exc_info=True)
+            return None, "unparseable-reply"
+        saw_uid = False
+        for comp in cal.walk("VEVENT"):
+            uid = comp.get("UID")
+            if not uid:
+                continue
+            saw_uid = True
+            attendees = comp.get("ATTENDEE")
+            if attendees is None:
+                continue
+            if not isinstance(attendees, list):
+                attendees = [attendees]
+            partstat = None
+            for att in attendees:
+                addr = str(att).strip().lower()
+                if addr.startswith("mailto:"):
+                    addr = addr[len("mailto:") :]
+                if addr == target:
+                    ps = att.params.get("PARTSTAT")
+                    if ps:
+                        partstat = str(ps)
+                    break
+            if partstat is None:
+                continue
+            dtstart = comp.get("DTSTART")
+            if dtstart is None:
+                # RFC 5546 makes DTSTART optional in a REPLY, but in practice
+                # every mainstream client echoes it; without it we can't bound
+                # the calendar-query REPORT, so reject rather than scan every
+                # calendar over an unbounded window. If minimal replies ever turn
+                # up in the field, a bounded (~±60 day) fallback is the escape
+                # hatch.
+                return None, "unparseable-reply"
+            dtend = comp.get("DTEND")
+            seq = comp.get("SEQUENCE")
+            dtstamp = comp.get("DTSTAMP")
+            if dtstamp is None:
+                # DTSTAMP is required in every iTIP component (RFC 5546). Without
+                # it the per-attendee staleness guard can't record anything, so
+                # a same-SEQUENCE redelivery could overwrite a newer PARTSTAT.
+                return None, "unparseable-reply"
+            return {
+                "uid": str(uid),
+                "attendee": target,
+                "partstat": partstat,
+                "start": dtstart.dt,
+                "end": dtend.dt if dtend is not None else None,
+                "sequence": int(seq) if seq is not None else 0,
+                "dtstamp": dtstamp.dt,
+                "is_recurrence_instance": comp.get("RECURRENCE-ID") is not None,
+            }, None
+        return None, ("attendee-mismatch" if saw_uid else "unparseable-reply")
+
+    def apply_reply(self, ics_data, attendee_email, organizer_email=None):
+        """Apply an inbound iTIP ``METHOD:REPLY`` to the organizer's stored event.
+
+        Mirror of ``respond_to_event``. Only ever modifies the ATTENDEE matching
+        ``attendee_email`` (the caller's DMARC-verified sender), reading its
+        PARTSTAT from that same entry — so a crafted multi-ATTENDEE payload can't
+        move a third party. When ``organizer_email`` is given, only a stored copy
+        whose ORGANIZER matches it is updated — so a same-UID copy on which the
+        mailbox is merely an ATTENDEE (not the organizer) is skipped. Stamps
+        ``SCHEDULE-AGENT=CLIENT`` to stop server-side iTIP re-fanout. Returns
+        ``{"applied": bool, "reason": str}``; never raises for expected no-ops.
+        """
+        reply, reason = self._parse_reply(ics_data, attendee_email)
+        if reply is None:
+            return {"applied": False, "reason": reason}
+
+        if reply["is_recurrence_instance"]:
+            # TODO(itip-recurrence): applying a single-instance REPLY against the
+            # master VEVENT (matched by UID) would flip the whole series. No-op.
+            logger.info(
+                "iTIP REPLY for %s targets a recurrence instance; skipping",
+                reply["uid"],
+            )
+            return {"applied": False, "reason": "recurrence-not-supported"}
+
+        organizer_norm = (organizer_email or "").strip().lower()
+        start, end = self._reply_query_window(reply)
+
+        for calendar in self.list_calendars(writable_only=True):
+            for resource_url, etag, stored_ics in self._calendar_query_detailed(
+                calendar["id"], start, end
+            ):
+                try:
+                    stored = ICalendar.from_ical(stored_ics)
+                except Exception:  # pylint: disable=broad-exception-caught
+                    logger.debug("Skipping unparseable stored event", exc_info=True)
+                    continue
+                if not self._event_has_uid(stored, reply["uid"]):
+                    continue
+                # Only touch the copy the mailbox actually organizes — skip a
+                # same-UID copy where it's merely an attendee, keep searching.
+                if organizer_norm and self._event_organizer(stored) != organizer_norm:
+                    continue
+                return self._apply_reply_to_resource(
+                    resource_url, stored, etag, reply
+                )
+
+        logger.info("No stored event matches iTIP REPLY UID %s", reply["uid"])
+        return {"applied": False, "reason": "no-matching-event"}
+
+    @staticmethod
+    def _event_organizer(cal):
+        """Bare (mailto-stripped, lower-cased) ORGANIZER of the first VEVENT."""
+        for comp in cal.walk("VEVENT"):
+            org = comp.get("ORGANIZER")
+            if org is None:
+                continue
+            addr = str(org).strip().lower()
+            if addr.startswith("mailto:"):
+                addr = addr[len("mailto:") :]
+            return addr
+        return ""
+
+    def _apply_reply_to_resource(self, resource_url, stored, etag, reply):
+        """Mutate ``stored`` for the reply and conditional-PUT to its resource.
+
+        If-Match on ``etag`` guards the lost-update race (concurrent replies, or
+        a reply racing the organizer's own edit). On 412 the resource is
+        re-fetched and the mutation re-applied once, then it gives up with
+        ``concurrent-modification``.
+        """
+        if not etag:
+            # The REPORT returned no etag; fetch one so the write stays
+            # conditional. Never PUT unconditionally — that would silently drop
+            # lost-update protection.
+            fresh_ics, etag = self._get_resource(resource_url)
+            if not etag or fresh_ics is None:
+                logger.warning(
+                    "No etag for %s; refusing unconditional iTIP write", resource_url
+                )
+                return {"applied": False, "reason": "no-etag"}
+            try:
+                stored = ICalendar.from_ical(fresh_ics)
+            except Exception:  # pylint: disable=broad-exception-caught
+                return {"applied": False, "reason": "no-etag"}
+        for attempt in (1, 2):
+            stale = self._reply_is_stale(stored, reply)
+            if stale:
+                return {"applied": False, "reason": stale}
+            if not self._update_partstat(
+                stored, reply["attendee"], reply["partstat"]
+            ):
+                return {"applied": False, "reason": "attendee-not-on-event"}
+            self._record_reply_dtstamp(stored, reply)
+            self._set_schedule_agent_client(stored)
+            body = rebuild_for_storage(stored).to_ical().decode("utf-8")
+            try:
+                self._put_resource(resource_url, body, etag)
+                return {"applied": True, "reason": "applied"}
+            except CalDAVError as exc:
+                if exc.status_code != 412:
+                    raise
+                if attempt == 2:
+                    return {"applied": False, "reason": "concurrent-modification"}
+                fresh_ics, etag = self._get_resource(resource_url)
+                if fresh_ics is None:
+                    return {"applied": False, "reason": "concurrent-modification"}
+                try:
+                    stored = ICalendar.from_ical(fresh_ics)
+                except Exception:  # pylint: disable=broad-exception-caught
+                    return {"applied": False, "reason": "concurrent-modification"}
+        return {"applied": False, "reason": "concurrent-modification"}
+
+    @staticmethod
+    def _event_has_uid(cal, uid):
+        for comp in cal.walk("VEVENT"):
+            if str(comp.get("UID") or "") == uid:
+                return True
+        return False
+
+    def _reply_query_window(self, reply):
+        """(start, end) TZ-aware UTC window (± a day) around the reply's event
+        time. DTSTART is guaranteed present by ``_parse_reply``.
+
+        DTSTART/DTEND are attacker-controlled, so the window is normalized
+        (inverted ranges collapsed), the span capped, and the ± day padding
+        clamped to safe absolute bounds to avoid datetime over/underflow.
+        """
+        start = self._as_utc(reply["start"])
+        end = self._as_utc(reply["end"] or reply["start"])
+        if end < start:
+            end = start
+        max_span = timedelta(days=self._MAX_QUERY_SPAN_DAYS)
+        if end - start > max_span:
+            end = start + max_span
+        floor = datetime(1, 1, 2, tzinfo=timezone.utc)
+        ceil = datetime(9999, 12, 30, tzinfo=timezone.utc)
+        start = max(min(start, ceil), floor) - timedelta(days=1)
+        end = min(max(end, floor), ceil) + timedelta(days=1)
+        return start, end
+
+    @staticmethod
+    def _as_utc(dt):
+        if not isinstance(dt, datetime):
+            dt = datetime(dt.year, dt.month, dt.day, tzinfo=timezone.utc)
+        elif dt.tzinfo is None:
+            dt = dt.replace(tzinfo=timezone.utc)
+        return dt.astimezone(timezone.utc)
+
+    def _reply_is_stale(self, stored, reply):
+        """Stale-reason string if the REPLY is older than any stored VEVENT
+        (SEQUENCE, then per-attendee DTSTAMP), else None.
+
+        All components are evaluated so a multi-VEVENT object isn't order-
+        dependent. The DTSTAMP guard only protects against replay when the prior
+        state was recorded by this path; a DKIM replay of an old signed reply can
+        still land when the newer state arrived via another channel.
+        """
+        reply_seq = reply["sequence"]
+        reply_stamp = reply["dtstamp"]
+        for comp in stored.walk("VEVENT"):
+            stored_seq = comp.get("SEQUENCE")
+            stored_seq = int(stored_seq) if stored_seq is not None else 0
+            if reply_seq < stored_seq:
+                return "stale-sequence"
+            if reply_seq == stored_seq:
+                last = self._stored_reply_dtstamp(comp, reply["attendee"])
+                if (
+                    last is not None
+                    and reply_stamp is not None
+                    and self._as_utc(reply_stamp) < self._as_utc(last)
+                ):
+                    return "stale-dtstamp"
+        return None
+
+    @classmethod
+    def _stored_reply_dtstamp(cls, comp, attendee_email):
+        """Last-applied REPLY DTSTAMP for ``attendee_email`` on this VEVENT."""
+        attendees = comp.get("ATTENDEE")
+        if attendees is None:
+            return None
+        if not isinstance(attendees, list):
+            attendees = [attendees]
+        email_lower = attendee_email.lower()
+        for att in attendees:
+            addr = str(att).strip().lower()
+            if addr.startswith("mailto:"):
+                addr = addr[len("mailto:") :]
+            if addr != email_lower:
+                continue
+            raw = att.params.get(cls._REPLY_DTSTAMP_PARAM)
+            if not raw:
+                return None
+            try:
+                return datetime.strptime(str(raw), "%Y%m%dT%H%M%SZ").replace(
+                    tzinfo=timezone.utc
+                )
+            except ValueError:
+                return None
+        return None
+
+    @classmethod
+    def _record_reply_dtstamp(cls, stored, reply):
+        """Stamp the REPLY's DTSTAMP onto the attendee for future staleness checks."""
+        if reply["dtstamp"] is None:
+            return
+        # Clamp to now + skew so a far-future DTSTAMP can't permanently mark this
+        # attendee's later replies as stale.
+        ceiling = datetime.now(timezone.utc) + cls._REPLY_DTSTAMP_SKEW
+        stamp = min(cls._as_utc(reply["dtstamp"]), ceiling).strftime("%Y%m%dT%H%M%SZ")
+        email_lower = reply["attendee"].lower()
+        for comp in stored.walk("VEVENT"):
+            attendees = comp.get("ATTENDEE")
+            if attendees is None:
+                continue
+            if not isinstance(attendees, list):
+                attendees = [attendees]
+            for att in attendees:
+                addr = str(att).strip().lower()
+                if addr.startswith("mailto:"):
+                    addr = addr[len("mailto:") :]
+                if addr == email_lower:
+                    att.params[cls._REPLY_DTSTAMP_PARAM] = stamp
 
     @staticmethod
     def _set_schedule_agent_client(cal):

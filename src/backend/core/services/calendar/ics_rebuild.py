@@ -75,6 +75,7 @@ _PARAM_KEEP = {
             "LANGUAGE",
             "SCHEDULE-AGENT",
             "SCHEDULE-STATUS",
+            "X-STMSG-REPLY-DTSTAMP",
         }
     ),
     "ORGANIZER": frozenset(

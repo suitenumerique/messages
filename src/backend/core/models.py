@@ -2147,6 +2147,8 @@ class Message(BaseModel):
     #   "processing": "fail"            force-delivered past the deferral window
     #   "rcpt_to":    "<addr>"          envelope RCPT TO, only when it diverges
     #                                   from the MIME To/Cc (BCC / alias / catch-all)
+    #   "itip-reply": "verified" | "unverified"  inbound iTIP REPLY trust-gated
+    #                                   and dispatched (async apply may still no-op)
     # Immutable ingest-time facts (ip/helo/hostname, MAIL FROM, widget referer)
     # live in headers in the blob instead — see the ingest paths. Keep values
     # small and bounded; large/regenerated data (e.g. AI summaries) belongs in
@@ -2265,6 +2267,9 @@ class Message(BaseModel):
             # The divergent envelope RCPT TO (alias/BCC/catch-all) recorded by
             # ``_record_divergent_rcpt`` — surfaces the recipient's own alias.
             result["rcpt_to"] = postmark["rcpt_to"]
+        if postmark.get("itip-reply"):
+            # Inbound iTIP REPLY trust-gated + dispatched (async apply may no-op).
+            result["itip-reply"] = postmark["itip-reply"]
         return result
 
     def generate_mime_id(self) -> str:
