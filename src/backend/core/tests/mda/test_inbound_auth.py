@@ -2,21 +2,23 @@
 
 # pylint: disable=missing-function-docstring,too-many-public-methods
 
+from datetime import timedelta
 from types import SimpleNamespace
 from unittest.mock import Mock, patch
 
 from django.test import override_settings
+from django.utils import timezone
 
 import pytest
 from jmap_email import parse_email
 
-from core import factories, models
+from core import enums, factories, models
 from core.mda.inbound_auth import (
     VERDICT_FORGED,
     VERDICT_UNVERIFIED,
     check_inbound_authentication,
 )
-from core.mda.inbound_pipeline import Decision, _make_arc_gate_step
+from core.mda.inbound_pipeline import DEFERRAL_MAX_AGE, Decision, _make_arc_step
 from core.mda.inbound_tasks import process_inbound_message_task
 
 RAW_EMAIL = (
@@ -847,63 +849,87 @@ class TestProcessInboundMessageAuthIntegration:
         assert values == ["fail"]
 
 
-class TestArcGateStep:
-    """The arc_gate pipeline step marks/drops messages lacking a trusted seal."""
+class TestArcStep:
+    """The ``arc`` pipeline step holds (RETRY) a message whose *trusted* seal
+    couldn't be verified due to a DNS failure. Untrusted-message gating now
+    lives in the ``arc`` spam rules (see TestArcRules), not this step."""
 
     @staticmethod
-    def _ctx():
-        return SimpleNamespace(raw_data=b"raw", is_spam=None, arc=None)
+    def _ctx(created_at=None, origin=None):
+        return SimpleNamespace(
+            raw_data=b"raw",
+            is_spam=None,
+            arc=None,
+            inbound_message=SimpleNamespace(
+                id="msg1",
+                created_at=created_at or timezone.now(),
+                envelope={"origin": origin} if origin else None,
+            ),
+        )
+
+    @staticmethod
+    def _arc(trusted=False, dnsfail=False, sealer=None):
+        return {"trusted": trusted, "dnsfail": dnsfail, "sealer": sealer, "aar": None}
 
     @patch("core.mda.inbound_pipeline.arc_result")
-    def test_off_is_noop(self, mock_arc):
+    def test_no_allowlist_is_noop(self, mock_arc):
+        # Empty allowlist = not an enforcement posture: skip, and don't even
+        # pay the ARC verification cost.
         ctx = self._ctx()
-        assert _make_arc_gate_step({})(ctx) == Decision.CONTINUE
-        assert ctx.is_spam is None
+        assert _make_arc_step({})(ctx) == Decision.CONTINUE
         mock_arc.assert_not_called()
+        assert ctx.arc is None
 
     @patch("core.mda.inbound_pipeline.arc_result")
-    def test_trusted_passes(self, mock_arc):
-        mock_arc.return_value = {
-            "trusted": True,
-            "dnsfail": False,
-            "sealer": "r",
-            "aar": "x",
-        }
+    def test_trusted_continues(self, mock_arc):
+        mock_arc.return_value = self._arc(trusted=True, sealer="relay.example")
+        cfg = {"trusted_arc_sealers": ["relay.example"]}
+        assert _make_arc_step(cfg)(self._ctx()) == Decision.CONTINUE
+
+    @patch("core.mda.inbound_pipeline.arc_result")
+    def test_dnsfail_for_claimed_trusted_sealer_retries(self, mock_arc):
+        mock_arc.return_value = self._arc(dnsfail=True, sealer="relay.example")
+        cfg = {"trusted_arc_sealers": ["relay.example"]}
         ctx = self._ctx()
-        step = _make_arc_gate_step({"arc_gate": "spam"})
-        assert step(ctx) == Decision.CONTINUE
+        assert _make_arc_step(cfg)(ctx) == Decision.RETRY
+        # Cached for downstream reuse (rules / inbound_auth).
+        assert ctx.arc is mock_arc.return_value
+
+    @patch("core.mda.inbound_pipeline.arc_result")
+    def test_dnsfail_for_untrusted_sealer_does_not_retry(self, mock_arc):
+        # A DNS blip against a sealer we don't list is not our problem to hold —
+        # it's a definite untrusted verdict handled by the arc rules.
+        mock_arc.return_value = self._arc(dnsfail=True, sealer="evil.net")
+        cfg = {"trusted_arc_sealers": ["relay.example"]}
+        assert _make_arc_step(cfg)(self._ctx()) == Decision.CONTINUE
+
+    @patch("core.mda.inbound_pipeline.arc_result")
+    def test_definite_untrusted_does_not_retry(self, mock_arc):
+        # The step never gates untrusted messages (that's the rules' job); it
+        # only holds on dnsfail.
+        mock_arc.return_value = self._arc(trusted=False, sealer="evil.net")
+        cfg = {"trusted_arc_sealers": ["relay.example"]}
+        ctx = self._ctx()
+        assert _make_arc_step(cfg)(ctx) == Decision.CONTINUE
         assert ctx.is_spam is None
 
     @patch("core.mda.inbound_pipeline.arc_result")
-    def test_spam_marks_untrusted(self, mock_arc):
-        mock_arc.return_value = {
-            "trusted": False,
-            "dnsfail": False,
-            "sealer": None,
-            "aar": None,
-        }
-        ctx = self._ctx()
-        assert _make_arc_gate_step({"arc_gate": "spam"})(ctx) == Decision.CONTINUE
-        assert ctx.is_spam is True
+    def test_dnsfail_past_deferral_window_reclassified_untrusted(self, mock_arc):
+        # After the retry window, an unresolvable claimed-trusted seal stops
+        # being held: dnsfail is cleared so the arc_verdict rules see "untrusted"
+        # (and an untrusted->drop rule can fire) instead of force-delivery.
+        mock_arc.return_value = self._arc(dnsfail=True, sealer="relay.example")
+        cfg = {"trusted_arc_sealers": ["relay.example"]}
+        old = timezone.now() - DEFERRAL_MAX_AGE - timedelta(hours=1)
+        ctx = self._ctx(created_at=old)
+        assert _make_arc_step(cfg)(ctx) == Decision.CONTINUE
+        assert ctx.arc["dnsfail"] is False
 
     @patch("core.mda.inbound_pipeline.arc_result")
-    def test_drop_untrusted(self, mock_arc):
-        mock_arc.return_value = {
-            "trusted": False,
-            "dnsfail": False,
-            "sealer": None,
-            "aar": None,
-        }
-        assert _make_arc_gate_step({"arc_gate": "drop"})(self._ctx()) == Decision.DROP
-
-    @patch("core.mda.inbound_pipeline.arc_result")
-    def test_dnsfail_no_action(self, mock_arc):
-        mock_arc.return_value = {
-            "trusted": False,
-            "dnsfail": True,
-            "sealer": None,
-            "aar": None,
-        }
-        ctx = self._ctx()
-        assert _make_arc_gate_step({"arc_gate": "drop"})(ctx) == Decision.CONTINUE
-        assert ctx.is_spam is None
+    def test_widget_origin_skips_arc(self, mock_arc):
+        # Widget submissions carry no seal — ARC gating must not touch them.
+        cfg = {"trusted_arc_sealers": ["relay.example"]}
+        ctx = self._ctx(origin=enums.InboundOrigin.WIDGET)
+        assert _make_arc_step(cfg)(ctx) == Decision.CONTINUE
+        mock_arc.assert_not_called()
+        assert ctx.arc is None

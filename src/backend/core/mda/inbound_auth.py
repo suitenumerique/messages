@@ -24,7 +24,7 @@ The backend is picked by ``SPAM_CONFIG["inbound_auth"]``:
   - ``"rspamd"``: read DKIM / DMARC symbols from the rspamd /checkv2 result
     (reused from the spam check, or fetched on demand by the caller).
   - ``"arc"``: dkim/dmarc from the ``ARC-Authentication-Results`` sealed by a
-    trusted sealer (``trusted_arc_sealers``; empty = any valid seal). Plaintext
+    trusted sealer (``trusted_arc_sealers``; empty = trust nothing). Plaintext
     headers are never read. Unsealed/untrusted -> unverified.
   - ``"authentication-results"``: parse ``dkim=`` / ``dmarc=`` from the
     top-level ``Authentication-Results`` sliced by ``trusted_relays``.

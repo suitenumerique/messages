@@ -13,10 +13,14 @@ mail, runs these steps in order:
 
 1. **Before-spam webhooks** (`message.inbound`) — user/integration webhooks that
    may drop, defer, or pre-decide the spam verdict.
-2. **Hardcoded header rules** — deterministic `header_match` rules from config.
-3. **rspamd** — native `/checkv2` scan.
-4. **Inbound authentication** — DKIM/DMARC verdict (SPF indirectly).
-5. **After-spam webhooks** (`message.delivering`, then `message.delivered`).
+2. **ARC** — holds (`RETRY`) a message whose *trusted* ARC seal couldn't be
+   verified because of a DNS failure (only when `trusted_arc_sealers` is set).
+   See [ARC relay-trust](#arc-relay-trust).
+3. **Hardcoded rules** — deterministic `header_match` rules **and** `arc_verdict`
+   relay-trust rules from config.
+4. **rspamd** — native `/checkv2` scan.
+5. **Inbound authentication** — DKIM/DMARC verdict (SPF indirectly).
+6. **After-spam webhooks** (`message.delivering`, then `message.delivered`).
 
 Each step returns a `Decision` (`CONTINUE` / `RETRY` / `DROP`) and may set the
 spam verdict. The verdict is a tri-state `ctx.is_spam`: `None` (undecided) until
@@ -106,9 +110,10 @@ global → mail domain. (A future enhancement could add a per-mailbox layer.)
 |------------------|--------|---------|
 | `rspamd_url`     | string | Base URL of the rspamd HTTP endpoint (`/checkv2` is appended). Omit to disable rspamd. |
 | `rspamd_auth`    | string | Optional value for the `Authorization` header sent to rspamd. |
-| `inbound_auth`   | string | Sender-auth backend: `native`, `rspamd`, or `authentication-results`. Omit/empty to disable DKIM/DMARC checks. |
-| `trusted_relays` | int    | Number of sender-side `Received`/`Authentication-Results` blocks to trust, counting from the boundary our own MTA prepends. Default `0` (trust only our own hop). Raise this when a fixed upstream gateway sits in front. |
-| `rules`          | list   | Ordered hardcoded header-match rules (see below). |
+| `inbound_auth`   | string | Sender-auth backend: `native`, `rspamd`, `arc`, or `authentication-results`. Omit/empty to disable DKIM/DMARC checks. |
+| `trusted_relays` | int    | Number of sender-side `Received`/`Authentication-Results` blocks to trust, counting from the boundary our own MTA prepends. Default `0` (trust only our own hop). Raise this when a fixed upstream gateway sits in front. Not used by `inbound_auth: "arc"`. |
+| `trusted_arc_sealers` | list | ARC sealer `d=` allowlist. **Fail closed: `[]` (or absent) trusts nothing** — you must list your sealers. Used by `inbound_auth: "arc"` and by `arc_verdict` rules, and enables the ARC `RETRY`-on-DNS-failure hold (see [ARC relay-trust](#arc-relay-trust)). |
+| `rules`          | list   | Ordered rules — `header_match` / `header_match_regex` **or** `arc_verdict` trust conditions — with action `spam` / `ham` / `drop` (see below). |
 
 ### Related settings
 
@@ -137,6 +142,10 @@ The backend is selected by `SPAM_CONFIG["inbound_auth"]`:
   returns `fail` (no DMARC policy lookup); worst case is `none`.
 - **`rspamd`** — read DKIM/DMARC **symbols** from the rspamd `/checkv2` result
   (reusing the spam-step scan). Verdict precedence: `fail` > `pass` > `none`.
+- **`arc`** — read `dkim=`/`dmarc=` from the `ARC-Authentication-Results` that a
+  **trusted sealer** cryptographically sealed (RFC 8617). Plaintext headers are
+  never read; an unsealed or untrusted-sealed message is `none`. See
+  [ARC relay-trust](#arc-relay-trust).
 - **`authentication-results`** — parse `dkim=`/`dmarc=` from the
   `Authentication-Results` header(s) added by trusted upstream relays (bounded
   by `trusted_relays`). Use this when an upstream MX gateway already does
@@ -156,22 +165,148 @@ is not `pass`, **unverified** (`auth = "none"`); otherwise verified.
 > classification indirectly through rspamd scoring (the envelope is forwarded to
 > rspamd). The user-facing auth verdict is DKIM + DMARC only.
 
-## Hardcoded header rules
+## ARC relay-trust
 
-`SPAM_CONFIG["rules"]` is an ordered list of deterministic header-match rules,
-evaluated before rspamd. The first matching rule decides the verdict. Each rule:
+[ARC](https://datatracker.ietf.org/doc/html/rfc8617) (Authenticated Received
+Chain) lets an intermediary that observed a message's original authentication
+**cryptographically seal** that observation, so a downstream receiver can trust
+it even after forwarding breaks SPF/DKIM. Messages uses ARC two ways, both keyed
+off one allowlist, `trusted_arc_sealers`:
+
+- **`trusted_arc_sealers`** — the `d=` domains whose seals we trust (subdomains
+  match). **Fail closed:** `[]` (or absent) trusts *nothing* — anyone can
+  produce a valid ARC seal, so you must list the sealers you trust. Trust is
+  granted only when the chain is `cv=pass` **and** the outermost sealer is on
+  the allowlist.
+
+The result is a **binary verdict** (`core/mda/arc.py`):
+
+| `arc_verdict` | Meaning |
+|---|---|
+| `trusted` | `cv=pass` **and** sealed by an allowlisted sealer |
+| `untrusted` | everything else — no ARC chain, a chain from an unlisted sealer, or a chain that fails to validate |
+
+> **We only verify seals we could trust.** If the allowlist is empty, or the
+> message's outermost sealer is not on it, the chain is `untrusted` regardless of
+> validity, so we skip crypto + DNS entirely. Attacker-controlled mail (which
+> never names a trusted sealer) therefore triggers **zero** DNS traffic, and a
+> forged chain claiming a trusted sealer is capped at 20 instances before we
+> refuse to verify.
+
+**1. As a sender-auth verdict** (`inbound_auth: "arc"`) — `dkim`/`dmarc` are read
+from the trusted sealer's sealed `ARC-Authentication-Results`; untrusted/unsealed
+→ `none`. See [Sender authentication](#sender-authentication-dkim--dmarc).
+
+**2. As a gating rule** — an `arc_verdict` rule acts on the verdict:
+
+```jsonc
+{ "arc_verdict": "untrusted", "action": "drop" }   // discard (no Message)
+{ "arc_verdict": "untrusted", "action": "spam" }   // route to Junk
+{ "arc_verdict": "trusted",   "action": "ham"  }   // allowlist trusted mail
+```
+
+Rules are evaluated in list order (first match wins), so an `arc_verdict` rule
+composes with the header rules in the same `rules` list. A `dnsfail` (below) is
+indeterminate and matches **neither** verdict.
+
+### DNS failures hold, they don't fail open
+
+`dnsfail` is an **internal, transient** signal — never an `arc_verdict` value. A
+key-record lookup that doesn't complete (timeout / SERVFAIL / NXDOMAIN / empty)
+is **indeterminate**, not a forgery — NXDOMAIN in particular can be transient
+(negative caching after a fresh publish, a zone mid-reload). Because we only
+verify seals from a listed sealer, a `dnsfail` only ever arises for a message
+**claiming one of your trusted sealers**. Such a message is held for retry
+(`Decision.RETRY`) by the `arc` pipeline step — never delivered unverified,
+never dropped. The hold is bounded by `MESSAGES_INBOUND_DEFERRAL_MAX_AGE` (48h
+default). **Past the window** the seal is deemed unresolvable (our own relay's
+DNS works, so a key that never resolved for 48h is treated as bogus) and
+reclassified to a definite `untrusted` verdict — so the `arc_verdict` rules then
+apply (an `untrusted` → `drop`/`spam` rule fires) rather than force-delivering it.
+
+> **Widget submissions are exempt.** Messages from a widget channel's web form
+> carry no seal by construction, so the arc step and `arc_verdict` rules skip
+> them — an `untrusted` → `drop` rule never discards first-party form traffic.
+> (rspamd and `header_match` rules still apply.) If no widget channel exists,
+> no widget-origin mail exists in the first place.
+
+> **Fail closed:** an empty `trusted_arc_sealers` trusts nothing — with
+> `inbound_auth: "arc"` every message is then `none` (unverified), and an
+> `arc_verdict: "untrusted"` rule matches everything. **Populate the allowlist**
+> (it may list several sealers, e.g. an external relay plus an internal gateway)
+> to actually trust anything.
+
+> **Single-relay assumption:** the sealed `ARC-Authentication-Results` is read
+> from the **outermost** ARC instance — correct for one trusted relay in front of
+> you. With two or more sealing hops the outermost AAR reflects the *last* hop's
+> re-evaluation (which may show `dkim=fail` for legitimately forwarded mail),
+> collapsing to `none` rather than recovering the origin verdict from an inner
+> instance. This fails safe (never a false "verified") and is a deliberate
+> limitation, not a bug.
+
+### Examples
+
+Public MX, accept only trusted-ARC-sealed mail, junk the rest:
+
+```jsonc
+{
+  "inbound_auth": "arc",
+  "trusted_arc_sealers": ["relay.example"],
+  "rules": [{ "arc_verdict": "untrusted", "action": "spam" }],
+  "rspamd_url": "http://rspamd:11334/checkv2"
+}
+```
+
+Third-party MX relay, ARC mandatory + honor the relay's `X-Spam` verdict. The
+relay is your published MX: it scans mail, ARC-seals it (`d=relay.thirdparty.example`),
+stamps `X-Spam-*` headers, then forwards to your MTA.
+
+```jsonc
+{
+  // Sender-auth banner comes from the relay's sealed results.
+  "inbound_auth": "arc",
+  "trusted_arc_sealers": ["relay.thirdparty.example"],
+
+  // The relay adds one hop in front of our MTA, so its X-Spam / Received
+  // headers land in block 1. Trust block 0+1 (raise if it chains more hops).
+  "trusted_relays": 1,
+
+  "rules": [
+    // 1. ARC mandatory: discard anything the relay didn't seal. First, so
+    //    unsealed mail dies before any of its headers are trusted.
+    { "arc_verdict": "untrusted", "action": "drop" },
+    // 2. Honor the relay's verdict — safe because rule 1 guarantees every
+    //    surviving message came through the relay.
+    { "header_match": "X-Spam-Flag: YES", "action": "spam" }
+  ]
+  // No rspamd_url: the relay already scans.
+}
+```
+
+Because `trusted_arc_sealers` is non-empty, a DNS failure verifying the relay's
+seal **holds** the message (RETRY) instead of dropping it — a relay-DNS outage
+never silently discards legitimate mail. Prefer `"action": "spam"` over `"drop"`
+in rule 1 while validating the setup, then tighten to `drop`.
+
+## Hardcoded rules
+
+`SPAM_CONFIG["rules"]` is an ordered list of deterministic rules, evaluated
+before rspamd. The first matching rule decides the verdict. Each rule has exactly
+one condition plus an `action`:
 
 | Field                | Meaning |
 |----------------------|---------|
 | `header_match`       | Literal `Header-Name: value` (case-insensitive). Must contain a colon. |
 | `header_match_regex` | Regex alternative, full-match, case-insensitive. |
-| `action`             | `spam` / `reject` → mark spam; `ham` / `no action` → mark not-spam. Default `spam`. |
+| `arc_verdict`        | ARC relay-trust condition — `trusted` / `untrusted` (see [ARC relay-trust](#arc-relay-trust)). |
+| `action`             | `spam` / `reject` → mark spam; `ham` / `no action` → mark not-spam; `drop` → discard the message (no `Message` row). Default `spam`. |
 
-Rules honor `trusted_relays`: only headers within the trusted window (the most
-recent `trusted_relays + 1` header blocks, newest first) are considered, so a
-spammer can't forge a header that an upstream you trust would have stripped or
+Header rules honor `trusted_relays`: only headers within the trusted window (the
+most recent `trusted_relays + 1` header blocks, newest first) are considered, so
+a spammer can't forge a header that an upstream you trust would have stripped or
 overwritten. The `Return-Path` header is always ignored (spoofable envelope
-value).
+value). `arc_verdict` conditions ignore `trusted_relays` — they use the
+cryptographic chain, not header position.
 
 This is the primary mechanism for **honoring the verdict of an upstream filter**
 (next section).

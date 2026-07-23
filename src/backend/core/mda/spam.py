@@ -22,14 +22,91 @@ from core.mda.utils import headers_blocks
 logger = logging.getLogger(__name__)
 
 
+# Rule ``action`` -> normalized verdict token. ``spam``/``reject`` route to
+# Junk; ``ham``/``no action`` force-deliver; ``drop`` discards the message
+# with no Message row (maps to ``Decision.DROP`` in the pipeline).
+_RULE_ACTION_ALIASES = {
+    "spam": "spam",
+    "reject": "spam",
+    "ham": "ham",
+    "no action": "ham",
+    "drop": "drop",
+}
+
+
+def _normalize_rule_action(action: Any) -> Optional[str]:
+    """Normalize a rule's ``action`` to ``"spam"`` / ``"ham"`` / ``"drop"``.
+
+    An empty/absent action defaults to ``"spam"``; an unrecognized action
+    yields ``None`` so the caller skips the rule rather than guessing.
+    """
+    if action is None or (isinstance(action, str) and not action.strip()):
+        return "spam"
+    if not isinstance(action, str):
+        return None
+    return _RULE_ACTION_ALIASES.get(action.strip().lower())
+
+
+def _arc_verdict_matches(
+    condition: Any, arc: Optional[Dict[str, Any]], idx: int
+) -> bool:
+    """Whether an ``arc_verdict`` rule condition holds.
+
+    The verdict is binary: ``"trusted"`` (valid chain sealed by an allowlisted
+    sealer) or ``"untrusted"`` (everything else — no chain, an unlisted sealer,
+    or a chain that failed to validate).
+
+    A ``dnsfail`` result (a key lookup that didn't complete) is *indeterminate*
+    and matches **neither** verdict: such a message claiming a trusted sealer is
+    held for retry by the arc pipeline step before the rules run, and in
+    best-effort mode (empty allowlist) it falls through unverified rather than
+    being gated on a transient DNS error. An absent ``arc`` result (couldn't
+    compute) likewise never matches — we never gate on what we couldn't decide.
+    """
+    cond = str(condition).strip().lower()
+    if cond not in ("trusted", "untrusted"):
+        logger.warning(
+            "Unknown arc_verdict %r in spam rule #%d — skipping", condition, idx
+        )
+        return False
+    if arc is None or arc.get("dnsfail"):
+        return False
+    trusted = bool(arc.get("trusted"))
+    return trusted if cond == "trusted" else not trusted
+
+
 def check_hardcoded_rules(
-    parsed_email: JmapEmail, spam_config: Dict[str, Any]
-) -> Optional[bool]:
-    """Apply the per-domain hardcoded ``rules`` list, header-matched
-    only against headers from trusted relay blocks. Returns ``True`` /
-    ``False`` on first matching rule, ``None`` if no rule matched."""
+    parsed_email: JmapEmail,
+    spam_config: Dict[str, Any],
+    arc: Optional[Dict[str, Any]] = None,
+) -> Optional[str]:
+    """Apply the per-domain ``rules`` list; return the first matching rule's
+    normalized action — ``"spam"`` (Junk), ``"ham"`` (deliver) or ``"drop"``
+    (discard) — or ``None`` if nothing matched.
+
+    Rules are evaluated in list order (first match wins) and are of two kinds:
+      - ``header_match`` / ``header_match_regex``: matched only against headers
+        from trusted relay blocks (see ``trusted_relays``).
+      - ``arc_verdict``: matched against the pre-computed ``arc`` relay-trust
+        result (``trusted`` / ``untrusted``). The caller must pass ``arc``; a
+        rule referencing it when none was computed simply never matches.
+    """
     rules = spam_config.get("rules", [])
     for idx, rule in enumerate(rules):
+        if not isinstance(rule, dict):
+            continue
+
+        # ARC relay-trust condition — evaluated against the pre-computed
+        # crypto/DNS result, not the header blocks.
+        arc_condition = rule.get("arc_verdict")
+        if arc_condition:
+            if _arc_verdict_matches(arc_condition, arc, idx):
+                verdict = _normalize_rule_action(rule.get("action"))
+                if verdict is not None:
+                    return verdict
+                logger.warning("Unknown action in spam rule #%d — skipping", idx)
+            continue
+
         header_match = rule.get("header_match") or rule.get("header_match_regex")
         if not header_match:
             continue
@@ -105,11 +182,10 @@ def check_hardcoded_rules(
                 logger.warning("Invalid regex in spam rule #%d — skipping", idx)
                 continue
         if is_match:
-            action = rule.get("action") or "spam"
-            if action in ("spam", "reject"):
-                return True
-            if action in ("ham", "no action"):
-                return False
+            verdict = _normalize_rule_action(rule.get("action"))
+            if verdict is not None:
+                return verdict
+            logger.warning("Unknown action in spam rule #%d — skipping", idx)
     return None
 
 

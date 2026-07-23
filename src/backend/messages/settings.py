@@ -552,17 +552,21 @@ class Base(Configuration):
     #                              own MTA prepends; a sender can forge any block
     #                              above that, so only raise this to the number of
     #                              relay hops you actually operate)
-    #   rules                    : list of hardcoded header-match spam rules
+    #   rules                    : list of spam rules; each is a header_match /
+    #                              header_match_regex OR an "arc_verdict" trust
+    #                              condition — "trusted" / "untrusted" — e.g.
+    #                              {"arc_verdict": "untrusted", "action": "drop"},
+    #                              with action spam / ham / drop.
     #   inbound_auth             : sender authentication backend — one of
     #                              "native", "rspamd", "arc",
     #                              "authentication-results", or None to disable.
     #                              See core.mda.inbound_auth for semantics.
     #   trusted_arc_sealers      : list of trusted ARC sealer d= domains
-    #                              (empty = any valid seal). Used by inbound_auth
-    #                              "arc" and by arc_gate.
-    #   arc_gate                 : action when a message is not sealed by a
-    #                              trusted sealer — "off" (default), "spam", or
-    #                              "drop".
+    #                              (empty = trust nothing). Used by inbound_auth
+    #                              "arc" and by "arc" spam rules. When non-empty,
+    #                              a DNS failure verifying a claimed-trusted
+    #                              sealer holds the message for retry rather than
+    #                              failing open or closed.
     SPAM_CONFIG = values.DictValue({}, environ_name="SPAM_CONFIG", environ_prefix=None)
 
     # MTA settings
