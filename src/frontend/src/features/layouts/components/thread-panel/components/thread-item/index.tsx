@@ -6,6 +6,7 @@ import clsx from "clsx"
 import { DateHelper } from "@/features/utils/date-helper"
 import { Thread } from "@/features/api/gen/models"
 import { ThreadItemSenders } from "./thread-item-senders"
+import { ThreadItemMessageSummaries } from "./thread-item-message-summaries"
 import { Badge } from "@/features/ui/components/badge"
 import { ThreadDragPreview } from "./thread-drag-preview"
 import { PORTALS } from "@/features/config/constants"
@@ -25,9 +26,11 @@ type ThreadItemProps = {
     onSelectRange: (threadId: string) => void
     selectedThreadIds: Set<string>
     isSelectionMode: boolean
+    isExpanded: boolean
+    onToggleExpand: () => void
 } & ThreadListboxItemProps
 
-export const ThreadItem = ({ thread, isSelected, onToggle, onSelectRange, selectedThreadIds, isSelectionMode, tabIndex, itemRef, onFocusItem }: ThreadItemProps) => {
+export const ThreadItem = ({ thread, isSelected, onToggle, onSelectRange, selectedThreadIds, isSelectionMode, isExpanded, onToggleExpand, tabIndex, itemRef, onFocusItem }: ThreadItemProps) => {
     const { t, i18n } = useTranslation();
     const params = useParams({ strict: false }) as { mailboxId?: string; threadId?: string }
     const [isDragging, setIsDragging] = useState(false)
@@ -141,30 +144,49 @@ export const ThreadItem = ({ thread, isSelected, onToggle, onSelectRange, select
 
     return (
         <>
-            <Link
-                to="/mailbox/$mailboxId/thread/$threadId"
-                params={{ mailboxId: params?.mailboxId ?? '', threadId: thread.id }}
-                search={true}
-                className={clsx(
-                    'thread-item',
-                    {
-                        'thread-item--active': thread.id === params?.threadId,
-                        'thread-item--dragging': isDragging,
-                        'thread-item--selected': isSelected,
-                    },
+            <div className="thread-item-row">
+                {thread.message_count > 1 && (
+                    // Sibling of the Link below, not nested inside it: interactive
+                    // content cannot be nested inside an <a> (same constraint
+                    // mailbox-list's FolderItem already follows for its own
+                    // disclosure chevron).
+                    <button
+                        type="button"
+                        className={clsx("thread-item__chevron", {
+                            "thread-item__chevron--collapsed": !isExpanded,
+                        })}
+                        onClick={onToggleExpand}
+                        aria-expanded={isExpanded}
+                        aria-controls={`thread-item-summaries-${thread.id}`}
+                        aria-label={isExpanded ? t('Collapse messages') : t('Expand messages')}
+                    >
+                        <Icon name="expand_more" type={IconType.OUTLINED} aria-hidden="true" />
+                    </button>
                 )}
-                data-unread={hasUnread}
-                draggable
-                onDragStart={handleDragStart}
-                onDragEnd={handleDragEnd}
-                onClick={handleItemClick}
-                onFocus={onFocusItem}
-                tabIndex={tabIndex}
-                ref={itemRef}
-                role="option"
-                aria-selected={isSelected}
-            >
-                <div>
+                <Link
+                    to="/mailbox/$mailboxId/thread/$threadId"
+                    params={{ mailboxId: params?.mailboxId ?? '', threadId: thread.id }}
+                    search={true}
+                    className={clsx(
+                        'thread-item',
+                        {
+                            'thread-item--active': thread.id === params?.threadId,
+                            'thread-item--dragging': isDragging,
+                            'thread-item--selected': isSelected,
+                        },
+                    )}
+                    data-unread={hasUnread}
+                    draggable
+                    onDragStart={handleDragStart}
+                    onDragEnd={handleDragEnd}
+                    onClick={handleItemClick}
+                    onFocus={onFocusItem}
+                    tabIndex={tabIndex}
+                    ref={itemRef}
+                    role="option"
+                    aria-selected={isSelected}
+                >
+                    <div>
                     {showCheckbox && (
                         // Mouse-only affordance, purely presentational: the option
                         // itself carries the selection state (aria-selected) and a
@@ -319,7 +341,16 @@ export const ThreadItem = ({ thread, isSelected, onToggle, onSelectRange, select
                      )}
                  </div>
                 </div>
-            </Link>
+                </Link>
+                {isExpanded && (
+                    <div id={`thread-item-summaries-${thread.id}`}>
+                        <ThreadItemMessageSummaries
+                            threadId={thread.id}
+                            mailboxId={params?.mailboxId ?? ''}
+                        />
+                    </div>
+                )}
+            </div>
             {(isDragging || isExiting) && dragPreviewContainer.current && createPortal(
                 <ThreadDragPreview
                     count={dragCount}

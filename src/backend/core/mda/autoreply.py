@@ -289,7 +289,7 @@ def send_autoreply_for_message(
         message.blob = models.Blob.objects.create_blob(
             content=signed_mime, content_type="message/rfc822"
         )
-        message.save(update_fields=["mime_id", "blob", "has_attachments"])
+        message.save(update_fields=["mime_id", "blob", "has_attachments", "snippet"])
 
     # Trigger async send (outside transaction to avoid sending before commit)
     send_message_task.delay(str(message.id))

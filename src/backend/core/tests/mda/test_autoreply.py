@@ -1061,3 +1061,18 @@ class TestSendAutoreplyForMessage:
 
         access.refresh_from_db()
         assert access.read_at is None
+
+    @patch("core.mda.outbound_tasks.send_message_task", new_callable=MagicMock)
+    @patch("core.mda.outbound.sign_message_dkim", return_value=None)
+    def test_snippet_persisted(
+        self, mock_dkim, mock_send_task, mailbox, autoreply_template, inbound_message
+    ):
+        """Snippet computed by compose_and_sign_mime is persisted to the database."""
+        send_autoreply_for_message(autoreply_template, mailbox, inbound_message)
+
+        autoreply_msg = models.Message.objects.filter(
+            parent=inbound_message, is_sender=True
+        ).last()
+        # Reload from DB to verify persisted value
+        autoreply_msg.refresh_from_db()
+        assert autoreply_msg.snippet == "I am out of office."

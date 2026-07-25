@@ -491,6 +491,10 @@ def _create_message_from_inbound(  # pylint: disable=too-many-arguments
                     thread=thread,
                     sender=sender_contact,
                     subject=subject,
+                    snippet=thread_snippet(
+                        parsed_email,
+                        fallback=subject or "(No snippet available)",
+                    ),
                     blob=blob,
                     mime_id=first_msgid(parsed_email.get("messageId")) or None,
                     parent=parent_message,

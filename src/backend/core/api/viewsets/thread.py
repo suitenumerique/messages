@@ -210,6 +210,9 @@ class ThreadViewSet(
                 )
             ),
             events_count=Count("events", distinct=True),
+            message_count=Count(
+                "messages", filter=Q(messages__is_draft=False), distinct=True
+            ),
             _can_edit=Exists(can_edit_qs),
         ).prefetch_related(
             # Feeds ThreadSerializer.get_assigned_users without N+1. UserEvent

@@ -1,4 +1,5 @@
 import { useState, useCallback, forwardRef, useEffect, useRef, useMemo } from "react";
+import { useLocation } from "@tanstack/react-router";
 import clsx from "clsx";
 import { useTranslation } from "react-i18next";
 import { Icon, IconType, Spinner } from "@gouvfr-lasuite/ui-kit";
@@ -142,18 +143,20 @@ export const ThreadMessage = forwardRef<HTMLSpanElement, ThreadMessageProps>(
         // lives in the compose form), so it is ready to render immediately.
         const [isThreadMessageBodyLoaded, setIsThreadMessageBodyLoaded] = useState(isMessageReady || message.is_draft);
         const [isFolded, setIsFolded] = useState(!isLatest && !message.is_unread && !draftMessage?.is_draft);
+        const hash = useLocation({ select: (l) => l.hash });
 
         // Deep-link target: unfold this message when the URL hash points to
         // it so the user lands on its expanded content instead of the folded
-        // preview. Runs once on mount because the hash is read at navigation
-        // time and the user can still re-fold manually afterwards.
+        // preview. Re-runs whenever the hash changes (not just on mount) so
+        // that clicking a different message's summary row of an already-open
+        // thread — which only changes the hash, without remounting this
+        // component — still unfolds the newly targeted message. The user can
+        // still re-fold manually afterwards.
         useEffect(() => {
-            if (typeof window === 'undefined') return;
-            if (window.location.hash === `#thread-message-${message.id}`) {
+            if (hash === `#thread-message-${message.id}`) {
                 setIsFolded(false);
             }
-            // eslint-disable-next-line react-hooks/exhaustive-deps
-        }, []);
+        }, [hash, message.id]);
         const [replyFormMode, setReplyFormMode] = useState<MessageFormMode | null>(() => {
             if (draftMessage?.is_draft) return 'reply';
             if (!message.is_draft || message.is_trashed) return null;

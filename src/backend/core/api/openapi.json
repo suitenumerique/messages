@@ -10654,6 +10654,10 @@
                         "type": "integer",
                         "readOnly": true
                     },
+                    "message_count": {
+                        "type": "integer",
+                        "readOnly": true
+                    },
                     "abilities": {
                         "type": "object",
                         "additionalProperties": {
@@ -10693,6 +10697,7 @@
                     "is_spam",
                     "is_trashed",
                     "labels",
+                    "message_count",
                     "messaged_at",
                     "messages",
                     "sender_messaged_at",

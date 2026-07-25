@@ -46,6 +46,10 @@ and this project adheres to
 - Remove the `TESTDOMAIN` feature, superseded by autojoin domains
 - Remove the `react-email` component from outbound message rendering
 
+### Added
+
+- Expand thread-list rows with a chevron to show per-message summaries (sender, date, snippet, read state) and jump directly to a message from its summary
+
 ### Fixed
 
 - Fix relay block indentation breaking SASL auth in MTA out #733

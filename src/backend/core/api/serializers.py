@@ -853,6 +853,7 @@ class ThreadSerializer(serializers.ModelSerializer):
     labels = serializers.SerializerMethodField()
     summary = serializers.CharField(read_only=True)
     events_count = serializers.IntegerField(read_only=True)
+    message_count = serializers.IntegerField(read_only=True)
     abilities = serializers.SerializerMethodField(read_only=True)
     assigned_users = serializers.SerializerMethodField(read_only=True)
 
@@ -1035,6 +1036,7 @@ class ThreadSerializer(serializers.ModelSerializer):
             "labels",
             "summary",
             "events_count",
+            "message_count",
             "abilities",
             "assigned_users",
         ]
@@ -1088,6 +1090,36 @@ class MessageSenderUserSerializer(serializers.ModelSerializer):
     class Meta:
         model = models.User
         fields = ["id", "full_name", "email"]
+        read_only_fields = fields
+
+
+class MessageSummarySerializer(serializers.ModelSerializer):
+    """Lightweight per-message summary for the thread-list expand dropdown.
+
+    Reads only stored fields — never Message.get_parsed_data(), which hits
+    object storage and re-parses MIME on every call. Used behind the
+    ``?summary=true`` query param on MessageViewSet's list action.
+    """
+
+    sender = ContactSerializer(read_only=True)
+    is_unread = serializers.SerializerMethodField(read_only=True)
+
+    @extend_schema_field(serializers.BooleanField())
+    def get_is_unread(self, instance):
+        """Return the ``_is_unread`` annotation set by ``MessageQuerySet.with_read_state()``."""
+        return getattr(instance, "_is_unread", False)
+
+    class Meta:
+        model = models.Message
+        fields = [
+            "id",
+            "sender",
+            "sent_at",
+            "is_unread",
+            "is_draft",
+            "has_attachments",
+            "snippet",
+        ]
         read_only_fields = fields
 
 
