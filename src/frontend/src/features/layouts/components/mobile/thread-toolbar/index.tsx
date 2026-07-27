@@ -11,6 +11,7 @@ import useArchive from "@/features/message/use-archive";
 import useTrash from "@/features/message/use-trash";
 import useSpam from "@/features/message/use-spam";
 import useDeleteDrafts from "@/features/message/use-delete-drafts";
+import useEmptyTrash from "@/features/message/use-empty-trash";
 import useStarred from "@/features/message/use-starred";
 import useRead from "@/features/message/use-read";
 import useCopyDeepLink from "@/features/message/use-copy-deep-link";
@@ -62,6 +63,7 @@ export const MobileThreadToolbar = ({ thread, isArchived, isTrashed, quickReplyM
   const { markAsTrashed, markAsUntrashed } = useTrash();
   const { markAsSpam, markAsNotSpam } = useSpam();
   const { deleteDrafts } = useDeleteDrafts();
+  const { emptyTrashbin } = useEmptyTrash();
   const { markAsStarred, markAsUnstarred } = useStarred();
   const { markAsReadAt } = useRead();
   const copyDeepLink = useCopyDeepLink();
@@ -69,6 +71,7 @@ export const MobileThreadToolbar = ({ thread, isArchived, isTrashed, quickReplyM
   const canSendMessages = useAbility(Abilities.CAN_SEND_MESSAGES, selectedMailbox);
   const canEditThread = useAbility(Abilities.CAN_EDIT_THREAD, thread);
   const canManageLabels = useAbility(Abilities.CAN_MANAGE_MAILBOX_LABELS, selectedMailbox);
+  const canEmptyTrash = useAbility(Abilities.CAN_EMPTY_TRASH, selectedMailbox);
   const labelsWidgetRef = useRef<LabelsWidgetHandle>(null);
   const [isDrawerOpen, setIsDrawerOpen] = useState(false);
   const isDraftsView = ViewHelper.isDraftsView();
@@ -94,24 +97,45 @@ export const MobileThreadToolbar = ({ thread, isArchived, isTrashed, quickReplyM
   };
 
   // The left "remove" slot follows the context: deleting the draft from the
-  // drafts view, restoring from the trash, trashing everywhere else.
-  const removeAction = !canEditThread ? null : isDraftsView
-    ? {
+  // drafts view, restoring from the trash, permanently deleting from spam
+  // (already part of the trashbin, so trashing it would be a no-op), trashing
+  // everywhere else.
+  const getRemoveAction = (): Omit<DrawerAction, "key"> | null => {
+    if (!canEditThread) return null;
+    if (isDraftsView) {
+      return {
         label: t("Delete draft"),
         icon: { icon: Trash },
         onSelect: () => deleteDrafts({ threadIds: [thread.id], onSuccess: unselectThread }),
-      }
-    : isTrashed
-      ? {
-          label: t("Undelete"),
-          icon: { icon:Restore },
-          onSelect: () => markAsUntrashed({ threadIds: [thread.id], onSuccess: unselectThread }),
-        }
-      : {
-          label: t("Move to trash"),
-          icon: { icon: Trash },
-          onSelect: () => markAsTrashed({ threadIds: [thread.id], onSuccess: unselectThread }),
-        };
+      };
+    }
+    if (isTrashed) {
+      return {
+        label: t("Restore"),
+        icon: { icon: Restore },
+        onSelect: () => markAsUntrashed({ threadIds: [thread.id], onSuccess: unselectThread }),
+      };
+    }
+    if (thread.is_spam) {
+      if (!canEmptyTrash || !selectedMailbox) return null;
+      return {
+        label: t("Delete permanently"),
+        icon: { icon: Trash },
+        onSelect: () => emptyTrashbin({
+          mailboxId: selectedMailbox.id,
+          scope: "spam",
+          threadIds: [thread.id],
+          onSuccess: unselectThread,
+        }),
+      };
+    }
+    return {
+      label: t("Move to trash"),
+      icon: { icon: Trash },
+      onSelect: () => markAsTrashed({ threadIds: [thread.id], onSuccess: unselectThread }),
+    };
+  };
+  const removeAction = getRemoveAction();
 
   const hasUnread = thread.has_unread;
   const drawerActionGroups: DrawerAction[][] = [

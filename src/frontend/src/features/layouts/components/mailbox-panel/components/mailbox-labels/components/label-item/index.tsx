@@ -1,5 +1,6 @@
-import { TreeLabel, ThreadsStatsRetrieveStatsFields, useLabelsDestroy, useLabelsList, useThreadsStatsRetrieve, ThreadsStatsRetrieve200, useLabelsPartialUpdate } from "@/features/api/gen";
-import { getThreadsStatsQueryKey, useMailboxContext } from "@/features/providers/mailbox";
+import { TreeLabel, ThreadsStatsRetrieveStatsFields, useLabelsDestroy, useLabelsList, useLabelsPartialUpdate } from "@/features/api/gen";
+import { useMailboxContext } from "@/features/providers/mailbox";
+import { useThreadsStats } from "@/hooks/use-threads-stats";
 import useArchive from "@/features/message/use-archive";
 import useDeleteLabel from "@/features/message/use-delete-label";
 import useAddLabel from "@/features/message/use-add-label";
@@ -39,20 +40,12 @@ export const LabelItem = ({ level = 0, onEdit, canManage, defaultFoldState, ...l
   const modals = useModals();
   const [isDropdownOpen, setIsDropdownOpen] = useState(false);
   const [isDragOver, setIsDragOver] = useState(false);
-  const queryParams = useMemo(() => {
-    const params = new URLSearchParams({ label_slug: label.slug });
-    return params.toString();
-  }, [label.slug]);
-  const { data: stats } = useThreadsStatsRetrieve({
-    mailbox_id: selectedMailbox?.id,
-    stats_fields: ThreadsStatsRetrieveStatsFields.all_unread,
-    label_slug: label.slug
-  }, {
-    query: {
-      queryKey: getThreadsStatsQueryKey(selectedMailbox!.id, queryParams),
-    }
+  const stats = useThreadsStats({
+    mailboxId: selectedMailbox?.id,
+    filter: { label_slug: label.slug },
+    fields: [ThreadsStatsRetrieveStatsFields.all_unread],
   });
-  const unreadCount = (stats?.data as ThreadsStatsRetrieve200)?.all_unread ?? 0;
+  const unreadCount = stats?.all_unread ?? 0;
   const { closeLeftPanel, setDragAction, getIsShiftHeld } = useLayoutDragContext();
   const navigate = useNavigate();
   const pathname = useLocation({ select: (l) => l.pathname });

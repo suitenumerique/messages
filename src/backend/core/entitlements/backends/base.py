@@ -27,3 +27,46 @@ class EntitlementsBackend(ABC):
         Raises:
             EntitlementsUnavailableError: If the backend cannot be reached.
         """
+
+    def get_mailbox_entitlements(  # pylint: disable=unused-argument
+        self, mailbox, force_refresh=False
+    ):
+        """Fetch storage entitlements for a mailbox.
+
+        Quotas are attached to mailboxes, not users: a user object never
+        carries a quota, so callers always resolve entitlements through the
+        mailbox they are viewing.
+
+        The result carries two levels — the mailbox ("account") and, when the
+        mailbox's domain is tied to an organization, the aggregate for that
+        organization. A ``max_storage`` of ``None`` means "no limit known"
+        and the frontend hides the corresponding gauge.
+
+        Returns:
+            dict: {
+                "account": {"storage_used": int, "max_storage": int | None},
+                "organization": {
+                    "storage_used": int,
+                    "max_storage": int | None,
+                } | None,
+            }
+
+        Raises:
+            EntitlementsUnavailableError: If the backend cannot be reached.
+        """
+        return {
+            "account": {"storage_used": 0, "max_storage": None},
+            "organization": None,
+        }
+
+    # Deliberately concrete and empty: the default suits every backend that
+    # does not cache, so only caching backends override it.
+    def invalidate_mailbox_entitlements(  # noqa: B027 # pylint: disable=unused-argument
+        self, mailbox
+    ):
+        """Mark a mailbox's cached entitlements as stale.
+
+        Called when the mailbox's usage drops in a way the user watches (e.g.
+        emptying its trashbin), so the next read reports the new usage instead
+        of waiting out the cache. A no-op for backends that do not cache.
+        """

@@ -164,6 +164,7 @@ export const AppLayout = ({
           isPanelOpen={isLeftPanelOpen}
           leftIcon={icon}
           hideSearch={hideSearch}
+          hideLeftPanelOnDesktop={hideLeftPanelOnDesktop}
         />
       </div>
       <main className="c__main-layout__content">

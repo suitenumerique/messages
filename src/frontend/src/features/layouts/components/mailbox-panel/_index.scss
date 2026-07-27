@@ -31,3 +31,11 @@
         padding-inline-end: 1.1rem;
     }
 }
+
+.mailbox-panel__footer {
+    display: flex;
+    align-items: center;
+    // Keeps the survey button at the end when there is no quota gauge.
+    justify-content: flex-end;
+    padding: var(--c--globals--spacings--xs);
+}

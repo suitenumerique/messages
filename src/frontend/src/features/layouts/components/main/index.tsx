@@ -10,6 +10,7 @@ import { ScrollRestoreProvider } from "@/features/providers/scroll-restore";
 import { AttachmentPreviewProvider } from "@/features/providers/attachment-preview";
 import { useTheme } from "@/features/providers/theme";
 import { useUnreadBadge } from "@/features/providers/use-unread-badge";
+import { useEmptyTrashTasksWatcher, useTrashbinFolderCounts } from "@/features/message/use-empty-trash";
 import { LayoutProvider, useLayoutDragContext } from "@/features/layouts/components/layout-context";
 import { AttachmentPreviewModal } from "@/features/layouts/components/thread-view/components/attachment-preview-modal";
 import { ComposeWindowsProvider } from "@/features/providers/compose-windows";
@@ -56,6 +57,8 @@ const MainLayoutContent = ({ children }: PropsWithChildren<{ simple?: boolean }>
     const headerIconName = isDesktop ? `app-logo-${variant}` : `app-icon-${variant}`;
 
     useUnreadBadge();
+    useEmptyTrashTasksWatcher();
+    useTrashbinFolderCounts();
 
     return (
         <AppLayout

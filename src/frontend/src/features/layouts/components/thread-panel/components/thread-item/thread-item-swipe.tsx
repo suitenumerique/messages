@@ -69,10 +69,13 @@ export const ThreadItemSwipe = ({
     // transition is restoring, and archiving a spam or a draft thread means
     // nothing.
     const isTrashContext = view.isTrashed || thread.is_trashed;
+    // Spam is already part of the trashbin: like the thread action bar, it is
+    // permanently deleted (after confirmation) rather than trashed.
+    const isSpamDelete = !isTrashContext && !!thread.is_spam;
     const isArchivedView = view.isArchived;
     const canArchive =
         canEditThread && !thread.is_spam && !isTrashContext && !view.isDrafts;
-    const canTrash = canEditThread;
+    const canTrash = canEditThread && (!isSpamDelete || actions.canDeleteSpam);
     const endWidth = (canArchive ? ACTION_WIDTH : 0) + (canTrash ? ACTION_WIDTH : 0);
 
     const toggleRead = () => actions.toggleRead(thread, hasUnread);
@@ -115,12 +118,16 @@ export const ThreadItemSwipe = ({
     const readLabel = hasUnread ? t("Read") : t("Unread");
     const readTitle = hasUnread ? t("Mark as read") : t("Mark as unread");
     const archiveLabel = isArchivedView ? t("Unarchive") : t("Archive");
-    const trashLabel = isTrashContext ? t("Restore") : t("Delete");
-    const trashTitle = isDraftDelete ? t("Delete draft") : trashLabel;
+    const trashLabel = isTrashContext ? t("Restore") : isDraftDelete || isSpamDelete ? t("Delete") : t("Trash");
+    const trashTitle = isTrashContext
+        ? t("Restore")
+        : isDraftDelete ? t("Delete draft") : isSpamDelete ? t("Delete permanently") : t("Move to trash");
     const trashIconProps: IconProps = { icon: isTrashContext ? Restore : Trash };
     const trashAction = isDraftDelete
         ? () => actions.deleteDrafts(thread)
-        : () => actions.setTrashed(thread, !isTrashContext);
+        : isSpamDelete
+          ? () => actions.deleteSpam(thread)
+          : () => actions.setTrashed(thread, !isTrashContext);
     const showPanels = enabled && (isSwiping || openSide !== null);
 
     // The wrapper is rendered even when the gesture is off (desktop, selection

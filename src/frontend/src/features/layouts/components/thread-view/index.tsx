@@ -466,10 +466,10 @@ const ThreadViewComponent = ({ threadItems, mailboxId, thread, showTrashedMessag
                         }]}
                     >
                         {t(
-                            '{{count}} messages of this thread have been deleted.',
+                            '{{count}} messages of this thread are in the trash.',
                             {
                                 count: stats.trashed,
-                                defaultValue_one: "{{count}} message of this thread has been deleted.",
+                                defaultValue_one: "{{count}} message of this thread is in the trash.",
                             }
                         )}
                     </Banner>
