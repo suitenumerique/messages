@@ -1,4 +1,4 @@
-import { HorizontalSeparator, Spinner } from "@gouvfr-lasuite/ui-components"
+import { HorizontalSeparator, Spinner, useResponsive } from "@gouvfr-lasuite/ui-components"
 import { MailboxPanelActions } from "./components/mailbox-actions"
 import { MailboxList } from "./components/mailbox-list"
 import { useMailboxContext } from "@/features/providers/mailbox";
@@ -8,11 +8,13 @@ import { MailboxLabels } from "./components/mailbox-labels";
 import { MAILBOX_FOLDERS } from "./components/mailbox-list";
 import { Group, Panel, Separator, useDefaultLayout } from "react-resizable-panels";
 import { MailboxSelector } from "@/features/layouts/components/mailbox-selector";
-
+import { QuotaWidget } from "@/features/quota/components/quota-widget";
+import { SurveyButton } from "@/features/ui/components/feedback-button";
 export const MailboxPanel = () => {
     const navigate = useNavigate();
     const { selectedMailbox, mailboxes, queryStates } = useMailboxContext();
     const { closeLeftPanel } = useLayoutContext();
+    const { isTablet } = useResponsive();
     const { defaultLayout, onLayoutChange } = useDefaultLayout({
         groupId: "mailbox-panel-sections",
         storage: typeof window !== "undefined" ? localStorage : undefined,
@@ -23,7 +25,7 @@ export const MailboxPanel = () => {
             <div className="mailbox-panel__header">
                 <MailboxPanelActions />
                 <HorizontalSeparator withPadding={false} />
-                { selectedMailbox && mailboxes && (
+                {selectedMailbox && mailboxes && (
                     <div className="mailbox-panel__mailbox-title">
                         <MailboxSelector
                             mailboxes={mailboxes}
@@ -53,6 +55,12 @@ export const MailboxPanel = () => {
                         </Panel>
                     </Group>
                 )}
+            {!isTablet && (
+                <div className="mailbox-panel__footer">
+                    <QuotaWidget mailboxId={selectedMailbox?.id} />
+                    <SurveyButton iconOnly color="neutral" variant="tertiary" />
+                </div>
+            )}
         </div>
     )
 }

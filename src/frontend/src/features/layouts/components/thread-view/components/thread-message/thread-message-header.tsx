@@ -14,7 +14,7 @@ import { ThreadMessageHeaderProps } from "./types";
 import ThreadMessageActions from "./thread-message-actions";
 import ThreadMessageRecipients from "./thread-message-recipients";
 import { useAuth } from "@/features/auth";
-import { Edit } from "@gouvfr-lasuite/ui-components/icons";
+import { Edit, Restore } from "@gouvfr-lasuite/ui-components/icons";
 import { Icon } from "@/features/ui/components/icon";
 
 const ThreadMessageHeader = ({
@@ -159,16 +159,16 @@ const ThreadMessageHeader = ({
                 {message.is_trashed && (
                     <Banner
                         type="info"
-                        icon={<Icon name="restore_from_trash" />}
+                        icon={<Icon icon={Restore} />}
                         fullWidth
                         actions={canEditThread ? [
                             {
-                                label: t('Undelete'),
+                                label: t('Restore'),
                                 onClick: handleMarkAsUntrashed,
                             }
                         ] : undefined}
                     >
-                        <p>{t('This message has been deleted.')}</p>
+                        <p>{t('This message is in the trash.')}</p>
                     </Banner>
                 )}
                 <div className="thread-message__header-rows" style={{ marginBottom: 'var(--c--globals--spacings--sm)' }}>

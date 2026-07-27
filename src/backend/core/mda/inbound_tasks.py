@@ -571,7 +571,10 @@ def process_inbound_message_task(self, inbound_message_id: str):
                         mailbox,
                         ctx.parsed_email,
                         inbound_msg,
-                        is_spam=bool(ctx.is_spam),
+                        # The thread, not the pipeline verdict: a follow-up
+                        # the spam filter let through into a spam conversation
+                        # must not be answered either.
+                        is_spam=inbound_msg.thread.is_spam,
                         envelope=inbound_message.envelope,
                     )
                 except Exception:  # pylint: disable=broad-exception-caught
@@ -584,10 +587,11 @@ def process_inbound_message_task(self, inbound_message_id: str):
             # effect above: on a dedup hit (SMTP retry, greylisting) the push
             # already fired for the original create and would otherwise re-alert
             # the device — `enqueue_push_notifications` has no idempotency of
-            # its own. Spam is skipped: no point waking a device for it.
+            # its own. Spam is skipped, a whole spam conversation included: no
+            # point waking a device for it.
             # `enqueue_push_notifications` already no-ops when push is
             # disabled ("safe to call unconditionally"), so no extra gate here.
-            if created_now and not ctx.is_spam:
+            if created_now and not inbound_msg.thread.is_spam:
                 enqueue_push_notifications(inbound_msg)
 
             logger.info(

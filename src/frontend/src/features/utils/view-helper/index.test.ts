@@ -1,5 +1,5 @@
 import { vi, describe, it, expect, beforeEach } from 'vitest';
-import ViewHelper from './index';
+import ViewHelper, { ThreadFolderFlags } from './index';
 
 describe('ViewHelper', () => {
     const setLocationSearch = (search: string) => {
@@ -167,6 +167,58 @@ describe('ViewHelper', () => {
         it('should handle URL encoded search params', () => {
             setLocationSearch('?search=in%3Aspam');
             expect(ViewHelper.isSpamView()).toBe(true);
+        });
+    });
+
+    describe('getThreadFolderSearch', () => {
+        const thread = (flags: Partial<ThreadFolderFlags> = {}): ThreadFolderFlags => ({
+            has_active: false,
+            has_draft: false,
+            has_sender: false,
+            has_delivery_pending: false,
+            has_archived: false,
+            has_trashed: false,
+            is_trashed: false,
+            is_spam: false,
+            ...flags,
+        });
+
+        it('opens a spam thread in the spam folder, even when it is active', () => {
+            setLocationSearch('?has_active=1');
+            expect(ViewHelper.getThreadFolderSearch(thread({ is_spam: true, has_active: true })))
+                .toEqual({ is_spam: '1' });
+        });
+
+        it('opens a fully trashed thread in the trash', () => {
+            setLocationSearch('?has_active=1');
+            expect(ViewHelper.getThreadFolderSearch(thread({ is_trashed: true, has_trashed: true, has_archived: true })))
+                .toEqual({ has_trashed: '1' });
+        });
+
+        it('keeps the current folder when it lists the thread', () => {
+            setLocationSearch('?has_archived=1');
+            expect(ViewHelper.getThreadFolderSearch(thread({ has_active: true, has_archived: true }))).toBe(true);
+        });
+
+        it('falls back to the first folder listing the thread', () => {
+            setLocationSearch('?has_active=1');
+            expect(ViewHelper.getThreadFolderSearch(thread({ has_archived: true }))).toEqual({ has_archived: '1' });
+            expect(ViewHelper.getThreadFolderSearch(thread({ has_sender: true })))
+                .toEqual({ has_sender: '1', has_delivery_pending: '0' });
+        });
+
+        it('prefers received mail folders over sent and drafts', () => {
+            setLocationSearch('?is_spam=1');
+            expect(ViewHelper.getThreadFolderSearch(thread({ has_draft: true, has_archived: true })))
+                .toEqual({ has_archived: '1' });
+            expect(ViewHelper.getThreadFolderSearch(thread({ has_draft: true, has_sender: true })))
+                .toEqual({ has_sender: '1', has_delivery_pending: '0' });
+            expect(ViewHelper.getThreadFolderSearch(thread({ has_draft: true }))).toEqual({ has_draft: '1' });
+        });
+
+        it('does not keep a subfolder it cannot check', () => {
+            setLocationSearch('?has_active=1&has_unread=1');
+            expect(ViewHelper.getThreadFolderSearch(thread({ has_active: true }))).toEqual({ has_active: '1' });
         });
     });
 });

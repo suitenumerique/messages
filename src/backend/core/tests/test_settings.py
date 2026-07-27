@@ -4,6 +4,9 @@ Unit tests for the User model
 
 import pytest
 
+from core.enums import TrashbinAllowEmpty
+from core.utils import StrEnumValue
+
 from messages.settings import Base
 
 
@@ -197,3 +200,41 @@ def test_web_push_subject_must_be_mailto_or_https():
         TestSettings().post_setup()
 
     assert "RFC 8292" in str(excinfo.value)
+
+
+def _trashbin_allow_empty():
+    """Declare TRASHBIN_ALLOW_EMPTY as the settings do, reading the env."""
+    return StrEnumValue(
+        TrashbinAllowEmpty,
+        TrashbinAllowEmpty.ADMIN,
+        environ_name="TRASHBIN_ALLOW_EMPTY",
+        environ_prefix=None,
+    )
+
+
+@pytest.mark.parametrize("policy", ["admins", "Admin", "everyone", ""])
+def test_unknown_trashbin_allow_empty_fails_at_startup(monkeypatch, policy):
+    """An unrecognised TRASHBIN_ALLOW_EMPTY stops the settings from loading.
+
+    Matching no policy would otherwise collapse to "nobody may empty" — the
+    same behaviour as a deliberate ``never``, with nothing to say the
+    deployment is misconfigured. "admins" is the former plural value.
+    """
+    monkeypatch.setenv("TRASHBIN_ALLOW_EMPTY", policy)
+
+    with pytest.raises(ValueError, match="expected one of never, admin, editor"):
+        _trashbin_allow_empty()
+
+
+def test_trashbin_allow_empty_is_parsed_into_the_enum(monkeypatch):
+    """A valid value is stored as its enum member."""
+    monkeypatch.setenv("TRASHBIN_ALLOW_EMPTY", "editor")
+
+    assert _trashbin_allow_empty() is TrashbinAllowEmpty.EDITOR
+
+
+def test_trashbin_allow_empty_defaults_to_admin(monkeypatch):
+    """Unset, only mailbox admins may empty the trashbin."""
+    monkeypatch.delenv("TRASHBIN_ALLOW_EMPTY", raising=False)
+
+    assert _trashbin_allow_empty() is TrashbinAllowEmpty.ADMIN

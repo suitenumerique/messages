@@ -8,6 +8,10 @@ resume idempotent for header-less mail, and cancellation.
 
 # pylint: disable=redefined-outer-name, unused-argument
 
+from datetime import timedelta
+
+from django.utils import timezone
+
 import pytest
 from jmap_email import parse_email
 
@@ -293,6 +297,67 @@ class TestLabelsAndDuplicateMerge:
         # importing mailbox.
         access = models.ThreadAccess.objects.get(thread=message.thread, mailbox=mailbox)
         assert access.read_at is not None
+
+
+@pytest.mark.django_db
+class TestImportTrashbinTimestamps:
+    """Imported Trash/Spam is dated from the import, not from the mail itself.
+
+    The importer carries these two flags through IMAP labels (``message_flags``)
+    rather than the ``is_trashed``/``is_spam`` arguments, and it backdates
+    ``created_at`` to the message's own Date header. Without an explicit
+    ``trashed_at`` the cutoff sweep would age an imported bin item by that
+    original date, so importing a years-old Spam folder would hand the whole
+    thing to the first nightly run. See ``core.services.trashbin``.
+    """
+
+    @pytest.mark.parametrize(
+        "label,field", [("Spam", "is_spam"), ("Trash", "is_trashed")]
+    )
+    def test_imported_bin_item_is_stamped_at_import_time(
+        self, mailbox, user, label, field
+    ):
+        channel = create_import_channel(
+            recipient=mailbox, user=user, source_type=enums.ImportSource.IMAP.value
+        )
+        raw = _raw(mailbox, message_id=f"<{label.lower()}@example.com>")
+        assert deliver_inbound_message(
+            str(mailbox),
+            parse_email(raw),
+            raw,
+            is_import=True,
+            channel=channel,
+            imap_labels=[label],
+        )
+
+        message = models.Message.objects.get(channel=channel)
+        assert getattr(message, field) is True
+        # created_at is backdated to the Date header (May 2025 in _raw)...
+        assert message.created_at < timezone.now() - timedelta(days=30)
+        # ...but the message only entered the bin now, so it gets the full
+        # TRASHBIN_CUTOFF_DAYS grace rather than being swept immediately.
+        assert message.trashed_at is not None
+        assert message.trashed_at > timezone.now() - timedelta(minutes=5)
+
+    def test_imported_live_message_has_no_trashed_at(self, mailbox, user):
+        """Only bin items are stamped; ordinary imported mail stays NULL."""
+        channel = create_import_channel(
+            recipient=mailbox, user=user, source_type=enums.ImportSource.IMAP.value
+        )
+        raw = _raw(mailbox, message_id="<live@example.com>")
+        assert deliver_inbound_message(
+            str(mailbox),
+            parse_email(raw),
+            raw,
+            is_import=True,
+            channel=channel,
+            imap_labels=["ProjectX"],
+        )
+
+        message = models.Message.objects.get(channel=channel)
+        assert message.is_trashed is False
+        assert message.is_spam is False
+        assert message.trashed_at is None
 
 
 @pytest.mark.django_db
