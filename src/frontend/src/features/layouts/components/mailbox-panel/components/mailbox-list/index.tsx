@@ -158,7 +158,7 @@ export const MAILBOX_FOLDERS = () => [
         name: i18n.t("Sent"),
         icon: "outbox",
         searchable: true,
-        showStats: true,
+        showStats: false,
         filter: {
             has_sender: "1",
             has_delivery_pending: "0"
