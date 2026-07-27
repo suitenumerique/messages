@@ -501,8 +501,10 @@ def _create_message_from_inbound(  # pylint: disable=too-many-arguments
                     # Keep timestamps in lockstep with the booleans, as the
                     # flag endpoint does — a NULL trashed_at/archived_at on a
                     # trashed/archived row breaks restore, ordering and any
-                    # auto-purge that keys off the timestamp.
-                    trashed_at=(timezone.now() if is_trashed else None),
+                    # auto-purge that keys off the timestamp. ``trashed_at`` is
+                    # the "entered the trashbin" time, so spam sets it too (the
+                    # trashbin is is_trashed OR is_spam; see services/trashbin).
+                    trashed_at=(timezone.now() if (is_trashed or is_spam) else None),
                     is_archived=is_archived,
                     archived_at=(timezone.now() if is_archived else None),
                     is_spam=is_spam,
@@ -520,12 +522,23 @@ def _create_message_from_inbound(  # pylint: disable=too-many-arguments
                 for flag, value in message_flags.items():
                     if hasattr(message, flag):
                         setattr(message, flag, value)
-                message.save(
-                    update_fields=[
-                        "created_at",
-                        *message_flags.keys(),
-                    ]
-                )
+                update_fields = ["created_at", *message_flags.keys()]
+
+                # The importer carries Trash/Spam through ``message_flags`` (IMAP
+                # labels), NOT through the ``is_trashed``/``is_spam`` arguments —
+                # those stay False for imports, so the ``trashed_at`` computed at
+                # create() time above is still NULL here. Stamp it now, from the
+                # import rather than from the message's own date: ``created_at``
+                # was just backdated to ``sent_at``, so ageing an imported bin
+                # item by it would put a five-year-old Spam folder instantly past
+                # TRASHBIN_CUTOFF_DAYS and hand the whole thing to the first
+                # nightly sweep. Dating from the import gives it the full grace
+                # period. See core/services/trashbin.
+                if message.is_trashed or message.is_spam:
+                    message.trashed_at = timezone.now()
+                    update_fields.append("trashed_at")
+
+                message.save(update_fields=update_fields)
                 # Update ThreadAccess for read/starred state
                 access = models.ThreadAccess.objects.filter(
                     thread=thread, mailbox=mailbox

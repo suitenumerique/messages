@@ -9,6 +9,7 @@ import { MailboxLabels } from "./components/mailbox-labels";
 import { MAILBOX_FOLDERS } from "./components/mailbox-list";
 import { Group, Panel, Separator, useDefaultLayout } from "react-resizable-panels";
 import { MailboxSelector } from "@/features/layouts/components/mailbox-selector";
+import { QuotaWidget } from "@/features/quota/components/quota-widget";
 
 export const MailboxPanel = () => {
     const navigate = useNavigate();
@@ -58,6 +59,7 @@ export const MailboxPanel = () => {
                         </Panel>
                     </Group>
                 )}
+            <QuotaWidget mailboxId={selectedMailbox?.id} />
         </div>
     )
 }

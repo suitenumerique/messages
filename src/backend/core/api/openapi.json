@@ -323,6 +323,11 @@
                                             "type": "boolean",
                                             "readOnly": true
                                         },
+                                        "TRASHBIN_CUTOFF_DAYS": {
+                                            "type": "integer",
+                                            "description": "Number of days after which trashed and spam messages are permanently and automatically deleted.",
+                                            "readOnly": true
+                                        },
                                         "MESSAGES_MANUAL_RETRY_MAX_AGE": {
                                             "type": "integer",
                                             "description": "Maximum age in seconds for a message to be eligible for manual retry of failed deliveries",
@@ -426,6 +431,7 @@
                                         "FEATURE_MAILDOMAIN_MANAGE_ACCESSES",
                                         "FEATURE_THREAD_SPLIT",
                                         "FEATURE_MAILDOMAIN_MANAGE_TOTP",
+                                        "TRASHBIN_CUTOFF_DAYS",
                                         "MESSAGES_MANUAL_RETRY_MAX_AGE",
                                         "FRONTEND_SILENT_LOGIN_ENABLED",
                                         "PUSH_ENABLED"
@@ -4122,6 +4128,96 @@
                 }
             }
         },
+        "/api/v1.0/mailboxes/{id}/empty-trash/": {
+            "post": {
+                "operationId": "mailboxes_empty_trash_create",
+                "description": "Permanently delete trashed or spam messages in the mailbox (pick the folder with `scope`). Deletes the whole folder by default, or only the items named by `thread_ids` / `message_ids`. This cannot be undone. Allowed only to the roles named by the TRASHBIN_ALLOW_EMPTY policy.",
+                "parameters": [
+                    {
+                        "in": "path",
+                        "name": "id",
+                        "schema": {
+                            "type": "string"
+                        },
+                        "required": true
+                    }
+                ],
+                "tags": [
+                    "mailboxes"
+                ],
+                "requestBody": {
+                    "content": {
+                        "application/json": {
+                            "schema": {
+                                "$ref": "#/components/schemas/MailboxEmptyTrashRequestRequest"
+                            }
+                        },
+                        "multipart/form-data": {
+                            "schema": {
+                                "$ref": "#/components/schemas/MailboxEmptyTrashRequestRequest"
+                            }
+                        }
+                    },
+                    "required": true
+                },
+                "security": [
+                    {
+                        "cookieAuth": []
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "$ref": "#/components/schemas/MailboxEmptyTrashResponse"
+                                }
+                            }
+                        },
+                        "description": ""
+                    },
+                    "403": {
+                        "description": "Emptying the trashbin is not allowed for your role (governed by TRASHBIN_ALLOW_EMPTY)."
+                    }
+                }
+            }
+        },
+        "/api/v1.0/mailboxes/{id}/entitlements/": {
+            "get": {
+                "operationId": "mailboxes_entitlements_retrieve",
+                "description": "Return storage entitlements (usage and limits) for the mailbox.\n\nQuotas live on the mailbox, not the user. Access is restricted to the\nmailbox's own members through ``get_object`` (the viewset queryset is\nalready filtered to the current user's mailboxes).\n\nWhen the entitlements backend is unavailable, the gauge is degraded\nrather than erroring the request: usage falls back to 0 and limits to\nnull, which hides the gauge on the frontend.",
+                "parameters": [
+                    {
+                        "in": "path",
+                        "name": "id",
+                        "schema": {
+                            "type": "string"
+                        },
+                        "required": true
+                    }
+                ],
+                "tags": [
+                    "mailboxes"
+                ],
+                "security": [
+                    {
+                        "cookieAuth": []
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "$ref": "#/components/schemas/MailboxEntitlements"
+                                }
+                            }
+                        },
+                        "description": ""
+                    }
+                }
+            }
+        },
         "/api/v1.0/mailboxes/{id}/search/": {
             "get": {
                 "operationId": "mailboxes_search_list",
@@ -4161,6 +4257,42 @@
                                     "items": {
                                         "$ref": "#/components/schemas/MailboxLight"
                                     }
+                                }
+                            }
+                        },
+                        "description": ""
+                    }
+                }
+            }
+        },
+        "/api/v1.0/mailboxes/{id}/storage/": {
+            "get": {
+                "operationId": "mailboxes_storage_retrieve",
+                "description": "Return total storage and the top-100 largest threads for the mailbox.\n\nThe total is computed with the shared storage service (the same formula\nthe metrics endpoints and the quota gauge use), so the \"Total storage\nused\" here always matches the sidebar gauge. Per-thread sizes and the\ntrash/spam subtotals cover message overhead plus MIME and draft blobs —\nattachments and templates are not thread-scoped.\n\nBacks the Storage settings tab; mailbox admins only.",
+                "parameters": [
+                    {
+                        "in": "path",
+                        "name": "id",
+                        "schema": {
+                            "type": "string"
+                        },
+                        "required": true
+                    }
+                ],
+                "tags": [
+                    "mailboxes"
+                ],
+                "security": [
+                    {
+                        "cookieAuth": []
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "$ref": "#/components/schemas/MailboxStorageStats"
                                 }
                             }
                         },
@@ -8439,6 +8571,48 @@
                     "name"
                 ]
             },
+            "LargestThread": {
+                "type": "object",
+                "description": "Serializer for a thread entry in the mailbox storage stats.",
+                "properties": {
+                    "id": {
+                        "type": "string",
+                        "format": "uuid",
+                        "description": "Thread UUID"
+                    },
+                    "subject": {
+                        "type": "string",
+                        "nullable": true,
+                        "description": "Thread subject"
+                    },
+                    "size": {
+                        "type": "integer",
+                        "description": "Total compressed blob size of the thread in bytes"
+                    },
+                    "message_count": {
+                        "type": "integer",
+                        "description": "Number of messages in the thread"
+                    },
+                    "messaged_at": {
+                        "type": "string",
+                        "format": "date-time",
+                        "nullable": true,
+                        "description": "Date of the last message in the thread"
+                    },
+                    "is_unread": {
+                        "type": "boolean",
+                        "description": "Whether the thread is unread for this mailbox"
+                    }
+                },
+                "required": [
+                    "id",
+                    "is_unread",
+                    "message_count",
+                    "messaged_at",
+                    "size",
+                    "subject"
+                ]
+            },
             "MailDomainAccessRoleChoices": {
                 "type": "string",
                 "enum": [
@@ -8752,6 +8926,10 @@
                             "import_messages": {
                                 "type": "boolean",
                                 "description": "Can import messages"
+                            },
+                            "empty_trash": {
+                                "type": "boolean",
+                                "description": "Can empty the trashbin (trashed + spam)"
                             }
                         },
                         "required": [
@@ -8765,7 +8943,8 @@
                             "send_messages",
                             "manage_labels",
                             "manage_message_templates",
-                            "import_messages"
+                            "import_messages",
+                            "empty_trash"
                         ],
                         "readOnly": true
                     }
@@ -9212,6 +9391,91 @@
                     "custom_attributes": {}
                 }
             },
+            "MailboxEmptyTrashRequestRequest": {
+                "type": "object",
+                "description": "Payload for the \"empty trashbin\" endpoint.\n\nThe trashbin is the union of trashed and spam messages; ``scope`` picks the\nfolder to act on (\"trashed\" or \"spam\") so the two are handled independently.\n\n``thread_ids`` / ``message_ids`` narrow the deletion to specific items.\nBoth omitted (the default) means the whole folder — note this is the\nopposite of ``ThreadBulkDeleteRequestSerializer``, where omitting every\ntarget is an error: there, \"no targets\" is a malformed request; here it is\nthe primary use case (\"Empty trash\").\n\nPermanently deleting one selected message and emptying the entire folder\nare the same privilege, so they deliberately share this one endpoint rather\nthan being split across two that could drift apart — see the note on\n``ThreadBulkDeleteRequestSerializer.BULK_DELETE_SCOPE_FILTERS``.",
+                "properties": {
+                    "scope": {
+                        "allOf": [
+                            {
+                                "$ref": "#/components/schemas/MailboxEmptyTrashRequestScopeEnum"
+                            }
+                        ],
+                        "description": "Which half of the trashbin to permanently delete: 'trashed' or 'spam'.\n\n* `trashed` - trashed\n* `spam` - spam"
+                    },
+                    "thread_ids": {
+                        "type": "array",
+                        "items": {
+                            "type": "string",
+                            "format": "uuid"
+                        },
+                        "description": "Restrict the deletion to these threads. Omit to empty the whole folder."
+                    },
+                    "message_ids": {
+                        "type": "array",
+                        "items": {
+                            "type": "string",
+                            "format": "uuid"
+                        },
+                        "description": "Restrict the deletion to these messages (still scope-filtered). Omit to empty the whole folder."
+                    }
+                },
+                "required": [
+                    "scope"
+                ]
+            },
+            "MailboxEmptyTrashRequestScopeEnum": {
+                "enum": [
+                    "trashed",
+                    "spam"
+                ],
+                "type": "string",
+                "description": "* `trashed` - trashed\n* `spam` - spam"
+            },
+            "MailboxEmptyTrashResponse": {
+                "type": "object",
+                "description": "Response for the \"empty trashbin\" endpoint.",
+                "properties": {
+                    "success": {
+                        "type": "boolean"
+                    },
+                    "deleted_count": {
+                        "type": "integer",
+                        "description": "Number of messages permanently deleted."
+                    }
+                },
+                "required": [
+                    "deleted_count",
+                    "success"
+                ]
+            },
+            "MailboxEntitlements": {
+                "type": "object",
+                "description": "Storage entitlements for a mailbox, at the account and organization levels.",
+                "properties": {
+                    "account": {
+                        "allOf": [
+                            {
+                                "$ref": "#/components/schemas/StorageEntitlement"
+                            }
+                        ],
+                        "readOnly": true
+                    },
+                    "organization": {
+                        "allOf": [
+                            {
+                                "$ref": "#/components/schemas/StorageEntitlement"
+                            }
+                        ],
+                        "readOnly": true,
+                        "nullable": true
+                    }
+                },
+                "required": [
+                    "account",
+                    "organization"
+                ]
+            },
             "MailboxLight": {
                 "type": "object",
                 "description": "Serializer for mailbox details in thread access.",
@@ -9250,6 +9514,47 @@
                     "editor",
                     "sender",
                     "admin"
+                ]
+            },
+            "MailboxStorageStats": {
+                "type": "object",
+                "description": "Serializer for mailbox storage statistics response.",
+                "properties": {
+                    "total_storage": {
+                        "type": "integer",
+                        "description": "Total storage used by the mailbox in bytes"
+                    },
+                    "trashed_storage": {
+                        "type": "integer",
+                        "description": "Storage used by trashed conversations in bytes"
+                    },
+                    "spam_storage": {
+                        "type": "integer",
+                        "description": "Storage used by spam conversations in bytes"
+                    },
+                    "message_count": {
+                        "type": "integer",
+                        "description": "Total number of messages in the mailbox"
+                    },
+                    "thread_count": {
+                        "type": "integer",
+                        "description": "Total number of threads in the mailbox"
+                    },
+                    "largest_threads": {
+                        "type": "array",
+                        "items": {
+                            "$ref": "#/components/schemas/LargestThread"
+                        },
+                        "description": "Top 100 threads by storage size, ordered descending."
+                    }
+                },
+                "required": [
+                    "largest_threads",
+                    "message_count",
+                    "spam_storage",
+                    "thread_count",
+                    "total_storage",
+                    "trashed_storage"
                 ]
             },
             "MaildomainAccessRead": {
@@ -10386,13 +10691,6 @@
                 "type": "string",
                 "description": "* `ACCEPTED` - ACCEPTED\n* `DECLINED` - DECLINED\n* `TENTATIVE` - TENTATIVE"
             },
-            "ScopeEnum": {
-                "enum": [
-                    "draft"
-                ],
-                "type": "string",
-                "description": "* `draft` - draft"
-            },
             "ScopeLevelEnum": {
                 "enum": [
                     "global",
@@ -10465,6 +10763,27 @@
                 ],
                 "type": "string",
                 "description": "* `FAILURE` - FAILURE\n* `PENDING` - PENDING\n* `PROGRESS` - PROGRESS\n* `RECEIVED` - RECEIVED\n* `RETRY` - RETRY\n* `REVOKED` - REVOKED\n* `STARTED` - STARTED\n* `SUCCESS` - SUCCESS"
+            },
+            "StorageEntitlement": {
+                "type": "object",
+                "description": "Storage usage and limit for a single level (mailbox or organization).\n\n``max_storage`` is nullable: null means \"no known limit\" and the\nfrontend hides the corresponding gauge.",
+                "properties": {
+                    "storage_used": {
+                        "type": "integer",
+                        "readOnly": true,
+                        "description": "Bytes currently used."
+                    },
+                    "max_storage": {
+                        "type": "integer",
+                        "readOnly": true,
+                        "nullable": true,
+                        "description": "Storage limit in bytes, or null when there is no limit."
+                    }
+                },
+                "required": [
+                    "max_storage",
+                    "storage_used"
+                ]
             },
             "TaskStatusResponse": {
                 "type": "object",
@@ -10840,7 +11159,7 @@
                     "scope": {
                         "allOf": [
                             {
-                                "$ref": "#/components/schemas/ScopeEnum"
+                                "$ref": "#/components/schemas/ThreadBulkDeleteRequestScopeEnum"
                             }
                         ],
                         "description": "Which messages to permanently delete. Only 'draft' (draft messages) is supported.\n\n* `draft` - draft"
@@ -10865,6 +11184,13 @@
                 "required": [
                     "scope"
                 ]
+            },
+            "ThreadBulkDeleteRequestScopeEnum": {
+                "enum": [
+                    "draft"
+                ],
+                "type": "string",
+                "description": "* `draft` - draft"
             },
             "ThreadEvent": {
                 "type": "object",

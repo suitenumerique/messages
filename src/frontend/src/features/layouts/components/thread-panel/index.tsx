@@ -11,6 +11,9 @@ import { useThreadSelection } from "@/features/providers/thread-selection";
 import { useScrollRestore } from "@/features/providers/scroll-restore";
 import { useThreadPanelFilters } from "./hooks/use-thread-panel-filters";
 import { useThreadListbox } from "./hooks/use-thread-listbox";
+import ViewHelper from "@/features/utils/view-helper";
+import { useConfig } from "@/features/providers/config";
+import { Banner } from "@/features/ui/components/banner";
 
 export const ThreadPanel = () => {
     const { threads, queryStates, unselectThread, loadNextThreads, selectedThread, selectedMailbox } = useMailboxContext();
@@ -39,6 +42,12 @@ export const ThreadPanel = () => {
     } = useThreadSelection();
 
     const { getItemProps, onKeyDown: handleListboxKeyDown, onBlur: handleListboxBlur } = useThreadListbox(threads?.results);
+
+    // The Trash and Spam folders are the trashbin: their messages are
+    // permanently deleted after TRASHBIN_CUTOFF_DAYS (see the backend
+    // cleanup_trashbin_task). Surface that retention policy at the top of the list.
+    const { TRASHBIN_CUTOFF_DAYS } = useConfig();
+    const isTrashbinView = ViewHelper.isTrashedView() || ViewHelper.isSpamView();
 
     const handleObserver = useCallback((entries: IntersectionObserverEntry[]) => {
         const target = entries[0];
@@ -108,6 +117,13 @@ export const ThreadPanel = () => {
                 onEnableSelectionMode={enableSelectionMode}
                 onDisableSelectionMode={clearSelection}
             />
+            {isTrashbinView && TRASHBIN_CUTOFF_DAYS > 0 && (
+                <div className="thread-panel__trashbin-notice">
+                    <Banner type="info">
+                        {t('Messages older than {{count}} days are automatically and permanently deleted.', { count: TRASHBIN_CUTOFF_DAYS })}
+                    </Banner>
+                </div>
+            )}
             {isEmpty ? (
                 <div className="thread-panel__empty">
                     <div>

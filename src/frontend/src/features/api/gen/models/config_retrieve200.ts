@@ -41,6 +41,8 @@ export type ConfigRetrieve200 = {
   readonly FEATURE_MAILDOMAIN_MANAGE_ACCESSES: boolean;
   readonly FEATURE_THREAD_SPLIT: boolean;
   readonly FEATURE_MAILDOMAIN_MANAGE_TOTP: boolean;
+  /** Number of days after which trashed and spam messages are permanently and automatically deleted. */
+  readonly TRASHBIN_CUTOFF_DAYS: number;
   /** Maximum age in seconds for a message to be eligible for manual retry of failed deliveries */
   readonly MESSAGES_MANUAL_RETRY_MAX_AGE: number;
   /** Whether silent OIDC login is enabled */

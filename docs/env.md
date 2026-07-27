@@ -409,7 +409,8 @@ without redeploying the frontend (the flag is pulled from
 
 | Variable | Default | Description | Required |
 |----------|---------|-------------|----------|
-| `TRASHBIN_CUTOFF_DAYS` | `30` | Days before permanent deletion | Optional |
+| `TRASHBIN_CUTOFF_DAYS` | `30` | Days an item may sit in the trashbin (trashed **or** spam messages) before the nightly `cleanup_trashbin_task` **permanently deletes** it. Age is measured from when the message entered the bin (`trashed_at`), falling back to `created_at` for rows written before that was recorded. Set to `0` to disable automatic deletion entirely. | Optional |
+| `TRASHBIN_ALLOW_EMPTY` | `admins` | Who may manually empty a trashbin folder from the UI, an irreversible bulk delete: `never` (only the nightly sweep deletes), `admins` (mailbox role `ADMIN`), or `editors` (role `EDITOR` and above). Any other value is rejected at startup. | Optional |
 | `INVITATION_VALIDITY_DURATION` | `604800` | Invitation validity (7 days) | Optional |
 | `MESSAGES_MANUAL_RETRY_MAX_AGE`| `604800` | Maximum age in seconds for a message to be eligible for manual retry of failed deliveries (7 days) | Optional |
 | `MESSAGES_INBOUND_DEFERRAL_MAX_AGE` | `172800` | Maximum age in seconds an inbound message is deferred (retried every 5 min) when a processing step keeps failing, before the pipeline delivers it anyway (recorded as `postmark["processing"]`) rather than holding it indefinitely (48 hours) | Optional |
@@ -570,6 +571,7 @@ Pluggable backend deciding what a user/domain is entitled to.
 | `ENTITLEMENTS_BACKEND` | `core.entitlements.backends.local.LocalEntitlementsBackend` | Dotted path to the entitlements backend class. | Optional |
 | `ENTITLEMENTS_BACKEND_PARAMETERS` | `{}` | JSON parameters passed to the backend. | Optional |
 | `ENTITLEMENTS_CACHE_TIMEOUT` | `300` | Cache TTL (seconds) for entitlement lookups. | Optional |
+| `STORAGE_USAGE_CACHE_TTL` | `60` | Cache TTL (seconds) for the computed storage usage of a mailbox or organization, as read by the quota gauge and the entitlements backends. The computation runs several correlated subqueries (~100 ms on a large mailbox), so it is not recomputed on every sidebar load. Emptying a trashbin and the nightly sweep both invalidate the affected mailboxes immediately; every other change (new mail, sends) shows up within this TTL. Set to `0` to always compute live. The `/metrics` endpoints ignore this and always compute live. | Optional |
 
 ### Message Import
 

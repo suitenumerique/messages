@@ -1,6 +1,8 @@
 """API ViewSet for changing flags on messages or threads."""
 
 from django.db import transaction
+from django.db.models import Case, DateTimeField, F, Value, When
+from django.db.models.functions import Coalesce
 from django.utils import timezone
 from django.utils.dateparse import parse_datetime
 
@@ -20,6 +22,40 @@ from .. import permissions
 
 # Define allowed flag types
 ALLOWED_FLAGS = ["unread", "starred", "trashed", "archived", "spam"]
+
+# The two message flags that make up the trashbin, and the other half of the
+# pair — ``trashed_at`` belongs to the pair, not to either flag alone.
+_TRASHBIN_FLAG_SIBLING = {"trashed": "is_spam", "spam": "is_trashed"}
+
+
+def trashbin_timestamp(flag, value, current_time):
+    """Build the ``trashed_at`` value for a trashbin flag toggle.
+
+    ``trashed_at`` records when a message entered the *trashbin*, and the
+    trashbin is ``is_trashed OR is_spam`` (see ``core.services.trashbin``). It
+    therefore has to outlive either flag on its own, so toggling one half must
+    not write the column unconditionally:
+
+    - Setting a flag keeps any timestamp already there (``Coalesce``), so a
+      message that has sat in the bin for 20 days does not restart its
+      retention clock just because the other half got flipped — nor can a user
+      postpone deletion indefinitely by toggling spam on and off.
+    - Clearing a flag only clears the timestamp when the *other* half is not
+      set. Otherwise the message stays in the bin with a NULL ``trashed_at``,
+      the cutoff sweep falls back to ageing it by ``created_at``, and old mail
+      is permanently deleted on the next nightly run instead of getting its
+      full grace period.
+    """
+    sibling = _TRASHBIN_FLAG_SIBLING[flag]
+    if value:
+        return Coalesce(
+            F("trashed_at"), Value(current_time), output_field=DateTimeField()
+        )
+    return Case(
+        When(**{sibling: True}, then=F("trashed_at")),
+        default=Value(None),
+        output_field=DateTimeField(),
+    )
 
 
 class ChangeFlagView(APIView):
@@ -258,8 +294,8 @@ class ChangeFlagView(APIView):
                     batch_update_data = {"updated_at": current_time}
                     if flag == "trashed":
                         batch_update_data["is_trashed"] = value
-                        batch_update_data["trashed_at"] = (
-                            current_time if value else None
+                        batch_update_data["trashed_at"] = trashbin_timestamp(
+                            flag, value, current_time
                         )
                     elif flag == "archived":
                         batch_update_data["is_archived"] = value
@@ -268,6 +304,12 @@ class ChangeFlagView(APIView):
                         )
                     elif flag == "spam":
                         batch_update_data["is_spam"] = value
+                        # trashed_at is the "entered the trashbin" time; spam is
+                        # half the trashbin (is_trashed OR is_spam), so it keys
+                        # the cutoff sweep off this too. See services/trashbin.
+                        batch_update_data["trashed_at"] = trashbin_timestamp(
+                            flag, value, current_time
+                        )
 
                     messages_to_update.update(**batch_update_data)
 
@@ -303,8 +345,8 @@ class ChangeFlagView(APIView):
                     batch_update_data = {"updated_at": current_time}
                     if flag == "trashed":
                         batch_update_data["is_trashed"] = value
-                        batch_update_data["trashed_at"] = (
-                            current_time if value else None
+                        batch_update_data["trashed_at"] = trashbin_timestamp(
+                            flag, value, current_time
                         )
                     elif flag == "archived":
                         batch_update_data["is_archived"] = value
@@ -313,6 +355,12 @@ class ChangeFlagView(APIView):
                         )
                     elif flag == "spam":
                         batch_update_data["is_spam"] = value
+                        # trashed_at is the "entered the trashbin" time; spam is
+                        # half the trashbin (is_trashed OR is_spam), so it keys
+                        # the cutoff sweep off this too. See services/trashbin.
+                        batch_update_data["trashed_at"] = trashbin_timestamp(
+                            flag, value, current_time
+                        )
                     # Note: Trashing or Archiving a thread might have other side effects (e.g., updating thread state)
                     # This current logic only updates the is_trashed or is_archived flag on messages within.
                     # If Thread model itself has state, update threads_to_process separately.

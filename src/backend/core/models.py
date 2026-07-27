@@ -20,7 +20,7 @@ from django.conf import settings
 from django.contrib.auth import models as auth_models
 from django.contrib.auth.base_user import AbstractBaseUser
 from django.core import validators
-from django.core.exceptions import ValidationError
+from django.core.exceptions import ImproperlyConfigured, ValidationError
 from django.db import connection, models, transaction
 from django.db.models import Case, Exists, F, Q, Value, When
 from django.db.models.fields import BooleanField
@@ -52,6 +52,7 @@ from core.enums import (
     ThreadAbilities,
     ThreadAccessRoleChoices,
     ThreadEventTypeChoices,
+    TrashbinAllowEmpty,
     UserAbilities,
     parse_compression_spec,
     thread_event_type_choices,
@@ -957,6 +958,7 @@ class Mailbox(BaseModel):
                 "manage_labels": False,
                 "manage_message_templates": False,
                 "import_messages": False,
+                "empty_trash": False,
             }
 
         is_admin = role == MailboxRoleChoices.ADMIN
@@ -964,6 +966,26 @@ class Mailbox(BaseModel):
         can_delete = role == MailboxRoleChoices.ADMIN
         can_send = role >= MailboxRoleChoices.SENDER
         has_access = bool(role)
+
+        # Who may manually empty the trashbin depends on the deployment policy:
+        # "admins" -> ADMIN only, "editors" -> EDITOR and above, "never" -> nobody
+        # (the cutoff sweep still deletes). See settings.TRASHBIN_ALLOW_EMPTY.
+        #
+        # Validated on read, not at settings-parse time. An unrecognised value
+        # would otherwise match no branch below and silently collapse to
+        # "nobody may empty" — indistinguishable from a deliberate "never", and
+        # invisible in the logs. Checking here also covers a value injected
+        # after startup (override_settings, runtime reconfiguration), which a
+        # parse-time check cannot see.
+        trashbin_allow_empty = settings.TRASHBIN_ALLOW_EMPTY
+        if trashbin_allow_empty not in set(TrashbinAllowEmpty):
+            raise ImproperlyConfigured(
+                f"TRASHBIN_ALLOW_EMPTY is {trashbin_allow_empty!r}: must be one "
+                f"of {', '.join(sorted(TrashbinAllowEmpty))}"
+            )
+        can_empty_trash = (
+            trashbin_allow_empty == TrashbinAllowEmpty.ADMINS and is_admin
+        ) or (trashbin_allow_empty == TrashbinAllowEmpty.EDITORS and can_modify)
 
         return {
             CRUDAbilities.CAN_READ: has_access,
@@ -981,6 +1003,7 @@ class Mailbox(BaseModel):
             MailboxAbilities.CAN_IMPORT_MESSAGES: (
                 is_admin and settings.FEATURE_IMPORT_MESSAGES
             ),
+            MailboxAbilities.CAN_EMPTY_TRASH: can_empty_trash,
         }
 
     def get_validated_signature(self, signature_id: str):
@@ -2168,6 +2191,21 @@ class Message(BaseModel):
         verbose_name = "message"
         verbose_name_plural = "messages"
         ordering = ["-created_at"]
+        indexes = [
+            # Backs the daily trashbin cutoff sweep (cleanup_trashbin_task).
+            # PARTIAL on purpose: the trashbin (is_trashed OR is_spam) is a small,
+            # bounded set — items older than TRASHBIN_CUTOFF_DAYS are deleted — so
+            # this index stays tiny and cheap to maintain (only trash/spam events
+            # touch it) even as the message table grows unbounded. Without it the
+            # daily sweep would seq-scan the whole table to find that small set,
+            # a cost that scales with total messages forever. Columns are the
+            # ones it ages by, Coalesce(trashed_at, created_at).
+            models.Index(
+                fields=["trashed_at", "created_at"],
+                name="msg_trashbin_cutoff_idx",
+                condition=models.Q(is_trashed=True) | models.Q(is_spam=True),
+            ),
+        ]
 
     def __str__(self):
         return str(self.subject) if self.subject else "(no subject)"

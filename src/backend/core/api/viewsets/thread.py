@@ -23,6 +23,7 @@ from core import enums, models
 from core.ai.thread_summarizer import summarize_thread
 from core.mda.utils import thread_snippet
 from core.services.search import search_threads
+from core.services.trashbin import permanently_delete_messages
 
 from .. import permissions, serializers
 
@@ -1099,31 +1100,17 @@ class ThreadViewSet(
             request.user
         ).values_list("thread_id", flat=True)
 
-        with transaction.atomic():
-            messages_to_delete = models.Message.objects.filter(
-                thread_id__in=accessible_thread_ids,
-                **scope_filter,
-            )
-            if thread_ids:
-                messages_to_delete = messages_to_delete.filter(thread_id__in=thread_ids)
-            if message_ids:
-                messages_to_delete = messages_to_delete.filter(id__in=message_ids)
+        messages_to_delete = models.Message.objects.filter(
+            thread_id__in=accessible_thread_ids,
+            **scope_filter,
+        )
+        if thread_ids:
+            messages_to_delete = messages_to_delete.filter(thread_id__in=thread_ids)
+        if message_ids:
+            messages_to_delete = messages_to_delete.filter(id__in=message_ids)
 
-            affected_thread_ids = set(
-                messages_to_delete.values_list("thread_id", flat=True)
-            )
-            # Count before deletion: the cascade total returned by delete() also
-            # includes related rows (recipients, attachments), not just messages.
-            deleted_count = messages_to_delete.count()
-            messages_to_delete.delete()
-
-            # An emptied thread is removed; a thread that still has messages has
-            # its denormalized stats (has_draft, has_trashed, ...) recomputed so
-            # it drops out of the corresponding folder filter.
-            for thread in models.Thread.objects.filter(pk__in=affected_thread_ids):
-                if thread.messages.exists():
-                    thread.update_stats()
-                else:
-                    thread.delete()
+        # Shared with the trashbin cutoff sweep and the "empty trashbin" action:
+        # hard-delete the rows, then drop emptied threads / recompute stats.
+        deleted_count = permanently_delete_messages(messages_to_delete)
 
         return drf.response.Response({"success": True, "deleted_count": deleted_count})
