@@ -43,21 +43,17 @@
             backdrop-filter: blur(6px);
             // The blur dissolves along with the tint, so the veil has no
             // visible bottom edge — same recipe as the bottom bar.
-            -webkit-mask-image: linear-gradient(
-                to bottom,
-                #000 0%, #000 60%,
-                rgba(0, 0, 0, .7) 78%,
-                rgba(0, 0, 0, .3) 90%,
-                transparent 100%
-            );
-            mask-image: linear-gradient(
-                to bottom,
-                #000 0%,
-                #000 60%,
-                rgba(0, 0, 0, .5) 78%,
-                rgba(0, 0, 0, .3) 90%,
-                transparent 100%
-            );
+            -webkit-mask-image: linear-gradient(to bottom,
+                    #000 0%, #000 60%,
+                    rgba(0, 0, 0, .7) 78%,
+                    rgba(0, 0, 0, .3) 90%,
+                    transparent 100%);
+            mask-image: linear-gradient(to bottom,
+                    #000 0%,
+                    #000 60%,
+                    rgba(0, 0, 0, .5) 78%,
+                    rgba(0, 0, 0, .3) 90%,
+                    transparent 100%);
         }
 
         .thread-panel__header--title-row {
@@ -235,6 +231,11 @@
         gap: var(--c--globals--spacings--3xs);
 
         @include control-surface;
+    }
+
+    .thread-panel__trashbin-notice {
+        padding: var(--c--globals--spacings--3xs) var(--c--globals--spacings--sm) var(--c--globals--spacings--2xs);
+        flex-shrink: 0;
     }
 
     .thread-panel__threads_list {

@@ -37,6 +37,7 @@ pytestmark = pytest.mark.django_db
     IMAGE_PROXY_ENABLED=False,
     MESSAGE_TRUSTED_LINK_DOMAINS=[],
     MESSAGES_MANUAL_RETRY_MAX_AGE=86400,  # 1 day in seconds
+    TRASHBIN_CUTOFF_DAYS=30,
     FRONTEND_SILENT_LOGIN_ENABLED=True,
     RELEASE="1.2.3",
     PUSH_ENABLED=False,
@@ -77,6 +78,7 @@ def test_api_config(is_authenticated):
         "IMAGE_PROXY_ENABLED": False,
         "MESSAGE_TRUSTED_LINK_DOMAINS": [],
         "MESSAGES_MANUAL_RETRY_MAX_AGE": 86400,
+        "TRASHBIN_CUTOFF_DAYS": 30,
         "FRONTEND_SILENT_LOGIN_ENABLED": True,
         "PUSH_ENABLED": False,
     }

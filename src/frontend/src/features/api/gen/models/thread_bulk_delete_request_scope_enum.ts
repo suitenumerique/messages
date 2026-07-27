@@ -9,9 +9,10 @@
 /**
  * * `draft` - draft
  */
-export type ScopeEnum = (typeof ScopeEnum)[keyof typeof ScopeEnum];
+export type ThreadBulkDeleteRequestScopeEnum =
+  (typeof ThreadBulkDeleteRequestScopeEnum)[keyof typeof ThreadBulkDeleteRequestScopeEnum];
 
 // eslint-disable-next-line @typescript-eslint/no-redeclare
-export const ScopeEnum = {
+export const ThreadBulkDeleteRequestScopeEnum = {
   draft: "draft",
 } as const;

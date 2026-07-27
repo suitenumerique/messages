@@ -25,6 +25,7 @@ import { MailboxSettingsMessageTemplatesTab } from "./message-templates-tab";
 import { MailboxSettingsAutorepliesTab } from "./autoreplies-tab";
 import { MailboxSettingsIntegrationsTab } from "./integrations-tab";
 import { MailboxSettingsImportsTab, ImportsTabView } from "./imports-tab";
+import { MailboxSettingsStorageTab } from "./storage-tab";
 import { ImportNewTitle } from "../imports-view/import-new-title";
 
 export type SettingsTabId =
@@ -34,7 +35,8 @@ export type SettingsTabId =
   | "message-templates"
   | "autoreplies"
   | "integrations"
-  | "imports";
+  | "imports"
+  | "storage";
 
 type ModalMailboxSettingsProps = {
   isOpen: boolean;
@@ -170,6 +172,11 @@ export const ModalMailboxSettings = ({
       if (isIntegrationsEnabled) {
         ids.push("integrations");
       }
+    }
+    // Storage sits last, after every other category. Admin-only: it exposes the
+    // largest conversations and a trash action.
+    if (manage_accesses) {
+      ids.push("storage");
     }
     return ids;
   }, [settingsMailbox, isIntegrationsEnabled]);
@@ -350,6 +357,22 @@ export const ModalMailboxSettings = ({
               <MailboxSettingsIntegrationsTab
                 key={settingsMailbox.id}
                 mailbox={settingsMailbox}
+              />
+            ),
+          },
+        ]
+      : []),
+    ...(availableTabIds.includes("storage")
+      ? [
+          {
+            id: "storage",
+            label: t("Storage"),
+            title: t("Storage"),
+            content: (
+              <MailboxSettingsStorageTab
+                key={settingsMailbox.id}
+                mailbox={settingsMailbox}
+                onClose={onClose}
               />
             ),
           },
