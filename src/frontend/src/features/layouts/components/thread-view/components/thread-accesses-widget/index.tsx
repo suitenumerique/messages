@@ -56,7 +56,7 @@ type EnrichedAccess = ThreadAccessDetail & {
  * Exposes an `open()` handle so the `AssigneesWidget` (rendered inside
  * `ThreadActionBar`) can reuse the exact same modal without duplicating state.
  *
- * The `ShareModal` from `@gouvfr-lasuite/ui-kit` is reused as-is for visual
+ * The `ShareModal` from `@gouvfr-lasuite/ui-components` is reused as-is for visual
  * consistency; assignment affordances are injected through its extension
  * points (`children` for the "assigned users" section, `renderAccessFooter`
  * for the per-mailbox user list, `renderAccessRightExtras` for the inline

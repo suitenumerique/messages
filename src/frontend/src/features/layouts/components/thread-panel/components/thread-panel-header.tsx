@@ -4,7 +4,7 @@ import { useCurrentFolderName } from "@/hooks/use-current-folder-name";
 import { useMailboxContext } from "@/features/providers/mailbox";
 import { useTranslation } from "react-i18next";
 import { useEffect, useMemo, useState } from "react";
-import { Button, Tooltip, Checkbox } from "@gouvfr-lasuite/ui-components";
+import { Button, Tooltip, Checkbox, Spinner } from "@gouvfr-lasuite/ui-components";
 import useRead from "@/features/message/use-read";
 import { DropdownMenu, IconType, VerticalSeparator, useResponsive } from "@gouvfr-lasuite/ui-components";
 import ViewHelper from "@/features/utils/view-helper";
@@ -12,6 +12,7 @@ import useArchive from "@/features/message/use-archive";
 import useSpam from "@/features/message/use-spam";
 import useTrash from "@/features/message/use-trash";
 import useDeleteDrafts from "@/features/message/use-delete-drafts";
+import useEmptyTrash from "@/features/message/use-empty-trash";
 import useStarred from "@/features/message/use-starred";
 import useCanEditThreads from "@/features/message/use-can-edit-threads";
 import { ThreadPanelFilter } from "./thread-panel-filter";
@@ -50,6 +51,7 @@ const ThreadPanelTitle = ({ selectedThreadIds, isAllSelected, isSomeSelected, is
     const { markAsArchived, markAsUnarchived } = useArchive();
     const { markAsTrashed, markAsUntrashed } = useTrash();
     const { deleteDrafts } = useDeleteDrafts();
+    const { emptyTrashbin, isPending: isDeletingPermanently } = useEmptyTrash();
     const { markAsSpam, markAsNotSpam } = useSpam();
     const { markAsStarred, markAsUnstarred } = useStarred();
     const [isDropdownOpen, setIsDropdownOpen] = useState(false);
@@ -125,7 +127,7 @@ const ThreadPanelTitle = ({ selectedThreadIds, isAllSelected, isSomeSelected, is
     const archiveIconProps: IconProps = isArchivedView ? { name: 'inbox' } : { icon: Archive };
     const archiveMutation = isArchivedView ? markAsUnarchived : markAsArchived;
 
-    const trashLabel = isTrashedView ? t('Undelete') : t('Delete');
+    const trashLabel = isTrashedView ? t('Restore') : t('Move to trash');
     const trashIconProps: IconProps = { icon: isTrashedView ? Restore : Trash };
     const trashMutation = isTrashedView ? markAsUntrashed : markAsTrashed;
 
@@ -135,11 +137,16 @@ const ThreadPanelTitle = ({ selectedThreadIds, isAllSelected, isSomeSelected, is
     const canStarSelection = !isSpamView && !isTrashedView;
     const canArchive = canEditSelection && !isSpamView && !isTrashedView && !isDraftsView;
     const canReportSpam = canEditSelection && !isTrashedView && !isSentView && !isDraftsView;
-    const canTrash = canEditSelection && !isDraftsView;
+    // Spam is already part of the trashbin (purged like the trash), so moving
+    // it to the trash would be a no-op: like the trash, it only offers a
+    // permanent deletion.
+    const canTrash = canEditSelection && !isDraftsView && !isSpamView;
     const canDeleteDrafts = canEditSelection && isDraftsView;
+    const canEmptyTrash = useAbility(Abilities.CAN_EMPTY_TRASH, selectedMailbox);
+    const canDeletePermanently = canEditSelection && (isTrashedView || isSpamView) && canEmptyTrash;
     const canManageLabels = useAbility(Abilities.CAN_MANAGE_MAILBOX_LABELS, selectedMailbox);
     const canAssignLabel = canManageLabels && !isSpamView && !isTrashedView && !isDraftsView;
-    const hasSelectionActions = canArchive || canReportSpam || canTrash || canDeleteDrafts || canAssignLabel;
+    const hasSelectionActions = canArchive || canReportSpam || canTrash || canDeletePermanently || canDeleteDrafts || canAssignLabel;
 
     const countLabel = useMemo(() => {
         if (isSearch) {
@@ -316,6 +323,29 @@ const ThreadPanelTitle = ({ selectedThreadIds, isAllSelected, isSomeSelected, is
                                 variant="tertiary"
                                 size={actionButtonSize}
                                 aria-label={trashLabel}
+                            />
+                        </Tooltip>
+                    )}
+                    {canDeletePermanently && (
+                        <Tooltip content={t('Delete permanently')} className={selectedThreadIds.size === 0 ? 'hidden' : ''}>
+                            <Button
+                                onClick={() => {
+                                    if (!selectedMailbox) return;
+                                    emptyTrashbin({
+                                        mailboxId: selectedMailbox.id,
+                                        scope: isSpamView ? 'spam' : 'trashed',
+                                        threadIds: threadIdsToMark,
+                                        onSuccess: () => {
+                                            unselectThread();
+                                            onClearSelection();
+                                        }
+                                    });
+                                }}
+                                disabled={selectedThreadIds.size === 0 || isDeletingPermanently}
+                                icon={isDeletingPermanently ? <Spinner size="sm" /> : <Icon icon={Trash} />}
+                                variant="tertiary"
+                                size={actionButtonSize}
+                                aria-label={t('Delete permanently')}
                             />
                         </Tooltip>
                     )}

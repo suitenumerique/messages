@@ -1,0 +1,63 @@
+// Mirrors the HeaderBanner styles of suitenumerique/ui-kit#253, see index.tsx.
+.c__header-banner {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: var(--c--globals--spacings--sm);
+    width: 100%;
+    min-height: 32px;
+    flex-shrink: 0;
+    padding-block: var(--c--globals--spacings--3xs);
+    padding-inline-start: var(--c--globals--spacings--sm);
+    padding-inline-end: var(--c--globals--spacings--3xs);
+    border-bottom: 1px solid var(--c--contextuals--border--surface--primary);
+
+    &--centered {
+        justify-content: center;
+    }
+
+    &--stacked {
+        flex-direction: column;
+        align-items: flex-start;
+        gap: var(--c--globals--spacings--3xs);
+        padding-inline-end: var(--c--globals--spacings--sm);
+    }
+
+    &--stacked#{&}--centered {
+        align-items: center;
+        text-align: center;
+    }
+
+    &__label {
+        margin: 0;
+        font-weight: 700;
+        font-size: 12px;
+        line-height: 16px;
+        word-break: break-word;
+    }
+
+    &__cta {
+        display: flex;
+        flex-shrink: 0;
+    }
+
+    &--brand {
+        background-color: var(--c--contextuals--background--semantic--brand--primary);
+        color: var(--c--contextuals--content--semantic--brand--on-brand);
+    }
+
+    &--neutral {
+        background-color: var(--c--contextuals--background--semantic--neutral--tertiary);
+        color: var(--c--contextuals--content--semantic--neutral--primary);
+    }
+
+    &--error {
+        background-color: var(--c--contextuals--background--semantic--error--primary);
+        color: var(--c--contextuals--content--semantic--error--on-error);
+    }
+
+    &--warning {
+        background-color: var(--c--contextuals--background--semantic--warning--primary);
+        color: var(--c--contextuals--content--semantic--warning--on-warning);
+    }
+}

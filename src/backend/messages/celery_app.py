@@ -3,6 +3,7 @@
 import os
 
 from celery import Celery
+from celery.schedules import crontab
 from configurations.importer import install
 
 # Set the default Django settings module for the 'celery' program.
@@ -40,6 +41,15 @@ if not settings.DISABLE_CELERY_BEAT_SCHEDULE:
             "schedule": settings.MESSAGES_SELFCHECK_INTERVAL,
             "options": {"queue": "outbound"},
         },
+        "cleanup-trashbin": {
+            # Permanently delete trashbin items (trashed + spam) older than
+            # TRASHBIN_CUTOFF_DAYS. Daily housekeeping, default queue like the
+            # other GC sweeps. Pinned off-peak (UTC): a plain 24h interval
+            # would fire at whatever time beat first ran, e.g. a daytime deploy.
+            "task": "core.services.trashbin.cleanup_trashbin_task",
+            "schedule": crontab(hour=1, minute=0),
+            "options": {"queue": "default"},
+        },
         "process-inbound-messages-queue": {
             "task": "core.mda.inbound_tasks.process_inbound_messages_queue_task",
             "schedule": 300.0,  # Every 5 minutes
@@ -48,9 +58,10 @@ if not settings.DISABLE_CELERY_BEAT_SCHEDULE:
         "purge-abandoned-inbound-messages": {
             # Reclaim inbound rows abandoned past the 7-day retention window
             # (kept until then for inspection/replay). Daily; housekeeping, so
-            # the default queue like the other GC sweeps.
+            # the default queue like the other GC sweeps. Off-peak, after the
+            # trashbin sweep (see above).
             "task": "core.mda.inbound_tasks.purge_abandoned_inbound_messages_task",
-            "schedule": 86400.0,  # daily
+            "schedule": crontab(hour=1, minute=30),
             "options": {"queue": "default"},
         },
         "process-pending-reindex": {

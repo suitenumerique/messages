@@ -1,9 +1,10 @@
+import { MailboxEmptyTrashRequestScopeEnum } from "@/features/api/gen/models";
 import { useMailboxContext } from "@/features/providers/mailbox";
 import useRead from "@/features/message/use-read";
 import useTrash from "@/features/message/use-trash";
 import useAbility, { Abilities } from "@/hooks/use-ability";
 import { DropdownMenu, IconType, VerticalSeparator, useResponsive } from "@gouvfr-lasuite/ui-components"
-import { Button, Tooltip } from "@gouvfr-lasuite/ui-components"
+import { Button, Spinner, Tooltip } from "@gouvfr-lasuite/ui-components"
 import { useRef, useState } from "react";
 import { useTranslation } from "react-i18next";
 import { ThreadAccessesWidget, type ThreadAccessesWidgetHandle } from "../thread-accesses-widget";
@@ -12,11 +13,12 @@ import { LabelsWidget } from "@/features/layouts/components/labels-widget";
 import useArchive from "@/features/message/use-archive";
 import useSpam from "@/features/message/use-spam";
 import useDeleteDrafts from "@/features/message/use-delete-drafts";
+import useEmptyTrash from "@/features/message/use-empty-trash";
 import useLeaveThread from "@/features/message/use-leave-thread";
 import ViewHelper from "@/features/utils/view-helper";
 import useCopyDeepLink from "@/features/message/use-copy-deep-link";
 import { Icon } from "@/features/ui/components/icon";
-import { Archive, Link, MoreVertical, Trash, Error as ErrorIcon, XMark } from "@gouvfr-lasuite/ui-components/icons";
+import { Archive, Link, MoreVertical, Trash, Error as ErrorIcon, XMark, Restore } from "@gouvfr-lasuite/ui-components/icons";
 
 type ThreadActionBarProps = {
     canUndelete: boolean;
@@ -25,13 +27,14 @@ type ThreadActionBarProps = {
 
 export const ThreadActionBar = ({ canUndelete, canUnarchive }: ThreadActionBarProps) => {
     const { t } = useTranslation();
-    const { selectedThread, unselectThread, messages } = useMailboxContext();
+    const { selectedMailbox, selectedThread, unselectThread, messages } = useMailboxContext();
     const { isMobile } = useResponsive();
     const { markAsReadAt } = useRead();
     const { markAsTrashed, markAsUntrashed } = useTrash();
     const { markAsArchived, markAsUnarchived } = useArchive();
     const { markAsSpam, markAsNotSpam } = useSpam();
     const { deleteDrafts } = useDeleteDrafts();
+    const { emptyTrashbin, isPending: isDeletingPermanently } = useEmptyTrash();
     const { canLeaveThread, leaveThread } = useLeaveThread();
     const isDraftsView = ViewHelper.isDraftsView();
     const accessesWidgetRef = useRef<ThreadAccessesWidgetHandle>(null);
@@ -41,10 +44,16 @@ export const ThreadActionBar = ({ canUndelete, canUnarchive }: ThreadActionBarPr
     // Label assignment is scoped to the mailbox (see `LabelsWidget`) and
     // therefore stays visible for viewer-only threads.
     const canEditThread = useAbility(Abilities.CAN_EDIT_THREAD, selectedThread ?? null);
+    const canEmptyTrash = useAbility(Abilities.CAN_EMPTY_TRASH, selectedMailbox);
     // Archiving, reporting as spam or labelling makes no sense from the
     // trash view (or on a fully trashed thread opened elsewhere): the only
-    // relevant transition from the trash is restoring it (Undelete).
+    // relevant transition from the trash is restoring it.
     const isTrashContext = ViewHelper.isTrashedView() || canUndelete;
+    // Trashed and spam threads both sit in the trashbin, so neither offers
+    // "Move to trash": they are permanently deleted from their own folder.
+    const trashbinScope: MailboxEmptyTrashRequestScopeEnum | null = canUndelete
+        ? 'trashed'
+        : !isTrashContext && selectedThread?.is_spam ? 'spam' : null;
     const canShowArchiveCTA = canEditThread && !selectedThread?.is_spam && !isTrashContext
     const canShowSpamCTA = canEditThread && !isTrashContext
     // A thread holding nothing but the draft being composed: archiving, spam
@@ -78,21 +87,42 @@ export const ThreadActionBar = ({ canUndelete, canUnarchive }: ThreadActionBarPr
                     </>
                 }
                 {canEditThread && !isDraftsView && (
-                    canUndelete ? (
-                        <Tooltip content={t('Undelete')}>
-                            <Button
-                                variant="tertiary"
-                                aria-label={t('Undelete')}
-                                size="nano"
-                                icon={<Icon name="restore_from_trash" type={IconType.OUTLINED} />}
-                                onClick={() => markAsUntrashed({ threadIds: [selectedThread!.id], onSuccess: unselectThread })}
-                            />
-                        </Tooltip>
+                    trashbinScope ? (
+                        <>
+                            {canUndelete && (
+                                <Tooltip content={t('Restore')}>
+                                    <Button
+                                        variant="tertiary"
+                                        aria-label={t('Restore')}
+                                        size="nano"
+                                        icon={<Icon icon={Restore} />}
+                                        onClick={() => markAsUntrashed({ threadIds: [selectedThread!.id], onSuccess: unselectThread })}
+                                    />
+                                </Tooltip>
+                            )}
+                            {canEmptyTrash && (
+                                <Tooltip content={t('Delete permanently')}>
+                                    <Button
+                                        variant="tertiary"
+                                        aria-label={t('Delete permanently')}
+                                        size="nano"
+                                        icon={isDeletingPermanently ? <Spinner size="sm" /> : <Icon icon={Trash} />}
+                                        disabled={isDeletingPermanently}
+                                        onClick={() => emptyTrashbin({
+                                            mailboxId: selectedMailbox!.id,
+                                            scope: trashbinScope,
+                                            threadIds: [selectedThread!.id],
+                                            onSuccess: unselectThread,
+                                        })}
+                                    />
+                                </Tooltip>
+                            )}
+                        </>
                     ) : (
-                        <Tooltip content={t('Delete')}>
+                        <Tooltip content={t('Move to trash')}>
                             <Button
                                 variant="tertiary"
-                                aria-label={t('Delete')}
+                                aria-label={t('Move to trash')}
                                 size="nano"
                                 icon={<Icon icon={Trash} />}
                                 onClick={() => markAsTrashed({ threadIds: [selectedThread!.id], onSuccess: unselectThread })}
