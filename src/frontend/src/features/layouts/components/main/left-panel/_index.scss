@@ -38,10 +38,17 @@
     flex: 0;
     // The mobile drawer reaches the screen edge (edge-to-edge webview): keep
     // the actions above the system navigation bar / home indicator.
-    padding: 1rem 1rem calc(1rem + var(--safe-area-inset-bottom));
+    padding: var(--c--globals--spacings--xs) var(--c--globals--spacings--xs) calc(var(--c--globals--spacings--xs) + var(--safe-area-inset-bottom));
     display: flex;
-    flex-direction: row-reverse;
+    flex-direction: row;
     align-items: center;
     justify-content: space-between;
+    gap: var(--c--globals--spacings--3xs);
     border-top: 1px solid var(--c--contextuals--border--surface--primary);
+}
+
+.left-panel__footer-gauge {
+    display: flex;
+    flex: 1;
+    min-width: 0;
 }

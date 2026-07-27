@@ -22,6 +22,7 @@ from rest_framework.response import Response
 from core import enums, models
 from core.ai.thread_summarizer import summarize_thread
 from core.services.search import search_threads
+from core.services.trashbin import permanently_delete_messages
 
 from .. import permissions, serializers
 
@@ -433,9 +434,9 @@ class ThreadViewSet(
         """Retrieve aggregated statistics for threads accessible by the user."""
         # Same defaults as ``list``: a counter must describe exactly the set of
         # threads the folder will show. Keeping spam/trash in here made badges
-        # count threads the list then filtered out — e.g. a thread whose first
-        # message is spam (``Thread.is_spam``) but which still has an active
-        # one (``has_active``). The Spam and Trash folders pass ``is_spam=1`` /
+        # count threads the list then filtered out — e.g. a spam thread
+        # (``Thread.is_spam``) still holding an unflagged received message
+        # (``has_active``). The Spam and Trash folders pass ``is_spam=1`` /
         # ``has_trashed=1`` explicitly, so they keep their own counts.
         queryset = self.get_queryset()
         stats_fields_param = request.query_params.get("stats_fields", "")
@@ -1113,35 +1114,20 @@ class ThreadViewSet(
             request.user
         ).values_list("thread_id", flat=True)
 
-        with transaction.atomic():
-            messages_to_delete = models.Message.objects.filter(
-                thread_id__in=accessible_thread_ids,
-                **scope_filter,
-            )
-            if thread_ids:
-                messages_to_delete = messages_to_delete.filter(thread_id__in=thread_ids)
-            if message_ids:
-                messages_to_delete = messages_to_delete.filter(id__in=message_ids)
+        messages_to_delete = models.Message.objects.filter(
+            thread_id__in=accessible_thread_ids,
+            **scope_filter,
+        )
+        if thread_ids:
+            messages_to_delete = messages_to_delete.filter(thread_id__in=thread_ids)
+        if message_ids:
+            messages_to_delete = messages_to_delete.filter(id__in=message_ids)
 
-            deleted_rows = list(
-                messages_to_delete.select_for_update(of=("self",))
-                .order_by("id")
-                .values_list("id", "thread_id")
-            )
-            deleted_message_ids = [message_id for message_id, _ in deleted_rows]
-            affected_thread_ids = {thread_id for _, thread_id in deleted_rows}
-            # Deleted by id so that the response matches what was removed, even
-            # if a matching draft is created concurrently.
-            models.Message.objects.filter(id__in=deleted_message_ids).delete()
-
-            # An emptied thread is removed; a thread that still has messages has
-            # its denormalized stats (has_draft, has_trashed, ...) recomputed so
-            # it drops out of the corresponding folder filter.
-            for thread in models.Thread.objects.filter(pk__in=affected_thread_ids):
-                if thread.messages.exists():
-                    thread.update_stats()
-                else:
-                    thread.delete()
+        # Shared with the trashbin cutoff sweep and the "empty trashbin" action:
+        # hard-delete the rows, then drop emptied threads / recompute stats.
+        # The ids let clients tell which targets were actually deleted, as the
+        # per-thread authorization may silently drop some of them.
+        deleted_message_ids = permanently_delete_messages(messages_to_delete)
 
         return drf.response.Response(
             {

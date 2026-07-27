@@ -94,6 +94,8 @@
     gap: var(--c--globals--spacings--base);
     padding: var(--c--globals--spacings--base);
     flex: 1;
+    // Lets the messages adapt to the width of the resizable panel.
+    container: thread-messages / inline-size;
 }
 
 .thread-view__trashed-banner__content {

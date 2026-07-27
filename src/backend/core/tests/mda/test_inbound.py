@@ -1235,3 +1235,71 @@ class TestInboundDedupIdempotency:
         )
         # And no second (parallel) thread was created.
         assert models.Thread.objects.filter(accesses__mailbox=mailbox).count() == 1
+
+
+@pytest.mark.django_db
+class TestInboundSpamConversation:
+    """A thread is spam as soon as one of its messages is.
+
+    Each message keeps its own spam verdict, so the conversation still tells
+    which message is spam.
+    """
+
+    parent_mime_id = "parent.spam@example.com"
+
+    def _thread(self, mailbox, **message_flags):
+        thread = factories.ThreadFactory(subject="Hello")
+        factories.ThreadAccessFactory(
+            mailbox=mailbox,
+            thread=thread,
+            role=enums.ThreadAccessRoleChoices.EDITOR,
+        )
+        parent = factories.MessageFactory(
+            thread=thread, mime_id=self.parent_mime_id, subject="Hello", **message_flags
+        )
+        thread.update_stats()
+        return thread, parent
+
+    def _deliver_reply(self, mailbox, is_spam=False):
+        return _create_message_from_inbound(
+            recipient_email=str(mailbox),
+            parsed_email={
+                "subject": "Re: Hello",
+                "from": [{"name": "Sender", "email": "sender@test.com"}],
+                "to": [{"name": "Rcpt", "email": str(mailbox)}],
+                "textBody": [{"content": "Reply."}],
+                "messageId": ["reply.spam@example.com"],
+                "inReplyTo": [self.parent_mime_id],
+                "sentAt": timezone.now().isoformat(),
+            },
+            raw_data=b"raw mime bytes",
+            mailbox=mailbox,
+            is_spam=is_spam,
+        )
+
+    def test_spam_reply_sends_the_thread_to_spam(self):
+        """A spam reply never hides inside a conversation listed in the inbox."""
+        mailbox = factories.MailboxFactory()
+        thread, parent = self._thread(mailbox)
+        assert thread.is_spam is False
+
+        reply = self._deliver_reply(mailbox, is_spam=True)
+
+        assert reply.thread_id == thread.id
+        thread.refresh_from_db()
+        assert thread.is_spam is True
+        parent.refresh_from_db()
+        assert parent.is_spam is False
+
+    def test_clean_reply_keeps_a_spam_thread_in_spam(self):
+        """A follow-up the spam filter let through cannot pull the thread out."""
+        mailbox = factories.MailboxFactory()
+        thread, _parent = self._thread(mailbox, is_spam=True, trashed_at=timezone.now())
+
+        reply = self._deliver_reply(mailbox, is_spam=False)
+
+        assert reply.thread_id == thread.id
+        reply.refresh_from_db()
+        assert reply.is_spam is False
+        thread.refresh_from_db()
+        assert thread.is_spam is True

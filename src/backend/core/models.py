@@ -25,6 +25,7 @@ from django.core.exceptions import ValidationError
 from django.db import connection, models, transaction
 from django.db.models import Case, Exists, F, Q, Value, When
 from django.db.models.fields import BooleanField
+from django.db.models.functions import Coalesce
 from django.utils import timezone
 from django.utils.html import escape
 from django.utils.text import slugify
@@ -54,6 +55,7 @@ from core.enums import (
     ThreadAbilities,
     ThreadAccessRoleChoices,
     ThreadEventTypeChoices,
+    TrashbinAllowEmpty,
     UserAbilities,
     parse_compression_spec,
     thread_event_type_choices,
@@ -1075,6 +1077,7 @@ class Mailbox(BaseModel):
                 "manage_labels": False,
                 "manage_message_templates": False,
                 "import_messages": False,
+                "empty_trash": False,
             }
 
         is_admin = role == MailboxRoleChoices.ADMIN
@@ -1082,6 +1085,14 @@ class Mailbox(BaseModel):
         can_delete = role == MailboxRoleChoices.ADMIN
         can_send = role >= MailboxRoleChoices.SENDER
         has_access = bool(role)
+
+        # Who may manually empty the trashbin depends on the deployment policy:
+        # "admin" -> ADMIN only, "editor" -> EDITOR and above, "never" -> nobody
+        # (the cutoff sweep still deletes). See settings.TRASHBIN_ALLOW_EMPTY.
+        trashbin_allow_empty = settings.TRASHBIN_ALLOW_EMPTY
+        can_empty_trash = (
+            trashbin_allow_empty == TrashbinAllowEmpty.ADMIN and is_admin
+        ) or (trashbin_allow_empty == TrashbinAllowEmpty.EDITOR and can_modify)
 
         return {
             CRUDAbilities.CAN_READ: has_access,
@@ -1099,6 +1110,7 @@ class Mailbox(BaseModel):
             MailboxAbilities.CAN_IMPORT_MESSAGES: (
                 is_admin and settings.FEATURE_IMPORT_MESSAGES
             ),
+            MailboxAbilities.CAN_EMPTY_TRASH: can_empty_trash,
         }
 
     def get_validated_signature(self, signature_id: str):
@@ -1414,8 +1426,13 @@ class Thread(BaseModel):
             ]
             self.has_messages = len(active_messages) > 0
 
-            # Set is_spam based on first message
-            self.is_spam = message_data[0]["is_spam"]
+            # Spam is flagged per message, but the Spam folder lists
+            # conversations: one spam message is enough to send the thread
+            # there, until it is purged (see core.services.trashbin) or moved
+            # to the trash, where it sits alone without holding the thread back.
+            self.is_spam = any(
+                msg["is_spam"] and not msg["is_trashed"] for msg in message_data
+            )
 
             # Check if thread has active messages (!is_sender && !is_spam && !is_archived && !is_trashed && !is_draft)
             self.has_active = any(
@@ -2392,9 +2409,54 @@ class Message(BaseModel):
         verbose_name = "message"
         verbose_name_plural = "messages"
         ordering = ["-created_at"]
+        indexes = [
+            # Back the trashbin sweep (cleanup_trashbin_task) and "Empty spam"
+            # (see core.services.trashbin). PARTIAL on purpose: only trash and
+            # spam rows are indexed, so these stay small and cheap to maintain
+            # even as the message table grows unbounded.
+            #
+            # Both expire message by message, aged by
+            # Coalesce(trashed_at, created_at): keyed on that exact expression
+            # (the only predicate Postgres matches an expression index to), a
+            # range scan reads only the expired rows.
+            models.Index(
+                Coalesce("trashed_at", "created_at"),
+                name="msg_trashed_binned_at_idx",
+                condition=Q(is_trashed=True),
+            ),
+            models.Index(
+                Coalesce("trashed_at", "created_at"),
+                name="msg_spam_binned_at_idx",
+                condition=Q(is_spam=True),
+            ),
+        ]
 
     def __str__(self):
         return str(self.subject) if self.subject else "(no subject)"
+
+    def save(self, *args, **kwargs):
+        """Save, keeping the bin and archive timestamps in lockstep with their
+        flags, so that no write path has to repeat the rule.
+
+        ``trashed_at`` dates the entry into the trashbin, which is
+        ``is_trashed OR is_spam``: the cutoff sweep ages bin items by it. Like
+        ``archived_at``, it is stamped when its flag holds without a date, and
+        cleared once it no longer holds. Bulk updates bypass ``save``: they
+        go through ``core.services.trashbin.trashbin_timestamp`` instead.
+        """
+        now = timezone.now()
+        stamped_fields = []
+        for field, flagged in (
+            ("trashed_at", self.is_trashed or self.is_spam),
+            ("archived_at", self.is_archived),
+        ):
+            if flagged == (getattr(self, field) is None):
+                setattr(self, field, now if flagged else None)
+                stamped_fields.append(field)
+        update_fields = kwargs.get("update_fields")
+        if update_fields is not None and stamped_fields:
+            kwargs["update_fields"] = [*update_fields, *stamped_fields]
+        super().save(*args, **kwargs)
 
     def get_parsed_data(self) -> JmapEmail:
         """Parse the raw MIME message and cache the strict JMAP Email

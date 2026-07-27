@@ -3,7 +3,7 @@ import useRead from "@/features/message/use-read";
 import useTrash from "@/features/message/use-trash";
 import useAbility, { Abilities } from "@/hooks/use-ability";
 import { DropdownMenu, IconType, VerticalSeparator, useResponsive } from "@gouvfr-lasuite/ui-components"
-import { Button, Tooltip } from "@gouvfr-lasuite/ui-components"
+import { Button, Spinner, Tooltip } from "@gouvfr-lasuite/ui-components"
 import { useRef, useState } from "react";
 import { useTranslation } from "react-i18next";
 import { ThreadAccessesWidget, type ThreadAccessesWidgetHandle } from "../thread-accesses-widget";
@@ -11,7 +11,7 @@ import { AssigneesWidget } from "../assignees-widget";
 import { LabelsWidget } from "@/features/layouts/components/labels-widget";
 import useArchive from "@/features/message/use-archive";
 import useSpam from "@/features/message/use-spam";
-import useDeleteDrafts from "@/features/message/use-delete-drafts";
+import useThreadRemoveActions from "@/features/message/use-thread-remove-actions";
 import useLeaveThread from "@/features/message/use-leave-thread";
 import ViewHelper from "@/features/utils/view-helper";
 import useCopyDeepLink from "@/features/message/use-copy-deep-link";
@@ -19,21 +19,22 @@ import { Icon } from "@/features/ui/components/icon";
 import { Archive, Link, MoreVertical, Trash, Error as ErrorIcon, XMark } from "@gouvfr-lasuite/ui-components/icons";
 
 type ThreadActionBarProps = {
-    canUndelete: boolean;
+    /** Trash view, or a fully trashed thread opened from any other view. */
+    isTrashContext: boolean;
     canUnarchive: boolean;
 }
 
-export const ThreadActionBar = ({ canUndelete, canUnarchive }: ThreadActionBarProps) => {
+export const ThreadActionBar = ({ isTrashContext, canUnarchive }: ThreadActionBarProps) => {
     const { t } = useTranslation();
     const { selectedThread, unselectThread, messages } = useMailboxContext();
     const { isMobile } = useResponsive();
     const { markAsReadAt } = useRead();
-    const { markAsTrashed, markAsUntrashed } = useTrash();
+    const { markAsTrashed } = useTrash();
     const { markAsArchived, markAsUnarchived } = useArchive();
     const { markAsSpam, markAsNotSpam } = useSpam();
-    const { deleteDrafts } = useDeleteDrafts();
     const { canLeaveThread, leaveThread } = useLeaveThread();
     const isDraftsView = ViewHelper.isDraftsView();
+    const removeActions = useThreadRemoveActions(selectedThread, isTrashContext);
     const accessesWidgetRef = useRef<ThreadAccessesWidgetHandle>(null);
     // Full edit rights on the thread — gates archive, spam, delete.
     // Star and read/unread toggle remain visible because they are personal
@@ -42,9 +43,7 @@ export const ThreadActionBar = ({ canUndelete, canUnarchive }: ThreadActionBarPr
     // therefore stays visible for viewer-only threads.
     const canEditThread = useAbility(Abilities.CAN_EDIT_THREAD, selectedThread ?? null);
     // Archiving, reporting as spam or labelling makes no sense from the
-    // trash view (or on a fully trashed thread opened elsewhere): the only
-    // relevant transition from the trash is restoring it (Undelete).
-    const isTrashContext = ViewHelper.isTrashedView() || canUndelete;
+    // trash context: the only relevant transitions are restoring or deleting.
     const canShowArchiveCTA = canEditThread && !selectedThread?.is_spam && !isTrashContext
     const canShowSpamCTA = canEditThread && !isTrashContext
     // A thread holding nothing but the draft being composed: archiving, spam
@@ -77,40 +76,18 @@ export const ThreadActionBar = ({ canUndelete, canUnarchive }: ThreadActionBarPr
                         <VerticalSeparator withPadding={false} />
                     </>
                 }
-                {canEditThread && !isDraftsView && (
-                    canUndelete ? (
-                        <Tooltip content={t('Undelete')}>
-                            <Button
-                                variant="tertiary"
-                                aria-label={t('Undelete')}
-                                size="nano"
-                                icon={<Icon name="restore_from_trash" type={IconType.OUTLINED} />}
-                                onClick={() => markAsUntrashed({ threadIds: [selectedThread!.id], onSuccess: unselectThread })}
-                            />
-                        </Tooltip>
-                    ) : (
-                        <Tooltip content={t('Delete')}>
-                            <Button
-                                variant="tertiary"
-                                aria-label={t('Delete')}
-                                size="nano"
-                                icon={<Icon icon={Trash} />}
-                                onClick={() => markAsTrashed({ threadIds: [selectedThread!.id], onSuccess: unselectThread })}
-                            />
-                        </Tooltip>
-                    )
-                )}
-                {canEditThread && isDraftsView && (
-                    <Tooltip content={t('Delete draft')}>
+                {removeActions.map((action) => (
+                    <Tooltip key={action.key} content={action.label}>
                         <Button
                             variant="tertiary"
-                            aria-label={t('Delete draft')}
+                            aria-label={action.label}
                             size="nano"
-                            icon={<Icon icon={Trash} />}
-                            onClick={() => deleteDrafts({ threadIds: [selectedThread!.id], onSuccess: unselectThread })}
+                            icon={action.isPending ? <Spinner size="sm" /> : <Icon {...action.icon} />}
+                            disabled={action.isPending}
+                            onClick={action.onSelect}
                         />
                     </Tooltip>
-                )}
+                ))}
                 {canShowArchiveCTA && !isDraftsView && (
                     canUnarchive ? (
                         (

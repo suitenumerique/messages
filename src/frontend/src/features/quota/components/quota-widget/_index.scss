@@ -1,0 +1,51 @@
+.quota-widget {
+  min-width: 0;
+  flex: 1;
+  box-sizing: border-box;
+  white-space: nowrap;
+
+  .c__storage-gauge {
+    width: 100%;
+    text-align: start;
+
+    // Let the texts shrink with the gauge and end with an ellipsis instead of
+    // overflowing: every flex level down to the text needs `min-width: 0`.
+    .c__storage-gauge__locked {
+      min-width: 0;
+    }
+
+    .c__storage-gauge__label {
+      flex-shrink: 1;
+      min-width: 0;
+      overflow: hidden;
+      text-overflow: ellipsis;
+    }
+  }
+
+  // The static gauge borrows the library button styles, drop their affordance.
+  .quota-widget__gauge--static {
+    cursor: default;
+
+    &:hover {
+      background: transparent;
+    }
+  }
+
+  &__locked-content {
+    display: flex;
+    align-items: center;
+    gap: var(--c--globals--spacings--3xs);
+    min-width: 0;
+
+    svg {
+      flex-shrink: 0;
+    }
+  }
+
+  &__locked-label {
+    min-width: 0;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+  }
+}

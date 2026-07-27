@@ -391,12 +391,24 @@ Once `is_spam = True`:
 
 - **Foldering** — spam is a boolean flag on the message/thread, not a separate
   folder. The thread list excludes spam by default; the **Junk** view is the
-  same list with `is_spam=1`. The thread's `is_spam` follows its first message,
-  and spam messages are excluded from "active" counters/timestamps. `is_spam` is
-  indexed for search and filtering. It is independent of `is_trashed`.
+  same list with `is_spam=1`. The flag is set per message, so a conversation
+  tells which of its messages are spam, but a thread is spam as soon as one of
+  its untrashed messages is: a spam reply sends its whole conversation to Junk,
+  and a clean follow-up does not pull it back out until the spam is purged or
+  trashed. A message both spam and trashed sits in Trash alone. Spam messages
+  are excluded from "active" counters/timestamps. `is_spam` is indexed for search
+  and filtering. It is independent of `is_trashed`.
 - **Auto-reply suppressed** — `should_send_autoreply()` returns early for spam
-  (never vacation-reply to spam).
-- **Push notifications suppressed** — no push is enqueued for a spam message.
+  (never vacation-reply to spam), including any message landing in a spam
+  conversation.
+- **Push notifications suppressed** — no push is enqueued for a message landing
+  in a spam conversation.
+- **Permanent deletion** — spam sits in the trashbin and is purged message by
+  message: "Empty spam" removes the spam messages of the threads listed in the
+  Junk view, and the nightly sweep removes each spam message older than
+  `TRASHBIN_CUTOFF_DAYS` (see `core/services/trashbin.py`). A message nobody
+  flagged is never purged with its conversation: once the conversation holds no
+  more spam, it leaves Junk and goes back to the folders of those messages.
 
 ### Deferral & "processing failed"
 
@@ -443,9 +455,19 @@ Note the two-tier design: rspamd's mid-confidence actions (`add header`,
 
 ## User "report as spam" action
 
-Users with edit rights can flag a message/thread as spam (or un-flag it) via the
-flag API (`spam` flag). This sets the `is_spam` boolean (cascading to draft
-children) and recomputes thread stats, moving the thread in/out of the Junk view.
+Users with edit rights can flag a message or a whole thread as spam (or un-flag
+it) via the flag API (`spam` flag). Flagging a thread sets `is_spam` on every
+one of its messages; flagging a message sets it on that message alone
+(cascading to its draft children). Thread stats are recomputed, moving the
+thread in/out of the Junk view: it leaves Junk once none of its untrashed
+messages is spam.
+
+The reading UI reports either a single received message (its menu) or the
+whole thread, and only removes the report for the whole thread: the thread
+banner and action bar un-flag every message at once. Spam is shown per
+conversation, except for the attachments of a reported message. A single message
+can also be moved to the trash from its menu, even in Junk: if it was the last
+spam of its thread, the thread leaves Junk.
 
 > **Gap:** this action is purely local foldering — it does **not** send any
 > feedback to rspamd (no `learnspam`/`learnham`/`fuzzy` training call exists in

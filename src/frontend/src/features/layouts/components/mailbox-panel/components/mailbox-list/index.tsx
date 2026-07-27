@@ -1,5 +1,6 @@
-import { Mailbox, ThreadsStatsRetrieve200, ThreadsStatsRetrieveStatsFields, useThreadsStatsRetrieve } from "@/features/api/gen"
-import { getThreadsStatsQueryKey, useMailboxContext } from "@/features/providers/mailbox"
+import { Mailbox, ThreadsStatsRetrieve200, ThreadsStatsRetrieveStatsFields } from "@/features/api/gen"
+import { useMailboxContext } from "@/features/providers/mailbox"
+import { FolderStatsDefinition, useFolderStats } from "@/hooks/use-threads-stats"
 import clsx from "clsx"
 import { Link } from "@tanstack/react-router"
 import { useUrlSearchParams } from "@/hooks/use-url-search-params"
@@ -23,7 +24,7 @@ import { Icon, IconProps } from "@/features/ui/components/icon"
 type FolderVisibilityContext = {
     mailbox: Mailbox;
     folderCount: number;
-    folderStats: ThreadsStatsRetrieve200;
+    folderStats: ThreadsStatsRetrieve200 | undefined;
 };
 
 type FolderVisibilityRule = (ctx: FolderVisibilityContext) => boolean;
@@ -35,6 +36,8 @@ type Folder = {
     icon: IconProps;
     filter?: Record<string, string>;
     showStats: boolean;
+    // Defaults to counting unread threads.
+    stats?: FolderStatsDefinition;
     searchable?: boolean;
     isVisible?: FolderVisibilityRule;
     children?: Folder[];
@@ -103,6 +106,11 @@ export const MAILBOX_FOLDERS = () => [
                 searchable: false,
                 showStats: true,
                 isVisible: visibleIfSharedOrHasMention,
+                // The badge counts unread mentions, visibility any mention.
+                stats: {
+                    count: ThreadsStatsRetrieveStatsFields.has_unread_mention,
+                    extra: [ThreadsStatsRetrieveStatsFields.has_mention],
+                },
                 filter: {
                     has_active: "1",
                     has_mention: "1",
@@ -115,6 +123,7 @@ export const MAILBOX_FOLDERS = () => [
                 searchable: false,
                 showStats: true,
                 isVisible: visibleIfSharedOrNonEmpty,
+                stats: { count: ThreadsStatsRetrieveStatsFields.all },
                 filter: {
                     has_assigned_to_me: "1",
                     has_active: "1",
@@ -127,6 +136,7 @@ export const MAILBOX_FOLDERS = () => [
                 searchable: false,
                 showStats: true,
                 isVisible: visibleIfSharedMailbox,
+                stats: { count: ThreadsStatsRetrieveStatsFields.all },
                 filter: {
                     has_unassigned: "1",
                     has_active: "1",
@@ -140,6 +150,7 @@ export const MAILBOX_FOLDERS = () => [
         icon: { icon: Edit },
         searchable: true,
         showStats: true,
+        stats: { count: ThreadsStatsRetrieveStatsFields.all },
         filter: {
             has_draft: "1",
         },
@@ -151,6 +162,10 @@ export const MAILBOX_FOLDERS = () => [
         searchable: false,
         isVisible: visibleIfNonEmpty,
         showStats: true,
+        stats: {
+            count: ThreadsStatsRetrieveStatsFields.all,
+            extra: [ThreadsStatsRetrieveStatsFields.has_delivery_failed],
+        },
         filter: {
             has_sender: "1",
             has_delivery_pending: "1"
@@ -183,6 +198,11 @@ export const MAILBOX_FOLDERS = () => [
         icon: { icon: ErrorIcon },
         searchable: true,
         showStats: true,
+        // The trashbin banner needs the whole folder count to offer emptying it.
+        stats: {
+            count: ThreadsStatsRetrieveStatsFields.all_unread,
+            extra: [ThreadsStatsRetrieveStatsFields.all],
+        },
         filter: {
             is_spam: "1",
         },
@@ -192,7 +212,9 @@ export const MAILBOX_FOLDERS = () => [
         name: i18n.t("Trash"),
         icon: { icon: Trash },
         searchable: true,
+        // No badge, but the trashbin banner counts the folder to offer emptying it.
         showStats: false,
+        stats: { count: ThreadsStatsRetrieveStatsFields.all },
         filter: {
             has_trashed: "1",
         },
@@ -214,20 +236,6 @@ export const ALL_MESSAGES_FOLDER = () => ({
         has_messages: "1",
     },
 });
-
-/**
- * Combines multiple stats fields into a comma-separated string for the API.
- * The API accepts a comma-separated list of fields (e.g., "all,has_delivery_failed").
- * This function provides type-safety for the individual field values while
- * producing the combined string format the API expects.
- */
-const combineStatsFields = (
-    ...fields: ThreadsStatsRetrieveStatsFields[]
-): ThreadsStatsRetrieveStatsFields => {
-    // The API type doesn't model comma-separated values, but the backend accepts them.
-    // This cast is intentional - see backend/core/api/viewsets/thread.py:200-205
-    return fields.join(',') as ThreadsStatsRetrieveStatsFields;
-};
 
 /**
  * Finds the root folder in the MAILBOX_FOLDERS tree structure whose match
@@ -332,42 +340,7 @@ const FolderItem = ({ folder, isChild, hasChildren, isExpanded, onToggleExpand, 
     const { markAsTrashed, markAsUntrashed } = useTrash();
     const { markAsSpam, markAsNotSpam } = useSpam();
 
-    const queryParams = useMemo(() => {
-        const params = new URLSearchParams(Object.entries(folder.filter || {}));
-        return params.toString();
-    }, [folder.filter]);
-    const stats_fields = useMemo(() => {
-        if (folder.id === 'drafts') return ThreadsStatsRetrieveStatsFields.all;
-        if (folder.id === 'outbox') return ThreadsStatsRetrieveStatsFields.all;
-        if (folder.id === 'mentioned') return ThreadsStatsRetrieveStatsFields.has_unread_mention;
-        if (folder.id === 'assigned_to_me') return ThreadsStatsRetrieveStatsFields.all;
-        if (folder.id === 'unassigned') return ThreadsStatsRetrieveStatsFields.all;
-        return ThreadsStatsRetrieveStatsFields.all_unread;
-    }, [folder.id]);
-    const requestedStatsFields = useMemo(() => {
-        if (folder.id === "outbox") {
-            return combineStatsFields(stats_fields, ThreadsStatsRetrieveStatsFields.has_delivery_failed);
-        }
-        // The Mentioned folder needs `has_mention` (any mention, read or
-        // unread) to drive sidebar visibility, while the badge keeps showing
-        // `has_unread_mention`.
-        if (folder.id === "mentioned") {
-            return combineStatsFields(stats_fields, ThreadsStatsRetrieveStatsFields.has_mention);
-        }
-        return stats_fields;
-    }, [folder.id, stats_fields]);
-    const { data } = useThreadsStatsRetrieve({
-        mailbox_id: selectedMailbox?.id,
-        stats_fields: requestedStatsFields,
-        ...folder.filter
-    }, {
-        query: {
-            enabled: folder.showStats,
-            queryKey: getThreadsStatsQueryKey(selectedMailbox!.id, queryParams),
-        }
-    });
-
-    const folderStats = data?.data as ThreadsStatsRetrieve200;
+    const { stats: folderStats, count } = useFolderStats(selectedMailbox?.id, folder, { enabled: folder.showStats });
 
     // View checks for determining allowed actions (same logic as thread-panel-header.tsx)
     const isTrashedView = ViewHelper.isTrashedView();
@@ -411,7 +384,7 @@ const FolderItem = ({ folder, isChild, hasChildren, isExpanded, onToggleExpand, 
     };
     const isActive = isFolderActive(folder);
 
-    const folderCount = folderStats?.[stats_fields] ?? 0;
+    const folderCount = count ?? 0;
     const hasDeliveryFailed = (folderStats?.[ThreadsStatsRetrieveStatsFields.has_delivery_failed] ?? 0) > 0;
 
     const handleDragOver = (e: React.DragEvent<HTMLAnchorElement>) => {
@@ -555,7 +528,7 @@ const FolderItem = ({ folder, isChild, hasChildren, isExpanded, onToggleExpand, 
             <div className="mailbox__item__metadata">
             {
                 hasDeliveryFailed ? <Tooltip content={t("Some messages have not been delivered to all recipients.")} placement="left"><Icon name="error" type={IconType.OUTLINED} aria-label={t("Delivery failed")} className="mailbox__item-warning" /></Tooltip>:
-                folderCount > 0 && <span className="mailbox__item-counter">{folderCount}</span>
+                folder.showStats && folderCount > 0 && <span className="mailbox__item-counter">{folderCount}</span>
             }
             </div>
         </Link>

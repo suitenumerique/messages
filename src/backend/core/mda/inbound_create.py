@@ -449,11 +449,7 @@ def _create_message_from_inbound(  # pylint: disable=too-many-arguments
                     is_draft=is_outbound,  # Outbound: draft until prepare_outbound_message finalizes
                     is_sender=is_sender,
                     is_trashed=is_trashed,
-                    # Keep timestamps in lockstep with the booleans, as the
-                    # flag endpoint does.
-                    trashed_at=(timezone.now() if is_trashed else None),
                     is_archived=is_archived,
-                    archived_at=(timezone.now() if is_archived else None),
                     is_spam=is_spam,
                     has_attachments=len(parsed_email.get("attachments", [])) > 0,
                     channel=channel,
@@ -469,16 +465,7 @@ def _create_message_from_inbound(  # pylint: disable=too-many-arguments
                 for flag, value in message_flags.items():
                     if hasattr(message, flag):
                         setattr(message, flag, value)
-                flag_update_fields = ["created_at", *message_flags.keys()]
-                # Keep the timestamps in lockstep with the booleans, as the
-                # create above does.
-                if message.is_trashed and message.trashed_at is None:
-                    message.trashed_at = timezone.now()
-                    flag_update_fields.append("trashed_at")
-                if message.is_archived and message.archived_at is None:
-                    message.archived_at = timezone.now()
-                    flag_update_fields.append("archived_at")
-                message.save(update_fields=flag_update_fields)
+                message.save(update_fields=["created_at", *message_flags.keys()])
                 # Update ThreadAccess for read/starred state
                 access = models.ThreadAccess.objects.filter(
                     thread=thread, mailbox=mailbox

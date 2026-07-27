@@ -24,6 +24,7 @@
 @use "./../features/ui/components/label-badge";
 @use "./../features/ui/components/contact-chip";
 @use "./../features/ui/components/banner";
+@use "./../features/ui/components/header-banner";
 @use "./../features/ui/components/feedback-button";
 @use "./../features/ui/components/copyable-input";
 @use "./../features/ui/components/dropdown-button";
@@ -85,6 +86,8 @@
 @use "./../features/layouts/components/admin/signatures-view";
 @use "./../features/layouts/components/mailbox-settings/autoreplies-view";
 @use "./../features/layouts/components/mailbox-settings/devices-view";
+@use "./../features/quota/components/quota-widget";
+@use "./../features/layouts/components/trashbin-banner";
 
 // Blocknote custom blocks and components
 @use "./../features/blocknote/blocknote-view-field";

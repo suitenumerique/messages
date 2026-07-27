@@ -70,15 +70,14 @@ const isLinkMasked = (href: string, text: string): boolean => {
     }
 };
 
-const ThreadMessageBody = ({ bodyParts, attachments = [], isHidden = false, messageId, onLoad }: ThreadMessageBodyProps) => {
+const ThreadMessageBody = ({ bodyParts, attachments = [], isHidden = false, areLinksDisabled = false, messageId, onLoad }: ThreadMessageBodyProps) => {
     const { t } = useTranslation();
     const iframeRef = useRef<HTMLIFrameElement>(null);
     const { cunninghamTheme, variant } = useTheme();
-    const { selectedMailbox, selectedThread } = useMailboxContext();
+    const { selectedMailbox } = useMailboxContext();
     const confirmLinkOpening = useLinkConfirmation();
     // Links of spam messages are inert. A ref keeps the iframe click handler
     // in sync without having to re-attach listeners when the flag changes.
-    const areLinksDisabled = Boolean(selectedThread?.is_spam);
     const areLinksDisabledRef = useRef(areLinksDisabled);
     areLinksDisabledRef.current = areLinksDisabled;
     const { IMAGE_PROXY_ENABLED: isImageProxyEnabled, MESSAGE_TRUSTED_LINK_DOMAINS: trustedLinkDomains } = useConfig();

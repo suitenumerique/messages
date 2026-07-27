@@ -28,6 +28,9 @@ BROWSERS = ["chromium", "firefox", "webkit"]
 DOMAIN_NAME = "example.local"
 SHARED_MAILBOX_LOCAL_PART = "shared.e2e"
 IMPORT_MAILBOX_LOCAL_PART = "import.e2e"
+PARTIALLY_TRASHED_SUBJECT = "Partially trashed thread"
+PARTIALLY_SPAM_SUBJECT = "Partially spam thread"
+TRASHED_SPAM_SUBJECT = "Trashed spam thread"
 
 
 class Command(BaseCommand):
@@ -386,10 +389,16 @@ class Command(BaseCommand):
             "Inbox thread beta",
         ]
 
-        # Clean up existing inbox test threads (bodyless seeds + the link
-        # thread delivered separately below).
+        # Clean up existing inbox test threads (bodyless seeds + the link and
+        # partially flagged threads created separately below).
         existing = models.Thread.objects.filter(
-            subject__in=[*inbox_subjects, "Spam link inbox thread"],
+            subject__in=[
+                *inbox_subjects,
+                "Spam link inbox thread",
+                PARTIALLY_TRASHED_SUBJECT,
+                PARTIALLY_SPAM_SUBJECT,
+                TRASHED_SPAM_SUBJECT,
+            ],
             accesses__mailbox=mailbox,
         )
         deleted_count = existing.count()
@@ -424,10 +433,50 @@ class Command(BaseCommand):
             thread.update_stats()
 
         self._create_inbox_link_thread(mailbox, browser)
+        # Listed both in the inbox and in the trash: the trash view opens a
+        # thread that is not fully trashed, whose actions must only touch the
+        # trashed message.
+        self._create_partially_flagged_thread(
+            mailbox, browser, PARTIALLY_TRASHED_SUBJECT, is_trashed=True
+        )
+        # Listed in spam only, until its spam message is purged and the other
+        # one brings it back to the inbox.
+        self._create_partially_flagged_thread(
+            mailbox, browser, PARTIALLY_SPAM_SUBJECT, is_spam=True
+        )
+        # Spam moved to the trash sits there alone, without holding the rest of
+        # its thread back from the inbox.
+        self._create_partially_flagged_thread(
+            mailbox, browser, TRASHED_SPAM_SUBJECT, is_spam=True, is_trashed=True
+        )
 
         self.stdout.write(
             self.style.SUCCESS(f"  ✓ Inbox test data created for {browser}")
         )
+
+    def _create_partially_flagged_thread(self, mailbox, browser, subject, **flags):
+        """Create a thread with a live message and one carrying ``flags``."""
+        sender_contact, _ = models.Contact.objects.get_or_create(
+            email=f"external.{browser}@external.invalid",
+            mailbox=mailbox,
+            defaults={"name": f"External Sender {browser}"},
+        )
+        thread = models.Thread.objects.create(subject=subject)
+        models.ThreadAccess.objects.create(
+            thread=thread,
+            mailbox=mailbox,
+            role=ThreadAccessRoleChoices.EDITOR,
+        )
+        for message_flags in ({}, flags):
+            models.Message.objects.create(
+                thread=thread,
+                sender=sender_contact,
+                subject=subject,
+                is_sender=False,
+                is_draft=False,
+                **message_flags,
+            )
+        thread.update_stats()
 
     def _create_inbox_link_thread(self, mailbox, browser):
         """Deliver a real inbound message with an HTML body carrying a bare

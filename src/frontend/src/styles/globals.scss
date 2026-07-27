@@ -98,6 +98,7 @@ body {
 .panel__resize-handle {
   background-color: var(--c--contextuals--border--surface--primary);
   position: relative;
+  z-index: 10;
 
   &:before {
     content: '';
@@ -105,7 +106,6 @@ body {
     position: absolute;
     opacity: 0;
     transition: opacity 250ms var(--c--globals--transitions--ease-in-out);
-    z-index: 10;
   }
 
   // Expand the hover catch zone.

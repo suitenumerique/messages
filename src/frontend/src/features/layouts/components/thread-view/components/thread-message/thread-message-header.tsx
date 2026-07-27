@@ -14,7 +14,7 @@ import { ThreadMessageHeaderProps } from "./types";
 import ThreadMessageActions from "./thread-message-actions";
 import ThreadMessageRecipients from "./thread-message-recipients";
 import { useAuth } from "@/features/auth";
-import { Edit } from "@gouvfr-lasuite/ui-components/icons";
+import { Edit, Error as ErrorIcon, Restore } from "@gouvfr-lasuite/ui-components/icons";
 import { Icon } from "@/features/ui/components/icon";
 
 const ThreadMessageHeader = ({
@@ -159,16 +159,16 @@ const ThreadMessageHeader = ({
                 {message.is_trashed && (
                     <Banner
                         type="info"
-                        icon={<Icon name="restore_from_trash" />}
+                        icon={<Icon icon={Restore} />}
                         fullWidth
                         actions={canEditThread ? [
                             {
-                                label: t('Undelete'),
+                                label: t('Restore'),
                                 onClick: handleMarkAsUntrashed,
                             }
                         ] : undefined}
                     >
-                        <p>{t('This message has been deleted.')}</p>
+                        <p>{t('This message is in the trash.')}</p>
                     </Banner>
                 )}
                 <div className="thread-message__header-rows" style={{ marginBottom: 'var(--c--globals--spacings--sm)' }}>
@@ -229,6 +229,13 @@ const ThreadMessageHeader = ({
                             <div className="thread-message__header-column thread-message__header-column--right flex-row flex-align-center">
                                 <div className="thread-message__metadata">
                                     <div className="flex-row">
+                                        {message.is_spam && (
+                                            <Tooltip placement="bottom" content={t('This message has been reported as spam.')}>
+                                                <Badge aria-label={t('Spam')} variant="tertiary" color="warning">
+                                                    <Icon icon={ErrorIcon} size={IconSize.X_SMALL} />
+                                                </Badge>
+                                            </Tooltip>
+                                        )}
                                         {(message.is_draft || draftMessage) && (
                                             <Tooltip placement="bottom" content={t('This message has a draft')}>
                                                 <Badge aria-label={t('Draft')} variant="tertiary" color="neutral">

@@ -5,6 +5,7 @@ import { Panel, Group, Separator, useDefaultLayout } from "react-resizable-panel
 import { ThreadPanel } from "@/features/layouts/components/thread-panel";
 import { ThreadSelectionPlaceholder } from "@/features/layouts/components/thread-selection-placeholder";
 import { ThreadView } from "@/features/layouts/components/thread-view";
+import { TrashbinBanner } from "@/features/layouts/components/trashbin-banner";
 import { useMailboxContext } from "@/features/providers/mailbox";
 import { useThreadSelection } from "@/features/providers/thread-selection";
 import { useCurrentFolderName } from "@/hooks/use-current-folder-name";
@@ -38,15 +39,18 @@ const Mailbox = () => {
   }
 
   return (
-    <Group defaultLayout={defaultLayout} onLayoutChange={onLayoutChange} orientation="horizontal" className="threads__container">
-      <Panel id="panel-thread-list" className="thread-list-panel" defaultSize="30%" minSize="250px" maxSize="50%">
-        <ThreadPanel />
-      </Panel>
-      <Separator className="panel__resize-handle" />
-      <Panel id="panel-thread-view" className="thread-view-panel">
-        {content}
-      </Panel>
-    </Group>
+    <div className="threads__layout">
+      <TrashbinBanner />
+      <Group defaultLayout={defaultLayout} onLayoutChange={onLayoutChange} orientation="horizontal" className="threads__container">
+        <Panel id="panel-thread-list" className="thread-list-panel" defaultSize="30%" minSize="250px" maxSize="50%">
+          <ThreadPanel />
+        </Panel>
+        <Separator className="panel__resize-handle" />
+        <Panel id="panel-thread-view" className="thread-view-panel">
+          {content}
+        </Panel>
+      </Group>
+    </div>
   );
 };
 

@@ -427,7 +427,7 @@ const ThreadViewComponent = ({ threadItems, mailboxId, thread, showTrashedMessag
                 {isNative ? (
                     <MobileThreadHeader onOpenAccesses={() => accessesWidgetRef.current?.open()} />
                 ) : (
-                    <ThreadActionBar canUndelete={isThreadTrashed} canUnarchive={isThreadArchived} />
+                    <ThreadActionBar isTrashContext={isTrashContext} canUnarchive={isThreadArchived} />
                 )}
             </div>
             <header className="thread-view__header" ref={headerRef}>
@@ -466,10 +466,10 @@ const ThreadViewComponent = ({ threadItems, mailboxId, thread, showTrashedMessag
                         }]}
                     >
                         {t(
-                            '{{count}} messages of this thread have been deleted.',
+                            '{{count}} messages of this thread are in the trash.',
                             {
                                 count: stats.trashed,
-                                defaultValue_one: "{{count}} message of this thread has been deleted.",
+                                defaultValue_one: "{{count}} message of this thread is in the trash.",
                             }
                         )}
                     </Banner>
@@ -537,7 +537,7 @@ const ThreadViewComponent = ({ threadItems, mailboxId, thread, showTrashedMessag
                     <MobileThreadToolbar
                         thread={thread}
                         isArchived={isThreadArchived}
-                        isTrashed={isTrashContext}
+                        isTrashContext={isTrashContext}
                         quickReplyMode={quickReplyMode}
                         onOpenAccesses={() => accessesWidgetRef.current?.open()}
                     />
