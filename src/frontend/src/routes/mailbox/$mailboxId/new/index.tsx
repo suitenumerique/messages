@@ -14,7 +14,7 @@ const NewMessageFormPage = () => {
   const router = useRouter();
   const { queryStates, selectedMailbox } = useMailboxContext();
 
-  useDocumentTitle(t("New message"), selectedMailbox?.email);
+  useDocumentTitle(selectedMailbox?.name ?? selectedMailbox?.email, t("New message"));
 
   const handleClose = () => {
     if (window.history.length > 1) {

@@ -3,7 +3,7 @@ import { useTranslation } from "react-i18next";
 
 import { useUnreadTitlePrefix } from "@/features/providers/unread-badge";
 
-const TITLE_SEPARATOR = " | ";
+const TITLE_SEPARATOR = " - ";
 
 /**
  * Sets the document title to "<segments> - <app name>" for the current view.
@@ -23,8 +23,8 @@ export const useDocumentTitle = (
   const { t } = useTranslation();
   const prefix = useUnreadTitlePrefix();
   const title = [
-    t("Messaging"),
     ...segments.filter((segment): segment is string => !!segment),
+    t("Messaging"),
   ].join(TITLE_SEPARATOR);
 
   useEffect(() => {
