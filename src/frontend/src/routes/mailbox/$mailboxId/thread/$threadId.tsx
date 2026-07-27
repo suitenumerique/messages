@@ -18,7 +18,7 @@ const Mailbox = () => {
     storage: localStorage,
   });
 
-  useDocumentTitle(folderName, selectedMailbox?.email);
+  useDocumentTitle(selectedMailbox?.name ?? selectedMailbox?.email, folderName);
 
   return (
     <Group defaultLayout={defaultLayout} onLayoutChange={onLayoutChange} orientation="horizontal" className="threads__container">

@@ -33,7 +33,7 @@ const Mailbox = () => {
     storage: localStorage,
   });
 
-  useDocumentTitle(selectedMailbox?.email, folderName);
+  useDocumentTitle(selectedMailbox?.name ?? selectedMailbox?.email, folderName);
 
   const showImportButton = useMemo(() => {
     if (!canImportMessages || !emptyMailbox) return false;
