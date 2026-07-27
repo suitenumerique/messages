@@ -15,7 +15,7 @@ from core.mda.inbound import deliver_inbound_message
 from core.mda.inbound_create import (
     _create_message_from_inbound,
     _record_divergent_rcpt,
-    find_thread_for_inbound_message,
+    find_thread_for_message,
 )
 
 
@@ -65,7 +65,7 @@ class TestRecordDivergentRcpt:
 
 @pytest.mark.django_db
 class TestFindThread:
-    """Unit tests for the find_thread_for_inbound_message helper."""
+    """Unit tests for the find_thread_for_message helper."""
 
     mailbox = None
 
@@ -102,7 +102,7 @@ class TestFindThread:
             "from": [{"email": "replier@a.com"}],
         }
 
-        found_thread = find_thread_for_inbound_message(parsed_reply, self.mailbox)
+        found_thread = find_thread_for_message(parsed_reply, self.mailbox)
         assert found_thread == initial_thread
 
     @pytest.mark.parametrize(
@@ -132,7 +132,7 @@ class TestFindThread:
             "from": [{"email": "replier@a.com"}],
         }
 
-        found_thread = find_thread_for_inbound_message(parsed_reply, self.mailbox)
+        found_thread = find_thread_for_message(parsed_reply, self.mailbox)
         assert found_thread == initial_thread
 
     @pytest.mark.parametrize(
@@ -142,8 +142,12 @@ class TestFindThread:
             enums.ThreadAccessRoleChoices.VIEWER,
         ],
     )
-    def test_find_fallback_no_subject_match(self, role):
-        """Thread found via References header, falling back when subjects don't normalize."""
+    def test_references_only_with_different_subject_returns_none(self, role):
+        """References alone + an unrelated subject → no thread.
+
+        Some MUAs recycle the References chain when starting a new topic from
+        an old message, so that header on its own is not proof of continuity.
+        """
         initial_subject = "Meeting Request"
         initial_mime_id = "meeting.abc@example.com"
         initial_thread = factories.ThreadFactory(subject=initial_subject)
@@ -164,8 +168,63 @@ class TestFindThread:
         }
 
         # Create a new thread
-        found_thread = find_thread_for_inbound_message(parsed_reply, self.mailbox)
+        found_thread = find_thread_for_message(parsed_reply, self.mailbox)
         assert found_thread is None
+
+    def test_find_by_in_reply_to_with_rewritten_subject(self):
+        """In-Reply-To wins over a subject rewritten mid-conversation.
+
+        Real-world case: the third message of a conversation replies to the
+        second one but its subject was edited, which used to start a brand
+        new thread on the delivery path.
+        """
+        first_mime_id = "first.789@example.com"
+        second_mime_id = "second.789@example.com"
+        initial_thread = factories.ThreadFactory(subject="Original topic")
+        factories.ThreadAccessFactory(
+            mailbox=self.mailbox,
+            thread=initial_thread,
+            role=enums.ThreadAccessRoleChoices.EDITOR,
+        )
+        factories.MessageFactory(
+            thread=initial_thread, mime_id=first_mime_id, subject="Original topic"
+        )
+        factories.MessageFactory(
+            thread=initial_thread, mime_id=second_mime_id, subject="Re: Original topic"
+        )
+
+        parsed_reply = {
+            "subject": "Re: Renamed topic",
+            "inReplyTo": [second_mime_id],
+            "references": [first_mime_id, second_mime_id],
+            "from": [{"email": "replier@a.com"}],
+        }
+
+        found_thread = find_thread_for_message(parsed_reply, self.mailbox)
+        assert found_thread == initial_thread
+
+    def test_find_by_references_without_space_after_prefix(self):
+        """A ``Re:`` prefix with no space after the colon still canonicalizes."""
+        initial_subject = "Quarterly report"
+        initial_mime_id = "report.001@example.com"
+        initial_thread = factories.ThreadFactory(subject=initial_subject)
+        factories.ThreadAccessFactory(
+            mailbox=self.mailbox,
+            thread=initial_thread,
+            role=enums.ThreadAccessRoleChoices.EDITOR,
+        )
+        factories.MessageFactory(
+            thread=initial_thread, mime_id=initial_mime_id, subject=initial_subject
+        )
+
+        parsed_reply = {
+            "subject": f"Re:{initial_subject}",
+            "references": [initial_mime_id],
+            "from": [{"email": "replier@a.com"}],
+        }
+
+        found_thread = find_thread_for_message(parsed_reply, self.mailbox)
+        assert found_thread == initial_thread
 
     @pytest.mark.parametrize(
         "role",
@@ -192,7 +251,7 @@ class TestFindThread:
             "from": [{"email": "replier@a.com"}],
         }
 
-        found_thread = find_thread_for_inbound_message(parsed_reply, self.mailbox)
+        found_thread = find_thread_for_message(parsed_reply, self.mailbox)
         assert found_thread is None
 
     @pytest.mark.parametrize(
@@ -235,7 +294,7 @@ class TestFindThread:
         }
 
         # Should find the thread in *our* mailbox
-        found_thread = find_thread_for_inbound_message(parsed_reply, self.mailbox)
+        found_thread = find_thread_for_message(parsed_reply, self.mailbox)
         assert found_thread == initial_thread
 
     @pytest.mark.parametrize(
@@ -259,7 +318,7 @@ class TestFindThread:
             # No In-Reply-To or References
             "from": [{"email": "new@a.com"}],
         }
-        found_thread = find_thread_for_inbound_message(parsed_new_email, self.mailbox)
+        found_thread = find_thread_for_message(parsed_new_email, self.mailbox)
         assert found_thread is None
 
 
@@ -292,7 +351,7 @@ class TestDeliverInboundMessage:
         domain = factories.MailDomainFactory(name="deliver.test")
         return factories.MailboxFactory(local_part="recipient", domain=domain)
 
-    @patch("core.mda.inbound_create.find_thread_for_inbound_message")
+    @patch("core.mda.inbound_create.find_thread_for_message")
     def test_basic_delivery_new_thread(
         self, mock_find_thread, target_mailbox, sample_parsed_email, raw_email_data
     ):
@@ -412,7 +471,7 @@ class TestDeliverInboundMessage:
             enums.ThreadAccessRoleChoices.VIEWER,
         ],
     )
-    @patch("core.mda.inbound_create.find_thread_for_inbound_message")
+    @patch("core.mda.inbound_create.find_thread_for_message")
     def test_basic_delivery_existing_thread(
         self,
         mock_find_thread,
@@ -684,6 +743,47 @@ class TestDeliverInboundMessage:
         message3 = thread2.messages.exclude(id=message1.id).first()
         assert thread2.subject == subject  # Make sure the original subject is kept
         assert message3.mime_id == parsed_email_3["messageId"][0]
+
+    def test_smtp_exchange_single_thread_with_rewritten_subject(self, target_mailbox):
+        """A reply whose subject was edited still lands in the same thread.
+
+        Delivery path only (no import): this is the case that used to split a
+        conversation in two, since the subject was required to match even when
+        In-Reply-To pointed at a message we already held.
+        """
+        recipient_addr = f"{target_mailbox.local_part}@{target_mailbox.domain.name}"
+
+        def _raw(subject: str, mime_id: str, headers: bytes = b"") -> bytes:
+            return (
+                b"From: sender@test.com\r\n"
+                b"To: " + recipient_addr.encode() + b"\r\n"
+                b"Subject: " + subject.encode() + b"\r\n"
+                b"Message-ID: <" + mime_id.encode() + b">\r\n" + headers + b"\r\nbody"
+            )
+
+        raw_1 = _raw("Initial topic", "exchange.1@example.com")
+        assert deliver_inbound_message(recipient_addr, parse_email(raw_1), raw_1)
+
+        raw_2 = _raw(
+            "Re: Initial topic",
+            "exchange.2@example.com",
+            b"In-Reply-To: <exchange.1@example.com>\r\n"
+            b"References: <exchange.1@example.com>\r\n",
+        )
+        assert deliver_inbound_message(recipient_addr, parse_email(raw_2), raw_2)
+
+        # Third message: same reply chain, but the subject was rewritten.
+        raw_3 = _raw(
+            "Re: Renamed topic",
+            "exchange.3@example.com",
+            b"In-Reply-To: <exchange.2@example.com>\r\n"
+            b"References: <exchange.1@example.com> <exchange.2@example.com>\r\n",
+        )
+        assert deliver_inbound_message(recipient_addr, parse_email(raw_3), raw_3)
+
+        threads = models.Thread.objects.filter(accesses__mailbox=target_mailbox)
+        assert threads.count() == 1
+        assert threads.get().messages.count() == 3
 
     def test_deliver_message_with_empty_subject(self, target_mailbox, raw_email_data):
         """Test delivery of message with empty subject."""
