@@ -3,6 +3,7 @@ import { renderToStaticMarkup } from 'react-dom/server';
 import { VALID_LINK_PROTOCOLS } from '@blocknote/core';
 import type { Block, InlineContent, StyledText } from '@blocknote/core';
 import MailHelper from '@/features/utils/mail-helper';
+import { resolveBlockNoteColor } from '../colors';
 import { TEMPLATE_VARIABLE_TYPE } from '../inline-template-variable';
 
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
@@ -11,19 +12,6 @@ type AnyBlock = Block<any, any, any>;
 type AnyInlineContent = InlineContent<any, any>;
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
 type AnyStyledText = StyledText<any>;
-
-// Inline copy of COLORS_DEFAULT from @blocknote/core (not part of the public API)
-const COLORS: Record<string, { text: string; background: string }> = {
-    gray: { text: '#9b9a97', background: '#ebeced' },
-    brown: { text: '#64473a', background: '#e9e5e3' },
-    red: { text: '#e03e3e', background: '#fbe4e4' },
-    orange: { text: '#d9730d', background: '#f6e9d9' },
-    yellow: { text: '#dfab01', background: '#fbf3db' },
-    green: { text: '#4d6461', background: '#ddedea' },
-    blue: { text: '#0b6e99', background: '#ddebf1' },
-    purple: { text: '#6940a5', background: '#eae4f2' },
-    pink: { text: '#ad1a72', background: '#f4dfeb' },
-};
 
 // BlockNote renders heading sizes via CSS variables on `data-level` attributes,
 // not on the <h1>-<h6> tags — and its `.bn-default-styles` rule forces
@@ -82,16 +70,18 @@ function mapStyle(key: string, value: boolean | string): CSSProperties {
                     borderRadius: '3px',
                 }
                 : {};
-        case 'textColor':
-            if (typeof value === 'string' && value !== 'default') {
-                return { color: COLORS[value]?.text || value };
-            }
-            return {};
-        case 'backgroundColor':
-            if (typeof value === 'string' && value !== 'default') {
-                return { backgroundColor: COLORS[value]?.background || value };
-            }
-            return {};
+        // Off-palette colors are dropped, not passed through: they come from
+        // pasted foreign HTML (BlockNote maps any `style="color: …"` onto these
+        // props) and are invisible in the editor, so emitting them would leak
+        // styling the user never applied into the sent HTML.
+        case 'textColor': {
+            const color = resolveBlockNoteColor(value, 'text');
+            return color ? { color } : {};
+        }
+        case 'backgroundColor': {
+            const backgroundColor = resolveBlockNoteColor(value, 'background');
+            return backgroundColor ? { backgroundColor } : {};
+        }
         default:
             return {};
     }
@@ -112,14 +102,14 @@ function blockPropsToCSS(props: Record<string, unknown>): CSSProperties {
         style.textAlign = alignment as CSSProperties['textAlign'];
     }
 
-    const textColor = props.textColor as string | undefined;
-    if (textColor && textColor !== 'default') {
-        style.color = COLORS[textColor]?.text || textColor;
+    const textColor = resolveBlockNoteColor(props.textColor, 'text');
+    if (textColor) {
+        style.color = textColor;
     }
 
-    const bgColor = props.backgroundColor as string | undefined;
-    if (bgColor && bgColor !== 'default') {
-        style.backgroundColor = COLORS[bgColor]?.background || bgColor;
+    const bgColor = resolveBlockNoteColor(props.backgroundColor, 'background');
+    if (bgColor) {
+        style.backgroundColor = bgColor;
     }
 
     return style;
@@ -203,10 +193,9 @@ function renderInlineContent(content: AnyInlineContent[]): React.ReactNode[] {
             }
             // Mirror the link text's own color onto the <a> so the underline
             // matches the text instead of staying the default link blue.
-            const textColor = link.content
-                .map((st) => st.styles?.textColor as string | undefined)
-                .find((color) => color && color !== 'default');
-            const linkColor = textColor && (COLORS[textColor]?.text || textColor);
+            const linkColor = link.content
+                .map((st) => resolveBlockNoteColor(st.styles?.textColor, 'text'))
+                .find((color) => color !== undefined);
             return (
                 <a
                     key={i}
@@ -300,6 +289,25 @@ function getListTag(blockType: string): ListTag | null {
         default:
             return null;
     }
+}
+
+/**
+ * Reads the number an ordered list must start counting from.
+ *
+ * BlockNote stores it on the first item of a run only — a `start` on any later
+ * item is ignored by its numbering plugin, exactly like the HTML attribute —
+ * so the caller passes the item opening the run.
+ *
+ * @param block - the first list item of the run
+ * @returns the start value, or `undefined` when the list counts from 1 (no
+ *   attribute to emit) or the stored value is not a usable number
+ */
+function listStart(block: AnyBlock): number | undefined {
+    const start = (block.props as Record<string, unknown>).start;
+    if (typeof start !== 'number' || !Number.isInteger(start) || start === 1) {
+        return undefined;
+    }
+    return start;
 }
 
 function renderListItem(
@@ -554,13 +562,13 @@ function tableCellStyle(props: Record<string, unknown> | undefined): CSSProperti
     if (alignment && alignment !== 'left') {
         style.textAlign = alignment as CSSProperties['textAlign'];
     }
-    const textColor = props.textColor as string | undefined;
-    if (textColor && textColor !== 'default') {
-        style.color = COLORS[textColor]?.text || textColor;
+    const textColor = resolveBlockNoteColor(props.textColor, 'text');
+    if (textColor) {
+        style.color = textColor;
     }
-    const bgColor = props.backgroundColor as string | undefined;
-    if (bgColor && bgColor !== 'default') {
-        style.backgroundColor = COLORS[bgColor]?.background || bgColor;
+    const bgColor = resolveBlockNoteColor(props.backgroundColor, 'background');
+    if (bgColor) {
+        style.backgroundColor = bgColor;
     }
     return style;
 }
@@ -590,14 +598,14 @@ function renderTable(block: AnyBlock, key: number): React.ReactNode {
     const headerCols = tableContent.headerCols ?? 0;
     const columnWidths = tableContent.columnWidths || [];
     const blockProps = block.props as Record<string, unknown>;
-    const blockTextColor = blockProps.textColor as string | undefined;
+    const blockTextColor = resolveBlockNoteColor(blockProps.textColor, 'text');
 
     const tableStyle: CSSProperties = {
         borderCollapse: 'collapse',
         wordBreak: 'break-word',
     };
-    if (blockTextColor && blockTextColor !== 'default') {
-        tableStyle.color = COLORS[blockTextColor]?.text || blockTextColor;
+    if (blockTextColor) {
+        tableStyle.color = blockTextColor;
     }
 
     const colgroup = columnWidths.some((w) => typeof w === 'number') ? (
@@ -677,7 +685,10 @@ function transformBlocks(
             }
 
             const ListTag = listTag;
-            result.push(<ListTag key={`list-${startI}`}>{listItems}</ListTag>);
+            const start = listTag === 'ol' ? listStart(blocks[startI]) : undefined;
+            result.push(
+                <ListTag key={`list-${startI}`} start={start}>{listItems}</ListTag>,
+            );
         } else {
             result.push(renderBlock(block, editorDomElement, i));
 

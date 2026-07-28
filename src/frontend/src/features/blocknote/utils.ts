@@ -1,5 +1,5 @@
 import * as locales from '@blocknote/core/locales';
-import { Block } from '@blocknote/core';
+import { Block, defaultBlockSpecs } from '@blocknote/core';
 import { TFunction } from 'i18next';
 import { ALLOWED_IMAGE_MIME_TYPES } from '@/features/blocknote/image-block';
 import { TEMPLATE_VARIABLE_TYPE } from '@/features/blocknote/inline-template-variable';
@@ -44,16 +44,33 @@ export const createNonImageFileBlockers = () => ({
     },
 });
 
+// eslint-disable-next-line @typescript-eslint/no-unused-vars
+const { video, audio, file, ...supportedBlockSpecs } = defaultBlockSpecs;
+
+/**
+ * The default BlockNote block specs, minus the media and file blocks.
+ *
+ * A `<video>` / `<audio>` / `<embed>` tag in pasted HTML used to create a
+ * block: the editor displayed it, but the email exporter has no branch for
+ * those types, so the content silently disappeared from the sent message. Out
+ * of the schema, the pasted tag now yields no block at all.
+ *
+ * Files reach the composer through the clipboard/drop handlers instead, which
+ * route anything that is not an image to the attachments — a path that never
+ * goes through this schema.
+ */
+export const SUPPORTED_BLOCK_SPECS = supportedBlockSpecs;
+
 /**
  * Block types to hide from the slash menu and BlockTypeSelect.
  * These blocks remain in the schema for backward-compatibility
  * (existing drafts may contain them) but are hidden from the UI.
+ *
+ * Video, audio and file are not listed here: they are out of the schemas
+ * entirely, see {@link SUPPORTED_BLOCK_SPECS}.
  */
 export const HIDDEN_BLOCK_TYPES = new Set([
     'toggleListItem',
-    'file',
-    'video',
-    'audio',
     'table',
 ]);
 
@@ -105,6 +122,41 @@ export const resolveTemplateVariables = (
         return resolvedBlock;
     });
 };
+
+/**
+ * Removes the blocks whose type is not part of the editor schema.
+ *
+ * Video, audio and file blocks were reachable by pasting HTML carrying a
+ * `<video>` / `<audio>` / `<embed>` tag: the editor displayed them, but the
+ * email exporter has no branch for them, so they silently vanished from the
+ * sent message. They are now out of the schemas — which makes BlockNote throw
+ * on any draft saved back then, since it cannot build a document from a type it
+ * does not know. Dropping them here keeps those drafts openable.
+ *
+ * Operates on the raw JSON blocks (pre-`useCreateBlockNote`), hence the loose
+ * typing. Recurses into children blocks.
+ *
+ * @param blocks - the parsed draft content
+ * @param supportedTypes - the block types the schema declares
+ */
+export const dropUnsupportedBlocks = (
+    blocks: Record<string, unknown>[],
+    supportedTypes: string[],
+): Record<string, unknown>[] =>
+    blocks
+        // A block without a type is a paragraph as far as BlockNote is concerned.
+        .filter((block) => typeof block.type !== 'string' || supportedTypes.includes(block.type))
+        .map((block) => {
+            const children = block.children;
+            if (!Array.isArray(children) || children.length === 0) return block;
+            return {
+                ...block,
+                children: dropUnsupportedBlocks(
+                    children as Record<string, unknown>[],
+                    supportedTypes,
+                ),
+            };
+        });
 
 /**
  * Backfills the styled `content` of legacy `template-variable` inline nodes.

@@ -5,6 +5,7 @@ import z from "zod";
 import { DriveFile } from "../forms/components/message-form/drive-attachment-picker";
 import { handle } from "./errors";
 import { getBlobDownloadRetrieveUrl } from "@/features/api/gen/blob/blob";
+import { getApiOrigin } from "@/features/api/utils";
 
 /**
  * Decode HTML entities produced by renderToStaticMarkup in attribute values.
@@ -59,6 +60,23 @@ const ATTACHMENT_SEPARATORS_BY_LANG: Record<string, string> = {
 const getAttachmentSeparator = (): string =>
     ATTACHMENT_SEPARATORS_BY_LANG[i18n.language] ?? ATTACHMENT_SEPARATORS[0];
 
+const escapeRegex = (value: string): string => value.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+
+/**
+ * Regex source matching the path of a blob download URL, with the blob id as
+ * first group.
+ *
+ * Derived from the Orval-generated getBlobDownloadRetrieveUrl so it stays in
+ * sync with the API spec. Carries no origin: callers prepend the prefix that
+ * matches how strict they need to be.
+ */
+const blobUrlRegexSource = (): string => {
+    const placeholder = '__BLOB_ID__';
+    // Escape regex special chars in the template, then replace the placeholder with a capture group
+    return escapeRegex(getBlobDownloadRetrieveUrl(placeholder))
+        .replace(placeholder, '([a-f0-9-]+)');
+};
+
 /** An helper which aims to gather all utils related write and send a message */
 class MailHelper {
 
@@ -66,21 +84,34 @@ class MailHelper {
      * Replace blob download URLs in HTML with cid: references for email embedding.
      * This converts image sources from API URLs to Content-ID references
      * that email clients can resolve using the MIME multipart/related structure.
-     *
-     * The URL pattern is derived from the Orval-generated getBlobDownloadRetrieveUrl
-     * so it stays in sync with the API spec.
      */
     static replaceBlobUrlsWithCid(html: string): string {
-        // Use the Orval-generated URL function with a placeholder to derive the pattern
-        const placeholder = '__BLOB_ID__';
-        const urlTemplate = getBlobDownloadRetrieveUrl(placeholder);
-        // Escape regex special chars in the template, then replace the placeholder with a capture group
-        const pattern = urlTemplate
-            .replace(/[.*+?^${}()|[\]\\]/g, '\\$&')
-            .replace(placeholder, '([a-f0-9-]+)');
-        // Allow an optional origin prefix (full URLs from getRequestUrl)
-        const regex = new RegExp(`(?:https?://[^/]+)?${pattern}`, 'g');
-        return html.replace(regex, 'cid:$1');
+        // Origin-agnostic on purpose: a draft written against another API origin
+        // (dev vs prod, mobile webview) must still get its images embedded, and
+        // rewriting a foreign URL to a cid: reference only ever removes a remote
+        // fetch from the sent email.
+        return html.replace(new RegExp(`(?:https?://[^/]+)?${blobUrlRegexSource()}`, 'g'), 'cid:$1');
+    }
+
+    /**
+     * Reads the blob id out of a blob download URL.
+     *
+     * Fully anchored, and restricted to our own API: the URL must *be* one of
+     * the download URLs we built, not merely start with or contain something
+     * that looks like one. A caller acts on the returned id (dropping the image
+     * block that carries it), so a URL hosted elsewhere must not be able to
+     * impersonate an attachment.
+     *
+     * @param url - the URL to inspect
+     * @returns the blob id, or `null` for any other URL — a remote address, a
+     *   `data:` URI or a hand-typed link never went through our upload, so it
+     *   has no attachment to be matched against.
+     */
+    static extractBlobId(url: string): string | null {
+        if (!url) return null;
+        const apiOrigin = getApiOrigin();
+        const originPrefix = apiOrigin ? `(?:${escapeRegex(apiOrigin)})?` : '';
+        return new RegExp(`^${originPrefix}${blobUrlRegexSource()}$`).exec(url)?.[1] ?? null;
     }
 
     /**

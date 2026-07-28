@@ -11,7 +11,8 @@ import { EmailExporter } from '@/features/blocknote/email-exporter';
 import { blocksToMarkdown } from '@/features/blocknote/markdown-exporter';
 import { useConfig } from '@/features/providers/config';
 import MailHelper from '@/features/utils/mail-helper';
-import { backfillTemplateVariableContent, createBlockNoteDictionary, createNonImageFileBlockers } from '@/features/blocknote/utils';
+import { backfillTemplateVariableContent, createBlockNoteDictionary, createNonImageFileBlockers, dropUnsupportedBlocks } from '@/features/blocknote/utils';
+import { PasteColorSanitizer } from '@/features/blocknote/paste-sanitizer';
 import { handle } from '@/features/utils/errors';
 
 const emailExporter = new EmailExporter();
@@ -87,6 +88,11 @@ export const useBase64Composer = <
         // otherwise they render as empty blue chips.
         blocks = backfillTemplateVariableContent(blocks);
 
+        // Drop the blocks the schema no longer knows about, otherwise BlockNote
+        // throws and the whole signature/template becomes impossible to open.
+        blocks = dropUnsupportedBlocks(blocks, Object.keys(schema.blockSchema));
+        if (blocks.length === 0) return DEFAULT_CONTENT;
+
         // Traverse blocks tree to transform image data URLs to Object URLs
         let imageIndex = 0;
         const processImageBlocks = (blocks: Record<string, unknown>[]) => {
@@ -110,7 +116,7 @@ export const useBase64Composer = <
         };
 
         return processImageBlocks(blocks);
-    }, [defaultValue, createObjectUrl]);
+    }, [defaultValue, createObjectUrl, schema]);
 
     const locale = i18n.resolvedLanguage?.split('-')[0] || 'en';
     const nonImageFileBlockers = createNonImageFileBlockers();
@@ -124,7 +130,7 @@ export const useBase64Composer = <
         dictionary: createBlockNoteDictionary(locale, t),
         ...blockNoteOptions,
         _tiptapOptions: {
-            ...(extensions ? { extensions } : {}),
+            extensions: [...(extensions ?? []), PasteColorSanitizer],
             editorProps: {
                 handleDOMEvents: nonImageFileBlockers,
             },
