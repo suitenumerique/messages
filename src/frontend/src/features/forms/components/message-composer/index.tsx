@@ -1,7 +1,7 @@
 "use client";
 import { useCreateBlockNote } from "@blocknote/react";
 import { useTranslation } from "react-i18next";
-import { BlockNoteEditor, BlockNoteEditorOptions, BlockNoteSchema, defaultBlockSpecs, PartialBlock } from '@blocknote/core';
+import { BlockNoteEditor, BlockNoteEditorOptions, BlockNoteSchema, PartialBlock } from '@blocknote/core';
 import { MessageTemplateSelector } from '@/features/blocknote/message-template-block';
 import { imageBlockSpec, ALLOWED_IMAGE_MIME_TYPES } from '@/features/blocknote/image-block';
 import { EmailExporter } from '@/features/blocknote/email-exporter';
@@ -19,7 +19,10 @@ import { MessageTemplateTypeChoices, useMailboxesMessageTemplatesAvailableList }
 import { Attachment } from '@/features/api/gen/models/attachment';
 import { MessageComposerHelper } from '@/features/utils/composer-helper';
 import { SmartTrailingBlock } from '@/features/blocknote/smart-trailing-block';
-import { createBlockNoteDictionary } from '@/features/blocknote/utils';
+import { createBlockNoteDictionary, dropUnsupportedBlocks, SUPPORTED_BLOCK_SPECS } from '@/features/blocknote/utils';
+import { PasteColorSanitizer } from '@/features/blocknote/paste-sanitizer';
+import { handle } from '@/features/utils/errors';
+import { findOrphanInlineImages } from './orphan-inline-images';
 import { MessageFormValues } from '../message-form';
 import { DriveFile } from '../message-form/drive-attachment-picker';
 
@@ -29,7 +32,7 @@ export { ALLOWED_IMAGE_MIME_TYPES } from '@/features/blocknote/image-block';
 
 export const BLOCKNOTE_SCHEMA = BlockNoteSchema.create({
     blockSpecs: {
-        ...defaultBlockSpecs,
+        ...SUPPORTED_BLOCK_SPECS,
         'image': imageBlockSpec,
         'signature': BlockSignature(),
         'quoted-message': QuotedMessageBlock(),
@@ -41,6 +44,8 @@ export type MessageComposerBlockSchema = MessageComposerBlockNoteSchema['blockSc
 export type MessageComposerInlineContentSchema = MessageComposerBlockNoteSchema['inlineContentSchema'];
 export type MessageComposerStyleSchema = MessageComposerBlockNoteSchema['styleSchema'];
 export type PartialMessageComposerBlockSchema = PartialBlock<MessageComposerBlockSchema, MessageComposerInlineContentSchema, MessageComposerStyleSchema>;
+
+const SUPPORTED_BLOCK_TYPES = Object.keys(BLOCKNOTE_SCHEMA.blockSchema);
 
 const emailExporter = new EmailExporter();
 
@@ -129,7 +134,7 @@ export const MessageComposer = React.forwardRef<MessageComposerHandle, MessageCo
 
     // Intercept non-image file drops/pastes before BlockNote processes them.
     // Without this, BlockNote routes unknown MIME types to the "file" block
-    // (removed from schema) which causes a crash.
+    // (kept out of the schema, see SUPPORTED_BLOCK_SPECS) which causes a crash.
     //
     // BlockNote's SideMenu plugin dispatches synthetic drop events (isTrusted=false)
     // on the editor when the real drop lands within 250px of the editor bounds.
@@ -153,9 +158,18 @@ export const MessageComposer = React.forwardRef<MessageComposerHandle, MessageCo
      * to display a preview of the quoted message.
      */
     const getInitialContent = () => {
-        // Parse initial content
-        const initialContent = defaultValue
-            ? JSON.parse(defaultValue)
+        // Parse initial content, dropping the blocks the schema no longer knows
+        // about so a draft saved with a pasted video/audio still opens.
+        let parsedContent: Record<string, unknown>[] = [];
+        if (defaultValue) {
+            try {
+                parsedContent = dropUnsupportedBlocks(JSON.parse(defaultValue), SUPPORTED_BLOCK_TYPES);
+            } catch (error) {
+                handle(new Error("Error parsing initial content."), { extra: { error, defaultValue } });
+            }
+        }
+        const initialContent = parsedContent.length > 0
+            ? parsedContent
             : [{ type: "paragraph", content: "" }];
 
         if (!quotedMessage) return initialContent;
@@ -184,7 +198,7 @@ export const MessageComposer = React.forwardRef<MessageComposerHandle, MessageCo
         dictionary: createBlockNoteDictionary(locale, t),
         ...blockNoteOptions,
         _tiptapOptions: {
-            extensions: [SmartTrailingBlock],
+            extensions: [SmartTrailingBlock, PasteColorSanitizer],
             editorProps: {
                 handleDOMEvents: {
                     blur: (_view: unknown, event: FocusEvent) => {
@@ -424,7 +438,9 @@ export const MessageComposer = React.forwardRef<MessageComposerHandle, MessageCo
     }, [editor, draft?.id]);
 
     // Sync direction: attachments → editor.
-    // Removes image blocks whose attachment was deleted externally (e.g. via AttachmentUploader).
+    // Removes image blocks whose inline attachment was deleted externally (e.g. via
+    // AttachmentUploader). Images that never had an attachment — a remote URL, one
+    // typed in the image toolbar — are left untouched, see findOrphanInlineImages.
     // The reverse direction (editor → attachments) lives in handleChange above.
     // No loop occurs because:
     //  - This effect removing a block triggers handleChange, but the attachment is already gone
@@ -433,14 +449,12 @@ export const MessageComposer = React.forwardRef<MessageComposerHandle, MessageCo
     //    when the attachment is already absent, so this effect doesn't re-fire.
     useEffect(() => {
         if (!editor) return;
-        const inlineImages = editor.document.filter(block => block.type === 'image');
-        if (inlineImages.length === 0) return;
-        const blobAttachments = attachments.filter((a): a is Attachment => 'blobId' in a);
-        const inlineImagesToRemove = inlineImages.filter(image =>
-            editor.getBlock(image.id) && !blobAttachments.some(a => image.props.url.includes(a.blobId)),
+        const attachedBlobIds = new Set(
+            attachments.filter((a): a is Attachment => 'blobId' in a).map(a => a.blobId),
         );
-        if (inlineImagesToRemove.length > 0) {
-            editor.removeBlocks(inlineImagesToRemove.map(image => image.id));
+        const orphanIds = findOrphanInlineImages(editor.document, attachedBlobIds);
+        if (orphanIds.length > 0) {
+            editor.removeBlocks(orphanIds);
         }
     }, [attachments]);
 

@@ -1,4 +1,5 @@
 import { vi } from 'vitest';
+import { BlockNoteEditor } from '@blocknote/core';
 import { EmailExporter } from './index';
 import {
   AnyBlock,
@@ -203,11 +204,15 @@ describe('EmailExporter', () => {
       expect(html).toContain('text-decoration-line:underline line-through');
     });
 
-    it('passes through non-named color values', () => {
+    it('drops color values outside the BlockNote palette', () => {
+      // Such values only come from pasted foreign HTML and are invisible in the
+      // editor, so exporting them would leak unapplied styling into the mail.
       const html = exportBlocks([
-        paragraph([styledText('Custom', { textColor: '#ff00ff' })]),
+        paragraph([styledText('Pasted', { textColor: 'rgb(51, 51, 51)' })], {
+          backgroundColor: '#ffffff',
+        }),
       ]);
-      expect(html).toContain('color:#ff00ff');
+      expect(html).toBe('<p>Pasted</p>');
     });
 
     it('ignores default color values', () => {
@@ -432,6 +437,55 @@ describe('EmailExporter', () => {
       expect(html).toContain('<ol>');
       expect(html).toContain('First');
       expect(html).toContain('Second');
+    });
+
+    // A list pasted from a mail or a document can start anywhere; the editor
+    // displays that number, so the mail must count from it too.
+    it('carries the start of a numbered list onto the <ol>', () => {
+      const html = exportBlocks([
+        numberedListItem('Fifth', { start: 5 }),
+        numberedListItem('Sixth'),
+      ]);
+      expect(html).toContain('<ol start="5">');
+    });
+
+    it('emits no start attribute for a list counting from 1', () => {
+      const html = exportBlocks([
+        numberedListItem('First', { start: 1 }),
+        numberedListItem('Second'),
+      ]);
+      expect(html).toContain('<ol>');
+    });
+
+    it('ignores a start carried by a later item, like the editor does', () => {
+      const html = exportBlocks([
+        numberedListItem('First'),
+        numberedListItem('Stray', { start: 9 }),
+      ]);
+      expect(html).toContain('<ol>');
+      expect(html).not.toContain('start=');
+    });
+
+    it('ignores an unusable start value', () => {
+      const html = exportBlocks([numberedListItem('First', { start: NaN })]);
+      expect(html).toContain('<ol>');
+      expect(html).not.toContain('start=');
+    });
+
+    it('never puts a start on a bullet list', () => {
+      const html = exportBlocks([bulletListItem('Item', { start: 5 })]);
+      expect(html).toContain('<ul>');
+      expect(html).not.toContain('start=');
+    });
+
+    it('gives a nested numbered list its own start', () => {
+      const html = exportBlocks([
+        numberedListItem('Parent', {}, [
+          numberedListItem('Nested third', { start: 3 }),
+          numberedListItem('Nested fourth'),
+        ]),
+      ]);
+      expect(html).toMatch(/<ol>[\s\S]*<ol start="3">[\s\S]*Nested third/);
     });
 
     it('renders checked check list item with checked input', () => {
@@ -1025,5 +1079,22 @@ describe('EmailExporter', () => {
       ]);
       expect(html).toMatchInlineSnapshot(`"<figure style="margin:0;text-align:center"><img loading="lazy" alt="A nice photo" src="https://example.com/photo.jpg" style="display:block;margin-left:auto;margin-right:auto" width="400"/><figcaption>A nice photo</figcaption></figure>"`);
     });
+  });
+});
+
+// Guards the whole chain for the case that motivated it: BlockNote only stores
+// `start` when it parses an `<ol start=…>` from pasted HTML.
+describe('EmailExporter on pasted HTML', () => {
+  it('keeps the numbering of a pasted ordered list', async () => {
+    const editor = BlockNoteEditor.create();
+    const blocks = await editor.tryParseHTMLToBlocks(
+      '<ol start="5"><li>cinq</li><li>six</li></ol>',
+    );
+
+    const html = new EmailExporter().exportBlocks(blocks, null);
+
+    expect(html).toContain('<ol start="5">');
+    expect(html).toContain('cinq');
+    expect(html).toContain('six');
   });
 });

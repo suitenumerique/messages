@@ -1,5 +1,5 @@
 import { BlockNoteViewField } from "@/features/blocknote/blocknote-view-field";
-import { BlockNoteEditor, BlockNoteEditorOptions, BlockNoteSchema, defaultBlockSpecs, defaultInlineContentSpecs } from "@blocknote/core";
+import { BlockNoteEditor, BlockNoteEditorOptions, BlockNoteSchema, defaultInlineContentSpecs } from "@blocknote/core";
 import { buildTemplateVariableInsertion, InlineTemplateVariable, TemplateVariableSelector } from "@/features/blocknote/inline-template-variable";
 import { TemplateVariableEditingBehavior } from "@/features/blocknote/inline-template-variable/editing-behavior";
 import { usePlaceholderVariables } from "@/features/blocknote/inline-template-variable/use-placeholder-variables";
@@ -11,6 +11,7 @@ import { BlockSignature, BlockSignatureConfigProps, SignatureTemplateSelector } 
 import { MessageTemplateTypeChoices, useMailboxesMessageTemplatesAvailableList } from "@/features/api/gen";
 import { useMailboxContext } from "@/features/providers/mailbox";
 import { imageBlockSpec } from "@/features/blocknote/image-block";
+import { SUPPORTED_BLOCK_SPECS } from "@/features/blocknote/utils";
 import { SmartTrailingBlock } from "@/features/blocknote/smart-trailing-block";
 import { useBase64Composer, Base64ComposerHandle } from "@/features/blocknote/hooks/use-base64-composer";
 import { extractSignatureId } from "../utils";
@@ -19,7 +20,7 @@ import { filterSuggestionItems } from "@blocknote/core/extensions";
 
 const TEMPLATE_BLOCKNOTE_SCHEMA = BlockNoteSchema.create({
     blockSpecs: {
-        ...defaultBlockSpecs,
+        ...SUPPORTED_BLOCK_SPECS,
         'image': imageBlockSpec,
         'signature': BlockSignature(),
     },

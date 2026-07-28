@@ -1,5 +1,5 @@
 import { BlockNoteViewField } from "@/features/blocknote/blocknote-view-field";
-import { BlockNoteEditor, BlockNoteEditorOptions, BlockNoteSchema, defaultBlockSpecs, defaultInlineContentSpecs, PartialBlock } from "@blocknote/core";
+import { BlockNoteEditor, BlockNoteEditorOptions, BlockNoteSchema, defaultInlineContentSpecs, PartialBlock } from "@blocknote/core";
 import { filterSuggestionItems } from "@blocknote/core/extensions";
 import { SuggestionMenuController } from "@blocknote/react";
 import { FieldProps } from "@gouvfr-lasuite/cunningham-react";
@@ -10,12 +10,13 @@ import { TemplateVariableEditingBehavior } from "@/features/blocknote/inline-tem
 import { usePlaceholderVariables } from "@/features/blocknote/inline-template-variable/use-placeholder-variables";
 import { Toolbar } from "@/features/blocknote/toolbar";
 import { imageBlockSpec } from "@/features/blocknote/image-block";
+import { SUPPORTED_BLOCK_SPECS } from "@/features/blocknote/utils";
 import { useBase64Composer, Base64ComposerHandle } from "@/features/blocknote/hooks/use-base64-composer";
 import { ColumnBlock, ColumnListBlock } from "@/features/blocknote/column-layout-block";
 
 const SIGNATURE_BLOCKNOTE_SCHEMA = BlockNoteSchema.create({
     blockSpecs: {
-        ...defaultBlockSpecs,
+        ...SUPPORTED_BLOCK_SPECS,
         'image': imageBlockSpec,
         'column': ColumnBlock,
         'columnList': ColumnListBlock,

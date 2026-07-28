@@ -2,6 +2,7 @@ import { vi } from 'vitest';
 import MailHelper, { SUPPORTED_IMAP_DOMAINS, ATTACHMENT_SEPARATORS } from './mail-helper';
 import DetectionMap from '@/features/i18n/attachments-detection-map.json';
 import i18n from '@/features/i18n/initI18n';
+import { getApiOrigin } from '@/features/api/utils';
 
 vi.mock('./errors', () => ({ handle: vi.fn() }));
 
@@ -810,6 +811,54 @@ describe('MailHelper', () => {
 
     it('should handle empty string', () => {
       expect(MailHelper.replaceBlobUrlsWithCid('')).toBe('');
+    });
+  });
+
+  describe('extractBlobId', () => {
+    const blobId = 'a1b2c3d4-e5f6-7890-abcd-ef1234567890';
+
+    it('should read the id from an absolute blob URL on the API origin', () => {
+      expect(
+        MailHelper.extractBlobId(`${getApiOrigin()}/api/v1.0/blob/${blobId}/download/`),
+      ).toBe(blobId);
+    });
+
+    it('should read the id from a relative blob URL', () => {
+      expect(MailHelper.extractBlobId(`/api/v1.0/blob/${blobId}/download/`)).toBe(blobId);
+    });
+
+    it('should read the id from a URL on the configured API origin', () => {
+      vi.stubEnv('NEXT_PUBLIC_API_ORIGIN', 'https://api.example.test');
+      try {
+        expect(
+          MailHelper.extractBlobId(`https://api.example.test/api/v1.0/blob/${blobId}/download/`),
+        ).toBe(blobId);
+        // The window origin is no longer the API: it must stop being accepted.
+        expect(
+          MailHelper.extractBlobId(`${window.location.origin}/api/v1.0/blob/${blobId}/download/`),
+        ).toBeNull();
+      } finally {
+        vi.unstubAllEnvs();
+      }
+    });
+
+    it.each([
+      ['a remote image', 'https://example.com/photo.png'],
+      ['a data URI', 'data:image/png;base64,iVBORw0KGgo='],
+      ['an object URL', 'blob:http://localhost:8900/8f3b-4a1c'],
+      ['an empty string', ''],
+    ])('should return null for %s', (_label, url) => {
+      expect(MailHelper.extractBlobId(url)).toBeNull();
+    });
+
+    it.each([
+      // Anchored matching: only the URL we built ourselves designates an attachment.
+      ['a URL that merely embeds a blob path', `https://evil.test/redirect?to=/api/v1.0/blob/${blobId}/download/`],
+      ['an arbitrary origin', `https://cdn.example/api/v1.0/blob/${blobId}/download/`],
+      ['a trailing path segment', `${getApiOrigin()}/api/v1.0/blob/${blobId}/download/extra`],
+      ['a trailing query string', `${getApiOrigin()}/api/v1.0/blob/${blobId}/download/?x=1`],
+    ])('should return null for %s', (_label, url) => {
+      expect(MailHelper.extractBlobId(url)).toBeNull();
     });
   });
 

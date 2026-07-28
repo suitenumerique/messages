@@ -1,5 +1,11 @@
+import { BlockNoteEditor, BlockNoteSchema } from '@blocknote/core';
 import type { Block } from '@blocknote/core';
-import { backfillTemplateVariableContent, resolveTemplateVariables } from './utils';
+import {
+  backfillTemplateVariableContent,
+  dropUnsupportedBlocks,
+  resolveTemplateVariables,
+  SUPPORTED_BLOCK_SPECS,
+} from './utils';
 import {
   AnyInlineContent,
   bulletListItem,
@@ -223,5 +229,102 @@ describe('backfillTemplateVariableContent', () => {
 
     expect(result[0].type).toBe('divider');
     expect(result[1].type).toBe('image');
+  });
+});
+
+describe('SUPPORTED_BLOCK_SPECS', () => {
+  it('leaves out the blocks the email exporter cannot render', () => {
+    expect(SUPPORTED_BLOCK_SPECS).not.toHaveProperty('video');
+    expect(SUPPORTED_BLOCK_SPECS).not.toHaveProperty('audio');
+    expect(SUPPORTED_BLOCK_SPECS).not.toHaveProperty('file');
+  });
+
+  it('keeps the blocks the composer relies on', () => {
+    expect(SUPPORTED_BLOCK_SPECS).toHaveProperty('paragraph');
+    expect(SUPPORTED_BLOCK_SPECS).toHaveProperty('heading');
+    expect(SUPPORTED_BLOCK_SPECS).toHaveProperty('image');
+  });
+
+  it('produces no block when media or a file is pasted', async () => {
+    const editor = BlockNoteEditor.create({
+      schema: BlockNoteSchema.create({ blockSpecs: SUPPORTED_BLOCK_SPECS }),
+    });
+
+    const blocks = await editor.tryParseHTMLToBlocks(
+      '<p>avant</p><video src="https://x.test/v.mp4"></video>' +
+      '<audio src="https://x.test/a.mp3"></audio>' +
+      '<embed src="https://x.test/doc.pdf" type="application/pdf"><p>apres</p>',
+    );
+
+    expect(blocks.map((b) => b.type)).toEqual(['paragraph', 'paragraph']);
+  });
+});
+
+describe('dropUnsupportedBlocks', () => {
+  const SUPPORTED = ['paragraph', 'image'];
+
+  it('removes a block whose type is not in the schema', () => {
+    const blocks = [
+      { type: 'paragraph', content: 'hello' },
+      { type: 'video', props: { url: 'https://x.test/v.mp4' } },
+    ];
+
+    const result = dropUnsupportedBlocks(blocks, SUPPORTED);
+
+    expect(result.map((b) => b.type)).toEqual(['paragraph']);
+  });
+
+  it('removes unsupported nested blocks while keeping their parent', () => {
+    const blocks = [
+      {
+        type: 'paragraph',
+        content: 'parent',
+        children: [
+          { type: 'audio', props: { url: 'https://x.test/a.mp3' } },
+          { type: 'paragraph', content: 'kept' },
+        ],
+      },
+    ];
+
+    const result = dropUnsupportedBlocks(blocks, SUPPORTED);
+
+    const children = result[0].children as Record<string, unknown>[];
+    expect(children.map((b) => b.type)).toEqual(['paragraph']);
+    expect(result[0].content).toBe('parent');
+  });
+
+  it('keeps a block without a type, which BlockNote reads as a paragraph', () => {
+    const blocks = [{ content: 'implicit paragraph' }];
+
+    expect(dropUnsupportedBlocks(blocks, SUPPORTED)).toHaveLength(1);
+  });
+
+  it('returns the same blocks when everything is supported', () => {
+    const blocks = [{ type: 'paragraph', content: 'a' }, { type: 'image', props: {} }];
+
+    expect(dropUnsupportedBlocks(blocks, SUPPORTED)).toHaveLength(2);
+  });
+
+  // Guards the reason this filter exists: BlockNote throws when initialContent
+  // holds a type it cannot construct, which would make the draft unopenable.
+  it('makes a legacy draft holding a video block loadable again', () => {
+    const schema = BlockNoteSchema.create({ blockSpecs: SUPPORTED_BLOCK_SPECS });
+    const draft = [
+      { type: 'paragraph', content: 'hello' },
+      { type: 'video', props: { url: 'https://x.test/v.mp4' } },
+    ];
+
+    expect(() =>
+      BlockNoteEditor.create({
+        schema,
+        initialContent: draft as never,
+      }),
+    ).toThrow();
+
+    const editor = BlockNoteEditor.create({
+      schema,
+      initialContent: dropUnsupportedBlocks(draft, Object.keys(schema.blockSchema)) as never,
+    });
+    expect(editor.document.map((b) => b.type)).toEqual(['paragraph']);
   });
 });
