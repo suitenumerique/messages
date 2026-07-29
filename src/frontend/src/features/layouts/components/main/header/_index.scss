@@ -107,8 +107,26 @@
   &__right {
     grid-area: right;
     justify-content: flex-end;
-    gap: var(--c--globals--spacings--3xs);
   }
+}
+
+// On the native app the header is pinned at the physical top of an
+// edge-to-edge webview: keep its background under the status bar / notch but
+// push its content below. --header-height grows by the same amount (see
+// globals.scss), so the content zone keeps its nominal height (border-box).
+.native .c__header {
+  padding-top: var(--safe-area-inset-top);
+}
+
+// Gap lives here (not on .c__header__right) so a conditionally-rendered
+// sibling (e.g. AutoreplyIndicator) mounting/unmounting doesn't shift the
+// other header-right children by a sub-pixel amount. 0.5rem matches
+// Docs/Drive's header-right action cluster exactly (not the 3xs/0.25rem
+// token) so the icon row lands on the same pixels across apps.
+.header__actions {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
 }
 
 .user-menu__footer-action {

@@ -165,6 +165,19 @@ body {
   text-align: center;
 }
 
+.c__button {
+  contain: content;
+}
+
+.c__button:disabled {
+  cursor: unset;
+}
+
+.c__button--medium {
+  min-height: var(--c--components--button--medium-height);
+  height: auto;
+}
+
 .c__dropdown-menu-trigger .c__button {
   font-size: var(--c--globals--font--sizes--sm);
 }

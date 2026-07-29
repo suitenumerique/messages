@@ -17,8 +17,12 @@ const APP_META: Record<AppId, { icon: string; color: string; gradientEnd: string
   commander: { icon: "/images/icons/commander-icon.svg", color: "#0284C7", gradientEnd: "#0064C8" },
 };
 
+// Fixed order for the trigger button's decorative dot pattern — identical
+// across every Mosa app regardless of which app is current (matches Docs/Drive).
+const DOT_ORDER: AppId[] = ["epicentre", "drive", "meet", "mail", "calendar", "chat", "commander"];
+
 // "mail" is this app itself and is intentionally omitted — it never appears in the jump-to list.
-const APP_ORDER: AppId[] = ["epicentre", "docs", "drive", "meet", "calendar", "chat", "commander"];
+const NAV_ORDER: AppId[] = ["epicentre", "docs", "drive", "meet", "calendar", "chat", "commander"];
 
 const AppIcon = ({ id, size = 40 }: { id: AppId; size?: number }) => {
   const { t } = useTranslation();
@@ -50,7 +54,7 @@ const Panel = ({
 }) => {
   const { t } = useTranslation();
 
-  const jumpTo = APP_ORDER.filter((id) => id in appUrls && id in APP_META);
+  const jumpTo = NAV_ORDER.filter((id) => id in appUrls && id in APP_META);
 
   return (
     <div
@@ -103,7 +107,7 @@ export const AppSwitcherButton = () => {
   const ref = useRef<HTMLDivElement>(null);
 
   const appUrls = APP_URLS ?? {};
-  const hasOtherApps = APP_ORDER.some((id) => id in appUrls && id in APP_META);
+  const hasOtherApps = NAV_ORDER.some((id) => id in appUrls && id in APP_META);
 
   useEffect(() => {
     if (!isOpen) return;
@@ -138,7 +142,7 @@ export const AppSwitcherButton = () => {
         icon={
           <span className="app-switcher-panel__trigger-grid" aria-hidden>
             <svg width="18" height="18" viewBox="0 0 18 18">
-              {[...APP_ORDER, APP_ORDER[0], APP_ORDER[1]].map((id, i) => (
+              {[...DOT_ORDER, DOT_ORDER[0], DOT_ORDER[1]].map((id, i) => (
                 <circle
                   key={i}
                   cx={3 + (i % 3) * 6}

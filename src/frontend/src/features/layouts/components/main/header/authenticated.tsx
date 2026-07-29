@@ -1,4 +1,4 @@
-import { DropdownMenu, HeaderProps, useResponsive, UserMenu, VerticalSeparator } from "@gouvfr-lasuite/ui-components";
+import { DropdownMenu, HeaderProps, useResponsive, UserMenu } from "@gouvfr-lasuite/ui-components";
 import { Controls, GearRounded, LeftPanel, Upload, XMark } from "@gouvfr-lasuite/ui-components/icons";
 import { Button, Tooltip } from "@gouvfr-lasuite/ui-components";
 import { useMemo, useState } from "react";
@@ -198,19 +198,15 @@ const ImportIndicator = () => {
 
 export const HeaderRight = () => {
   const { user } = useAuth();
-  const { isDesktop } = useResponsive();
   const { themeConfig } = useTheme();
 
   return (
-    <>
-      <div className="flex-row flex-align-center">
-        <ImportIndicator />
-        <AutoreplyIndicator />
-        <SurveyButton iconOnly color="brand" variant="tertiary" />
-        <ApplicationMenu />
-        {isDesktop && <VerticalSeparator size="24px" withPadding={false} />}
-        {!isNativePlatform() && <AppSwitcherButton />}
-      </div>
+    <div className="header__actions">
+      <ImportIndicator />
+      <AutoreplyIndicator />
+      <SurveyButton iconOnly color="brand" variant="tertiary" />
+      <ApplicationMenu />
+      <AppSwitcherButton />
       <UserMenu
         user={user ? {
           full_name: user.full_name ?? undefined,
@@ -225,7 +221,7 @@ export const HeaderRight = () => {
           </div>
         }
       />
-    </>
+    </div>
   );
 };
 
