@@ -78,82 +78,66 @@ def inbound_mailbox_lock(mailbox_id: uuid.UUID):
 
 def _canonicalize_subject(subject: str | None) -> str:
     """Strip leading ``Re:`` / ``Fwd:`` (and i18n variants) for thread match."""
+    # ``\s*`` after the colon, not ``\s+``: mobile clients regularly send
+    # "Re:subject" with no space, and a prefix left in place makes two
+    # messages of the same conversation compare as different subjects.
     return re.sub(
-        r"^((re|fwd|fw|rep|tr|rép)\s*:\s+)+",
+        r"^((re|fwd|fw|rep|tr|rép)\s*:\s*)+",
         "",
         (subject or "").lower(),
         flags=re.IGNORECASE,
     ).strip()
 
 
-def find_thread_for_inbound_message(
-    parsed_email: JmapEmail, mailbox: models.Mailbox
-) -> models.Thread | None:
-    """Attempt to find an existing thread for an inbound message.
-
-    Follows JMAP spec recommendations:
-    https://www.ietf.org/rfc/rfc8621.html#section-3
-    """
-    in_reply_to = first_msgid(parsed_email.get("inReplyTo"))
-    references = parsed_email.get("references") or []
-
-    all_referenced_ids = set(references)
-    if in_reply_to:
-        all_referenced_ids.add(in_reply_to)
-
-    if not all_referenced_ids:
-        return None  # No headers to match on
-
-    # Find potential parent messages in the target mailbox based on references
-    potential_parents = list(
+def _parent_messages(mime_ids: list[str], mailbox: models.Mailbox):
+    """Messages of ``mailbox`` whose Message-ID is one of ``mime_ids``, newest first."""
+    return (
         models.Message.objects.filter(
-            mime_id__in=list(all_referenced_ids),
+            mime_id__in=mime_ids,
             thread__accesses__mailbox=mailbox,
         )
         .select_related("thread")
         .order_by("-created_at")  # Prefer newer matches if multiple found
     )
 
-    if len(potential_parents) == 0:
-        return None  # No matching messages found by ID in this mailbox
 
-    # Strategy 1: Match by reference AND canonical subject
-    incoming_subject_canonical = _canonicalize_subject(parsed_email.get("subject"))
-    for parent in potential_parents:
-        parent_subject_canonical = _canonicalize_subject(parent.subject)
-        if incoming_subject_canonical == parent_subject_canonical:
-            return parent.thread  # Found a match!
-
-    # Strategy 2 (Fallback): If no subject match, return thread of the most recent parent message
-    # The list is ordered by -created_at, so the first element is the latest match.
-    return None  # potential_parents.first().thread
-
-
-def find_thread_for_import(
+def find_thread_for_message(
     parsed_email: JmapEmail, mailbox: models.Mailbox
 ) -> models.Thread | None:
-    """
-    During import, try to find an existing thread that contains messages
-    with the same subject or referenced message IDs.
-    """
+    """Attempt to find the existing thread an incoming message belongs to.
 
-    subject = parsed_email.get("subject", "")
+    Two levels of evidence, strongest first:
+
+    1. ``In-Reply-To`` — an explicit, unambiguous pointer to a single
+       parent. When that parent is already in the mailbox the message
+       belongs to its thread whatever the subject says: participants
+       rewrite subjects mid-conversation, and RFC 8621 §3 only *allows*
+       splitting a thread on subject, it never requires it.
+    2. ``References`` — a chain some MUAs recycle across unrelated
+       conversations (replying to an old mail to start a new topic), so a
+       matching canonical subject is required before trusting it.
+
+    Shared by the SMTP delivery path and the importers: a mailbox that is
+    imported and then kept in sync over SMTP must be threaded by one rule,
+    otherwise the same conversation splits differently on each path.
+    """
     in_reply_to = first_msgid(parsed_email.get("inReplyTo"))
-    references = parsed_email.get("references") or []
+    references = [
+        ref for ref in (parsed_email.get("references") or []) if ref != in_reply_to
+    ]
 
-    # First try to find a thread by message IDs
-    thread = _find_thread_by_message_ids(in_reply_to, references, mailbox)
+    if in_reply_to:
+        parent = _parent_messages([in_reply_to], mailbox).first()
+        if parent:
+            return parent.thread
 
-    # If no thread found by message IDs, try by subject
-    if not thread and subject:
-        # Look for threads with similar subjects
-        canonical_subject = _canonicalize_subject(subject)
-        thread = models.Thread.objects.filter(
-            subject__iregex=rf"^(re|fwd|fw|rep|tr|rép)\s*:\s*{re.escape(canonical_subject)}$",
-            accesses__mailbox=mailbox,
-        ).first()
+    if references:
+        incoming_subject_canonical = _canonicalize_subject(parsed_email.get("subject"))
+        for parent in _parent_messages(references, mailbox):
+            if _canonicalize_subject(parent.subject) == incoming_subject_canonical:
+                return parent.thread
 
-    return thread
+    return None
 
 
 def _create_thread(parsed_email: JmapEmail, mailbox: models.Mailbox) -> models.Thread:
@@ -181,24 +165,6 @@ def _create_thread(parsed_email: JmapEmail, mailbox: models.Mailbox) -> models.T
     )
 
     return thread
-
-
-def _find_thread_by_message_ids(
-    in_reply_to: str, references: list[str], mailbox: models.Mailbox
-) -> models.Thread | None:
-    """Find thread by message IDs (``inReplyTo`` and ``references``)."""
-    if in_reply_to or references:
-        thread = models.Thread.objects.filter(
-            messages__mime_id__in=[in_reply_to] if in_reply_to else [],
-            accesses__mailbox=mailbox,
-        ).first()
-        if not thread and references:
-            thread = models.Thread.objects.filter(
-                messages__mime_id__in=references,
-                accesses__mailbox=mailbox,
-            ).first()
-        return thread
-    return None
 
 
 def _record_divergent_rcpt(
@@ -315,14 +281,7 @@ def _create_message_from_inbound(  # pylint: disable=too-many-arguments
 
         # --- 3. Find or Create Thread --- #
         try:
-            thread = None
-            if is_import:
-                thread = find_thread_for_import(parsed_email, mailbox)
-
-            # If no thread found or not an import, use normal thread finding logic
-            if not thread:
-                thread = find_thread_for_inbound_message(parsed_email, mailbox)
-
+            thread = find_thread_for_message(parsed_email, mailbox)
             if not thread:
                 thread = _create_thread(parsed_email, mailbox)
 

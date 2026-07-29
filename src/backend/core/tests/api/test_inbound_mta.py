@@ -842,10 +842,14 @@ class TestMTAInboundEmailThreading:
         assert new_message.thread == initial_thread
         assert new_message.subject == reply_subject
 
-    def test_reply_creates_new_thread_different_subject(
+    def test_reply_keeps_thread_when_subject_rewritten(
         self, api_client: APIClient, valid_jwt_token
     ):
-        """Test reply creates a new thread if the canonical subject differs."""
+        """Test a reply stays in its thread even when its subject was rewritten.
+
+        In-Reply-To points at a message we hold: that link is explicit and
+        wins over the subject, which participants routinely edit.
+        """
         initial_subject = "Important Meeting"
         initial_mime_id = "meeting.789@example.com"
         initial_thread, initial_message = self._create_initial_message(
@@ -855,6 +859,44 @@ class TestMTAInboundEmailThreading:
         reply_subject = "Completely Different Topic"  # Subject changed
         reply_email_bytes = self._create_reply_email(
             self.recipient_email, reply_subject, in_reply_to=initial_mime_id
+        )
+
+        token = valid_jwt_token(
+            reply_email_bytes, {"original_recipients": [self.recipient_email]}
+        )
+
+        response = api_client.post(
+            "/api/v1.0/inbound/mta/deliver/",
+            data=reply_email_bytes,
+            content_type="message/rfc822",
+            HTTP_AUTHORIZATION=f"Bearer {token}",
+        )
+
+        assert response.status_code == status.HTTP_200_OK
+        assert models.Thread.objects.count() == 1  # No new thread created
+        assert models.Message.objects.count() == 2
+        new_message = models.Message.objects.exclude(id=initial_message.id).first()
+        assert new_message is not None
+        assert new_message.thread == initial_thread
+        assert new_message.subject == reply_subject
+
+    def test_references_only_creates_new_thread_different_subject(
+        self, api_client: APIClient, valid_jwt_token
+    ):
+        """Test a new topic built on a recycled References chain is split off.
+
+        Without In-Reply-To, References alone is not proof of continuity: a
+        differing canonical subject means a new thread.
+        """
+        initial_subject = "Important Meeting"
+        initial_mime_id = "meeting.790@example.com"
+        initial_thread, initial_message = self._create_initial_message(
+            initial_subject, initial_mime_id
+        )
+
+        reply_subject = "Completely Different Topic"  # Subject changed
+        reply_email_bytes = self._create_reply_email(
+            self.recipient_email, reply_subject, references=[initial_mime_id]
         )
 
         token = valid_jwt_token(
