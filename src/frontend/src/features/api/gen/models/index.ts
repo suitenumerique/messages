@@ -119,6 +119,7 @@ export * from "./maildomains_message_templates_retrieve_params";
 export * from "./message";
 export * from "./message_body_item";
 export * from "./message_delivery_status_choices";
+export * from "./message_read_by_item";
 export * from "./message_recipient";
 export * from "./message_recipient_delivery_status";
 export * from "./message_sender_user";

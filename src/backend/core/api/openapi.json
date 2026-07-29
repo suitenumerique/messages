@@ -9514,6 +9514,26 @@
                         "additionalProperties": {},
                         "description": "Return the STMSG headers of the message.",
                         "readOnly": true
+                    },
+                    "read_by": {
+                        "type": "array",
+                        "items": {
+                            "type": "object",
+                            "properties": {
+                                "user_id": {
+                                    "type": "string",
+                                    "format": "uuid"
+                                },
+                                "user_name": {
+                                    "type": "string"
+                                },
+                                "read_at": {
+                                    "type": "string",
+                                    "format": "date-time"
+                                }
+                            }
+                        },
+                        "readOnly": true
                     }
                 },
                 "required": [
@@ -9532,6 +9552,7 @@
                     "is_unread",
                     "mime_id",
                     "parent_id",
+                    "read_by",
                     "sender",
                     "sender_user",
                     "sent_at",
