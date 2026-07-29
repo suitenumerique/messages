@@ -7,6 +7,31 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.3.0] - 2026-07-29
+
+### Added
+
+- Public attachment-filename helpers, extracted so consumers can apply
+  the same mechanics to names that never went through `parse_email`
+  (e.g. client-supplied names):
+  - `sanitize_filename` (previously the parser-internal
+    `_sanitize_filename`): path/control-character stripping and
+    extension-preserving truncation to 255 chars.
+  - `guess_mime_extension`: MIME type → file extension, correcting the
+    stdlib `mimetypes` table where mail-borne reality disagrees
+    (`text/calendar` → `.ics`, `application/xml` → `.xml` not `.xsl`,
+    `application/octet-stream` → no extension, Outlook's
+    `application/x-zip-compressed` → `.zip`, …). Accepts a full
+    `Content-Type` header value; parameters are dropped before lookup.
+
+  Neither is applied by `parse_email` beyond the existing sanitization:
+  a nameless part still reports `name: null` per RFC 8621 —
+  synthesizing a placeholder remains the consumer's decision.
+
+### Removed
+
+- Dead private helper `_build_attachment_dict`
+
 ## [0.2.0] - 2026-07-22
 
 ### Added
@@ -67,5 +92,6 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 Initial release. Extracted from the
 [Messages](https://github.com/suitenumerique/messages) project.
 
+[0.3.0]: https://github.com/suitenumerique/messages/releases/tag/jmap-email-0.3.0
 [0.2.0]: https://github.com/suitenumerique/messages/releases/tag/jmap-email-0.2.0
 [0.1.0]: https://github.com/suitenumerique/messages/releases/tag/jmap-email-0.1.0

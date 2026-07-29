@@ -1507,8 +1507,11 @@ PDF content 2
         assert content["attachments"][0]["name"] == "doc1.pdf"
         assert content["attachments"][1]["name"] == "doc2.pdf"
 
-    def test_infer_filename_unknown_type(self):
-        """Test filename inference for unknown content types."""
+    def test_nameless_part_keeps_null_name(self):
+        """A part with no filename reports ``name`` as null, per the JMAP spec.
+
+        Synthesizing a placeholder is the consumer's job, not the parser's.
+        """
         raw_email = b"""From: sender@example.com
 To: recipient@example.com
 Subject: Unknown Type
@@ -1523,7 +1526,6 @@ content
         message_obj = _stdlib_message(raw_email)
         content = _parse_message_content(message_obj)
         attachment = content["attachments"][0]
-        # Should return "unnamed" without extension for unknown types
         assert attachment["name"] is None
 
     def test_part_with_empty_body(self):
@@ -3068,7 +3070,7 @@ class TestBufferOverflowShapeRegressions:
         parsed = parse_email(raw)
         if parsed["attachments"]:
             name = parsed["attachments"][0]["name"]
-            # ``_sanitize_filename`` caps at 255 chars.
+            # ``sanitize_filename`` caps at 255 chars.
             assert len(name) <= 255, f"filename not truncated: len={len(name)}"
 
     def test_cve_2005_4348_fetchmail_zero_headers(self):

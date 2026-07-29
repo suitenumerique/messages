@@ -31,10 +31,9 @@ from email.errors import HeaderParseError, MessageError
 from email.header import decode_header as _stdlib_decode_header
 from email.message import Message
 from email.utils import getaddresses, parsedate_to_datetime
-from ntpath import basename as nt_basename
-from posixpath import basename as posix_basename
 from typing import Any, cast
 
+from .filenames import sanitize_filename
 from .options import DEFAULT_PARSE_OPTIONS, ParseOptions
 from .preview import preview_text
 from .types import EmailAddress, EmailBodyPart, JmapEmail
@@ -598,102 +597,6 @@ def parse_date(date_str: str) -> datetime | None:
         return None
 
 
-def _infer_filename_from_content_type(content_type: str) -> str:
-    """
-    Infer a filename with extension from a MIME content type.
-    Uses the most commonly used file extensions for each MIME type.
-
-    Args:
-        content_type: MIME type string (e.g., "image/png", "application/pdf")
-
-    Returns:
-        Filename with appropriate extension (e.g., "unnamed.png", "unnamed.pdf")
-    """
-    extension_map = {
-        "text/plain": ".txt",
-        "text/html": ".html",
-        "text/csv": ".csv",
-        "application/pdf": ".pdf",
-        "image/jpeg": ".jpg",
-        "image/png": ".png",
-        "image/gif": ".gif",
-        "application/json": ".json",
-        "application/xml": ".xml",
-        "application/zip": ".zip",
-    }
-    ext = extension_map.get(content_type, "")
-    return f"unnamed{ext}"
-
-
-def _sanitize_filename(filename: str, max_length: int = 255) -> str:
-    """Sanitize an attachment filename, preserving the extension when truncating."""
-
-    filename = nt_basename(posix_basename(filename))
-
-    filename = filename.strip('"/.\\')
-
-    # Remove null bytes and control characters
-    filename = re.sub(r"[\x00-\x1f\x7f]", "", filename)
-
-    # Remove dangerous characters
-    filename = re.sub(r'[<>:"|?*\\/]', "_", filename)
-
-    # Truncate while preserving extension
-    if len(filename) > max_length:
-        # Find the last dot for extension (but not at the start like .gitignore)
-        last_dot = filename.rfind(".")
-        if last_dot > 0:
-            name = filename[:last_dot]
-            ext = filename[last_dot:]
-            # Only preserve extension if it's reasonable length (up to 10 chars including dot)
-            if len(ext) <= 10:
-                max_name_length = max_length - len(ext)
-                if max_name_length > 0:
-                    return name[:max_name_length] + ext
-        return filename[:max_length]
-
-    return filename
-
-
-def _build_attachment_dict(
-    body: Any,
-    part_type: str,
-    filename: str,
-    disposition: str,
-    content_id: str | None,
-) -> dict[str, Any]:
-    """
-    Helper function to build an attachment dictionary.
-    Converts body to bytes, computes SHA-256 hash, and constructs the attachment dict.
-
-    Args:
-        body: The part body (str or bytes)
-        part_type: MIME type of the part
-        filename: Name of the attachment file
-        disposition: Content-Disposition value ("attachment", "inline", etc.)
-        content_id: Content-ID if present
-
-    Returns:
-        Dictionary representing the attachment
-    """
-    if isinstance(body, str):
-        body_bytes = body.encode("utf-8")
-    else:
-        body_bytes = body
-
-    content_hash = hashlib.sha256(body_bytes).hexdigest()
-
-    return {
-        "type": part_type,
-        "name": _sanitize_filename(filename) or "unnamed",
-        "size": len(body_bytes),
-        "disposition": disposition,
-        "cid": content_id,
-        "content": body_bytes,
-        "sha256": content_hash,
-    }
-
-
 def _is_inline_media_type(content_type: str) -> bool:
     """
     Check if the content type is an inline media type (image/*, audio/*, video/*).
@@ -971,7 +874,7 @@ def _build_attachment_from_part_info(
     body_bytes = part_info["body"] or b""
     if isinstance(body_bytes, str):
         body_bytes = body_bytes.encode("utf-8")
-    sanitized_name = _sanitize_filename(raw_filename) if raw_filename else ""
+    sanitized_name = sanitize_filename(raw_filename) if raw_filename else ""
     return {
         "partId": part_info["part_id"],
         "blobId": None,
