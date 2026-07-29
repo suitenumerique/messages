@@ -116,6 +116,7 @@ export * from "./maildomains_mailboxes_list_params";
 export * from "./maildomains_message_templates_list_params";
 export * from "./maildomains_message_templates_list_type";
 export * from "./maildomains_message_templates_retrieve_params";
+export * from "./mention_read_by_user";
 export * from "./message";
 export * from "./message_body_item";
 export * from "./message_delivery_status_choices";

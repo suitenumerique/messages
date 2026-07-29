@@ -675,6 +675,8 @@
   "Provenance": "Provenance",
   "Raw .eml (message/rfc822)": "Raw .eml (message/rfc822)",
   "Read": "Read",
+  "read_by_count_one": "Read by {{count}}/{{total}}",
+  "read_by_count_other": "Read by {{count}}/{{total}}",
   "Read state": "Read state",
   "Read the webhook documentation for all technical details": "Read the webhook documentation for all technical details",
   "Read-only": "Read-only",

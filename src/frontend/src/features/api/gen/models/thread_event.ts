@@ -8,6 +8,7 @@
 import type { ThreadEventTypeEnum } from "./thread_event_type_enum";
 import type { UserWithoutAbilities } from "./user_without_abilities";
 import type { ThreadEventData } from "./thread_event_data";
+import type { MentionReadByUser } from "./mention_read_by_user";
 
 /**
  * Serialize thread event information.
@@ -34,6 +35,8 @@ export interface ThreadEvent {
   data: ThreadEventData;
   readonly has_unread_mention: boolean;
   readonly is_editable: boolean;
+  /** @nullable */
+  readonly mention_read_by: readonly MentionReadByUser[] | null;
   /** date and time at which a record was created */
   readonly created_at: string;
   /** date and time at which a record was last updated */

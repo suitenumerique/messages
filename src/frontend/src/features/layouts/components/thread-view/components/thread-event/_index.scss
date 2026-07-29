@@ -118,6 +118,22 @@
     pointer-events: auto;
 }
 
+// Read status indicator for mentions (visible only to the event author)
+.thread-event__read-status {
+    display: flex;
+    justify-content: flex-end;
+    padding: 0 var(--c--globals--spacings--xs);
+}
+
+.thread-event__read-indicator {
+    font-size: var(--c--globals--font--sizes--xs);
+    color: var(--c--contextuals--content--semantic--success--primary);
+    display: flex;
+    align-items: center;
+    gap: var(--c--globals--spacings--4xs);
+    cursor: help;
+}
+
 // Edited badge
 .thread-event__edited-badge {
     font-size: var(--c--globals--font--sizes--xs);

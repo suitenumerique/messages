@@ -759,6 +759,8 @@
   "Provenance": "Provenance",
   "Raw .eml (message/rfc822)": ".eml brut (message/rfc822)",
   "Read": "Lu",
+  "read_by_count_one": "Lu par {{count}}/{{total}}",
+  "read_by_count_other": "Lu par {{count}}/{{total}}",
   "Read state": "État de lecture",
   "Read the webhook documentation for all technical details": "Consultez la documentation des webhooks pour tous les détails techniques",
   "Read-only": "Lecture seule",

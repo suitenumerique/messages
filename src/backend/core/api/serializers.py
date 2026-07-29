@@ -1315,6 +1315,18 @@ class ThreadAccessSerializer(CreateOnlyFieldsMixin, serializers.ModelSerializer)
         ).data
 
 
+class MentionReadByUserSerializer(serializers.Serializer):  # pylint: disable=abstract-method
+    """Describes a user who has read a mention on a ThreadEvent.
+
+    Exists solely to produce a named component in the OpenAPI schema;
+    only used as a return type of ``ThreadEventSerializer.mention_read_by``.
+    """
+
+    id = serializers.UUIDField()
+    name = serializers.CharField()
+    read_at = serializers.DateTimeField()
+
+
 class ThreadEventSerializer(CreateOnlyFieldsMixin, serializers.ModelSerializer):
     """Serialize thread event information."""
 
@@ -1323,6 +1335,7 @@ class ThreadEventSerializer(CreateOnlyFieldsMixin, serializers.ModelSerializer):
     data = ThreadEventDataField()
     has_unread_mention = serializers.SerializerMethodField()
     is_editable = serializers.SerializerMethodField()
+    mention_read_by = serializers.SerializerMethodField()
 
     class Meta:
         model = models.ThreadEvent
@@ -1337,6 +1350,7 @@ class ThreadEventSerializer(CreateOnlyFieldsMixin, serializers.ModelSerializer):
             "data",
             "has_unread_mention",
             "is_editable",
+            "mention_read_by",
             "created_at",
             "updated_at",
         ]
@@ -1402,6 +1416,29 @@ class ThreadEventSerializer(CreateOnlyFieldsMixin, serializers.ModelSerializer):
     def get_is_editable(self, obj):
         """Return whether the event is still within the edit delay window."""
         return obj.is_editable()
+
+    @extend_schema_field(MentionReadByUserSerializer(many=True, allow_null=True))
+    def get_mention_read_by(self, obj):
+        """Return the list of mentioned users who have read this mention.
+
+        Only returned for the event author. Returns ``None`` for other users.
+        """
+        request = self.context.get("request")
+        if not request or request.user != obj.author:
+            return None
+        read_mentions = models.UserEvent.objects.filter(
+            thread_event=obj,
+            type=enums.UserEventTypeChoices.MENTION,
+            read_at__isnull=False,
+        ).select_related("user")
+        return [
+            {
+                "id": str(ue.user.id),
+                "name": ue.user.full_name or ue.user.email or "",
+                "read_at": ue.read_at.isoformat(),
+            }
+            for ue in read_mentions
+        ]
 
 
 class MailboxAccessReadSerializer(serializers.ModelSerializer):
