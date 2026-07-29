@@ -55,4 +55,13 @@ export interface Message {
   readonly signature: MessageSignature;
   /** Return the STMSG headers of the message. */
   readonly stmsg_headers: MessageStmsgHeaders;
+  /** List of users who have read this message */
+  readonly read_by: readonly ReadByUser[];
+}
+
+/** @nullable */
+export interface ReadByUser {
+  readonly user_id: string;
+  readonly user_name: string;
+  readonly read_at: string;
 }

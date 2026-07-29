@@ -1124,6 +1124,7 @@ class MessageSerializer(serializers.ModelSerializer):
     is_unread = serializers.SerializerMethodField(read_only=True)
     signature = serializers.SerializerMethodField()
     stmsg_headers = serializers.SerializerMethodField(read_only=True)
+    read_by = serializers.SerializerMethodField(read_only=True)
 
     @extend_schema_field(ReadMessageTemplateSerializer(allow_null=True))
     def get_signature(self, instance):
@@ -1146,6 +1147,34 @@ class MessageSerializer(serializers.ModelSerializer):
     def get_stmsg_headers(self, instance) -> dict:
         """Return the STMSG headers of the message."""
         return instance.get_stmsg_headers()
+
+    @extend_schema_field(
+        {
+            "type": "array",
+            "items": {
+                "type": "object",
+                "properties": {
+                    "user_id": {"type": "string", "format": "uuid"},
+                    "user_name": {"type": "string"},
+                    "read_at": {"type": "string", "format": "date-time"},
+                },
+            },
+        }
+    )
+    def get_read_by(self, instance):
+        """Return the list of users who have read this message.
+
+        Uses the ``reads`` prefetch when available (set by MessageViewSet).
+        """
+        reads = instance.reads.all()
+        return [
+            {
+                "user_id": str(r.user_id),
+                "user_name": r.user.full_name or "",
+                "read_at": r.read_at.isoformat(),
+            }
+            for r in reads
+        ]
 
     @extend_schema_field(MessageBodyItemSerializer(many=True))
     def get_textBody(self, instance):  # pylint: disable=invalid-name
@@ -1272,6 +1301,7 @@ class MessageSerializer(serializers.ModelSerializer):
             "mime_id",
             "signature",
             "stmsg_headers",
+            "read_by",
         ]
         read_only_fields = fields  # Mark all as read-only
 
