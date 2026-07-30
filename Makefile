@@ -777,10 +777,11 @@ mobile-android-run: mobile-build ## (host) build+install the debug APK on a devi
 
 # Play refuses a versionCode it has already seen, so it must strictly grow.
 # Default to the commit count — the monotonic half of MOBILE_OTA_BUILD_ID — so
-# it can never be forgotten; override for a pinned/CI build. versionName is what
-# users read in the store listing, so it stays a deliberate marketing version.
+# it can never be forgotten; override for a pinned/CI build. The displayed
+# version (versionName / iOS MARKETING_VERSION) is not passed here: both
+# platforms read it from the frontend package.json, bumped manually per
+# release (docs/mobile.md, App versioning).
 MOBILE_VERSION_CODE ?= $(shell git rev-list --count HEAD)
-MOBILE_VERSION_NAME ?= 1.0
 ANDROID_RELEASE_AAB = src/frontend/android/app/build/outputs/bundle/release/app-release.aab
 
 mobile-android-release: mobile-build ## (host) build the signed Play bundle (.aab) — see docs/mobile.md
@@ -790,10 +791,9 @@ mobile-android-release: mobile-build ## (host) build the signed Play bundle (.aa
 		MOBILE_AUTH_SCHEME="$(call mobile_env,MOBILE_AUTH_SCHEME)" \
 		MOBILE_FIREBASE_PROJECT_ID="$(call mobile_env,MOBILE_FIREBASE_PROJECT_ID)" \
 		MOBILE_VERSION_CODE="$(MOBILE_VERSION_CODE)" \
-		MOBILE_VERSION_NAME="$(MOBILE_VERSION_NAME)" \
 		./gradlew bundleRelease
 	@echo "$(GREEN)Signed bundle: $(ANDROID_RELEASE_AAB)$(RESET)"
-	@echo "versionCode $(MOBILE_VERSION_CODE) / versionName $(MOBILE_VERSION_NAME)"
+	@echo "versionCode $(MOBILE_VERSION_CODE) / versionName $$(sed -n 's/^  \"version\": \"\(.*\)\",$$/\1/p' src/frontend/package.json)"
 .PHONY: mobile-android-release
 
 i18n-generate-front: ## Extract the frontend translation inside a json to be used for crowdin

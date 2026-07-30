@@ -794,10 +794,24 @@ It runs `make mobile-build` (container: web bundle + `cap sync`) then
 `gradlew bundleRelease` (host), and produces
 `src/frontend/android/app/build/outputs/bundle/release/app-release.aab`.
 
-`versionCode` defaults to the commit count, so it grows on its own; override it
-(`make mobile-android-release MOBILE_VERSION_CODE=42 MOBILE_VERSION_NAME=1.1`)
-for a pinned build. Play refuses a `versionCode` it has already accepted, so
-every upload needs a fresh one — including a rebuild of the same commit.
+#### App versioning
+
+The **displayed version** (Android `versionName`, iOS `MARKETING_VERSION` /
+`CFBundleShortVersionString`) has a single source of truth: the `version`
+field of `src/frontend/package.json`, **bumped manually** when releasing.
+Gradle reads the file directly; iOS receives it through the generated
+xcconfig (`make mobile-build`), so bumping it needs no other change on
+either platform. It is a marketing string — users read it in the store
+listing — and carries no ordering constraint.
+
+The **technical version** (`versionCode`) is separate and automatic: it
+defaults to the commit count, so it grows on its own; override it
+(`make mobile-android-release MOBILE_VERSION_CODE=42`) for a pinned build.
+Play refuses a `versionCode` it has already accepted, so every upload needs
+a fresh one — including a rebuild of the same commit. The iOS equivalent
+(`CURRENT_PROJECT_VERSION`, the build number) is still fixed at `1` in the
+Xcode project and will need the same treatment when TestFlight enters the
+picture.
 
 Four guards fail the build rather than shipping something broken: a leftover dev
 `server.url`, cleartext traffic, a missing signing key, and an `applicationId`

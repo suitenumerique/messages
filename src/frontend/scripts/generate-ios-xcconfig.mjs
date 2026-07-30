@@ -11,14 +11,23 @@
 // and the Info.plist `:default=` operators (pinned by sso-invariants.test.ts).
 //
 // Usage: node scripts/generate-ios-xcconfig.mjs
-import { writeFileSync } from "node:fs";
+import { readFileSync, writeFileSync } from "node:fs";
 import { dirname, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
+
+const scriptDir = dirname(fileURLToPath(import.meta.url));
 
 const settings = {
   MOBILE_APP_ID: process.env.MOBILE_APP_ID || "local.suitenumerique.messages",
   PRODUCT_DISPLAY_NAME: process.env.MOBILE_APP_NAME || "ST Messages",
   AUTH_CALLBACK_SCHEME: process.env.MOBILE_AUTH_SCHEME || "stmessages",
+  // Unlike the per-instance identity above, the displayed version is project
+  // truth: the frontend package.json "version" field, bumped manually per
+  // release (docs/mobile.md, App versioning). Feeds MARKETING_VERSION, i.e.
+  // CFBundleShortVersionString — the Android versionName reads the same field.
+  MOBILE_VERSION_NAME: JSON.parse(
+    readFileSync(resolve(scriptDir, "../package.json"), "utf8"),
+  ).version,
 };
 
 // A newline or a "//" would truncate the setting (xcconfig comment/line
@@ -29,10 +38,7 @@ for (const [key, value] of Object.entries(settings)) {
   }
 }
 
-const target = resolve(
-  dirname(fileURLToPath(import.meta.url)),
-  "../ios/App/generated.xcconfig",
-);
+const target = resolve(scriptDir, "../ios/App/generated.xcconfig");
 
 writeFileSync(
   target,

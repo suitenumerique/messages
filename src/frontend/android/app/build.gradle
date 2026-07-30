@@ -44,7 +44,11 @@ android {
         // `make mobile-android-release`) instead of hardcoded, which would make
         // the second upload fail in the console rather than at build time.
         versionCode Integer.parseInt(System.getenv("MOBILE_VERSION_CODE") ?: "1")
-        versionName System.getenv("MOBILE_VERSION_NAME") ?: "1.0"
+        // The displayed version is project truth, not per-instance config: the
+        // single source is the frontend package.json "version" field, bumped
+        // manually per release (iOS reads it too, through the generated
+        // xcconfig) — see docs/mobile.md, App versioning.
+        versionName new groovy.json.JsonSlurper().parse(file("$rootDir/../package.json")).version
         // OIDC callback scheme declared by the manifest's intent-filter. Per
         // environment (like applicationId) so a staging and a production build
         // can coexist on one device: sharing it would make Android prompt the
