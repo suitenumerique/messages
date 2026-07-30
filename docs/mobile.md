@@ -134,8 +134,10 @@ The token is a bearer secret for ~60 s; **PKCE is what makes a stolen deep link
 useless** (the attacker lacks the verifier), which matters because custom URL
 schemes can be claimed by other apps.
 
-The `stmessages` return scheme must be registered natively on **both** platforms
-(source of truth: `AUTH_CALLBACK_SCHEME` in `auth.ts`): an `intent-filter` in
+The return scheme (`MOBILE_AUTH_SCHEME`, default `stmessages`) must be
+registered natively on **both** platforms — both substitute it at build time
+from that one variable, and `sso-invariants.test.ts` pins the wiring (source of
+truth: `AUTH_CALLBACK_SCHEME` in `auth.ts`): an `intent-filter` in
 `AndroidManifest.xml`, and `CFBundleURLTypes` in the iOS `Info.plist` — the
 latter is required because `ASWebAuthenticationSession` runs with
 `prefersEphemeralWebBrowserSession = false` (needed to share the IdP cookie), and
@@ -193,6 +195,20 @@ exchange and cached in `localStorage`:
   native platforms and the web token otherwise; `getHeaders()` echoes it as
   `X-CSRFToken`. This works with the backend's `CSRF_USE_SESSIONS` (the secret
   lives in the session, replayed by the native cookie jar).
+
+**CSRF `Origin` on HTTPS.** Against a secure backend (staging/prod), Django
+additionally requires an `Origin` or `Referer` on every mutation ("Referer
+checking failed - no Referer" otherwise) — headers the native HTTP client never
+sends on its own. `getHeaders()` injects `Origin: <API origin>` on native
+(same-origin for the backend, so no `CSRF_TRUSTED_ORIGINS` entry is needed),
+but the bridge's patched `window.fetch` normalizes headers through
+`new Request()`, whose browser "request" guard silently drops forbidden names —
+`Origin` included. Mutations (POST/PUT/PATCH/DELETE) therefore bypass the patch
+and call the `CapacitorHttp` plugin directly via `nativeFetch()`
+(`src/features/native/fetch.ts`), which passes headers verbatim to the same
+native stack; reads stay on the patched fetch and keep request cancellation.
+The plain-HTTP dev backend never triggers the check, which is why this only
+shows up outside dev.
 
 **Downloads** can't use `<a download>`: on native it escapes the WebView into the
 system browser, which has no session and gets a 401. `nativeDownloadFile()`
@@ -392,6 +408,16 @@ can opt into mobile-only chrome without every component re-deriving the platform
   the native toolchains below. If you do run `npm` on the host anyway, it must
   be **Node 22** (`>=22 <23`): any other version corrupts the lockfile and
   breaks the container build.
+- **The frontend dependencies live in `src/frontend/node_modules` on the host**,
+  installed there by the container through the bind mount (`make update`,
+  `make install-front`, …). Gradle and SPM resolve the Capacitor plugins through
+  relative paths into that tree (`../node_modules/@capacitor/<plugin>/android`,
+  `../../../node_modules/@capacitor/<plugin>`), so it must not be masked by a
+  Docker volume — that is why `node_modules` is deliberately kept inside the bind
+  mount, see `compose.yaml`. If those paths are missing, run
+  `make install-frozen-front`. The installed binaries are the container's (Linux)
+  ones: Gradle and Xcode only read sources from them, but never point a host
+  `npm`/`vite` at that tree.
 - Backend settings must allowlist the scheme:
   `MOBILE_AUTH_CALLBACK_SCHEMES=["stmessages"]` (empty list = mobile login
   disabled). See [env.md](./env.md).
@@ -450,6 +476,7 @@ with a bare `npm run build` would inline none of them. The native compile, IDE,
 | `make mobile-assets` | regenerate native icons & splashscreens from `src/frontend/assets/` |
 | `make mobile-android` | `mobile-build`, then open the Android project in Android Studio (host) |
 | `make mobile-android-run` | `mobile-build` + `gradlew assembleDebug` + `adb install` + `adb reverse` (host) |
+| `make mobile-android-release` | `mobile-build` + `gradlew bundleRelease` → signed `.aab` for Play (host, see [Publishing to Google Play](#publishing-to-google-play)) |
 | `make mobile-android-reverse` | (re)apply the `adb reverse` port mapping |
 | `make mobile-ios` | `mobile-build`, then open the Xcode project (host, macOS) |
 | `make mobile-ota-keygen` | generate a per-instance OTA signing key pair (base64 PEMs) |
@@ -566,8 +593,10 @@ Mobile-specific environment variables (full reference in [env.md](./env.md)):
 
 | Variable | Purpose |
 | --- | --- |
-| `MOBILE_APP_ID` | Store/OS bundle identifier (default `local.suitenumerique.messages`). Read by `cap sync` (container) **and** the native builds (gradle `applicationId`, iOS `PRODUCT_BUNDLE_IDENTIFIER`), so it must be exported in both contexts. Independent of the `stmessages` auth scheme |
-| `MOBILE_AUTH_CALLBACK_SCHEMES` | JSON list of allowlisted deep-link schemes (e.g. `["stmessages"]`); empty disables mobile login |
+| `MOBILE_APP_ID` | Store/OS bundle identifier (default `local.suitenumerique.messages`). Read by `cap sync` (container) **and** the native builds — gradle reads the host env (the `mobile-android-*` targets export it), Xcode reads the gitignored `ios/App/generated.xcconfig` written by `make mobile-build`. Release builds fail on a divergence from the synced config on both platforms (gradle guard / "Check synced Capacitor identity" build phase). Independent of the auth scheme (`MOBILE_AUTH_SCHEME`) |
+| `MOBILE_APP_NAME` | Displayed application name (default `ST Messages`, a neutral placeholder an organisation overrides with its own). Reaches the native builds through the same two channels as `MOBILE_APP_ID` (gradle `resValue app_name` / iOS `PRODUCT_DISPLAY_NAME` in the generated xcconfig), with the same release-time divergence guards |
+| `MOBILE_AUTH_SCHEME` | OIDC deep-link scheme (default `stmessages`). Read by Vite **and** the native builds (Android `manifestPlaceholders` from the host env, iOS `AUTH_CALLBACK_SCHEME` from the generated xcconfig). Give each environment its own so two builds can coexist on a device |
+| `MOBILE_AUTH_CALLBACK_SCHEMES` | Backend allowlist: JSON list of accepted deep-link schemes (e.g. `["stmessages"]`); empty disables mobile login. Must contain every `MOBILE_AUTH_SCHEME` in use |
 | `MOBILE_DEV_SERVER_URL` | Dev only: Vite dev server URL baked as Capacitor `server.url` at `cap sync` (hot reload). Set to `http://localhost:8900` in `frontend.defaults`; disable with an empty value in `frontend.local`; never set for release builds (see *Hot reload*) |
 | `MOBILE_ALLOW_CLEARTEXT_FOR_DEV` | Dev only: baked as Capacitor `server.cleartext` at `cap sync` (`android:usesCleartextTraffic`), allowing plain HTTP to the dev backend / Vite / RustFS. Set to `1` in `frontend.defaults`; never set for release builds — the manifest then stays cleartext-free |
 | `MOBILE_AUTH_TOKEN_TTL` | Lifetime (s) of the one-time exchange token (default 60) |
@@ -594,9 +623,6 @@ Treat this list as the "definition of ready for production".
 - **Move off custom URL schemes.** Custom schemes can be claimed by other apps
   (mitigated today by the one-time token + PKCE). Production should move to
   **Universal Links (iOS) / App Links (Android)**.
-- **CSRF `Origin` on HTTPS.** Native requests carry no `Origin`/`Referer`, which
-  Django requires on secure requests. The fetch wrapper must inject an `Origin`
-  listed in `CSRF_TRUSTED_ORIGINS`.
 - **Cleartext transport is dev-only, build-gated on both platforms.** On
   Android, `preReleaseBuild` fails when the synced `capacitor.config.json`
   carries a dev `server.url` or `server.cleartext` (i.e. when
@@ -604,9 +630,8 @@ Treat this list as the "definition of ready for production".
   `cap sync` env). On iOS, the "Strip dev ATS exception" build phase deletes
   the `NSAppTransportSecurity` dict (`NSAllowsLocalNetworking`) from the built
   product in every non-Debug configuration, so it never ships in an Archive.
-- **IdP logout & session renewal.** Logout ends the Django session but not
-  the IdP one; the 12 h Django session has no refresh-token renewal yet.
-  Confirm ProConnect SSO session duration and persistent-cookie behaviour
+- **Session renewal.** The 12 h Django session has no refresh-token renewal
+  yet. Confirm ProConnect SSO session duration and persistent-cookie behaviour
   (esp. iOS) in production.
 - **Safe-area insets.** Disabling Capacitor's `SystemBars` inset handling (to fix
   the double keyboard inset, Capacitor #8181) means Android no longer receives
@@ -620,6 +645,183 @@ Treat this list as the "definition of ready for production".
   itself renders.
 - **App Store guideline 4.2.** A pure web wrapper needs native-feeling
   differentiators (push notifications, share targets…) to pass review.
+
+## Publishing to Google Play
+
+Everything below is **per-instance**: the app id, the signing key and the
+Firebase config belong to the publishing organisation and are deliberately
+absent from this repo. The commands run on the **host** (the Android SDK is
+there), the web bundle is still built in the container.
+
+### 1. Upload key (once, and never lose it)
+
+Play App Signing splits the key in two: Google holds the *app signing key* that
+end users verify, you hold an *upload key* that only proves uploads come from
+you. A lost upload key can be reset by support; a lost app signing key without
+Play App Signing would end the app.
+
+One upload key per Play listing, shared by **every** track: the bundle sent to
+internal testing and the one that reaches production are signed with the same
+key — which is what lets a tested release be promoted rather than rebuilt. The
+key generated for a first internal test *is* the production key, so it belongs
+in the organisation's secret manager from day one, passwords included.
+
+Generate the upload key:
+
+```bash
+keytool -genkeypair -v \
+  -keystore ~/.android-keystores/messages-upload.jks \
+  -alias messages-upload \
+  -keyalg RSA -keysize 4096 -validity 10000
+```
+
+The parameters are constrained, not stylistic. **RSA is mandatory** — Play
+requires "an RSA key of 2048 bits or more" for the upload key and rejects
+EC/ECDSA, even though the APK signature format itself supports them; 4096
+matches what Google generates for the app signing key. **Validity is ~27 years**
+(10000 days) because Android recommends at least 25 and Play rejects any
+certificate expiring before 22 October 2033. Nothing here should be shortened
+out of TLS habit: this certificate is the app's *identity*, not a link in a
+renewable trust chain — Android treats an app signed by another certificate as a
+different app.
+
+Keep the `.jks` itself **outside the repository** (`chmod 600`). `.gitignore`
+stops commits, not Docker: `src/frontend/.dockerignore` only excludes
+`node_modules`/`out`/`.next`, so anything under `src/frontend/android/` is sent
+to the daemon as build context and lands in a layer through the Dockerfile's
+`COPY . ./` — a keystore there would end up cached in a build image.
+
+Store it (and the passwords) in the organisation's secret manager, then point
+gradle at it through `src/frontend/android/keystore.properties` — gitignored,
+alongside the project, never committed. Use an **absolute** `storeFile` path: a
+relative one resolves from `src/frontend/android/app/`, not from where you
+stand.
+
+```properties
+storeFile=/absolute/path/to/messages-upload.jks
+storePassword=…
+keyAlias=messages-upload
+keyPassword=…
+```
+
+CI has no such file and uses `ANDROID_KEYSTORE_FILE` & co. instead
+([env.md](./env.md#android-store-release-hostci-only)). With neither, release
+builds fail up front rather than producing a bundle Play would reject.
+
+### 2. Release configuration
+
+In `deploy/env/frontend.local` (gitignored) — the container build reads it, and
+`make mobile-android-release` re-reads `MOBILE_APP_ID` from it so the host
+gradle build cannot diverge:
+
+```bash
+MOBILE_APP_ID=fr.gouv.example.messages   # frozen for the lifetime of the app
+MOBILE_APP_NAME=Messages
+MOBILE_FIREBASE_PROJECT_ID=messages-prod # the google-services.json must match
+NEXT_PUBLIC_API_ORIGIN=https://<publicly reachable backend>
+MOBILE_DEV_SERVER_URL=                   # empty: no hot reload in a store build
+MOBILE_ALLOW_CLEARTEXT_FOR_DEV=          # empty: no cleartext in the manifest
+```
+
+The `applicationId` is **frozen once uploaded** — Play identifies the app by it
+forever. Two more per-instance pieces, both silent when missing:
+
+- `src/frontend/android/app/google-services.json` from the **production**
+  Firebase project, containing a client for that exact id — otherwise push
+  notifications simply never arrive (see *Push environment pairing* in the
+  release checklist). Set `MOBILE_FIREBASE_PROJECT_ID` so a mismatched file
+  fails the build instead.
+- backend `MOBILE_AUTH_CALLBACK_SCHEMES=["stmessages"]`, or mobile login is
+  disabled.
+
+#### Keeping environments apart
+
+Push isolation comes from **separate Firebase projects**, one per environment
+(`PUSH_FCM_PROJECT_ID` backend side, `google-services.json` app side) — not from
+a flag. FCM registration tokens are scoped to the project that issued them, so a
+staging backend holding staging credentials *cannot* notify production devices
+even if it somehow held their tokens: FCM rejects the mismatch. The residual
+risk is purely a deployment one — production FCM credentials pasted into a
+staging backend.
+
+Sharing one `applicationId` across environments is fine for that isolation, but
+it means only one build can be installed at a time, and a wrong
+`google-services.json` still compiles (the package name matches). Giving each
+environment its own id fixes both — and turns a mismatched Firebase file into a
+build failure, since the `google-services` plugin finds no client for the
+package name.
+
+Two builds side by side also need **their own callback scheme**
+(`MOBILE_AUTH_SCHEME`): two apps claiming one scheme make Android prompt the
+user to pick an app in the middle of the login. The value flows from a single
+variable to three places — `auth.ts` (inlined by Vite), the Android manifest
+(gradle `manifestPlaceholders`), and the iOS `Info.plist` (the
+`AUTH_CALLBACK_SCHEME` build setting) — and `sso-invariants.test.ts` pins that
+wiring, including that their fallbacks agree. Because gradle runs on the host
+and Vite in the container, both must see it: `make mobile-android-run` and
+`make mobile-android-release` pass it through, but a bare `./gradlew` does not.
+Add every scheme in use to the backend's `MOBILE_AUTH_CALLBACK_SCHEMES` list.
+
+A staging `frontend.local` then reads:
+
+```bash
+MOBILE_APP_ID=org.acme.example.messages.local
+MOBILE_APP_NAME=Messages (staging)
+MOBILE_AUTH_SCHEME=stmessages.local
+MOBILE_FIREBASE_PROJECT_ID=messages-local
+```
+
+Scheme shape follows RFC 3986 — a letter, then letters, digits, `+`, `-`, `.`
+— and must be **lowercase**: Android matches the manifest scheme literally
+against a lowercased URI, and Django's redirect validation compares against
+`urlparse`, which lowercases too. Neither says anything when it does not match,
+the login simply never returns. `_` is not in the grammar and fails silently on
+the Python side (`urlparse` yields an empty scheme). Add every scheme in use to
+the backend `MOBILE_AUTH_CALLBACK_SCHEMES` list.
+
+What this does *not* solve: both apps still ship the same icon and near-identical
+names, which is how a real mail gets sent from the staging build. Differentiated
+icons mean a second asset set for `make mobile-assets`, which generates from a
+single `src/frontend/assets/` today.
+
+### 3. Build the bundle
+
+```bash
+make mobile-android-release
+```
+
+It runs `make mobile-build` (container: web bundle + `cap sync`) then
+`gradlew bundleRelease` (host), and produces
+`src/frontend/android/app/build/outputs/bundle/release/app-release.aab`.
+
+`versionCode` defaults to the commit count, so it grows on its own; override it
+(`make mobile-android-release MOBILE_VERSION_CODE=42 MOBILE_VERSION_NAME=1.1`)
+for a pinned build. Play refuses a `versionCode` it has already accepted, so
+every upload needs a fresh one — including a rebuild of the same commit.
+
+Four guards fail the build rather than shipping something broken: a leftover dev
+`server.url`, cleartext traffic, a missing signing key, and an `applicationId`
+that does not match the `appId` `cap sync` baked into `capacitor.config.json`
+(the `MOBILE_APP_ID`-exported-on-only-one-side trap).
+
+### 4. Internal testing track
+
+In the [Play Console](https://play.google.com/console): *Create app*, then
+**Testing → Internal testing → Create new release** and upload the `.aab`.
+Internal testing reaches up to 100 testers, needs no review wait, and skips the
+closed-testing requirements that gate production.
+
+Testers are Google accounts listed in an email list you attach to the track;
+each opts in through the generated link before the app appears for them on Play.
+
+Play still gates the *release* on the app-content declarations (privacy policy
+URL, data safety form, ads, content rating, target audience). For a mail client
+the data safety form is the substantive one: declare what the app collects and
+transmits, matching what the backend actually stores.
+
+Because the app is SSO-only, reviewers and testers cannot sign in without an
+account on an instance — provide credentials in *App access* when the track ever
+moves beyond internal testing.
 
 ## Release checklist (manual)
 
