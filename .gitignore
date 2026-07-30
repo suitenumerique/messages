@@ -89,6 +89,7 @@ CLAUDE.md
 
 # Various
 .turbo
+compose.override.yaml
 
 # Messages
 .aws

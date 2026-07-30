@@ -27,7 +27,6 @@ USER ${DOCKER_USER}
 # ---- Production dependency install (ONLY for the prod build below) ----
 # frontend-build runs `npm run build`, which needs node_modules present in the
 # image; the dev/tools services use the lean frontend-dev-base above instead.
-# .npmrc sets install-strategy=linked (symlinked/deduplicated node_modules).
 FROM frontend-dev-base AS frontend-deps
 COPY --chown=${DOCKER_USER} package*.json .npmrc ./
 RUN npm ci

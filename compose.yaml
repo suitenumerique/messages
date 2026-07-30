@@ -328,8 +328,8 @@ services:
     build:
       context: ./src/frontend
       dockerfile: Dockerfile
-      # Lean image with no node_modules baked in — deps live in the
-      # frontend-node-modules volume, installed by `make install-frozen-front`.
+      # Lean image with no node_modules baked in — deps are installed into the
+      # bind-mounted source tree by `make install-frozen-front`.
       target: frontend-dev-base
       args:
         DOCKER_USER: ${DOCKER_USER:-1000}
@@ -341,13 +341,13 @@ services:
       - deploy/env/frontend.local
     command: ["npm", "run", "dev"]
     volumes:
+      # node_modules deliberately stays inside this bind mount. Moving it to a
+      # named volume makes installs faster, but the volume then masks the path
+      # on the host side, leaving src/frontend/node_modules empty — and the IDE
+      # (TypeScript, ESLint) and the native mobile builds (Gradle, Xcode/SPM,
+      # which resolve ../node_modules/@capacitor/*) read it from there. Mirroring
+      # the tree back out costs more than the install ever saved.
       - ./src/frontend/:/home/frontend/
-      # Keep node_modules on a fast Docker volume instead of the (slow,
-      # virtualized) host bind mount above. Writing ~thousands of files to a
-      # bind mount is what made installs take minutes; a named volume lives on
-      # the container filesystem, so `npm ci` runs in ~20s. Populated by
-      # `make install-frozen-front`.
-      - frontend-node-modules:/home/frontend/node_modules
     ports:
       - "8900:3000"
 
@@ -357,11 +357,9 @@ services:
       - frontend-tools
     volumes:
       - ./src/backend/core/api/openapi.json:/home/backend/core/api/openapi.json
+      # `make install-frozen-front` runs here, so it installs straight into the
+      # host tree that frontend-dev and the native builds consume.
       - ./src/frontend/:/home/frontend/
-      # Share the same fast node_modules volume as frontend-dev so that
-      # `make install-frozen-front` (which runs here) installs into the volume
-      # that frontend-dev consumes.
-      - frontend-node-modules:/home/frontend/node_modules
 
   frontend-tools-amd64:
     extends: frontend-tools
@@ -397,11 +395,11 @@ services:
       - deploy/env/frontend.defaults
       - deploy/env/frontend.local
     volumes:
+      # `cap sync` runs here and bakes the plugin paths it resolves into the
+      # committed native project files (Package.swift, capacitor.settings.gradle),
+      # which Xcode and Gradle then read from the host. Both sides must therefore
+      # resolve to the same node_modules — hence no masking volume here.
       - ./src/frontend/:/home/frontend/
-      # Share the same fast node_modules volume as frontend-dev so that
-      # `make install-frozen-front` (which runs here) installs into the volume
-      # that frontend-dev consumes.
-      - frontend-node-modules:/home/frontend/node_modules
 
   crowdin:
     image: crowdin/cli:4.11.0@sha256:9b32eafcfd8ba4b5183bd601bfeb8a65b0d338f2d2fc36df155f4845ee244eff
@@ -601,4 +599,3 @@ services:
 volumes:
   jmap-email-hypothesis:
   objectstorage-data:
-  frontend-node-modules:
