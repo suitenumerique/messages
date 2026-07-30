@@ -181,12 +181,12 @@ start-deps: ## start the slow infra deps (postgres, redis, keycloak) in the back
 .PHONY: start-deps
 
 # Fail fast (before booting a broken stack) when the project has not been
-# bootstrapped: `make bootstrap` creates the gitignored env files and the
-# frontend node_modules volume. start/start-full depend on this.
+# bootstrapped: `make bootstrap` creates the gitignored env files and installs
+# the frontend dependencies. start/start-full depend on this.
 check-bootstrapped:
 	@test -f deploy/env/backend.local || { \
 		printf "\n$(BOLD)✗ Not bootstrapped$(RESET): env files are missing.\n  Run $(BOLD)make bootstrap$(RESET) first.\n\n" >&2; exit 1; }
-	@docker volume inspect st-messages_frontend-node-modules >/dev/null 2>&1 || { \
+	@test -d src/frontend/node_modules/.bin || { \
 		printf "\n$(BOLD)✗ Not bootstrapped$(RESET): frontend dependencies are not installed.\n  Run $(BOLD)make bootstrap$(RESET) first.\n\n" >&2; exit 1; }
 .PHONY: check-bootstrapped
 
@@ -706,7 +706,9 @@ MOBILE_OTA_BUILD_ID ?= $(shell git rev-list --count HEAD)-$(shell git rev-parse 
 # into the native projects. The sync (not a bare copy) also regenerates the
 # gitignored capacitor-cordova-android-plugins/ scaffolding that Gradle needs,
 # so always run `make mobile-build` after a fresh checkout. The native compile /
-# IDE / device steps are macOS- and SDK-bound, so they stay on the host.
+# IDE / device steps are macOS- and SDK-bound, so they stay on the host; they
+# read the dependencies straight from src/frontend/node_modules, which the
+# container shares through the bind mount.
 # MOBILE_OTA_BUILD_ID is passed so `cap sync` stamps it as the builtin bundle version
 # (capacitor.config.ts), letting the OTA freshness check match a same-commit
 # manifest instead of re-downloading on first launch.
@@ -772,6 +774,27 @@ mobile-android-run: mobile-build ## (host) build+install the debug APK on a devi
 	@adb install -r $(ANDROID_DEBUG_APK)
 	@$(MAKE) mobile-android-reverse
 .PHONY: mobile-android-run
+
+# Play refuses a versionCode it has already seen, so it must strictly grow.
+# Default to the commit count — the monotonic half of MOBILE_OTA_BUILD_ID — so
+# it can never be forgotten; override for a pinned/CI build. versionName is what
+# users read in the store listing, so it stays a deliberate marketing version.
+MOBILE_VERSION_CODE ?= $(shell git rev-list --count HEAD)
+MOBILE_VERSION_NAME ?= 1.0
+ANDROID_RELEASE_AAB = src/frontend/android/app/build/outputs/bundle/release/app-release.aab
+
+mobile-android-release: mobile-build ## (host) build the signed Play bundle (.aab) — see docs/mobile.md
+	@cd src/frontend/android && \
+		MOBILE_APP_ID="$(call mobile_env,MOBILE_APP_ID)" \
+		MOBILE_APP_NAME="$(call mobile_env,MOBILE_APP_NAME)" \
+		MOBILE_AUTH_SCHEME="$(call mobile_env,MOBILE_AUTH_SCHEME)" \
+		MOBILE_FIREBASE_PROJECT_ID="$(call mobile_env,MOBILE_FIREBASE_PROJECT_ID)" \
+		MOBILE_VERSION_CODE="$(MOBILE_VERSION_CODE)" \
+		MOBILE_VERSION_NAME="$(MOBILE_VERSION_NAME)" \
+		./gradlew bundleRelease
+	@echo "$(GREEN)Signed bundle: $(ANDROID_RELEASE_AAB)$(RESET)"
+	@echo "versionCode $(MOBILE_VERSION_CODE) / versionName $(MOBILE_VERSION_NAME)"
+.PHONY: mobile-android-release
 
 i18n-generate-front: ## Extract the frontend translation inside a json to be used for crowdin
 	@$(COMPOSE) run --rm --build frontend-tools npm run i18n:extract

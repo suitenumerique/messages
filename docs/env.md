@@ -286,6 +286,23 @@ _Those settings are deprecated and will be removed in the future._
 
 > **Note**: overriding `MOBILE_APP_ID` only changes the app identity; the OIDC deep-link scheme is a separate knob (`MOBILE_AUTH_SCHEME`), declared in the iOS `Info.plist` (`CFBundleURLTypes`) and the Android manifest. Changing one without the other is valid — but two builds installed together need **both** to differ.
 
+### Android Store Release (host/CI only)
+
+Read by gradle on the **host**, not by the container build — they are release
+parameters and signing secrets, so they live in the shell / CI secrets or in the
+gitignored `src/frontend/android/keystore.properties`, never in
+`deploy/env/`. See [mobile.md](./mobile.md#publishing-to-google-play).
+
+| Variable | Default | Description | Required |
+|----------|---------|-------------|----------|
+| `MOBILE_FIREBASE_PROJECT_ID` | — | Firebase project the bundled `android/app/google-services.json` must belong to. Optional but strongly recommended: environments are separate Firebase projects (see `PUSH_FCM_PROJECT_ID`), and building with the wrong file is silent — the app installs and logs in, it just never receives a push. When set, a release build fails on a mismatch. Read from `deploy/env/frontend.*` by `make mobile-android-release`. | Optional |
+| `MOBILE_VERSION_CODE` | commit count (`git rev-list --count HEAD`, via the Makefile) | Android `versionCode`. Play refuses any upload reusing a code it has already seen, so it must strictly grow; the git-derived default guarantees that without manual tracking. Override to pin a build. | Optional |
+| `MOBILE_VERSION_NAME` | `1.0` | Android `versionName` — the version string users read in the store listing. Unlike `MOBILE_VERSION_CODE` it carries no ordering constraint. | Optional |
+| `ANDROID_KEYSTORE_FILE` | — | Path to the Play **upload** keystore (`.jks`). Fallback for the `storeFile` entry of `keystore.properties`; setting neither fails release builds early rather than producing a bundle Play would reject. | Required for a release build |
+| `ANDROID_KEYSTORE_PASSWORD` | — | Keystore password (`storePassword` fallback). | Required for a release build |
+| `ANDROID_KEY_ALIAS` | — | Alias of the signing key inside the keystore (`keyAlias` fallback). | Required for a release build |
+| `ANDROID_KEY_PASSWORD` | — | Password of that key (`keyPassword` fallback). | Required for a release build |
+
 ### Mobile App Authentication (Capacitor)
 
 | Variable | Default | Description | Required |
