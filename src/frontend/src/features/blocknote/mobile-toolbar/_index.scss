@@ -1,0 +1,271 @@
+// The composer's formatting toolbar on the native app, shown as a bar pinned
+// above the on-screen keyboard while the composer is focused (see
+// mobile-toolbar/index.tsx). The keyboard resizes the webview itself (iOS:
+// @capacitor/keyboard native resize, Android: adjustResize), so a fixed
+// bottom: 0 lands right on top of it.
+
+
+// `:root.native` (not `.native`) so the inner rules outweigh the composer's
+// inline-toolbar styles (.composer-field .composer-field-input …) that wrap
+// buttons and stretch the bar to 100%.
+:root.native .bn-mobile-formatting-toolbar {
+  position: fixed;
+  left: var(--c--globals--spacings--3xs);
+  right: var(--c--globals--spacings--3xs);
+  bottom: var(--c--globals--spacings--3xs);
+  // Above Cunningham/React modals (.ReactModalPortal is z-index 999999): the
+  // signature / template composers live inside settings modals and their
+  // toolbar must stay visible. Below react-toastify (--toastify-z-index).
+  z-index: 1000000;
+  display: flex;
+  // The "Aa" format panel stacks above the buttons row.
+  flex-direction: column;
+  // Override the overflow-x: auto from @blocknote/react's base rule (loaded
+  // through @blocknote/mantine/style.css): the bar is the containing block of
+  // the inline dropdowns (template/signature selectors…), and an overflow on
+  // the containing block itself would clip them. Scrolling belongs to the
+  // inner toolbar below.
+  overflow: visible;
+  // No background or border here: the container also spans the drawer area,
+  // and a solid backdrop would stay put while the drawer sheet slides down
+  // (a white slab during the exit animation). Each bottom row paints its own
+  // background — and carries the safe-area padding — instead.
+
+  // Floating-bar chrome shared by the two bottom rows: the buttons toolbar
+  // and the link editor that replaces it (see MobileLinkEditor).
+  .bn-toolbar.bn-formatting-toolbar,
+  .mobile-toolbar__link-editor {
+    border-radius: 8px;
+    border: 1px solid var(--c--contextuals--border--surface--primary);
+    // Solid at the top fading out towards the keyboard, so the buttons read
+    // against the content scrolling behind (plain background kept as the
+    // fallback for engines without color-mix).
+    background: var(--c--contextuals--background--surface--secondary);
+    background: linear-gradient(
+        to bottom,
+        var(--c--contextuals--background--surface--secondary) 0%,
+        color-mix(in srgb, var(--c--contextuals--background--surface--secondary) 80%, transparent) 50%,
+        transparent 100%
+    );
+    backdrop-filter: blur(8px);
+    -webkit-backdrop-filter: blur(8px);
+    padding-top: var(--c--globals--spacings--3xs);
+    padding-bottom: calc(var(--c--globals--spacings--3xs) + var(--safe-area-inset-bottom));
+    padding-inline: var(--c--globals--spacings--3xs);
+    box-sizing: border-box;
+  }
+
+  // Drawers opened from the bar are true bottom sheets: escape the bar's
+  // floating inset so they span edge to edge instead of inheriting the
+  // toolbar's margins.
+  .drawer {
+    margin-inline: calc(-1 * var(--c--globals--spacings--3xs));
+  }
+
+  // The format drawer is the bottom-most surface while open (the buttons
+  // row folds away, see MobileToolbar). Anchored to the viewport itself
+  // rather than laid out inside the bar, so none of the bar's insets can
+  // leave a gap under it; its sheet clears the home-indicator area. The
+  // bar has no transform/filter, so fixed still resolves against the
+  // viewport here.
+  .mobile-toolbar__format-drawer {
+    position: fixed;
+    left: 0;
+    right: 0;
+    bottom: 0;
+    margin: 0;
+
+    .drawer__sheet {
+      padding-bottom: var(--safe-area-inset-bottom);
+    }
+  }
+
+  // The inner toolbar — not the bar itself — is the horizontal scroller: the
+  // selectors' dropdowns render inline (BlockNote hardcodes withinPortal:
+  // false) and are absolutely positioned against this fixed bar, so they
+  // escape the static inner scroller's clip and can open above the keyboard
+  // instead of being cut off.
+  .bn-toolbar.bn-formatting-toolbar {
+    flex: 1 1 auto;
+    width: 100%;
+    min-width: 0;
+    max-width: none;
+    flex-wrap: nowrap;
+    overflow-x: auto;
+    touch-action: pan-x;
+    -webkit-overflow-scrolling: touch;
+    // Settle flings on a button boundary instead of mid-icon; proximity keeps
+    // free scrolling in between so it doesn't feel paginated.
+    scroll-snap-type: x proximity;
+    scroll-padding-inline: var(--c--globals--spacings--3xs);
+
+    > * {
+      // Buttons keep their natural width — overflow scrolls instead of
+      // squeezing text buttons (the selectors) down to one letter.
+      flex-shrink: 0;
+      scroll-snap-align: start;
+    }
+
+    // Mantine buttons remaining in the bar (file actions, template and
+    // signature selectors) get the same touch-target size as the custom
+    // buttons.
+    .bn-button {
+      min-width: 44px;
+      min-height: 44px;
+    }
+  }
+
+  // The bar is portaled to <body>, outside .composer-field-input whose
+  // scoped rules normally style the separators (see
+  // blocknote-view-field/_index.scss) — restated here. Declared at bar level
+  // (not inside .bn-toolbar) so the format panel rows share it.
+  .bn-toolbar-separator {
+    flex-shrink: 0;
+    width: 1px;
+    align-self: stretch;
+    margin-block: var(--c--globals--spacings--3xs);
+    background-color: var(--c--components--forms-input--border-color);
+
+    &:first-child,
+    &:last-child,
+    & + .bn-toolbar-separator {
+      display: none;
+    }
+  }
+
+  // The slot children portal their Drawer into: display: contents so the
+  // portaled Drawer participates directly in the bar's flex column.
+  .mobile-toolbar__drawer-slot {
+    display: contents;
+  }
+
+  .mobile-toolbar__button {
+    display: inline-flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    gap: var(--c--globals--spacings--3xs);
+    min-width: 44px;
+    min-height: 44px;
+    padding: 0 var(--c--globals--spacings--3xs);
+    border: none;
+    border-radius: var(--c--globals--spacings--3xs);
+    background: transparent;
+    color: var(--c--contextuals--content--semantic--neutral--primary);
+    font: inherit;
+
+    &:disabled {
+      opacity: 0.4;
+    }
+
+    &--active {
+      background-color: var(--c--contextuals--background--semantic--contextual--primary);
+    }
+  }
+
+  .mobile-toolbar__button-text {
+    max-width: 100%;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+    font-size: var(--c--globals--font--sizes--2xs);
+  }
+
+  // The panel lives inside the generic Drawer, which brings the sheet
+  // chrome (handle, title row, scroll) — only the content layout is here.
+  .mobile-toolbar__panel {
+    display: flex;
+    flex-direction: column;
+    gap: var(--c--globals--spacings--2xs);
+    padding: var(--c--globals--spacings--2xs);
+    // Keep part of the editor visible on small landscape screens.
+    max-height: 45vh;
+  }
+
+  // Shared scroller behavior for every panel row: horizontal overflow with
+  // the same snap feel as the main buttons row.
+  .mobile-toolbar__panel-inline,
+  .mobile-toolbar__panel-row {
+    display: flex;
+    overflow-x: auto;
+    -webkit-overflow-scrolling: touch;
+    scroll-snap-type: x proximity;
+    touch-action: pan-x;
+
+    & > * {
+      scroll-snap-align: start;
+    }
+  }
+
+  .mobile-toolbar__panel-inline {
+    gap: var(--c--globals--spacings--2xs);
+
+    & > * {
+      flex: 1 0 min-content;
+      padding-inline: var(--c--globals--spacings--md);
+    }
+
+    .mobile-toolbar__button {
+      width: 100%;
+      min-height: 56px;
+    }
+  }
+
+  .mobile-toolbar__panel-row {
+    align-items: center;
+    gap: var(--c--globals--spacings--3xs);
+  }
+
+  .mobile-toolbar__swatch {
+    flex-shrink: 0;
+    width: 44px;
+    height: 44px;
+    border: 2px solid var(--c--contextuals--border--surface--primary);
+    border-radius: 12px;
+    font-size: var(--c--globals--font--sizes--m);
+    font-weight: 900;
+    // The letter's color and the background swatches' fill come from
+    // BlockNote's [data-style-type][data-value] rules. Neither color nor a
+    // blanket background is declared here on purpose: those rules only weigh
+    // (0,2,0), so any declaration at this nesting level would bury them.
+
+    // Only the swatches BlockNote leaves unpainted drop the button's UA
+    // background.
+    &[data-style-type="textColor"],
+    &[data-value="default"] {
+      background: transparent;
+    }
+
+    // iOS paints button text in the system blue, not black: pin the letter
+    // to a neutral token wherever BlockNote's rules don't color it
+    // (background swatches and the "default" swatch).
+    &[data-style-type="backgroundColor"],
+    &[data-value="default"] {
+      color: var(--c--contextuals--content--semantic--neutral--primary);
+    }
+
+    &--active {
+      border-color: var(--c--contextuals--border--semantic--brand--primary);
+    }
+  }
+
+  // Chrome (background, border, radius, paddings) comes from the shared
+  // floating-bar rule above.
+  .mobile-toolbar__link-editor {
+    display: flex;
+    align-items: center;
+    gap: var(--c--globals--spacings--3xs);
+  }
+
+  .mobile-toolbar__link-input {
+    flex: 1 1 auto;
+    min-width: 0;
+    height: 44px;
+    padding: 0 var(--c--globals--spacings--2xs);
+    border: 1px solid var(--c--components--forms-input--border-color);
+    border-radius: var(--c--components--forms-input--border-radius);
+    background: var(--c--contextuals--background--surface--primary);
+    color: inherit;
+    font: inherit;
+  }
+}

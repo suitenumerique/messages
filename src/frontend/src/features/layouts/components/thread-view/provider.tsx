@@ -1,9 +1,13 @@
-import { createContext, PropsWithChildren, useContext, useEffect, useMemo, useState } from "react";
+import { createContext, PropsWithChildren, useCallback, useContext, useEffect, useMemo, useState } from "react";
+import { MessageFormMode } from "@/features/forms/components/message-form";
 
 type ThreadViewProviderProps = PropsWithChildren<{
     threadId: string;
     messageIds: readonly string[];
 }>
+
+/** Reply-form modes that can be requested from outside a message card. */
+export type ReplyRequestMode = Exclude<MessageFormMode, "new">;
 
 type ThreadViewContextType = {
     isReady: boolean;
@@ -14,6 +18,11 @@ type ThreadViewContextType = {
     setHasBeenInitialized: (hasBeenInitialized: boolean) => void;
     isMessageFormFocused: boolean;
     setIsMessageFormFocused: (focused: boolean) => void;
+    /** Incremented to ask the latest message to open its reply form. */
+    replyRequest: number;
+    /** Mode the latest message should open its reply form with. */
+    replyRequestMode: ReplyRequestMode;
+    requestReply: (mode?: ReplyRequestMode) => void;
 }
 
 const ThreadViewContext = createContext<ThreadViewContextType | undefined>(undefined);
@@ -26,6 +35,13 @@ const ThreadViewProvider = ({ threadId, messageIds, children }: ThreadViewProvid
     const [messagesReadiness, setMessagesReadiness] = useState(new Map(messageIds.map((id) => [id, false])));
     const [hasBeenInitialized, setHasBeenInitialized] = useState(false);
     const [isMessageFormFocused, setIsMessageFormFocused] = useState(false);
+    const [replyRequest, setReplyRequest] = useState(0);
+    const [replyRequestMode, setReplyRequestMode] = useState<ReplyRequestMode>("reply");
+
+    const requestReply = useCallback((mode: ReplyRequestMode = "reply") => {
+        setReplyRequestMode(mode);
+        setReplyRequest((n) => n + 1);
+    }, []);
 
     const isReady = useMemo(() => {
         return Array.from(messagesReadiness.values()).every((isReady) => isReady === true);
@@ -68,7 +84,10 @@ const ThreadViewProvider = ({ threadId, messageIds, children }: ThreadViewProvid
         setHasBeenInitialized,
         isMessageFormFocused,
         setIsMessageFormFocused,
-    }), [isReady, setMessageReadiness, isMessageReady, reset, hasBeenInitialized, setHasBeenInitialized, isMessageFormFocused]);
+        replyRequest,
+        replyRequestMode,
+        requestReply,
+    }), [isReady, setMessageReadiness, isMessageReady, reset, hasBeenInitialized, setHasBeenInitialized, isMessageFormFocused, replyRequest, replyRequestMode, requestReply]);
 
 
 

@@ -1,8 +1,9 @@
 import * as locales from '@blocknote/core/locales';
-import { Block, defaultBlockSpecs } from '@blocknote/core';
+import { Block, BlockNoteEditor, BlockSchema, InlineContentSchema, StyleSchema, defaultBlockSpecs } from '@blocknote/core';
 import { TFunction } from 'i18next';
 import { ALLOWED_IMAGE_MIME_TYPES } from '@/features/blocknote/image-block';
 import { TEMPLATE_VARIABLE_TYPE } from '@/features/blocknote/inline-template-variable';
+import { isNativePlatform } from '@/features/native/platform';
 
 /**
  * Builds the BlockNote i18n dictionary for the given locale.
@@ -15,6 +16,53 @@ export const createBlockNoteDictionary = (locale: string, t: TFunction) => ({
         default: t('Start typing...'),
     },
 });
+
+/**
+ * Bubbling custom event re-emitted from the tapped link when the native app
+ * suppresses BlockNote's open-on-click (see createNativeLinkOptions).
+ */
+export const NATIVE_LINK_TAP_EVENT = 'blocknote:native-link-tap';
+
+/**
+ * `links` editor options for the native app: BlockNote's built-in click
+ * handler `window.open`s the href from a ProseMirror `handleClick`, so no
+ * DOM-level `preventDefault` can stop it — supplying `links.onClick` is the
+ * documented way to disable it. The tap is re-emitted as a custom event so
+ * the mobile toolbar can turn it into an edit action (see useEditLinkOnTap);
+ * ProseMirror's `handleClick` fires on the simulated mouseup, which touch
+ * guarantees, unlike the synthesized DOM click.
+ *
+ * ProseMirror skips its own caret placement when a click handler consumes
+ * the event, so the caret is placed here from the tap coordinates — the
+ * link editor reads the URL to edit from the selection.
+ */
+export const createNativeLinkOptions = () =>
+    isNativePlatform()
+        ? {
+              links: {
+                  onClick: (
+                      event: MouseEvent,
+                      editor: BlockNoteEditor<
+                          BlockSchema,
+                          InlineContentSchema,
+                          StyleSchema
+                      >,
+                  ) => {
+                      const tapped = editor.prosemirrorView?.posAtCoords({
+                          left: event.clientX,
+                          top: event.clientY,
+                      });
+                      if (tapped) {
+                          editor._tiptapEditor.commands.setTextSelection(tapped.pos);
+                      }
+                      event.target?.dispatchEvent(
+                          new CustomEvent(NATIVE_LINK_TAP_EVENT, { bubbles: true }),
+                      );
+                      return true;
+                  },
+              },
+          }
+        : {};
 
 /**
  * Returns TipTap handleDOMEvents handlers that block non-image file

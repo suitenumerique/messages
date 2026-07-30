@@ -6,32 +6,77 @@
   grid-template-areas: "left center right";
   background-color: var(--c--contextuals--background--surface--secondary);
   border-bottom: 1px solid var(--c--contextuals--border--surface--primary);
-  height: var(--header-height);
-  min-height: var(--header-height);
-  max-height: var(--header-height);
-  padding: 0 1.125rem;
+  // No fixed height: the header sizes to its content + block padding, so the
+  // flex column can split 100dvh between header and content without a
+  // hardcoded offset. The block padding (2xs) lands the single-row header at
+  // ~52px around the 40px logo. The top safe-area inset keeps content below
+  // the Dynamic Island while the background still spans to the device edge.
+  padding: calc(var(--safe-area-inset-top) + var(--c--globals--spacings--2xs)) 1.125rem var(--c--globals--spacings--2xs);
+  // ui-kit pins .c__header to a fixed 52px through all three of height,
+  // min-height and max-height: undo them so the header sizes to its content.
+  // Without this the mobile web header cannot grow to fit its second (search)
+  // row, which then overflows onto the thread list.
+  height: auto;
+  min-height: 0;
+  max-height: none;
 
   &--anonymous {
     border-color: transparent;
   }
 
+  // On the native app the search field is replaced by a trigger in the trailing
+  // slot, so the header drops the second (search) row and stays a single ~52px
+  // bar. It floats over the content with no bottom border: its controls carry
+  // their own surface instead.
+  //
+  // Excludes the anonymous (home page) header: it has no panel toggle and no
+  // search, so this three-zone grid would leave an empty leading column before
+  // the logo, and its language / lagaufre controls are not app chrome — they
+  // keep their plain look.
+  :root.native &:not(#{&}--anonymous) {
+    grid-template-columns: 40px 1fr 40px;
+    grid-template-rows: 1fr;
+    grid-template-areas: "toggle left right";
+    border-bottom: none;
+
+    .c__header__toggle-menu .c__button,
+    .search__trigger.c__button {
+      @include control-surface;
+    }
+  }
+
+  // Mobile (web and native): three zones — the panel toggle, the app icon
+  // centred on the header, and a trailing slot holding the search trigger on
+  // native. Both side columns are fixed and equal so the icon stays optically
+  // centred even when the trailing slot is empty — on the web, where the search
+  // bar takes the second full-width row instead.
   @media screen and (max-width: breakpoint(tablet)) {
-    grid-template-columns: auto 1fr 1fr;
+    grid-template-columns: 40px 1fr 40px;
     grid-template-rows: 1fr 1fr;
     grid-template-areas:
-      "toggle left left"
+      "toggle left right"
       "center center center";
-    padding: 0 var(--c--globals--spacings--base);
+    padding: calc(var(--safe-area-inset-top) + var(--c--globals--spacings--2xs)) var(--c--globals--spacings--base) var(--c--globals--spacings--2xs);
 
     &__left {
-      justify-content: space-between;
+      justify-content: center;
     }
 
     &__center {
-      padding-bottom: var(--c--globals--spacings--sm);
+      padding-bottom: var(--c--globals--spacings--2xs);
     }
 
+    // The anonymous header has no panel toggle and keeps its own controls
+    // (language, lagaufre) inline, so it stays a plain two-zone bar.
+    &--anonymous {
+      grid-template-columns: 1fr auto;
+      grid-template-rows: 1fr;
+      grid-template-areas: "left right";
 
+      .c__header__left {
+        justify-content: flex-start;
+      }
+    }
   }
 
   &__toggle-menu {
@@ -64,14 +109,6 @@
     justify-content: flex-end;
     gap: var(--c--globals--spacings--3xs);
   }
-}
-
-// On the native app the header is pinned at the physical top of an
-// edge-to-edge webview: keep its background under the status bar / notch but
-// push its content below. --header-height grows by the same amount (see
-// globals.scss), so the content zone keeps its nominal height (border-box).
-.native .c__header {
-  padding-top: var(--safe-area-inset-top);
 }
 
 .user-menu__footer-action {

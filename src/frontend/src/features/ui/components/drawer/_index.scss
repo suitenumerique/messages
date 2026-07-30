@@ -1,0 +1,121 @@
+.drawer {
+  // Clips the sheet while it slides in and out. clip-path rather than
+  // overflow: hidden so the sheet's upward shadow survives (the negative
+  // top inset extends the clip region above the box).
+  clip-path: inset(-24px 0 0 0);
+  display: flex;
+  flex-direction: column;
+  justify-content: flex-end;
+}
+
+.drawer__sheet {
+  display: flex;
+  flex-direction: column;
+  min-height: 0;
+  background-color: var(--c--contextuals--background--surface--secondary);
+  border-top-left-radius: var(--c--globals--spacings--2xs);
+  border-top-right-radius: var(--c--globals--spacings--2xs);
+  // The sheet floats over the page content (its container is transparent):
+  // a soft top shadow keeps it readable against whatever sits behind.
+  box-shadow: 0 -4px 16px rgba(0, 0, 0, 0.1);
+  transition: transform 200ms ease;
+  animation: drawer-slide-in 250ms ease;
+
+  &--closing {
+    transform: translateY(100%);
+  }
+}
+
+.drawer__header {
+  // Required for pointer-events dragging on touch screens: without it the
+  // browser claims vertical moves for scrolling.
+  touch-action: none;
+  cursor: grab;
+  user-select: none;
+  -webkit-user-select: none;
+}
+
+.drawer__grab-handle {
+  width: 48px;
+  height: 5px;
+  border-radius: 50vw;
+  margin: var(--c--globals--spacings--xs) auto 0;
+  background-color: var(--c--contextuals--border--surface--primary);
+}
+
+.drawer__title-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding-inline: var(--c--globals--spacings--base);
+  padding-block: var(--c--globals--spacings--2xs) var(--c--globals--spacings--sm);
+}
+
+.drawer__title {
+  font-weight: 600;
+  font-size: var(--c--globals--font--sizes--m);
+  color: var(--c--contextuals--content--semantic--neutral--primary);
+}
+
+.drawer__close {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-width: 44px;
+  min-height: 44px;
+  border: none;
+  border-radius: var(--c--globals--spacings--3xs);
+  background: transparent;
+  color: var(--c--contextuals--content--semantic--neutral--primary);
+}
+
+.drawer__body {
+  min-height: 0;
+  overflow-y: auto;
+  -webkit-overflow-scrolling: touch;
+}
+
+// Companion option-list styles for drawer content: large touch-target rows
+// with an icon, a label and a trailing check on the selected row.
+.drawer-list {
+  display: flex;
+  flex-direction: column;
+  padding: var(--c--globals--spacings--3xs) var(--c--globals--spacings--2xs)
+    var(--c--globals--spacings--2xs);
+}
+
+.drawer-list__item {
+  display: flex;
+  align-items: center;
+  gap: var(--c--globals--spacings--2xs);
+  min-height: 48px;
+  padding: var(--c--globals--spacings--3xs) var(--c--globals--spacings--2xs);
+  border: none;
+  border-radius: var(--c--globals--spacings--3xs);
+  background: transparent;
+  color: var(--c--contextuals--content--semantic--neutral--primary);
+  font: inherit;
+  text-align: left;
+
+  &--selected {
+    background-color: var(--c--contextuals--background--semantic--contextual--primary);
+  }
+
+  &:disabled {
+    opacity: 0.5;
+  }
+}
+
+.drawer-list__item-label {
+  flex: 1 1 auto;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+@keyframes drawer-slide-in {
+  from {
+    transform: translateY(100%);
+  }
+}

@@ -1,5 +1,5 @@
 import { useTranslation } from "react-i18next"
-import { Link, useParams } from "@tanstack/react-router"
+import { Link, useNavigate, useParams } from "@tanstack/react-router"
 import { useEffect, useMemo, useRef, useState } from "react"
 import { createPortal } from "react-dom"
 import clsx from "clsx"
@@ -9,8 +9,8 @@ import { ThreadItemSenders } from "./thread-item-senders"
 import { Badge } from "@/features/ui/components/badge"
 import { ThreadDragPreview } from "./thread-drag-preview"
 import { PORTALS } from "@/features/config/constants"
-import { Checkbox, Tooltip } from "@gouvfr-lasuite/cunningham-react"
-import { Icon, IconSize, IconType } from "@gouvfr-lasuite/ui-kit"
+import { Button, Checkbox, Tooltip } from "@gouvfr-lasuite/cunningham-react"
+import { Icon, IconSize, IconType, UserAvatar } from "@gouvfr-lasuite/ui-kit"
 import { AssigneesAvatarGroup } from "@/features/ui/components/assignees-avatar-group"
 import { LabelBadge } from "@/features/ui/components/label-badge"
 import { useLayoutDragContext } from "@/features/layouts/components/layout-context"
@@ -18,6 +18,16 @@ import ViewHelper from "@/features/utils/view-helper"
 import useCanEditThreads from "@/features/message/use-can-edit-threads"
 import { FEATURE_KEYS, useFeatureFlag } from "@/hooks/use-feature"
 import { ThreadListboxItemProps } from "../../hooks/use-thread-listbox"
+import { AttachFile, Star, StarFilled } from "@gouvfr-lasuite/ui-kit/icons"
+import useStarred from "@/features/message/use-starred"
+import useThreadUnread from "@/features/message/use-thread-unread"
+import { useLongPress } from "@/hooks/use-long-press"
+
+/**
+ * Shorter than the hook's default: nothing competes for the press anymore, so
+ * selection mode can open as soon as the intent is unambiguous.
+ */
+const TOUCH_SELECTION_DELAY_MS = 350;
 
 type ThreadItemProps = {
     thread: Thread
@@ -30,9 +40,13 @@ type ThreadItemProps = {
 
 export const ThreadItem = ({ thread, isSelected, onToggle, onSelectRange, selectedThreadIds, isSelectionMode, tabIndex, itemRef, onFocusItem }: ThreadItemProps) => {
     const { t, i18n } = useTranslation();
+    const navigate = useNavigate();
     const params = useParams({ strict: false }) as { mailboxId?: string; threadId?: string }
     const [isDragging, setIsDragging] = useState(false)
     const [isExiting, setIsExiting] = useState(false)
+    // Read from `dragstart`, which can fire before a state update would have
+    // been committed — hence a ref rather than state.
+    const isTouchGestureRef = useRef(false)
     const { setIsDragging: setGlobalDragging, setDragAction } = useLayoutDragContext();
     const dragPreviewContainer = useRef(document.getElementById(PORTALS.DRAG_PREVIEW));
     const threadDate = useMemo(() => {
@@ -56,13 +70,7 @@ export const ThreadItem = ({ thread, isSelected, onToggle, onSelectRange, select
         return thread.messaged_at || thread.draft_messaged_at;
     }, [thread])
 
-    const hasUnread = useMemo(() => {
-        const access = thread.accesses.find((a) => a.mailbox.id === params?.mailboxId)
-        const compareDate = thread.messaged_at;
-        if (!access || !compareDate) return false
-        if (!access.read_at) return true
-        return new Date(compareDate) > new Date(access.read_at)
-    }, [thread, params?.mailboxId])
+    const hasUnread = useThreadUnread(thread);
 
     const hasSelection = isSelectionMode || selectedThreadIds.size > 0;
     const showCheckbox = hasSelection;
@@ -79,23 +87,87 @@ export const ThreadItem = ({ thread, isSelected, onToggle, onSelectRange, select
     const snippetEnabled = useFeatureFlag(FEATURE_KEYS.THREAD_SNIPPET);
     const showSnippet = snippetEnabled && !!thread.snippet;
 
-    const handleItemClick = (e: React.MouseEvent<HTMLAnchorElement>) => {
+    // ``sender_names`` is stored server-side as [first sender, last sender]
+    // (collapsed to a single entry when both are the same), so the avatar of
+    // the most recent sender is always the last entry.
+    const lastSenderName = thread.sender_names?.at(-1);
+
+    // A long press is the touch entry point into selection mode — the only
+    // one, since dragging is mouse-only. The tap that ends the press still
+    // fires a click afterwards, which would navigate to the thread we just
+    // selected — the flag swallows exactly that one click.
+    const suppressNextClickRef = useRef(false);
+    const { handlers: longPressHandlers } = useLongPress(() => {
+        suppressNextClickRef.current = true;
+        onToggle(thread.id);
+    }, { delay: TOUCH_SELECTION_DELAY_MS });
+
+    // Keyboard activation (Enter on the focused option) fires a click with
+    // detail === 0 and no pointer type: it must navigate even while a
+    // selection is active, being the only pointer-free way to open a thread.
+    // Taps report detail === 0 too on some WebKit builds, hence the
+    // pointerType check — without it a tap on a selected thread would be
+    // mistaken for a keyboard activation and open the thread.
+    const isKeyboardActivation = (e: React.MouseEvent<HTMLDivElement>) => {
+        const pointerType = 'pointerType' in e.nativeEvent
+            ? (e.nativeEvent as PointerEvent).pointerType
+            : '';
+        return e.detail === 0 && !pointerType;
+    };
+
+    // Cancelling the navigation has to happen on the way down: the Link
+    // navigates from its own onClick handler on the <a>, which runs before
+    // the event bubbles up to this container. It skips navigation when the
+    // event is already defaultPrevented — and for ctrl/meta/shift clicks,
+    // which is why modifier-driven selection worked without this, while a
+    // plain tap in selection mode still opened the thread.
+    const handleItemClickCapture = (e: React.MouseEvent<HTMLDivElement>) => {
+        if (isKeyboardActivation(e)) return;
+        if (suppressNextClickRef.current || hasSelection || e.shiftKey || e.ctrlKey || e.metaKey) {
+            e.preventDefault();
+        }
+    };
+
+    // Lives on the item container, not the Link: it catches clicks bubbling
+    // from the stretched ::after overlay as well as clicks on elements raised
+    // above it (badges column, labels).
+    const handleItemClick = (e: React.MouseEvent<HTMLDivElement>) => {
         onFocusItem();
-        // Keyboard activation (Enter on the focused option) fires a click
-        // with detail === 0: let it navigate even while a selection is
-        // active, it is the only pointer-free way to open a thread.
-        if (e.detail === 0) return;
+        if (suppressNextClickRef.current) {
+            suppressNextClickRef.current = false;
+            e.preventDefault();
+            return;
+        }
+        if (isKeyboardActivation(e)) return;
         if (e.shiftKey) {
             e.preventDefault();
             onSelectRange(thread.id);
         } else if (e.ctrlKey || e.metaKey || hasSelection) {
             e.preventDefault();
             onToggle(thread.id);
+        } else if (e.target instanceof Element && !e.target.closest('a, button')) {
+            // Raised elements sit above the stretched link, so plain clicks
+            // on them never reach it: navigate as the link would have.
+            navigate({
+                to: "/mailbox/$mailboxId/thread/$threadId",
+                params: { mailboxId: params?.mailboxId ?? '', threadId: thread.id },
+                search: true,
+            });
         }
         // Otherwise, let the Link handle navigation normally
     };
 
-    const handleDragStart = (e: React.DragEvent<HTMLAnchorElement>) => {
+    const handleDragStart = (e: React.DragEvent<HTMLDivElement>) => {
+        // Dragging is mouse-only: browsers start their touch drag on the hold
+        // alone, with no way to make it wait for a movement, so it claimed
+        // every long press meant to open selection mode. Refusing the
+        // `dragstart` here rather than dropping `draggable` on the container
+        // is what actually works — the event bubbles up from the subject
+        // `<a>`, which anchors make draggable with or without the attribute.
+        if (isTouchGestureRef.current) {
+            e.preventDefault();
+            return;
+        }
         setIsDragging(true)
         setGlobalDragging(true)
 
@@ -134,6 +206,11 @@ export const ThreadItem = ({ thread, isSelected, onToggle, onSelectRange, select
         setDragAction(null);
     };
 
+    const { markAsStarred, markAsUnstarred } = useStarred();
+    // Starring a trashed or spam thread makes no sense: keep the starred
+    // state visible (read-only badge) but drop the toggle in those views.
+    const canToggleStar = !ViewHelper.isTrashedView() && !ViewHelper.isSpamView();
+
     const dragCount = selectedThreadIds.size > 0 ? selectedThreadIds.size : 1;
 
     // Clear any pending drag action if the item unmounts before the
@@ -142,12 +219,24 @@ export const ThreadItem = ({ thread, isSelected, onToggle, onSelectRange, select
     useEffect(() => () => setDragAction(null), [setDragAction]);
 
 
+    // The link (the listbox option) only wraps the thread subject, with an
+    // accessible name built from senders + subject, and stretches its click
+    // surface over the whole item via a ::after overlay (see SCSS). Nesting
+    // the whole item inside the link would put the star button — an
+    // interactive element — inside another interactive element.
+    // Date, badges and labels sit outside the link, so they feed the
+    // option's *description* instead: screen readers still announce them
+    // after the name, while voice-control tools keep targeting the short
+    // name only.
+    const sendersId = `thread-item-senders-${thread.id}`;
+    const subjectId = `thread-item-subject-${thread.id}`;
+    const dateId = `thread-item-date-${thread.id}`;
+    const badgesId = `thread-item-badges-${thread.id}`;
+    const labelsId = `thread-item-labels-${thread.id}`;
+
     return (
         <>
-            <Link
-                to="/mailbox/$mailboxId/thread/$threadId"
-                params={{ mailboxId: params?.mailboxId ?? '', threadId: thread.id }}
-                search={true}
+            <div
                 className={clsx(
                     'thread-item',
                     {
@@ -160,37 +249,64 @@ export const ThreadItem = ({ thread, isSelected, onToggle, onSelectRange, select
                 draggable
                 onDragStart={handleDragStart}
                 onDragEnd={handleDragEnd}
+                onClickCapture={handleItemClickCapture}
                 onClick={handleItemClick}
-                onFocus={onFocusItem}
-                tabIndex={tabIndex}
-                ref={itemRef}
-                role="option"
-                aria-selected={isSelected}
+                {...longPressHandlers}
+                onTouchStart={(e) => {
+                    // A press that never produces a click (finger lifted after
+                    // a scroll, gesture cancelled) would otherwise leave the
+                    // flag armed and swallow the next tap.
+                    suppressNextClickRef.current = false;
+                    isTouchGestureRef.current = true;
+                    longPressHandlers.onTouchStart(e);
+                }}
+                onTouchEnd={() => {
+                    isTouchGestureRef.current = false;
+                    longPressHandlers.onTouchEnd();
+                }}
+                // Deliberately leaves the touch flag armed: browsers fire
+                // `touchcancel` precisely when they claim the gesture for a
+                // drag, and nothing guarantees it arrives after `dragstart` —
+                // disarming here could hand them back the press. The next
+                // `touchstart` rearms it anyway.
+                onTouchCancel={longPressHandlers.onTouchCancel}
             >
-                <div>
-                    {showCheckbox && (
-                        // Mouse-only affordance, purely presentational: the option
-                        // itself carries the selection state (aria-selected) and a
-                        // focusable checkbox would add a second tab stop, hence
-                        // aria-hidden + tabIndex=-1. pointer-events:none (see SCSS)
-                        // lets the click fall through to the Link, where
-                        // handleItemClick owns the selection logic; the checkbox
-                        // only reflects `checked`. Driving it from its own click
-                        // handler would fight handleItemClick's preventDefault and
-                        // leave it visually out of sync.
-                        <span aria-hidden="true" className="thread-item__checkbox-wrapper">
-                            <Checkbox
-                                checked={isSelected}
-                                tabIndex={-1}
-                                className="thread-item__checkbox"
-                            />
-                        </span>
-                    )}
+                <div className="thread-item__aside">
                     <div className="thread-item__read-indicator" />
+                    {/* The checkbox takes over the avatar slot in selection
+                        mode: both are the row's leading affordance, and
+                        stacking them would shift the whole row sideways every
+                        time selection is toggled. */}
+                    <div className="thread-item__identity-slot">
+                        {showCheckbox ? (
+                            // Pointer-only affordance, purely presentational: the option
+                            // itself carries the selection state (aria-selected) and a
+                            // focusable checkbox would add a second tab stop, hence
+                            // aria-hidden + tabIndex=-1. pointer-events:none (see SCSS)
+                            // lets the click fall through to the item container, where
+                            // handleItemClick owns the selection logic; the checkbox
+                            // only reflects `checked`. Driving it from its own click
+                            // handler would fight handleItemClick's preventDefault and
+                            // leave it visually out of sync.
+                            <span aria-hidden="true" className="thread-item__checkbox-wrapper">
+                                <Checkbox
+                                    checked={isSelected}
+                                    tabIndex={-1}
+                                    className="thread-item__checkbox"
+                                />
+                            </span>
+                        ) : lastSenderName && (
+                            // Decorative: the sender is already announced as part of
+                            // the option's accessible name.
+                            <span aria-hidden="true" className="thread-item__avatar">
+                                <UserAvatar fullName={lastSenderName} size="medium" />
+                            </span>
+                        )}
+                    </div>
                 </div>
                 <div>
                     <div className="thread-item__row">
-                        <div className="thread-item__column">
+                        <div className="thread-item__column" id={sendersId}>
                             {thread.sender_names && thread.sender_names.length > 0 && (
                                 <ThreadItemSenders senders={thread.sender_names} />
                             )}
@@ -203,7 +319,7 @@ export const ThreadItem = ({ thread, isSelected, onToggle, onSelectRange, select
                                 </span>
                             }
                         </div>
-                        <div className="thread-item__column thread-item__column--metadata">
+                        <div className="thread-item__column thread-item__column--metadata" id={dateId}>
                             {(threadDate || thread.messaged_at) && (
                                 <span className="thread-item__date">
                                     {DateHelper.formatDate((threadDate || thread.messaged_at)!, i18n.resolvedLanguage)}
@@ -213,11 +329,23 @@ export const ThreadItem = ({ thread, isSelected, onToggle, onSelectRange, select
                     </div>
                     <div className="thread-item__row thread-item__row--subject">
                         <div className="thread-item__column">
-                            <p className="thread-item__subject">
-                                {thread.subject || t('No subject')}
-                            </p>
+                            <Link
+                                to="/mailbox/$mailboxId/thread/$threadId"
+                                params={{ mailboxId: params?.mailboxId ?? '', threadId: thread.id }}
+                                search={true}
+                                className="thread-item__link"
+                                aria-labelledby={`${sendersId} ${subjectId}`}
+                                aria-describedby={`${dateId} ${badgesId} ${labelsId}`}
+                                onFocus={onFocusItem}
+                                tabIndex={tabIndex}
+                                ref={itemRef}
+                                role="option"
+                                aria-selected={isSelected}
+                            >
+                                <p className="thread-item__subject" id={subjectId}>{thread.subject || t('No subject')}</p>
+                            </Link>
                         </div>
-                        <div className="thread-item__column thread-item__column--badges">
+                        <div className="thread-item__column thread-item__column--badges" id={badgesId}>
                             {thread.has_draft && (
                                 <Badge aria-label={t('Draft')} title={t('Draft')} color="neutral" variant="tertiary" compact>
                                     <Icon
@@ -235,27 +363,9 @@ export const ThreadItem = ({ thread, isSelected, onToggle, onSelectRange, select
                                     color="neutral"
                                     variant="tertiary"
                                     compact>
-                                    <Icon
-                                        name="attachment"
-                                        size={IconSize.SMALL}
-                                        aria-hidden="true"
-                                    />
+                                    <AttachFile size={IconSize.SMALL} aria-hidden="true" />
                                 </Badge>
                             ) : null}
-                            {thread.has_starred && (
-                                <Badge
-                                    aria-label={t('Starred')}
-                                    title={t('Starred')}
-                                    color="yellow"
-                                    variant="tertiary"
-                                    compact>
-                                    <Icon
-                                        name="star"
-                                        size={IconSize.SMALL}
-                                        aria-hidden="true"
-                                    />
-                                </Badge>
-                            )}
                             {thread.has_unread_mention && (
                                 <Badge
                                     aria-label={t('Unread mention')}
@@ -320,6 +430,41 @@ export const ThreadItem = ({ thread, isSelected, onToggle, onSelectRange, select
                                     </span>
                                 </Tooltip>
                             )}
+                            {canToggleStar ? (
+                                thread.has_starred ? (
+                                    <Button
+                                        aria-label={t('Unstar this thread')}
+                                        title={t('Unstar this thread')}
+                                        color="warning"
+                                        variant="tertiary"
+                                        size="nano"
+                                        onClick={(e) => {
+                                            e.preventDefault();
+                                            e.stopPropagation();
+                                            markAsUnstarred({ threadIds: [thread.id] });
+                                        }}
+                                        icon={<StarFilled size={IconSize.SMALL} aria-hidden="true" />}
+                                    />
+                                ) : (
+                                    <Button
+                                        aria-label={t('Star this thread')}
+                                        title={t('Star this thread')}
+                                        color="neutral"
+                                        variant="tertiary"
+                                        size="nano"
+                                        onClick={(e) => {
+                                            e.preventDefault();
+                                            e.stopPropagation();
+                                            markAsStarred({ threadIds: [thread.id] });
+                                        }}
+                                        icon={<Star size={IconSize.SMALL} aria-hidden="true" />}
+                                    />
+                                )
+                            ) : thread.has_starred && (
+                                <Badge aria-label={t('Starred')} title={t('Starred')} color="warning" variant="tertiary" compact>
+                                    <StarFilled size={IconSize.SMALL} aria-hidden="true" />
+                                </Badge>
+                            )}
                         </div>
                     </div>
                     {showSnippet && (
@@ -337,7 +482,7 @@ export const ThreadItem = ({ thread, isSelected, onToggle, onSelectRange, select
                         )}
                     </div>
                 </div>
-            </Link>
+            </div>
             {(isDragging || isExiting) && dragPreviewContainer.current && createPortal(
                 <ThreadDragPreview
                     count={dragCount}

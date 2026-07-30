@@ -19,7 +19,7 @@ import { MessageTemplateTypeChoices, useMailboxesMessageTemplatesAvailableList }
 import { Attachment } from '@/features/api/gen/models/attachment';
 import { MessageComposerHelper } from '@/features/utils/composer-helper';
 import { SmartTrailingBlock } from '@/features/blocknote/smart-trailing-block';
-import { createBlockNoteDictionary, dropUnsupportedBlocks, SUPPORTED_BLOCK_SPECS } from '@/features/blocknote/utils';
+import { createBlockNoteDictionary, createNativeLinkOptions, dropUnsupportedBlocks, SUPPORTED_BLOCK_SPECS } from '@/features/blocknote/utils';
 import { PasteColorSanitizer } from '@/features/blocknote/paste-sanitizer';
 import { handle } from '@/features/utils/errors';
 import { findOrphanInlineImages } from './orphan-inline-images';
@@ -196,6 +196,7 @@ export const MessageComposer = React.forwardRef<MessageComposerHandle, MessageCo
         initialContent: getInitialContent(),
         uploadFile,
         dictionary: createBlockNoteDictionary(locale, t),
+        ...createNativeLinkOptions(),
         ...blockNoteOptions,
         _tiptapOptions: {
             extensions: [SmartTrailingBlock, PasteColorSanitizer],

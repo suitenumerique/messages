@@ -139,3 +139,10 @@
         }
     }
 }
+
+// Specific styles for native platforms
+:root.native {
+    & .bn-editor {
+        padding-block: var(--c--globals--spacings--base);
+    }
+}

@@ -1,5 +1,6 @@
 import { Button } from "@gouvfr-lasuite/cunningham-react";
-import { Icon, ShareMemberItem, ShareModal } from "@gouvfr-lasuite/ui-kit";
+import { ShareMemberItem, ShareModal, useResponsive } from "@gouvfr-lasuite/ui-kit";
+import { Icon } from "@/features/ui/components/icon";
 import { useState } from "react";
 import { useTranslation } from "react-i18next";
 import {
@@ -14,6 +15,7 @@ import {
   useMailboxAccessManagement,
 } from "@/hooks/use-mailbox-access-management";
 import { ResourceSectionHeader } from "../resource-section-header";
+import { UserAdd } from "@gouvfr-lasuite/ui-kit/icons";
 
 type MailboxSettingsAccessTabProps = {
   mailbox: Mailbox;
@@ -26,6 +28,7 @@ export const MailboxSettingsAccessTab = ({
   const { user } = useAuth();
   const { refetchMailboxes } = useMailboxContext();
   const [isAddMemberOpen, setIsAddMemberOpen] = useState(false);
+  const { isMobile } = useResponsive();
 
   // Only mailbox admins reach this tab (the settings modal filters on
   // `manage_accesses`), so the accesses list is always fetched. `noGlobalError`
@@ -80,11 +83,12 @@ export const MailboxSettingsAccessTab = ({
           })}
           action={
             <Button
-              size="nano"
-              icon={<Icon name="add" />}
+              size={isMobile ? "small" : "nano"}
+              icon={<Icon icon={UserAdd} />}
               onClick={() => setIsAddMemberOpen(true)}
+              aria-label={isMobile ? t("Add a member") : undefined}
             >
-              {t("Add a member")}
+              {!isMobile && t("Add a member")}
             </Button>
           }
         />

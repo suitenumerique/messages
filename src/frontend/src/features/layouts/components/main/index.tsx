@@ -14,6 +14,7 @@ import { LayoutProvider, useLayoutDragContext } from "@/features/layouts/compone
 import { AttachmentPreviewModal } from "@/features/layouts/components/thread-view/components/attachment-preview-modal";
 import { Link } from "@tanstack/react-router";
 import { useTranslation } from "react-i18next";
+import { useResponsive } from "@gouvfr-lasuite/ui-kit";
 
 export const MainLayout = ({ children }: PropsWithChildren) => {
     return (
@@ -42,6 +43,11 @@ const MainLayoutContent = ({ children }: PropsWithChildren<{ simple?: boolean }>
     const hasNoMailbox = queryStates.mailboxes.status === 'success' && mailboxes!.length === 0;
     const { theme, variant } = useTheme();
     const { isLeftPanelOpen, setIsLeftPanelOpen, isDragging } = useLayoutDragContext();
+    const { isDesktop } = useResponsive();
+    // The mobile header centres the app icon between the panel toggle and the
+    // search trigger: the full wordmark would not fit between them (same rule
+    // as the home page header).
+    const headerIconName = isDesktop ? `app-logo-${variant}` : `app-icon-${variant}`;
 
     useUnreadBadge();
 
@@ -51,7 +57,7 @@ const MainLayoutContent = ({ children }: PropsWithChildren<{ simple?: boolean }>
             isLeftPanelOpen={isLeftPanelOpen}
             setIsLeftPanelOpen={setIsLeftPanelOpen}
             leftPanelContent={<LeftPanel hasNoMailbox={hasNoMailbox} />}
-            icon={<Link to="/"><img src={`/images/${theme}/app-logo-${variant}.svg`} alt={t("logo")} height={40} /></Link>}
+            icon={<Link to="/"><img src={`/images/${theme}/${headerIconName}.svg`} alt={t("logo")} height={40} /></Link>}
             hideLeftPanelOnDesktop={hasNoMailbox}
             isDragging={isDragging}
         >

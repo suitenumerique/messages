@@ -1,0 +1,18 @@
+// Shape shared by every floating control of the app chrome (mobile header
+// buttons, native bottom bars, thread action bar): a rounded box with a soft
+// elevation, so a control reads as an affordance hovering over the content
+// rather than a flat icon.
+@mixin control-shape {
+  border-radius: 8px;
+  box-shadow: 0 2px 4px rgb(0 0 0 / 5%);
+}
+
+// Full surface for controls that carry no colour of their own: the shape plus
+// an opaque background and a hairline border, so they stay readable over any
+// content scrolling underneath.
+@mixin control-surface {
+  @include control-shape;
+
+  background-color: var(--c--contextuals--background--surface--primary);
+  border: 1px solid var(--c--contextuals--border--surface--primary);
+}

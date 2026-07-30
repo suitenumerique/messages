@@ -51,9 +51,9 @@
   &__section-header {
     display: flex;
     justify-content: space-between;
-    align-items: baseline;
-    gap: var(--c--globals--spacings--s);
-    margin-bottom: var(--c--globals--spacings--xs);
+    align-items: center;
+    gap: var(--c--globals--spacings--2xs);
+    margin-bottom: var(--c--globals--spacings--base);
   }
 
   &__section-title {

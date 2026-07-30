@@ -1,13 +1,19 @@
 import { useBlockNoteEditor, useComponentsContext, useEditorState } from "@blocknote/react";
+import { createPortal } from "react-dom";
 import { useTranslation } from "react-i18next";
 import { Icon, IconSize, Spinner } from "@gouvfr-lasuite/ui-kit";
 import { Modal, ModalSize } from "@gouvfr-lasuite/cunningham-react";
+import { MobileToolbarButton } from "@/features/blocknote/mobile-toolbar/buttons";
+import { useMobileToolbarDrawer } from "@/features/blocknote/mobile-toolbar/drawer-context";
+import { Drawer } from "@/features/ui/components/drawer";
 import { MessageTemplateTypeChoices, ReadMessageTemplate, useMailboxesMessageTemplatesAvailableList, draftPlaceholdersRetrieve, DraftPlaceholdersRetrieve200 } from "@/features/api/gen";
 import { MessageComposerBlockSchema, MessageComposerInlineContentSchema, MessageComposerStyleSchema, PartialMessageComposerBlockSchema } from "@/features/forms/components/message-composer";
 import { useModal } from "@gouvfr-lasuite/cunningham-react";
 import { handle } from "@/features/utils/errors";
 import MailHelper from "@/features/utils/mail-helper";
 import { resolveTemplateVariables } from "@/features/blocknote/utils";
+
+const TEMPLATES_DRAWER_ID = "message-templates";
 
 type MessageTemplateSelectorProps = {
     mailboxId: string;
@@ -25,6 +31,9 @@ export const MessageTemplateSelector = ({ mailboxId, messageId, ensureDraft, upl
     const editor = useBlockNoteEditor<MessageComposerBlockSchema, MessageComposerInlineContentSchema, MessageComposerStyleSchema>();
     const Components = useComponentsContext()!;
     const modal = useModal();
+    // Non-null when rendered inside the mobile toolbar: templates are then
+    // picked from a bottom drawer instead of the desktop modal.
+    const mobileDrawer = useMobileToolbarDrawer();
 
     const hasInlineContent = useEditorState({
         editor,
@@ -141,6 +150,16 @@ export const MessageTemplateSelector = ({ mailboxId, messageId, ensureDraft, upl
     if (!hasInlineContent) return null;
 
     if (isLoading) {
+        if (mobileDrawer) {
+            return (
+                <MobileToolbarButton
+                    icon={<Spinner size="sm" />}
+                    label={t("Loading templates...")}
+                    isDisabled
+                    onClick={() => {}}
+                />
+            );
+        }
         return (
             <Components.FormattingToolbar.Button
                 icon={<Spinner size="sm" />}
@@ -153,6 +172,50 @@ export const MessageTemplateSelector = ({ mailboxId, messageId, ensureDraft, upl
 
     if (templates.length === 0) {
         return null;
+    }
+
+    if (mobileDrawer) {
+        return (
+            <>
+                <MobileToolbarButton
+                    icon={<Icon name="description" size={IconSize.MEDIUM} />}
+                    label={t("Insert template")}
+                    isActive={mobileDrawer.openId === TEMPLATES_DRAWER_ID}
+                    onClick={() => mobileDrawer.open(TEMPLATES_DRAWER_ID)}
+                />
+                {mobileDrawer.openId === TEMPLATES_DRAWER_ID &&
+                    mobileDrawer.slot &&
+                    createPortal(
+                        <Drawer
+                            title={t("Insert template")}
+                            onClose={mobileDrawer.close}
+                        >
+                            <div className="drawer-list">
+                                {templates.map((template) => (
+                                    <button
+                                        type="button"
+                                        key={template.id}
+                                        className="drawer-list__item"
+                                        onClick={() => {
+                                            // Close first: the keyboard comes
+                                            // back while the async insertion
+                                            // (placeholders, images) settles.
+                                            mobileDrawer.close();
+                                            void handleSelect(template);
+                                        }}
+                                    >
+                                        <Icon name="description" size={IconSize.MEDIUM} />
+                                        <span className="drawer-list__item-label">
+                                            {template.name}
+                                        </span>
+                                    </button>
+                                ))}
+                            </div>
+                        </Drawer>,
+                        mobileDrawer.slot,
+                    )}
+            </>
+        );
     }
 
     return (

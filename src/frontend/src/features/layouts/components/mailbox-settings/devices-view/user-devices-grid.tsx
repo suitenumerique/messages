@@ -1,4 +1,4 @@
-import { Icon, IconSize, IconType, Spinner } from "@gouvfr-lasuite/ui-kit";
+import { Icon, IconSize, IconType, Spinner, useResponsive } from "@gouvfr-lasuite/ui-kit";
 import { Trash } from "@gouvfr-lasuite/ui-kit/icons";
 import {
     Button,
@@ -86,6 +86,7 @@ export const UserDevicesGrid = () => {
     const modals = useModals();
     const queryClient = useQueryClient();
     const [isEnabling, setIsEnabling] = useState(false);
+    const { isMobile } = useResponsive();
     // The row whose sign-out is in flight: the spinner must sit on that row
     // only, while the mutation's pending flag disables every button (one
     // sign-out at a time).
@@ -153,8 +154,8 @@ export const UserDevicesGrid = () => {
             const result = isNativePlatform()
                 ? await enableNativePush(user?.id)
                 : config.PUSH_VAPID_PUBLIC_KEY
-                  ? await enableWebPush(config.PUSH_VAPID_PUBLIC_KEY, user?.id)
-                  : "unsupported";
+                    ? await enableWebPush(config.PUSH_VAPID_PUBLIC_KEY, user?.id)
+                    : "unsupported";
             if (result === "subscribed" || result === "registered") {
                 await invalidateDevices();
                 addToast(
@@ -168,33 +169,33 @@ export const UserDevicesGrid = () => {
                 // OS app settings (iOS only lets the app prompt once).
                 const messages: Record<string, string> = isNativePlatform()
                     ? {
-                          denied: t(
-                              "Notifications are blocked. Allow them for this app in your device settings.",
-                          ),
-                          unsupported: t(
-                              "This device does not support notifications.",
-                          ),
-                          registration_failed: t(
-                              "Couldn't register this device for notifications. Check your connection and try again.",
-                          ),
-                      }
+                        denied: t(
+                            "Notifications are blocked. Allow them for this app in your device settings.",
+                        ),
+                        unsupported: t(
+                            "This device does not support notifications.",
+                        ),
+                        registration_failed: t(
+                            "Couldn't register this device for notifications. Check your connection and try again.",
+                        ),
+                    }
                     : {
-                          denied: t(
-                              "Notifications are blocked. Allow them for this site in your browser settings.",
-                          ),
-                          dismissed: t(
-                              "Notification permission was dismissed. Click again to enable.",
-                          ),
-                          unsupported: t(
-                              "This browser does not support notifications.",
-                          ),
-                          registration_failed: t(
-                              "Couldn't start the notification service worker. Reload the page and try again.",
-                          ),
-                          push_service_error: t(
-                              "Couldn't reach the browser's push service. Your network or company firewall may be blocking it. If you use Brave, enable “Use Google services for push messaging” in settings, restart the browser, then try again.",
-                          ),
-                      };
+                        denied: t(
+                            "Notifications are blocked. Allow them for this site in your browser settings.",
+                        ),
+                        dismissed: t(
+                            "Notification permission was dismissed. Click again to enable.",
+                        ),
+                        unsupported: t(
+                            "This browser does not support notifications.",
+                        ),
+                        registration_failed: t(
+                            "Couldn't start the notification service worker. Reload the page and try again.",
+                        ),
+                        push_service_error: t(
+                            "Couldn't reach the browser's push service. Your network or company firewall may be blocking it. If you use Brave, enable “Use Google services for push messaging” in settings, restart the browser, then try again.",
+                        ),
+                    };
                 addToast(
                     <ToasterItem type="error">
                         <span>{messages[result]}</span>
@@ -317,7 +318,7 @@ export const UserDevicesGrid = () => {
                 );
             },
         },
-        {
+        ...(!isMobile ? [{
             id: "last_active",
             headerName: t("Last active"),
             size: 140,
@@ -328,7 +329,7 @@ export const UserDevicesGrid = () => {
                 const ts = row.last_used_at ?? row.created_at;
                 return ts ? new Date(ts).toLocaleDateString() : "";
             },
-        },
+        } as Column<Channel>] : []),
         {
             // Icon buttons only, just wide enough so the name column gets the
             // reclaimed width. The header still needs a name: an unlabeled
@@ -379,7 +380,7 @@ export const UserDevicesGrid = () => {
     const enableToolbar = canEnableThisDevice ? (
         <div
             className="flex-row flex-justify-end"
-            style={{ marginBottom: "var(--c--globals--spacings--sm)" }}
+            style={{ marginBlock: "var(--c--globals--spacings--sm)" }}
         >
             <Button
                 variant="secondary"

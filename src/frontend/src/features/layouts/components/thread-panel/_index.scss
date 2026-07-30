@@ -1,3 +1,5 @@
+@use "../../../../styles/utils" as *;
+
 .thread-panel {
     display: flex;
     flex-direction: column;
@@ -15,6 +17,82 @@
             justify-content: space-between;
         }
 
+        // Touch layout: title and count stacked in one column, actions in the
+        // other. Bottom-aligned so the boxed bar spans both text lines instead
+        // of pushing the count row down to its own height. Selection mode
+        // overrides this — see the grid variant below.
+        .thread-panel__header--columns {
+            display: flex;
+            align-items: flex-end;
+            gap: var(--c--globals--spacings--xs);
+        }
+
+        // Selection mode. The title here is a running count ("12 conversations
+        // sélectionnées"), far longer than the folder name it replaces — and
+        // longest in French. Sharing its row with the action bar left it barely
+        // half the panel and wrapped it onto two or three lines, deepening the
+        // header every time the selection crossed a digit.
+        //
+        // So the title takes the whole first line, and the two boxed control
+        // groups face each other underneath — which they can do unaided, unlike
+        // the count row of the non-selection layout that has no right-hand
+        // group to balance the bar against.
+        .thread-panel__header--columns--selection {
+            display: grid;
+            grid-template-columns: 1fr auto;
+            grid-template-areas:
+                "title title"
+                "controls actions";
+            align-items: center;
+            row-gap: var(--c--globals--spacings--2xs);
+
+            // The wrapper exists only to stack title over count for the flex
+            // layout; here its two children are grid items in their own right.
+            .thread-panel__header--text {
+                display: contents;
+            }
+
+            .thread-panel__header--title-row {
+                grid-area: title;
+                min-width: 0;
+            }
+
+            .thread-panel__header--title {
+                // A full line to itself, so one line is all it needs. Truncate
+                // rather than wrap if a translation ever overflows: the header
+                // height must not depend on the selection size.
+                white-space: nowrap;
+                overflow: hidden;
+                text-overflow: ellipsis;
+                // The nudge that lines the title up with the count below is
+                // wrong once what sits underneath is the bordered controls box.
+                transform: none;
+            }
+
+            .thread-panel__header--details {
+                grid-area: controls;
+            }
+
+            .thread-panel__bar {
+                grid-area: actions;
+                // margin-left:auto is the flex-row trick for pushing the bar
+                // right; the grid column already sizes to it.
+                margin-left: 0;
+            }
+        }
+
+        .thread-panel__header--text {
+            // Owns the leftover width so the count can still ellipsize.
+            flex: 1 1 auto;
+            min-width: 0;
+        }
+
+        // Wrapper capturing the pointer position the context menu opened at:
+        // it must not add a box of its own around the filter button.
+        .thread-panel__filter-trigger {
+            display: inline-flex;
+        }
+
         .thread-panel__header--title {
             color: var(--c--contextuals--content--semantic--neutral--primary);
             font-size: var(--c--globals--font--sizes--h4);
@@ -22,6 +100,12 @@
             line-height: 1.27;
             // Adjust title position to align with message count below
             transform: translateX(-3px);
+
+            @media screen and (max-width: breakpoint("mobile")) {
+                font-size: var(--c--globals--font--sizes--base);
+                font-weight: 700;
+                line-height: 1.375rem;
+            }
         }
 
         .thread-panel__header--details {
@@ -52,6 +136,37 @@
                 min-width: 0;
                 flex: 1 1 auto;
             }
+
+            .thread-panel__header--mailbox {
+                font-weight: 500;
+                color: var(--c--contextuals--content--semantic--neutral--primary);
+            }
+        }
+
+        // Selection mode on touch: select-all and the exit button on the left,
+        // bulk actions on the right. Nothing else — the count and mailbox name
+        // would leave no room, and the selection size is the title above.
+        .thread-panel__header--details--selection {
+            .c__checkbox {
+                // Big enough to be a comfortable touch target, unlike the
+                // mouse-sized default of the row above.
+                --c--components--forms-checkbox--size: 1.25rem;
+                // The nudge that lines the checkbox up with the title above
+                // is wrong once it sits inside a box of its own.
+                transform: none;
+            }
+        }
+
+        // Select-all + exit: the same floating box as the bulk actions facing
+        // them, so the row reads as two groups rather than loose controls.
+        .thread-panel__selection-controls {
+            display: flex;
+            align-items: center;
+            flex-shrink: 0;
+            gap: var(--c--globals--spacings--2xs);
+            padding: var(--c--globals--spacings--3xs) var(--c--globals--spacings--2xs);
+
+            @include control-surface;
         }
     }
 
@@ -64,12 +179,66 @@
         margin-left: auto;
     }
 
+    // On touch the actions read as one floating control, same box as the
+    // thread action bar and the native bottom bars.
+    .thread-panel__bar--floating {
+        padding: var(--c--globals--spacings--3xs);
+        gap: var(--c--globals--spacings--3xs);
+
+        @include control-surface;
+    }
+
     .thread-panel__threads_list {
+        --thread-list-fade-height: 1.25rem;
+
+        // Fill the remaining height even when the threads don't, so the
+        // pull-to-refresh touch surface spans the whole panel and the gesture
+        // works below the last item. min-height:0 keeps overflow scrolling
+        // working inside the flex column.
+        flex: 1 1 auto;
+        min-height: 0;
         overflow-y: auto;
+        // Keep the native overscroll bounce from fighting the custom
+        // pull-to-refresh gesture on iOS/Android web views.
+        overscroll-behavior-y: contain;
         padding-inline: var(--c--globals--spacings--xs);
         display: flex;
         flex-direction: column;
         gap: var(--c--globals--spacings--4xs);
+
+        // Soften the hard clipping edge under the header: threads dissolve
+        // into the panel background instead of being cut off mid-line. The
+        // gradient mask fades both the surface tint and the blur, so the
+        // transition has no visible end. Sticky (rather than an overlay on
+        // the header) keeps it anchored to the scroll viewport, so the
+        // pull-to-refresh indicator pushing the list down never slides
+        // underneath it.
+        &::before {
+            content: "";
+            position: sticky;
+            top: 0;
+            z-index: 1;
+            flex: 0 0 auto;
+            height: var(--thread-list-fade-height);
+            // Overlay the first thread instead of taking room in the flow,
+            // gap included.
+            margin-bottom: calc(-1 * (var(--thread-list-fade-height) + var(--c--globals--spacings--4xs)));
+            // Cover the list padding so the fade spans the full panel width.
+            margin-inline: calc(-1 * var(--c--globals--spacings--xs));
+            pointer-events: none;
+            background-color: var(--c--contextuals--background--surface--secondary);
+            backdrop-filter: blur(3px);
+            -webkit-backdrop-filter: blur(3px);
+            mask-image: linear-gradient(to bottom, #000 25%, transparent);
+            -webkit-mask-image: linear-gradient(to bottom, #000 25%, transparent);
+            // Only once scrolled: at rest the first thread must stay crisp.
+            opacity: 0;
+            transition: opacity 120ms ease-out;
+        }
+
+        &[data-scrolled="true"]::before {
+            opacity: 1;
+        }
     }
 
     &--loading {

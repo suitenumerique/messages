@@ -1,3 +1,5 @@
+@use "../../../../styles/utils" as *;
+
 .search__filters {
     display: flex;
     flex-direction: column;
@@ -17,6 +19,42 @@
     animation: slide-in 200ms ease-out;
     transform-origin: top center;
     z-index: 0;
+}
+
+// On mobile the form is rendered inside a fullscreen modal: drop the floating
+// dropdown styling and let it flow in the modal body at full width. The submit/
+// reset buttons live in the modal's own sticky footer (rendered outside this
+// scroll area), so the form here only holds the fields.
+@media screen and (max-width: breakpoint(tablet)) {
+    // The fullscreen modal already scrolls its body; the forced inner scroll on
+    // the content wrapper otherwise nests a second scrollbar (the "slight
+    // scroll" with the sticky close button pinned on top). Let it grow instead.
+    .c__modal__content:has(.search__filters) {
+        overflow: visible;
+    }
+
+    // The default (non-tab) modal nudges its close button by -1.1rem on both
+    // axes. On a fullscreen mobile modal that overflows the padded scroller
+    // (horizontal scroll) and pins the button against the top edge. Keep it
+    // within the scroller padding instead.
+    .c__modal__scroller:has(.search__filters) .c__modal__close .c__button {
+        right: 0;
+        top: 0;
+    }
+
+    .search__filters {
+        position: static;
+        transform: none;
+        width: 100%;
+        min-width: 0;
+        max-width: 100%;
+        padding: 0;
+        border: none;
+        box-shadow: none;
+        background-color: transparent;
+        animation: none;
+        gap: var(--c--globals--spacings--xs);
+    }
 }
 
 @keyframes slide-in {

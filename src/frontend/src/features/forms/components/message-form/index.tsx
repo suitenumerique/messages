@@ -1,4 +1,4 @@
-import { Icon, IconType, Spinner } from "@gouvfr-lasuite/ui-kit";
+import { IconType, Spinner } from "@gouvfr-lasuite/ui-kit";
 import { Button, Tooltip, useModals } from "@gouvfr-lasuite/cunningham-react";
 import { clsx } from "clsx";
 import { useEffect, useMemo, useState, useRef, forwardRef, useImperativeHandle } from "react";
@@ -28,6 +28,8 @@ import { useConfig } from "@/features/providers/config";
 import { DriveFile } from "./drive-attachment-picker";
 import { useAttachments } from "@/features/forms/hooks/use-attachments";
 import { MessageComposerHelper } from "@/features/utils/composer-helper";
+import { Icon } from "@/features/ui/components/icon";
+import { Send, Trash } from "@gouvfr-lasuite/ui-kit/icons";
 
 export type MessageFormMode = "new" | "reply" | "reply_all" | "forward";
 
@@ -925,7 +927,9 @@ export const MessageForm = forwardRef<MessageFormHandle, MessageFormProps>(({
                         dropdownOptions={[
                             ...(mode !== 'new' ? [{
                                 label: preferredSendMode === PreferSendMode.SEND_AND_ARCHIVE ? t("Send") : t("Send and archive"),
-                                icon: <Icon name={preferredSendMode === PreferSendMode.SEND_AND_ARCHIVE ? "send" : "send_and_archive"} type={IconType.OUTLINED} />,
+                                icon: preferredSendMode === PreferSendMode.SEND_AND_ARCHIVE
+                                    ? <Icon icon={Send} />
+                                    : <Icon name={"send_and_archive"} type={IconType.OUTLINED} />,
                                 callback: form.handleSubmit(() => handleSubmit({ archive: preferredSendMode !== PreferSendMode.SEND_AND_ARCHIVE })),
                                 showSeparator: true,
                             }, {
@@ -945,7 +949,7 @@ export const MessageForm = forwardRef<MessageFormHandle, MessageFormProps>(({
                                 variant="tertiary"
                                 onClick={onClose}
                                 aria-label={t("Delete")}
-                                icon={<Icon name="delete" type={IconType.OUTLINED} />}
+                                icon={<Icon icon={Trash} />}
                             />
                         </Tooltip>
                     )}
@@ -957,7 +961,7 @@ export const MessageForm = forwardRef<MessageFormHandle, MessageFormProps>(({
                                     variant="tertiary"
                                     onClick={() => handleDeleteMessage(draft.id)}
                                     aria-label={t("Delete draft")}
-                                    icon={<Icon name="delete" type={IconType.OUTLINED} />}
+                                    icon={<Icon icon={Trash} />}
                                 />
                             </Tooltip>
                         )
