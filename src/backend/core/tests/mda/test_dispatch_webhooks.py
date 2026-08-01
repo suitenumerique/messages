@@ -1462,8 +1462,7 @@ class TestPipelineIntegration:
         # 4xx is a webhook error, not an explicit drop → hold for RETRY.
         mock_session.return_value.post.return_value = _make_response(403)
 
-        with patch.object(process_inbound_message_task, "update_state", Mock()):
-            result = process_inbound_message_task.run(str(inbound_message.id))
+        result = process_inbound_message_task(str(inbound_message.id))
 
         assert result["error"] == "retry"
         assert result["step"].endswith(":before_spam")
@@ -1498,8 +1497,7 @@ class TestPipelineIntegration:
         # 4xx is a webhook error, not an explicit drop → hold for RETRY.
         mock_session.return_value.post.return_value = _make_response(403)
 
-        with patch.object(process_inbound_message_task, "update_state", Mock()):
-            result = process_inbound_message_task.run(str(inbound_message.id))
+        result = process_inbound_message_task(str(inbound_message.id))
 
         assert result["error"] == "retry"
         assert result["step"].endswith(":after_spam")
@@ -1533,8 +1531,7 @@ class TestPipelineIntegration:
         mock_session.return_value.post.return_value = _make_response(200)
         mock_create_message.return_value = True
 
-        with patch.object(process_inbound_message_task, "update_state", Mock()):
-            process_inbound_message_task.run(str(inbound_message.id))
+        process_inbound_message_task(str(inbound_message.id))
 
         # is_spam=True surfaces as the X-StMsg-Is-Spam header.
         headers = mock_session.return_value.post.call_args.kwargs["headers"]
@@ -1558,8 +1555,7 @@ class TestPipelineIntegration:
         inbound_message = _queue_inbound(mailbox, raw_data)
 
         # Within the deferral window → held for retry, row kept.
-        with patch.object(process_inbound_message_task, "update_state", Mock()):
-            result = process_inbound_message_task.run(str(inbound_message.id))
+        result = process_inbound_message_task(str(inbound_message.id))
         assert result["error"] == "retry"
         assert models.InboundMessage.objects.filter(id=inbound_message.id).exists()
 
@@ -1569,8 +1565,7 @@ class TestPipelineIntegration:
         models.InboundMessage.objects.filter(id=inbound_message.id).update(
             created_at=dj_timezone.now() - DEFERRAL_MAX_AGE - DEFERRAL_MAX_AGE
         )
-        with patch.object(process_inbound_message_task, "update_state", Mock()):
-            result = process_inbound_message_task.run(str(inbound_message.id))
+        result = process_inbound_message_task(str(inbound_message.id))
         assert result["error"] == "abandoned"
         assert models.InboundMessage.objects.filter(id=inbound_message.id).exists()
         inbound_message.refresh_from_db()
@@ -1585,7 +1580,7 @@ class TestPipelineIntegration:
 @pytest.mark.django_db
 class TestNonBlockingDispatch:
     """Non-blocking webhooks are recorded during the pipeline and fired
-    from a Celery task after the Message exists — the task renders the
+    from a background task after the Message exists — the task renders the
     payload from the durable ``Message.blob`` (no snapshot, nothing large
     on the broker), keeping the inbound worker free of webhook I/O."""
 
@@ -2527,8 +2522,7 @@ class TestPipelineRetry:
         )
         mock_session.return_value.post.return_value = _make_response(503)
 
-        with patch.object(process_inbound_message_task, "update_state", Mock()):
-            result = process_inbound_message_task.run(str(inbound_message.id))
+        result = process_inbound_message_task(str(inbound_message.id))
 
         assert result["error"] == "retry"
         assert result["step"].endswith(":before_spam")
@@ -2562,8 +2556,7 @@ class TestPipelineRetry:
         )
         mock_session.return_value.post.side_effect = requests_lib.Timeout("timed out")
 
-        with patch.object(process_inbound_message_task, "update_state", Mock()):
-            result = process_inbound_message_task.run(str(inbound_message.id))
+        result = process_inbound_message_task(str(inbound_message.id))
 
         assert result["error"] == "retry"
         assert models.InboundMessage.objects.filter(id=inbound_message.id).exists()
@@ -2603,8 +2596,7 @@ class TestPipelineRetry:
         mock_session.return_value.post.return_value = _make_response(503)
         mock_create_message.return_value = True
 
-        with patch.object(process_inbound_message_task, "update_state", Mock()):
-            process_inbound_message_task.run(str(inbound_message.id))
+        process_inbound_message_task(str(inbound_message.id))
 
         # The pipeline aborts at the failing before_spam webhook (RETRY),
         # so deferral is decided at the task level — generic, not
@@ -2657,8 +2649,7 @@ class TestPipelineRetry:
         # Webhook keeps failing → RETRY → force-delivered once deferral expires.
         mock_session.return_value.post.return_value = _make_response(503)
 
-        with patch.object(process_inbound_message_task, "update_state", Mock()):
-            process_inbound_message_task.run(str(inbound_message.id))
+        process_inbound_message_task(str(inbound_message.id))
 
         # Force-delivered (row consumed) but no autoreply fired.
         assert not models.InboundMessage.objects.filter(id=inbound_message.id).exists()
@@ -2696,8 +2687,7 @@ class TestPipelineWebhookAntispam:
         )
         mock_create_message.return_value = Mock(spec=models.Message)
 
-        with patch.object(process_inbound_message_task, "update_state", Mock()):
-            result = process_inbound_message_task.run(str(inbound_message.id))
+        result = process_inbound_message_task(str(inbound_message.id))
 
         # rspamd was skipped because the webhook decided.
         mock_check_spam.assert_not_called()
@@ -2735,8 +2725,7 @@ class TestPipelineWebhookAntispam:
         )
         mock_create_message.return_value = Mock(spec=models.Message)
 
-        with patch.object(process_inbound_message_task, "update_state", Mock()):
-            process_inbound_message_task.run(str(inbound_message.id))
+        process_inbound_message_task(str(inbound_message.id))
 
         # The webhook flip wins.
         assert mock_create_message.call_args.kwargs["is_spam"] is True
@@ -2786,8 +2775,7 @@ class TestPipelineWebhookLabels:
             ).encode("utf-8"),
         )
 
-        with patch.object(process_inbound_message_task, "update_state", Mock()):
-            process_inbound_message_task.run(str(inbound_message.id))
+        process_inbound_message_task(str(inbound_message.id))
 
         message = models.Message.objects.get(mime_id="label-1@example.com")
         thread_labels = set(message.thread.labels.values_list("id", flat=True))
@@ -2839,8 +2827,7 @@ class TestPipelineWebhookAssign:
             body=json.dumps({"assign_to": ["EDITOR@example.org"]}).encode("utf-8"),
         )
 
-        with patch.object(process_inbound_message_task, "update_state", Mock()):
-            process_inbound_message_task.run(str(inbound_message.id))
+        process_inbound_message_task(str(inbound_message.id))
 
         thread = models.Message.objects.get(mime_id="assign-ok@example.com").thread
         events = list(
@@ -2920,8 +2907,7 @@ class TestPipelineWebhookAssign:
             ).encode("utf-8"),
         )
 
-        with patch.object(process_inbound_message_task, "update_state", Mock()):
-            process_inbound_message_task.run(str(inbound_message.id))
+        process_inbound_message_task(str(inbound_message.id))
 
         thread = models.Message.objects.get(mime_id="assign-mixed@example.com").thread
         # Only the editor lands in the timeline.
@@ -2984,8 +2970,7 @@ class TestPipelineWebhookAssign:
             _make_response(200, body=b'{"assign_to": ["bob@example.org"]}'),
         ]
 
-        with patch.object(process_inbound_message_task, "update_state", Mock()):
-            process_inbound_message_task.run(str(inbound_message.id))
+        process_inbound_message_task(str(inbound_message.id))
 
         thread = models.Message.objects.get(mime_id="assign-multi@example.com").thread
         events = list(
@@ -3039,8 +3024,7 @@ class TestPipelineWebhookFlagActions:
             mock_session.return_value.post.return_value = _make_response(
                 200, body=action_body
             )
-            with patch.object(process_inbound_message_task, "update_state", Mock()):
-                process_inbound_message_task.run(str(inbound_message.id))
+            process_inbound_message_task(str(inbound_message.id))
         return models.Message.objects.get(mime_id=mime_id)
 
     def test_mark_starred_and_mark_read_set_threadaccess_fields(self):
@@ -3095,8 +3079,7 @@ class TestPipelineWebhookFlagActions:
             200, body=b'{"skip_autoreply": true}'
         )
 
-        with patch.object(process_inbound_message_task, "update_state", Mock()):
-            process_inbound_message_task.run(str(inbound_message.id))
+        process_inbound_message_task(str(inbound_message.id))
 
         mock_autoreply.assert_not_called()
 
@@ -3140,8 +3123,7 @@ class TestPipelineWebhookAddEvent:
             ).encode("utf-8"),
         )
 
-        with patch.object(process_inbound_message_task, "update_state", Mock()):
-            process_inbound_message_task.run(str(inbound_message.id))
+        process_inbound_message_task(str(inbound_message.id))
 
         message = models.Message.objects.get(mime_id="flag-event@example.com")
         events = list(
@@ -3207,8 +3189,7 @@ class TestPipelineWebhookReplyDraft:
             ),
         )
 
-        with patch.object(process_inbound_message_task, "update_state", Mock()):
-            process_inbound_message_task.run(str(inbound_message.id))
+        process_inbound_message_task(str(inbound_message.id))
 
         inbound = models.Message.objects.get(mime_id="reply-draft@example.com")
         draft = models.Message.objects.filter(
@@ -3266,8 +3247,7 @@ class TestPipelineWebhookReplyDraft:
             ),
         )
 
-        with patch.object(process_inbound_message_task, "update_state", Mock()):
-            process_inbound_message_task.run(str(inbound_message.id))
+        process_inbound_message_task(str(inbound_message.id))
 
         inbound = models.Message.objects.get(mime_id="draft-oos@example.com")
         # No draft was created — out-of-scope template silently skipped.
@@ -3329,8 +3309,7 @@ class TestFinalizeStepIsolation:
             ).encode("utf-8"),
         )
 
-        with patch.object(process_inbound_message_task, "update_state", Mock()):
-            result = process_inbound_message_task.run(str(inbound_message.id))
+        result = process_inbound_message_task(str(inbound_message.id))
 
         # Task reports success (message landed, finalize errors logged).
         assert result["success"] is True
@@ -3381,8 +3360,7 @@ class TestDeferralDelivery:
         # Non-2xx triggers RETRY from the blocking webhook.
         mock_session.return_value.post.return_value = _make_response(503)
 
-        with patch.object(process_inbound_message_task, "update_state", Mock()):
-            result = process_inbound_message_task.run(str(inbound_message.id))
+        result = process_inbound_message_task(str(inbound_message.id))
 
         # Message delivered despite the blocking webhook failing.
         assert result["success"] is True
@@ -3435,8 +3413,7 @@ class TestDeferralDelivery:
         mock_rspamd.return_value = ("reject", None, None)
         mock_session.return_value.post.return_value = _make_response(503)
 
-        with patch.object(process_inbound_message_task, "update_state", Mock()):
-            result = process_inbound_message_task.run(str(inbound_message.id))
+        result = process_inbound_message_task(str(inbound_message.id))
 
         assert result["success"] is True
         assert result["is_spam"] is False
@@ -3473,7 +3450,7 @@ class TestAbandonedRowHandling:
         with patch(
             "core.mda.inbound_tasks.process_inbound_message_task.delay"
         ) as mock_delay:
-            process_inbound_messages_queue_task.run()
+            process_inbound_messages_queue_task()
 
         dispatched = [call.args[0] for call in mock_delay.call_args_list]
         assert str(abandoned.id) not in dispatched
@@ -3492,8 +3469,7 @@ class TestAbandonedRowHandling:
             abandoned_at=dj_timezone.now(),
         )
 
-        with patch.object(process_inbound_message_task, "update_state", Mock()):
-            result = process_inbound_message_task.run(str(abandoned.id))
+        result = process_inbound_message_task(str(abandoned.id))
 
         assert result["error"] == "abandoned"
         mock_rspamd.assert_not_called()
@@ -3511,7 +3487,7 @@ class TestAbandonedRowHandling:
             abandoned_at=dj_timezone.now() - timedelta(days=8),
         )
 
-        result = purge_abandoned_inbound_messages_task.run()
+        result = purge_abandoned_inbound_messages_task()
 
         assert result["purged"] == 1
         assert not models.InboundMessage.objects.filter(id=old.id).exists()
@@ -3526,7 +3502,7 @@ class TestAbandonedRowHandling:
             abandoned_at=dj_timezone.now() - timedelta(days=1),
         )
 
-        result = purge_abandoned_inbound_messages_task.run()
+        result = purge_abandoned_inbound_messages_task()
 
         assert result["purged"] == 0
         assert models.InboundMessage.objects.filter(id=recent.id).exists()
@@ -3539,7 +3515,7 @@ class TestAbandonedRowHandling:
             created_at=dj_timezone.now() - timedelta(days=30)
         )
 
-        result = purge_abandoned_inbound_messages_task.run()
+        result = purge_abandoned_inbound_messages_task()
 
         assert result["purged"] == 0
         assert models.InboundMessage.objects.filter(id=live.id).exists()
@@ -3601,8 +3577,7 @@ class TestPipelineIdempotency:
 
         # --- First pass: creates the message + all side effects. ---
         im1 = _queue_inbound(mailbox, raw_data)
-        with patch.object(process_inbound_message_task, "update_state", Mock()):
-            r1 = process_inbound_message_task.run(str(im1.id))
+        r1 = process_inbound_message_task(str(im1.id))
         assert r1["success"] is True
 
         message = models.Message.objects.get(mime_id=mime)
@@ -3622,8 +3597,7 @@ class TestPipelineIdempotency:
 
         # --- Second pass: SAME Message-ID → dedup hit (_created_now=False). ---
         im2 = _queue_inbound(mailbox, raw_data)
-        with patch.object(process_inbound_message_task, "update_state", Mock()):
-            process_inbound_message_task.run(str(im2.id))
+        process_inbound_message_task(str(im2.id))
 
         # The pipeline DID run again (the blocking webhook fired a 2nd time),
         # proving the skip is gated on _created_now, not on the pipeline
@@ -3645,7 +3619,7 @@ class TestPipelineIdempotency:
         """A duplicate delivery must not re-enqueue the non-blocking
         ``message.delivered`` webhook — its dispatch is one of the finalize
         side effects gated on ``_created_now`` (and ``message.delivered`` is
-        already at-least-once at the Celery layer, so a duplicate *enqueue*
+        already at-least-once at the queue layer, so a duplicate *enqueue*
         here would compound that)."""
         mailbox = factories.MailboxFactory()
         factories.ChannelFactory(
@@ -3668,15 +3642,13 @@ class TestPipelineIdempotency:
         )
 
         im1 = _queue_inbound(mailbox, raw_data)
-        with patch.object(process_inbound_message_task, "update_state", Mock()):
-            process_inbound_message_task.run(str(im1.id))
+        process_inbound_message_task(str(im1.id))
         # Enqueued exactly once, on the original create.
         assert mock_delay.call_count == 1
 
         # Duplicate delivery: same Message-ID, separate queue row.
         im2 = _queue_inbound(mailbox, raw_data)
-        with patch.object(process_inbound_message_task, "update_state", Mock()):
-            process_inbound_message_task.run(str(im2.id))
+        process_inbound_message_task(str(im2.id))
 
         # Still 1 — the dedup hit skipped the non-blocking dispatch.
         assert mock_delay.call_count == 1
@@ -3704,15 +3676,13 @@ class TestPipelineIdempotency:
         )
 
         im1 = _queue_inbound(mailbox, raw_data)
-        with patch.object(process_inbound_message_task, "update_state", Mock()):
-            process_inbound_message_task.run(str(im1.id))
+        process_inbound_message_task(str(im1.id))
         # Enqueued exactly once, on the original create.
         assert mock_enqueue_push.call_count == 1
 
         # Duplicate delivery: same Message-ID, separate queue row.
         im2 = _queue_inbound(mailbox, raw_data)
-        with patch.object(process_inbound_message_task, "update_state", Mock()):
-            process_inbound_message_task.run(str(im2.id))
+        process_inbound_message_task(str(im2.id))
 
         # Still 1 — the dedup hit skipped the push enqueue.
         assert mock_enqueue_push.call_count == 1
@@ -3888,8 +3858,7 @@ class TestBlockingWebhookResultCache:
         mock_rspamd.return_value = (None, "rspamd unreachable", None)
 
         # Attempt 1: webhook POSTed once, message held for retry.
-        with patch.object(process_inbound_message_task, "update_state", Mock()):
-            r1 = process_inbound_message_task.run(str(inbound_message.id))
+        r1 = process_inbound_message_task(str(inbound_message.id))
         assert r1["error"] == "retry"
         assert mock_session.return_value.post.call_count == 1
         # The success was memoised to Redis on the retry path.
@@ -3898,8 +3867,7 @@ class TestBlockingWebhookResultCache:
 
         # Attempt 2 on the SAME row: the cached result is replayed, so the
         # webhook is NOT POSTed again — still RETRYs (rspamd still down).
-        with patch.object(process_inbound_message_task, "update_state", Mock()):
-            r2 = process_inbound_message_task.run(str(inbound_message.id))
+        r2 = process_inbound_message_task(str(inbound_message.id))
         assert r2["error"] == "retry"
         assert mock_session.return_value.post.call_count == 1  # served from cache
 
@@ -3932,8 +3900,7 @@ class TestBlockingWebhookResultCache:
         mock_rspamd.return_value = ("no action", None, None)
         mock_session.return_value.post.return_value = _make_response(200)
 
-        with patch.object(process_inbound_message_task, "update_state", Mock()):
-            result = process_inbound_message_task.run(str(inbound_message.id))
+        result = process_inbound_message_task(str(inbound_message.id))
 
         assert result["success"] is True
         mock_load.assert_not_called()

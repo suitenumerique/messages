@@ -192,7 +192,7 @@ check-bootstrapped:
 .PHONY: check-bootstrapped
 
 start: check-bootstrapped build-python-base ## start the light dev stack (backend, worker, frontend, keycloak, postgresql, redis)
-	@$(COMPOSE) stop backend-dev worker-dev worker-ui opensearch objectstorage mailcatcher mta-in-py mpa >/dev/null 2>&1 || true
+	@$(COMPOSE) stop backend-dev worker-dev opensearch objectstorage mailcatcher mta-in-py mpa >/dev/null 2>&1 || true
 	@$(COMPOSE) up --build -d --wait \
 		postgresql \
 		redis \
@@ -214,7 +214,6 @@ start-full: check-bootstrapped build-python-base ## start the full dev stack (ad
 		frontend-dev \
 		backend-dev \
 		worker-dev \
-		worker-ui \
 		mta-in-py \
 		mpa
 .PHONY: start-full

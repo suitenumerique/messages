@@ -12,7 +12,7 @@ mailbox ability). Tuning env vars live in [env.md](env.md#message-import).
 
 Every import is a `Channel` with `type=import`, scoped to the destination
 mailbox (`scope_level=mailbox`). Modelling it as a durable row (instead of
-tracking Celery task state) means the run is listable, resumable and cancellable
+tracking task state) means the run is listable, resumable and cancellable
 by id long after any worker has forgotten it.
 
 Durable state on the channel:
@@ -248,7 +248,7 @@ the calling user before it touches S3.
 - `core/services/importer/channel.py` — channel creation, Redis state, lifecycle
   transitions (`mark_started`/`record_progress`/`mark_finished`/`heartbeat`),
   run-lock, cancel/purge, continuous controls.
-- `core/services/importer/tasks.py` — orchestration: the Celery tasks
+- `core/services/importer/tasks.py` — orchestration: the background tasks
   (`run_import_task`, `cancel_import_task`, `schedule_imports_task`) and the
   `_RUNNERS` source→runner dispatch table.
 - `core/services/importer/utils.py` — shared, format-agnostic runner

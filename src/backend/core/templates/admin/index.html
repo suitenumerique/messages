@@ -1,0 +1,28 @@
+{% extends "admin/index.html" %}
+{% load i18n %}
+
+{% comment %}
+Adds a "Background tasks" card to the admin home linking to the queue
+dashboard. The link is rendered only when the dashboard is actually mounted —
+it needs the Redis Streams broker, so it is absent under the eager broker used
+by the tests and the no-Redis dev profile.
+{% endcomment %}
+
+{% block content %}
+{{ block.super }}
+
+{% url 'task-dashboard' path='' as task_dashboard_url %}
+{% if task_dashboard_url %}
+<div class="module">
+    <h2>{% translate "Background tasks" %}</h2>
+    <div class="form-row">
+        <div>
+            <a href="{{ task_dashboard_url }}" class="addlink">{% translate "Queue dashboard" %}</a>
+            <p class="help">
+                {% translate "Live queue backlogs, in-flight work per worker, delayed messages and dead-letter queues." %}
+            </p>
+        </div>
+    </div>
+</div>
+{% endif %}
+{% endblock %}

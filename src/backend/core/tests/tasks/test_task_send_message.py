@@ -67,10 +67,8 @@ class TestSendMessageTask:
         # Mock the send_message function
         with patch("core.mda.outbound_tasks.send_message") as mock_mda_send:
             # Call the task with must_archive=True
-            with patch.object(send_message_task, "update_state"):
-                result = send_message_task(  # pylint: disable=no-value-for-parameter
-                    str(draft_message.id), must_archive=True
-                )
+            with patch("core.mda.outbound_tasks.set_task_progress"):
+                result = send_message_task(str(draft_message.id), must_archive=True)
 
             # Verify send_message was called
             mock_mda_send.assert_called_once_with(draft_message, False)
@@ -115,10 +113,8 @@ class TestSendMessageTask:
         # Mock the send_message function
         with patch("core.mda.outbound_tasks.send_message") as mock_mda_send:
             # Call the task with must_archive=False
-            with patch.object(send_message_task, "update_state"):
-                result = send_message_task(  # pylint: disable=no-value-for-parameter
-                    str(draft_message.id), must_archive=False
-                )
+            with patch("core.mda.outbound_tasks.set_task_progress"):
+                result = send_message_task(str(draft_message.id), must_archive=False)
 
             # Verify the result
             assert result["success"] is True
@@ -155,10 +151,8 @@ class TestSendMessageTask:
 
                 # Call the task with must_archive=True
                 # The task should succeed even if archiving fails
-                with patch.object(send_message_task, "update_state"):
-                    result = send_message_task(  # pylint: disable=no-value-for-parameter
-                        str(draft_message.id), must_archive=True
-                    )
+                with patch("core.mda.outbound_tasks.set_task_progress"):
+                    result = send_message_task(str(draft_message.id), must_archive=True)
 
                 # Verify send_message was called
                 mock_mda_send.assert_called_once_with(draft_message, False)
@@ -178,10 +172,8 @@ class TestSendMessageTask:
             # Mock thread.update_stats to verify it's called
             with patch("core.models.Thread.update_stats") as mock_update_stats:
                 # Call the task with must_archive=True
-                with patch.object(send_message_task, "update_state"):
-                    result = send_message_task(  # pylint: disable=no-value-for-parameter
-                        str(draft_message.id), must_archive=True
-                    )
+                with patch("core.mda.outbound_tasks.set_task_progress"):
+                    result = send_message_task(str(draft_message.id), must_archive=True)
 
                 # Verify the result
                 assert result["success"] is True

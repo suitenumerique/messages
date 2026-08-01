@@ -8,6 +8,46 @@ and this project adheres to
 
 ## [Unreleased]
 
+### Changed
+
+- Replace Celery with Dramatiq over a Redis Streams broker for background
+  tasks. Queues, the CLI (`python worker.py`) and the task-status API are
+  unchanged; tasks are declared through `core/task_utils.py` and routed by
+  their own `@register_task(queue=...)` rather than by module globs in
+  settings. See [docs/worker.md](docs/worker.md).
+  - The broker now requires **Redis >= 7**, running with
+    `maxmemory-policy noeviction` and AOF persistence.
+  - `CELERY_BROKER_URL` is replaced by `TASK_BROKER_URL`, and
+    `DISABLE_CELERY_BEAT_SCHEDULE` by `DISABLE_TASK_SCHEDULE`.
+    `CELERY_TASK_SEND_SENT_EVENT`, `CELERY_WORKER_SEND_TASK_EVENTS` and
+    `CELERY_CONCURRENCY` are gone.
+  - Task results moved from Postgres to Redis, kept for `TASK_RESULT_TTL`
+    (24h by default) instead of 30 days. Set `TASK_HISTORY_ENABLED=True` for
+    a Postgres-backed task history in the admin.
+  - Task delivery is now **at-least-once** (it was at-most-once): a worker that
+    dies mid-task no longer loses it, but may re-run it. Tasks with side
+    effects must be idempotent — see [docs/worker.md](docs/worker.md).
+  - The hourly blob sweeps (`gc_orphan_blobs_task`, `offload_blobs_task`, up to
+    55 minutes each) moved to a new `blobs` queue with its own Procfile worker,
+    so they can't strand short tasks reserved beside them. **Deployments must
+    add the `workerblobs` process type**, or blob GC and offload stop running.
+  - Queue priority is now real. The documented "priority order" of the queues
+    had no implementation — the order queues are passed to a worker does not
+    prioritise anything. Each task now carries the priority of its queue
+    (`QUEUE_PRIORITIES`), which Dramatiq applies when a worker has several
+    messages in hand, so inbound mail is served before search indexing.
+  - Migration `core.0035` drops the `django_celery_beat_*` and
+    `django_celery_results_*` tables. Any periodic task added by hand through
+    the beat admin goes with them (it could not have run under Dramatiq
+    anyway) — check `django_celery_beat_periodictask` first if that is a
+    possibility.
+
+### Removed
+
+- The Flower service (`worker-ui`, port 8903). Queue monitoring — backlogs,
+  in-flight work per worker, delayed messages, dead-letter queues — now lives
+  in the Django admin at `/admin/tasks/`.
+
 ## [0.9.0] - 2026-07-22
 
 ### Added

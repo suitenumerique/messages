@@ -692,7 +692,7 @@ END:VCALENDAR""",
 
 
 # ---------------------------------------------------------------------------
-# RSVP (task-based – we call the task synchronously via .apply())
+# RSVP (task-based – we call the task function synchronously)
 # ---------------------------------------------------------------------------
 
 
@@ -812,7 +812,7 @@ class TestCalendarRsvpView:
         happens, but no PARTSTAT changes for the mailbox), the iTIP
         REPLY never reaches the organizer, and the user sees a
         misleading "Response saved — the organizer will be notified"
-        toast. Exercised at the service level because eager Celery
+        toast. Exercised at the service level because the eager broker
         does not persist task results to the result backend, so the
         task-polling endpoint cannot observe the FAILURE here.
         """

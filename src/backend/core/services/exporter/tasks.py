@@ -1,8 +1,9 @@
-"""Celery tasks for exporting mailbox messages."""
+"""Background tasks for exporting mailbox messages."""
 
 import gzip
 import html
 import io
+import logging
 import re
 from datetime import datetime, timezone
 from typing import Any, Dict
@@ -11,7 +12,6 @@ from django.conf import settings
 from django.core.files.storage import storages
 from django.db.models import OuterRef, Subquery
 
-from celery.utils.log import get_task_logger
 from jmap_email import compose_email, parse_email
 from jmap_email.types import JmapEmail
 from sentry_sdk import capture_exception
@@ -20,10 +20,13 @@ from core.api.utils import generate_presigned_url
 from core.mda.inbound import deliver_inbound_message
 from core.mda.utils import current_sent_at
 from core.models import Label, Mailbox, Message, ThreadAccess
+from core.task_utils import register_task, set_task_progress
 
-from messages.celery_app import app as celery_app
+logger = logging.getLogger(__name__)
 
-logger = get_task_logger(__name__)
+# A full-mailbox export streams every message through a gzip multipart upload,
+# so it needs far more than the queue library's 10-minute default.
+_EXPORT_TASK_TIME_LIMIT = 6 * 3600  # seconds
 
 # 7 days in seconds
 PRESIGNED_URL_EXPIRATION = 7 * 24 * 60 * 60
@@ -402,8 +405,8 @@ def _create_mbox_entry(
     return mbox_entry
 
 
-@celery_app.task(bind=True)  # pylint: disable=too-many-locals
-def export_mailbox_task(self, mailbox_id: str, user_id: str) -> Dict[str, Any]:  # pylint: disable=unused-argument
+@register_task(queue="default", time_limit=_EXPORT_TASK_TIME_LIMIT)  # pylint: disable=too-many-locals
+def export_mailbox_task(mailbox_id: str, user_id: str) -> Dict[str, Any]:  # pylint: disable=unused-argument
     """
     Export all messages from a mailbox to an MBOX file and upload to S3.
 
@@ -433,28 +436,12 @@ def export_mailbox_task(self, mailbox_id: str, user_id: str) -> Dict[str, Any]: 
             "skipped_count": 0,
             "error": error_msg,
         }
-        self.update_state(
-            state="FAILURE",
-            meta={"result": result, "error": error_msg},
-        )
         return {"status": "FAILURE", "result": result, "error": error_msg}
 
     mailbox_email = str(mailbox_obj)
 
     try:
-        # Update state to show we're starting
-        self.update_state(
-            state="PROGRESS",
-            meta={
-                "result": {
-                    "message_status": "Counting messages",
-                    "total_messages": 0,
-                    "exported_count": 0,
-                    "skipped_count": 0,
-                },
-                "error": None,
-            },
-        )
+        set_task_progress(0, {"message": "Counting messages"})
 
         # Query all messages in this mailbox with their threads and labels
         # Annotate with read_at to compute per-message unread status
@@ -505,20 +492,19 @@ def export_mailbox_task(self, mailbox_id: str, user_id: str) -> Dict[str, Any]: 
 
                 # Update progress every 100 messages to reduce overhead
                 if current_message % 100 == 0 or current_message == total_messages:
-                    self.update_state(
-                        state="PROGRESS",
-                        meta={
-                            "result": {
-                                "message_status": (
-                                    f"Exporting message {current_message} "
-                                    f"of {total_messages}"
-                                ),
-                                "total_messages": total_messages,
-                                "exported_count": exported_count,
-                                "skipped_count": skipped_count,
-                                "current_message": current_message,
-                            },
-                            "error": None,
+                    set_task_progress(
+                        100 * current_message // total_messages
+                        if total_messages
+                        else 100,
+                        {
+                            "message": (
+                                f"Exporting message {current_message} "
+                                f"of {total_messages}"
+                            ),
+                            "total_messages": total_messages,
+                            "exported_count": exported_count,
+                            "skipped_count": skipped_count,
+                            "current_message": current_message,
                         },
                     )
 
@@ -574,18 +560,7 @@ def export_mailbox_task(self, mailbox_id: str, user_id: str) -> Dict[str, Any]: 
         )
 
         # Create notification message
-        self.update_state(
-            state="PROGRESS",
-            meta={
-                "result": {
-                    "message_status": "Creating notification",
-                    "total_messages": total_messages,
-                    "exported_count": exported_count,
-                    "skipped_count": skipped_count,
-                },
-                "error": None,
-            },
-        )
+        set_task_progress(99, {"message": "Creating notification"})
 
         try:
             _create_notification_message(
@@ -612,10 +587,7 @@ def export_mailbox_task(self, mailbox_id: str, user_id: str) -> Dict[str, Any]: 
             "s3_key": s3_key,
         }
 
-        self.update_state(
-            state="SUCCESS",
-            meta={"result": result, "error": None},
-        )
+        set_task_progress(100, {"message": "Export completed"})
 
         return {"status": "SUCCESS", "result": result, "error": None}
 
@@ -634,11 +606,6 @@ def export_mailbox_task(self, mailbox_id: str, user_id: str) -> Dict[str, Any]: 
             "skipped_count": skipped_count,
             "error": error_msg,
         }
-
-        self.update_state(
-            state="FAILURE",
-            meta={"result": result, "error": error_msg},
-        )
 
         return {"status": "FAILURE", "result": result, "error": error_msg}
 

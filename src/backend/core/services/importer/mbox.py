@@ -7,19 +7,19 @@ the low-level scan it (and the exporter tests) build the ordered plan from.
 
 # pylint: disable=broad-exception-caught
 import io
+import logging
 from collections.abc import Callable
 from dataclasses import dataclass
 from datetime import datetime
 from datetime import timezone as dt_timezone
 
-from celery.utils.log import get_task_logger
 from jmap_email import parse_date
 
 from core.services.s3_seekable import BUFFER_CENTERED, S3SeekableReader
 
 from .utils import beat, deliver, imports_storage, run_plan
 
-logger = get_task_logger(__name__)
+logger = logging.getLogger(__name__)
 
 
 @dataclass

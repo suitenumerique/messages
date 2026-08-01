@@ -1,11 +1,11 @@
-"""Tests for tiered storage Celery tasks.
+"""Tests for tiered storage background tasks.
 
 These tests use real object storage when available.
 Only minimal mocking for disabled state and error simulation.
 
 The periodic ``offload_blobs_task`` does the work itself — it walks
 the eligible queryset and processes blobs sequentially via
-``offload_one_blob``. There is no per-blob celery fan-out, so tests
+``offload_one_blob``. There is no per-blob task fan-out, so tests
 here drive the loop directly and assert on the resulting DB / storage
 state, not on what got queued.
 """

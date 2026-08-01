@@ -64,7 +64,7 @@ The application uses a new environment file structure with `.defaults` and `.loc
 | Variable | Default | Description | Required |
 |----------|---------|-------------|----------|
 | `REDIS_URL` | `redis://redis:6379` | Redis connection URL (internal) | Optional |
-| `CELERY_BROKER_URL` | `redis://redis:6379` | Celery message broker URL (internal) | Optional |
+| `TASK_BROKER_URL` | `redis://redis:6379` | Background-task broker URL (internal). Needs Redis >= 7 with `noeviction` + AOF — see [worker.md](worker.md). | Optional |
 | `CACHES_DEFAULT_TIMEOUT` | `30` | Default cache timeout in seconds | Optional |
 
 **Note**: For external Redis access, use `localhost:8913`. For internal container communication, use `redis:6379`.
@@ -79,9 +79,9 @@ The application uses a new environment file structure with `.defaults` and `.loc
 | `OPENSEARCH_BULK_TIMEOUT` | `60` | OpenSearch request timeout (seconds) applied to bulk indexation calls. Raise it if full reindex (`make search-index`) hits timeouts on large payloads. | Optional |
 | `OPENSEARCH_BULK_MAX_BYTES` | `26_214_400` | Flush threshold (bytes) for bulk indexation payloads; default 25 MiB. Once accumulated actions exceed this, `opensearch-py` emits a sub-chunk HTTP request. Note: this is a batching threshold, not a per-document cap — a single oversized document is still sent as its own chunk. Keep well under the OpenSearch server `http.max_content_length` | Optional |
 | `OPENSEARCH_BULK_CHUNK_SIZE` | `50` | Number of thread documents (and their child message documents) accumulated before a bulk flush in `reindex_bulk_threads`. Lower values reduce per-request cluster pressure (heap, queue depth) at the cost of more round-trips. Lower this if you see 503s on bulk requests. | Optional |
-| `OPENSEARCH_MAX_RETRIES` | `3` | Transport-level retry budget on the OpenSearch client. The opensearch-py transport already retries on 502/503/504 (`DEFAULT_RETRY_ON_STATUS`); this just exposes the count so it can be raised above the library default. Whatever exhausts this budget is wrapped as `TransientTransportError` and handed to Celery autoretry (5 attempts, exponential backoff up to 600s). | Optional |
+| `OPENSEARCH_MAX_RETRIES` | `3` | Transport-level retry budget on the OpenSearch client. The opensearch-py transport already retries on 502/503/504 (`DEFAULT_RETRY_ON_STATUS`); this just exposes the count so it can be raised above the library default. Whatever exhausts this budget is wrapped as `TransientTransportError` and handed to task retries (5 attempts, exponential backoff up to 600s). | Optional |
 | `OPENSEARCH_INDEX_THREADS` | `True` | Enable thread indexing | Optional |
-| `SEARCH_REINDEX_TASKS_INTERVAL` | `30` | Interval (seconds) between Celery Beat runs of `process_pending_reindex_task`, which drains the reindex and delete coalescing buffers and enqueues bulk thread tasks. Longer values cut Celery/OpenSearch load at the cost of search-result staleness. | Optional |
+| `SEARCH_REINDEX_TASKS_INTERVAL` | `30` | Interval (seconds) between the scheduler runs of `process_pending_reindex_task`, which drains the reindex and delete coalescing buffers and enqueues bulk thread tasks. Longer values cut queue/OpenSearch load at the cost of search-result staleness. | Optional |
 | `SEARCH_FLUSH_BATCH_SIZE` | `1000` | Maximum number of thread / message IDs handed to a single `bulk_*_task` call. This is the unit of parallelism, retry granularity and worker occupation for catch-up flows. Lower means more, shorter tasks (better parallelism, cheaper retries on failure); higher means fewer, longer tasks (less broker chatter but worse failure isolation). | Optional |
 | `SEARCH_FLUSH_MAX_BATCHES` | `10` | Maximum number of `bulk_*_task` calls a single Beat tick is allowed to enqueue, shared across the three handoffs (reindex / thread-delete / message-delete). Bounds catch-up bursts so a huge backlog is spread across several ticks rather than flooding the broker in one go. Effective per-tick capacity is roughly `SEARCH_FLUSH_BATCH_SIZE × SEARCH_FLUSH_MAX_BATCHES` IDs. | Optional |
 
@@ -456,7 +456,7 @@ Each gateway is all-or-nothing, and validated at boot: with `PUSH_ENABLED=True`,
 
 | Variable | Default | Description | Required |
 |----------|---------|-------------|----------|
-| `PUSH_ENABLED` | `False` | Master switch. When `False`, the feature is fully dark: no gateway is contacted and the enqueue helper never schedules the Celery task. | Optional |
+| `PUSH_ENABLED` | `False` | Master switch. When `False`, the feature is fully dark: no gateway is contacted and the enqueue helper never schedules the background task. | Optional |
 | `PUSH_APNS_KEY` | None | Contents of the APNs auth key `.p8` file (PEM). Required for iOS (with the three vars below). | Optional |
 | `PUSH_APNS_KEY_ID` | None | APNs auth key id (Key ID from the Apple developer portal). | Optional |
 | `PUSH_APNS_TEAM_ID` | None | Apple developer Team ID. | Optional |
@@ -591,13 +591,21 @@ channels and resumed from a Redis watermark by `run_import_task`. See
 |----------|---------|-------------|----------|
 | `SPAM_CONFIG` | `{}` | JSON config for the spam checker. Empty `{}` disables it. Example: `{"rspamd_url": "http://mpa:8010/_api", "rspamd_auth": ""}`. | Optional |
 
-### Celery / Task Queue
+### Task Queue
+
+See [worker.md](worker.md) for the full picture.
 
 | Variable | Default | Description | Required |
 |----------|---------|-------------|----------|
-| `DISABLE_CELERY_BEAT_SCHEDULE` | `False` | Disable the periodic Beat schedule (search indexing, offload, selfcheck, …). | Optional |
-| `CELERY_TASK_SEND_SENT_EVENT` | `True` | Emit Celery `task-sent` events (monitoring/Flower). | Optional |
-| `CELERY_WORKER_SEND_TASK_EVENTS` | `True` | Workers emit task events (monitoring/Flower). | Optional |
+| `TASK_BROKER_URL` | `redis://redis:6379` | Broker + result-backend Redis URL. | Optional |
+| `TASK_BROKER_NAMESPACE` | `dramatiq` | Prefix for every broker key in Redis. | Optional |
+| `TASK_RESULT_TTL` | `86400` | Seconds a task's return value stays readable through the task-status endpoint. | Optional |
+| `TASK_HISTORY_ENABLED` | `False` | Record every task in Postgres for the admin task history. Costs an `INSERT` on the enqueueing request. | Optional |
+| `TASK_HISTORY_MAX_AGE` | `604800` | Seconds of task history kept before the nightly prune. | Optional |
+| `TASK_PROMETHEUS_ENABLED` | `False` | Expose per-worker Dramatiq metrics on port 9191. | Optional |
+| `DISABLE_TASK_SCHEDULE` | `False` | Register no periodic schedules (search indexing, offload, selfcheck, …). | Optional |
+| `WORKER_CONCURRENCY` | CPU count | Worker processes when `--concurrency` is not passed. | Optional |
+| `WORKER_THREADS` | `1` | Threads per worker process when `--threads` is not passed. | Optional |
 
 ### Metrics
 

@@ -1,17 +1,16 @@
-"""Celery tasks for CalDAV calendar operations."""
+"""Background tasks for CalDAV calendar operations."""
 
+import logging
 from typing import Any, Dict
 
-from celery.utils.log import get_task_logger
 from sentry_sdk import capture_exception
 
 from core.enums import ChannelTypes
 from core.models import Channel
 from core.services.calendar.service import CalDAVError, CalDAVService
+from core.task_utils import register_task
 
-from messages.celery_app import app as celery_app
-
-logger = get_task_logger(__name__)
+logger = logging.getLogger(__name__)
 
 # Generic, user-facing error wording. The exception text is logged + sent to
 # Sentry for diagnosis, but is never surfaced to the API client — exception
@@ -41,9 +40,8 @@ def _get_caldav_service(channel_id: str | None, user_email: str):
     return CalDAVService.from_instance_config(user_email)
 
 
-@celery_app.task(bind=True)
+@register_task(queue="default")
 def calendar_rsvp_task(
-    self,  # pylint: disable=unused-argument
     channel_id: str | None,
     user_email: str,
     ics_data: str,
@@ -128,9 +126,8 @@ def calendar_rsvp_task(
         }
 
 
-@celery_app.task(bind=True)
+@register_task(queue="default")
 def calendar_add_event_task(
-    self,  # pylint: disable=unused-argument
     channel_id: str | None,
     user_email: str,
     ics_data: str,

@@ -1,15 +1,16 @@
 """
-Tiered storage Celery tasks for blob offloading.
+Tiered storage background tasks for blob offloading.
 
 The periodic offload task walks the eligible queryset and processes
 blobs sequentially within a single task invocation — no per-blob
 fan-out, no broker amplification. Runs are bounded by a wall-clock
-budget so the task always returns to celery before it could be
-soft-killed; whatever isn't done this tick gets picked up next tick.
+budget so the task always returns before it could hit its time
+limit; whatever isn't done this tick gets picked up next tick.
 Per-blob failures stay local (logged + skipped); the surrounding loop
 keeps going.
 """
 
+import logging
 from datetime import timedelta
 from time import monotonic
 from typing import Any, Dict
@@ -19,15 +20,13 @@ from django.db import transaction
 from django.utils.timezone import now
 
 from botocore.exceptions import BotoCoreError, ClientError
-from celery.utils.log import get_task_logger
 
 from core.enums import BlobStorageLocationChoices
 from core.models import Blob
 from core.services.tiered_storage import TieredStorageService, sha256_advisory_lock
+from core.task_utils import cron_task, register_task
 
-from messages.celery_app import app as celery_app
-
-logger = get_task_logger(__name__)
+logger = logging.getLogger(__name__)
 
 # Transient exceptions worth recording but not crashing the loop on.
 # OSError + BotoCoreError cover connection-level errors (timeouts,
@@ -54,18 +53,20 @@ def _is_transient_storage_error(exc: BaseException) -> bool:
     return False
 
 
-# Wall-clock budget per beat tick. The schedule is hourly (3600s) and
-# we cap at 55 minutes so the task always returns to celery before the
-# next beat tick could overlap. Whatever isn't done this tick is picked
-# up next tick.
+# Wall-clock budget per tick. The schedule is hourly and we cap at 55
+# minutes so the task always returns before the next tick could overlap.
+# Whatever isn't done this tick is picked up next tick.
 _MAX_RUN_SECONDS = 55 * 60
 
 
-@celery_app.task
+@cron_task(crontab="5 * * * *")
+# The in-task budget is the real bound; the time limit sits just past it so a
+# run that stops itself cleanly is never mistaken for one that hung.
+@register_task(queue="blobs", time_limit=_MAX_RUN_SECONDS + 300)
 def offload_blobs_task(dry_run: bool = False) -> Dict[str, Any]:
     """Periodic task: offload eligible blobs to object storage.
 
-    All work happens inside this single task — no per-blob celery
+    All work happens inside this single task — no per-blob
     fan-out. The loop processes blobs one at a time and stops when
     either the 55-minute wall-clock budget runs out or the queryset
     is exhausted. Per-blob errors (transient or permanent) are logged

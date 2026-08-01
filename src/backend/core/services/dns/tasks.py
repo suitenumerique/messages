@@ -2,8 +2,8 @@
 
 # pylint: disable=unused-argument, broad-exception-raised, broad-exception-caught, too-many-lines
 
-# @celery_app.task(bind=True)
-# def check_maildomain_dns(self, maildomain_id):
+# @register_task(queue="default")
+# def check_maildomain_dns(maildomain_id):
 #     """Check if the DNS records for a mail domain are correct."""
 
 #     maildomain = models.MailDomain.objects.get(id=maildomain_id)

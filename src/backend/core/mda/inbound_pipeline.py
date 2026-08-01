@@ -486,7 +486,7 @@ def run_inbound_pipeline(
     """Iterate the pipeline. Stop on the first non-CONTINUE decision.
 
     Returns ``(final_decision, aborting_step_name_or_None)``. The
-    caller turns that into a Celery-task return value.
+    caller turns that into a task return value.
     """
     for step in pipeline:
         decision = step(ctx)

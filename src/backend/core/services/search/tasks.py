@@ -2,11 +2,10 @@
 
 # pylint: disable=unused-argument, broad-exception-raised, broad-exception-caught
 
+import logging
 from datetime import datetime
 
 from django.conf import settings
-
-from celery.utils.log import get_task_logger
 
 from core import models
 from core.services.search import (
@@ -33,10 +32,14 @@ from core.services.search.index import (
     reindex_bulk_threads,
 )
 from core.services.search.mapping import MESSAGE_INDEX
+from core.task_utils import cron_task, register_task, set_task_progress
 
-from messages.celery_app import app as celery_app
+logger = logging.getLogger(__name__)
 
-logger = get_task_logger(__name__)
+# A full or per-mailbox reindex walks every thread in scope, so it needs far
+# more than the queue library's 10-minute default. Both are operator-triggered
+# (admin action or ``manage.py search_reindex``), never on a schedule.
+_REINDEX_TASK_TIME_LIMIT = 12 * 3600  # seconds
 
 
 def _reindex_all_base(update_progress=None, from_date=None):
@@ -64,21 +67,21 @@ def _reindex_all_base(update_progress=None, from_date=None):
     }
 
 
-@celery_app.task(bind=True)
-def reindex_all(self, from_date_iso=None):
-    """Celery task wrapper for reindexing all threads and messages.
+@register_task(queue="reindex", time_limit=_REINDEX_TASK_TIME_LIMIT)
+def reindex_all(from_date_iso=None):
+    """Reindex every thread and message.
 
     Args:
         from_date_iso: Optional ISO-8601 datetime string — forwarded as a
             ``datetime`` filter on ``Thread.updated_at``. Stringified at the
-            edge because Celery serializes payloads through JSON.
+            edge because task payloads are serialized through JSON.
     """
 
     def update_progress(current, total, success_count, failure_count):
         """Update task progress."""
-        self.update_state(
-            state="PROGRESS",
-            meta={
+        set_task_progress(
+            100 * current // total if total else 100,
+            {
                 "current": current,
                 "total": total,
                 "success_count": success_count,
@@ -90,8 +93,8 @@ def reindex_all(self, from_date_iso=None):
     return _reindex_all_base(update_progress, from_date=from_date)
 
 
-@celery_app.task(bind=True)
-def reindex_thread_task(self, thread_id):
+@register_task(queue="reindex")
+def reindex_thread_task(thread_id):
     """Reindex a specific thread and all its messages."""
     if not settings.OPENSEARCH_INDEX_THREADS:
         logger.info("OpenSearch thread indexing is disabled.")
@@ -122,14 +125,13 @@ def reindex_thread_task(self, thread_id):
         raise
 
 
-@celery_app.task(
-    bind=True,
-    autoretry_for=RETRYABLE_EXCEPTIONS,
-    retry_backoff=True,
-    retry_backoff_max=600,
+@register_task(
+    queue="reindex",
     max_retries=5,
+    retry_on=RETRYABLE_EXCEPTIONS,
+    max_backoff=600,
 )
-def update_threads_mailbox_flags_task(self, thread_ids):
+def update_threads_mailbox_flags_task(thread_ids):
     """Update mailbox-scoped flags (unread_mailboxes, starred_mailboxes) in OpenSearch."""
     if not settings.OPENSEARCH_INDEX_THREADS:
         logger.info("OpenSearch thread indexing is disabled.")
@@ -182,9 +184,9 @@ def _reindex_mailbox_base(mailbox_id, update_progress=None, from_date=None):
     }
 
 
-@celery_app.task(bind=True)
-def reindex_mailbox_task(self, mailbox_id, from_date_iso=None):
-    """Celery task wrapper for reindexing all threads in a mailbox.
+@register_task(queue="reindex", time_limit=_REINDEX_TASK_TIME_LIMIT)
+def reindex_mailbox_task(mailbox_id, from_date_iso=None):
+    """Reindex every thread in a mailbox.
 
     Args:
         mailbox_id: The mailbox UUID.
@@ -194,9 +196,9 @@ def reindex_mailbox_task(self, mailbox_id, from_date_iso=None):
 
     def update_progress(current, total, success_count, failure_count):
         """Update task progress."""
-        self.update_state(
-            state="PROGRESS",
-            meta={
+        set_task_progress(
+            100 * current // total if total else 100,
+            {
                 "current": current,
                 "total": total,
                 "success_count": success_count,
@@ -208,8 +210,8 @@ def reindex_mailbox_task(self, mailbox_id, from_date_iso=None):
     return _reindex_mailbox_base(mailbox_id, update_progress, from_date=from_date)
 
 
-@celery_app.task(bind=True)
-def index_message_task(self, message_id):
+@register_task(queue="reindex")
+def index_message_task(message_id):
     """Index a single message."""
     if not settings.OPENSEARCH_INDEX_THREADS:
         logger.info("OpenSearch message indexing is disabled.")
@@ -247,14 +249,13 @@ def index_message_task(self, message_id):
         raise
 
 
-@celery_app.task(
-    bind=True,
-    autoretry_for=RETRYABLE_EXCEPTIONS,
-    retry_backoff=True,
-    retry_backoff_max=600,
+@register_task(
+    queue="reindex",
     max_retries=5,
+    retry_on=RETRYABLE_EXCEPTIONS,
+    max_backoff=600,
 )
-def bulk_reindex_threads_task(self, thread_ids):
+def bulk_reindex_threads_task(thread_ids):
     """Reindex a list of threads and all their messages in one bulk pass.
 
     Enqueued at the end of a scoped ``ThreadReindexDeferrer.defer()`` block
@@ -283,14 +284,13 @@ def bulk_reindex_threads_task(self, thread_ids):
     }
 
 
-@celery_app.task(
-    bind=True,
-    autoretry_for=RETRYABLE_EXCEPTIONS,
-    retry_backoff=True,
-    retry_backoff_max=600,
+@register_task(
+    queue="reindex",
     max_retries=5,
+    retry_on=RETRYABLE_EXCEPTIONS,
+    max_backoff=600,
 )
-def bulk_delete_threads_task(self, thread_ids):
+def bulk_delete_threads_task(thread_ids):
     """Remove thread parent documents from OpenSearch via bulk delete by ``_id``.
 
     Child message documents are removed by ``bulk_delete_messages_task``
@@ -318,14 +318,13 @@ def bulk_delete_threads_task(self, thread_ids):
     return {"success": True, "deleted_threads": len(actions)}
 
 
-@celery_app.task(
-    bind=True,
-    autoretry_for=RETRYABLE_EXCEPTIONS,
-    retry_backoff=True,
-    retry_backoff_max=600,
+@register_task(
+    queue="reindex",
     max_retries=5,
+    retry_on=RETRYABLE_EXCEPTIONS,
+    max_backoff=600,
 )
-def bulk_delete_messages_task(self, pairs):
+def bulk_delete_messages_task(pairs):
     """Remove message child documents from OpenSearch via bulk delete by ``_id``.
 
     ``pairs`` is a list of ``"thread_id:message_id"`` strings as produced
@@ -370,8 +369,8 @@ def bulk_delete_messages_task(self, pairs):
     return {"success": True, "deleted_messages": len(actions)}
 
 
-@celery_app.task(bind=True)
-def reset_search_index(self):
+@register_task(queue="reindex")
+def reset_search_index():
     """Delete and recreate the OpenSearch index."""
 
     delete_index()
@@ -379,11 +378,12 @@ def reset_search_index(self):
     return {"success": True}
 
 
-@celery_app.task(bind=True)
-def process_pending_reindex_task(self):
+@cron_task(interval=settings.SEARCH_REINDEX_TASKS_INTERVAL)
+@register_task(queue="reindex")
+def process_pending_reindex_task():
     """Drain the coalescing buffers and enqueue bulk delete/reindex tasks.
 
-    Scheduled every ``SEARCH_REINDEX_TASKS_INTERVAL`` seconds by Celery Beat.
+    Scheduled every ``SEARCH_REINDEX_TASKS_INTERVAL`` seconds.
     Consumes IDs accumulated by ``enqueue_thread_reindex`` /
     ``enqueue_thread_delete`` / ``enqueue_message_delete`` from signal
     handlers firing outside any ``ThreadReindexDeferrer.defer()`` scope and

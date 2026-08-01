@@ -378,7 +378,7 @@ maps to transport priority here.
 
 ## 12. Delivery & operations (as implemented)
 
-### Task model — one Celery task per notification
+### Task model — one background task per notification
 `enqueue_push_notifications` (on commit) schedules `send_push_for_message`, the
 **orchestrator**: it resolves recipients and does the per-recipient DB work once
 (devices, badge counts, deep-link mailbox — a handful of batched queries),
@@ -399,7 +399,7 @@ task.
 **Why per-notification, not batched:** the gateways have **no multi-device batch
 API** — APNs is one HTTP/2 request per token, FCM v1 is one request per token
 (legacy multicast is removed), Web Push is one request per subscription. So
-parallelism, not batching, is the lever, and the Celery worker pool provides it.
+parallelism, not batching, is the lever, and the worker pool provides it.
 
 ### Scale
 Mailboxes are bounded (~50–100 members; not distribution lists), so the common

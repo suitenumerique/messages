@@ -208,7 +208,7 @@ class TestE2EMessageOutboundFlow:
         }
         # Delivery is dispatched via ``transaction.on_commit`` (see
         # SendMessageView), so capture and execute the callbacks to run the
-        # deferred ``send_message_task`` inline (CELERY_TASK_ALWAYS_EAGER).
+        # deferred ``send_message_task`` inline (the eager broker).
         with django_capture_on_commit_callbacks(execute=True):
             send_response = client.post(
                 reverse("send-message"), send_payload, format="json"

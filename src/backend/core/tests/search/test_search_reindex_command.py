@@ -111,7 +111,7 @@ class TestFromDateForwarding:
         )
 
     def test_all_async_forwards_iso_string(self, patched_command_targets):
-        """Async ``--all`` re-encodes the datetime as ISO for Celery JSON."""
+        """Async ``--all`` re-encodes the datetime as ISO for the JSON task payload."""
         _run("--all", "--async", "--from-date", "2026-04-01")
         patched_command_targets["reindex_all_async"].delay.assert_called_once_with(
             from_date_iso=timezone.make_aware(datetime(2026, 4, 1)).isoformat()

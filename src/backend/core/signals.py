@@ -34,7 +34,7 @@ def _schedule_thread_reindex(thread_id):
     - Inside a `ThreadReindexDeferrer.defer()` scope (bulk flows like imports
       or migrations), the ID is collected and a single batched
       `bulk_reindex_threads_task` is enqueued at scope exit — avoiding one
-      Celery task per row.
+      background task per row.
     - Outside that scope, the ID is pushed to the coalescing buffer drained
       by `process_pending_reindex_task`. The enqueue is wrapped in
       `transaction.on_commit` so a rolled-back save never leaves a phantom

@@ -77,14 +77,14 @@ class TestInboundSpoofedSender:
             "ext": {"headersBlocks": []},
         }
 
-        # Bypass the Celery layer: deliver and process in-thread.
+        # Bypass the queue layer: deliver and process in-thread.
         with patch("core.mda.inbound.process_inbound_message_task.delay") as mock_delay:
             assert deliver_inbound_message(recipient, parsed_email, raw) is True
 
         inbound = models.InboundMessage.objects.get(mailbox=victim_mailbox)
         mock_delay.assert_called_once_with(str(inbound.id))
 
-        process_inbound_message_task.apply(args=[str(inbound.id)])
+        process_inbound_message_task(str(inbound.id))
 
         message = models.Message.objects.get(thread__accesses__mailbox=victim_mailbox)
         assert message.is_sender is False, (
@@ -121,7 +121,7 @@ class TestInboundSpoofedSender:
             deliver_inbound_message(recipient, parsed_email, raw)
 
         inbound = models.InboundMessage.objects.get(mailbox=victim_mailbox)
-        process_inbound_message_task.apply(args=[str(inbound.id)])
+        process_inbound_message_task(str(inbound.id))
 
         # Sanity: a recipient row exists with NULL delivery_status (the
         # natural state for an inbound MessageRecipient).
@@ -129,7 +129,7 @@ class TestInboundSpoofedSender:
         assert message.recipients.filter(delivery_status__isnull=True).exists()
 
         # Run the periodic retry task. It must not pick the spoofed message.
-        result = retry_messages_task.apply(args=[]).get()
+        result = retry_messages_task()
 
         assert result["total_messages"] == 0, (
             "retry_messages_task must not match an inbound spoofed message; "
@@ -242,5 +242,5 @@ class TestInboundSpoofedSender:
             == message.recipients.count()
         )
 
-        result = retry_messages_task.apply(args=[]).get()
+        result = retry_messages_task()
         assert result["total_messages"] == 0

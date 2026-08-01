@@ -1,4 +1,4 @@
-"""Orchestration for imports: the Celery tasks + per-source dispatch.
+"""Orchestration for imports: the background tasks + per-source dispatch.
 
 ``run_import_task(channel_id)`` is the single entry point an import channel
 dispatches. It loads the channel, guards it (active + single-writer lock), reads
@@ -20,6 +20,7 @@ stale — which doubles as the poll clock for ``continuous`` IMAP channels.
 """
 
 # pylint: disable=broad-exception-caught, unused-argument
+import logging
 from datetime import timedelta
 from typing import Any
 
@@ -28,11 +29,9 @@ from django.db.models import Q
 from django.utils import timezone
 
 from botocore.exceptions import BotoCoreError, ClientError
-from celery.utils.log import get_task_logger
 
 from core import enums, models
-
-from messages.celery_app import app as celery_app
+from core.task_utils import cron_task, register_task
 
 from .channel import (
     ImportCancelled,
@@ -53,7 +52,14 @@ from .mbox import run_mbox
 from .pst import run_pst
 from .utils import TransientImportError, error_text
 
-logger = get_task_logger(__name__)
+logger = logging.getLogger(__name__)
+
+# Imports are long-running by nature (a multi-GB PST, a full IMAP account), so
+# they need far more than the queue library's 10-minute default. Hitting the
+# limit is not fatal — the run is interrupted, its lock expires, and the
+# 5-minute reaper re-dispatches it to resume from its watermark — but it costs
+# a restart, so the ceiling is set well past any realistic single pass.
+_IMPORT_TASK_TIME_LIMIT = 6 * 3600  # seconds
 
 
 _RUNNERS = {
@@ -101,8 +107,8 @@ def _finish_cancelled_run(channel: models.Channel) -> None:
         channel.delete()
 
 
-@celery_app.task(bind=True)
-def run_import_task(self, channel_id: str) -> dict[str, Any]:
+@register_task(queue="imports", time_limit=_IMPORT_TASK_TIME_LIMIT)
+def run_import_task(channel_id: str) -> dict[str, Any]:
     """Run (or resume) one import to completion. Idempotent + resumable."""
     channel = get_import_channel(channel_id)
     if channel is None:
@@ -295,8 +301,8 @@ def run_import_task(self, channel_id: str) -> dict[str, Any]:
         release_run_lock(channel_id)
 
 
-@celery_app.task(bind=True)
-def cancel_import_task(self, channel_id: str) -> dict[str, int]:
+@register_task(queue="default")
+def cancel_import_task(channel_id: str) -> dict[str, int]:
     """Delete a cancelled import's messages + clean orphan threads off-request,
     then remove the run's row so it disappears from ``/imports/``.
 
@@ -326,8 +332,9 @@ def cancel_import_task(self, channel_id: str) -> dict[str, int]:
     return result
 
 
-@celery_app.task(bind=True)
-def schedule_imports_task(self) -> dict[str, int]:
+@cron_task(crontab="*/5 * * * *")
+@register_task(queue="default")
+def schedule_imports_task() -> dict[str, int]:
     """Dispatch every active import that is due to run.
 
     "Due" means the durable ``last_used_at`` heartbeat is stale: for a oneshot

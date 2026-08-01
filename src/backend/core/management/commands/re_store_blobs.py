@@ -20,7 +20,7 @@ Two operations, applied based on settings:
   no rows reference it.
 
 The PG → S3 direction (offload) is owned by
-``offload_blobs_task`` (periodic celery task with age/size
+``offload_blobs_task`` (periodic task with age/size
 filters) — not exposed here, on purpose: this command does
 "reconcile to current config", offload does "move cold blobs
 out of PG".

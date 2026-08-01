@@ -17,6 +17,8 @@ from drf_spectacular.views import (
     SpectacularSwaggerView,
 )
 
+from core.task_dashboard import get_dashboard_urlpatterns
+
 logger = getLogger(__name__)
 
 
@@ -31,6 +33,9 @@ def heartbeat(request):
 
 
 urlpatterns = [
+    # Before the admin's own catch-all, which would otherwise resolve this to
+    # an unknown model page.
+    *get_dashboard_urlpatterns(),
     path(f"{settings.ADMIN_URL}/", admin.site.urls),
     path("", include("core.urls")),
     path(
