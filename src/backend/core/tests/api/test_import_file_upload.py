@@ -3,15 +3,17 @@
 
 from unittest import mock
 
+from django.core.cache import cache
 from django.urls import reverse
 
 import pytest
+from dramatiq.results import ResultFailure, ResultMissing
 from rest_framework import status
 from rest_framework.test import APIClient
 
 from core import enums, factories
 from core.api.utils import generate_file_key, validate_file_key
-from core.utils import register_task_owner
+from core.task_utils import register_task_owner
 
 pytestmark = pytest.mark.django_db
 
@@ -61,6 +63,22 @@ def _upload_detail_url(mailbox, upload_id):
 class TestTaskDetailViewPermissions:
     """Test that TaskDetailView enforces ownership checks."""
 
+    @staticmethod
+    def _register(task_id, user_id):
+        """Track a task as owned by ``user_id``, as a dispatch would."""
+        register_task_owner(
+            task_id, user_id, actor_name="some_task", queue_name="default"
+        )
+
+    @staticmethod
+    def _stub_result(**kwargs):
+        """Patch the result lookup: ``return_value=`` or ``side_effect=``."""
+        patcher = mock.patch("core.api.viewsets.task.dramatiq.Message")
+        message_cls = patcher.start()
+        for key, value in kwargs.items():
+            setattr(message_cls.return_value.get_result, key, value)
+        return patcher
+
     def test_api_task_detail_unknown_task_should_be_forbidden(self):
         """Test that accessing an unknown task (not in cache) returns 403."""
         user = factories.UserFactory()
@@ -80,21 +98,17 @@ class TestTaskDetailViewPermissions:
         user2 = factories.UserFactory()
 
         task_id = "test-task-id-12345"
-        register_task_owner(task_id, user1.id)
+        self._register(task_id, user1.id)
         url = reverse("task-detail", kwargs={"task_id": task_id})
 
-        with mock.patch("core.api.viewsets.task.AsyncResult") as mock_async_result:
-            mock_result = mock.MagicMock()
-            mock_result.status = "SUCCESS"
-            mock_result.state = "SUCCESS"
-            mock_result.result = {
+        patcher = self._stub_result(
+            return_value={
                 "status": "SUCCESS",
                 "result": {"imported": 42, "mailbox_id": "sensitive-data"},
                 "error": None,
             }
-            mock_result.info = None
-            mock_async_result.return_value = mock_result
-
+        )
+        try:
             # User2 tries to access user1's task - should be denied
             client2 = APIClient()
             client2.force_authenticate(user=user2)
@@ -107,55 +121,103 @@ class TestTaskDetailViewPermissions:
             response = client1.get(url)
             assert response.status_code == status.HTTP_200_OK
             assert response.data["result"]["imported"] == 42
+        finally:
+            patcher.stop()
 
-    def test_api_task_detail_worker_crash_exception_should_be_serialized(self):
-        """Test that a task with an exception result (e.g. WorkerLostError)
-        returns a properly serialized error instead of a 500."""
+    def test_api_task_detail_pending_when_no_result_yet(self):
+        """A dispatched task with no stored result and no progress is PENDING."""
+        user = factories.UserFactory()
+        client = APIClient()
+        client.force_authenticate(user=user)
+
+        task_id = "test-task-pending"
+        self._register(task_id, user.id)
+        url = reverse("task-detail", kwargs={"task_id": task_id})
+
+        patcher = self._stub_result(side_effect=ResultMissing("nothing yet"))
+        try:
+            response = client.get(url)
+        finally:
+            patcher.stop()
+
+        assert response.status_code == status.HTTP_200_OK
+        assert response.data["status"] == "PENDING"
+        assert response.data["result"] is None
+
+    def test_api_task_detail_progress_is_reported(self):
+        """Progress published by a running task is surfaced to its owner."""
+        user = factories.UserFactory()
+        client = APIClient()
+        client.force_authenticate(user=user)
+
+        task_id = "test-task-progress"
+        self._register(task_id, user.id)
+        cache.set(
+            f"task_progress:{task_id}",
+            {"progress": 42, "timestamp": 1.0, "metadata": {"message": "Halfway"}},
+        )
+        url = reverse("task-detail", kwargs={"task_id": task_id})
+
+        patcher = self._stub_result(side_effect=ResultMissing("nothing yet"))
+        try:
+            response = client.get(url)
+        finally:
+            patcher.stop()
+
+        assert response.status_code == status.HTTP_200_OK
+        assert response.data["status"] == "PROGRESS"
+        assert response.data["progress"] == 42
+        assert response.data["message"] == "Halfway"
+
+    def test_api_task_detail_failed_task_does_not_leak_the_exception(self):
+        """A task that raised reports FAILURE without echoing its message.
+
+        Exception text can carry internal hostnames, credentials in URLs or
+        fragments of the payload, so the endpoint reports the failure but not
+        its detail.
+        """
         user = factories.UserFactory()
         client = APIClient()
         client.force_authenticate(user=user)
 
         task_id = "test-task-crashed-worker"
-        register_task_owner(task_id, user.id)
+        self._register(task_id, user.id)
         url = reverse("task-detail", kwargs={"task_id": task_id})
 
-        with mock.patch("core.api.viewsets.task.AsyncResult") as mock_async_result:
-            mock_result = mock.MagicMock()
-            mock_result.status = "FAILURE"
-            mock_result.state = "FAILURE"
-            mock_result.result = Exception("Worker lost")
-            mock_result.info = None
-            mock_async_result.return_value = mock_result
-
+        patcher = self._stub_result(
+            side_effect=ResultFailure(
+                "boom", "ConnectionResetError", "postgres://user:secret@db/prod"
+            )
+        )
+        try:
             response = client.get(url)
-            assert response.status_code == status.HTTP_200_OK
-            assert response.data["status"] == "FAILURE"
-            assert response.data["result"] is None
-            assert response.data["error"] == "Worker lost"
+        finally:
+            patcher.stop()
 
-    def test_api_task_detail_exception_without_message_should_use_class_name(self):
-        """Test that an exception with an empty str() uses the class name."""
+        assert response.status_code == status.HTTP_200_OK
+        assert response.data["status"] == "FAILURE"
+        assert response.data["result"] is None
+        assert response.data["error"] == "Task failed"
+        assert "secret" not in str(response.data)
+
+    def test_api_task_detail_result_backend_unavailable(self):
+        """A broken result backend is a 503, not a 500."""
         user = factories.UserFactory()
         client = APIClient()
         client.force_authenticate(user=user)
 
-        task_id = "test-task-empty-exception"
-        register_task_owner(task_id, user.id)
+        task_id = "test-task-backend-down"
+        self._register(task_id, user.id)
         url = reverse("task-detail", kwargs={"task_id": task_id})
 
-        with mock.patch("core.api.viewsets.task.AsyncResult") as mock_async_result:
-            mock_result = mock.MagicMock()
-            mock_result.status = "FAILURE"
-            mock_result.state = "FAILURE"
-            mock_result.result = ConnectionResetError()
-            mock_result.info = None
-            mock_async_result.return_value = mock_result
-
+        patcher = self._stub_result(side_effect=ConnectionError("redis is down"))
+        try:
             response = client.get(url)
-            assert response.status_code == status.HTTP_200_OK
-            assert response.data["status"] == "FAILURE"
-            assert response.data["result"] is None
-            assert response.data["error"] == "ConnectionResetError"
+        finally:
+            patcher.stop()
+
+        assert response.status_code == status.HTTP_503_SERVICE_UNAVAILABLE
+        assert response.data["status"] == "FAILURE"
 
 
 class TestImportViewSetPermissions:

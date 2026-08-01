@@ -90,7 +90,7 @@ def fixture_wait_for_indexing():
 
         Drains the coalescing buffers (reindex + delete) first so any thread
         IDs queued by signal handlers are handed off to the bulk tasks. Under
-        ``CELERY_TASK_ALWAYS_EAGER=True`` the tasks run synchronously, which
+        the eager broker the tasks run synchronously, which
         makes the documents visible as soon as OpenSearch refreshes.
         """
         process_pending_reindex()

@@ -61,8 +61,7 @@ from core.mda.inbound_pipeline import (
 )
 from core.mda.webhook_payload import build_jmap_email
 from core.services.ssrf import SSRFSafeSession, SSRFValidationError
-
-from messages.celery_app import app as celery_app
+from core.task_utils import register_task
 
 logger = logging.getLogger(__name__)
 
@@ -1081,7 +1080,7 @@ def dispatch_recorded_webhooks(
         dispatch_webhook_task.delay(message_id, str(channel_id), mailbox_id, is_spam)
 
 
-@celery_app.task
+@register_task(queue="default", store_results=False)
 def dispatch_webhook_task(
     message_id: str,
     channel_id: str,

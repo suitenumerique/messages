@@ -19,7 +19,7 @@ from rest_framework.views import APIView
 from core import enums, models
 from core.mda.outbound import prepare_outbound_message
 from core.mda.outbound_tasks import send_message_task
-from core.utils import register_task_owner
+from core.task_utils import register_task_owner
 
 from .. import permissions, serializers
 
@@ -133,7 +133,7 @@ class SendMessageView(APIView):
                 "You do not have permission to send as this mailbox."
             )
 
-        # Pre-generate the Celery task id so we can return it to the caller
+        # Pre-generate the task id so we can return it to the caller
         # while still deferring the actual dispatch to ``transaction.on_commit``
         # below — the broker must never receive a delivery task for a message
         # whose finalized state is still uncommitted (or rolled back).
@@ -153,16 +153,22 @@ class SendMessageView(APIView):
                     code=status.HTTP_500_INTERNAL_SERVER_ERROR,
                 )
 
+            # Ownership is recorded now, so the id in the response can be
+            # polled the moment the client receives it. What the task turns out
+            # to be — its actor and queue, needed to look a result up — is
+            # filled in by ``track_owner`` once it is actually dispatched.
             register_task_owner(task_id, request.user.id)
 
             # Dispatch only once the message's finalized state is durable.
-            transaction.on_commit(
-                lambda: send_message_task.apply_async(
+            def dispatch_send():
+                task = send_message_task.apply_async(
                     args=[str(message.id)],
                     kwargs={"must_archive": must_archive},
                     task_id=task_id,
                 )
-            )
+                task.track_owner(request.user.id)
+
+            transaction.on_commit(dispatch_send)
 
             # --- Finalize ---
             # Message state was updated by prepare_outbound_message (e.g.

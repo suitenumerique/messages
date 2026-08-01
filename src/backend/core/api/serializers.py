@@ -2061,7 +2061,7 @@ class ImportRunSerializer(serializers.ModelSerializer):
 
     Progress lives in Redis and terminal state on the channel; the serializer
     reads the merged view so the frontend can poll the import resource
-    (``GET /mailboxes/{id}/imports/{id}/``) instead of the raw Celery task state.
+    (``GET /mailboxes/{id}/imports/{id}/``) instead of the raw task state.
     """
 
     status = serializers.SerializerMethodField()

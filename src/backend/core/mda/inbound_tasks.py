@@ -1,13 +1,14 @@
 """Message delivery and processing tasks.
 
 Per-message processing is a pipeline of ``Step``s — see
-``inbound_pipeline.py``. This module is the Celery task wrapper:
+``inbound_pipeline.py``. This module is the background-task wrapper:
 acquire a Redis lock, parse the bytes, build the context + pipeline,
 iterate, and turn the final ``Decision`` into a task return value.
 """
 
 # pylint: disable=unused-argument, broad-exception-raised, broad-exception-caught
 
+import logging
 from typing import Any, Dict, Optional
 
 from django.conf import settings
@@ -15,8 +16,6 @@ from django.core.cache import cache
 from django.db import transaction
 from django.utils import timezone
 
-from celery.exceptions import SoftTimeLimitExceeded
-from celery.utils.log import get_task_logger
 from jmap_email import first_address_email, parse_email
 from jmap_email.types import JmapEmail
 
@@ -43,27 +42,27 @@ from core.mda.inbound_pipeline import (
     run_inbound_pipeline,
 )
 from core.services.push import enqueue_push_notifications
+from core.task_utils import (
+    TaskTimeLimitExceeded,
+    cron_task,
+    register_task,
+)
 
-from messages.celery_app import app as celery_app
-
-logger = get_task_logger(__name__)
+logger = logging.getLogger(__name__)
 
 
-# Hard ceiling on one inbound task's wall-clock (Celery kills the task here).
-# A deliberately non-configurable constant: it's an internal safety bound
-# sized to the worst-case blocking-webhook budget (each up to 30s, fired for
-# every matching channel across both pipeline phases), not an operator knob.
-# The soft limit fires 60s earlier, raising ``SoftTimeLimitExceeded`` inside
-# the task so it bails out gracefully (releases the lock, holds for retry)
-# instead of being hard-killed mid-flight.
+# Ceiling on one inbound task's wall-clock. A deliberately non-configurable
+# constant: it's an internal safety bound sized to the worst-case
+# blocking-webhook budget (each up to 30s, fired for every matching channel
+# across both pipeline phases), not an operator knob. Reaching it raises
+# ``TaskTimeLimitExceeded`` inside the task, which bails out gracefully
+# (releases the lock, holds for retry).
 _INBOUND_TASK_TIME_LIMIT = 600  # seconds (10 min)
-_INBOUND_TASK_SOFT_TIME_LIMIT = max(_INBOUND_TASK_TIME_LIMIT - 60, 1)
-# The per-message lock must outlive the hard limit. On a clean (or soft-limit)
-# exit the ``finally`` releases it immediately; on a hard-kill / worker OOM the
-# lock is freed only by this TTL. Setting it just past the hard limit means a
-# *live* task can never have its lock stolen (Celery kills the task before the
-# lock expires), while a *dead* task's lock frees ~a minute later so the 5-min
-# sweep can retry.
+# The per-message lock must outlive the time limit. On a clean (or timed-out)
+# exit the ``finally`` releases it immediately; on a worker OOM/kill the lock is
+# freed only by this TTL. Setting it past the time limit means a *live* task can
+# never have its lock stolen, while a *dead* task's lock frees ~a minute later
+# so the 5-min sweep can retry.
 _INBOUND_TASK_LOCK_TTL = _INBOUND_TASK_TIME_LIMIT + 60
 
 
@@ -92,11 +91,17 @@ def _safe_finalize(label, inbound_message_id, gate, fn):
 
     ``gate`` short-circuits the call when the input collection is
     empty/false — same semantics as the inline ``if ctx.labels:``
-    guards, just lifted out. ALL exceptions (including a Celery
-    ``SoftTimeLimitExceeded``) are logged and swallowed, never propagated:
-    these run AFTER the message has landed and its queue row is deleted, so
-    re-raising would make the task-level handler retry/abandon a row that no
-    longer exists. A dropped finalize side effect is the acceptable cost."""
+    guards, just lifted out. Every ``Exception`` is logged and swallowed, never
+    propagated: these run AFTER the message has landed and its queue row is
+    deleted, so re-raising would make the task-level handler retry/abandon a
+    row that no longer exists. A dropped finalize side effect is the acceptable
+    cost.
+
+    ``TaskTimeLimitExceeded`` deliberately escapes — it derives from
+    ``BaseException`` precisely so that blanket handlers cannot ignore a
+    request to stop. The task-level handler catches it and, seeing the queue
+    row already gone (``pk is None``), returns without retrying; the remaining
+    finalize steps are abandoned, which is the point of a time limit."""
     if not gate:
         return
     try:
@@ -217,12 +222,8 @@ def _stamp_processing_failed(ctx: InboundContext) -> None:
     ctx.postmark["processing"] = "fail"
 
 
-@celery_app.task(
-    bind=True,
-    time_limit=_INBOUND_TASK_TIME_LIMIT,
-    soft_time_limit=_INBOUND_TASK_SOFT_TIME_LIMIT,
-)
-def process_inbound_message_task(self, inbound_message_id: str):
+@register_task(queue="inbound", time_limit=_INBOUND_TASK_TIME_LIMIT)
+def process_inbound_message_task(inbound_message_id: str):
     """Process an inbound message: run the pipeline, persist the result.
 
     Returns ``{"success": ...}`` so the 5-min retry sweep can tell which
@@ -230,10 +231,9 @@ def process_inbound_message_task(self, inbound_message_id: str):
     deleted (we're done with it) and the task reports success.
     """
     # Redis lock keyed on the message id prevents two workers from racing on
-    # the same row. Its TTL is the task's hard time limit + 60s, so a live
-    # task (which Celery kills at the hard limit) can never have its lock
-    # stolen, while a crashed/OOM'd worker's lock still auto-frees for the
-    # next sweep.
+    # the same row. Its TTL is the task's time limit + 60s, so a live task
+    # (which is interrupted at the time limit) can never have its lock stolen,
+    # while a crashed/OOM'd worker's lock still auto-frees for the next sweep.
     lock_key = f"process_inbound_message_lock:{inbound_message_id}"
     if not cache.add(lock_key, "locked", _INBOUND_TASK_LOCK_TTL):
         logger.warning(
@@ -404,7 +404,7 @@ def process_inbound_message_task(self, inbound_message_id: str):
             # greylisting, a relay double-sending), so we get a second
             # ``InboundMessage`` and process it later. (A concurrent second
             # task could also land here, but is structurally prevented in
-            # practice — the prefork hard ``time_limit`` kills a task before
+            # practice — a task is interrupted at its ``time_limit``, before
             # its lock TTL frees; see ``process_inbound_message_task``.) Either
             # way the side effects already ran for the original create, so
             # repeating them here would duplicate them.
@@ -417,7 +417,7 @@ def process_inbound_message_task(self, inbound_message_id: str):
             # could run unconditionally, but are gated with the rest for
             # simplicity — there is nothing new to apply on a dedup hit anyway.)
             # NB: ``message.delivered`` is independently at-least-once at the
-            # Celery layer; this only stops a duplicate *enqueue* on reprocess.
+            # queue layer; this only stops a duplicate *enqueue* on reprocess.
             created_now = isinstance(inbound_msg, models.Message) and getattr(
                 inbound_msg, "_created_now", False
             )
@@ -537,20 +537,19 @@ def process_inbound_message_task(self, inbound_message_id: str):
             blocking_webhook_results=ctx.blocking_webhook_results,
         )
 
-    except SoftTimeLimitExceeded:
-        # The task ran past its soft time limit (almost always a slow chain of
-        # blocking webhooks). Bail out gracefully while we still can — before
-        # the hard limit SIGKILLs us — so the ``finally`` below releases the
-        # lock cleanly. Hold for retry: a message that *always* overruns
-        # (e.g. far too many slow blocking webhooks) is bounded by the same
-        # deferral window and ends up abandoned (kept + marked) rather than
-        # looping forever.
+    except TaskTimeLimitExceeded:
+        # The task ran past its time limit (almost always a slow chain of
+        # blocking webhooks). Bail out gracefully so the ``finally`` below
+        # releases the lock cleanly. Hold for retry: a message that *always*
+        # overruns (e.g. far too many slow blocking webhooks) is bounded by the
+        # same deferral window and ends up abandoned (kept + marked) rather
+        # than looping forever.
         logger.warning(
-            "Inbound message %s exceeded the %ss soft time limit — holding for retry",
+            "Inbound message %s exceeded the %ss time limit — holding for retry",
             inbound_message_id,
-            _INBOUND_TASK_SOFT_TIME_LIMIT,
+            _INBOUND_TASK_TIME_LIMIT,
         )
-        # A soft timeout fires asynchronously and can surface in the small
+        # The timeout fires asynchronously and can surface in the small
         # unwrapped gaps between the post-delete finalize blocks. Once the queue
         # row is deleted ``delete()`` nulls its pk, so ``_retry_or_abandon`` would
         # ``save(update_fields=...)`` a pk-less row and raise ValueError, masking
@@ -558,17 +557,16 @@ def process_inbound_message_task(self, inbound_message_id: str):
         if inbound_message and inbound_message.pk is not None:
             return _retry_or_abandon(
                 inbound_message,
-                f"Processing exceeded the {_INBOUND_TASK_SOFT_TIME_LIMIT}s "
-                "soft time limit",
+                f"Processing exceeded the {_INBOUND_TASK_TIME_LIMIT}s time limit",
                 blocking_webhook_results=ctx.blocking_webhook_results if ctx else None,
             )
-        return {"success": False, "error": "soft_time_limit"}
+        return {"success": False, "error": "time_limit"}
     except Exception as e:
         # Sanitized for Sentry: log only the exception *type*, never ``str(e)``
         # nor ``exc_info``. ``logger.exception`` would ship the traceback with
         # its frame locals (the parsed email, addresses, body) to Sentry — an
         # external service. The full ``str(e)`` is preserved instead on the
-        # internal row (``error_message`` / Celery result) below.
+        # internal row (``error_message`` / task result) below.
         logger.error(
             "Error processing inbound message %s: %s",
             inbound_message_id,
@@ -581,7 +579,7 @@ def process_inbound_message_task(self, inbound_message_id: str):
             # Same bounded-retry policy as a failed creation: a persistent
             # error must not pin the row (and re-fire webhooks) forever.
             # ``str(e)`` is kept in full: it lands in the admin-visible
-            # ``error_message`` and the Celery result backend — both internal,
+            # ``error_message`` and the task result backend — both internal,
             # trusted stores an operator inspects to diagnose the row. What we
             # keep OUT is Sentry (external): the ``logger.error`` above is
             # sanitized to the exception type only, so no raw mail fragment
@@ -597,8 +595,9 @@ def process_inbound_message_task(self, inbound_message_id: str):
         cache.delete(lock_key)
 
 
-@celery_app.task(bind=True)
-def process_inbound_messages_queue_task(self, batch_size: int = 10):
+@cron_task(crontab="*/5 * * * *")
+@register_task(queue="inbound")
+def process_inbound_messages_queue_task(batch_size: int = 10):
     """Retry processing of inbound messages that are older than 5 minutes.
 
     This task only handles retries for messages that may have failed or gotten stuck.
@@ -659,9 +658,14 @@ def process_inbound_messages_queue_task(self, batch_size: int = 10):
 _ABANDONED_RETENTION = timezone.timedelta(days=7)
 
 
-@celery_app.task(bind=True)
+# Housekeeping, so it runs on the general-purpose queue rather than competing
+# with time-sensitive inbound delivery.
+@cron_task(crontab="17 3 * * *")
+# ``max_batches`` bounds a run at 100k rows, each delete cascading through
+# post_delete signals — comfortably more than the 10-minute default allows.
+@register_task(queue="default", time_limit=3600)
 def purge_abandoned_inbound_messages_task(
-    self, batch_size: int = 500, max_batches: int = 200
+    batch_size: int = 500, max_batches: int = 200
 ):
     """Reclaim inbound messages abandoned more than ``_ABANDONED_RETENTION`` ago.
 

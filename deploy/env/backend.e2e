@@ -3,7 +3,7 @@ DB_HOST=postgresql
 
 # Redis configuration
 REDIS_URL=redis://redis:6379
-CELERY_BROKER_URL=redis://redis:6379
+TASK_BROKER_URL=redis://redis:6379
 
 # OpenSearch configuration
 OPENSEARCH_URL=http://opensearch:9200

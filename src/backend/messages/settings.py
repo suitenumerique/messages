@@ -99,7 +99,7 @@ class Base(Configuration):
     # ``DEFAULT_RETRY_ON_STATUS``) — this just exposes the count so we
     # can lift it above the library default of 3 if needed. Whatever
     # bubbles up through this budget is wrapped as
-    # ``TransientTransportError`` and handed to Celery autoretry.
+    # ``TransientTransportError`` and handed to the task's retry policy.
     OPENSEARCH_MAX_RETRIES = values.PositiveIntegerValue(
         3,
         environ_name="OPENSEARCH_MAX_RETRIES",
@@ -111,9 +111,9 @@ class Base(Configuration):
     OPENSEARCH_CA_CERTS = values.Value(
         None, environ_name="OPENSEARCH_CA_CERTS", environ_prefix=None
     )
-    # Interval (seconds) at which the Celery Beat task drains the Redis
+    # Interval (seconds) at which the scheduled task drains the Redis
     # coalescing buffers (reindex + delete) and enqueues bulk thread tasks.
-    # Longer intervals reduce Celery/OpenSearch load at the cost of search
+    # Longer intervals reduce queue/OpenSearch load at the cost of search
     # result staleness for recent writes.
     SEARCH_REINDEX_TASKS_INTERVAL = values.PositiveIntegerValue(
         30,
@@ -121,7 +121,7 @@ class Base(Configuration):
         environ_prefix=None,
     )
     # Maximum number of thread / message IDs handed to a single
-    # ``bulk_*_task`` call. Each batch becomes one Celery task, so the
+    # ``bulk_*_task`` call. Each batch becomes one background task, so the
     # value is the unit of parallelism, retry granularity and worker
     # occupation for catch-up flows. Lower means more, shorter tasks
     # (better parallelism, cheaper retries); higher means fewer, longer
@@ -241,7 +241,7 @@ class Base(Configuration):
     # Master switch. Everything in core.services.push is a hard no-op while
     # this is False, so the feature is safe to merge dark: no tokens are
     # pushed to, no external gateway is contacted, and the enqueue helper
-    # never schedules the Celery task. Flip to True *and* configure at least
+    # never schedules the background task. Flip to True *and* configure at least
     # one gateway below to go live.
     PUSH_ENABLED = values.BooleanValue(
         False, environ_name="PUSH_ENABLED", environ_prefix=None
@@ -959,8 +959,8 @@ class Base(Configuration):
         "drf_spectacular",
         # Third party apps
         "corsheaders",
-        "django_celery_beat",
-        "django_celery_results",
+        "django_dramatiq",
+        "dramatiq_crontab",
         "django_filters",
         "rest_framework",
         # Django
@@ -1112,51 +1112,139 @@ class Base(Configuration):
         None, environ_name="FRONTEND_LAGAUFRE_WIDGET_CONFIG", environ_prefix=None
     )
 
-    # Celery
-    CELERY_BROKER_URL = values.Value(
-        "redis://redis:6379", environ_name="CELERY_BROKER_URL", environ_prefix=None
+    # Background tasks (Dramatiq)
+    #
+    # Queues are declared per task (``@register_task(queue=...)``) rather than
+    # matched by module glob at dispatch time; ``worker.ALL_QUEUES`` lists them
+    # in priority order. The concrete dicts Dramatiq reads
+    # (``DRAMATIQ_BROKER`` & co.) are assembled in ``post_setup`` from the
+    # settings below, because they nest env-driven values that
+    # django-configurations only resolves at the top level.
+    #
+    # The broker keyspace is namespaced (``dramatiq:*``), so it can share a
+    # Redis with the cache — but a queue is not a cache: whatever instance it
+    # points at must run with ``maxmemory-policy noeviction`` and AOF
+    # persistence, or enqueued tasks can be silently evicted or lost.
+    TASK_BROKER_URL = values.Value(
+        "redis://redis:6379", environ_name="TASK_BROKER_URL", environ_prefix=None
     )
-    CELERY_RESULT_BACKEND = "django-db"
-    CELERY_CACHE_BACKEND = "django-cache"
-    CELERY_BROKER_TRANSPORT_OPTIONS = values.DictValue({})
-    CELERY_RESULT_EXTENDED = True
-    CELERY_TASK_RESULT_EXPIRES = 60 * 60 * 24 * 30  # 30 days
-    CELERY_BEAT_SCHEDULER = "django_celery_beat.schedulers:DatabaseScheduler"
-    CELERY_WORKER_HIJACK_ROOT_LOGGER = False
+    TASK_BROKER_NAMESPACE = values.Value(
+        "dramatiq", environ_name="TASK_BROKER_NAMESPACE", environ_prefix=None
+    )
+    TASK_BROKER_CLASS = "dramatiq_redis_streams.StreamsBroker"
 
-    # Default queue for tasks without explicit routing
-    CELERY_TASK_DEFAULT_QUEUE = "default"
-
-    # Queue routing - tasks are routed to specific queues based on their type
-    # Priority order: management > inbound > outbound > default > imports > reindex
-    CELERY_TASK_ROUTES = {
-        # Inbound email processing - highest priority, time-sensitive
-        "core.mda.inbound_tasks.*": {"queue": "inbound"},
-        # Outbound email sending - high priority
-        "core.mda.outbound_tasks.*": {"queue": "outbound"},
-        # Import tasks - lower priority than regular tasks.
-        # The import scheduler runs on "default" (matched first, before the
-        # glob) so it can dispatch even when the single imports worker is busy
-        # or stuck on a run; the run itself goes to the imports queue.
-        "core.services.importer.tasks.schedule_imports_task": {"queue": "default"},
-        # Cancellation cleanup is housekeeping — keep it off the sequential
-        # imports worker so it isn't stuck behind a long-running import.
-        "core.services.importer.tasks.cancel_import_task": {"queue": "default"},
-        "core.services.importer.tasks.*": {"queue": "imports"},
-        # Search indexing - lowest priority, can be delayed
-        "core.services.search.tasks.*": {"queue": "reindex"},
-    }
-
-    DISABLE_CELERY_BEAT_SCHEDULE = values.BooleanValue(
-        default=False, environ_name="DISABLE_CELERY_BEAT_SCHEDULE", environ_prefix=None
+    # How long a task's return value stays readable through the task-status
+    # endpoint. Only long enough to outlive the UI that polls it — results are
+    # held in Redis (memory), not on disk.
+    TASK_RESULT_TTL = values.PositiveIntegerValue(
+        86400, environ_name="TASK_RESULT_TTL", environ_prefix=None
     )
 
-    CELERY_WORKER_SEND_TASK_EVENTS = values.BooleanValue(
-        True, environ_name="CELERY_WORKER_SEND_TASK_EVENTS", environ_prefix=None
+    # Persist every task to Postgres so it shows up in the admin's task history.
+    # Off by default: it costs a synchronous INSERT *on enqueue*, i.e. on the
+    # request path of every send and on every inbound delivery. Live queue
+    # state (backlog, in-flight, delayed, dead-lettered) is in the task
+    # dashboard instead, which reads Redis and costs nothing to produce.
+    TASK_HISTORY_ENABLED = values.BooleanValue(
+        False, environ_name="TASK_HISTORY_ENABLED", environ_prefix=None
     )
-    CELERY_TASK_SEND_SENT_EVENT = values.BooleanValue(
-        True, environ_name="CELERY_TASK_SEND_SENT_EVENT", environ_prefix=None
+    # Rows older than this are pruned by ``prune_task_history_task``.
+    TASK_HISTORY_MAX_AGE = values.PositiveIntegerValue(
+        86400 * 7, environ_name="TASK_HISTORY_MAX_AGE", environ_prefix=None
     )
+
+    # Expose per-worker Dramatiq metrics. The worker binds an exposition server
+    # on $dramatiq_prom_port (9191), so leave it off unless it is scraped.
+    TASK_PROMETHEUS_ENABLED = values.BooleanValue(
+        False, environ_name="TASK_PROMETHEUS_ENABLED", environ_prefix=None
+    )
+
+    # Skip registration of every periodic schedule. Mainly for first deploys to
+    # a PaaS, where the scheduler would fire against an unmigrated database.
+    DISABLE_TASK_SCHEDULE = values.BooleanValue(
+        default=False, environ_name="DISABLE_TASK_SCHEDULE", environ_prefix=None
+    )
+
+    # ``core/tasks.py`` re-exports every task module, so this one import is
+    # enough for both the worker and ``manage.py crontab``.
+    DRAMATIQ_AUTODISCOVER_MODULES = ["tasks"]
+
+    # The three settings below are written as (uppercase) methods, which
+    # django-configurations calls and stores the return value of. They nest
+    # env-driven values, and a ``Value`` is only resolved when it is a class
+    # attribute — inside a literal dict it would reach Dramatiq unresolved.
+
+    # pylint: disable=invalid-name
+    def dramatiq_middleware(self):
+        """The middleware stack every message passes through.
+
+        Ordering matters: Dramatiq runs ``before_*`` hooks in list order and
+        ``after_*`` in reverse, so ``Retries`` must sit outside the hooks that
+        record an outcome, and ``CurrentMessage`` must be in place before the
+        task body runs (``set_task_progress`` reads it).
+        """
+        middleware = []
+        if self.TASK_PROMETHEUS_ENABLED:
+            middleware.append("dramatiq.middleware.prometheus.Prometheus")
+        middleware += [
+            "dramatiq.middleware.AgeLimit",
+            "dramatiq.middleware.TimeLimit",
+            "dramatiq.middleware.Callbacks",
+            "dramatiq.middleware.Retries",
+            "dramatiq.middleware.CurrentMessage",
+            # Recycles connections closed by Postgres between messages; without
+            # it a worker idling past ``CONN_MAX_AGE`` fails its next task.
+            "django_dramatiq.middleware.DbConnectionsMiddleware",
+            "core.task_utils.WorkerShutdownMiddleware",
+        ]
+        if self.TASK_HISTORY_ENABLED:
+            middleware.append("django_dramatiq.middleware.AdminMiddleware")
+        return middleware
+
+    def DRAMATIQ_BROKER(self):
+        """Broker configuration consumed by ``django_dramatiq``."""
+        return {
+            "BROKER": self.TASK_BROKER_CLASS,
+            "OPTIONS": {
+                "url": self.TASK_BROKER_URL,
+                "namespace": self.TASK_BROKER_NAMESPACE,
+            },
+            "MIDDLEWARE": self.dramatiq_middleware(),
+        }
+
+    def DRAMATIQ_RESULT_BACKEND(self):
+        """Where task return values are kept for the task-status endpoint.
+
+        Results share the broker's Redis but sit under their own namespace, and
+        are stored under readable ``<namespace>:<queue>:<actor>:<id>`` keys
+        rather than the default opaque MD5 digests — so an operator can see
+        what is in there.
+        """
+        return {
+            "BACKEND": "dramatiq.results.backends.redis.RedisBackend",
+            "BACKEND_OPTIONS": {
+                "url": self.TASK_BROKER_URL,
+                "namespace": f"{self.TASK_BROKER_NAMESPACE}-results",
+                "use_namespace_prefix_keys": True,
+            },
+            "MIDDLEWARE_OPTIONS": {"result_ttl": self.TASK_RESULT_TTL * 1000},
+        }
+
+    def DRAMATIQ_CRONTAB(self):
+        """Scheduler configuration.
+
+        The scheduler takes a Redis lock so exactly one instance is live at a
+        time, however many workers run. The long blocking timeout makes every
+        other worker's scheduler *wait* on that lock rather than give up, so a
+        dead leader is replaced in about a second instead of leaving the
+        schedule unattended until someone restarts a worker.
+        """
+        return {
+            "REDIS_URL": self.TASK_BROKER_URL,
+            "LOCK_BLOCKING_TIMEOUT": 3600,
+        }
+
+    # pylint: enable=invalid-name
 
     # Session
     SESSION_ENGINE = "django.contrib.sessions.backends.cache"
@@ -1701,6 +1789,34 @@ class Base(Configuration):
                 )
 
 
+class EagerTasksMixin:
+    """Run background tasks inline, with no broker and no worker.
+
+    Used by the test suite and by the no-Redis dev profile. Both the broker and
+    the result backend are in-process, so ``.delay()`` runs the task then and
+    there and its result is still readable afterwards — the Celery
+    ``task_always_eager`` arrangement these settings replace.
+    """
+
+    TASK_BROKER_CLASS = "core.task_utils.EagerBroker"
+
+    # pylint: disable=invalid-name
+    def DRAMATIQ_BROKER(self):
+        """The in-process broker takes no connection settings."""
+        broker = super().DRAMATIQ_BROKER()
+        broker["OPTIONS"] = {}
+        return broker
+
+    def DRAMATIQ_RESULT_BACKEND(self):
+        """Results live in memory, alongside the in-process broker."""
+        backend = super().DRAMATIQ_RESULT_BACKEND()
+        backend["BACKEND"] = "dramatiq.results.backends.stub.StubBackend"
+        backend["BACKEND_OPTIONS"] = {}
+        return backend
+
+    # pylint: enable=invalid-name
+
+
 class Build(Base):
     """Settings used when the application is built.
 
@@ -1800,12 +1916,11 @@ class E2E(Development):
     USE_X_FORWARDED_HOST = True
 
 
-class DevelopmentMinimal(Development):
+class DevelopmentMinimal(EagerTasksMixin, Development):
     """
     Development environment settings with minimal dependencies
     """
 
-    CELERY_TASK_ALWAYS_EAGER = True
     OPENSEARCH_INDEX_THREADS = False
     # LocMemCache (not DummyCache) for the default cache so that features
     # that depend on real caching — notably task-owner tracking used by
@@ -1816,7 +1931,7 @@ class DevelopmentMinimal(Development):
     }
 
 
-class Test(Base):
+class Test(EagerTasksMixin, Base):
     """Test environment settings"""
 
     PASSWORD_HASHERS = [
@@ -1826,7 +1941,9 @@ class Test(Base):
 
     IDENTITY_PROVIDER = None
 
-    CELERY_TASK_ALWAYS_EAGER = values.BooleanValue(True)
+    # No scheduler runs under test; registering the schedules would only pull
+    # APScheduler in and bind every task's clock to the test process.
+    DISABLE_TASK_SCHEDULE = True
 
     AWS_S3_DOMAIN_REPLACE = None
 

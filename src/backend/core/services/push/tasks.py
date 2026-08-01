@@ -1,4 +1,4 @@
-"""Celery tasks: the recipient-resolving orchestrator and the per-device send.
+"""Background tasks: the recipient-resolving orchestrator and the per-device send.
 
 ``enqueue_push_notifications`` is called (on commit) by the delivery pipeline;
 ``send_push_for_message`` resolves recipients and dispatches one
@@ -27,8 +27,7 @@ from core.services.push.common import (
     build_thin_payload,
     collapse_key_for_message,
 )
-
-from messages.celery_app import app as celery_app
+from core.task_utils import register_task
 
 logger = getLogger(__name__)
 
@@ -47,7 +46,7 @@ def enqueue_push_notifications(message: models.Message) -> None:
     """Schedule push delivery for ``message`` after the current transaction commits.
 
     Safe to call unconditionally from the delivery pipeline: it no-ops when
-    push is disabled, and otherwise defers the actual send to a Celery task
+    push is disabled, and otherwise defers the actual send to a background task
     via ``transaction.on_commit`` so we never push for a message that ends
     up rolled back. Never raises.
     """
@@ -73,8 +72,8 @@ def enqueue_push_notifications(message: models.Message) -> None:
         logger.warning("Failed to schedule push for message %s: %s", message_id, exc)
 
 
-@celery_app.task(bind=True)
-def send_push_for_message(self, message_id: str):
+@register_task(queue="default")
+def send_push_for_message(message_id: str):
     """Resolve recipients for ``message_id`` and dispatch one task per device.
 
     Loads the message, resolves the recipient users and their devices, builds
@@ -88,7 +87,7 @@ def send_push_for_message(self, message_id: str):
 
     One task per notification makes each push an independently-retryable atomic
     unit: a single flaky device retries on its own without re-sending to anyone
-    else, and the Celery worker pool delivers them in parallel (the gateways
+    else, and the worker pool delivers them in parallel (the gateways
     have no multi-device batch API, so parallelism — not batching — is the
     lever). The shared, cached gateway tokens (APNs JWT / FCM OAuth) mean the
     many tasks don't each re-authenticate.
@@ -160,27 +159,25 @@ def send_push_for_message(self, message_id: str):
     }
 
 
-@celery_app.task(
-    bind=True,
-    autoretry_for=(PushTransientError,),
-    retry_backoff=True,
-    retry_backoff_max=600,
+@register_task(
+    queue="default",
     max_retries=5,
-    retry_jitter=True,
-    acks_late=True,
+    retry_on=(PushTransientError,),
+    max_backoff=600,
 )
-def send_push_notification(self, channel_id: str, payload: dict, collapse_key: str):
+def send_push_notification(channel_id: str, payload: dict, collapse_key: str):
     """Deliver one push to one device, retrying on a transient failure.
 
     The atomic unit of delivery: it re-fetches the one channel (skips if the
     device was un-associated since dispatch), resolves its platform, and hands a
     single-item batch to that platform's sender. On a *transient* failure
-    (429 / 5xx / network) it raises :class:`PushTransientError` so Celery retries
-    just this notification with exponential backoff; retrying is idempotent
+    (429 / 5xx / network) it raises :class:`PushTransientError` so just this
+    notification is retried with exponential backoff; retrying is idempotent
     on-device because the collapse key / Topic coalesces it onto the same
     notification. Dead-token devices are deleted inside the sender; permanent
-    rejections (bad payload, auth) end the task. ``acks_late`` means a worker
-    crash re-runs this one push (again collapse-deduped), not the whole fan-out.
+    rejections (bad payload, auth) end the task. Delivery is at-least-once, so
+    a worker crash re-runs this one push (again collapse-deduped), not the
+    whole fan-out.
     """
     if not settings.PUSH_ENABLED:
         return {"success": True, "skipped": "push_disabled"}

@@ -27,7 +27,7 @@ def _run_request(fn, *args, **kwargs):
     """Wrap a single OpenSearch call with the shared retry contract.
 
     Translates retryable HTTP statuses to ``TransientTransportError`` so the
-    Celery ``autoretry_for`` list catches them. ``ConnectionError`` falls
+    task's ``retry_on`` list catches them. ``ConnectionError`` falls
     through (its ``status_code`` is ``"N/A"``) and is matched directly by
     ``RETRYABLE_EXCEPTIONS`` upstream. Everything else propagates so caller
     bugs surface in Sentry and bare ``NotFoundError`` catches in
@@ -52,7 +52,7 @@ def _run_bulk(es, actions, *, swallow_4xx_as_failure, ignored_statuses=()):
     Same retry contract as ``_run_request``. Transient transport errors
     (502/503/504) are retried at the transport layer by the OpenSearch
     client (see ``get_opensearch_client``); whatever still bubbles up
-    here is re-raised as ``TransientTransportError`` so Celery
+    here is re-raised as ``TransientTransportError`` so the retry policy
     autoretry takes over with its own exponential backoff. Stacking a
     third local retry would just block the worker on ``time.sleep``
     without adding resilience.
@@ -132,7 +132,7 @@ def get_opensearch_client():
 
     ``max_retries`` is forwarded to the transport layer, which already
     retries on its ``DEFAULT_RETRY_ON_STATUS`` set (502/503/504). This
-    is the single source of truth for transport-level retries — Celery
+    is the single source of truth for transport-level retries — the task
     autoretry handles the longer outage with exponential backoff if
     the transport budget is exhausted.
     """
@@ -344,7 +344,7 @@ def index_message(message: models.Message, mailbox_ids=None) -> bool:
         logger.debug("Indexed message %s", message.id)
         return True
     except RETRYABLE_EXCEPTIONS:
-        # Bare-raise so Celery autoretry fires; the broad catch below would
+        # Bare-raise so the retry policy fires; the broad catch below would
         # otherwise swallow the transient and silently desync the index.
         raise
     # pylint: disable=broad-exception-caught

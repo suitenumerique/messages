@@ -10,7 +10,7 @@ x-nofile-ulimits: &nofile-ulimits
     soft: 262144
     hard: 262144
 
-# Shared config for the Celery workers. worker-dev (full stack) and
+# Shared config for the task workers. worker-dev (full stack) and
 # worker-dev-light (light stack) differ only in their profiles / depends_on /
 # environment; everything else lives here. Note that ``environment`` is a list,
 # so the ``<<`` merge does NOT combine it — each service repeats the full list.
@@ -46,7 +46,9 @@ services:
       - deploy/env/postgresql.local
 
   redis:
-    image: redis:5
+    # The Streams broker needs Redis >= 7 (consumer groups on streams
+    # with per-entry deletion). Keep this in step with production.
+    image: redis:8.2
     ports:
       - "8913:6379"
 
@@ -212,7 +214,7 @@ services:
         condition: service_started
 
   # Lean backend for the default `make start`: same Development config (Redis
-  # cache + Celery broker, real worker) but WITHOUT OpenSearch, object storage
+  # cache + task broker, real worker) but WITHOUT OpenSearch, object storage
   # or the MTAs — so a plain dev loop boots a handful of containers. Under the
   # `light` profile so a bare `docker compose up` (make start-full) skips it;
   # `make start` names it explicitly. `backend-dev` is left untouched because
@@ -292,27 +294,6 @@ services:
         condition: service_healthy
       redis:
         condition: service_started
-
-  worker-ui:
-    build:
-      context: src/backend
-      target: runtime-dev
-      args:
-        DOCKER_USER: ${DOCKER_USER:-1000}
-    user: ${DOCKER_USER:-1000}
-    depends_on:
-      - redis
-    environment:
-      - FLOWER_UNAUTHENTICATED_API=true
-      - DJANGO_CONFIGURATION=Development
-    env_file:
-      - deploy/env/backend.defaults
-      - deploy/env/backend.local
-    volumes:
-      - ./src/backend:/app
-    ports:
-      - "8903:8803"
-    command: celery -A messages.celery_app flower --port=8803
 
   frontend-base:
     user: "${DOCKER_USER:-1000}"

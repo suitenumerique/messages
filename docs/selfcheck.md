@@ -48,7 +48,7 @@ python manage.py selfcheck --verbose
 
 ### Scheduled Execution
 
-The selfcheck runs automatically every 10 minutes via Celery Beat. The interval can be configured using the `MESSAGES_SELFCHECK_INTERVAL` setting.
+The selfcheck runs automatically every 10 minutes via the scheduler. The interval can be configured using the `MESSAGES_SELFCHECK_INTERVAL` setting.
 
 ## Response Format
 

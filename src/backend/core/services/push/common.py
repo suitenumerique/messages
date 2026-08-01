@@ -3,7 +3,7 @@
 Result types, the thin payload, device storage (``Channel(type="push")``
 registration + management), recipient resolution, the process-global HTTP
 clients, and stale-device deactivation. The per-transport senders live in
-:mod:`apns` / :mod:`fcm` / :mod:`webpush`; the Celery tasks in :mod:`tasks`.
+:mod:`apns` / :mod:`fcm` / :mod:`webpush`; the background tasks in :mod:`tasks`.
 """
 
 # pylint: disable=broad-exception-caught
@@ -23,10 +23,10 @@ from django.db.models import Count
 from django.utils import timezone
 
 import httpx
-from celery.signals import worker_process_shutdown
 
 from core import models
 from core.enums import ChannelScopeLevel, ChannelTypes, PushPlatformChoices
+from core.task_utils import on_worker_shutdown
 
 logger = getLogger(__name__)
 
@@ -67,7 +67,7 @@ class PushResult(NamedTuple):
 
 
 class PushTransientError(Exception):
-    """Raised by :func:`tasks.send_push_notification` to trigger a Celery retry.
+    """Raised by :func:`tasks.send_push_notification` to trigger a retry.
 
     Signals the device hit a transient gateway failure. Retrying re-sends the
     push, which is safe: the collapse key / Topic coalesces it onto the same
@@ -420,7 +420,7 @@ def _is_transient_status(status_code: int) -> bool:
 
 # Process-global HTTP clients, reused across notification tasks.
 #
-# Delivery is one Celery task per push, but opening a fresh TLS connection per
+# Delivery is one background task per push, but opening a fresh TLS connection per
 # push is wasteful — and for APNs specifically, Apple penalizes rapid
 # connect/disconnect (it reads as abuse) and HTTP/2 setup is comparatively
 # expensive. So we keep one client (and its kept-alive connection pool) per
@@ -452,8 +452,8 @@ def _fcm_client() -> httpx.Client:
     return _FCM_CLIENT
 
 
-@worker_process_shutdown.connect
-def _close_push_clients(**_kwargs):
+@on_worker_shutdown
+def _close_push_clients():
     """Close the shared clients when a worker process shuts down."""
     global _APNS_CLIENT, _FCM_CLIENT  # noqa: PLW0603  # pylint: disable=global-statement
     for client in (_APNS_CLIENT, _FCM_CLIENT):

@@ -2,25 +2,24 @@
 
 # pylint: disable=unused-argument, broad-exception-raised, broad-exception-caught, too-many-lines
 
+import logging
 import math
 
+from django.conf import settings
 from django.db.models import Exists, OuterRef, Q
 from django.utils import timezone
-
-from celery.utils.log import get_task_logger
 
 from core import models
 from core.enums import MessageDeliveryStatusChoices
 from core.mda.outbound import send_message
 from core.mda.selfcheck import run_selfcheck
+from core.task_utils import cron_task, register_task, set_task_progress
 
-from messages.celery_app import app as celery_app
-
-logger = get_task_logger(__name__)
+logger = logging.getLogger(__name__)
 
 
-@celery_app.task(bind=True)
-def send_message_task(self, message_id, force_mta_out=False, must_archive=False):
+@register_task(queue="outbound")
+def send_message_task(message_id, force_mta_out=False, must_archive=False):
     """Send a message asynchronously.
 
     Args:
@@ -37,17 +36,9 @@ def send_message_task(self, message_id, force_mta_out=False, must_archive=False)
             .get(id=message_id)
         )
 
-        send_message(message, force_mta_out)
+        set_task_progress(50, {"message": "Sending message"})
 
-        # Update task state with progress information
-        self.update_state(
-            state="SUCCESS",
-            meta={
-                "status": "completed",  # TODO fetch recipients statuses
-                "message_id": str(message_id),
-                "success": True,
-            },
-        )
+        send_message(message, force_mta_out)
 
         # If requested, archive the whole thread after sending
         if must_archive:
@@ -66,6 +57,8 @@ def send_message_task(self, message_id, force_mta_out=False, must_archive=False)
                     e,
                 )
 
+        set_task_progress(100, {"message": "Message sent"})
+
         return {
             "message_id": str(message_id),
             "success": True,
@@ -73,15 +66,12 @@ def send_message_task(self, message_id, force_mta_out=False, must_archive=False)
     # pylint: disable=broad-exception-caught
     except Exception as e:
         logger.exception("Error in send_message_task for message %s: %s", message_id, e)
-        self.update_state(
-            state="FAILURE",
-            meta={"status": "failed", "message_id": str(message_id), "error": str(e)},
-        )
         raise
 
 
-@celery_app.task(bind=True)
-def selfcheck_task(self):
+@cron_task(interval=settings.MESSAGES_SELFCHECK_INTERVAL)
+@register_task(queue="outbound")
+def selfcheck_task():
     """Run a selfcheck of the mail delivery system.
 
     This task performs an end-to-end test of the mail delivery pipeline:
@@ -97,32 +87,18 @@ def selfcheck_task(self):
         dict: A dictionary with success status, timings, and metrics
     """
     try:
-        result = run_selfcheck()
-
-        # Update task state with progress information
-        self.update_state(
-            state="SUCCESS",
-            meta={
-                "status": "completed",
-                "success": result["success"],
-                "send_time": result["send_time"],
-                "reception_time": result["reception_time"],
-            },
-        )
-
-        return result
+        return run_selfcheck()
     # pylint: disable=broad-exception-caught
     except Exception as e:
         logger.exception("Error in selfcheck_task: %s", e)
-        self.update_state(
-            state="FAILURE",
-            meta={"status": "failed", "error": str(e)},
-        )
         raise
 
 
-@celery_app.task(bind=True)
-def retry_messages_task(self, message_ids=None, force_mta_out=False, batch_size=100):
+@cron_task(crontab="*/5 * * * *")
+# A large retry backlog is walked in one pass, one SMTP delivery at a time, so
+# this needs more room than the 10-minute default.
+@register_task(queue="outbound", time_limit=3600)
+def retry_messages_task(message_ids=None, force_mta_out=False, batch_size=100):
     """Retry sending messages with retryable recipients (respects retry timing).
 
     Args:
@@ -189,11 +165,13 @@ def retry_messages_task(self, message_ids=None, force_mta_out=False, batch_size=
     ):
         # Update progress for bulk operations
         if index % batch_size == 0:
-            self.update_state(
-                state="PROGRESS",
-                meta={
-                    "current_batch": index // batch_size + 1,
-                    "total_batches": math.ceil(total_messages / batch_size),
+            set_task_progress(
+                100 * index // total_messages,
+                {
+                    "message": (
+                        f"Batch {index // batch_size + 1} of "
+                        f"{math.ceil(total_messages / batch_size)}"
+                    ),
                     "processed_messages": processed_count,
                     "total_messages": total_messages,
                     "success_count": success_count,

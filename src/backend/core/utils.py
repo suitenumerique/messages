@@ -5,23 +5,12 @@ import logging
 from contextlib import contextmanager
 from contextvars import ContextVar
 
-from django.core.cache import cache
 from django.core.exceptions import ImproperlyConfigured, ValidationError
 
 import jsonschema
 from configurations import values
 
 logger = logging.getLogger(__name__)
-
-# How long the "who started this task" record lives, gating the task-status
-# endpoint's ownership check. Lives here (not in the API layer) so the service
-# layer can register owners without importing back up into ``core.api``.
-TASK_OWNER_CACHE_TTL = 86400  # 24 hours
-
-
-def register_task_owner(task_id, user_id):
-    """Register the owner of a task for permission checks."""
-    cache.set(f"task_owner:{task_id}", str(user_id), timeout=TASK_OWNER_CACHE_TTL)
 
 
 def get_redis_client():
@@ -166,7 +155,7 @@ class ThreadReindexDeferrer(AbstractBatchingDeferrer):
     """Batch OpenSearch thread reindex enqueues within a scope.
 
     When active, signal handlers collect thread IDs instead of enqueuing one
-    Celery task per row. On outermost scope exit, collected IDs are sliced
+    task per row. On outermost scope exit, collected IDs are sliced
     into chunks of ``settings.SEARCH_FLUSH_BATCH_SIZE`` and one
     ``bulk_reindex_threads_task`` is enqueued per chunk — avoiding broker
     saturation and worker churn during bulk delivery flows (imports,
@@ -187,7 +176,7 @@ class ThreadReindexDeferrer(AbstractBatchingDeferrer):
     def _flush(cls, items):
         # Lazy imports: this module is loaded by settings.py (for JSONValue /
         # ThrottleRateValue), and the search modules pull in Django models
-        # and the Celery app — both would fail at top-level import time.
+        # and the task broker — both would fail at top-level import time.
         # pylint: disable-next=import-outside-toplevel
         from django.conf import settings
 

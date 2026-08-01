@@ -351,7 +351,7 @@ class TestThreadStatsUpdateDeferrer:
 class TestThreadReindexDeferrer:
     """Test the ThreadReindexDeferrer context manager.
 
-    The deferrer is the load-bearing piece that prevents Celery saturation
+    The deferrer is the load-bearing piece that prevents broker saturation
     during large mailbox imports: per-row reindex enqueues are replaced by a
     single ``bulk_reindex_threads_task`` at context exit.
     """
@@ -453,7 +453,7 @@ class TestThreadReindexDeferrer:
     def test_flush_chunks_large_batches(self):
         """IDs beyond ``SEARCH_FLUSH_BATCH_SIZE`` are sliced across several tasks.
 
-        Guards against oversized Celery payloads when a bulk import collects
+        Guards against oversized task payloads when a bulk import collects
         more IDs than the cap enforced by ``process_pending_reindex``.
         Uses ``override_settings`` with a small batch so the test stays
         self-contained and cheap regardless of the production default.
@@ -944,7 +944,7 @@ class TestCoalescerRedisBackend:
         """A broker failure after SPOP must not lose the drained IDs.
 
         ``SPOP count=N`` removes the IDs atomically before we know whether
-        Celery accepted the task. If ``delay()`` raises, the coalescer
+        the broker accepted the task. If ``delay()`` raises, the coalescer
         re-``SADD``s them so the next cycle retries them.
         """
         # pylint: disable-next=import-outside-toplevel
@@ -1315,7 +1315,7 @@ class TestCoalescerRedisRoundtrip:
         }
 
     def test_process_chunks_pending_into_multiple_tasks(self, redis_cache):
-        """batch_size caps each Celery payload, process drains the whole set."""
+        """batch_size caps each task payload, process drains the whole set."""
         # pylint: disable-next=import-outside-toplevel
         from core.services.search.coalescer import (
             PENDING_REINDEX_KEY,

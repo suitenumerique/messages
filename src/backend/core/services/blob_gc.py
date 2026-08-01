@@ -8,9 +8,9 @@ lifetime is determined by whichever ``Message`` / ``Attachment`` /
 delete can't clean blobs up; instead:
 
 - Reference sources push their blob_ids into a Redis set on
-  ``post_delete`` (cheap — O(1) SADD, no per-blob celery task even
+  ``post_delete`` (cheap — O(1) SADD, no per-blob task even
   when 100k cascade together).
-- A periodic Celery task drains the set, checks each candidate for
+- A periodic task drains the set, checks each candidate for
   remaining references, and deletes orphans (with inline S3 cleanup
   under the per-sha advisory lock — same pattern as
   ``offload_blobs_task``).
@@ -30,6 +30,7 @@ itself.
 
 # pylint: disable=broad-exception-caught
 
+import logging
 from time import monotonic
 from typing import Any, Dict, Iterable, Iterator
 from uuid import UUID
@@ -38,17 +39,15 @@ from django.conf import settings
 from django.db import transaction
 from django.utils import timezone
 
-from celery.utils.log import get_task_logger
 from redis.exceptions import RedisError
 
 from core.enums import BlobStorageLocationChoices
 from core.models import UPLOAD_RESERVATION_TTL, Blob, MailboxBlob
 from core.services.tiered_storage import TieredStorageService, sha256_advisory_lock
+from core.task_utils import cron_task, register_task
 from core.utils import get_redis_client
 
-from messages.celery_app import app as celery_app
-
-logger = get_task_logger(__name__)
+logger = logging.getLogger(__name__)
 
 
 # Redis set holding blob ids that may have become orphans. Reference-source
@@ -372,13 +371,17 @@ def _gc_one_blob(blob_id_str: str, service, dry_run: bool = False) -> str:
         return "error"
 
 
-@celery_app.task
+@cron_task(crontab="35 * * * *")
+# The in-task budget is the real bound; the time limit sits just past it so a
+# run that stops itself cleanly is never mistaken for one that hung. The "full"
+# mode has no budget and is invoked by hand, so it gets the same headroom.
+@register_task(queue="blobs", time_limit=_GC_MAX_RUN_SECONDS + 300)
 def gc_orphan_blobs_task(mode: str = "fast", dry_run: bool = False) -> Dict[str, Any]:
     """Periodic: GC blobs whose last reference was deleted.
 
     Modes:
 
-    - ``"fast"`` (default, hooked to celery beat) — drain ids from the
+    - ``"fast"`` (default, the scheduled mode) — drain ids from the
       Redis candidate set and process each. Catches the common case
       where a Message / Attachment / MessageTemplate post_delete has
       pushed the blob_id.
@@ -400,7 +403,7 @@ def gc_orphan_blobs_task(mode: str = "fast", dry_run: bool = False) -> Dict[str,
     - Skip blobs with an active upload reservation (JMAP 2-step flow).
     - Re-check the reference graph inside a per-sha advisory lock to
       avoid racing the offload / re-store / dedup paths.
-    - Do S3 cleanup inline (no per-blob celery fan-out) when the
+    - Do S3 cleanup inline (no per-blob fan-out) when the
       deleted row was at OBJECT_STORAGE.
     """
     if mode == "fast":

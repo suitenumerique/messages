@@ -10,7 +10,7 @@ Layout:
 - :mod:`common` — result types, the thin payload, device storage/registration,
   recipient resolution, the process-global HTTP clients, stale-device deletion.
 - :mod:`apns` / :mod:`fcm` / :mod:`webpush` — the per-transport senders.
-- :mod:`tasks` — the Celery orchestrator + the per-device delivery task.
+- :mod:`tasks` — the task queue orchestrator + the per-device delivery task.
 
 Design constraints baked in here:
 
@@ -31,7 +31,7 @@ Design constraints baked in here:
 - **Non-fatal.** Push is best-effort. Senders never raise into the caller —
   failures are logged and swallowed so a flaky gateway can never break delivery.
 - **One task per notification.** Each device's push is an independently-retryable
-  Celery task; the gateways have no multi-device batch API, so the Celery worker
+  background task; the gateways have no multi-device batch API, so the task queue worker
   pool provides the parallelism.
 - **Self-healing devices.** A gateway "this token is dead" response (APNs 410
   ``Unregistered``, FCM ``UNREGISTERED`` / ``NOT_FOUND``, Web Push 404/410)

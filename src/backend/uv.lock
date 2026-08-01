@@ -45,6 +45,18 @@ wheels = [
 ]
 
 [[package]]
+name = "apscheduler"
+version = "3.11.3"
+source = { registry = "https://pypi.org/simple" }
+dependencies = [
+    { name = "tzlocal" },
+]
+sdist = { url = "https://files.pythonhosted.org/packages/8c/6b/eeff360196bb20b312c9e762a820fd1b2c6d809466c755ef57863478e454/apscheduler-3.11.3.tar.gz", hash = "sha256:cd2fcc9330039a81a5893472ad49facf23a6d5604cbe1d918c835c6de7834d5a", size = 110312, upload-time = "2026-06-28T19:39:22.493Z" }
+wheels = [
+    { url = "https://files.pythonhosted.org/packages/42/c9/8638db32514dbb9157b3d82680c6faea89283523edf9ed2415ea3884f2ae/apscheduler-3.11.3-py3-none-any.whl", hash = "sha256:bbeb2ec02d23d3c06a6c07ed7f0f3939ada6680eb121fae809a69bb42c537a30", size = 66024, upload-time = "2026-06-28T19:39:20.982Z" },
+]
+
+[[package]]
 name = "asgiref"
 version = "3.11.1"
 source = { registry = "https://pypi.org/simple" }
@@ -171,11 +183,6 @@ dependencies = [
 sdist = { url = "https://files.pythonhosted.org/packages/8f/9d/3d13596519cfa7207a6f9834f4b082554845eb3cd2684b5f8535d50c7c44/celery-5.6.2.tar.gz", hash = "sha256:4a8921c3fcf2ad76317d3b29020772103581ed2454c4c042cc55dcc43585009b", size = 1718802, upload-time = "2026-01-04T12:35:58.012Z" }
 wheels = [
     { url = "https://files.pythonhosted.org/packages/dd/bd/9ecd619e456ae4ba73b6583cc313f26152afae13e9a82ac4fe7f8856bfd1/celery-5.6.2-py3-none-any.whl", hash = "sha256:3ffafacbe056951b629c7abcf9064c4a2366de0bdfc9fdba421b97ebb68619a5", size = 445502, upload-time = "2026-01-04T12:35:55.894Z" },
-]
-
-[package.optional-dependencies]
-redis = [
-    { name = "kombu", extra = ["redis"] },
 ]
 
 [[package]]
@@ -343,18 +350,6 @@ wheels = [
 ]
 
 [[package]]
-name = "cron-descriptor"
-version = "2.0.6"
-source = { registry = "https://pypi.org/simple" }
-dependencies = [
-    { name = "typing-extensions" },
-]
-sdist = { url = "https://files.pythonhosted.org/packages/7c/31/0b21d1599656b2ffa6043e51ca01041cd1c0f6dacf5a3e2b620ed120e7d8/cron_descriptor-2.0.6.tar.gz", hash = "sha256:e39d2848e1d8913cfb6e3452e701b5eec662ee18bea8cc5aa53ee1a7bb217157", size = 49456, upload-time = "2025-09-03T16:30:22.434Z" }
-wheels = [
-    { url = "https://files.pythonhosted.org/packages/21/cc/361326a54ad92e2e12845ad15e335a4e14b8953665007fb514d3393dfb0f/cron_descriptor-2.0.6-py3-none-any.whl", hash = "sha256:3a1c0d837c0e5a32e415f821b36cf758eb92d510e6beff8fbfe4fa16573d93d6", size = 74446, upload-time = "2025-09-03T16:30:21.397Z" },
-]
-
-[[package]]
 name = "cryptography"
 version = "48.0.1"
 source = { registry = "https://pypi.org/simple" }
@@ -488,36 +483,6 @@ wheels = [
 ]
 
 [[package]]
-name = "django-celery-beat"
-version = "2.8.1"
-source = { registry = "https://pypi.org/simple" }
-dependencies = [
-    { name = "celery" },
-    { name = "cron-descriptor" },
-    { name = "django" },
-    { name = "django-timezone-field" },
-    { name = "python-crontab" },
-    { name = "tzdata" },
-]
-sdist = { url = "https://files.pythonhosted.org/packages/aa/11/0c8b412869b4fda72828572068312b10aafe7ccef7b41af3633af31f9d4b/django_celery_beat-2.8.1.tar.gz", hash = "sha256:dfad0201c0ac50c91a34700ef8fa0a10ee098cc7f3375fe5debed79f2204f80a", size = 175802, upload-time = "2025-05-13T06:58:29.246Z" }
-wheels = [
-    { url = "https://files.pythonhosted.org/packages/61/e5/3a0167044773dee989b498e9a851fc1663bea9ab879f1179f7b8a827ac10/django_celery_beat-2.8.1-py3-none-any.whl", hash = "sha256:da2b1c6939495c05a551717509d6e3b79444e114a027f7b77bf3727c2a39d171", size = 104833, upload-time = "2025-05-13T06:58:27.309Z" },
-]
-
-[[package]]
-name = "django-celery-results"
-version = "2.6.0"
-source = { registry = "https://pypi.org/simple" }
-dependencies = [
-    { name = "celery" },
-    { name = "django" },
-]
-sdist = { url = "https://files.pythonhosted.org/packages/a6/b5/9966c28e31014c228305e09d48b19b35522a8f941fe5af5f81f40dc8fa80/django_celery_results-2.6.0.tar.gz", hash = "sha256:9abcd836ae6b61063779244d8887a88fe80bbfaba143df36d3cb07034671277c", size = 83985, upload-time = "2025-04-10T08:23:52.677Z" }
-wheels = [
-    { url = "https://files.pythonhosted.org/packages/2c/da/70f0f3c5364735344c4bc89e53413bcaae95b4fc1de4e98a7a3b9fb70c88/django_celery_results-2.6.0-py3-none-any.whl", hash = "sha256:b9ccdca2695b98c7cbbb8dea742311ba9a92773d71d7b4944a676e69a7df1c73", size = 38351, upload-time = "2025-04-10T08:23:49.965Z" },
-]
-
-[[package]]
 name = "django-configurations"
 version = "2.5.1"
 source = { registry = "https://pypi.org/simple" }
@@ -553,6 +518,19 @@ dependencies = [
 sdist = { url = "https://files.pythonhosted.org/packages/67/2e/ed67f8f460d1de25ee64fca5d7f219680f944fc8ac5a29fbede3574dc3db/django_countries-8.2.0.tar.gz", hash = "sha256:6df3883180599052c7dfa9a8be0601792441cfb248935dc229ad1ac92e9e39e3", size = 2455542, upload-time = "2025-11-24T19:57:08.071Z" }
 wheels = [
     { url = "https://files.pythonhosted.org/packages/20/3c/9ebd7ed021b7c519bac954bc88146bc870e7d3c8db2580fa67268464fd2e/django_countries-8.2.0-py3-none-any.whl", hash = "sha256:2b2617bec7c15dc735bdec38ae89f0058e38fddfffdb19a7f6b75ef1e3d5380f", size = 3776079, upload-time = "2025-11-24T19:57:05.576Z" },
+]
+
+[[package]]
+name = "django-dramatiq"
+version = "0.15.0"
+source = { registry = "https://pypi.org/simple" }
+dependencies = [
+    { name = "django" },
+    { name = "dramatiq" },
+]
+sdist = { url = "https://files.pythonhosted.org/packages/2b/b7/2a5ac56a5fd41fbe332221d3906168ace96df6a1f3c92d0839c4c7133cb2/django_dramatiq-0.15.0.tar.gz", hash = "sha256:e3cf1b2ac288fe4a7aa198c9450fe242ed312df8850f3f9e18ce01b8acc78b96", size = 15763, upload-time = "2025-11-13T15:53:40.115Z" }
+wheels = [
+    { url = "https://files.pythonhosted.org/packages/4a/3a/4d2e6f89ee0b9a79a271f0ead1a6c25f6cab291735493b083e316ab86130/django_dramatiq-0.15.0-py3-none-any.whl", hash = "sha256:23f0bc418a860952adbf822c4aa3b9c46c51d3d9f50be0a8ed3d19a53380df1d", size = 12620, upload-time = "2025-11-13T15:53:38.878Z" },
 ]
 
 [[package]]
@@ -697,6 +675,51 @@ wheels = [
 ]
 
 [[package]]
+name = "dramatiq"
+version = "2.2.0"
+source = { registry = "https://pypi.org/simple" }
+sdist = { url = "https://files.pythonhosted.org/packages/29/fb/78b1b689c4a121fc762ab6f00674cfa7246980678117edb03cbb168e5f9f/dramatiq-2.2.0.tar.gz", hash = "sha256:70c9278b0a9b880aeb23b8e09c9d43b1421ac8e807ef18903f6dd059130474a1", size = 108462, upload-time = "2026-06-17T11:18:34.629Z" }
+wheels = [
+    { url = "https://files.pythonhosted.org/packages/ef/57/a9be0b205b24e794c833a5295497f914776eb4d606d5a25a5b290e8b75ec/dramatiq-2.2.0-py3-none-any.whl", hash = "sha256:2b2aa244b4098e154600c47cdb2c04cec6c3af44e9e159c319c6fc8b6f0ba90e", size = 127342, upload-time = "2026-06-17T11:18:33.433Z" },
+]
+
+[package.optional-dependencies]
+prometheus = [
+    { name = "prometheus-client" },
+]
+redis = [
+    { name = "redis" },
+]
+
+[[package]]
+name = "dramatiq-crontab"
+version = "1.0.12"
+source = { registry = "https://pypi.org/simple" }
+dependencies = [
+    { name = "apscheduler" },
+    { name = "django" },
+    { name = "dramatiq" },
+]
+sdist = { url = "https://files.pythonhosted.org/packages/92/27/13dd12312f7126f41d3c7787c8a07568a9026d5b546a2c237bb168a6bef2/dramatiq_crontab-1.0.12.tar.gz", hash = "sha256:6192289cb7fe16aa698cd6a78aa86e40ae4fb1fe043a55a028cfbf3c2299c8dd", size = 8157, upload-time = "2025-08-06T16:12:54.907Z" }
+wheels = [
+    { url = "https://files.pythonhosted.org/packages/18/40/802f5afda7f75b6ed61bd88fc71f96f94670ab5efd172e78ced3f82b67a0/dramatiq_crontab-1.0.12-py3-none-any.whl", hash = "sha256:417d1da76fd423c02466db6e1091bb089cf76596331951447283fb9d6720ab8c", size = 8861, upload-time = "2025-08-06T16:12:53.352Z" },
+]
+
+[package.optional-dependencies]
+sentry = [
+    { name = "sentry-sdk" },
+]
+
+[[package]]
+name = "dramatiq-redis-streams"
+version = "0.1.0"
+source = { git = "https://github.com/sylvinus/dramatiq-redis-streams.git?rev=819912de7259361688fcfa1b91b0c465ecd2b6e4#819912de7259361688fcfa1b91b0c465ecd2b6e4" }
+dependencies = [
+    { name = "dramatiq" },
+    { name = "redis" },
+]
+
+[[package]]
 name = "drf-spectacular"
 version = "0.29.0"
 source = { registry = "https://pypi.org/simple" }
@@ -773,22 +796,6 @@ source = { registry = "https://pypi.org/simple" }
 sdist = { url = "https://files.pythonhosted.org/packages/73/92/a8e2479937ff39185d20dd6a851c1a63e55849e447a55e798cc2e1f49c65/filelock-3.24.3.tar.gz", hash = "sha256:011a5644dc937c22699943ebbfc46e969cdde3e171470a6e40b9533e5a72affa", size = 37935, upload-time = "2026-02-19T00:48:20.543Z" }
 wheels = [
     { url = "https://files.pythonhosted.org/packages/9c/0f/5d0c71a1aefeb08efff26272149e07ab922b64f46c63363756224bd6872e/filelock-3.24.3-py3-none-any.whl", hash = "sha256:426e9a4660391f7f8a810d71b0555bce9008b0a1cc342ab1f6947d37639e002d", size = 24331, upload-time = "2026-02-19T00:48:18.465Z" },
-]
-
-[[package]]
-name = "flower"
-version = "2.0.1"
-source = { registry = "https://pypi.org/simple" }
-dependencies = [
-    { name = "celery" },
-    { name = "humanize" },
-    { name = "prometheus-client" },
-    { name = "pytz" },
-    { name = "tornado" },
-]
-sdist = { url = "https://files.pythonhosted.org/packages/09/a1/357f1b5d8946deafdcfdd604f51baae9de10aafa2908d0b7322597155f92/flower-2.0.1.tar.gz", hash = "sha256:5ab717b979530770c16afb48b50d2a98d23c3e9fe39851dcf6bc4d01845a02a0", size = 3220408, upload-time = "2023-08-13T14:37:46.073Z" }
-wheels = [
-    { url = "https://files.pythonhosted.org/packages/a6/ff/ee2f67c0ff146ec98b5df1df637b2bc2d17beeb05df9f427a67bd7a7d79c/flower-2.0.1-py2.py3-none-any.whl", hash = "sha256:9db2c621eeefbc844c8dd88be64aef61e84e2deb29b271e02ab2b5b9f01068e2", size = 383553, upload-time = "2023-08-13T14:37:41.552Z" },
 ]
 
 [[package]]
@@ -888,15 +895,6 @@ wheels = [
 [package.optional-dependencies]
 http2 = [
     { name = "h2" },
-]
-
-[[package]]
-name = "humanize"
-version = "4.15.0"
-source = { registry = "https://pypi.org/simple" }
-sdist = { url = "https://files.pythonhosted.org/packages/ba/66/a3921783d54be8a6870ac4ccffcd15c4dc0dd7fcce51c6d63b8c63935276/humanize-4.15.0.tar.gz", hash = "sha256:1dd098483eb1c7ee8e32eb2e99ad1910baefa4b75c3aff3a82f4d78688993b10", size = 83599, upload-time = "2025-12-20T20:16:13.19Z" }
-wheels = [
-    { url = "https://files.pythonhosted.org/packages/c5/7b/bca5613a0c3b542420cf92bd5e5fb8ebd5435ce1011a091f66bb7693285e/humanize-4.15.0-py3-none-any.whl", hash = "sha256:b1186eb9f5a9749cd9cb8565aee77919dd7c8d076161cf44d70e59e3301e1769", size = 132203, upload-time = "2025-12-20T20:16:11.67Z" },
 ]
 
 [[package]]
@@ -1096,11 +1094,6 @@ wheels = [
     { url = "https://files.pythonhosted.org/packages/fb/0f/834427d8c03ff1d7e867d3db3d176470c64871753252b21b4f4897d1fa45/kombu-5.6.2-py3-none-any.whl", hash = "sha256:efcfc559da324d41d61ca311b0c64965ea35b4c55cc04ee36e55386145dace93", size = 214219, upload-time = "2025-12-29T20:30:05.74Z" },
 ]
 
-[package.optional-dependencies]
-redis = [
-    { name = "redis" },
-]
-
 [[package]]
 name = "libpass"
 version = "1.9.3"
@@ -1165,16 +1158,14 @@ source = { editable = "." }
 dependencies = [
     { name = "boto3" },
     { name = "botocore" },
-    { name = "celery", extra = ["redis"] },
     { name = "cryptography" },
     { name = "defusedxml" },
     { name = "dj-database-url" },
     { name = "django" },
-    { name = "django-celery-beat" },
-    { name = "django-celery-results" },
     { name = "django-configurations" },
     { name = "django-cors-headers" },
     { name = "django-countries" },
+    { name = "django-dramatiq" },
     { name = "django-fernet-encrypted-fields" },
     { name = "django-filter" },
     { name = "django-lasuite", extra = ["all"] },
@@ -1185,6 +1176,9 @@ dependencies = [
     { name = "djangorestframework" },
     { name = "dkimpy" },
     { name = "dnspython" },
+    { name = "dramatiq", extra = ["prometheus", "redis"] },
+    { name = "dramatiq-crontab", extra = ["sentry"] },
+    { name = "dramatiq-redis-streams" },
     { name = "drf-spectacular" },
     { name = "factory-boy" },
     { name = "google-auth" },
@@ -1217,7 +1211,6 @@ dependencies = [
 dev = [
     { name = "django-extensions" },
     { name = "drf-spectacular-sidecar" },
-    { name = "flower" },
     { name = "hypothesis" },
     { name = "pip-audit" },
     { name = "pipdeptree" },
@@ -1238,16 +1231,14 @@ dev = [
 requires-dist = [
     { name = "boto3", specifier = "==1.42.53" },
     { name = "botocore", specifier = "==1.42.53" },
-    { name = "celery", extras = ["redis"], specifier = "==5.6.2" },
     { name = "cryptography", specifier = "==48.0.1" },
     { name = "defusedxml", specifier = "==0.7.1" },
     { name = "dj-database-url", specifier = "==3.1.2" },
     { name = "django", specifier = "==5.2.15" },
-    { name = "django-celery-beat", specifier = "==2.8.1" },
-    { name = "django-celery-results", specifier = "==2.6.0" },
     { name = "django-configurations", specifier = "==2.5.1" },
     { name = "django-cors-headers", specifier = "==4.9.0" },
     { name = "django-countries", specifier = "==8.2.0" },
+    { name = "django-dramatiq", specifier = "==0.15.0" },
     { name = "django-extensions", marker = "extra == 'dev'", specifier = "==4.1" },
     { name = "django-fernet-encrypted-fields", specifier = "==0.3.1" },
     { name = "django-filter", specifier = "==25.2" },
@@ -1259,10 +1250,12 @@ requires-dist = [
     { name = "djangorestframework", specifier = "==3.16.1" },
     { name = "dkimpy", specifier = "==1.1.8" },
     { name = "dnspython", specifier = "==2.8.0" },
+    { name = "dramatiq", extras = ["prometheus", "redis"], specifier = "==2.2.0" },
+    { name = "dramatiq-crontab", extras = ["sentry"], specifier = "==1.0.12" },
+    { name = "dramatiq-redis-streams", git = "https://github.com/sylvinus/dramatiq-redis-streams.git?rev=819912de7259361688fcfa1b91b0c465ecd2b6e4" },
     { name = "drf-spectacular", specifier = "==0.29.0" },
     { name = "drf-spectacular-sidecar", marker = "extra == 'dev'", specifier = "==2026.1.1" },
     { name = "factory-boy", specifier = "==3.3.3" },
-    { name = "flower", marker = "extra == 'dev'", specifier = "==2.0.1" },
     { name = "google-auth", specifier = "==2.41.1" },
     { name = "gunicorn", specifier = "==25.1.0" },
     { name = "http-ece", specifier = "==1.2.1" },
@@ -1836,15 +1829,6 @@ wheels = [
 ]
 
 [[package]]
-name = "python-crontab"
-version = "3.3.0"
-source = { registry = "https://pypi.org/simple" }
-sdist = { url = "https://files.pythonhosted.org/packages/99/7f/c54fb7e70b59844526aa4ae321e927a167678660ab51dda979955eafb89a/python_crontab-3.3.0.tar.gz", hash = "sha256:007c8aee68dddf3e04ec4dce0fac124b93bd68be7470fc95d2a9617a15de291b", size = 57626, upload-time = "2025-07-13T20:05:35.535Z" }
-wheels = [
-    { url = "https://files.pythonhosted.org/packages/47/42/bb4afa5b088f64092036221843fc989b7db9d9d302494c1f8b024ee78a46/python_crontab-3.3.0-py3-none-any.whl", hash = "sha256:739a778b1a771379b75654e53fd4df58e5c63a9279a63b5dfe44c0fcc3ee7884", size = 27533, upload-time = "2025-07-13T20:05:34.266Z" },
-]
-
-[[package]]
 name = "python-dateutil"
 version = "2.9.0.post0"
 source = { registry = "https://pypi.org/simple" }
@@ -2203,23 +2187,6 @@ source = { registry = "https://pypi.org/simple" }
 sdist = { url = "https://files.pythonhosted.org/packages/c3/af/14b24e41977adb296d6bd1fb59402cf7d60ce364f90c890bd2ec65c43b5a/tomlkit-0.14.0.tar.gz", hash = "sha256:cf00efca415dbd57575befb1f6634c4f42d2d87dbba376128adb42c121b87064", size = 187167, upload-time = "2026-01-13T01:14:53.304Z" }
 wheels = [
     { url = "https://files.pythonhosted.org/packages/b5/11/87d6d29fb5d237229d67973a6c9e06e048f01cf4994dee194ab0ea841814/tomlkit-0.14.0-py3-none-any.whl", hash = "sha256:592064ed85b40fa213469f81ac584f67a4f2992509a7c3ea2d632208623a3680", size = 39310, upload-time = "2026-01-13T01:14:51.965Z" },
-]
-
-[[package]]
-name = "tornado"
-version = "6.5.7"
-source = { registry = "https://pypi.org/simple" }
-sdist = { url = "https://files.pythonhosted.org/packages/64/24/95ec527ad67b76d59299e5465b3935d05e4294b7e0290a3924b7487df30b/tornado-6.5.7.tar.gz", hash = "sha256:66c513a76cda70d53907bc27cf1447557699c2e95aa48ba27a442ff61c3ddfc2", size = 519252, upload-time = "2026-06-08T17:34:51.232Z" }
-wheels = [
-    { url = "https://files.pythonhosted.org/packages/02/dc/c7043cab6fed8ae159fc1923ce829ada35c4dbd797d408a43858ffaf9639/tornado-6.5.7-cp39-abi3-macosx_10_9_universal2.whl", hash = "sha256:148b2eb15c2c765a50796172c1e499649b35f30d2e3c3d3e15913cfa56bfb163", size = 448543, upload-time = "2026-06-08T17:34:38.052Z" },
-    { url = "https://files.pythonhosted.org/packages/92/4f/090b1431e5a43df696feceffc268c5383cc079ecb5f08ce58f917109aafe/tornado-6.5.7-cp39-abi3-macosx_10_9_x86_64.whl", hash = "sha256:9da38de27f1da3b78a966f0dae12b5a1ea9afe72ca805d84ff06508272ddf100", size = 446707, upload-time = "2026-06-08T17:34:39.594Z" },
-    { url = "https://files.pythonhosted.org/packages/37/d8/ef374952fd5da67d4463122c2b8e5a96536ec10b4b339254c6dcde81d01c/tornado-6.5.7-cp39-abi3-manylinux1_x86_64.manylinux_2_28_x86_64.manylinux_2_5_x86_64.whl", hash = "sha256:8d759e71906ee783f8867b93bf26a265743da4c1e2f4a018464c1ba019862972", size = 449774, upload-time = "2026-06-08T17:34:41.204Z" },
-    { url = "https://files.pythonhosted.org/packages/35/37/d434c73f4c6e014b745b9b37085f34f40c022f007efff3d7fe65991899f3/tornado-6.5.7-cp39-abi3-manylinux2014_aarch64.manylinux_2_17_aarch64.manylinux_2_28_aarch64.whl", hash = "sha256:8a46347a18f23fb92b396beebe0fb78f61dda0cc302445202c16203d8a18848b", size = 450745, upload-time = "2026-06-08T17:34:42.531Z" },
-    { url = "https://files.pythonhosted.org/packages/b6/2b/56b9aff361d7f1ab728a805ec7d7ea835f8807afa9f5cc690ea0e630efb9/tornado-6.5.7-cp39-abi3-musllinux_1_2_aarch64.whl", hash = "sha256:7778b30bef919231265e91c69963ce0f49a1e9c07ac900bbe75b19ce2575ba92", size = 450578, upload-time = "2026-06-08T17:34:43.787Z" },
-    { url = "https://files.pythonhosted.org/packages/02/30/a7444fb23aa76860a14198fab96ac79f1866b0a6e19e26c4381b0938e50f/tornado-6.5.7-cp39-abi3-musllinux_1_2_x86_64.whl", hash = "sha256:e726f0c75da7726eec023aa62751ff8878bd2737e34fbdd33b1ae5897d2200f5", size = 449985, upload-time = "2026-06-08T17:34:45.326Z" },
-    { url = "https://files.pythonhosted.org/packages/5c/42/5f0e56c01e8d9d36f4e23f367b85ae6cae0c1ecddd5e6977d8388ad27488/tornado-6.5.7-cp39-abi3-win32.whl", hash = "sha256:f8de3bf12d3efdd0cbe7c8887868198f8a91415e3f29fcf258d9b8eb7b1d9ae4", size = 451047, upload-time = "2026-06-08T17:34:46.784Z" },
-    { url = "https://files.pythonhosted.org/packages/c9/a4/b393076ffb21b469eec5b328a0534cf03a3b90bfc6b1f09507cdd075d938/tornado-6.5.7-cp39-abi3-win_amd64.whl", hash = "sha256:de942f843533a039ef9fa3d9c88c7cd8a7c94553fb5ad0154270989b3d99a2c4", size = 451485, upload-time = "2026-06-08T17:34:48.248Z" },
-    { url = "https://files.pythonhosted.org/packages/71/2e/7b1c769803121b809112cf9a00681c472eae1d80e32d7ec0e0bd61d0d0e1/tornado-6.5.7-cp39-abi3-win_arm64.whl", hash = "sha256:ff934fce95643af5f11efdae618eaa73d469dc588641e5c8d19295a0c65c4796", size = 450506, upload-time = "2026-06-08T17:34:49.702Z" },
 ]
 
 [[package]]

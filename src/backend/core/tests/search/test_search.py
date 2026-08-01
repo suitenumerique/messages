@@ -116,7 +116,7 @@ def test_get_opensearch_client_forwards_max_retries():
     transient statuses (502/503/504, opensearch-py's
     ``DEFAULT_RETRY_ON_STATUS``). Without it we silently fall back to
     the library default of 3, and a brief cluster overload bypasses
-    our outer Celery autoretry without anyone noticing.
+    our outer retry policy without anyone noticing.
     """
     # pylint: disable-next=import-outside-toplevel
     from core.services.search.index import get_opensearch_client
@@ -720,7 +720,7 @@ class TestSearchReindexAllBulk:
     def test_bulk_retryable_transport_error_is_reraised(
         self, mock_es_client_index, status_code
     ):
-        """Retryable codes propagate as ``TransientTransportError`` so Celery
+        """Retryable codes propagate as ``TransientTransportError`` so the retry policy
         autoretry kicks in. Swallowing them would silently drop the chunk
         and emit one Sentry event per chunk during an outage instead of one
         per task.
@@ -818,7 +818,7 @@ class TestBulkDeleteThreadsTask:
             ) as mock_bulk,
             mock.patch("core.services.search.index.get_opensearch_client"),
         ):
-            result = bulk_delete_threads_task.run(thread_ids)
+            result = bulk_delete_threads_task(thread_ids)
 
         assert result == {"success": True, "deleted_threads": 2}
         mock_bulk.assert_called_once()
@@ -840,7 +840,7 @@ class TestBulkDeleteThreadsTask:
         from core.services.search.tasks import bulk_delete_threads_task
 
         with mock.patch("core.services.search.index.bulk") as mock_bulk:
-            result = bulk_delete_threads_task.run([])
+            result = bulk_delete_threads_task([])
 
         assert result == {"success": True, "deleted_threads": 0}
         mock_bulk.assert_not_called()
@@ -854,14 +854,14 @@ class TestBulkDeleteThreadsTask:
             override_settings(OPENSEARCH_INDEX_THREADS=False),
             mock.patch("core.services.search.index.bulk") as mock_bulk,
         ):
-            result = bulk_delete_threads_task.run(["thread-a"])
+            result = bulk_delete_threads_task(["thread-a"])
 
         assert result == {"success": False, "reason": "disabled"}
         mock_bulk.assert_not_called()
 
     @pytest.mark.parametrize("status_code", sorted(RETRYABLE_TRANSPORT_STATUS))
     def test_retryable_transport_error_propagates(self, status_code):
-        """Retryable codes surface as ``TransientTransportError`` so Celery autoretry kicks in."""
+        """Retryable codes surface as ``TransientTransportError`` so the retry policy kicks in."""
         # pylint: disable-next=import-outside-toplevel
         from core.services.search.tasks import bulk_delete_threads_task
 
@@ -873,7 +873,7 @@ class TestBulkDeleteThreadsTask:
             mock.patch("core.services.search.index.get_opensearch_client"),
             pytest.raises(TransientTransportError),
         ):
-            bulk_delete_threads_task.run(["thread-a"])
+            bulk_delete_threads_task(["thread-a"])
 
     @pytest.mark.parametrize("status_code", [400, 500, 501])
     def test_non_retryable_transport_error_does_not_trigger_retry(self, status_code):
@@ -891,7 +891,7 @@ class TestBulkDeleteThreadsTask:
             mock.patch("core.services.search.index.get_opensearch_client"),
             pytest.raises(TransportError) as exc_info,
         ):
-            bulk_delete_threads_task.run(["thread-a"])
+            bulk_delete_threads_task(["thread-a"])
 
         assert not isinstance(exc_info.value, TransientTransportError)
 
@@ -919,7 +919,7 @@ class TestBulkDeleteMessagesTask:
             ) as mock_bulk,
             mock.patch("core.services.search.index.get_opensearch_client"),
         ):
-            result = bulk_delete_messages_task.run(pairs)
+            result = bulk_delete_messages_task(pairs)
 
         assert result == {"success": True, "deleted_messages": 3}
         actions = mock_bulk.call_args[0][1]
@@ -950,7 +950,7 @@ class TestBulkDeleteMessagesTask:
         from core.services.search.tasks import bulk_delete_messages_task
 
         with mock.patch("core.services.search.index.bulk") as mock_bulk:
-            result = bulk_delete_messages_task.run([])
+            result = bulk_delete_messages_task([])
 
         assert result == {"success": True, "deleted_messages": 0}
         mock_bulk.assert_not_called()
@@ -969,7 +969,7 @@ class TestBulkDeleteMessagesTask:
             mock.patch("core.services.search.index.get_opensearch_client"),
             mock.patch("core.services.search.tasks.logger") as mock_logger,
         ):
-            result = bulk_delete_messages_task.run(pairs)
+            result = bulk_delete_messages_task(pairs)
 
         assert result == {"success": True, "deleted_messages": 1}
         actions = mock_bulk.call_args[0][1]
@@ -993,14 +993,14 @@ class TestBulkDeleteMessagesTask:
             override_settings(OPENSEARCH_INDEX_THREADS=False),
             mock.patch("core.services.search.index.bulk") as mock_bulk,
         ):
-            result = bulk_delete_messages_task.run(["thread-a:msg-1"])
+            result = bulk_delete_messages_task(["thread-a:msg-1"])
 
         assert result == {"success": False, "reason": "disabled"}
         mock_bulk.assert_not_called()
 
     @pytest.mark.parametrize("status_code", sorted(RETRYABLE_TRANSPORT_STATUS))
     def test_retryable_transport_error_propagates(self, status_code):
-        """Retryable codes surface as ``TransientTransportError`` so Celery autoretry kicks in."""
+        """Retryable codes surface as ``TransientTransportError`` so the retry policy kicks in."""
         # pylint: disable-next=import-outside-toplevel
         from core.services.search.tasks import bulk_delete_messages_task
 
@@ -1012,7 +1012,7 @@ class TestBulkDeleteMessagesTask:
             mock.patch("core.services.search.index.get_opensearch_client"),
             pytest.raises(TransientTransportError),
         ):
-            bulk_delete_messages_task.run(["thread-a:msg-1"])
+            bulk_delete_messages_task(["thread-a:msg-1"])
 
     @pytest.mark.parametrize("status_code", [400, 500, 501])
     def test_non_retryable_transport_error_does_not_trigger_retry(self, status_code):
@@ -1030,7 +1030,7 @@ class TestBulkDeleteMessagesTask:
             mock.patch("core.services.search.index.get_opensearch_client"),
             pytest.raises(TransportError) as exc_info,
         ):
-            bulk_delete_messages_task.run(["thread-a:msg-1"])
+            bulk_delete_messages_task(["thread-a:msg-1"])
 
         assert not isinstance(exc_info.value, TransientTransportError)
 
@@ -1065,7 +1065,7 @@ class TestBulkDeleteMessagesTask:
             mock.patch("core.services.search.index.get_opensearch_client"),
             mock.patch("core.services.search.index.logger") as mock_logger,
         ):
-            result = bulk_delete_messages_task.run(["thread-a:msg-1"])
+            result = bulk_delete_messages_task(["thread-a:msg-1"])
 
         assert result == {"success": True, "deleted_messages": 1}
         mock_logger.error.assert_not_called()
@@ -1093,7 +1093,7 @@ class TestBulkDeleteMessagesTask:
             mock.patch("core.services.search.index.get_opensearch_client"),
             mock.patch("core.services.search.index.logger") as mock_logger,
         ):
-            bulk_delete_messages_task.run(["thread-a:msg-1"])
+            bulk_delete_messages_task(["thread-a:msg-1"])
 
         mock_logger.error.assert_called_with("Bulk indexing error: %s", bulk_errors[0])
 
@@ -1103,7 +1103,7 @@ class TestRunRequestRetryFilter:
 
     Without this filter, a transient ``TransportError`` on a unitary call
     (e.g., ``es.indices.exists``) would not be in ``RETRYABLE_EXCEPTIONS``
-    and would abort the surrounding Celery task — that was the root cause
+    and would abort the surrounding task — that was the root cause
     of the residual Sentry issues that survived the ``delete_by_query``
     removal.
     """
@@ -1149,7 +1149,7 @@ class TestRunRequestRetryFilter:
     def test_connection_error_propagates_untouched(self):
         """``ConnectionError`` is a ``TransportError`` subclass with a
         non-numeric ``status_code``; it must fall through to the bare ``raise``
-        so Celery matches it directly via ``RETRYABLE_EXCEPTIONS`` (it is
+        so the retry policy matches it directly via ``RETRYABLE_EXCEPTIONS`` (it is
         unambiguously retryable on its own — no need to wrap it).
         """
         # pylint: disable-next=import-outside-toplevel
@@ -1169,7 +1169,7 @@ class TestCreateIndexIfNotExistsRetry:
 
     The Sentry issue that motivated this work was raised by
     ``es.indices.exists`` inside ``create_index_if_not_exists`` — the call
-    used to throw a raw ``TransportError`` that bypassed Celery autoretry
+    used to throw a raw ``TransportError`` that bypassed the retry policy
     entirely and aborted whatever bulk task came after it.
     """
 
@@ -1261,7 +1261,7 @@ class TestEnsureIndexExists:
 class TestSingleDocIndexRetry:
     """``index_message`` / ``update_thread_mailbox_flags`` / ``index_thread``
     propagate ``RETRYABLE_EXCEPTIONS`` instead of swallowing them in the broad
-    ``except Exception`` — otherwise the surrounding Celery task would never
+    ``except Exception`` — otherwise the surrounding task would never
     autoretry on a transient and would silently desync the index.
     """
 
@@ -1383,11 +1383,11 @@ class TestHotPathProbesIndexOnceThenCaches:
         mock_es_client_index.indices.exists.return_value = True
 
         with mock.patch("core.services.search.index.bulk", return_value=(0, [])):
-            bulk_reindex_threads_task.run([str(thread.id)])
+            bulk_reindex_threads_task([str(thread.id)])
 
         assert mock_es_client_index.indices.exists.call_count == 1
 
-        index_message_task.run(str(thread.messages.first().id))
+        index_message_task(str(thread.messages.first().id))
 
         # Still 1 — the second task short-circuited via the cached flag.
         assert mock_es_client_index.indices.exists.call_count == 1
@@ -1407,7 +1407,7 @@ class TestHotPathProbesIndexOnceThenCaches:
         mock_es_client_index.indices.exists.return_value = False
 
         with mock.patch("core.services.search.index.bulk", return_value=(0, [])):
-            bulk_reindex_threads_task.run([str(thread.id)])
+            bulk_reindex_threads_task([str(thread.id)])
 
         mock_es_client_index.indices.exists.assert_called_once()
         mock_es_client_index.indices.create.assert_called_once()
@@ -1416,7 +1416,7 @@ class TestHotPathProbesIndexOnceThenCaches:
     def test_failure_on_first_probe_does_not_set_cache_flag(self, mock_es_client_index):
         """End-to-end check of the same retry-on-failure contract as
         ``TestEnsureIndexExists.test_failure_does_not_set_cache``, but
-        through a real Celery task entry point.
+        through a real task entry point.
         """
         # pylint: disable-next=import-outside-toplevel
         from core.services.search.tasks import bulk_reindex_threads_task
@@ -1431,13 +1431,13 @@ class TestHotPathProbesIndexOnceThenCaches:
             mock.patch("core.services.search.index.bulk", return_value=(0, [])),
             pytest.raises(TransientTransportError),
         ):
-            bulk_reindex_threads_task.run([str(thread.id)])
+            bulk_reindex_threads_task([str(thread.id)])
 
         mock_es_client_index.indices.exists.side_effect = None
         mock_es_client_index.indices.exists.return_value = True
 
         with mock.patch("core.services.search.index.bulk", return_value=(0, [])):
-            bulk_reindex_threads_task.run([str(thread.id)])
+            bulk_reindex_threads_task([str(thread.id)])
 
         assert mock_es_client_index.indices.exists.call_count == 2
 
@@ -1453,6 +1453,6 @@ class TestHotPathProbesIndexOnceThenCaches:
         from core.services.search.tasks import bulk_reindex_threads_task
 
         with override_settings(OPENSEARCH_INDEX_THREADS=False):
-            bulk_reindex_threads_task.run([str(test_thread.id)])
+            bulk_reindex_threads_task([str(test_thread.id)])
 
         mock_es_client_index.indices.exists.assert_not_called()

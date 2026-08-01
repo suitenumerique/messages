@@ -685,8 +685,7 @@ class TestProcessInboundMessageAuthIntegration:
         mock_auth_check.return_value = VERDICT_UNVERIFIED
         mock_create_message.return_value = True
 
-        with patch.object(process_inbound_message_task, "update_state", Mock()):
-            process_inbound_message_task.run(str(inbound_message.id))
+        process_inbound_message_task(str(inbound_message.id))
 
         assert mock_create_message.called
         call_kwargs = mock_create_message.call_args[1]
@@ -705,8 +704,7 @@ class TestProcessInboundMessageAuthIntegration:
         mock_auth_check.return_value = VERDICT_FORGED
         mock_create_message.return_value = True
 
-        with patch.object(process_inbound_message_task, "update_state", Mock()):
-            process_inbound_message_task.run(str(inbound_message.id))
+        process_inbound_message_task(str(inbound_message.id))
 
         call_kwargs = mock_create_message.call_args[1]
         assert call_kwargs["postmark"]["auth"] == "fail"
@@ -721,8 +719,7 @@ class TestProcessInboundMessageAuthIntegration:
         mock_auth_check.return_value = None
         mock_create_message.return_value = True
 
-        with patch.object(process_inbound_message_task, "update_state", Mock()):
-            process_inbound_message_task.run(str(inbound_message.id))
+        process_inbound_message_task(str(inbound_message.id))
 
         call_kwargs = mock_create_message.call_args[1]
         assert "auth" not in (call_kwargs.get("postmark") or {})
@@ -751,8 +748,7 @@ class TestProcessInboundMessageAuthIntegration:
         mock_post.return_value = mock_response
         mock_create_message.return_value = True
 
-        with patch.object(process_inbound_message_task, "update_state", Mock()):
-            process_inbound_message_task.run(str(inbound_message.id))
+        process_inbound_message_task(str(inbound_message.id))
 
         assert mock_post.call_count == 1
         call_kwargs = mock_create_message.call_args[1]
@@ -785,8 +781,7 @@ class TestProcessInboundMessageAuthIntegration:
         mock_post.return_value = mock_response
         mock_create_message.return_value = True
 
-        with patch.object(process_inbound_message_task, "update_state", Mock()):
-            process_inbound_message_task.run(str(inbound_message.id))
+        process_inbound_message_task(str(inbound_message.id))
 
         call_kwargs = mock_create_message.call_args[1]
         assert call_kwargs["postmark"]["auth"] == "fail"
@@ -818,8 +813,7 @@ class TestProcessInboundMessageAuthIntegration:
         mock_post.return_value = mock_response
         mock_create_message.return_value = True
 
-        with patch.object(process_inbound_message_task, "update_state", Mock()):
-            process_inbound_message_task.run(str(inbound_message.id))
+        process_inbound_message_task(str(inbound_message.id))
 
         assert mock_post.call_count == 1
         call_kwargs = mock_create_message.call_args[1]

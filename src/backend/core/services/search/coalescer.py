@@ -1,10 +1,10 @@
 """Coalescing buffers for OpenSearch reindex and delete enqueues.
 
 Signal handlers push thread IDs (and ``thread_id:message_id`` pairs for
-deletes) into Redis sets instead of scheduling a Celery task per
+deletes) into Redis sets instead of scheduling a background task per
 ``save()`` / ``delete()``. A periodic task (``process_pending_reindex_task``)
 drains the buffers every ``SEARCH_REINDEX_TASKS_INTERVAL`` seconds, chunks
-each set by ``SEARCH_FLUSH_BATCH_SIZE`` to keep each Celery payload
+each set by ``SEARCH_FLUSH_BATCH_SIZE`` to keep each task payload
 bounded, and enqueues ``bulk_delete_threads_task`` /
 ``bulk_delete_messages_task`` / ``bulk_reindex_threads_task`` per chunk —
 up to ``SEARCH_FLUSH_MAX_BATCHES`` tasks per cycle, shared across the

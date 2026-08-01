@@ -9,10 +9,11 @@ format module and not ``runner``) so the runners can import it without a cycle.
 """
 
 # pylint: disable=broad-exception-caught
+import logging
+
 from django.conf import settings
 from django.core.files.storage import storages
 
-from celery.utils.log import get_task_logger
 from jmap_email import first_address_email, parse_email
 
 from core import models
@@ -28,7 +29,7 @@ from .channel import (
     renew_run_lock,
 )
 
-logger = get_task_logger(__name__)
+logger = logging.getLogger(__name__)
 
 # Flush the Redis watermark + counts (and beat the heartbeat) every N messages.
 # Small enough to lose little work on a crash, large enough to keep Redis writes

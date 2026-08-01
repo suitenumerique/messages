@@ -512,7 +512,7 @@ you install.
 3. In Firebase console → project settings → service accounts, generate a
    service-account key and set in `deploy/env/backend.local`:
    `PUSH_ENABLED=True`, `PUSH_FCM_CREDENTIALS` (the JSON, single line),
-   `PUSH_FCM_PROJECT_ID`. Restart the backend + celery worker.
+   `PUSH_FCM_PROJECT_ID`. Restart the backend + task worker.
 4. Emulator: use the same **Play-services image** the SSO setup already
    requires (see *Prerequisites*) — FCM registration fails on a bare AOSP
    image (the UI then shows the `registration_failed` message, by design).
@@ -529,7 +529,7 @@ you install.
    `PUSH_APNS_BUNDLE_ID` (= your `MOBILE_APP_ID`), and
    **`PUSH_APNS_USE_SANDBOX=True`** — dev-signed builds hold sandbox tokens;
    against the production gateway they are rejected as `BadDeviceToken`.
-   Restart the backend + celery worker.
+   Restart the backend + task worker.
 
 ### Smoke test (both platforms)
 

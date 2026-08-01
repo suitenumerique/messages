@@ -4,7 +4,7 @@ POST /api/v1.0/submit/
 Accepts a raw RFC 5322 message and sends it from a mailbox.
 Creates a Message via the inbound pipeline (with ``is_outbound=True``),
 then runs ``prepare_outbound_message`` synchronously (DKIM signing, blob
-creation) and dispatches SMTP delivery asynchronously via Celery.
+creation) and dispatches SMTP delivery asynchronously in the background.
 """
 
 import logging
@@ -42,7 +42,7 @@ class SubmitRawEmailView(APIView):
         X-Rcpt-To:    <addr>[,<addr>] (comma-separated recipient addresses)
 
     The endpoint creates a Message record, DKIM-signs the raw MIME
-    synchronously, and dispatches SMTP delivery via Celery.
+    synchronously, and dispatches SMTP delivery in the background.
 
     Returns: ``{"message_id": "<…>", "status": "accepted"}`` (HTTP 202).
     """
@@ -143,7 +143,7 @@ class SubmitRawEmailView(APIView):
 
         # Create the message, sign it, and arm the SMTP dispatch atomically.
         # The whole thing rolls back on any failure (no orphan draft), and the
-        # Celery task is dispatched via ``transaction.on_commit`` so the broker
+        # background task is dispatched via ``transaction.on_commit`` so the broker
         # never receives a delivery task for a message that is still uncommitted
         # or whose transaction later rolls back.
         with transaction.atomic():

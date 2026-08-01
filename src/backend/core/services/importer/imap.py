@@ -10,6 +10,7 @@ and the import must continue processing remaining messages on failure.
 import base64
 import codecs
 import imaplib
+import logging
 import re
 import socket
 import ssl
@@ -18,7 +19,6 @@ from typing import Any
 
 from django.conf import settings
 
-from celery.utils.log import get_task_logger
 from jmap_email import first_address_email, parse_email
 
 from core import models
@@ -36,7 +36,7 @@ from .utils import (
     error_text,
 )
 
-logger = get_task_logger(__name__)
+logger = logging.getLogger(__name__)
 
 # In-line retries for a single ``UID FETCH`` that hits a socket timeout (same
 # connection, exponential backoff). An implementation detail of the fetch, not

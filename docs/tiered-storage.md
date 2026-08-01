@@ -2,7 +2,7 @@
 
 Blobs (raw RFC822 email bodies and attachments) live in PostgreSQL by
 default. Once a blob is older than `MESSAGES_BLOBS_OFFLOAD_DELAY`,
-a periodic celery task moves its bytes to S3 and clears the PG row's
+a periodic background task moves its bytes to S3 and clears the PG row's
 `raw_content`. Reads transparently fetch from whichever location the
 row points at — application code only ever calls `blob.get_content()`.
 
@@ -75,11 +75,11 @@ flow drops it once the ``Attachment`` row exists.
 
 When a reference source is deleted (Message, Attachment,
 MessageTemplate, InboundMessage ``post_delete``), the affected blob_id
-is pushed into a Redis candidate set. A periodic Celery task —
+is pushed into a Redis candidate set. A periodic background task —
 ``gc_orphan_blobs_task`` in ``core/services/blob_gc.py`` — drains the
 set, re-checks the reference graph under the per-sha advisory lock,
 deletes the row if no references remain, and cleans up the S3
-object inline. No per-blob celery fan-out; one task processes the
+object inline. No per-blob task fan-out; one task processes the
 whole backlog within a 55-minute wall-clock budget per hourly tick.
 
 Two modes:
@@ -120,7 +120,7 @@ To start moving cold blobs to S3:
    The task logs one INFO line per eligible blob (id, size, stored, content_type, created_at) and returns counts with ``would_offload`` plus ``bytes_plain`` / ``bytes_stored``. Bypasses both the ``MESSAGES_BLOBS_OFFLOAD_ENABLED`` and ``service.enabled`` gates so you can preview before configuring the bucket.
 5. Set `MESSAGES_BLOBS_OFFLOAD_ENABLED=True`.
 
-A single celery beat task fires hourly and processes eligible blobs
+A single scheduled task fires hourly and processes eligible blobs
 sequentially within a 55-minute wall-clock budget — no per-blob
 fan-out. Each row is offloaded under the per-sha advisory lock, so
 the row flip is atomic. Whatever isn't done in one tick is picked up
@@ -314,7 +314,7 @@ Reads each blob, decrypts under its current key, re-encrypts under
 the active key, and writes the result to the target storage
 location implied by `MESSAGES_BLOBS_OFFLOAD_ENABLED`. The PG → S3
 direction (offload of cold blobs) is owned by the periodic
-`offload_blobs_task` celery beat task — not exposed here.
+`offload_blobs_task` scheduled task — not exposed here.
 
 - **`--dry-run`** — prints what would happen without writing.
 - **`--limit=N`** — caps the worklist; rerun until empty.
@@ -348,7 +348,7 @@ one-way for production.
 
 - **Initial rollout on a populated DB.** The offload task processes
   eligible blobs sequentially within a 55-minute wall-clock budget per
-  hourly tick. There is no per-blob celery fan-out, so a backlog of
+  hourly tick. There is no per-blob task fan-out, so a backlog of
   millions doesn't queue-bomb the broker. Ramping
   `MESSAGES_BLOBS_OFFLOAD_DELAY` down gradually (e.g. 365d → 90d → 30d
   → 1d, expressed in seconds) still helps spread the load over several
@@ -363,9 +363,9 @@ one-way for production.
 - **Bulk deletes** (e.g. mailbox cascade, `QuerySet.delete()`) push
   the affected blob_ids into the GC candidate set via post_delete
   signals on the *reference sources* (Message, Attachment, Template).
-  No per-blob celery task is enqueued — the periodic GC drains the
+  No per-blob background task is enqueued — the periodic GC drains the
   set in a single bounded task per tick. Cascade of 100k attachments
-  produces 100k Redis SADDs (~1-2s total), not 100k Celery messages.
+  produces 100k Redis SADDs (~1-2s total), not 100k queued tasks.
 - **Drift between DB and bucket.** Offload trusts the DB on dedup
   (no S3 HEAD), so a missing-S3-but-DB-says-OBJECT_STORAGE row will
   not auto-repair. Run `verify_blobs --mode=db-to-storage`

@@ -23,7 +23,6 @@ from core import enums, models
 from core.api.permissions import HasAccessToMailbox, HasWriteAccessToMailbox
 from core.services.calendar.service import CalDAVError, CalDAVService
 from core.services.calendar.tasks import calendar_add_event_task, calendar_rsvp_task
-from core.utils import register_task_owner
 
 logger = logging.getLogger(__name__)
 
@@ -159,7 +158,7 @@ class CalendarRsvpView(CalDAVChannelMixin, APIView):
                 attendee_email=mailbox_email,
                 calendar_id=calendar_id,
             )
-            register_task_owner(task.id, request.user.id)
+            task.track_owner(request.user.id)
         except Exception as e:  # pylint: disable=broad-exception-caught
             logger.exception("Failed to enqueue calendar_rsvp_task: %s", e)
             return Response(
@@ -230,7 +229,7 @@ class CalendarAddEventView(CalDAVChannelMixin, APIView):
                 ics_data=ics_data,
                 calendar_id=calendar_id,
             )
-            register_task_owner(task.id, request.user.id)
+            task.track_owner(request.user.id)
         except Exception as e:  # pylint: disable=broad-exception-caught
             logger.exception("Failed to enqueue calendar_add_event_task: %s", e)
             return Response(

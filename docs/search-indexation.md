@@ -18,7 +18,7 @@ The index is kept up to date through three cooperating paths:
    their work in `ThreadReindexDeferrer.defer()` so all touched threads are
    reindexed in a single bulk task at scope exit.
 
-All index writes happen asynchronously through Celery on the `reindex` queue.
+All index writes happen asynchronously through background tasks on the `reindex` queue.
 A full reindex is available through a management command for recovery and
 index-schema changes.
 
@@ -104,7 +104,7 @@ Storage is chosen at runtime from `CACHES['default']['BACKEND']`:
 Common to both paths:
 
 - Drained by `process_pending_reindex_task`, scheduled every
-  `SEARCH_REINDEX_TASKS_INTERVAL` seconds by Celery Beat.
+  `SEARCH_REINDEX_TASKS_INTERVAL` seconds by the scheduler.
 - Each cycle drains the three sets in order — thread deletes, message
   deletes, then reindex — and hands each batch to its dedicated task
   (`bulk_delete_threads_task`, `bulk_delete_messages_task`,
@@ -112,12 +112,12 @@ Common to both paths:
   already picked up by the thread-delete pass is filtered out (the
   delete wins): a thread that is about to be removed from the index is
   never reindexed in the same cycle.
-- Drained IDs are pushed back to their pending set if the Celery broker
+- Drained IDs are pushed back to their pending set if the task broker
   rejects any bulk task, so a transient broker outage cannot silently
   desync the index.
 
 Each drain pulls up to `SEARCH_FLUSH_BATCH_SIZE` (default `1000`) IDs
-and enqueues one bulk task per chunk, sized to keep each Celery task
+and enqueues one bulk task per chunk, sized to keep each background task
 short enough to retry cheaply and parallelize across workers. A safety
 cap (`SEARCH_FLUSH_MAX_BATCHES`, default `10`) bounds how many bulk
 tasks a single cycle can enqueue in total (shared across delete and
@@ -137,7 +137,7 @@ enqueued for all collected threads.
 Used by:
 - the `run_mbox`/`run_eml`/`run_pst`/`run_imap` runners in `core/services/importer/` (`mbox.py`/`eml.py`/`pst.py`/`imap.py`)
 
-This bypasses the pending-set round-trip and avoids Celery saturation when
+This bypasses the pending-set round-trip and avoids broker saturation when
 delivering thousands of inbound messages in a single job. It composes with
 `ThreadStatsUpdateDeferrer`, which batches `Thread.update_stats()` calls on
 the same principle.
@@ -194,7 +194,7 @@ by the scheduled drains, the management command, and the deferrer:
   layer of the OpenSearch client (`OPENSEARCH_MAX_RETRIES`, default 3,
   honoring opensearch-py's `DEFAULT_RETRY_ON_STATUS`). Anything that
   exhausts that budget bubbles up as `TransientTransportError` and is
-  picked up by Celery autoretry (5 attempts with exponential backoff
+  picked up by task retries (5 attempts with exponential backoff
   capped at 600s) — no third local layer.
 - Pure upsert: the loop never deletes. Stale documents are removed by
   the dedicated `bulk_delete_threads_task` / `bulk_delete_messages_task`
@@ -228,7 +228,7 @@ All commands live under `src/backend/core/management/commands/` and run via
 | `search_reindex --mailbox <uuid> [--async]` | Reindex all threads visible to one mailbox. |
 | `search_reindex --thread <uuid> [--async]` | Reindex a single thread and its messages. |
 
-`--async` dispatches the work to Celery and returns the task ID; without it,
+`--async` dispatches the work to the task queue and returns the task ID; without it,
 the command runs inline in the backend container and prints progress.
 
 `--recreate-index` deletes and re-creates the index before reindexing. Use it
@@ -242,7 +242,7 @@ Makefile shortcut:
 make search-index
 ```
 
-## Celery Queue and Scheduling
+## Task Queue and Scheduling
 
 All search tasks are routed to the `reindex` queue (see
 `docs/worker.md`). The `reindex` queue has the **lowest priority**: it never
@@ -250,7 +250,7 @@ competes with inbound/outbound email processing.
 
 | Task | Trigger | Queue |
 |------|---------|-------|
-| `process_pending_reindex_task` | Celery Beat every `SEARCH_REINDEX_TASKS_INTERVAL` seconds | `reindex` (scheduled) |
+| `process_pending_reindex_task` | the scheduler every `SEARCH_REINDEX_TASKS_INTERVAL` seconds | `reindex` (scheduled) |
 | `bulk_reindex_threads_task` | Deferrer scope exit or beat drain | `reindex` |
 | `bulk_delete_threads_task` | Beat drain of the thread-delete set | `reindex` |
 | `bulk_delete_messages_task` | Beat drain of the message-delete set | `reindex` |
@@ -262,7 +262,7 @@ competes with inbound/outbound email processing.
 
 ### Redis outage
 
-The coalescing buffer and the Celery broker both rely on Redis (typically
+The coalescing buffer and the task broker both rely on Redis (typically
 the same instance). A Redis outage has the following effects:
 
 - **Signal-driven enqueues** — `enqueue_thread_reindex` /
@@ -320,7 +320,7 @@ table; the indexation-specific variables are:
 | `OPENSEARCH_BULK_MAX_BYTES` | `52428800` (50 MiB) | Flush threshold (bytes) for bulk payloads. Keep well under the server `http.max_content_length`. |
 | `OPENSEARCH_INDEX_THREADS` | `True` | Master switch. When `False`, all signal handlers, bulk tasks and delete tasks short-circuit. |
 | `OPENSEARCH_CA_CERTS` | `None` | Path to a CA bundle for TLS verification. |
-| `SEARCH_REINDEX_TASKS_INTERVAL` | `30` | Seconds between Celery Beat runs of `process_pending_reindex_task`. |
+| `SEARCH_REINDEX_TASKS_INTERVAL` | `30` | Seconds between the scheduler runs of `process_pending_reindex_task`. |
 
 Tuning guidance:
 
@@ -356,7 +356,7 @@ Tuning guidance:
               │ every N seconds                     ▼
               ▼                                OpenSearch index
    process_pending_reindex_task               (messages)
-      (Celery Beat)                                ▲
+      (the scheduler)                                ▲
               │                                    │
               ▼                                    │
    drain delete-threads → bulk_delete_threads_task ┤
@@ -368,10 +368,10 @@ Tuning guidance:
 ## Related Files
 
 - `src/backend/core/services/search/index.py` — Bulk reindex, unitary index helpers, client singleton.
-- `src/backend/core/services/search/tasks.py` — Celery task wrappers.
+- `src/backend/core/services/search/tasks.py` — background task wrappers.
 - `src/backend/core/services/search/coalescer.py` — Coalescing buffer (Redis SADD/SPOP or Django-cache fallback) and flush.
 - `src/backend/core/services/search/mapping.py` — Index name and mapping.
 - `src/backend/core/signals.py` — All `post_save` / `post_delete` handlers.
 - `src/backend/core/utils.py` — `ThreadReindexDeferrer`, `ThreadStatsUpdateDeferrer`, `BatchingDeferrer` base class.
 - `src/backend/core/management/commands/search_reindex.py` — Reindex CLI.
-- `src/backend/messages/celery_app.py` — Beat schedule entry.
+- `src/backend/core/task_utils.py` — the `@register_task` / `@cron_task` API.

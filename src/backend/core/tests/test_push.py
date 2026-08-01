@@ -41,7 +41,7 @@ from core import enums, factories, models
 from core.enums import ChannelScopeLevel, ChannelTypes, PushPlatformChoices
 from core.services import push
 from core.services.push import common as push_common
-from core.services.push.common import session_hash
+from core.services.push.common import PushTransientError, session_hash
 
 pytestmark = pytest.mark.django_db
 
@@ -690,7 +690,7 @@ class TestSendPushTask:
                 push, "send_fcm", return_value=push.PushResult(1, 0)
             ) as fcm,
         ):
-            # Celery is eager in tests, so the dispatched per-device tasks run
+            # The broker is eager in tests, so the dispatched per-device tasks run
             # inline and each call the (mocked) sender for its platform.
             result = push.send_push_for_message(str(message.id))
 
@@ -758,29 +758,33 @@ class TestSendPushNotification:
         )
         assert out["skipped"] == "channel_gone"
 
-    def test_transient_failure_triggers_retry(self, settings):
-        """A transient sender result makes the task retry just this device; the
-        collapse key makes the re-send idempotent. Succeeds on the 2nd attempt."""
+    def test_transient_failure_raises_for_retry(self, settings):
+        """A transient sender result raises, which is what makes the worker
+        retry just this device; the collapse key makes the re-send idempotent.
+
+        The retry itself happens in the worker, so what is checked here is the
+        signal (the exception) and the policy that acts on it — a transient
+        failure is retried, anything else is not.
+        """
         settings.PUSH_ENABLED = True
         ch = _push_channel(
             factories.UserFactory(), platform=PushPlatformChoices.FCM, token="b"
         )
-        calls = []
 
-        def sender(_items, _collapse):
-            calls.append(1)
-            return push.PushResult(0, 1) if len(calls) == 1 else push.PushResult(1, 0)
+        with mock.patch.object(
+            push, "send_fcm", return_value=push.PushResult(0, 1)
+        ) as sender:
+            with pytest.raises(PushTransientError):
+                push.send_push_notification(str(ch.id), {"type": "new_message"}, "k")
 
-        with (
-            mock.patch.object(push, "send_fcm", side_effect=sender),
-            mock.patch("time.sleep"),  # neutralize any eager retry backoff
-        ):
-            result = push.send_push_notification.apply(
-                args=(str(ch.id), {"type": "new_message"}, "k")
-            )
+        assert sender.call_count == 1
 
-        assert len(calls) == 2  # retried once after the transient failure
-        assert result.result["success"] is True
+        options = push.send_push_notification.options
+        assert options["max_retries"] == 5
+        retry_when = options["retry_when"]
+        assert retry_when(0, PushTransientError("429")) is True
+        assert retry_when(5, PushTransientError("429")) is False
+        assert retry_when(0, RuntimeError("boom")) is False
 
     def test_sender_bug_does_not_loop_forever(self, settings):
         """A sender that raises (a bug, not a transient signal) ends the task
