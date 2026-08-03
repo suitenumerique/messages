@@ -139,7 +139,9 @@ with zipfile.ZipFile(WHEEL) as zf:
 
 expected_wheel = {
     "jmap_email/__init__.py",
+    "jmap_email/addresses.py",
     "jmap_email/composer.py",
+    "jmap_email/filenames.py",
     "jmap_email/helpers.py",
     "jmap_email/options.py",
     "jmap_email/parser.py",

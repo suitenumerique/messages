@@ -6,6 +6,10 @@ BEFORE truncation, whitespace collapsed, length capped at 256 (the
 RFC 8621 §4.1.4 ceiling) unless the caller lowers ``max_chars``.
 """
 
+import time
+
+import pytest
+
 from jmap_email import preview_text
 
 
@@ -263,8 +267,6 @@ class TestPreviewHardening:
     def test_markup_bomb_is_bounded(self):
         # A body that is almost entirely markup never reaches the text budget;
         # the scan cap must still bound the work (regression for the DoS).
-        import time
-
         start = time.perf_counter()
         preview_text("<a></a>" * 500_000, max_scan_bytes=64 * 1024)
         assert (time.perf_counter() - start) < 1.0  # was seconds before the cap
@@ -489,7 +491,41 @@ class TestPreviewParserQuirks:
         assert preview_text("a<blockquote/>b") == "a b"
 
 
-if __name__ == "__main__":
-    import pytest
+class TestPreviewComplexity:
+    """Wall-clock guards against quadratic matching returning.
 
+    Every line-anchored markdown pattern once used ``\\s`` for its leading
+    run. ``\\s`` matches ``\\n``, so under ``re.MULTILINE`` the match
+    rescanned the whole following whitespace run from every line start.
+    The head the patterns run on is bounded — but its size scales with
+    ``max_chars``, so a caller who raised that knob turned a 128 KiB body
+    of alternating spaces and newlines into >20s of matching. The bounds
+    below are ~100x the fixed cost, so they flag a regression in the
+    exponent without being flaky about machine speed.
+    """
+
+    # Alternating whitespace: one line start per two characters, which is
+    # what makes ``^\s*`` rescan.
+    BOMB = " \n" * 65000
+
+    @pytest.mark.parametrize("max_chars", [256, 4096, 16384, 65536])
+    def test_widening_max_chars_stays_linear(self, max_chars):
+        start = time.perf_counter()
+        preview_text(self.BOMB, max_chars=max_chars)
+        assert time.perf_counter() - start < 5.0
+
+    def test_tab_newline_alternation(self):
+        start = time.perf_counter()
+        preview_text("\t\n" * 65000, max_chars=16384)
+        assert time.perf_counter() - start < 5.0
+
+    def test_at_run_without_a_dot(self):
+        """``[^@>\\s]+@[^@>\\s]+\\.[^@>\\s]+`` could split at every dot,
+        because the label class contained the dot it was splitting on."""
+        start = time.perf_counter()
+        preview_text("<" + "a" * 60000 + "@" + "b" * 60000 + ">", max_chars=16384)
+        assert time.perf_counter() - start < 5.0
+
+
+if __name__ == "__main__":
     pytest.main()

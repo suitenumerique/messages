@@ -13,14 +13,23 @@ import binascii
 import datetime
 import logging
 import re
+import secrets
 from email.errors import MessageError
 from email.generator import BytesGenerator
 from email.headerregistry import HeaderRegistry, UnstructuredHeader
 from email.message import MIMEPart
 from email.policy import SMTP as email_policy_smtp
 from email.utils import format_datetime, parsedate_to_datetime
+from functools import lru_cache
 from io import BytesIO
 from typing import Any
+
+from .addresses import (
+    STRIPPED_HEADER_CHARS,
+    _is_terminated_quoted_string,
+    is_valid_addr_spec,
+)
+from .options import DEFAULT_COMPOSE_OPTIONS, ComposeOptions
 
 logger = logging.getLogger(__name__)
 
@@ -61,6 +70,27 @@ _HEADER_FACTORY.map_to_type("references", UnstructuredHeader)  # ty: ignore[inva
 # base64 instead of emitting raw 8-bit octets that a non-8BITMIME relay would
 # either reject or silently mangle.
 _POLICY = email_policy_smtp.clone(cte_type="7bit", header_factory=_HEADER_FACTORY)
+
+
+@lru_cache(maxsize=4)
+def _policy_for(cte_type: str, utf8: bool):
+    """Return the serialization policy for one (8BITMIME, SMTPUTF8) pair.
+
+    Four combinations exist and each is a small immutable object, so they
+    are cached rather than cloned per call. ``_HEADER_FACTORY`` is shared
+    deliberately: it is our own dedicated instance (see above), and every
+    variant needs the same In-Reply-To / References mapping.
+    """
+    if cte_type == "7bit" and not utf8:
+        return _POLICY
+    return email_policy_smtp.clone(
+        cte_type=cte_type, utf8=utf8, header_factory=_HEADER_FACTORY
+    )
+
+
+def _policy_for_options(options: ComposeOptions):
+    """Pick the policy an options bundle asks for."""
+    return _policy_for("8bit" if options.emits_8bit else "7bit", options.allow_smtputf8)
 
 
 class ComposeError(Exception):
@@ -134,6 +164,115 @@ _RESERVED_HEADER_NAMES = frozenset(
 )
 
 
+def _idna_encode_domain(domain: str) -> str | None:
+    """Return the A-label (punycode) form of *domain*, or ``None``.
+
+    ``None`` means the domain has no ASCII form we are willing to emit:
+    the stdlib codec is IDNA2003 and refuses labels over 63 octets and
+    empty labels (so ``exemplé.fr.`` with its root dot fails, as does
+    ``a..b.fr``). Nothing else in the standard library does this — the
+    ``email`` package RFC 2047-encodes a non-ASCII domain instead, which
+    RFC 2047 §5 forbids inside an addr-spec and no MTA routes — so the
+    conversion is ours to make or decline.
+    """
+    try:
+        return domain.encode("idna").decode("ascii")
+    except (UnicodeError, ValueError):
+        return None
+
+
+def _normalize_addr_list(addr_list: Any, *, field: str, options: ComposeOptions) -> Any:
+    """Validate every mailbox in *addr_list*, IDNA-encoding where asked.
+
+    Returns the list to compose from: *addr_list* itself when nothing
+    needed rewriting, otherwise a new list of new dicts. The caller's
+    input is never mutated — a JMAP dict handed to ``compose_email`` is
+    frequently the same object the caller goes on to store.
+
+    An entry with no ``email`` is left alone; the composer already treats
+    those as absent. What this refuses is a present-but-malformed one,
+    most importantly an ``email`` containing a comma: joined into a
+    mailbox-list it becomes two recipients, which is address injection
+    performed by the library on its caller's behalf.
+    """
+    if not isinstance(addr_list, list):
+        return addr_list
+    rewritten: dict[int, dict[str, Any]] = {}
+    for index, entry in enumerate(addr_list):
+        if not isinstance(entry, dict):
+            continue
+        raw = entry.get("email")
+        # Checked as supplied, only surrounding whitespace removed. Running
+        # it through ``_sanitize_header_value`` first would let a control
+        # character be quietly deleted and the survivor emitted — a
+        # recipient the caller never wrote. Strict compose means that is an
+        # error, like any other malformed addr-spec.
+        email = str(raw or "").strip()
+        if not email:
+            continue
+        if not is_valid_addr_spec(email):
+            raise InvalidAddressError(
+                f"Invalid addr-spec in {field!r}: {raw!r} is not a single mailbox"
+            )
+        if email.isascii():
+            continue
+        local, _, domain = email.rpartition("@")
+        # Under SMTPUTF8 the whole addr-spec may travel as UTF-8, so both
+        # halves are already legal and there is nothing to convert.
+        if options.allow_smtputf8:
+            continue
+        # Otherwise the local part is checked first, and separately.
+        # Punycode is a DNS algorithm; a local part is not a DNS label, so
+        # there is no ASCII form to convert it to — only SMTPUTF8 carries
+        # it, and ``idna_encode_domains`` deliberately does not reach here.
+        if not local.isascii():
+            raise InvalidAddressError(
+                f"Non-ASCII local-part in {field!r}: {raw!r} needs SMTPUTF8 "
+                "(RFC 6531); pass options=ComposeOptions(allow_smtputf8=True) only "
+                "if the next hop advertised it"
+            )
+        if not options.idna_encode_domains:
+            raise InvalidAddressError(
+                f"Non-ASCII domain in {field!r}: {raw!r} must be IDNA encoded "
+                "to travel over 7-bit SMTP (pass "
+                "options=ComposeOptions(idna_encode_domains=True) to have the "
+                "composer do it)"
+            )
+        encoded = _idna_encode_domain(domain)
+        if encoded is None:
+            raise InvalidAddressError(
+                f"Non-ASCII domain in {field!r}: {raw!r} has no IDNA encoding"
+            )
+        rewritten[index] = {**entry, "email": f"{local}@{encoded}"}
+    if not rewritten:
+        return addr_list
+    return [rewritten.get(i, entry) for i, entry in enumerate(addr_list)]
+
+
+# The JMAP address-list fields, in the order the wire header block wants
+# them. Every one is validated before any of them is formatted.
+_ADDR_LIST_FIELDS = ("from", "sender", "replyTo", "to", "cc", "bcc")
+
+
+def _normalize_addresses(
+    jmap_data: dict[str, Any], options: ComposeOptions
+) -> dict[str, Any]:
+    """Return *jmap_data* with every address list validated and normalized.
+
+    A shallow copy is made only if some list actually changed, so the
+    common all-ASCII path hands the original dict straight through.
+    """
+    replacements = {}
+    for field in _ADDR_LIST_FIELDS:
+        original = jmap_data.get(field)
+        normalized = _normalize_addr_list(original, field=field, options=options)
+        if normalized is not original:
+            replacements[field] = normalized
+    if not replacements:
+        return jmap_data
+    return {**jmap_data, **replacements}
+
+
 def format_address(name: str, email: str) -> str:
     """Format a name and email address according to RFC 5322.
 
@@ -150,15 +289,40 @@ def format_address(name: str, email: str) -> str:
         >>> format_address('John Doe', 'john@example.com')
         'John Doe <john@example.com>'
     """
-    email = _sanitize_header_value(email or "")
-    if not email:
+    email = (email or "").strip()
+    # Shape as well as injection: an addr-spec carrying a comma would be
+    # joined into a mailbox-list as two recipients. A display helper must
+    # not be the thing that mints a second mailbox.
+    if not is_valid_addr_spec(email):
         return ""
     name = _sanitize_header_value(name or "")
     if not name:
         return email.strip()
 
-    needs_quoting = any(c in name for c in ',.;:@<>()[]"\\')
-    if needs_quoting and not (name.startswith('"') and name.endswith('"')):
+    # The header machinery decodes RFC 2047 encoded-words *after* this
+    # decision, so the quoting question has to be asked about the text
+    # that will actually be emitted, not the literal we were handed.
+    # ``=?utf-8?B?ZXZpbEB4LmNv?=`` carries none of the specials below,
+    # so it went out unquoted — and decoded to ``evil@x.co``, giving
+    # ``To: evil@x.co <a@b.co>``, which is two mailboxes. A display name
+    # an attacker chose thereby became a recipient.
+    looks_encoded = "=?" in name and "?=" in name
+    needs_quoting = looks_encoded or any(c in name for c in ',.;:@<>()[]"\\')
+    # "Already quoted" has to mean a *complete* quoted-string, not merely
+    # a leading and a trailing DQUOTE. A lone ``"`` satisfies both
+    # ``startswith`` and ``endswith`` at once, ``"a"b"`` closes early, and
+    # ``"a\\"`` ends on a backslash that escapes its own closing quote.
+    # Emitting any of those verbatim unbalances the header, and in a
+    # mailbox-list the next entry's display name is then read as an
+    # address — the display-name-becomes-recipient bug, arrived at from
+    # the quoting side rather than the encoded-word side.
+    already_quoted = (
+        len(name) >= 2
+        and name.startswith('"')
+        and name.endswith('"')
+        and _is_terminated_quoted_string(name)
+    )
+    if needs_quoting and not already_quoted:
         # RFC 5322 §3.2.4: quoted-pair escapes the next character, so the
         # backslash must be doubled before any embedded ``"`` is escaped —
         # otherwise ``a\"`` round-trips as ``a"`` and quoted-pair sequences
@@ -191,9 +355,7 @@ def format_address_list(addresses: list[dict[str, str]]) -> str:
 #    in receivers that interpret e.g. \x01 (SOH) as a separator. Stripping
 #    them silently is consistent with our "compose strict, parse lenient"
 #    contract. TAB stays \u2014 it's legal FWS.
-_HEADER_INJECTION_CHARS = (
-    "".join(chr(c) for c in range(0x00, 0x20) if c != 0x09) + "\x7f\u0085\u2028\u2029"
-)
+_HEADER_INJECTION_CHARS = "".join(sorted(STRIPPED_HEADER_CHARS))
 _HEADER_INJECTION_TABLE = str.maketrans("", "", _HEADER_INJECTION_CHARS)
 
 
@@ -229,21 +391,33 @@ _MSG_ID_MAX_OCTETS = 900
 def is_valid_msg_id(value: str | None) -> bool:
     """Return True when ``value`` matches the composer's msg-id shape.
 
-    The same predicate :func:`compose_email` applies to Message-ID /
-    In-Reply-To / References entries: ``<local@domain>``, no internal
-    whitespace, no nested angle brackets, at least one ``@``, and
-    within the ``_MSG_ID_MAX_OCTETS`` byte ceiling. Angle brackets are
-    optional \u2014 callers may pass either the stripped (``local@domain``)
-    or wrapped (``<local@domain>``) form.
+    The shape :func:`compose_email` requires of Message-ID / In-Reply-To
+    / References entries: ``<local@domain>``, no internal whitespace, no
+    nested angle brackets, at least one ``@``, and within the
+    ``_MSG_ID_MAX_OCTETS`` byte ceiling. Angle brackets are optional
+    \u2014 callers may pass either the stripped (``local@domain``) or
+    wrapped (``<local@domain>``) form.
 
     Use this from lenient-parse paths (archive importers, inbound
     salvaging) to decide whether to keep a raw msg-id or fall back to
     synthesis \u2014 checking the predicate yourself rather than try/except
     against :func:`compose_email` keeps the cold path cheap.
+
+    ``True`` means the value is usable **as it stands**. A value
+    carrying characters the composer would strip on the way out \u2014 a
+    line terminator, a control character \u2014 is rejected rather than
+    silently cleaned, because the caller keeps the raw string it
+    validated: answering ``True`` for ``"<a@b.co\\r\\n>"`` would hand a
+    header-injection payload to anyone who writes that value somewhere
+    other than :func:`compose_email`. The composer itself stays lenient
+    and sanitizes such an entry instead of rejecting the whole message,
+    so this predicate is the stricter of the two by design.
     """
     if not isinstance(value, str) or not value:
         return False
-    cleaned = _ensure_angle_brackets(_sanitize_header_value(value))
+    if _sanitize_header_value(value) != value:
+        return False
+    cleaned = _ensure_angle_brackets(value)
     if len(cleaned.encode("utf-8", errors="replace")) > _MSG_ID_MAX_OCTETS:
         return False
     return _MSG_ID_RE.match(cleaned) is not None
@@ -370,25 +544,6 @@ def _first_msgid(value: list[str] | None) -> str | None:
         if isinstance(v, str) and v:
             return v
     return None
-
-
-def _collect_msgids(value: list[str] | None) -> str:
-    """Join a JMAP ``MessageIds`` ``String[]`` into a single
-    space-separated chain (angle-bracket form) for the wire.
-
-    Strict-typed: see :func:`_first_msgid` — only accepts a list.
-    """
-    if not isinstance(value, list) or not value:
-        return ""
-    chain: list[str] = []
-    for v in value:
-        if not isinstance(v, str) or not v:
-            continue
-        sanitized = v.strip()
-        if not (sanitized.startswith("<") and sanitized.endswith(">")):
-            sanitized = f"<{sanitized}>"
-        chain.append(sanitized)
-    return " ".join(chain)
 
 
 def _iter_custom_headers(
@@ -526,14 +681,14 @@ def _set_basic_headers(  # pylint: disable=too-many-branches
     message_part: MIMEPart,
     jmap_data: dict[str, Any],
     in_reply_to: str | None = None,
-    keep_bcc: bool = False,
+    emit_bcc: bool = False,
 ) -> None:
     """Set the basic email headers on a message part.
 
-    keep_bcc: if False (default), Bcc in jmap_data is dropped — the entire
+    emit_bcc: if False (default), Bcc in jmap_data is dropped — the entire
     point of Bcc is that recipients don't see each other. Only callers that
     are reconstructing an archive (e.g. PST import, where the Bcc list was
-    already in the source file) should pass keep_bcc=True.
+    already in the source file) should pass emit_bcc=True.
     """
     # MIME-Version is required on every top-level MIME message (RFC 2045 §4).
     # MIMEPart — unlike EmailMessage — does NOT add it implicitly, so we set
@@ -547,7 +702,12 @@ def _set_basic_headers(  # pylint: disable=too-many-branches
 
     # ``from``: JMAP ``EmailAddress[]``. Emit the first author as
     # the ``From:`` header (multi-author mailbox-lists are rare and
-    # most receivers reject them anyway).
+    # most receivers reject them anyway). Every address list reaching
+    # here has already been shape-checked and normalized by
+    # ``_normalize_addresses`` in ``compose_email`` — before any of them
+    # was formatted, so a malformed addr-spec is an error rather than
+    # something we quietly drop (losing a recipient) or quietly emit
+    # (gaining one).
     from_data = jmap_data.get("from")
     first_from = _first_address(from_data)
     if first_from:
@@ -578,7 +738,7 @@ def _set_basic_headers(  # pylint: disable=too-many-branches
     # is non-empty. An empty list of valid addresses must NOT produce
     # an empty To: header (most receivers reject).
     recipient_fields = [("to", "To"), ("cc", "Cc")]
-    if keep_bcc:
+    if emit_bcc:
         recipient_fields.append(("bcc", "Bcc"))
     for jmap_key, header_name in recipient_fields:
         addr_list = jmap_data.get(jmap_key)
@@ -709,7 +869,9 @@ def _normalize_cid(cid: str) -> str:
 _CID_STRUCTURAL_RE = re.compile(r"^<[^\s<>]+>$")
 
 
-def _create_attachment_part(attachment: dict[str, Any]) -> MIMEPart:
+def _create_attachment_part(
+    attachment: dict[str, Any], options: ComposeOptions
+) -> MIMEPart:
     """Create a MIME part for an attachment from JMAP data.
 
     Strict-by-design: the composer is caller-controlled and refuses to
@@ -780,7 +942,7 @@ def _create_attachment_part(attachment: dict[str, Any]) -> MIMEPart:
         maintype, subtype = "text", "plain"
 
     try:
-        part = MIMEPart(policy=_POLICY)
+        part = MIMEPart(policy=_policy_for_options(options))
         kwargs: dict[str, Any] = {
             "maintype": maintype,
             "subtype": subtype,
@@ -837,6 +999,9 @@ def _build_body(msg: MIMEPart, jmap_data: dict[str, Any]) -> None:
     if text_body is not None and html_body is not None:
         msg.set_content(text_body, subtype="plain", charset="utf-8")
         msg.add_alternative(html_body, subtype="html", charset="utf-8")
+        # ``add_alternative`` converted ``msg`` to multipart/alternative and
+        # left the boundary to the stdlib's non-CSPRNG generator.
+        msg.set_boundary(_fresh_boundary())
     elif text_body is not None:
         msg.set_content(text_body, subtype="plain", charset="utf-8")
     elif html_body is not None:
@@ -846,7 +1011,9 @@ def _build_body(msg: MIMEPart, jmap_data: dict[str, Any]) -> None:
 
 
 def _wrap_with_inline_images(
-    body_part: MIMEPart, inline_attachments: list[dict[str, Any]]
+    body_part: MIMEPart,
+    inline_attachments: list[dict[str, Any]],
+    options: ComposeOptions,
 ) -> MIMEPart:
     """Wrap a body part with multipart/related to attach inline images by cid.
 
@@ -859,11 +1026,16 @@ def _wrap_with_inline_images(
     unwrapped: a single-child multipart/related is wasteful and confuses
     some receivers.
     """
-    built = [p for p in (_create_attachment_part(a) for a in inline_attachments) if p]
+    built = [
+        p
+        for p in (_create_attachment_part(a, options) for a in inline_attachments)
+        if p
+    ]
     if not built:
         return body_part
-    related = MIMEPart(policy=_POLICY)
+    related = MIMEPart(policy=_policy_for_options(options))
     related.make_related()
+    related.set_boundary(_fresh_boundary())
     # RFC 2387 §3.1 requires the multipart/related Content-Type to carry a
     # ``type=`` parameter naming the root part's media type. Without it,
     # downstream MUAs that follow the spec fall back to alternate rendering
@@ -875,19 +1047,45 @@ def _wrap_with_inline_images(
     return related
 
 
+def _fresh_boundary() -> str:
+    """Return an unpredictable MIME boundary.
+
+    The stdlib generates boundaries with ``random.randrange`` — a
+    Mersenne Twister, not a CSPRNG. Boundaries are visible in every
+    message a system emits, and MT19937 state is recoverable from
+    enough consecutive outputs, so a party who can collect sequential
+    boundaries (by provoking autoreplies, say) can predict the next
+    one. Predicting it is what makes MIME part injection possible: a
+    sender who also controls a slice of the body — quoted text in an
+    autoreply, an echoed subject — can close the part we opened and
+    append parts of their own, which the recipient's client renders as
+    ours.
+
+    The alphabet is a subset of RFC 2046 ``bcharsnospace``.
+    """
+    return f"=_{secrets.token_urlsafe(24)}"
+
+
 def _wrap_with_attachments(
-    body_part: MIMEPart, regular_attachments: list[dict[str, Any]]
+    body_part: MIMEPart,
+    regular_attachments: list[dict[str, Any]],
+    options: ComposeOptions,
 ) -> MIMEPart:
     """Wrap a body part with multipart/mixed and append regular attachments.
 
     Same fresh-wrapper pattern as _wrap_with_inline_images; if every
     attachment fails to build, the body is returned unwrapped.
     """
-    built = [p for p in (_create_attachment_part(a) for a in regular_attachments) if p]
+    built = [
+        p
+        for p in (_create_attachment_part(a, options) for a in regular_attachments)
+        if p
+    ]
     if not built:
         return body_part
-    mixed = MIMEPart(policy=_POLICY)
+    mixed = MIMEPart(policy=_policy_for_options(options))
     mixed.make_mixed()
+    mixed.set_boundary(_fresh_boundary())
     mixed.attach(body_part)
     for att_part in built:
         mixed.attach(att_part)
@@ -897,7 +1095,7 @@ def _wrap_with_attachments(
 def _create_multipart_message(
     jmap_data: dict[str, Any],
     in_reply_to: str | None = None,
-    keep_bcc: bool = False,
+    options: ComposeOptions = DEFAULT_COMPOSE_OPTIONS,
 ) -> MIMEPart:
     """Create the top-level MIMEPart from JMAP data.
 
@@ -933,14 +1131,14 @@ def _create_multipart_message(
         else:
             regular_attachments.append(a)
 
-    msg = MIMEPart(policy=_POLICY)
+    msg = MIMEPart(policy=_policy_for_options(options))
     _build_body(msg, jmap_data)
     if inline_attachments:
-        msg = _wrap_with_inline_images(msg, inline_attachments)
+        msg = _wrap_with_inline_images(msg, inline_attachments, options)
     if regular_attachments:
-        msg = _wrap_with_attachments(msg, regular_attachments)
+        msg = _wrap_with_attachments(msg, regular_attachments, options)
 
-    _set_basic_headers(msg, jmap_data, in_reply_to, keep_bcc=keep_bcc)
+    _set_basic_headers(msg, jmap_data, in_reply_to, emit_bcc=options.emit_bcc)
     return msg
 
 
@@ -949,8 +1147,7 @@ def compose_email(
     *,
     in_reply_to: str | None = None,
     prepend_headers: list[tuple[str, str]] | None = None,
-    keep_bcc: bool = False,
-    allow_extensions: bool = True,
+    options: ComposeOptions | None = None,
 ) -> bytes:
     """Compose a JMAP Email object dict into RFC 5322 bytes.
 
@@ -970,15 +1167,14 @@ def compose_email(
     prepend_headers : list of (name, value), optional
         Extra headers to inject at the top of the output (e.g.
         ``Received:`` set by an MTA-out pipeline).
-    keep_bcc : bool, default False
-        When False, the ``Bcc:`` header is silently dropped — the
-        entire point of Bcc is that it must NOT be transmitted to
-        recipients. Set True only for archive-reconstruction use
-        cases (e.g. PST import).
-    allow_extensions : bool, default True
-        When False, any ``_ext`` key in ``jmap_data`` raises
-        ``ComposeError`` — a strict-JMAP signal that the caller is
-        not silently relying on project extensions.
+    options : ComposeOptions, optional
+        Output policy: ``emit_bcc``, ``idna_encode_domains``,
+        ``allow_8bit``, ``allow_smtputf8``. See :class:`jmap_email.ComposeOptions`.
+        Defaults to :data:`jmap_email.DEFAULT_COMPOSE_OPTIONS`.
+
+        The two parameters above stay separate because they are
+        per-*message* data that changes on every call; everything in
+        ``options`` is a property of the call site, set once.
 
     Note on dot-stuffing: this function produces RFC 5322 bytes; it
     does NOT apply RFC 5321 §4.5.2 dot-stuffing. Callers that hand the
@@ -990,15 +1186,11 @@ def compose_email(
     ComposeError
         If composition fails.
     """
+    if options is None:
+        options = DEFAULT_COMPOSE_OPTIONS
     try:
         if not jmap_data:
             raise ComposeError("Empty JMAP data provided")
-
-        if not allow_extensions and "_ext" in jmap_data:
-            raise ComposeError(
-                "Strict-JMAP input rejects ``_ext`` key "
-                "(pass allow_extensions=True to accept project extensions)"
-            )
 
         # ``from`` must be a non-empty ``EmailAddress[]`` (RFC 8621 §4.1.2)
         # with at least one entry carrying a non-empty ``email``.
@@ -1009,7 +1201,11 @@ def compose_email(
         if not first_from or not first_from.get("email"):
             raise InvalidAddressError("Missing or invalid 'from' field in JMAP data")
 
-        msg = _create_multipart_message(jmap_data, in_reply_to, keep_bcc=keep_bcc)
+        # Shape-check and normalize every address list up front, so the
+        # whole MIME tree below is built from validated mailboxes.
+        jmap_data = _normalize_addresses(jmap_data, options)
+
+        msg = _create_multipart_message(jmap_data, in_reply_to, options)
 
         if prepend_headers:
             # Insert at the top of the header block so they appear before
@@ -1043,7 +1239,7 @@ def compose_email(
         out = BytesIO()
         # ``BytesGenerator.flatten`` accepts any ``Message`` subclass at
         # runtime; the stub narrows to ``EmailMessage``.
-        BytesGenerator(out, policy=_POLICY).flatten(msg)  # ty: ignore[invalid-argument-type]
+        BytesGenerator(out, policy=_policy_for_options(options)).flatten(msg)  # ty: ignore[invalid-argument-type]
         return out.getvalue()
 
     except ComposeError:  # pylint: disable=try-except-raise

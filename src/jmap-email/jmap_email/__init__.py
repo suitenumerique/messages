@@ -23,6 +23,7 @@ __version__ = "0.3.0"
 # cluttering the top-level (runtime) API. Re-export the submodule itself so
 # ``jmap_email.types`` is always reachable and recognised as public.
 from . import types as types
+from .addresses import is_valid_addr_spec
 from .composer import (
     AttachmentError,
     ComposeError,
@@ -35,7 +36,7 @@ from .composer import (
     format_address_list,
     is_valid_msg_id,
 )
-from .filenames import guess_mime_extension, sanitize_filename
+from .filenames import sanitize_filename
 from .helpers import (
     body_part_text,
     body_text_joined,
@@ -50,7 +51,12 @@ from .helpers import (
     now_sent_at,
     sent_at_to_datetime,
 )
-from .options import DEFAULT_PARSE_OPTIONS, ParseOptions
+from .options import (
+    DEFAULT_COMPOSE_OPTIONS,
+    DEFAULT_PARSE_OPTIONS,
+    ComposeOptions,
+    ParseOptions,
+)
 from .parser import (
     decode_rfc2047_header,
     parse_address,
@@ -74,11 +80,10 @@ __all__ = [
     "format_address_list",
     # Validators
     "is_valid_msg_id",
-    # Attachment filename mechanics (opt-in: ``parse_email`` reports a
-    # nameless part as ``name: null`` per RFC 8621 and never synthesizes
-    # a placeholder itself)
+    "is_valid_addr_spec",
+    # Attachment filename hygiene (applied by the parser to every part
+    # name it reports; public for names that never went through it)
     "sanitize_filename",
-    "guess_mime_extension",
     # Null-safe shape accessors
     "first_address",
     "first_address_email",
@@ -96,6 +101,8 @@ __all__ = [
     # Per-call resource caps
     "ParseOptions",
     "DEFAULT_PARSE_OPTIONS",
+    "ComposeOptions",
+    "DEFAULT_COMPOSE_OPTIONS",
     # Errors (compose-side only; parse_email returns None on failure)
     "ComposeError",
     "InvalidAddressError",

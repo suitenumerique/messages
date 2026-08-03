@@ -4212,3 +4212,95 @@ class TestPreviewCleaning:
         )
         parsed = parse_email(raw)
         assert parsed["preview"] == "Ma reponse fraiche"
+
+
+class TestUnclosedCommentAddressSpoof:
+    """An unclosed ``(`` must not turn a display name into the sender.
+
+    ``getaddresses(strict=False)`` treats an unclosed comment as running
+    to end of input, so in ``victim@bank.com( <attacker@evil.co>`` the
+    comment eats the angle-addr and the splitter returns one tuple whose
+    *address* is what the sender typed in display-name position.
+
+    That is CVE-2023-27043 by another route.
+    :func:`_pick_best_address` defends the multi-tuple form by preferring
+    the last plausible tuple; here the bogus tuple is the only one, so
+    the preference has nothing to choose between. A consumer keying
+    allow/deny, DMARC alignment or contact identity off the parsed
+    address would attribute the message to an address the sender merely
+    named and does not own.
+    """
+
+    @pytest.mark.parametrize(
+        "header",
+        [
+            pytest.param("victim@bank.com( <attacker@evil.co>", id="bare-display-addr"),
+            pytest.param("'victim@bank.com(' <attacker@evil.co>", id="single-quoted"),
+            pytest.param(
+                "victim@bank.com(comment <attacker@evil.co>", id="comment-text"
+            ),
+            pytest.param(
+                "victim@bank.com((( <attacker@evil.co>", id="several-unclosed"
+            ),
+        ],
+    )
+    def test_spoofed_sender_is_refused(self, header):
+        assert parse_address(header) == ("", "")
+        assert not parse_addresses(header)
+
+    def test_parse_email_reports_no_sender_rather_than_the_wrong_one(self):
+        raw = (
+            b"From: victim@bank.com( <attacker@evil.co>\r\n"
+            b"To: user@example.com\r\nSubject: hi\r\n"
+            b"Date: Thu, 01 Jan 2026 00:00:00 +0000\r\n\r\nbody\r\n"
+        )
+        parsed = parse_email(raw)
+        assert parsed is not None
+        # Refusing beats naming the wrong mailbox.
+        assert not parsed.get("from")
+
+    def test_lenient_mode_still_preserves_the_wire_bytes(self):
+        """Archive importers keep the original text; they just don't get
+        a fabricated addr-spec out of it."""
+        name, addr = parse_address("victim@bank.com( <attacker@evil.co>", lenient=True)
+        assert name == ""
+        assert addr == "victim@bank.com( <attacker@evil.co>"
+
+    @pytest.mark.parametrize(
+        ("header", "expected"),
+        [
+            # Parens inside a quoted-string are literal, not a comment.
+            pytest.param(
+                '"victim@evil.com(" <real@you.com>',
+                ("victim@evil.com(", "real@you.com"),
+                id="paren-inside-quotes",
+            ),
+            # A quoted display name may legitimately hold an angle-addr;
+            # with no unclosed comment there is nothing ambiguous.
+            pytest.param(
+                '"Bob <bob@old.co>" <bob@new.co>',
+                ("Bob <bob@old.co>", "bob@new.co"),
+                id="angle-addr-in-quoted-name",
+            ),
+            # Ordinary balanced comments keep working.
+            pytest.param(
+                "John (the boss) Doe <john@example.com>",
+                ("John Doe (the boss)", "john@example.com"),
+                id="balanced-comment",
+            ),
+            pytest.param(
+                "john@example.com (trailing comment)",
+                ("trailing comment", "john@example.com"),
+                id="trailing-comment",
+            ),
+            # The original CVE-2023-27043 shape still resolves to the
+            # angle-addr rather than the display name.
+            pytest.param(
+                '"a@b.co" <real@you.com>',
+                ("a@b.co", "real@you.com"),
+                id="cve-2023-27043",
+            ),
+        ],
+    )
+    def test_legitimate_forms_are_untouched(self, header, expected):
+        assert parse_address(header) == expected

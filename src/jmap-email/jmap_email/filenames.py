@@ -1,109 +1,132 @@
-"""Attachment filename mechanics: hygiene and extension inference.
+"""Attachment filename hygiene.
 
-Two public helpers around the same domain knowledge:
+:func:`sanitize_filename` defangs a filename that arrived over the wire —
+path components, invisible characters, length — while keeping it
+recognizable. ``parse_email`` applies it to every part name it reports;
+it is public so consumers can apply it to names that never went through
+the parser, such as client-supplied ones.
 
-- :func:`sanitize_filename` — defang a filename that arrived over the
-  wire (path components, control characters, length) while keeping it
-  recognizable. The parser applies it to every part name it reports;
-  consumers storing client-supplied names can apply it too.
-- :func:`guess_mime_extension` — map a MIME ``Content-Type`` to the file
-  extension a user would expect, correcting the stdlib ``mimetypes``
-  table where mail-borne reality disagrees with it.
-
-Per RFC 8621 a part's ``name`` is ``String | null`` and ``parse_email``
-never substitutes a placeholder for a nameless part — synthesizing a
-display name is the consumer's decision. These helpers are the building
-blocks for that decision, not a policy applied by the parser.
+Naming a part that carries *no* filename is deliberately not covered
+here. Per RFC 8621 ``name`` is ``String | null`` and ``parse_email``
+reports ``null`` rather than inventing a placeholder — what to display
+instead is consumer policy.
 """
 
-import mimetypes
 import re
+import unicodedata
 from ntpath import basename as nt_basename
 from posixpath import basename as posix_basename
 
-# Extensions to use instead of what the stdlib ``mimetypes`` table returns,
-# for MIME types that routinely travel over mail without a filename. An empty
-# value means "no extension at all", which ``mimetypes`` alone cannot express.
-_MIME_EXTENSION_OVERRIDES = {
-    # The generic "unknown type": ``mimetypes`` maps it to ``.bin``, which
-    # looks like a real format while telling the user nothing.
-    "application/octet-stream": "",
-    # ``mimetypes`` answers ``.xsl`` (an XSLT stylesheet) — plain wrong for a
-    # generic XML document, and worse than no extension at all.
-    "application/xml": ".xml",
-    # Over mail this carries an S/MIME message, not the bare certificate
-    # ``mimetypes`` assumes with ``.p7c``.
-    "application/pkcs7-mime": ".p7m",
-    # Types the stdlib table simply does not know, all common over mail:
-    # calendar invites (the most frequent nameless part of all), the
-    # Outlook/Windows spelling of ZIP, the standard vCard type (only the
-    # legacy ``text/x-vcard`` is mapped), and signature parts.
-    "text/calendar": ".ics",
-    "application/x-zip-compressed": ".zip",
-    "application/x-rar-compressed": ".rar",
-    "text/vcard": ".vcf",
-    "application/rtf": ".rtf",
-    "application/vnd.ms-outlook": ".msg",
-    "application/x-apple-diskimage": ".dmg",
-    "audio/amr": ".amr",
-    "application/pgp-signature": ".asc",
-    "application/pkcs7-signature": ".p7s",
-    "application/x-pkcs7-signature": ".p7s",
-}
+# Unicode categories removed outright. Deliberately broad: a filename is
+# shown to a human and handed to a filesystem, and each of these is
+# invisible to the first while meaning something to the second.
+#
+#   Cc  controls (NUL, CR, LF, TAB, DEL, the C1 block)
+#   Cf  format characters — bidi overrides (U+202E renders "annexe.exe"
+#       as "annexe.txt", the classic attachment spoof), zero-width
+#       joiners and spaces, the BOM
+#   Zl  U+2028 line separator
+#   Zp  U+2029 paragraph separator
+#   Cs  lone surrogates — unencodable, they raise on write
+#
+# The cost is that a ZWJ emoji sequence degrades to its component emoji:
+# a cosmetic loss on a filename, against an allowlist that would need
+# revisiting every Unicode release.
+_STRIPPED_CATEGORIES = frozenset({"Cc", "Cf", "Zl", "Zp", "Cs"})
+
+# Replaced with "_": legal in a name but reserved by some filesystem or
+# shell, so they stay visible rather than vanishing.
+_UNSAFE_CHARS_RE = re.compile(r'[<>:"|?*\\/]')
+
+# Stripped from both ends: quote framing left by a MIME parameter, the
+# dot/separator runs that spell "." and "..", and surrounding whitespace
+# (Windows silently drops trailing dots and spaces, so "x.exe " and
+# "x.exe" name the same file there).
+_FRAMING_CHARS = '"/.\\ '
 
 
-def sanitize_filename(filename: str, max_length: int = 255) -> str:
+def sanitize_filename(filename: str | None, max_length: int = 255) -> str | None:
     """Sanitize an attachment filename, preserving the extension when truncating.
 
-    Strips path components (both POSIX and Windows separators), control
-    characters, and characters unsafe in filenames, then truncates to
-    *max_length* keeping a reasonable-length extension intact. May return
-    an empty string when nothing recognizable survives (e.g. ``"..."``);
-    callers wanting a guaranteed non-empty name must supply their own
-    fallback.
+    Strips path components (POSIX and Windows both, since the wire does
+    not say which system produced the name), every invisible character,
+    and the characters filesystems reject; then truncates to *max_length*
+    keeping a reasonable extension intact. Pass the limit your storage
+    enforces rather than relying on the default.
+
+    Returns ``None`` — never ``""`` — when nothing usable survives, so
+    the failure case can never be mistaken for a name. Callers wanting a
+    placeholder write ``sanitize_filename(x) or "unnamed"``.
+
+    The result is safe to join onto a directory: it holds no separator,
+    no traversal segment, and no leading dot (so ``.gitignore`` comes
+    back as ``gitignore``). It is also NFKC-stable, so normalizing it
+    downstream cannot reintroduce any of those.
+
+    What it does **not** do is apply the naming policy of whatever
+    filesystem you are about to write to. A name can be perfectly clean
+    and still mean something particular there — ``nul.txt`` is the null
+    device on Windows 10, ``aux`` on every Windows version — and the
+    right answer depends on the target OS, which a parser cannot see.
+    That check belongs where the file is opened; see
+    ``werkzeug.utils.secure_filename`` for the shape of it.
     """
+    if not filename or max_length <= 0:
+        return None
+
+    # Bound the work before normalizing: NFKC expands by up to 18x
+    # (U+FDFA), so an unbounded caller-supplied name is a memory
+    # multiplier. Everything past this is discarded by the truncation
+    # below anyway, with slack far beyond any composition's ability to
+    # shrink text back under *max_length*.
+    filename = filename[: max_length * 32]
+
+    # The next two steps are ordered, and it matters in both directions.
+    #
+    # Invisibles go first. A format character with combining class 0 sits
+    # *outside* a run of dots and shields it from the strip further down;
+    # deleting it afterwards re-exposes them, so ``"\x00..\x00"`` would
+    # come back as ``".."`` — the parent directory, intact.
+    filename = "".join(
+        c for c in filename if unicodedata.category(c) not in _STRIPPED_CATEGORIES
+    )
+
+    # Then compatibility-normalize, before anything looks for a separator.
+    # Sanitizing and *then* normalizing is a known bypass (CVE-2025-52488
+    # and relatives): U+FF0F FULLWIDTH SOLIDUS and U+FF0E FULLWIDTH FULL
+    # STOP survive any ASCII-based check untouched, then NFKC folds them
+    # to "/" and "." — so a name we called clean becomes "../etc/passwd"
+    # the moment a database collation, a macOS filesystem or a caller's
+    # own normalize() touches it. U+2026 folds to "..." the same way.
+    #
+    # Doing it *after* the strip above is what keeps the result a fixed
+    # point. Those format characters block canonical composition, so
+    # deleting them can leave a base and its combining mark composable:
+    # normalizing first and deleting after returned a name that NFKC
+    # still had work to do on. Nothing below this line removes a
+    # non-ASCII character, and NFKC provably never emits a character in
+    # ``_STRIPPED_CATEGORIES`` (checked across all 0x110000 code points),
+    # so a single pass in this order is sufficient.
+    filename = unicodedata.normalize("NFKC", filename)
 
     filename = nt_basename(posix_basename(filename))
 
-    filename = filename.strip('"/.\\')
+    filename = filename.strip(_FRAMING_CHARS)
+    filename = _UNSAFE_CHARS_RE.sub("_", filename)
 
-    # Remove null bytes and control characters
-    filename = re.sub(r"[\x00-\x1f\x7f]", "", filename)
-
-    # Remove dangerous characters
-    filename = re.sub(r'[<>:"|?*\\/]', "_", filename)
-
-    # Truncate while preserving extension
     if len(filename) > max_length:
-        # Find the last dot for extension (but not at the start like .gitignore)
+        truncated = filename[:max_length]
+        # Keep the extension when there is one worth keeping: a dot that
+        # isn't leading, short enough to be an extension, and leaving room
+        # for at least one character of name.
         last_dot = filename.rfind(".")
         if last_dot > 0:
-            name = filename[:last_dot]
             ext = filename[last_dot:]
-            # Only preserve extension if it's reasonable length (up to 10 chars including dot)
-            if len(ext) <= 10:
-                max_name_length = max_length - len(ext)
-                if max_name_length > 0:
-                    return name[:max_name_length] + ext
-        return filename[:max_length]
+            if len(ext) <= 10 and max_length - len(ext) > 0:
+                truncated = filename[: max_length - len(ext)] + ext
+        # Cutting can expose a new trailing dot (``"ab.cd"`` capped at 3
+        # gives ``"ab."``), so strip once more — otherwise sanitizing an
+        # already-sanitized name would keep changing it.
+        filename = truncated.strip(_FRAMING_CHARS)
 
-    return filename
-
-
-def guess_mime_extension(content_type: str) -> str:
-    """Return the file extension (with leading dot) for a MIME type, or ``""``.
-
-    Accepts a full ``Content-Type`` header value — parameters (charset,
-    name…) are dropped before lookup. The overrides table above wins over
-    the stdlib ``mimetypes`` answer; an unknown type yields ``""``. Note
-    the stdlib table is completed at import time from system files
-    (``/etc/mime.types``…), so answers for non-overridden types may vary
-    across hosts.
-    """
-    if not content_type:
-        return ""
-
-    mime_type = content_type.split(";", maxsplit=1)[0].strip().lower()
-    return _MIME_EXTENSION_OVERRIDES.get(
-        mime_type, mimetypes.guess_extension(mime_type) or ""
-    )
+    return filename or None

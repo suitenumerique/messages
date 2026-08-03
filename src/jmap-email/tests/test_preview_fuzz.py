@@ -10,18 +10,26 @@ Run with: pytest -m fuzz tests/test_preview_fuzz.py
 Or: make fuzz-jmap-email
 """
 
+import os
+
 import pytest
-from hypothesis import HealthCheck, Phase, given, settings
+from hypothesis import HealthCheck, given, settings
 from hypothesis import strategies as st
 
 from jmap_email import preview_text
 
 # Intensive fuzzing settings
 FUZZ_SETTINGS = {
-    "max_examples": 10000,
+    "max_examples": int(os.environ.get("FUZZ_EXAMPLES", "10000")),
     "deadline": None,  # No time limit per example
     "suppress_health_check": [HealthCheck.too_slow, HealthCheck.data_too_large],
-    "phases": [Phase.generate, Phase.target],  # Skip shrinking for speed
+    # Phases are Hypothesis's defaults on purpose. ``shrink`` and
+    # ``explain`` cost nothing on a green run — they only engage once a
+    # failure exists, which is exactly when you want a minimal example
+    # rather than the raw generated blob. ``reuse`` replays a stored
+    # failure until it is fixed, which is what makes an intermittent
+    # find reproducible; it needs ``.hypothesis`` to survive the
+    # container, so compose mounts it.
 }
 
 # Fragments biased toward what the cleaning pipeline reacts to, so the

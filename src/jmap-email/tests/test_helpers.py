@@ -7,7 +7,7 @@ defaults on absence, accepts only well-typed input) is what
 downstream callers rely on.
 """
 
-from datetime import datetime, timezone
+from datetime import datetime, timedelta, timezone
 
 import pytest
 
@@ -222,3 +222,146 @@ class TestBodyAccess:
 
 if __name__ == "__main__":
     pytest.main()
+
+
+class TestAccessorsAreNullSafe:
+    """The module's documented guarantee: no accessor ever raises.
+
+    Regression: ``find_header``/``find_headers``/``has_header``/
+    ``body_text_joined`` called ``.get`` on their first argument
+    unguarded, so they raised ``AttributeError`` on ``None`` — which is
+    exactly what ``parse_email`` returns for unparseable input, making
+    ``find_header(parse_email(raw), "Subject")`` crash on the one input
+    the null-safe accessors exist to survive.
+    """
+
+    def test_header_accessors_on_none(self):
+        assert find_header(None, "Subject") == ""
+        assert find_headers(None, "Subject") == []
+        assert has_header(None, "Subject") is False
+
+    def test_body_accessors_on_none(self):
+        assert body_text_joined(None) == ""
+        assert body_part_text(None, {"partId": "1"}) == ""
+
+    @pytest.mark.parametrize(
+        "value",
+        [
+            pytest.param(None, id="none"),
+            pytest.param("", id="str"),
+            pytest.param(0, id="int"),
+            pytest.param([], id="list"),
+            pytest.param([{"name": "Subject"}], id="list-of-dicts"),
+            # Truthy non-iterables: caught by an ``isinstance`` guard, not
+            # by a falsiness check. ``first_address`` iterated these and
+            # raised TypeError.
+            pytest.param(5, id="truthy-int"),
+            pytest.param(True, id="truthy-bool"),
+            pytest.param(3.5, id="truthy-float"),
+            pytest.param("a@b.co", id="truthy-str"),
+        ],
+    )
+    def test_no_accessor_raises_on_wrong_shape(self, value):
+        assert find_header(value, "Subject") == ""
+        assert find_headers(value, "Subject") == []
+        assert has_header(value, "Subject") is False
+        assert body_text_joined(value) == ""
+        assert first_address(value) is None
+        assert first_msgid(value) == ""
+
+    def test_body_text_joined_with_non_list_key(self):
+        assert body_text_joined({"textBody": "not-a-list"}) == ""
+
+
+class TestMsgidChainIsHeaderSafe:
+    """``msgid_chain`` exists to be written straight into a header.
+
+    That makes it the one accessor that must not hand back something
+    unwritable. It is the same reasoning ``is_valid_msg_id`` gives for
+    being strict: the caller keeps what it got and may put it somewhere
+    other than ``compose_email``.
+    """
+
+    @pytest.mark.parametrize(
+        ("ids", "reason"),
+        [
+            pytest.param(["a@x\r\nBcc: evil@x.co"], "crlf", id="crlf-injection"),
+            pytest.param(["a@x\nBcc: evil@x.co"], "lf", id="lf-injection"),
+            pytest.param(["a b@x"], "folds mid-id", id="internal-space"),
+            pytest.param(["a\tb@x"], "folds mid-id", id="internal-tab"),
+            pytest.param(["a<b@x"], "ambiguous token", id="nested-open"),
+            pytest.param(["a>b@x"], "ambiguous token", id="nested-close"),
+            pytest.param(["a\x00b@x"], "control char", id="nul"),
+        ],
+    )
+    def test_unwritable_entries_are_dropped(self, ids, reason):
+        assert msgid_chain(ids) == "", reason
+
+    def test_good_entries_survive_a_dropped_neighbour(self):
+        assert msgid_chain(["a@x", "b\r\nc@x", "d@x"]) == "<a@x> <d@x>"
+
+    @pytest.mark.parametrize(
+        ("ids", "expected"),
+        [
+            pytest.param(["a@x"], "<a@x>", id="bare"),
+            pytest.param(["<a@x>"], "<a@x>", id="already-wrapped"),
+            pytest.param(["a@x", "b@x"], "<a@x> <b@x>", id="chain"),
+            # obs-id-left: real Outlook/MAPI ids carry several "@".
+            pytest.param(["foo$@local@domain"], "<foo$@local@domain>", id="multi-at"),
+            # No "@" at all is malformed but harmless; a reassembly helper
+            # should not silently lose it.
+            pytest.param(["12345"], "<12345>", id="no-at"),
+        ],
+    )
+    def test_legitimate_ids_round_trip(self, ids, expected):
+        assert msgid_chain(ids) == expected
+
+    def test_output_can_be_written_into_a_header(self):
+        """The end-to-end promise: whatever comes out is emittable."""
+        from email.parser import BytesParser
+        from email.policy import default as default_policy
+
+        chain = msgid_chain(["a@x", "evil\r\nBcc: x@y.co", "b@x"])
+        raw = f"References: {chain}\r\n\r\n".encode()
+        parsed = BytesParser(policy=default_policy).parsebytes(raw)
+        assert parsed["Bcc"] is None
+        assert len(parsed.keys()) == 1
+
+
+class TestSentAtToDatetimeIsAlwaysAware:
+    """The docstring promises tz-aware; a naive return breaks callers.
+
+    ``datetime.fromisoformat`` yields a naive object for an input with no
+    offset, and mixing that into a comparison with an aware datetime
+    raises ``TypeError`` at the call site rather than here.
+    """
+
+    @pytest.mark.parametrize(
+        "value",
+        [
+            pytest.param("2026-01-01T00:00:00+00:00", id="with-offset"),
+            pytest.param("2026-01-01T00:00:00", id="no-offset"),
+            pytest.param("2026-01-01", id="bare-date"),
+            pytest.param("2026-01-01T00:00:00+02:00", id="non-utc-offset"),
+        ],
+    )
+    def test_result_is_always_comparable_to_an_aware_datetime(self, value):
+        result = sent_at_to_datetime(value)
+        assert result is not None
+        assert result.utcoffset() is not None
+        # The property that actually matters at the call site.
+        assert isinstance(result < datetime.now(timezone.utc), bool)
+
+    def test_naive_datetime_input_is_stamped_utc(self):
+        assert sent_at_to_datetime(datetime(2026, 1, 1)) == datetime(
+            2026, 1, 1, tzinfo=timezone.utc
+        )
+
+    def test_aware_datetime_input_keeps_its_offset(self):
+        aware = datetime(2026, 1, 1, tzinfo=timezone(timedelta(hours=2)))
+        assert sent_at_to_datetime(aware) == aware
+        assert sent_at_to_datetime(aware).utcoffset() == timedelta(hours=2)
+
+    def test_unparseable_still_returns_none(self):
+        assert sent_at_to_datetime("not a date") is None
+        assert sent_at_to_datetime(None) is None

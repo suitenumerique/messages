@@ -38,17 +38,26 @@ from html.parser import HTMLParser
 __all__ = ["preview_text"]
 
 # ── markdown / whitespace patterns (all run on the bounded head) ─────────
+#
+# Every line-anchored pattern below uses ``[ \t]`` rather than ``\s`` for its
+# leading run. ``\s`` matches ``\n``, so under ``re.MULTILINE`` a ``^\s*``
+# rescans the entire following whitespace run from every line start — O(n²) on
+# a body of alternating spaces and newlines. The head is bounded, but its size
+# scales with ``max_preview_chars``, so a caller who raised that knob turned a
+# 128 KiB body into tens of seconds of matching. Leading *horizontal*
+# whitespace is what these constructs actually allow.
+
 # Fence markers are dropped but the code content itself is kept.
-_MD_CODE_FENCE_RE = re.compile(r"^\s*(```|~~~).*$", re.MULTILINE)
+_MD_CODE_FENCE_RE = re.compile(r"^[ \t]*(```|~~~).*$", re.MULTILINE)
 _MD_IMAGE_RE = re.compile(r"!\[([^\]]*)\]\([^)]*\)")
 _MD_LINK_RE = re.compile(r"\[([^\]]*)\]\([^)]*\)")
 # ATX headers (``# Title``) and setext underlines (a line of only ``=``/``-``
 # under a title — we drop the underline, the title on the line above stays).
-_MD_HEADER_RE = re.compile(r"^\s{0,3}#{1,6}\s+", re.MULTILINE)
+_MD_HEADER_RE = re.compile(r"^[ \t]{0,3}#{1,6}[ \t]+", re.MULTILINE)
 _MD_SETEXT_RE = re.compile(r"^[ \t]*[=-]{2,}[ \t]*$", re.MULTILINE)
 # A horizontal rule is a line of only -/*/_ (3+), possibly spaced.
-_MD_HRULE_RE = re.compile(r"^\s*(?:[-*_]\s*){3,}$", re.MULTILINE)
-_MD_LIST_RE = re.compile(r"^\s*(?:[-*+]|\d+[.)])\s+", re.MULTILINE)
+_MD_HRULE_RE = re.compile(r"^[ \t]*(?:[-*_][ \t]*){3,}$", re.MULTILINE)
+_MD_LIST_RE = re.compile(r"^[ \t]*(?:[-*+]|\d+[.)])[ \t]+", re.MULTILINE)
 # Hard breaks: a trailing backslash at end of line (tolerate CRLF
 # endings — ``$`` alone stops at the ``\r``).
 _MD_HARDBREAK_RE = re.compile(r"\\[ \t]*\r?$", re.MULTILINE)
@@ -70,7 +79,7 @@ _MD_EMPHASIS_RE = re.compile(r"\*{1,3}|~~|`+|(?<!\w)_{1,3}|_{1,3}(?!\w)")
 #
 # IGNORECASE so ``<HTTPS://…>`` / ``<MAILTO:…>`` are not lost (schemes are
 # case-insensitive; without this the tag path drops them as markup).
-_AUTOLINK = r"(?:https?://|mailto:)[^>\s]+|[^@>\s]+@[^@>\s]+\.[^@>\s]+"
+_AUTOLINK = r"(?:https?://|mailto:)[^>\s]+|[^@>\s]+@[^@>\s.]+(?:\.[^@>\s.]+)+"
 _AUTOLINK_INNER_RE = re.compile(_AUTOLINK, re.IGNORECASE)
 _MD_AUTOLINK_RE = re.compile(rf"<({_AUTOLINK})>", re.IGNORECASE)
 
