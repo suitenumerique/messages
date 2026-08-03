@@ -336,10 +336,21 @@ def format_address(name: str, email: str) -> str:
     return f"{name} <{email.strip()}>"
 
 
-def format_address_list(addresses: list[dict[str, str]]) -> str:
-    """Format a list of address dicts as a comma-separated RFC 5322 mailbox-list."""
+def format_address_list(addresses: Any) -> str:
+    """Format a list of address dicts as a comma-separated RFC 5322 mailbox-list.
+
+    Entries that are not dicts are skipped, matching what
+    ``_normalize_addr_list`` does with them. This is a public helper and
+    the shape comes from caller JSON, so a stray ``null`` or bare string
+    in the list is malformed input rather than a reason to raise
+    ``AttributeError`` out of ``.get`` and log a traceback per call.
+    """
+    if not isinstance(addresses, list):
+        return ""
     formatted = []
     for addr in addresses:
+        if not isinstance(addr, dict):
+            continue
         name = addr.get("name", "")
         email = addr.get("email", "")
         if email:
@@ -1120,6 +1131,14 @@ def _create_multipart_message(
     inline_attachments: list[dict[str, Any]] = []
     regular_attachments: list[dict[str, Any]] = []
     for a in jmap_data.get("attachments", []) or []:
+        # Strict on attachments: a malformed entry is refused, never
+        # dropped, because silently losing one is invisible data loss for
+        # the sender. Checked here so the failure is an AttachmentError
+        # naming the problem rather than an AttributeError from ``.get``.
+        if not isinstance(a, dict):
+            raise AttachmentError(
+                f"Attachment must be an object, got {type(a).__name__}"
+            )
         if a.get("disposition") == "inline" and a.get("cid"):
             inline_attachments.append(a)
         else:

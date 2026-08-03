@@ -49,8 +49,12 @@ __all__ = ["preview_text"]
 
 # Fence markers are dropped but the code content itself is kept.
 _MD_CODE_FENCE_RE = re.compile(r"^[ \t]*(```|~~~).*$", re.MULTILINE)
-_MD_IMAGE_RE = re.compile(r"!\[([^\]]*)\]\([^)]*\)")
-_MD_LINK_RE = re.compile(r"\[([^\]]*)\]\([^)]*\)")
+# Every unbounded run below is bounded instead. ``[^\]]*`` on a body of
+# ``[[[[…`` with no closing bracket rescans to end of head from each of the
+# n start positions — quadratic. The head is bounded, but its size scales
+# with ``max_chars``.
+_MD_IMAGE_RE = re.compile(r"!\[([^\]]{0,500})\]\([^)]{0,2000}\)")
+_MD_LINK_RE = re.compile(r"\[([^\]]{0,500})\]\([^)]{0,2000}\)")
 # ATX headers (``# Title``) and setext underlines (a line of only ``=``/``-``
 # under a title — we drop the underline, the title on the line above stays).
 _MD_HEADER_RE = re.compile(r"^[ \t]{0,3}#{1,6}[ \t]+", re.MULTILINE)
@@ -79,7 +83,13 @@ _MD_EMPHASIS_RE = re.compile(r"\*{1,3}|~~|`+|(?<!\w)_{1,3}|_{1,3}(?!\w)")
 #
 # IGNORECASE so ``<HTTPS://…>`` / ``<MAILTO:…>`` are not lost (schemes are
 # case-insensitive; without this the tag path drops them as markup).
-_AUTOLINK = r"(?:https?://|mailto:)[^>\s]+|[^@>\s]+@[^@>\s.]+(?:\.[^@>\s.]+)+"
+# Bounded for the same reason. RFC 5321 caps a local-part at 64 octets and
+# a domain at 255, so these ceilings cannot refuse a real address; what
+# they refuse is a 64 KiB run of one character costing quadratic time.
+_AUTOLINK = (
+    r"(?:https?://|mailto:)[^>\s]{1,2000}"
+    r"|[^@>\s]{1,256}@[^@>\s.]{1,256}(?:\.[^@>\s.]{1,256}){1,16}"
+)
 _AUTOLINK_INNER_RE = re.compile(_AUTOLINK, re.IGNORECASE)
 _MD_AUTOLINK_RE = re.compile(rf"<({_AUTOLINK})>", re.IGNORECASE)
 

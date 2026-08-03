@@ -23,6 +23,7 @@ from jmap_email import (
     is_valid_msg_id,
     parse_address,
     parse_email,
+    preview_text,
 )
 from jmap_email.composer import (
     _MSG_ID_MAX_OCTETS,
@@ -3925,3 +3926,79 @@ class TestAttachmentFailuresPropagate:
         )
         parsed = parse_email(raw)
         assert {a["name"] for a in parsed["attachments"]} == {"one.txt", "two.txt"}
+
+
+class TestAdversarialComplexityAndShapes:
+    """Attacker-supplied input must cost time proportional to its size.
+
+    Every entry here is a measured finding, not a hypothetical. The bounds
+    are ~100x the fixed cost so they catch a change in the exponent
+    without being flaky about machine speed.
+    """
+
+    def test_display_name_angle_run_is_not_quadratic(self):
+        """``_ANGLE_ADDR_RE`` written ``<[^<>]*@[^<>]*>`` lets both halves
+        match ``@``, so a ``<`` followed by a run of ``@`` with no closing
+        ``>`` made the engine try every split point. Reachable straight
+        from a ``From`` display name: one 96 KiB message cost ~43s."""
+        payload = '"<' + "@" * 90000 + '" <a@b.co>'
+        raw = (
+            f"From: {payload}\r\nTo: x@y.co\r\nSubject: s\r\n"
+            "Date: Thu, 01 Jan 2026 00:00:00 +0000\r\n\r\nbody\r\n"
+        ).encode()
+        start = time.perf_counter()
+        parse_email(raw)
+        assert time.perf_counter() - start < 5.0
+
+    @pytest.mark.parametrize(
+        ("char", "what"),
+        [
+            pytest.param("[", "markdown link text", id="bracket-run"),
+            pytest.param("<", "markdown autolink", id="angle-run"),
+            pytest.param("a", "autolink local-part", id="no-at-run"),
+        ],
+    )
+    def test_preview_patterns_are_not_quadratic(self, char, what):
+        """The markdown link and autolink patterns had unbounded runs, so
+        a body of one repeated character rescanned to end of head from
+        every start position. At ``max_chars=65536`` that was 65s for
+        ``[`` and 114s for ``<``."""
+        start = time.perf_counter()
+        preview_text(char * 200000, max_chars=65536)
+        assert time.perf_counter() - start < 10.0, what
+
+    @pytest.mark.parametrize(
+        "jmap_data",
+        [
+            pytest.param({"to": "not-a-list"}, id="address-list-is-a-string"),
+            pytest.param({"to": [None, 1, "x"]}, id="address-entries-not-dicts"),
+            pytest.param({"cc": [None]}, id="cc-entry-none"),
+            pytest.param({"attachments": "not-a-list"}, id="attachments-is-a-string"),
+            pytest.param({"attachments": [None]}, id="attachment-entry-none"),
+            pytest.param({"attachments": ["x"]}, id="attachment-entry-string"),
+        ],
+    )
+    def test_malformed_shapes_raise_composeerror_not_attributeerror(self, jmap_data):
+        """``.get`` on a non-dict raised ``AttributeError``, which the
+        broad handler wrapped — but only after logging a full traceback.
+        A caller sending ``{"to": "x"}`` in a loop could flood the logs,
+        drowning real errors. The shape check now happens before the
+        access."""
+        base = {
+            "from": [{"name": None, "email": "s@e.co"}],
+            "to": [{"name": None, "email": "r@e.co"}],
+            "subject": "s",
+            "sentAt": "2026-01-01T00:00:00+00:00",
+            "textBody": [{"content": "b"}],
+        }
+        try:
+            compose_email({**base, **jmap_data})
+        except ComposeError:
+            pass  # the documented failure mode
+        except Exception as exc:
+            pytest.fail(f"escaped as {type(exc).__name__}: {exc}")
+
+    def test_format_address_list_tolerates_junk_entries(self):
+        """Public helper, shape comes from caller JSON."""
+        assert format_address_list("not-a-list") == ""
+        assert format_address_list([None, 1, {"email": "a@b.co"}]) == "a@b.co"

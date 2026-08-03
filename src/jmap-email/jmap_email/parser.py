@@ -405,7 +405,7 @@ def _is_plausible_addr(addr: str) -> bool:
 # An angle-addr left sitting inside a display name. RFC 5322 puts the
 # authoritative addr-spec in the angle brackets, so finding one *outside*
 # them means the split went wrong.
-_ANGLE_ADDR_RE = re.compile(r"<[^<>]*@[^<>]*>")
+_ANGLE_ADDR_RE = re.compile(r"<[^<>@]*@[^<>]*>")
 
 
 def _has_unclosed_comment(value: str) -> bool:
