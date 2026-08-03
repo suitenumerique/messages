@@ -17,12 +17,13 @@ import secrets
 from email.errors import MessageError
 from email.generator import BytesGenerator
 from email.headerregistry import HeaderRegistry, UnstructuredHeader
-from email.message import MIMEPart
+from email.message import EmailMessage, MIMEPart
 from email.policy import SMTP as email_policy_smtp
+from email.policy import EmailPolicy
 from email.utils import format_datetime, parsedate_to_datetime
 from functools import lru_cache
 from io import BytesIO
-from typing import Any
+from typing import Any, cast
 
 from .addresses import (
     STRIPPED_HEADER_CHARS,
@@ -73,7 +74,7 @@ _POLICY = email_policy_smtp.clone(cte_type="7bit", header_factory=_HEADER_FACTOR
 
 
 @lru_cache(maxsize=4)
-def _policy_for(cte_type: str, utf8: bool):
+def _policy_for(cte_type: str, utf8: bool) -> EmailPolicy[EmailMessage]:
     """Return the serialization policy for one (8BITMIME, SMTPUTF8) pair.
 
     Four combinations exist and each is a small immutable object, so they
@@ -88,7 +89,7 @@ def _policy_for(cte_type: str, utf8: bool):
     )
 
 
-def _policy_for_options(options: ComposeOptions):
+def _policy_for_options(options: ComposeOptions) -> EmailPolicy[EmailMessage]:
     """Pick the policy an options bundle asks for."""
     return _policy_for("8bit" if options.emits_8bit else "7bit", options.allow_smtputf8)
 
@@ -198,9 +199,12 @@ def _normalize_addr_list(addr_list: Any, *, field: str, options: ComposeOptions)
     if not isinstance(addr_list, list):
         return addr_list
     rewritten: dict[int, dict[str, Any]] = {}
-    for index, entry in enumerate(addr_list):
-        if not isinstance(entry, dict):
+    for index, raw_entry in enumerate(addr_list):
+        if not isinstance(raw_entry, dict):
             continue
+        # ``addr_list`` is ``Any``, so ``isinstance`` narrows only to an
+        # un-parameterised dict; name the shape we actually require.
+        entry = cast(dict[str, Any], raw_entry)
         raw = entry.get("email")
         # Checked as supplied, only surrounding whitespace removed. Running
         # it through ``_sanitize_header_value`` first would let a control
