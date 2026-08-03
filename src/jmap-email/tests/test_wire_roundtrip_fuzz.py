@@ -19,6 +19,7 @@ Or: make fuzz-jmap-email
 
 import email
 import os
+from collections import Counter
 
 import pytest
 from hypothesis import HealthCheck, given, settings
@@ -108,7 +109,13 @@ raw_message = st.builds(
 
 
 def _addrs(parsed, key):
-    return {a["email"] for a in (parsed.get(key) or [])}
+    """Address multiset for *key*.
+
+    A ``Counter``, not a ``set``: amplification is the property under
+    test, and a set collapses a recipient that gained a duplicate into
+    one entry — exactly the bug these assertions exist to catch.
+    """
+    return Counter(a["email"] for a in (parsed.get(key) or []))
 
 
 @pytest.mark.fuzz
@@ -167,8 +174,8 @@ class TestWireRoundTrip:
             pytest.fail("compose accepted its own output once but not twice")
         end = parse_email(twice)
         assert end is not None
-        assert _addrs(end, "to") == _addrs(mid, "to")
-        assert _addrs(end, "from") == _addrs(mid, "from")
+        for key in ("from", "to", "cc"):
+            assert _addrs(end, key) == _addrs(mid, key)
         assert end["subject"] == mid["subject"]
 
     @settings(**FUZZ_SETTINGS)

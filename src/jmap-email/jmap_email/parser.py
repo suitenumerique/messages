@@ -902,7 +902,11 @@ def _collect_ambiguity_defects(part: Message, defects: list[str]) -> None:
         ct_params = part.get_params() or []
         cd_params = part.get_params(header="content-disposition") or []
     except Exception:  # pylint: disable=broad-exception-caught
-        return
+        # A damaged header block can trip the stdlib accessors. Carry on
+        # with no parameters rather than returning: the checks below read
+        # other sources, and abandoning them would mean the most damaged
+        # messages — the ones most worth flagging — get the fewest markers.
+        ct_params, cd_params = [], []
     if sum(1 for k, _ in ct_params if k == "boundary") > 1:
         defects.append("DuplicateBoundaryParameterDefect")
 
@@ -913,8 +917,15 @@ def _collect_ambiguity_defects(part: Message, defects: list[str]) -> None:
         is_multipart = part.get_content_maintype() == "multipart"
     except Exception:  # pylint: disable=broad-exception-caught
         is_multipart = False
-    if is_multipart and not _flatten_param(part.get_param("boundary")):
-        defects.append("EmptyBoundaryDefect")
+    if is_multipart:
+        try:
+            boundary = _flatten_param(part.get_param("boundary"))
+        except Exception:  # pylint: disable=broad-exception-caught
+            # Unreadable is not better than absent: either way there is no
+            # boundary anyone can agree on.
+            boundary = None
+        if not boundary:
+            defects.append("EmptyBoundaryDefect")
 
     # RFC 2047 encoded-words are not permitted in MIME parameters — RFC
     # 2231 is the mechanism for non-ASCII there. Senders use them anyway,

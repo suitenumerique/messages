@@ -410,9 +410,17 @@ class TestEndToEndPathFuzz:
     @given(jmap=pst_jmap)
     @settings(**FUZZ_SETTINGS)
     def test_pst_import_path_with_emit_bcc(self, jmap):
-        """PST import → reconstruct_eml → compose_email(emit_bcc=True)."""
+        """PST import → reconstruct_eml → compose_email(...).
+
+        Uses the same bundle the archive caller passes
+        (``ARCHIVE_COMPOSE_OPTIONS``) so the fuzzing covers the IDNA
+        normalization branch the real path takes, not just Bcc retention.
+        """
         try:
-            raw = compose_email(jmap, options=ComposeOptions(emit_bcc=True))
+            raw = compose_email(
+                jmap,
+                options=ComposeOptions(idna_encode_domains=True, emit_bcc=True),
+            )
         except ComposeError:
             return
         _assert_wire_format_invariants(raw)

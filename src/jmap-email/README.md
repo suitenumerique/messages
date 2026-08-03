@@ -332,14 +332,16 @@ Punycode is a DNS algorithm (RFC 3492/5891) and a local part is not a DNS
 label, so an IDN domain has an exact ASCII wire form — the same one the MX
 lookup has to use — and a non-ASCII local part has none.
 
-A non-ASCII **local part** therefore raises `InvalidAddressError` whatever
-you set. Carrying one requires SMTPUTF8 (RFC 6531), which is negotiated
-per-hop against the receiver's EHLO, is viral across every address in the
-transaction, and has **no downgrade path** — RFC 6530 dropped the
-mechanism RFC 5504 had specified. This composer emits 7-bit and never
-negotiates it, so refusing is the only honest answer. Support is also not
-transitive: a relay that accepts your transaction may itself have to
-forward to a hop that doesn't.
+A non-ASCII **local part** therefore needs `allow_smtputf8`, not this
+flag: with `allow_smtputf8=True` the whole addr-spec travels as UTF-8, and
+without it the address raises `InvalidAddressError`. Carrying one requires
+SMTPUTF8 (RFC 6531), which is negotiated per-hop against the receiver's
+EHLO, is viral across every address in the transaction, and has **no
+downgrade path** — RFC 6530 dropped the mechanism RFC 5504 had specified.
+Support is also not transitive: a relay that accepts your transaction may
+itself have to forward to a hop that doesn't. That is why the ASCII
+fallback variant below still rejects such an address: there is no ASCII
+form of it to fall back *to*.
 
 Left at the default, a non-ASCII *domain* raises too, because the composer
 does not rewrite an address you handed it unless you ask.

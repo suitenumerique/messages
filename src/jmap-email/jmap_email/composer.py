@@ -1026,17 +1026,13 @@ def _wrap_with_inline_images(
     MIMEPart._make_multipart's `disallowed_subtypes`. Wrapping a fresh
     related part around the existing body bypasses that check.
 
-    If every inline attachment fails to build, the body is returned
-    unwrapped: a single-child multipart/related is wasteful and confuses
-    some receivers.
+    Callers only reach this with a non-empty list, and
+    ``_create_attachment_part`` raises rather than returning a falsy part
+    for every bad input, so ``built`` always has at least one entry —
+    ``AttachmentError`` and ``InvalidMessageIdError`` propagate to the
+    caller instead of the attachment being silently dropped.
     """
-    built = [
-        p
-        for p in (_create_attachment_part(a, options) for a in inline_attachments)
-        if p
-    ]
-    if not built:
-        return body_part
+    built = [_create_attachment_part(a, options) for a in inline_attachments]
     related = MIMEPart(policy=_policy_for_options(options))
     related.make_related()
     related.set_boundary(_fresh_boundary())
@@ -1077,16 +1073,10 @@ def _wrap_with_attachments(
 ) -> MIMEPart:
     """Wrap a body part with multipart/mixed and append regular attachments.
 
-    Same fresh-wrapper pattern as _wrap_with_inline_images; if every
-    attachment fails to build, the body is returned unwrapped.
+    Same fresh-wrapper pattern as _wrap_with_inline_images, and the same
+    strict contract: a bad attachment raises rather than being dropped.
     """
-    built = [
-        p
-        for p in (_create_attachment_part(a, options) for a in regular_attachments)
-        if p
-    ]
-    if not built:
-        return body_part
+    built = [_create_attachment_part(a, options) for a in regular_attachments]
     mixed = MIMEPart(policy=_policy_for_options(options))
     mixed.make_mixed()
     mixed.set_boundary(_fresh_boundary())

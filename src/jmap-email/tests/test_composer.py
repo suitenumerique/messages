@@ -3227,6 +3227,38 @@ class TestHistoricalCVERegressions:
         inner ``@`` data, and the domain is unambiguous."""
         assert is_valid_addr_spec('"a@b.co"@evil.co') is True
 
+    def test_cve_2023_36632_nested_comments_do_not_recurse(self):
+        """A crafted argument drove parseaddr into RecursionError; we
+        catch and degrade rather than let it escape."""
+        assert parse_address("(" * 50000 + "a@b.co") == ("", "")
+
+    @pytest.mark.parametrize(
+        "body",
+        [
+            pytest.param("before\r\n.\r\nafter", id="crlf-dot"),
+            pytest.param("before\n.\nafter", id="bare-lf-dot"),
+            pytest.param("a\nb\nc", id="bare-lf"),
+            pytest.param("a\rb", id="bare-cr"),
+        ],
+    )
+    def test_cve_2023_51764_output_is_crlf_canonical(self, body):
+        """SMTP smuggling works because some servers accept ``\\n.\\n`` as
+        a DATA terminator. A composer that emitted a bare LF would be
+        *generating* that vector out of body text an attacker chose, so
+        every line ending in our output must be a full CRLF.
+        """
+        raw = compose_email(
+            {
+                "from": [{"name": None, "email": "a@b.co"}],
+                "to": [{"name": None, "email": "c@d.co"}],
+                "subject": "s",
+                "sentAt": "2026-06-08T12:00:00+00:00",
+                "textBody": [{"partId": "1", "type": "text/plain", "content": body}],
+            }
+        )
+        assert b"\n" not in raw.replace(b"\r\n", b"")
+        assert b"\r" not in raw.replace(b"\r\n", b"")
+
 
 class TestQuotedLocalPartTermination:
     """A quoted-string local-part must actually close.
@@ -3307,38 +3339,6 @@ class TestQuotedLocalPartTermination:
         parsed = BytesParser(policy=_POLICY).parsebytes(raw)
         pairs = email.utils.getaddresses([str(parsed["To"])])
         assert [addr for _name, addr in pairs] == ['"a,b"@e.co', "victim@x.co"]
-
-    def test_cve_2023_36632_nested_comments_do_not_recurse(self):
-        """A crafted argument drove parseaddr into RecursionError; we
-        catch and degrade rather than let it escape."""
-        assert parse_address("(" * 50000 + "a@b.co") == ("", "")
-
-    @pytest.mark.parametrize(
-        "body",
-        [
-            pytest.param("before\r\n.\r\nafter", id="crlf-dot"),
-            pytest.param("before\n.\nafter", id="bare-lf-dot"),
-            pytest.param("a\nb\nc", id="bare-lf"),
-            pytest.param("a\rb", id="bare-cr"),
-        ],
-    )
-    def test_cve_2023_51764_output_is_crlf_canonical(self, body):
-        """SMTP smuggling works because some servers accept ``\\n.\\n`` as
-        a DATA terminator. A composer that emitted a bare LF would be
-        *generating* that vector out of body text an attacker chose, so
-        every line ending in our output must be a full CRLF.
-        """
-        raw = compose_email(
-            {
-                "from": [{"name": None, "email": "a@b.co"}],
-                "to": [{"name": None, "email": "c@d.co"}],
-                "subject": "s",
-                "sentAt": "2026-06-08T12:00:00+00:00",
-                "textBody": [{"partId": "1", "type": "text/plain", "content": body}],
-            }
-        )
-        assert b"\n" not in raw.replace(b"\r\n", b"")
-        assert b"\r" not in raw.replace(b"\r\n", b"")
 
 
 class TestComposeOptionsIdnaDomains:
@@ -3867,3 +3867,61 @@ class TestAddrSpecRejectsRfc5322Specials:
             pairs = email.utils.getaddresses([f"{addr}, victim@x.co"])
             assert len(pairs) == 2, f"{addr!r} did not stay one mailbox"
             assert pairs[-1][1] == "victim@x.co"
+
+
+class TestAttachmentFailuresPropagate:
+    """A bad attachment raises; it is never silently dropped.
+
+    The wrappers used to filter falsy parts and fall back to an unwrapped
+    body "if every attachment fails to build" — unreachable, since
+    ``_create_attachment_part`` raises on every bad-input branch. Pinning
+    the real contract so the dead code cannot come back as a behaviour
+    change: silently losing an attachment is invisible data loss for the
+    sender, which is the one outcome this composer refuses.
+    """
+
+    @staticmethod
+    def _jmap(attachments):
+        return {
+            "from": [{"name": None, "email": "s@e.co"}],
+            "to": [{"name": None, "email": "r@e.co"}],
+            "subject": "s",
+            "sentAt": "2026-01-01T00:00:00+00:00",
+            "textBody": [{"content": "b"}],
+            "attachments": attachments,
+        }
+
+    GOOD = {"content": b"ok", "type": "text/plain", "name": "a.txt"}
+
+    @pytest.mark.parametrize("disposition", ["attachment", "inline"])
+    def test_a_single_bad_attachment_fails_the_whole_compose(self, disposition):
+        bad = {"type": "text/plain", "name": "b.txt", "disposition": disposition}
+        if disposition == "inline":
+            bad["cid"] = "c1"
+        with pytest.raises(AttachmentError):
+            compose_email(self._jmap([bad]))
+
+    @pytest.mark.parametrize("disposition", ["attachment", "inline"])
+    def test_a_bad_one_beside_a_good_one_still_raises(self, disposition):
+        """The filter that used to sit here would have dropped the bad
+        part and shipped the message with only the good one."""
+        bad = {"type": "text/plain", "name": "b.txt", "disposition": disposition}
+        good = dict(self.GOOD, disposition=disposition)
+        if disposition == "inline":
+            bad["cid"] = "c1"
+            good["cid"] = "c2"
+        with pytest.raises(AttachmentError):
+            compose_email(self._jmap([good, bad]))
+
+    def test_good_attachments_are_all_present(self):
+        """The other half: nothing is lost on the success path."""
+        raw = compose_email(
+            self._jmap(
+                [
+                    {"content": b"one", "type": "text/plain", "name": "one.txt"},
+                    {"content": b"two", "type": "text/plain", "name": "two.txt"},
+                ]
+            )
+        )
+        parsed = parse_email(raw)
+        assert {a["name"] for a in parsed["attachments"]} == {"one.txt", "two.txt"}

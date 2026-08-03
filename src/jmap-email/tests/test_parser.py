@@ -4248,6 +4248,25 @@ class TestUnclosedCommentAddressSpoof:
         assert parse_address(header) == ("", "")
         assert not parse_addresses(header)
 
+    def test_one_unclosed_comment_truncates_the_rest_of_the_list(self):
+        """An unclosed comment costs every entry from it onwards, and no
+        earlier one.
+
+        The comment runs to end of input, so the stdlib splitter has
+        already folded everything after it into the poisoned tuple's
+        display name — ``other@b.co`` is not a tuple we could keep even if
+        we wanted to. Entries *before* it were split normally and survive.
+        Recorded because it is the kind of partial result that looks like
+        a bug from either end: a caller comparing the returned count to
+        the comma count sees a mismatch, and the missing entries are the
+        tail rather than the malformed one alone.
+        """
+        header = "good@a.co, victim@bank.com( <attacker@evil.co>, other@b.co"
+        assert parse_addresses(header) == [("", "good@a.co")]
+
+        # With nothing before it, the whole header yields nothing.
+        assert not parse_addresses("victim@bank.com( <attacker@evil.co>, other@b.co")
+
     def test_parse_email_reports_no_sender_rather_than_the_wrong_one(self):
         raw = (
             b"From: victim@bank.com( <attacker@evil.co>\r\n"

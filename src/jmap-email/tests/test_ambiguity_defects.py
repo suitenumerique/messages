@@ -489,3 +489,62 @@ class TestStdlibEmailCveRegressions:
         )
         names = {h["name"].lower() for h in (parse_email(raw).get("headers") or [])}
         assert "bcc" not in names
+
+
+class TestDefectCollectionSurvivesBrokenAccessors:
+    """A damaged header block must not cost the *other* markers.
+
+    ``get_params()`` can raise on sufficiently broken input. Returning at
+    that point would mean the most damaged messages — the ones a
+    quarantine policy most wants flagged — come back with the fewest
+    markers, which is exactly backwards.
+    """
+
+    @staticmethod
+    def _raising_part(monkeypatch, real):
+        def boom(*_a, **_k):
+            raise ValueError("damaged header block")
+
+        monkeypatch.setattr(type(real), "get_params", boom, raising=False)
+        return real
+
+    def test_later_markers_still_fire_when_get_params_raises(self, monkeypatch):
+        import email as _email
+        from email import policy as _policy
+
+        from jmap_email.parser import _collect_ambiguity_defects
+
+        raw = (
+            b'Content-Type: message/partial; id="x@y"; number=1; total=2\r\n'
+            b"Content-Transfer-Encoding: bas64\r\n\r\nbody\r\n"
+        )
+        part = _email.message_from_bytes(raw, policy=_policy.compat32)
+        self._raising_part(monkeypatch, part)
+
+        defects: list[str] = []
+        _collect_ambiguity_defects(part, defects)
+
+        # Both of these are read from sources other than get_params(), so
+        # they must survive its failure.
+        assert "UnrecognizedTransferEncodingDefect" in defects
+        assert "PartialMessageDefect" in defects
+
+    def test_unreadable_boundary_counts_as_absent(self, monkeypatch):
+        """Unreadable is not better than missing: either way nobody can
+        agree where the parts start."""
+        import email as _email
+        from email import policy as _policy
+
+        from jmap_email.parser import _collect_ambiguity_defects
+
+        raw = b"Content-Type: multipart/mixed; boundary=B\r\n\r\nbody\r\n"
+        part = _email.message_from_bytes(raw, policy=_policy.compat32)
+
+        def boom(*_a, **_k):
+            raise ValueError("damaged parameter")
+
+        monkeypatch.setattr(type(part), "get_param", boom, raising=False)
+
+        defects: list[str] = []
+        _collect_ambiguity_defects(part, defects)
+        assert "EmptyBoundaryDefect" in defects
