@@ -83,9 +83,8 @@ _MD_EMPHASIS_RE = re.compile(r"\*{1,3}|~~|`+|(?<!\w)_{1,3}|_{1,3}(?!\w)")
 #
 # IGNORECASE so ``<HTTPS://…>`` / ``<MAILTO:…>`` are not lost (schemes are
 # case-insensitive; without this the tag path drops them as markup).
-# Bounded for the same reason. RFC 5321 caps a local-part at 64 octets and
-# a domain at 255, so these ceilings cannot refuse a real address; what
-# they refuse is a 64 KiB run of one character costing quadratic time.
+# Bounded for the same reason. RFC 5321 caps a local-part at 64 octets
+# and a domain at 255, so these cannot refuse a real address.
 _AUTOLINK = (
     r"(?:https?://|mailto:)[^>\s]{1,2000}"
     r"|[^@>\s]{1,256}@[^@>\s.]{1,256}(?:\.[^@>\s.]{1,256}){1,16}"

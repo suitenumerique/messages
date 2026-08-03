@@ -402,9 +402,9 @@ def _is_plausible_addr(addr: str) -> bool:
     return is_valid_addr_spec(addr)
 
 
-# An angle-addr left sitting inside a display name. RFC 5322 puts the
-# authoritative addr-spec in the angle brackets, so finding one *outside*
-# them means the split went wrong.
+# An angle-addr sitting inside a display name means the split went wrong.
+# The local half excludes ``@`` so the split is unique; both halves
+# matching it is quadratic on a ``<`` + run of ``@``.
 _ANGLE_ADDR_RE = re.compile(r"<[^<>@]*@[^<>]*>")
 
 
