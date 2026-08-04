@@ -128,6 +128,12 @@ export const MessageForm = forwardRef<MessageFormHandle, MessageFormProps>(({
         return localStorage.getItem(PREFER_SEND_MODE_KEY) as PreferSendMode ?? PreferSendMode.SEND;
     });
     const saveDraftPromiseRef = useRef<Promise<string | undefined> | null>(null);
+    // Blocks any non-forced draft save while a send is in flight: a draft PUT
+    // racing the send rewrites the recipients of a message already being
+    // delivered server-side. A ref (not state) so the guard is visible
+    // synchronously from the autosave timer and saveDraftInner, and survives
+    // the re-arms done by saveDraftInner's finally and the [draft] effect.
+    const isSendingRef = useRef(false);
     const [isSubmitting, setIsSubmitting] = useState(false);
     const [currentTime, setCurrentTime] = useState(new Date());
     const autoSaveTimerRef = useRef<NodeJS.Timeout | null>(null);
@@ -470,6 +476,8 @@ export const MessageForm = forwardRef<MessageFormHandle, MessageFormProps>(({
      * Auto-save draft every 30 seconds
      */
     const startAutoSave = () => {
+        // No autosave while a send is in flight (see isSendingRef).
+        if (isSendingRef.current) return;
         // Clear existing timer
         if (autoSaveTimerRef.current) {
             clearInterval(autoSaveTimerRef.current);
@@ -522,6 +530,7 @@ export const MessageForm = forwardRef<MessageFormHandle, MessageFormProps>(({
      * Returns the draft id on success.
      */
     const saveDraftInner = async (force = false): Promise<string | undefined> => {
+        if (isSendingRef.current && !force) return draft?.id;
         if (saveDraftPromiseRef.current) return saveDraftPromiseRef.current;
 
         const data = form.getValues();
@@ -626,6 +635,17 @@ export const MessageForm = forwardRef<MessageFormHandle, MessageFormProps>(({
         if (!canSendMessages || !composerRef.current) return;
 
         setIsSubmitting(true);
+        // Block autosave for the whole send: the ref also guards
+        // startAutoSave against the re-arms performed by saveDraftInner's
+        // finally and the [draft] effect during the awaits below.
+        isSendingRef.current = true;
+        stopAutoSave();
+
+        const abortSend = () => {
+            isSendingRef.current = false;
+            setIsSubmitting(false);
+            if (draftRef.current) startAutoSave();
+        };
 
         try {
             // Wait for any in-progress draft save to complete
@@ -634,7 +654,7 @@ export const MessageForm = forwardRef<MessageFormHandle, MessageFormProps>(({
             // Ensure a draft exists before sending (creates one on-the-fly if needed)
             const messageId = draft?.id ?? await ensureDraft();
             if (!messageId) {
-                setIsSubmitting(false);
+                abortSend();
                 return;
             }
 
@@ -643,7 +663,9 @@ export const MessageForm = forwardRef<MessageFormHandle, MessageFormProps>(({
             // <img> DOM elements and triggers unwanted blob download requests).
             const { htmlBody, textBody } = await composerRef.current.exportContent();
 
-            stopAutoSave();
+            // A blur-triggered save may have started while we awaited above;
+            // let it settle so no draft PUT is in flight when the send fires.
+            await saveDraftPromiseRef.current;
             // Send (and "send and archive") moves the thread out of the drafts
             // filter — and possibly out of the inbox when archived. Drop the
             // pin upfront so the eventual refetch is authoritative.
@@ -657,10 +679,17 @@ export const MessageForm = forwardRef<MessageFormHandle, MessageFormProps>(({
                     textBody: MailHelper.attachDriveAttachmentsToTextBody(textBody, data.driveAttachments),
                     archive,
                 }
+            }, {
+                onSuccess: () => {
+                    isSendingRef.current = false;
+                },
+                // The draft stays open when the send fails server-side;
+                // resume the autosave loop blocked for the send.
+                onError: abortSend,
             });
         } catch (error) {
             console.warn("Error in handleSubmit:", error);
-            setIsSubmitting(false);
+            abortSend();
         }
     };
 
