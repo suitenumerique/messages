@@ -96,43 +96,6 @@ class SendMessageView(APIView):
         except models.Mailbox.DoesNotExist as e:
             raise drf_exceptions.NotFound("Sender mailbox not found.") from e
 
-        try:
-            message = (
-                models.Message.objects.select_related("sender")
-                .prefetch_related(
-                    "thread__accesses", "recipients__contact", "attachments__blob"
-                )
-                .get(
-                    id=message_id,
-                    is_draft=True,
-                    thread__accesses__mailbox=mailbox_sender,
-                )
-            )
-        except models.Message.DoesNotExist as e:
-            raise drf_exceptions.NotFound(
-                "Draft message not found or does not belong to the specified sender mailbox."
-            ) from e
-
-        self.check_object_permissions(request, message)
-
-        # The sender mailbox itself must be authorised to send on this thread.
-        # ``IsAllowedToAccess`` only proves the user can SEND through *some*
-        # mailbox holding EDITOR access to the thread — not necessarily
-        # ``mailbox_sender``. Re-check against the specific ``senderId`` so a
-        # VIEWER on the sender mailbox cannot send as it by piggy-backing on a
-        # SENDER role they hold on a different mailbox sharing the thread.
-        can_send_as_sender = models.ThreadAccess.objects.filter(
-            thread=message.thread,
-            mailbox=mailbox_sender,
-            role=enums.ThreadAccessRoleChoices.EDITOR,
-            mailbox__accesses__user=request.user,
-            mailbox__accesses__role__in=enums.MAILBOX_ROLES_CAN_SEND,
-        ).exists()
-        if not can_send_as_sender:
-            raise drf_exceptions.PermissionDenied(
-                "You do not have permission to send as this mailbox."
-            )
-
         # Pre-generate the Celery task id so we can return it to the caller
         # while still deferring the actual dispatch to ``transaction.on_commit``
         # below — the broker must never receive a delivery task for a message
@@ -140,6 +103,50 @@ class SendMessageView(APIView):
         task_id = str(uuid.uuid4())
 
         with transaction.atomic():
+            # Fetch under a row lock: the draft PUT takes the same lock
+            # before rewriting the recipients, so the recipient set and
+            # draft state read here (MIME headers, recipient cap) can no
+            # longer change between this read and the commit that hands
+            # the message to the worker. The prefetches run under the
+            # lock too, so they observe the same snapshot.
+            try:
+                message = (
+                    models.Message.objects.select_for_update(of=("self",))
+                    .select_related("sender")
+                    .prefetch_related(
+                        "thread__accesses", "recipients__contact", "attachments__blob"
+                    )
+                    .get(
+                        id=message_id,
+                        is_draft=True,
+                        thread__accesses__mailbox=mailbox_sender,
+                    )
+                )
+            except models.Message.DoesNotExist as e:
+                raise drf_exceptions.NotFound(
+                    "Draft message not found or does not belong to the specified sender mailbox."
+                ) from e
+
+            self.check_object_permissions(request, message)
+
+            # The sender mailbox itself must be authorised to send on this thread.
+            # ``IsAllowedToAccess`` only proves the user can SEND through *some*
+            # mailbox holding EDITOR access to the thread — not necessarily
+            # ``mailbox_sender``. Re-check against the specific ``senderId`` so a
+            # VIEWER on the sender mailbox cannot send as it by piggy-backing on a
+            # SENDER role they hold on a different mailbox sharing the thread.
+            can_send_as_sender = models.ThreadAccess.objects.filter(
+                thread=message.thread,
+                mailbox=mailbox_sender,
+                role=enums.ThreadAccessRoleChoices.EDITOR,
+                mailbox__accesses__user=request.user,
+                mailbox__accesses__role__in=enums.MAILBOX_ROLES_CAN_SEND,
+            ).exists()
+            if not can_send_as_sender:
+                raise drf_exceptions.PermissionDenied(
+                    "You do not have permission to send as this mailbox."
+                )
+
             prepared = prepare_outbound_message(
                 mailbox_sender,
                 message,

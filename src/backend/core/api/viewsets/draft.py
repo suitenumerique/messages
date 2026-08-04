@@ -278,21 +278,31 @@ class DraftMessageView(APIView):
         # mailbox can edit (404 otherwise).
         sender_mailbox = self._resolve_editable_sender_mailbox(request.user, sender_id)
 
-        # Get the draft message
+        # Lock the message row and re-check ``is_draft`` under it: a
+        # concurrent send finalizes the message (``is_draft=False``) and
+        # hands it to the outbound worker, so an autosave racing it must
+        # either fully commit before the send proceeds, or observe the
+        # finalized state and 404 — never rewrite the recipients of a
+        # message already being delivered. The view runs in a single
+        # transaction (``@transaction.atomic`` above), so the lock is held
+        # until the request commits.
         try:
-            message = models.Message.objects.select_related("thread", "draft_blob").get(
-                id=message_id,
-                is_draft=True,
-                # Ensure the user has access to this thread
-                thread__accesses__mailbox=sender_mailbox,
-                thread__accesses__role=enums.ThreadAccessRoleChoices.EDITOR,
+            message = (
+                models.Message.objects.select_for_update(of=("self",))
+                .select_related("thread", "draft_blob")
+                .get(
+                    id=message_id,
+                    is_draft=True,
+                    # Ensure the user has access to this thread
+                    thread__accesses__mailbox=sender_mailbox,
+                    thread__accesses__role=enums.ThreadAccessRoleChoices.EDITOR,
+                )
             )
         except models.Message.DoesNotExist as exc:
             raise drf.exceptions.NotFound(
                 "Draft message not found, is not a draft, or access denied."
             ) from exc
 
-        # Update draft using the new function
         updated_message = update_draft(
             sender_mailbox, message, request.data, user=request.user
         )

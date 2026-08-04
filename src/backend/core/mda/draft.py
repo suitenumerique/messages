@@ -463,6 +463,16 @@ def update_draft(
         drf.exceptions.PermissionDenied: If access denied to thread
     """
 
+    # Recipients become the outbound envelope the moment the message is
+    # finalized: rewriting them (delete + recreate) on a sent message
+    # resets delivery statuses and makes the retry task deliver the same
+    # email again. Keep the invariant structural, not just in callers'
+    # WHERE clauses.
+    if message.pk and not message.is_draft:
+        raise drf.exceptions.ValidationError(
+            "Cannot update a message that is no longer a draft."
+        )
+
     updated_fields = []
     thread_updated_fields = []
 

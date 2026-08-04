@@ -7,7 +7,8 @@ from typing import Any, Optional
 
 from django.conf import settings
 from django.core.cache import cache
-from django.db import transaction
+from django.core.exceptions import ValidationError
+from django.db import DatabaseError, transaction
 from django.utils import timezone
 
 import rest_framework as drf
@@ -503,6 +504,48 @@ def _finalize_sent_message(
     message.thread.update_stats()
 
 
+def _save_recipient_status(
+    recipient: models.MessageRecipient, update_fields: list
+) -> None:
+    """Persist a recipient's delivery outcome, tolerating concurrent deletion.
+
+    The row can vanish while the worker is on the wire (a draft rewrite
+    racing the send used to do this); losing one status write must not
+    crash the whole delivery. A plain ``save`` is kept — not a queryset
+    UPDATE — so the post_save signals (thread stats, search reindex)
+    still fire on success. The savepoint keeps the surrounding
+    transaction usable when the row is gone (a 0-row UPDATE marks the
+    atomic block for rollback), and ``ValidationError`` covers the
+    variant where a concurrent rewrite already recreated an identical
+    row (``validate_unique`` collision on the stale instance).
+
+    Only the vanished-row case is absorbed. If the row still exists, the
+    write failed for another reason (deadlock, statement timeout, dropped
+    connection) and is re-raised: silently leaving a delivered recipient
+    at a NULL status would hand it to ``retry_messages_task``, which
+    re-enters ``send_message`` and delivers the same email a second time.
+    """
+    try:
+        with transaction.atomic():
+            recipient.save(update_fields=update_fields)
+    except (DatabaseError, ValidationError):
+        if models.MessageRecipient.objects.filter(pk=recipient.pk).exists():
+            logger.error(
+                "Failed to persist status %s of recipient row %s of message %s",
+                recipient.delivery_status,
+                recipient.pk,
+                recipient.message_id,
+            )
+            raise
+        logger.warning(
+            "Recipient row %s of message %s vanished during delivery; "
+            "status %s not recorded",
+            recipient.pk,
+            recipient.message_id,
+            recipient.delivery_status,
+        )
+
+
 def send_message(message: models.Message, force_mta_out: bool = False):
     """Send an existing Message, internally or externally.
 
@@ -544,8 +587,8 @@ def send_message(message: models.Message, force_mta_out: bool = False):
                 for recipient in message.recipients.all():
                     recipient.delivery_status = MessageDeliveryStatusChoices.FAILED
                     recipient.delivery_message = "Internal error: failed to parse email"
-                    recipient.save(
-                        update_fields=["delivery_status", "delivery_message"]
+                    _save_recipient_status(
+                        recipient, ["delivery_status", "delivery_message"]
                     )
                 return
 
@@ -593,10 +636,11 @@ def send_message(message: models.Message, force_mta_out: bool = False):
                     status,
                     json.dumps(error or "nil"),
                 )
+                recipient = envelope_to[recipient_email]
                 if delivered:
                     # TODO also update message.updated_at?
-                    envelope_to[recipient_email].delivered_at = timezone.now()
-                    envelope_to[recipient_email].delivery_message = None
+                    recipient.delivered_at = timezone.now()
+                    recipient.delivery_message = None
                     # Same-instance delivery gets its own SENT_INTERNAL
                     # status, distinct from external SENT_EXTERNAL, so the
                     # internal/external split stays visible in the data and
@@ -609,46 +653,35 @@ def send_message(message: models.Message, force_mta_out: bool = False):
                     # internal mail (see the note on
                     # ``MessageDeliveryStatusChoices`` and the
                     # ``force_mta_out`` guard in ``mda/selfcheck.py``).
-                    envelope_to[recipient_email].delivery_status = (
+                    recipient.delivery_status = (
                         MessageDeliveryStatusChoices.SENT_INTERNAL
                         if internal
                         else MessageDeliveryStatusChoices.SENT_EXTERNAL
                     )
-                    envelope_to[recipient_email].save(
-                        update_fields=[
-                            "delivered_at",
-                            "delivery_message",
-                            "delivery_status",
-                        ]
+                    status_fields = [
+                        "delivered_at",
+                        "delivery_message",
+                        "delivery_status",
+                    ]
+                elif retry and recipient.retry_count < len(RETRY_INTERVALS):
+                    recipient.retry_at = (
+                        timezone.now() + RETRY_INTERVALS[recipient.retry_count]
                     )
-                elif retry and envelope_to[recipient_email].retry_count < len(
-                    RETRY_INTERVALS
-                ):
-                    envelope_to[recipient_email].retry_at = (
-                        timezone.now()
-                        + RETRY_INTERVALS[envelope_to[recipient_email].retry_count]
-                    )
-                    envelope_to[recipient_email].retry_count += 1
-                    envelope_to[
-                        recipient_email
-                    ].delivery_status = MessageDeliveryStatusChoices.RETRY
-                    envelope_to[recipient_email].delivery_message = error
-                    envelope_to[recipient_email].save(
-                        update_fields=[
-                            "retry_at",
-                            "retry_count",
-                            "delivery_status",
-                            "delivery_message",
-                        ]
-                    )
+                    recipient.retry_count += 1
+                    recipient.delivery_status = MessageDeliveryStatusChoices.RETRY
+                    recipient.delivery_message = error
+                    status_fields = [
+                        "retry_at",
+                        "retry_count",
+                        "delivery_status",
+                        "delivery_message",
+                    ]
                 else:
-                    envelope_to[
-                        recipient_email
-                    ].delivery_status = MessageDeliveryStatusChoices.FAILED
-                    envelope_to[recipient_email].delivery_message = error
-                    envelope_to[recipient_email].save(
-                        update_fields=["delivery_status", "delivery_message"]
-                    )
+                    recipient.delivery_status = MessageDeliveryStatusChoices.FAILED
+                    recipient.delivery_message = error
+                    status_fields = ["delivery_status", "delivery_message"]
+
+                _save_recipient_status(recipient, status_fields)
 
             external_recipients = set()
             for recipient_email in envelope_to:
@@ -755,25 +788,53 @@ def send_message(message: models.Message, force_mta_out: bool = False):
                         sender_domain.name,
                     )
 
+                statuses = None
                 try:
                     statuses = send_outbound_message(
                         external_recipients, message, blob_content
                     )
-                    for recipient_email, status in statuses.items():
-                        _mark_delivered(
-                            recipient_email,
-                            status["delivered"],
-                            False,
-                            status.get("error"),
-                            status.get("retry", False),
-                            status.get("smtp_host"),
-                            status.get("proxy_host"),
-                        )
                 except Exception as e:  # pylint: disable=broad-exception-caught
                     logger.error(
                         "Failed to send outbound message: %s", e, exc_info=True
                     )
+
+                if statuses is None:
+                    # The send itself failed before the MTA reported anything:
+                    # nothing was accepted, retry everyone.
                     for recipient_email in external_recipients:
+                        _mark_delivered(
+                            recipient_email,
+                            False,
+                            False,
+                            "Internal error while delivering",
+                            True,
+                        )
+                else:
+                    # ``statuses`` is the authoritative MTA outcome. Record
+                    # each entry independently: one malformed entry must not
+                    # abort the others, and above all must not flip a
+                    # recipient the MTA already accepted back to RETRY — the
+                    # retry task would send the same email a second time.
+                    for recipient_email, status in statuses.items():
+                        try:
+                            _mark_delivered(
+                                recipient_email,
+                                status["delivered"],
+                                False,
+                                status.get("error"),
+                                status.get("retry", False),
+                                status.get("smtp_host"),
+                                status.get("proxy_host"),
+                            )
+                        except Exception:  # pylint: disable=broad-exception-caught
+                            logger.exception(
+                                "Failed to record delivery status of a "
+                                "recipient of message %s",
+                                message.id,
+                            )
+                    # Recipients the MTA never reported on: outcome unknown,
+                    # retry them.
+                    for recipient_email in external_recipients - set(statuses):
                         _mark_delivered(
                             recipient_email,
                             False,
