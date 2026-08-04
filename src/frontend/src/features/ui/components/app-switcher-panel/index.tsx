@@ -127,6 +127,15 @@ export const AppSwitcherButton = () => {
   const appUrls = APP_URLS ?? {};
   const hasOtherApps = NAV_ORDER.some((id) => id in appUrls && id in APP_META);
 
+  const measure = () => {
+    if (!ref.current) return;
+    const rect = ref.current.getBoundingClientRect();
+    const spaceBelow = window.innerHeight - rect.bottom;
+    const spaceAbove = rect.top;
+    setOpensUpward(spaceBelow < spaceAbove);
+    setAnchorRect(rect);
+  };
+
   useEffect(() => {
     if (!isOpen) return;
     const handler = (e: MouseEvent) => {
@@ -135,18 +144,19 @@ export const AppSwitcherButton = () => {
       }
     };
     document.addEventListener("mousedown", handler);
-    return () => document.removeEventListener("mousedown", handler);
+    window.addEventListener("resize", measure);
+    window.addEventListener("orientationchange", measure);
+    return () => {
+      document.removeEventListener("mousedown", handler);
+      window.removeEventListener("resize", measure);
+      window.removeEventListener("orientationchange", measure);
+    };
   }, [isOpen]);
 
   if (!hasOtherApps) return null;
 
   const handleOpen = () => {
-    if (ref.current) {
-      const rect = ref.current.getBoundingClientRect();
-      const spaceBelow = window.innerHeight - rect.bottom;
-      setOpensUpward(spaceBelow < 320);
-      setAnchorRect(rect);
-    }
+    measure();
     setIsOpen((v) => !v);
   };
 
