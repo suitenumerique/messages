@@ -43,24 +43,41 @@ const AppIcon = ({ id, size = 40 }: { id: AppId; size?: number }) => {
   );
 };
 
+const MOBILE_BREAKPOINT = 480;
+
 const Panel = ({
   onClose,
   opensUpward,
   appUrls,
+  anchorRect,
 }: {
   onClose: () => void;
   opensUpward: boolean;
   appUrls: Record<string, string>;
+  anchorRect: DOMRect | null;
 }) => {
   const { t } = useTranslation();
 
   const jumpTo = NAV_ORDER.filter((id) => id in appUrls && id in APP_META);
+
+  const isMobile = typeof window !== "undefined" && window.innerWidth <= MOBILE_BREAKPOINT;
+  const mobilePosition: React.CSSProperties = {};
+  if (isMobile && anchorRect) {
+    if (opensUpward) {
+      mobilePosition.top = "auto";
+      mobilePosition.bottom = window.innerHeight - anchorRect.top + 8;
+    } else {
+      mobilePosition.top = anchorRect.bottom + 8;
+      mobilePosition.bottom = "auto";
+    }
+  }
 
   return (
     <div
       className={`app-switcher-panel__dropdown${opensUpward ? " app-switcher-panel__dropdown--up" : ""}`}
       style={{
         background: `linear-gradient(180deg, color-mix(in srgb, ${APP_META.mail.color} 8%, transparent) 0%, transparent 100%) top center / 100% 80px no-repeat, #ffffff`,
+        ...mobilePosition,
       }}
     >
       <div className="app-switcher-panel__current">
@@ -104,6 +121,7 @@ export const AppSwitcherButton = () => {
   const { t } = useTranslation();
   const [isOpen, setIsOpen] = useState(false);
   const [opensUpward, setOpensUpward] = useState(false);
+  const [anchorRect, setAnchorRect] = useState<DOMRect | null>(null);
   const ref = useRef<HTMLDivElement>(null);
 
   const appUrls = APP_URLS ?? {};
@@ -127,6 +145,7 @@ export const AppSwitcherButton = () => {
       const rect = ref.current.getBoundingClientRect();
       const spaceBelow = window.innerHeight - rect.bottom;
       setOpensUpward(spaceBelow < 320);
+      setAnchorRect(rect);
     }
     setIsOpen((v) => !v);
   };
@@ -155,7 +174,14 @@ export const AppSwitcherButton = () => {
           </span>
         }
       />
-      {isOpen && <Panel onClose={() => setIsOpen(false)} opensUpward={opensUpward} appUrls={appUrls} />}
+      {isOpen && (
+        <Panel
+          onClose={() => setIsOpen(false)}
+          opensUpward={opensUpward}
+          appUrls={appUrls}
+          anchorRect={anchorRect}
+        />
+      )}
     </div>
   );
 };

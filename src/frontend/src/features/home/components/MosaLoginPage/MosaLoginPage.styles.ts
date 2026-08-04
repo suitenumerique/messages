@@ -213,6 +213,10 @@ export const LanguageSelectorWrapper = styled.div`
   top: 1.5rem;
   right: 1.5rem;
   z-index: 10;
+
+  @media (max-width: 900px) {
+    display: none;
+  }
 `;
 
 export const LangSelectorContainer = styled.div`
@@ -290,12 +294,24 @@ export const MobileHeader = styled.div`
   @media (max-width: 900px) {
     display: flex;
     align-items: center;
-    justify-content: center;
+    justify-content: space-between;
+    gap: 1rem;
+    max-width: 440px;
+    margin: 0 auto;
+    width: 100%;
     padding: 1.5rem;
+    box-sizing: border-box;
 
     img {
       height: 1.75rem;
       width: auto;
+      flex-shrink: 0;
+    }
+  }
+
+  @media (max-width: 360px) {
+    img {
+      height: 1.375rem;
     }
   }
 `;

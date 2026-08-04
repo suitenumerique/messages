@@ -43,6 +43,15 @@ $mosa-ease:          cubic-bezier(0.4, 0, 0.2, 1);
   padding: 14px;
   z-index: 2000;
   animation: mosa-panel-in 150ms $mosa-ease both;
+
+  @media (max-width: 480px) {
+    position: fixed;
+    left: 1rem;
+    right: 1rem;
+    margin: 0 auto;
+    width: auto;
+    max-width: 312px;
+  }
 }
 
 @keyframes mosa-panel-in {
