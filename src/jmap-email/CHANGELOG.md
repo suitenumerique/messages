@@ -5,12 +5,18 @@ All notable changes to `jmap-email` are documented here.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
-## [Unreleased]
-
-## [0.3.0] - 2026-08-03
+## [0.3.0]
 
 ### Changed
 
+- **Breaking:** `parse_email` returns `None` when any header field
+  exceeds `max_header_value_bytes` (previously the value was truncated
+  and the message parsed).
+- `decode_rfc2047_header` bounds its own input at
+  `max_header_value_bytes`: the stdlib's `decode_header` is O(n²) in the
+  number of encoded-words, and attachment filenames reach it untruncated.
+- The unexported `MAX_*` mirror constants on `jmap_email.parser` are
+  removed; read the fields on `DEFAULT_PARSE_OPTIONS` instead.
 - **Breaking:** `compose_email`'s `keep_bcc` argument moved into a
   `ComposeOptions` bundle as `emit_bcc`, for symmetry with `ParseOptions`:
   `compose_email(jmap, options=ComposeOptions(emit_bcc=True))`.
@@ -61,6 +67,16 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
+- **Remote DoS: deeply nested MIME.** `BufferedSubFile.readline` tests
+  every body line against every ancestor predicate, making the stdlib
+  parse O(depth × lines). `_FastSubFile` skips that scan for lines that
+  cannot be a delimiter: cost flat in depth, identical output.
+- **Sender forgery via header truncation.** Header values were cut at a
+  byte bound and *then* parsed, so a padded `From` could be made to
+  parse to an address nobody sent — which became the stored sender and
+  the DKIM alignment domain. Over-long fields are now rejected; address
+  lists cut back to a top-level separator and record
+  `AddressListTruncatedDefect`.
 - **A display name could become a recipient**, two ways: the quoting check
   treated a lone `"` as an already-quoted name, and RFC 2047 decoding
   happened after the quoting decision, so `=?utf-8?B?ZXZpbEB4LmNv?=`

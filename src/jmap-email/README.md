@@ -146,6 +146,7 @@ choice was made, so each construct also lands in `_ext.defects`:
 | `FoldInQuotedParameterDefect` | a header folds *inside* a quoted parameter value | `filename="pay<CRLF> load.exe"` — we unfold to `pay load.exe`, a parser dropping the whole fold reads `payload.exe`, one truncating at CR reads `pay` |
 | `PartialMessageDefect` | `message/partial` | RFC 2046 §5.2.2 splits one message across several; the payload exists only after a reassembly a per-message scanner never does |
 | `ExternalBodyDefect` | `message/external-body` | the content is fetched from elsewhere, so it is not in this message for anyone to scan |
+| `AddressListTruncatedDefect` | address header past `max_address_list_bytes` | entries past the cut are dropped, so the list we report is shorter than the wire's — and `null` when no mailbox separator precedes the cap. A recipient you never see is one you cannot act on |
 
 None is an error, and well-formed mail raises none of them. Treat them
 as input to a policy: score them, quarantine on them, or log them and
@@ -262,7 +263,21 @@ leaves to the server, such as the `preview` length.
 | `max_preview_chars`          | 256     | RFC 8621 §4.1.4 `preview` ceiling        |
 | `max_preview_scan_bytes`     | 131 072 | bound `preview` work on markup-only input |
 
-Excess input is silently truncated and logged at WARNING level.
+Most excess input is silently truncated and logged at WARNING level.
+
+`max_header_value_bytes` is the exception: a field above it makes
+`parse_email` return `None`. RFC 5322 §2.2.3 puts no limit on a header
+field — "an unfolded header field has no length restriction and
+therefore may be indeterminately long" — so this is local policy, set to
+Postfix's `header_size_limit`. Postfix discards the excess; we refuse the
+message, because there is no generally safe place to cut an arbitrary
+field. A shortened `Received` still looks well-formed to trust-scope
+logic, and cutting an address list mid-token *manufactures* an address
+nobody sent. `max_address_list_bytes` truncation, which stays below that
+ceiling, therefore cuts back to a top-level mailbox separator — the same
+shape as Postfix's `header_address_token_limit`, which discards excess
+*tokens* rather than bytes — and records
+`AddressListTruncatedDefect`.
 
 A single process can host multiple workloads with different options —
 they travel with the call, never via shared module state:

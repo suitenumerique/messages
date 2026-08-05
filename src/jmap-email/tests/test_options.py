@@ -1,7 +1,7 @@
 """Tests for the per-call :class:`ParseOptions` context.
 
 Pin the behavior that:
-- Defaults reproduce the historical module-constant values.
+- The default caps are the documented values.
 - ``ParseOptions`` is frozen (a returned dict cannot be mutated by a
   caller and have that leak across other call sites).
 - Custom ``options=`` actually changes parser behavior — both wider
@@ -16,25 +16,19 @@ from dataclasses import FrozenInstanceError
 import pytest
 
 from jmap_email import DEFAULT_PARSE_OPTIONS, ParseOptions, parse_addresses, parse_email
-from jmap_email.parser import (
-    MAX_ADDRESS_LIST_BYTES,
-    MAX_HEADER_VALUE_BYTES,
-    MAX_MIME_NESTING_DEPTH,
-    MAX_MIME_PARTS,
-)
 
 
 class TestParseOptionsShape:
     """The dataclass is the public contract."""
 
-    def test_default_constructor_matches_module_constants(self):
-        """``ParseOptions()`` reproduces the values exposed as
-        ``MAX_*`` on :mod:`jmap_email.parser`."""
+    def test_default_caps_are_the_documented_values(self):
+        """Literals, not a comparison against the same field: changing a
+        default has to be a deliberate act that trips this."""
         defaults = ParseOptions()
-        assert defaults.max_mime_nesting_depth == MAX_MIME_NESTING_DEPTH
-        assert defaults.max_mime_parts == MAX_MIME_PARTS
-        assert defaults.max_header_value_bytes == MAX_HEADER_VALUE_BYTES
-        assert defaults.max_address_list_bytes == MAX_ADDRESS_LIST_BYTES
+        assert defaults.max_mime_nesting_depth == 100  # Postfix mime_nesting_limit
+        assert defaults.max_mime_parts == 1000  # Go multipartmaxparts
+        assert defaults.max_header_value_bytes == 102_400  # Postfix header_size_limit
+        assert defaults.max_address_list_bytes == 100_000
 
     def test_default_preview_cap_is_the_rfc_ceiling(self):
         """``max_preview_chars`` defaults to 256, the RFC 8621 §4.1.4
@@ -90,7 +84,9 @@ class TestCustomOptionsOnParseEmail:
                 c += _count(sub)
             return c
 
-        assert _count(parsed["bodyStructure"]) <= MAX_MIME_PARTS + 5
+        assert _count(parsed["bodyStructure"]) <= (
+            DEFAULT_PARSE_OPTIONS.max_mime_parts + 5
+        )
 
     def test_tighter_limits_truncate_earlier(self):
         """A 100-part cap truncates a 200-part input even though the
@@ -128,24 +124,29 @@ class TestCustomOptionsOnParseEmail:
         # size; total is root + 1500.
         assert _count(parsed["bodyStructure"]) >= 1500
 
-    def test_default_caps_truncate_header_value(self):
-        """A header value beyond the default 100 KB cap gets truncated."""
-        huge = b"x" * (MAX_HEADER_VALUE_BYTES + 1000)
+    def test_default_cap_rejects_an_over_long_header_value(self):
+        """Rejected, not truncated: there is no safe cut point for an
+        arbitrary field, and a shortened one still looks well-formed."""
+        cap = DEFAULT_PARSE_OPTIONS.max_header_value_bytes
+        huge = b"x" * (cap + 1000)
         raw = b"From: a@b.c\r\nTo: d@e.f\r\nX-Big: " + huge + b"\r\n\r\nbody\r\n"
-        parsed = parse_email(raw)
-        xbig = next(h for h in parsed["headers"] if h["name"].lower() == "x-big")
-        assert len(xbig["value"]) <= MAX_HEADER_VALUE_BYTES
+        assert parse_email(raw) is None
 
-    def test_tighter_header_cap_truncates_smaller(self):
+    def test_value_at_the_cap_still_parses(self):
+        """The cap is a ceiling, not an off-by-one rejection."""
+        cap = DEFAULT_PARSE_OPTIONS.max_header_value_bytes
+        raw = b"From: a@b.c\r\nX-Big: " + (b"x" * (cap - 10)) + b"\r\n\r\nbody\r\n"
+        assert parse_email(raw) is not None
+
+    def test_tighter_header_cap_rejects_smaller(self):
         raw = (
             b"From: a@b.c\r\nTo: d@e.f\r\n"
             b"X-Med: " + (b"y" * 10000) + b"\r\n"
             b"\r\nbody\r\n"
         )
         tight = ParseOptions(max_header_value_bytes=500)
-        parsed = parse_email(raw, options=tight)
-        xmed = next(h for h in parsed["headers"] if h["name"].lower() == "x-med")
-        assert len(xmed["value"]) <= 500
+        assert parse_email(raw, options=tight) is None
+        assert parse_email(raw) is not None  # unchanged under the default
 
 
 class TestPreviewCap:

@@ -47,7 +47,8 @@ class ParseOptions:
 
     Pass an instance to :func:`jmap_email.parse_email` or
     :func:`jmap_email.parse_addresses` via the ``options=`` keyword.
-    Excess input is silently truncated and a WARNING is logged.
+    Excess input is silently truncated and a WARNING is logged, except
+    for ``max_header_value_bytes``, which **rejects** the message.
 
     Attributes
     ----------
@@ -61,11 +62,19 @@ class ParseOptions:
         flat ``multipart/mixed`` inputs with millions of children.
         Sourced from Go's ``multipartmaxparts``. Default: 1000.
     max_header_value_bytes : int
-        Maximum byte-length of a single header value retained for
-        downstream processing. Values above this size are truncated
-        before the stdlib's ``_header_value_parser`` runs — guards
-        against the quadratic-time hot spots reported in gh-136063.
-        Sourced from Postfix's ``header_size_limit``. Default: 102 400.
+        Maximum octet-length of a single header value. A message
+        carrying a longer field is **rejected** — ``parse_email``
+        returns ``None`` — rather than truncated: there is no generally
+        safe cut point for an arbitrary field, and a byte cut can
+        manufacture a value that was never sent (a shortened address
+        list re-parses to a different address). Also guards the
+        quadratic-time hot spots reported in gh-136063.
+
+        RFC 5322 §2.2.3 puts no limit on a field — folding makes it
+        unbounded while every line stays legal — so this is local
+        policy, sourced from Postfix's ``header_size_limit``. Postfix
+        discards the excess; we refuse, because it is rewriting a header
+        where we assert identity from one. Default: 102 400.
     max_address_list_bytes : int
         Maximum byte-length of an address-list value handed to
         :func:`jmap_email.parse_addresses`. Cap protects against the
