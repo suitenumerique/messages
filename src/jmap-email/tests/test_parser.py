@@ -13,6 +13,7 @@ from email.header import Header
 
 import pytest
 
+from jmap_email import DEFAULT_PARSE_OPTIONS
 from jmap_email.parser import (
     _parse_message_content,
     decode_rfc2047_header,
@@ -1507,8 +1508,11 @@ PDF content 2
         assert content["attachments"][0]["name"] == "doc1.pdf"
         assert content["attachments"][1]["name"] == "doc2.pdf"
 
-    def test_infer_filename_unknown_type(self):
-        """Test filename inference for unknown content types."""
+    def test_nameless_part_keeps_null_name(self):
+        """A part with no filename reports ``name`` as null, per the JMAP spec.
+
+        Synthesizing a placeholder is the consumer's job, not the parser's.
+        """
         raw_email = b"""From: sender@example.com
 To: recipient@example.com
 Subject: Unknown Type
@@ -1523,7 +1527,6 @@ content
         message_obj = _stdlib_message(raw_email)
         content = _parse_message_content(message_obj)
         attachment = content["attachments"][0]
-        # Should return "unnamed" without extension for unknown types
         assert attachment["name"] is None
 
     def test_part_with_empty_body(self):
@@ -1773,7 +1776,7 @@ Image content
         assert img_in_body is not None, "Inline image should be in textBody"
 
     def test_email_with_many_parts(self):
-        """Many MIME parts below ``MAX_MIME_PARTS=1000`` must surface
+        """Many MIME parts below ``max_mime_parts`` must surface
         all parts. (Cap behavior is tested separately in
         ``test_huge_part_count_does_not_explode``.)
         """
@@ -1801,11 +1804,11 @@ Content-Type: multipart/mixed; boundary="boundary"
         )
         message_obj = _stdlib_message(raw_email)
         content = _parse_message_content(message_obj)
-        # Capped at ``MAX_MIME_PARTS=1000``; 50 stays well below the cap
+        # Capped at ``max_mime_parts``; 50 stays well below the cap
         assert len(content["textBody"]) == 50
 
     def test_deeply_nested_multipart(self):
-        """Deeply nested multipart below ``MAX_MIME_NESTING_DEPTH=100``
+        """Deeply nested multipart below ``max_mime_nesting_depth``
         must surface all levels. (Bomb behavior is tested separately
         in ``test_deeply_nested_multipart_bomb_does_not_recursion_error``.)
         """
@@ -1844,7 +1847,7 @@ Content-Type: multipart/mixed; boundary="outer"
         )
         message_obj = _stdlib_message(raw_email)
         content = _parse_message_content(message_obj)
-        # Capped at ``MAX_MIME_NESTING_DEPTH=100``; 10 levels stays well below
+        # Capped at ``max_mime_nesting_depth``; 10 levels stays well below
         assert len(content["textBody"]) >= 1
 
     def test_header_with_control_characters_strips_nul_from_subject(self):
@@ -2279,10 +2282,15 @@ class TestParserSecurityRegressions:
         be truncated gracefully, not blow up the worker.
 
         Modelled on the HackerOne "stack exhaustion in MIME multipart"
-        disclosure pattern. Postfix caps at ``mime_nesting_limit=100``.
+        disclosure pattern.
+
+        Note this bomb reuses ONE boundary at every level. That shape
+        collapses in the stdlib rather than nesting, so it stays cheap
+        and is *not* what the caps reject — see ``TestBoundedParse`` for
+        the distinct-boundary case that is.
         """
         # Build 500 levels of multipart/mixed nesting — well above our
-        # 100-level guard, well below CPython's 1000-frame limit but
+        # depth guard, well below CPython's 1000-frame limit but
         # close enough that an unguarded recursive walk would fail.
         depth = 500
         body = b"Content-Type: text/plain\r\n\r\nDEEPEST_TEXT\r\n"
@@ -2329,9 +2337,9 @@ class TestParserSecurityRegressions:
     def test_huge_address_list_is_bounded_in_time(self):
         """Dovecot CVE-2024-23184 / Postfix ``header_address_token_limit``:
         a hostile ``To:`` with 50_000 addresses must not allocate
-        unbounded memory or block the worker for more than a few
-        seconds. We cap the input bytes; the parsed list may be
-        smaller than the wire content, but parsing must complete."""
+        unbounded memory or block the worker. The header is past
+        ``max_header_value_bytes``, so the message is refused — in
+        bounded time, which is what the CVE is about."""
         import time as _time
 
         addrs = ", ".join(f"u{i}@example.com" for i in range(50_000))
@@ -2345,8 +2353,47 @@ class TestParserSecurityRegressions:
         start = _time.monotonic()
         parsed = parse_email(raw)
         elapsed = _time.monotonic() - start
+        assert parsed is None
+        assert elapsed < 10.0, f"rejecting 50k addresses took {elapsed:.2f}s"
+
+    def test_address_list_under_the_header_cap_is_cut_at_a_separator(self):
+        """Between ``max_address_list_bytes`` and ``max_header_value_bytes``
+        the list is still truncated — but at a mailbox separator, never
+        mid-token, or the cut manufactures an address nobody sent."""
+        target = "ceo@bigcorp.example"
+        cap = DEFAULT_PARSE_OPTIONS.max_address_list_bytes
+        payload = "x" * (cap - len(target) - 2) + ", " + target + "-junk@evil.test"
+        assert len(payload) < DEFAULT_PARSE_OPTIONS.max_header_value_bytes
+        raw = b"From: " + payload.encode() + b"\r\nSubject: t\r\n\r\nbody\r\n"
+        parsed = parse_email(raw, extensions=True)
         assert parsed is not None
-        assert elapsed < 10.0, f"parsing 50k addresses took {elapsed:.2f}s"
+        got = [a["email"] for a in (parsed.get("from") or [])]
+        assert target not in got, f"forged {target} out of a byte-boundary cut"
+        assert "AddressListTruncatedDefect" in (
+            (parsed.get("_ext") or {}).get("defects") or []
+        )
+
+    def test_truncated_resent_list_is_marked_as_defect(self):
+        """The ``Resent-*`` projection is parsed after the base address
+        headers; a message whose *only* truncated list is ``Resent-To``
+        must still carry ``AddressListTruncatedDefect`` — the dropped
+        recipients are just as invisible to the consumer."""
+        target = "ceo@bigcorp.example"
+        cap = DEFAULT_PARSE_OPTIONS.max_address_list_bytes
+        payload = "x" * (cap - len(target) - 2) + ", " + target + "-junk@evil.test"
+        assert len(payload) < DEFAULT_PARSE_OPTIONS.max_header_value_bytes
+        raw = (
+            b"From: a@b.com\r\n"
+            b"Resent-To: " + payload.encode() + b"\r\n"
+            b"Subject: t\r\n"
+            b"\r\n"
+            b"body\r\n"
+        )
+        parsed = parse_email(raw, extensions=True)
+        assert parsed is not None
+        assert "AddressListTruncatedDefect" in (
+            (parsed.get("_ext") or {}).get("defects") or []
+        )
 
     def test_huge_part_count_does_not_explode(self):
         """Go ``multipartmaxparts=1000`` analogue: a message with 2000
@@ -2381,11 +2428,11 @@ class TestParserSecurityRegressions:
         )
         assert total <= 2 * 1000, f"part-count cap not enforced: total={total}"
 
-    def test_huge_single_header_value_is_truncated_not_quadratic(self):
+    def test_huge_single_header_value_is_refused_not_quadratic(self):
         """gh-136063: multiple quadratic sites in stdlib's
-        ``_header_value_parser``. We cap raw header values at
-        ``MAX_HEADER_VALUE_BYTES`` before decoding so the
-        worst-case parse time stays linear in the cap, not in the
+        ``_header_value_parser``. A header past
+        ``max_header_value_bytes`` is refused before decoding, so the
+        worst case is bounded by the cap rather than by the
         attacker-supplied length.
 
         Source: https://github.com/python/cpython/issues/136063
@@ -2405,8 +2452,8 @@ class TestParserSecurityRegressions:
         start = _time.monotonic()
         parsed = parse_email(raw)
         elapsed = _time.monotonic() - start
-        assert parsed is not None
-        assert elapsed < 10.0, f"5MB header parsed in {elapsed:.2f}s"
+        assert parsed is None
+        assert elapsed < 10.0, f"5MB header handled in {elapsed:.2f}s"
 
     def test_display_name_strips_crlf_injection(self):
         """Header-injection in the display name (Apache James
@@ -3018,8 +3065,8 @@ class TestBufferOverflowShapeRegressions:
         """CVE-2000-0567 / CVE-2001-0125 (Outlook / OE GMT-date heap
         overflow): a giant Date field crashed Outlook's
         ``inetcomm.dll``. Python's ``parsedate_to_datetime`` is
-        memory-safe, but a 200 KB Date must not hang and must return
-        a fallback rather than raise.
+        memory-safe; a 200 KB Date is past ``max_header_value_bytes``
+        and the message is refused, in bounded time and without raising.
 
         Source: https://docs.microsoft.com/security-updates/SecurityBulletins/2000/ms00-043
         """
@@ -3037,8 +3084,8 @@ class TestBufferOverflowShapeRegressions:
         start = _time.monotonic()
         parsed = parse_email(raw)
         elapsed = _time.monotonic() - start
-        assert parsed is not None
-        assert elapsed < 5.0, f"long date parsed in {elapsed:.2f}s"
+        assert parsed is None
+        assert elapsed < 5.0, f"long date handled in {elapsed:.2f}s"
 
     def test_cert_1998_long_filename_in_content_disposition(self):
         """CERT CA-1998-10 (Netscape/Pine/OE): a long
@@ -3068,7 +3115,7 @@ class TestBufferOverflowShapeRegressions:
         parsed = parse_email(raw)
         if parsed["attachments"]:
             name = parsed["attachments"][0]["name"]
-            # ``_sanitize_filename`` caps at 255 chars.
+            # ``sanitize_filename`` caps at 255 chars.
             assert len(name) <= 255, f"filename not truncated: len={len(name)}"
 
     def test_cve_2005_4348_fetchmail_zero_headers(self):
@@ -3162,8 +3209,8 @@ class TestBufferOverflowShapeRegressions:
         start = _time.monotonic()
         parsed = parse_email(raw)
         elapsed = _time.monotonic() - start
-        assert parsed is not None
-        assert elapsed < 10.0, f"5MB encoded-word parsed in {elapsed:.2f}s"
+        assert parsed is None
+        assert elapsed < 10.0, f"5MB encoded-word handled in {elapsed:.2f}s"
 
     def test_content_type_duplicate_param_explosion(self):
         """Sendmail / Exchange (CVE-2005-1987 / CVE-2006-0027 class):
@@ -3184,23 +3231,16 @@ class TestBufferOverflowShapeRegressions:
 
     def test_unfolded_one_megabyte_header_line(self):
         """Fetchmail ≤6.2.4 class: a single unfolded header line of
-        50 MB triggered unbounded malloc. We cap raw header value at
-        ``MAX_HEADER_VALUE_BYTES``; the truncation must happen
-        before the value lands in the decoded dict."""
-        from jmap_email.parser import MAX_HEADER_VALUE_BYTES
+        50 MB triggered unbounded malloc. A value past
+        ``max_header_value_bytes`` is refused outright — no truncated
+        copy of it ever reaches the decoded dict."""
+        cap = DEFAULT_PARSE_OPTIONS.max_header_value_bytes
 
-        big_line = b"X-Big: " + b"A" * (2 * MAX_HEADER_VALUE_BYTES) + b"\r\n"
+        big_line = b"X-Big: " + b"A" * (2 * cap) + b"\r\n"
         raw = (
             b"From: a@b.com\r\n" + big_line + b"Subject: huge unfolded\r\n\r\nbody\r\n"
         )
-        parsed = parse_email(raw)
-        assert parsed is not None
-        x_big = _header_all(parsed, "x-big")
-        if x_big and isinstance(x_big, list):
-            # Stored value must be capped at the configured limit.
-            assert len(x_big[0]) <= MAX_HEADER_VALUE_BYTES + 100, (
-                f"raw header not truncated: len={len(x_big[0])}"
-            )
+        assert parse_email(raw) is None
 
 
 class TestUnrecognisedMessageSubtypeRobustness:
@@ -3981,12 +4021,12 @@ class TestParserPass4Regressions:
     def test_m22_body_structure_part_cap_caps_total_parts(self):
         """A pathological multipart with thousands of children must not
         explode memory. The body-structure walker bails at
-        ``MAX_MIME_PARTS``."""
-        from jmap_email.parser import MAX_MIME_PARTS
+        ``max_mime_parts``."""
+        cap = DEFAULT_PARSE_OPTIONS.max_mime_parts
 
         # Build a flat multipart/mixed with many text/plain leaves.
         parts = []
-        n = MAX_MIME_PARTS + 50
+        n = cap + 50
         for i in range(n):
             parts.append(b"--B\r\nContent-Type: text/plain\r\n\r\nx%d\r\n" % i)
         raw = (
@@ -4007,14 +4047,12 @@ class TestParserPass4Regressions:
             return c
 
         total = _count(parsed["bodyStructure"])
-        # The cap is enforced after ``MAX_MIME_PARTS`` leaves have been
+        # The cap is enforced after ``max_mime_parts`` leaves have been
         # collected; with the multipart root + 1000 leaves, the total
         # stays just above the cap and well below the input count.
         assert total < n, f"part cap not enforced: walked {total} of {n} input parts"
         # And not far above the cap itself (root + cap leaves + slack).
-        assert total <= MAX_MIME_PARTS + 5, (
-            f"part cap exceeded by more than expected: {total}"
-        )
+        assert total <= cap + 5, f"part cap exceeded by more than expected: {total}"
 
     # ----- L1: Content-ID stripping uses _strip_cfws + single bracket pair --
 
@@ -4210,3 +4248,370 @@ class TestPreviewCleaning:
         )
         parsed = parse_email(raw)
         assert parsed["preview"] == "Ma reponse fraiche"
+
+
+class TestUnclosedCommentAddressSpoof:
+    """An unclosed ``(`` must not turn a display name into the sender.
+
+    ``getaddresses(strict=False)`` treats an unclosed comment as running
+    to end of input, so in ``victim@bank.com( <attacker@evil.co>`` the
+    comment eats the angle-addr and the splitter returns one tuple whose
+    *address* is what the sender typed in display-name position.
+
+    That is CVE-2023-27043 by another route.
+    :func:`_pick_best_address` defends the multi-tuple form by preferring
+    the last plausible tuple; here the bogus tuple is the only one, so
+    the preference has nothing to choose between. A consumer keying
+    allow/deny, DMARC alignment or contact identity off the parsed
+    address would attribute the message to an address the sender merely
+    named and does not own.
+    """
+
+    @pytest.mark.parametrize(
+        "header",
+        [
+            pytest.param("victim@bank.com( <attacker@evil.co>", id="bare-display-addr"),
+            pytest.param("'victim@bank.com(' <attacker@evil.co>", id="single-quoted"),
+            pytest.param(
+                "victim@bank.com(comment <attacker@evil.co>", id="comment-text"
+            ),
+            pytest.param(
+                "victim@bank.com((( <attacker@evil.co>", id="several-unclosed"
+            ),
+        ],
+    )
+    def test_spoofed_sender_is_refused(self, header):
+        assert parse_address(header) == ("", "")
+        assert not parse_addresses(header)
+
+    def test_one_unclosed_comment_truncates_the_rest_of_the_list(self):
+        """An unclosed comment costs every entry from it onwards, and no
+        earlier one.
+
+        The comment runs to end of input, so the stdlib splitter has
+        already folded everything after it into the poisoned tuple's
+        display name — ``other@b.co`` is not a tuple we could keep even if
+        we wanted to. Entries *before* it were split normally and survive.
+        Recorded because it is the kind of partial result that looks like
+        a bug from either end: a caller comparing the returned count to
+        the comma count sees a mismatch, and the missing entries are the
+        tail rather than the malformed one alone.
+        """
+        header = "good@a.co, victim@bank.com( <attacker@evil.co>, other@b.co"
+        assert parse_addresses(header) == [("", "good@a.co")]
+
+        # With nothing before it, the whole header yields nothing.
+        assert not parse_addresses("victim@bank.com( <attacker@evil.co>, other@b.co")
+
+    def test_parse_email_reports_no_sender_rather_than_the_wrong_one(self):
+        raw = (
+            b"From: victim@bank.com( <attacker@evil.co>\r\n"
+            b"To: user@example.com\r\nSubject: hi\r\n"
+            b"Date: Thu, 01 Jan 2026 00:00:00 +0000\r\n\r\nbody\r\n"
+        )
+        parsed = parse_email(raw)
+        assert parsed is not None
+        # Refusing beats naming the wrong mailbox.
+        assert not parsed.get("from")
+
+    def test_lenient_mode_still_preserves_the_wire_bytes(self):
+        """Archive importers keep the original text; they just don't get
+        a fabricated addr-spec out of it."""
+        name, addr = parse_address("victim@bank.com( <attacker@evil.co>", lenient=True)
+        assert name == ""
+        assert addr == "victim@bank.com( <attacker@evil.co>"
+
+    @pytest.mark.parametrize(
+        ("header", "expected"),
+        [
+            # Parens inside a quoted-string are literal, not a comment.
+            pytest.param(
+                '"victim@evil.com(" <real@you.com>',
+                ("victim@evil.com(", "real@you.com"),
+                id="paren-inside-quotes",
+            ),
+            # A quoted display name may legitimately hold an angle-addr;
+            # with no unclosed comment there is nothing ambiguous.
+            pytest.param(
+                '"Bob <bob@old.co>" <bob@new.co>',
+                ("Bob <bob@old.co>", "bob@new.co"),
+                id="angle-addr-in-quoted-name",
+            ),
+            # Ordinary balanced comments keep working.
+            pytest.param(
+                "John (the boss) Doe <john@example.com>",
+                ("John Doe (the boss)", "john@example.com"),
+                id="balanced-comment",
+            ),
+            pytest.param(
+                "john@example.com (trailing comment)",
+                ("trailing comment", "john@example.com"),
+                id="trailing-comment",
+            ),
+            # The original CVE-2023-27043 shape still resolves to the
+            # angle-addr rather than the display name.
+            pytest.param(
+                '"a@b.co" <real@you.com>',
+                ("a@b.co", "real@you.com"),
+                id="cve-2023-27043",
+            ),
+        ],
+    )
+    def test_legitimate_forms_are_untouched(self, header, expected):
+        assert parse_address(header) == expected
+
+
+def _nested(depth, body_lines=4, line_len=2):
+    """A message nested ``depth`` multipart levels deep with a flat body.
+
+    Each level gets a distinct boundary — reused boundaries collapse in
+    the stdlib and trip the separate body-smuggling defence.
+    """
+    body = (
+        b"Content-Type: text/plain\n\n" + (b"x" * (line_len - 1) + b"\n") * body_lines
+    )
+    for i in range(depth):
+        tok = f"B{i}".encode()
+        body = (
+            b'Content-Type: multipart/mixed; boundary="'
+            + tok
+            + b'"\n\n--'
+            + tok
+            + b"\n"
+            + body
+            + b"\n--"
+            + tok
+            + b"--\n"
+        )
+    return b"From: a@b.com\nSubject: nested\n" + body
+
+
+class TestFastSubFile:
+    """``_FastSubFile`` — the stdlib input buffer without the
+    per-ancestor scan on lines that cannot be a delimiter.
+
+    ``BufferedSubFile.readline`` tests every body line against every
+    ancestor predicate, making the stdlib parse O(depth × lines): a
+    10 MiB message measured 22.5 s at depth 100, against a 90 s worker
+    timeout. The body-tree depth cap could not help — it runs after the
+    parse, once the cost is already spent.
+    """
+
+    def test_probe_still_works_on_this_python(self):
+        """Guards the private-API coupling: if a Python upgrade moves
+        ``_input``, this fails instead of the buffer silently not being
+        used."""
+        from jmap_email.parser import _FAST_SUBFILE_SUPPORTED, _probe_fast_subfile
+
+        assert _FAST_SUBFILE_SUPPORTED is True
+        assert _probe_fast_subfile() is True
+
+    @pytest.mark.parametrize(
+        "raw",
+        [
+            b"From: a@b.com\nSubject: s\n\nbody\n",
+            b"From: a@b.com\r\nSubject: s\r\n\r\nbody\r\n",
+            b"From: a@b.com\nSubject: s\n\nbody",
+            b"From: a@b.com\nSubject: \xc3\xa9\n\nb\xffdy\n",
+        ],
+        ids=["lf", "crlf", "no-trailing-nl", "8bit"],
+    )
+    def test_output_is_identical_to_message_from_bytes(self, raw):
+        from jmap_email.parser import _message_from_bytes
+
+        got, want = _message_from_bytes(raw), _stdlib_message(raw)
+        assert got.as_bytes() == want.as_bytes()
+        assert [type(d).__name__ for d in got.defects] == [
+            type(d).__name__ for d in want.defects
+        ]
+
+    def test_delivery_status_blocks_survive(self):
+        """``_eofstack`` is not boundary-only.
+
+        Inside a ``message/delivery-status`` the parser pushes
+        ``NLCRE.match``, for which a *blank* line is the false EOF.
+        Skipping the scan on it merges the per-message and per-recipient
+        blocks and turns ``Final-Recipient`` / ``Status`` into an
+        unparsed payload — the DSN stops being machine-readable.
+        """
+        from jmap_email.parser import _message_from_bytes
+
+        raw = (
+            b"From: MAILER-DAEMON@relay.example\r\nTo: s@example.com\r\n"
+            b"Subject: Undelivered Mail\r\n"
+            b"Content-Type: multipart/report; report-type=delivery-status;\r\n"
+            b'\tboundary="RPT"\r\n\r\n'
+            b"--RPT\r\nContent-Type: text/plain\r\n\r\nfailed\r\n"
+            b"--RPT\r\nContent-Type: message/delivery-status\r\n\r\n"
+            b"Reporting-MTA: dns; relay.example\r\n\r\n"
+            b"Final-Recipient: rfc822; victim@example.org\r\n"
+            b"Action: failed\r\nStatus: 5.1.1\r\n\r\n"
+            b"--RPT--\r\n"
+        )
+
+        def blocks(msg):
+            dsn = [
+                p
+                for p in msg.walk()
+                if p.get_content_type() == "message/delivery-status"
+            ]
+            assert dsn, "no delivery-status part"
+            return [
+                sorted(k.lower() for k in sub.keys()) for sub in dsn[0].get_payload()
+            ]
+
+        assert blocks(_message_from_bytes(raw)) == blocks(_stdlib_message(raw))
+        assert any("final-recipient" in b for b in blocks(_message_from_bytes(raw)))
+
+    def test_parse_cost_is_flat_in_depth(self):
+        """The point of the whole change: depth must stop multiplying
+        the per-line cost."""
+        import time as _time
+
+        shallow = _nested(2, body_lines=200_000, line_len=40)
+        deep = _nested(100, body_lines=200_000, line_len=40)
+
+        start = _time.monotonic()
+        assert parse_email(shallow) is not None
+        shallow_cost = _time.monotonic() - start
+
+        start = _time.monotonic()
+        assert parse_email(deep) is not None
+        deep_cost = _time.monotonic() - start
+
+        # A ratio, not an absolute bound: both scale together on a slow
+        # runner. Without the fast path depth 100 costs several times
+        # depth 2; with it the two are comparable.
+        assert deep_cost < shallow_cost * 3, (
+            f"depth 100 cost {deep_cost:.2f}s vs depth 2 {shallow_cost:.2f}s "
+            "— the O(depth) term is back"
+        )
+
+    def test_a_deep_message_with_a_large_body_is_cheap(self):
+        """The shape that used to take tens of seconds."""
+        import time as _time
+
+        raw = _nested(99, body_lines=300_000, line_len=21)
+        start = _time.monotonic()
+        assert parse_email(raw) is not None
+        elapsed = _time.monotonic() - start
+        assert elapsed < 2.0, f"depth 99 with a large body took {elapsed:.2f}s"
+
+    def test_ordinary_nesting_still_parses(self):
+        parsed = parse_email(_nested(4, body_lines=10))
+        assert parsed is not None
+        assert parsed["subject"] == "nested"
+
+    def test_wide_but_shallow_still_parses(self):
+        """A ``multipart/digest`` with 200 sibling sub-parts."""
+        parts = b"".join(
+            b'--OUT\r\nContent-Type: multipart/alternative; boundary="S'
+            + str(i).encode()
+            + b'"\r\n\r\n--S'
+            + str(i).encode()
+            + b"\r\nContent-Type: text/plain\r\n\r\nhi\r\n--S"
+            + str(i).encode()
+            + b"--\r\n"
+            for i in range(200)
+        )
+        raw = (
+            b"From: a@b.c\r\nSubject: digest\r\n"
+            b'Content-Type: multipart/digest; boundary="OUT"\r\n\r\n'
+            + parts
+            + b"--OUT--\r\n"
+        )
+        parsed = parse_email(raw)
+        assert parsed is not None
+        assert parsed["subject"] == "digest"
+
+    @pytest.mark.parametrize("blen", [69, 70, 71, 100, 200, 300, 1000])
+    def test_over_long_boundaries_parse_as_the_stdlib_does(self, blen):
+        """RFC 2046 §5.1.1 caps a boundary at 70, but that binds the
+        *generator*: ``get_boundary`` applies no length check and matches
+        the delimiter literally, so a longer one is live everywhere."""
+        b = ("B" * blen).encode()
+        raw = (
+            b"From: a@b.com\r\nTo: c@d.com\r\nSubject: s\r\nMIME-Version: 1.0\r\n"
+            b'Content-Type: multipart/mixed; boundary="' + b + b'"\r\n\r\n'
+            b"--" + b + b"\r\nContent-Type: text/plain\r\n\r\nhello world\r\n"
+            b"--" + b + b"\r\nContent-Type: text/plain\r\n\r\nsecond part\r\n"
+            b"--" + b + b"--\r\n"
+        )
+        parsed = parse_email(raw)
+        assert parsed is not None, f"boundary of {blen} bytes was rejected"
+        assert len(parsed["textBody"]) == len(_stdlib_message(raw).get_payload()) == 2
+
+
+class TestHeaderTruncationForgery:
+    """Truncating a header and *then* parsing it can manufacture an
+    address nobody sent.
+
+    Pad a ``From`` so the byte cut lands after ``, ceo@bigcorp.example``
+    in ``…, ceo@bigcorp.example-junk@attacker.test`` and the list parses
+    to exactly that address — which then becomes the stored sender and
+    the DKIM alignment domain. RFC 5322 §2.2.3 puts no limit on a field
+    ("may be indeterminately long"), so this is reachable with fully
+    conformant folding; a line-length rule does not help.
+    """
+
+    TARGET = "ceo@bigcorp.example"
+
+    def _payload(self, cut, delta=0):
+        pad = "x" * (cut - len(self.TARGET) - 2 + delta)
+        return pad + ", " + self.TARGET + "-junk@attacker.test"
+
+    def _from(self, payload):
+        raw = b"From: " + payload.encode() + b"\r\nSubject: t\r\n\r\nbody\r\n"
+        parsed = parse_email(raw)
+        return [a["email"] for a in ((parsed or {}).get("from") or [])]
+
+    def test_unfolded_over_header_cap_is_refused(self):
+        cut = DEFAULT_PARSE_OPTIONS.max_header_value_bytes
+        raw = (
+            b"From: " + self._payload(cut).encode() + b"\r\nSubject: t\r\n\r\nbody\r\n"
+        )
+        assert parse_email(raw) is None
+
+    def test_address_list_cut_never_forges_at_any_offset(self):
+        """One offset in a few hundred lands the cut exactly; sweep."""
+        cut = DEFAULT_PARSE_OPTIONS.max_address_list_bytes
+        forged = [
+            d
+            for d in range(-60, 61)
+            if self.TARGET in self._from(self._payload(cut, d))
+        ]
+        assert not forged, f"forged at offsets {forged}"
+
+    def test_folded_header_is_refused_too(self):
+        """Every physical line stays under RFC 5322's 998-octet limit,
+        so line length is no defence — the unfolded field is what counts.
+        """
+        cut = DEFAULT_PARSE_OPTIONS.max_header_value_bytes
+        forged = []
+        for delta in range(-60, 61):
+            pad = cut - len(self.TARGET) - 2 + delta
+            tokens, used = [], 0
+            while used < pad:
+                chunk = min(900, pad - used)
+                tokens.append("x" * chunk)
+                used += chunk
+            field = "\r\n ".join(tokens) + ", " + self.TARGET + "-junk@attacker.test"
+            raw = b"From: " + field.encode() + b"\r\nSubject: t\r\n\r\nbody\r\n"
+            assert max(len(ln) for ln in raw.split(b"\r\n")) <= 998
+            parsed = parse_email(raw)
+            if self.TARGET in [a["email"] for a in ((parsed or {}).get("from") or [])]:
+                forged.append(delta)
+        assert not forged, f"folded forgery at offsets {forged}"
+
+    def test_cut_lands_only_on_a_top_level_separator(self):
+        """A comma inside a quoted-string, domain-literal or comment is
+        literal text; cutting there re-parses into a different address.
+        """
+        from jmap_email.parser import _last_separator_index
+
+        assert _last_separator_index("a@[1,2], b@c.com", 7) == -1
+        assert _last_separator_index('"q,x"@d.com, b@c.com', 5) == -1
+        assert _last_separator_index("(c,x) a@b.com, d@e.com", 5) == -1
+        assert _last_separator_index('"a\\",b"@x.com, c@d.com', 8) == -1
+        # ...but a real separator after the literal closes is found.
+        assert _last_separator_index("a@[1,2], b@c.com", 8) == 7

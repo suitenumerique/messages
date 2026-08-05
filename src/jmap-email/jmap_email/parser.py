@@ -18,64 +18,45 @@ must be guarded here, not assumed upstream.
 """
 
 import base64
-import email
 import hashlib
 import logging
 import re
 import unicodedata
-from collections import defaultdict
+from collections import Counter, defaultdict
 from datetime import datetime
 from datetime import timezone as dt_timezone
 from email import policy as email_policy
 from email.errors import HeaderParseError, MessageError
+from email.feedparser import (
+    BufferedSubFile,  # ty: ignore[unresolved-import]
+    BytesFeedParser,
+)
 from email.header import decode_header as _stdlib_decode_header
 from email.message import Message
-from email.utils import getaddresses, parsedate_to_datetime
-from ntpath import basename as nt_basename
-from posixpath import basename as posix_basename
+from email.utils import (
+    collapse_rfc2231_value,
+    getaddresses,
+    parsedate_to_datetime,
+)
 from typing import Any, cast
 
+from .addresses import is_valid_addr_spec
+from .filenames import sanitize_filename
 from .options import DEFAULT_PARSE_OPTIONS, ParseOptions
 from .preview import preview_text
 from .types import EmailAddress, EmailBodyPart, JmapEmail
 
-# Resource caps — all chosen to match or exceed the equivalents in
-# battle-tested mail servers. Real-world legitimate messages are well
-# below these caps; adversarial inputs that exceed them are silently
-# truncated or rejected per Postel's law.
+# Resource caps and their provenance live on
+# :class:`jmap_email.options.ParseOptions`; per-call overrides go through
+# the ``options=`` keyword. Read ``DEFAULT_PARSE_OPTIONS`` where no
+# per-call bundle is in scope.
 #
-# - Postfix ``mime_nesting_limit`` defaults to 100. Above this depth,
-#   Python's ~1000-frame recursion limit becomes reachable through a
-#   crafted ``multipart/mixed`` cascade.
-# - Go's stdlib (after CVE-2022-41725 / CVE-2023-24536 / CVE-2023-45290)
-#   caps multipart parts at 1000 per message via the
-#   ``multipartmaxparts`` GODEBUG. Python's ``email`` package has no
-#   equivalent; we enforce our own here.
-# - Postfix ``header_size_limit`` is 102_400 bytes — the de-facto
-#   ceiling we copy. Anything larger is truncated before decoding;
-#   ``email`` package decoders are linear in input size, so a 10 MB
-#   ``X-Foo`` header still works but burns wall-clock.
-# - Postfix ``header_address_token_limit`` is 10_240 tokens. We cap
-#   the *byte length* of an address-list header instead (100 KB,
-#   roughly 5_000 typical addresses) — getaddresses is O(n) but the
-#   per-tuple allocations stack up on huge inputs (Dovecot
-#   CVE-2024-23184 was the same anti-pattern).
-# ``message/rfc822`` nesting is implicitly bounded: we treat
-# ``message/*`` parts as opaque attachments (we don't recurse into
-# them in ``_parse_body_structure``), so a hostile chain of nested
-# forwards can only hurt us via stdlib's ``Message.as_bytes()`` when
-# we serialize the wrapped sub-message in ``_decoded_part_body``.
-# That call catches ``RecursionError`` directly.
-# Module-level mirrors of the default resource caps. Authoritative
-# values live on :class:`jmap_email.options.ParseOptions`; per-call
-# overrides go through the ``options=`` keyword on :func:`parse_email`
-# / :func:`parse_addresses`. Module-level reassignment is not a
-# supported tuning mechanism — it would race across threads and leak
-# across unrelated callers in the same process.
-MAX_MIME_NESTING_DEPTH = DEFAULT_PARSE_OPTIONS.max_mime_nesting_depth
-MAX_MIME_PARTS = DEFAULT_PARSE_OPTIONS.max_mime_parts
-MAX_HEADER_VALUE_BYTES = DEFAULT_PARSE_OPTIONS.max_header_value_bytes
-MAX_ADDRESS_LIST_BYTES = DEFAULT_PARSE_OPTIONS.max_address_list_bytes
+# ``message/rfc822`` nesting is implicitly bounded and so has no cap: we
+# treat ``message/*`` parts as opaque attachments (no recursion in
+# ``_parse_body_structure``), so a hostile chain of nested forwards can
+# only hurt us via stdlib's ``Message.as_bytes()`` when we serialize the
+# wrapped sub-message in ``_decoded_part_body``. That call catches
+# ``RecursionError`` directly.
 
 # Characters stripped from decoded display-names before they are
 # surfaced. Header-injection vector: a downstream consumer that re-
@@ -101,6 +82,101 @@ logger = logging.getLogger(__name__)
 # back to UTF-8 instead of being mangled into U+FFFD by the public
 # ``Message.items()`` view.
 _PARSE_POLICY = email_policy.compat32
+
+
+# ─── Nesting-depth cost ───
+#
+# ``BufferedSubFile.readline`` tests every body line against every
+# ancestor predicate, which makes the stdlib parse O(depth × lines) —
+# enough for one legal-but-deep message to occupy a worker.
+# ``max_mime_nesting_depth`` could not help: it is applied during the
+# body-tree walk, by which point the parse has already been paid for.
+#
+# RFC 2046 §5.1.1 requires a *boundary* delimiter to begin with ``--``,
+# so while every active predicate is a boundary matcher the scan can be
+# skipped for any other line. That makes cost flat in depth with
+# identical output. The stack is not boundary-only, though — see the
+# class — so this is not an optimisation CPython simply missed.
+
+
+class _FastSubFile(BufferedSubFile):
+    """``BufferedSubFile`` without the per-ancestor scan on body lines.
+
+    The scan may only be skipped while every *active* predicate requires
+    a ``--`` prefix. ``_eofstack`` is not boundary-only: inside a
+    ``message/delivery-status`` the parser pushes ``NLCRE.match``, for
+    which a *blank* line is the false EOF. Skipping that merges the DSN's
+    per-message and per-recipient blocks into one and turns
+    ``Final-Recipient`` / ``Status`` into an unparsed payload.
+
+    So the predicates are tracked as they are pushed, and anything not
+    recognised as a boundary matcher disables the shortcut for as long
+    as it is on the stack — unrecognised means slow, never wrong.
+    """
+
+    def __init__(self):
+        super().__init__()
+        self._delimiter_only = True
+
+    def _refresh(self):
+        self._delimiter_only = all(
+            getattr(pred, "__name__", "") == "boundarymatch" for pred in self._eofstack
+        )
+
+    def push_eof_matcher(self, pred):
+        super().push_eof_matcher(pred)
+        self._refresh()
+
+    def pop_eof_matcher(self):
+        pred = super().pop_eof_matcher()
+        self._refresh()
+        return pred
+
+    def readline(self):
+        lines = self._lines
+        if lines and self._eofstack and self._delimiter_only and lines[0][:2] != "--":
+            return lines.popleft()
+        return super().readline()
+
+
+def _message_from_bytes(raw: bytes) -> Message:
+    """``email.message_from_bytes`` with the faster input buffer.
+
+    Substituting ``_input`` is the whole integration: the parser is
+    otherwise the stdlib's, fed in one shot, and the result is
+    byte-identical. ``_probe_fast_subfile`` verifies the substitution
+    still takes effect rather than assuming it.
+    """
+    feed_parser = BytesFeedParser(policy=_PARSE_POLICY)
+    feed_parser._input = _FastSubFile()  # ty: ignore[unresolved-attribute]  # noqa: SLF001
+    feed_parser.feed(raw)
+    return feed_parser.close()
+
+
+def _probe_fast_subfile() -> bool:
+    """Verify the substituted buffer is actually used by the parser.
+
+    ``_input`` is private, so this pins the coupling to a startup check
+    instead of a silent no-op. ``tests/test_parser.py`` asserts the
+    result, so a Python upgrade that moves it fails CI.
+    """
+    try:
+        probe = BytesFeedParser(policy=_PARSE_POLICY)
+        probe._input = _FastSubFile()  # ty: ignore[unresolved-attribute]  # noqa: SLF001
+        probe.feed(b'Content-Type: multipart/mixed; boundary="B"\n\n--B\n\nx\n--B--\n')
+        used = isinstance(probe._input, _FastSubFile)  # ty: ignore[unresolved-attribute]  # noqa: SLF001
+        return used and probe.close().is_multipart()
+    except Exception:  # pylint: disable=broad-exception-caught
+        return False
+
+
+_FAST_SUBFILE_SUPPORTED = _probe_fast_subfile()
+
+if not _FAST_SUBFILE_SUPPORTED:  # pragma: no cover
+    logger.error(
+        "The faster MIME input buffer is not taking effect on this Python; "
+        "deeply nested messages will parse slowly."
+    )
 
 
 def _strip_nul_bytes(text: str) -> str:
@@ -144,13 +220,28 @@ def _repair_surrogate_escaped(text: str) -> str:
 def decode_rfc2047_header(header_text: str) -> str:
     """Decode RFC 2047 encoded-words in a header value to a single string.
 
-    Wraps :func:`email.header.decode_header` (stdlib) with three
+    Wraps :func:`email.header.decode_header` (stdlib) with four
     additional guarantees the bare stdlib helper doesn't give:
     a single string return type (not a list of fragments); recovery
     from ``HeaderParseError`` on malformed base64 inside an encoded-
     word so a single bad ``=?…?b?…?=`` doesn't torpedo the rest of
-    the parse; and surrogate-escape repair of raw 8-bit bytes left
-    by the ``compat32`` policy.
+    the parse; surrogate-escape repair of raw 8-bit bytes left
+    by the ``compat32`` policy; and a bound on the input.
+
+    The bound is required: ``decode_header`` pops from the front of a
+    list, making it O(n²) in the number of encoded-words. ``parse_email``
+    rejects an over-long header value outright, but that check runs over
+    ``message.raw_items()`` — the top-level fields only. A MIME *part*
+    header is never seen by it, so an attachment filename off a
+    sub-part's ``Content-Disposition`` reaches here unbounded and this is
+    the only thing standing in front of it.
+
+    A work bound, not a policy limit: it borrows the magnitude of
+    ``max_header_value_bytes`` but counts characters, which is what the
+    fragment count — and so the cost — actually tracks. Deliberately not
+    a ``ParseOptions`` knob: the call site that needs it
+    (``_get_part_info``) has no options to thread, and a parameter no
+    internal caller can honour is worse than none.
 
     Folding CRLF+WSP is unfolded to single spaces; other internal
     whitespace runs are preserved.
@@ -159,6 +250,12 @@ def decode_rfc2047_header(header_text: str) -> str:
         return ""
 
     header_text_str = str(header_text)
+    cap = DEFAULT_PARSE_OPTIONS.max_header_value_bytes
+    if len(header_text_str) > cap:
+        logger.warning(
+            "decode_rfc2047_header: input exceeds %d characters; truncating", cap
+        )
+        header_text_str = header_text_str[:cap]
     # Stdlib's ``email.header.decode_header`` returns a list of
     # ``(decoded_string, charset)`` pairs (charset is ``None`` when the
     # fragment was not encoded). It raises ``HeaderParseError`` on
@@ -387,7 +484,67 @@ def _is_plausible_addr(addr: str) -> bool:
     # inserts, log lines, JSON serialisers — never see them).
     if any(c in addr for c in ("\r", "\n", "\t", "\x00")):
         return False
-    return True
+    # 3. **Not one mailbox.** ``a@b.co, c@d.co`` and ``a b@c.co`` both
+    #    carry an ``@`` and no control characters, but neither is a
+    #    single addr-spec: the comma is the mailbox-list separator and
+    #    the space separates a display name from an angle-addr, so a
+    #    consumer re-emitting either into a header gains a recipient it
+    #    never validated. Same shape as MimeKit's CVE-2026-30227.
+    #    Delegated to the composer's predicate so the parse and compose
+    #    sides cannot drift apart on what counts as an address.
+    return is_valid_addr_spec(addr)
+
+
+# An angle-addr sitting inside a display name means the split went wrong.
+# The local half excludes ``@`` so the split is unique; both halves
+# matching it is quadratic on a ``<`` + run of ``@``.
+_ANGLE_ADDR_RE = re.compile(r"<[^<>@]*@[^<>]*>")
+
+
+def _has_unclosed_comment(value: str) -> bool:
+    """True when *value* opens an RFC 5322 comment it never closes.
+
+    Parens inside a quoted-string are literal text and a quoted-pair
+    escapes whatever follows it, so both are skipped.
+    """
+    depth = 0
+    in_quotes = False
+    index = 0
+    while index < len(value):
+        char = value[index]
+        if char == "\\":
+            index += 2
+            continue
+        if char == '"':
+            in_quotes = not in_quotes
+        elif not in_quotes:
+            if char == "(":
+                depth += 1
+            elif char == ")" and depth:
+                depth -= 1
+        index += 1
+    return depth > 0
+
+
+def _comment_ate_the_angle_addr(source: str, name: str) -> bool:
+    """True when an unclosed comment swallowed the real addr-spec.
+
+    ``getaddresses(strict=False)`` treats an unclosed ``(`` as a comment
+    running to end of input. In ``victim@bank.com( <attacker@evil.co>``
+    that comment eats the angle-addr, so the splitter reports a single
+    tuple whose *address* is the text the sender typed in display-name
+    position and whose *name* holds the mailbox they actually own.
+
+    That is CVE-2023-27043 reached by another route:
+    :func:`_pick_best_address` defends the multi-tuple form by taking
+    the last plausible tuple, but here the bogus tuple is the only one
+    there is. A consumer keying allow/deny, DMARC alignment or contact
+    identity off the parsed address would attribute the message to an
+    address the sender merely named. Both conditions are required so
+    that a quoted display name legitimately containing an angle-addr
+    (``"Bob <bob@old.co>" <bob@new.co>``) still parses.
+    """
+    return bool(_ANGLE_ADDR_RE.search(name)) and _has_unclosed_comment(source)
 
 
 def _pick_best_address(parsed) -> tuple[str, str] | None:
@@ -497,7 +654,49 @@ def parse_address(
         return ("", address_str.strip()) if lenient else ("", "")
 
     name, addr = _clean_address_pair(*best)
+    if _comment_ate_the_angle_addr(address_str, name):
+        return ("", address_str.strip()) if lenient else ("", "")
     return name, addr
+
+
+def _last_separator_index(value: str, limit: int) -> int:
+    """Index of the last mailbox-list ``,`` at or before *limit*, or -1.
+
+    Only a top-level comma separates mailboxes: one inside a
+    quoted-string, a domain-literal or a comment is literal text.
+    Cutting at those leaves a fragment that re-parses into an address
+    nobody sent — ``a@[1,2]`` cut at its comma yields ``a@[1]``.
+    """
+    in_quote = False
+    in_literal = False
+    comment_depth = 0
+    last = -1
+    index = 0
+    end = min(len(value), limit)
+    while index < end:
+        char = value[index]
+        if char == "\\" and (in_quote or comment_depth):
+            index += 2  # quoted-pair escapes whatever follows
+            continue
+        if in_quote:
+            in_quote = char != '"'
+        elif in_literal:
+            in_literal = char != "]"
+        elif comment_depth:
+            if char == "(":
+                comment_depth += 1
+            elif char == ")":
+                comment_depth -= 1
+        elif char == '"':
+            in_quote = True
+        elif char == "[":
+            in_literal = True
+        elif char == "(":
+            comment_depth = 1
+        elif char == ",":
+            last = index
+        index += 1
+    return last
 
 
 def parse_addresses(
@@ -519,6 +718,11 @@ def parse_addresses(
     address-tuple recovery, never "the whole header was garbage so
     return it as a single fake address."
 
+    A value over ``max_address_list_bytes`` is cut back to a mailbox
+    separator, so entries past the cut are missing from the result. Use
+    :func:`_parse_addresses_ex` when you need to know that happened;
+    ``parse_email`` does, and reports ``AddressListTruncatedDefect``.
+
     Args:
         addresses_str: Comma-separated string of email addresses.
         options: Per-call resource caps. See :class:`ParseOptions`. Pass
@@ -529,18 +733,40 @@ def parse_addresses(
         List of tuples, each containing (display_name, email_address).
         Entries that fail the addr-spec shape check are omitted.
     """
+    return _parse_addresses_ex(addresses_str, options)[0]
+
+
+def _parse_addresses_ex(
+    addresses_str: str, options: ParseOptions
+) -> tuple[list[tuple[str, str]], bool]:
+    """:func:`parse_addresses`, also reporting whether the input was cut.
+
+    Truncation is a property of the parse, so it is decided here rather
+    than re-derived by the caller — two copies of the cut condition would
+    drift the moment one changed.
+    """
     if not addresses_str:
-        return []
+        return [], False
 
     # Defensive byte cap. ``getaddresses`` is O(n) but a 50 MB
     # ``To:`` would allocate millions of tuples (see Dovecot
     # CVE-2024-23184 — same anti-pattern in C). The default 100 KB cap
     # holds ~5_000 typical addresses; well above any legitimate
     # mailing-list expansion that lands in a single header.
+    # Cut back to the last mailbox separator so the result is always a
+    # subset of what an uncapped parse returns. Slicing at the byte bound
+    # instead lands mid-token and can *manufacture* an address: pad a
+    # header so the cut falls after ``, ceo@corp.example`` in
+    # ``…, ceo@corp.example-junk@attacker.test`` and the list parses to
+    # exactly ``ceo@corp.example``, which nobody sent. Same shape as
+    # Postfix's ``header_address_token_limit``, which discards excess
+    # *tokens* rather than bytes.
     cap = options.max_address_list_bytes
-    if len(addresses_str) > cap:
+    truncated = len(addresses_str) > cap
+    if truncated:
         logger.warning("Address-list header exceeds %d bytes; truncating", cap)
-        addresses_str = addresses_str[:cap]
+        separator = _last_separator_index(addresses_str, cap)
+        addresses_str = addresses_str[:separator] if separator >= 0 else ""
 
     # Repair raw 8-bit (surrogate-escaped) bytes. See
     # ``parse_address`` for why we deliberately stop short of
@@ -552,7 +778,7 @@ def parse_addresses(
     if _contains_group_syntax(addresses_str):
         addresses_str = _remove_group_syntax(addresses_str)
         if not addresses_str:
-            return []  # Empty group like "undisclosed-recipients:;"
+            return [], truncated  # Empty group like "undisclosed-recipients:;"
 
     try:
         parsed = getaddresses([addresses_str], strict=False)
@@ -563,7 +789,7 @@ def parse_addresses(
         # limit. Degrade to empty rather than letting the error
         # propagate.
         logger.warning("RecursionError in getaddresses; returning empty list")
-        return []
+        return [], truncated
 
     result: list[tuple[str, str]] = []
     for raw_name, raw_addr in parsed:
@@ -573,8 +799,10 @@ def parse_addresses(
         if not _is_plausible_addr(raw_addr):
             continue
         name, addr = _clean_address_pair(raw_name, raw_addr)
+        if _comment_ate_the_angle_addr(addresses_str, name):
+            continue
         result.append((name, addr))
-    return result
+    return result, truncated
 
 
 def parse_date(date_str: str) -> datetime | None:
@@ -598,100 +826,317 @@ def parse_date(date_str: str) -> datetime | None:
         return None
 
 
-def _infer_filename_from_content_type(content_type: str) -> str:
-    """
-    Infer a filename with extension from a MIME content type.
-    Uses the most commonly used file extensions for each MIME type.
+# Transfer encodings RFC 2045 §6.1 defines. Anything else on the wire is
+# a value some parser in the chain will interpret and another won't.
+_KNOWN_TRANSFER_ENCODINGS = frozenset(
+    {"7bit", "8bit", "binary", "base64", "quoted-printable"}
+)
 
-    Args:
-        content_type: MIME type string (e.g., "image/png", "application/pdf")
 
-    Returns:
-        Filename with appropriate extension (e.g., "unnamed.png", "unnamed.pdf")
-    """
-    extension_map = {
-        "text/plain": ".txt",
-        "text/html": ".html",
-        "text/csv": ".csv",
-        "application/pdf": ".pdf",
-        "image/jpeg": ".jpg",
-        "image/png": ".png",
-        "image/gif": ".gif",
-        "application/json": ".json",
-        "application/xml": ".xml",
-        "application/zip": ".zip",
+# RFC 5322 §3.6: each of these may appear at most once. Real senders
+# emit duplicates anyway, and which copy a reader sees is parser-defined.
+_RFC5322_SINGLETON_HEADERS = frozenset(
+    {
+        "date",
+        "sender",
+        "reply-to",
+        "to",
+        "cc",
+        "bcc",
+        "message-id",
+        "in-reply-to",
+        "references",
+        "subject",
     }
-    ext = extension_map.get(content_type, "")
-    return f"unnamed{ext}"
+)
 
 
-def _sanitize_filename(filename: str, max_length: int = 255) -> str:
-    """Sanitize an attachment filename, preserving the extension when truncating."""
+def _flatten_param(value: Any) -> str | None:
+    """Reduce a ``get_param`` result to a plain string.
 
-    filename = nt_basename(posix_basename(filename))
-
-    filename = filename.strip('"/.\\')
-
-    # Remove null bytes and control characters
-    filename = re.sub(r"[\x00-\x1f\x7f]", "", filename)
-
-    # Remove dangerous characters
-    filename = re.sub(r'[<>:"|?*\\/]', "_", filename)
-
-    # Truncate while preserving extension
-    if len(filename) > max_length:
-        # Find the last dot for extension (but not at the start like .gitignore)
-        last_dot = filename.rfind(".")
-        if last_dot > 0:
-            name = filename[:last_dot]
-            ext = filename[last_dot:]
-            # Only preserve extension if it's reasonable length (up to 10 chars including dot)
-            if len(ext) <= 10:
-                max_name_length = max_length - len(ext)
-                if max_name_length > 0:
-                    return name[:max_name_length] + ext
-        return filename[:max_length]
-
-    return filename
-
-
-def _build_attachment_dict(
-    body: Any,
-    part_type: str,
-    filename: str,
-    disposition: str,
-    content_id: str | None,
-) -> dict[str, Any]:
+    RFC 2231-encoded parameters come back as a ``(charset, lang, value)``
+    tuple; everything else is already a string.
     """
-    Helper function to build an attachment dictionary.
-    Converts body to bytes, computes SHA-256 hash, and constructs the attachment dict.
+    if value is None:
+        return None
+    if isinstance(value, tuple):
+        # ``(charset, lang, value)`` — the value is percent-decoded bytes
+        # carried in a latin-1 str, so it needs the charset applied. Doing
+        # ``value[2]`` alone turns "documenté.pdf" into "documentÃ©.pdf".
+        try:
+            value = collapse_rfc2231_value(value)
+        except Exception:  # pylint: disable=broad-exception-caught
+            value = value[-1]
+    text = str(value).strip()
+    return text or None
 
-    Args:
-        body: The part body (str or bytes)
-        part_type: MIME type of the part
-        filename: Name of the attachment file
-        disposition: Content-Disposition value ("attachment", "inline", etc.)
-        content_id: Content-ID if present
 
-    Returns:
-        Dictionary representing the attachment
+def _preferred_filename(part: Message) -> str | None:
+    """Return the filename a spec-following recipient would use.
+
+    RFC 6266 §4.3: when a ``Content-Disposition`` carries both
+    ``filename`` and the RFC 2231 extended ``filename*``, recipients
+    SHOULD pick ``filename*`` and ignore ``filename``. The stdlib's
+    ``get_filename`` returns whichever the parameter dict happened to
+    keep — in practice the plain one — so a sender can show
+    ``safe.txt`` to us and ``evil.exe`` to every client that follows the
+    RFC. Prefer the extended form, then fall back to the stdlib
+    (which also covers the ``Content-Type: name=`` case).
     """
-    if isinstance(body, str):
-        body_bytes = body.encode("utf-8")
-    else:
-        body_bytes = body
+    try:
+        params = part.get_params(header="content-disposition") or []
+    except Exception:  # pylint: disable=broad-exception-caught
+        return part.get_filename()
+    for key, value in params:
+        if key == "filename" and isinstance(value, tuple):
+            return _flatten_param(value)
+    return part.get_filename()
 
-    content_hash = hashlib.sha256(body_bytes).hexdigest()
 
-    return {
-        "type": part_type,
-        "name": _sanitize_filename(filename) or "unnamed",
-        "size": len(body_bytes),
-        "disposition": disposition,
-        "cid": content_id,
-        "content": body_bytes,
-        "sha256": content_hash,
+# Headers whose value steers how the body is carved up or named. A
+# control character in one of these is a structural risk, not a display
+# quirk, which is why the check is scoped to them rather than every header.
+_MIME_RELEVANT_HEADERS = frozenset(
+    {
+        "content-type",
+        "content-disposition",
+        "content-transfer-encoding",
+        "content-id",
     }
+)
+
+
+def _iter_mime_header_values(part: Message):
+    """Yield ``(name, raw_value)`` for the MIME-structural headers."""
+    try:
+        items = list(part.items())
+    except Exception:  # pylint: disable=broad-exception-caught
+        return
+    for name, value in items:
+        if str(name).lower() in _MIME_RELEVANT_HEADERS:
+            yield str(name), str(value)
+
+
+# Content types whose payload this parser reports as one opaque
+# attachment and does not look inside. ``message/rfc822`` is deliberately
+# absent: it fires on every forwarded message, so it would be noise
+# rather than signal (the README says as much). These two are not
+# ordinary mail —
+#
+#   message/partial       RFC 2046 §5.2.2 splits one message across
+#                         several, so the payload only exists after a
+#                         reassembly a per-message scanner never does.
+#   message/external-body the content is fetched from elsewhere and is
+#                         not in this message at all.
+#
+# — and both are long-standing ways to put something in front of a reader
+# that no content scanner ever saw.
+_OPAQUE_MESSAGE_DEFECTS = {
+    "message/partial": "PartialMessageDefect",
+    "message/external-body": "ExternalBodyDefect",
+}
+
+
+def _has_fold_inside_quotes(raw_value: str) -> bool:
+    """True when a header folds *inside* a quoted parameter value.
+
+    Folding between parameters is ordinary. Folding inside the quotes is
+    where readers diverge: unfolding per RFC 5322 §2.2.3 removes the CRLF
+    and keeps the WSP, so ``filename="pay<CRLF> load.exe"`` is
+    ``pay load.exe`` here — but a parser that drops the whole fold reads
+    ``payload.exe`` and one that truncates at the CR reads ``pay``. Three
+    names for one attachment, which is the point of doing it.
+    """
+    in_quotes = False
+    index = 0
+    while index < len(raw_value):
+        char = raw_value[index]
+        if char == "\\" and in_quotes:
+            index += 2
+            continue
+        if char == '"':
+            in_quotes = not in_quotes
+        elif in_quotes and char in "\r\n":
+            return True
+        index += 1
+    return False
+
+
+def _collect_message_ambiguity_defects(message: Message, defects: list[str]) -> None:
+    """Root-level ambiguities: duplicated singleton headers, missing
+    ``MIME-Version``.
+
+    Kept separate from the per-part walk because these are properties of
+    the message as a whole — a nested ``message/rfc822`` legitimately
+    carries its own ``From``, and flagging that would be noise.
+    """
+    try:
+        names = [str(k).lower() for k in message.keys()]
+    except Exception:  # pylint: disable=broad-exception-caught
+        return
+    counts = Counter(names)
+
+    # Called out separately from the rest: a second ``From`` is how a
+    # sender shows one identity to the filter that authenticated the
+    # message and another to the human who reads it (CERT VU#517845;
+    # "Weak Links in Authentication Chains", USENIX 2020).
+    if counts.get("from", 0) > 1:
+        defects.append("DuplicateFromDefect")
+    if any(counts.get(h, 0) > 1 for h in _RFC5322_SINGLETON_HEADERS):
+        defects.append("DuplicateScalarHeaderDefect")
+
+    # MIME syntax with no MIME-Version to license it. We parse it; a
+    # strict receiver treats the body as flat text and never sees the
+    # parts — including their attachments.
+    if not counts.get("mime-version"):
+        try:
+            is_mime = message.get_content_maintype() == "multipart" or bool(
+                message.get("content-transfer-encoding")
+            )
+        except Exception:  # pylint: disable=broad-exception-caught
+            return
+        if is_mime:
+            defects.append("MissingMimeVersionDefect")
+
+
+def _collect_ambiguity_defects(part: Message, defects: list[str]) -> None:
+    """Record MIME constructs that different parsers resolve differently.
+
+    None of these stop us producing output — we resolve each the way the
+    stdlib does — but each is a point where a spam filter, a virus
+    scanner and a mail client can legitimately disagree about what the
+    message *contains*. Research on MIME parser differentials ("Email
+    Smuggling with Differential Fuzzing of MIME Parsers", Andarzian,
+    Meyers & Poll, 2025) demonstrates payloads smuggled past filters on
+    exactly these constructs, so a consumer running a scanning or
+    quarantine policy needs to see them rather than receive a confident
+    parse of one of the possible readings.
+
+    They are surfaced as ``_ext.defects`` entries alongside the stdlib
+    ones — a signal, not a verdict.
+    """
+    try:
+        content_types = part.get_all("content-type") or []
+        encodings = part.get_all("content-transfer-encoding") or []
+    except Exception:  # pylint: disable=broad-exception-caught
+        # A sufficiently damaged header block can trip the stdlib's own
+        # accessors; the absence of a defect flag must never be the thing
+        # that aborts a parse.
+        return
+
+    # Duplicate structural headers: we take the first, and so does the
+    # stdlib. Clients have been observed honouring the *second*, which
+    # changes the media type — and with it whether the body is one blob
+    # of text or a multipart tree whose attachments we never extract.
+    if len(content_types) > 1:
+        defects.append("DuplicateContentTypeDefect")
+    if len(encodings) > 1:
+        defects.append("DuplicateTransferEncodingDefect")
+
+    # An encoding token outside RFC 2045 §6.1. We leave the body
+    # undecoded; lenient clients guess (base64 for "bas64", or
+    # quoted-printable whenever the data contains "="), which reveals
+    # content a scanner reading our output never sees. This also catches
+    # the mangled-header case ``Content-Transfer-Encoding:: base64``,
+    # where the value arrives as ``": base64"``.
+    if encodings:
+        token = str(encodings[0]).strip().lower()
+        if token and token not in _KNOWN_TRANSFER_ENCODINGS:
+            defects.append("UnrecognizedTransferEncodingDefect")
+
+    # RFC 2046 §5.1 says the preamble and epilogue are to be ignored, and
+    # we ignore both. Mail clients have been observed rendering preamble
+    # text as the message's first line, so it reaches the reader and
+    # nothing downstream of this parser; the epilogue is the same gap at
+    # the other end of the body.
+    preamble = getattr(part, "preamble", None)
+    if isinstance(preamble, str) and preamble.strip():
+        defects.append("NonEmptyPreambleDefect")
+    epilogue = getattr(part, "epilogue", None)
+    if isinstance(epilogue, str) and epilogue.strip():
+        defects.append("NonEmptyEpilogueDefect")
+
+    # Two boundaries declared on one part: whichever we honour, the other
+    # delimits parts we never see. (Inbox Invasion, CCS '24.)
+    try:
+        ct_params = part.get_params() or []
+        cd_params = part.get_params(header="content-disposition") or []
+    except Exception:  # pylint: disable=broad-exception-caught
+        # A damaged header block can trip the stdlib accessors. Carry on
+        # with no parameters rather than returning: the checks below read
+        # other sources, and abandoning them would mean the most damaged
+        # messages — the ones most worth flagging — get the fewest markers.
+        ct_params, cd_params = [], []
+    if sum(1 for k, _ in ct_params if k == "boundary") > 1:
+        defects.append("DuplicateBoundaryParameterDefect")
+
+    # A multipart whose boundary is absent or empty has no agreed way to
+    # split: some parsers give up and treat the body as one flat part,
+    # others resynchronise on the next ``--`` line they find.
+    try:
+        is_multipart = part.get_content_maintype() == "multipart"
+    except Exception:  # pylint: disable=broad-exception-caught
+        is_multipart = False
+    if is_multipart:
+        try:
+            boundary = _flatten_param(part.get_param("boundary"))
+        except Exception:  # pylint: disable=broad-exception-caught
+            # Unreadable is not better than absent: either way there is no
+            # boundary anyone can agree on.
+            boundary = None
+        if not boundary:
+            defects.append("EmptyBoundaryDefect")
+
+    # RFC 2047 encoded-words are not permitted in MIME parameters — RFC
+    # 2231 is the mechanism for non-ASCII there. Senders use them anyway,
+    # and receivers split: some decode, some show the raw ``=?…?=``. We
+    # decode, so an attachment can carry one name past a scanner that
+    # doesn't and a different one to the user.
+    for _key, value in list(ct_params) + list(cd_params):
+        flat = _flatten_param(value) or ""
+        if "=?" in flat and "?=" in flat:
+            defects.append("EncodedWordInParameterDefect")
+            break
+
+    # NUL and other control characters in a MIME-relevant header value.
+    # Parsers disagree on all three available readings — strip them (as we
+    # do), truncate at the first one, or keep them — so the same
+    # ``report.pdf\x00.exe`` is three different filenames depending on who
+    # is looking.
+    for _name, raw_value in _iter_mime_header_values(part):
+        if any(ord(c) < 0x20 and c not in "\t\r\n" or c == "\x7f" for c in raw_value):
+            defects.append("ControlCharInHeaderDefect")
+            break
+
+    # A fold inside a quoted parameter value. Legal, and read three
+    # different ways — see ``_has_fold_inside_quotes``.
+    for _name, raw_value in _iter_mime_header_values(part):
+        if _has_fold_inside_quotes(raw_value):
+            defects.append("FoldInQuotedParameterDefect")
+            break
+
+    # A part we hand over without looking inside.
+    try:
+        opaque = _OPAQUE_MESSAGE_DEFECTS.get(part.get_content_type())
+    except Exception:  # pylint: disable=broad-exception-caught
+        opaque = None
+    if opaque:
+        defects.append(opaque)
+
+    # The part names itself twice and differently. A recipient picking
+    # ``Content-Type: name=`` — or honouring RFC 6266 §4.3's preference
+    # for ``filename*`` — saves the file under a name the other never
+    # saw, which is the whole point of a double extension.
+    names = {
+        flat
+        for flat in (_flatten_param(v) for k, v in cd_params if k == "filename")
+        if flat
+    }
+    ct_name = _flatten_param(dict(ct_params).get("name"))
+    if ct_name:
+        names.add(ct_name)
+    if len(names) > 1:
+        defects.append("ConflictingAttachmentNameDefect")
 
 
 def _is_inline_media_type(content_type: str) -> bool:
@@ -797,7 +1242,7 @@ def _get_part_info(part: Message) -> dict[str, Any]:
     # through ``decode_rfc2047_header`` for the encoded-word case
     # where the value sits on a Content-Type ``name=`` parameter.
     filename: str | None = None
-    raw_filename = part.get_filename()
+    raw_filename = _preferred_filename(part)
     if raw_filename:
         filename = decode_rfc2047_header(str(raw_filename).strip())
 
@@ -963,21 +1408,20 @@ def _build_attachment_from_part_info(
 ) -> EmailBodyPart:
     """Build a JMAP ``EmailBodyPart`` for the attachments array."""
     disposition = part_info["disposition"] or disposition_override
-    raw_filename = part_info["name"]
     # JMAP spec: ``name`` is ``String | null``. We don't substitute
     # ``"unnamed"`` here — if a downstream consumer wants a default,
-    # they can synthesize one. We also map an empty sanitized result
-    # to ``None`` so callers don't have to ``or "fallback"`` it.
+    # they can synthesize one. ``sanitize_filename`` returns ``None``
+    # for a missing name and for one that sanitizes away to nothing,
+    # which is exactly the field's shape.
     body_bytes = part_info["body"] or b""
     if isinstance(body_bytes, str):
         body_bytes = body_bytes.encode("utf-8")
-    sanitized_name = _sanitize_filename(raw_filename) if raw_filename else ""
     return {
         "partId": part_info["part_id"],
         "blobId": None,
         "type": part_info["type"],
         "size": len(body_bytes),
-        "name": sanitized_name or None,
+        "name": sanitize_filename(part_info["name"]),
         "charset": part_info.get("charset") or None,
         "disposition": disposition,
         "cid": part_info["content_id"],
@@ -1456,17 +1900,6 @@ def _jmap_addresses(pairs: list[tuple[str, str]]) -> list[EmailAddress] | None:
     return [{"name": name or None, "email": addr} for name, addr in pairs]
 
 
-def _jmap_single_address(name: str, addr: str) -> list[EmailAddress] | None:
-    """Convert a single ``(name, addr)`` to a single-element list (or None).
-
-    JMAP requires address-list fields to always be lists; even a header
-    with one mailbox surfaces as a 1-element ``EmailAddress[]``.
-    """
-    if not addr:
-        return None
-    return [{"name": name or None, "email": addr}]
-
-
 def _jmap_message_ids(raw_header_value: str) -> list[str] | None:
     """Split a Message-ID / In-Reply-To / References header into ``String[]``.
 
@@ -1834,7 +2267,7 @@ def _parse_email(
         # raises on malformed input under this policy — recoverable
         # damage is recorded in ``message.defects`` and we walk the
         # structure best-effort.
-        message = email.message_from_bytes(raw_email_bytes, policy=_PARSE_POLICY)
+        message = _message_from_bytes(raw_email_bytes)
 
         if message is None:
             logger.warning(
@@ -1873,19 +2306,35 @@ def _parse_email(
 
         for k, v in message.raw_items():
             raw_value = _repair_surrogate_escaped(str(v))
-            # Defensive byte cap on individual header values. Matches
-            # Postfix's ``header_size_limit``. Above this size the
-            # quadratic-time hot spots in ``_header_value_parser``
-            # (gh-136063: ``get_phrase`` / ``_parseparam`` / etc.)
-            # start to hurt — truncating early keeps wall-clock
-            # bounded on adversarial input.
-            if len(raw_value) > options.max_header_value_bytes:
+            # Cap on individual header values, matching Postfix's
+            # ``header_size_limit``. RFC 5322 §2.2.3 puts no limit on a
+            # field ("may be indeterminately long" — folding makes it
+            # unbounded while every line stays legal), so this is local
+            # policy, and above it the quadratic hot spots in
+            # ``_header_value_parser`` (gh-136063) start to hurt.
+            #
+            # Rejected, not truncated. Postfix discards the excess, but
+            # it is rewriting a header, not asserting identity from one:
+            # a byte cut lands mid-token and can *manufacture* a value
+            # that was never sent. There is no generally safe cut point
+            # for an arbitrary field — a shortened ``Received`` still
+            # looks well-formed to the trust-scope logic — so a message
+            # carrying one is refused rather than silently reshaped.
+            #
+            # Measured in octets, not characters: the value has already
+            # been decoded from the wire, so a non-ASCII field is up to
+            # 4x longer in bytes than in ``len()`` and a character count
+            # would let it past a cap named for bytes.
+            if (
+                len(raw_value.encode("utf-8", "surrogateescape"))
+                > options.max_header_value_bytes
+            ):
                 logger.warning(
-                    "Header %s value exceeds %d bytes; truncating",
+                    "parse_email: header %s exceeds %d bytes; returning None",
                     k,
                     options.max_header_value_bytes,
                 )
-                raw_value = raw_value[: options.max_header_value_bytes]
+                return None
             # NUL bytes in headers would either reach a downstream text
             # store (PostgreSQL rejects \x00 in TEXT) or smuggle past a
             # naive C-string parser. Strip before any decode + before
@@ -1918,13 +2367,29 @@ def _parse_email(
         # Address fields. Use the raw (surrogate-repaired but NOT RFC
         # 2047-decoded) header values to defend against PortSwigger
         # "Splitting the Email Atom" smuggling.
+        truncated_address_lists: set[str] = set()
+
         def _addrs(name: str) -> list[EmailAddress] | None:
             """Header-present → list (possibly empty after validation);
             header-absent → None. Spec mandates the null-vs-empty
             distinction (RFC 8621 §4.1.2.2)."""
             if name not in decoded_by_name:
                 return None
-            return _jmap_addresses(parse_addresses(raw_addr_headers.get(name, "")))
+            # ``options=`` must be threaded through: without it every
+            # address header is parsed under the module default, so
+            # ``max_address_list_bytes`` — the CVE-2024-23184 analogue,
+            # Dovecot's unbounded address-list allocation — was inert for
+            # anyone tuning it on ``parse_email``, which is the entry
+            # point that actually meets hostile mail.
+            addresses, truncated = _parse_addresses_ex(
+                raw_addr_headers.get(name, ""), options
+            )
+            if truncated:
+                # Entries past the cut are dropped, so the reported list
+                # is shorter than the wire's — a recipient we never
+                # surface is one a consumer cannot act on.
+                truncated_address_lists.add(name)
+            return _jmap_addresses(addresses)
 
         jmap_from = _addrs("from")
         jmap_sender = _addrs("sender")
@@ -1944,13 +2409,9 @@ def _parse_email(
         jmap_sent_at = _jmap_iso_date(parse_date(_first_value("date")))
 
         # Defects collected from the stdlib parse + our recursive walks.
+        # Populated by the walks below and harvested after body parsing —
+        # see the collection site further down for why the order matters.
         defects: list[str] = []
-        try:
-            for part in message.walk():
-                for defect in getattr(part, "defects", ()) or ():
-                    defects.append(type(defect).__name__)
-        except RecursionError:
-            defects.append("RecursionError")
 
         body_parts = _parse_message_content(message, options=options, defects=defects)
         text_body: list[EmailBodyPart] = body_parts["textBody"]
@@ -1999,6 +2460,22 @@ def _parse_email(
 
         # ─── Extensions (project-specific) ───
         if extensions:
+            # Harvested HERE, not before the body walk. The stdlib attaches
+            # several of its defects while *decoding* a payload rather than
+            # while parsing structure — ``InvalidBase64CharactersDefect``,
+            # ``InvalidBase64PaddingDefect``, ``InvalidBase64LengthDefect``
+            # — so a collection that ran before ``_parse_message_content``
+            # (and before ``_build_body_structure``) silently dropped every
+            # one of them.
+            try:
+                for part in message.walk():
+                    for defect in getattr(part, "defects", ()) or ():
+                        defects.append(type(defect).__name__)
+                    _collect_ambiguity_defects(part, defects)
+            except RecursionError:
+                defects.append("RecursionError")
+            _collect_message_ambiguity_defects(message, defects)
+
             ext: dict[str, Any] = {"defects": defects}
             # Resent-* typed projection. RFC 8621 §4.1.3 names only the
             # 11 base convenience properties; Resent-* is a §4.1.2
@@ -2018,6 +2495,11 @@ def _parse_email(
             }
             if any(v is not None for v in resent.values()):
                 ext["resent"] = resent
+            # After the ``resent`` projection: those ``_addrs`` calls feed
+            # ``truncated_address_lists`` too, and ``defects`` is aliased
+            # into ``ext``, so the append lands in ``_ext.defects``.
+            if truncated_address_lists:
+                defects.append("AddressListTruncatedDefect")
             result["_ext"] = ext
 
         return cast(JmapEmail, result)

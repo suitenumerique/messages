@@ -16,7 +16,15 @@ from email.parser import BytesParser
 import pytest
 
 import jmap_email.composer as _composer_module
-from jmap_email import is_valid_msg_id, parse_email
+from jmap_email import (
+    DEFAULT_COMPOSE_OPTIONS,
+    ComposeOptions,
+    is_valid_addr_spec,
+    is_valid_msg_id,
+    parse_address,
+    parse_email,
+    preview_text,
+)
 from jmap_email.composer import (
     _MSG_ID_MAX_OCTETS,
     _POLICY,
@@ -328,10 +336,10 @@ class TestEmailComposition:
             "textBody": [{"content": "Hello everyone!"}],
         }
 
-        # keep_bcc=True so this contract test exercises the full address-list
+        # emit_bcc=True so this contract test exercises the full address-list
         # serialization path including Bcc. Default behavior (Bcc dropped) is
         # covered by TestComposerRFCAudit.test_bcc_dropped_by_default.
-        result_bytes = compose_email(jmap_data, keep_bcc=True)
+        result_bytes = compose_email(jmap_data, options=ComposeOptions(emit_bcc=True))
         assert isinstance(result_bytes, bytes)
 
         parsed = BytesParser().parsebytes(result_bytes)
@@ -673,7 +681,7 @@ class TestEmailComposition:
             ],
         }
 
-        raw_email = compose_email(jmap_data, keep_bcc=True)
+        raw_email = compose_email(jmap_data, options=ComposeOptions(emit_bcc=True))
 
         msg = email.message_from_bytes(raw_email, policy=policy.default)
         part = next(p for p in msg.walk() if p.get_filename() == "details.txt")
@@ -709,7 +717,7 @@ class TestEmailComposition:
             ],
         }
 
-        raw_email = compose_email(jmap_data, keep_bcc=True)
+        raw_email = compose_email(jmap_data, options=ComposeOptions(emit_bcc=True))
 
         msg = email.message_from_bytes(raw_email, policy=policy.default)
         part = next(p for p in msg.walk() if p.get_filename() == "details.txt")
@@ -1222,8 +1230,13 @@ class TestErrorHandling:
         # Test with empty strings
         assert format_address("", "") == ""
 
-        # Test with unusual email format (missing domain)
-        assert "user-without-domain" in format_address("Test", "user-without-domain")
+        # A value that is not an addr-spec yields "" rather than being
+        # emitted: format_address's own docstring points callers at
+        # envelope construction and quoted-block headers, so anything it
+        # returns may end up in a header and must be a real mailbox.
+        assert format_address("Test", "user-without-domain") == ""
+        # Nor may it mint a second mailbox out of one entry.
+        assert format_address("Test", "a@b.co, evil@x.co") == ""
 
         # Test with extremely long name
         long_name = "A" * 100
@@ -1250,7 +1263,9 @@ class TestErrorHandling:
                 "cid": case["cid"],
             }
 
-            attachment_part = _create_attachment_part(attachment)
+            attachment_part = _create_attachment_part(
+                attachment, DEFAULT_COMPOSE_OPTIONS
+            )
 
             # Verify the attachment part was created
             assert attachment_part is not None
@@ -1708,27 +1723,28 @@ class TestComposerRFCAudit:  # pylint: disable=too-many-public-methods
     # --- B. CR/LF in the email address portion (CVE-2021-23400 nodemailer) -
 
     def test_crlf_in_email_address_does_not_inject_header(self):
-        """A \\r\\n smuggled into the email field must not survive into the wire bytes.
+        """A \\r\\n smuggled into the email field is now refused outright.
 
-        format_address only .strip()s whitespace from the email field. The
-        guarantee comes from _sanitize_header_value wrapping the formatted
-        result. Lock that contract here.
+        Stripping the CRLF leaves ``a@b.comBcc: evil@evil.tld`` — no
+        injection, but not a mailbox either, and emitting it would put
+        nonsense in a To: header. Strict compose rejects instead, which
+        is the stronger property: the bytes are never built at all.
         """
-        raw, parsed = self._compose_and_parse(
-            self._minimal(to=[{"name": "x", "email": "a@b.com\r\nBcc: evil@evil.tld"}])
-        )
-        assert b"evil@evil.tld" not in raw or b"Bcc:" not in raw
-        # Bcc must not appear as a separate header
-        assert parsed["Bcc"] is None
+        with pytest.raises(InvalidAddressError):
+            compose_email(
+                self._minimal(
+                    to=[{"name": "x", "email": "a@b.com\r\nBcc: evil@evil.tld"}]
+                )
+            )
 
     def test_crlf_in_from_email_does_not_inject_header(self):
         """Same CRLF-in-email guard applied via the From path."""
-        raw, _ = self._compose_and_parse(
-            self._minimal(**{"from": [{"name": "n", "email": "a@b\r\nX-Injected: 1"}]})
-        )
-        # injected line must be folded into something parsing can't split on
-        msg = email.message_from_bytes(raw)
-        assert msg["X-Injected"] is None
+        with pytest.raises(InvalidAddressError):
+            compose_email(
+                self._minimal(
+                    **{"from": [{"name": "n", "email": "a@b\r\nX-Injected: 1"}]}
+                )
+            )
 
     # --- C. Display-name with control chars (RFC 5322 atext) ---------------
 
@@ -1981,19 +1997,19 @@ class TestComposerRFCAudit:  # pylint: disable=too-many-public-methods
     def test_bcc_dropped_by_default(self):
         """RFC 5322 §3.6.3: Bcc must not be transmitted to recipients. The
         composer drops it by default. Only archive-reconstruction callers
-        (PST import) opt in via keep_bcc=True."""
+        (PST import) opt in via emit_bcc=True."""
         raw, parsed = self._compose_and_parse(
             self._minimal(bcc=[{"name": "BCC R", "email": "bcc@example.com"}])
         )
         assert parsed["Bcc"] is None
         assert b"bcc@example.com" not in raw
 
-    def test_bcc_emitted_when_keep_bcc_true(self):
-        """Archive-reconstruction opt-in: PST import passes keep_bcc=True so
+    def test_bcc_emitted_when_emit_bcc_true(self):
+        """Archive-reconstruction opt-in: PST import passes emit_bcc=True so
         the original Bcc list is preserved in the stored .eml."""
         raw = compose_email(
             self._minimal(bcc=[{"name": "BCC R", "email": "bcc@example.com"}]),
-            keep_bcc=True,
+            options=ComposeOptions(emit_bcc=True),
         )
         parsed = BytesParser(policy=policy.default).parsebytes(raw)
         assert parsed["Bcc"] is not None
@@ -3116,3 +3132,903 @@ class TestIsValidMsgId:
 
 if __name__ == "__main__":
     pytest.main()
+
+
+class TestAddressInjectionViaCompose:
+    """Address-shaped values that must not become mailboxes.
+
+    All three were found by the parse/compose round-trip fuzz suite: the
+    composed bytes were re-parsed and compared against what was supplied.
+    """
+
+    def _minimal_jmap(self, **over):
+        base = {
+            "from": [{"name": None, "email": "a@b.co"}],
+            "to": [{"name": None, "email": "c@d.co"}],
+            "subject": "s",
+            "sentAt": "2026-06-08T12:00:00+00:00",
+            "textBody": [{"partId": "1", "type": "text/plain", "content": "x"}],
+        }
+        base.update(over)
+        return base
+
+    def test_encoded_word_display_name_stays_one_mailbox(self):
+        """A display name that decodes to an address must be quoted.
+
+        ``=?utf-8?B?ZXZpbEB4LmNv?=`` carries none of the characters the
+        quoting check looks for, but the header machinery decodes it
+        afterwards to ``evil@x.co`` — emitted bare that is a second
+        mailbox, so an attacker-chosen display name became a recipient.
+        """
+        raw = compose_email(
+            self._minimal_jmap(
+                to=[{"name": "=?utf-8?B?ZXZpbEB4LmNv?=", "email": "a@b.co"}]
+            )
+        )
+        reparsed = parse_email(raw)
+        assert [a["email"] for a in reparsed["to"]] == ["a@b.co"]
+
+    def test_comma_in_addr_spec_is_refused(self):
+        """One ``email`` value, one mailbox — never two."""
+        with pytest.raises(InvalidAddressError):
+            compose_email(
+                self._minimal_jmap(to=[{"name": "x", "email": "a@b.co, evil@x.co"}])
+            )
+
+    def test_non_ascii_addr_spec_is_refused(self):
+        """RFC 6531 addresses need SMTPUTF8, which this composer doesn't
+        emit. Left alone the stdlib RFC 2047-encodes the addr-spec —
+        forbidden by RFC 2047 §5, unroutable, and on re-parse the
+        display name wins as the recipient.
+        """
+        with pytest.raises(InvalidAddressError):
+            compose_email(self._minimal_jmap(to=[{"name": "x", "email": "é@ü.co"}]))
+
+    def test_boundaries_are_unpredictable(self):
+        """Boundaries come from a CSPRNG, not the stdlib's Mersenne
+        Twister: predicting one is what lets a sender who controls part
+        of a body close our part and append their own."""
+        jmap = self._minimal_jmap(
+            htmlBody=[{"partId": "2", "type": "text/html", "content": "<p>x</p>"}]
+        )
+        boundaries = {
+            email.message_from_bytes(compose_email(jmap)).get_boundary()
+            for _ in range(8)
+        }
+        assert len(boundaries) == 8
+        assert all(b and " " not in b for b in boundaries)
+
+
+class TestHistoricalCVERegressions:
+    """Address-parsing CVE classes from the past decade of CPython.
+
+    Each was reachable through this library before the addr-spec
+    predicate existed; the defense matrix now names them.
+    """
+
+    @pytest.mark.parametrize(
+        "addr",
+        [
+            pytest.param("a@b@evil.co", id="two-at"),
+            pytest.param("victim@good.co@evil.co", id="domain-looks-allowed"),
+            pytest.param("a@@b.co", id="empty-middle"),
+            pytest.param("a@b.co@", id="trailing-at"),
+        ],
+    )
+    def test_cve_2019_16056_multiple_at_is_rejected(self, addr):
+        """CPython's parseaddr mis-split addresses with several ``@``, so
+        an allowlist keyed on the domain could be talked into accepting
+        one it meant to deny. An unquoted ``@`` in the local-part is not
+        an addr-spec, and is refused."""
+        assert is_valid_addr_spec(addr) is False
+        assert parse_address(addr) == ("", "")
+
+    def test_quoted_local_part_keeps_its_at(self):
+        """``"a@b.co"@evil.co`` *is* one mailbox: the quoting makes the
+        inner ``@`` data, and the domain is unambiguous."""
+        assert is_valid_addr_spec('"a@b.co"@evil.co') is True
+
+    def test_cve_2023_36632_nested_comments_do_not_recurse(self):
+        """A crafted argument drove parseaddr into RecursionError; we
+        catch and degrade rather than let it escape."""
+        assert parse_address("(" * 50000 + "a@b.co") == ("", "")
+
+    @pytest.mark.parametrize(
+        "body",
+        [
+            pytest.param("before\r\n.\r\nafter", id="crlf-dot"),
+            pytest.param("before\n.\nafter", id="bare-lf-dot"),
+            pytest.param("a\nb\nc", id="bare-lf"),
+            pytest.param("a\rb", id="bare-cr"),
+        ],
+    )
+    def test_cve_2023_51764_output_is_crlf_canonical(self, body):
+        """SMTP smuggling works because some servers accept ``\\n.\\n`` as
+        a DATA terminator. A composer that emitted a bare LF would be
+        *generating* that vector out of body text an attacker chose, so
+        every line ending in our output must be a full CRLF.
+        """
+        raw = compose_email(
+            {
+                "from": [{"name": None, "email": "a@b.co"}],
+                "to": [{"name": None, "email": "c@d.co"}],
+                "subject": "s",
+                "sentAt": "2026-06-08T12:00:00+00:00",
+                "textBody": [{"partId": "1", "type": "text/plain", "content": body}],
+            }
+        )
+        assert b"\n" not in raw.replace(b"\r\n", b"")
+        assert b"\r" not in raw.replace(b"\r\n", b"")
+
+
+class TestQuotedLocalPartTermination:
+    """A quoted-string local-part must actually close.
+
+    Stripping ``\\\\`` and ``\\"`` pairs and checking for a leftover quote
+    is not equivalent to walking escapes: it accepts a local-part ending
+    in a lone backslash — in ``"a\\"`` the backslash escapes the closing
+    DQUOTE — so the string never terminates and keeps quoting whatever
+    the header carries after it.
+    """
+
+    @pytest.mark.parametrize(
+        "addr",
+        [
+            # The backslash escapes the closing quote, so the string runs on.
+            pytest.param('"a\\"@b.co', id="trailing-escape"),
+            # Nothing but the escape: same shape, empty content.
+            pytest.param('"\\"@b.co', id="escape-only"),
+            # Escaped backslash, then an escaped quote — still unterminated.
+            pytest.param('"a\\\\\\"@b.co', id="escaped-pair-then-escape"),
+            # An unescaped interior quote closes early; the rest is loose.
+            pytest.param('"a"b"@b.co', id="early-close"),
+        ],
+    )
+    def test_unterminated_quoted_string_is_rejected(self, addr):
+        assert is_valid_addr_spec(addr) is False
+
+    @pytest.mark.parametrize(
+        "addr",
+        [
+            pytest.param('"john doe"@e.co', id="space-inside"),
+            pytest.param('"a@b.co"@e.co', id="at-inside"),
+            pytest.param('"a,b"@e.co', id="comma-inside"),
+            # An escaped backslash is a complete quoted-pair: this closes.
+            pytest.param('"a\\\\"@e.co', id="escaped-backslash"),
+            # An escaped quote is content, not a terminator.
+            pytest.param('"a\\"b"@e.co', id="escaped-quote"),
+            # RFC 5322 permits zero qcontent.
+            pytest.param('""@e.co', id="empty-quoted-string"),
+        ],
+    )
+    def test_terminated_quoted_string_is_accepted(self, addr):
+        assert is_valid_addr_spec(addr) is True
+
+    def test_unterminated_local_part_cannot_reach_the_wire(self):
+        """The composer refuses it rather than emitting a header whose
+        mailbox count depends on who is reading."""
+        with pytest.raises(InvalidAddressError):
+            compose_email(
+                {
+                    "from": [{"name": None, "email": "s@e.co"}],
+                    "to": [
+                        {"name": None, "email": '"a\\"@b.co'},
+                        {"name": None, "email": "victim@x.co"},
+                    ],
+                    "subject": "s",
+                    "sentAt": "2026-01-01T00:00:00+00:00",
+                    "textBody": [{"content": "b"}],
+                }
+            )
+
+    def test_accepted_quoted_local_part_stays_one_mailbox(self):
+        """The flip side: what the predicate *does* accept must still
+        count as exactly one mailbox once it sits next to another
+        recipient in a real mailbox-list."""
+        raw = compose_email(
+            {
+                "from": [{"name": None, "email": "s@e.co"}],
+                "to": [
+                    {"name": None, "email": '"a,b"@e.co'},
+                    {"name": None, "email": "victim@x.co"},
+                ],
+                "subject": "s",
+                "sentAt": "2026-01-01T00:00:00+00:00",
+                "textBody": [{"content": "b"}],
+            }
+        )
+        parsed = BytesParser(policy=_POLICY).parsebytes(raw)
+        pairs = email.utils.getaddresses([str(parsed["To"])])
+        assert [addr for _name, addr in pairs] == ['"a,b"@e.co', "victim@x.co"]
+
+
+class TestComposeOptionsIdnaDomains:
+    """``idna_encode_domains`` governs the domain, and only the domain.
+
+    The split is the whole point of the option. Punycode is a DNS
+    algorithm (RFC 3492/5891) and the local part is not a DNS label, so
+    an IDN domain has an ASCII wire form and a non-ASCII local part does
+    not. Carrying the latter needs SMTPUTF8 (RFC 6531), negotiated
+    per-hop against the receiver's EHLO with no downgrade path — RFC 6530
+    dropped the RFC 5504 mechanism — and this composer emits 7-bit and
+    never negotiates it. A flag covering both would silently produce
+    undeliverable mail.
+
+    Note the stdlib does none of this: ``email.policy.default`` RFC
+    2047-encodes a non-ASCII domain, producing
+    ``contact@=?utf-8?q?exempl=C3=A9?=.fr`` — which RFC 2047 §5 forbids
+    inside an addr-spec and no MTA routes.
+    """
+
+    @staticmethod
+    def _jmap(email_addr):
+        return {
+            "from": [{"name": "S", "email": "s@e.co"}],
+            "to": [{"name": "N", "email": email_addr}],
+            "subject": "s",
+            "sentAt": "2026-01-01T00:00:00+00:00",
+            "textBody": [{"content": "b"}],
+        }
+
+    def test_idn_domain_is_refused_by_default(self):
+        """Strict default: the composer does not rewrite an address it
+        was handed unless asked to."""
+        with pytest.raises(InvalidAddressError) as excinfo:
+            compose_email(self._jmap("contact@exemplé.fr"))
+        # The error has to name the way out, or an outside consumer has
+        # no path from the exception to the option.
+        assert "idna_encode_domains=True" in str(excinfo.value)
+
+    def test_idn_domain_is_encoded_when_enabled(self):
+        raw = compose_email(
+            self._jmap("contact@exemplé.fr"),
+            options=ComposeOptions(idna_encode_domains=True),
+        )
+        parsed = BytesParser(policy=_POLICY).parsebytes(raw)
+        assert "contact@xn--exempl-gva.fr" in str(parsed["To"])
+        # Pure ASCII on the wire: that is the point of the conversion.
+        assert raw.isascii()
+
+    @pytest.mark.parametrize(
+        "addr",
+        [
+            pytest.param("josé@exemple.fr", id="non-ascii-local"),
+            pytest.param("josé@exemplé.fr", id="non-ascii-both"),
+        ],
+    )
+    def test_non_ascii_local_part_raises_whatever_the_flag(self, addr):
+        for options in (
+            ComposeOptions(idna_encode_domains=False),
+            ComposeOptions(idna_encode_domains=True),
+        ):
+            with pytest.raises(InvalidAddressError) as excinfo:
+                compose_email(self._jmap(addr), options=options)
+            assert "SMTPUTF8" in str(excinfo.value)
+
+    def test_domain_with_no_idna_encoding_is_refused(self):
+        """A label over 63 octets has no legal A-label form. Refusing
+        beats emitting a domain that cannot resolve."""
+        with pytest.raises(InvalidAddressError):
+            compose_email(
+                self._jmap("a@" + "é" * 70 + ".fr"),
+                options=ComposeOptions(idna_encode_domains=True),
+            )
+
+    def test_deviation_codepoints_are_not_folded(self):
+        """UTS 46 non-transitional: ``faß.de`` and ``fass.de`` are
+        distinct registrable domains (DENIC allows ß since 2010), so
+        the encoder must not fold one into the other the way IDNA2003
+        nameprep silently did — that misdirected the mail."""
+        raw = compose_email(
+            self._jmap("a@faß.de"),
+            options=ComposeOptions(idna_encode_domains=True),
+        )
+        assert b"a@xn--fa-hia.de" in raw
+        assert b"fass.de" not in raw
+
+    def test_trailing_root_dot_is_refused(self):
+        """``idna.encode`` keeps a trailing root dot, but a domain
+        ending in ``.`` is not a valid RFC 5322 dot-atom, so the
+        composer keeps refusing it."""
+        with pytest.raises(InvalidAddressError):
+            compose_email(
+                self._jmap("a@exemplé.fr."),
+                options=ComposeOptions(idna_encode_domains=True),
+            )
+
+    def test_ascii_address_is_untouched(self):
+        """The flag must be inert for the overwhelmingly common case."""
+        for flag in (False, True):
+            raw = compose_email(
+                self._jmap("plain@example.com"),
+                options=ComposeOptions(idna_encode_domains=flag),
+            )
+            parsed = BytesParser(policy=_POLICY).parsebytes(raw)
+            assert "plain@example.com" in str(parsed["To"])
+
+    def test_caller_input_is_not_mutated(self):
+        """A JMAP dict handed to compose_email is frequently the same
+        object the caller goes on to store, so the rewrite must land on
+        a copy."""
+        jmap = self._jmap("contact@exemplé.fr")
+        compose_email(jmap, options=ComposeOptions(idna_encode_domains=True))
+        assert jmap["to"][0]["email"] == "contact@exemplé.fr"
+
+    def test_every_address_field_is_covered(self):
+        """A recipient hidden in cc/bcc/replyTo must not skip the check."""
+        for field in ("sender", "replyTo", "cc", "bcc"):
+            jmap = self._jmap("ok@e.co")
+            jmap[field] = [{"name": None, "email": "contact@exemplé.fr"}]
+            with pytest.raises(InvalidAddressError) as excinfo:
+                compose_email(jmap)
+            assert field in str(excinfo.value)
+
+
+class TestComposeOptionsDefaults:
+    """``DEFAULT_COMPOSE_OPTIONS`` is what ``options=None`` resolves to."""
+
+    def test_default_instance_matches_an_empty_construction(self):
+        assert DEFAULT_COMPOSE_OPTIONS == ComposeOptions()
+
+    def test_defaults_preserve_the_pre_bundle_behaviour(self):
+        """The shipped defaults: nothing assumed about the hop, no
+        rewriting of caller data, no Bcc on the wire."""
+        assert DEFAULT_COMPOSE_OPTIONS.emit_bcc is False
+        assert DEFAULT_COMPOSE_OPTIONS.idna_encode_domains is False
+        assert DEFAULT_COMPOSE_OPTIONS.allow_8bit is False
+        assert DEFAULT_COMPOSE_OPTIONS.allow_smtputf8 is False
+
+    def test_frozen_and_hashable_like_parse_options(self):
+        """Same contract as ParseOptions: safe to build once at import
+        time and share across threads."""
+        options = ComposeOptions(idna_encode_domains=True)
+        assert hash(options) == hash(ComposeOptions(idna_encode_domains=True))
+        with pytest.raises(AttributeError):
+            options.idna_encode_domains = False
+
+
+class TestComposeOptionsEsmtpCapabilities:
+    """``allow_8bit`` and ``allow_smtputf8`` name capabilities of the *hop*.
+
+    The library never discovers those — the caller does. How is the
+    caller's business: a relay whose config it owns, an EHLO response it
+    read before composing, or two variants composed up front so the
+    delivery loop can fall back. What the library owes is that each flag
+    produces exactly the wire form the corresponding extension licenses,
+    and nothing more.
+    """
+
+    @staticmethod
+    def _jmap(**over):
+        base = {
+            "from": [{"name": "Alice", "email": "alice@example.com"}],
+            "to": [{"name": "Bob", "email": "bob@example.com"}],
+            "subject": "café",
+            "sentAt": "2026-01-01T00:00:00+00:00",
+            "textBody": [{"content": "café naïve résumé"}],
+        }
+        base.update(over)
+        return base
+
+    def test_default_is_7bit_and_pure_ascii(self):
+        """No extension assumed: body encoded down, headers RFC 2047."""
+        raw = compose_email(self._jmap())
+        assert raw.isascii()
+        assert b"Content-Transfer-Encoding: base64" in raw
+        assert b"=?utf-8?q?caf=C3=A9?=" in raw
+
+    def test_allow_8bit_emits_raw_body_but_keeps_2047_headers(self):
+        """8BITMIME (RFC 6152) licenses 8-bit *body* octets and nothing
+        else. Headers still need RFC 2047 — that takes SMTPUTF8."""
+        raw = compose_email(self._jmap(), options=ComposeOptions(allow_8bit=True))
+        assert not raw.isascii()
+        assert b"Content-Transfer-Encoding: 8bit" in raw
+        assert "café naïve résumé".encode() in raw
+        # The subject is still an encoded-word: 8BITMIME says nothing
+        # about header charsets.
+        assert b"=?utf-8?q?caf=C3=A9?=" in raw
+
+    def test_smtputf8_emits_utf8_headers(self):
+        """RFC 6532: headers go out as UTF-8 rather than encoded-words."""
+        raw = compose_email(self._jmap(), options=ComposeOptions(allow_smtputf8=True))
+        assert "Subject: café".encode() in raw
+        assert b"=?utf-8?" not in raw
+
+    def test_smtputf8_implies_8bit(self):
+        """RFC 6531 §3.1 requires an SMTPUTF8 server to support 8BITMIME,
+        and UTF-8 headers are 8-bit by construction — encoding the body
+        down while emitting 8-bit headers would buy nothing."""
+        assert ComposeOptions(allow_smtputf8=True).emits_8bit is True
+        raw = compose_email(self._jmap(), options=ComposeOptions(allow_smtputf8=True))
+        assert b"Content-Transfer-Encoding: 8bit" in raw
+
+    @pytest.mark.parametrize(
+        ("allow_8bit", "allow_smtputf8", "expected"),
+        [
+            pytest.param(False, False, False, id="neither"),
+            pytest.param(True, False, True, id="8bit-only"),
+            pytest.param(False, True, True, id="utf8-implies-8bit"),
+            pytest.param(True, True, True, id="both"),
+        ],
+    )
+    def test_emits_8bit_truth_table(self, allow_8bit, allow_smtputf8, expected):
+        options = ComposeOptions(allow_8bit=allow_8bit, allow_smtputf8=allow_smtputf8)
+        assert options.emits_8bit is expected
+
+    def test_smtputf8_permits_a_non_ascii_local_part(self):
+        """The one thing IDNA cannot do. Under SMTPUTF8 the whole
+        addr-spec travels as UTF-8, so there is nothing to convert."""
+        raw = compose_email(
+            self._jmap(to=[{"name": "B", "email": "josé@exemplé.fr"}]),
+            options=ComposeOptions(allow_smtputf8=True),
+        )
+        assert "josé@exemplé.fr".encode() in raw
+
+    def test_non_ascii_local_part_still_refused_without_smtputf8(self):
+        """Including with idna_encode_domains on — a domain encoding does
+        not license a local part."""
+        for options in (
+            ComposeOptions(),
+            ComposeOptions(allow_8bit=True),
+            ComposeOptions(idna_encode_domains=True),
+        ):
+            with pytest.raises(InvalidAddressError):
+                compose_email(
+                    self._jmap(to=[{"name": "B", "email": "josé@exemple.fr"}]),
+                    options=options,
+                )
+
+    def test_ascii_message_is_byte_identical_across_flags(self):
+        """The flags must be inert when there is nothing non-ASCII to
+        encode, so a caller can set them by deployment without changing
+        the output of ordinary mail."""
+        plain = self._jmap(subject="hello", textBody=[{"content": "plain body"}])
+        baseline = compose_email(plain)
+        for options in (
+            ComposeOptions(allow_8bit=True),
+            ComposeOptions(allow_smtputf8=True),
+            ComposeOptions(allow_8bit=True, allow_smtputf8=True),
+        ):
+            other = compose_email(plain, options=options)
+            # Boundaries are freshly random per compose, and this message
+            # has no multipart, so the bytes are directly comparable.
+            assert other == baseline
+
+    def test_two_variants_for_the_delivery_time_fallback(self):
+        """The pattern the flags exist for: compose both up front, send
+        the SMTPUTF8 one, fall back on SMTPNotSupportedError.
+
+        This works whenever an ASCII form *exists* — here an IDN domain
+        with an ASCII local part. When the local part is non-ASCII there
+        is no ASCII variant to fall back to (RFC 6530 dropped the
+        downgrade), and the caller must bounce instead; the sibling test
+        above pins that half.
+        """
+        jmap = self._jmap(to=[{"name": "B", "email": "contact@exemplé.fr"}])
+        preferred = compose_email(
+            jmap, options=ComposeOptions(allow_smtputf8=True, allow_8bit=True)
+        )
+        fallback = compose_email(jmap, options=ComposeOptions(idna_encode_domains=True))
+        assert "contact@exemplé.fr".encode() in preferred
+        assert b"contact@xn--exempl-gva.fr" in fallback
+        assert fallback.isascii()
+
+
+class TestExtIsNotAComposeInput:
+    """``_ext`` is parser-only; the composer never reads it.
+
+    Pinned because the parser emits a *typed* ``_ext.resent`` projection
+    that looks like something you could compose from. You cannot — and
+    the failure is silent, so it needs a test rather than a comment.
+    """
+
+    @staticmethod
+    def _jmap(**over):
+        base = {
+            "from": [{"name": "A", "email": "a@e.co"}],
+            "to": [{"name": "B", "email": "b@e.co"}],
+            "subject": "s",
+            "sentAt": "2026-01-01T00:00:00+00:00",
+            "textBody": [{"content": "x"}],
+        }
+        base.update(over)
+        return base
+
+    def test_ext_does_not_change_the_output(self):
+        loaded = self._jmap(
+            _ext={
+                "defects": ["DuplicateFromDefect"],
+                "resent": {"from": [{"name": "R", "email": "resender@e.co"}]},
+            }
+        )
+        assert compose_email(loaded) == compose_email(self._jmap())
+
+    def test_ext_resent_alone_emits_no_resent_headers(self):
+        """The asymmetry: parse produces ``_ext.resent``, compose ignores
+        it. Resent-* round-trips through ``headers``, not through here."""
+        raw = compose_email(
+            self._jmap(_ext={"resent": {"from": [{"name": None, "email": "r@e.co"}]}})
+        )
+        assert b"Resent-From" not in raw
+
+    def test_resent_headers_round_trip_through_headers(self):
+        """The path that does work, so the test above reads as a scope
+        boundary rather than a bug."""
+        raw = compose_email(
+            self._jmap(headers=[{"name": "Resent-From", "value": "r@e.co"}])
+        )
+        assert b"Resent-From: r@e.co" in raw
+
+    def test_ext_is_always_accepted(self):
+        """There is no flag to reject it. ``_ext`` cannot reach the
+        output, so refusing it protected nothing — a caller wanting to
+        assert strict RFC 8621 input checks ``"_ext" in data`` itself."""
+        assert compose_email(self._jmap(_ext={"defects": []})) == compose_email(
+            self._jmap()
+        )
+
+
+class TestAddrSpecCheckedAsSupplied:
+    """A control character in an address is an error, not something to
+    quietly delete.
+
+    ``is_valid_addr_spec`` promises a value is safe to place in a header
+    *as it stands*, the same promise ``is_valid_msg_id`` makes. Sanitizing
+    an address before validating it breaks that: the control character
+    disappears, what is left validates, and the composer emits a
+    recipient the caller never wrote. Caught by the round-trip fuzz
+    property ``test_no_address_appears_that_we_never_supplied``.
+    """
+
+    @pytest.mark.parametrize(
+        "addr",
+        [
+            pytest.param("references@1&Q\x1a", id="c0-substitute"),
+            pytest.param("a@b.co\r\nBcc: evil@x.co", id="crlf-injection"),
+            pytest.param("a\x7f@b.co", id="del-in-local"),
+            pytest.param("a@b.co\u2028", id="line-separator"),
+            pytest.param("a@b.co\u0085", id="nel"),
+        ],
+    )
+    def test_predicate_rejects_what_the_composer_would_strip(self, addr):
+        assert is_valid_addr_spec(addr) is False
+
+    def test_composer_refuses_rather_than_cleaning(self):
+        """The failure mode this closes: the survivor of a strip is a
+        different recipient from the one supplied."""
+        with pytest.raises(InvalidAddressError):
+            compose_email(
+                {
+                    "from": [{"name": None, "email": "s@e.co"}],
+                    "to": [{"name": "x", "email": "references@1&Q\x1a"}],
+                    "subject": "s",
+                    "sentAt": "2026-01-01T00:00:00+00:00",
+                    "textBody": [{"content": "b"}],
+                }
+            )
+
+    def test_format_address_returns_empty_rather_than_cleaning(self):
+        assert format_address("x", "a@b.co\x1a") == ""
+
+    def test_surrounding_whitespace_is_still_tolerated(self):
+        """Trimming the edges is normalization, not a content change."""
+        assert format_address("x", "  a@b.co  ") == "x <a@b.co>"
+
+    def test_the_stripped_set_has_one_definition(self):
+        """The predicate and the composer's sanitizer must not drift —
+        that drift is exactly what let a cleaned address through."""
+        from jmap_email.addresses import STRIPPED_HEADER_CHARS
+        from jmap_email.composer import _HEADER_INJECTION_CHARS
+
+        assert set(_HEADER_INJECTION_CHARS) == STRIPPED_HEADER_CHARS
+
+
+class TestAlreadyQuotedDisplayNameDetection:
+    """ "Already quoted" must mean a complete quoted-string.
+
+    ``format_address`` skips re-quoting a display name that is already a
+    quoted-string. Testing that with ``startswith('"') and
+    endswith('"')`` alone accepts three things that are not one: a lone
+    ``"`` (one character satisfies both at once), ``"a"b"`` (closes
+    early), and ``"a\\"`` (ends on a backslash escaping its own closing
+    quote). Emitting any of them verbatim unbalances the header, and in a
+    mailbox-list the *next* entry's display name is then read as an
+    address.
+
+    Same root cause as the unterminated local-part in
+    :func:`jmap_email.is_valid_addr_spec`, which is why both now go
+    through the same helper.
+    """
+
+    @staticmethod
+    def _jmap(to):
+        return {
+            "from": [{"name": None, "email": "s@e.co"}],
+            "to": to,
+            "subject": "s",
+            "sentAt": "2026-01-01T00:00:00+00:00",
+            "textBody": [{"content": "b"}],
+        }
+
+    @pytest.mark.parametrize(
+        "name",
+        [
+            pytest.param('"', id="lone-quote"),
+            pytest.param('"a"b"', id="closes-early"),
+            pytest.param('"a\\"', id="trailing-escape"),
+        ],
+    )
+    def test_incomplete_quoted_string_is_escaped_not_trusted(self, name):
+        formatted = format_address(name, "a@b.co")
+        # Whatever we emit must re-parse as exactly one mailbox, with the
+        # address we supplied.
+        pairs = email.utils.getaddresses([formatted])
+        assert [addr for _n, addr in pairs] == ["a@b.co"]
+
+    @pytest.mark.parametrize(
+        "name",
+        [
+            pytest.param('"ok"', id="complete"),
+            pytest.param('""', id="empty-quoted-string"),
+            pytest.param('"a\\\\"', id="escaped-backslash"),
+        ],
+    )
+    def test_complete_quoted_string_is_left_alone(self, name):
+        """No double-quoting: a name that is already a well-formed
+        quoted-string passes through untouched."""
+        assert format_address(name, "a@b.co") == f"{name} <a@b.co>"
+
+    def test_display_name_cannot_become_a_recipient(self):
+        """The end-to-end failure this closes: an unbalanced quote in one
+        entry let the next entry's display name be read as an address,
+        and both real recipients vanished."""
+        raw = compose_email(
+            self._jmap(
+                [
+                    {"name": '"', "email": '"a b"@c.co'},
+                    {"name": ", evil@x.co", "email": '"a b"@c.co'},
+                ]
+            )
+        )
+        recovered = {a["email"] for a in (parse_email(raw).get("to") or [])}
+        assert recovered == {'"a b"@c.co'}
+        assert "evil@x.co" not in recovered
+
+
+class TestAddrSpecRejectsRfc5322Specials:
+    """Specials outside a quoted-string / domain-literal are not one mailbox.
+
+    RFC 5322 §3.2.3 lists ``( ) < > [ ] : ; @ \\ , . "`` as specials. Every
+    one except ``.`` ends whatever token a reader is mid-way through, so a
+    value carrying one unquoted means different things to different
+    parsers — which is the whole failure mode this predicate exists to
+    prevent. Measured against ``getaddresses``:
+
+    * ``a(b@c.co, victim@x.co`` -> a comment swallows the rest, **zero**
+      addresses recovered, both recipients silently gone.
+    * ``a:b@c.co`` -> read as the group ``a`` containing ``b@c.co``, so
+      the address a reader sees is not the one we were handed.
+    """
+
+    @pytest.mark.parametrize(
+        "char", ["(", ")", "<", ">", "[", "]", ":", ";", "@", "\\", ",", '"']
+    )
+    def test_special_in_unquoted_local_part_is_rejected(self, char):
+        assert is_valid_addr_spec(f"a{char}b@c.co") is False
+
+    @pytest.mark.parametrize(
+        "char", ["(", ")", "<", ">", "[", "]", ":", ";", "\\", ","]
+    )
+    def test_special_in_domain_is_rejected(self, char):
+        assert is_valid_addr_spec(f"a@b{char}c.co") is False
+
+    def test_dot_is_not_rejected(self):
+        """``.`` is the dot-atom separator, not a token terminator."""
+        assert is_valid_addr_spec("a.b@c.d.co") is True
+
+    @pytest.mark.parametrize(
+        "addr",
+        [
+            pytest.param("a@[192.168.1.1]", id="ipv4-literal"),
+            pytest.param("a@[IPv6:::1]", id="ipv6-literal"),
+            pytest.param("a@[]", id="empty-literal"),
+        ],
+    )
+    def test_domain_literal_keeps_its_brackets_and_colons(self, addr):
+        """A domain-literal is the one place ``[``, ``]`` and ``:`` are
+        structural rather than stray, so the check has to know the form."""
+        assert is_valid_addr_spec(addr) is True
+
+    @pytest.mark.parametrize(
+        "addr",
+        [
+            pytest.param("a@[1.2.3.4", id="unclosed-literal"),
+            pytest.param("a@[a[b]", id="nested-open-bracket"),
+            pytest.param("a@[a\\b]", id="escape-inside-literal"),
+            # Legal dtext, rejected on the one-mailbox invariant: a
+            # reader blind to literal brackets cuts a mailbox-list at
+            # the comma and opens a comment at the paren, so
+            # ``getaddresses`` recovers zero mailboxes from either next
+            # to a second recipient.
+            pytest.param("a@[a,b]", id="comma-inside-literal"),
+            pytest.param("a@[a(b]", id="open-paren-inside-literal"),
+            pytest.param("a@[a)b]", id="close-paren-inside-literal"),
+        ],
+    )
+    def test_malformed_domain_literal_is_rejected(self, addr):
+        assert is_valid_addr_spec(addr) is False
+
+    @pytest.mark.parametrize(
+        "addr",
+        [
+            pytest.param('"a(b"@c.co', id="paren-quoted"),
+            pytest.param('"a:b"@c.co', id="colon-quoted"),
+            pytest.param('"a,b"@c.co', id="comma-quoted"),
+            pytest.param('"a b"@c.co', id="space-quoted"),
+        ],
+    )
+    def test_quoting_is_what_makes_a_special_safe(self, addr):
+        """Inside a quoted-string the same characters are data, and the
+        quoting is what keeps the value one mailbox."""
+        assert is_valid_addr_spec(addr) is True
+
+    @pytest.mark.parametrize(
+        "addr",
+        [
+            pytest.param("plain@example.com", id="plain"),
+            pytest.param("a.b+tag@sub.example.co.uk", id="dots-and-plus"),
+            pytest.param("!#$%&'*+-/=?^_`{|}~@example.com", id="all-atext"),
+            pytest.param("a@localhost", id="no-dot-domain"),
+            pytest.param("a@b-c.example", id="hyphen-domain"),
+            pytest.param("josé@exemplé.fr", id="rfc6531"),
+        ],
+    )
+    def test_real_addresses_are_unaffected(self, addr):
+        assert is_valid_addr_spec(addr) is True
+
+    def test_an_accepted_address_is_exactly_one_mailbox(self):
+        """The invariant behind the predicate, checked against the stdlib
+        rather than restated."""
+        for addr in [
+            "plain@example.com",
+            '"a,b"@c.co',
+            "a.b+tag@sub.example.co.uk",
+        ]:
+            assert is_valid_addr_spec(addr)
+            pairs = email.utils.getaddresses([f"{addr}, victim@x.co"])
+            assert len(pairs) == 2, f"{addr!r} did not stay one mailbox"
+            assert pairs[-1][1] == "victim@x.co"
+
+
+class TestAttachmentFailuresPropagate:
+    """A bad attachment raises; it is never silently dropped.
+
+    The wrappers used to filter falsy parts and fall back to an unwrapped
+    body "if every attachment fails to build" — unreachable, since
+    ``_create_attachment_part`` raises on every bad-input branch. Pinning
+    the real contract so the dead code cannot come back as a behaviour
+    change: silently losing an attachment is invisible data loss for the
+    sender, which is the one outcome this composer refuses.
+    """
+
+    @staticmethod
+    def _jmap(attachments):
+        return {
+            "from": [{"name": None, "email": "s@e.co"}],
+            "to": [{"name": None, "email": "r@e.co"}],
+            "subject": "s",
+            "sentAt": "2026-01-01T00:00:00+00:00",
+            "textBody": [{"content": "b"}],
+            "attachments": attachments,
+        }
+
+    GOOD = {"content": b"ok", "type": "text/plain", "name": "a.txt"}
+
+    @pytest.mark.parametrize("disposition", ["attachment", "inline"])
+    def test_a_single_bad_attachment_fails_the_whole_compose(self, disposition):
+        bad = {"type": "text/plain", "name": "b.txt", "disposition": disposition}
+        if disposition == "inline":
+            bad["cid"] = "c1"
+        with pytest.raises(AttachmentError):
+            compose_email(self._jmap([bad]))
+
+    @pytest.mark.parametrize("disposition", ["attachment", "inline"])
+    def test_a_bad_one_beside_a_good_one_still_raises(self, disposition):
+        """The filter that used to sit here would have dropped the bad
+        part and shipped the message with only the good one."""
+        bad = {"type": "text/plain", "name": "b.txt", "disposition": disposition}
+        good = dict(self.GOOD, disposition=disposition)
+        if disposition == "inline":
+            bad["cid"] = "c1"
+            good["cid"] = "c2"
+        with pytest.raises(AttachmentError):
+            compose_email(self._jmap([good, bad]))
+
+    def test_good_attachments_are_all_present(self):
+        """The other half: nothing is lost on the success path."""
+        raw = compose_email(
+            self._jmap(
+                [
+                    {"content": b"one", "type": "text/plain", "name": "one.txt"},
+                    {"content": b"two", "type": "text/plain", "name": "two.txt"},
+                ]
+            )
+        )
+        parsed = parse_email(raw)
+        assert {a["name"] for a in parsed["attachments"]} == {"one.txt", "two.txt"}
+
+
+class TestAdversarialComplexityAndShapes:
+    """Attacker-supplied input must cost time proportional to its size.
+
+    Every entry here is a measured finding, not a hypothetical. The bounds
+    are ~100x the fixed cost so they catch a change in the exponent
+    without being flaky about machine speed.
+    """
+
+    def test_display_name_angle_run_is_not_quadratic(self):
+        """``_ANGLE_ADDR_RE`` written ``<[^<>]*@[^<>]*>`` lets both halves
+        match ``@``, so a ``<`` followed by a run of ``@`` with no closing
+        ``>`` made the engine try every split point. Reachable straight
+        from a ``From`` display name: one 96 KiB message cost ~43s."""
+        payload = '"<' + "@" * 90000 + '" <a@b.co>'
+        raw = (
+            f"From: {payload}\r\nTo: x@y.co\r\nSubject: s\r\n"
+            "Date: Thu, 01 Jan 2026 00:00:00 +0000\r\n\r\nbody\r\n"
+        ).encode()
+        start = time.perf_counter()
+        parse_email(raw)
+        assert time.perf_counter() - start < 5.0
+
+    @pytest.mark.parametrize(
+        ("char", "what"),
+        [
+            pytest.param("[", "markdown link text", id="bracket-run"),
+            pytest.param("<", "markdown autolink", id="angle-run"),
+            pytest.param("a", "autolink local-part", id="no-at-run"),
+        ],
+    )
+    def test_preview_patterns_are_not_quadratic(self, char, what):
+        """The markdown link and autolink patterns had unbounded runs, so
+        a body of one repeated character rescanned to end of head from
+        every start position. At ``max_chars=65536`` that was 65s for
+        ``[`` and 114s for ``<``."""
+        start = time.perf_counter()
+        preview_text(char * 200000, max_chars=65536)
+        assert time.perf_counter() - start < 10.0, what
+
+    @pytest.mark.parametrize(
+        "jmap_data",
+        [
+            pytest.param({"to": "not-a-list"}, id="address-list-is-a-string"),
+            pytest.param({"to": [None, 1, "x"]}, id="address-entries-not-dicts"),
+            pytest.param({"cc": [None]}, id="cc-entry-none"),
+            pytest.param({"attachments": "not-a-list"}, id="attachments-is-a-string"),
+            pytest.param({"attachments": [None]}, id="attachment-entry-none"),
+            pytest.param({"attachments": ["x"]}, id="attachment-entry-string"),
+        ],
+    )
+    def test_malformed_shapes_raise_composeerror_not_attributeerror(self, jmap_data):
+        """``.get`` on a non-dict raised ``AttributeError``, which the
+        broad handler wrapped — but only after logging a full traceback.
+        A caller sending ``{"to": "x"}`` in a loop could flood the logs,
+        drowning real errors. The shape check now happens before the
+        access."""
+        base = {
+            "from": [{"name": None, "email": "s@e.co"}],
+            "to": [{"name": None, "email": "r@e.co"}],
+            "subject": "s",
+            "sentAt": "2026-01-01T00:00:00+00:00",
+            "textBody": [{"content": "b"}],
+        }
+        try:
+            compose_email({**base, **jmap_data})
+        except ComposeError:
+            pass  # the documented failure mode
+        except Exception as exc:
+            pytest.fail(f"escaped as {type(exc).__name__}: {exc}")
+
+    def test_format_address_list_tolerates_junk_entries(self):
+        """Public helper, shape comes from caller JSON."""
+        assert format_address_list("not-a-list") == ""
+        assert format_address_list([None, 1, {"email": "a@b.co"}]) == "a@b.co"

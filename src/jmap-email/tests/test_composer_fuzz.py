@@ -8,7 +8,7 @@ ComposeError — never an unwrapped stdlib exception, never a crash, never
 a malformed output.
 
 Input paths covered:
-  - compose_email(jmap_data, in_reply_to, prepend_headers, keep_bcc)
+  - compose_email(jmap_data, in_reply_to, prepend_headers, emit_bcc)
       ↳ jmap_data fields: from, to, cc, bcc, subject, date, messageId,
         references, textBody, htmlBody, attachments, headers
       ↳ in_reply_to: arbitrary string
@@ -30,9 +30,10 @@ from email import policy
 from email.parser import BytesParser
 
 import pytest
-from hypothesis import HealthCheck, Phase, given, settings
+from hypothesis import HealthCheck, given, settings
 from hypothesis import strategies as st
 
+from jmap_email import ComposeOptions
 from jmap_email.composer import (
     ComposeError,
     _normalize_date,
@@ -48,7 +49,13 @@ FUZZ_SETTINGS = {
     "max_examples": int(os.environ.get("FUZZ_EXAMPLES", "2000")),
     "deadline": None,
     "suppress_health_check": [HealthCheck.too_slow, HealthCheck.data_too_large],
-    "phases": [Phase.generate, Phase.target],
+    # Phases are Hypothesis's defaults on purpose. ``shrink`` and
+    # ``explain`` cost nothing on a green run — they only engage once a
+    # failure exists, which is exactly when you want a minimal example
+    # rather than the raw generated blob. ``reuse`` replays a stored
+    # failure until it is fixed, which is what makes an intermittent
+    # find reproducible; it needs ``.hypothesis`` to survive the
+    # container, so compose mounts it.
 }
 
 
@@ -236,7 +243,7 @@ class TestComposeEmailFuzz:
     @given(jmap=jmap_dict)
     @settings(**FUZZ_SETTINGS)
     def test_compose_drops_bcc_by_default(self, jmap):
-        """RFC 5322 §3.6.3 contract: Bcc never leaks unless keep_bcc=True."""
+        """RFC 5322 §3.6.3 contract: Bcc never leaks unless emit_bcc=True."""
         try:
             raw = compose_email(jmap)
         except ComposeError:
@@ -271,19 +278,19 @@ class TestComposeEmailFuzz:
         for reserved in ("From", "To", "Subject", "Date"):
             assert len(parsed.get_all(reserved) or []) <= 1
 
-    @given(jmap=jmap_dict, keep_bcc=st.booleans())
+    @given(jmap=jmap_dict, emit_bcc=st.booleans())
     @settings(**FUZZ_SETTINGS)
-    def test_compose_keep_bcc_flag_is_honored(self, jmap, keep_bcc):
-        """keep_bcc=True surfaces Bcc; False drops it. This is the contract
+    def test_compose_emit_bcc_flag_is_honored(self, jmap, emit_bcc):
+        """emit_bcc=True surfaces Bcc; False drops it. This is the contract
         PST import relies on."""
         try:
-            raw = compose_email(jmap, keep_bcc=keep_bcc)
+            raw = compose_email(jmap, options=ComposeOptions(emit_bcc=emit_bcc))
         except ComposeError:
             return
         parsed = BytesParser(policy=policy.default).parsebytes(raw)
-        if not keep_bcc:
+        if not emit_bcc:
             assert parsed["Bcc"] is None
-        # When keep_bcc=True, Bcc may or may not appear depending on whether
+        # When emit_bcc=True, Bcc may or may not appear depending on whether
         # the input had any bcc entries with a non-empty email. Don't assert
         # presence — just that the flag is honored on the no-leak side.
 
@@ -388,7 +395,7 @@ class TestEndToEndPathFuzz:
             "from": contact_dict,
             "to": contact_list,
             "cc": contact_list,
-            "bcc": contact_list,  # PST import preserves Bcc via keep_bcc=True
+            "bcc": contact_list,  # PST import preserves Bcc via emit_bcc=True
             "subject": chaotic_text,
             "sentAt": chaotic_date,
             "messageId": st.one_of(st.none(), chaotic_text),
@@ -402,10 +409,18 @@ class TestEndToEndPathFuzz:
 
     @given(jmap=pst_jmap)
     @settings(**FUZZ_SETTINGS)
-    def test_pst_import_path_with_keep_bcc(self, jmap):
-        """PST import → reconstruct_eml → compose_email(keep_bcc=True)."""
+    def test_pst_import_path_with_emit_bcc(self, jmap):
+        """PST import → reconstruct_eml → compose_email(...).
+
+        Uses the same bundle the archive caller passes
+        (``ARCHIVE_COMPOSE_OPTIONS``) so the fuzzing covers the IDNA
+        normalization branch the real path takes, not just Bcc retention.
+        """
         try:
-            raw = compose_email(jmap, keep_bcc=True)
+            raw = compose_email(
+                jmap,
+                options=ComposeOptions(idna_encode_domains=True, emit_bcc=True),
+            )
         except ComposeError:
             return
         _assert_wire_format_invariants(raw)

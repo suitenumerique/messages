@@ -1,7 +1,7 @@
 [project]
 name = "jmap-email"
 version = "0.2.0"
-description = "A strict-JMAP RFC 8621 Email object library for Python 3.14+ with lenient RFC 5322 / MIME parsing and strict-by-design composition. Zero runtime dependencies."
+description = "A strict-JMAP RFC 8621 Email object library for Python 3.14+ with lenient RFC 5322 / MIME parsing and strict-by-design composition. One runtime dependency: idna (UTS 46 domain encoding)."
 readme = "README.md"
 license = "MIT"
 authors = [{ name = "ANCT", email = "contact@suite.anct.gouv.fr" }]
@@ -18,10 +18,20 @@ classifiers = [
     "Topic :: Software Development :: Libraries :: Python Modules",
 ]
 
-# Zero runtime dependencies. The whole point of this library is to be a
-# clean stdlib-only wrapper. If you find yourself adding one, stop and
-# read the README first.
-dependencies = []
+# One deliberate runtime dependency, and only this one. The stdlib's
+# ``idna`` codec is IDNA2003, whose nameprep *folds* what it does not
+# refuse (``faß.de`` → ``fass.de``, a distinct registrable domain since
+# 2010) — silently routing mail to the folded sibling. The ``idna``
+# package does UTS 46 non-transitional, what browsers and modern
+# resolvers do. Floor 3.7: the CVE-2024-3651 fix (quadratic
+# ``idna.encode`` on crafted input). Cap <4: what a domain encodes to
+# is this library's observable behavior, so a major that may revise
+# UTS 46 mappings must not arrive silently. Never ``==``: an exact pin
+# here would hold every consumer's ``idna`` hostage to our release
+# cadence — including for security fixes like the one the floor names.
+# Exact pinning is the consuming app's job (its lockfile). If you find
+# yourself adding a *second* dependency, stop and read the README first.
+dependencies = ["idna>=3.7,<4"]
 
 [project.urls]
 Homepage = "https://github.com/suitenumerique/messages/tree/main/src/jmap-email"

@@ -8,8 +8,10 @@ Run with: pytest -m fuzz core/tests/mda/test_rfc5322_address_fuzz.py
 Or: make fuzz-back
 """
 
+import os
+
 import pytest
-from hypothesis import HealthCheck, Phase, given, settings
+from hypothesis import HealthCheck, given, settings
 from hypothesis import strategies as st
 
 from jmap_email.parser import (
@@ -21,10 +23,16 @@ from jmap_email.parser import (
 
 # Intensive fuzzing settings
 FUZZ_SETTINGS = {
-    "max_examples": 10000,
+    "max_examples": int(os.environ.get("FUZZ_EXAMPLES", "10000")),
     "deadline": None,  # No time limit per example
     "suppress_health_check": [HealthCheck.too_slow, HealthCheck.data_too_large],
-    "phases": [Phase.generate, Phase.target],  # Skip shrinking for speed
+    # Phases are Hypothesis's defaults on purpose. ``shrink`` and
+    # ``explain`` cost nothing on a green run — they only engage once a
+    # failure exists, which is exactly when you want a minimal example
+    # rather than the raw generated blob. ``reuse`` replays a stored
+    # failure until it is fixed, which is what makes an intermittent
+    # find reproducible; it needs ``.hypothesis`` to survive the
+    # container, so compose mounts it.
 }
 
 
@@ -370,3 +378,63 @@ class TestAddressEdgeCasesFuzzing:
         assert isinstance(result, tuple)
         result = parse_addresses(chars)
         assert isinstance(result, list)
+
+
+@pytest.mark.fuzz
+class TestAddrSpecMailboxCount:
+    """The invariant behind :func:`is_valid_addr_spec`.
+
+    The predicate's job is not "looks like an address" — it is "this is
+    **one** mailbox, safe to place in a header as it stands". So the
+    property to hold it to is arithmetic: put an accepted value next to
+    one other recipient in a mailbox-list, and a reader must count
+    exactly two. Anything that can end up quoting, or being quoted by,
+    its neighbour breaks that count, which is how an unterminated
+    quoted-string local-part hid a recipient before it was rejected.
+    """
+
+    @given(
+        interior=st.text(
+            alphabet=st.sampled_from('abc \\",;<>@.()[]:'),
+            max_size=12,
+        )
+    )
+    @settings(**FUZZ_SETTINGS)
+    def test_accepted_quoted_local_part_is_exactly_one_mailbox(self, interior):
+        from email.utils import getaddresses
+
+        from jmap_email import is_valid_addr_spec
+
+        addr = f'"{interior}"@e.co'
+        if not is_valid_addr_spec(addr):
+            return
+        pairs = getaddresses([f"{addr}, victim@x.co"])
+        assert len(pairs) == 2, f"{addr!r} did not stay one mailbox: {pairs!r}"
+        assert pairs[-1][1] == "victim@x.co"
+
+    @given(
+        interior=st.text(
+            alphabet=st.sampled_from("ab1.:,;<>@()[]\\\"' "),
+            max_size=12,
+        )
+    )
+    @settings(**FUZZ_SETTINGS)
+    def test_accepted_domain_literal_is_exactly_one_mailbox(self, interior):
+        """Same arithmetic, for the other bracketed form.
+
+        A comma or a paren inside ``[...]`` is legal dtext, but a reader
+        that does not track literal brackets cuts the list or opens a
+        comment there — which is how ``x@[a,b]`` next to a second
+        recipient collapsed to zero recovered mailboxes before those
+        characters were rejected.
+        """
+        from email.utils import getaddresses
+
+        from jmap_email import is_valid_addr_spec
+
+        addr = f"a@[{interior}]"
+        if not is_valid_addr_spec(addr):
+            return
+        pairs = getaddresses([f"{addr}, victim@x.co"])
+        assert len(pairs) == 2, f"{addr!r} did not stay one mailbox: {pairs!r}"
+        assert pairs[-1][1] == "victim@x.co"
