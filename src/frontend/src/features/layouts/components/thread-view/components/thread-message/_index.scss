@@ -286,3 +286,10 @@
         font-size: var(--c--globals--font--sizes--sm);
     }
 }
+
+.thread-message__read-by {
+    font-size: var(--c--globals--font--sizes--xs);
+    color: var(--c--contextuals--content--semantic--neutral--secondary);
+    text-align: right;
+    margin-bottom: var(--c--globals--spacings--base);
+}

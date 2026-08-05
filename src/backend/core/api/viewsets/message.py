@@ -5,7 +5,7 @@ from datetime import timedelta
 
 from django.conf import settings
 from django.db import transaction
-from django.db.models import Exists, OuterRef
+from django.db.models import Exists, OuterRef, Prefetch
 from django.http import HttpResponse
 from django.utils import timezone
 
@@ -79,6 +79,12 @@ class MessageViewSet(
             super()
             .get_queryset()
             .select_related("sender_user")
+            .prefetch_related(
+                Prefetch(
+                    "reads",
+                    queryset=models.MessageRead.objects.select_related("user"),
+                )
+            )
             .filter(
                 Exists(
                     models.ThreadAccess.objects.filter(

@@ -12,6 +12,7 @@ import type { MessageSenderUserProperty } from "./message_sender_user_property";
 import type { MessageRecipient } from "./message_recipient";
 import type { MessageSignature } from "./message_signature";
 import type { MessageStmsgHeaders } from "./message_stmsg_headers";
+import type { MessageReadByItem } from "./message_read_by_item";
 
 /**
  * Serialize messages, getting parsed details from the Message model.
@@ -55,4 +56,5 @@ export interface Message {
   readonly signature: MessageSignature;
   /** Return the STMSG headers of the message. */
   readonly stmsg_headers: MessageStmsgHeaders;
+  readonly read_by: readonly MessageReadByItem[];
 }

@@ -1132,11 +1132,24 @@ class AttachmentInline(admin.TabularInline):
     extra = 0
 
 
+class MessageReadInline(admin.TabularInline):
+    """Inline admin for MessageRead records."""
+
+    model = models.MessageRead
+    extra = 0
+    readonly_fields = ("user", "read_at")
+    raw_id_fields = ("message",)
+    can_delete = False
+
+    def has_add_permission(self, request, obj=None):
+        return False
+
+
 @admin.register(models.Message)
 class MessageAdmin(admin.ModelAdmin):
     """Admin class for the Message model"""
 
-    inlines = [MessageRecipientInline, AttachmentInline]
+    inlines = [MessageRecipientInline, AttachmentInline, MessageReadInline]
     actions = [retry_send_messages_action]
     list_display = (
         "id",

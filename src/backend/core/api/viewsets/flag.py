@@ -352,15 +352,21 @@ class ChangeFlagView(APIView):
         The caller sends the exact read_at timestamp:
         - read_at = timestamp → messages created before that timestamp are read
         - read_at = null → all messages are unread
+
+        Also creates/deletes ``MessageRead`` records so per-user read-tracking
+        stays in sync (who has read what in shared mailboxes).
         """
-        read_at = request.data.get("read_at")
+        read_at_raw = request.data.get("read_at")
 
         # read_at must be None or a valid datetime string
-        if read_at is not None and parse_datetime(str(read_at)) is None:
-            return drf.response.Response(
-                {"detail": "read_at must be a valid ISO 8601 datetime."},
-                status=drf.status.HTTP_400_BAD_REQUEST,
-            )
+        read_at = None
+        if read_at_raw is not None:
+            read_at = parse_datetime(str(read_at_raw))
+            if read_at is None:
+                return drf.response.Response(
+                    {"detail": "read_at must be a valid ISO 8601 datetime."},
+                    status=drf.status.HTTP_400_BAD_REQUEST,
+                )
 
         thread_qs = models.Thread.objects.filter(
             id__in=thread_ids,
@@ -375,7 +381,44 @@ class ChangeFlagView(APIView):
         thread_ids_to_sync = [
             str(tid) for tid in accesses.values_list("thread_id", flat=True)
         ]
-        updated_count = accesses.update(read_at=read_at)
+
+        # Persist read_at as the raw string for backward compat (DB stores ISO text)
+        raw_read_at = read_at_raw if read_at_raw is not None else None
+        updated_count = accesses.update(read_at=raw_read_at)
+
+        # Sync MessageRead for per-user read tracking
+        user = request.user
+        if user.is_authenticated and thread_ids_to_sync:
+            thread_pks = list(accesses.values_list("thread_id", flat=True))
+            if read_at is not None:
+                # Mark all messages up to read_at as read by this user
+                messages_to_mark = list(
+                    models.Message.objects.filter(
+                        thread_id__in=thread_pks,
+                        created_at__lte=read_at,
+                    )
+                    .exclude(
+                        reads__user=user,
+                    )
+                    .values_list("id", flat=True)
+                )
+                if messages_to_mark:
+                    models.MessageRead.objects.bulk_create(
+                        [
+                            models.MessageRead(
+                                message_id=mid, user=user, read_at=read_at
+                            )
+                            for mid in messages_to_mark
+                        ],
+                        ignore_conflicts=True,
+                        batch_size=500,
+                    )
+            else:
+                # Mark as unread: remove MessageRead for this user in these threads
+                models.MessageRead.objects.filter(
+                    message__thread_id__in=thread_pks,
+                    user=user,
+                ).delete()
 
         if thread_ids_to_sync:
             transaction.on_commit(

@@ -391,6 +391,13 @@ export const ThreadMessage = forwardRef<HTMLSpanElement, ThreadMessageProps>(
                             onSetReplyFormMode={setReplyFormMode}
                             intersectionRef={ref}
                         />
+
+                        {message.read_by && message.read_by.length > 0 && (
+                            <div className="thread-message__read-by">
+                                {'Vu par '}
+                                {message.read_by.map((r) => r.user_name).join(', ')}
+                            </div>
+                        )}
                     </>
                 )}
 

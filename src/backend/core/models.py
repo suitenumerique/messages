@@ -2373,6 +2373,33 @@ class Message(BaseModel):
         return len(counted_text.split())
 
 
+class MessageRead(BaseModel):
+    """Per-user read tracking for individual messages.
+
+    Created whenever a user triggers a mark-as-read (auto-scroll, manual,
+    thread-level). Used to display *who* has read each message in shared
+    mailboxes, complementing ``ThreadAccess.read_at`` which remains the
+    per-mailbox read-pointer for thread-level ``has_unread`` computation.
+    """
+
+    message = models.ForeignKey(
+        "Message", on_delete=models.CASCADE, related_name="reads"
+    )
+    user = models.ForeignKey(
+        "User", on_delete=models.CASCADE, related_name="message_reads"
+    )
+    read_at = models.DateTimeField("read at", default=timezone.now, db_index=True)
+
+    class Meta:
+        db_table = "messages_messageread"
+        verbose_name = "message read"
+        verbose_name_plural = "message reads"
+        unique_together = ("message", "user")
+
+    def __str__(self):
+        return f"{self.message} read by {self.user} at {self.read_at}"
+
+
 class InboundMessage(BaseModel):
     """Temporary queue model for inbound messages waiting to be processed by spam filter."""
 
