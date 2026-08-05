@@ -175,6 +175,16 @@ def _idna_encode_domain(domain: str) -> str | None:
     ``email`` package RFC 2047-encodes a non-ASCII domain instead, which
     RFC 2047 §5 forbids inside an addr-spec and no MTA routes — so the
     conversion is ours to make or decline.
+
+    Known approximation: what IDNA2003 does not refuse it may *fold*.
+    Its nameprep case-folds ``faß.de`` to ``fass.de`` (likewise the
+    Greek final sigma, and ZWJ/ZWNJ are dropped), and since IDNA2008
+    those are distinct registrable domains — DENIC has allowed ß since
+    2010 — so mail to such a domain is silently routed to its folded
+    sibling rather than rejected. Accepted for now: it keeps the
+    library dependency-free, and the overlap with real correspondents
+    is marginal. If that ever stops being true, the ``idna`` package
+    (UTS46, non-transitional) is the drop-in fix.
     """
     try:
         return domain.encode("idna").decode("ascii")

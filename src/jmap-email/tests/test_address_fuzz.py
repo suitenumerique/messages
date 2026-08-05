@@ -411,3 +411,30 @@ class TestAddrSpecMailboxCount:
         pairs = getaddresses([f"{addr}, victim@x.co"])
         assert len(pairs) == 2, f"{addr!r} did not stay one mailbox: {pairs!r}"
         assert pairs[-1][1] == "victim@x.co"
+
+    @given(
+        interior=st.text(
+            alphabet=st.sampled_from("ab1.:,;<>@()[]\\\"' "),
+            max_size=12,
+        )
+    )
+    @settings(**FUZZ_SETTINGS)
+    def test_accepted_domain_literal_is_exactly_one_mailbox(self, interior):
+        """Same arithmetic, for the other bracketed form.
+
+        A comma or a paren inside ``[...]`` is legal dtext, but a reader
+        that does not track literal brackets cuts the list or opens a
+        comment there — which is how ``x@[a,b]`` next to a second
+        recipient collapsed to zero recovered mailboxes before those
+        characters were rejected.
+        """
+        from email.utils import getaddresses
+
+        from jmap_email import is_valid_addr_spec
+
+        addr = f"a@[{interior}]"
+        if not is_valid_addr_spec(addr):
+            return
+        pairs = getaddresses([f"{addr}, victim@x.co"])
+        assert len(pairs) == 2, f"{addr!r} did not stay one mailbox: {pairs!r}"
+        assert pairs[-1][1] == "victim@x.co"

@@ -30,8 +30,15 @@ STRIPPED_HEADER_CHARS = frozenset(
 _SPECIALS = frozenset('()<>[]:;@\\,"')
 
 # RFC 5322 §3.4.1 ``dtext``: printable ASCII inside a domain-literal,
-# excluding the framing brackets and the escape.
-_DTEXT_EXCLUDED = frozenset("[]\\")
+# excluding the framing brackets and the escape. The comma and the
+# parens are legal dtext but are excluded anyway: this predicate
+# promises one mailbox *to everybody*, and a lenient reader that does
+# not track literal brackets cuts a mailbox-list at every comma and
+# opens a comment at every ``(`` — ``email.utils.getaddresses``
+# recovers **zero** mailboxes from ``x@[a,b], victim@x.co`` and from
+# ``x@[a(b], victim@x.co`` alike, the exact reader disagreement
+# described above.
+_DTEXT_EXCLUDED = frozenset("[]\\,()")
 
 
 def _is_valid_domain(domain: str) -> bool:

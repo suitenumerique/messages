@@ -3823,6 +3823,14 @@ class TestAddrSpecRejectsRfc5322Specials:
             pytest.param("a@[1.2.3.4", id="unclosed-literal"),
             pytest.param("a@[a[b]", id="nested-open-bracket"),
             pytest.param("a@[a\\b]", id="escape-inside-literal"),
+            # Legal dtext, rejected on the one-mailbox invariant: a
+            # reader blind to literal brackets cuts a mailbox-list at
+            # the comma and opens a comment at the paren, so
+            # ``getaddresses`` recovers zero mailboxes from either next
+            # to a second recipient.
+            pytest.param("a@[a,b]", id="comma-inside-literal"),
+            pytest.param("a@[a(b]", id="open-paren-inside-literal"),
+            pytest.param("a@[a)b]", id="close-paren-inside-literal"),
         ],
     )
     def test_malformed_domain_literal_is_rejected(self, addr):
