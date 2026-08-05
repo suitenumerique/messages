@@ -16,7 +16,7 @@ Versioning: semantic. Public API is everything exported below; anything
 prefixed with ``_`` is internal.
 """
 
-__version__ = "0.2.0"
+__version__ = "0.3.0"
 
 # The RFC 8621 ``TypedDict`` shapes are annotation-only and live in their
 # own namespace — ``from jmap_email.types import JmapEmail`` — rather than
