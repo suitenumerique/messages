@@ -938,6 +938,7 @@
   "This file looks suspicious": "Ce fichier semble suspect",
   "This is the mailbox owner, its access cannot be modified.": "Il s'agit du propriétaire de la boîte aux lettres, son accès ne peut pas être modifié.",
   "This is the only admin of this mailbox, you cannot therefore modify its access.": "C'est le seul administrateur de cette boîte aux lettres, vous ne pouvez donc pas modifier son accès.",
+  "This message could not be read and cannot be displayed. Its content is still stored and support can retrieve it.": "Ce message n'a pas pu être lu et ne peut pas être affiché. Son contenu est toujours conservé et l'équipe support peut le récupérer.",
   "This message failed sender authentication and is likely a forgery. Do not trust it.": "L'authentification de l'expéditeur a échoué pour ce message, qui est probablement frauduleux. Ne lui faites pas confiance.",
   "This message has {{count}} attachments_one": "Ce message a une pièce jointe",
   "This message has {{count}} attachments_many": "Ce message a {{count}} pièces jointes",

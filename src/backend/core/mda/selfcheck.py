@@ -10,7 +10,7 @@ from typing import Optional, Tuple
 from django.conf import settings
 from django.utils import timezone
 
-from jmap_email import body_text_joined
+from jmap_email import ComposeError, body_text_joined
 
 from core import models
 from core.enums import is_delivered
@@ -82,9 +82,14 @@ def create_and_send_draft(
         bcc_emails=bcc_emails or [],
     )
 
-    # Prepare the outbound message
-    if not prepare_outbound_message(from_mailbox, message, text_body, html_body):
-        raise SelfCheckError("Failed to prepare outbound message")
+    # Prepare the outbound message. ``ComposeError`` now escapes
+    # ``prepare_outbound_message`` (the API views turn it into a 400);
+    # here every failure is equally a selfcheck failure.
+    try:
+        if not prepare_outbound_message(from_mailbox, message, text_body, html_body):
+            raise SelfCheckError("Failed to prepare outbound message")
+    except ComposeError as exc:
+        raise SelfCheckError("Failed to compose outbound message") from exc
 
     # Send the message synchronously
     send_message(message, force_mta_out=True)

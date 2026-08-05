@@ -21,6 +21,7 @@ from core.mda.dispatch_webhooks import (
     VALID_FORMATS,
 )
 from core.mda.inline_images import extract_inline_images_html
+from core.services.attachments import get_attachment_display_name
 from core.services.blob_gc import schedule_for_gc
 from core.services.identity import keycloak as keycloak_service
 from core.services.importer.channel import merged_state
@@ -1191,7 +1192,9 @@ class MessageSerializer(serializers.ModelSerializer):
                 stripped_attachments.append(
                     {
                         "blobId": f"msg_{instance.id}_{index}",
-                        "name": attachment.get("name") or "unnamed",
+                        "name": get_attachment_display_name(
+                            attachment.get("name"), attachment.get("type")
+                        ),
                         "size": attachment["size"],
                         "type": attachment["type"],
                         "cid": attachment.get("cid"),

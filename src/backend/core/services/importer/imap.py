@@ -86,7 +86,9 @@ def decode_imap_utf7(s):
         return decoded_bytes.decode("utf-16-be")
 
     try:
-        return re.sub(r"&([^-]*)-", decode_match, s)
+        # ``[^-&]`` not ``[^-]``: ``&`` is not in the base64 alphabet, and
+        # excluding it stops a ``&&&&…`` name backtracking quadratically.
+        return re.sub(r"&([^-&]*)-", decode_match, s)
     except Exception as e:  # pylint: disable=broad-exception-caught
         # A malformed UTF-7 folder name must not abort the whole import (this
         # runs while building the folder map, outside any per-folder guard) —

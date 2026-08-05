@@ -19,6 +19,8 @@ import re
 import typing
 import uuid
 
+from core.services.attachments import guess_mime_extension
+
 logger = logging.getLogger(__name__)
 
 # Matches src="data:<mime>;base64,<data>" in HTML img tags
@@ -30,15 +32,6 @@ _HTML_BASE64_IMG_RE = re.compile(
 _MD_BASE64_IMG_RE = re.compile(
     r"(!\[[^\]]*\]\()data:(image/[a-zA-Z0-9.+-]+);base64,([A-Za-z0-9+/\n\r =]+)(\))"
 )
-
-# Common image MIME types → file extensions for the synthesized filename.
-_MIME_TO_EXT = {
-    "image/png": "png",
-    "image/jpeg": "jpg",
-    "image/gif": "gif",
-    "image/webp": "webp",
-    "image/svg+xml": "svg",
-}
 
 
 def _resolve_image(
@@ -60,8 +53,8 @@ def _resolve_image(
         return known_images[digest]
 
     cid = str(uuid.uuid4())
-    ext = _MIME_TO_EXT.get(content_type)
-    filename = f"{cid}.{ext}" if ext else cid
+    ext = guess_mime_extension(content_type)
+    filename = f"{cid}{ext}" if ext else cid
 
     images.append(
         {

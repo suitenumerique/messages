@@ -12,6 +12,10 @@ import rest_framework as drf
 
 from core import enums, models
 from core.api.utils import get_attachment_from_blob_id
+from core.services.attachments import (
+    UNNAMED_ATTACHMENT_STEM,
+    get_attachment_display_name,
+)
 from core.services.blob_gc import release_upload, schedule_for_gc
 
 logger = logging.getLogger(__name__)
@@ -88,7 +92,7 @@ def _get_or_create_attachment_from_message_blob(
         The created Attachment or None if processing failed
     """
     blob_id = attachment_data.get("blobId")
-    name = attachment_data.get("name", "unnamed")
+    name = attachment_data.get("name")
     cid = attachment_data.get("cid")
 
     try:
@@ -99,9 +103,17 @@ def _get_or_create_attachment_from_message_blob(
         if not cid:
             cid = parsed_attachment.get("cid")
 
-        # Use name from parsed attachment if not provided
-        if name == "unnamed":
-            name = parsed_attachment.get("name", "unnamed")
+        # Forwarding round-trips our own serializer output back to us.
+        # No name, or the bare placeholder stem, both mean "none supplied".
+        # Guarded by ``not parsed_name``: "unnamed" is also a real filename.
+        parsed_name = parsed_attachment.get("name")
+        if not name or (name == UNNAMED_ATTACHMENT_STEM and not parsed_name):
+            name = parsed_name
+
+        # Sanitizes and, for a part with no name at all, synthesizes one
+        # with an extension inferred from the MIME type. ``Attachment.name``
+        # is NOT NULL, so this is what keeps the save from failing.
+        name = get_attachment_display_name(name, parsed_attachment.get("type"))
 
         # Atomic: the Blob INSERT and the Attachment INSERT must be
         # visible together so the GC sweep never sees the blob row
@@ -158,7 +170,7 @@ def _get_or_create_attachment_from_blob(
         The created/existing Attachment or None if processing failed
     """
     blob_id = attachment_data.get("blobId")
-    name = attachment_data.get("name", "unnamed")
+    name = attachment_data.get("name")
     cid = attachment_data.get("cid")
 
     try:
@@ -168,6 +180,8 @@ def _get_or_create_attachment_from_blob(
 
         # Try to get the blob
         blob = models.Blob.objects.get(id=blob_id)
+
+        name = get_attachment_display_name(name, blob.content_type)
 
         # Provenance check: the user attaching this blob must have
         # either an active upload reservation tied to this mailbox

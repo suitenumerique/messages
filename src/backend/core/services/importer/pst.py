@@ -23,6 +23,7 @@ import pypff
 from jmap_email import compose_email, is_valid_msg_id, parse_address, parse_addresses
 from jmap_email.types import EmailAddress
 
+from core.mda.utils import ARCHIVE_COMPOSE_OPTIONS
 from core.services.s3_seekable import BUFFER_NONE, S3SeekableReader
 
 from .channel import ImportCancelled
@@ -1276,7 +1277,7 @@ def reconstruct_eml(
     # PST is an archive: the Bcc list was in the original source file and we
     # are reconstructing the .eml for storage in the user's own mailbox, not
     # retransmitting. Preserve it.
-    return compose_email(jmap_data, keep_bcc=True)
+    return compose_email(jmap_data, options=ARCHIVE_COMPOSE_OPTIONS)
 
 
 def _find_ipm_subtree(pst_file):

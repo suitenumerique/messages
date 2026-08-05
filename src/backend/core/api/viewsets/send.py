@@ -10,6 +10,7 @@ from drf_spectacular.utils import (
     extend_schema,
     inline_serializer,
 )
+from jmap_email import ComposeError
 from rest_framework import exceptions as drf_exceptions
 from rest_framework import serializers as drf_serializers
 from rest_framework import status
@@ -147,13 +148,28 @@ class SendMessageView(APIView):
                     "You do not have permission to send as this mailbox."
                 )
 
-            prepared = prepare_outbound_message(
-                mailbox_sender,
-                message,
-                request.data.get("textBody"),
-                request.data.get("htmlBody"),
-                request.user,
-            )
+            # A recipient the composer cannot put on the wire — a non-ASCII
+            # local part needing SMTPUTF8, a malformed addr-spec — is a
+            # property of the draft, not a server fault, so it is a 400
+            # rather than the 500 an escaping ComposeError would give.
+            try:
+                prepared = prepare_outbound_message(
+                    mailbox_sender,
+                    message,
+                    request.data.get("textBody"),
+                    request.data.get("htmlBody"),
+                    request.user,
+                )
+            except ComposeError as e:
+                logger.info(
+                    "Send rejected for message %s: cannot compose MIME (%s)",
+                    message_id,
+                    type(e).__name__,
+                )
+                raise drf_exceptions.ValidationError(
+                    "This message cannot be sent: one of its addresses or "
+                    "attachments cannot be represented on the wire."
+                ) from e
             if not prepared:
                 raise drf_exceptions.APIException(
                     "Failed to prepare message for sending.",

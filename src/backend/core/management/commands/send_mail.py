@@ -18,12 +18,12 @@ import logging
 
 from django.core.management.base import BaseCommand, CommandError
 
-from jmap_email import compose_email, parse_address
+from jmap_email import ComposeError, compose_email, parse_address
 
 from core import models
 from core.mda.outbound import send_outbound_email
 from core.mda.signing import sign_message_dkim
-from core.mda.utils import current_sent_at, generate_mime_id
+from core.mda.utils import COMPOSE_OPTIONS, current_sent_at, generate_mime_id
 
 logger = logging.getLogger(__name__)
 
@@ -136,8 +136,12 @@ class Command(BaseCommand):
             "messageId": [mime_id],
         }
 
-        # Compose the email
-        raw_mime = compose_email(mime_data)
+        # Compose the email. A malformed addr-spec surfaces here rather
+        # than at parse time, so it gets the same CommandError treatment.
+        try:
+            raw_mime = compose_email(mime_data, options=COMPOSE_OPTIONS)
+        except ComposeError as e:
+            raise CommandError(f"Cannot compose message: {e}") from e
 
         # Sign the message with DKIM (only if mailbox exists)
         dkim_signature_header = None

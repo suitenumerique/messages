@@ -46,6 +46,11 @@ const ThreadMessageHeader = ({
     // the inbound deferral window expired. Warn prominently.
     const processingFailed = Boolean(message.stmsg_headers?.['processing-failed']);
 
+    // The stored message exists but the server cannot turn it back into
+    // content, so every field below renders blank. Say so rather than
+    // showing an empty message.
+    const isUnreadable = Boolean(message.stmsg_headers?.['unreadable']);
+
     // Spam scanning flagged the message as probable spam but below the Junk
     // threshold, so it was delivered to the inbox with a graded marker
     // ('possible' < 'likely'). Show an inline caution banner.
@@ -175,6 +180,13 @@ const ThreadMessageHeader = ({
                         <Banner type="warning" compact fullWidth>
                             <div className="thread-message__header-banner__content">
                                 <p>{t("This contact's identity could not be verified. Proceed with caution.")}</p>
+                            </div>
+                        </Banner>
+                    )}
+                    {isUnreadable && (
+                        <Banner type="error" compact fullWidth>
+                            <div className="thread-message__header-banner__content">
+                                <p>{t("This message could not be read and cannot be displayed. Its content is still stored and support can retrieve it.")}</p>
                             </div>
                         </Banner>
                     )}

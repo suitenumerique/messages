@@ -24,6 +24,7 @@ from rest_framework.viewsets import ViewSet
 
 from core import enums, models
 from core.api import permissions, utils
+from core.services.attachments import get_attachment_display_name
 from core.services.blob_gc import upload_and_reserve_blob
 
 # Number of leading bytes inspected by python-magic on the preview endpoint.
@@ -185,7 +186,7 @@ class BlobViewSet(ViewSet):
 
         Returns:
             A dict with keys `content` (bytes), `declared_type` (str),
-            `filename` (str), `size` (int).
+            `filename` (str, never empty), `size` (int).
 
         Raises:
             ParseError: malformed `msg_*` ID.
@@ -202,7 +203,14 @@ class BlobViewSet(ViewSet):
             return {
                 "content": attachment["content"],
                 "declared_type": attachment["type"],
-                "filename": attachment["name"],
+                # The parser reports ``None`` for a part with no filename.
+                # Synthesize the same display name the message serializer
+                # exposes for it, so the download lands under the name the
+                # user was shown — and so ``Content-Disposition`` is built
+                # from a real string either way.
+                "filename": get_attachment_display_name(
+                    attachment["name"], attachment["type"]
+                ),
                 "size": attachment["size"],
             }
 

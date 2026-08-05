@@ -34,9 +34,28 @@ def test_get_attachments_preserves_present_name():
         pytest.param({"name": "", "size": 1, "type": "text/plain"}, id="empty-name"),
     ],
 )
-def test_get_attachments_falls_back_to_unnamed(attachment):
-    """A MIME part with no usable ``filename`` falls back to the "unnamed"
-    sentinel so consumers never receive a null/empty name (regression: a null
-    name crashed the frontend calendar-invite download button)."""
+def test_get_attachments_synthesizes_a_name(attachment):
+    """A MIME part with no usable ``filename`` gets a synthesized name, so
+    consumers never receive a null/empty one (regression: a null name crashed
+    the frontend calendar-invite download button). The extension comes from
+    the part's MIME type — ``text/plain`` here."""
     result = _serialize_parsed_attachments([attachment])
-    assert result[0]["name"] == "unnamed"
+    assert result[0]["name"] == "unnamed.txt"
+
+
+@pytest.mark.parametrize(
+    ("content_type", "expected"),
+    [
+        pytest.param("image/gif", "unnamed.gif", id="gif"),
+        pytest.param('text/calendar; charset="utf-8"', "unnamed.ics", id="parameters"),
+        pytest.param("application/x-unknown", "unnamed", id="unknown-type"),
+    ],
+)
+def test_get_attachments_passes_the_content_type_through(content_type, expected):
+    """The serializer hands the part's type to the naming policy, so a
+    forwarded nameless part stays openable by the recipient's OS. The mapping
+    itself is covered in ``core/tests/services/test_attachments.py``."""
+    result = _serialize_parsed_attachments(
+        [{"name": None, "size": 1, "type": content_type}]
+    )
+    assert result[0]["name"] == expected

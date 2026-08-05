@@ -13,6 +13,8 @@ Three groups of helpers live here:
 - :func:`current_sent_at` — single source of truth for the
   ``sentAt`` ISO-8601 string outbound paths stamp on the JMAP dict
   they hand to :func:`jmap_email.compose_email`.
+- :data:`COMPOSE_OPTIONS` — the compose policy every path that
+  produces MIME for us shares.
 """
 
 import re
@@ -22,10 +24,33 @@ from email.utils import make_msgid
 
 from django.utils import timezone
 
-from jmap_email import body_part_text, decode_rfc2047_header
+from jmap_email import ComposeOptions, body_part_text, decode_rfc2047_header
 from jmap_email.types import JmapEmail
 
+# Compose policy shared by every path that builds MIME for us.
+#
+# ``idna_encode_domains``: we send over plain 7-bit SMTP (``core.mda.smtp``
+# passes no ``mail_options``), and an A-label is the only form that carries
+# there. Without it such addresses never send.
+#
+# A non-ASCII *local part* stays unsendable — that needs SMTPUTF8, which we
+# never negotiate — and raises ``InvalidAddressError`` for callers to
+# handle. RFC 6530 provides no downgrade, so there is no fallback variant.
+COMPOSE_OPTIONS = ComposeOptions(idna_encode_domains=True)
+
+# Archive reconstruction (PST import) additionally keeps Bcc: the list was
+# already in the source file, so dropping it would lose data the user owns.
+# ``allow_smtputf8`` for the same reason — an EAI address (non-ASCII local
+# part, RFC 6530) is legal in an Exchange archive, and the reconstructed
+# .eml is stored in the user's own mailbox, never retransmitted over SMTP;
+# refusing it would exclude the message from the import.
+ARCHIVE_COMPOSE_OPTIONS = ComposeOptions(
+    idna_encode_domains=True, emit_bcc=True, allow_smtputf8=True
+)
+
 __all__ = [
+    "ARCHIVE_COMPOSE_OPTIONS",
+    "COMPOSE_OPTIONS",
     "SNIPPET_MAX_LENGTH",
     "current_sent_at",
     "generate_mime_id",

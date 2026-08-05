@@ -13,6 +13,7 @@ from django.utils import timezone
 
 import rest_framework as drf
 from jmap_email import (
+    ComposeError,
     compose_email,
     find_header,
     first_address_email,
@@ -30,7 +31,7 @@ from core.mda.outbound_direct import send_message_via_mx
 from core.mda.replies import make_forward, make_reply
 from core.mda.signing import sign_message_dkim, verify_message_dkim
 from core.mda.smtp import send_smtp_mail
-from core.mda.utils import current_sent_at
+from core.mda.utils import COMPOSE_OPTIONS, current_sent_at
 from core.services.blob_gc import schedule_for_gc
 from core.services.dns.check import check_spf_status
 from core.services.throttle import check_and_increment_throttle
@@ -223,6 +224,7 @@ def compose_and_sign_mime(
         mime_data,
         in_reply_to=message.parent.mime_id if message.parent else None,
         prepend_headers=prepend_headers,
+        options=COMPOSE_OPTIONS,
     )
 
     # Bcc/Cc-only send: the composed MIME has no To header. Add the empty-group
@@ -450,6 +452,13 @@ def prepare_outbound_message(
             # each row and schedules its blob_id for the GC sweep.
             message.attachments.all().delete()
     except drf.exceptions.ValidationError:
+        raise
+    except ComposeError:
+        # A draft the composer refuses (unrepresentable address,
+        # undecodable attachment) is the caller's to turn into a 4xx —
+        # swallowing it into ``False`` would surface as a 500. Re-raising
+        # before the broad handler also keeps the raw addr-spec embedded
+        # in the exception message out of logger.exception/Sentry.
         raise
     except Exception:
         logger.exception("Failed to compose MIME for message %s", message.id)

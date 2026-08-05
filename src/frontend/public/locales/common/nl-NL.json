@@ -842,6 +842,7 @@
   "This file looks suspicious": "",
   "This is the mailbox owner, its access cannot be modified.": "",
   "This is the only admin of this mailbox, you cannot therefore modify its access.": "Dit is de enige admin van deze mailbox, u kunt daarom de toegang niet wijzigen.",
+  "This message could not be read and cannot be displayed. Its content is still stored and support can retrieve it.": "Dit bericht kon niet worden gelezen en kan niet worden weergegeven. De inhoud is nog steeds opgeslagen en de supportafdeling kan deze ophalen.",
   "This message failed sender authentication and is likely a forgery. Do not trust it.": "",
   "This message has {{count}} attachments_one": "Deze e-mail heeft een bijlage",
   "This message has {{count}} attachments_other": "Dit bericht heeft {{count}} bijlagen",

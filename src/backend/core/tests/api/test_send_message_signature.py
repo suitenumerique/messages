@@ -9,6 +9,7 @@ from django.test import override_settings
 from django.urls import reverse
 
 import pytest
+from jmap_email import ComposeError, InvalidAddressError
 from rest_framework import status
 from rest_framework.test import APIClient
 
@@ -550,3 +551,100 @@ class TestSendMessageSecurity:
                 if "SendMessageView" in getattr(cb, "__qualname__", "")
             ]
             assert len(send_callbacks) == 1
+
+
+class TestSendMessageComposeFailure:
+    """A draft the composer cannot put on the wire is a 400, not a 500.
+
+    ``prepare_outbound_message`` composes synchronously inside the request,
+    so a ``ComposeError`` — a non-ASCII local part needing SMTPUTF8, a
+    malformed addr-spec, an undecodable attachment — escaped as an
+    unhandled exception. That is a property of the draft the user built,
+    so it belongs in the 4xx family with a message they can act on.
+    """
+
+    def test_compose_error_escapes_prepare_outbound_message(
+        self, user, mailbox_access, mailbox, draft_message
+    ):
+        """The error must cross ``prepare_outbound_message``, not be
+        swallowed there.
+
+        ``prepare_outbound_message`` wraps composition in a broad
+        ``except Exception: return False`` whose ``False`` the view turns
+        into a 500 — so mocking ``prepare_outbound_message`` itself cannot
+        prove the 400 works. Run the real function and fail at its
+        composition boundary instead.
+        """
+        client = APIClient()
+        client.force_authenticate(user=user)
+
+        with (
+            patch("core.mda.outbound.compose_and_sign_mime") as mock_compose,
+            patch("core.mda.outbound.logger") as mock_outbound_logger,
+        ):
+            mock_compose.side_effect = InvalidAddressError(
+                "recipient needs SMTPUTF8: 'josé@example.com'"
+            )
+            response = client.post(
+                reverse("send-message"),
+                {
+                    "messageId": str(draft_message.id),
+                    "textBody": "hello",
+                    "htmlBody": "<p>hello</p>",
+                    "senderId": str(mailbox.id),
+                },
+                format="json",
+            )
+
+        assert response.status_code == status.HTTP_400_BAD_REQUEST
+        # The broad handler in ``prepare_outbound_message`` must not have
+        # caught it: its ``logger.exception`` line would carry the raw
+        # addr-spec into logs/Sentry.
+        assert not mock_outbound_logger.exception.called
+
+    def test_compose_error_is_a_400(self, user, mailbox_access, mailbox, draft_message):
+        client = APIClient()
+        client.force_authenticate(user=user)
+
+        with patch("core.api.viewsets.send.prepare_outbound_message") as mock_prepare:
+            mock_prepare.side_effect = ComposeError("bad addr-spec")
+            response = client.post(
+                reverse("send-message"),
+                {
+                    "messageId": str(draft_message.id),
+                    "textBody": "hello",
+                    "htmlBody": "<p>hello</p>",
+                    "senderId": str(mailbox.id),
+                },
+                format="json",
+            )
+
+        assert response.status_code == status.HTTP_400_BAD_REQUEST
+
+    def test_compose_error_log_does_not_carry_the_message_body(
+        self, user, mailbox_access, mailbox, draft_message
+    ):
+        """The rejection is logged for operators; the log line must not
+        become a copy of the user's content."""
+        client = APIClient()
+        client.force_authenticate(user=user)
+
+        with patch("core.api.viewsets.send.prepare_outbound_message") as mock_prepare:
+            mock_prepare.side_effect = ComposeError("bad addr-spec")
+            with patch("core.api.viewsets.send.logger") as mock_logger:
+                client.post(
+                    reverse("send-message"),
+                    {
+                        "messageId": str(draft_message.id),
+                        "textBody": "SECRET-BODY-CONTENT",
+                        "htmlBody": "<p>SECRET-BODY-CONTENT</p>",
+                        "senderId": str(mailbox.id),
+                    },
+                    format="json",
+                )
+
+        logged = " ".join(
+            str(a) for call in mock_logger.info.call_args_list for a in call.args
+        )
+        assert mock_logger.info.called
+        assert "SECRET-BODY-CONTENT" not in logged

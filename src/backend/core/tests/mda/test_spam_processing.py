@@ -1085,14 +1085,15 @@ class TestProcessInboundMessagesQueueTask:
         """Test that the queue processing task triggers individual message processing."""
         mailbox = factories.MailboxFactory()
 
-        # Create multiple pending messages older than 5 minutes (for retry processing)
+        # Create multiple pending messages due for a retry. Both timestamps are
+        # backdated: ``created_at`` picks the backoff band, ``updated_at`` is
+        # the last attempt the band's interval is measured from.
         old_time = timezone.now() - timezone.timedelta(minutes=6)
         for i in range(3):
             # Distinct bytes per row so blob dedup doesn't collapse them.
             inbound_message = _queue_inbound(mailbox, f"Content {i}".encode())
-            # Update created_at to make it old enough for retry
             models.InboundMessage.objects.filter(id=inbound_message.id).update(
-                created_at=old_time
+                created_at=old_time, updated_at=old_time
             )
 
         # Call the bound task directly using .run() method

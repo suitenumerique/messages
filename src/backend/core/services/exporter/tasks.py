@@ -18,7 +18,7 @@ from sentry_sdk import capture_exception
 
 from core.api.utils import generate_presigned_url
 from core.mda.inbound import deliver_inbound_message
-from core.mda.utils import current_sent_at
+from core.mda.utils import COMPOSE_OPTIONS, current_sent_at
 from core.models import Label, Mailbox, Message, ThreadAccess
 
 from messages.celery_app import app as celery_app
@@ -702,7 +702,7 @@ This file is in MBOX format and can be imported into most email clients.
         "textBody": [{"partId": "1", "type": "text/plain", "content": body_text}],
         "htmlBody": [{"partId": "2", "type": "text/html", "content": body_html}],
     }
-    raw_data = compose_email(notification)
+    raw_data = compose_email(notification, options=COMPOSE_OPTIONS)
     parsed_email = parse_email(raw_data)
     if parsed_email is None:
         # We just composed this; failing to parse it back means the

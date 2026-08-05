@@ -300,6 +300,30 @@ class TestReconstructEml:
         assert len(text_parts) >= 1
         assert "Hello world" in text_parts[0].get_payload(decode=True).decode()
 
+    def test_reconstruct_with_eai_address(self):
+        """A non-ASCII local part (RFC 6530 EAI) is legal in an Exchange
+        archive. The reconstructed .eml is stored in the user's own
+        mailbox, never retransmitted over SMTP, so the composer must
+        accept the address — refusing it would silently exclude the
+        message from the import."""
+        transport = (
+            "From: José <josé@exemple.fr>\r\n"
+            "To: recipient@example.com\r\n"
+            "Subject: EAI sender\r\n"
+            "Date: Mon, 26 May 2025 10:00:00 +0000\r\n"
+        )
+        msg = _make_message(
+            subject="EAI sender",
+            transport_headers=transport,
+            plain_text_body="Hello EAI",
+        )
+        eml_bytes = reconstruct_eml(msg)
+
+        assert "josé@exemple.fr".encode() in eml_bytes
+        parsed = email.message_from_bytes(eml_bytes)
+        text_parts = [p for p in parsed.walk() if p.get_content_type() == "text/plain"]
+        assert "Hello EAI" in text_parts[0].get_payload(decode=True).decode()
+
     def test_reconstruct_preserves_rfc5322_date(self):
         """Test that RFC 5322 date from transport headers is preserved correctly."""
         transport = (

@@ -8,11 +8,13 @@ iterate, and turn the final ``Decision`` into a task return value.
 
 # pylint: disable=unused-argument, broad-exception-raised, broad-exception-caught
 
+from datetime import timedelta
 from typing import Any, Dict, Optional
 
 from django.conf import settings
 from django.core.cache import cache
 from django.db import transaction
+from django.db.models import Q
 from django.utils import timezone
 
 from celery.exceptions import SoftTimeLimitExceeded
@@ -65,6 +67,49 @@ _INBOUND_TASK_SOFT_TIME_LIMIT = max(_INBOUND_TASK_TIME_LIMIT - 60, 1)
 # lock expires), while a *dead* task's lock frees ~a minute later so the 5-min
 # sweep can retry.
 _INBOUND_TASK_LOCK_TTL = _INBOUND_TASK_TIME_LIMIT + 60
+
+# How often a held row is re-attempted, as a function of how long it has
+# already been failing: ``(minimum age, interval between attempts)``, in
+# increasing age order. A row picks the last band whose minimum age it has
+# reached.
+#
+# Both inputs are existing columns — ``created_at`` for the age, ``updated_at``
+# for the previous attempt (every attempt stamps it) — so this needs no schema
+# change. Outbound does the same thing with an explicit ``retry_count`` /
+# ``retry_at`` pair on the recipient row (``RETRY_INTERVALS`` in
+# ``outbound.py``); deriving the interval from age instead of counting attempts
+# gives the same spacing without the columns.
+#
+# The point is that a dependency outage is not cheaper to survive by asking
+# more often. A flat retry every 5 minutes turns one degraded webhook provider
+# into ~600 pipeline runs per message over the deferral window, each re-POSTing
+# to the same dead endpoint; the schedule below covers 48h in ~28 attempts.
+_RETRY_BACKOFF = [
+    (timedelta(0), timedelta(minutes=5)),
+    (timedelta(minutes=30), timedelta(minutes=15)),
+    (timedelta(hours=2), timedelta(hours=1)),
+    (timedelta(hours=8), timedelta(hours=4)),
+]
+
+
+def _due_for_retry_q(now) -> Q:
+    """Rows whose next attempt is due, per ``_RETRY_BACKOFF``.
+
+    One OR'd band per entry, each bounded to its own age range so the bands
+    are disjoint and a row matches exactly one. A band is satisfied when the
+    row's last attempt (``updated_at``) is at least that band's interval old.
+
+    A freshly-queued row has ``updated_at == created_at``, so the first band
+    also supplies the "don't touch it for 5 minutes" grace the immediate
+    ``.delay()`` dispatch needs to do its work unraced.
+    """
+    due = Q()
+    for index, (min_age, interval) in enumerate(_RETRY_BACKOFF):
+        band = Q(created_at__lte=now - min_age, updated_at__lte=now - interval)
+        if index + 1 < len(_RETRY_BACKOFF):
+            band &= Q(created_at__gt=now - _RETRY_BACKOFF[index + 1][0])
+        due |= band
+    return due
 
 
 def _is_selfcheck(parsed_email: JmapEmail, recipient_email: str) -> bool:
@@ -192,8 +237,18 @@ def _retry_or_abandon(
         inbound_message.id,
         age,
     )
-    # Keep the row (and its bytes) — stamp it terminally failed so the sweep
-    # skips it instead of deleting and losing the only copy of the mail.
+    return _abandon(inbound_message, reason)
+
+
+def _abandon(inbound_message: models.InboundMessage, reason: str) -> Dict[str, Any]:
+    """Stamp a message terminally failed so the sweep stops retrying it.
+
+    Keeps the row and its bytes — the ``blob`` is the only copy of the
+    mail, so an operator can still inspect and replay it from the admin.
+
+    Called directly rather than via ``_retry_or_abandon`` for
+    deterministic failures, which no number of retries can clear.
+    """
     inbound_message.error_message = reason
     inbound_message.abandoned_at = timezone.now()
     inbound_message.save(update_fields=["error_message", "abandoned_at", "updated_at"])
@@ -264,13 +319,28 @@ def process_inbound_message_task(self, inbound_message_id: str):
                 "error": "abandoned",
             }
 
+        # Stamp the attempt before doing any work. ``updated_at`` is what the
+        # sweep backs off from, so a run that outlives a sweep interval (the
+        # soft limit is 9 min, the interval 5) must not be selected again while
+        # it is still going: those dispatches would only bounce off the lock
+        # above and burn the batch. Costs one UPDATE on the happy path, on a
+        # row that is about to be deleted anyway.
+        inbound_message.save(update_fields=["updated_at"])
+
         raw_data_bytes = inbound_message.get_raw_bytes()
         parsed_email = parse_email(raw_data_bytes)
         if parsed_email is None:
-            # A deterministic parse failure never succeeds on retry —
-            # route through ``_retry_or_abandon`` so it's bounded by the
-            # deferral window instead of looping on every 5-min sweep.
-            return _retry_or_abandon(inbound_message, "Failed to parse email message")
+            # Deterministic: the parse is a pure function of the stored
+            # bytes, so deferring would just repeat it for 48h.
+            #
+            # ``error`` rather than ``warning``: abandoned rows are hard
+            # deleted by the 7-day purge, so a parser regression would
+            # otherwise drop real mail with no alert.
+            logger.error(
+                "Inbound message %s could not be parsed; abandoning (not retryable)",
+                inbound_message.id,
+            )
+            return _abandon(inbound_message, "Failed to parse email message")
 
         mailbox = inbound_message.mailbox
         recipient_email = str(mailbox)
@@ -598,51 +668,82 @@ def process_inbound_message_task(self, inbound_message_id: str):
 
 
 @celery_app.task(bind=True)
-def process_inbound_messages_queue_task(self, batch_size: int = 10):
-    """Retry processing of inbound messages that are older than 5 minutes.
+def process_inbound_messages_queue_task(
+    self, chunk_size: int = 500, max_dispatch: int = 2000
+):
+    """Re-dispatch inbound messages whose next retry is due.
 
     This task only handles retries for messages that may have failed or gotten stuck.
     Regular messages are processed immediately when created via process_inbound_message_task.delay().
 
+    Due-ness is per ``_RETRY_BACKOFF``, so a row that keeps failing is asked
+    less and less often. Ordering by ``updated_at`` takes the
+    least-recently-attempted first: with a flat schedule and ``created_at``
+    ordering, a backlog larger than the batch let the oldest rows hold every
+    slot forever while newer ones aged out to the deferral window without ever
+    being retried once. It also means a run cut short by ``max_dispatch``
+    drops the rows that have waited least, never the same rows every tick.
+
+    Dispatches the whole due set rather than one truncated slice: a backlog
+    bigger than the slice used to cap retry throughput regardless of how much
+    capacity the workers had. ``max_dispatch`` bounds a single run so one tick
+    cannot enqueue an unbounded burst; hitting it is logged, never silent.
+
+    Streamed with ``.iterator()`` (server-side cursor) over a ``values_list``
+    of ids, so neither the row count nor the message size lands in worker RAM
+    — the same idiom as ``re_store_blobs``. One snapshot, so a row whose
+    ``updated_at`` is stamped by its worker mid-sweep can neither be handed
+    back nor skipped.
+
     Args:
-        batch_size: Number of messages to process in this batch
+        chunk_size: Rows fetched per round trip
+        max_dispatch: Maximum messages re-dispatched in one run
 
     Returns:
         dict: A dictionary with processing results
     """
-    # Only retry messages older than 5 minutes
-    retry_threshold = timezone.now() - timezone.timedelta(minutes=5)
-    old_messages = models.InboundMessage.objects.filter(
-        created_at__lt=retry_threshold,
-        # Terminally-failed rows are kept for inspection/replay but must
-        # not be retried — otherwise the poison message loops the pipeline
-        # (and re-fires every user webhook) every 5 minutes forever.
-        abandoned_at__isnull=True,
-    ).order_by("created_at")[:batch_size]
-
-    total = len(old_messages)
-    if total == 0:
-        return {
-            "success": True,
-            "processed": 0,
-            "total": 0,
-        }
+    due = (
+        models.InboundMessage.objects.filter(
+            _due_for_retry_q(timezone.now()),
+            # Terminally-failed rows are kept for inspection/replay but must
+            # not be retried — otherwise the poison message loops the pipeline
+            # (and re-fires every user webhook) every 5 minutes forever.
+            abandoned_at__isnull=True,
+        )
+        .order_by("updated_at")
+        .values_list("id", flat=True)[: max_dispatch + 1]
+    )
 
     processed = 0
     errors = 0
+    total = 0
+    capped = False
 
-    for inbound_message in old_messages:
+    for row_id in due.iterator(chunk_size=chunk_size):
+        if total >= max_dispatch:
+            # The extra row the slice asked for: more work is due than this
+            # run will take.
+            capped = True
+            break
+        total += 1
         try:
             # Trigger async task for each old message (retry)
-            process_inbound_message_task.delay(str(inbound_message.id))
+            process_inbound_message_task.delay(str(row_id))
             processed += 1
         except Exception as e:
             logger.exception(
                 "Error queuing inbound message %s for retry: %s",
-                inbound_message.id,
+                row_id,
                 e,
             )
             errors += 1
+
+    if capped:
+        logger.warning(
+            "Inbound retry sweep stopped at its %d-message cap — more were due; "
+            "the queue is not draining within one run",
+            max_dispatch,
+        )
 
     return {
         "success": True,

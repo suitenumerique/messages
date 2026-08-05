@@ -38,17 +38,19 @@ class TestArcResult:
 
     def test_empty_allowlist_trusts_nothing(self):
         # Fail closed: no allowlist -> nothing trusted, and no parse/verify.
-        with patch("core.mda.arc._outermost_sealer") as mock_outer, patch(
-            "core.mda.arc.arc_verify"
-        ) as mock_verify:
+        with (
+            patch("core.mda.arc._outermost_sealer") as mock_outer,
+            patch("core.mda.arc.arc_verify") as mock_verify,
+        ):
             out = arc.arc_result(b"raw", set())
         assert out == {"trusted": False, "sealer": None, "aar": None, "dnsfail": False}
         mock_outer.assert_not_called()
         mock_verify.assert_not_called()
 
     def test_verify_exception_untrusted(self):
-        with self._outer("relay.example"), patch(
-            "core.mda.arc.arc_verify", side_effect=Exception("boom")
+        with (
+            self._outer("relay.example"),
+            patch("core.mda.arc.arc_verify", side_effect=Exception("boom")),
         ):
             out = arc.arc_result(b"raw", {"relay.example"})
         assert out["dnsfail"] is False
@@ -82,9 +84,10 @@ class TestArcFastPath:
     """Q1: full crypto/DNS verification runs ONLY for a claimed-trusted sealer."""
 
     def test_unlisted_sealer_skips_verification(self):
-        with patch(
-            "core.mda.arc._outermost_sealer", return_value=("evil.net", 1)
-        ), patch("core.mda.arc.arc_verify") as mock_verify:
+        with (
+            patch("core.mda.arc._outermost_sealer", return_value=("evil.net", 1)),
+            patch("core.mda.arc.arc_verify") as mock_verify,
+        ):
             out = arc.arc_result(b"raw", {"relay.example"})
         assert out["trusted"] is False
         assert out["sealer"] == "evil.net"
@@ -92,9 +95,10 @@ class TestArcFastPath:
         mock_verify.assert_not_called()
 
     def test_no_chain_skips_verification(self):
-        with patch(
-            "core.mda.arc._outermost_sealer", return_value=(None, 0)
-        ), patch("core.mda.arc.arc_verify") as mock_verify:
+        with (
+            patch("core.mda.arc._outermost_sealer", return_value=(None, 0)),
+            patch("core.mda.arc.arc_verify") as mock_verify,
+        ):
             out = arc.arc_result(b"raw", {"relay.example"})
         assert out["trusted"] is False
         assert out["sealer"] is None
@@ -102,9 +106,10 @@ class TestArcFastPath:
 
     def test_overlong_chain_skips_verification(self):
         # One past the cap (_MAX_ARC_INSTANCES = 20) is refused without verifying.
-        with patch(
-            "core.mda.arc._outermost_sealer", return_value=("relay.example", 21)
-        ), patch("core.mda.arc.arc_verify") as mock_verify:
+        with (
+            patch("core.mda.arc._outermost_sealer", return_value=("relay.example", 21)),
+            patch("core.mda.arc.arc_verify") as mock_verify,
+        ):
             out = arc.arc_result(b"raw", {"relay.example"})
         assert out["trusted"] is False
         mock_verify.assert_not_called()
@@ -112,11 +117,12 @@ class TestArcFastPath:
     def test_at_cap_still_verifies(self):
         # Exactly at the cap is still verified.
         results = [{"ams-domain": b"relay.example", "aar-value": b"x"}]
-        with patch(
-            "core.mda.arc._outermost_sealer", return_value=("relay.example", 20)
-        ), patch(
-            "core.mda.arc.arc_verify", return_value=(arc.CV_Pass, results, "ok")
-        ) as mock_verify:
+        with (
+            patch("core.mda.arc._outermost_sealer", return_value=("relay.example", 20)),
+            patch(
+                "core.mda.arc.arc_verify", return_value=(arc.CV_Pass, results, "ok")
+            ) as mock_verify,
+        ):
             out = arc.arc_result(b"raw", {"relay.example"})
         assert out["trusted"] is True
         mock_verify.assert_called_once()

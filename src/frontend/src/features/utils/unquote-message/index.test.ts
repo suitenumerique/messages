@@ -1055,3 +1055,55 @@ On 2024-01-15, alice@example.com wrote:
     });
   });
 });
+
+describe("quote-pattern complexity", () => {
+  /**
+   * The attribution patterns run against the whole body, and their
+   * wildcards were only implicitly bounded by line length — so a body
+   * that is one very long line made them backtrack quadratically. At
+   * 195 KiB that was ~16s of blocked main thread, and
+   * MAX_INCOMING_EMAIL_SIZE is 10 MiB, so a max-size message froze the
+   * tab. Opening the email was the whole exploit.
+   *
+   * The bound is ~100x the fixed cost, so it catches a change in the
+   * exponent without being flaky about machine speed.
+   */
+  it("does not blow up on a single very long line", () => {
+    const body = "a <b> ".repeat(40000); // ~234 KiB, one line
+    const start = performance.now();
+    new UnquoteMessage("", body).getText();
+    expect(performance.now() - start).toBeLessThan(2000);
+  });
+
+  /**
+   * Bounding the intra-line wildcards is not enough on its own: a
+   * whitespace quantifier that crosses newlines (`\s*` under the `m`
+   * flag) backtracks once per line start, so a body of blank or
+   * space-only lines is quadratic in the number of lines — no long
+   * line required. Both shapes must stay under the same budget. The
+   * leading "x" defeats the all-whitespace early return: a real
+   * message needs a single visible character to reach the patterns.
+   */
+  it("does not blow up on a body of blank lines", () => {
+    const body = "x" + "\n".repeat(60000); // ~59 KiB, only newlines
+    const start = performance.now();
+    new UnquoteMessage("", body).getText();
+    expect(performance.now() - start).toBeLessThan(2000);
+  });
+
+  it("does not blow up on a body of whitespace-only lines", () => {
+    const body = "x\n" + (" ".repeat(79) + "\n").repeat(700); // ~55 KiB
+    const start = performance.now();
+    new UnquoteMessage("", body).getText();
+    expect(performance.now() - start).toBeLessThan(2000);
+  });
+
+  it("still finds an attribution line after long content", () => {
+    const body =
+      "a <b> ".repeat(5000) +
+      "\nOn Mon, 8 Jun 2026 at 14:30, Alice <alice@example.com> wrote:\n> quoted";
+    const result = new UnquoteMessage("", body).getText();
+    expect(result.hadQuotes).toBe(true);
+    expect(result.content).not.toContain("> quoted");
+  });
+});

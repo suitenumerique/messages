@@ -23,6 +23,7 @@ from rest_framework.views import APIView
 from core import models
 from core.api import utils
 from core.api.serializers import PartialDriveItemSerializer
+from core.services.attachments import get_attachment_display_name
 
 logger = logging.getLogger(__name__)
 
@@ -155,9 +156,19 @@ class DriveAPIView(APIView):
             "Content-Type": "application/json",
         }
 
+        # The parser reports ``None`` for a part with no filename. Resolve
+        # the same display name the message serializer and blob download
+        # expose, so the Drive dedup search keeps its ``title`` filter (a
+        # ``None`` param would be dropped by ``requests``, matching an
+        # unrelated file on size alone) and the created file carries a
+        # real filename.
+        filename = get_attachment_display_name(attachment["name"], attachment["type"])
+
         # Check if file already exists in Drive (get_or_create pattern)
         try:
-            existing_item = self._find_existing_drive_item(attachment, auth_headers)
+            existing_item = self._find_existing_drive_item(
+                attachment, auth_headers, filename
+            )
         except requests.exceptions.RequestException:
             logger.exception("Failed to search Drive for existing file")
             return Response(
@@ -170,7 +181,7 @@ class DriveAPIView(APIView):
 
         # File doesn't exist, create it
         try:
-            return self._create_drive_item(attachment, auth_headers)
+            return self._create_drive_item(attachment, auth_headers, filename)
         except requests.exceptions.RequestException:
             logger.exception("Failed to create file in Drive")
             return Response(
@@ -178,7 +189,7 @@ class DriveAPIView(APIView):
                 data={"error": "Failed to create file in Drive"},
             )
 
-    def _find_existing_drive_item(self, attachment, headers):
+    def _find_existing_drive_item(self, attachment, headers, filename):
         """Search for an existing file in Drive matching the attachment name and size.
 
         Raises RequestException on network/server errors so callers don't
@@ -189,7 +200,7 @@ class DriveAPIView(APIView):
             params={
                 "is_creator_me": True,
                 "type": "file",
-                "title": attachment["name"],
+                "title": filename,
             },
             headers=headers,
             timeout=5,
@@ -202,13 +213,13 @@ class DriveAPIView(APIView):
 
         return None
 
-    def _create_drive_item(self, attachment, headers):
+    def _create_drive_item(self, attachment, headers, filename):
         """Create a new file in Drive and upload its content."""
         response = requests.post(
             f"{self.drive_external_api}/items/",
             json={
                 "type": "file",
-                "filename": attachment["name"],
+                "filename": filename,
             },
             headers=headers,
             timeout=5,

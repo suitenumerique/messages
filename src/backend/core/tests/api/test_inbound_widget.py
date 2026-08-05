@@ -272,6 +272,58 @@ class TestInboundWidgetDeliver:
         assert response.status_code == status.HTTP_400_BAD_REQUEST
         assert response.json() == {"detail": "Invalid email format"}
 
+    def test_inbound_widget_deliver_non_ascii_local_part(self, api_client, channel):
+        """An RFC 6531 local part is a *valid* address, so ``parse_address``
+        accepts it and the shape check above lets it through — but we emit
+        7-bit SMTP and never negotiate SMTPUTF8, so the composer refuses it.
+        That is a property of what this public form was given, so it must be
+        a 400 like any other unusable address, not a 500."""
+        response = api_client.post(
+            "/api/v1.0/inbound/widget/deliver/",
+            data={"email": "josé@example.com", "textBody": "hello"},
+            HTTP_X_CHANNEL_ID=str(channel.id),
+        )
+
+        assert response.status_code == status.HTTP_400_BAD_REQUEST
+        assert response.json() == {"detail": "Invalid email format"}
+
+    def test_compose_rejection_log_carries_only_the_domain(self, api_client, channel):
+        """The rejection is logged so operators can see widgets failing,
+        but the submitter's address is user data on a public endpoint —
+        the local part must not land in the log. Same convention the
+        send_mail command already uses.
+
+        Asserts on the logger call rather than ``caplog``: this logger does
+        not propagate to root under the project's logging config, so a
+        ``caplog.text`` assertion would pass whether or not the address
+        leaked.
+        """
+        with patch.object(widget_module, "logger") as mock_logger:
+            api_client.post(
+                "/api/v1.0/inbound/widget/deliver/",
+                data={"email": "josé.secret@example.com", "textBody": "hello"},
+                HTTP_X_CHANNEL_ID=str(channel.id),
+            )
+
+        assert mock_logger.info.called
+        logged = " ".join(
+            str(a) for call in mock_logger.info.call_args_list for a in call.args
+        )
+        assert "example.com" in logged
+        assert "josé.secret" not in logged
+
+    def test_inbound_widget_deliver_idn_domain_is_accepted(self, api_client, channel):
+        """The other half: an IDN *domain* has an exact ASCII wire form, so
+        ``COMPOSE_OPTIONS`` converts it and the submission goes through
+        rather than being rejected alongside the case above."""
+        response = api_client.post(
+            "/api/v1.0/inbound/widget/deliver/",
+            data={"email": "contact@exemplé.fr", "textBody": "hello"},
+            HTTP_X_CHANNEL_ID=str(channel.id),
+        )
+
+        assert response.status_code == status.HTTP_200_OK
+
     def test_inbound_widget_deliver_missing_message(self, api_client, channel):
         """Test deliver with missing message."""
         data = {"email": "sender@example.com"}

@@ -59,6 +59,63 @@ class TestMessageGetParsedData:
             assert not message.get_parsed_data()
 
 
+@pytest.mark.django_db
+class TestUnreadableContent:
+    """A stored blob that no longer parses must reach the UI as an error,
+    not as an empty message."""
+
+    def _message_with_blob(self, content):
+        fake_blob = MagicMock()
+        if isinstance(content, Exception):
+            fake_blob.get_content.side_effect = content
+        else:
+            fake_blob.get_content.return_value = content
+        message = models.Message()
+        message.id = "test-id"
+        message.postmark = None
+        return message, patch.object(
+            models.Message, "blob", new_callable=PropertyMock, return_value=fake_blob
+        )
+
+    def test_header_over_the_cap_is_reported_unreadable(self):
+        """The retroactive case: bytes accepted under looser rules that the
+        parser now refuses outright."""
+        raw = b"From: a@example.com\r\nSubject: " + b"x" * 200_000 + b"\r\n\r\nbody\r\n"
+        message, blob_patch = self._message_with_blob(raw)
+        with blob_patch:
+            assert message.get_parsed_data() == {}
+            assert message.has_unreadable_content()
+            assert message.get_stmsg_headers()["unreadable"] == "true"
+
+    def test_blob_read_failure_is_reported_unreadable(self):
+        """Decompression / decryption / integrity failure renders the same
+        blank message, so it takes the same banner."""
+        message, blob_patch = self._message_with_blob(ValueError("bad blob"))
+        with blob_patch:
+            assert message.has_unreadable_content()
+            assert message.get_stmsg_headers()["unreadable"] == "true"
+
+    def test_readable_message_is_not_flagged(self):
+        """A message that parses carries no marker."""
+        message, blob_patch = self._message_with_blob(
+            b"From: a@example.com\r\nSubject: hi\r\n\r\nbody\r\n"
+        )
+        with blob_patch:
+            assert not message.has_unreadable_content()
+            assert "unreadable" not in message.get_stmsg_headers()
+
+    def test_blobless_message_is_not_flagged(self):
+        """A draft skeleton has no content to fail on — banner would be a
+        false alarm on every empty draft."""
+        message = models.Message()
+        message.postmark = None
+        with patch.object(
+            models.Message, "blob", new_callable=PropertyMock, return_value=None
+        ):
+            assert not message.has_unreadable_content()
+            assert "unreadable" not in message.get_stmsg_headers()
+
+
 class TestGetStmsgHeaders:
     """``get_stmsg_headers`` unions legacy baked ``X-StMsg-*`` bytes with the
     structured ``postmark``; the structured value wins on overlap."""

@@ -617,7 +617,19 @@ services:
       - ./src/jmap-email/jmap_email:/app/jmap_email
       - ./src/jmap-email/tests:/app/tests
       - ./src/jmap-email/pyproject.toml:/app/pyproject.toml
+      # Hypothesis' example database. Without it the container starts with
+      # no memory of past failures, so Phase.reuse has nothing to replay
+      # and an intermittent find stays intermittent.
+      #
+      # A named volume rather than a bind mount: a bind mount to a path
+      # that does not exist yet — and it never does on a fresh clone,
+      # since .hypothesis is gitignored — is created by Docker as *root*,
+      # which then blocks `git clean -fdx` and any pytest run against a
+      # local venv. This is a cache, so nothing needs to read it from the
+      # host.
+      - jmap-email-hypothesis:/app/.hypothesis
 
 volumes:
+  jmap-email-hypothesis:
   objectstorage-data:
   frontend-node-modules:

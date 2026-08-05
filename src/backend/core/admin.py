@@ -3,7 +3,6 @@
 
 import json
 import logging
-import mimetypes
 
 from django import forms
 from django.contrib import admin, messages
@@ -1379,8 +1378,14 @@ class BlobAdmin(admin.ModelAdmin):
             # POST-only download endpoint and 405.
             return redirect("..")
 
-        extension = mimetypes.guess_extension(blob.content_type or "") or ""
-        filename = f"blob-{blob.id}{extension}"
+        # No extension. This is a debugging download of an opaque blob, not
+        # a user-facing attachment: the ``Content-Type`` below already tells
+        # the browser what it is, and the blob id is the only part of the
+        # name anyone needs. Inferring one would either re-import the
+        # stdlib ``mimetypes`` table (whose answers vary with the host
+        # image) or reuse the attachment table (deliberately short, so most
+        # types would come back bare anyway).
+        filename = f"blob-{blob.id}"
         response = HttpResponse(
             content, content_type=blob.content_type or "application/octet-stream"
         )

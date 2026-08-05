@@ -850,6 +850,7 @@
   "This file looks suspicious": "This file looks suspicious",
   "This is the mailbox owner, its access cannot be modified.": "This is the mailbox owner, its access cannot be modified.",
   "This is the only admin of this mailbox, you cannot therefore modify its access.": "This is the only admin of this mailbox, you cannot therefore modify its access.",
+  "This message could not be read and cannot be displayed. Its content is still stored and support can retrieve it.": "This message could not be read and cannot be displayed. Its content is still stored and support can retrieve it.",
   "This message failed sender authentication and is likely a forgery. Do not trust it.": "This message failed sender authentication and is likely a forgery. Do not trust it.",
   "This message has {{count}} attachments_one": "This message has one attachment",
   "This message has {{count}} attachments_other": "This message has {{count}} attachments",

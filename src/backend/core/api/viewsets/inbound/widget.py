@@ -7,7 +7,7 @@ from urllib.parse import urlparse
 from django.conf import settings
 
 from drf_spectacular.utils import extend_schema
-from jmap_email import compose_email, parse_address
+from jmap_email import ComposeError, compose_email, parse_address
 from rest_framework import status, viewsets
 from rest_framework.authentication import BaseAuthentication
 from rest_framework.decorators import action
@@ -18,7 +18,7 @@ from rest_framework.throttling import SimpleRateThrottle
 from core import enums, models
 from core.api.permissions import IsAuthenticated
 from core.mda.inbound import deliver_inbound_message
-from core.mda.utils import current_sent_at
+from core.mda.utils import COMPOSE_OPTIONS, current_sent_at
 
 logger = logging.getLogger(__name__)
 
@@ -240,10 +240,31 @@ class InboundWidgetViewSet(viewsets.GenericViewSet):
             "textBody": [{"content": message_text}],
         }
 
+        # ``parse_address`` above accepts an RFC 6531 address — it is a
+        # valid one — but the composer cannot carry a non-ASCII local part
+        # over the 7-bit SMTP we emit, and refuses. That is a property of
+        # the address this caller typed into a public form, so it is a 400
+        # like the shape check above, not a 500.
+        try:
+            raw_mime = compose_email(
+                parsed_email,
+                prepend_headers=prepend_headers,
+                options=COMPOSE_OPTIONS,
+            )
+        except ComposeError:
+            logger.info(
+                "Widget submission rejected: cannot compose MIME for sender "
+                "at domain %r",
+                sender_email.split("@", 1)[-1],
+            )
+            return Response(
+                {"detail": "Invalid email format"}, status=status.HTTP_400_BAD_REQUEST
+            )
+
         delivered = deliver_inbound_message(
             target_email,
             parsed_email,
-            compose_email(parsed_email, prepend_headers=prepend_headers),
+            raw_mime,
             channel=channel,
             envelope={
                 "origin": enums.InboundOrigin.WIDGET,

@@ -83,6 +83,55 @@ Test file content for Drive upload.
     return mailbox, message
 
 
+@pytest.fixture
+def mailbox_with_nameless_attachment(api_client_with_user):
+    """Create a message whose attachment part declares no filename at all."""
+    _, user = api_client_with_user
+
+    mailbox = factories.MailboxFactory()
+    factories.MailboxAccessFactory(
+        mailbox=mailbox,
+        user=user,
+        role=MailboxRoleChoices.EDITOR,
+    )
+
+    thread = factories.ThreadFactory()
+    factories.ThreadAccessFactory(
+        thread=thread,
+        mailbox=mailbox,
+        role=ThreadAccessRoleChoices.EDITOR,
+    )
+
+    # No ``filename`` in Content-Disposition, no ``name`` in Content-Type:
+    # the parser reports ``name`` as None for this part.
+    raw_mime_content = b"""From: sender@example.com
+To: recipient@example.com
+Subject: Test message with nameless attachment
+MIME-Version: 1.0
+Content-Type: multipart/mixed; boundary="boundary-string"
+
+--boundary-string
+Content-Type: text/plain; charset="utf-8"
+
+This is a test message.
+
+--boundary-string
+Content-Type: text/plain
+Content-Disposition: attachment
+
+Nameless file content for Drive upload.
+--boundary-string--
+"""
+
+    message = factories.MessageFactory(
+        thread=thread,
+        raw_mime=raw_mime_content,
+        has_attachments=True,
+    )
+
+    return mailbox, message
+
+
 class TestDriveAPIView:
     """Tests for the Drive API View endpoints."""
 
@@ -435,6 +484,75 @@ Test file content for Drive upload without access.
 
         # Verify upload-ended confirmation
         assert f"items/{file_id}/upload-ended/" in responses.calls[3].request.url
+
+    @responses.activate
+    @patch(
+        "lasuite.oidc_login.middleware.RefreshOIDCAccessToken.is_expired",
+        return_value=False,
+    )
+    def test_api_third_party_drive_post_nameless_attachment(
+        self, _mock, api_client_with_user, mailbox_with_nameless_attachment
+    ):
+        """A nameless attachment gets the synthesized display name end to end.
+
+        With a raw ``None`` name, ``requests`` would drop the ``title``
+        param from the dedup search — matching an unrelated Drive file on
+        size alone — and the creation call would post ``"filename": null``.
+        """
+        client, _ = api_client_with_user
+        _, message = mailbox_with_nameless_attachment
+
+        blob_id = f"msg_{message.id}_0"
+        file_id = str(uuid.uuid4())
+        presigned_url = "http://s3.test/presigned-upload-url"
+
+        responses.add(
+            responses.GET,
+            "http://drive.test/external_api/v1.0/items/",
+            json={"count": 0, "next": None, "previous": None, "results": []},
+            status=status.HTTP_200_OK,
+        )
+        responses.add(
+            responses.POST,
+            "http://drive.test/external_api/v1.0/items/",
+            json={
+                "id": file_id,
+                "title": "unnamed.txt",
+                "type": "file",
+                "policy": presigned_url,
+                "created_at": "2024-01-01T00:00:00Z",
+                "updated_at": "2024-01-01T00:00:00Z",
+            },
+            status=status.HTTP_200_OK,
+        )
+        responses.add(responses.PUT, presigned_url, status=status.HTTP_200_OK)
+        responses.add(
+            responses.POST,
+            f"http://drive.test/external_api/v1.0/items/{file_id}/upload-ended/",
+            json={
+                "id": file_id,
+                "title": "unnamed.txt",
+                "type": "file",
+                "created_at": "2024-01-01T00:00:00Z",
+                "updated_at": "2024-01-01T00:00:00Z",
+            },
+            status=status.HTTP_200_OK,
+        )
+
+        response = client.post(
+            reverse("drive"),
+            {"blob_id": blob_id},
+            format="json",
+        )
+
+        assert response.status_code == status.HTTP_201_CREATED
+
+        # The dedup search must keep its title filter, with the same
+        # synthesized name the message serializer exposes.
+        assert "title=unnamed.txt" in responses.calls[0].request.url
+
+        file_creation_body = json.loads(responses.calls[1].request.body)
+        assert file_creation_body["filename"] == "unnamed.txt"
 
     @responses.activate
     @patch(

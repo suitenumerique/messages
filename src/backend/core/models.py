@@ -2162,6 +2162,10 @@ class Message(BaseModel):
 
     # Internal cache for parsed data
     _parsed_email_cache: Optional[JmapEmail] = None
+    # True once ``get_parsed_data`` has run and the blob failed to load or
+    # parse. Distinguishes "no content" from "content we can no longer read",
+    # which the empty cache alone cannot express.
+    _parse_failed: bool = False
 
     class Meta:
         db_table = "messages_message"
@@ -2179,7 +2183,8 @@ class Message(BaseModel):
         Use the helpers in :mod:`jmap_email` (``first_address``,
         ``first_msgid``, ``find_header``, …) for null-safe access
         patterns over the list-typed fields. Returns ``{}`` when
-        there's no blob or parsing fails.
+        there's no blob or parsing fails; the two are told apart by
+        ``has_unreadable_content``.
         """
         if self._parsed_email_cache is not None:
             return self._parsed_email_cache
@@ -2201,13 +2206,36 @@ class Message(BaseModel):
                 logger.warning(
                     "Failed to load blob content for message %s: %s", self.id, exc
                 )
+                self._parse_failed = True
                 self._parsed_email_cache = {}
                 return self._parsed_email_cache
             parsed = parse_email(raw, body_values=False)
+            if parsed is None:
+                # The bytes are intact but the parser refuses them — a
+                # message stored under looser rules than the ones in force
+                # now. Rendering it as an empty message would be a silent
+                # lie, so flag it for the UI.
+                logger.warning(
+                    "Stored message %s is no longer parseable (%d bytes)",
+                    self.id,
+                    len(raw),
+                )
+                self._parse_failed = True
             self._parsed_email_cache = parsed if parsed is not None else {}
         else:
             self._parsed_email_cache = {}
         return self._parsed_email_cache
+
+    def has_unreadable_content(self) -> bool:
+        """True when this message has a blob we cannot turn into content.
+
+        Either the blob failed to load (decompression / decryption /
+        integrity check) or the parser refused it. Both leave every parsed
+        field empty, so consumers that would otherwise render a blank
+        message must show an error instead.
+        """
+        self.get_parsed_data()
+        return self._parse_failed
 
     def get_parsed_field(self, field_name: str) -> Any:
         """Get a parsed field from the parsed JMAP Email object."""
@@ -2265,6 +2293,11 @@ class Message(BaseModel):
             # The divergent envelope RCPT TO (alias/BCC/catch-all) recorded by
             # ``_record_divergent_rcpt`` — surfaces the recipient's own alias.
             result["rcpt_to"] = postmark["rcpt_to"]
+        if self._parse_failed:
+            # Set by the ``get_parsed_data`` call above. Not a pipeline verdict
+            # like the rest, but it rides the same channel because it needs the
+            # same banner: every field the UI would render is empty.
+            result["unreadable"] = "true"
         return result
 
     def generate_mime_id(self) -> str:

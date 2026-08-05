@@ -876,6 +876,92 @@ Content-ID: <{cid}>
         return email_template.encode("utf-8"), cid, image_content
 
     @pytest.fixture
+    def make_multipart_email_with_attachment(self, user_mailbox):
+        """Build a multipart email carrying a single attachment part.
+
+        With ``filename`` left to ``None`` the part carries no filename at all —
+        no ``filename`` in ``Content-Disposition``, no ``name`` in
+        ``Content-Type`` — so the parser reports ``name`` as ``None``. Seen in
+        the wild on messages forwarded by other clients.
+        """
+
+        def _make(filename=None):
+            recipient_email = f"{user_mailbox.local_part}@{user_mailbox.domain.name}"
+            boundary = "------------boundary123456789"
+            image_content = b"fake-gif-content-for-testing"
+            disposition = "attachment"
+            if filename is not None:
+                disposition += f'; filename="{filename}"'
+
+            email_template = f"""From: sender@example.com
+To: {recipient_email}
+Subject: Original message with a nameless attachment
+Message-ID: <original-msg-{uuid.uuid4()}@example.com>
+MIME-Version: 1.0
+Content-Type: multipart/mixed; boundary="{boundary}"
+
+--{boundary}
+Content-Type: text/plain; charset="UTF-8"
+Content-Transfer-Encoding: 7bit
+
+This is the original message body.
+
+--{boundary}
+Content-Type: image/gif
+Content-Transfer-Encoding: base64
+Content-Disposition: {disposition}
+Content-ID: <cid123@example.com>
+
+{base64.b64encode(image_content).decode()}
+--{boundary}--
+"""
+            return email_template.encode("utf-8"), image_content
+
+        return _make
+
+    @pytest.fixture
+    def make_received_message_with_attachment(
+        self, user_mailbox, make_multipart_email_with_attachment
+    ):
+        """Build a received message holding a single attachment part."""
+
+        def _make(filename=None):
+            mime_content, image_content = make_multipart_email_with_attachment(filename)
+            return (
+                self._store_received_message(user_mailbox, mime_content),
+                image_content,
+            )
+
+        return _make
+
+    @staticmethod
+    def _store_received_message(user_mailbox, mime_content):
+        """Persist a received message from its raw MIME content."""
+        thread = factories.ThreadFactory(subject="Nameless attachment")
+        factories.ThreadAccessFactory(
+            thread=thread, mailbox=user_mailbox, role=ThreadAccessRoleChoices.EDITOR
+        )
+        sender = factories.ContactFactory(
+            mailbox=user_mailbox, email="sender@example.com", name="Sender"
+        )
+        blob = factories.BlobFactory(
+            mailbox=user_mailbox,
+            content=mime_content,
+            content_type="message/rfc822",
+        )
+        message = factories.MessageFactory(
+            thread=thread,
+            sender=sender,
+            is_draft=False,
+            is_sender=False,
+            subject="Nameless attachment",
+            blob=blob,
+            has_attachments=True,
+        )
+
+        return message
+
+    @pytest.fixture
     def received_message_with_attachment(
         self, user_mailbox, multipart_email_with_attachment
     ):
@@ -1004,6 +1090,155 @@ Content-ID: <{cid}>
         new_blob_id = response.data["attachments"][0]["blobId"]
         assert not new_blob_id.startswith("msg_")
         uuid.UUID(new_blob_id)  # Should not raise
+
+    def test_draft_create_with_forwarded_nameless_attachment(
+        self, api_client, user_mailbox, make_received_message_with_attachment
+    ):
+        """Forwarding an attachment whose MIME part has no filename succeeds.
+
+        Regression: the parser reports ``name`` as ``None`` for such a part, the
+        API echoed the "unnamed" placeholder back, and the draft builder then
+        wrote that ``None`` straight into the NOT NULL ``Attachment.name`` —
+        answering 400 "This field cannot be null". The synthesized name now
+        carries the extension inferred from the MIME type.
+        """
+        client, _ = api_client
+        message, image_content = make_received_message_with_attachment()
+
+        # What the API exposes for that part is what the client sends back.
+        list_response = client.get(
+            reverse("messages-detail", kwargs={"id": str(message.id)})
+        )
+        assert list_response.status_code == status.HTTP_200_OK
+        exposed = list_response.data["attachments"][0]
+        assert exposed["name"] == "unnamed.gif"
+
+        response = client.post(
+            reverse("draft-message"),
+            {
+                "senderId": str(user_mailbox.id),
+                "parentId": str(message.id),
+                "subject": "Fwd: Nameless attachment",
+                "draftBody": json.dumps({"text": "Forwarding this message"}),
+                "to": ["recipient@example.com"],
+                "attachments": [{"blobId": exposed["blobId"], "name": exposed["name"]}],
+            },
+            format="json",
+        )
+
+        assert response.status_code == status.HTTP_201_CREATED
+
+        draft = models.Message.objects.get(id=response.data["id"])
+        attachment = draft.attachments.get()
+        assert attachment.name == "unnamed.gif"
+        assert attachment.blob.get_content() == image_content
+
+    def test_download_nameless_attachment_serves_the_name_the_user_saw(
+        self, api_client, make_received_message_with_attachment
+    ):
+        """Downloading a nameless part serves it under its displayed name.
+
+        The other half of the same round-trip: the blob endpoint reads the
+        parsed ``name`` too, so it was handing ``None`` to
+        ``content_disposition_header`` and emitting a bare ``attachment``
+        with no filename — leaving the browser to save the file under the
+        blob id, extensionless, while the UI listed it as ``unnamed.gif``.
+        """
+        client, _ = api_client
+        message, image_content = make_received_message_with_attachment()
+
+        list_response = client.get(
+            reverse("messages-detail", kwargs={"id": str(message.id)})
+        )
+        assert list_response.status_code == status.HTTP_200_OK
+        exposed = list_response.data["attachments"][0]
+        assert exposed["name"] == "unnamed.gif"
+
+        response = client.get(
+            reverse("blob-download", kwargs={"pk": exposed["blobId"]})
+        )
+
+        assert response.status_code == status.HTTP_200_OK
+        assert response["Content-Disposition"] == 'attachment; filename="unnamed.gif"'
+        assert response.content == image_content
+
+    def test_draft_create_with_forwarded_attachment_actually_named_unnamed(
+        self, api_client, user_mailbox, make_received_message_with_attachment
+    ):
+        """A part genuinely named "unnamed" keeps that name when forwarded.
+
+        The draft builder treats "unnamed" as the placeholder older clients
+        echo back for a nameless part. It must not do so when the part really
+        carries that filename, or forwarding would rename the user's file.
+        """
+        client, _ = api_client
+        message, _ = make_received_message_with_attachment("unnamed")
+
+        list_response = client.get(
+            reverse("messages-detail", kwargs={"id": str(message.id)})
+        )
+        assert list_response.status_code == status.HTTP_200_OK
+        exposed = list_response.data["attachments"][0]
+        assert exposed["name"] == "unnamed"
+
+        response = client.post(
+            reverse("draft-message"),
+            {
+                "senderId": str(user_mailbox.id),
+                "parentId": str(message.id),
+                "subject": "Fwd: Attachment named unnamed",
+                "draftBody": json.dumps({"text": "Forwarding this message"}),
+                "to": ["recipient@example.com"],
+                "attachments": [{"blobId": exposed["blobId"], "name": exposed["name"]}],
+            },
+            format="json",
+        )
+
+        assert response.status_code == status.HTTP_201_CREATED
+
+        draft = models.Message.objects.get(id=response.data["id"])
+        assert draft.attachments.get().name == "unnamed"
+
+    def test_draft_create_with_forwarded_attachment_overlong_name(
+        self, api_client, user_mailbox, make_received_message_with_attachment
+    ):
+        """A client-sent name longer than 255 chars is truncated, not rejected.
+
+        The draft endpoint takes ``attachments[].name`` without serializer
+        validation; ``Attachment.name`` is a ``CharField(max_length=255)``
+        enforced by ``full_clean`` on save. Without sanitization the whole
+        draft save was rolled back with a 400 over one overlong name.
+        """
+        client, _ = api_client
+        message, _ = make_received_message_with_attachment("original.gif")
+
+        list_response = client.get(
+            reverse("messages-detail", kwargs={"id": str(message.id)})
+        )
+        assert list_response.status_code == status.HTTP_200_OK
+        exposed = list_response.data["attachments"][0]
+
+        response = client.post(
+            reverse("draft-message"),
+            {
+                "senderId": str(user_mailbox.id),
+                "parentId": str(message.id),
+                "subject": "Fwd: Overlong attachment name",
+                "draftBody": json.dumps({"text": "Forwarding this message"}),
+                "to": ["recipient@example.com"],
+                "attachments": [
+                    {"blobId": exposed["blobId"], "name": "a" * 300 + ".gif"}
+                ],
+            },
+            format="json",
+        )
+
+        assert response.status_code == status.HTTP_201_CREATED
+
+        draft = models.Message.objects.get(id=response.data["id"])
+        attachment = draft.attachments.get()
+        assert len(attachment.name) == 255
+        assert attachment.name.endswith(".gif")
 
     def test_draft_forward_attachments_inline_image_preserves_cid(
         self, api_client, user_mailbox, received_message_with_inline_image

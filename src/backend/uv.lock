@@ -1013,11 +1013,14 @@ wheels = [
 
 [[package]]
 name = "jmap-email"
-version = "0.1.0"
+version = "0.3.0"
 source = { registry = "https://pypi.org/simple" }
-sdist = { url = "https://files.pythonhosted.org/packages/e5/65/86143692dc38e57ea950d85f6a7d66ea9df9a3b64debd8d258cb8ba2cb4d/jmap_email-0.1.0.tar.gz", hash = "sha256:04d906c22aff25ac62819bda04f467bc9f65e041be4a1f96bb5439a54c4d2de1", size = 149817, upload-time = "2026-06-09T13:41:36.923Z" }
+dependencies = [
+    { name = "idna" },
+]
+sdist = { url = "https://files.pythonhosted.org/packages/94/ca/821eee73857d072e78160e71de0f777d0a7551c11f473d656018d1ecb422/jmap_email-0.3.0.tar.gz", hash = "sha256:d559085692bb6694631baf5ab3f75843bc3fbf44dc03bc889b4c82aa2f583f01", size = 252066, upload-time = "2026-08-05T22:14:07.872Z" }
 wheels = [
-    { url = "https://files.pythonhosted.org/packages/67/bf/41fd7b86859391bc112114162ae9d21d1a98c09986dfdc0872132e19dbf7/jmap_email-0.1.0-py3-none-any.whl", hash = "sha256:a32d8b49f5f33ae27de1279a1d402c1714c85c35a1b55844251c985a32ff1498", size = 59633, upload-time = "2026-06-09T13:41:34.395Z" },
+    { url = "https://files.pythonhosted.org/packages/37/f1/b90eb401d3155eedf36384c6840730f87b8730302317e955e97d060c32da/jmap_email-0.3.0-py3-none-any.whl", hash = "sha256:27f30fa35782c4f4fd214387484c85cba46db68c5ccf82e1aa4daddd881cd0f9", size = 98681, upload-time = "2026-08-05T22:14:06.55Z" },
 ]
 
 [[package]]
@@ -1269,7 +1272,7 @@ requires-dist = [
     { name = "httpx", extras = ["http2"], specifier = "==0.28.1" },
     { name = "hypothesis", marker = "extra == 'dev'", specifier = "==6.151.9" },
     { name = "icalendar", specifier = "==7.0.3" },
-    { name = "jmap-email", specifier = "==0.1.0" },
+    { name = "jmap-email", specifier = "==0.3.0" },
     { name = "jsonschema", specifier = "==4.26.0" },
     { name = "libpff-python", specifier = "==20231205" },
     { name = "nested-multipart-parser", specifier = "==1.6.0" },
