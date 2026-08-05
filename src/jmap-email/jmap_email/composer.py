@@ -25,6 +25,8 @@ from functools import lru_cache
 from io import BytesIO
 from typing import Any, cast
 
+import idna
+
 from .addresses import (
     STRIPPED_HEADER_CHARS,
     _is_terminated_quoted_string,
@@ -169,26 +171,25 @@ def _idna_encode_domain(domain: str) -> str | None:
     """Return the A-label (punycode) form of *domain*, or ``None``.
 
     ``None`` means the domain has no ASCII form we are willing to emit:
-    the stdlib codec is IDNA2003 and refuses labels over 63 octets and
-    empty labels (so ``exemplé.fr.`` with its root dot fails, as does
-    ``a..b.fr``). Nothing else in the standard library does this — the
-    ``email`` package RFC 2047-encodes a non-ASCII domain instead, which
-    RFC 2047 §5 forbids inside an addr-spec and no MTA routes — so the
-    conversion is ours to make or decline.
+    a label over 63 octets, an empty label (``a..b.fr``), a code point
+    IDNA2008 disallows, or a trailing root dot — ``idna`` would keep
+    the dot of ``exemplé.fr.``, but a domain ending in ``.`` is not a
+    valid RFC 5322 dot-atom, so it is refused here instead.
 
-    Known approximation: what IDNA2003 does not refuse it may *fold*.
-    Its nameprep case-folds ``faß.de`` to ``fass.de`` (likewise the
-    Greek final sigma, and ZWJ/ZWNJ are dropped), and since IDNA2008
-    those are distinct registrable domains — DENIC has allowed ß since
-    2010 — so mail to such a domain is silently routed to its folded
-    sibling rather than rejected. Accepted for now: it keeps the
-    library dependency-free, and the overlap with real correspondents
-    is marginal. If that ever stops being true, the ``idna`` package
-    (UTS46, non-transitional) is the drop-in fix.
+    The ``idna`` package (UTS 46, non-transitional) rather than the
+    stdlib codec — the library's one runtime dependency. The stdlib is
+    IDNA2003, whose nameprep *folds* what it does not refuse:
+    ``faß.de`` became ``fass.de`` — a distinct registrable domain
+    since DENIC allowed ß in 2010 (likewise the Greek final sigma) —
+    so mail was silently routed to the folded sibling. UTS 46
+    non-transitional preserves those code points, matching what
+    browsers and modern resolvers look up.
     """
+    if domain.endswith("."):
+        return None
     try:
-        return domain.encode("idna").decode("ascii")
-    except (UnicodeError, ValueError):
+        return idna.encode(domain, uts46=True).decode("ascii")
+    except idna.IDNAError:
         return None
 
 

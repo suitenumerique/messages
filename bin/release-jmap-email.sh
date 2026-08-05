@@ -295,9 +295,10 @@ echo "  https://test.pypi.org/project/jmap-email/${VERSION}/"
 
 # ── 5. smoke install ──────────────────────────────────────────────────────
 say "→ Smoke-installing jmap-email==${VERSION} from TestPyPI"
-# TestPyPI's index has limited transitive coverage; jmap-email has zero
-# runtime deps so a bare TestPyPI install is fine. The retry loop covers
-# the index-propagation lag (~30s after upload).
+# TestPyPI's index has limited transitive coverage, so the runtime dep
+# (idna) is resolved from real PyPI via --extra-index-url; only the
+# package under test comes from TestPyPI. The retry loop covers the
+# index-propagation lag (~30s after upload).
 docker run --rm -t \
     "${PYTHON_IMAGE}" \
     bash -c "
@@ -305,6 +306,7 @@ docker run --rm -t \
         for i in 1 2 3 4 5; do
             if pip install --quiet --no-cache-dir \
                 --index-url https://test.pypi.org/simple/ \
+                --extra-index-url https://pypi.org/simple/ \
                 jmap-email==${VERSION}; then
                 break
             fi

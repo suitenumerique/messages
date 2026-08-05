@@ -2,7 +2,7 @@
 # (managed CPython 3.14.6 + uv). NOTE: the PyPI *release* still builds on the
 # official python:3.14.6-slim image via bin/release-jmap-email.sh — that is the
 # release-parity environment; this image is only for CI lint/type/test.
-# Zero non-stdlib runtime deps; only pytest + hypothesis for the suite, plus
+# One runtime dep (idna); plus pytest + hypothesis for the suite, and
 # ``ty``/``ruff``/``pylint`` for type-checking and linting.
 ARG PYTHON_UV_IMAGE=messages-python-uv:local
 FROM ${PYTHON_UV_IMAGE}
@@ -29,7 +29,7 @@ COPY pyproject.toml README.md LICENSE CHANGELOG.md ./
 COPY jmap_email ./jmap_email
 COPY tests ./tests
 
-# Install the package itself (no runtime deps; zero new packages resolved).
+# Install the package itself (resolves its one runtime dep, idna).
 # Editable so that the mount-overlay in development instantly picks up edits.
 RUN uv pip install --no-cache -e .
 

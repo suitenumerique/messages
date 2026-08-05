@@ -2,9 +2,12 @@
 
 A strict-JMAP RFC 8621 Email object library for Python 3.14+, with
 lenient RFC 5322 / MIME parsing and strict-by-design composition.
-**Zero runtime dependencies** — the package is a clean wrapper around
+**One runtime dependency** — the package is a clean wrapper around
 the Python stdlib `email` package, plus null-safe shape accessors over
-the JMAP Email object.
+the JMAP Email object. The single dependency is
+[`idna`](https://pypi.org/project/idna/), for UTS 46 non-transitional
+domain encoding: the stdlib codec is IDNA2003, which silently folds
+`faß.de` into the *distinct* registrable domain `fass.de`.
 
 The codebase came out of operating an inbound mail pipeline; every CVE
 and research result in the [defense matrix](#defense-matrix) below has
@@ -740,9 +743,9 @@ below. See the `tests/` directory for regression coverage of each.
 - **Python** 3.14.6+ (see [Why a Python 3.14.6 floor?](#why-a-python-3146-floor))
 - **Platforms tested in CI:** Linux on x86_64 and arm64
 - **macOS / Windows / PyPy / free-threaded build:** untested; expected
-  to work since the package has zero compiled extensions and zero
-  runtime dependencies. Reports of breakage welcome via the issue
-  tracker.
+  to work since the package has zero compiled extensions and a single
+  pure-Python runtime dependency (`idna`). Reports of breakage welcome
+  via the issue tracker.
 
 ## Performance and concurrency
 

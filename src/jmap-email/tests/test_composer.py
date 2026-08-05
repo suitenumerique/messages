@@ -3406,11 +3406,33 @@ class TestComposeOptionsIdnaDomains:
             assert "SMTPUTF8" in str(excinfo.value)
 
     def test_domain_with_no_idna_encoding_is_refused(self):
-        """The stdlib codec is IDNA2003 and rejects a label over 63
-        octets. Refusing beats emitting a domain that cannot resolve."""
+        """A label over 63 octets has no legal A-label form. Refusing
+        beats emitting a domain that cannot resolve."""
         with pytest.raises(InvalidAddressError):
             compose_email(
                 self._jmap("a@" + "é" * 70 + ".fr"),
+                options=ComposeOptions(idna_encode_domains=True),
+            )
+
+    def test_deviation_codepoints_are_not_folded(self):
+        """UTS 46 non-transitional: ``faß.de`` and ``fass.de`` are
+        distinct registrable domains (DENIC allows ß since 2010), so
+        the encoder must not fold one into the other the way IDNA2003
+        nameprep silently did — that misdirected the mail."""
+        raw = compose_email(
+            self._jmap("a@faß.de"),
+            options=ComposeOptions(idna_encode_domains=True),
+        )
+        assert b"a@xn--fa-hia.de" in raw
+        assert b"fass.de" not in raw
+
+    def test_trailing_root_dot_is_refused(self):
+        """``idna.encode`` keeps a trailing root dot, but a domain
+        ending in ``.`` is not a valid RFC 5322 dot-atom, so the
+        composer keeps refusing it."""
+        with pytest.raises(InvalidAddressError):
+            compose_email(
+                self._jmap("a@exemplé.fr."),
                 options=ComposeOptions(idna_encode_domains=True),
             )
 

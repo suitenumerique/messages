@@ -9,6 +9,17 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Changed
 
+- **Breaking:** the package is no longer dependency-free: IDNA encoding
+  (`ComposeOptions(idna_encode_domains=True)`) now uses the
+  [`idna`](https://pypi.org/project/idna/) package (UTS 46,
+  non-transitional) instead of the stdlib IDNA2003 codec. `idna>=3.7`
+  is the floor (CVE-2024-3651 fix). Deviation code points are no longer
+  folded — `faß.de` encodes to `xn--fa-hia.de` instead of silently
+  becoming the *distinct* registrable domain `fass.de` (likewise the
+  Greek final sigma) — and labels IDNA2008 disallows (emoji) are now
+  refused. Empty labels, over-long labels, and a trailing root dot are
+  refused as before.
+
 - **Breaking:** `parse_email` returns `None` when any header field
   exceeds `max_header_value_bytes` (previously the value was truncated
   and the message parsed).
