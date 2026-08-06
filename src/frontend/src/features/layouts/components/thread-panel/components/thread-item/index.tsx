@@ -115,6 +115,14 @@ export const ThreadItem = ({ thread, isSelected, onToggle, onSelectRange, select
         return e.detail === 0 && !pointerType;
     };
 
+    // Gmail-style pointer entry into selection mode: a press on the identity
+    // slot (avatar, or checkbox once a selection exists) toggles the thread
+    // instead of opening it. The slot is raised above the stretched link
+    // overlay (see SCSS), so these clicks land on the slot itself and never
+    // trigger the Link — only the bubble-phase handler below sees them.
+    const isIdentitySlotClick = (e: React.MouseEvent<HTMLDivElement>) =>
+        e.target instanceof Element && !!e.target.closest('.thread-item__identity-slot');
+
     // Cancelling the navigation has to happen on the way down: the Link
     // navigates from its own onClick handler on the <a>, which runs before
     // the event bubbles up to this container. It skips navigation when the
@@ -142,7 +150,7 @@ export const ThreadItem = ({ thread, isSelected, onToggle, onSelectRange, select
         if (e.shiftKey) {
             e.preventDefault();
             onSelectRange(thread.id);
-        } else if (e.ctrlKey || e.metaKey || hasSelection) {
+        } else if (e.ctrlKey || e.metaKey || hasSelection || isIdentitySlotClick(e)) {
             e.preventDefault();
             onToggle(thread.id);
         } else if (e.target instanceof Element && !e.target.closest('a, button')) {

@@ -20,7 +20,7 @@ import useAbility, { Abilities } from "@/hooks/use-ability";
 import ViewHelper from "@/features/utils/view-helper";
 import { isNativePlatform } from "@/features/native/platform";
 import { MobileBottomBar } from "../bottom-bar";
-import { Archive, Link, Restore, Star, StarFilled, TagAdd, Trash } from "@gouvfr-lasuite/ui-kit/icons";
+import { Archive, Link, Restore, Star, StarFilled, TagAdd, Trash, Error as ErrorIcon } from "@gouvfr-lasuite/ui-kit/icons";
 import { Icon, IconProps } from "@/features/ui/components/icon";
 
 /** Modes offered by the quick-reply CTA (bottom-right of the toolbar). */
@@ -182,14 +182,14 @@ export const MobileThreadToolbar = ({ thread, isArchived, isTrashed, quickReplyM
         key: "archive",
         label: isArchived ? t("Unarchive") : t("Archive"),
         icon: isArchived
-          ? { name: "unarchive", type: IconType.OUTLINED }
+          ? { name: "inbox" }
           : { icon: Archive },
         onSelect: handleArchive,
       }] : []),
       ...(canReportSpam ? [{
         key: "spam",
         label: thread.is_spam ? t("Remove spam report") : t("Report as spam"),
-        icon: { name: thread.is_spam ? "report_off" : "report", type: IconType.OUTLINED },
+        icon: thread.is_spam ? { name: "error-off" } : { icon: ErrorIcon },
         onSelect: () => {
           const mutation = thread.is_spam ? markAsNotSpam : markAsSpam;
           mutation({ threadIds: [thread.id], onSuccess: unselectThread });
@@ -233,7 +233,7 @@ export const MobileThreadToolbar = ({ thread, isArchived, isTrashed, quickReplyM
             <Button
               variant="tertiary"
               onClick={handleArchive}
-              icon={isArchived ? <Icon name="unarchive" type={IconType.OUTLINED} /> : <Icon icon={Archive} />}
+              icon={isArchived ? <Icon name="inbox" /> : <Icon icon={Archive} />}
               aria-label={isArchived ? t("Unarchive") : t("Archive")}
             />
           )}

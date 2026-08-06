@@ -129,7 +129,7 @@ export const SearchInput = ({ compact = false }: SearchInputProps) => {
             <>
                 <Button
                     className="search__trigger"
-                    color="brand"
+                    color="neutral"
                     variant="tertiary"
                     size="medium"
                     onClick={() => setShowFilters(true)}

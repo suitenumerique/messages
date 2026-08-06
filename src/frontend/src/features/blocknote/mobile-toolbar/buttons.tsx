@@ -26,7 +26,7 @@ type MobileToolbarButtonProps = {
     text?: string;
     isActive?: boolean;
     isDisabled?: boolean;
-    onClick: () => void;
+    onClick: (event: React.MouseEvent<HTMLButtonElement>) => void;
 };
 
 export const MobileToolbarButton = ({

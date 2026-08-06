@@ -19,6 +19,19 @@ export const inboxFolderLink = (page: Page): Locator =>
     .first();
 
 /**
+ * Open a floating "New message" compose window from the sidebar button and
+ * return its locator. Composing happens in floating windows (not a dedicated
+ * page), each rendered as a region labelled by its title.
+ */
+export const openNewMessageWindow = async (page: Page): Promise<Locator> => {
+  await page.getByRole("button", { name: "New message" }).click();
+  await expect(page.getByRole("region", { name: "New message" })).toBeVisible();
+  // Return a class-based locator: the window's accessible name follows the
+  // subject field, so a name-based locator would break after typing one.
+  return page.locator(".compose-window").last();
+};
+
+/**
  * Open the mailbox settings modal from the header "More options" menu and return
  * the settings dialog locator. The per-mailbox configuration views (rename,
  * access, signatures, templates, auto-replies, integrations) all live as tabs

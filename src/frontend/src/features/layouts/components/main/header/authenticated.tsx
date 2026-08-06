@@ -51,7 +51,7 @@ export const AuthenticatedHeader = ({
           size="medium"
           onClick={onTogglePanel}
           aria-label={isPanelOpen ? t("Close the menu") : t("Open the menu")}
-          color="brand"
+          color="neutral"
           variant="tertiary"
           icon={<Icon icon={isPanelOpen ? XMark : LeftPanel} />}
         />

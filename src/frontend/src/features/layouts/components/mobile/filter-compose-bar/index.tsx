@@ -27,6 +27,7 @@ export const MobileFilterComposeBar = () => {
         icon={<Icon name="mail-plus" />}
         disabled={!canWriteMessages}
         aria-label={t("New message")}
+        variant="tertiary"
       />
     </MobileBottomBar>
   );

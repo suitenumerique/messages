@@ -3,13 +3,18 @@ import { Icon, IconSize } from "@gouvfr-lasuite/ui-kit";
 import clsx from "clsx";
 import { useEffect, useMemo, useRef } from "react";
 import { useTranslation } from "react-i18next";
-import { RiBold, RiItalic, RiStrikethrough, RiUnderline } from "react-icons/ri";
+import {
+    RiBold,
+    RiItalic,
+    RiLink,
+    RiStrikethrough,
+    RiUnderline,
+} from "react-icons/ri";
 
 import {
     createColumnListBlock,
     isInsideColumn,
 } from "../column-layout-block/column-layout-insert-button";
-import { cursorHasInlineContent, insertImageBlock } from "../image-upload-button";
 import { ToolbarSeparator } from "../toolbar-separator";
 import {
     BlockTypeButton,
@@ -88,13 +93,19 @@ const ColorSwatchButton = ({
 type MobileFormatPanelProps = {
     /** Called after an insertion so the toolbar can fold the panel away. */
     onInsert: () => void;
+    /** Opens the link editor (which replaces the toolbar row). */
+    onOpenLink: () => void;
 };
 
 /**
- * The progressive-disclosure panel opened by the "Aa" toolbar button:
- * block types, strike, alignment, insertions and text colors.
+ * The panel opened by the "Aa" toolbar button, gathering every
+ * text-formatting control: block types, inline styles, link, alignment,
+ * column layout and text colors.
  */
-export const MobileFormatPanel = ({ onInsert }: MobileFormatPanelProps) => {
+export const MobileFormatPanel = ({
+    onInsert,
+    onOpenLink,
+}: MobileFormatPanelProps) => {
     const { t } = useTranslation();
     const editor = useBlockNoteEditor();
     const availableBlockItems = useAvailableBlockTypeItems();
@@ -108,10 +119,9 @@ export const MobileFormatPanel = ({ onInsert }: MobileFormatPanelProps) => {
         [availableBlockItems],
     );
 
-    const canInsertImage = useEditorState({
+    const hasLink = useEditorState({
         editor,
-        selector: ({ editor }) =>
-            "image" in editor.schema.blockSpecs && cursorHasInlineContent(editor),
+        selector: ({ editor }) => editor.getSelectedLinkUrl() !== undefined,
     });
     const canInsertColumns = useEditorState({
         editor,
@@ -154,16 +164,12 @@ export const MobileFormatPanel = ({ onInsert }: MobileFormatPanelProps) => {
                     icon={<RiStrikethrough size={20} />}
                 />
                 <ToolbarSeparator />
-                {canInsertImage && (
-                    <MobileToolbarButton
-                        icon={<Icon name="image" size={IconSize.MEDIUM} />}
-                        label={t("Insert image")}
-                        onClick={() => {
-                            insertImageBlock(editor);
-                            onInsert();
-                        }}
-                    />
-                )}
+                <MobileToolbarButton
+                    icon={<RiLink size={20} />}
+                    label={editor.dictionary.formatting_toolbar.link.tooltip}
+                    isActive={hasLink}
+                    onClick={onOpenLink}
+                />
                 {canInsertColumns && (
                     <MobileToolbarButton
                         icon={
@@ -185,7 +191,7 @@ export const MobileFormatPanel = ({ onInsert }: MobileFormatPanelProps) => {
                         }}
                     />
                 )}
-                {(canInsertImage || canInsertColumns) && <ToolbarSeparator />}
+                <ToolbarSeparator />
                 <TextAlignMobileButton alignment="left" />
                 <TextAlignMobileButton alignment="center" />
                 <TextAlignMobileButton alignment="right" />

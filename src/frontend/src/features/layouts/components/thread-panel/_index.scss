@@ -1,6 +1,11 @@
 @use "../../../../styles/utils" as *;
 
 .thread-panel {
+    // How far the thread list slides up behind the header (see the negative
+    // margin on the list): the strip where threads dissolve into the header
+    // veil instead of being clipped at a hard edge.
+    --thread-panel-header-overlap: 3rem;
+
     display: flex;
     flex-direction: column;
     max-height: 100%;
@@ -10,6 +15,49 @@
     &__header {
         padding: var(--c--globals--spacings--sm) var(--c--globals--spacings--base);
         padding-right: var(--c--globals--spacings--xs);
+        // Above the list so the veil below paints over the threads sliding
+        // behind the header.
+        position: relative;
+        z-index: 2;
+
+        // Same floating treatment as the mobile bottom bar, mirrored
+        // downward: the list scrolls up behind the header and fades out in a
+        // blurry gradient over the overlap strip, instead of vanishing under
+        // an opaque edge — the panel reads as taller than it is.
+        &::after {
+            content: "";
+            position: absolute;
+            inset: 0 0 -10px 0;
+            // Behind the header controls, above the list.
+            z-index: -1;
+            pointer-events: none;
+            // Fully opaque down to the clip line (the scroll viewport's real
+            // top edge, hidden behind the header), so threads finish
+            // dissolving before the browser clips them.
+            background: linear-gradient(to bottom,
+                    var(--c--contextuals--background--surface--secondary) calc(100% - var(--thread-panel-header-overlap)),
+                    transparent 100%);
+            // background: red;
+            backdrop-filter: blur(6px);
+            -webkit-backdrop-filter: blur(6px);
+            // The blur dissolves along with the tint, so the veil has no
+            // visible bottom edge — same recipe as the bottom bar.
+            -webkit-mask-image: linear-gradient(
+                to bottom,
+                #000 0%, #000 60%,
+                rgba(0, 0, 0, .7) 78%,
+                rgba(0, 0, 0, .3) 90%,
+                transparent 100%
+            );
+            mask-image: linear-gradient(
+                to bottom,
+                #000 0%,
+                #000 60%,
+                rgba(0, 0, 0, .5) 78%,
+                rgba(0, 0, 0, .3) 90%,
+                transparent 100%
+            );
+        }
 
         .thread-panel__header--title-row {
             display: flex;
@@ -189,8 +237,6 @@
     }
 
     .thread-panel__threads_list {
-        --thread-list-fade-height: 1.25rem;
-
         // Fill the remaining height even when the threads don't, so the
         // pull-to-refresh touch surface spans the whole panel and the gesture
         // works below the last item. min-height:0 keeps overflow scrolling
@@ -201,44 +247,21 @@
         // Keep the native overscroll bounce from fighting the custom
         // pull-to-refresh gesture on iOS/Android web views.
         overscroll-behavior-y: contain;
+        // Extend the scroll viewport up behind the header, where the veil
+        // (see the header ::after) dissolves the threads before the clip
+        // line. The padding puts the resting position back where it was, so
+        // the strip only fills once the user scrolls — at rest the veil sits
+        // over the panel background and is invisible, and the pull-to-refresh
+        // indicator (which only shows at scrollTop 0) never gets veiled.
+        margin-top: calc(-1 * var(--thread-panel-header-overlap));
+        padding-top: var(--thread-panel-header-overlap);
+        // Keep keyboard focus (roving tabindex scrolling an option into view)
+        // clear of the veiled strip.
+        scroll-padding-top: var(--thread-panel-header-overlap);
         padding-inline: var(--c--globals--spacings--xs);
         display: flex;
         flex-direction: column;
         gap: var(--c--globals--spacings--4xs);
-
-        // Soften the hard clipping edge under the header: threads dissolve
-        // into the panel background instead of being cut off mid-line. The
-        // gradient mask fades both the surface tint and the blur, so the
-        // transition has no visible end. Sticky (rather than an overlay on
-        // the header) keeps it anchored to the scroll viewport, so the
-        // pull-to-refresh indicator pushing the list down never slides
-        // underneath it.
-        &::before {
-            content: "";
-            position: sticky;
-            top: 0;
-            z-index: 1;
-            flex: 0 0 auto;
-            height: var(--thread-list-fade-height);
-            // Overlay the first thread instead of taking room in the flow,
-            // gap included.
-            margin-bottom: calc(-1 * (var(--thread-list-fade-height) + var(--c--globals--spacings--4xs)));
-            // Cover the list padding so the fade spans the full panel width.
-            margin-inline: calc(-1 * var(--c--globals--spacings--xs));
-            pointer-events: none;
-            background-color: var(--c--contextuals--background--surface--secondary);
-            backdrop-filter: blur(3px);
-            -webkit-backdrop-filter: blur(3px);
-            mask-image: linear-gradient(to bottom, #000 25%, transparent);
-            -webkit-mask-image: linear-gradient(to bottom, #000 25%, transparent);
-            // Only once scrolled: at rest the first thread must stay crisp.
-            opacity: 0;
-            transition: opacity 120ms ease-out;
-        }
-
-        &[data-scrolled="true"]::before {
-            opacity: 1;
-        }
     }
 
     &--loading {
@@ -258,14 +281,14 @@
         flex: 1;
         padding-inline: var(--c--globals--spacings--sm);
 
-        & > div {
+        &>div {
             font-size: var(--c--globals--font--sizes--h6);
             display: flex;
             flex-direction: column;
             align-items: center;
             gap: 1rem;
 
-            & > * {
+            &>* {
                 margin-block: 0;
             }
 
@@ -285,9 +308,8 @@
         gap: var(--c--globals--spacings--md);
         padding-inline: var(--c--globals--spacings--base);
 
-        & > .c__spinner {
+        &>.c__spinner {
             flex-shrink: 0;
         }
     }
 }
-

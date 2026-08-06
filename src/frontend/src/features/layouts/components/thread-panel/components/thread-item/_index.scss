@@ -274,9 +274,10 @@
 .thread-item__checkbox-wrapper {
     display: inline-flex;
     flex-shrink: 0;
-    // The checkbox is presentational only; let clicks reach the Link so
-    // handleItemClick handles selection (and the checkbox stays in sync via
-    // its `checked` prop instead of fighting the click's preventDefault).
+    // The checkbox is presentational only; let clicks land on the identity
+    // slot so handleItemClick handles selection (and the checkbox stays in
+    // sync via its `checked` prop instead of fighting the click's
+    // preventDefault).
     pointer-events: none;
 }
 
@@ -284,7 +285,7 @@
     flex-shrink: 0;
     margin: 0;
     padding: 0;
-    --c--components--forms-checkbox--size: 1.5rem;
+    --c--components--forms-checkbox--size: 1.25rem;
     & svg {
         width: var(--c--components--forms-checkbox--size);
         height: var(--c--components--forms-checkbox--size);
@@ -294,8 +295,8 @@
 .thread-item__avatar {
     display: inline-flex;
     flex-shrink: 0;
-    // Decorative and below the stretched link overlay, so a tap on the
-    // avatar behaves like a tap anywhere else on the row.
+    // Decorative: clicks are owned by the identity slot around it, which
+    // toggles selection (see handleItemClick).
     pointer-events: none;
 }
 
@@ -306,6 +307,12 @@
     box-sizing: border-box;
     display: grid;
     place-items: center;
+    // Raised above the stretched link overlay: a press here is the pointer
+    // entry into selection mode (Gmail-style avatar/checkbox toggle), owned
+    // by the item container's click handler — never a navigation.
+    position: relative;
+    z-index: 1;
+    cursor: pointer;
 }
 
 .thread-item__read-indicator {

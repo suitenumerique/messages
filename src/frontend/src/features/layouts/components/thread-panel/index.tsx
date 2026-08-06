@@ -5,7 +5,7 @@ import { ThreadItemSwipe } from "./components/thread-item/thread-item-swipe";
 import { Spinner } from "@gouvfr-lasuite/ui-kit";
 import { useTranslation } from "react-i18next";
 import { Button } from "@gouvfr-lasuite/cunningham-react";
-import { useEffect, useRef, useCallback, type UIEvent } from "react";
+import { useEffect, useRef, useCallback } from "react";
 import { useUrlSearchParams } from "@/hooks/use-url-search-params";
 import ThreadPanelHeader from "./components/thread-panel-header";
 import { useThreadSelection } from "@/features/providers/thread-selection";
@@ -67,11 +67,7 @@ export const ThreadPanel = () => {
         pullToRefreshRef(node);
     }, [scrollContainerRef, pullToRefreshRef]);
 
-    // Drive the top fade from the node itself: putting "is scrolled" in state
-    // would re-render every thread of the list on each scroll crossing.
-    const handleThreadsListScroll = useCallback((event: UIEvent<HTMLDivElement>) => {
-        const list = event.currentTarget;
-        list.dataset.scrolled = String(list.scrollTop > 0);
+    const handleThreadsListScroll = useCallback(() => {
         // A row left open by a swipe would otherwise scroll away still open,
         // and come back holding actions the user has moved on from.
         closeSwipedRows();

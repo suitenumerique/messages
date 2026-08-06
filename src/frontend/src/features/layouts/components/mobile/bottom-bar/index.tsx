@@ -1,3 +1,4 @@
+import clsx from "clsx";
 import { PropsWithChildren } from "react";
 import { createPortal } from "react-dom";
 
@@ -20,7 +21,7 @@ type MobileBottomBarProps = PropsWithChildren<{
  */
 export const MobileBottomBar = ({ children, className }: MobileBottomBarProps) => {
   return createPortal(
-    <div className={`mobile-bottom-bar${className ? ` ${className}` : ""}`}>
+    <div className={clsx('mobile-bottom-bar', className)}>
       {children}
     </div>,
     document.getElementById("root") ?? document.body,

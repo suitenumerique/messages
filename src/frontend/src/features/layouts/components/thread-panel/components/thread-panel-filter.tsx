@@ -66,6 +66,7 @@ export const ThreadPanelFilter = () => {
       ),
       // Filters are picked several at a time: only an outside click closes
       // the menu.
+      isChecked: selection.includes(type),
       keepOpen: true,
       callback: () => selectFilterRef.current(type),
     }));
@@ -136,6 +137,7 @@ export const ThreadPanelFilter = () => {
         disabled={isDisabled}
         icon={hasActiveFilters ? <Icon name="filter-notification" size={22} /> : <Icon icon={Filter} size={22} />}
         variant="tertiary"
+        color={isNative ? "neutral" : "brand"}
         size="small"
         aria-label={t("Filter threads")}
       />

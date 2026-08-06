@@ -11,7 +11,7 @@ import { useDebounceCallback } from "@/hooks/use-debounce-callback"
 import { useIsSharedContext } from "@/hooks/use-is-shared-context"
 import { useVisibilityObserver } from "@/hooks/use-visibility-observer"
 import { MailboxRoleChoices, Message, Thread, ThreadEvent as ThreadEventModel } from "@/features/api/gen/models"
-import { IconType, Spinner } from "@gouvfr-lasuite/ui-kit"
+import { Spinner } from "@gouvfr-lasuite/ui-kit"
 import { Banner } from "@/features/ui/components/banner"
 import { SKIP_LINK_TARGET_ID } from "@/features/ui/components/skip-link"
 import { useTranslation } from "react-i18next"
@@ -26,7 +26,7 @@ import { isNativePlatform } from "@/features/native/platform";
 import { MobileThreadHeader } from "@/features/layouts/components/mobile/thread-header";
 import { MobileThreadToolbar, QuickReplyMode } from "@/features/layouts/components/mobile/thread-toolbar";
 import { ThreadAccessesWidget, type ThreadAccessesWidgetHandle } from "./components/thread-accesses-widget";
-import { Star, StarFilled, Trash } from "@gouvfr-lasuite/ui-kit/icons";
+import { Star, StarFilled, Trash, Error as ErrorIcon } from "@gouvfr-lasuite/ui-kit/icons";
 import useStarred from "@/features/message/use-starred";
 import { Button, Tooltip } from "@gouvfr-lasuite/cunningham-react";
 import { Icon } from "@/features/ui/components/icon";
@@ -448,7 +448,7 @@ const ThreadViewComponent = ({ threadItems, mailboxId, thread, showTrashedMessag
             <div className="thread-view__messages-list">
                 {thread.is_spam && (
                     <Banner
-                        icon={<Icon name="report" type={IconType.OUTLINED} />}
+                        icon={<Icon icon={ErrorIcon} />}
                         type="warning"
                         actions={[{ label: t('Remove report'), onClick: () => markAsNotSpam({ threadIds: [thread.id] }) }]}
                     >

@@ -51,7 +51,7 @@
     -webkit-backdrop-filter: blur(8px);
     padding-top: var(--c--globals--spacings--3xs);
     padding-bottom: calc(var(--c--globals--spacings--3xs) + var(--safe-area-inset-bottom));
-    padding-inline: var(--c--globals--spacings--3xs);
+    padding-inline: var(--c--globals--spacings--3xs) 0;
     box-sizing: border-box;
   }
 
@@ -80,16 +80,31 @@
     }
   }
 
-  // The inner toolbar — not the bar itself — is the horizontal scroller: the
-  // selectors' dropdowns render inline (BlockNote hardcodes withinPortal:
-  // false) and are absolutely positioned against this fixed bar, so they
-  // escape the static inner scroller's clip and can open above the keyboard
-  // instead of being cut off.
+  // The toolbar row hugs its content (a short bar stays short, anchored to
+  // the right edge); horizontal scrolling belongs to the inner
+  // .mobile-toolbar__scroll-row — @blocknote/react's base rule puts
+  // overflow-x: auto here, overridden so nothing laid out against the row
+  // gets clipped.
   .bn-toolbar.bn-formatting-toolbar {
-    flex: 1 1 auto;
-    width: 100%;
+    align-self: flex-end;
+    width: fit-content;
     min-width: 0;
-    max-width: none;
+    max-width: 100%;
+    overflow: visible;
+
+    > * {
+      // Buttons keep their natural width — overflow scrolls instead of
+      // squeezing text buttons (the selectors) down to one letter.
+      flex-shrink: 0;
+      scroll-snap-align: start;
+    }
+  }
+
+  .mobile-toolbar__scroll-row {
+    display: flex;
+    flex: 1;
+    width: max-content;
+    gap: var(--c--globals--spacings--3xs);
     flex-wrap: nowrap;
     overflow-x: auto;
     touch-action: pan-x;
@@ -98,21 +113,22 @@
     // free scrolling in between so it doesn't feel paginated.
     scroll-snap-type: x proximity;
     scroll-padding-inline: var(--c--globals--spacings--3xs);
+  }
 
-    > * {
-      // Buttons keep their natural width — overflow scrolls instead of
-      // squeezing text buttons (the selectors) down to one letter.
-      flex-shrink: 0;
-      scroll-snap-align: start;
-    }
-
-    // Mantine buttons remaining in the bar (file actions, template and
-    // signature selectors) get the same touch-target size as the custom
-    // buttons.
-    .bn-button {
-      min-width: 44px;
-      min-height: 44px;
-    }
+  // The keyboard-dismiss button stays pinned to the bar's right edge while
+  // the options scroll: sticky against the scrollport, painted above the
+  // static items, with a fade so they slide under it instead of clipping
+  // hard. When the bar fits (fit-content, nothing scrolls) the fade sits
+  // over the bar's own background and stays invisible.
+  .mobile-toolbar__keyboard-dismiss {
+    // position: sticky;
+    // right: 0;
+    flex-shrink: 0;
+    align-self: stretch;
+    display: flex;
+    align-items: center;
+    scroll-snap-align: none;
+    padding-right: var(--c--globals--spacings--3xs);
   }
 
   // The bar is portaled to <body>, outside .composer-field-input whose
@@ -267,5 +283,48 @@
     background: var(--c--contextuals--background--surface--primary);
     color: inherit;
     font: inherit;
+  }
+}
+
+// The "insert a file" menu (see InsertFileButton), portaled to <body>: the
+// toolbar row is a horizontal scroller that would clip anything anchored
+// inside it. The layer spans the viewport so the transparent backdrop
+// catches outside taps; the menu itself is placed with inline coordinates
+// measured from its button.
+:root.native .mobile-toolbar__popover-layer {
+  position: fixed;
+  inset: 0;
+  // One above the bar itself.
+  z-index: 1000001;
+
+  .mobile-toolbar__popover-backdrop {
+    position: absolute;
+    inset: 0;
+  }
+
+  .mobile-toolbar__popover {
+    position: absolute;
+    display: flex;
+    flex-direction: column;
+    min-width: 240px;
+    padding: var(--c--globals--spacings--3xs);
+    border: 1px solid var(--c--contextuals--border--surface--primary);
+    border-radius: 8px;
+    background: var(--c--contextuals--background--surface--secondary);
+    box-shadow: 0 4px 16px rgb(0 0 0 / 15%);
+  }
+
+  .mobile-toolbar__popover-item {
+    display: flex;
+    align-items: center;
+    gap: var(--c--globals--spacings--2xs);
+    min-height: 44px;
+    padding: 0 var(--c--globals--spacings--2xs);
+    border: none;
+    border-radius: var(--c--globals--spacings--3xs);
+    background: transparent;
+    color: var(--c--contextuals--content--semantic--neutral--primary);
+    font: inherit;
+    text-align: left;
   }
 }

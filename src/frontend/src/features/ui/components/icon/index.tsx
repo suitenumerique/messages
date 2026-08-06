@@ -23,6 +23,7 @@ export const APP_ICON_NAMES = [
     "at-sign",
     "circle-dashed",
     "dns",
+    "error-off",
     "filter-notification",
     "fold",
     "forward",

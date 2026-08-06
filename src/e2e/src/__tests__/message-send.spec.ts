@@ -1,6 +1,6 @@
 import test, { expect } from "@playwright/test";
 import { getMailboxEmail, resetDatabase } from "../utils";
-import { signInKeycloakIfNeeded } from "../utils-test";
+import { openNewMessageWindow, signInKeycloakIfNeeded } from "../utils-test";
 import path from "path";
 import { FIXTURES_PATH } from "../constants";
 
@@ -13,10 +13,7 @@ test.describe("Send Message", () => {
   test("should send a message then receive it", async ({ page, browserName }) => {
     await page.waitForLoadState("networkidle");
 
-    const newMessageButton = page.getByRole("link", { name: "New message" });
-    await newMessageButton.click();
-
-    await page.waitForURL("/mailbox/*/new");
+    const composeWindow = await openNewMessageWindow(page);
 
     const draftBoxLink = page.getByRole("link", { name: "Drafts" });
     let initialDraftCount = "0";
@@ -24,13 +21,11 @@ test.describe("Send Message", () => {
       initialDraftCount = (await draftBoxLink.locator("span.mailbox__item-counter").textContent()) ?? "0";
     }
 
-    const formHeading = page.getByRole("heading", { name: "New message" });
-    await formHeading.waitFor({ state: "visible" });
-    await page.getByRole("combobox", { name: "To" }).fill(getMailboxEmail('shared'));
-    await page.getByRole("textbox", { name: "Subject" }).fill("Hello everyone!");
-    await page.locator(".ProseMirror").pressSequentially("# E2E testing\n\nThis is a test message");
+    await composeWindow.getByRole("combobox", { name: "To" }).fill(getMailboxEmail('shared'));
+    await composeWindow.getByRole("textbox", { name: "Subject" }).fill("Hello everyone!");
+    await composeWindow.locator(".ProseMirror").pressSequentially("# E2E testing\n\nThis is a test message");
     const fileChooserPromise = page.waitForEvent("filechooser");
-    await page.getByRole("button", { name: "Add attachments" }).click();
+    await composeWindow.getByRole("button", { name: "Add attachments" }).click();
     const fileChooser = await fileChooserPromise;
     await fileChooser.setFiles(path.join(FIXTURES_PATH, "attachment.png"));
 
@@ -39,7 +34,7 @@ test.describe("Send Message", () => {
     // The number of drafts should be incremented by 1
     await draftBoxLink.locator("span.mailbox__item-counter", { hasText: (parseInt(initialDraftCount!) + 1).toString() }).waitFor({ state: "visible" });
 
-    await page.getByRole("button", { name: "Send" }).click();
+    await composeWindow.getByRole("button", { name: "Send" }).click();
     await page.getByText("Sending message...").waitFor({ state: "visible" });
 
     await page.getByText("Message sent successfully").waitFor({ state: "visible" });

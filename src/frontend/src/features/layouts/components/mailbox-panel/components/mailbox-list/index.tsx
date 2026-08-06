@@ -16,7 +16,7 @@ import ViewHelper from "@/features/utils/view-helper";
 import { addToast, ToasterItem } from "@/features/ui/components/toaster";
 import { Tooltip } from "@gouvfr-lasuite/cunningham-react"
 import { EXPANDED_FOLDERS_KEY } from "@/features/config/constants"
-import { Archive, ChevronDown, Edit, Restore, Star, Trash } from "@gouvfr-lasuite/ui-kit/icons"
+import { Archive, ChevronDown, Edit, Restore, Star, Trash, Error as ErrorIcon } from "@gouvfr-lasuite/ui-kit/icons"
 import { Icon, IconProps } from "@/features/ui/components/icon"
 
 type FolderVisibilityContext = {
@@ -179,7 +179,7 @@ export const MAILBOX_FOLDERS = () => [
     {
         id: "spam",
         name: i18n.t("Spam"),
-        icon: { name: "report", type: IconType.OUTLINED },
+        icon: { icon: ErrorIcon },
         searchable: true,
         showStats: true,
         filter: {
@@ -463,7 +463,7 @@ const FolderItem = ({ folder, isChild, hasChildren, isExpanded, onToggleExpand, 
                                         type="info"
                                         actions={[{ label: t('Undo'), onClick: () => markAsArchived({ threadIds }) }]}
                                     >
-                                        <Icon name="unarchive" type={IconType.OUTLINED} />
+                                        <Icon name="inbox" />
                                         <span>{t('{{count}} threads have been unarchived.', { count: threadIds.length, defaultValue_one: 'The thread has been unarchived.' })}</span>
                                     </ToasterItem>
                                 );
@@ -478,7 +478,7 @@ const FolderItem = ({ folder, isChild, hasChildren, isExpanded, onToggleExpand, 
                                         type="info"
                                         actions={[{ label: t('Undo'), onClick: () => markAsSpam({ threadIds }) }]}
                                     >
-                                        <Icon name="report_off" type={IconType.OUTLINED} />
+                                        <Icon name="error-off" />
                                         <span>{t('Spam report removed from {{count}} threads.', { count: threadIds.length, defaultValue_one: 'Spam report removed from the thread.' })}</span>
                                     </ToasterItem>
                                 );

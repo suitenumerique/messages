@@ -2,7 +2,7 @@ import { useMemo } from "react";
 import { useTranslation } from "react-i18next";
 import { useLocation } from "@tanstack/react-router";
 import clsx from "clsx";
-import { Icon, IconType } from "@gouvfr-lasuite/ui-kit";
+import { IconType } from "@gouvfr-lasuite/ui-kit";
 
 import { Thread } from "@/features/api/gen/models";
 import { ThreadRowActions } from "@/features/message/use-thread-row-actions";
@@ -10,6 +10,8 @@ import useThreadUnread from "@/features/message/use-thread-unread";
 import useAbility, { Abilities } from "@/hooks/use-ability";
 import { useSwipeActions } from "@/hooks/use-swipe-actions";
 import ViewHelper from "@/features/utils/view-helper";
+import { Archive, Restore, Trash } from "@gouvfr-lasuite/ui-kit/icons";
+import { Icon, IconProps } from "@/features/ui/components/icon";
 
 /** Width (px) of a single revealed action button. Mirrors the SCSS. */
 const ACTION_WIDTH = 76;
@@ -115,11 +117,11 @@ export const ThreadItemSwipe = ({
     const archiveLabel = isArchivedView ? t("Unarchive") : t("Archive");
     const trashLabel = isTrashContext ? t("Restore") : t("Delete");
     const trashTitle = isDraftDelete ? t("Delete draft") : trashLabel;
-    const trashIcon = isDraftDelete
-        ? "edit_off"
+    const trashIconProps: IconProps = isDraftDelete
+        ? { name: "edit_off" }
         : isTrashContext
-          ? "restore_from_trash"
-          : "delete";
+            ? { icon: Restore }
+            : { icon: Trash };
     const trashAction = isDraftDelete
         ? () => actions.deleteDrafts(thread)
         : () => actions.setTrashed(thread, !isTrashContext);
@@ -153,7 +155,7 @@ export const ThreadItemSwipe = ({
                             title={readTitle}
                         >
                             <Icon
-                                name={hasUnread ? "drafts" : "mark_email_unread"}
+                                name={hasUnread ? "mail-open" : "mail-unread"}
                                 type={IconType.OUTLINED}
                             />
                             <span className="thread-item-swipe__action-label">{readLabel}</span>
@@ -174,10 +176,10 @@ export const ThreadItemSwipe = ({
                                     }
                                     title={archiveLabel}
                                 >
-                                    <Icon
-                                        name={isArchivedView ? "unarchive" : "archive"}
-                                        type={IconType.OUTLINED}
-                                    />
+                                    {isArchivedView
+                                        ? <Icon name="inbox" />
+                                        : <Icon icon={Archive} />
+                                    }
                                     <span className="thread-item-swipe__action-label">
                                         {archiveLabel}
                                     </span>
@@ -191,7 +193,7 @@ export const ThreadItemSwipe = ({
                                     onClick={() => runAction(trashAction)}
                                     title={trashTitle}
                                 >
-                                    <Icon name={trashIcon} type={IconType.OUTLINED} />
+                                    <Icon {...trashIconProps} />
                                     <span className="thread-item-swipe__action-label">
                                         {trashLabel}
                                     </span>

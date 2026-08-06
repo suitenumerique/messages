@@ -10,11 +10,40 @@
   padding: var(--c--globals--spacings--sm);
   // Fold the home-indicator inset into the bottom padding so the controls
   // stay clear of the system gesture bar.
+  padding-top: var(--c--globals--spacings--2xl);
   padding-bottom: calc(var(--c--globals--spacings--sm) + var(--safe-area-inset-bottom));
   // The bar itself is just a positioning layer: clicks fall through the gaps
   // to the content behind, only the floating controls are interactive.
   pointer-events: none;
   background: transparent;
+
+  &::after {
+    content: "";
+    position: absolute;
+    inset: 0;
+    pointer-events: none;
+    z-index: -1;
+    background: linear-gradient(to top, var(--c--contextuals--content--semantic--overlay--primary) 0%, transparent 100%);
+
+    -webkit-backdrop-filter: blur(6px);
+    backdrop-filter: blur(6px);
+
+    -webkit-mask-image: linear-gradient(
+      to top,
+      #000 0%, #000 40%,
+      rgba(0,0,0,.7) 78%,
+      rgba(0,0,0,.3) 90%,
+      transparent 100%
+    );
+    mask-image: linear-gradient(
+      to top,
+      #000 0%,
+      #000 40%,
+      rgba(0,0,0,.5) 78%,
+      rgba(0,0,0,.3) 90%,
+      transparent 100%
+    );
+  }
 
   > * {
     pointer-events: auto;

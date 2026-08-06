@@ -18,7 +18,6 @@ export const MailboxPanelActions = () => {
             <div>
                 <Button
                     onClick={goToNewMessage}
-                    href={`/mailbox/${selectedMailbox.id}/new`}
                     icon={<Icon name="mail-plus" />}
                     disabled={!canWriteMessages}
                 >

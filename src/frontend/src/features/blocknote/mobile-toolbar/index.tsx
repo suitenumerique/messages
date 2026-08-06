@@ -1,27 +1,20 @@
-import {
-    FileCaptionButton,
-    FileDeleteButton,
-    FilePreviewButton,
-    FileReplaceButton,
-    FormattingToolbar,
-    useBlockNoteEditor,
-    useEditorState,
-} from "@blocknote/react";
+import { FormattingToolbar, useBlockNoteEditor } from "@blocknote/react";
 import { useCallback, useMemo, useState } from "react";
 import { createPortal } from "react-dom";
 import { useTranslation } from "react-i18next";
-import { RiBold, RiItalic, RiLink, RiUnderline } from "react-icons/ri";
 
+import { DriveFile } from "@/features/forms/components/message-form/drive-attachment-picker";
 import { Drawer } from "@/features/ui/components/drawer";
 import { ToolbarSeparator } from "../toolbar-separator";
+import { MobileToolbarButton } from "./buttons";
 import {
-    BlockTypeButton,
-    MobileToolbarButton,
-    StyleToggleButton,
-    useAvailableBlockTypeItems,
-} from "./buttons";
+    FileDeleteMobileButton,
+    FileReplaceMobileButton,
+    useSelectedFileBlock,
+} from "./file-block-buttons";
 import { MobileToolbarDrawerContext } from "./drawer-context";
 import { MobileFormatPanel } from "./format-panel";
+import { InsertFileButton } from "./insert-file-button";
 import {
     releaseKeyboardToEditor,
     useComposerFocusState,
@@ -36,6 +29,10 @@ import { FormatText, KeyboardHide } from "@gouvfr-lasuite/ui-kit/icons";
 
 type MobileToolbarProps = {
     children?: React.ReactNode;
+    /** Adds files as message attachments (see InsertFileButton). */
+    onAttachFiles?: (files: File[]) => Promise<void> | void;
+    /** Adds Drive files as message attachments (see InsertFileButton). */
+    onDriveAttachmentPick?: (files: DriveFile[]) => void;
 };
 
 type MobileToolbarView = "toolbar" | "format" | "link";
@@ -51,15 +48,20 @@ const dismissKeyboard = () => {
  * The composer toolbar for the native app, pinned right above the on-screen
  * keyboard while the composer is focused (positioning in _index.scss: the
  * webview is resized by the keyboard, so a fixed bottom bar lands on top of
- * it). A short row of large touch targets for the most frequent actions;
- * everything else lives in the "Aa" format panel.
+ * it). A deliberately short row — formatting (which opens the "Aa" panel
+ * gathering every text-formatting control), file insertion, then the
+ * signature / template selectors when available.
  *
  * Not BlockNote's ExperimentalMobileFormattingToolbarController: it only
  * renders live React while text is *selected* and serves a frozen
  * dangerouslySetInnerHTML snapshot otherwise, which freezes loading states
  * and dead-ends every button.
  */
-export const MobileToolbar = ({ children }: MobileToolbarProps) => {
+export const MobileToolbar = ({
+    children,
+    onAttachFiles,
+    onDriveAttachmentPick,
+}: MobileToolbarProps) => {
     const { t } = useTranslation();
     const editor = useBlockNoteEditor();
     const focusState = useComposerFocusState(editor);
@@ -71,13 +73,8 @@ export const MobileToolbar = ({ children }: MobileToolbarProps) => {
     const [childDrawerId, setChildDrawerId] = useState<string | null>(null);
     const [drawerSlot, setDrawerSlot] = useState<HTMLDivElement | null>(null);
 
-    const blockItems = useAvailableBlockTypeItems();
-    const bulletListItem = blockItems.find((item) => item.type === "bulletListItem");
-    const quoteItem = blockItems.find((item) => item.type === "quote");
-    const hasLink = useEditorState({
-        editor,
-        selector: ({ editor }) => editor.getSelectedLinkUrl() !== undefined,
-    });
+    const isFileBlockSelected = useSelectedFileBlock() !== undefined;
+
     // Tapping a link edits it instead of navigating (the default link
     // toolbar is disabled on native, see BlockNoteViewField).
     const openLinkEditor = useCallback(() => setView("link"), []);
@@ -123,10 +120,13 @@ export const MobileToolbar = ({ children }: MobileToolbarProps) => {
     }
 
     // The format panel and child drawers replace the dismissed keyboard, so
-    // they must survive the "none" state their own opening produces.
+    // they must survive the "none" state their own opening produces. The
+    // link editor also opens from the format panel (keyboard down, so the
+    // state is "none" too) and must live long enough for its input's
+    // autofocus to bring the focus back.
     const isVisible =
         focusState === "composer" ||
-        (focusState === "none" && (view === "format" || childDrawerId !== null));
+        (focusState === "none" && (view !== "toolbar" || childDrawerId !== null));
 
     if (!isVisible) return null;
 
@@ -153,7 +153,10 @@ export const MobileToolbar = ({ children }: MobileToolbarProps) => {
                         releaseKeyboardToEditor(editor);
                     }}
                 >
-                    <MobileFormatPanel onInsert={() => setView("toolbar")} />
+                    <MobileFormatPanel
+                        onInsert={() => setView("toolbar")}
+                        onOpenLink={() => setView("link")}
+                    />
                 </Drawer>
             )}
             {/* Children portal their own Drawer here (display: contents, so
@@ -167,53 +170,71 @@ export const MobileToolbar = ({ children }: MobileToolbarProps) => {
                 the text) handles the way back. */}
             {view === "toolbar" && (
                 <FormattingToolbar>
-                    <MobileToolbarButton
-                        icon={<Icon icon={KeyboardHide} size={IconSize.MEDIUM} />}
-                        label={t("Hide keyboard")}
-                        // The mousedown guard keeps the editor focused through
-                        // the tap, so the blur here is what dismisses the
-                        // keyboard — and with it the whole toolbar (focus
-                        // state becomes "none" with no panel open).
-                        onClick={dismissKeyboard}
-                    />
-                    <ToolbarSeparator />
-                    <MobileToolbarButton
-                        icon={<Icon icon={FormatText} size={IconSize.MEDIUM} />}
-                        label={t("Formatting options")}
-                        onClick={() => {
-                            setView("format");
-                            setChildDrawerId(null);
-                            // Apple-Notes style: dismiss the keyboard so the
-                            // panel takes its place instead of stacking on
-                            // top of it. The selection lives in editor state
-                            // and survives the blur.
-                            dismissKeyboard();
-                        }}
-                    />
-                    <StyleToggleButton style="bold" icon={<RiBold size={20} />} />
-                    <StyleToggleButton style="italic" icon={<RiItalic size={20} />} />
-                    <StyleToggleButton
-                        style="underline"
-                        icon={<RiUnderline size={20} />}
-                    />
-                    <MobileToolbarButton
-                        icon={<RiLink size={20} />}
-                        label={editor.dictionary.formatting_toolbar.link.tooltip}
-                        isActive={hasLink}
-                        onClick={() => setView("link")}
-                    />
-                    {bulletListItem && <BlockTypeButton item={bulletListItem} />}
-                    {quoteItem && <BlockTypeButton item={quoteItem} />}
-                    <FileCaptionButton key={"fileCaptionButton"} />
-                    <FileReplaceButton key={"fileReplaceButton"} />
-                    <FileDeleteButton key={"fileDeleteButton"} />
-                    <FilePreviewButton key={"filePreviewButton"} />
-                    {children && (
-                        <MobileToolbarDrawerContext.Provider value={drawerApi}>
-                            <ToolbarSeparator />
-                            {children}
-                        </MobileToolbarDrawerContext.Provider>
+                    <div className="mobile-toolbar__scroll-row">
+                    {isFileBlockSelected ? (
+                        // A selected image/file block swaps the whole row for
+                        // its two actions (replace / delete — caption and
+                        // preview stay desktop-only); only the keyboard
+                        // dismiss below survives the swap.
+                        <>
+                            <FileReplaceMobileButton />
+                            <FileDeleteMobileButton />
+                        </>
+                    ) : (
+                        <>
+                            <MobileToolbarButton
+                                icon={
+                                    <Icon
+                                        icon={FormatText}
+                                        size={IconSize.MEDIUM}
+                                    />
+                                }
+                                label={t("Formatting options")}
+                                onClick={() => {
+                                    setView("format");
+                                    setChildDrawerId(null);
+                                    // Apple-Notes style: dismiss the keyboard
+                                    // so the panel takes its place instead of
+                                    // stacking on top of it. The selection
+                                    // lives in editor state and survives the
+                                    // blur.
+                                    dismissKeyboard();
+                                }}
+                            />
+                            <InsertFileButton
+                                onAttachFiles={onAttachFiles}
+                                onDriveAttachmentPick={onDriveAttachmentPick}
+                            />
+                            {children && (
+                                <MobileToolbarDrawerContext.Provider
+                                    value={drawerApi}
+                                >
+                                    {children}
+                                </MobileToolbarDrawerContext.Provider>
+                            )}
+                        </>
                     )}
+                    </div>
+                    <ToolbarSeparator />
+                    {/* Pinned to the bar's right edge while the options
+                        scroll beneath it (see _index.scss). */}
+                    <div className="mobile-toolbar__keyboard-dismiss">
+                        <MobileToolbarButton
+                            icon={
+                                <Icon
+                                    icon={KeyboardHide}
+                                    size={IconSize.MEDIUM}
+                                />
+                            }
+                            label={t("Hide keyboard")}
+                            // The mousedown guard keeps the editor focused
+                            // through the tap, so the blur here is what
+                            // dismisses the keyboard — and with it the whole
+                            // toolbar (focus state becomes "none" with no
+                            // panel open).
+                            onClick={dismissKeyboard}
+                        />
+                    </div>
                 </FormattingToolbar>
             )}
         </div>,

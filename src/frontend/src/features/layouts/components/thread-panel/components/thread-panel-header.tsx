@@ -6,7 +6,7 @@ import { useTranslation } from "react-i18next";
 import { useEffect, useMemo, useState } from "react";
 import { Button, Tooltip, Checkbox } from "@gouvfr-lasuite/cunningham-react";
 import useRead from "@/features/message/use-read";
-import { DropdownMenu, IconSize, IconType, VerticalSeparator, useResponsive } from "@gouvfr-lasuite/ui-kit";
+import { DropdownMenu, IconType, VerticalSeparator, useResponsive } from "@gouvfr-lasuite/ui-kit";
 import ViewHelper from "@/features/utils/view-helper";
 import useArchive from "@/features/message/use-archive";
 import useSpam from "@/features/message/use-spam";
@@ -20,7 +20,7 @@ import { SelectionReadStatus, SelectionStarredStatus } from "@/features/provider
 import { LabelsWidget } from "@/features/layouts/components/labels-widget";
 import useAbility, { Abilities } from "@/hooks/use-ability";
 import { isNativePlatform } from "@/features/native/platform";
-import { Archive, More, MoreVertical, Restore, Star, StarFilled, TodoList, Trash } from "@gouvfr-lasuite/ui-kit/icons";
+import { Archive, MoreVertical, Restore, Star, StarFilled, TodoList, Trash, Error as ErrorIcon } from "@gouvfr-lasuite/ui-kit/icons";
 import { Icon, IconProps } from "@/features/ui/components/icon";
 
 type ThreadPanelTitleProps = {
@@ -112,16 +112,17 @@ const ThreadPanelTitle = ({ selectedThreadIds, isAllSelected, isSomeSelected, is
         return threads?.results.map((thread) => thread.id) || [];
     }, [selectedThreadIds, threads?.results]);
 
+    const isNative = isNativePlatform();
     const markAllTooltip = isSomeSelected ? t('Mark as read') : t('Mark all as read');
     const markAllUnreadLabel = isSomeSelected ? t('Mark as unread') : t('Mark all as unread');
     const mainReadTooltip = selectionReadStatus === SelectionReadStatus.READ ? markAllUnreadLabel : markAllTooltip;
 
     const spamLabel = isSpamView ? t('Remove spam report') : t('Report as spam');
-    const spamIconProps:IconProps = {name: isSpamView ? 'report_off' : 'report', type: IconType.OUTLINED};
+    const spamIconProps: IconProps = isSpamView ? { name: 'error-off' } : { icon: ErrorIcon };
     const spamMutation = isSpamView ? markAsNotSpam : markAsSpam;
 
     const archiveLabel = isArchivedView ? t('Unarchive') : t('Archive');
-    const archiveIconProps: IconProps = isArchivedView ? {name: 'unarchive', type: IconType.OUTLINED} : {icon: Archive};
+    const archiveIconProps: IconProps = isArchivedView ? { name: 'inbox' } : { icon: Archive };
     const archiveMutation = isArchivedView ? markAsUnarchived : markAsArchived;
 
     const trashLabel = isTrashedView ? t('Undelete') : t('Delete');
@@ -442,7 +443,7 @@ const ThreadPanelTitle = ({ selectedThreadIds, isAllSelected, isSomeSelected, is
                     <>
                         <h2 className="thread-panel__header--title">{title}</h2>
                         {/* On the native app the filter lives in the bottom bar. */}
-                        {!isNativePlatform() && <ThreadPanelFilter />}
+                        {!isNative && <ThreadPanelFilter />}
                     </>
                 )}
             </div>
@@ -484,6 +485,50 @@ const ThreadPanelTitle = ({ selectedThreadIds, isAllSelected, isSomeSelected, is
             </div>
         </>
     );
+
+    const headerSelection = (
+        <>
+            <div className={clsx("thread-panel__header--details", {
+                "thread-panel__header--details--selection": showSelectionBar,
+            })}>
+                {/* Off touch the actions stay inline with the count. */}
+                {!hasFloatingActions && actionsBar}
+                <div className="thread-panel__selection-controls">
+                    {selectAllCheckbox}
+                    <Button
+                        onClick={onDisableSelectionMode}
+                        icon={<Icon name="close" type={IconType.OUTLINED} />}
+                        variant="tertiary"
+                        color="neutral"
+                        size={actionButtonSize}
+                        aria-label={t('Disable thread selection')}
+                    />
+                </div>
+            </div>
+        </>
+    );
+
+    if (isNative) {
+        return (
+            <header className="thread-panel__header">
+                {hasFloatingActions ? (
+                    // The box around the actions would deepen the count row;
+                    // stacking the title and count in their own column instead
+                    // lets the bar sit alongside both, keeping the header short.
+                    // Selection mode reflows this into a grid (see the SCSS): its
+                    // title is a running count too long to share a row with the bar.
+                    <div className={clsx("thread-panel__header--columns", {
+                        "thread-panel__header--columns--selection": showSelectionBar,
+                    })}>
+                        <div className="thread-panel__header--text">
+                            {isSelectionMode ? headerSelection : headerText}
+                        </div>
+                        {isSelectionMode ? actionsBar : null}
+                    </div>
+                ) : headerText}
+            </header>
+        );
+    }
 
     return (
         <header className="thread-panel__header">

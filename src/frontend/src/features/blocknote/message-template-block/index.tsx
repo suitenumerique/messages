@@ -1,7 +1,7 @@
 import { useBlockNoteEditor, useComponentsContext, useEditorState } from "@blocknote/react";
 import { createPortal } from "react-dom";
 import { useTranslation } from "react-i18next";
-import { Icon, IconSize, Spinner } from "@gouvfr-lasuite/ui-kit";
+import { IconSize, IconType, Spinner } from "@gouvfr-lasuite/ui-kit";
 import { Modal, ModalSize } from "@gouvfr-lasuite/cunningham-react";
 import { MobileToolbarButton } from "@/features/blocknote/mobile-toolbar/buttons";
 import { useMobileToolbarDrawer } from "@/features/blocknote/mobile-toolbar/drawer-context";
@@ -12,6 +12,7 @@ import { useModal } from "@gouvfr-lasuite/cunningham-react";
 import { handle } from "@/features/utils/errors";
 import MailHelper from "@/features/utils/mail-helper";
 import { resolveTemplateVariables } from "@/features/blocknote/utils";
+import { Icon } from "@/features/ui/components/icon";
 
 const TEMPLATES_DRAWER_ID = "message-templates";
 
@@ -178,7 +179,7 @@ export const MessageTemplateSelector = ({ mailboxId, messageId, ensureDraft, upl
         return (
             <>
                 <MobileToolbarButton
-                    icon={<Icon name="description" size={IconSize.MEDIUM} />}
+                    icon={<Icon name="description" type={IconType.OUTLINED} size={IconSize.MEDIUM} />}
                     label={t("Insert template")}
                     isActive={mobileDrawer.openId === TEMPLATES_DRAWER_ID}
                     onClick={() => mobileDrawer.open(TEMPLATES_DRAWER_ID)}
@@ -204,7 +205,7 @@ export const MessageTemplateSelector = ({ mailboxId, messageId, ensureDraft, upl
                                             void handleSelect(template);
                                         }}
                                     >
-                                        <Icon name="description" size={IconSize.MEDIUM} />
+                                        <Icon name="description" type={IconType.OUTLINED} size={IconSize.MEDIUM} />
                                         <span className="drawer-list__item-label">
                                             {template.name}
                                         </span>
@@ -221,7 +222,7 @@ export const MessageTemplateSelector = ({ mailboxId, messageId, ensureDraft, upl
     return (
         <>
             <Components.FormattingToolbar.Button
-                icon={<Icon name="description" size={IconSize.SMALL} />}
+                icon={<Icon name="description" type={IconType.OUTLINED} size={IconSize.SMALL} />}
                 label={t("Insert template")}
                 mainTooltip={t("Insert template")}
                 onClick={modal.open}
@@ -241,7 +242,7 @@ export const MessageTemplateSelector = ({ mailboxId, messageId, ensureDraft, upl
                             onClick={() => handleSelect(template)}
                         >
                             <div className="template-icon">
-                                <Icon name="description" size={IconSize.MEDIUM} />
+                                <Icon name="description" type={IconType.OUTLINED} size={IconSize.MEDIUM} />
                             </div>
                             <div className="template-content">
                                 <div className="template-name">

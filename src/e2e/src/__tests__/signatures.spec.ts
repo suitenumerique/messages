@@ -1,6 +1,6 @@
 import test, { expect, Locator, Page } from "@playwright/test";
 import { resetDatabase } from "../utils";
-import { openMailboxSettingsModal, signInKeycloakIfNeeded } from "../utils-test";
+import { openMailboxSettingsModal, openNewMessageWindow, signInKeycloakIfNeeded } from "../utils-test";
 
 // Helper to click checkbox and wait for toast to be visible
 const clickAndWaitForToast = async (page: Page, checkbox: Locator) => {
@@ -239,8 +239,7 @@ test.describe("Mailbox Signatures", () => {
     await page.keyboard.press("Escape");
 
     // Click new message button
-    const newMessageButton = page.getByRole('link', { name: 'New message' })
-    await newMessageButton.click();
+    await openNewMessageWindow(page);
 
     // Wait for the composer to load
     await page.waitForLoadState("networkidle");
@@ -347,8 +346,7 @@ test.describe("Mailbox Signatures", () => {
     await page.waitForLoadState("networkidle");
 
     // Click new message button
-    const newMessageButton = page.getByRole("link", { name: "New message" });
-    await newMessageButton.click();
+    await openNewMessageWindow(page);
 
     // Wait for the composer to load
     await page.waitForLoadState("networkidle");

@@ -3,6 +3,7 @@ import useRead from "@/features/message/use-read";
 import useTrash from "@/features/message/use-trash";
 import useAbility, { Abilities } from "@/hooks/use-ability";
 import { DropdownMenu, IconType, VerticalSeparator } from "@gouvfr-lasuite/ui-kit"
+import { Error as ErrorIcon } from "@gouvfr-lasuite/ui-kit/icons";
 import { Button, Tooltip } from "@gouvfr-lasuite/cunningham-react"
 import { useRef, useState } from "react";
 import { useTranslation } from "react-i18next";
@@ -104,7 +105,7 @@ export const ThreadActionBar = ({ canUndelete, canUnarchive }: ThreadActionBarPr
                                     variant="tertiary"
                                     aria-label={t('Unarchive')}
                                     size="nano"
-                                    icon={<Icon name="unarchive" type={IconType.OUTLINED} />}
+                                    icon={<Icon name="inbox" />}
                                     onClick={() => markAsUnarchived({ threadIds: [selectedThread!.id], onSuccess: unselectThread })}
                                 />
                             </Tooltip>
@@ -128,7 +129,7 @@ export const ThreadActionBar = ({ canUndelete, canUnarchive }: ThreadActionBarPr
                                 variant="tertiary"
                                 aria-label={t('Report as spam')}
                                 size="nano"
-                                icon={<Icon name="report" type={IconType.OUTLINED} />}
+                                icon={<Icon icon={ErrorIcon} />}
                                 onClick={() => markAsSpam({ threadIds: [selectedThread!.id], onSuccess: unselectThread })}
                             />
                         </Tooltip>
@@ -138,7 +139,7 @@ export const ThreadActionBar = ({ canUndelete, canUnarchive }: ThreadActionBarPr
                                 variant="tertiary"
                                 aria-label={t('Remove spam report')}
                                 size="nano"
-                                icon={<Icon name="report_off" type={IconType.OUTLINED} />}
+                                icon={<Icon name="error-off" />}
                                 onClick={() => markAsNotSpam({ threadIds: [selectedThread!.id], onSuccess: unselectThread })}
                             />
                         </Tooltip>
@@ -183,7 +184,7 @@ export const ThreadActionBar = ({ canUndelete, canUnarchive }: ThreadActionBarPr
                             },
                             {
                                 label: t('Report as spam'),
-                                icon: <Icon name="report" type={IconType.OUTLINED} />,
+                                icon: <Icon icon={ErrorIcon} />,
                                 callback: () => markAsSpam({ threadIds: [selectedThread!.id], onSuccess: unselectThread }),
                             },
                             {

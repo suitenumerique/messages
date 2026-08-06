@@ -67,6 +67,7 @@ type MessageComposerProps = FieldProps & {
     quoteType?: QuoteType;
     uploadInlineImage: (file: File) => Promise<{ url: string; blobId: string } | null>;
     uploadFiles: (files: File[]) => Promise<void>;
+    onDriveAttachmentPick?: (files: DriveFile[]) => void;
     removeInlineImage: (blobId: string) => void;
     attachments: (Attachment | DriveFile)[];
 }
@@ -81,7 +82,7 @@ type MessageComposerProps = FieldProps & {
  * creating real DOM elements on every keystroke.
  */
 
-export const MessageComposer = React.forwardRef<MessageComposerHandle, MessageComposerProps>(({ mailboxId, blockNoteOptions, defaultValue, quotedMessage, quoteType, disabled = false, draft, submitDraft, ensureDraft, uploadInlineImage, uploadFiles, removeInlineImage, attachments, ...props }, ref) => {
+export const MessageComposer = React.forwardRef<MessageComposerHandle, MessageComposerProps>(({ mailboxId, blockNoteOptions, defaultValue, quotedMessage, quoteType, disabled = false, draft, submitDraft, ensureDraft, uploadInlineImage, uploadFiles, onDriveAttachmentPick, removeInlineImage, attachments, ...props }, ref) => {
     const form = useFormContext<MessageFormValues>();
     const { t, i18n } = useTranslation();
     const { data: { data: activeSignatures = [] } = {}, isLoading: isLoadingSignatures } = useMailboxesMessageTemplatesAvailableList(
@@ -471,19 +472,22 @@ export const MessageComposer = React.forwardRef<MessageComposerHandle, MessageCo
                     onChange: (editor) => handleChange(editor, true),
                 }}
             >
-                <Toolbar>
-                    <MessageTemplateSelector
-                        mailboxId={mailboxId}
-                        messageId={draft?.id}
-                        ensureDraft={ensureDraft}
-                        uploadInlineImage={uploadInlineImage}
-                    />
+                <Toolbar
+                    onAttachFiles={uploadFiles}
+                    onDriveAttachmentPick={onDriveAttachmentPick}
+                >
                     <SignatureTemplateSelector
                         templates={activeSignatures}
                         isLoading={isLoadingSignatures}
                         mailboxId={mailboxId}
                         messageId={draft?.id}
                         defaultSelected={draft?.signature?.id}
+                    />
+                    <MessageTemplateSelector
+                        mailboxId={mailboxId}
+                        messageId={draft?.id}
+                        ensureDraft={ensureDraft}
+                        uploadInlineImage={uploadInlineImage}
                     />
                 </Toolbar>
             </BlockNoteViewField>

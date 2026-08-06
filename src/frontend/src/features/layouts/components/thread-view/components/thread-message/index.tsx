@@ -12,8 +12,10 @@ import MailHelper from "@/features/utils/mail-helper";
 import useAbility, { Abilities } from "@/hooks/use-ability";
 import { useThreadViewContext } from "../../provider";
 import usePrevious from "@/hooks/use-previous";
+import { useComposeWindows } from "@/features/providers/compose-windows";
 import ThreadMessageBody from "./thread-message-body";
 import MessageReplyForm from "../message-reply-form";
+import { ComposeDraftBanner } from "../compose-draft-banner";
 import ThreadMessageHeader from "./thread-message-header";
 import ThreadMessageFooter from "./thread-message-footer";
 import { CalendarInvite } from "../calendar-invite";
@@ -163,10 +165,16 @@ export const ThreadMessage = forwardRef<HTMLSpanElement, ThreadMessageProps>(
 
         // Computed flags
         const showReplyForm = replyFormMode !== null;
+        // The draft handled by this card, when it is being edited in a
+        // floating compose window: the inline form is replaced by a banner
+        // pointing at that window, which also prevents double edition.
+        const { getWindowByDraftId, focusWindow } = useComposeWindows();
+        const cardDraftId = draftMessage?.is_draft ? draftMessage.id : (message.is_draft ? message.id : undefined);
+        const detachedWindow = cardDraftId ? getWindowByDraftId(cardDraftId) : undefined;
         // When the card *is* a draft being composed, it must read as a pure
         // compose surface: the message chrome (sender header, reply/forward/fold
         // actions, body) is redundant and nonsensical on your own draft.
-        const renderAsComposeOnly = message.is_draft && showReplyForm;
+        const renderAsComposeOnly = message.is_draft && (showReplyForm || !!detachedWindow);
         // Reply/Reply All/Forward require BOTH sending rights on the mailbox
         // AND full edit rights on the thread. A user with only VIEWER access
         // (mailbox or thread) must not see these buttons — the backend would
@@ -256,12 +264,15 @@ export const ThreadMessage = forwardRef<HTMLSpanElement, ThreadMessageProps>(
         // Effects
         useEffect(() => {
             const getReplyFormMode = (): MessageFormMode | null => {
+                // The draft is edited in a floating window: no inline form.
+                // Recomputed when the window closes so the form reappears.
+                if (detachedWindow) return null;
                 if (draftMessage?.is_draft) return 'reply';
                 if (!message.is_draft || message.is_trashed) return null;
                 return 'new';
             };
             setReplyFormMode(getReplyFormMode());
-        }, [message, draftMessage]);
+        }, [message, draftMessage, detachedWindow]);
 
         // Smooth scroll to the reply form when it is opened by the user
         useEffect(() => {
@@ -414,24 +425,28 @@ export const ThreadMessage = forwardRef<HTMLSpanElement, ThreadMessageProps>(
                     </>
                 )}
 
-                {isMessageReady && showReplyForm && (
-                    <section
-                        className="thread-message__reply-form thread-message__reply-form--detached"
-                        ref={replyFormRef}
-                        onFocus={() => threadViewContext.setIsMessageFormFocused(true)}
-                        onBlur={(e) => {
-                            if (!e.currentTarget.contains(e.relatedTarget as Node)) {
-                                threadViewContext.setIsMessageFormFocused(false);
-                            }
-                        }}
-                    >
-                        <MessageReplyForm
-                            mode={replyFormMode}
-                            handleClose={handleCloseReplyForm}
-                            message={draftMessage || message}
-                            detached
-                        />
-                    </section>
+                {isMessageReady && (detachedWindow || showReplyForm) && (
+                    detachedWindow ? (
+                        <ComposeDraftBanner onFocus={() => focusWindow(detachedWindow.windowId)} />
+                    ) : (
+                        <section
+                            className="thread-message__reply-form thread-message__reply-form--detached"
+                            ref={replyFormRef}
+                            onFocus={() => threadViewContext.setIsMessageFormFocused(true)}
+                            onBlur={(e) => {
+                                if (!e.currentTarget.contains(e.relatedTarget as Node)) {
+                                    threadViewContext.setIsMessageFormFocused(false);
+                                }
+                            }}
+                        >
+                            <MessageReplyForm
+                                mode={replyFormMode ?? undefined}
+                                handleClose={handleCloseReplyForm}
+                                message={draftMessage || message}
+                                detached
+                            />
+                        </section>
+                    )
                 )}
 
                 {!isFolded && !isMessageReady && (
