@@ -33,9 +33,10 @@ def normalize_txt_value(value: str) -> str:
 def parse_dkim_tags(value: str) -> Optional[Dict[str, str]]:
     """Parse a DKIM key record into a dict of tag=value pairs.
 
-    Per RFC 6376 3.2, tags are separated by semicolons and folding whitespace
-    is allowed on both sides of the "=". Per 3.6.1, v= is optional and defaults
-    to DKIM1, but MUST be first and equal to DKIM1 when present.
+    Per RFC 6376 3.2, tags are separated by semicolons, folding whitespace is
+    allowed on both sides of the "=", and a duplicate tag name invalidates the
+    whole tag-list. Per 3.6.1, v= is optional and defaults to DKIM1, but MUST
+    be first and equal to DKIM1 when present.
     Returns None if the record is not a valid DKIM key record.
     """
     parts = [p.strip() for p in value.split(";") if p.strip()]
@@ -44,7 +45,10 @@ def parse_dkim_tags(value: str) -> Optional[Dict[str, str]]:
         if "=" not in part:
             continue
         key, val = part.split("=", 1)
-        tags[key.strip()] = val.strip()
+        key = key.strip()
+        if key in tags:
+            return None
+        tags[key] = val.strip()
     if not tags:
         return None
     if "v" in tags:

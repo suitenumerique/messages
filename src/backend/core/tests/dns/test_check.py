@@ -847,6 +847,14 @@ class TestParseDkimTags:
         """A TXT record with no tag=value pair is not a DKIM record."""
         assert parse_dkim_tags("not a dkim record") is None
 
+    def test_duplicate_p_tag_returns_none(self):
+        """RFC 6376 3.2: a duplicate tag name invalidates the whole tag-list."""
+        assert parse_dkim_tags("v=DKIM1; k=rsa; p=AAAA; p=MIGfMA0") is None
+
+    def test_duplicate_v_tag_returns_none(self):
+        """A repeated v= tag invalidates the record even if both values match."""
+        assert parse_dkim_tags("v=DKIM1; k=rsa; p=MIGfMA0; v=DKIM1") is None
+
     def test_v_not_first_returns_none(self):
         """Test that v= not being first tag returns None."""
         assert parse_dkim_tags("k=rsa; v=DKIM1; p=MIGfMA0") is None
