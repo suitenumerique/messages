@@ -847,6 +847,20 @@ class TestParseDkimTags:
         """A TXT record with no tag=value pair is not a DKIM record."""
         assert parse_dkim_tags("not a dkim record") is None
 
+    def test_segment_without_equals_returns_none(self):
+        """RFC 6376 3.2: every segment must be a tag=value pair."""
+        assert parse_dkim_tags("v; v=DKIM1; k=rsa; p=MIGfMA0") is None
+        assert parse_dkim_tags("k=rsa; p=MIGfMA0; trailing") is None
+
+    def test_empty_tag_name_returns_none(self):
+        """A segment with no tag name before the '=' is malformed."""
+        assert parse_dkim_tags("v=DKIM1; k=rsa; =MIGfMA0") is None
+
+    def test_trailing_semicolon_is_valid(self):
+        """A trailing semicolon is explicitly allowed by RFC 6376 3.2."""
+        result = parse_dkim_tags("v=DKIM1; k=rsa; p=MIGfMA0;")
+        assert result == {"v": "DKIM1", "k": "rsa", "p": "MIGfMA0"}
+
     def test_duplicate_p_tag_returns_none(self):
         """RFC 6376 3.2: a duplicate tag name invalidates the whole tag-list."""
         assert parse_dkim_tags("v=DKIM1; k=rsa; p=AAAA; p=MIGfMA0") is None
@@ -1041,6 +1055,40 @@ class TestDKIMSemanticComparison:
 
             result = check_single_record(maildomain, expected_record)
             assert result["status"] == "correct"
+
+    def test_dkim_malformed_segment_is_incorrect(self, maildomain_factory):
+        """A bare segment must not let a record through the semantic check.
+
+        The leading "v" segment would otherwise satisfy the "v= must be first"
+        rule while the record itself is malformed and fails verification.
+        """
+        maildomain = maildomain_factory(name="example.com")
+        expected_record = {
+            "type": "TXT",
+            "target": "selector._domainkey",
+            "value": "v=DKIM1; k=rsa; p=MIGfMA0",
+        }
+
+        with patch("core.services.dns.check.dns.resolver.resolve") as mock_resolve:
+            mock_resolve.return_value = _txt_answer("v; v=DKIM1; k=rsa; p=MIGfMA0")
+
+            result = check_single_record(maildomain, expected_record)
+            assert result["status"] == "incorrect"
+
+    def test_dkim_trailing_junk_segment_is_incorrect(self, maildomain_factory):
+        """A trailing segment without '=' invalidates the whole tag-list."""
+        maildomain = maildomain_factory(name="example.com")
+        expected_record = {
+            "type": "TXT",
+            "target": "selector._domainkey",
+            "value": "v=DKIM1; k=rsa; p=MIGfMA0",
+        }
+
+        with patch("core.services.dns.check.dns.resolver.resolve") as mock_resolve:
+            mock_resolve.return_value = _txt_answer("k=rsa; p=MIGfMA0; trailing")
+
+            result = check_single_record(maildomain, expected_record)
+            assert result["status"] == "incorrect"
 
     def test_dkim_missing_expected_tag_is_incorrect(self, maildomain_factory):
         """A tag present in the expected record but absent in DNS is a mismatch."""
