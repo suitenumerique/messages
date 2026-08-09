@@ -18,17 +18,29 @@ PYMTA_MAX_SESSIONS_TOTAL=2000
 PYMTA_MAX_RECIPIENTS=100
 PYMTA_MAX_ENVELOPES_PER_CONNECTION=20
 
-# Timeouts (seconds).
+# Timeouts (seconds). PYMTA_COMMAND_TIMEOUT is the idle gap allowed between
+# complete commands; PYMTA_DATA_TIMEOUT is a separate total budget for the
+# whole DATA phase (354 -> last body byte -> MDA deliver -> reply).
 PYMTA_COMMAND_TIMEOUT=120
-PYMTA_DATA_TIMEOUT=600
+PYMTA_DATA_TIMEOUT=300
 
 # STARTTLS off by default in dev (no cert wired).
 PYMTA_TLS_CERT_FILE=
 PYMTA_TLS_KEY_FILE=
 
-# SMTPUTF8 advertised — the MDA accepts UTF-8 envelope addresses.
+# SMTPUTF8 advertised: the MDA accepts UTF-8 envelope addresses.
 PYMTA_ENABLE_SMTPUTF8=true
 
-# PROXY protocol off in dev. In production set ENABLE_PROXY_PROTOCOL=haproxy
-# (same env var the Postfix entrypoint already consumes) when behind HAProxy.
+# PROXY protocol off in dev: the test suite connects to pymta directly, so the
+# TCP peer IS the client.
+#
+# Behind a load balancer, set PYMTA_ENABLE_PROXY_PROTOCOL=true AND
+# PYMTA_TRUSTED_PROXIES to the balancer's IPs/CIDRs. pymta refuses to start
+# with PROXY protocol on and no allowlist. (The Postfix image drives the same
+# feature from its own ENABLE_PROXY_PROTOCOL=haproxy; pymta ignores that name.)
+#
+# A balancer WITHOUT PROXY protocol is not a supported configuration: every
+# session would bucket under the balancer's IP and every message would be
+# stamped with it as the sender's address.
 PYMTA_ENABLE_PROXY_PROTOCOL=false
+PYMTA_TRUSTED_PROXIES=

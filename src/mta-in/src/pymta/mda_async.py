@@ -4,8 +4,8 @@ The Postfix milter uses ``requests`` (sync, see ``src/api/mda.py``). pymta
 runs inside an asyncio event loop, so blocking HTTP calls would freeze the
 whole SMTP server; we mirror the same JWT contract here on top of httpx.
 
-The MDA contract — kept identical to the milter so both implementations stay
-swap-compatible — is:
+The MDA contract, kept identical to the milter so both implementations stay
+swap-compatible, is:
 
 * ``POST /inbound/mta/check/`` with ``application/json`` body
   ``{"addresses": [...]}`` → returns ``{addr: bool}``.
@@ -41,6 +41,26 @@ _LOCAL_HOSTNAMES = frozenset({"localhost", "127.0.0.1", "::1"})
 # even start the process rather than minting weak tokens.
 _MIN_SECRET_LENGTH = 32
 
+# HTTP statuses on which a message is rejected *permanently* (SMTP 5xx). The
+# list is an allow-list, not a "4xx means permanent" rule, because the default
+# has to be the safe one: deferring costs a retry, bouncing loses the mail.
+#
+#   400: the MDA could not parse the message, or the request was malformed.
+#   413: over MAX_INCOMING_EMAIL_SIZE. Retrying sends the same oversized bytes.
+#   415: wrong Content-Type. Ours to fix, but no retry will change it.
+#
+# Everything else defers:
+#   207: Multi-Status. *Some* recipients were delivered, some were not. The
+#         MDA has no per-recipient reply channel back to us, so the only way
+#         the failed ones ever land is if the sending MTA retries the whole
+#         envelope. That re-delivers to the recipients who already succeeded,
+#         which is the correct trade against silently losing the rest.
+#   401 / 403: secret rotation skew, or an `exp` the MDA's clock reads as
+#         past. A routine operational event must not bounce real mail.
+#   404: a routing/deployment mistake, not a verdict on this message.
+#   429: throttling. Retrying later is the intended response.
+_PERMANENT_STATUSES = frozenset({400, 413, 415})
+
 
 @dataclass(frozen=True)
 class MDAResult:
@@ -48,8 +68,9 @@ class MDAResult:
 
     ``ok`` is true iff the call returned HTTP 200 with a JSON body that the
     caller can rely on. ``temp_fail`` distinguishes "try again later" (network
-    error / 5xx / timeout) from a permanent rejection. ``payload`` is the
-    decoded JSON body when available.
+    error, timeout, 5xx, and every status not in :data:`_PERMANENT_STATUSES`)
+    from a permanent rejection. ``payload`` is the decoded JSON body when
+    available.
     """
 
     ok: bool
@@ -67,18 +88,20 @@ class MDAClient:
     blocks on a synchronous MDA call so there is no on-disk queue.
     """
 
-    def __init__(
+    def __init__(  # noqa: PLR0913
         self,
         base_url: str | None = None,
         secret: str | None = None,
         timeout: int | None = None,
         breaker_threshold: int | None = None,
         breaker_cooldown: int | None = None,
+        jwt_ttl: int | None = None,
         clock=time.monotonic,
     ):
         self.base_url = (base_url or settings.MDA_API_BASE_URL).rstrip("/") + "/"
         self.secret = secret or settings.MDA_API_SECRET
         self.timeout = timeout if timeout is not None else settings.MDA_API_TIMEOUT
+        self.jwt_ttl = jwt_ttl if jwt_ttl is not None else settings.MDA_API_JWT_TTL
         self._breaker_threshold = (
             breaker_threshold
             if breaker_threshold is not None
@@ -99,13 +122,13 @@ class MDAClient:
         self._validate_credentials()
 
     def _validate_credentials(self) -> None:
-        """Warn loudly at startup about weak secret or plaintext non-local MDA URL.
+        """Warn loudly at startup about a weak secret or a plaintext non-local MDA URL.
 
-        Warnings rather than hard failures because the shared dev secret
-        ``my-shared-secret-mda`` (20 chars) is intentionally short, and dev
-        deployments talk to the MDA over the docker bridge without TLS. The
-        log line gives a prod operator clear feedback to fix; promote to
-        ``RuntimeError`` here once prod has migrated to a stronger secret.
+        Warnings, not hard failures: the shared dev secret
+        ``my-shared-secret-mda`` (20 chars) is intentionally short and dev
+        deployments talk to the MDA over the docker bridge without TLS, so
+        refusing to start would block the normal local workflow. See the
+        production checklist in the README for what these should look like.
         """
         parsed = urlparse(self.base_url)
         host = (parsed.hostname or "").lower()
@@ -117,7 +140,12 @@ class MDAClient:
                 host,
                 self.base_url,
             )
-        if self.secret and len(self.secret) < _MIN_SECRET_LENGTH:
+        if not self.secret:
+            logger.warning(
+                "MDA_API_SECRET is empty; every MDA call will fail to sign and "
+                "all mail will be deferred. Configure the shared secret."
+            )
+        elif len(self.secret) < _MIN_SECRET_LENGTH:
             logger.warning(
                 "MDA_API_SECRET is %d bytes; recommended minimum is %d. "
                 "Short HS256 secrets are brute-forceable from a captured JWT.",
@@ -144,7 +172,8 @@ class MDAClient:
         # "body_hash" cannot shadow the security-relevant claims.
         claims = {
             **metadata,
-            "exp": datetime.datetime.now(tz=datetime.UTC) + datetime.timedelta(seconds=60),
+            "exp": datetime.datetime.now(tz=datetime.UTC)
+            + datetime.timedelta(seconds=self.jwt_ttl),
             "body_hash": hashlib.sha256(body).hexdigest(),
         }
         return jwt.encode(claims, self.secret, algorithm="HS256")
@@ -234,15 +263,30 @@ class MDAClient:
             self._record_success()
             return MDAResult(ok=True, temp_fail=False, payload=payload, status_code=status)
 
-        # 5xx → tempfail (counted as a breaker failure); 4xx → permanent reject
-        # (not counted — it's the MDA telling us the *request* was bad).
-        temp = status >= 500
-        result_label = "http_5xx" if temp else "http_4xx"
+        # Two independent judgements here, kept separate:
+        #
+        #  * temp_fail: what we tell the *sender*. Permanent only for the
+        #    statuses that say "this message is bad"; everything else defers.
+        #  * the circuit breaker: a *liveness* signal. Only 5xx (and the
+        #    transport failures above) indicate the MDA is unhealthy. A 207 or
+        #    a 401 is a complete answer from a healthy MDA, so it closes the
+        #    breaker rather than opening it.
+        temp = status not in _PERMANENT_STATUSES
+        unhealthy = status >= 500
+        if unhealthy:
+            result_label = "http_5xx"
+        else:
+            result_label = "http_defer" if temp else "http_perm"
         metrics.MDA_REQUEST_DURATION.labels(endpoint=endpoint_label, result=result_label).observe(
             elapsed
         )
-        logger.warning("MDA %s returned HTTP %d", endpoint_label, status)
-        if temp:
+        logger.warning(
+            "MDA %s returned HTTP %d (%s)",
+            endpoint_label,
+            status,
+            "deferring" if temp else "rejecting permanently",
+        )
+        if unhealthy:
             self._record_failure()
         else:
             self._record_success()

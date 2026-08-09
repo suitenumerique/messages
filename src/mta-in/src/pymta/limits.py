@@ -5,12 +5,12 @@ The :class:`IPGate` enforces three ceilings on inbound TCP sessions:
 * a process-wide cap, defending against a generic flood;
 * a per-IP concurrent cap, defending against a single remote opening thousands
   of half-idle connections (aiosmtpd does not enforce any per-IP cap);
-* a per-IP new-session rate cap (rolling 60s window), defending against fast
+* a per-IP new-session rate cap (fixed 60s window), defending against fast
   open/close churn from one IP that never exceeds the concurrent cap but
   still costs CPU/TLS handshakes/MDA RCPT checks.
 
 All caps are skipped when set to 0, matching the existing Postfix default
-(``smtpd_client_event_limit_exceptions = static:all``) — useful in dev/test
+(``smtpd_client_event_limit_exceptions = static:all``), which is useful in dev/test
 where the whole load comes from the same loopback address.
 """
 
@@ -25,7 +25,10 @@ from . import metrics
 logger = logging.getLogger(__name__)
 
 
-# Rolling window used by the per-IP rate cap.
+# Window used by the per-IP rate cap. Fixed, not sliding: the counter resets
+# wholesale once the window elapses, so a peer timed to straddle a boundary can
+# land up to 2x the cap back to back. Acceptable here: this cap exists to
+# bound sustained churn, and the concurrent caps handle the instantaneous side.
 _RATE_WINDOW_SECONDS = 60.0
 # Opportunistic prune cadence for the rate-tracking dict: walk and drop
 # expired entries every Nth acquire. Bounds memory under PROXY-protocol with

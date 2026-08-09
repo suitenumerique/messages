@@ -18,7 +18,8 @@ _METRICS_NAMESPACE = "pymta"
 CONNECTIONS_TOTAL = Counter(
     f"{_METRICS_NAMESPACE}_connections_total",
     "Total inbound TCP connections, by post-accept outcome.",
-    # accepted | rejected_per_ip | rejected_per_ip_rate | rejected_global | proxy_error
+    # accepted | rejected_per_ip | rejected_per_ip_rate | rejected_global |
+    # rejected_untrusted_proxy | proxy_error
     labelnames=("result",),
 )
 
@@ -68,7 +69,10 @@ MDA_REQUEST_DURATION = Histogram(
     labelnames=(
         "endpoint",
         "result",
-    ),  # endpoint: check|deliver, result: ok|http_5xx|timeout|error
+    ),  # endpoint: check|deliver
+    # result: ok | http_5xx | http_defer (non-5xx status we retry on) |
+    #         http_perm (status that permanently rejects the message) |
+    #         timeout | error | breaker_open
     buckets=(0.005, 0.01, 0.05, 0.1, 0.5, 1, 2, 5, 10, 30),
 )
 
@@ -76,7 +80,7 @@ DISCONNECTS_421 = Counter(
     f"{_METRICS_NAMESPACE}_disconnects_421_total",
     "Sessions where pymta replied 421 and closed the TCP connection.",
     labelnames=("reason",),  # gate_global | gate_per_ip | gate_per_ip_rate |
-    # hard_error_limit | internal_error
+    # hard_error_limit | max_rcpt_misses | max_session_seconds | internal_error
 )
 
 
@@ -87,7 +91,7 @@ SECURITY_REJECTIONS = Counter(
     # Known reasons: source_route, control_char, oversize_local, oversize_domain,
     # nul_byte, oversize_announced, max_recipients, max_envelopes, auth_offered,
     # bad_address, address_literal, bad_helo, hard_error_limit, max_rcpt_misses,
-    # internal_error
+    # untrusted_proxy, max_session_seconds, internal_error
 )
 
 

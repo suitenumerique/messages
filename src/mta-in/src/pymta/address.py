@@ -1,7 +1,7 @@
 """RFC 5321 envelope-address validation.
 
 The functions in this module are intentionally strict: they reject anything
-the inbound SMTP server should not have to deal with — source routes
+the inbound SMTP server should not have to deal with: source routes
 (RFC 5321 §4.1.1.3), control characters (CRLF injection vector), overlong
 local-parts or domains, and the common ``user@`` / ``@domain`` truncations.
 
@@ -104,7 +104,7 @@ def validate_envelope_address(  # noqa: PLR0912
 
     # ----- 3. exactly one unquoted '@' ---------------------------------------
     # Quoted local-parts could legally contain '@', but we don't accept those
-    # on the public inbound path — most senders never use them and they are
+    # on the public inbound path. Most senders never use them and they are
     # a fertile parser-confusion ground.
     if address.count("@") != 1:
         raise AddressError(
