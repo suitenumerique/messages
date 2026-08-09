@@ -18,6 +18,10 @@ logger = logging.getLogger(__name__)
 SPF_CHECK_CACHE_KEY_PREFIX = "dns:spf_check:"
 SPF_CHECK_CACHE_TIMEOUT = 600  # 10 minutes
 
+# DKIM tags whose values are base64: internal whitespace is not significant.
+DKIM_BASE64_TAGS = frozenset({"p", "b", "bh"})
+DKIM_VERSION = "DKIM1"
+
 
 def normalize_txt_value(value: str) -> str:
     """
@@ -27,25 +31,27 @@ def normalize_txt_value(value: str) -> str:
 
 
 def parse_dkim_tags(value: str) -> Optional[Dict[str, str]]:
-    """Parse a DKIM record into a dict of tag=value pairs.
+    """Parse a DKIM key record into a dict of tag=value pairs.
 
-    Per RFC 6376, tags are separated by semicolons, with tag=value format.
-    The v= tag MUST be first and equal to DKIM1.
-    Returns None if the record is not a valid DKIM record.
+    Per RFC 6376 3.2, tags are separated by semicolons and folding whitespace
+    is allowed on both sides of the "=". Per 3.6.1, v= is optional and defaults
+    to DKIM1, but MUST be first and equal to DKIM1 when present.
+    Returns None if the record is not a valid DKIM key record.
     """
     parts = [p.strip() for p in value.split(";") if p.strip()]
-    if not parts:
-        return None
-    # v= must be first
-    first = parts[0]
-    if not first.startswith("v=") or first.split("=", 1)[1].strip() != "DKIM1":
-        return None
     tags = {}
     for part in parts:
         if "=" not in part:
             continue
         key, val = part.split("=", 1)
         tags[key.strip()] = val.strip()
+    if not tags:
+        return None
+    if "v" in tags:
+        if tags["v"] != DKIM_VERSION or parts[0].split("=", 1)[0].strip() != "v":
+            return None
+    else:
+        tags["v"] = DKIM_VERSION
     return tags
 
 
@@ -71,6 +77,17 @@ def parse_spf_terms(value: str) -> Optional[Tuple[str, set]]:
     return (all_mechanism, other_terms)
 
 
+def _dkim_tag_equal(tag: str, expected: str, found: str) -> bool:
+    """Compare a single DKIM tag value.
+
+    Per RFC 6376, whitespace inside a base64 value must be ignored. It is
+    significant for other tags, so this cannot be applied globally.
+    """
+    if tag in DKIM_BASE64_TAGS:
+        return "".join(expected.split()) == "".join(found.split())
+    return expected == found
+
+
 def _check_dkim_semantic(
     expected_value: str, found_values: List[str]
 ) -> Optional[Dict[str, any]]:
@@ -82,7 +99,10 @@ def _check_dkim_semantic(
         found_tags = parse_dkim_tags(found_value)
         if not found_tags:
             continue
-        if not all(found_tags.get(k) == v for k, v in expected_tags.items()):
+        if not all(
+            k in found_tags and _dkim_tag_equal(k, v, found_tags[k])
+            for k, v in expected_tags.items()
+        ):
             continue
         # Check for t=y (testing mode) → insecure
         if found_tags.get("t") and "y" in found_tags["t"].split(":"):

@@ -833,6 +833,20 @@ class TestParseDkimTags:
         result = parse_dkim_tags("v=DKIM1; k=rsa; p=MIGfMA0; t=y:s")
         assert result == {"v": "DKIM1", "k": "rsa", "p": "MIGfMA0", "t": "y:s"}
 
+    def test_whitespace_around_equals(self):
+        """RFC 6376 3.2 allows folding whitespace on both sides of the '='."""
+        result = parse_dkim_tags("v = DKIM1; k = rsa; p = MIGfMA0")
+        assert result == {"v": "DKIM1", "k": "rsa", "p": "MIGfMA0"}
+
+    def test_missing_v_defaults_to_dkim1(self):
+        """RFC 6376 3.6.1: v= is optional in a key record and defaults to DKIM1."""
+        result = parse_dkim_tags("k=rsa; p=MIGfMA0")
+        assert result == {"v": "DKIM1", "k": "rsa", "p": "MIGfMA0"}
+
+    def test_record_without_any_tag_returns_none(self):
+        """A TXT record with no tag=value pair is not a DKIM record."""
+        assert parse_dkim_tags("not a dkim record") is None
+
     def test_v_not_first_returns_none(self):
         """Test that v= not being first tag returns None."""
         assert parse_dkim_tags("k=rsa; v=DKIM1; p=MIGfMA0") is None
@@ -954,6 +968,83 @@ class TestDKIMSemanticComparison:
 
         with patch("core.services.dns.check.dns.resolver.resolve") as mock_resolve:
             mock_resolve.return_value = _txt_answer("v=DKIM1; k=rsa; p=WRONG_KEY")
+
+            result = check_single_record(maildomain, expected_record)
+            assert result["status"] == "incorrect"
+
+    def test_dkim_key_with_internal_whitespace_is_correct(self, maildomain_factory):
+        """Whitespace inside the base64 key is not significant (RFC 6376)."""
+        maildomain = maildomain_factory(name="example.com")
+        expected_record = {
+            "type": "TXT",
+            "target": "selector._domainkey",
+            "value": "v=DKIM1; k=rsa; p=MIGfMA0GCSqGSIb3",
+        }
+
+        with patch("core.services.dns.check.dns.resolver.resolve") as mock_resolve:
+            mock_resolve.return_value = _txt_answer(
+                "v=DKIM1; k=rsa; p=MIGfMA0 GCSqGSIb3"
+            )
+
+            result = check_single_record(maildomain, expected_record)
+            assert result["status"] == "correct"
+
+    def test_dkim_whitespace_in_other_tags_is_significant(self, maildomain_factory):
+        """Internal whitespace outside base64 tags still marks a mismatch."""
+        maildomain = maildomain_factory(name="example.com")
+        expected_record = {
+            "type": "TXT",
+            "target": "selector._domainkey",
+            "value": "v=DKIM1; k=rsa; p=MIGfMA0",
+        }
+
+        with patch("core.services.dns.check.dns.resolver.resolve") as mock_resolve:
+            mock_resolve.return_value = _txt_answer("v=DKIM1; k=r sa; p=MIGfMA0")
+
+            result = check_single_record(maildomain, expected_record)
+            assert result["status"] == "incorrect"
+
+    def test_dkim_whitespace_before_equals_is_correct(self, maildomain_factory):
+        """Folding whitespace before the '=' is legal, including on v= (RFC 6376)."""
+        maildomain = maildomain_factory(name="example.com")
+        expected_record = {
+            "type": "TXT",
+            "target": "selector._domainkey",
+            "value": "v=DKIM1; k=rsa; p=MIGfMA0",
+        }
+
+        with patch("core.services.dns.check.dns.resolver.resolve") as mock_resolve:
+            mock_resolve.return_value = _txt_answer("v = DKIM1; k=rsa; p = MIGfMA0")
+
+            result = check_single_record(maildomain, expected_record)
+            assert result["status"] == "correct"
+
+    def test_dkim_without_v_tag_is_correct(self, maildomain_factory):
+        """A key record omitting the optional v= tag is still valid (RFC 6376)."""
+        maildomain = maildomain_factory(name="example.com")
+        expected_record = {
+            "type": "TXT",
+            "target": "selector._domainkey",
+            "value": "v=DKIM1; k=rsa; p=MIGfMA0",
+        }
+
+        with patch("core.services.dns.check.dns.resolver.resolve") as mock_resolve:
+            mock_resolve.return_value = _txt_answer("k=rsa; p=MIGfMA0")
+
+            result = check_single_record(maildomain, expected_record)
+            assert result["status"] == "correct"
+
+    def test_dkim_missing_expected_tag_is_incorrect(self, maildomain_factory):
+        """A tag present in the expected record but absent in DNS is a mismatch."""
+        maildomain = maildomain_factory(name="example.com")
+        expected_record = {
+            "type": "TXT",
+            "target": "selector._domainkey",
+            "value": "v=DKIM1; k=rsa; p=MIGfMA0",
+        }
+
+        with patch("core.services.dns.check.dns.resolver.resolve") as mock_resolve:
+            mock_resolve.return_value = _txt_answer("v=DKIM1; k=rsa")
 
             result = check_single_record(maildomain, expected_record)
             assert result["status"] == "incorrect"
