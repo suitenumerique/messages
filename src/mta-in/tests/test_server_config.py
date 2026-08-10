@@ -31,9 +31,34 @@ def test_proxy_protocol_without_allowlist_refuses_to_start(monkeypatch):
 
 def test_proxy_protocol_with_allowlist_starts(monkeypatch):
     monkeypatch.setattr(settings, "PYMTA_ENABLE_PROXY_PROTOCOL", True)
+    monkeypatch.setattr(settings, "PYMTA_TRUSTED_PROXIES", [ip_network("10.89.0.0/24")])
+    _check_proxy_trust_config()
+
+
+@pytest.mark.parametrize("catch_all", ["0.0.0.0/0", "::/0"])
+def test_proxy_protocol_with_catch_all_allowlist_refuses_to_start(monkeypatch, catch_all):
+    # Non-empty, so it clears the emptiness check, while trusting every peer
+    # exactly as much as no allowlist would.
+    monkeypatch.setattr(settings, "PYMTA_ENABLE_PROXY_PROTOCOL", True)
+    monkeypatch.setattr(settings, "PYMTA_TRUSTED_PROXIES", [ip_network(catch_all)])
+    with pytest.raises(RuntimeError, match="matches every peer"):
+        _check_proxy_trust_config()
+
+
+def test_catch_all_is_refused_even_beside_a_real_network(monkeypatch):
+    monkeypatch.setattr(settings, "PYMTA_ENABLE_PROXY_PROTOCOL", True)
     monkeypatch.setattr(
-        settings, "PYMTA_TRUSTED_PROXIES", [ip_network("10.89.0.0/24")]
+        settings,
+        "PYMTA_TRUSTED_PROXIES",
+        [ip_network("10.89.0.0/24"), ip_network("0.0.0.0/0")],
     )
+    with pytest.raises(RuntimeError, match="matches every peer"):
+        _check_proxy_trust_config()
+
+
+def test_catch_all_is_irrelevant_without_proxy_protocol(monkeypatch):
+    monkeypatch.setattr(settings, "PYMTA_ENABLE_PROXY_PROTOCOL", False)
+    monkeypatch.setattr(settings, "PYMTA_TRUSTED_PROXIES", [ip_network("0.0.0.0/0")])
     _check_proxy_trust_config()
 
 

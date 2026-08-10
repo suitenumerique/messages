@@ -5,12 +5,23 @@ import os
 
 
 def _env_bool(name: str, default: bool) -> bool:
+    """Read a boolean setting, refusing spellings the code cannot honour.
+
+    An unset or blank variable takes the default. Anything else must be a
+    recognised spelling: silently reading a typo as its opposite is how a
+    security toggle ends up off in production.
+    """
     raw = os.environ.get(name, "").strip().lower()
+    if not raw:
+        return default
     if raw in ("1", "true", "yes", "on"):
         return True
     if raw in ("0", "false", "no", "off"):
         return False
-    return default
+    raise ValueError(
+        f"{name} is set to {raw!r}, which is not a recognised boolean. Use one of "
+        "1/true/yes/on or 0/false/no/off."
+    )
 
 
 def _env_int(name: str, default: int, *, minimum: int) -> int:
@@ -150,7 +161,15 @@ PYMTA_COMMAND_TIMEOUT = _env_int("PYMTA_COMMAND_TIMEOUT", 120, minimum=1)
 #
 # Sizing: this is a *floor* on how slow a legitimate sender may be. At the
 # 10 MB default MAX_INCOMING_EMAIL_SIZE, 300 s means ~34 kB/s sustained.
-PYMTA_DATA_TIMEOUT = _env_int("PYMTA_DATA_TIMEOUT", 300, minimum=1)
+#
+# The slice the handler holds back, read by ``handler._REPLY_RESERVE_SECONDS``.
+# No PYMTA_ prefix: that marks the env-backed settings, and this one is not
+# configurable. It is a property of how the two deadlines nest, not something
+# an operator sizes. It bounds the minimum below, because a DATA timeout at or
+# under the reserve leaves the deliver call no budget at all and would defer
+# every message.
+REPLY_RESERVE_SECONDS = 10
+PYMTA_DATA_TIMEOUT = _env_int("PYMTA_DATA_TIMEOUT", 300, minimum=REPLY_RESERVE_SECONDS + 1)
 
 # Wall-clock ceiling on one TCP session (seconds), armed at connect and never
 # re-armed. 0 disables.
@@ -188,7 +207,9 @@ PYMTA_MAX_SESSIONS_TOTAL = _env_int("PYMTA_MAX_SESSIONS_TOTAL", 1000, minimum=0)
 # Per-IP new-session rate, measured in a fixed 60s window. Defends against a
 # peer that churns through fast open/close cycles (which never exceed the
 # concurrent cap but still cost CPU/TLS handshakes/MDA RCPT checks). 0 disables.
-PYMTA_MAX_SESSIONS_PER_IP_PER_MINUTE = _env_int("PYMTA_MAX_SESSIONS_PER_IP_PER_MINUTE", 600, minimum=0)
+PYMTA_MAX_SESSIONS_PER_IP_PER_MINUTE = _env_int(
+    "PYMTA_MAX_SESSIONS_PER_IP_PER_MINUTE", 600, minimum=0
+)
 
 # Per-session soft-error budget. Mirrors Postfix `smtpd_hard_error_limit`:
 # once a session accumulates this many 4xx/5xx replies (typically over-limit
@@ -217,6 +238,7 @@ PYMTA_ENABLE_SMTPUTF8 = _env_bool("PYMTA_ENABLE_SMTPUTF8", True)
 # either one inheriting the other's switch.
 PYMTA_ENABLE_PROXY_PROTOCOL = _env_bool("PYMTA_ENABLE_PROXY_PROTOCOL", False)
 PYMTA_PROXY_PROTOCOL_TIMEOUT = _env_int("PYMTA_PROXY_PROTOCOL_TIMEOUT", 5, minimum=1)
+
 
 # Comma-separated IPs / CIDRs allowed to send a PROXY header, matched against
 # the *wire* peer (the TCP source, i.e. the load balancer). Anything the header

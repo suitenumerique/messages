@@ -10,6 +10,7 @@ from __future__ import annotations
 import datetime
 
 import httpx
+import jwt
 import pytest
 
 from pymta import settings
@@ -95,16 +96,42 @@ async def test_5xx_returns_temp_fail():
     assert result.status_code == 503
 
 
+async def _deliver(client):
+    return await client.deliver(
+        message=b"From: a@example.com\r\n\r\nbody\r\n",
+        sender="a@example.com",
+        original_recipients=["user@example.com"],
+        client_address="192.0.2.1",
+        client_port="2525",
+        client_hostname=None,
+        client_helo="relay.example.com",
+    )
+
+
 @pytest.mark.parametrize("status", [400, 413, 415])
 @pytest.mark.asyncio
-async def test_message_rejecting_statuses_are_permanent(status):
+async def test_message_rejecting_statuses_are_permanent_on_deliver(status):
     # The only statuses that mean "this message is unacceptable, retrying
     # cannot help": unparseable, oversize, wrong content type.
     client, _ = _new_client()
     client._client = _StubAsyncClient([_resp(status, b'{"detail":"no"}')])
-    result = await client.check_recipient("user@example.com")
+    result = await _deliver(client)
     assert result.ok is False
     assert result.temp_fail is False
+    assert result.status_code == status
+
+
+@pytest.mark.parametrize("status", [400, 413, 415])
+@pytest.mark.asyncio
+async def test_message_rejecting_statuses_defer_on_recipient_check(status):
+    # A recipient check carries no message, so these statuses describe the
+    # check request we built, not the mailbox. Bouncing on our own bug would
+    # tell the sender a working address is permanently bad.
+    client, _ = _new_client()
+    client._client = _StubAsyncClient([_resp(status, b'{"detail":"no"}')])
+    result = await client.check_recipient("user@example.com")
+    assert result.ok is False
+    assert result.temp_fail is True
     assert result.status_code == status
 
 
@@ -268,14 +295,10 @@ def test_empty_secret_logs_warning(caplog, monkeypatch):
 
 
 def test_metadata_cannot_shadow_exp_or_body_hash():
-    import jwt
-
     client, _ = _new_client()
     body = b"hello"
     # Attacker-supplied metadata tries to overwrite security fields.
-    token = client._build_jwt(
-        body, {"exp": 0, "body_hash": "deadbeef", "sender": "u@x"}
-    )
+    token = client._build_jwt(body, {"exp": 0, "body_hash": "deadbeef", "sender": "u@x"})
     decoded = jwt.decode(token, client.secret, algorithms=["HS256"])
     # The real exp must be in the future, not 0.
     assert decoded["exp"] != 0
@@ -289,14 +312,8 @@ def test_jwt_ttl_is_configurable():
     # A fixed 60s expiry leaves no room for clock skew against the MDA, and a
     # token the MDA reads as expired is a 401, which now defers rather than
     # bounces, but still stalls the mail.
-    import jwt
-
-    client = MDAClient(
-        base_url="https://mda.example.invalid/api/", secret="x" * 32, jwt_ttl=600
-    )
+    client = MDAClient(base_url="https://mda.example.invalid/api/", secret="x" * 32, jwt_ttl=600)
     before = datetime.datetime.now(tz=datetime.UTC)
-    decoded = jwt.decode(
-        client._build_jwt(b"body", {}), client.secret, algorithms=["HS256"]
-    )
+    decoded = jwt.decode(client._build_jwt(b"body", {}), client.secret, algorithms=["HS256"])
     ttl = datetime.datetime.fromtimestamp(decoded["exp"], tz=datetime.UTC) - before
     assert 590 <= ttl.total_seconds() <= 600

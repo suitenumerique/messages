@@ -57,6 +57,18 @@ def _check_proxy_trust_config() -> None:
             f"port {settings.PYMTA_SMTP_PORT} directly can forge its source IP past "
             "the per-IP caps and into the Received header."
         )
+    # A zero-prefix network (0.0.0.0/0, ::/0) matches every peer, so it is the
+    # empty allowlist wearing a disguise: non-empty enough to pass the check
+    # above, while trusting exactly as much as no allowlist at all.
+    catch_all = [net for net in settings.PYMTA_TRUSTED_PROXIES if net.prefixlen == 0]
+    if catch_all:
+        raise RuntimeError(
+            "PROXY protocol is enabled but PYMTA_TRUSTED_PROXIES contains "
+            f"{', '.join(str(net) for net in catch_all)}, which matches every peer. "
+            "Set it to the load balancer's IPs/CIDRs. Otherwise any peer able to "
+            f"reach port {settings.PYMTA_SMTP_PORT} directly can forge its source IP "
+            "past the per-IP caps and into the Received header."
+        )
     logger.info(
         "PROXY protocol enabled; trusting headers only from %s",
         ", ".join(str(net) for net in settings.PYMTA_TRUSTED_PROXIES),
@@ -117,8 +129,7 @@ async def _serve() -> None:
                 )
             except TimeoutError:
                 logger.warning(
-                    "graceful shutdown deadline (%ds) exceeded; in-flight "
-                    "sessions abandoned",
+                    "graceful shutdown deadline (%ds) exceeded; in-flight sessions abandoned",
                     settings.PYMTA_SHUTDOWN_TIMEOUT,
                 )
     finally:

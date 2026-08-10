@@ -47,8 +47,8 @@ Each MTA → MDA call is an HTTP `POST` carrying:
 
 - **Body**: for `check/`, an `application/json` document `{"addresses": [...]}`; for `deliver/`, the full RFC 5322 message as `message/rfc822`.
 - **Authorization**: `Bearer <jwt>` where the JWT is signed HS256 with `env.MDA_API_SECRET` and carries:
-  - `exp`: `env.MDA_API_JWT_TTL` seconds from issuance, anchored in UTC. It has to cover the whole request *plus* clock skew against the MDA. The `body_hash` binding is what limits a captured token, not the TTL.
-  - `body_hash`: `sha256(body).hexdigest()`, which binds the token to the exact bytes posted (replay-proof per-request).
+  - `exp`: `env.MDA_API_JWT_TTL` seconds from issuance, anchored in UTC. It has to cover the whole request *plus* clock skew against the MDA.
+  - `body_hash`: `sha256(body).hexdigest()`, which binds the token to the exact bytes posted, so a captured token cannot be reused to send *different* content. The MDA tracks no nonce, so replaying the same token with the same body until `exp` is not prevented; the two claims bound a captured token together, one in content and one in time.
   - Plus, for `deliver/`, envelope metadata claims (`sender`, `original_recipients`, `client_address`, `client_port`, `client_hostname`, `client_helo`, `size`).
 - **Response**: see the outcome table above.
 
@@ -137,7 +137,7 @@ Every other timeout is re-armed by peer activity, so a peer that stays marginall
 
 **Do not tighten `PYMTA_MAX_SESSIONS_PER_IP` far.** Postfix's `default_destination_concurrency_limit` is 20, so a single default-configured relay sending a backlog sits at a cap of 20 and gets 421s on its 21st connection; busy relays raise that figure. The worst case for a tight cap is a queue flush: after pymta downtime or a tripped MDA breaker, every sender with a backlog retries at full concurrency, and a low cap extends the outage by rejecting the senders trying to drain into you. The gain in return is small, since the number of source IPs an attacker needs scales only linearly with the cap. 100 is a reasonable default, and the shipping Postfix config disables per-client limits entirely (`smtpd_client_event_limit_exceptions = static:all`), so it is already a tightening.
 
-Slot exhaustion on an *inbound* MTA delays mail rather than losing it: once the global cap is hit, new connections get `421` and close, and SMTP senders retry for days. Watch `pymta_sessions_active` and the upper buckets of `pymta_session_duration_seconds`; a healthy inbound MX has sessions measured in seconds. Connection-rate limiting belongs at the edge, where it applies before a socket reaches this process.
+Slot exhaustion on an *inbound* MTA delays mail rather than losing it: once the global cap is hit, new connections get `421` and close, and SMTP senders retry for days. Watch `pymta_sessions_active` and the upper buckets of `pymta_session_duration_seconds`; a healthy inbound MX has sessions measured in seconds. `PYMTA_MAX_SESSIONS_PER_IP_PER_MINUTE` refuses churn before the dialogue opens: the gate is acquired ahead of the `220` greeting, and TLS here is STARTTLS (an in-session command, not a handshake on accept), so a refused connection costs no asymmetric crypto and no MDA recipient check. What it still costs is the TCP accept, one protocol object, and the `421` write — small per connection, but paid inside this process. Only a cap upstream of it (firewall, load balancer, network ACL) drops the packet before that.
 
 Also review `PYMTA_DATA_TIMEOUT` against your real `MAX_INCOMING_EMAIL_SIZE`; it sets a floor on how slow a legitimate sender may be. The dev defaults file disables the per-IP cap entirely, because all local load comes from loopback.
 

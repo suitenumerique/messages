@@ -58,9 +58,10 @@ NULL_SENDER_SENTINEL = "<>"
 
 # Slice of PYMTA_DATA_TIMEOUT the handler holds back from the MDA deliver call
 # so it still has room to push a 451 before the protocol-level deadline closes
-# the transport. Not configurable: it is a property of how the two deadlines
-# nest, not something an operator sizes.
-_REPLY_RESERVE_SECONDS = 10.0
+# the transport. Defined in settings beside the timeout it is subtracted from,
+# which refuses to start a configuration where it would consume the whole
+# budget.
+_REPLY_RESERVE_SECONDS = float(settings.REPLY_RESERVE_SECONDS)
 
 # Control characters that must never appear in an EHLO/HELO hostname or
 # anywhere else we'll log / pass into HTTP claims. CR, LF, NUL are the
@@ -86,6 +87,21 @@ def _bump(holder, attr: str) -> int:
     n = _count(holder, attr) + 1
     setattr(holder, attr, n)
     return n
+
+
+def _hard_error_limit_reached(server, counters) -> bool:
+    """True when this connection has spent its ``PYMTA_HARD_ERROR_LIMIT``.
+
+    Records the rejection and asks for the disconnect, so a caller only has to
+    return the 421. Bulk address enumeration and dictionary attacks otherwise
+    keep hammering a single TCP session.
+    """
+    if _count(counters, _SOFT_ERRORS_ATTR) < settings.PYMTA_HARD_ERROR_LIMIT:
+        return False
+    metrics.SECURITY_REJECTIONS.labels(reason="hard_error_limit").inc()
+    metrics.DISCONNECTS_421.labels(reason="hard_error_limit").inc()
+    _request_disconnect(server)
+    return True
 
 
 def _request_disconnect(server) -> None:
@@ -151,15 +167,19 @@ def _remaining_data_budget(server) -> float:
     disconnect instead of a reason to retry.
 
     Falls back to the full budget when the caller has no DATA start timestamp
-    (unit-test fakes). The floor keeps a very slow receive from cancelling the
-    deliver call before it is even issued; past that point the transport
-    deadline is the backstop, as designed.
+    (unit-test fakes). Raises ``TimeoutError`` when the receive already spent
+    the whole budget: issuing the deliver call anyway would overrun the
+    transport deadline the reserve exists to stay clear of, and the caller
+    already turns that exception into the 451.
     """
     started = getattr(server, "data_phase_started", None)
     if started is None:
         return float(settings.PYMTA_DATA_TIMEOUT)
     spent = time.monotonic() - started
-    return max(1.0, settings.PYMTA_DATA_TIMEOUT - spent - _REPLY_RESERVE_SECONDS)
+    remaining = settings.PYMTA_DATA_TIMEOUT - spent - _REPLY_RESERVE_SECONDS
+    if remaining <= 0:
+        raise TimeoutError("DATA budget spent before the deliver call")
+    return remaining
 
 
 def _proxy_header_is_trusted(session) -> bool:
@@ -260,6 +280,14 @@ class InboundHandler:
 
     # ------------------------------------------------------------------ MAIL
     async def handle_MAIL(self, server, session, envelope, address, mail_options):
+        counters = _counters(server, session)
+
+        # Same hard-error budget as handle_RCPT: a peer can burn errors on
+        # MAIL alone (malformed senders, bad SIZE), so the guard has to sit on
+        # this verb too or the budget is trivially sidestepped.
+        if _hard_error_limit_reached(server, counters):
+            return "421 4.7.0 Too many errors, goodbye"
+
         try:
             clean = validate_envelope_address(
                 address,
@@ -269,9 +297,8 @@ class InboundHandler:
             )
         except AddressError as err:
             metrics.SECURITY_REJECTIONS.labels(reason=err.reason).inc()
+            _bump(counters, _SOFT_ERRORS_ATTR)
             return f"{err.smtp_code} {err.smtp_text}"
-
-        counters = _counters(server, session)
 
         # Honour MAIL FROM:... SIZE=N if announced, to fail fast before DATA.
         for opt in mail_options or []:
@@ -294,15 +321,9 @@ class InboundHandler:
     async def handle_RCPT(self, server, session, envelope, address, rcpt_options):  # noqa: PLR0911
         counters = _counters(server, session)
 
-        # First gate: hard-error budget. Once the connection has accumulated
-        # ``PYMTA_HARD_ERROR_LIMIT`` 4xx/5xx replies, send 421 and close so
-        # bulk address enumeration / dictionary attacks cannot keep hammering
-        # this single TCP session.
-        if _count(counters, _SOFT_ERRORS_ATTR) >= settings.PYMTA_HARD_ERROR_LIMIT:
-            metrics.SECURITY_REJECTIONS.labels(reason="hard_error_limit").inc()
-            metrics.DISCONNECTS_421.labels(reason="hard_error_limit").inc()
+        # First gate: hard-error budget, shared with handle_MAIL.
+        if _hard_error_limit_reached(server, counters):
             metrics.RCPT_TOTAL.labels(result="rejected_temp").inc()
-            _request_disconnect(server)
             return "421 4.7.0 Too many errors, goodbye"
 
         # Per-envelope recipient cap.
@@ -381,6 +402,10 @@ class InboundHandler:
             return "552 5.3.4 Message size exceeds fixed maximum"
 
         try:
+            # Before building the coroutine: a budget already spent raises
+            # here, and a coroutine created but never awaited would only add a
+            # RuntimeWarning to the log on the way to the same 451.
+            budget = _remaining_data_budget(server)
             sender = envelope.mail_from
             if sender == NULL_SENDER_SENTINEL:
                 sender = ""
@@ -395,9 +420,11 @@ class InboundHandler:
                     # own Received header using metadata and can decide what
                     # to do with the missing hostname.
                     client_hostname=None,
-                    client_helo=_safe_hostname(getattr(session, "host_name", None), session=session),
+                    client_helo=_safe_hostname(
+                        getattr(session, "host_name", None), session=session
+                    ),
                 ),
-                timeout=_remaining_data_budget(server),
+                timeout=budget,
             )
         except TimeoutError:
             metrics.MESSAGES_TOTAL.labels(result="rejected_temp").inc()

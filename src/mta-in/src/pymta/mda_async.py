@@ -59,6 +59,11 @@ _MIN_SECRET_LENGTH = 32
 #         past. A routine operational event must not bounce real mail.
 #   404: a routing/deployment mistake, not a verdict on this message.
 #   429: throttling. Retrying later is the intended response.
+#
+# Delivery only. Each entry is a verdict on the *message*, and a recipient
+# check carries no message: a 400/413/415 there is a fault in the check request
+# we built, so it defers like any other unexpected status rather than telling
+# the sender the mailbox is permanently bad.
 _PERMANENT_STATUSES = frozenset({400, 413, 415})
 
 
@@ -68,8 +73,9 @@ class MDAResult:
 
     ``ok`` is true iff the call returned HTTP 200 with a JSON body that the
     caller can rely on. ``temp_fail`` distinguishes "try again later" (network
-    error, timeout, 5xx, and every status not in :data:`_PERMANENT_STATUSES`)
-    from a permanent rejection. ``payload`` is the decoded JSON body when
+    error, timeout, 5xx, and every status the endpoint does not name as
+    permanent) from a permanent rejection; only ``deliver`` names any, via
+    :data:`_PERMANENT_STATUSES`. ``payload`` is the decoded JSON body when
     available.
     """
 
@@ -196,26 +202,24 @@ class MDAClient:
         if self._consecutive_failures >= self._breaker_threshold and self._open_until is None:
             self._open_until = self._clock() + self._breaker_cooldown
             logger.warning(
-                "MDA circuit breaker OPEN after %d consecutive failures; "
-                "fast-failing for %ds",
+                "MDA circuit breaker OPEN after %d consecutive failures; fast-failing for %ds",
                 self._consecutive_failures,
                 self._breaker_cooldown,
             )
 
     def _record_success(self) -> None:
         if self._consecutive_failures and self._open_until is None:
-            logger.info(
-                "MDA recovered after %d consecutive failures", self._consecutive_failures
-            )
+            logger.info("MDA recovered after %d consecutive failures", self._consecutive_failures)
         self._consecutive_failures = 0
 
-    async def _post(
+    async def _post(  # noqa: PLR0913
         self,
         path: str,
         content_type: str,
         body: bytes,
         metadata: dict,
         endpoint_label: str,
+        permanent_statuses: frozenset[int] = frozenset(),
     ) -> MDAResult:
         if self._breaker_open():
             metrics.MDA_REQUEST_DURATION.labels(
@@ -271,7 +275,7 @@ class MDAClient:
         #    transport failures above) indicate the MDA is unhealthy. A 207 or
         #    a 401 is a complete answer from a healthy MDA, so it closes the
         #    breaker rather than opening it.
-        temp = status not in _PERMANENT_STATUSES
+        temp = status not in permanent_statuses
         unhealthy = status >= 500
         if unhealthy:
             result_label = "http_5xx"
@@ -330,4 +334,5 @@ class MDAClient:
             message,
             metadata=metadata,
             endpoint_label="deliver",
+            permanent_statuses=_PERMANENT_STATUSES,
         )

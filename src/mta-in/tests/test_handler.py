@@ -7,6 +7,7 @@ stand-ins: no Docker stack, no real SMTP traffic.
 
 from __future__ import annotations
 
+import time
 import types
 from ipaddress import ip_address, ip_network
 
@@ -16,9 +17,11 @@ from pymta import settings
 from pymta.handler import (
     _ENVELOPES_ATTR,
     _RCPT_MISSES_ATTR,
+    _REPLY_RESERVE_SECONDS,
     _SOFT_ERRORS_ATTR,
     NULL_SENDER_SENTINEL,
     InboundHandler,
+    _remaining_data_budget,
 )
 from pymta.mda_async import MDAResult
 
@@ -137,14 +140,10 @@ async def test_rcpt_miss_counter_triggers_421_at_limit(monkeypatch):
 
     # First two misses get the normal 550.
     for i in range(2):
-        reply = await handler.handle_RCPT(
-            None, session, envelope, f"<miss{i}@example.com>", []
-        )
+        reply = await handler.handle_RCPT(None, session, envelope, f"<miss{i}@example.com>", [])
         assert reply.startswith("550"), reply
     # Third miss hits the per-session cap and forces 421.
-    reply = await handler.handle_RCPT(
-        None, session, envelope, "<miss3@example.com>", []
-    )
+    reply = await handler.handle_RCPT(None, session, envelope, "<miss3@example.com>", [])
     assert reply.startswith("421")
     assert getattr(session, _RCPT_MISSES_ATTR) == 3
 
@@ -160,11 +159,46 @@ async def test_rcpt_existence_does_not_increment_miss_counter():
         )
     )
     handler, session, envelope = _handler(mda), _session(), _envelope()
-    reply = await handler.handle_RCPT(
-        None, session, envelope, "<hit@example.com>", []
-    )
+    reply = await handler.handle_RCPT(None, session, envelope, "<hit@example.com>", [])
     assert reply.startswith("250")
     assert getattr(session, _RCPT_MISSES_ATTR, 0) == 0
+
+
+# ---------------------------------------------------------------------------
+# The DATA budget is one deadline shared by receive and deliver.
+# ---------------------------------------------------------------------------
+
+
+def test_data_budget_without_a_start_timestamp_is_the_full_budget():
+    assert _remaining_data_budget(types.SimpleNamespace()) == float(settings.PYMTA_DATA_TIMEOUT)
+
+
+def test_data_budget_subtracts_time_already_spent(monkeypatch):
+    monkeypatch.setattr(settings, "PYMTA_DATA_TIMEOUT", 120)
+    server = types.SimpleNamespace(data_phase_started=time.monotonic() - 20)
+    remaining = _remaining_data_budget(server)
+    assert 120 - 20 - _REPLY_RESERVE_SECONDS - 1 < remaining <= 120 - 20 - _REPLY_RESERVE_SECONDS
+
+
+def test_data_budget_raises_once_spent(monkeypatch):
+    # A slow receive that ate the whole budget must not still be granted a
+    # deliver call: that would overrun the transport deadline the reserve is
+    # there to stay clear of, costing the peer its 451.
+    monkeypatch.setattr(settings, "PYMTA_DATA_TIMEOUT", 60)
+    server = types.SimpleNamespace(data_phase_started=time.monotonic() - 60)
+    with pytest.raises(TimeoutError):
+        _remaining_data_budget(server)
+
+
+@pytest.mark.asyncio
+async def test_data_replies_451_when_the_budget_is_already_spent(monkeypatch):
+    monkeypatch.setattr(settings, "PYMTA_DATA_TIMEOUT", 60)
+    server = _FakeServer()
+    server.data_phase_started = time.monotonic() - 60
+    session, envelope = _session(), _envelope()
+    envelope.content = b"From: a@example.com\r\n\r\nhi\r\n"
+    reply = await _handler().handle_DATA(server, session, envelope)
+    assert reply.startswith("451")
 
 
 # ---------------------------------------------------------------------------
@@ -177,10 +211,39 @@ async def test_hard_error_limit_blocks_further_rcpts(monkeypatch):
     monkeypatch.setattr(settings, "PYMTA_HARD_ERROR_LIMIT", 2)
     handler, session, envelope = _handler(), _session(), _envelope()
     setattr(session, _SOFT_ERRORS_ATTR, 2)
-    reply = await handler.handle_RCPT(
-        None, session, envelope, "<anyone@example.com>", []
-    )
+    reply = await handler.handle_RCPT(None, session, envelope, "<anyone@example.com>", [])
     assert reply.startswith("421")
+
+
+@pytest.mark.asyncio
+async def test_mail_malformed_sender_bumps_soft_errors():
+    # Without this the hard-error budget is sidestepped by burning errors on
+    # MAIL FROM alone, which never counted towards it.
+    session, envelope = _session(), _envelope()
+    reply = await _handler().handle_MAIL(None, session, envelope, "<not an address>", [])
+    assert reply.startswith("501")
+    assert getattr(session, _SOFT_ERRORS_ATTR) == 1
+
+
+@pytest.mark.asyncio
+async def test_hard_error_limit_blocks_further_mails(monkeypatch):
+    monkeypatch.setattr(settings, "PYMTA_HARD_ERROR_LIMIT", 2)
+    handler, session, envelope = _handler(), _session(), _envelope()
+    setattr(session, _SOFT_ERRORS_ATTR, 2)
+    reply = await handler.handle_MAIL(None, session, envelope, "<a@example.com>", [])
+    assert reply.startswith("421")
+    assert envelope.mail_from is None
+
+
+@pytest.mark.asyncio
+async def test_hard_error_limit_on_mail_requests_disconnect(monkeypatch):
+    monkeypatch.setattr(settings, "PYMTA_HARD_ERROR_LIMIT", 1)
+    server = _FakeServer()
+    handler, session, envelope = _handler(), _session(), _envelope()
+    setattr(server, _SOFT_ERRORS_ATTR, 1)
+    reply = await handler.handle_MAIL(server, session, envelope, "<a@example.com>", [])
+    assert reply.startswith("421")
+    assert server.disconnect_requested is True
 
 
 # ---------------------------------------------------------------------------
@@ -235,20 +298,14 @@ async def test_proxy_source_survives_starttls_and_reaches_mda(monkeypatch):
     handler = _handler(mda)
 
     # 1. PROXY header parsed on the plaintext connection, before STARTTLS.
-    proxy_data = types.SimpleNamespace(
-        src_addr=real_client, src_port=52000, version=2, protocol=1
-    )
-    session_pre_tls = types.SimpleNamespace(
-        host_name=None, peer=lb_peer, proxy_data=proxy_data
-    )
+    proxy_data = types.SimpleNamespace(src_addr=real_client, src_port=52000, version=2, protocol=1)
+    session_pre_tls = types.SimpleNamespace(host_name=None, peer=lb_peer, proxy_data=proxy_data)
     gate = await handler.handle_PROXY(server, session_pre_tls, _envelope(), proxy_data)
     assert gate is True
 
     # 2. STARTTLS rebuilds the session: proxy_data gone, peer is the LB again.
     #    Same server instance carries over.
-    session_post_tls = types.SimpleNamespace(
-        host_name=None, peer=lb_peer, proxy_data=None
-    )
+    session_post_tls = types.SimpleNamespace(host_name=None, peer=lb_peer, proxy_data=None)
 
     # 3. DATA delivers using the post-TLS session.
     envelope = _envelope()
@@ -341,9 +398,7 @@ async def test_rcpt_miss_cutoff_requests_disconnect(monkeypatch):
     server = _FakeServer()
     handler, session, envelope = _handler(), _session(), _envelope()
 
-    reply = await handler.handle_RCPT(
-        server, session, envelope, "<miss@example.com>", []
-    )
+    reply = await handler.handle_RCPT(server, session, envelope, "<miss@example.com>", [])
     assert reply.startswith("421")
     assert server.disconnect_requested is True
 
@@ -355,9 +410,7 @@ async def test_hard_error_cutoff_requests_disconnect(monkeypatch):
     setattr(server, _SOFT_ERRORS_ATTR, 2)
     handler, session, envelope = _handler(), _session(), _envelope()
 
-    reply = await handler.handle_RCPT(
-        server, session, envelope, "<anyone@example.com>", []
-    )
+    reply = await handler.handle_RCPT(server, session, envelope, "<anyone@example.com>", [])
     assert reply.startswith("421")
     assert server.disconnect_requested is True
 
@@ -384,9 +437,7 @@ async def test_rcpt_miss_budget_survives_the_starttls_session_rebuild(monkeypatc
         assert reply.startswith("550"), reply
 
     # STARTTLS hands us a brand-new session object; the budget must not reset.
-    reply = await handler.handle_RCPT(
-        server, _session(), envelope, "<miss3@example.com>", []
-    )
+    reply = await handler.handle_RCPT(server, _session(), envelope, "<miss3@example.com>", [])
     assert reply.startswith("421"), reply
     assert getattr(server, _RCPT_MISSES_ATTR) == 3
 
@@ -401,37 +452,23 @@ async def test_rcpt_miss_budget_survives_the_starttls_session_rebuild(monkeypatc
 
 
 def _proxy_data(src="203.0.113.9"):
-    return types.SimpleNamespace(
-        src_addr=ip_address(src), src_port=52000, version=2, protocol=1
-    )
+    return types.SimpleNamespace(src_addr=ip_address(src), src_port=52000, version=2, protocol=1)
 
 
 @pytest.mark.asyncio
 async def test_proxy_header_from_untrusted_peer_is_refused(monkeypatch):
-    monkeypatch.setattr(
-        settings, "PYMTA_TRUSTED_PROXIES", [ip_network("10.89.0.0/24")]
-    )
-    session = types.SimpleNamespace(
-        host_name=None, peer=("198.51.100.7", 5555), proxy_data=None
-    )
-    accepted = await _handler().handle_PROXY(
-        _FakeServer(), session, _envelope(), _proxy_data()
-    )
+    monkeypatch.setattr(settings, "PYMTA_TRUSTED_PROXIES", [ip_network("10.89.0.0/24")])
+    session = types.SimpleNamespace(host_name=None, peer=("198.51.100.7", 5555), proxy_data=None)
+    accepted = await _handler().handle_PROXY(_FakeServer(), session, _envelope(), _proxy_data())
     assert accepted is False
 
 
 @pytest.mark.asyncio
 async def test_proxy_header_from_trusted_peer_is_accepted(monkeypatch):
-    monkeypatch.setattr(
-        settings, "PYMTA_TRUSTED_PROXIES", [ip_network("10.89.0.0/24")]
-    )
+    monkeypatch.setattr(settings, "PYMTA_TRUSTED_PROXIES", [ip_network("10.89.0.0/24")])
     server = _FakeServer()
-    session = types.SimpleNamespace(
-        host_name=None, peer=("10.89.0.2", 5555), proxy_data=None
-    )
-    accepted = await _handler().handle_PROXY(
-        server, session, _envelope(), _proxy_data()
-    )
+    session = types.SimpleNamespace(host_name=None, peer=("10.89.0.2", 5555), proxy_data=None)
+    accepted = await _handler().handle_PROXY(server, session, _envelope(), _proxy_data())
     assert accepted is True
 
 
@@ -441,12 +478,8 @@ async def test_empty_allowlist_fails_closed(monkeypatch):
     # with an empty allowlist, but the matcher must not treat "no entries" as
     # "everyone".
     monkeypatch.setattr(settings, "PYMTA_TRUSTED_PROXIES", [])
-    session = types.SimpleNamespace(
-        host_name=None, peer=("198.51.100.7", 5555), proxy_data=None
-    )
-    accepted = await _handler().handle_PROXY(
-        _FakeServer(), session, _envelope(), _proxy_data()
-    )
+    session = types.SimpleNamespace(host_name=None, peer=("198.51.100.7", 5555), proxy_data=None)
+    accepted = await _handler().handle_PROXY(_FakeServer(), session, _envelope(), _proxy_data())
     assert accepted is False
 
 

@@ -166,9 +166,7 @@ def test_expn_disabled():
         "NUL-CRLF-dot-CRLF",
     ],
 )
-def test_smtp_smuggling_does_not_split_messages(
-    mock_api_server, smuggle_bytes, mta_impl
-):
+def test_smtp_smuggling_does_not_split_messages(mock_api_server, smuggle_bytes, mta_impl):
     """A smuggling EOD variant must NOT split the envelope into two messages.
 
     The MDA must see at most ONE delivery, and the "smuggled" MAIL FROM/RCPT

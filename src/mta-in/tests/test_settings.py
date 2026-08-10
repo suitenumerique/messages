@@ -8,6 +8,7 @@ from __future__ import annotations
 
 import pytest
 
+from pymta import settings
 from pymta.settings import _env_bool, _env_int, _env_str, _env_token
 
 
@@ -39,6 +40,16 @@ def test_int_rejects_values_below_the_minimum(monkeypatch, raw):
         _env_int("PYMTA_TEST_INT", 7, minimum=1)
 
 
+def test_data_timeout_must_exceed_the_reply_reserve(monkeypatch):
+    # The handler subtracts REPLY_RESERVE_SECONDS from this budget. A DATA
+    # timeout at or below it leaves the deliver call nothing, which would defer
+    # every message rather than fail loudly at startup.
+    monkeypatch.setenv("PYMTA_TEST_INT", str(settings.REPLY_RESERVE_SECONDS))
+    with pytest.raises(ValueError, match="must be >="):
+        _env_int("PYMTA_TEST_INT", 300, minimum=settings.REPLY_RESERVE_SECONDS + 1)
+    assert settings.PYMTA_DATA_TIMEOUT > settings.REPLY_RESERVE_SECONDS
+
+
 def test_int_allows_zero_where_it_means_disabled(monkeypatch):
     monkeypatch.setenv("PYMTA_TEST_INT", "0")
     assert _env_int("PYMTA_TEST_INT", 7, minimum=0) == 0
@@ -65,17 +76,36 @@ def test_token_checks_the_default_too(monkeypatch):
 
 @pytest.mark.parametrize(
     "raw, expected",
-    [("1", True), ("true", True), ("YES", True), ("on", True),
-     ("0", False), ("false", False), ("no", False), ("OFF", False)],
+    [
+        ("1", True),
+        ("true", True),
+        ("YES", True),
+        ("on", True),
+        ("0", False),
+        ("false", False),
+        ("no", False),
+        ("OFF", False),
+    ],
 )
 def test_bool_spellings(monkeypatch, raw, expected):
     monkeypatch.setenv("PYMTA_TEST_BOOL", raw)
     assert _env_bool("PYMTA_TEST_BOOL", not expected) is expected
 
 
-def test_bool_unrecognised_value_keeps_the_default(monkeypatch):
+def test_bool_unrecognised_value_is_refused(monkeypatch):
+    # A typo must not read as its opposite: PYMTA_ENABLE_PROXY_PROTOCOL=Ture
+    # silently disabling PROXY protocol is a security-relevant misconfiguration.
     monkeypatch.setenv("PYMTA_TEST_BOOL", "maybe")
+    with pytest.raises(ValueError, match="not a recognised boolean"):
+        _env_bool("PYMTA_TEST_BOOL", True)
+    with pytest.raises(ValueError, match="not a recognised boolean"):
+        _env_bool("PYMTA_TEST_BOOL", False)
+
+
+def test_bool_blank_and_missing_take_the_default(monkeypatch):
+    monkeypatch.setenv("PYMTA_TEST_BOOL", "   ")
     assert _env_bool("PYMTA_TEST_BOOL", True) is True
+    monkeypatch.delenv("PYMTA_TEST_BOOL", raising=False)
     assert _env_bool("PYMTA_TEST_BOOL", False) is False
 
 
