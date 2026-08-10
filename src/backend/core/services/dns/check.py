@@ -21,43 +21,58 @@ SPF_CHECK_CACHE_TIMEOUT = 600  # 10 minutes
 # DKIM tags whose values are base64: internal whitespace is not significant.
 DKIM_BASE64_TAGS = frozenset({"p", "b", "bh"})
 DKIM_VERSION = "DKIM1"
+DKIM_DEFAULT_KEY_TYPE = "rsa"
+# RFC 6376 3.2 spells tag-name as ALPHA *ALNUMPUNC. Only the leading ALPHA is
+# enforced, matching dkimpy: vendor tags such as "x-foo" are used in the wild
+# and verify fine, so rejecting them would report working records as broken.
+DKIM_TAG_NAME_RE = re.compile(r"[a-zA-Z]")
 
 
 def normalize_txt_value(value: str) -> str:
     """
     Normalize a TXT record value.
+
+    Only a lone trailing semicolon is dropped, so that it does not defeat
+    exact comparison. A repeated one is kept: it makes a DKIM tag-list
+    invalid (RFC 6376 3.2) and must not normalize into a valid record.
     """
-    return re.sub(r"\;$", "", re.sub(r"\s*\;\s*", ";", value.strip('"')))
+    return re.sub(r"(?<!;);$", "", re.sub(r"\s*\;\s*", ";", value.strip('"')))
 
 
 def parse_dkim_tags(value: str) -> Optional[Dict[str, str]]:
     """Parse a DKIM key record into a dict of tag=value pairs.
 
     Per RFC 6376 3.2, tags are separated by semicolons and folding whitespace
-    is allowed on both sides of the "=". Every segment must be a named
+    is allowed on both sides of the "=". Every tag-spec must be a named
     tag=value pair, and a duplicate tag name invalidates the whole tag-list.
     Per 3.6.1, v= is optional and defaults to DKIM1, but MUST be first and
     equal to DKIM1 when present.
     Returns None if the record is not a valid DKIM key record.
     """
-    # A trailing semicolon is valid, hence dropping empty segments up front.
-    parts = [p.strip() for p in value.split(";") if p.strip()]
+    specs = value.split(";")
+    # A single trailing semicolon is allowed; any other empty tag-spec
+    # (leading, interior, or a second trailing one) makes the record invalid.
+    if len(specs) > 1 and not specs[-1].strip():
+        specs.pop()
     tags = {}
-    for part in parts:
+    for spec in specs:
+        part = spec.strip()
         if "=" not in part:
             return None
         key, val = part.split("=", 1)
         key = key.strip()
-        if not key or key in tags:
+        if not DKIM_TAG_NAME_RE.match(key) or key in tags:
             return None
         tags[key] = val.strip()
-    if not tags:
-        return None
     if "v" in tags:
-        if tags["v"] != DKIM_VERSION or parts[0].split("=", 1)[0].strip() != "v":
+        if tags["v"] != DKIM_VERSION or specs[0].split("=", 1)[0].strip() != "v":
             return None
     else:
         tags["v"] = DKIM_VERSION
+    # RFC 6376 3.6.1: k= is optional and defaults to rsa. Records omitting it
+    # are common, so applying the default keeps them from reading as a
+    # mismatch against the k= we publish.
+    tags.setdefault("k", DKIM_DEFAULT_KEY_TYPE)
     return tags
 
 

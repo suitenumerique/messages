@@ -843,6 +843,11 @@ class TestParseDkimTags:
         result = parse_dkim_tags("k=rsa; p=MIGfMA0")
         assert result == {"v": "DKIM1", "k": "rsa", "p": "MIGfMA0"}
 
+    def test_missing_k_defaults_to_rsa(self):
+        """RFC 6376 3.6.1: k= is optional in a key record and defaults to rsa."""
+        result = parse_dkim_tags("v=DKIM1; p=MIGfMA0")
+        assert result == {"v": "DKIM1", "k": "rsa", "p": "MIGfMA0"}
+
     def test_record_without_any_tag_returns_none(self):
         """A TXT record with no tag=value pair is not a DKIM record."""
         assert parse_dkim_tags("not a dkim record") is None
@@ -860,6 +865,33 @@ class TestParseDkimTags:
         """A trailing semicolon is explicitly allowed by RFC 6376 3.2."""
         result = parse_dkim_tags("v=DKIM1; k=rsa; p=MIGfMA0;")
         assert result == {"v": "DKIM1", "k": "rsa", "p": "MIGfMA0"}
+
+    def test_leading_semicolon_returns_none(self):
+        """Only a trailing semicolon is optional; a leading one is malformed."""
+        assert parse_dkim_tags("; v=DKIM1; k=rsa; p=MIGfMA0") is None
+
+    def test_interior_empty_tag_spec_returns_none(self):
+        """An empty tag-spec between two others is malformed."""
+        assert parse_dkim_tags("v=DKIM1; k=rsa;; p=MIGfMA0") is None
+
+    def test_second_trailing_semicolon_returns_none(self):
+        """RFC 6376 3.2 allows one optional trailing semicolon, not two."""
+        assert parse_dkim_tags("v=DKIM1; k=rsa; p=MIGfMA0;;") is None
+
+    def test_tag_name_not_starting_with_alpha_returns_none(self):
+        """RFC 6376 3.2: a tag name must start with an ALPHA."""
+        assert parse_dkim_tags("v=DKIM1; 2x=junk; k=rsa; p=MIGfMA0") is None
+        assert parse_dkim_tags("v=DKIM1; _x=junk; k=rsa; p=MIGfMA0") is None
+
+    def test_vendor_tag_name_is_accepted(self):
+        """Tags like "x-foo" are used in the wild and verify, so keep them."""
+        result = parse_dkim_tags("v=DKIM1; x-vendor=junk; k=rsa; p=MIGfMA0")
+        assert result == {
+            "v": "DKIM1",
+            "x-vendor": "junk",
+            "k": "rsa",
+            "p": "MIGfMA0",
+        }
 
     def test_duplicate_p_tag_returns_none(self):
         """RFC 6376 3.2: a duplicate tag name invalidates the whole tag-list."""
@@ -1055,6 +1087,51 @@ class TestDKIMSemanticComparison:
 
             result = check_single_record(maildomain, expected_record)
             assert result["status"] == "correct"
+
+    def test_dkim_without_k_tag_is_correct(self, maildomain_factory):
+        """A record omitting the optional k= tag signs as rsa and is valid."""
+        maildomain = maildomain_factory(name="example.com")
+        expected_record = {
+            "type": "TXT",
+            "target": "selector._domainkey",
+            "value": "v=DKIM1; k=rsa; p=MIGfMA0",
+        }
+
+        with patch("core.services.dns.check.dns.resolver.resolve") as mock_resolve:
+            mock_resolve.return_value = _txt_answer("v=DKIM1; p=MIGfMA0")
+
+            result = check_single_record(maildomain, expected_record)
+            assert result["status"] == "correct"
+
+    def test_dkim_missing_k_does_not_match_ed25519(self, maildomain_factory):
+        """The rsa default must not satisfy an expected ed25519 key."""
+        maildomain = maildomain_factory(name="example.com")
+        expected_record = {
+            "type": "TXT",
+            "target": "selector._domainkey",
+            "value": "v=DKIM1; k=ed25519; p=MIGfMA0",
+        }
+
+        with patch("core.services.dns.check.dns.resolver.resolve") as mock_resolve:
+            mock_resolve.return_value = _txt_answer("v=DKIM1; p=MIGfMA0")
+
+            result = check_single_record(maildomain, expected_record)
+            assert result["status"] == "incorrect"
+
+    def test_dkim_double_trailing_semicolon_is_incorrect(self, maildomain_factory):
+        """Normalization must not turn a repeated trailing ';' into a valid one."""
+        maildomain = maildomain_factory(name="example.com")
+        expected_record = {
+            "type": "TXT",
+            "target": "selector._domainkey",
+            "value": "v=DKIM1; k=rsa; p=MIGfMA0",
+        }
+
+        with patch("core.services.dns.check.dns.resolver.resolve") as mock_resolve:
+            mock_resolve.return_value = _txt_answer("v=DKIM1; k=rsa; p=MIGfMA0;;")
+
+            result = check_single_record(maildomain, expected_record)
+            assert result["status"] == "incorrect"
 
     def test_dkim_malformed_segment_is_incorrect(self, maildomain_factory):
         """A bare segment must not let a record through the semantic check.
