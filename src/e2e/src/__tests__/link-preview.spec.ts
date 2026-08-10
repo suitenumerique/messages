@@ -1,6 +1,6 @@
 import test, { expect, Page } from "@playwright/test";
 import { getMailboxEmail } from "../utils";
-import { signInKeycloakIfNeeded } from "../utils-test";
+import { openNewMessageWindow, signInKeycloakIfNeeded } from "../utils-test";
 
 /**
  * Link preview feature: URLs in a message body are rendered as links, a
@@ -12,17 +12,18 @@ import { signInKeycloakIfNeeded } from "../utils-test";
 // navigation is served locally through a Playwright route.
 const EXTERNAL_URL = "https://external-link.example/promo";
 
+/**
+ * Composing happens in a floating window: there is no dedicated page to
+ * navigate to, so every field is scoped to the window that just opened.
+ */
 const composeAndSendMessage = async (page: Page, to: string, subject: string, body: string) => {
-  await page.getByRole("link", { name: "New message" }).click();
-  await page.waitForURL("/mailbox/*/new");
-  await page.getByRole("heading", { name: "New message" }).waitFor({ state: "visible" });
+  const composeWindow = await openNewMessageWindow(page);
 
-  await page.getByRole("combobox", { name: "To" }).fill(to);
-  await page.getByRole("textbox", { name: "Subject" }).fill(subject);
-  await page.locator(".ProseMirror").pressSequentially(body);
-  await page.getByText("Draft saved").waitFor({ state: "visible" });
+  await composeWindow.getByRole("combobox", { name: "To" }).fill(to);
+  await composeWindow.getByRole("textbox", { name: "Subject" }).fill(subject);
+  await composeWindow.locator(".ProseMirror").pressSequentially(body);
 
-  await page.getByRole("button", { name: "Send" }).click();
+  await composeWindow.getByRole("button", { name: "Send" }).click();
   await page.getByText("Message sent successfully").waitFor({ state: "visible" });
 };
 

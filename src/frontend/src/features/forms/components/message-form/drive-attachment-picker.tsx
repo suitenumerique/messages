@@ -98,11 +98,11 @@ export const DriveAttachmentPicker = ({ onPick, ...buttonProps }: DriveAttachmen
         <Tooltip content={t('Add attachment from {{driveAppName}}', { driveAppName: config.DRIVE.app_name })}>
             <Button
                 aria-label={t('Add attachment from {{driveAppName}}')}
-                {...buttonProps}
                 variant="secondary"
+                disabled={isLoading || buttonProps.disabled}
+                {...buttonProps}
                 icon={isLoading ? <Spinner size="sm" /> : <DriveIcon />}
                 type="button"
-                disabled={isLoading || buttonProps.disabled}
                 aria-busy={isLoading}
                 onClick={handlePick}
                 className="drive-attachment-picker"

@@ -22,8 +22,6 @@ export const ComposeWindowForm = ({ descriptor, formRef }: ComposeWindowFormProp
         draftId: descriptor.draftId,
         parentMessageId: descriptor.parentMessageId,
         threadId: descriptor.threadId,
-        initialDraft: descriptor.initialDraft,
-        initialParent: descriptor.initialParent,
     });
 
     // The draft was deleted or made inaccessible elsewhere (other tab, other

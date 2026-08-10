@@ -122,6 +122,22 @@ export const MessageComposer = React.forwardRef<MessageComposerHandle, MessageCo
 
     const editorRef = useRef<BlockNoteEditor<MessageComposerBlockSchema, MessageComposerInlineContentSchema, MessageComposerStyleSchema>>(null);
 
+    // Raised around editor mutations we perform ourselves (signature
+    // insertion/removal, messageId patch, initial serialization): their
+    // onChange must not mark the form dirty, otherwise a merely-consulted
+    // draft looks user-edited — dirtyFields drives the autosave, the
+    // blur-save and the window recycling check. BlockNote dispatches
+    // onChange synchronously with the transaction, so a plain ref works.
+    const isProgrammaticChangeRef = useRef(false);
+    const withProgrammaticChange = (mutate: () => void) => {
+        isProgrammaticChangeRef.current = true;
+        try {
+            mutate();
+        } finally {
+            isProgrammaticChangeRef.current = false;
+        }
+    };
+
     const uploadFile = async (file: File, blockId?: string) => {
         const attachment = await uploadInlineImageRef.current(file);
         if (!attachment) {
@@ -174,6 +190,12 @@ export const MessageComposer = React.forwardRef<MessageComposerHandle, MessageCo
             : [{ type: "paragraph", content: "" }];
 
         if (!quotedMessage) return initialContent;
+        // A resumed draft already carries its quoted-message block in the
+        // saved body: appending again would stack one more quote on every
+        // editor mount (each compose window opening).
+        if (initialContent.some((block) => block.type === "quoted-message")) {
+            return initialContent;
+        }
         return initialContent.concat([{
             type: "quoted-message",
             content: undefined,
@@ -312,7 +334,7 @@ export const MessageComposer = React.forwardRef<MessageComposerHandle, MessageCo
 
     const handleChange = async (editor: BlockNoteEditor<MessageComposerBlockSchema, MessageComposerInlineContentSchema, MessageComposerStyleSchema>, submitNeeded: boolean = true) => {
         registerImageLoadListeners(editor);
-        form.setValue("messageDraftBody", JSON.stringify(editor.document), { shouldDirty: true });
+        form.setValue("messageDraftBody", JSON.stringify(editor.document), { shouldDirty: !isProgrammaticChangeRef.current });
 
         // Detect inline image blocks that were removed since the last change
         // and delete their corresponding attachment. If no attachment matches
@@ -335,8 +357,11 @@ export const MessageComposer = React.forwardRef<MessageComposerHandle, MessageCo
         const signatureId = (signatureBlock?.type === 'signature' ? signatureBlock.props.templateId : undefined);
         form.setValue("signatureId", signatureId);
 
-        // If signature block has changed, fire update immediately
-        if (submitNeeded && signatureId !== draft?.signature?.id) {
+        // If the user changed the signature block, fire update immediately.
+        // Programmatic applications (see withProgrammaticChange) are excluded:
+        // they must not persist anything on their own — the normalized body
+        // converges with the server on the next genuine user edit.
+        if (submitNeeded && !isProgrammaticChangeRef.current && signatureId !== draft?.signature?.id) {
             submitDraft?.();
         }
     }
@@ -347,7 +372,11 @@ export const MessageComposer = React.forwardRef<MessageComposerHandle, MessageCo
     useEffect(() => {
         editorRef.current = editor;
         if (!editor) return;
-        handleChange(editor, false);
+        // The initial serialization only mirrors the loaded content into the
+        // form; BlockNote normalization must not count as a user edit.
+        withProgrammaticChange(() => {
+            void handleChange(editor, false);
+        });
     }, [editor])
 
     useEffect(() => {
@@ -388,7 +417,7 @@ export const MessageComposer = React.forwardRef<MessageComposerHandle, MessageCo
             const shouldUpdateToNewDefault = !draft && signatureToUse && signatureToUse.id !== blockSignatureId;
 
             if (isSignatureStale || forcedSignatureMismatch || draftSignatureMismatch || shouldUpdateToNewDefault) {
-                editor.removeBlocks(["signature"]);
+                withProgrammaticChange(() => editor.removeBlocks(["signature"]));
             } else {
                 return;
             }
@@ -414,7 +443,7 @@ export const MessageComposer = React.forwardRef<MessageComposerHandle, MessageCo
             };
 
             // Put signature at the end of the document or before the quote block if it exists
-            MessageComposerHelper.insertSignatureBlock(editor, signatureBlock);
+            withProgrammaticChange(() => MessageComposerHelper.insertSignatureBlock(editor, signatureBlock));
 
             // Set the signatureId in the form
             form.setValue('signatureId', signatureToUse.id);
@@ -432,9 +461,9 @@ export const MessageComposer = React.forwardRef<MessageComposerHandle, MessageCo
         if (signatureBlock) {
             const blockProps = signatureBlock.props as BlockSignatureConfigProps;
             if (blockProps.messageId !== draft.id) {
-                editor.updateBlock('signature', {
+                withProgrammaticChange(() => editor.updateBlock('signature', {
                     props: { messageId: draft.id }
-                });
+                }));
             }
         }
     }, [editor, draft?.id]);

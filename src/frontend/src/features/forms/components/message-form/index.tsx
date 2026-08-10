@@ -31,7 +31,7 @@ import { DriveAttachmentPicker, DriveFile } from "./drive-attachment-picker";
 import { useAttachments } from "@/features/forms/hooks/use-attachments";
 import { MessageComposerHelper } from "@/features/utils/composer-helper";
 import { Icon } from "@/features/ui/components/icon";
-import { Send, Trash } from "@gouvfr-lasuite/ui-kit/icons";
+import { AttachFile, Send, Trash } from "@gouvfr-lasuite/ui-kit/icons";
 
 export type MessageFormMode = "new" | "reply" | "reply_all" | "forward";
 
@@ -111,7 +111,20 @@ export type MessageFormHandle = {
     saveDraftNow: () => Promise<string | undefined>;
     ensureDraftId: () => Promise<string | undefined>;
     hasUnsavedContent: () => boolean;
+    // Whether the user actually touched this form since it mounted: a draft
+    // save was attempted (saves only trigger on user-caused dirtiness) or
+    // dirty fields are pending. Programmatic changes (signature application,
+    // BlockNote normalization) never count — see withProgrammaticChange in
+    // the composer. Drives the draft-window recycling.
+    wasUserEdited: () => boolean;
     getDraftId: () => string | undefined;
+    // Submits the form exactly like its internal Send button (validation
+    // and permission checks included), for external send CTAs such as the
+    // mobile sheet header. `archive` overrides the preferred send mode for
+    // this send only.
+    requestSend: (options?: { archive?: boolean }) => void;
+    getPreferredSendMode: () => PreferSendMode;
+    setPreferredSendMode: (mode: PreferSendMode) => void;
 };
 
 const DRAFT_TOAST_ID = "MESSAGE_FORM_DRAFT_TOAST";
@@ -168,6 +181,10 @@ export const MessageForm = forwardRef<MessageFormHandle, MessageFormProps>(({
         return localStorage.getItem(PREFER_SEND_MODE_KEY) as PreferSendMode ?? PreferSendMode.SEND;
     });
     const saveDraftPromiseRef = useRef<Promise<string | undefined> | null>(null);
+    // Whether a draft save was attempted since mount. Set before the mutation
+    // fires (a failed save still means user content diverged from the server),
+    // it survives the form.reset that clears dirtyFields — see wasUserEdited.
+    const hasSavedSinceMountRef = useRef(false);
     // Blocks any non-forced draft save while a send is in flight: a draft PUT
     // racing the send rewrites the recipients of a message already being
     // delivered server-side. A ref (not state) so the guard is visible
@@ -282,6 +299,12 @@ export const MessageForm = forwardRef<MessageFormHandle, MessageFormProps>(({
             signatureId: draft?.signature?.id,
         }
     }, [draft, defaultSenderId, toRecipients, ccRecipients, parentMessage, mode])
+
+    // The template the user started from, frozen at mount. `formDefaultValues`
+    // tracks `draft`, so it absorbs every autosave: comparing against it made
+    // saved content read as "nothing was written", and closing a window then
+    // silently deleted a perfectly good draft.
+    const initialFormValuesRef = useRef(formDefaultValues);
 
     const form = useForm({
         resolver: zodResolver(messageFormSchema),
@@ -467,7 +490,15 @@ export const MessageForm = forwardRef<MessageFormHandle, MessageFormProps>(({
         await saveDraftPromiseRef.current;
         stopAutoSave();
 
-        const isSingleMessage = effectiveThread?.messages.length === 1;
+        // A detached compose window carries no thread context, but the draft
+        // itself knows which thread it created. Both are needed below, and
+        // reading them now matters: `setDraft(undefined)` clears the ref.
+        const threadId = effectiveThread?.id ?? draftRef.current?.thread_id ?? undefined;
+        // Without a thread we know the draft is the only message of the thread
+        // it created, so its deletion removes that thread from the list.
+        const isSingleMessage = effectiveThread
+            ? effectiveThread.messages.length === 1
+            : true;
         try {
             await deleteMessageMutation.mutateAsync({ id: messageId });
         } catch {
@@ -476,12 +507,13 @@ export const MessageForm = forwardRef<MessageFormHandle, MessageFormProps>(({
         }
         onClose?.();
         setDraft(undefined);
-        if (effectiveThread) {
-            removeMessages(effectiveThread.id, [messageId]);
+        if (threadId) {
+            removeMessages(threadId, [messageId]);
             // The thread may exit the active filter (e.g. drafts) once
             // its only draft is gone. Drop any pin so the next refetch
-            // is authoritative.
-            unpinThreads([effectiveThread.id]);
+            // is authoritative — draft creation pins it, and a pin left
+            // behind keeps the deleted draft listed whatever the refetch says.
+            unpinThreads([threadId]);
         }
         if (isSingleMessage) {
             invalidateThreadList();
@@ -526,7 +558,17 @@ export const MessageForm = forwardRef<MessageFormHandle, MessageFormProps>(({
         hasUnsavedContent: () =>
             hasUserDraftContent(form.getValues())
             || (!!draftRef.current && Object.keys(form.formState.dirtyFields).length > 0),
+        wasUserEdited: () =>
+            hasSavedSinceMountRef.current
+            || Object.keys(form.formState.dirtyFields).length > 0,
         getDraftId: () => draftRef.current?.id,
+        requestSend: (options) => {
+            void form.handleSubmit(() => handleSubmit({
+                archive: options?.archive ?? (preferredSendMode === PreferSendMode.SEND_AND_ARCHIVE),
+            }))();
+        },
+        getPreferredSendMode: () => preferredSendMode,
+        setPreferredSendMode,
     }));
 
     useEffect(() => {
@@ -598,20 +640,25 @@ export const MessageForm = forwardRef<MessageFormHandle, MessageFormProps>(({
      * Recipients alone do not trigger creation by design: only a subject, body
      * or attachment does.
      *
-     * Everything is measured against the initial template (`formDefaultValues`),
-     * not against zero, so reply/forward behave like a new message: the prefilled
+     * Everything is measured against the template the form started from, not
+     * against zero, so reply/forward behave like a new message: the prefilled
      * "Re:"/"Fwd:" subject and the attachments carried over from a forwarded
      * message do not, on their own, create a draft. The body is checked through
      * the editor blocks (not its raw length), and `hasUserBodyContent` ignores
      * the auto-inserted signature and quoted-message blocks — so a pristine
      * composer counts as empty in every mode.
+     *
+     * The reference is the mount-time snapshot, never the live
+     * `formDefaultValues`: the latter follows `draft`, so each autosave would
+     * move the goalposts and make written content look like an empty form.
      */
     const hasUserDraftContent = (data: MessageFormValues): boolean => {
+        const initialValues = initialFormValuesRef.current;
         const subjectChanged =
-            data.subject.trim() !== (formDefaultValues.subject ?? "").trim();
+            data.subject.trim() !== (initialValues.subject ?? "").trim();
         const initialAttachmentCount =
-            (formDefaultValues.attachments?.length ?? 0) +
-            (formDefaultValues.driveAttachments?.length ?? 0);
+            (initialValues.attachments?.length ?? 0) +
+            (initialValues.driveAttachments?.length ?? 0);
         const currentAttachmentCount =
             (data.attachments?.length ?? 0) + (data.driveAttachments?.length ?? 0);
         return (
@@ -636,9 +683,8 @@ export const MessageForm = forwardRef<MessageFormHandle, MessageFormProps>(({
         // Once a draft exists, keep the reactive behavior (save on any dirty
         // field, plus the 30s timer). Before a draft exists, only create one
         // when the user has actually entered content: relying on `dirtyFields`
-        // here is both unreliable (it lags behind the synchronous form values,
-        // hence the "save only on the second blur" bug) and too eager (the
-        // composer marks `messageDraftBody` dirty on mount with an empty doc).
+        // here is unreliable — it lags behind the synchronous form values,
+        // hence the "save only on the second blur" bug.
         const saveDraftNeeded = force || (
             draftRef.current
                 ? Object.keys(form.formState.dirtyFields).length > 0
@@ -648,6 +694,7 @@ export const MessageForm = forwardRef<MessageFormHandle, MessageFormProps>(({
         if (!saveDraftNeeded) {
             return draft?.id;
         }
+        hasSavedSinceMountRef.current = true;
 
         const payload = {
             to: data.to,
@@ -846,7 +893,10 @@ export const MessageForm = forwardRef<MessageFormHandle, MessageFormProps>(({
 
     return (
         <FormProvider {...form}>
-            <form {...(compact ? formDropzone.getRootProps(formElementProps) : formElementProps)}>
+            {/* The dropzone props are spread first: with `noKeyboard`,
+                getRootProps nulls out any onBlur/onKeyDown handed to it,
+                which would silently kill the blur-triggered draft save. */}
+            <form {...(compact ? { ...formDropzone.getRootProps(), ...formElementProps } : formElementProps)}>
                 {compact && (
                     <>
                         <DropZone isHidden={!formDropzone.isDragActive} />
@@ -1034,26 +1084,12 @@ export const MessageForm = forwardRef<MessageFormHandle, MessageFormProps>(({
                         {preferredSendMode === PreferSendMode.SEND_AND_ARCHIVE && t("Send and archive")}
                         {preferredSendMode === PreferSendMode.SEND && t("Send")}
                     </DropdownButton>
-                    {compact && (
-                        <>
-                            <Tooltip content={t("Add attachments")}>
-                                <Button
-                                    type="button"
-                                    variant="tertiary"
-                                    onClick={formDropzone.open}
-                                    disabled={!canWriteMessages}
-                                    aria-label={t("Add attachments")}
-                                    icon={<Icon name="attach_file" type={IconType.OUTLINED} />}
-                                />
-                            </Tooltip>
-                            <DriveAttachmentPicker onPick={attachmentHook.addDriveFiles} disabled={!canWriteMessages} />
-                        </>
-                    )}
                     {!draft && onClose && (
                         <Tooltip content={t("Delete")}>
                             <Button
                                 type="button"
                                 variant="tertiary"
+                                className="form-footer__delete"
                                 onClick={onClose}
                                 aria-label={t("Delete")}
                                 icon={<Icon icon={Trash} />}
@@ -1066,6 +1102,7 @@ export const MessageForm = forwardRef<MessageFormHandle, MessageFormProps>(({
                                 <Button
                                     type="button"
                                     variant="tertiary"
+                                    className="form-footer__delete"
                                     onClick={() => handleDeleteMessage(draft.id)}
                                     aria-label={t("Delete draft")}
                                     icon={<Icon icon={Trash} />}
@@ -1073,6 +1110,21 @@ export const MessageForm = forwardRef<MessageFormHandle, MessageFormProps>(({
                             </Tooltip>
                         )
                     }
+                    {compact && (
+                        <>
+                            <Tooltip content={t("Add attachments")} placement="top">
+                                <Button
+                                    type="button"
+                                    variant="tertiary"
+                                    onClick={formDropzone.open}
+                                    disabled={!canWriteMessages}
+                                    aria-label={t("Add attachments")}
+                                    icon={<Icon icon={AttachFile} />}
+                                />
+                            </Tooltip>
+                            <DriveAttachmentPicker onPick={attachmentHook.addDriveFiles} disabled={!canWriteMessages} variant="tertiary" />
+                        </>
+                    )}
                     {compact && (
                         <div className="form-footer__save-time">
                             {

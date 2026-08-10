@@ -24,11 +24,21 @@ export const inboxFolderLink = (page: Page): Locator =>
  * page), each rendered as a region labelled by its title.
  */
 export const openNewMessageWindow = async (page: Page): Promise<Locator> => {
-  await page.getByRole("button", { name: "New message" }).click();
-  await expect(page.getByRole("region", { name: "New message" })).toBeVisible();
-  // Return a class-based locator: the window's accessible name follows the
-  // subject field, so a name-based locator would break after typing one.
-  return page.locator(".compose-window").last();
+  const windows = page.locator(".compose-window");
+  const openedBefore = await windows.count();
+  // Scoped to the sidebar: an untitled window's own title button is also named
+  // "New message", so a page-wide locator turns ambiguous (strict mode
+  // violation) as soon as one such window is open.
+  await page
+    .getByTestId("panel-main-left")
+    .getByRole("button", { name: "New message" })
+    .click();
+  // Gate on the count rather than on a name: the window's accessible name
+  // follows the subject field, so it stops being "New message" once typed.
+  await expect(windows).toHaveCount(openedBefore + 1);
+  const opened = windows.last();
+  await expect(opened).toBeVisible();
+  return opened;
 };
 
 /**

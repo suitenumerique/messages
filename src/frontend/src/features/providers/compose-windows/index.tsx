@@ -1,18 +1,19 @@
-import { createContext, PropsWithChildren, useCallback, useContext, useEffect, useMemo, useState } from "react";
+import { createContext, PropsWithChildren, useCallback, useContext, useEffect, useMemo, useRef, useState } from "react";
 import { useTranslation } from "react-i18next";
 import { useQueryClient } from "@tanstack/react-query";
 import { addToast, ToasterItem } from "@/features/ui/components/toaster";
 import { getMailboxThreadsListQueryKeyPrefix } from "@/features/providers/mailbox-cache";
 import { getThreadsStatsQueryKey } from "@/features/providers/mailbox";
+import { randomUUID } from "@/features/utils/uuid";
 import { subscribeToComposeBroadcast } from "./broadcast";
-import { focusWindowReducer, openWindowReducer, setWindowStateReducer } from "./core";
+import { focusWindowReducer, minimizeWindowReducer, openWindowReducer, restoreWindowReducer, setPresentationReducer } from "./core";
 import { loadPersistedWindows, persistWindows } from "./persistence";
-import { ComposeWindowDescriptor, ComposeWindowDisplayState, OpenComposeWindowInput } from "./types";
-
-export { MAX_VISIBLE_WINDOWS, MAX_WINDOWS } from "./core";
+import { ComposeWindowDescriptor, ComposeWindowPresentation, OpenComposeWindowInput } from "./types";
 
 type ComposeWindowsContextType = {
     windows: readonly ComposeWindowDescriptor[];
+    /** The single un-minimized window, if any. */
+    activeWindow: ComposeWindowDescriptor | undefined;
     /**
      * Opens a compose window. Deduplicates on draftId: if the draft is already
      * open in a window, that window is focused instead. Returns the windowId,
@@ -21,11 +22,34 @@ type ComposeWindowsContextType = {
     openComposeWindow: (input: OpenComposeWindowInput) => string | null;
     /** Removes the window from the store. No confirmation logic here. */
     closeWindow: (windowId: string) => void;
-    setWindowState: (windowId: string, state: ComposeWindowDisplayState) => void;
+    /** Collapses the window into a dock tab. */
+    minimizeWindow: (windowId: string) => void;
+    /** Expands the window with its remembered presentation, minimizing the others. */
+    restoreWindow: (windowId: string) => void;
+    /** Changes how the expanded window renders; expands it first if needed. */
+    setPresentation: (windowId: string, presentation: ComposeWindowPresentation) => void;
     updateWindow: (windowId: string, patch: Partial<Pick<ComposeWindowDescriptor, "draftId" | "title">>) => void;
     getWindowByDraftId: (draftId: string) => ComposeWindowDescriptor | undefined;
-    /** Restores the window if minimized and asks it to grab focus. */
-    focusWindow: (windowId: string) => void;
+    /** Restores the window if minimized and asks it to grab focus.
+     * `moveToEnd` relocates it to the right end of the dock (used when it
+     * comes out of the "+X" overflow, which had no visible slot). */
+    focusWindow: (windowId: string, options?: { moveToEnd?: boolean }) => void;
+    /**
+     * Registers the window's form-bound behaviors (close flow, dirtiness),
+     * so surfaces outside the window — the mobile overview, the recycling
+     * check below — can reach them. Returns the unregister cleanup.
+     */
+    registerWindowHandle: (windowId: string, handle: ComposeWindowHandle) => () => void;
+    /** Runs the window's close flow (save/confirm/discard). */
+    requestCloseWindow: (windowId: string) => void;
+};
+
+export type ComposeWindowHandle = {
+    requestClose: () => void | Promise<void>;
+    /** Whether the user touched the form since the window opened: a draft
+     * save happened (saves only trigger on user-caused dirtiness) or dirty
+     * fields are pending. Automatic signature application does not count. */
+    wasUserEdited: () => boolean;
 };
 
 const ComposeWindowsContext = createContext<ComposeWindowsContextType | undefined>(undefined);
@@ -57,25 +81,55 @@ export const ComposeWindowsProvider = ({ children }: PropsWithChildren) => {
         }
     }), [queryClient]);
 
-    const focusWindow = useCallback((windowId: string) => {
-        setWindows((prev) => focusWindowReducer(prev, windowId));
+    const focusWindow = useCallback((windowId: string, options?: { moveToEnd?: boolean }) => {
+        setWindows((prev) => focusWindowReducer(prev, windowId, options));
+    }, []);
+
+    // Form-bound behaviors keyed by windowId; a ref because handles must be
+    // readable synchronously from openComposeWindow without re-rendering.
+    const windowHandlesRef = useRef(new Map<string, ComposeWindowHandle>());
+    const registerWindowHandle = useCallback((windowId: string, handle: ComposeWindowHandle) => {
+        windowHandlesRef.current.set(windowId, handle);
+        return () => {
+            windowHandlesRef.current.delete(windowId);
+        };
+    }, []);
+    const requestCloseWindow = useCallback((windowId: string) => {
+        void windowHandlesRef.current.get(windowId)?.requestClose();
     }, []);
 
     const openComposeWindow = useCallback((input: OpenComposeWindowInput): string | null => {
         const descriptor: ComposeWindowDescriptor = {
-            windowId: crypto.randomUUID(),
+            windowId: randomUUID(),
             mailboxId: input.mailboxId,
             mode: input.mode ?? "new",
-            state: "open",
+            presentation: "docked",
+            isMinimized: false,
             draftId: input.draftId,
             threadId: input.threadId,
             parentMessageId: input.parentMessageId,
             openedOnExistingDraft: !!input.draftId,
-            focusTick: 0,
-            initialDraft: input.initialDraft,
-            initialParent: input.initialParent,
+            // Ask the window to grab focus (the composer) as soon as it can.
+            focusTick: 1,
         };
-        const { windows: next, windowId, outcome } = openWindowReducer(windows, descriptor);
+        // Recycle a merely-consulted draft window: opening another draft
+        // while the active window shows an existing draft the user never
+        // touched replaces it instead of stacking one more tab. Pristine by
+        // definition, it closes without any flush.
+        let current = windows;
+        if (input.draftId) {
+            const active = windows.find((window) => !window.isMinimized);
+            if (
+                active
+                && active.openedOnExistingDraft
+                && active.draftId
+                && active.draftId !== input.draftId
+                && !(windowHandlesRef.current.get(active.windowId)?.wasUserEdited() ?? true)
+            ) {
+                current = windows.filter((window) => window.windowId !== active.windowId);
+            }
+        }
+        const { windows: next, windowId, outcome } = openWindowReducer(current, descriptor);
         if (outcome === "cap-reached") {
             addToast(
                 <ToasterItem type="info">
@@ -91,8 +145,16 @@ export const ComposeWindowsProvider = ({ children }: PropsWithChildren) => {
         setWindows((prev) => prev.filter((window) => window.windowId !== windowId));
     }, []);
 
-    const setWindowState = useCallback((windowId: string, state: ComposeWindowDisplayState) => {
-        setWindows((prev) => setWindowStateReducer(prev, windowId, state));
+    const minimizeWindow = useCallback((windowId: string) => {
+        setWindows((prev) => minimizeWindowReducer(prev, windowId));
+    }, []);
+
+    const restoreWindow = useCallback((windowId: string) => {
+        setWindows((prev) => restoreWindowReducer(prev, windowId));
+    }, []);
+
+    const setPresentation = useCallback((windowId: string, presentation: ComposeWindowPresentation) => {
+        setWindows((prev) => setPresentationReducer(prev, windowId, presentation));
     }, []);
 
     const updateWindow = useCallback((windowId: string, patch: Partial<Pick<ComposeWindowDescriptor, "draftId" | "title">>) => {
@@ -114,15 +176,22 @@ export const ComposeWindowsProvider = ({ children }: PropsWithChildren) => {
         [windows]
     );
 
+    const activeWindow = useMemo(() => windows.find((window) => !window.isMinimized), [windows]);
+
     const value = useMemo(() => ({
         windows,
+        activeWindow,
         openComposeWindow,
         closeWindow,
-        setWindowState,
+        minimizeWindow,
+        restoreWindow,
+        setPresentation,
         updateWindow,
         getWindowByDraftId,
         focusWindow,
-    }), [windows, openComposeWindow, closeWindow, setWindowState, updateWindow, getWindowByDraftId, focusWindow]);
+        registerWindowHandle,
+        requestCloseWindow,
+    }), [windows, activeWindow, openComposeWindow, closeWindow, minimizeWindow, restoreWindow, setPresentation, updateWindow, getWindowByDraftId, focusWindow, registerWindowHandle, requestCloseWindow]);
 
     return (
         <ComposeWindowsContext.Provider value={value}>
@@ -138,10 +207,3 @@ export const useComposeWindows = () => {
     }
     return context;
 };
-
-/**
- * Same as useComposeWindows but usable outside the provider (e.g. surfaces
- * shared with the standalone pop-out page): returns undefined instead of
- * throwing.
- */
-export const useOptionalComposeWindows = () => useContext(ComposeWindowsContext);

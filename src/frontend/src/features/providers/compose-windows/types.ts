@@ -1,13 +1,22 @@
-import { Message } from "@/features/api/gen";
 import { MessageFormMode } from "@/features/forms/components/message-form";
 
-export type ComposeWindowDisplayState = "open" | "minimized" | "expanded";
+/**
+ * How the expanded window renders on desktop/tablet: docked to the bottom
+ * right, or floating as a centered overlay. Mobile ignores it (the expanded
+ * window is always a full-screen sheet).
+ */
+export type ComposeWindowPresentation = "docked" | "floating";
 
 export type ComposeWindowDescriptor = {
     windowId: string;
     mailboxId: string;
     mode: MessageFormMode;
-    state: ComposeWindowDisplayState;
+    presentation: ComposeWindowPresentation;
+    /**
+     * A minimized window collapses into a dock tab; restoring it reapplies
+     * its presentation. At most one window is un-minimized at a time.
+     */
+    isMinimized: boolean;
     /** Set once the draft is materialized server-side. */
     draftId?: string;
     threadId?: string;
@@ -22,9 +31,6 @@ export type ComposeWindowDescriptor = {
     openedOnExistingDraft: boolean;
     /** Incremented by focusWindow so the window can grab focus imperatively. */
     focusTick: number;
-    /** Transient snapshots to skip the initial fetches. Never persisted. */
-    initialDraft?: Message;
-    initialParent?: Message;
 };
 
 export type OpenComposeWindowInput = {
@@ -33,6 +39,4 @@ export type OpenComposeWindowInput = {
     draftId?: string;
     threadId?: string;
     parentMessageId?: string;
-    initialDraft?: Message;
-    initialParent?: Message;
 };

@@ -9,8 +9,9 @@ import { useAttachmentPreview } from '@/features/providers/attachment-preview';
 import { useConfig } from '@/features/providers/config';
 import { DropZone } from './dropzone';
 import { DriveAttachmentPicker, DriveFile } from './drive-attachment-picker';
-import { Icon } from '@gouvfr-lasuite/ui-kit';
 import clsx from 'clsx';
+import { AttachFile } from '@gouvfr-lasuite/ui-kit/icons';
+import { Icon } from '@/features/ui/components/icon';
 
 type AttachmentBucketProps = {
     attachments: (DriveFile | Attachment)[];
@@ -162,7 +163,7 @@ export const AttachmentUploader = ({
             <div className="attachment-uploader__input">
                 <Button
                     variant="secondary"
-                    icon={<Icon name="attach_file" />}
+                    icon={<Icon icon={AttachFile} />}
                     type="button"
                     disabled={disabled}
                 >

@@ -8,9 +8,6 @@ type UseComposeDraftDataInput = {
     draftId?: string;
     parentMessageId?: string;
     threadId?: string;
-    /** Transient snapshots provided at open time to skip the initial fetches. */
-    initialDraft?: Message;
-    initialParent?: Message;
 };
 
 type UseComposeDraftDataResult = {
@@ -34,8 +31,6 @@ export const useComposeDraftData = ({
     draftId,
     parentMessageId,
     threadId,
-    initialDraft,
-    initialParent,
 }: UseComposeDraftDataInput): UseComposeDraftDataResult => {
     const { mailboxes } = useMailboxContext();
     const mailbox = mailboxes?.find((entry) => entry.id === mailboxId);
@@ -46,24 +41,30 @@ export const useComposeDraftData = ({
 
     const draftQuery = useMessagesRetrieve(initialDraftId ?? "", {
         query: {
-            enabled: !!initialDraftId && !initialDraft,
+            enabled: !!initialDraftId,
             // A refetch must never reset the form: the draft prop is only the
             // initial state of the form, so keep the cache entry untouched.
             staleTime: Infinity,
+            // Which is exactly why the entry must not outlive the surface that
+            // owns it: the draft can be edited elsewhere meanwhile (pop-out
+            // tab, mobile, another client), and a surviving entry would be
+            // served synchronously on the next mount — seeding the form with
+            // the stale body before any refetch could correct it.
+            gcTime: 0,
             meta: { noGlobalError: true },
         },
     });
-    const draft = initialDraft ?? draftQuery.data?.data;
+    const draft = draftQuery.data?.data;
 
     const effectiveParentId = parentMessageId ?? draft?.parent_id ?? undefined;
     const parentQuery = useMessagesRetrieve(effectiveParentId ?? "", {
         query: {
-            enabled: !!effectiveParentId && !initialParent,
+            enabled: !!effectiveParentId,
             staleTime: Infinity,
             meta: { noGlobalError: true },
         },
     });
-    const parentMessage = initialParent ?? parentQuery.data?.data;
+    const parentMessage = parentQuery.data?.data;
 
     // Replies need the thread to resolve edit permissions; a thread-less
     // "new" draft (no parent) does not.

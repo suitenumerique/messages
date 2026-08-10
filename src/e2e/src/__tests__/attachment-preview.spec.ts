@@ -16,6 +16,17 @@ import { FIXTURES_PATH } from "../constants";
  *    sidebar; it must be opened before its actions can be clicked.
  * Everything inside ``.attachment-preview-sidebar*`` is our own component.
  */
+/** Number of attachments a draft PUT body declares, 0 for anything unparsable. */
+const declaredAttachmentCount = (postData: string | null): number => {
+  if (!postData) return 0;
+  try {
+    const { attachments } = JSON.parse(postData) as { attachments?: unknown };
+    return Array.isArray(attachments) ? attachments.length : 0;
+  } catch {
+    return 0;
+  }
+};
+
 test.describe("Attachment preview", () => {
   test.beforeEach(async ({ page, browserName }) => {
     await signInKeycloakIfNeeded({ page, username: `user.e2e.${browserName}` });
@@ -38,6 +49,21 @@ test.describe("Attachment preview", () => {
     await page.getByRole("textbox", { name: "Subject" }).fill(subject);
     await page.locator(".ProseMirror").pressSequentially("Please find the files attached.");
 
+    // What actually makes the files survive the send is the draft PUT carrying
+    // them: /send/ posts the body only, the backend reads everything else from
+    // the stored draft. That PUT comes either from the debounced (1s) autosave
+    // or from the flush performed on send, so arm the wait up front and settle
+    // it after the click instead of betting on which one wins. Gating on the
+    // "Draft saved" toast would prove nothing — it only fires on draft
+    // *creation*, the later saves are silent by design.
+    const draftSavedWithAttachments = page.waitForResponse(
+      (response) =>
+        response.request().method() === "PUT" &&
+        /\/api\/v1\.0\/draft\/[^/]+\/$/.test(response.url()) &&
+        response.ok() &&
+        declaredAttachmentCount(response.request().postData()) === fixtures.length,
+    );
+
     const fileChooserPromise = page.waitForEvent("filechooser");
     await page.getByRole("button", { name: "Add attachments" }).click();
     const fileChooser = await fileChooserPromise;
@@ -45,15 +71,20 @@ test.describe("Attachment preview", () => {
 
     // Wait for the uploads to *complete* before sending. An in-progress upload
     // already renders the file name (so getByText can't gate this), but only a
-    // finished attachment exposes a "Preview <name>" trigger. Sending too early
-    // drops the not-yet-persisted blobs and the message arrives with no PJ.
-    await expect(page.getByRole("button", { name: /^Preview / })).toHaveCount(
-      fixtures.length,
-      { timeout: 15000 },
-    );
+    // finished attachment exposes a "Preview <name>" trigger.
+    //
+    // Match each file by its exact name: a loose /^Preview / also matches the
+    // compose window's title button, whose accessible name is the subject —
+    // which starts with "Preview" here. That made the gate pass instantly and
+    // let the send fire mid-upload, before the blob was attached to the draft.
+    for (const fixture of fixtures) {
+      await expect(
+        page.getByRole("button", { name: `Preview ${fixture}`, exact: true }),
+      ).toBeVisible({ timeout: 15000 });
+    }
 
-    await page.getByText("Draft saved").waitFor({ state: "visible" });
     await page.getByRole("button", { name: "Send" }).click();
+    await draftSavedWithAttachments;
     await page.getByText("Message sent successfully").waitFor({ state: "visible" });
 
     await page.getByRole("link", { name: "Sent" }).click();

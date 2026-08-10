@@ -7,6 +7,11 @@
   // so the toolbar hugs the screen edge (still clearing the home indicator).
   padding-bottom: calc(var(--c--globals--spacings--3xs) + var(--safe-area-inset-bottom));
 
+  // Above the compose stack the safe area is the stack's business.
+  :root.has-compose-stack & {
+    padding-bottom: var(--c--globals--spacings--3xs);
+  }
+
   // Single shared box for the management actions: the buttons inside stay
   // flat, the group carries the floating-control surface.
   &__group {
@@ -34,7 +39,7 @@
   // Icon-only CTA carrying its own brand background: only the floating
   // shape applies.
   &__reply.c__button {
-    @include control-shape;
+    @include control-surface;
   }
 }
 

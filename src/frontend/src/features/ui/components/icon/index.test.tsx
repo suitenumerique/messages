@@ -160,7 +160,7 @@ describe("Icon", () => {
             />
         );
         const html = renderToStaticMarkup(<Icon icon={UIKitSvgIcon} />);
-        expect(html).toContain('class="messages-icon--svg"');
+        expect(html).toContain('class="messages-icon messages-icon--svg"');
         expect(html).toContain('width="1em"');
         expect(html).toContain('height="1em"');
     });

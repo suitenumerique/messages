@@ -1,3 +1,5 @@
+@use "../../../../styles/utils" as *;
+
 .drawer {
   // Clips the sheet while it slides in and out. clip-path rather than
   // overflow: hidden so the sheet's upward shadow survives (the negative
@@ -36,11 +38,9 @@
 }
 
 .drawer__grab-handle {
-  width: 48px;
-  height: 5px;
-  border-radius: 50vw;
+  @include grab-handle;
+
   margin: var(--c--globals--spacings--xs) auto 0;
-  background-color: var(--c--contextuals--border--surface--primary);
 }
 
 .drawer__title-row {

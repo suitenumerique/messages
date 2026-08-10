@@ -37,23 +37,24 @@ export const CloseConfirmModal = ({ isOpen, onSave, onDelete, onCancel }: CloseC
             <div className="compose-window-close-confirm">
                 <p>{t("You can save it to finish it later, or delete it permanently.")}</p>
                 <footer className="compose-window-close-confirm__actions">
-                    <Button type="button" variant="tertiary" onClick={onCancel} disabled={!!pendingAction}>
-                        {t("Cancel")}
-                    </Button>
                     <Button
                         type="button"
+                        color="error"
                         variant="secondary"
                         onClick={runAction("delete", onDelete)}
                         disabled={!!pendingAction}
                         icon={pendingAction === "delete" ? <Spinner size="sm" /> : undefined}
+                        fullWidth
                     >
                         {t("Delete draft")}
                     </Button>
                     <Button
                         type="button"
+                        variant="secondary"
                         onClick={runAction("save", onSave)}
                         disabled={!!pendingAction}
                         icon={pendingAction === "save" ? <Spinner size="sm" /> : undefined}
+                        fullWidth
                     >
                         {t("Save and close")}
                     </Button>

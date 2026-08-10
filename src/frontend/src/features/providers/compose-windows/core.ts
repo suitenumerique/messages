@@ -1,38 +1,76 @@
-import { ComposeWindowDescriptor, ComposeWindowDisplayState } from "./types";
+import { ComposeWindowDescriptor, ComposeWindowPresentation } from "./types";
 
-/**
- * How many windows can be visible (open or expanded) at once. Opening more
- * minimizes the oldest visible one, like Gmail does when space runs out.
- */
-export const MAX_VISIBLE_WINDOWS = 3;
-/** Hard cap on simultaneously tracked windows (visible + minimized). */
+/** Hard cap on simultaneously tracked windows (expanded + minimized). */
 export const MAX_WINDOWS = 8;
 
-const isVisible = (window: ComposeWindowDescriptor) => window.state !== "minimized";
-
-/** Minimizes the oldest visible windows until at most `max` remain visible. */
-export const enforceVisibleCap = (windows: ComposeWindowDescriptor[], max = MAX_VISIBLE_WINDOWS): ComposeWindowDescriptor[] => {
-    let excess = windows.filter(isVisible).length - max;
-    if (excess <= 0) return windows;
-    return windows.map((window) => {
-        if (excess > 0 && isVisible(window)) {
-            excess -= 1;
-            return { ...window, state: "minimized" as const };
-        }
-        return window;
-    });
+/**
+ * At most one window is expanded (un-minimized) at a time; the array is
+ * MRU-ordered, so when several claim to be expanded the last one wins.
+ * Used to sanitize restored payloads.
+ */
+export const enforceSingleExpanded = (windows: ComposeWindowDescriptor[]): ComposeWindowDescriptor[] => {
+    if (windows.filter((window) => !window.isMinimized).length <= 1) return windows;
+    const lastExpanded = windows.findLast((window) => !window.isMinimized);
+    return windows.map((window) =>
+        window.isMinimized || window.windowId === lastExpanded?.windowId
+            ? window
+            : { ...window, isMinimized: true }
+    );
 };
 
-/** Restores the window if minimized and bumps its focus counter. */
-export const focusWindowReducer = (windows: ComposeWindowDescriptor[], windowId: string): ComposeWindowDescriptor[] =>
-    windows.map((window) =>
+export const minimizeWindowReducer = (windows: ComposeWindowDescriptor[], windowId: string): ComposeWindowDescriptor[] => {
+    const target = windows.find((window) => window.windowId === windowId);
+    if (!target || target.isMinimized) return windows;
+    return windows.map((window) =>
+        window.windowId === windowId ? { ...window, isMinimized: true } : window
+    );
+};
+
+/**
+ * Expands the window with its remembered presentation and minimizes the
+ * others, all in place: a tab opens right where its collapsed self sat.
+ * `moveToEnd` relocates it to the end of the list first — for windows
+ * emerging from the "+X" overflow, which had no visible slot to keep.
+ */
+export const restoreWindowReducer = (
+    windows: ComposeWindowDescriptor[],
+    windowId: string,
+    options?: { moveToEnd?: boolean },
+): ComposeWindowDescriptor[] => {
+    const target = windows.find((window) => window.windowId === windowId);
+    if (!target) return windows;
+    const restored = { ...target, isMinimized: false };
+    const others = windows
+        .filter((window) => window.windowId !== windowId)
+        .map((window) => (window.isMinimized ? window : { ...window, isMinimized: true }));
+    if (options?.moveToEnd) return [...others, restored];
+    return windows.map((window) =>
         window.windowId === windowId
-            ? {
-                ...window,
-                state: window.state === "minimized" ? "open" : window.state,
-                focusTick: window.focusTick + 1,
-            }
+            ? restored
+            : (window.isMinimized ? window : { ...window, isMinimized: true })
+    );
+};
+
+/** Restores the window and bumps its focus counter. */
+export const focusWindowReducer = (
+    windows: ComposeWindowDescriptor[],
+    windowId: string,
+    options?: { moveToEnd?: boolean },
+): ComposeWindowDescriptor[] =>
+    restoreWindowReducer(windows, windowId, options).map((window) =>
+        window.windowId === windowId
+            ? { ...window, focusTick: window.focusTick + 1 }
             : window
+    );
+
+/** Changes how the expanded window renders; expands it first if needed. */
+export const setPresentationReducer = (
+    windows: ComposeWindowDescriptor[],
+    windowId: string,
+    presentation: ComposeWindowPresentation,
+): ComposeWindowDescriptor[] =>
+    restoreWindowReducer(windows, windowId).map((window) =>
+        window.windowId === windowId ? { ...window, presentation } : window
     );
 
 export type OpenWindowResult = {
@@ -56,33 +94,35 @@ export const openWindowReducer = (windows: ComposeWindowDescriptor[], descriptor
             };
         }
     }
+    // Asking again for a composition that is already around should focus it,
+    // not stack a second window: a blank untitled "new" window, or a not yet
+    // materialized reply/forward on the same parent message (whose subject
+    // is auto-filled, hence no title condition there).
+    if (!descriptor.draftId) {
+        const duplicate = windows.find((window) =>
+            !window.draftId
+            && window.mode === descriptor.mode
+            && window.parentMessageId === descriptor.parentMessageId
+            && (descriptor.mode !== "new" || !window.title?.trim())
+        );
+        if (duplicate) {
+            return {
+                windows: focusWindowReducer(windows, duplicate.windowId),
+                windowId: duplicate.windowId,
+                outcome: "focused-existing",
+            };
+        }
+    }
     if (windows.length >= MAX_WINDOWS) {
         return { windows, windowId: null, outcome: "cap-reached" };
     }
-    // Minimize oldest visible windows first so the new one stays open.
+    // Minimize the current expanded window so the new one takes its place.
+    const minimized = windows.map((window) =>
+        window.isMinimized ? window : { ...window, isMinimized: true }
+    );
     return {
-        windows: [...enforceVisibleCap(windows, MAX_VISIBLE_WINDOWS - 1), descriptor],
+        windows: [...minimized, descriptor],
         windowId: descriptor.windowId,
         outcome: "opened",
     };
-};
-
-export const setWindowStateReducer = (
-    windows: ComposeWindowDescriptor[],
-    windowId: string,
-    state: ComposeWindowDisplayState,
-): ComposeWindowDescriptor[] => {
-    let next = windows.map((window) =>
-        window.windowId === windowId ? { ...window, state } : window
-    );
-    // The expanded window is a centered overlay: only one at a time.
-    if (state === "expanded") {
-        next = next.map((window) =>
-            window.windowId !== windowId && window.state === "expanded"
-                ? { ...window, state: "open" as const }
-                : window
-        );
-    }
-    if (state !== "minimized") next = enforceVisibleCap(next);
-    return next;
 };

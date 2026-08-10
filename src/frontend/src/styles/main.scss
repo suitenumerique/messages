@@ -52,7 +52,7 @@
 @use "./../features/layouts/components/thread-view/components/thread-message";
 @use "./../features/layouts/components/thread-view/components/thread-summary";
 @use "./../features/layouts/components/thread-view/components/message-reply-form";
-@use "./../features/layouts/components/thread-view/components/compose-draft-banner";
+@use "./../features/layouts/components/thread-view/components/compose-draft-placeholder";
 @use "./../features/layouts/components/thread-view/components/thread-attachment-list";
 @use "./../features/layouts/components/thread-view/components/attachment-preview-modal";
 @use "./../features/layouts/components/thread-view/components/calendar-invite";
@@ -63,6 +63,8 @@
 @use "./../features/forms/components/message-form";
 @use "./../features/layouts/components/compose/compose-window";
 @use "./../features/layouts/components/compose/compose-windows-layer";
+@use "./../features/layouts/components/compose/compose-mobile-stack";
+@use "./../features/layouts/components/compose/compose-overview";
 @use "./../features/layouts/components/compose/compose-standalone";
 @use "./../features/forms/components/search-input";
 @use "./../features/forms/components/search-filters-form";
@@ -92,5 +94,4 @@
 // Application views
 @use "./views";
 @use "./views/mailbox";
-@use "./views/mailbox/new";
 @use "./views/domain";

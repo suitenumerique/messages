@@ -223,6 +223,7 @@ export const MobileThreadToolbar = ({ thread, isArchived, isTrashed, quickReplyM
         <div className="mobile-thread-toolbar__group">
           {removeAction && (
             <Button
+              color="neutral"
               variant="tertiary"
               onClick={removeAction.onSelect}
               icon={<Icon {...removeAction.icon} />}
@@ -231,6 +232,7 @@ export const MobileThreadToolbar = ({ thread, isArchived, isTrashed, quickReplyM
           )}
           {canArchive && (
             <Button
+              color="neutral"
               variant="tertiary"
               onClick={handleArchive}
               icon={isArchived ? <Icon name="inbox" /> : <Icon icon={Archive} />}
@@ -238,6 +240,7 @@ export const MobileThreadToolbar = ({ thread, isArchived, isTrashed, quickReplyM
             />
           )}
           <Button
+            color="neutral"
             variant="tertiary"
             onClick={() => setIsDrawerOpen(true)}
             icon={<Icon name="more_horiz" type={IconType.OUTLINED} />}
@@ -250,7 +253,7 @@ export const MobileThreadToolbar = ({ thread, isArchived, isTrashed, quickReplyM
           <Button
             className="mobile-thread-toolbar__reply"
             color="brand"
-            variant="primary"
+            variant="tertiary"
             onClick={() => requestReply(quickReplyMode!)}
             icon={<Icon name={quickReplyMode === "reply_all" ? "reply-all" : "reply"} type={IconType.OUTLINED} />}
             aria-label={quickReplyMode === "reply_all" ? t("Reply all") : t("Reply")}

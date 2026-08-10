@@ -50,7 +50,10 @@ test.describe("Send Message", () => {
     await page.getByRole("link", { name: "Sent" }).click();
     const threadItem = page.getByRole("option", { name: "Hello everyone!" }).first();
     await expect(threadItem).toBeVisible();
-    expect(await threadItem.textContent()).toMatch(new RegExp(`User E2E ${browserName}`, "i"));
+    // Assert on the accessible name, not on textContent: the senders live in a
+    // sibling node the option only references through aria-labelledby, so they
+    // are part of what is announced but not of the option's own text.
+    await expect(threadItem).toHaveAccessibleName(new RegExp(`User E2E ${browserName}`, "i"));
 
     // Go the shared mailbox and check if the message is there
     await page.getByRole("button", { name: getMailboxEmail('user', browserName) }).click();
@@ -61,7 +64,7 @@ test.describe("Send Message", () => {
 
     const messageItem = page.getByRole("option", { name: "Hello everyone!" }).first();
     await expect(messageItem).toBeVisible();
-    expect(await messageItem.textContent()).toMatch(new RegExp(`User E2E ${browserName}`, "i"));
+    await expect(messageItem).toHaveAccessibleName(new RegExp(`User E2E ${browserName}`, "i"));
 
     // Open the message and check its content
     await messageItem.click();

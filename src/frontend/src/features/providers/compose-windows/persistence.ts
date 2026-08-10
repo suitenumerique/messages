@@ -1,16 +1,21 @@
 import { MessageFormMode } from "@/features/forms/components/message-form";
-import { ComposeWindowDescriptor, ComposeWindowDisplayState } from "./types";
+import { randomUUID } from "@/features/utils/uuid";
+import { enforceSingleExpanded } from "./core";
+import { ComposeWindowDescriptor, ComposeWindowPresentation } from "./types";
 
-export const COMPOSE_WINDOWS_STORAGE_KEY = "messages:compose-windows:v1";
+export const COMPOSE_WINDOWS_STORAGE_KEY = "messages:compose-windows:v2";
+/** Pre-presentation payload ({state} instead of {presentation, isMinimized}). */
+const LEGACY_STORAGE_KEY_V1 = "messages:compose-windows:v1";
 
 const FORM_MODES: MessageFormMode[] = ["new", "reply", "reply_all", "forward"];
-const RESTORABLE_STATES: ComposeWindowDisplayState[] = ["open", "minimized"];
+const PRESENTATIONS: ComposeWindowPresentation[] = ["docked", "floating"];
 
 type PersistedComposeWindow = {
     draftId: string;
     mailboxId: string;
     mode: MessageFormMode;
-    state: ComposeWindowDisplayState;
+    presentation: ComposeWindowPresentation;
+    isMinimized: boolean;
     threadId?: string;
     parentMessageId?: string;
 };
@@ -19,8 +24,6 @@ type PersistedComposeWindow = {
  * Keeps only what a page reload can restore: windows whose draft exists
  * server-side. Unmaterialized windows are empty by definition (autosave
  * materializes on first real content) so dropping them loses nothing.
- * "expanded" is downgraded to "open": restoring a full overlay after a
- * reload would be intrusive.
  */
 export const serializeWindows = (windows: readonly ComposeWindowDescriptor[]): string => {
     const persisted: PersistedComposeWindow[] = windows
@@ -29,12 +32,26 @@ export const serializeWindows = (windows: readonly ComposeWindowDescriptor[]): s
             draftId: window.draftId,
             mailboxId: window.mailboxId,
             mode: window.mode,
-            state: window.state === "expanded" ? "open" : window.state,
+            presentation: window.presentation,
+            isMinimized: window.isMinimized,
             threadId: window.threadId,
             parentMessageId: window.parentMessageId,
         }));
     return JSON.stringify(persisted);
 };
+
+const toDescriptor = (entry: PersistedComposeWindow): ComposeWindowDescriptor => ({
+    windowId: randomUUID(),
+    mailboxId: entry.mailboxId,
+    mode: entry.mode,
+    presentation: entry.presentation,
+    isMinimized: entry.isMinimized,
+    draftId: entry.draftId,
+    threadId: typeof entry.threadId === "string" ? entry.threadId : undefined,
+    parentMessageId: typeof entry.parentMessageId === "string" ? entry.parentMessageId : undefined,
+    openedOnExistingDraft: true,
+    focusTick: 0,
+});
 
 /**
  * Defensive parsing: the storage may hold corrupted or outdated payloads.
@@ -49,32 +66,56 @@ export const deserializeWindows = (raw: string | null): ComposeWindowDescriptor[
         return [];
     }
     if (!Array.isArray(parsed)) return [];
-    return parsed
+    const windows = parsed
         .filter((entry): entry is PersistedComposeWindow =>
             !!entry
             && typeof entry === "object"
             && typeof (entry as PersistedComposeWindow).draftId === "string"
             && typeof (entry as PersistedComposeWindow).mailboxId === "string"
             && FORM_MODES.includes((entry as PersistedComposeWindow).mode)
-            && RESTORABLE_STATES.includes((entry as PersistedComposeWindow).state)
+            && PRESENTATIONS.includes((entry as PersistedComposeWindow).presentation)
+            && typeof (entry as PersistedComposeWindow).isMinimized === "boolean"
         )
-        .map((entry) => ({
-            windowId: crypto.randomUUID(),
-            mailboxId: entry.mailboxId,
-            mode: entry.mode,
-            state: entry.state,
-            draftId: entry.draftId,
-            threadId: typeof entry.threadId === "string" ? entry.threadId : undefined,
-            parentMessageId: typeof entry.parentMessageId === "string" ? entry.parentMessageId : undefined,
-            openedOnExistingDraft: true,
-            focusTick: 0,
+        .map(toDescriptor);
+    return enforceSingleExpanded(windows);
+};
+
+type LegacyPersistedWindow = Omit<PersistedComposeWindow, "presentation" | "isMinimized"> & {
+    state: "open" | "minimized" | "expanded";
+};
+
+/** Maps a v1 payload onto the v2 shape so the migration reuses the v2 parser. */
+export const migrateLegacyPayload = (raw: string | null): string | null => {
+    if (!raw) return null;
+    let parsed: unknown;
+    try {
+        parsed = JSON.parse(raw);
+    } catch {
+        return null;
+    }
+    if (!Array.isArray(parsed)) return null;
+    const migrated = parsed
+        .filter((entry): entry is LegacyPersistedWindow =>
+            !!entry
+            && typeof entry === "object"
+            && ["open", "minimized", "expanded"].includes((entry as LegacyPersistedWindow).state)
+        )
+        .map(({ state, ...rest }) => ({
+            ...rest,
+            presentation: state === "expanded" ? "floating" : "docked",
+            isMinimized: state === "minimized",
         }));
+    return JSON.stringify(migrated);
 };
 
 export const loadPersistedWindows = (): ComposeWindowDescriptor[] => {
     if (typeof localStorage === "undefined") return [];
     try {
-        return deserializeWindows(localStorage.getItem(COMPOSE_WINDOWS_STORAGE_KEY));
+        const raw = localStorage.getItem(COMPOSE_WINDOWS_STORAGE_KEY);
+        if (raw !== null) return deserializeWindows(raw);
+        const migrated = migrateLegacyPayload(localStorage.getItem(LEGACY_STORAGE_KEY_V1));
+        localStorage.removeItem(LEGACY_STORAGE_KEY_V1);
+        return deserializeWindows(migrated);
     } catch {
         return [];
     }

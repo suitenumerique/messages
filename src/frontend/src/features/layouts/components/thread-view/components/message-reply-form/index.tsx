@@ -2,7 +2,7 @@ import { useRef, useState } from "react";
 import { Message } from "@/features/api/gen";
 import { MessageForm, MessageFormHandle, MessageFormMode } from "@/features/forms/components/message-form";
 import { useQueryClient } from "@tanstack/react-query";
-import { Icon, IconType } from "@gouvfr-lasuite/ui-kit";
+import { IconType } from "@gouvfr-lasuite/ui-kit";
 import { Button, Tooltip } from "@gouvfr-lasuite/cunningham-react";
 import { useTranslation } from "react-i18next";
 import clsx from "clsx";
@@ -10,6 +10,8 @@ import { DateHelper } from "@/features/utils/date-helper";
 import { useComposeWindows } from "@/features/providers/compose-windows";
 import { useMailboxContext } from "@/features/providers/mailbox";
 import DraftActionsMenu from "./draft-actions-menu";
+import { PlusDashed } from "@gouvfr-lasuite/ui-kit/icons";
+import { Icon } from "@/features/ui/components/icon";
 
 type MessageReplyFormProps = {
     handleClose: () => void;
@@ -71,7 +73,7 @@ const MessageReplyForm = ({ handleClose, message, mode, detached = false }: Mess
                                 color="brand"
                                 size="small"
                                 aria-label={t("Open in a window")}
-                                icon={<Icon name="open_in_new" type={IconType.OUTLINED} />}
+                                icon={<Icon icon={PlusDashed} />}
                                 onClick={handleOpenInWindow}
                             />
                         </Tooltip>

@@ -20,17 +20,19 @@
 .message-form--compact {
     position: relative;
     gap: var(--c--globals--spacings--2xs);
-    height: 100%;
-    min-height: 0;
+    // Content-driven height inside the scrolling window body; stretched so
+    // the sticky footer reaches the bottom even with little content.
+    height: auto;
+    min-height: 100%;
 
     .c__input__wrapper {
-        height: 2.5rem;
+        height: 3rem;
     }
 
     .c__combobox .c__select__wrapper,
     .c__select__wrapper {
-        --c--components--forms-select--height: 2.5rem;
-        min-height: 2.5rem;
+        --c--components--forms-select--height: 3rem;
+        min-height: 3rem;
     }
 
     // Only error messages remain in field footers; tighten them.
@@ -40,11 +42,9 @@
     }
 
     .form-field-row--composer {
-        flex: 1 1 auto;
-        min-height: 0;
-        overflow-y: auto;
-        // Override the flex-start of .form-field-row so the editor stretches
-        // to fill the window height while still growing with long content.
+        // Grows with the content and never shrinks below the composer's
+        // minimum; the window body owns the scrolling.
+        flex: 1 0 auto;
         align-items: stretch;
 
         .composer-field {
@@ -55,8 +55,17 @@
         }
 
         .composer-field-input {
-            --min-height: 12rem;
+            --min-height: 250px;
             flex: 1;
+        }
+
+        // In this narrow height-constrained surface the toolbar wraps to
+        // several rows, but the editor's default min-height reserves the
+        // height of a single one (--toolbar-height): the excess overflows
+        // the column-reverse field on the clipped (top) side and swallows
+        // the toolbar's first row. Let flex share the height instead.
+        .composer-field-input .bn-editor {
+            min-height: 0;
         }
     }
 
@@ -67,6 +76,15 @@
     .form-footer {
         align-items: center;
         gap: var(--c--globals--spacings--2xs);
+        // Pinned to the bottom of the scrolling window body: send, delete,
+        // attachments and the save-time label stay reachable while the form
+        // scrolls underneath.
+        position: sticky;
+        bottom: 0;
+        z-index: 2;
+        background-color: var(--c--contextuals--background--surface--primary);
+        outline: 4px solid var(--c--contextuals--background--surface--primary);
+        padding-block: var(--c--globals--spacings--2xs) var(--c--globals--spacings--sm);
     }
 
     .form-footer__save-time {

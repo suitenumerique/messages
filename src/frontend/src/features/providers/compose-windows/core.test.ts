@@ -1,76 +1,107 @@
 import { describe, expect, it } from "vitest";
 import {
-    enforceVisibleCap,
+    enforceSingleExpanded,
     focusWindowReducer,
-    MAX_VISIBLE_WINDOWS,
     MAX_WINDOWS,
+    minimizeWindowReducer,
     openWindowReducer,
-    setWindowStateReducer,
+    restoreWindowReducer,
+    setPresentationReducer,
 } from "./core";
-import { ComposeWindowDescriptor, ComposeWindowDisplayState } from "./types";
+import { ComposeWindowDescriptor } from "./types";
 
 let counter = 0;
 const makeWindow = (overrides: Partial<ComposeWindowDescriptor> = {}): ComposeWindowDescriptor => ({
     windowId: `window-${++counter}`,
     mailboxId: "mailbox-1",
     mode: "new",
-    state: "open",
+    presentation: "docked",
+    isMinimized: false,
     openedOnExistingDraft: false,
     focusTick: 0,
     ...overrides,
 });
 
-describe("enforceVisibleCap", () => {
-    it("leaves the list untouched under the cap", () => {
-        const windows = [makeWindow(), makeWindow({ state: "minimized" })];
-        expect(enforceVisibleCap(windows)).toBe(windows);
+const expandedIds = (windows: ComposeWindowDescriptor[]) =>
+    windows.filter((w) => !w.isMinimized).map((w) => w.windowId);
+
+describe("enforceSingleExpanded", () => {
+    it("leaves a compliant list untouched", () => {
+        const windows = [makeWindow({ isMinimized: true }), makeWindow()];
+        expect(enforceSingleExpanded(windows)).toBe(windows);
     });
 
-    it("minimizes the oldest visible windows beyond the cap", () => {
-        const windows = [
-            makeWindow(),
-            makeWindow({ state: "minimized" }),
-            makeWindow(),
-            makeWindow({ state: "expanded" }),
-            makeWindow(),
-        ];
-        const result = enforceVisibleCap(windows, 3);
-        expect(result.map((w) => w.state)).toEqual(["minimized", "minimized", "open", "expanded", "open"]);
+    it("keeps only the last expanded window expanded", () => {
+        const windows = [makeWindow(), makeWindow({ isMinimized: true }), makeWindow()];
+        const result = enforceSingleExpanded(windows);
+        expect(expandedIds(result)).toEqual([windows[2].windowId]);
     });
 });
 
 describe("openWindowReducer", () => {
-    it("appends the new window", () => {
-        const { windows, windowId, outcome } = openWindowReducer([], makeWindow({ windowId: "new-window" }));
+    it("appends the new window and minimizes the current one", () => {
+        const current = makeWindow({ title: "Current subject" });
+        const { windows, windowId, outcome } = openWindowReducer([current], makeWindow({ windowId: "new-window" }));
         expect(outcome).toBe("opened");
         expect(windowId).toBe("new-window");
-        expect(windows).toHaveLength(1);
+        expect(windows.map((w) => w.isMinimized)).toEqual([true, false]);
     });
 
     it("focuses the existing window instead of duplicating a draft", () => {
-        const existing = makeWindow({ draftId: "draft-1", state: "minimized", focusTick: 0 });
+        const existing = makeWindow({ draftId: "draft-1", isMinimized: true, focusTick: 0 });
+        const other = makeWindow();
         const { windows, windowId, outcome } = openWindowReducer(
-            [existing],
+            [existing, other],
             makeWindow({ draftId: "draft-1" }),
         );
         expect(outcome).toBe("focused-existing");
         expect(windowId).toBe(existing.windowId);
-        expect(windows).toHaveLength(1);
-        expect(windows[0].state).toBe("open");
+        expect(windows).toHaveLength(2);
+        expect(expandedIds(windows)).toEqual([existing.windowId]);
         expect(windows[0].focusTick).toBe(1);
+        expect(windows[0].windowId).toBe(existing.windowId);
     });
 
-    it("minimizes the oldest visible window when the visible cap is reached", () => {
-        const prev = Array.from({ length: MAX_VISIBLE_WINDOWS }, () => makeWindow());
-        const { windows } = openWindowReducer(prev, makeWindow({ windowId: "latest" }));
-        expect(windows).toHaveLength(MAX_VISIBLE_WINDOWS + 1);
-        expect(windows[0].state).toBe("minimized");
-        expect(windows.at(-1)?.windowId).toBe("latest");
-        expect(windows.at(-1)?.state).toBe("open");
+    it("focuses an existing untitled new-message window instead of stacking blanks", () => {
+        const blank = makeWindow({ mode: "new", isMinimized: true });
+        const { windows, windowId, outcome } = openWindowReducer([blank], makeWindow({ mode: "new" }));
+        expect(outcome).toBe("focused-existing");
+        expect(windowId).toBe(blank.windowId);
+        expect(windows).toHaveLength(1);
+        expect(windows[0].isMinimized).toBe(false);
+    });
+
+    it("focuses an existing unmaterialized reply on the same parent message", () => {
+        const reply = makeWindow({ mode: "reply", parentMessageId: "parent-1", title: "Re: subject", isMinimized: true });
+        const { windows, windowId, outcome } = openWindowReducer(
+            [reply],
+            makeWindow({ mode: "reply", parentMessageId: "parent-1" }),
+        );
+        expect(outcome).toBe("focused-existing");
+        expect(windowId).toBe(reply.windowId);
+        expect(windows).toHaveLength(1);
+    });
+
+    it("opens a fresh window for a reply on a different parent message", () => {
+        const reply = makeWindow({ mode: "reply", parentMessageId: "parent-1" });
+        const { outcome, windows } = openWindowReducer(
+            [reply],
+            makeWindow({ mode: "reply", parentMessageId: "parent-2" }),
+        );
+        expect(outcome).toBe("opened");
+        expect(windows).toHaveLength(2);
+    });
+
+    it("still opens a fresh window when the existing new-message ones have a subject or a draft", () => {
+        const titled = makeWindow({ mode: "new", title: "Some subject" });
+        const materialized = makeWindow({ mode: "new", draftId: "draft-9" });
+        const { windows, outcome } = openWindowReducer([titled, materialized], makeWindow({ mode: "new" }));
+        expect(outcome).toBe("opened");
+        expect(windows).toHaveLength(3);
     });
 
     it("refuses to open beyond the hard cap", () => {
-        const prev = Array.from({ length: MAX_WINDOWS }, () => makeWindow({ state: "minimized" }));
+        const prev = Array.from({ length: MAX_WINDOWS }, (_, i) => makeWindow({ isMinimized: true, title: `Window ${i}` }));
         const { windows, windowId, outcome } = openWindowReducer(prev, makeWindow());
         expect(outcome).toBe("cap-reached");
         expect(windowId).toBeNull();
@@ -78,37 +109,68 @@ describe("openWindowReducer", () => {
     });
 });
 
-describe("setWindowStateReducer", () => {
-    it("updates the target window state", () => {
+describe("minimizeWindowReducer", () => {
+    it("collapses the target window", () => {
         const window = makeWindow();
-        const result = setWindowStateReducer([window], window.windowId, "minimized");
-        expect(result[0].state).toBe("minimized");
+        const result = minimizeWindowReducer([window], window.windowId);
+        expect(result[0].isMinimized).toBe(true);
     });
 
-    it("collapses any other expanded window when expanding", () => {
-        const first = makeWindow({ state: "expanded" });
-        const second = makeWindow();
-        const result = setWindowStateReducer([first, second], second.windowId, "expanded");
-        expect(result.map((w) => w.state)).toEqual(["open", "expanded"]);
+    it("is a no-op on an already minimized window", () => {
+        const windows = [makeWindow({ isMinimized: true })];
+        expect(minimizeWindowReducer(windows, windows[0].windowId)).toBe(windows);
+    });
+});
+
+describe("restoreWindowReducer", () => {
+    it("expands the target in place and minimizes the others", () => {
+        const [a, b, c] = [makeWindow({ isMinimized: true }), makeWindow(), makeWindow({ isMinimized: true })];
+        const result = restoreWindowReducer([a, b, c], a.windowId);
+        expect(result.map((w) => w.windowId)).toEqual([a.windowId, b.windowId, c.windowId]);
+        expect(expandedIds(result)).toEqual([a.windowId]);
     });
 
-    it("re-applies the visible cap when restoring a window", () => {
-        const windows = [
-            ...Array.from({ length: MAX_VISIBLE_WINDOWS }, () => makeWindow()),
-            makeWindow({ windowId: "restored", state: "minimized" }),
-        ];
-        const result = setWindowStateReducer(windows, "restored", "open" as ComposeWindowDisplayState);
-        expect(result.filter((w) => w.state !== "minimized")).toHaveLength(MAX_VISIBLE_WINDOWS);
-        expect(result.at(-1)?.state).toBe("open");
-        expect(result[0].state).toBe("minimized");
+    it("moves the target to the end when asked (out of the overflow)", () => {
+        const [a, b] = [makeWindow({ isMinimized: true }), makeWindow()];
+        const result = restoreWindowReducer([a, b], a.windowId, { moveToEnd: true });
+        expect(result.map((w) => w.windowId)).toEqual([b.windowId, a.windowId]);
+        expect(expandedIds(result)).toEqual([a.windowId]);
+    });
+
+    it("keeps the remembered presentation on restore", () => {
+        const floating = makeWindow({ presentation: "floating", isMinimized: true });
+        const result = restoreWindowReducer([floating], floating.windowId);
+        expect(result[0].presentation).toBe("floating");
+        expect(result[0].isMinimized).toBe(false);
+    });
+
+    it("ignores an unknown windowId", () => {
+        const windows = [makeWindow()];
+        expect(restoreWindowReducer(windows, "missing")).toBe(windows);
+    });
+});
+
+describe("setPresentationReducer", () => {
+    it("changes the presentation of the expanded window", () => {
+        const window = makeWindow();
+        const result = setPresentationReducer([window], window.windowId, "floating");
+        expect(result[0].presentation).toBe("floating");
+        expect(result[0].isMinimized).toBe(false);
+    });
+
+    it("expands a minimized window and minimizes the current one", () => {
+        const [current, minimized] = [makeWindow(), makeWindow({ isMinimized: true })];
+        const result = setPresentationReducer([current, minimized], minimized.windowId, "floating");
+        expect(expandedIds(result)).toEqual([minimized.windowId]);
+        expect(result.at(-1)?.presentation).toBe("floating");
     });
 });
 
 describe("focusWindowReducer", () => {
     it("restores a minimized window and bumps its focus tick", () => {
-        const window = makeWindow({ state: "minimized", focusTick: 3 });
+        const window = makeWindow({ isMinimized: true, focusTick: 3 });
         const result = focusWindowReducer([window], window.windowId);
-        expect(result[0].state).toBe("open");
+        expect(result[0].isMinimized).toBe(false);
         expect(result[0].focusTick).toBe(4);
     });
 });

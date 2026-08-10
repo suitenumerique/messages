@@ -1,3 +1,4 @@
+import { useState } from "react";
 import { createFileRoute, useNavigate } from "@tanstack/react-router";
 import { useTranslation } from "react-i18next";
 import { Spinner } from "@gouvfr-lasuite/ui-kit";
@@ -13,6 +14,7 @@ import { postComposeBroadcast } from "@/features/providers/compose-windows/broad
 import { Toaster } from "@/features/ui/components/toaster";
 import { useTheme } from "@/features/providers/theme";
 import { SKIP_LINK_TARGET_ID } from "@/features/ui/components/skip-link";
+import { useDocumentTitle } from "@/hooks/use-document-title";
 
 const ComposeStandaloneContent = () => {
   const { t } = useTranslation();
@@ -22,6 +24,10 @@ const ComposeStandaloneContent = () => {
     mailboxId,
     draftId,
   });
+  // The tab title follows the subject as it is typed, like the window title
+  // of the docked counterpart.
+  const [editedSubject, setEditedSubject] = useState<string>();
+  useDocumentTitle((editedSubject ?? draft?.subject)?.trim() || t("New message"));
 
   // Opened via window.open from the main tab: closing the tab is the natural
   // exit. When the tab was opened directly (deep link), fall back to the app.
@@ -58,6 +64,7 @@ const ComposeStandaloneContent = () => {
       draftMessage={draft}
       parentMessage={parentMessage}
       onDraftChange={(nextDraft) => broadcast(nextDraft ? "draft-updated" : "draft-deleted")}
+      onSubjectChange={setEditedSubject}
       onSuccess={() => {
         broadcast("draft-sent");
         handleExit();
