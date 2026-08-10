@@ -2,7 +2,7 @@ import { useEffect, useMemo, useRef, useState } from 'react';
 import { useTranslation } from 'react-i18next';
 
 import { login } from '@/features/auth';
-import { LANGUAGES } from '@/features/i18n/conf';
+import { useConfig } from '@/features/providers/config';
 
 import {
   ArrowRight,
@@ -45,25 +45,30 @@ interface LanguageOption {
   label: string;
 }
 
-const LANGUAGE_OPTIONS: LanguageOption[] = LANGUAGES.map((lang: [string, string]) => ({
-  code: lang[0].split('-')[0].toUpperCase(),
-  value: lang[0],
-  label: lang[1],
-}));
-
 const LanguageSelector = () => {
   const { i18n } = useTranslation();
+  const { LANGUAGES } = useConfig();
   const [isOpen, setIsOpen] = useState(false);
   const ref = useRef<HTMLDivElement>(null);
+
+  const languageOptions = useMemo<LanguageOption[]>(
+    () =>
+      LANGUAGES.map((lang) => ({
+        code: lang[0].split('-')[0].toUpperCase(),
+        value: lang[0],
+        label: lang[1],
+      })),
+    [LANGUAGES],
+  );
 
   const currentLang = useMemo(() => {
     const langCode = i18n.language?.split('-')[0]?.toUpperCase() || 'EN';
     return (
-      LANGUAGE_OPTIONS.find(
+      languageOptions.find(
         (l) => l.code === langCode || l.value === i18n.language
-      ) || LANGUAGE_OPTIONS[0]
+      ) || languageOptions[0]
     );
-  }, [i18n.language]);
+  }, [i18n.language, languageOptions]);
 
   useEffect(() => {
     function handleClickOutside(event: MouseEvent) {
@@ -89,7 +94,7 @@ const LanguageSelector = () => {
       </LangButton>
       {isOpen && (
         <LangDropdown>
-          {LANGUAGE_OPTIONS.map((lang) => (
+          {languageOptions.map((lang) => (
             <LangOption
               key={lang.value}
               $selected={currentLang.value === lang.value}
