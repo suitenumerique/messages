@@ -18,34 +18,61 @@ logger = logging.getLogger(__name__)
 SPF_CHECK_CACHE_KEY_PREFIX = "dns:spf_check:"
 SPF_CHECK_CACHE_TIMEOUT = 600  # 10 minutes
 
+# DKIM tags whose values are base64: internal whitespace is not significant.
+DKIM_BASE64_TAGS = frozenset({"p", "b", "bh"})
+DKIM_VERSION = "DKIM1"
+DKIM_DEFAULT_KEY_TYPE = "rsa"
+# RFC 6376 3.2 spells tag-name as ALPHA *ALNUMPUNC. Only the leading ALPHA is
+# enforced, matching dkimpy: vendor tags such as "x-foo" are used in the wild
+# and verify fine, so rejecting them would report working records as broken.
+DKIM_TAG_NAME_RE = re.compile(r"[a-zA-Z]")
+
 
 def normalize_txt_value(value: str) -> str:
     """
     Normalize a TXT record value.
+
+    Only a lone trailing semicolon is dropped, so that it does not defeat
+    exact comparison. A repeated one is kept: it makes a DKIM tag-list
+    invalid (RFC 6376 3.2) and must not normalize into a valid record.
     """
-    return re.sub(r"\;$", "", re.sub(r"\s*\;\s*", ";", value.strip('"')))
+    return re.sub(r"(?<!;);$", "", re.sub(r"\s*\;\s*", ";", value.strip('"')))
 
 
 def parse_dkim_tags(value: str) -> Optional[Dict[str, str]]:
-    """Parse a DKIM record into a dict of tag=value pairs.
+    """Parse a DKIM key record into a dict of tag=value pairs.
 
-    Per RFC 6376, tags are separated by semicolons, with tag=value format.
-    The v= tag MUST be first and equal to DKIM1.
-    Returns None if the record is not a valid DKIM record.
+    Per RFC 6376 3.2, tags are separated by semicolons and folding whitespace
+    is allowed on both sides of the "=". Every tag-spec must be a named
+    tag=value pair, and a duplicate tag name invalidates the whole tag-list.
+    Per 3.6.1, v= is optional and defaults to DKIM1, but MUST be first and
+    equal to DKIM1 when present.
+    Returns None if the record is not a valid DKIM key record.
     """
-    parts = [p.strip() for p in value.split(";") if p.strip()]
-    if not parts:
-        return None
-    # v= must be first
-    first = parts[0]
-    if not first.startswith("v=") or first.split("=", 1)[1].strip() != "DKIM1":
-        return None
+    specs = value.split(";")
+    # A single trailing semicolon is allowed; any other empty tag-spec
+    # (leading, interior, or a second trailing one) makes the record invalid.
+    if len(specs) > 1 and not specs[-1].strip():
+        specs.pop()
     tags = {}
-    for part in parts:
+    for spec in specs:
+        part = spec.strip()
         if "=" not in part:
-            continue
+            return None
         key, val = part.split("=", 1)
-        tags[key.strip()] = val.strip()
+        key = key.strip()
+        if not DKIM_TAG_NAME_RE.match(key) or key in tags:
+            return None
+        tags[key] = val.strip()
+    if "v" in tags:
+        if tags["v"] != DKIM_VERSION or specs[0].split("=", 1)[0].strip() != "v":
+            return None
+    else:
+        tags["v"] = DKIM_VERSION
+    # RFC 6376 3.6.1: k= is optional and defaults to rsa. Records omitting it
+    # are common, so applying the default keeps them from reading as a
+    # mismatch against the k= we publish.
+    tags.setdefault("k", DKIM_DEFAULT_KEY_TYPE)
     return tags
 
 
@@ -71,6 +98,17 @@ def parse_spf_terms(value: str) -> Optional[Tuple[str, set]]:
     return (all_mechanism, other_terms)
 
 
+def _dkim_tag_equal(tag: str, expected: str, found: str) -> bool:
+    """Compare a single DKIM tag value.
+
+    Per RFC 6376, whitespace inside a base64 value must be ignored. It is
+    significant for other tags, so this cannot be applied globally.
+    """
+    if tag in DKIM_BASE64_TAGS:
+        return "".join(expected.split()) == "".join(found.split())
+    return expected == found
+
+
 def _check_dkim_semantic(
     expected_value: str, found_values: List[str]
 ) -> Optional[Dict[str, any]]:
@@ -82,7 +120,10 @@ def _check_dkim_semantic(
         found_tags = parse_dkim_tags(found_value)
         if not found_tags:
             continue
-        if not all(found_tags.get(k) == v for k, v in expected_tags.items()):
+        if not all(
+            k in found_tags and _dkim_tag_equal(k, v, found_tags[k])
+            for k, v in expected_tags.items()
+        ):
             continue
         # Check for t=y (testing mode) → insecure
         if found_tags.get("t") and "y" in found_tags["t"].split(":"):
