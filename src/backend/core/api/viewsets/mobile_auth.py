@@ -114,11 +114,11 @@ class MobileSessionExchangeView(APIView):
 class MobileLogoutView(APIView):
     """Invalidate the Django session without the RP-initiated IdP logout.
 
-    The web logout (`/logout/`) redirects to the identity provider with an
-    `id_token_hint`, which terminates the IdP session and therefore cross-app
-    SSO. Mobile logout must only flush the server-side Django session: the app
-    clears its local cookie jar, and the IdP session stays alive for the other
-    apps of the suite.
+    Fallback for the mobile logout: the nominal path runs the full IdP logout
+    (`/logout/?mobile_scheme=...`) in the system browser, but when that flow
+    fails or is cancelled the app still needs to end its own session — this
+    endpoint only flushes the server-side Django session bound to the request
+    cookie.
 
     Anonymous requests are a no-op (204): the app calls this best-effort, and
     logging out an already expired session must not fail.

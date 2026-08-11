@@ -1,0 +1,48 @@
+<!doctype html>
+{% comment %}
+Hand-off page ending a mobile login on the app deep link — served instead of
+a plain 302 to the custom scheme, which the IdP login page's CSP form-action
+blocks at the end of the credential form's redirect chain (see
+mobile_login_handoff in core/authentication/views.py for the full rationale).
+The script keeps the silent path (iOS interception); the link is the Android
+fallback — a user-activated navigation from this page, outside the IdP CSP.
+{% endcomment %}
+<html lang="fr">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>Messages</title>
+    <style>
+      body {
+        font-family: system-ui, sans-serif;
+        display: flex;
+        flex-direction: column;
+        align-items: center;
+        justify-content: center;
+        gap: 1.5rem;
+        min-height: 100dvh;
+        margin: 0;
+        padding: 1rem;
+        text-align: center;
+        color: #161616;
+        background: #fff;
+      }
+      a {
+        display: inline-block;
+        padding: 0.75rem 1.5rem;
+        border-radius: 0.5rem;
+        background: #000091;
+        color: #fff;
+        text-decoration: none;
+        font-weight: 600;
+      }
+    </style>
+  </head>
+  <body>
+    <p>Retour vers l&rsquo;application&hellip;<br /><span lang="en">Returning to the app&hellip;</span></p>
+    <a id="open" href="{{ app_url }}">Ouvrir l&rsquo;application / <span lang="en">Open the app</span></a>
+    <script>
+      location.replace(document.getElementById("open").href);
+    </script>
+  </body>
+</html>

@@ -8,9 +8,18 @@ import { computeCodeChallenge, generateCodeVerifier } from "./pkce";
 
 /**
  * Deep-link scheme ending the mobile OIDC flow. The backend allowlists it
- * through MOBILE_AUTH_CALLBACK_SCHEMES.
+ * through MOBILE_AUTH_CALLBACK_SCHEMES (a list, so several environments can be
+ * served at once).
+ *
+ * Per-environment (MOBILE_AUTH_SCHEME) so staging and production builds can sit
+ * side by side on one device: two installed apps claiming the same scheme would
+ * make Android ask the user which one should receive the login callback, in the
+ * middle of the auth flow. The same value must reach both native declarations —
+ * the Android manifest through a gradle manifestPlaceholder, the iOS Info.plist
+ * through the AUTH_CALLBACK_SCHEME build setting — and the default below must
+ * stay in sync with theirs; sso-invariants.test.ts pins that wiring.
  */
-const AUTH_CALLBACK_SCHEME = "stmessages";
+const AUTH_CALLBACK_SCHEME = import.meta.env.MOBILE_AUTH_SCHEME || "stmessages";
 
 type ExchangeResponse = {
   csrf_token: string;
@@ -68,18 +77,34 @@ export const nativeLogin = async (): Promise<void> => {
 };
 
 /**
- * End the app session while preserving cross-app SSO.
+ * End the session everywhere: Django AND the identity provider.
  *
- * Calling /api/v1.0/logout/ would trigger the RP-initiated IdP logout
- * (id_token_hint) and terminate the cross-app SSO session. The dedicated
- * mobile endpoint flushes only the server-side Django session; the local
- * cookies and CSRF token are then dropped. Never rejects: the reload into
+ * The RP-initiated logout runs in the system browser, which holds both the
+ * Django session cookie (the session handed over at login) and the IdP SSO
+ * cookie: the round-trip terminates both, so the next login always stops on
+ * the IdP login page and the user can switch accounts — prompt=login alone
+ * cannot guarantee it, ProConnect ignores it. Never rejects: the reload into
  * the logged-out state must happen even when a step fails.
  */
 export const nativeLogout = async (): Promise<void> => {
+  const scheme = AUTH_CALLBACK_SCHEME;
   try {
-    // Invalidate the server-side session first: even if clearing the native
-    // cookie jar fails below, the cookie no longer maps to a live session.
+    // Ends on a scheme://logout deep link once the IdP round-trip flushed
+    // the server-side session.
+    await openAuthSession(
+      getRequestUrl("/api/v1.0/logout/", { mobile_scheme: scheme }),
+      scheme,
+    );
+  } catch (error) {
+    // A cancelled sheet or a failed round-trip must not keep the app
+    // signed in: the local flush below still ends the app session.
+    console.warn("IdP logout did not complete:", error);
+  }
+  try {
+    // Always flush the app-side server session too: the browser round-trip
+    // only ends it when the browser still holds the same session cookie —
+    // if the browser dropped it, the app session would otherwise survive.
+    // Anonymous no-op when the round-trip already ended it.
     const csrfToken = getNativeCsrfToken();
     await fetch(getRequestUrl("/api/v1.0/mobile/auth/logout/"), {
       method: "POST",
