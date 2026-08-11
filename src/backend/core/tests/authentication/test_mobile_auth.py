@@ -1,5 +1,6 @@
 """Tests for the mobile (Capacitor) OIDC session handoff."""
 
+import re
 import time
 from importlib import import_module
 from unittest.mock import patch
@@ -92,6 +93,9 @@ class TestMobileAuthenticationRequest:
         mobile_auth = client.session[MOBILE_AUTH_SESSION_KEY]
         assert mobile_auth["scheme"] == "stmessagesa"
         assert mobile_auth["code_challenge"] == "challenge"
+        query = parse_qs(urlparse(response["Location"]).query)
+        assert mobile_auth["state"] == query["state"][0]
+        assert mobile_auth["state"] in client.session["oidc_states"]
 
     @override_settings(**AUTHENTICATE_SETTINGS)
     def test_web_login_does_not_flag_the_session(self):
@@ -114,9 +118,10 @@ CALLBACK_SETTINGS = {
 class TestMobileAuthenticationCallback:
     """Tests for the mobile handoff performed by the callback view."""
 
-    def _build_view(self, session_data=None):
+    def _build_view(self, session_data=None, state="login-state"):
         """Return a callback view bound to a request with a real session."""
-        request = RequestFactory().get("/api/v1.0/callback/")
+        query = {"state": state} if state else {}
+        request = RequestFactory().get("/api/v1.0/callback/", query)
         SessionMiddleware(lambda _request: None).process_request(request)
         for key, value in (session_data or {}).items():
             request.session[key] = value
@@ -130,6 +135,21 @@ class TestMobileAuthenticationCallback:
         view.user = user
         return view
 
+    @staticmethod
+    def _handoff_url(response):
+        """Extract the app deep link from the hand-off page of a mobile login.
+
+        The login ends on a page (not a 302 to the scheme, which the IdP login
+        page's CSP form-action blocks at the end of the credential form's
+        redirect chain) whose auto redirect and tap fallback both point at the
+        deep link.
+        """
+        assert response.status_code == status.HTTP_200_OK
+        assert response["Cache-Control"] == "no-store"
+        match = re.search(rb'href="([^"]+)"', response.content)
+        assert match is not None
+        return match[1].decode()
+
     @override_settings(**CALLBACK_SETTINGS)
     def test_mobile_login_success_redirects_to_the_app(self):
         """A mobile login ends with a deep link carrying a one-time token."""
@@ -138,14 +158,14 @@ class TestMobileAuthenticationCallback:
                 MOBILE_AUTH_SESSION_KEY: {
                     "scheme": "stmessagesa",
                     "code_challenge": "challenge",
+                    "state": "login-state",
                     "created_at": time.time(),
                 }
             }
         )
         response = view.login_success()
 
-        assert response.status_code == status.HTTP_302_FOUND
-        location = urlparse(response["Location"])
+        location = urlparse(self._handoff_url(response))
         assert location.scheme == "stmessagesa"
         assert location.netloc == "auth"
 
@@ -173,6 +193,7 @@ class TestMobileAuthenticationCallback:
                 MOBILE_AUTH_SESSION_KEY: {
                     "scheme": "stmessagesa",
                     "code_challenge": "challenge",
+                    "state": "login-state",
                     "created_at": time.time() - 3600,
                 }
             }
@@ -182,6 +203,28 @@ class TestMobileAuthenticationCallback:
         assert MOBILE_AUTH_SESSION_KEY not in view.request.session
 
     @override_settings(**CALLBACK_SETTINGS)
+    def test_mobile_flag_of_another_login_is_left_alone(self):
+        """A browser session can carry a pending mobile login while another
+        login runs: that callback must keep its web redirect and leave the flag
+        to the callback it belongs to."""
+        view = self._build_view(
+            {
+                MOBILE_AUTH_SESSION_KEY: {
+                    "scheme": "stmessagesa",
+                    "code_challenge": "challenge",
+                    "state": "mobile-state",
+                    "created_at": time.time(),
+                }
+            },
+            state="web-state",
+        )
+        response = view.login_success()
+
+        assert response.status_code == status.HTTP_302_FOUND
+        assert response["Location"] == "/"
+        assert MOBILE_AUTH_SESSION_KEY in view.request.session
+
+    @override_settings(**CALLBACK_SETTINGS)
     def test_mobile_login_failure_redirects_to_the_app(self):
         """A failed mobile login notifies the app through the deep link."""
         view = self._build_view(
@@ -189,13 +232,13 @@ class TestMobileAuthenticationCallback:
                 MOBILE_AUTH_SESSION_KEY: {
                     "scheme": "stmessagesa",
                     "code_challenge": "challenge",
+                    "state": "login-state",
                     "created_at": time.time(),
                 }
             }
         )
         response = view.login_failure()
-        assert response.status_code == status.HTTP_302_FOUND
-        assert response["Location"] == "stmessagesa://auth?error=login_failed"
+        assert self._handoff_url(response) == "stmessagesa://auth?error=login_failed"
 
     @override_settings(**CALLBACK_SETTINGS)
     def test_web_login_failure_is_unchanged(self):
@@ -345,10 +388,11 @@ class TestMobileSessionExchange:
 
 
 class TestMobileLogout:
-    """Tests for the mobile logout endpoint.
+    """Tests for the mobile logout fallback endpoint.
 
-    Unlike `/logout/` it must end the Django session without the RP-initiated
-    IdP logout, so the cross-app SSO session survives.
+    The nominal mobile logout runs the IdP round-trip through `/logout/`;
+    this endpoint only flushes the Django session, for when the system
+    browser flow fails or is cancelled.
     """
 
     def _login(self, client, user):

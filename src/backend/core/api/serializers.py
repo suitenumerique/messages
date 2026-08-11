@@ -21,8 +21,8 @@ from core.mda.dispatch_webhooks import (
     VALID_FORMATS,
 )
 from core.mda.inline_images import extract_inline_images_html
-from core.services.attachments import get_attachment_display_name
 from core.mda.utils import message_snippet
+from core.services.attachments import get_attachment_display_name
 from core.services.blob_gc import schedule_for_gc
 from core.services.identity import keycloak as keycloak_service
 from core.services.importer.channel import merged_state

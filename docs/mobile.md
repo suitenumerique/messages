@@ -102,15 +102,28 @@ Step by step:
    system browser.
 2. **Backend flags the session.** `OIDCAuthenticationRequestView` checks the
    scheme against `MOBILE_AUTH_CALLBACK_SCHEMES` (rejects unknown schemes) and
-   stashes `{scheme, code_challenge, created_at}` in the Django session. A flag
-   older than 10 min is later ignored, so an abandoned mobile attempt can't
-   hijack a subsequent web login in the same browser.
+   stashes `{scheme, code_challenge, state, created_at}` in the Django session.
+   The `state` is the one generated for this OIDC round-trip: the callback only
+   consumes the flag when its own state matches, and a flag older than 10 min
+   is ignored, so an abandoned or overlapping mobile attempt can't hijack a web
+   flow running in the same browser (same binding for the mobile logout).
 3. **IdP authenticates** — interactively the first time, silently afterwards
    (see *Cross-app SSO conditions* below).
 4. **Callback mints a one-time token.** `OIDCAuthenticationCallbackView` caches
    `{session_key, code_challenge}` under `mobile-auth-token:<token>` with a
-   `MOBILE_AUTH_TOKEN_TTL` (60 s) timeout and deep-links back to
-   `stmessages://auth?token=…`.
+   `MOBILE_AUTH_TOKEN_TTL` (60 s) timeout and hands the browser back to
+   `stmessages://auth?token=…` — through a small **hand-off page**
+   (auto-redirect + "open the app" button), not a plain 302 to the scheme.
+   The direct redirect gets blocked by the **CSP of the IdP login page**:
+   Chrome enforces its `form-action` on the whole redirect chain of the
+   credential form submission, and `*` only matches network schemes, so the
+   final custom-scheme hop violates it and the sheet stays stuck on the IdP.
+   ProConnect sends such a CSP; the dev Keycloak does not, which hides the
+   bug in dev. Ending the chain on a 200 page satisfies the policy, and the
+   deep link then leaves from our own page. iOS is indifferent —
+   `ASWebAuthenticationSession` intercepts the scheme navigation either way —
+   and the logout keeps its direct scheme redirects: its round-trip involves
+   no form submission, so no `form-action` ever applies.
 5. **App exchanges the token.** `MobileSessionExchangeView` (anonymous, single
    use) deletes the cache key *before* verifying it (a failed attempt can't be
    retried), checks `S256(code_verifier) == code_challenge` with
@@ -146,13 +159,19 @@ are independent of `MOBILE_APP_ID`.
 > simply because the Django session cookie is still valid — that never hits
 > `/authorize` and does **not** prove IdP SSO. Always exercise the mobile flow.
 
-### Logout keeps the IdP session alive
+### Logout ends the session everywhere (Django **and** IdP)
 
-`nativeLogout()` does **not** call `/logout/`, which would trigger RP-initiated
-IdP logout and tear down the cross-app SSO session. It POSTs to
-`/api/v1.0/mobile/auth/logout/` instead, which flushes only the server-side
-Django session, then clears the native cookies and the cached CSRF token.
-IdP-level logout is a follow-up.
+`nativeLogout()` runs the RP-initiated logout (`/api/v1.0/logout/` with
+`mobile_scheme`) in the system browser, which holds both the Django session
+cookie handed over at login and the IdP SSO cookie: the round-trip terminates
+both and ends on a `scheme://logout` deep link that closes the sheet. Keeping
+the IdP session alive is not an option — it silently signs the same identity
+back in on the next login and ProConnect ignores `prompt=login`, so tearing it
+down is the only way to let the user switch accounts. The app then POSTs to
+`/api/v1.0/mobile/auth/logout/` as a safety net (the browser round-trip only
+ends the app-side session when the browser still holds the same session
+cookie), clears the native cookies and the cached CSRF token. By design this
+also ends the SSO session shared with other La Suite apps.
 
 ## Networking & session
 
@@ -637,8 +656,10 @@ or the Capacitor version.
    manifest is refused (downgrade guard).
 5. **Native file paths** — download/share an attachment and a raw `.eml`
    (native HTTP session), upload an attachment (CSRF token path).
-6. **Logout → re-login** — logout ends the Django session only; the
-   following login must complete silently (IdP session preserved).
+6. **Logout → re-login** — logout ends both the Django session and the IdP
+   session (RP-initiated logout in the system browser); the following login
+   must stop on the IdP login form, allowing an account switch. A silent
+   re-login means the IdP session survived: that is a regression.
 7. **No dev server baked in** — in dev, `MOBILE_DEV_SERVER_URL` bakes the Vite
    dev server URL into `capacitor.config.json` (hot reload, see *Build & run
    workflow*). Before archiving, set it empty in `frontend.local` and rerun
