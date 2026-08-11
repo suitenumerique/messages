@@ -48,7 +48,6 @@
         transparent 100%
     );
     backdrop-filter: blur(8px);
-    -webkit-backdrop-filter: blur(8px);
     padding-top: var(--c--globals--spacings--3xs);
     padding-bottom: calc(var(--c--globals--spacings--3xs) + var(--safe-area-inset-bottom));
     padding-inline: var(--c--globals--spacings--3xs) 0;

@@ -90,7 +90,6 @@
                     var(--c--contextuals--background--surface--primary) calc(100% - var(--compose-header-overlap)),
                     transparent 100%);
             backdrop-filter: blur(6px);
-            -webkit-backdrop-filter: blur(6px);
             // The blur dissolves along with the tint, so the veil has no
             // visible bottom edge.
             -webkit-mask-image: linear-gradient(

@@ -37,9 +37,7 @@
             background: linear-gradient(to bottom,
                     var(--c--contextuals--background--surface--secondary) calc(100% - var(--thread-panel-header-overlap)),
                     transparent 100%);
-            // background: red;
             backdrop-filter: blur(6px);
-            -webkit-backdrop-filter: blur(6px);
             // The blur dissolves along with the tint, so the veil has no
             // visible bottom edge — same recipe as the bottom bar.
             -webkit-mask-image: linear-gradient(
