@@ -249,10 +249,11 @@ PYMTA_PROXY_PROTOCOL_TIMEOUT = _env_int("PYMTA_PROXY_PROTOCOL_TIMEOUT", 5, minim
 # PYMTA_MAX_SESSIONS_PER_IP / _PER_MINUTE) and attribute its mail to any IP it
 # likes.
 #
-# Required whenever PROXY protocol is enabled, because enabling it *is* the claim
-# that a balancer sits in front, so the balancer's address is a known fact.
-# ``server.py`` refuses to start on the combination of PROXY protocol and an
-# empty list rather than falling back to trusting everyone.
+# Strongly recommended whenever PROXY protocol is enabled, because enabling it
+# *is* the claim that a balancer sits in front, so the balancer's address is
+# usually a known fact. Left empty there is nothing to match on and every peer's
+# header is trusted; ``server.py`` warns loudly at startup rather than refusing
+# to run, since some deployments only learn the balancer's addresses later.
 def _parse_networks(raw: str) -> list[ipaddress.IPv4Network | ipaddress.IPv6Network]:
     networks = []
     for chunk in raw.split(","):
