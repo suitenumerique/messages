@@ -9,6 +9,7 @@
   "scripts": {
     "dev": "vite",
     "build": "tsc --noEmit && vite build",
+    "scalingo-postbuild": "npm run build && bash ../../deploy/paas/scalingo_stage_ota",
     "preview": "vite preview",
     "start": "vite preview",
     "lint": "eslint .",

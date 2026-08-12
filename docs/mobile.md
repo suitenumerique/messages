@@ -428,9 +428,11 @@ On Scalingo the OTA release is not a separate pipeline: **every deployment of an
 OTA-configured app publishes the exact `dist/` the web is about to serve**, in
 two halves that bracket the deployment outcome:
 
-1. **Stage, at build time** — `deploy/paas/scalingo_postfrontend` (gated on
-   `MOBILE_OTA_S3_BUCKET`; with the gate set, any other missing `MOBILE_OTA_*`
-   variable fails the build loudly). It runs
+1. **Stage, at build time** — the frontend `scalingo-postbuild` npm script
+   runs `deploy/paas/scalingo_stage_ota` inside the Node.js buildpack compile,
+   the only window where node and the devDependencies `publish-ota.mjs` needs
+   are both available (gated on `MOBILE_OTA_S3_BUCKET`; with the gate set, any
+   other missing `MOBILE_OTA_*` variable fails the build loudly). It runs
    `publish-ota.mjs --stage-only --version ${SOURCE_VERSION:0:8}`: zip, encrypt,
    upload the bundle and archive `releases/<sha8>.json` — but **never touch the
    channel manifest**. Any failure here fails the whole deployment, so a broken
@@ -468,11 +470,20 @@ Operational rules:
   no spurious first-launch download/toast — and a fresh install can never sit
   ahead of the channel (the native floor no longer guards this, see *Bundle
   versioning*).
-- The vite build must inline `MOBILE_OTA_SIGNING_PUBLIC_KEY_B64` (the hook
-  refuses to publish otherwise: a key-less bundle would refuse every later
-  update) and `NEXT_PUBLIC_API_ORIGIN` must be **absolute** — the same dist
-  serves the mobile app from a `capacitor://` origin where a relative origin
-  resolves nowhere.
+- The vite build must inline `MOBILE_OTA_SIGNING_PUBLIC_KEY_B64` and
+  `MOBILE_AUTH_SCHEME` — the hook refuses to publish without either, because
+  each defaults to something that only breaks on device: a key-less bundle
+  refuses every later update, and a bundle carrying the generic `stmessages`
+  scheme cannot log in at all on an environment that uses its own (the backend
+  answers `400` on `/authenticate/`, and the deep link would not route back to
+  the app). Set `MOBILE_AUTH_SCHEME` on the PaaS app to the very value its
+  store/dev builds were built with, even when that is the default: the web
+  deploy is also the OTA publisher, so a variable that only exists in
+  `frontend.local` reaches the native shells and never the bundle that
+  replaces them.
+- `NEXT_PUBLIC_API_ORIGIN` must be **absolute** — the same dist serves the
+  mobile app from a `capacitor://` origin where a relative origin resolves
+  nowhere.
 - The backend of the same environment points devices at the channel:
   `MOBILE_OTA_MANIFEST_URL=<MOBILE_OTA_PUBLIC_BASE_URL>/channels/<channel>/manifest.json`.
 
@@ -503,6 +514,7 @@ Operational rules:
 | Backend mobile-aware OIDC views | `src/backend/core/authentication/views.py` |
 | Backend token → session exchange & mobile logout | `src/backend/core/api/viewsets/mobile_auth.py` |
 | OTA publish scripts | `src/frontend/scripts/publish-ota.mjs`, `create-ota-bucket.mjs`, `ota-lib.mjs` |
+| Scalingo OTA staging (frontend `scalingo-postbuild`) + flip | `deploy/paas/scalingo_stage_ota`, `deploy/paas/scalingo_ota_promote.py` |
 
 **Native/web branching contract:** the single source of truth is
 `isNativePlatform()`. `main.tsx` also tags `<html class="native">` so stylesheets

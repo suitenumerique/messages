@@ -1,0 +1,66 @@
+#!/bin/bash
+
+set -o errexit    # always exit on error
+set -o pipefail   # don't ignore exit codes when piping output
+
+# Mobile OTA: stage the signed bundle. Runs as the frontend `scalingo-postbuild`
+# npm script (cwd: src/frontend), i.e. INSIDE the nodejs buildpack compile — the
+# only window where node and the devDependencies publish-ota.mjs needs
+# (@aws-sdk/client-s3, @capgo/cli) are both available: the buildpack prunes
+# devDependencies at the end of its compile and exposes neither node nor
+# node_modules to the later post-frontend hook (scalingo_postfrontend).
+#
+# Upload the just-built dist as an OTA bundle + immutable release metadata, but
+# do NOT touch the channel manifest: the deploy can still fail after this hook
+# (python buildpack, container boot), and the manifest must never point at a
+# version that is not actually serving. The flip happens at postdeploy
+# (deploy/paas/scalingo_ota_promote.py), which Scalingo only runs on a
+# successful deployment — redeploying an old commit re-flips the manifest
+# backward, which is the sanctioned OTA rollback (docs/mobile.md).
+#
+# Gated on MOBILE_OTA_S3_BUCKET (the first variable otaConfig() requires, with
+# no default): unset means "this app has no OTA bucket" and the script is a
+# no-op. Set, every other required variable must be present — a half-done
+# configuration must fail the build loudly, not publish something broken.
+if [ -z "${MOBILE_OTA_S3_BUCKET:-}" ]; then
+  if [ -n "${MOBILE_OTA_CHANNEL:-}${MOBILE_OTA_PUBLIC_BASE_URL:-}${MOBILE_OTA_SIGNING_PRIVATE_KEY_B64:-}" ]; then
+    echo "Partial OTA config: MOBILE_OTA_* vars set without MOBILE_OTA_S3_BUCKET" >&2
+    exit 1
+  fi
+  exit 0
+fi
+
+# The last two are not used here but MUST have been inlined into the vite build
+# (envPrefix), because this hook is the last barrier before publication and each
+# of them, left to its default, ships a bundle that is broken on device only:
+#
+# - MOBILE_OTA_SIGNING_PUBLIC_KEY_B64: ota.ts refuses any update when the
+#   running bundle embeds no verification key, so a key-less bundle strands
+#   every device that applies it.
+# - MOBILE_AUTH_SCHEME: auth.ts falls back to the generic "stmessages" deep-link
+#   scheme, which an environment-specific backend rejects (400 on
+#   /authenticate/) and an environment-specific app would not route back — the
+#   bundle then cannot log in at all. Its absence is invisible until a session
+#   expires, hence the explicit requirement even where the default is correct.
+for v in MOBILE_OTA_S3_ENDPOINT MOBILE_OTA_S3_ACCESS_KEY MOBILE_OTA_S3_SECRET_KEY \
+         MOBILE_OTA_CHANNEL MOBILE_OTA_PUBLIC_BASE_URL \
+         MOBILE_OTA_SIGNING_PRIVATE_KEY_B64 MOBILE_OTA_SIGNING_PUBLIC_KEY_B64 \
+         MOBILE_AUTH_SCHEME \
+         SOURCE_VERSION; do
+  [ -n "${!v:-}" ] || { echo "OTA enabled (MOBILE_OTA_S3_BUCKET set) but $v is missing" >&2; exit 1; }
+done
+
+# Bare short sha, the same id `make mobile-build` stamps into the builtin
+# bundle (Makefile pins `git rev-parse --short=8` precisely so both sides
+# produce identical strings).
+OTA_VERSION="${SOURCE_VERSION:0:8}"
+echo "-----> Staging OTA bundle ${OTA_VERSION} (channel ${MOBILE_OTA_CHANNEL})"
+node scripts/publish-ota.mjs --stage-only \
+  --version "$OTA_VERSION" --channel "$MOBILE_OTA_CHANNEL" --dist ./dist
+
+# Marker consumed by the postdeploy flip (scalingo_ota_promote.py), written at
+# the repo root where build/ survives scalingo_postcompile — and only after a
+# successful stage, so the flip can trust its content.
+REPO_ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)"
+mkdir -p "$REPO_ROOT/build"
+printf '%s %s\n' "$OTA_VERSION" "$MOBILE_OTA_CHANNEL" > "$REPO_ROOT/build/ota-release-id"

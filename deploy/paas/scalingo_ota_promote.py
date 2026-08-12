@@ -3,7 +3,8 @@
 Runs as the tail of the Scalingo `postdeploy` hook (see the Procfile), which the
 platform only executes on a successful deployment — that timing is the whole
 design: the bundle and its immutable release metadata were uploaded during the
-build (deploy/paas/scalingo_postfrontend, `publish-ota.mjs --stage-only`), but
+build (the frontend `scalingo-postbuild` npm script, which runs
+deploy/paas/scalingo_stage_ota → `publish-ota.mjs --stage-only`), but
 the channel manifest, the pointer devices actually follow, only moves here. The
 OTA channel therefore can never advertise a version that is not serving, and
 redeploying an old commit re-flips the manifest backward (the manifest
