@@ -36,6 +36,7 @@
 		7A11AA0100000000000000E1 /* en */ = {isa = PBXFileReference; lastKnownFileType = text.plist.strings; name = en; path = en.lproj/Localizable.strings; sourceTree = "<group>"; };
 		7A11AA0100000000000000E2 /* fr */ = {isa = PBXFileReference; lastKnownFileType = text.plist.strings; name = fr; path = fr.lproj/Localizable.strings; sourceTree = "<group>"; };
 		958DCC722DB07C7200EA8C5F /* debug.xcconfig */ = {isa = PBXFileReference; lastKnownFileType = text.xcconfig; name = debug.xcconfig; path = ../debug.xcconfig; sourceTree = SOURCE_ROOT; };
+		7A11AA0100000000000000F1 /* generated.xcconfig */ = {isa = PBXFileReference; lastKnownFileType = text.xcconfig; path = generated.xcconfig; sourceTree = SOURCE_ROOT; };
 /* End PBXFileReference section */
 
 /* Begin PBXFrameworksBuildPhase section */
@@ -54,6 +55,7 @@
 			isa = PBXGroup;
 			children = (
 				958DCC722DB07C7200EA8C5F /* debug.xcconfig */,
+				7A11AA0100000000000000F1 /* generated.xcconfig */,
 				504EC3061FED79650016851F /* App */,
 				504EC3051FED79650016851F /* Products */,
 			);
@@ -97,6 +99,7 @@
 				504EC3011FED79650016851F /* Frameworks */,
 				504EC3021FED79650016851F /* Resources */,
 				7A11AA0100000000000000C1 /* Strip dev ATS exception */,
+				7A11AA0100000000000000C2 /* Check synced Capacitor identity */,
 			);
 			buildRules = (
 			);
@@ -187,6 +190,28 @@
 			shellScript = "# NSAllowsLocalNetworking in App/Info.plist exists only so dev builds can\n# reach the plain-HTTP backend on localhost. Delete the whole ATS dict from\n# the built product in every non-Debug configuration so the exception can\n# never ship (Archive always builds Release).\nif [ \"${CONFIGURATION}\" != \"Debug\" ]; then\n  PLIST=\"${TARGET_BUILD_DIR}/${INFOPLIST_PATH}\"\n  if /usr/libexec/PlistBuddy -c \"Print :NSAppTransportSecurity\" \"${PLIST}\" >/dev/null 2>&1; then\n    /usr/libexec/PlistBuddy -c \"Delete :NSAppTransportSecurity\" \"${PLIST}\"\n  fi\nfi\n";
 			showEnvVarsInLog = 0;
 		};
+		7A11AA0100000000000000C2 /* Check synced Capacitor identity */ = {
+			isa = PBXShellScriptBuildPhase;
+			alwaysOutOfDate = 1;
+			buildActionMask = 2147483647;
+			files = (
+			);
+			inputFileListPaths = (
+			);
+			inputPaths = (
+				"$(TARGET_BUILD_DIR)/$(INFOPLIST_PATH)",
+				"$(SRCROOT)/App/capacitor.config.json",
+			);
+			name = "Check synced Capacitor identity";
+			outputFileListPaths = (
+			);
+			outputPaths = (
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+			shellPath = /bin/sh;
+			shellScript = "# `make mobile-build` writes generated.xcconfig and capacitor.config.json in\n# one run from one env; the identity Xcode compiled must match what was\n# synced. A stale or hand-edited value would otherwise ship silently — and\n# the first store upload freezes the bundle id forever. Debug builds skip the\n# check (Android equivalent: the preReleaseBuild guard in app/build.gradle).\nif [ \"${CONFIGURATION}\" != \"Debug\" ]; then\n  CONFIG_JSON=\"${SRCROOT}/App/capacitor.config.json\"\n  PLIST=\"${TARGET_BUILD_DIR}/${INFOPLIST_PATH}\"\n  SYNCED_ID=$(/usr/bin/plutil -extract appId raw -o - \"${CONFIG_JSON}\")\n  SYNCED_NAME=$(/usr/bin/plutil -extract appName raw -o - \"${CONFIG_JSON}\")\n  BUILT_ID=$(/usr/libexec/PlistBuddy -c \"Print :CFBundleIdentifier\" \"${PLIST}\")\n  BUILT_NAME=$(/usr/libexec/PlistBuddy -c \"Print :CFBundleDisplayName\" \"${PLIST}\")\n  if [ \"${SYNCED_ID}\" != \"${BUILT_ID}\" ] || [ \"${SYNCED_NAME}\" != \"${BUILT_NAME}\" ]; then\n    echo \"error: built identity '${BUILT_ID}' / '${BUILT_NAME}' does not match the synced capacitor.config.json '${SYNCED_ID}' / '${SYNCED_NAME}'. Rerun 'make mobile-build' so generated.xcconfig and the synced config agree.\" >&2\n    exit 1\n  fi\nfi\n";
+			showEnvVarsInLog = 0;
+		};
 /* End PBXShellScriptBuildPhase section */
 
 /* Begin PBXSourcesBuildPhase section */
@@ -233,7 +258,7 @@
 /* Begin XCBuildConfiguration section */
 		504EC3141FED79650016851F /* Debug */ = {
 			isa = XCBuildConfiguration;
-			baseConfigurationReference = 958DCC722DB07C7200EA8C5F /* debug.xcconfig */;
+			baseConfigurationReference = 7A11AA0100000000000000F1 /* generated.xcconfig */;
 			buildSettings = {
 				ALWAYS_SEARCH_USER_PATHS = NO;
 				CLANG_ANALYZER_NONNULL = YES;
@@ -291,6 +316,7 @@
 		};
 		504EC3151FED79650016851F /* Release */ = {
 			isa = XCBuildConfiguration;
+			baseConfigurationReference = 7A11AA0100000000000000F1 /* generated.xcconfig */;
 			buildSettings = {
 				ALWAYS_SEARCH_USER_PATHS = NO;
 				CLANG_ANALYZER_NONNULL = YES;
@@ -356,8 +382,7 @@
 				);
 				MARKETING_VERSION = 1.0;
 				OTHER_SWIFT_FLAGS = "$(inherited) \"-D\" \"COCOAPODS\" \"-DDEBUG\"";
-				MOBILE_APP_ID = "local.suitenumerique.messages";
-				PRODUCT_BUNDLE_IDENTIFIER = "$(MOBILE_APP_ID)";
+				PRODUCT_BUNDLE_IDENTIFIER = "$(MOBILE_APP_ID:default=local.suitenumerique.messages)";
 				PRODUCT_NAME = "$(TARGET_NAME)";
 				SWIFT_ACTIVE_COMPILATION_CONDITIONS = DEBUG;
 				SWIFT_VERSION = 5.0;
@@ -379,8 +404,7 @@
 					"@executable_path/Frameworks",
 				);
 				MARKETING_VERSION = 1.0;
-				MOBILE_APP_ID = "local.suitenumerique.messages";
-				PRODUCT_BUNDLE_IDENTIFIER = "$(MOBILE_APP_ID)";
+				PRODUCT_BUNDLE_IDENTIFIER = "$(MOBILE_APP_ID:default=local.suitenumerique.messages)";
 				PRODUCT_NAME = "$(TARGET_NAME)";
 				SWIFT_ACTIVE_COMPILATION_CONDITIONS = "";
 				SWIFT_VERSION = 5.0;

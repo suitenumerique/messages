@@ -13,10 +13,25 @@ android {
         // via MOBILE_APP_ID (kept out of this open-source repo). It may differ
         // from the namespace above.
         applicationId System.getenv("MOBILE_APP_ID") ?: "local.suitenumerique.messages"
+        // Displayed app name, same per-instance override pattern as the
+        // applicationId above. Defined as resValues (not values/strings.xml,
+        // which would clash with them) so MOBILE_APP_NAME can drive them at
+        // build time; the manifest keeps pointing at @string/app_name.
+        def appDisplayName = System.getenv("MOBILE_APP_NAME") ?: "ST Messages"
+        resValue "string", "app_name", appDisplayName
+        resValue "string", "title_activity_main", appDisplayName
         minSdkVersion rootProject.ext.minSdkVersion
         targetSdkVersion rootProject.ext.targetSdkVersion
         versionCode 1
         versionName "1.0"
+        // OIDC callback scheme declared by the manifest's intent-filter. Per
+        // environment (like applicationId) so a staging and a production build
+        // can coexist on one device: sharing it would make Android prompt the
+        // user to pick an app mid-login. The default must match auth.ts and the
+        // iOS AUTH_CALLBACK_SCHEME build setting (sso-invariants.test.ts).
+        manifestPlaceholders = [
+            authCallbackScheme: System.getenv("MOBILE_AUTH_SCHEME") ?: "stmessages"
+        ]
         testInstrumentationRunner "androidx.test.runner.AndroidJUnitRunner"
         aaptOptions {
              // Files and dirs to omit from the packaged assets dir, modified to accommodate modern web apps.
@@ -47,9 +62,10 @@ tasks.configureEach { task ->
     if (task.name == 'preReleaseBuild') {
         task.doFirst {
             def capConfig = file('src/main/assets/capacitor.config.json')
-            def server = capConfig.exists()
-                    ? new groovy.json.JsonSlurper().parse(capConfig)?.server
+            def parsed = capConfig.exists()
+                    ? new groovy.json.JsonSlurper().parse(capConfig)
                     : null
+            def server = parsed?.server
             if (server?.url) {
                 throw new GradleException(
                     "capacitor.config.json contains a dev server.url (hot reload). " +
@@ -60,6 +76,33 @@ tasks.configureEach { task ->
                     "capacitor.config.json allows cleartext traffic " +
                     "(MOBILE_ALLOW_CLEARTEXT_FOR_DEV). " +
                     "Rerun a bare 'make mobile-build' before building a release.")
+            }
+            // MOBILE_APP_ID is read twice from two different environments: by
+            // `cap sync` in the container (the appId written to the config read
+            // here) and by gradle on the host (applicationId above). Forgetting
+            // the host half is silent — and a store upload freezes the id for
+            // the lifetime of the app.
+            def syncedAppId = parsed?.appId
+            def builtAppId = android.defaultConfig.applicationId
+            if (syncedAppId && syncedAppId != builtAppId) {
+                throw new GradleException(
+                    "applicationId '${builtAppId}' does not match the appId " +
+                    "'${syncedAppId}' synced into capacitor.config.json. " +
+                    "Export the same MOBILE_APP_ID for the host gradle build " +
+                    "as for 'make mobile-build'.")
+            }
+            // Same double-read as MOBILE_APP_ID: the displayed name (resValue
+            // above) comes from the host env, the synced appName from the
+            // container env. A divergence is recoverable (unlike the appId) but
+            // ships a wrong name silently, so fail it the same way.
+            def syncedAppName = parsed?.appName
+            def builtAppName = System.getenv("MOBILE_APP_NAME") ?: "ST Messages"
+            if (syncedAppName && syncedAppName != builtAppName) {
+                throw new GradleException(
+                    "app name '${builtAppName}' does not match the appName " +
+                    "'${syncedAppName}' synced into capacitor.config.json. " +
+                    "Export the same MOBILE_APP_NAME for the host gradle build " +
+                    "as for 'make mobile-build'.")
             }
         }
     }

@@ -24,7 +24,7 @@
     "ts:check": "tsc --noEmit",
     "i18n:extract": "i18next-cli extract",
     "analyze": "ANALYZE=1 vite build && node ./scripts/print-bundle-stats.mjs",
-    "mobile:build": "npm run build && npx cap sync",
+    "mobile:build": "npm run build && npx cap sync && node scripts/generate-ios-xcconfig.mjs",
     "mobile:ota:bucket": "node scripts/create-ota-bucket.mjs",
     "mobile:ota:keygen": "node scripts/generate-ota-keys.mjs",
     "mobile:ota:publish": "node scripts/publish-ota.mjs",

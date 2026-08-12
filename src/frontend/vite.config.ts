@@ -89,10 +89,13 @@ export default defineConfig({
   // hot reload session (see capacitor.config.ts) and skip the OTA check there.
   // MOBILE_OTA_SIGNING_PUBLIC_KEY_B64 (public key, safe to inline) lets ota.ts
   // refuse a server-provided manifest URL on a build that can't verify bundles.
+  // MOBILE_AUTH_SCHEME must match the scheme the native projects declare, so
+  // auth.ts builds its callback URL with the one the OS will actually route.
   envPrefix: [
     'NEXT_PUBLIC_',
     'MOBILE_DEV_SERVER_URL',
     'MOBILE_OTA_SIGNING_PUBLIC_KEY_B64',
+    'MOBILE_AUTH_SCHEME',
   ],
   build: {
     outDir: 'dist',
