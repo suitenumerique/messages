@@ -20,6 +20,7 @@ NEXT_PUBLIC_SENTRY_ENVIRONMENT=
 ## An organisation publishing to the stores overrides it — in BOTH contexts — with
 ## its own signed bundle id, which never lands in this open-source repo.
 MOBILE_APP_ID=local.suitenumerique.messages
+MOBILE_APP_NAME=
 
 ## Mobile hot reload (Capacitor). Baked as the WebView's server.url at
 ## `cap sync` (capacitor.config.ts): the app loads the JS straight from the

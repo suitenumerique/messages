@@ -39,6 +39,10 @@ interface ImportMetaEnv {
   // (capacitor.config.ts). Exposed so ota.ts can refuse a server-provided
   // manifest URL on a build that embeds no key.
   readonly MOBILE_OTA_SIGNING_PUBLIC_KEY_B64?: string;
+  // OIDC deep-link scheme, per environment so two builds can coexist on a
+  // device. Also declared natively (Android manifestPlaceholder, iOS build
+  // setting) from the same variable — see auth.ts.
+  readonly MOBILE_AUTH_SCHEME?: string;
 }
 
 interface ImportMeta {

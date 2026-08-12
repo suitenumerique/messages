@@ -758,8 +758,26 @@ mobile-android-reverse: ## (host) map device ports to the dev stack via adb reve
 	@$(foreach port,$(ANDROID_REVERSE_PORTS),adb reverse tcp:$(port) tcp:$(port);)
 .PHONY: mobile-android-reverse
 
+# Read a MOBILE_* value from the frontend env files the way the container does
+# (frontend.local overriding frontend.defaults, last definition wins). Gradle
+# runs on the host and would otherwise read a *different* MOBILE_APP_ID than the
+# `cap sync` that produced the bundle — a divergence a store upload freezes
+# forever. A gradle guard cross-checks the two (android/app/build.gradle).
+# Surrounding double quotes are stripped the way compose's dotenv parser does,
+# so a quoted value does not reach gradle with its quotes and trip the appId
+# cross-check with an unreadable message.
+mobile_env = $(shell sed -n 's/^$(1)=//p' deploy/env/frontend.defaults deploy/env/frontend.local 2>/dev/null | tail -n1 | sed 's/^"//;s/"$$//')
+
+# The same env the container used for `cap sync` must reach the host gradle
+# build, debug included: a MOBILE_AUTH_SCHEME set only on the JS side would ship
+# a manifest declaring the old scheme, and the OIDC callback would never come
+# back — the login opens, and nothing returns.
 mobile-android-run: mobile-build ## (host) build+install the debug APK on a device then adb reverse
-	@cd src/frontend/android && ./gradlew assembleDebug
+	@cd src/frontend/android && \
+		MOBILE_APP_ID="$(call mobile_env,MOBILE_APP_ID)" \
+		MOBILE_APP_NAME="$(call mobile_env,MOBILE_APP_NAME)" \
+		MOBILE_AUTH_SCHEME="$(call mobile_env,MOBILE_AUTH_SCHEME)" \
+		./gradlew assembleDebug
 	@adb install -r $(ANDROID_DEBUG_APK)
 	@$(MAKE) mobile-android-reverse
 .PHONY: mobile-android-run

@@ -46,12 +46,15 @@ const otaBuildId = process.env.MOBILE_OTA_BUILD_ID;
 const devServerUrl = process.env.MOBILE_DEV_SERVER_URL;
 
 const config: CapacitorConfig = {
-  // Build-time app identity. The repo ships a neutral placeholder; an
-  // organisation publishing to the stores overrides it with its own signed
-  // bundle id via the MOBILE_APP_ID env var (read here by `cap sync`, and by
-  // the native builds — see android/app/build.gradle and the iOS pbxproj).
-  appId: process.env.MOBILE_APP_ID ?? "local.suitenumerique.messages",
-  appName: "Messages",
+  // Build-time app identity. The repo ships neutral placeholders; an
+  // organisation publishing to the stores overrides them via the MOBILE_APP_ID
+  // (signed bundle id) and MOBILE_APP_NAME (displayed name) env vars — read
+  // here by `cap sync`, and by the native builds: gradle resValue/applicationId
+  // on Android (android/app/build.gradle), the generated xcconfig on iOS
+  // (scripts/generate-ios-xcconfig.mjs). `||` not `??`: the env files ship the
+  // vars empty, and an empty string must fall back like an unset one.
+  appId: process.env.MOBILE_APP_ID || "local.suitenumerique.messages",
+  appName: process.env.MOBILE_APP_NAME || "ST Messages",
   webDir: "dist",
   server: {
     // Dev only: `cap sync` turns this into android:usesCleartextTraffic in the

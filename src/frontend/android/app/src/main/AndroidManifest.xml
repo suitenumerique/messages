@@ -21,15 +21,18 @@
 
             <!--
                 Deep-link scheme ending the mobile OIDC flow: routes the
-                stmessages://auth?token=… redirect from the Custom Tab back to
+                <scheme>://auth?token=… redirect from the Custom Tab back to
                 the app (caught by App.addListener("appUrlOpen")).
+                Substituted from MOBILE_AUTH_SCHEME by the manifestPlaceholder
+                in build.gradle, so a staging build declares its own scheme and
+                does not fight the production app for the callback.
                 Source of truth: src/features/native/auth.ts (AUTH_CALLBACK_SCHEME).
             -->
             <intent-filter>
                 <action android:name="android.intent.action.VIEW" />
                 <category android:name="android.intent.category.DEFAULT" />
                 <category android:name="android.intent.category.BROWSABLE" />
-                <data android:scheme="stmessages" />
+                <data android:scheme="${authCallbackScheme}" />
             </intent-filter>
         </activity>
 

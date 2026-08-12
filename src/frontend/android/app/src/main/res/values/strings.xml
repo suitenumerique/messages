@@ -1,7 +1,7 @@
 <?xml version='1.0' encoding='utf-8'?>
 <resources>
-    <string name="app_name">Messages</string>
-    <string name="title_activity_main">Messages</string>
+    <!-- app_name / title_activity_main are resValues driven by MOBILE_APP_NAME
+         (see app/build.gradle); defining them here too would clash. -->
     <string name="package_name">local.suitenumerique.messages</string>
     <string name="custom_url_scheme">local.suitenumerique.messages</string>
 
