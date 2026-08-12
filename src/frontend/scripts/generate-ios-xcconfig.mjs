@@ -47,6 +47,12 @@ const settings = {
   AUTH_CALLBACK_SCHEME: process.env.MOBILE_AUTH_SCHEME || "stmessages",
   // Feeds MARKETING_VERSION, i.e. CFBundleShortVersionString.
   MOBILE_VERSION_NAME: syncedAppVersion,
+  // Feeds CURRENT_PROJECT_VERSION, i.e. CFBundleVersion — the build number,
+  // iOS counterpart of the Android versionCode and fed from the same Makefile
+  // variable, so both stores order a release by the very same number. Unlike
+  // the displayed version it must grow at every App Store Connect upload of a
+  // given MARKETING_VERSION, which the commit count satisfies by construction.
+  MOBILE_VERSION_CODE: process.env.MOBILE_VERSION_CODE || "1",
 };
 
 // A newline or a "//" would truncate the setting (xcconfig comment/line

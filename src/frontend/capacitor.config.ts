@@ -58,7 +58,7 @@ const devServerUrl = process.env.MOBILE_DEV_SERVER_URL;
 // `cap sync` copies this key verbatim into each platform's synced
 // capacitor.config.json, which is the single file both native builds read —
 // gradle for versionName, scripts/generate-ios-xcconfig.mjs for the xcconfig.
-const appVersion = "0.1.1";
+const appVersion = "0.1.0";
 
 // `appVersion` is ours, not part of Capacitor's schema — the CLI copies unknown
 // top-level keys into the synced config untouched, which is exactly what the

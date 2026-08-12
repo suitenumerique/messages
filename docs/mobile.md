@@ -825,14 +825,28 @@ web app, which ships on its own cadence (a web deploy or an OTA bundle never
 reaches the stores). The two numbers are therefore expected to diverge, and
 the app shows them as distinct values — see *Version displayed to users*.
 
-The **technical version** (`versionCode`) is separate and automatic: it
+The **technical version** is separate and automatic: `MOBILE_VERSION_CODE`
 defaults to the commit count, so it grows on its own; override it
 (`make mobile-android-release MOBILE_VERSION_CODE=42`) for a pinned build.
 Play refuses a `versionCode` it has already accepted, so every upload needs
-a fresh one — including a rebuild of the same commit. The iOS equivalent
-(`CURRENT_PROJECT_VERSION`, the build number) is still fixed at `1` in the
-Xcode project and will need the same treatment when TestFlight enters the
-picture.
+a fresh one — including a rebuild of the same commit; App Store Connect
+applies the same rule to `CFBundleVersion` within a given `MARKETING_VERSION`.
+
+Both platforms read that one variable, by different routes. Gradle takes it
+straight from the environment at `make mobile-android-release`. Xcode cannot:
+release builds run from the IDE on the host, where the container's environment
+never lands — so `make mobile-build` passes it to
+`scripts/generate-ios-xcconfig.mjs`, which writes it into `generated.xcconfig`
+as `MOBILE_VERSION_CODE`, and the Xcode project resolves
+`CURRENT_PROJECT_VERSION = "$(MOBILE_VERSION_CODE:default=1)"` from there.
+A build made without a prior `make mobile-build` therefore falls back to `1`
+rather than failing — check the number before an upload.
+
+Using the commit count (rather than a counter reset per marketing version)
+keeps it globally monotonic, so it satisfies both stores without any
+bookkeeping and reads identically on both platforms in a support report. It is
+branch-dependent, though: two branches can produce the same count, so store
+releases should always be cut from the same branch.
 
 Five guards fail the build rather than shipping something broken: a leftover dev
 `server.url`, cleartext traffic, a missing signing key, an `applicationId`
