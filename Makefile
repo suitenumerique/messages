@@ -265,13 +265,23 @@ mobile-ota-bucket: ## create the public mobile OTA bucket in objectstorage
 # bind mount), then zip + upload it and the channel manifest to the public
 # bucket. Both steps run in the frontend toolchain: the OTA release is a
 # frontend artifact, Django is not involved. VERSION defaults to the git-derived
-# MOBILE_OTA_BUILD_ID (the hybrid <count>-<sha> id); override it to pin a specific
-# release. CHANNEL defaults to the MOBILE_OTA_CHANNEL env var (frontend env files).
-ota-publish: VERSION ?= $(MOBILE_OTA_BUILD_ID)
-ota-publish: ## build and publish a mobile OTA bundle (VERSION defaults to <count>-<sha>, CHANNEL to MOBILE_OTA_CHANNEL)
+# MOBILE_OTA_BUILD_ID (short sha); override it to pin a specific release.
+# CHANNEL defaults to the MOBILE_OTA_CHANNEL env var (frontend env files).
+mobile-ota-publish: VERSION ?= $(MOBILE_OTA_BUILD_ID)
+mobile-ota-publish: ## build and publish a mobile OTA bundle (VERSION defaults to the short sha, CHANNEL to MOBILE_OTA_CHANNEL)
 	@$(COMPOSE) up -d objectstorage --wait
 	@$(COMPOSE_RUN) frontend-mobile sh -c "npm run build && npm run mobile:ota:publish -- --version $(VERSION)$(if $(CHANNEL), --channel $(CHANNEL))"
-.PHONY: ota-publish
+.PHONY: mobile-ota-publish
+
+# Re-point the channel manifest at an already-published version (no rebuild):
+# reads the release metadata archived at publish time and bumps the manifest
+# sequence so devices follow even though the build id goes backward. VERSION is
+# required. CHANNEL defaults to the MOBILE_OTA_CHANNEL env var (frontend env files).
+mobile-ota-rollback: ## roll a channel back to a published OTA version (VERSION required, CHANNEL defaults to MOBILE_OTA_CHANNEL)
+	@test -n "$(VERSION)" || { echo "VERSION is required: make mobile-ota-rollback VERSION=<id> [CHANNEL=<name>]"; exit 1; }
+	@$(COMPOSE) up -d objectstorage --wait
+	@$(COMPOSE_RUN) frontend-mobile npm run mobile:ota:rollback -- --version $(VERSION)$(if $(CHANNEL), --channel $(CHANNEL))
+.PHONY: mobile-ota-rollback
 
 # -- Linters
 
@@ -696,10 +706,14 @@ build-front: ## build the frontend locally
 	@$(COMPOSE) run --rm --build frontend-tools npm run build
 .PHONY: build-front
 
-# Hybrid OTA/build version: a monotonic commit count (for ordering — enables a
-# future downgrade check) plus the short SHA (for traceability). Computed on the
-# HOST (git is not in the container) and injected; CI may override it.
-MOBILE_OTA_BUILD_ID ?= $(shell git rev-list --count HEAD)-$(shell git rev-parse --short HEAD)
+# OTA/build id: the bare short commit SHA. Release ordering is carried by the
+# manifest's `sequence` counter (and "redeploy = re-flip" on Scalingo), not by
+# the id — Scalingo builds have no .git and derive the same id from
+# SOURCE_VERSION, so `--short=8` is pinned: the builtin-vs-manifest freshness
+# check is a plain string equality and both sides must produce identical ids.
+# Computed on the HOST (git is not in the container) and injected; CI may
+# override it.
+MOBILE_OTA_BUILD_ID ?= $(shell git rev-parse --short=8 HEAD)
 
 # Mobile (Capacitor). The web bundle is built in a container (frontend-mobile,
 # which carries the env_file so the NEXT_PUBLIC_* vars are inlined) and synced
@@ -784,9 +798,10 @@ mobile-android-run: mobile-build ## (host) build+install the debug APK on a devi
 # generated.xcconfig at `make mobile-build`). Play refuses a versionCode it has
 # already seen and App Store Connect refuses a CFBundleVersion already uploaded
 # for the same MARKETING_VERSION, so it must strictly grow. Default to the
-# commit count — the monotonic half of MOBILE_OTA_BUILD_ID — so it can never be
-# forgotten; override for a pinned/CI build. The displayed version (versionName
-# / iOS MARKETING_VERSION) is not passed here: both platforms read it from the
+# commit count so it can never be forgotten; override for a pinned/CI build.
+# Store-only numbering: OTA release ordering is a separate system (the manifest
+# `sequence`, see docs/mobile.md). The displayed version (versionName / iOS
+# MARKETING_VERSION) is not passed here either: both platforms read it from the
 # `appVersion` property of capacitor.config.ts, bumped manually per release
 # (docs/mobile.md, App versioning).
 MOBILE_VERSION_CODE ?= $(shell git rev-list --count HEAD)

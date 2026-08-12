@@ -232,27 +232,35 @@ soon as OTA is on: `ota.ts` refuses to apply a manifest when the build embeds no
 deprecated baked `NEXT_PUBLIC_MOBILE_OTA_MANIFEST_URL` is set without it), so an
 OTA-enabled app can never apply an unverified bundle.
 
-- **Publish** (`make ota-publish [VERSION=x] [CHANNEL=x]`, i.e. the frontend
+- **Publish** (`make mobile-ota-publish [VERSION=x] [CHANNEL=x]`, i.e. the frontend
   node script `src/frontend/scripts/publish-ota.mjs` — no Django involved):
   `capgo bundle zip` `dist/` (with `index.html` at the zip root), `capgo bundle
   encrypt` it (→ encrypted zip + encrypted `checksum` + `ivSessionKey`), upload
-  the *encrypted* zip to `channels/<channel>/bundles/<version>.zip`, and write
-  `channels/<channel>/manifest.json` = `{version, url, checksum, sessionKey}`
-  (the last two feed native verification). Publishing also refuses a version
-  that does not order above the channel's current manifest (mirror of the
-  client-side downgrade guard, see *Bundle versioning*; `--force` overrides).
-- **Consume** (`src/features/native/ota.ts`, called at startup):
-  `notifyOtaAppReady()` first (confirms the running bundle booted, so
-  a broken update auto-rolls-back on next launch), then
-  `checkAndApplyOtaUpdate()` polls the manifest URL served by the backend
+  the *encrypted* zip to `channels/<channel>/bundles/<version>.zip`, archive the
+  release metadata as `channels/<channel>/releases/<version>.json` (immutable —
+  what makes the version re-pointable later, see *Rollback*), and write
+  `channels/<channel>/manifest.json` = `{version, url, checksum, sessionKey,
+  sequence, publishedAt}` (`checksum` + `sessionKey` feed native verification;
+  `sequence` orders releases, see *Release sequence*). Publishing also refuses a
+  version that does not order above the channel's current manifest (mirror of
+  the legacy client guard; the sanctioned downgrade path is `make mobile-ota-rollback`,
+  `--force` overrides).
+- **Consume** (`src/features/native/ota.ts`, called at startup and on app
+  foreground with a 30 min throttle): `notifyOtaAppReady()` first (confirms the
+  running bundle booted, so a broken update auto-rolls-back on next launch),
+  then `checkAndStageOtaUpdate()` polls the manifest URL served by the backend
   `MOBILE_OTA_MANIFEST_URL` setting (`/config` endpoint, resolved in
-  `bootstrap.tsx`) and applies the
-  advertised bundle **only if it is genuinely newer** — it must differ from
-  `CapacitorUpdater.current()`, carry a *strictly greater* version count (see
-  *Bundle versioning*), and not be recorded as a prior failed
-  boot (see *Rollback*). It then downloads (passing `checksum` + `sessionKey`,
-  verified against the baked-in public key) and `set()`s it, which reloads the
-  WebView.
+  `bootstrap.tsx`) and accepts the advertised bundle only when it clears the
+  guards — different from `CapacitorUpdater.current()`, a *strictly greater*
+  `sequence` (see *Release sequence*; pre-sequence manifests fall back to the
+  version-count guard of *Bundle versioning*), never older than the native
+  builtin bundle, and not recorded as a prior failed boot (see *Rollback*). It
+  then downloads (passing `checksum` + `sessionKey`, verified against the
+  baked-in public key) and **stages** it via `next()` — no mid-session reload.
+  A persistent, non-dismissible toast (`use-ota-update-toast.tsx`, mounted by
+  the main layout) offers the single action "Update", which `reload()`s onto
+  the staged bundle; never tapping it is fine, Capgo applies the staged bundle
+  when the app next goes to the background or relaunches.
 
 OTA replaces the *web* bundle only. Anything native (a new Capacitor plugin, a
 permission, the Swift/Gradle side) still requires a store release.
@@ -277,7 +285,7 @@ zips under their channel also prevents two channels publishing the same commit
 (same `<count>-<sha>` id) from overwriting each other's bundle.
 
 The publish target comes from `MOBILE_OTA_CHANNEL` (or `--channel` /
-`make ota-publish CHANNEL=…`), and must match the channel the apps follow
+`make mobile-ota-publish CHANNEL=…`), and must match the channel the apps follow
 through the backend `MOBILE_OTA_MANIFEST_URL`: publishing a bundle built for
 another environment would strand the fleet on that other backend's config.
 
@@ -307,27 +315,59 @@ build (the public key is baked in), so treat it as long-lived.
 ### Bundle versioning
 
 The manifest `version` (and the `channels/<channel>/bundles/<version>.zip` key)
-is a **hybrid id**, `<count>-<sha>` — e.g. `1234-a1b2c3d`:
+is the **bare short commit sha**, pinned to 8 characters — e.g. `a1b2c3d4`. It
+carries *identity only*: release ordering lives entirely in the manifest
+`sequence` (see *Release sequence*). The `version` field is a free-form string —
+Capgo treats it as a *"version code/name"* and does **not** require semver — so
+a commit sha is fine.
 
-- `<count>` = `git rev-list --count HEAD`, a **monotonic** commit count that
-  orders releases;
-- `<sha>` = `git rev-parse --short HEAD`, tracing the exact source commit.
+The Makefile derives it as `MOBILE_OTA_BUILD_ID` (`git rev-parse --short=8`);
+`make mobile-ota-publish` uses it as the default `VERSION` (override with `VERSION=…`
+to pin a release). Scalingo deploys have no `.git` and derive the very same id
+as `${SOURCE_VERSION:0:8}` — the `--short=8` pin exists because the
+builtin-vs-manifest freshness check is a plain string equality, so both sides
+must produce identical ids for the same commit (see *Publishing from Scalingo
+deploys*).
 
-The Makefile derives it once as `MOBILE_OTA_BUILD_ID`; `make ota-publish` uses it as the
-default `VERSION` (override with `VERSION=…` to pin a release). The `version`
-field is a free-form string — Capgo treats it as a *"version code/name"* and does
-**not** require semver — so a commit-based id is fine. We use `-` (not the semver
-`+` build-metadata separator) to keep the id safe in the bundle URL/S3 key.
+Earlier releases used a hybrid `<count>-<sha>` id whose leading commit count
+carried the ordering. The count-based guards remain in the code and self-disable
+on sha ids (`versionCount()` returns `null`); they still bite on hybrid-era
+artifacts:
 
-The count drives **ordering, and the client enforces it**: `checkAndApplyOtaUpdate()`
-applies a manifest only when its count is *strictly greater* than the running
-bundle's, so **republishing an older build cannot downgrade the fleet** (an
-accidental old publish or a replayed old bundle is refused). A bare SHA would
-carry no such order. Ids without the numeric prefix — the literal `"builtin"`, or
-a manually pinned non-hybrid version — can't be ordered and fall back to a plain
-inequality check. Because the count comes from `git rev-list --count HEAD`, it is
-only monotonic **along a single line of history**: always publish OTA from the
-release branch, or two diverging branches can mint colliding counts.
+- **Legacy guard**: a manifest *without* a `sequence` (pre-sequence publish) is
+  only applied when its count is strictly greater than the running bundle's.
+  Sha ids can't be ordered and fall back to a plain inequality check.
+- **Native floor** (retired de facto): with hybrid ids,
+  `checkAndStageOtaUpdate()` refused to stage a bundle whose count was below
+  the native builtin's. Sha ids carry no order, so this bound no longer
+  applies — the compensating rule is operational: **cut store builds from a
+  commit at or behind the deployed web prod**, so a fresh install's builtin is
+  never ahead of the channel. A bundle older than its binary that fails to
+  boot is still caught by the automatic revert + blacklist (see *Rollback*).
+- **Publish-side accident guard**: `make mobile-ota-publish` refuses a *hybrid*
+  version that does not order above the channel's current manifest. Sha
+  publishes skip it — on the Scalingo path the guard's job is done structurally
+  (the manifest only moves on a successful deployment), and the dev channel is
+  disposable.
+
+### Release sequence
+
+`sequence` is a per-channel **monotonic release counter** carried by the
+manifest and bumped by *every* manifest write — publish, forced republish and
+rollback alike. It decouples the order of *releases* from the order of *builds*:
+devices persist the highest sequence they staged (WebView storage,
+`ota-applied-sequence`) and accept any manifest with a strictly greater one,
+**even when it points at an older build** — which is exactly what a rollback is.
+A stale or replayed manifest can never drag a device backward (its sequence is
+not above the floor), while a deliberate rollback always can (its sequence is).
+
+A device with **no persisted floor** — pre-sequence client just updated, or
+storage wiped — accepts the current manifest on trust-on-first-use, bounded by
+the native floor and by bundle signatures; its floor starts there. Migration
+caveat: a device still *running* a pre-sequence client ignores `sequence`
+entirely and keeps the count-only guard, so **it will not follow a rollback
+until it has received a sequence-aware build through a normal forward publish**.
+Ship this feature to the fleet before relying on `make mobile-ota-rollback`.
 
 **Builtin stamping.** `make mobile-build` passes `MOBILE_OTA_BUILD_ID` to `cap sync`,
 which stamps it as the store build's builtin bundle version
@@ -344,26 +384,97 @@ There are two kinds, plus a per-device safety net:
 - **Automatic (a bundle that fails to boot).** If the new bundle never calls
   `notifyAppReady()` (crash / white screen), the plugin reverts to the last
   good bundle — the builtin if there is none — on the next launch and records
-  the version as its *last failed update*. `checkAndApplyOtaUpdate()` mirrors
+  the version as its *last failed update*. `checkAndStageOtaUpdate()` mirrors
   that record (which self-clears on read) into WebView storage and refuses to
   re-apply the version, so a broken publish can't trap the app in a
   download → crash → revert → re-download loop. The record is boot-specific:
   a transient download failure does not blacklist the version, it is simply
   retried on the next check.
-- **Deliberate (a bundle that boots but is bad).** You **cannot** point the
-  manifest back at the older, lower-count bundle — the downgrade guard refuses
-  it. Roll *forward* instead: `git revert` the bad commit(s) and
-  `make ota-publish`. The revert has a **higher** count, so it passes the guard
-  and the fleet converges onto the (restored) good code with a clean git trail.
-  Escape hatch if you can't revert: `make ota-publish VERSION=<count-above-current>-<oldsha>`
-  from the old build — but that breaks the count↔commit invariant, so prefer the
-  revert.
+- **Deliberate (a bundle that boots but is bad).**
+  `make mobile-ota-rollback VERSION=<id> [CHANNEL=<name>]` re-points the channel
+  manifest at the archived release metadata
+  (`channels/<channel>/releases/<version>.json`) under a **higher sequence**:
+  no rebuild, devices follow at their next check (launch or foreground,
+  30 min throttle) even though the build id goes backward. Limits:
+  - Releases published **before** release archiving existed have no
+    `releases/<version>.json` (their encrypted `checksum`/`sessionKey` died
+    with the overwritten manifest) — for those, check out the old git ref and
+    `make mobile-ota-publish` it again; the fresh sequence makes devices follow.
+  - Devices still running a **pre-sequence client** ignore the rollback (see
+    *Release sequence*).
+  - A device that **blacklisted** the target version (it boot-looped there)
+    skips it — re-staging it would just loop again. Those devices wait for the
+    next forward publish. Related caveat: the blacklist is keyed by version id
+    while `--force` can re-point an id at new content, so recovery publishes
+    must use a fresh id (the default sha id does: a recovery publish comes from
+    a new commit).
+
+  Rolling *forward* (`git revert` + `make mobile-ota-publish`) remains the cleanest
+  exit from an incident when build time is not the constraint: it reaches even
+  blacklisted/pre-sequence devices.
+
+  On a Scalingo-driven channel, the nominal rollback is neither of these:
+  **redeploy the old commit** (see *Publishing from Scalingo deploys*).
 - **Per-device safety net.** `CapacitorUpdater.reset()` returns a single device to
   the builtin (store) bundle, which is always bootable. Not fleet-wide; useful to
   wire onto a support/debug action.
 
-**Never prune old bundles from the bucket** — the plugin's fallback and any
-revert build may still reference them.
+**Never prune old bundles or `releases/*.json` from the bucket** — the plugin's
+fallback, a rollback and any revert build may still reference them.
+
+### Publishing from Scalingo deploys
+
+On Scalingo the OTA release is not a separate pipeline: **every deployment of an
+OTA-configured app publishes the exact `dist/` the web is about to serve**, in
+two halves that bracket the deployment outcome:
+
+1. **Stage, at build time** — `deploy/paas/scalingo_postfrontend` (gated on
+   `MOBILE_OTA_S3_BUCKET`; with the gate set, any other missing `MOBILE_OTA_*`
+   variable fails the build loudly). It runs
+   `publish-ota.mjs --stage-only --version ${SOURCE_VERSION:0:8}`: zip, encrypt,
+   upload the bundle and archive `releases/<sha8>.json` — but **never touch the
+   channel manifest**. Any failure here fails the whole deployment, so a broken
+   bundle can't ship; a deployment that fails *later* (python buildpack,
+   container boot) leaves at worst orphaned bundle artifacts, never a moved
+   pointer. A marker (`build/ota-release-id`) records the staged
+   version+channel for step 2.
+2. **Flip, at postdeploy** — the Procfile chains
+   `python deploy/paas/scalingo_ota_promote.py` after `migrate`. Scalingo runs
+   the `postdeploy` hook only when the deployment is otherwise successful, and
+   a hook failure marks the deployment `hook-error` with the previous version
+   kept serving ([postdeploy hook](https://doc.scalingo.com/platform/app/postdeploy-hook)).
+   The script re-points `manifest.json` at the staged release under a bumped
+   `sequence` (idempotent: a retry or a same-commit redeploy is a no-op).
+
+The invariant this buys: **the channel manifest can only ever point at a
+version that actually serves as the web prod** — mobile and web move as one, in
+both directions:
+
+- **Rollback = redeploy the old commit.** Nothing OTA-specific to do: the build
+  re-stages that commit's bundle (`releases/<sha8>.json` usually already
+  exists) and the flip re-points the manifest under a higher `sequence`;
+  devices follow backward at their next check. `make mobile-ota-rollback` remains a
+  dev/emergency tool — on a Scalingo-driven channel it can desync mobile from
+  web, so reach for a redeploy instead.
+- The flip runs seconds *before* the routing switch, so there is a short window
+  where the manifest is new and the web still old — same order of magnitude as
+  CDN propagation, and the best ordering Scalingo offers (nothing runs "after
+  the switch").
+
+Operational rules:
+
+- **Cut store builds from a commit at or behind the deployed web prod.** The
+  builtin stamp (`make mobile-build`, sha8) then matches a published manifest —
+  no spurious first-launch download/toast — and a fresh install can never sit
+  ahead of the channel (the native floor no longer guards this, see *Bundle
+  versioning*).
+- The vite build must inline `MOBILE_OTA_SIGNING_PUBLIC_KEY_B64` (the hook
+  refuses to publish otherwise: a key-less bundle would refuse every later
+  update) and `NEXT_PUBLIC_API_ORIGIN` must be **absolute** — the same dist
+  serves the mobile app from a `capacitor://` origin where a relative origin
+  resolves nowhere.
+- The backend of the same environment points devices at the channel:
+  `MOBILE_OTA_MANIFEST_URL=<MOBILE_OTA_PUBLIC_BASE_URL>/channels/<channel>/manifest.json`.
 
 ## Codebase map
 
@@ -482,7 +593,7 @@ with a bare `npm run build` would inline none of them. The native compile, IDE,
 | `make mobile-ios` | `mobile-build`, then open the Xcode project (host, macOS) |
 | `make mobile-ota-keygen` | generate a per-instance OTA signing key pair (base64 PEMs) |
 | `make mobile-ota-bucket` | create the public `messages-ota` bucket |
-| `make ota-publish [VERSION=x] [CHANNEL=x]` | build + publish a signed OTA bundle and its channel manifest (VERSION defaults to `<count>-<sha>`, CHANNEL to `MOBILE_OTA_CHANNEL`) |
+| `make mobile-ota-publish [VERSION=x] [CHANNEL=x]` | build + publish a signed OTA bundle and its channel manifest (VERSION defaults to `<count>-<sha>`, CHANNEL to `MOBILE_OTA_CHANNEL`) |
 
 **Android port forwarding.** The in-app WebView reaches the dev stack through an
 `adb reverse` tunnel for ports **8900, 8901, 8902, 8906** (frontend, backend,
@@ -602,8 +713,8 @@ Mobile-specific environment variables (full reference in [env.md](./env.md)):
 | `MOBILE_ALLOW_CLEARTEXT_FOR_DEV` | Dev only: baked as Capacitor `server.cleartext` at `cap sync` (`android:usesCleartextTraffic`), allowing plain HTTP to the dev backend / Vite / RustFS. Set to `1` in `frontend.defaults`; never set for release builds — the manifest then stays cleartext-free |
 | `MOBILE_AUTH_TOKEN_TTL` | Lifetime (s) of the one-time exchange token (default 60) |
 | `NEXT_PUBLIC_API_ORIGIN` | API base URL — **must be set explicitly** for mobile builds (no meaningful `window.location.origin` in the WebView) |
-| `MOBILE_OTA_MANIFEST_URL` | Backend setting served through `/config`: OTA channel manifest polled at startup — the followed channel changes without a new native build; unset disables OTA (deprecated build-time fallback: `NEXT_PUBLIC_MOBILE_OTA_MANIFEST_URL`) |
-| `MOBILE_OTA_CHANNEL` | Release channel `ota-publish` targets (`dev` locally, `staging`/`prod` in the pipeline); must match the channel the build follows (see *Release channels*) |
+| `MOBILE_OTA_MANIFEST_URL` | Backend setting served through `/config`: OTA channel manifest polled at startup and on app foreground (30 min throttle) — the followed channel changes without a new native build; unset disables OTA (deprecated build-time fallback: `NEXT_PUBLIC_MOBILE_OTA_MANIFEST_URL`) |
+| `MOBILE_OTA_CHANNEL` | Release channel `mobile-ota-publish` targets (`dev` locally, `staging`/`prod` in the pipeline); must match the channel the build follows (see *Release channels*) |
 | `MOBILE_OTA_S3_*`, `MOBILE_OTA_PUBLIC_BASE_URL` | OTA publish: S3 write credentials/endpoint (frontend env, not Django) and the device-reachable public base URL written into the manifest |
 | `MOBILE_OTA_SIGNING_PUBLIC_KEY_B64` | Base64 PEM public key baked into the app (`capacitor.config.ts`, native verification) and inlined by Vite (`ota.ts` refuses a server-provided manifest URL without it); required for any OTA-enabled build |
 | `MOBILE_OTA_SIGNING_PRIVATE_KEY_B64` | Base64 PEM private key that signs bundles at publish time (`publish-ota.mjs`, CI-only) |
@@ -613,14 +724,12 @@ Mobile-specific environment variables (full reference in [env.md](./env.md)):
 The following are POC-scoped shortcuts that must be resolved before shipping.
 Treat this list as the "definition of ready for production".
 
-- **OTA over HTTPS.** Bundle signing/encryption (Capgo v2, RSA+AES) and a
-  strictly-increasing version guard are in place (see the OTA section), so a
-  substituted or replayed old zip is refused. What remains for production is to
-  serve the bucket/CDN over **HTTPS** (dev uses cleartext RustFS). A hard
-  minimum-version *floor* baked into the app — rejecting anything below a known
-  release regardless of the running bundle — would further harden a device stuck
-  on a very old build, but the monotonic guard already covers accidental
-  downgrades.
+- **OTA over HTTPS.** Bundle signing/encryption (Capgo v2, RSA+AES), the
+  monotonic `sequence` floor persisted per device (anti-replay, see *Release
+  sequence*) and the native-builtin floor (never below the store build) are in
+  place, so a substituted or replayed old zip is refused. What remains for
+  production is to serve the bucket/CDN over **HTTPS** (dev uses cleartext
+  RustFS).
 - **Move off custom URL schemes.** Custom schemes can be claimed by other apps
   (mitigated today by the one-time token + PKCE). Production should move to
   **Universal Links (iOS) / App Links (Android)**.
@@ -884,7 +993,7 @@ build-arg). A bundle built through the local containers gets neither: the repo
 mounts `src/frontend/` alone, so they see no `.git`, and the image carries no
 `git` binary — `vite.config.ts` then falls back to a `t<timestamp>` stamp,
 still unique per build but not traceable to a commit. It applies to anything
-built by `make mobile-build` / `make ota-publish` on a workstation, the Play
+built by `make mobile-build` / `make mobile-ota-publish` on a workstation, the Play
 `.aab` included. Passing the host's SHA in (as the Makefile already does for
 `MOBILE_OTA_BUILD_ID`) is what would close the gap.
 

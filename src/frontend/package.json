@@ -29,6 +29,7 @@
     "mobile:ota:keygen": "node scripts/generate-ota-keys.mjs",
     "mobile:ota:publish": "node scripts/publish-ota.mjs",
     "mobile:assets": "node scripts/generate-mobile-assets.mjs",
+    "mobile:ota:rollback": "node scripts/rollback-ota.mjs",
     "check:deps": "node scripts/check-node-modules.mjs"
   },
   "dependencies": {

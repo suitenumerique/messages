@@ -183,7 +183,7 @@ blob stays in PG.
 Public (anonymous read) bucket holding the mobile OTA artifacts, one
 self-contained folder per release channel (`channels/<channel>/manifest.json` +
 `channels/<channel>/bundles/<version>.zip`). Created with `make mobile-ota-bucket`;
-bundles are published with `make ota-publish [CHANNEL=…]`. Channels are fully
+bundles are published with `make mobile-ota-publish [CHANNEL=…]`. Channels are fully
 independent: `NEXT_PUBLIC_*` vars are inlined into the bundle at build time, so
 each channel ships its own build — never copy a bundle across channels.
 
@@ -202,17 +202,17 @@ in the frontend env files; in CI they come from secrets.
 | Variable | Default | Description | Required |
 |----------|---------|-------------|----------|
 | `MOBILE_OTA_S3_ENDPOINT` | `http://objectstorage:9000` | S3 endpoint the script **writes** to (compose network in dev; target S3 in CI) | Optional |
-| `MOBILE_OTA_S3_BUCKET` | `messages-ota` | S3 bucket name for OTA bundles | Optional |
+| `MOBILE_OTA_S3_BUCKET` | `messages-ota` | S3 bucket name for OTA bundles. On Scalingo it is also the **activation gate**: set, every deploy stages an OTA bundle at build time and flips the channel manifest at postdeploy (any other missing `MOBILE_OTA_*` var then fails the build); unset, deploys skip OTA entirely. See [mobile.md](./mobile.md#publishing-from-scalingo-deploys) | Optional |
 | `MOBILE_OTA_S3_ACCESS_KEY` | `st-messages` | S3 access key | Optional |
 | `MOBILE_OTA_S3_SECRET_KEY` | `password` | S3 secret key | Optional |
 | `MOBILE_OTA_S3_REGION` | `us-east-1` | S3 region | Optional |
 | `MOBILE_OTA_S3_KEY_PREFIX` | `` (empty) | Object key prefix; empty for a dedicated bucket root, `messages/mobileapp/` for a shared bucket. Must stay consistent with `MOBILE_OTA_PUBLIC_BASE_URL` | Optional |
-| `MOBILE_OTA_CHANNEL` | `dev` (dev env) | Release channel `mobile:ota:publish` targets (`channels/<channel>/…`); overridable per run with `--channel` / `make ota-publish CHANNEL=…`. The deploy pipeline uses `staging` and `prod`, each publishing its own build. Must match the channel segment of the `MOBILE_OTA_MANIFEST_URL` served by the backend this deployment's apps talk to | Optional |
+| `MOBILE_OTA_CHANNEL` | `dev` (dev env) | Release channel `mobile:ota:publish` targets (`channels/<channel>/…`); overridable per run with `--channel` / `make mobile-ota-publish CHANNEL=…`. The deploy pipeline uses `staging` and `prod`, each publishing its own build. Must match the channel segment of the `MOBILE_OTA_MANIFEST_URL` served by the backend this deployment's apps talk to | Optional |
 | `MOBILE_OTA_MANIFEST_URL` | None (**backend** env) | OTA channel manifest URL the apps poll at startup, served through the `/config` endpoint — so the followed channel can change without shipping a new native build. Must point to the channel this deployment publishes to. Unset disables OTA | Optional |
 | `MOBILE_OTA_PUBLIC_BASE_URL` | `http://localhost:8906/messages-ota` | Device-reachable **read** base URL written into the manifest | Optional |
 | `MOBILE_OTA_SIGNING_PRIVATE_KEY_B64` | None | Base64-encoded (single-line) RSA private-key PEM signing/encrypting each bundle at publish time (`publish-ota.mjs`). CI secret only — never commit. Unset ⇒ publish fails. See [mobile.md](./mobile.md#generating-the-signing-key-pair) | Optional |
 | `MOBILE_OTA_SIGNING_PUBLIC_KEY_B64` | None | Base64-encoded (single-line) RSA public-key PEM baked into the app at `cap sync` time (`capacitor.config.ts`, native verification) **and** inlined by Vite into the JS bundle (`ota.ts` refuses a server-provided manifest URL on a key-less build). Read by the builds, not the publish scripts — an OTA-enabled build can never apply an unsigned bundle | Required if OTA enabled |
-| `MOBILE_OTA_BUILD_ID` | `<count>-<sha>` (git-derived) | Hybrid release id stamped into the builtin bundle version at `cap sync` (`capacitor.config.ts`) and used as the default OTA `VERSION`. Computed by the Makefile from git; override in CI to pin a build. See [mobile.md](./mobile.md#bundle-versioning) | Optional |
+| `MOBILE_OTA_BUILD_ID` | short sha, 8 chars (git-derived) | Release id stamped into the builtin bundle version at `cap sync` (`capacitor.config.ts`) and used as the default OTA `VERSION`. Pinned to `--short=8` so it string-matches the `${SOURCE_VERSION:0:8}` id Scalingo deploys publish. Computed by the Makefile from git; override in CI to pin a build. See [mobile.md](./mobile.md#bundle-versioning) | Optional |
 
 ### Static Files
 
