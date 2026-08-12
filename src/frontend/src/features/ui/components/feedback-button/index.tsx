@@ -1,10 +1,13 @@
-import { DropdownMenu, Icon, IconType } from "@gouvfr-lasuite/ui-kit"
+import { DropdownMenu, DropdownMenuItem, Icon, IconType } from "@gouvfr-lasuite/ui-kit"
 import { Button, ButtonProps, Tooltip } from "@gouvfr-lasuite/cunningham-react"
 import { useTranslation } from "react-i18next"
 import { useAuth } from "@/features/auth";
 import { useConfig } from "@/features/providers/config";
 import { useState } from "react";
 import { WidgetHelper } from "@/features/utils/widget-helper";
+import { formatVersionReport, useAppVersion } from "@/features/hooks/use-app-version";
+import { addToast, ToasterItem } from "../toaster";
+import { handle } from "@/features/utils/errors";
 
 type SurveyButtonProps = ButtonProps & {
   /** Display only icon without label */
@@ -12,22 +15,23 @@ type SurveyButtonProps = ButtonProps & {
 }
 
 /**
- * A button that opens the help center, feedback widget, or a dropdown with both options
+ * A button opening a menu with the help center, the feedback widget and the
+ * running app version. The support entries depend on what the instance
+ * configures; the version entry is always there, which is why the button
+ * renders even on an instance with no support channel at all.
  */
 export const SurveyButton = ({ iconOnly = false, ...props }: SurveyButtonProps) => {
   const { t } = useTranslation()
   const { user } = useAuth();
   const { FEEDBACK_WIDGET, HELP_CENTER_URL } = useConfig();
   const [isDropdownOpen, setIsDropdownOpen] = useState(false);
+  const version = useAppVersion();
 
   const { api_url: apiUrl, path: widgetPath, channel } = FEEDBACK_WIDGET;
   const helpCenterUrl = HELP_CENTER_URL;
 
   const hasWidget = !!(channel && apiUrl && widgetPath);
   const hasHelpCenter = !!helpCenterUrl;
-
-  // If neither is configured, don't render the button
-  if (!hasHelpCenter && !hasWidget) return null;
 
   const title: string = t("Do you have any feedback?");
   const placeholder: string = t("Share your feedback here...");
@@ -65,16 +69,14 @@ export const SurveyButton = ({ iconOnly = false, ...props }: SurveyButtonProps) 
     }
   }
 
-  const handleClick = () => {
-    if (hasHelpCenter && hasWidget) {
-      // Both configured: open dropdown
-      setIsDropdownOpen(open => !open);
-    } else if (hasHelpCenter) {
-      // Only help center: open directly
-      openHelpCenter();
-    } else {
-      // Only widget: show widget directly
-      showWidget();
+  // Everything identifying the running app in one line, so a user reporting a
+  // problem can paste it instead of reading numbers out.
+  const copyVersionReport = async () => {
+    try {
+      await navigator.clipboard.writeText(formatVersionReport(version));
+      addToast(<ToasterItem><p>{t('Version details copied to clipboard')}</p></ToasterItem>);
+    } catch (error) {
+      handle(new Error('Failed to copy the version details.'), { extra: { error } });
     }
   }
 
@@ -82,7 +84,8 @@ export const SurveyButton = ({ iconOnly = false, ...props }: SurveyButtonProps) 
   const getButtonLabel = () => {
     if (hasHelpCenter && hasWidget) return t("Help center & Support");
     if (hasHelpCenter) return t("Visit the Help center");
-    return t("Contact the Support team");
+    if (hasWidget) return t("Contact the Support team");
+    return t("About this app");
   }
 
   const getButtonIcon = () => {
@@ -90,51 +93,62 @@ export const SurveyButton = ({ iconOnly = false, ...props }: SurveyButtonProps) 
     return "help";
   }
 
-  const dropdownOptions = [
-    {
+  const supportOptions: DropdownMenuItem[] = [
+    ...(hasHelpCenter ? [{
       label: t("Visit the Help center"),
       icon: <Icon name="help" type={IconType.FILLED} />,
       callback: openHelpCenter,
-      showSeparator: true,
       subText: t("Tutorials and training"),
-    },
-    {
+    }] : []),
+    ...(hasWidget ? [{
       label: t("Contact the Support team"),
       icon: <Icon name="feedback" type={IconType.FILLED} />,
       callback: showWidget,
       subText: t("I have an issue or a feature request"),
+    }] : []),
+  ];
+
+  const dropdownOptions: DropdownMenuItem[] = [
+    ...supportOptions,
+    ...(supportOptions.length ? [{ type: "separator" } as const] : []),
+    {
+      // Native builds carry two numbers that move independently: the installed
+      // app, updated through the store, and the web bundle inside it, which an
+      // OTA release can move ahead on its own. The store version is the one
+      // users and store listings talk about, so it leads; the bundle version
+      // stays legible underneath rather than being merged into a single string.
+      label: t("Version {{version}}", { version: version.native ?? version.web }),
+      subText: version.native
+        ? t("Web interface {{version}}", { version: version.web })
+        : undefined,
+      icon: <Icon name="info" type={IconType.FILLED} />,
+      callback: copyVersionReport,
     },
   ];
 
-  const button = (
-    <Tooltip placement="bottom" content={getButtonLabel()}>
-      <Button
-        {...props}
-        icon={<Icon name={getButtonIcon()} type={IconType.FILLED} />}
-        color={props.color ?? "brand"}
-        variant={props.variant ?? "secondary"}
-        className="feedback-button"
-        title={getButtonLabel()}
-        aria-label={getButtonLabel()}
-        onClick={handleClick}
-      >
-        {iconOnly ? null : getButtonLabel()}
-      </Button>
-    </Tooltip>
+  // Always a dropdown: the version entry means the menu is never down to a
+  // single item, so there is no configuration left where opening the menu
+  // would be a pointless detour around a direct action.
+  return (
+    <DropdownMenu
+      isOpen={isDropdownOpen}
+      onOpenChange={setIsDropdownOpen}
+      options={dropdownOptions}
+    >
+      <Tooltip placement="bottom" content={getButtonLabel()}>
+        <Button
+          {...props}
+          icon={<Icon name={getButtonIcon()} type={IconType.FILLED} />}
+          color={props.color ?? "brand"}
+          variant={props.variant ?? "secondary"}
+          className="feedback-button"
+          title={getButtonLabel()}
+          aria-label={getButtonLabel()}
+          onClick={() => setIsDropdownOpen(open => !open)}
+        >
+          {iconOnly ? null : getButtonLabel()}
+        </Button>
+      </Tooltip>
+    </DropdownMenu>
   );
-
-  // If both are configured, wrap in dropdown
-  if (hasHelpCenter && hasWidget) {
-    return (
-      <DropdownMenu
-        isOpen={isDropdownOpen}
-        onOpenChange={setIsDropdownOpen}
-        options={dropdownOptions}
-      >
-        {button}
-      </DropdownMenu>
-    );
-  }
-
-  return button;
 }

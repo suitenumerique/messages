@@ -779,8 +779,8 @@ mobile-android-run: mobile-build ## (host) build+install the debug APK on a devi
 # Default to the commit count — the monotonic half of MOBILE_OTA_BUILD_ID — so
 # it can never be forgotten; override for a pinned/CI build. The displayed
 # version (versionName / iOS MARKETING_VERSION) is not passed here: both
-# platforms read it from the frontend package.json, bumped manually per
-# release (docs/mobile.md, App versioning).
+# platforms read it from the `appVersion` property of capacitor.config.ts,
+# bumped manually per release (docs/mobile.md, App versioning).
 MOBILE_VERSION_CODE ?= $(shell git rev-list --count HEAD)
 ANDROID_RELEASE_AAB = src/frontend/android/app/build/outputs/bundle/release/app-release.aab
 
@@ -793,7 +793,7 @@ mobile-android-release: mobile-build ## (host) build the signed Play bundle (.aa
 		MOBILE_VERSION_CODE="$(MOBILE_VERSION_CODE)" \
 		./gradlew bundleRelease
 	@echo "$(GREEN)Signed bundle: $(ANDROID_RELEASE_AAB)$(RESET)"
-	@echo "versionCode $(MOBILE_VERSION_CODE) / versionName $$(sed -n 's/^  \"version\": \"\(.*\)\",$$/\1/p' src/frontend/package.json)"
+	@echo "versionCode $(MOBILE_VERSION_CODE) / versionName $$(sed -n 's/.*\"appVersion\": *\"\([^\"]*\)\".*/\1/p' src/frontend/android/app/src/main/assets/capacitor.config.json)"
 .PHONY: mobile-android-release
 
 i18n-generate-front: ## Extract the frontend translation inside a json to be used for crowdin

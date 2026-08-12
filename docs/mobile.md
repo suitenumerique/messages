@@ -369,7 +369,8 @@ revert build may still reference them.
 
 | Concern | Location |
 | --- | --- |
-| Capacitor config (appId via `MOBILE_APP_ID`, plugins, HTTP, SystemBars, OTA signing key) | `src/frontend/capacitor.config.ts` |
+| Capacitor config (appId via `MOBILE_APP_ID`, store version via `appVersion`, plugins, HTTP, SystemBars, OTA signing key) | `src/frontend/capacitor.config.ts` |
+| Versions shown to users (native + web) | `src/frontend/src/features/hooks/use-app-version.ts` |
 | Platform detection | `src/frontend/src/features/native/platform.ts` |
 | PKCE helpers | `src/frontend/src/features/native/pkce.ts` |
 | System-browser session | `src/frontend/src/features/native/auth-session.ts` |
@@ -804,12 +805,25 @@ It runs `make mobile-build` (container: web bundle + `cap sync`) then
 #### App versioning
 
 The **displayed version** (Android `versionName`, iOS `MARKETING_VERSION` /
-`CFBundleShortVersionString`) has a single source of truth: the `version`
-field of `src/frontend/package.json`, **bumped manually** when releasing.
-Gradle reads the file directly; iOS receives it through the generated
-xcconfig (`make mobile-build`), so bumping it needs no other change on
-either platform. It is a marketing string — users read it in the store
-listing — and carries no ordering constraint.
+`CFBundleShortVersionString`) has a single source of truth: the `appVersion`
+property of `src/frontend/capacitor.config.ts`, **bumped manually** when
+releasing:
+
+```ts
+const appVersion = "0.1.0";
+```
+
+`cap sync` copies it verbatim into each platform's `capacitor.config.json`,
+and both native builds read it from there — gradle for the `versionName`, and
+`scripts/generate-ios-xcconfig.mjs` for the xcconfig `MOBILE_VERSION_NAME`
+(`make mobile-build`). Bumping the one line needs no other change on either
+platform. It is a marketing string — users read it in the store listing — and
+carries no ordering constraint.
+
+It deliberately does **not** live in `package.json`: that field versions the
+web app, which ships on its own cadence (a web deploy or an OTA bundle never
+reaches the stores). The two numbers are therefore expected to diverge, and
+the app shows them as distinct values — see *Version displayed to users*.
 
 The **technical version** (`versionCode`) is separate and automatic: it
 defaults to the commit count, so it grows on its own; override it
@@ -820,10 +834,45 @@ a fresh one — including a rebuild of the same commit. The iOS equivalent
 Xcode project and will need the same treatment when TestFlight enters the
 picture.
 
-Four guards fail the build rather than shipping something broken: a leftover dev
-`server.url`, cleartext traffic, a missing signing key, and an `applicationId`
+Five guards fail the build rather than shipping something broken: a leftover dev
+`server.url`, cleartext traffic, a missing signing key, an `applicationId`
 that does not match the `appId` `cap sync` baked into `capacitor.config.json`
-(the `MOBILE_APP_ID`-exported-on-only-one-side trap).
+(the `MOBILE_APP_ID`-exported-on-only-one-side trap), and a `versionName` that
+is either the unsynced placeholder (`0.0.0`) or stale against the synced
+`appVersion`.
+
+#### Version displayed to users
+
+The version is readable in-app, as the last entry of the help/support menu
+(`SurveyButton`, `src/frontend/src/features/ui/components/feedback-button/`).
+It reads the numbers through `useAppVersion()`
+(`src/frontend/src/features/hooks/use-app-version.ts`):
+
+| Shown | Source | Read |
+| --- | --- | --- |
+| `Version 1.2.0` (native) | `appVersion` in `capacitor.config.ts` | at runtime from the OS, via `@capacitor/app` |
+| `Web interface 0.1.0` (native only) | `version` in `package.json` | baked in at build time (`__WEB_APP_VERSION__`) |
+| `Version 0.1.0` (web) | `version` in `package.json` | idem |
+
+On a native platform the store version leads and the bundle version sits
+underneath, because OTA moves the bundle ahead of the installed app between
+two store releases (see *OTA live updates*) — a single number could not stand
+for both. Reading the native half from the OS rather than from the build means
+it reflects what the user actually installed.
+
+Clicking the entry copies a one-line report — `app 1.2.0 (42) · web 0.1.0
+(a1b2c3d) · ios` — including the build stamp of the running bundle, so a bug
+report pins the exact code without the user reading numbers out.
+
+That stamp is the commit SHA only when the build received a `SOURCE_VERSION`
+(Scalingo's buildpack sets it natively, and the CI image build passes it as a
+build-arg). A bundle built through the local containers gets neither: the repo
+mounts `src/frontend/` alone, so they see no `.git`, and the image carries no
+`git` binary — `vite.config.ts` then falls back to a `t<timestamp>` stamp,
+still unique per build but not traceable to a commit. It applies to anything
+built by `make mobile-build` / `make ota-publish` on a workstation, the Play
+`.aab` included. Passing the host's SHA in (as the Makefile already does for
+`MOBILE_OTA_BUILD_ID`) is what would close the gap.
 
 ### 4. Internal testing track
 

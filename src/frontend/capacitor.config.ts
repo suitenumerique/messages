@@ -45,7 +45,26 @@ const otaBuildId = process.env.MOBILE_OTA_BUILD_ID;
 // blocks Android release builds; see android/app/build.gradle).
 const devServerUrl = process.env.MOBILE_DEV_SERVER_URL;
 
-const config: CapacitorConfig = {
+// The store-facing version of the *native* apps (Android versionName, iOS
+// MARKETING_VERSION / CFBundleShortVersionString) — the string users read in
+// the store listing. Bumped manually here when cutting a store release; it
+// carries no ordering constraint (that is versionCode / CURRENT_PROJECT_VERSION,
+// see docs/mobile.md, App versioning).
+//
+// It lives here rather than in package.json because it versions the *shipped
+// app*, not the web codebase: a web deploy or an OTA bundle changes the latter
+// without ever reaching the stores, so the two numbers move on different
+// cadences and the UI shows them as distinct values (see use-app-version.ts).
+// `cap sync` copies this key verbatim into each platform's synced
+// capacitor.config.json, which is the single file both native builds read —
+// gradle for versionName, scripts/generate-ios-xcconfig.mjs for the xcconfig.
+const appVersion = "0.1.1";
+
+// `appVersion` is ours, not part of Capacitor's schema — the CLI copies unknown
+// top-level keys into the synced config untouched, which is exactly what the
+// native builds read.
+const config: CapacitorConfig & { appVersion: string } = {
+  appVersion,
   // Build-time app identity. The repo ships neutral placeholders; an
   // organisation publishing to the stores overrides them via the MOBILE_APP_ID
   // (signed bundle id) and MOBILE_APP_NAME (displayed name) env vars — read

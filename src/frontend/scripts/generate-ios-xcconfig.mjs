@@ -17,17 +17,36 @@ import { fileURLToPath } from "node:url";
 
 const scriptDir = dirname(fileURLToPath(import.meta.url));
 
+// The displayed version, read from the config `cap sync` just wrote (this
+// script runs right after it, see the mobile:build npm script). Unlike the
+// per-instance identity below it is project truth — the `appVersion` property
+// of capacitor.config.ts, bumped manually per release (docs/mobile.md, App
+// versioning) — and the Android versionName reads the very same key from its
+// own synced copy. Missing means `cap sync` did not run: fail loudly rather
+// than write an xcconfig that silently drops MARKETING_VERSION.
+const syncedConfigPath = resolve(scriptDir, "../ios/App/App/capacitor.config.json");
+let syncedAppVersion;
+try {
+  syncedAppVersion = JSON.parse(readFileSync(syncedConfigPath, "utf8")).appVersion;
+} catch (error) {
+  throw new Error(
+    `Cannot read ${syncedConfigPath} (${error.message}): run \`npx cap sync\` ` +
+      "before this script (both are part of `npm run mobile:build`).",
+  );
+}
+if (!syncedAppVersion) {
+  throw new Error(
+    `${syncedConfigPath} carries no appVersion: capacitor.config.ts must ` +
+      "declare it (see docs/mobile.md, App versioning).",
+  );
+}
+
 const settings = {
   MOBILE_APP_ID: process.env.MOBILE_APP_ID || "local.suitenumerique.messages",
   PRODUCT_DISPLAY_NAME: process.env.MOBILE_APP_NAME || "ST Messages",
   AUTH_CALLBACK_SCHEME: process.env.MOBILE_AUTH_SCHEME || "stmessages",
-  // Unlike the per-instance identity above, the displayed version is project
-  // truth: the frontend package.json "version" field, bumped manually per
-  // release (docs/mobile.md, App versioning). Feeds MARKETING_VERSION, i.e.
-  // CFBundleShortVersionString — the Android versionName reads the same field.
-  MOBILE_VERSION_NAME: JSON.parse(
-    readFileSync(resolve(scriptDir, "../package.json"), "utf8"),
-  ).version,
+  // Feeds MARKETING_VERSION, i.e. CFBundleShortVersionString.
+  MOBILE_VERSION_NAME: syncedAppVersion,
 };
 
 // A newline or a "//" would truncate the setting (xcconfig comment/line
