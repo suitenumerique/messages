@@ -1,8 +1,9 @@
 // The composer's formatting toolbar on the native app, shown as a bar pinned
 // above the on-screen keyboard while the composer is focused (see
 // mobile-toolbar/index.tsx). The keyboard resizes the webview itself (iOS:
-// @capacitor/keyboard native resize, Android: adjustResize), so a fixed
-// bottom: 0 lands right on top of it.
+// @capacitor/keyboard native resize; Android: adjustResize, and the ime inset
+// applied by MainActivity.java on 15+ where adjustResize no longer fires), so
+// a fixed bottom: 0 lands right on top of it.
 
 
 // `:root.native` (not `.native`) so the inner rules outweigh the composer's
@@ -61,13 +62,14 @@
     margin-inline: calc(-1 * var(--c--globals--spacings--3xs));
   }
 
-  // The format drawer is the bottom-most surface while open (the buttons
-  // row folds away, see MobileToolbar). Anchored to the viewport itself
-  // rather than laid out inside the bar, so none of the bar's insets can
-  // leave a gap under it; its sheet clears the home-indicator area. The
-  // bar has no transform/filter, so fixed still resolves against the
-  // viewport here.
-  .mobile-toolbar__format-drawer {
+  // An open drawer — the format panel, or a child one (template / signature
+  // selectors) — is the bottom-most surface: the buttons row folds away (see
+  // MobileToolbar). Anchored to the viewport itself rather than laid out
+  // inside the bar, so none of the bar's insets can leave a gap under it;
+  // its sheet clears the home-indicator area. The bar has no
+  // transform/filter, so fixed still resolves against the viewport here.
+  .mobile-toolbar__format-drawer,
+  .mobile-toolbar__drawer-slot .drawer {
     position: fixed;
     left: 0;
     right: 0;
@@ -77,6 +79,13 @@
     .drawer__sheet {
       padding-bottom: var(--safe-area-inset-bottom);
     }
+  }
+
+  // Child drawers hide the buttons row instead of unmounting it: the child
+  // that portals the drawer into the slot renders from that row (the format
+  // panel, owned by the bar itself, can just unmount it).
+  &--drawer-open .bn-toolbar.bn-formatting-toolbar {
+    display: none;
   }
 
   // The toolbar row hugs its content (a short bar stays short, anchored to

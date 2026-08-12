@@ -1,4 +1,5 @@
 import { FormattingToolbar, useBlockNoteEditor } from "@blocknote/react";
+import clsx from "clsx";
 import { useCallback, useMemo, useState } from "react";
 import { createPortal } from "react-dom";
 import { useTranslation } from "react-i18next";
@@ -138,7 +139,13 @@ export const MobileToolbar = ({
     // styles under them, and the portal leaves the editor's container.
     return createPortal(
         <div
-            className="bn-mobile-formatting-toolbar bn-root bn-mantine light"
+            className={clsx(
+                "bn-mobile-formatting-toolbar bn-root bn-mantine light",
+                {
+                    "bn-mobile-formatting-toolbar--drawer-open":
+                        childDrawerId !== null,
+                },
+            )}
             data-color-scheme="light"
             ref={keepEditorFocusOnTap}
         >
@@ -165,9 +172,13 @@ export const MobileToolbar = ({
             {view === "link" && (
                 <MobileLinkEditor onClose={() => setView("toolbar")} />
             )}
-            {/* The buttons row folds away while the format panel is open —
-                the panel's Drawer chrome (close button, swipe, tap back into
-                the text) handles the way back. */}
+            {/* The buttons row folds away while a drawer is open — the
+                drawer's own chrome (close button, swipe, tap back into the
+                text) handles the way back. The format panel unmounts it;
+                a child drawer only hides it in CSS
+                (bn-mobile-formatting-toolbar--drawer-open), since the child
+                portaling that drawer into the slot renders from this very
+                row and unmounting it would take the drawer down with it. */}
             {view === "toolbar" && (
                 <FormattingToolbar>
                     <div className="mobile-toolbar__scroll-row">

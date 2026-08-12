@@ -473,7 +473,7 @@ with a bare `npm run build` would inline none of them. The native compile, IDE,
 | Command | What it does |
 | --- | --- |
 | `make mobile-build` | web build (container) + `cap sync` into `ios/` and `android/` |
-| `make mobile-assets` | regenerate native icons & splashscreens from `src/frontend/assets/` |
+| `make mobile-assets` | regenerate native icons & splashscreens from the vector mark — see [`mobile-assets.md`](./mobile-assets.md) |
 | `make mobile-android` | `mobile-build`, then open the Android project in Android Studio (host) |
 | `make mobile-android-run` | `mobile-build` + `gradlew assembleDebug` + `adb install` + `adb reverse` (host) |
 | `make mobile-android-release` | `mobile-build` + `gradlew bundleRelease` → signed `.aab` for Play (host, see [Publishing to Google Play](#publishing-to-google-play)) |
@@ -636,8 +636,14 @@ Treat this list as the "definition of ready for production".
 - **Safe-area insets.** Disabling Capacitor's `SystemBars` inset handling (to fix
   the double keyboard inset, Capacitor #8181) means Android no longer receives
   the `--safe-area-inset-*` CSS variables; `MainActivity.java` re-injects them
-  from the window insets (system bars + display cutout), without touching the
-  keyboard behavior. iOS resolves `env(safe-area-inset-*)` natively. The app
+  from the window insets (system bars + display cutout). The same listener also
+  owns the keyboard resize on **Android 15+**: the OS draws every app edge to
+  edge there, and an edge-to-edge window is never resized by the keyboard, so
+  `windowSoftInputMode=adjustResize` does nothing and the composer toolbar would
+  hide behind the keyboard — the listener applies the `ime()` inset as padding,
+  and only above API 34 (below it the system resize still runs, and adding
+  padding is exactly what #8181 was). iOS resolves `env(safe-area-inset-*)`
+  natively and resizes through `@capacitor/keyboard`. The app
   shell folds the top inset into `--header-height` (`globals.scss`), so
   anything laid out from it clears the status bar / notch automatically.
 - **Iframe subresources.** Inline images proxied through the API use the WebView
@@ -781,8 +787,9 @@ the backend `MOBILE_AUTH_CALLBACK_SCHEMES` list.
 
 What this does *not* solve: both apps still ship the same icon and near-identical
 names, which is how a real mail gets sent from the staging build. Differentiated
-icons mean a second asset set for `make mobile-assets`, which generates from a
-single `src/frontend/assets/` today.
+icons mean generating from a second mark — the generator takes `--icon` /
+`--icon-dark` for exactly that, but the output paths are fixed, so the two sets
+cannot coexist in one checkout (see [`mobile-assets.md`](./mobile-assets.md)).
 
 ### 3. Build the bundle
 
@@ -899,4 +906,7 @@ or the Capacitor version.
   test with curl, running on emulators/devices, re-testing cross-app SSO with a
   throwaway second app, and objective SSO proofs (Keycloak events, negative
   controls).
+- [`mobile-assets.md`](./mobile-assets.md) — app icons and splash screens: the
+  vector mark everything is derived from, the platform safe zones, and what each
+  OS actually reads at launch.
 - [`env.md`](./env.md) — full environment-variable reference.

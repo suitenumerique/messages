@@ -28,7 +28,7 @@
     "mobile:ota:bucket": "node scripts/create-ota-bucket.mjs",
     "mobile:ota:keygen": "node scripts/generate-ota-keys.mjs",
     "mobile:ota:publish": "node scripts/publish-ota.mjs",
-    "mobile:assets": "capacitor-assets generate --ios --android --pwa --iconBackgroundColor '#ffffff' --iconBackgroundColorDark '#161B28' --splashBackgroundColor '#ffffff' --splashBackgroundColorDark '#161B28'",
+    "mobile:assets": "node scripts/generate-mobile-assets.mjs",
     "check:deps": "node scripts/check-node-modules.mjs"
   },
   "dependencies": {

@@ -82,8 +82,10 @@ const config: CapacitorConfig = {
     // windowSoftInputMode=adjustResize it double-applies the keyboard inset, so
     // the WebView shrinks by twice the keyboard height (capacitor #8181, the
     // Android < 15 variant). Capacitor then stops injecting the --safe-area-inset-*
-    // CSS variables on Android; MainActivity.java re-injects them (without the
-    // buggy keyboard handling). iOS is unaffected: env(safe-area-inset-*)
+    // CSS variables on Android *and* stops resizing the WebView for the keyboard
+    // on Android 15+, where the forced edge-to-edge window makes adjustResize a
+    // no-op; MainActivity.java takes over both, applying the keyboard inset only
+    // on the versions that need it. iOS is unaffected: env(safe-area-inset-*)
     // resolves natively there.
     SystemBars: {
         insetsHandling: "disable",
