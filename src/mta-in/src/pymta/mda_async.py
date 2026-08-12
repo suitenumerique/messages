@@ -77,6 +77,12 @@ class MDAResult:
     permanent) from a permanent rejection; only ``deliver`` names any, via
     :data:`_PERMANENT_STATUSES`. ``payload`` is the decoded JSON body when
     available.
+
+    ``payload`` is always a dict, so callers can ``.get()`` without guarding.
+    A body that is absent, unparseable, or a JSON value that is not an object
+    (a list, a string, ``null``) becomes ``{}``. An empty payload therefore
+    means "no usable answer", never a verdict: callers must not read a missing
+    key as a negative one.
     """
 
     ok: bool
@@ -253,10 +259,20 @@ class MDAClient:
 
         elapsed = self._clock() - start
 
-        # JSON decode is best-effort; some error bodies may be HTML.
+        # JSON decode is best-effort; some error bodies may be HTML. Anything
+        # that is not a JSON object collapses to {} so callers get a total
+        # ``.get()`` instead of an AttributeError on a list or None body.
         try:
             payload = response.json() if response.content else {}
         except json.JSONDecodeError:
+            payload = {}
+        if not isinstance(payload, dict):
+            logger.warning(
+                "MDA %s returned HTTP %d with a non-object JSON body (%s)",
+                endpoint_label,
+                response.status_code,
+                type(payload).__name__,
+            )
             payload = {}
 
         status = response.status_code

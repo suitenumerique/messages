@@ -181,6 +181,49 @@ async def test_200_returns_ok_with_payload():
 
 
 # ---------------------------------------------------------------------------
+# ``payload`` is always a dict.
+#
+# Callers read it with ``.get()`` on the reply path of a live SMTP session; a
+# body that is not a JSON object would otherwise raise AttributeError there and
+# turn a readable defer into a 421 + disconnect. Collapsing to {} keeps the
+# reply logic total, and the handlers treat {} as "no answer", never a verdict.
+# ---------------------------------------------------------------------------
+
+
+@pytest.mark.parametrize(
+    "body",
+    [
+        pytest.param(b"", id="empty"),
+        pytest.param(b"<html><body>200 OK</body></html>", id="html-error-page"),
+        pytest.param(b"not json at all", id="garbage"),
+        pytest.param(b'{"user@example.com": true', id="truncated-json"),
+        pytest.param(b"[true, false]", id="json-list"),
+        pytest.param(b"null", id="json-null"),
+        pytest.param(b'"user@example.com"', id="json-string"),
+        pytest.param(b"42", id="json-number"),
+        pytest.param(b"true", id="json-bool"),
+    ],
+)
+@pytest.mark.parametrize("status", [200, 400, 500])
+@pytest.mark.asyncio
+async def test_non_object_bodies_become_an_empty_payload(body, status):
+    client, _ = _new_client()
+    client._client = _StubAsyncClient([_resp(status, body)])
+    result = await client.check_recipient("user@example.com")
+    assert result.payload == {}
+    assert result.status_code == status
+
+
+@pytest.mark.asyncio
+async def test_non_object_body_on_deliver_also_becomes_an_empty_payload():
+    client, _ = _new_client()
+    client._client = _StubAsyncClient([_resp(200, b"[]")])
+    result = await _deliver(client)
+    assert result.ok is True
+    assert result.payload == {}
+
+
+# ---------------------------------------------------------------------------
 # Circuit breaker
 # ---------------------------------------------------------------------------
 

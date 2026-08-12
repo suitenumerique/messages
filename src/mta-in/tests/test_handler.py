@@ -16,6 +16,7 @@ import pytest
 from pymta import settings
 from pymta.handler import (
     _ENVELOPES_ATTR,
+    _PROXY_SRC_ATTR,
     _RCPT_MISSES_ATTR,
     _REPLY_RESERVE_SECONDS,
     _SOFT_ERRORS_ATTR,
@@ -27,23 +28,33 @@ from pymta.mda_async import MDAResult
 
 
 class _FakeMDA:
-    """Stand-in for MDAClient. Returns whatever the test wires up."""
+    """Stand-in for MDAClient. Returns whatever the test wires up.
+
+    ``check_result`` pins one verbatim result for every address; leave it unset
+    and the fake synthesises the real MDA shape instead, ``{address:
+    check_exists}``. A miss has to be an explicit ``False``, because the
+    handler treats a body that does not name the address as no answer at all.
+    """
 
     def __init__(
         self,
         check_result: MDAResult | None = None,
         deliver_result: MDAResult | None = None,
+        check_exists: bool = False,
     ):
-        self.check_result = check_result or MDAResult(
-            ok=True, temp_fail=False, payload={}, status_code=200
-        )
+        self.check_result = check_result
+        self.check_exists = check_exists
         self.deliver_result = deliver_result or MDAResult(
             ok=True, temp_fail=False, payload={"status": "ok"}, status_code=200
         )
         self.deliver_kwargs: dict | None = None
 
     async def check_recipient(self, address: str) -> MDAResult:
-        return self.check_result
+        if self.check_result is not None:
+            return self.check_result
+        return MDAResult(
+            ok=True, temp_fail=False, payload={address: self.check_exists}, status_code=200
+        )
 
     async def deliver(self, **kwargs) -> MDAResult:
         self.deliver_kwargs = kwargs
@@ -62,6 +73,15 @@ def _envelope():
 
 def _handler(mda=None) -> InboundHandler:
     return InboundHandler(mda or _FakeMDA())
+
+
+async def _deliver_with(mda) -> str:
+    """Run one complete DATA phase against ``mda`` and return the SMTP reply."""
+    session, envelope = _session(), _envelope()
+    envelope.mail_from = "sender@example.com"
+    envelope.rcpt_tos = ["a@example.com"]
+    envelope.content = b"Subject: hi\r\n\r\nbody\r\n"
+    return await _handler(mda).handle_DATA(None, session, envelope)
 
 
 # ---------------------------------------------------------------------------
@@ -131,11 +151,7 @@ async def test_data_max_envelopes_bumps_soft_errors():
 async def test_rcpt_miss_counter_triggers_421_at_limit(monkeypatch):
     # Tight limit so we don't have to do many round-trips.
     monkeypatch.setattr(settings, "PYMTA_MAX_RCPT_MISSES_PER_SESSION", 3)
-    mda = _FakeMDA(
-        check_result=MDAResult(
-            ok=True, temp_fail=False, payload={}, status_code=200
-        )  # exists=False for every address
-    )
+    mda = _FakeMDA(check_exists=False)
     handler, session, envelope = _handler(mda), _session(), _envelope()
 
     # First two misses get the normal 550.
@@ -146,6 +162,107 @@ async def test_rcpt_miss_counter_triggers_421_at_limit(monkeypatch):
     reply = await handler.handle_RCPT(None, session, envelope, "<miss3@example.com>", [])
     assert reply.startswith("421")
     assert getattr(session, _RCPT_MISSES_ATTR) == 3
+
+
+# ---------------------------------------------------------------------------
+# A 200 that does not name the address is not a verdict.
+#
+# ``_post`` collapses an absent, unparseable, or non-object body to {}, so the
+# handler cannot tell those apart from "the MDA said this mailbox is missing"
+# unless it insists on the key. Reading a bodyless 200 (an ingress error page,
+# a response shape that drifted) as a miss would answer 550 and have the
+# sending MTA bounce mail to a working address.
+# ---------------------------------------------------------------------------
+
+
+UNUSABLE_CHECK_BODIES = [
+    pytest.param({}, id="empty-body-or-unparseable"),
+    pytest.param({"detail": "ok"}, id="proxy-200-page"),
+    pytest.param({"other@example.com": True}, id="answers-a-different-address"),
+    pytest.param({"Rcpt@example.com": True}, id="case-drifted-key"),
+    pytest.param({"rcpt@example.com": None}, id="null-verdict"),
+    pytest.param({"rcpt@example.com": "false"}, id="stringified-verdict"),
+    pytest.param({"rcpt@example.com": 0}, id="numeric-verdict"),
+    pytest.param({"rcpt@example.com": {"exists": False}}, id="nested-verdict-shape"),
+    pytest.param({"rcpt@example.com": []}, id="empty-list-verdict"),
+]
+
+
+@pytest.mark.parametrize("payload", UNUSABLE_CHECK_BODIES)
+@pytest.mark.asyncio
+async def test_rcpt_defers_when_a_200_carries_no_verdict(payload):
+    mda = _FakeMDA(
+        check_result=MDAResult(ok=True, temp_fail=False, payload=payload, status_code=200)
+    )
+    handler, session, envelope = _handler(mda), _session(), _envelope()
+
+    reply = await handler.handle_RCPT(None, session, envelope, "<rcpt@example.com>", [])
+
+    assert reply.startswith("451"), reply
+    assert envelope.rcpt_tos == []
+    # Not a miss: an unusable body must not spend the unknown-recipient budget,
+    # or an MDA hiccup would hang up on a sender addressing real mailboxes.
+    assert getattr(session, _RCPT_MISSES_ATTR, 0) == 0
+
+
+@pytest.mark.parametrize(
+    "result",
+    [
+        pytest.param(MDAResult(ok=False, temp_fail=True, payload={}, status_code=0), id="timeout"),
+        pytest.param(
+            MDAResult(ok=False, temp_fail=True, payload={}, status_code=0), id="breaker-open"
+        ),
+        pytest.param(
+            MDAResult(ok=False, temp_fail=True, payload={"detail": "no"}, status_code=400),
+            id="http-400",
+        ),
+        pytest.param(
+            MDAResult(ok=False, temp_fail=True, payload={"detail": "no"}, status_code=413),
+            id="http-413",
+        ),
+        pytest.param(
+            MDAResult(ok=False, temp_fail=True, payload={"detail": "no"}, status_code=415),
+            id="http-415",
+        ),
+        pytest.param(
+            MDAResult(ok=False, temp_fail=True, payload={}, status_code=401), id="http-401"
+        ),
+        pytest.param(
+            MDAResult(ok=False, temp_fail=True, payload={}, status_code=404), id="http-404"
+        ),
+        pytest.param(
+            MDAResult(ok=False, temp_fail=True, payload={}, status_code=429), id="http-429"
+        ),
+        pytest.param(
+            MDAResult(ok=False, temp_fail=True, payload={}, status_code=503), id="http-503"
+        ),
+    ],
+)
+@pytest.mark.asyncio
+async def test_rcpt_defers_on_every_unsuccessful_check(result):
+    # No check failure is ever a verdict on the mailbox: 400/413/415 included,
+    # since there they describe the request we built, not the address.
+    mda = _FakeMDA(check_result=result)
+    handler, session, envelope = _handler(mda), _session(), _envelope()
+
+    reply = await handler.handle_RCPT(None, session, envelope, "<rcpt@example.com>", [])
+
+    assert reply.startswith("451"), reply
+    assert envelope.rcpt_tos == []
+    assert getattr(session, _RCPT_MISSES_ATTR, 0) == 0
+
+
+@pytest.mark.asyncio
+async def test_rcpt_explicit_false_is_still_a_permanent_miss():
+    # The guard above must not soften a real answer: an explicit False is the
+    # MDA saying the mailbox does not exist, and that stays a 550.
+    mda = _FakeMDA(check_exists=False)
+    handler, session, envelope = _handler(mda), _session(), _envelope()
+
+    reply = await handler.handle_RCPT(None, session, envelope, "<rcpt@example.com>", [])
+
+    assert reply.startswith("550"), reply
+    assert getattr(session, _RCPT_MISSES_ATTR) == 1
 
 
 @pytest.mark.asyncio
@@ -367,21 +484,61 @@ async def test_http_200_without_status_ok_defers():
     assert reply.startswith("451"), reply
 
 
+@pytest.mark.parametrize("status", [400, 413, 415])
 @pytest.mark.asyncio
-async def test_message_rejecting_status_still_bounces():
+async def test_message_rejecting_status_still_bounces(status):
     # 400/413/415 keep their permanent reject: retrying sends the same bytes.
     mda = _FakeMDA(
         deliver_result=MDAResult(
-            ok=False, temp_fail=False, payload={"detail": "unparseable"}, status_code=400
+            ok=False, temp_fail=False, payload={"detail": "unparseable"}, status_code=status
         )
     )
-    handler, session, envelope = _handler(mda), _session(), _envelope()
-    envelope.mail_from = "sender@example.com"
-    envelope.rcpt_tos = ["a@example.com"]
-    envelope.content = b"Subject: hi\r\n\r\nbody\r\n"
-
-    reply = await handler.handle_DATA(None, session, envelope)
+    reply = await _deliver_with(mda)
     assert reply.startswith("554"), reply
+
+
+@pytest.mark.parametrize(
+    "payload",
+    [
+        pytest.param({}, id="empty-body-or-unparseable"),
+        pytest.param({"status": None}, id="null-status"),
+        pytest.param({"status": "OK"}, id="wrong-case-status"),
+        pytest.param({"detail": "accepted"}, id="no-status-key"),
+        pytest.param({"status": "partial_success"}, id="partial-on-a-200"),
+    ],
+)
+@pytest.mark.asyncio
+async def test_deliver_200_without_an_unambiguous_ok_defers(payload):
+    # 200 is not proof of delivery; only the exact ``{"status": "ok"}`` is.
+    # Every other body keeps the message alive for a retry.
+    mda = _FakeMDA(
+        deliver_result=MDAResult(ok=True, temp_fail=False, payload=payload, status_code=200)
+    )
+    reply = await _deliver_with(mda)
+    assert reply.startswith("451"), reply
+
+
+@pytest.mark.parametrize(
+    "status",
+    [
+        pytest.param(0, id="timeout-transport-or-breaker"),
+        pytest.param(207, id="multi-status"),
+        pytest.param(401, id="jwt-rejected"),
+        pytest.param(403, id="forbidden"),
+        pytest.param(404, id="route-missing"),
+        pytest.param(429, id="throttled"),
+        pytest.param(418, id="unrecognised-4xx"),
+        pytest.param(500, id="mda-error"),
+        pytest.param(503, id="mda-unavailable"),
+    ],
+)
+@pytest.mark.asyncio
+async def test_deliver_defers_on_every_status_outside_the_permanent_set(status):
+    mda = _FakeMDA(
+        deliver_result=MDAResult(ok=False, temp_fail=True, payload={}, status_code=status)
+    )
+    reply = await _deliver_with(mda)
+    assert reply.startswith("451"), reply
 
 
 # ---------------------------------------------------------------------------
@@ -472,15 +629,19 @@ async def test_proxy_header_from_trusted_peer_is_accepted(monkeypatch):
     assert accepted is True
 
 
+@pytest.mark.parametrize("allowlist", [[], [ip_network("0.0.0.0/0")]])
 @pytest.mark.asyncio
-async def test_empty_allowlist_fails_closed(monkeypatch):
-    # Unreachable in practice, since server.py refuses to start PROXY protocol
-    # with an empty allowlist, but the matcher must not treat "no entries" as
-    # "everyone".
-    monkeypatch.setattr(settings, "PYMTA_TRUSTED_PROXIES", [])
+async def test_empty_allowlist_trusts_every_peer(monkeypatch, allowlist):
+    # "No upstream named" means there is nothing left to filter on, so the
+    # header is taken from anyone -- the same posture 0.0.0.0/0 spells out.
+    # server.py warns loudly at startup; the isolation is the trust boundary.
+    monkeypatch.setattr(settings, "PYMTA_TRUSTED_PROXIES", allowlist)
+    server = _FakeServer()
     session = types.SimpleNamespace(host_name=None, peer=("198.51.100.7", 5555), proxy_data=None)
-    accepted = await _handler().handle_PROXY(_FakeServer(), session, _envelope(), _proxy_data())
-    assert accepted is False
+    accepted = await _handler().handle_PROXY(server, session, _envelope(), _proxy_data())
+    assert accepted is True
+    # And the claimed source is what the caps and Received are keyed on.
+    assert getattr(server, _PROXY_SRC_ATTR) == ("203.0.113.9", 52000)
 
 
 # ---------------------------------------------------------------------------

@@ -34,41 +34,47 @@ def _configure_logging() -> None:
 
 
 def _check_proxy_trust_config() -> None:
-    """Refuse to run a PROXY-protocol listener that would believe any peer.
+    """Warn loudly when the PROXY-protocol listener will believe any peer.
 
-    Enabling PROXY protocol is the assertion that a balancer sits in front of
-    us, which makes the balancer's address a known fact, so there is no
-    coherent configuration where it is enabled and the allowlist is empty.
-    Without one, the header decides the per-IP rate-limit key and the
-    ``client_address`` the MDA writes into ``Received`` on the word of whoever
-    sent it, and any peer reaching port 25 directly can forge both.
+    Enabling PROXY protocol is normally the assertion that a balancer sits in
+    front of us, which makes the balancer's address a known fact. Naming it in
+    ``PYMTA_TRUSTED_PROXIES`` is strongly recommended and this warns when it is
+    absent, but it does not block startup: deployments where the balancer's
+    addresses are dynamic or simply unknown at boot still need to run, and
+    there the network isolation has to carry the whole weight instead.
 
-    There are exactly two supported topologies: PROXY protocol on, behind a
-    balancer named in ``PYMTA_TRUSTED_PROXIES``; or PROXY protocol off,
-    exposed directly. A balancer without PROXY protocol is not supported, because
-    pymta would attribute every session to the balancer's own IP.
+    What the allowlist buys is that the header only decides the per-IP
+    rate-limit key and the ``client_address`` the MDA writes into ``Received``
+    when a known balancer sent it. Without one, any peer that can open a TCP
+    connection to the SMTP port decides both.
+
+    There are two supported topologies: PROXY protocol on, behind a balancer;
+    or PROXY protocol off, exposed directly. A balancer without PROXY protocol
+    is not supported, because pymta would attribute every session to the
+    balancer's own IP.
     """
     if not settings.PYMTA_ENABLE_PROXY_PROTOCOL:
         return
-    if not settings.PYMTA_TRUSTED_PROXIES:
-        raise RuntimeError(
-            "PROXY protocol is enabled but PYMTA_TRUSTED_PROXIES is empty. Set it "
-            "to the load balancer's IPs/CIDRs. Without it any peer able to reach "
-            f"port {settings.PYMTA_SMTP_PORT} directly can forge its source IP past "
-            "the per-IP caps and into the Received header."
-        )
     # A zero-prefix network (0.0.0.0/0, ::/0) matches every peer, so it is the
-    # empty allowlist wearing a disguise: non-empty enough to pass the check
-    # above, while trusting exactly as much as no allowlist at all.
+    # empty allowlist wearing a disguise. Same posture, same warning.
     catch_all = [net for net in settings.PYMTA_TRUSTED_PROXIES if net.prefixlen == 0]
-    if catch_all:
-        raise RuntimeError(
-            "PROXY protocol is enabled but PYMTA_TRUSTED_PROXIES contains "
-            f"{', '.join(str(net) for net in catch_all)}, which matches every peer. "
-            "Set it to the load balancer's IPs/CIDRs. Otherwise any peer able to "
-            f"reach port {settings.PYMTA_SMTP_PORT} directly can forge its source IP "
-            "past the per-IP caps and into the Received header."
+    if not settings.PYMTA_TRUSTED_PROXIES or catch_all:
+        why = (
+            "PYMTA_TRUSTED_PROXIES is empty"
+            if not settings.PYMTA_TRUSTED_PROXIES
+            else f"PYMTA_TRUSTED_PROXIES contains {', '.join(str(n) for n in catch_all)}, "
+            "which matches every peer"
         )
+        logger.warning(
+            "SECURITY: PROXY protocol is enabled but %s, so a PROXY header is trusted "
+            "from any peer. Any host able to reach port %s directly can forge its "
+            "source IP past the per-IP caps and into the Received header. Set it to "
+            "the load balancer's IPs/CIDRs, and make sure the port is reachable only "
+            "from the balancer.",
+            why,
+            settings.PYMTA_SMTP_PORT,
+        )
+        return
     logger.info(
         "PROXY protocol enabled; trusting headers only from %s",
         ", ".join(str(net) for net in settings.PYMTA_TRUSTED_PROXIES),

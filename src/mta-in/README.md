@@ -28,9 +28,11 @@ Both run as a stateless, queue-less SMTP front-end. After receiving an email thr
 
 ### Translating the MDA outcome
 
-Losing a legitimate message is worse than asking the sender to retry, so the permanent-rejection set is an explicit allow-list and everything else defers:
+Losing a legitimate message is worse than asking the sender to retry, so the permanent-rejection set is an explicit allow-list and everything else defers.
 
-| MDA response | SMTP reply | Why |
+The table below maps the response to `deliver/`; `check/` has its own table under it.
+
+| MDA `deliver/` response | SMTP reply | Why |
 |---|---|---|
 | `200` + `{"status": "ok"}` | `250` | Delivered to every recipient. |
 | `400`, `413`, `415` | `554` / `5xx` | The message itself is unacceptable: unparseable, oversize, or wrong content type. A retry sends the same bytes. |
@@ -40,6 +42,18 @@ Losing a legitimate message is worse than asking the sender to retry, so the per
 | `200` with an unrecognised body | `451` | Not proof of delivery. |
 
 Only 5xx and transport failures feed the circuit breaker. A `207` or a `401` is a complete answer from a healthy MDA.
+
+`check/` names **no** permanent statuses at all. Every entry above is a verdict on a *message*, and a recipient check carries none: a `400`, `413` or `415` there is a fault in the check request we built, so saying `554` would tell the sender a working address is permanently bad. The only permanent reply at RCPT TO comes from a `200` whose body says the mailbox does not exist.
+
+| MDA `check/` response | SMTP reply | Why |
+|---|---|---|
+| `200` + `{"<addr>": true}` | `250` | Mailbox exists. |
+| `200` + `{"<addr>": false}` | `550` (`421` at the miss cutoff) | The MDA says there is no such mailbox. The only permanent rejection on this path. |
+| `200` naming the address with anything but a bool | `451` | Not an answer about this mailbox. |
+| `200` not naming the address at all | `451` | Empty body, unparseable body, a proxy's own 200 page, or a drifted response shape. |
+| any non-200, timeout, transport error, open breaker | `451` | Nothing here is a verdict on the mailbox. |
+
+The last two rows are the reason `MDAResult.payload` is normalised to a dict and read strictly: the MDA returns one boolean per address it was asked about, so a missing key never legitimately means "no such mailbox" — it means we did not get the answer. Treating it as a miss would bounce real mail whenever something upstream of the MDA substituted the response.
 
 ### MDA wire contract
 
@@ -94,7 +108,7 @@ In addition to the shared `MDA_API_BASE_URL` / `MDA_API_SECRET` / `MDA_API_TIMEO
 | `PYMTA_MAX_SESSION_SECONDS` | `1800` (0 = off) | Wall-clock ceiling (s) on one TCP session, armed at connect and never re-armed |
 | `PYMTA_DATA_TIMEOUT` | `300` | Hard DATA-phase deadline (s): 354 → last body byte → MDA deliver → reply. Nothing in a DATA phase outlives it |
 | `MDA_API_JWT_TTL` | `MDA_API_TIMEOUT + 90` | Lifetime (s) of the JWT signed for each MDA call |
-| `PYMTA_TRUSTED_PROXIES` | empty | Comma-separated IPs/CIDRs allowed to send a PROXY header. Required when PROXY protocol is on (startup aborts without it); ignored when it is off |
+| `PYMTA_TRUSTED_PROXIES` | empty | Comma-separated IPs/CIDRs allowed to send a PROXY header. Strongly recommended when PROXY protocol is on: empty means *every* peer's header is trusted, and startup only warns. Ignored when PROXY protocol is off |
 | `PYMTA_SHUTDOWN_TIMEOUT` | `25` | Drain deadline on SIGTERM before abandoning in-flight sessions (s) |
 | `PYMTA_MDA_BREAKER_THRESHOLD` | `10` (0 = off) | Consecutive MDA failures before short-circuiting to 451 |
 | `PYMTA_MDA_BREAKER_COOLDOWN` | `30` | Seconds the breaker stays open before probing the MDA again |
@@ -114,12 +128,14 @@ The defaults are tuned for the dev stack. Five things to set before pymta faces 
 
 | | PROXY protocol | `PYMTA_TRUSTED_PROXIES` | Client IP comes from |
 |---|---|---|---|
-| **Behind a load balancer** | `PYMTA_ENABLE_PROXY_PROTOCOL=true` | **required**: the balancer's IPs/CIDRs | the PROXY header |
+| **Behind a load balancer** | `PYMTA_ENABLE_PROXY_PROTOCOL=true` | **strongly recommended**: the balancer's IPs/CIDRs | the PROXY header |
 | **Directly exposed** | off | ignored | the TCP peer |
 
 **A load balancer without PROXY protocol is not supported.** pymta would see only the balancer's address, so every session would bucket under one IP (`PYMTA_MAX_SESSIONS_PER_IP` silently becomes a second, much lower global cap), and every message would be stamped with the balancer's own IP as the sender's, in `Received` and in the envelope the MDA stores. There is no setting for this topology and no fallback that makes it work.
 
-pymta enforces two parts of this at runtime. PROXY protocol with an empty `PYMTA_TRUSTED_PROXIES` aborts at startup, since enabling PROXY protocol asserts that a known balancer sits in front. And with PROXY protocol on, pymta never falls back to the TCP peer for `client_address`; a header-less connection (a v2 `LOCAL` health check) reports no client rather than naming the balancer.
+An empty `PYMTA_TRUSTED_PROXIES` with PROXY protocol on means **every peer's header is trusted** — there is nothing left to filter on, exactly as if you had written `0.0.0.0/0`. It starts, with a `SECURITY:` warning on the first lines of the log, because deployments whose balancer addresses are not known at boot still have to run. In that mode the network isolation below is the *entire* trust boundary; name the balancer whenever you can.
+
+The one thing pymta does enforce: with PROXY protocol on it never falls back to the TCP peer for `client_address`, so a header-less connection (a v2 `LOCAL` health check) reports no client rather than naming the balancer.
 
 Network isolation has to come from the deployment. A PROXY header is trusted on the word of the peer that sent it, and it sets both the key for every per-IP cap and the `client_address` the MDA writes into `Received`. A peer that can open a TCP connection to port 25 directly (a container port published on a node, a second interface, a foothold on an internal network) can otherwise spread a forged source across the address space until only the global cap applies, and attribute its mail to any IP it names. Enforce the isolation in the NetworkPolicy or firewall as well as in the allowlist.
 

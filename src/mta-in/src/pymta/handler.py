@@ -191,10 +191,15 @@ def _proxy_header_is_trusted(session) -> bool:
     connector a free pass past every per-IP cap and the ability to attribute
     its mail to any address it names.
 
-    Fails closed by construction: an empty allowlist matches nothing, and
-    ``server._check_proxy_trust_config`` refuses to start that combination in
-    the first place.
+    An *empty* allowlist means "no upstream named", and there is nothing left
+    to filter on: every header is trusted, exactly as if the allowlist were
+    0.0.0.0/0. That is a deliberate escape hatch for deployments whose balancer
+    addresses are not known at boot, and it puts the whole trust boundary on
+    the network isolation; ``server._check_proxy_trust_config`` warns loudly
+    about it at startup. Naming the balancer is the safe configuration.
     """
+    if not settings.PYMTA_TRUSTED_PROXIES:
+        return True
     peer = getattr(session, "peer", None)
     if not peer:
         return False
@@ -351,13 +356,34 @@ class InboundHandler:
             metrics.RCPT_TOTAL.labels(result="rejected_temp").inc()
             _bump(counters, _SOFT_ERRORS_ATTR)
             return "451 4.3.0 Recipient verification temporarily unavailable"
+        # Unreachable while ``check_recipient`` names no permanent statuses:
+        # every non-200 there comes back as a temp_fail above. Kept as the
+        # landing spot if one is ever added.
         if not result.ok:
             metrics.RCPT_TOTAL.labels(result="rejected_perm").inc()
             _bump(counters, _SOFT_ERRORS_ATTR)
             return "550 5.1.1 Recipient verification failed"
 
-        exists = bool(result.payload.get(clean, False))
-        if not exists:
+        # Only an explicit true/false for this exact address is a verdict. The
+        # MDA answers with one boolean per address it was asked about, so a
+        # missing key or any other type means the body is not the answer we
+        # asked for: an empty or unparseable body, a proxy's own 200 page, or a
+        # response shape that has drifted. Reading that as "no such mailbox"
+        # would bounce a working address on someone else's bug, so it defers
+        # like every other unusable check response.
+        verdict = result.payload.get(clean)
+        if not isinstance(verdict, bool):
+            metrics.RCPT_TOTAL.labels(result="rejected_temp").inc()
+            _bump(counters, _SOFT_ERRORS_ATTR)
+            logger.warning(
+                "MDA check returned HTTP %d with no usable verdict for %r (%s); deferring",
+                result.status_code,
+                clean,
+                type(verdict).__name__,
+            )
+            return "451 4.3.0 Recipient verification temporarily unavailable"
+
+        if not verdict:
             metrics.RCPT_TOTAL.labels(result="rejected_perm").inc()
             _bump(counters, _SOFT_ERRORS_ATTR)
             misses = _bump(counters, _RCPT_MISSES_ATTR)
