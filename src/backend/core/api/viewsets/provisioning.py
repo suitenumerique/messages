@@ -4,6 +4,7 @@ import logging
 
 from django.core.exceptions import ValidationError
 from django.db import IntegrityError
+from django.db.models import Prefetch
 
 from drf_spectacular.utils import extend_schema
 from rest_framework import status
@@ -17,6 +18,7 @@ from core.api.serializers import (
     MailboxLightSerializer,
     ProvisioningMailDomainSerializer,
 )
+from core.api.viewsets import Pagination
 from core.enums import ChannelApiKeyScope, MailboxRoleChoices
 
 logger = logging.getLogger(__name__)
@@ -90,6 +92,58 @@ class ProvisioningMailDomainView(IsGlobalChannelMixin, APIView):
             },
             status=status.HTTP_200_OK,
         )
+
+
+class MailDomainDNSPagination(Pagination):
+    """Pagination allowing bigger pages, so a full DNS sync needs few requests."""
+
+    max_page_size = 1000
+
+
+class ProvisioningMailDomainDNSView(IsGlobalChannelMixin, APIView):
+    """List all mail domains with the DNS records we expect for them.
+
+    GET /api/v1.0/provisioning/maildomains/dns/?page=2&page_size=1000
+
+    Paginated with the standard ``page``/``page_size`` params (up to 1000
+    domains per page). Ordered by
+    creation date ascending (``id`` as tiebreaker) so domains created while
+    a caller is walking the pages are appended after the pages already
+    fetched, instead of shifting rows across page boundaries.
+
+    Global-only, like the other provisioning endpoints.
+    """
+
+    authentication_classes = [ChannelApiKeyAuthentication]
+    permission_classes = [channel_scope(ChannelApiKeyScope.MAILDOMAINS_READ)]
+
+    @extend_schema(exclude=True)
+    def get(self, request):
+        """Return a page of mail domains with their expected DNS records."""
+        # Only the fields needed to render the DKIM record, so the encrypted
+        # private keys are never loaded or decrypted. ``domain`` is required
+        # for the prefetch to map keys back to their domain.
+        active_dkim_keys = models.DKIMKey.objects.filter(is_active=True).only(
+            "selector", "public_key", "algorithm", "is_active", "domain"
+        )
+
+        queryset = models.MailDomain.objects.prefetch_related(
+            Prefetch("dkim_keys", queryset=active_dkim_keys)
+        ).order_by("created_at", "id")
+
+        paginator = MailDomainDNSPagination()
+        page = paginator.paginate_queryset(queryset, request, view=self)
+
+        results = [
+            {
+                "id": str(domain.id),
+                "name": domain.name,
+                "expected_dns_records": domain.get_expected_dns_records(),
+            }
+            for domain in page
+        ]
+
+        return paginator.get_paginated_response(results)
 
 
 def _serialize_mailbox_with_users(

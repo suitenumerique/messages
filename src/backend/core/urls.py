@@ -46,6 +46,7 @@ from core.api.viewsets.mobile_auth import MobileLogoutView, MobileSessionExchang
 from core.api.viewsets.placeholder import DraftPlaceholderView, PlaceholderView
 from core.api.viewsets.provisioning import (
     ProvisioningMailboxView,
+    ProvisioningMailDomainDNSView,
     ProvisioningMailDomainView,
 )
 from core.api.viewsets.send import SendMessageView
@@ -305,6 +306,11 @@ urlpatterns = [
         f"api/{settings.API_VERSION}/provisioning/maildomains/",
         ProvisioningMailDomainView.as_view(),
         name="provisioning-maildomains",
+    ),
+    path(
+        f"api/{settings.API_VERSION}/provisioning/maildomains/dns/",
+        ProvisioningMailDomainDNSView.as_view(),
+        name="provisioning-maildomains-dns",
     ),
     path(
         f"api/{settings.API_VERSION}/submit/",
