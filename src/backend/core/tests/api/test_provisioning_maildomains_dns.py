@@ -239,3 +239,12 @@ class TestProvisioningMailDomainsDNS:
         assert response.json()["count"] == 4
 
         assert len(queries) == len(baseline)
+
+        # The encrypted private keys are never selected, and no deferred-field
+        # query fetches them afterwards
+        sql = [query["sql"] for query in queries.captured_queries]
+        assert any("public_key" in statement for statement in sql), (
+            "the DKIM prefetch query was not captured, the assertion below would pass "
+            "for the wrong reason"
+        )
+        assert not any("private_key" in statement for statement in sql)

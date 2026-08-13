@@ -4,6 +4,7 @@ import logging
 
 from django.core.exceptions import ValidationError
 from django.db import IntegrityError
+from django.db.models import Prefetch
 
 from drf_spectacular.utils import extend_schema
 from rest_framework import status
@@ -119,9 +120,16 @@ class ProvisioningMailDomainDNSView(IsGlobalChannelMixin, APIView):
     @extend_schema(exclude=True)
     def get(self, request):
         """Return a page of mail domains with their expected DNS records."""
-        queryset = models.MailDomain.objects.prefetch_related("dkim_keys").order_by(
-            "created_at", "id"
+        # Only the fields needed to render the DKIM record, so the encrypted
+        # private keys are never loaded or decrypted. ``domain`` is required
+        # for the prefetch to map keys back to their domain.
+        active_dkim_keys = models.DKIMKey.objects.filter(is_active=True).only(
+            "selector", "public_key", "algorithm", "is_active", "domain"
         )
+
+        queryset = models.MailDomain.objects.prefetch_related(
+            Prefetch("dkim_keys", queryset=active_dkim_keys)
+        ).order_by("created_at", "id")
 
         paginator = MailDomainDNSPagination()
         page = paginator.paginate_queryset(queryset, request, view=self)
