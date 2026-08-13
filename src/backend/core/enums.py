@@ -399,6 +399,7 @@ class ChannelApiKeyScope(models.TextChoices):
 
     METRICS_READ = "metrics:read", "Read usage metrics"
     MAILBOXES_READ = "mailboxes:read", "Read mailboxes (and their users/roles)"
+    MAILDOMAINS_READ = "maildomains:read", "Read maildomains"
     MESSAGES_SEND = "messages:send", "Send outbound messages"
     MAILDOMAINS_CREATE = "maildomains:create", "Create new maildomains"
 
@@ -407,7 +408,6 @@ class ChannelApiKeyScope(models.TextChoices):
     # glance and so the WRITE/CREATE convention is documented.
     #
     # Reads:
-    #   MAILDOMAINS_READ   = "maildomains:read",       "Read maildomains"
     #   USERS_READ         = "users:read",             "Read users"
     #   LABELS_READ        = "labels:read",            "Read labels"
     #   CONTACTS_READ      = "contacts:read",          "Read contacts"

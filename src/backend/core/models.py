@@ -436,6 +436,13 @@ class MailDomain(BaseModel):
 
     def get_active_dkim_key(self):
         """Get the most recent active DKIM key for this domain."""
+        # Use prefetched keys if available to avoid a query per domain
+        if (
+            hasattr(self, "_prefetched_objects_cache")
+            and "dkim_keys" in self._prefetched_objects_cache
+        ):
+            return next((key for key in self.dkim_keys.all() if key.is_active), None)
+
         return (
             DKIMKey.objects.filter(
                 domain=self, is_active=True
