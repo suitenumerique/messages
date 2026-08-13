@@ -153,8 +153,6 @@ def test_expn_disabled():
         b"\r\n.\r",
         # the doubled-CR form Postfix accepted (SEC Consult, 2023)
         b"\r\r\n.\r\r\n",
-        # NUL ahead of the terminator, to unstick naive scanners
-        b"\x00\r\n.\r\n",
     ],
     ids=[
         "LF-dot-CRLF",
@@ -163,26 +161,20 @@ def test_expn_disabled():
         "CRLF-dot-LF",
         "CRLF-dot-CR",
         "CRCRLF-dot-CRCRLF",
-        "NUL-CRLF-dot-CRLF",
     ],
 )
-def test_smtp_smuggling_does_not_split_messages(
-    mock_api_server, smuggle_bytes, mta_impl
-):
+def test_smtp_smuggling_does_not_split_messages(mock_api_server, smuggle_bytes):
     """A smuggling EOD variant must NOT split the envelope into two messages.
 
     The MDA must see at most ONE delivery, and the "smuggled" MAIL FROM/RCPT
     TO must appear as text inside that single message body — never as a
     separately-delivered envelope to an attacker-chosen recipient.
+
+    Every variant here is a *malformed* terminator. A payload embedding a
+    genuine CRLF.CRLF is not a smuggling vector: both implementations end
+    DATA there and read what follows as a second transaction from the
+    directly-connected client, which is ordinary submission.
     """
-    if mta_impl == "postfix" and smuggle_bytes.startswith(b"\x00"):
-        # Unlike the other variants, this payload embeds a *genuine*
-        # RFC 5321 terminator after the NUL. Postfix accepts and
-        # normalizes NUL bytes (see test_nul_byte_in_body_rejected), so
-        # it legitimately ends DATA there and reads what follows as a
-        # pipelined second transaction from the directly-connected
-        # client — ordinary submission, not smuggling.
-        pytest.skip("NUL-tolerant MTA: embedded CRLF.CRLF is a real terminator")
     mock_api_server.add_mailbox("victim@example.com")
     # Register the smuggled recipient too: otherwise an actual split would be
     # rejected at RCPT by the MDA (mailbox not found) and the test would

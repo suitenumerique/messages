@@ -3,12 +3,12 @@
 aiosmtpd's defaults are reasonable but its surface area still includes a few
 verbs we never want exposed on a public, inbound-only port-25 endpoint:
 
-* ``AUTH`` — never offered (no authenticator wired) but we still reply 502 to
+* ``AUTH``: never offered (no authenticator wired) but we still reply 502 to
   reject any attempt explicitly, so a misconfiguration cannot quietly become a
   relay.
-* ``VRFY`` — RFC 5321 §3.5 lets us respond with a canned 252; we do so
+* ``VRFY``: RFC 5321 §3.5 lets us respond with a canned 252; we do so
   unconditionally to prevent address enumeration.
-* ``EXPN`` — explicit 502.
+* ``EXPN``: explicit 502.
 
 We also fold connection-admission control into :meth:`_handle_client`. The
 gate is checked exactly once per accepted TCP session. When PROXY-protocol is
@@ -23,8 +23,9 @@ import logging
 import time
 
 from aiosmtpd.smtp import SMTP as BaseSMTP
+from aiosmtpd.smtp import syntax
 
-from . import metrics
+from . import metrics, settings
 from .limits import IPGate, TooManyConnections
 
 logger = logging.getLogger(__name__)
@@ -40,6 +41,15 @@ class HardenedSMTP(BaseSMTP):
         # release path runs at most once.
         self._gate_held_ip: str | None = None
         self._gate_started: float | None = None
+        # Set by request_disconnect(); consumed by push() once the reply that
+        # announced the disconnect is on the wire.
+        self._disconnect_after_reply = False
+        # Monotonic timestamp of the 354 that opened the current DATA phase,
+        # or None outside DATA. Read by the handler to size its own deadline.
+        self.data_phase_started: float | None = None
+        # One-shot timer for the whole-session deadline. Armed on connect,
+        # never re-armed. See _arm_session_deadline.
+        self._session_deadline_handle = None
 
     # ----------------------------------------------------------- verb lockdown
     async def smtp_VRFY(self, arg: str) -> None:
@@ -58,15 +68,126 @@ class HardenedSMTP(BaseSMTP):
         # Default aiosmtpd HELP enumerates implemented verbs (mild info leak).
         await self.push("214 2.0.0 See https://www.rfc-editor.org/rfc/rfc5321")
 
+    # ------------------------------------------------------ session deadline
+    def connection_made(self, transport) -> None:
+        super().connection_made(transport)
+        self._arm_session_deadline()
+
+    def connection_lost(self, error) -> None:
+        if self._session_deadline_handle is not None:
+            self._session_deadline_handle.cancel()
+            self._session_deadline_handle = None
+        super().connection_lost(error)
+
+    def _arm_session_deadline(self) -> None:
+        """Start the one bound a peer cannot push back by staying busy.
+
+        Every other deadline is reset by peer activity: aiosmtpd re-arms its
+        idle timer on each accepted command line, so a peer that sends one
+        command just under ``PYMTA_COMMAND_TIMEOUT`` keeps the session alive
+        for as long as ``command_call_limit`` lets it issue commands, which is
+        many hours on the default budgets.
+
+        Armed once per connection. Not re-armed on the STARTTLS transport swap
+        either: aiosmtpd calls ``connection_made`` a second time there, and
+        resetting the deadline there would give the peer a second full budget.
+        """
+        if self._session_deadline_handle is not None:
+            return
+        limit = settings.PYMTA_MAX_SESSION_SECONDS
+        if limit <= 0:
+            return
+        self._session_deadline_handle = self.loop.call_later(limit, self._session_expired)
+
+    def _session_expired(self) -> None:
+        self._session_deadline_handle = None
+        peer = getattr(self.session, "peer", None) if self.session else None
+        logger.info(
+            "session from %r exceeded PYMTA_MAX_SESSION_SECONDS (%ds); closing",
+            peer,
+            settings.PYMTA_MAX_SESSION_SECONDS,
+        )
+        metrics.SECURITY_REJECTIONS.labels(reason="max_session_seconds").inc()
+        metrics.DISCONNECTS_421.labels(reason="max_session_seconds").inc()
+        # Announce before hanging up so the sender defers and retries rather
+        # than reading a bare reset as a hard failure. Runs as a task because
+        # push() is async and we are in a timer callback; writing from here is
+        # safe even mid-DATA (StreamWriter.write only appends to a buffer) and
+        # the connection is ending either way.
+        # The task is not retained: nothing awaits it, and the transport close
+        # it performs is what ends the connection.
+        self.loop.create_task(self._close_with_notice())
+
+    async def _close_with_notice(self) -> None:
+        with contextlib.suppress(OSError, ConnectionError):
+            await self.push("421 4.4.2 Session too long, closing connection")
+        if self.transport is not None:
+            self.transport.close()
+
+    # ------------------------------------------------------- forced disconnect
+    def request_disconnect(self) -> None:
+        """Close the connection once the reply now being sent has gone out.
+
+        aiosmtpd pushes whatever a handler hook returns and then loops back for
+        the next command. A ``421 ... goodbye`` from ``handle_RCPT`` is only a
+        string to it, so without this the session stays open and an enumerator
+        keeps probing until the much coarser per-verb ``command_call_limit``
+        closes it. Closing from :meth:`push` rather than here means the 421 is
+        on the wire before the FIN, so the peer gets a reason.
+        """
+        self._disconnect_after_reply = True
+
+    async def push(self, status) -> None:
+        await super().push(status)
+        if self._disconnect_after_reply:
+            self._disconnect_after_reply = False
+            if self.transport is not None:
+                self.transport.close()
+
+    async def handle_exception(self, error: Exception) -> str:
+        # The handler answers 421 ("closing transmission channel"); make that
+        # true. aiosmtpd would otherwise push it and carry on with a session
+        # whose state we no longer trust.
+        status = await super().handle_exception(error)
+        self.request_disconnect()
+        return status
+
+    # ------------------------------------------------------------ DATA budget
+    @syntax("DATA")
+    async def smtp_DATA(self, arg: str) -> None:
+        """Run the DATA phase under a single total deadline.
+
+        aiosmtpd arms its idle timer when a command line is dispatched and does
+        not re-arm it while the handler runs, so the whole of DATA (body
+        receive *and* the MDA deliver call) is charged to one
+        ``PYMTA_COMMAND_TIMEOUT``. That conflates two very different budgets:
+        120 s is right for "peer went quiet at the command prompt" and too
+        tight for a 10 MB body plus a slow MDA, which would be torn down
+        mid-handler with no reply at all.
+
+        Swap in the DATA budget for the duration. The transport is armed at
+        exactly ``PYMTA_DATA_TIMEOUT``, so nothing in a DATA phase outlives it;
+        the handler takes its reply reserve out of the same budget so it can
+        answer 451 first.
+        """
+        self.data_phase_started = time.monotonic()
+        self._reset_timeout(settings.PYMTA_DATA_TIMEOUT)
+        try:
+            await super().smtp_DATA(arg)
+        finally:
+            self.data_phase_started = None
+            if self.transport is not None:
+                self._reset_timeout()
+
     # ------------------------------------------------------------ gate wiring
     async def _handle_client(self) -> None:
         """Wrap aiosmtpd's per-connection dialogue with admission control.
 
         Two paths:
 
-        * **No PROXY protocol** — the immediate TCP peer is the real client,
+        * **No PROXY protocol**: the immediate TCP peer is the real client,
           so we gate before the SMTP dialogue starts.
-        * **PROXY protocol enabled** — gate is deferred to
+        * **PROXY protocol enabled**: the gate is deferred to
           :meth:`acquire_gate_post_proxy`, called from the handler's
           ``handle_PROXY`` hook once the real client IP has been parsed off
           the PROXY header.
@@ -90,7 +211,7 @@ class HardenedSMTP(BaseSMTP):
         return await self._acquire_gate(real_ip)
 
     async def _acquire_gate(self, ip: str) -> bool:
-        assert self._ip_gate is not None  # noqa: S101 — narrowing only; checked above
+        assert self._ip_gate is not None  # noqa: S101 (narrowing only; checked above)
         try:
             await self._ip_gate._try_acquire(ip)  # noqa: SLF001
         except TooManyConnections as exc:

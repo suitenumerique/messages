@@ -33,7 +33,56 @@ def _configure_logging() -> None:
     )
 
 
+def _check_proxy_trust_config() -> None:
+    """Warn loudly when the PROXY-protocol listener will believe any peer.
+
+    Enabling PROXY protocol is normally the assertion that a balancer sits in
+    front of us, which makes the balancer's address a known fact. Naming it in
+    ``PYMTA_TRUSTED_PROXIES`` is strongly recommended and this warns when it is
+    absent, but it does not block startup: deployments where the balancer's
+    addresses are dynamic or simply unknown at boot still need to run, and
+    there the network isolation has to carry the whole weight instead.
+
+    What the allowlist buys is that the header only decides the per-IP
+    rate-limit key and the ``client_address`` the MDA writes into ``Received``
+    when a known balancer sent it. Without one, any peer that can open a TCP
+    connection to the SMTP port decides both.
+
+    There are two supported topologies: PROXY protocol on, behind a balancer;
+    or PROXY protocol off, exposed directly. A balancer without PROXY protocol
+    is not supported, because pymta would attribute every session to the
+    balancer's own IP.
+    """
+    if not settings.PYMTA_ENABLE_PROXY_PROTOCOL:
+        return
+    # A zero-prefix network (0.0.0.0/0, ::/0) matches every peer, so it is the
+    # empty allowlist wearing a disguise. Same posture, same warning.
+    catch_all = [net for net in settings.PYMTA_TRUSTED_PROXIES if net.prefixlen == 0]
+    if not settings.PYMTA_TRUSTED_PROXIES or catch_all:
+        why = (
+            "PYMTA_TRUSTED_PROXIES is empty"
+            if not settings.PYMTA_TRUSTED_PROXIES
+            else f"PYMTA_TRUSTED_PROXIES contains {', '.join(str(n) for n in catch_all)}, "
+            "which matches every peer"
+        )
+        logger.warning(
+            "SECURITY: PROXY protocol is enabled but %s, so a PROXY header is trusted "
+            "from any peer. Any host able to reach port %s directly can forge its "
+            "source IP past the per-IP caps and into the Received header. Set it to "
+            "the load balancer's IPs/CIDRs, and make sure the port is reachable only "
+            "from the balancer.",
+            why,
+            settings.PYMTA_SMTP_PORT,
+        )
+        return
+    logger.info(
+        "PROXY protocol enabled; trusting headers only from %s",
+        ", ".join(str(net) for net in settings.PYMTA_TRUSTED_PROXIES),
+    )
+
+
 async def _serve() -> None:
+    _check_proxy_trust_config()
     mda_client = MDAClient()
     try:
         await mda_client.start()
@@ -72,7 +121,7 @@ async def _serve() -> None:
             try:
                 loop.add_signal_handler(sig, stop.set)
             except NotImplementedError:
-                # Windows / restricted environments — no signal handler support.
+                # Windows / restricted environments: no signal handler support.
                 pass
 
         try:
@@ -86,8 +135,7 @@ async def _serve() -> None:
                 )
             except TimeoutError:
                 logger.warning(
-                    "graceful shutdown deadline (%ds) exceeded; in-flight "
-                    "sessions abandoned",
+                    "graceful shutdown deadline (%ds) exceeded; in-flight sessions abandoned",
                     settings.PYMTA_SHUTDOWN_TIMEOUT,
                 )
     finally:

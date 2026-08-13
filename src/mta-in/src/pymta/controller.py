@@ -1,6 +1,6 @@
 """aiosmtpd Controller wired to our :class:`HardenedSMTP` factory.
 
-The Controller itself is unchanged structurally — all hardening lives inside
+The Controller itself is unchanged structurally; all hardening lives inside
 :class:`HardenedSMTP` so the admission gate runs in the same coroutine that
 will dispatch SMTP verbs.
 """
@@ -62,7 +62,7 @@ def build_smtp_kwargs(*, tls_context: ssl.SSLContext | None) -> dict:
 def load_tls_context() -> ssl.SSLContext | None:
     """Build a TLS context from the configured cert/key, or None.
 
-    Returning None disables STARTTLS — aiosmtpd will not advertise it.
+    Returning None disables STARTTLS, so aiosmtpd will not advertise it.
     """
     cert = settings.PYMTA_TLS_CERT_FILE
     key = settings.PYMTA_TLS_KEY_FILE

@@ -9,6 +9,7 @@ from __future__ import annotations
 
 import pytest
 
+from pymta import limits
 from pymta.limits import IPGate, TooManyConnections
 
 
@@ -139,7 +140,6 @@ async def test_rate_cap_disabled_when_zero():
 async def test_rate_dict_prunes_expired_entries():
     """The rate map must not grow without bound under churning client IPs."""
     clock = _FakeClock()
-    from pymta import limits
 
     # Shrink the prune interval so the test doesn't have to call 1000 times.
     original = limits._RATE_PRUNE_EVERY
