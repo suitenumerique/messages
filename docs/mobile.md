@@ -97,7 +97,8 @@ App                         System browser                  Backend             
 Step by step:
 
 1. **App starts the flow.** `nativeLogin()` generates a PKCE verifier
-   (`generateCodeVerifier`), computes its S256 challenge, and opens
+   (`generateCodeVerifier`), computes its S256 challenge, **persists the
+   verifier** (see *Surviving the background* below), and opens
    `/api/v1.0/authenticate/?mobile_scheme=stmessages&code_challenge=…` in the
    system browser.
 2. **Backend flags the session.** `OIDCAuthenticationRequestView` checks the
@@ -143,6 +144,35 @@ latter is required because `ASWebAuthenticationSession` runs with
 `prefersEphemeralWebBrowserSession = false` (needed to share the IdP cookie), and
 in that mode iOS only delivers the callback for an app-registered scheme. Both
 are independent of `MOBILE_APP_ID`.
+
+### Surviving the background
+
+The whole flow runs while the app is **backgrounded** — the system browser is
+on top — and a backgrounded WebView is not a safe place to keep state. Two
+things can wipe the JS context mid-flow: the native updater installing a staged
+OTA bundle (`appMovedToBackground()` → `installNext()` reloads the WebView,
+whatever `autoUpdate` says), and Android reclaiming the process. Either one
+used to strand the login *and* poison the following attempts, because
+`@capacitor/app` notifies `appUrlOpen` with `retainUntilConsumed`: a callback
+nobody was listening for is retained and replayed to the **next** listener that
+subscribes, so the next attempt exchanged the previous attempt's expired token
+— forever, until the app was killed. Three rules keep that shut:
+
+- **The verifier outlives its context.** `nativeLogin()` persists
+  `{codeVerifier, startedAt}` before opening the browser, and the exchange
+  reads it back from storage. It is the only value the exchange cannot
+  re-derive. The record expires after 15 min (the user's time on the IdP, not
+  the 60 s life of the token) and is cleared on every exit path.
+- **One deep-link listener, for the whole app lifetime.** `deep-link.ts` owns
+  the single `appUrlOpen` subscription, registered at boot in `bootstrap.tsx`;
+  flows *capture* routing from it while they run. Nothing is ever left
+  unconsumed for a later attempt to inherit — a link arriving outside a flow
+  either resumes a pending login (`resumeNativeLogin`, which is how a login
+  whose context died still completes) or is dropped.
+- **OTA installs are held for the duration.** `openAuthSession()` brackets the
+  browser round-trip with `holdOtaInstall()` / `releaseOtaInstall()`, a Capgo
+  delay condition that makes `installNext()` return early. The staged bundle
+  applies at the next background *after* the flow instead.
 
 ### Cross-app SSO conditions (both bit us during the POC)
 
@@ -497,12 +527,13 @@ Operational rules:
 | PKCE helpers | `src/frontend/src/features/native/pkce.ts` |
 | System-browser session | `src/frontend/src/features/native/auth-session.ts` |
 | Native login / logout | `src/frontend/src/features/native/auth.ts` |
+| Deep-link dispatcher (single `appUrlOpen` owner) | `src/frontend/src/features/native/deep-link.ts` |
 | Native CSRF token store | `src/frontend/src/features/native/csrf.ts` |
 | Native download → share | `src/frontend/src/features/native/download.ts` |
 | Native push client (enable / on-launch refresh / tap deep-link) | `src/frontend/src/features/native/push.ts` |
 | Push opt-in marker + token-hash contract (shared web/native) | `src/frontend/src/features/push/shared.ts` |
 | OTA client | `src/frontend/src/features/native/ota.ts` |
-| Startup wiring (OTA, `native` html class) | `src/frontend/src/main.tsx` |
+| Startup wiring (OTA, deep links, `native` html class) | `src/frontend/src/bootstrap.tsx` |
 | CSRF / API origin wiring | `src/frontend/src/features/api/utils.ts` |
 | Login/logout routing | `src/frontend/src/features/auth/index.tsx` |
 | iOS ASWebAuthenticationSession plugin | `src/frontend/ios/App/App/WebAuthSessionPlugin.swift` |

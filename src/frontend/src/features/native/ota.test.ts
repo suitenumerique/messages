@@ -28,6 +28,8 @@ vi.mock("@capgo/capacitor-updater", () => ({
     next: vi.fn(),
     reload: vi.fn(),
     set: vi.fn(),
+    setMultiDelay: vi.fn(),
+    cancelDelay: vi.fn(),
   },
 }));
 vi.mock("./platform", () => ({
@@ -48,7 +50,9 @@ type OtaTestContext = {
     | "list"
     | "next"
     | "reload"
-    | "set",
+    | "set"
+    | "setMultiDelay"
+    | "cancelDelay",
     ReturnType<typeof vi.fn>
   >;
   app: { addListener: ReturnType<typeof vi.fn> };
@@ -130,6 +134,50 @@ afterEach(() => {
   // console never leaks into an unrelated test.
   vi.restoreAllMocks();
   vi.useRealTimers();
+});
+
+describe("OTA install hold", () => {
+  it("delays the install while a flow backgrounds the app", async () => {
+    const ctx = await loadOta();
+
+    await ctx.ota.holdOtaInstall();
+
+    // Without a delay condition the native layer installs the staged bundle
+    // and reloads the WebView the moment the app is backgrounded — which is
+    // what opening the system browser for the OIDC login does.
+    expect(ctx.updater.setMultiDelay).toHaveBeenCalledWith({
+      delayConditions: [{ kind: "kill" }],
+    });
+  });
+
+  it("lifts the delay when the flow ends", async () => {
+    const ctx = await loadOta();
+
+    await ctx.ota.releaseOtaInstall();
+
+    expect(ctx.updater.cancelDelay).toHaveBeenCalled();
+  });
+
+  it("never throws: a failed hold must not break the flow it guards", async () => {
+    const ctx = await loadOta();
+    vi.spyOn(console, "warn").mockImplementation(() => undefined);
+    ctx.updater.setMultiDelay.mockRejectedValue(new Error("plugin error"));
+    ctx.updater.cancelDelay.mockRejectedValue(new Error("plugin error"));
+
+    await expect(ctx.ota.holdOtaInstall()).resolves.toBeUndefined();
+    await expect(ctx.ota.releaseOtaInstall()).resolves.toBeUndefined();
+  });
+
+  it("does nothing on the web", async () => {
+    const ctx = await loadOta();
+    ctx.isNative.mockReturnValue(false);
+
+    await ctx.ota.holdOtaInstall();
+    await ctx.ota.releaseOtaInstall();
+
+    expect(ctx.updater.setMultiDelay).not.toHaveBeenCalled();
+    expect(ctx.updater.cancelDelay).not.toHaveBeenCalled();
+  });
 });
 
 describe("notifyOtaAppReady", () => {

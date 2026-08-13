@@ -119,6 +119,48 @@ export const applyStagedOtaUpdate = async (): Promise<void> => {
 };
 
 /**
+ * Hold back the staged bundle until {@link releaseOtaInstall}.
+ *
+ * A staged bundle is installed by the *native* layer as soon as the app is
+ * backgrounded — `appMovedToBackground()` calls `installNext()`, which sets
+ * the bundle and reloads the WebView, whatever `autoUpdate` says. Opening the
+ * system browser backgrounds the app, so without this hold every login that
+ * follows a publish reloads the WebView mid-flow and destroys the JS context
+ * the flow lives in (see auth.ts). A delay condition is the plugin's own
+ * mechanism for it: `installNext()` returns early while one is set.
+ *
+ * `kind: "kill"` only names the event that would clear the condition on its
+ * own; the release below is what normally lifts it, and a process death
+ * during the flow leaves no condition behind either way.
+ */
+export const holdOtaInstall = async (): Promise<void> => {
+  if (!isNativePlatform()) {
+    return;
+  }
+  try {
+    await CapacitorUpdater.setMultiDelay({ delayConditions: [{ kind: "kill" }] });
+  } catch (error) {
+    console.warn("OTA install hold failed", error);
+  }
+};
+
+/**
+ * Lift the hold set by {@link holdOtaInstall}, so the staged bundle installs
+ * at the next background again. Must run on every exit path of the held flow:
+ * a condition left behind would freeze OTA updates until the app is killed.
+ */
+export const releaseOtaInstall = async (): Promise<void> => {
+  if (!isNativePlatform()) {
+    return;
+  }
+  try {
+    await CapacitorUpdater.cancelDelay();
+  } catch (error) {
+    console.warn("OTA install release failed", error);
+  }
+};
+
+/**
  * Confirm the running bundle booted successfully. Without this call the plugin
  * assumes the update is broken and rolls back to the previous bundle on the
  * next launch, so it must run as early as the app is functional.
