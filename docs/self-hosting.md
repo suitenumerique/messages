@@ -181,6 +181,7 @@ Messages uses OpenID Connect (OIDC) for user authentication. This is the only au
    - Pre-configured with Messages realm and users
    - Suitable for organizations wanting a self-hosted identity provider
    - Configure via `deploy/env/production/keycloak.defaults`
+   - See the [identity provider guide](./identity-provider.md) to create the realm and the clients
 
 2. **External OIDC Provider**
    - Use any OIDC-compliant identity provider
@@ -191,6 +192,8 @@ Messages uses OpenID Connect (OIDC) for user authentication. This is the only au
 **User Management:**
 - Users are created automatically when they first log in via OIDC
 - Mailboxes can be created automatically based on OIDC email addresses
+- A mail domain with `oidc_autojoin` gives each user a mailbox at login. This needs no `IDENTITY_PROVIDER`.
+- A mail domain with `identity_sync` pushes each mailbox to Keycloak. See the [identity provider guide](./identity-provider.md)
 
 ### 7. Production Deployment
 
