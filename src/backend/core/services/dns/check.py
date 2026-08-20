@@ -3,6 +3,7 @@ DNS checking functionality for mail domains.
 """
 
 import collections
+import ipaddress
 import logging
 import re
 from typing import Dict, List, Optional, Tuple
@@ -48,6 +49,10 @@ SPF_MECHANISMS = frozenset({"all", "include", "a", "mx", "ptr", "ip4", "ip6", "e
 SPF_MECHANISMS_NEEDING_ARGUMENT = frozenset({"include", "exists", "ip4", "ip6"})
 # RFC 7208 6: each of these may appear at most once, on pain of permerror.
 SPF_SINGLETON_MODIFIERS = ("redirect", "exp")
+# RFC 7208 12: name = ALPHA *( ALPHA / DIGIT / "-" / "_" / "." )
+SPF_MODIFIER_NAME_RE = re.compile(r"[a-z][a-z0-9_.-]*", re.IGNORECASE)
+# RFC 7208 12: ip4-cidr-length is 0-32 and ip6-cidr-length 0-128.
+SPF_MAX_CIDR_LENGTH = {"ip4": 32, "ip6": 128}
 # Ordered from most permissive to strictest (RFC 7208 4.6.2).
 SPF_ALL_STRICTNESS = {"+all": 0, "?all": 1, "~all": 2, "-all": 3}
 SPF_ALL_MECHANISMS = frozenset(SPF_ALL_STRICTNESS)
@@ -164,24 +169,53 @@ def parse_spf_terms(value: str) -> Optional[Tuple[str, set]]:
     return (all_mechanism, other_terms)
 
 
+def _ip_network_is_valid(name: str, argument: str) -> bool:
+    """Whether an "ip4:" or "ip6:" argument is an address and CIDR length.
+
+    Splitting on "/" is only unambiguous here: an ip-network is a literal, so
+    unlike the domain-spec of "a" or "mx" it cannot carry a macro with a "/"
+    of its own. RFC 7208 12 allows a single length, never the dual "//" form.
+    """
+    literal, separator, cidr_length = argument[1:].partition("/")
+    if separator:
+        # Spelled as "0" or a digit string not starting with one, so a second
+        # "/" or a leading zero leaves something that is not a length.
+        if not cidr_length.isdigit() or (
+            cidr_length.startswith("0") and cidr_length != "0"
+        ):
+            return False
+        if int(cidr_length) > SPF_MAX_CIDR_LENGTH[name]:
+            return False
+    try:
+        address = ipaddress.ip_address(literal)
+    except ValueError:
+        return False
+    return (address.version == 4) == (name == "ip4")
+
+
 def spf_syntax_is_valid(value: str) -> bool:
     """Whether an SPF record's terms are well formed.
 
     A syntax error anywhere makes receivers return permerror for the whole
     record (RFC 7208 4.6), so the delegation it describes never takes effect.
-    Term names and the presence of their arguments are checked; the contents
-    of an argument (that an IP parses, that a CIDR is in range) are not. Those
-    are permerrors too, but validating them means reimplementing the grammar,
-    and being wrong there would report working records as broken.
+    Term names, the presence of their arguments and the ip4/ip6 literals are
+    checked. A domain-spec is not: it may hold macros that expand at
+    evaluation time, and rejecting one wrongly would report a working record
+    as broken. That leaves the CIDR lengths of "a" and "mx" unchecked too,
+    since their domain-spec can contain the "/" they would be split on.
     """
     if not is_spf_record(value):
         return False
     modifiers = collections.Counter()
     for term in value[len(SPF_VERSION) :].split():
-        _qualifier, name, argument = _parse_spf_term(term)
+        qualifier, name, argument = _parse_spf_term(term)
         if argument.startswith("="):
-            # Unrecognized modifiers must be ignored whatever they are (6),
-            # so only their names are worth counting.
+            # A modifier is a bare "name=value" (4.6.1): a qualifier belongs
+            # to a directive, so a qualified one is neither. Unrecognized
+            # modifiers must still be ignored whatever they say (6), so only
+            # their names are worth checking and counting.
+            if qualifier or not SPF_MODIFIER_NAME_RE.fullmatch(name):
+                return False
             modifiers[name] += 1
             continue
         if name not in SPF_MECHANISMS:
@@ -191,6 +225,8 @@ def spf_syntax_is_valid(value: str) -> bool:
         if name == "all" and argument:
             return False
         if argument == ":":
+            return False
+        if name in SPF_MAX_CIDR_LENGTH and not _ip_network_is_valid(name, argument):
             return False
     return all(modifiers[name] <= 1 for name in SPF_SINGLETON_MODIFIERS)
 
@@ -416,6 +452,15 @@ def _resolve_spf_includes(
             return resolved, visited, transient, f"duplicate:{include_domain}"
 
         if not spf_records:
+            continue
+
+        # Every version-matching record counted towards the duplicate check
+        # above, per the RFC 7208 4.5 selection rules; only now that one has
+        # been selected does 4.6 syntax apply. A record receivers permerror
+        # on makes the include return permerror too (5.2), so it delegates
+        # nothing and leads nowhere.
+        if not spf_syntax_is_valid(spf_records[0]):
+            logger.debug("Malformed SPF record at %s", include_domain)
             continue
 
         resolved.add(include_domain)

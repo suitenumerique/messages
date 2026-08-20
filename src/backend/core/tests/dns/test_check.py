@@ -1013,10 +1013,49 @@ class TestSpfSyntaxIsValid:
         """Mechanism names are case-insensitive (RFC 7208 12)."""
         assert spf_syntax_is_valid("v=spf1 MX Include:x.example.com -ALL")
 
-    def test_malformed_argument_is_not_checked(self):
-        """Known limitation: argument contents are not validated, so a bad IP
-        still reads as valid even though receivers permerror on it."""
-        assert spf_syntax_is_valid("v=spf1 ip4:999.1.1.1 -all")
+    def test_well_formed_ip_literals(self):
+        """ip4 and ip6 take an address with an optional CIDR length."""
+        assert spf_syntax_is_valid(
+            "v=spf1 ip4:1.2.3.4 ip4:192.0.2.0/24 ip6:2001:db8::1 ip6:2001:db8::/32 -all"
+        )
+
+    def test_malformed_ip4_literal(self):
+        """RFC 7208 12 spells ip4-network as a dotted quad of 0-255 values."""
+        assert not spf_syntax_is_valid("v=spf1 ip4:999.1.1.1 -all")
+
+    def test_truncated_ip4_literal(self):
+        """RFC 7208 5.6: parts may not be omitted in place of a CIDR."""
+        assert not spf_syntax_is_valid("v=spf1 ip4:192.0.2 -all")
+
+    def test_malformed_ip6_literal(self):
+        """ip6-network is an address per RFC 4291 2.2."""
+        assert not spf_syntax_is_valid("v=spf1 ip6:gggg::1 -all")
+
+    def test_cidr_length_out_of_range(self):
+        """RFC 7208 12 bounds the lengths at 32 for ip4 and 128 for ip6."""
+        assert not spf_syntax_is_valid("v=spf1 ip4:1.2.3.4/33 -all")
+        assert not spf_syntax_is_valid("v=spf1 ip6:2001:db8::1/129 -all")
+
+    def test_dual_cidr_not_allowed_on_ip4(self):
+        """The dual "//" form belongs to a and mx, not to ip4 and ip6."""
+        assert not spf_syntax_is_valid("v=spf1 ip4:1.2.3.4//24 -all")
+
+    def test_a_and_mx_cidr_arguments_are_not_checked(self):
+        """Known limitation: a domain-spec may itself contain "/" inside a
+        macro, so a and mx arguments are left alone rather than mis-split."""
+        assert spf_syntax_is_valid("v=spf1 a:foo.example.com/24//64 mx/99 -all")
+
+    def test_qualified_modifier(self):
+        """RFC 7208 4.6.1: a qualifier belongs to a directive. A modifier is a
+        bare "name=value", so a qualified one is neither."""
+        assert not spf_syntax_is_valid("v=spf1 +redirect=a.example.com")
+        assert not spf_syntax_is_valid("v=spf1 -zzz=one -all")
+
+    def test_modifier_name_must_follow_the_grammar(self):
+        """RFC 7208 12: name = ALPHA *( ALPHA / DIGIT / "-" / "_" / "." )."""
+        assert not spf_syntax_is_valid("v=spf1 1bad=x -all")
+        assert not spf_syntax_is_valid("v=spf1 =x -all")
+        assert spf_syntax_is_valid("v=spf1 moo.cow-far_out=man:dog/cat -all")
 
     def test_repeated_redirect_modifier(self):
         """RFC 7208 6: redirect= MUST NOT appear more than once."""
@@ -2153,6 +2192,34 @@ class TestSPFRecursiveCheck:
                     )
                 if name == "_spf.messages.org":
                     return _txt_answer("v=spf1 ip4:1.2.3.4 -all")
+                raise NXDOMAIN()
+
+            mock_resolve.side_effect = resolve_side_effect
+            result = check_single_record(maildomain, expected_record)
+
+            assert result["status"] == "incorrect"
+
+    def test_spf_invalid_record_at_the_include_target(
+        self, maildomain_factory, settings
+    ):
+        """RFC 7208 5.2: a recursive check returning permerror makes the
+        include return permerror, so a malformed record at the target breaks
+        the chain rather than completing it."""
+        settings.MESSAGES_TECHNICAL_DOMAIN = "messages.org"
+        maildomain = maildomain_factory(name="example.com")
+        expected_record = {
+            "type": "TXT",
+            "target": "",
+            "value": "v=spf1 include:_spf.messages.org -all",
+        }
+
+        with patch("core.services.dns.check.dns.resolver.resolve") as mock_resolve:
+
+            def resolve_side_effect(name, _record_type):
+                if name == "example.com":
+                    return _txt_answer("v=spf1 include:_spf.messages.org -all")
+                if name == "_spf.messages.org":
+                    return _txt_answer("v=spf1 ip4:999.1.1.1 gibberish -all")
                 raise NXDOMAIN()
 
             mock_resolve.side_effect = resolve_side_effect
