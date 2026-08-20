@@ -425,7 +425,7 @@ def _resolve_spf_includes(
         (resolved_domains, visited_domains, transient_failures, error) where
         visited_domains are the ones we got to look up, transient_failures the
         ones whose lookup failed in a way that may well succeed next time, and
-        error is None on success, or a string describing the issue
+        error is None on success, or a string describing the first problem met
         ("limit_reached", "void_limit_reached", "duplicate:domain.com").
     """
     queue = collections.deque()
@@ -438,10 +438,13 @@ def _resolve_spf_includes(
     transient = set()
     lookup_count = 0
     void_count = 0
+    # Kept aside rather than returned on the spot, so that a dead end on one
+    # branch neither hides an earlier problem nor cuts the walk short.
+    error = None
 
     while queue:
         if lookup_count >= max_lookups:
-            return resolved, visited, transient, "limit_reached"
+            return resolved, visited, transient, error or "limit_reached"
 
         include_domain = queue.popleft()
         if include_domain in visited:
@@ -465,7 +468,7 @@ def _resolve_spf_includes(
             logger.debug("No TXT record for %s", include_domain)
             void_count += 1
             if void_count > max_void_lookups:
-                return resolved, visited, transient, "void_limit_reached"
+                return resolved, visited, transient, error or "void_limit_reached"
             continue
         except (dns.resolver.Timeout, dns.resolver.NoNameservers):
             logger.debug("DNS resolution failed for %s, may retry", include_domain)
@@ -479,7 +482,15 @@ def _resolve_spf_includes(
             continue
 
         if len(spf_records) > 1:
-            return resolved, visited, transient, f"duplicate:{include_domain}"
+            # A name publishing two records permerrors (RFC 7208 4.5), so this
+            # include delegates nothing — the same dead end a malformed record
+            # below is, and walked past the same way. Only a third party can
+            # be one: the customer's own duplicates never reach here, they are
+            # caught before the walk starts. Stopping would let where a third
+            # party sits in the record decide whether we find our own include.
+            logger.debug("Duplicate SPF records at %s", include_domain)
+            error = error or f"duplicate:{include_domain}"
+            continue
 
         if not spf_records:
             continue
@@ -498,7 +509,7 @@ def _resolve_spf_includes(
             if child_domain not in visited:
                 queue.append(child_domain)
 
-    return resolved, visited, transient, None
+    return resolved, visited, transient, error
 
 
 def _txt_record_value(rr) -> str:

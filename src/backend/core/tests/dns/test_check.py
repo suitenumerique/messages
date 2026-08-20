@@ -1677,6 +1677,39 @@ class TestSPFValidRecordsAreNotFlagged:
             result = check_single_record(maildomain, expected_record)
             assert result["status"] == "correct"
 
+    def test_broken_third_party_include_listed_first_does_not_hide_ours(
+        self, maildomain_factory
+    ):
+        """Same record, with the broken third party listed before our include.
+
+        Where a third party sits in the record must not decide whether we find
+        the include we asked for. The walk goes past its duplicate the way it
+        goes past a malformed record, instead of stopping on it.
+        """
+        maildomain = maildomain_factory(name="example.com")
+        expected_record = {
+            "type": "TXT",
+            "target": "",
+            "value": "v=spf1 include:_spf.example.com -all",
+        }
+
+        with patch("core.services.dns.check.dns.resolver.resolve") as mock_resolve:
+            mock_resolve.side_effect = self._resolver(
+                {
+                    "example.com": _txt_answer(
+                        "v=spf1 include:broken.example.net include:_spf.example.com -all"
+                    ),
+                    "_spf.example.com": _txt_answer("v=spf1 ip4:1.2.3.4 -all"),
+                    "broken.example.net": _txt_answer(
+                        "v=spf1 ip4:5.6.7.8 -all",
+                        "v=spf1 ip4:9.10.11.12 ~all",
+                    ),
+                }
+            )
+
+            result = check_single_record(maildomain, expected_record)
+            assert result["status"] == "correct"
+
     def test_long_chain_after_our_include_does_not_hide_it(self, maildomain_factory):
         """Hitting the 10-lookup limit further along the record must not mask an
         include that already resolved."""
