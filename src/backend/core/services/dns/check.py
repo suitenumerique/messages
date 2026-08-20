@@ -39,6 +39,15 @@ SPF_VERSION_RE = re.compile(rf"{SPF_VERSION}( |$)", re.IGNORECASE)
 SPF_QUALIFIERS = "+-?~"
 # RFC 7208 4.6.1: a term name ends at the first ":", "=" or "/".
 SPF_TERM_NAME_RE = re.compile(r"[^:=/]*")
+# RFC 7208 5: the complete set of mechanisms. SPF has no extension point for
+# new ones, so a term that is neither one of these nor a "name=value"
+# modifier is a syntax error.
+SPF_MECHANISMS = frozenset({"all", "include", "a", "mx", "ptr", "ip4", "ip6", "exists"})
+# RFC 7208 12: "include", "exists", "ip4" and "ip6" spell a mandatory ":"
+# argument, "all" takes none, and "a", "mx" and "ptr" take an optional one.
+SPF_MECHANISMS_NEEDING_ARGUMENT = frozenset({"include", "exists", "ip4", "ip6"})
+# RFC 7208 6: each of these may appear at most once, on pain of permerror.
+SPF_SINGLETON_MODIFIERS = ("redirect", "exp")
 # Ordered from most permissive to strictest (RFC 7208 4.6.2).
 SPF_ALL_STRICTNESS = {"+all": 0, "?all": 1, "~all": 2, "-all": 3}
 SPF_ALL_MECHANISMS = frozenset(SPF_ALL_STRICTNESS)
@@ -147,9 +156,43 @@ def parse_spf_terms(value: str) -> Optional[Tuple[str, set]]:
         if canonical in SPF_ALL_MECHANISMS:
             if all_mechanism is None:
                 all_mechanism = canonical
-        else:
+        # Mechanisms after the first "all" are never tested (RFC 7208 5.1).
+        # Modifiers are not mechanisms and still apply (4.6.3): a canonical
+        # mechanism always carries its qualifier, a modifier never does.
+        elif all_mechanism is None or canonical[0] not in SPF_QUALIFIERS:
             other_terms.add(canonical)
     return (all_mechanism, other_terms)
+
+
+def spf_syntax_is_valid(value: str) -> bool:
+    """Whether an SPF record's terms are well formed.
+
+    A syntax error anywhere makes receivers return permerror for the whole
+    record (RFC 7208 4.6), so the delegation it describes never takes effect.
+    Term names and the presence of their arguments are checked; the contents
+    of an argument (that an IP parses, that a CIDR is in range) are not. Those
+    are permerrors too, but validating them means reimplementing the grammar,
+    and being wrong there would report working records as broken.
+    """
+    if not is_spf_record(value):
+        return False
+    modifiers = collections.Counter()
+    for term in value[len(SPF_VERSION) :].split():
+        _qualifier, name, argument = _parse_spf_term(term)
+        if argument.startswith("="):
+            # Unrecognized modifiers must be ignored whatever they are (6),
+            # so only their names are worth counting.
+            modifiers[name] += 1
+            continue
+        if name not in SPF_MECHANISMS:
+            return False
+        if name in SPF_MECHANISMS_NEEDING_ARGUMENT and not argument.startswith(":"):
+            return False
+        if name == "all" and argument:
+            return False
+        if argument == ":":
+            return False
+    return all(modifiers[name] <= 1 for name in SPF_SINGLETON_MODIFIERS)
 
 
 def _dkim_tag_equal(tag: str, expected: str, found: str) -> bool:
@@ -199,6 +242,13 @@ def _check_spf(expected_value: str, found_values: List[str]) -> Dict[str, any]:
     found_spf_values = [v for v in found_values if is_spf_record(v)]
     if not found_spf_values:
         return {"status": "missing", "found": found_values}
+
+    # A record receivers permerror on delegates nothing, whatever it lists.
+    # This is deliberately kept apart from is_spf_record: RFC 7208 4.5 selects
+    # records on the version section alone, before 4.6 validates them, so a
+    # malformed record still counts towards the duplicate check.
+    if not all(spf_syntax_is_valid(v) for v in found_spf_values):
+        return {"status": "incorrect", "found": found_values}
 
     # If there are expected includes, check they resolve via BFS.
     # This is the primary signal: includes being set up is what matters.
@@ -271,9 +321,10 @@ def _extract_include_domains(spf_value: str) -> List[str]:
 
     Both the "include:" mechanism and the "redirect=" modifier hand the
     decision over to another domain's record (RFC 7208 5.2 and 6.1), so a
-    domain reached either way counts. An "all" mechanism anywhere in the
-    record makes the redirect inoperative though (RFC 7208 5.1 and 6.1), and
-    a record it never reaches delegates nothing.
+    domain reached either way counts. An "all" mechanism ends that though:
+    it always matches, so an include listed after it is never tested (5.1),
+    and a redirect is inoperative when an "all" appears anywhere at all in
+    the record (5.1 and 6.1), wherever the two sit relative to each other.
     """
     includes = []
     redirects = []
@@ -282,7 +333,7 @@ def _extract_include_domains(spf_value: str) -> List[str]:
         qualifier, name, argument = _parse_spf_term(term)
         if name == "all" and not argument:
             has_all = True
-        elif name == "include" and argument.startswith(":"):
+        elif name == "include" and argument.startswith(":") and not has_all:
             includes.append(argument[1:])
         elif name == "redirect" and not qualifier and argument.startswith("="):
             redirects.append(argument[1:])
@@ -294,19 +345,22 @@ def _extract_include_domains(spf_value: str) -> List[str]:
 
 
 def _resolve_spf_includes(
-    found_values: List[str], max_lookups: int = 10
+    found_values: List[str], max_lookups: int = 10, max_void_lookups: int = 2
 ) -> Tuple[set, set, set, Optional[str]]:
     """BFS through SPF include chains, return all domains with valid SPF records.
 
     Seeds from the domains found_values delegate to, follows the chain via BFS.
-    Per RFC 7208, stops after max_lookups DNS lookups.
+    Per RFC 7208 4.6.4, stops after max_lookups DNS lookups, and after
+    max_void_lookups of those came back with nothing. Both caps are what keeps
+    a record from turning us into a DNS amplifier aimed at whatever names it
+    lists, which need not even exist (RFC 7208 11.1).
 
     Returns:
         (resolved_domains, visited_domains, transient_failures, error) where
         visited_domains are the ones we got to look up, transient_failures the
         ones whose lookup failed in a way that may well succeed next time, and
         error is None on success, or a string describing the issue
-        ("limit_reached", "duplicate:domain.com").
+        ("limit_reached", "void_limit_reached", "duplicate:domain.com").
     """
     queue = collections.deque()
     for found_value in found_values:
@@ -317,6 +371,7 @@ def _resolve_spf_includes(
     resolved = set()
     transient = set()
     lookup_count = 0
+    void_count = 0
 
     while queue:
         if lookup_count >= max_lookups:
@@ -337,8 +392,14 @@ def _resolve_spf_includes(
             ]
         except (dns.resolver.NXDOMAIN, dns.resolver.NoAnswer):
             # An include pointing at a name that publishes nothing is a
-            # settled answer, not a failure to look it up.
+            # settled answer, not a failure to look it up — but it is a "void
+            # lookup", and a run of them is the amplification RFC 7208 4.6.4
+            # caps. A name that answers without an SPF record is not one: the
+            # query did come back with something.
             logger.debug("No TXT record for %s", include_domain)
+            void_count += 1
+            if void_count > max_void_lookups:
+                return resolved, visited, transient, "void_limit_reached"
             continue
         except (dns.resolver.Timeout, dns.resolver.NoNameservers):
             logger.debug("DNS resolution failed for %s, may retry", include_domain)

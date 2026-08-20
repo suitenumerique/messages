@@ -20,6 +20,7 @@ from core.services.dns.check import (
     invalidate_spf_check_cache,
     parse_dkim_tags,
     parse_spf_terms,
+    spf_syntax_is_valid,
 )
 
 
@@ -975,6 +976,82 @@ class TestParseSpfTerms:
         tested — including a second, stricter "all"."""
         all_mech, _terms = parse_spf_terms("v=spf1 +all -all")
         assert all_mech == "+all"
+
+    def test_mechanisms_after_all_are_dropped(self):
+        """Mechanisms listed after "all" MUST be ignored (RFC 7208 5.1)."""
+        all_mech, terms = parse_spf_terms("v=spf1 mx -all ip4:1.2.3.4")
+        assert all_mech == "-all"
+        assert terms == {"+mx"}
+
+    def test_modifiers_after_all_are_kept(self):
+        """Modifiers are not mechanisms, so an "all" does not skip them."""
+        _all_mech, terms = parse_spf_terms("v=spf1 -all exp=why.example.com")
+        assert terms == {"exp=why.example.com"}
+
+
+class TestSpfSyntaxIsValid:
+    """Test the SPF record syntax check."""
+
+    def test_known_mechanisms_and_modifiers(self):
+        """Every mechanism of RFC 7208 5, plus modifiers, are accepted."""
+        assert spf_syntax_is_valid(
+            "v=spf1 a mx ptr ip4:1.2.3.4 ip6:2001:db8::1 exists:%{i}.e.com"
+            " include:x.example.com redirect=y.example.com exp=z.example.com -all"
+        )
+
+    def test_unknown_mechanism(self):
+        """An unknown bare term is a syntax error (RFC 7208 4.6)."""
+        assert not spf_syntax_is_valid("v=spf1 include:x.example.com gibberish -all")
+
+    def test_unknown_modifier_is_ignored(self):
+        """RFC 7208 6: unrecognized modifiers MUST be ignored, not rejected."""
+        assert spf_syntax_is_valid(
+            "v=spf1 moo.cow-far_out=man:dog/cat ip4:1.2.3.4 -all"
+        )
+
+    def test_case_insensitive(self):
+        """Mechanism names are case-insensitive (RFC 7208 12)."""
+        assert spf_syntax_is_valid("v=spf1 MX Include:x.example.com -ALL")
+
+    def test_malformed_argument_is_not_checked(self):
+        """Known limitation: argument contents are not validated, so a bad IP
+        still reads as valid even though receivers permerror on it."""
+        assert spf_syntax_is_valid("v=spf1 ip4:999.1.1.1 -all")
+
+    def test_repeated_redirect_modifier(self):
+        """RFC 7208 6: redirect= MUST NOT appear more than once."""
+        assert not spf_syntax_is_valid(
+            "v=spf1 redirect=a.example.com redirect=b.example.com"
+        )
+
+    def test_repeated_exp_modifier(self):
+        """RFC 7208 6: exp= MUST NOT appear more than once."""
+        assert not spf_syntax_is_valid(
+            "v=spf1 exp=a.example.com exp=b.example.com -all"
+        )
+
+    def test_repeated_unknown_modifier_is_allowed(self):
+        """Only redirect= and exp= are capped; others MUST just be ignored."""
+        assert spf_syntax_is_valid("v=spf1 zzz=one zzz=two -all")
+
+    def test_mechanism_missing_its_required_argument(self):
+        """include, exists, ip4 and ip6 all spell a mandatory ":" argument."""
+        assert not spf_syntax_is_valid("v=spf1 include -all")
+        assert not spf_syntax_is_valid("v=spf1 include: -all")
+        assert not spf_syntax_is_valid("v=spf1 ip4 -all")
+
+    def test_all_takes_no_argument(self):
+        """RFC 7208 12 spells all as the bare word."""
+        assert not spf_syntax_is_valid("v=spf1 -all:example.com")
+
+    def test_optional_argument_may_be_omitted(self):
+        """a, mx and ptr default to the current domain."""
+        assert spf_syntax_is_valid("v=spf1 a mx ptr -all")
+        assert not spf_syntax_is_valid("v=spf1 a: -all")
+
+    def test_non_spf_value(self):
+        """A value that is not a record at all cannot be a valid one."""
+        assert not spf_syntax_is_valid("google-site-verification=abc123")
 
     def test_modifiers_keep_no_qualifier(self):
         """Modifiers are name=value pairs and take no qualifier."""
@@ -2027,6 +2104,155 @@ class TestSPFRecursiveCheck:
             result = check_single_record(maildomain, expected_record)
 
             assert result["status"] == "incorrect"
+
+    def test_spf_include_after_all_is_never_reached(self, maildomain_factory, settings):
+        """RFC 7208 5.1: "all" always matches, so mechanisms listed after it
+        MUST be ignored. An include placed after it delegates nothing, and the
+        record hard-fails every sender."""
+        settings.MESSAGES_TECHNICAL_DOMAIN = "messages.org"
+        maildomain = maildomain_factory(name="example.com")
+        expected_record = {
+            "type": "TXT",
+            "target": "",
+            "value": "v=spf1 include:_spf.messages.org -all",
+        }
+
+        with patch("core.services.dns.check.dns.resolver.resolve") as mock_resolve:
+
+            def resolve_side_effect(name, _record_type):
+                if name == "example.com":
+                    return _txt_answer("v=spf1 -all include:_spf.messages.org")
+                if name == "_spf.messages.org":
+                    return _txt_answer("v=spf1 ip4:1.2.3.4 -all")
+                raise NXDOMAIN()
+
+            mock_resolve.side_effect = resolve_side_effect
+            result = check_single_record(maildomain, expected_record)
+
+            assert result["status"] == "incorrect"
+
+    def test_spf_unknown_mechanism_is_a_syntax_error(
+        self, maildomain_factory, settings
+    ):
+        """RFC 7208 4.6: a syntax error anywhere in the record makes receivers
+        return permerror, so the delegation never takes effect."""
+        settings.MESSAGES_TECHNICAL_DOMAIN = "messages.org"
+        maildomain = maildomain_factory(name="example.com")
+        expected_record = {
+            "type": "TXT",
+            "target": "",
+            "value": "v=spf1 include:_spf.messages.org -all",
+        }
+
+        with patch("core.services.dns.check.dns.resolver.resolve") as mock_resolve:
+
+            def resolve_side_effect(name, _record_type):
+                if name == "example.com":
+                    return _txt_answer(
+                        "v=spf1 include:_spf.messages.org gibberish -all"
+                    )
+                if name == "_spf.messages.org":
+                    return _txt_answer("v=spf1 ip4:1.2.3.4 -all")
+                raise NXDOMAIN()
+
+            mock_resolve.side_effect = resolve_side_effect
+            result = check_single_record(maildomain, expected_record)
+
+            assert result["status"] == "incorrect"
+
+    def test_spf_void_lookups_are_capped(self, maildomain_factory, settings):
+        """RFC 7208 4.6.4 and 11.1: a record listing names that do not exist
+        turns a verifier into a DNS amplifier aimed at them, so the walk stops
+        after two void lookups instead of spending the full budget of ten."""
+        settings.MESSAGES_TECHNICAL_DOMAIN = "messages.org"
+        maildomain = maildomain_factory(name="example.com")
+        expected_record = {
+            "type": "TXT",
+            "target": "",
+            "value": "v=spf1 include:_spf.messages.org -all",
+        }
+
+        with patch("core.services.dns.check.dns.resolver.resolve") as mock_resolve:
+
+            def resolve_side_effect(name, _record_type):
+                if name == "example.com":
+                    return _txt_answer(
+                        "v=spf1 "
+                        + " ".join(f"include:v{i}.victim.example" for i in range(9))
+                        + " include:_spf.messages.org -all"
+                    )
+                if name == "_spf.messages.org":
+                    return _txt_answer("v=spf1 ip4:1.2.3.4 -all")
+                raise NXDOMAIN()
+
+            mock_resolve.side_effect = resolve_side_effect
+            result = check_single_record(maildomain, expected_record)
+
+            assert result["status"] == "incorrect"
+            # One lookup for the domain itself, then three void ones: the
+            # third trips the cap. Without it this would have been ten.
+            assert mock_resolve.call_count == 4
+
+    def test_spf_void_lookups_do_not_mask_an_include_reached_first(
+        self, maildomain_factory, settings
+    ):
+        """The cap must not hide a delegation that already resolved."""
+        settings.MESSAGES_TECHNICAL_DOMAIN = "messages.org"
+        maildomain = maildomain_factory(name="example.com")
+        expected_record = {
+            "type": "TXT",
+            "target": "",
+            "value": "v=spf1 include:_spf.messages.org -all",
+        }
+
+        with patch("core.services.dns.check.dns.resolver.resolve") as mock_resolve:
+
+            def resolve_side_effect(name, _record_type):
+                if name == "example.com":
+                    return _txt_answer(
+                        "v=spf1 include:_spf.messages.org "
+                        + " ".join(f"include:v{i}.example.net" for i in range(9))
+                        + " -all"
+                    )
+                if name == "_spf.messages.org":
+                    return _txt_answer("v=spf1 ip4:1.2.3.4 -all")
+                raise NXDOMAIN()
+
+            mock_resolve.side_effect = resolve_side_effect
+            result = check_single_record(maildomain, expected_record)
+
+            assert result["status"] == "correct"
+
+    def test_spf_name_answering_without_a_record_is_not_a_void_lookup(
+        self, maildomain_factory, settings
+    ):
+        """A void lookup is one that came back empty. A name that answers with
+        TXT records but no SPF among them did answer."""
+        settings.MESSAGES_TECHNICAL_DOMAIN = "messages.org"
+        maildomain = maildomain_factory(name="example.com")
+        expected_record = {
+            "type": "TXT",
+            "target": "",
+            "value": "v=spf1 include:_spf.messages.org -all",
+        }
+
+        with patch("core.services.dns.check.dns.resolver.resolve") as mock_resolve:
+
+            def resolve_side_effect(name, _record_type):
+                if name == "example.com":
+                    return _txt_answer(
+                        "v=spf1 "
+                        + " ".join(f"include:n{i}.example.net" for i in range(5))
+                        + " include:_spf.messages.org -all"
+                    )
+                if name == "_spf.messages.org":
+                    return _txt_answer("v=spf1 ip4:1.2.3.4 -all")
+                return _txt_answer("google-site-verification=abc123")
+
+            mock_resolve.side_effect = resolve_side_effect
+            result = check_single_record(maildomain, expected_record)
+
+            assert result["status"] == "correct"
 
     def test_spf_redirect_is_ignored_when_all_is_present(
         self, maildomain_factory, settings
