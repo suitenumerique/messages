@@ -42,13 +42,8 @@ SPF_TERM_NAME_RE = re.compile(r"[^:=/]*")
 # Ordered from most permissive to strictest (RFC 7208 4.6.2).
 SPF_ALL_STRICTNESS = {"+all": 0, "?all": 1, "~all": 2, "-all": 3}
 SPF_ALL_MECHANISMS = frozenset(SPF_ALL_STRICTNESS)
-
-# RFC 7208 3.3 and RFC 6376 3.6.2: the strings of a single TXT record are
-# concatenated with no separator, which is how records over 255 octets are
-# published. Some local resolvers (e.g. systemd-resolved) instead merge
-# separate TXT records into one RR; those show up as a later string opening
-# its own record, and have to stay apart.
-TXT_RECORD_START_RE = re.compile(r"v=(spf1( |$)|DMARC1\b)", re.IGNORECASE)
+# RFC 7208 4.7: a record with no "all" ends in an implicit "?all".
+SPF_IMPLICIT_ALL = "?all"
 
 
 def normalize_txt_value(value: str) -> str:
@@ -244,13 +239,16 @@ def _check_spf(expected_value: str, found_values: List[str]) -> Dict[str, any]:
 def _all_is_acceptable(expected_all: Optional[str], found_all: Optional[str]) -> bool:
     """Whether a found "all" mechanism is at least as strict as expected.
 
-    "~all" also passes for an expected "-all": softfail is where most domains
-    start, and it does not keep us from sending.
+    A record with no "all" is read as the implicit "?all" it ends in, on
+    either side: without it, an expected value carrying no "all" of its own
+    could never be matched. "~all" also passes for an expected "-all":
+    softfail is where most domains start, and it does not keep us from
+    sending.
     """
+    expected_all = expected_all or SPF_IMPLICIT_ALL
+    found_all = found_all or SPF_IMPLICIT_ALL
     if expected_all == found_all:
         return True
-    if expected_all is None or found_all is None:
-        return False
     if expected_all == "-all" and found_all == "~all":
         return True
     return SPF_ALL_STRICTNESS[found_all] > SPF_ALL_STRICTNESS[expected_all]
@@ -334,8 +332,7 @@ def _resolve_spf_includes(
             answers = dns.resolver.resolve(include_domain, "TXT")
             spf_records = [
                 value
-                for rr in answers.rrset
-                for value in _txt_record_values(rr)
+                for value in (_txt_record_value(rr) for rr in answers.rrset)
                 if is_spf_record(value)
             ]
         except (dns.resolver.NXDOMAIN, dns.resolver.NoAnswer):
@@ -368,22 +365,20 @@ def _resolve_spf_includes(
     return resolved, visited, transient, None
 
 
-def _txt_record_values(rr) -> List[str]:
-    """Normalized TXT values carried by a single resource record.
+def _txt_record_value(rr) -> str:
+    """Normalized value of a single TXT resource record.
 
-    Its strings belong to one record and are concatenated, unless a later one
-    opens a record of its own — the sign of a resolver having merged separate
-    records into one RR. SPF records are US-ASCII (RFC 7208 3.1), but an
-    unrelated TXT record at the same name may hold anything, and that is no
-    reason to fail the whole check.
+    RFC 7208 3.3 and RFC 6376 3.6.2: the strings of one record are
+    concatenated with no separator, which is how a value over the 255-octet
+    limit on a character-string is published. Separate TXT records arrive as
+    separate resource records, so several strings here always belong to the
+    same record. SPF records are US-ASCII (RFC 7208 3.1), but an unrelated
+    TXT record may hold anything, and that is no reason to fail the check.
     """
-    strings = [s.decode(errors="replace") for s in rr.strings]
-    if any(TXT_RECORD_START_RE.match(s) for s in strings[1:]):
-        return [normalize_txt_value(s) for s in strings]
-    return [normalize_txt_value("".join(strings))]
+    return normalize_txt_value(b"".join(rr.strings).decode(errors="replace"))
 
 
-def _resolve_dns_values(record_type, target, query_name):
+def _resolve_dns_values(record_type, query_name):
     """Resolve DNS and return found values and normalized expected value flag."""
     if record_type.upper() == "MX":
         answers = dns.resolver.resolve(query_name, "MX")
@@ -391,16 +386,7 @@ def _resolve_dns_values(record_type, target, query_name):
 
     if record_type.upper() == "TXT":
         answers = dns.resolver.resolve(query_name, "TXT")
-        values = []
-        for rr in answers.rrset:
-            if target.endswith("._domainkey"):
-                # DKIM: concatenate strings (long key split across strings)
-                values.append(
-                    normalize_txt_value(b"".join(rr.strings).decode(errors="replace"))
-                )
-            else:
-                values.extend(_txt_record_values(rr))
-        return values
+        return [_txt_record_value(rr) for rr in answers.rrset]
 
     answers = dns.resolver.resolve(query_name, record_type)
     return [answer.to_text() for answer in answers]
@@ -449,7 +435,7 @@ def check_single_record(
     query_name = f"{target}.{maildomain.name}" if target else maildomain.name
 
     try:
-        found_values = _resolve_dns_values(record_type, target, query_name)
+        found_values = _resolve_dns_values(record_type, query_name)
         if record_type.upper() == "TXT":
             expected_value = normalize_txt_value(expected_value)
 

@@ -407,12 +407,16 @@ class TestDNSChecking:  # pylint: disable=too-many-public-methods
 
             assert result["status"] == "correct"
 
-    def test_check_single_record_spf_found_when_resolver_merges_txt_records(
+    def test_check_single_record_spf_found_among_other_txt_records(
         self, maildomain_factory
     ):
-        """Regression: some local resolvers (e.g. systemd-resolved) merge
-        separate TXT records into a single RR with multiple strings. SPF must
-        still be found by iterating individual strings."""
+        """SPF must be found when the name carries other TXT records too.
+
+        Separate TXT records arrive as separate resource records, each with
+        its own strings: the RDATA boundary is part of the record framing, so
+        no resolver can merge two records into one. Several strings on one
+        record therefore always belong together (RFC 7208 3.3).
+        """
         maildomain = maildomain_factory(name="example.com")
         expected_record = {
             "type": "TXT",
@@ -421,15 +425,10 @@ class TestDNSChecking:  # pylint: disable=too-many-public-methods
         }
 
         with patch("core.services.dns.check.dns.resolver.resolve") as mock_resolve:
-            # Single RR with two strings (merged by local resolver)
-            merged_rr = MagicMock()
-            merged_rr.strings = (
-                b"google-site-verification=abc123",
-                b"v=spf1 include:_spf.example.com -all",
+            mock_resolve.return_value = _txt_answer(
+                "google-site-verification=abc123",
+                "v=spf1 include:_spf.example.com -all",
             )
-            answer = MagicMock()
-            answer.rrset = [merged_rr]
-            mock_resolve.return_value = answer
 
             result = check_single_record(maildomain, expected_record)
             assert result["status"] == "correct"
@@ -1422,7 +1421,9 @@ class TestSPFValidRecordsAreNotFlagged:
 
     def test_record_split_across_several_strings(self, maildomain_factory):
         """RFC 7208 3.3: the strings of one TXT record are concatenated with no
-        separator, which is how records over 255 octets are published."""
+        separator, which is how a value over the 255-octet character-string
+        limit is published. Publishers split where they like, not only at
+        exactly 255 octets, so the split point carries no meaning."""
         maildomain = maildomain_factory(name="example.com")
         expected_record = {
             "type": "TXT",
@@ -1554,6 +1555,50 @@ class TestSPFValidRecordsAreNotFlagged:
 
             result = check_single_record(maildomain, expected_record)
             assert result["status"] == "correct"
+
+    def test_expected_value_without_an_all_mechanism(self, maildomain_factory):
+        """A configured expected value carrying no "all" ends in the implicit
+        "?all" (RFC 7208 4.7); a stricter published one satisfies it. Reading
+        it as "no acceptable all exists" would make the check unsatisfiable."""
+        maildomain = maildomain_factory(name="example.com")
+        expected_record = {
+            "type": "TXT",
+            "target": "",
+            "value": "v=spf1 include:_spf.example.com",
+        }
+
+        with patch("core.services.dns.check.dns.resolver.resolve") as mock_resolve:
+            mock_resolve.side_effect = self._resolver(
+                {
+                    "example.com": _txt_answer("v=spf1 include:_spf.example.com -all"),
+                    "_spf.example.com": _txt_answer("v=spf1 ip4:1.2.3.4 -all"),
+                }
+            )
+
+            result = check_single_record(maildomain, expected_record)
+            assert result["status"] == "correct"
+
+    def test_expected_value_without_an_all_still_rejects_plus_all(
+        self, maildomain_factory
+    ):
+        """The implicit "?all" is still stricter than a published "+all"."""
+        maildomain = maildomain_factory(name="example.com")
+        expected_record = {
+            "type": "TXT",
+            "target": "",
+            "value": "v=spf1 include:_spf.example.com",
+        }
+
+        with patch("core.services.dns.check.dns.resolver.resolve") as mock_resolve:
+            mock_resolve.side_effect = self._resolver(
+                {
+                    "example.com": _txt_answer("v=spf1 include:_spf.example.com +all"),
+                    "_spf.example.com": _txt_answer("v=spf1 ip4:1.2.3.4 -all"),
+                }
+            )
+
+            result = check_single_record(maildomain, expected_record)
+            assert result["status"] == "insecure"
 
     def test_unrelated_non_ascii_txt_record(self, maildomain_factory):
         """SPF records are US-ASCII (RFC 7208 3.1), but another TXT record at
