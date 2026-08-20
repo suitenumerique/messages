@@ -949,6 +949,18 @@ class TestParseSpfTerms:
         """RFC 7208 4.5: "v=spf10" is not an SPF record."""
         assert parse_spf_terms("v=spf10 include:_spf.example.com -all") is None
 
+    def test_version_must_be_terminated_by_a_space(self):
+        """RFC 7208 4.6.1 separates terms with SP alone. Receivers read a
+        record broken by another control character as no record at all, so we
+        must not report it as one either."""
+        assert parse_spf_terms("v=spf1\tinclude:_spf.example.com -all") is None
+
+    def test_empty_record_is_valid(self):
+        """RFC 7208 4.5: a bare "v=spf1" is a record, with no terms."""
+        all_mech, terms = parse_spf_terms("v=spf1")
+        assert all_mech is None
+        assert terms == set()
+
     def test_qualifiers_are_made_explicit(self):
         """An omitted qualifier means "+", so both spellings are one term."""
         _all_mech, terms = parse_spf_terms("v=spf1 +MX ip4:1.2.3.4")
@@ -957,6 +969,12 @@ class TestParseSpfTerms:
     def test_bare_all_means_pass(self):
         """A bare "all" carries the implicit "+" qualifier."""
         all_mech, _terms = parse_spf_terms("v=spf1 mx all")
+        assert all_mech == "+all"
+
+    def test_first_all_wins(self):
+        """RFC 7208 5.1: "all" always matches, so anything after it is never
+        tested — including a second, stricter "all"."""
+        all_mech, _terms = parse_spf_terms("v=spf1 +all -all")
         assert all_mech == "+all"
 
     def test_modifiers_keep_no_qualifier(self):
@@ -1456,7 +1474,7 @@ class TestSPFValidRecordsAreNotFlagged:
 
             result = check_single_record(maildomain, expected_record)
             # The delegation is in place; only the "all" is missing locally.
-            assert result["status"] in ("correct", "insecure")
+            assert result["status"] == "insecure"
 
     def test_v_spf10_is_not_a_second_record(self, maildomain_factory):
         """RFC 7208 4.5: the version section is terminated by a space or the end
@@ -1537,6 +1555,35 @@ class TestSPFValidRecordsAreNotFlagged:
             result = check_single_record(maildomain, expected_record)
             assert result["status"] == "correct"
 
+    def test_unrelated_non_ascii_txt_record(self, maildomain_factory):
+        """SPF records are US-ASCII (RFC 7208 3.1), but another TXT record at
+        the same name may hold anything, and decoding it must not fail the
+        whole check."""
+        maildomain = maildomain_factory(name="example.com")
+        expected_record = {
+            "type": "TXT",
+            "target": "",
+            "value": "v=spf1 include:_spf.example.com -all",
+        }
+
+        binary_rr = MagicMock()
+        binary_rr.strings = (b"\xff\xfe some vendor blob",)
+        spf_rr = MagicMock()
+        spf_rr.strings = (b"v=spf1 include:_spf.example.com -all",)
+        answer = MagicMock()
+        answer.rrset = [binary_rr, spf_rr]
+
+        with patch("core.services.dns.check.dns.resolver.resolve") as mock_resolve:
+            mock_resolve.side_effect = self._resolver(
+                {
+                    "example.com": answer,
+                    "_spf.example.com": _txt_answer("v=spf1 ip4:1.2.3.4 -all"),
+                }
+            )
+
+            result = check_single_record(maildomain, expected_record)
+            assert result["status"] == "correct"
+
     def test_stricter_all_than_expected_is_correct(self, maildomain_factory):
         """A domain hardening ~all into -all is stricter, not insecure."""
         maildomain = maildomain_factory(name="example.com")
@@ -1573,9 +1620,10 @@ class TestSPFValidRecordsAreNotFlagged:
             result = check_single_record(maildomain, expected_record)
             assert result["status"] == "correct"
 
-    def test_transient_dns_failure_in_chain_is_not_cached(self, maildomain_factory):
-        """A timeout while walking the chain says nothing about the record, so
-        it must not be cached as a definitive failure for 10 minutes."""
+    def test_transient_dns_failure_in_chain_is_reported_as_an_error(
+        self, maildomain_factory
+    ):
+        """A timeout while walking the chain says nothing about the record."""
         maildomain = maildomain_factory(name="example.com")
         expected_record = {
             "type": "TXT",
@@ -1594,6 +1642,62 @@ class TestSPFValidRecordsAreNotFlagged:
 
             result = check_single_record(maildomain, expected_record)
             assert result["status"] == "error"
+
+    @override_settings(
+        MESSAGES_TECHNICAL_DOMAIN="messages.org",
+        MESSAGES_DNS_RECORDS='[{"target":"","type":"txt",'
+        '"value":"v=spf1 include:_spf.messages.org -all"}]',
+    )
+    def test_transient_dns_failure_in_chain_is_not_cached(self, maildomain_factory):
+        """That error must not be cached as a definitive failure for 10 minutes."""
+        cache.clear()
+        maildomain = maildomain_factory(name="example.com")
+
+        with (
+            patch("core.services.dns.check.dns.resolver.resolve") as mock_resolve,
+            patch("core.services.dns.check.cache.set") as mock_cache_set,
+        ):
+
+            def resolve_side_effect(name, _record_type):
+                if name == "example.com":
+                    return _txt_answer("v=spf1 include:_spf.messages.org -all")
+                raise Timeout()
+
+            mock_resolve.side_effect = resolve_side_effect
+
+            assert check_spf_status(maildomain) is False
+            mock_cache_set.assert_not_called()
+
+    @override_settings(
+        MESSAGES_TECHNICAL_DOMAIN="messages.org",
+        MESSAGES_DNS_RECORDS='[{"target":"","type":"txt",'
+        '"value":"v=spf1 include:_spf.messages.org -all"}]',
+    )
+    def test_unrelated_transient_failure_stays_definitive(self, maildomain_factory):
+        """A timeout on someone else's include, when ours was looked up and
+        settled, is not what hid it: the answer is definitive and cacheable."""
+        cache.clear()
+        maildomain = maildomain_factory(name="example.com")
+
+        with (
+            patch("core.services.dns.check.dns.resolver.resolve") as mock_resolve,
+            patch("core.services.dns.check.cache.set") as mock_cache_set,
+        ):
+
+            def resolve_side_effect(name, _record_type):
+                if name == "example.com":
+                    return _txt_answer(
+                        "v=spf1 include:_spf.messages.org"
+                        " include:other.example.net -all"
+                    )
+                if name == "_spf.messages.org":
+                    raise NXDOMAIN()
+                raise Timeout()
+
+            mock_resolve.side_effect = resolve_side_effect
+
+            assert check_spf_status(maildomain) is False
+            mock_cache_set.assert_called_once()
 
 
 @pytest.fixture(name="maildomain_factory")
@@ -1850,6 +1954,64 @@ class TestSPFRecursiveCheck:
             result = check_single_record(maildomain, expected_record)
 
             assert result["status"] == "duplicate"
+
+    def test_spf_weak_all_does_not_excuse_a_missing_include(
+        self, maildomain_factory, settings
+    ):
+        """A weak "all" says the policy is lax; it says nothing about whether
+        the domain delegates to us. Reporting "insecure" here would let
+        check_spf_status send for a domain that never included us."""
+        settings.MESSAGES_TECHNICAL_DOMAIN = "messages.org"
+        maildomain = maildomain_factory(name="example.com")
+        expected_record = {
+            "type": "TXT",
+            "target": "",
+            "value": "v=spf1 include:_spf.messages.org -all",
+        }
+
+        with patch("core.services.dns.check.dns.resolver.resolve") as mock_resolve:
+
+            def resolve_side_effect(name, _record_type):
+                if name == "example.com":
+                    return _txt_answer("v=spf1 ?all include:other.example.net")
+                if name == "other.example.net":
+                    return _txt_answer("v=spf1 ip4:1.2.3.4 -all")
+                raise NXDOMAIN()
+
+            mock_resolve.side_effect = resolve_side_effect
+            result = check_single_record(maildomain, expected_record)
+
+            assert result["status"] == "incorrect"
+
+    def test_spf_redirect_is_ignored_when_all_is_present(
+        self, maildomain_factory, settings
+    ):
+        """RFC 7208 5.1 and 6.1: a "redirect=" modifier MUST be ignored when the
+        record has an "all" mechanism anywhere, so it delegates nothing and our
+        include is not actually in place."""
+        settings.MESSAGES_TECHNICAL_DOMAIN = "messages.org"
+        maildomain = maildomain_factory(name="example.com")
+        expected_record = {
+            "type": "TXT",
+            "target": "",
+            "value": "v=spf1 include:_spf.messages.org -all",
+        }
+
+        with patch("core.services.dns.check.dns.resolver.resolve") as mock_resolve:
+
+            def resolve_side_effect(name, _record_type):
+                if name == "example.com":
+                    return _txt_answer("v=spf1 redirect=policy.example.net -all")
+                if name == "policy.example.net":
+                    return _txt_answer("v=spf1 include:_spf.messages.org -all")
+                if name == "_spf.messages.org":
+                    return _txt_answer("v=spf1 ip4:1.2.3.4 -all")
+                raise NXDOMAIN()
+
+            mock_resolve.side_effect = resolve_side_effect
+            result = check_single_record(maildomain, expected_record)
+
+            assert result["status"] == "incorrect"
 
 
 @pytest.mark.django_db

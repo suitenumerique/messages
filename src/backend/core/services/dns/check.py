@@ -10,6 +10,7 @@ from typing import Dict, List, Optional, Tuple
 from django.core.cache import cache
 
 import dns.resolver
+from sentry_sdk import capture_exception
 
 from core.models import MailDomain
 
@@ -30,22 +31,24 @@ DKIM_TAG_NAME_RE = re.compile(r"[a-zA-Z]")
 SPF_VERSION = "v=spf1"
 # RFC 7208 4.5: a record starts with a version section of exactly "v=spf1",
 # terminated by a space or the end of the record, so "v=spf10" is not one.
-# Per Section 12, ABNF literals are case-insensitive: "V=sPf1" is.
-SPF_VERSION_RE = re.compile(rf"{SPF_VERSION}(\s|$)", re.IGNORECASE)
+# Per Section 12, ABNF literals are case-insensitive: "V=sPf1" is. Only a
+# space terminates it: RFC 7208 4.6.1 separates terms with SP alone, and a
+# record broken by another control character is one receivers reject too.
+SPF_VERSION_RE = re.compile(rf"{SPF_VERSION}( |$)", re.IGNORECASE)
 # RFC 7208 4.6.1: directive = [ qualifier ] mechanism.
 SPF_QUALIFIERS = "+-?~"
 # RFC 7208 4.6.1: a term name ends at the first ":", "=" or "/".
 SPF_TERM_NAME_RE = re.compile(r"[^:=/]*")
-SPF_ALL_MECHANISMS = frozenset({"+all", "-all", "~all", "?all"})
 # Ordered from most permissive to strictest (RFC 7208 4.6.2).
 SPF_ALL_STRICTNESS = {"+all": 0, "?all": 1, "~all": 2, "-all": 3}
+SPF_ALL_MECHANISMS = frozenset(SPF_ALL_STRICTNESS)
 
 # RFC 7208 3.3 and RFC 6376 3.6.2: the strings of a single TXT record are
 # concatenated with no separator, which is how records over 255 octets are
 # published. Some local resolvers (e.g. systemd-resolved) instead merge
 # separate TXT records into one RR; those show up as a later string opening
 # its own record, and have to stay apart.
-TXT_RECORD_START_RE = re.compile(r"v=(spf1(\s|$)|DMARC1\b)", re.IGNORECASE)
+TXT_RECORD_START_RE = re.compile(r"v=(spf1( |$)|DMARC1\b)", re.IGNORECASE)
 
 
 def normalize_txt_value(value: str) -> str:
@@ -134,8 +137,10 @@ def parse_spf_terms(value: str) -> Optional[Tuple[str, set]]:
 
     Returns (all_mechanism, other_terms) where all_mechanism is the canonical
     "-all", "~all", "+all" or "?all" (a bare "all" means "+all"), or None when
-    the record has no "all" at all. Terms are canonicalized, so ordering,
-    letter case and implicit qualifiers do not matter.
+    the record has no "all" at all. Only the first one counts: "all" always
+    matches, so anything after it is never tested (RFC 7208 5.1). Terms are
+    canonicalized, so ordering, letter case and implicit qualifiers do not
+    matter.
     Returns None if not a valid SPF record.
     """
     if not is_spf_record(value):
@@ -145,7 +150,8 @@ def parse_spf_terms(value: str) -> Optional[Tuple[str, set]]:
     for term in value[len(SPF_VERSION) :].split():
         canonical = _canonical_spf_term(term)
         if canonical in SPF_ALL_MECHANISMS:
-            all_mechanism = canonical
+            if all_mechanism is None:
+                all_mechanism = canonical
         else:
             other_terms.add(canonical)
     return (all_mechanism, other_terms)
@@ -202,13 +208,15 @@ def _check_spf(expected_value: str, found_values: List[str]) -> Dict[str, any]:
     # If there are expected includes, check they resolve via BFS.
     # This is the primary signal: includes being set up is what matters.
     if expected_includes:
-        resolved, transient, error = _resolve_spf_includes(found_spf_values)
+        resolved, visited, transient, error = _resolve_spf_includes(found_spf_values)
         if not expected_includes <= resolved:
             # A problem met while walking the chain only matters when it is
             # what kept our own include out of reach: a third party
             # duplicating its record, or a chain too long past our include,
             # says nothing about the record we asked the customer to publish.
-            if transient:
+            # A branch that failed transiently is unexplored, so unless every
+            # include we expect was looked up and settled, it may sit there.
+            if transient and not expected_includes <= visited - transient:
                 return {
                     "status": "error",
                     "error": "DNS query failed while following the SPF chain",
@@ -265,37 +273,42 @@ def _extract_include_domains(spf_value: str) -> List[str]:
 
     Both the "include:" mechanism and the "redirect=" modifier hand the
     decision over to another domain's record (RFC 7208 5.2 and 6.1), so a
-    domain reached either way counts.
+    domain reached either way counts. An "all" mechanism anywhere in the
+    record makes the redirect inoperative though (RFC 7208 5.1 and 6.1), and
+    a record it never reaches delegates nothing.
     """
-    domains = []
+    includes = []
+    redirects = []
+    has_all = False
     for term in spf_value.split():
         qualifier, name, argument = _parse_spf_term(term)
-        if name == "include" and argument.startswith(":"):
-            domain = argument[1:]
+        if name == "all" and not argument:
+            has_all = True
+        elif name == "include" and argument.startswith(":"):
+            includes.append(argument[1:])
         elif name == "redirect" and not qualifier and argument.startswith("="):
-            domain = argument[1:]
-        else:
-            continue
-        # A macro only expands at evaluation time, so it names no domain we
-        # could look up here.
-        if domain and "%" not in domain:
-            domains.append(domain)
-    return domains
+            redirects.append(argument[1:])
+    # A redirect is only reached once every mechanism failed to match, so it
+    # comes last. A macro only expands at evaluation time, so it names no
+    # domain we could look up here.
+    domains = includes if has_all else includes + redirects
+    return [domain for domain in domains if domain and "%" not in domain]
 
 
 def _resolve_spf_includes(
     found_values: List[str], max_lookups: int = 10
-) -> Tuple[set, set, Optional[str]]:
+) -> Tuple[set, set, set, Optional[str]]:
     """BFS through SPF include chains, return all domains with valid SPF records.
 
     Seeds from the domains found_values delegate to, follows the chain via BFS.
     Per RFC 7208, stops after max_lookups DNS lookups.
 
     Returns:
-        (resolved_domains, transient_failures, error) where transient_failures
-        holds the domains whose lookup failed in a way that may well succeed
-        next time, and error is None on success, or a string describing the
-        issue ("limit_reached", "duplicate:domain.com").
+        (resolved_domains, visited_domains, transient_failures, error) where
+        visited_domains are the ones we got to look up, transient_failures the
+        ones whose lookup failed in a way that may well succeed next time, and
+        error is None on success, or a string describing the issue
+        ("limit_reached", "duplicate:domain.com").
     """
     queue = collections.deque()
     for found_value in found_values:
@@ -309,7 +322,7 @@ def _resolve_spf_includes(
 
     while queue:
         if lookup_count >= max_lookups:
-            return resolved, transient, "limit_reached"
+            return resolved, visited, transient, "limit_reached"
 
         include_domain = queue.popleft()
         if include_domain in visited:
@@ -325,16 +338,24 @@ def _resolve_spf_includes(
                 for value in _txt_record_values(rr)
                 if is_spf_record(value)
             ]
+        except (dns.resolver.NXDOMAIN, dns.resolver.NoAnswer):
+            # An include pointing at a name that publishes nothing is a
+            # settled answer, not a failure to look it up.
+            logger.debug("No TXT record for %s", include_domain)
+            continue
         except (dns.resolver.Timeout, dns.resolver.NoNameservers):
-            logger.debug("DNS resolution timed out for %s", include_domain)
+            logger.debug("DNS resolution failed for %s, may retry", include_domain)
             transient.add(include_domain)
             continue
-        except Exception:  # pylint: disable=broad-exception-caught
-            logger.debug("DNS resolution failed for %s", include_domain)
+        except Exception as exc:  # pylint: disable=broad-exception-caught
+            logger.warning(
+                "Unexpected error resolving %s: %s", include_domain, exc, exc_info=True
+            )
+            capture_exception(exc)
             continue
 
         if len(spf_records) > 1:
-            return resolved, transient, f"duplicate:{include_domain}"
+            return resolved, visited, transient, f"duplicate:{include_domain}"
 
         if not spf_records:
             continue
@@ -344,7 +365,7 @@ def _resolve_spf_includes(
             if child_domain not in visited:
                 queue.append(child_domain)
 
-    return resolved, transient, None
+    return resolved, visited, transient, None
 
 
 def _txt_record_values(rr) -> List[str]:
@@ -352,9 +373,11 @@ def _txt_record_values(rr) -> List[str]:
 
     Its strings belong to one record and are concatenated, unless a later one
     opens a record of its own — the sign of a resolver having merged separate
-    records into one RR.
+    records into one RR. SPF records are US-ASCII (RFC 7208 3.1), but an
+    unrelated TXT record at the same name may hold anything, and that is no
+    reason to fail the whole check.
     """
-    strings = [s.decode() for s in rr.strings]
+    strings = [s.decode(errors="replace") for s in rr.strings]
     if any(TXT_RECORD_START_RE.match(s) for s in strings[1:]):
         return [normalize_txt_value(s) for s in strings]
     return [normalize_txt_value("".join(strings))]
@@ -372,7 +395,9 @@ def _resolve_dns_values(record_type, target, query_name):
         for rr in answers.rrset:
             if target.endswith("._domainkey"):
                 # DKIM: concatenate strings (long key split across strings)
-                values.append(normalize_txt_value(b"".join(rr.strings).decode()))
+                values.append(
+                    normalize_txt_value(b"".join(rr.strings).decode(errors="replace"))
+                )
             else:
                 values.extend(_txt_record_values(rr))
         return values
@@ -383,17 +408,12 @@ def _resolve_dns_values(record_type, target, query_name):
 
 def _check_txt_security(expected_value, found_values):
     """Check for duplicate/insecure SPF and DMARC records. Returns result or None."""
-    # SPF duplicate and insecure checks
+    # SPF duplicate check. Whether the policy is strong enough is left to
+    # _check_spf: a weak "all" only reads as "insecure" once the delegation
+    # is known to be in place, and "insecure" is a status we still send on.
     if is_spf_record(expected_value):
-        spf_records = [v for v in found_values if is_spf_record(v)]
-        if len(spf_records) > 1:
+        if len([v for v in found_values if is_spf_record(v)]) > 1:
             return {"status": "duplicate", "found": found_values}
-        expected_all, _ = parse_spf_terms(expected_value)
-        if expected_all == "-all":
-            for spf in spf_records:
-                found_all, _ = parse_spf_terms(spf)
-                if found_all in ("+all", "?all"):
-                    return {"status": "insecure", "found": found_values}
 
     # DMARC duplicate and insecure checks
     if expected_value.startswith("v=DMARC1"):
@@ -502,7 +522,9 @@ def _check_spf_status_uncached(maildomain: MailDomain) -> Tuple[bool, bool]:
     spf_records = [
         r
         for r in expected_records
-        if r["type"].upper() == "TXT" and is_spf_record(r["value"])
+        # check_single_record normalizes before matching, so a configured
+        # value carrying its zone-file quotes has to be recognized here too.
+        if r["type"].upper() == "TXT" and is_spf_record(normalize_txt_value(r["value"]))
     ]
     if not spf_records:
         return True, True
