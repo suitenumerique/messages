@@ -35,7 +35,9 @@ SPF_VERSION = "v=spf1"
 # Per Section 12, ABNF literals are case-insensitive: "V=sPf1" is. Only a
 # space terminates it: RFC 7208 4.6.1 separates terms with SP alone, and a
 # record broken by another control character is one receivers reject too.
-SPF_VERSION_RE = re.compile(rf"{SPF_VERSION}( |$)", re.IGNORECASE)
+# Records are US-ASCII (3.1) and receivers compare bytes, so the folding has
+# to stay ASCII as well: Unicode maps U+017F onto "s" and U+212A onto "k".
+SPF_VERSION_RE = re.compile(rf"{SPF_VERSION}( |$)", re.IGNORECASE | re.ASCII)
 # RFC 7208 4.6.1: directive = [ qualifier ] mechanism.
 SPF_QUALIFIERS = "+-?~"
 # RFC 7208 4.6.1: a term name ends at the first ":", "=" or "/".
@@ -47,10 +49,13 @@ SPF_MECHANISMS = frozenset({"all", "include", "a", "mx", "ptr", "ip4", "ip6", "e
 # RFC 7208 12: "include", "exists", "ip4" and "ip6" spell a mandatory ":"
 # argument, "all" takes none, and "a", "mx" and "ptr" take an optional one.
 SPF_MECHANISMS_NEEDING_ARGUMENT = frozenset({"include", "exists", "ip4", "ip6"})
-# RFC 7208 6: each of these may appear at most once, on pain of permerror.
-SPF_SINGLETON_MODIFIERS = ("redirect", "exp")
-# RFC 7208 12: name = ALPHA *( ALPHA / DIGIT / "-" / "_" / "." )
-SPF_MODIFIER_NAME_RE = re.compile(r"[a-z][a-z0-9_.-]*", re.IGNORECASE)
+# The only two modifiers RFC 7208 defines: each may appear at most once (6),
+# and each takes a domain-spec, which is never empty (6.1 and 6.2). Any other
+# modifier must be ignored, however often it appears and even if it is empty.
+SPF_DEFINED_MODIFIERS = ("redirect", "exp")
+# RFC 7208 12: name = ALPHA *( ALPHA / DIGIT / "-" / "_" / "." ), where ALPHA
+# is ASCII, so the folding is held to ASCII as it is for the version above.
+SPF_MODIFIER_NAME_RE = re.compile(r"[a-z][a-z0-9_.-]*", re.IGNORECASE | re.ASCII)
 # RFC 7208 12: ip4-cidr-length is 0-32 and ip6-cidr-length 0-128.
 SPF_MAX_CIDR_LENGTH = {"ip4": 32, "ip6": 128}
 # Ordered from most permissive to strictest (RFC 7208 4.6.2).
@@ -169,6 +174,18 @@ def parse_spf_terms(value: str) -> Optional[Tuple[str, set]]:
     return (all_mechanism, other_terms)
 
 
+def _cidr_length_is_valid(length: str, maximum: int) -> bool:
+    """Whether a CIDR length is spelled as RFC 7208 12 requires.
+
+    Either "0" or a digit string that does not start with one, within the
+    maximum for its address family. Anything else left by the split — a
+    second "/", an empty string — is not a length at all.
+    """
+    if not length.isdigit() or (length.startswith("0") and length != "0"):
+        return False
+    return int(length) <= maximum
+
+
 def _ip_network_is_valid(name: str, argument: str) -> bool:
     """Whether an "ip4:" or "ip6:" argument is an address and CIDR length.
 
@@ -177,20 +194,28 @@ def _ip_network_is_valid(name: str, argument: str) -> bool:
     of its own. RFC 7208 12 allows a single length, never the dual "//" form.
     """
     literal, separator, cidr_length = argument[1:].partition("/")
-    if separator:
-        # Spelled as "0" or a digit string not starting with one, so a second
-        # "/" or a leading zero leaves something that is not a length.
-        if not cidr_length.isdigit() or (
-            cidr_length.startswith("0") and cidr_length != "0"
-        ):
-            return False
-        if int(cidr_length) > SPF_MAX_CIDR_LENGTH[name]:
-            return False
+    if separator and not _cidr_length_is_valid(cidr_length, SPF_MAX_CIDR_LENGTH[name]):
+        return False
     try:
         address = ipaddress.ip_address(literal)
     except ValueError:
         return False
     return (address.version == 4) == (name == "ip4")
+
+
+def _dual_cidr_is_valid(argument: str) -> bool:
+    """Whether an "a" or "mx" argument that is only a dual-cidr-length is in
+    range: [ ip4-cidr-length ] [ "/" ip6-cidr-length ] (RFC 7208 12).
+
+    Unambiguous exactly because no domain-spec precedes it here; once one
+    does, it may carry a macro holding a "/" of its own.
+    """
+    ip4_part, has_ip6, ip6_length = argument.partition("//")
+    if has_ip6 and not _cidr_length_is_valid(ip6_length, SPF_MAX_CIDR_LENGTH["ip6"]):
+        return False
+    return not ip4_part or _cidr_length_is_valid(
+        ip4_part[1:], SPF_MAX_CIDR_LENGTH["ip4"]
+    )
 
 
 def spf_syntax_is_valid(value: str) -> bool:
@@ -213,8 +238,10 @@ def spf_syntax_is_valid(value: str) -> bool:
             # A modifier is a bare "name=value" (4.6.1): a qualifier belongs
             # to a directive, so a qualified one is neither. Unrecognized
             # modifiers must still be ignored whatever they say (6), so only
-            # their names are worth checking and counting.
+            # their name, and the domain-spec of the two defined ones, matter.
             if qualifier or not SPF_MODIFIER_NAME_RE.fullmatch(name):
+                return False
+            if name in SPF_DEFINED_MODIFIERS and argument == "=":
                 return False
             modifiers[name] += 1
             continue
@@ -228,7 +255,10 @@ def spf_syntax_is_valid(value: str) -> bool:
             return False
         if name in SPF_MAX_CIDR_LENGTH and not _ip_network_is_valid(name, argument):
             return False
-    return all(modifiers[name] <= 1 for name in SPF_SINGLETON_MODIFIERS)
+        if name in ("a", "mx") and argument.startswith("/"):
+            if not _dual_cidr_is_valid(argument):
+                return False
+    return all(modifiers[name] <= 1 for name in SPF_DEFINED_MODIFIERS)
 
 
 def _dkim_tag_equal(tag: str, expected: str, found: str) -> bool:

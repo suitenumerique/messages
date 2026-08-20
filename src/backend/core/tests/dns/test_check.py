@@ -949,6 +949,13 @@ class TestParseSpfTerms:
         """RFC 7208 4.5: "v=spf10" is not an SPF record."""
         assert parse_spf_terms("v=spf10 include:_spf.example.com -all") is None
 
+    def test_version_must_be_ascii(self):
+        """RFC 7208 3.1 encodes records in US-ASCII and receivers compare
+        bytes, but Unicode case folding maps U+017F onto "s" and U+212A onto
+        "k". A record spelled with either is no record at all."""
+        assert parse_spf_terms("v=ſpf1 include:_spf.example.com -all") is None
+        assert parse_spf_terms("v=spf1 -all".replace("k", "K")) is not None
+
     def test_version_must_be_terminated_by_a_space(self):
         """RFC 7208 4.6.1 separates terms with SP alone. Receivers read a
         record broken by another control character as no record at all, so we
@@ -1040,10 +1047,35 @@ class TestSpfSyntaxIsValid:
         """The dual "//" form belongs to a and mx, not to ip4 and ip6."""
         assert not spf_syntax_is_valid("v=spf1 ip4:1.2.3.4//24 -all")
 
-    def test_a_and_mx_cidr_arguments_are_not_checked(self):
-        """Known limitation: a domain-spec may itself contain "/" inside a
-        macro, so a and mx arguments are left alone rather than mis-split."""
-        assert spf_syntax_is_valid("v=spf1 a:foo.example.com/24//64 mx/99 -all")
+    def test_a_and_mx_bare_dual_cidr_is_checked(self):
+        """With no domain-spec the whole argument is a dual-cidr-length, so
+        there is nothing it could be confused with (RFC 7208 12)."""
+        assert spf_syntax_is_valid("v=spf1 a/24//64 mx/32 a//128 -all")
+        assert not spf_syntax_is_valid("v=spf1 mx/99 -all")
+        assert not spf_syntax_is_valid("v=spf1 a//129 -all")
+        assert not spf_syntax_is_valid("v=spf1 a/ -all")
+
+    def test_a_and_mx_domain_spec_is_not_checked(self):
+        """Known limitation: once a domain-spec is present it may hold a macro
+        carrying a "/" of its own, so the argument is left alone."""
+        assert spf_syntax_is_valid("v=spf1 a:foo.example.com/24//64 -all")
+        assert spf_syntax_is_valid("v=spf1 mx:%{d}/99 -all")
+
+    def test_defined_modifiers_need_a_domain_spec(self):
+        """RFC 7208 6.1 and 6.2 spell redirect and exp with a domain-spec,
+        which is never empty."""
+        assert not spf_syntax_is_valid("v=spf1 redirect=")
+        assert not spf_syntax_is_valid("v=spf1 exp= -all")
+
+    def test_unknown_modifier_may_be_empty(self):
+        """RFC 7208 12: unknown-modifier takes a macro-string, and that one
+        is allowed to be empty."""
+        assert spf_syntax_is_valid("v=spf1 zzz= -all")
+
+    def test_non_ascii_lookalike_is_not_a_mechanism_name(self):
+        """Case-insensitive matching must stay ASCII: U+017F case-folds to
+        "s" and U+212A to "k", but receivers compare bytes."""
+        assert not spf_syntax_is_valid("v=spf1 ſoo=x -all")
 
     def test_qualified_modifier(self):
         """RFC 7208 4.6.1: a qualifier belongs to a directive. A modifier is a
