@@ -18,8 +18,8 @@ _METRICS_NAMESPACE = "pymta"
 CONNECTIONS_TOTAL = Counter(
     f"{_METRICS_NAMESPACE}_connections_total",
     "Total inbound TCP connections, by post-accept outcome.",
-    # accepted | rejected_per_ip | rejected_per_ip_rate | rejected_global |
-    # rejected_untrusted_proxy | proxy_error
+    # accepted | rejected_global | rejected_per_ip | rejected_per_ip_rate |
+    # rejected_untrusted_proxy
     labelnames=("result",),
 )
 
@@ -80,7 +80,8 @@ DISCONNECTS_421 = Counter(
     f"{_METRICS_NAMESPACE}_disconnects_421_total",
     "Sessions where pymta replied 421 and closed the TCP connection.",
     labelnames=("reason",),  # gate_global | gate_per_ip | gate_per_ip_rate |
-    # hard_error_limit | max_rcpt_misses | max_session_seconds | internal_error
+    # max_errors_per_session | max_rcpt_misses_per_session | session_timeout |
+    # internal_error
 )
 
 
@@ -88,11 +89,47 @@ SECURITY_REJECTIONS = Counter(
     f"{_METRICS_NAMESPACE}_security_rejections_total",
     "Requests rejected by an explicit hardening check, by reason.",
     labelnames=("reason",),
-    # Known reasons: source_route, control_char, oversize_local, oversize_domain,
-    # nul_byte, oversize_announced, max_recipients, max_envelopes, auth_offered,
-    # bad_address, address_literal, bad_helo, hard_error_limit, max_rcpt_misses,
-    # untrusted_proxy, max_session_seconds, internal_error
+    # Reasons that name a configurable limit use that setting's name (minus the
+    # PYMTA_ prefix), so a series lines up with the CONFIG_LIMIT gauge below:
+    #   max_recipients_per_envelope, max_envelopes_per_session,
+    #   max_errors_per_session, max_rcpt_misses_per_session, session_timeout,
+    #   data_timeout
+    # The size cap is the exception, split by the phase that caught it:
+    #   oversize_announced (MAIL FROM SIZE=), oversize_message (the body itself)
+    # The rest are fixed checks:
+    #   source_route, control_char, oversize_local, oversize_domain, nul_byte,
+    #   bad_address, address_literal, bad_helo, auth_offered, untrusted_proxy,
+    #   internal_error
 )
+
+MDA_BREAKER_OPEN = Gauge(
+    f"{_METRICS_NAMESPACE}_mda_breaker_open",
+    "1 while the MDA circuit breaker is open and calls short-circuit to 451.",
+)
+
+SESSIONS_ABANDONED = Counter(
+    f"{_METRICS_NAMESPACE}_sessions_abandoned_total",
+    "Sessions cut mid-flight because the SIGTERM drain deadline expired.",
+)
+
+CONFIG_LIMIT = Gauge(
+    f"{_METRICS_NAMESPACE}_config_limit",
+    "Configured value of each enforced limit, keyed by setting name without the "
+    "PYMTA_ prefix. Lets a dashboard plot usage against the ceiling, and an alert "
+    "fire on approach, without hardcoding the deployment's numbers.",
+    labelnames=("name",),
+)
+
+
+def export_config_limits(limits: dict[str, int]) -> None:
+    """Publish the configured limits as gauges. Called once at startup.
+
+    Takes the values rather than reading ``settings`` so this module stays free
+    of that import, and so the caller decides what counts as a limit worth
+    watching.
+    """
+    for name, value in limits.items():
+        CONFIG_LIMIT.labels(name=name).set(value)
 
 
 def start_metrics_server(host: str, port: int) -> None:
@@ -102,7 +139,7 @@ def start_metrics_server(host: str, port: int) -> None:
     thread, so this just adds a log line. Pass ``port=0`` to skip.
     """
     if port <= 0:
-        logger.info("Prometheus metrics endpoint disabled (PYMTA_METRICS_PORT=0)")
+        logger.info("Prometheus metrics endpoint disabled (PYMTA_METRICS_BIND_PORT=0)")
         return
     start_http_server(port, addr=host)
     logger.info("Prometheus metrics endpoint listening on %s:%d/metrics", host, port)

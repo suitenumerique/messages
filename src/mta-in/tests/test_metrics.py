@@ -71,6 +71,41 @@ def test_delivery_increments_messages_total(metrics_url, mock_api_server, smtp_c
     assert after >= before + 1, (before, after)
 
 
+def test_config_limits_are_exported(metrics_url):
+    """The ceilings are published so a dashboard can plot usage against them.
+
+    Scraped rather than asserted in-process because the gauge is only populated
+    from ``server.main()``: a unit test would pass with the call deleted.
+    """
+    text = _scrape(metrics_url)
+    assert "pymta_config_limit" in text
+    # Every limit the README documents as enforced should have a series.
+    for name in (
+        "max_incoming_email_size",
+        "max_recipients_per_envelope",
+        "max_envelopes_per_session",
+        "max_errors_per_session",
+        "max_rcpt_misses_per_session",
+        "max_sessions_total",
+        "command_timeout",
+        "data_timeout",
+        "session_timeout",
+    ):
+        assert f'pymta_config_limit{{name="{name}"}}' in text, name
+
+    # The dev stack inherits MAX_INCOMING_EMAIL_SIZE=30000000 through the
+    # migration fallback, so this doubles as an end-to-end check of the chain.
+    assert _metric_value(text, 'pymta_config_limit{name="max_incoming_email_size"}') == 30_000_000
+
+
+def test_breaker_gauge_is_exported(metrics_url):
+    # Closed at rest; the point of the gauge is that "is the breaker open right
+    # now" is answerable without inferring it from a counter's rate.
+    text = _scrape(metrics_url)
+    assert "pymta_mda_breaker_open" in text
+    assert _metric_value(text, "pymta_mda_breaker_open") == 0
+
+
 def test_rcpt_rejected_increments_rcpt_total(metrics_url, mock_api_server, smtp_client):
     before = _metric_value(_scrape(metrics_url), 'pymta_rcpt_total{result="rejected_perm"}')
 

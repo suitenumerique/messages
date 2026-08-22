@@ -19,8 +19,8 @@ def _env_bool(name: str, default: bool) -> bool:
     if raw in ("0", "false", "no", "off"):
         return False
     raise ValueError(
-        f"{name} is set to {raw!r}, which is not a recognised boolean. Use one of "
-        "1/true/yes/on or 0/false/no/off."
+        f"Environment variable {name} is set to {raw!r}, which is not a recognised "
+        "boolean. Use one of 1/true/yes/on or 0/false/no/off."
     )
 
 
@@ -31,8 +31,8 @@ def _env_int(name: str, default: int, *, minimum: int) -> int:
     call site: ``minimum=0`` marks the settings where zero means "disabled",
     ``minimum=1`` the ones where zero is nonsense. Without the check those two
     groups look identical from the env, and the nonsense values fail in ways
-    that are silent and wrong rather than loud. ``PYMTA_MAX_RECIPIENTS=0``
-    would 452 every recipient, ``MAX_INCOMING_EMAIL_SIZE=0`` would disable
+    that are silent and wrong rather than loud. ``PYMTA_MAX_RECIPIENTS_PER_ENVELOPE=0``
+    would 452 every recipient, ``PYMTA_MAX_INCOMING_EMAIL_SIZE=0`` would disable
     aiosmtpd's size cap while the handler rejected every message, and
     ``PYMTA_DATA_TIMEOUT=0`` would quietly inherit the command timeout because
     aiosmtpd reads a falsy duration as "unset".
@@ -61,7 +61,7 @@ def _env_token(name: str, default: str) -> str:
 
     The banner is ``220 {hostname} {ident}``, so a CR/LF/NUL here would append
     extra lines to our greeting. These values come from the operator, not the
-    peer, so this is not a live vector; ``PYMTA_HOSTNAME`` does fall back to
+    peer, so this is not a live vector; ``PYMTA_SMTP_HOSTNAME`` does fall back to
     the shared ``MYHOSTNAME``, which on k8s can come from the downward API.
     """
     value = _env_str(name, default)
@@ -71,7 +71,7 @@ def _env_token(name: str, default: str) -> str:
 
 
 # ---------------------------------------------------------------------------
-# MDA back-end (shared with the Postfix milter)
+# MDA back-end
 # ---------------------------------------------------------------------------
 
 MDA_API_BASE_URL = _env_str("MDA_API_BASE_URL", "http://localhost:8000/api/v1.0/")
@@ -87,35 +87,54 @@ MDA_API_TIMEOUT = _env_int("MDA_API_TIMEOUT", 30, minimum=1)
 # margin costs nothing.
 MDA_API_JWT_TTL = _env_int("MDA_API_JWT_TTL", MDA_API_TIMEOUT + 90, minimum=1)
 
-# Circuit-breaker: when this many consecutive MDA calls fail (timeout / 5xx /
-# transport error), pymta short-circuits subsequent calls for
-# ``PYMTA_MDA_BREAKER_COOLDOWN`` seconds and replies 451 directly. Prevents
-# SMTP sessions from stacking up against a dead MDA. Set to 0 to disable.
-PYMTA_MDA_BREAKER_THRESHOLD = _env_int("PYMTA_MDA_BREAKER_THRESHOLD", 10, minimum=0)
-PYMTA_MDA_BREAKER_COOLDOWN = _env_int("PYMTA_MDA_BREAKER_COOLDOWN", 30, minimum=0)
+# Circuit-breaker on the MDA calls. When this many consecutive calls fail
+# (timeout / 5xx / transport error), pymta short-circuits subsequent ones for
+# ``MDA_BREAKER_COOLDOWN`` seconds and replies 451 directly, which stops SMTP
+# sessions stacking up against a dead MDA. Only pymta implements it; the milter
+# ignores these, as it ignores anything it does not read.
+#
+# The threshold is the off switch (0 = never trip). The cooldown takes minimum=1
+# because a zero there disables nothing: the breaker would trip and reopen to the
+# very next call, which is the breaker neutered rather than turned off.
+MDA_BREAKER_THRESHOLD = _env_int("MDA_BREAKER_THRESHOLD", 10, minimum=0)
+MDA_BREAKER_COOLDOWN = _env_int("MDA_BREAKER_COOLDOWN", 30, minimum=1)
 
 
 # ---------------------------------------------------------------------------
 # SMTP listener
 # ---------------------------------------------------------------------------
 
-PYMTA_SMTP_HOST = _env_str("PYMTA_SMTP_HOST", "0.0.0.0")  # noqa: S104
-PYMTA_SMTP_PORT = _env_int("PYMTA_SMTP_PORT", 25, minimum=1)
+PYMTA_SMTP_BIND_HOST = _env_str("PYMTA_SMTP_BIND_HOST", "0.0.0.0")  # noqa: S104
+PYMTA_SMTP_BIND_PORT = _env_int("PYMTA_SMTP_BIND_PORT", 25, minimum=1)
 
 # Banner / Received-header hostname. Matches Postfix's `myhostname`.
-PYMTA_HOSTNAME = _env_token("PYMTA_HOSTNAME", _env_str("MYHOSTNAME", "mta-in"))
+PYMTA_SMTP_HOSTNAME = _env_token("PYMTA_SMTP_HOSTNAME", _env_str("MYHOSTNAME", "mta-in"))
 
 # ESMTP banner ident (after the hostname). Kept short and version-less so we
 # don't broadcast "aiosmtpd X.Y.Z" to internet scanners.
-PYMTA_IDENT = _env_token("PYMTA_IDENT", "ESMTP")
+PYMTA_SMTP_IDENT = _env_token("PYMTA_SMTP_IDENT", "ESMTP")
 
 
 # ---------------------------------------------------------------------------
 # Message-shape limits (security-critical)
 # ---------------------------------------------------------------------------
 
-# Total RFC822 message size cap. Mirrors Postfix `message_size_limit`.
-MAX_INCOMING_EMAIL_SIZE = _env_int("MAX_INCOMING_EMAIL_SIZE", 10_240_000, minimum=1)
+# Total RFC822 message size cap, and the value advertised as the ESMTP SIZE.
+#
+# The unprefixed ``MAX_INCOMING_EMAIL_SIZE`` is the Postfix image's name for the
+# same limit (entrypoint.sh writes it into `message_size_limit`) and is read here
+# only as a migration fallback, so an env file written for that image keeps
+# working. Reading it through ``_env_int`` as well means a malformed value fails
+# at startup whichever name carries it.
+#
+# The final fallback matches the MDA's own default (10 MiB): a cap above it
+# would have pymta accept the whole body only for the MDA to answer 413, and a
+# cap below it would refuse mail the MDA would have stored.
+PYMTA_MAX_INCOMING_EMAIL_SIZE = _env_int(
+    "PYMTA_MAX_INCOMING_EMAIL_SIZE",
+    _env_int("MAX_INCOMING_EMAIL_SIZE", 10 * 1024 * 1024, minimum=1),
+    minimum=1,
+)
 
 # RCPT TO per SMTP transaction. Mirrors Postfix `smtpd_recipient_limit=100`.
 #
@@ -124,18 +143,18 @@ MAX_INCOMING_EMAIL_SIZE = _env_int("MAX_INCOMING_EMAIL_SIZE", 10_240_000, minimu
 # which on the defaults is 1010 commands before aiosmtpd force-closes. Raising
 # either of these raises that ceiling as their product, and it is the ceiling
 # on how many commands one connection can spend re-arming the idle timer.
-PYMTA_MAX_RECIPIENTS = _env_int("PYMTA_MAX_RECIPIENTS", 100, minimum=1)
+PYMTA_MAX_RECIPIENTS_PER_ENVELOPE = _env_int("PYMTA_MAX_RECIPIENTS_PER_ENVELOPE", 100, minimum=1)
 
 # Envelopes per TCP connection (one envelope = MAIL FROM..DATA cycle).
-PYMTA_MAX_ENVELOPES_PER_CONNECTION = _env_int("PYMTA_MAX_ENVELOPES_PER_CONNECTION", 10, minimum=1)
+PYMTA_MAX_ENVELOPES_PER_SESSION = _env_int("PYMTA_MAX_ENVELOPES_PER_SESSION", 10, minimum=1)
 
 # RFC 5321 §4.5.3.1.1/.1.2: local-part ≤ 64 octets, domain ≤ 255 octets.
 # Constants, not env vars: these are the protocol's numbers, not a deployment
 # choice, and raising them would only widen the gap between what pymta accepts
 # at RCPT and what the MDA can store. ``validate_envelope_address`` still takes
 # them as arguments so the tests can probe the boundaries directly.
-PYMTA_MAX_LOCAL_PART = 64
-PYMTA_MAX_DOMAIN = 255
+MAX_LOCAL_PART = 64
+MAX_DOMAIN = 255
 
 
 # ---------------------------------------------------------------------------
@@ -160,15 +179,16 @@ PYMTA_COMMAND_TIMEOUT = _env_int("PYMTA_COMMAND_TIMEOUT", 120, minimum=1)
 # vanishing mid-transaction.
 #
 # Sizing: this is a *floor* on how slow a legitimate sender may be. At the
-# 10 MB default MAX_INCOMING_EMAIL_SIZE, 300 s means ~34 kB/s sustained.
-#
-# The slice the handler holds back, read by ``handler._REPLY_RESERVE_SECONDS``.
-# No PYMTA_ prefix: that marks the env-backed settings, and this one is not
-# configurable. It is a property of how the two deadlines nest, not something
-# an operator sizes. It bounds the minimum below, because a DATA timeout at or
-# under the reserve leaves the deliver call no budget at all and would defer
-# every message.
+# 10 MiB default PYMTA_MAX_INCOMING_EMAIL_SIZE, 300 s means ~35 kB/s sustained.
+
+# The slice of that budget the handler holds back, read as
+# ``handler._REPLY_RESERVE_SECONDS``. No PYMTA_ prefix: that marks the env-backed
+# settings, and this one is not configurable. It is a property of how the two
+# deadlines nest, not something an operator sizes. It bounds the DATA timeout
+# from below, because a budget at or under the reserve leaves the deliver call
+# nothing at all and would defer every message.
 REPLY_RESERVE_SECONDS = 10
+
 PYMTA_DATA_TIMEOUT = _env_int("PYMTA_DATA_TIMEOUT", 300, minimum=REPLY_RESERVE_SECONDS + 1)
 
 # Wall-clock ceiling on one TCP session (seconds), armed at connect and never
@@ -184,14 +204,14 @@ PYMTA_DATA_TIMEOUT = _env_int("PYMTA_DATA_TIMEOUT", 300, minimum=REPLY_RESERVE_S
 # of leaving them held until the process restarts.
 #
 # Sizing: 100 recipients plus a 10 MB body is under a minute for a real sender.
-PYMTA_MAX_SESSION_SECONDS = _env_int("PYMTA_MAX_SESSION_SECONDS", 1800, minimum=0)
+PYMTA_SESSION_TIMEOUT = _env_int("PYMTA_SESSION_TIMEOUT", 1800, minimum=0)
 
 # Maximum wall-clock seconds the server waits for in-flight sessions to drain
 # after SIGTERM, before abandoning them. Sized to sit under k8s
 # `terminationGracePeriodSeconds` so we choose the cut-off rather than having
 # SIGKILL choose it.
 #
-# It sits far below PYMTA_DATA_TIMEOUT and PYMTA_MAX_SESSION_SECONDS, so a
+# It sits far below PYMTA_DATA_TIMEOUT and PYMTA_SESSION_TIMEOUT, so a
 # rollout does cut sessions mid-transaction rather than waiting out a slow DATA
 # phase. The failure is one-directional: a peer cut off before our 250 retries,
 # which risks a duplicate on an already-delivered message, not a loss. Do not
@@ -216,7 +236,7 @@ PYMTA_MAX_SESSIONS_PER_IP_PER_MINUTE = _env_int(
 # or unknown-recipient RCPTs), the next misbehaviour gets a 421 and the
 # connection closes. Defends against bulk address enumeration that lives in
 # one TCP session.
-PYMTA_HARD_ERROR_LIMIT = _env_int("PYMTA_HARD_ERROR_LIMIT", 50, minimum=1)
+PYMTA_MAX_ERRORS_PER_SESSION = _env_int("PYMTA_MAX_ERRORS_PER_SESSION", 50, minimum=1)
 
 # Per-session cap on unknown-mailbox lookups specifically. The hard-error
 # budget above covers the *aggregate* of all 4xx/5xx replies; this one
@@ -232,11 +252,27 @@ PYMTA_MAX_RCPT_MISSES_PER_SESSION = _env_int("PYMTA_MAX_RCPT_MISSES_PER_SESSION"
 
 PYMTA_ENABLE_SMTPUTF8 = _env_bool("PYMTA_ENABLE_SMTPUTF8", True)
 
-# PROXY protocol v1/v2 (HAProxy in front). The Postfix image toggles the same
-# feature with its own ENABLE_PROXY_PROTOCOL=haproxy (see entrypoint.sh); pymta
-# does not read that name, so the two services can share an env file without
-# either one inheriting the other's switch.
-PYMTA_ENABLE_PROXY_PROTOCOL = _env_bool("PYMTA_ENABLE_PROXY_PROTOCOL", False)
+
+def _env_proxy_protocol(name: str, default: bool) -> bool:
+    """Read a PROXY-protocol switch. ``haproxy`` is an alias for true.
+
+    Postfix's ``postscreen_upstream_proxy_protocol`` takes a protocol name and
+    defines only ``haproxy``, the one implemented here (v1 and v2), so naming it
+    and switching the feature on are the same statement. Everything else is a
+    strict boolean.
+    """
+    if os.environ.get(name, "").strip().lower() == "haproxy":
+        return True
+    return _env_bool(name, default)
+
+
+# PROXY protocol v1/v2 (a load balancer in front). Use the prefixed name;
+# ENABLE_PROXY_PROTOCOL is the Postfix image's name for the same switch and is
+# read as a migration fallback. Both are parsed the same way, and entrypoint.sh
+# refuses the values this rejects, so the two images cannot end up disagreeing.
+PYMTA_ENABLE_PROXY_PROTOCOL = _env_proxy_protocol(
+    "PYMTA_ENABLE_PROXY_PROTOCOL", _env_proxy_protocol("ENABLE_PROXY_PROTOCOL", False)
+)
 PYMTA_PROXY_PROTOCOL_TIMEOUT = _env_int("PYMTA_PROXY_PROTOCOL_TIMEOUT", 5, minimum=1)
 
 
@@ -254,9 +290,9 @@ PYMTA_PROXY_PROTOCOL_TIMEOUT = _env_int("PYMTA_PROXY_PROTOCOL_TIMEOUT", 5, minim
 # usually a known fact. Left empty there is nothing to match on and every peer's
 # header is trusted; ``server.py`` warns loudly at startup rather than refusing
 # to run, since some deployments only learn the balancer's addresses later.
-def _parse_networks(raw: str) -> list[ipaddress.IPv4Network | ipaddress.IPv6Network]:
+def _env_networks(name: str) -> list[ipaddress.IPv4Network | ipaddress.IPv6Network]:
     networks = []
-    for chunk in raw.split(","):
+    for chunk in _env_str(name, "").split(","):
         entry = chunk.strip()
         if not entry:
             continue
@@ -264,12 +300,12 @@ def _parse_networks(raw: str) -> list[ipaddress.IPv4Network | ipaddress.IPv6Netw
             networks.append(ipaddress.ip_network(entry, strict=False))
         except ValueError as exc:
             raise ValueError(
-                f"PYMTA_TRUSTED_PROXIES entry {entry!r} is not an IP address or CIDR"
+                f"Environment variable {name} entry {entry!r} is not an IP address or CIDR"
             ) from exc
     return networks
 
 
-PYMTA_TRUSTED_PROXIES = _parse_networks(_env_str("PYMTA_TRUSTED_PROXIES", ""))
+PYMTA_TRUSTED_PROXIES = _env_networks("PYMTA_TRUSTED_PROXIES")
 
 
 # ---------------------------------------------------------------------------
@@ -296,6 +332,18 @@ if _chain_files and not PYMTA_TLS_CERT_FILE and not PYMTA_TLS_KEY_FILE:
     PYMTA_TLS_CERT_FILE = _first_chain
     PYMTA_TLS_KEY_FILE = _first_chain
 
+# Both or neither. ``load_tls_context`` returns None unless it has a pair, so a
+# half-configured STARTTLS would not fail — it would serve plaintext and simply
+# not advertise STARTTLS, which is the quietest possible way to lose transport
+# encryption. Refuse it here instead.
+if bool(PYMTA_TLS_CERT_FILE) != bool(PYMTA_TLS_KEY_FILE):
+    raise ValueError(
+        "PYMTA_TLS_CERT_FILE and PYMTA_TLS_KEY_FILE must be set together; "
+        f"only {'PYMTA_TLS_CERT_FILE' if PYMTA_TLS_CERT_FILE else 'PYMTA_TLS_KEY_FILE'} "
+        "is set, which would leave STARTTLS off without saying so. Leave both "
+        "empty to disable STARTTLS deliberately."
+    )
+
 
 # ---------------------------------------------------------------------------
 # Prometheus metrics HTTP endpoint
@@ -308,13 +356,22 @@ if _chain_files and not PYMTA_TLS_CERT_FILE and not PYMTA_TLS_KEY_FILE:
 # rejection reasons, breaker state) rather than message data. It must still be
 # fenced off from the interface that serves port 25 with a NetworkPolicy or
 # firewall rule; set the host to 127.0.0.1, or the port to 0, where it isn't.
-PYMTA_METRICS_HOST = _env_str("PYMTA_METRICS_HOST", "0.0.0.0")  # noqa: S104
+PYMTA_METRICS_BIND_HOST = _env_str("PYMTA_METRICS_BIND_HOST", "0.0.0.0")  # noqa: S104
 # Set to 0 to disable the metrics HTTP server.
-PYMTA_METRICS_PORT = _env_int("PYMTA_METRICS_PORT", 9100, minimum=0)
+PYMTA_METRICS_BIND_PORT = _env_int("PYMTA_METRICS_BIND_PORT", 9100, minimum=0)
 
 
 # ---------------------------------------------------------------------------
 # Logging
 # ---------------------------------------------------------------------------
 
+# Checked against the level names rather than passed to a ``getattr`` default:
+# an unrecognised level would otherwise silently resolve to INFO, which is the
+# same class of quiet misconfiguration the boolean and integer readers refuse.
+_LOG_LEVELS = ("CRITICAL", "ERROR", "WARNING", "INFO", "DEBUG")
 PYMTA_LOG_LEVEL = _env_str("PYMTA_LOG_LEVEL", "INFO").upper()
+if PYMTA_LOG_LEVEL not in _LOG_LEVELS:
+    raise ValueError(
+        f"Environment variable PYMTA_LOG_LEVEL is set to {PYMTA_LOG_LEVEL!r}. "
+        f"Use one of {', '.join(_LOG_LEVELS)}."
+    )

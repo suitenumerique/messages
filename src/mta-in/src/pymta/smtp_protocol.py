@@ -32,7 +32,25 @@ logger = logging.getLogger(__name__)
 
 
 class HardenedSMTP(BaseSMTP):
-    """SMTP subclass that locks down VRFY/EXPN/AUTH and applies the IP gate."""
+    """SMTP subclass that locks down VRFY/EXPN/AUTH and applies the IP gate.
+
+    Three of aiosmtpd's protections are class attributes rather than constructor
+    arguments, so they are invisible in ``build_smtp_kwargs`` and are inherited
+    at their defaults. Recorded here because they are load-bearing and nothing
+    else in the tree mentions them:
+
+    * ``line_length_limit = 1001`` — RFC 5321 §4.5.3.1.6. Enforced as the
+      ``StreamReader`` limit, so an endless line is refused at the transport
+      instead of buffering.
+    * ``command_size_limit = 512`` — RFC 5321 §4.5.3.1.4, per command line.
+    * ``BOGUS_LIMIT = 5`` (module constant) — unrecognised commands per session
+      before aiosmtpd hangs up. Narrower and stricter than
+      ``PYMTA_MAX_ERRORS_PER_SESSION``, which counts every 4xx/5xx we emit.
+
+    ``local_part_limit`` is aiosmtpd's own address check and stays at its
+    default of 0 (disabled) on purpose: :mod:`pymta.address` enforces the same
+    RFC limit, with a rejection reason and a metric label attached.
+    """
 
     def __init__(self, *args, ip_gate: IPGate | None = None, **kwargs):
         super().__init__(*args, **kwargs)
@@ -94,7 +112,7 @@ class HardenedSMTP(BaseSMTP):
         """
         if self._session_deadline_handle is not None:
             return
-        limit = settings.PYMTA_MAX_SESSION_SECONDS
+        limit = settings.PYMTA_SESSION_TIMEOUT
         if limit <= 0:
             return
         self._session_deadline_handle = self.loop.call_later(limit, self._session_expired)
@@ -103,12 +121,12 @@ class HardenedSMTP(BaseSMTP):
         self._session_deadline_handle = None
         peer = getattr(self.session, "peer", None) if self.session else None
         logger.info(
-            "session from %r exceeded PYMTA_MAX_SESSION_SECONDS (%ds); closing",
+            "session from %r exceeded PYMTA_SESSION_TIMEOUT (%ds); closing",
             peer,
-            settings.PYMTA_MAX_SESSION_SECONDS,
+            settings.PYMTA_SESSION_TIMEOUT,
         )
-        metrics.SECURITY_REJECTIONS.labels(reason="max_session_seconds").inc()
-        metrics.DISCONNECTS_421.labels(reason="max_session_seconds").inc()
+        metrics.SECURITY_REJECTIONS.labels(reason="session_timeout").inc()
+        metrics.DISCONNECTS_421.labels(reason="session_timeout").inc()
         # Announce before hanging up so the sender defers and retries rather
         # than reading a bare reset as a hard failure. Runs as a task because
         # push() is async and we are in a timer callback; writing from here is

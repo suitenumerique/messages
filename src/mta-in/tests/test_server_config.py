@@ -84,14 +84,18 @@ def test_allowlist_is_irrelevant_without_proxy_protocol(monkeypatch, caplog):
     "env, enabled",
     [
         ("true", True),
+        # The prefixed name is the setting; it overrides the inherited one in
+        # both directions, so pymta can run a topology of its own during a
+        # side-by-side migration.
         ("false", False),
-        (None, False),
+        # Unset, it inherits the Postfix image's switch rather than defaulting
+        # to off: an env file written for that image describes the same
+        # deployment, and a switchover should not silently change who is
+        # trusted to name the client IP.
+        (None, True),
     ],
 )
-def test_proxy_protocol_reads_only_the_pymta_name(monkeypatch, env, enabled):
-    # The Postfix image drives the same feature from its own
-    # ENABLE_PROXY_PROTOCOL=haproxy; pymta must not inherit it, so the two
-    # services can share an env file.
+def test_proxy_protocol_falls_back_to_the_postfix_name(monkeypatch, env, enabled):
     monkeypatch.setenv("ENABLE_PROXY_PROTOCOL", "haproxy")
     if env is None:
         monkeypatch.delenv("PYMTA_ENABLE_PROXY_PROTOCOL", raising=False)

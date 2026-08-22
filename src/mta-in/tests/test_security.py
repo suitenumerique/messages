@@ -295,7 +295,7 @@ def test_size_overlimit_rejected(mock_api_server, smtp_client):
     s = _raw_session()
     try:
         _send_cmd(s, b"EHLO example.com\r\n")
-        # 1 GB announced — well above MAX_INCOMING_EMAIL_SIZE (30 MB).
+        # 1 GB announced — well above the configured size cap (30 MB in dev).
         resp = _send_cmd(s, b"MAIL FROM:<a@example.com> SIZE=1000000000\r\n")
         assert resp[:3] in (b"552", b"452", b"550"), resp
     finally:

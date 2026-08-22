@@ -102,7 +102,7 @@ async def test_mail_size_bad_value_bumps_soft_errors():
 @pytest.mark.asyncio
 async def test_mail_size_oversize_bumps_soft_errors():
     session, envelope = _session(), _envelope()
-    too_big = settings.MAX_INCOMING_EMAIL_SIZE + 1
+    too_big = settings.PYMTA_MAX_INCOMING_EMAIL_SIZE + 1
     reply = await _handler().handle_MAIL(
         None, session, envelope, "<a@example.com>", [f"SIZE={too_big}"]
     )
@@ -127,7 +127,7 @@ async def test_data_nul_byte_bumps_soft_errors():
 @pytest.mark.asyncio
 async def test_data_oversize_bumps_soft_errors():
     session, envelope = _session(), _envelope()
-    envelope.content = b"x" * (settings.MAX_INCOMING_EMAIL_SIZE + 10)
+    envelope.content = b"x" * (settings.PYMTA_MAX_INCOMING_EMAIL_SIZE + 10)
     reply = await _handler().handle_DATA(None, session, envelope)
     assert reply.startswith("552")
     assert getattr(session, _SOFT_ERRORS_ATTR) == 1
@@ -136,7 +136,7 @@ async def test_data_oversize_bumps_soft_errors():
 @pytest.mark.asyncio
 async def test_data_max_envelopes_bumps_soft_errors():
     session, envelope = _session(), _envelope()
-    setattr(session, _ENVELOPES_ATTR, settings.PYMTA_MAX_ENVELOPES_PER_CONNECTION)
+    setattr(session, _ENVELOPES_ATTR, settings.PYMTA_MAX_ENVELOPES_PER_SESSION)
     reply = await _handler().handle_DATA(None, session, envelope)
     assert reply.startswith("451")
     assert getattr(session, _SOFT_ERRORS_ATTR) == 1
@@ -325,7 +325,7 @@ async def test_data_replies_451_when_the_budget_is_already_spent(monkeypatch):
 
 @pytest.mark.asyncio
 async def test_hard_error_limit_blocks_further_rcpts(monkeypatch):
-    monkeypatch.setattr(settings, "PYMTA_HARD_ERROR_LIMIT", 2)
+    monkeypatch.setattr(settings, "PYMTA_MAX_ERRORS_PER_SESSION", 2)
     handler, session, envelope = _handler(), _session(), _envelope()
     setattr(session, _SOFT_ERRORS_ATTR, 2)
     reply = await handler.handle_RCPT(None, session, envelope, "<anyone@example.com>", [])
@@ -344,7 +344,7 @@ async def test_mail_malformed_sender_bumps_soft_errors():
 
 @pytest.mark.asyncio
 async def test_hard_error_limit_blocks_further_mails(monkeypatch):
-    monkeypatch.setattr(settings, "PYMTA_HARD_ERROR_LIMIT", 2)
+    monkeypatch.setattr(settings, "PYMTA_MAX_ERRORS_PER_SESSION", 2)
     handler, session, envelope = _handler(), _session(), _envelope()
     setattr(session, _SOFT_ERRORS_ATTR, 2)
     reply = await handler.handle_MAIL(None, session, envelope, "<a@example.com>", [])
@@ -354,7 +354,7 @@ async def test_hard_error_limit_blocks_further_mails(monkeypatch):
 
 @pytest.mark.asyncio
 async def test_hard_error_limit_on_mail_requests_disconnect(monkeypatch):
-    monkeypatch.setattr(settings, "PYMTA_HARD_ERROR_LIMIT", 1)
+    monkeypatch.setattr(settings, "PYMTA_MAX_ERRORS_PER_SESSION", 1)
     server = _FakeServer()
     handler, session, envelope = _handler(), _session(), _envelope()
     setattr(server, _SOFT_ERRORS_ATTR, 1)
@@ -562,7 +562,7 @@ async def test_rcpt_miss_cutoff_requests_disconnect(monkeypatch):
 
 @pytest.mark.asyncio
 async def test_hard_error_cutoff_requests_disconnect(monkeypatch):
-    monkeypatch.setattr(settings, "PYMTA_HARD_ERROR_LIMIT", 2)
+    monkeypatch.setattr(settings, "PYMTA_MAX_ERRORS_PER_SESSION", 2)
     server = _FakeServer()
     setattr(server, _SOFT_ERRORS_ATTR, 2)
     handler, session, envelope = _handler(), _session(), _envelope()

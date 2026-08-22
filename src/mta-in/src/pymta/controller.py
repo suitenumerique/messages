@@ -24,11 +24,22 @@ logger = logging.getLogger(__name__)
 def build_smtp_kwargs(*, tls_context: ssl.SSLContext | None) -> dict:
     """Centralise the SMTP-class options driven by settings."""
     return {
-        "hostname": settings.PYMTA_HOSTNAME,
-        "ident": settings.PYMTA_IDENT,
-        "data_size_limit": settings.MAX_INCOMING_EMAIL_SIZE,
+        "hostname": settings.PYMTA_SMTP_HOSTNAME,
+        "ident": settings.PYMTA_SMTP_IDENT,
+        "data_size_limit": settings.PYMTA_MAX_INCOMING_EMAIL_SIZE,
         "enable_SMTPUTF8": settings.PYMTA_ENABLE_SMTPUTF8,
         "timeout": settings.PYMTA_COMMAND_TIMEOUT,
+        # Pinned rather than left to the default, like STARTTLS below: the whole
+        # pipeline downstream is bytes. With decode_data=True the NUL-byte scan
+        # raises TypeError, the size check counts characters instead of octets,
+        # and the MDA receives a re-encoded body rather than the bytes the peer
+        # sent — none of which fails loudly.
+        "decode_data": False,
+        # require_starttls is deliberately NOT exposed. This is a public inbound
+        # MX: refusing a sender that does not offer STARTTLS loses mail rather
+        # than protecting it, and the sending side chooses opportunistic TLS.
+        # auth_callback / authenticator likewise stay unset — AUTH is answered
+        # 502 in HardenedSMTP, so there is nothing to configure.
         # Per-verb call ceilings (defence against pipelining floods). Numbers
         # come from "what a sane sender would ever do in one TCP session";
         # anything above means the peer is hammering us.
@@ -36,10 +47,11 @@ def build_smtp_kwargs(*, tls_context: ssl.SSLContext | None) -> dict:
             "EHLO": 4,
             "HELO": 4,
             "NOOP": 5,
-            "MAIL": settings.PYMTA_MAX_ENVELOPES_PER_CONNECTION + 2,
-            "RCPT": settings.PYMTA_MAX_RECIPIENTS * settings.PYMTA_MAX_ENVELOPES_PER_CONNECTION
+            "MAIL": settings.PYMTA_MAX_ENVELOPES_PER_SESSION + 2,
+            "RCPT": settings.PYMTA_MAX_RECIPIENTS_PER_ENVELOPE
+            * settings.PYMTA_MAX_ENVELOPES_PER_SESSION
             + 10,
-            "DATA": settings.PYMTA_MAX_ENVELOPES_PER_CONNECTION + 2,
+            "DATA": settings.PYMTA_MAX_ENVELOPES_PER_SESSION + 2,
             "RSET": 20,
             "QUIT": 1,
             # STARTTLS pinned explicitly so a future contributor cannot raise

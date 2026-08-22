@@ -17,9 +17,22 @@ echo >> /etc/postfix/main.cf
 [[ -n "${MYDOMAIN}" ]] && echo "mydomain = ${MYDOMAIN}" >> /etc/postfix/main.cf
 echo "message_size_limit=${MAX_INCOMING_EMAIL_SIZE:-10240000}" >> /etc/postfix/main.cf
 
-if [ "${ENABLE_PROXY_PROTOCOL:-false}" = "haproxy" ]; then
-  echo "postscreen_upstream_proxy_protocol = haproxy" >> /etc/postfix/main.cf
-fi
+# `haproxy` is the only protocol postscreen accepts. Anything else that is not
+# an explicit "off" is refused rather than silently read as off: a value like
+# `true` is someone asking for PROXY protocol, and starting without it would
+# stamp every message with the balancer's IP as the client's.
+case "$(echo "${ENABLE_PROXY_PROTOCOL:-}" | tr '[:upper:]' '[:lower:]' | tr -d '[:space:]')" in
+  haproxy)
+    echo "postscreen_upstream_proxy_protocol = haproxy" >> /etc/postfix/main.cf
+    ;;
+  ""|false|0|off|no)
+    ;;
+  *)
+    echo "ERROR: ENABLE_PROXY_PROTOCOL is '${ENABLE_PROXY_PROTOCOL}'; the only supported" >&2
+    echo "       value is 'haproxy' (or unset/false to disable)." >&2
+    exit 1
+    ;;
+esac
 
 if [ ! -z "${STARTTLS_CHAIN_FILES}" ]; then
   cat >> /etc/postfix/main.cf <<_EOF

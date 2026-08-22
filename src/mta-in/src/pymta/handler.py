@@ -90,16 +90,16 @@ def _bump(holder, attr: str) -> int:
 
 
 def _hard_error_limit_reached(server, counters) -> bool:
-    """True when this connection has spent its ``PYMTA_HARD_ERROR_LIMIT``.
+    """True when this connection has spent its ``PYMTA_MAX_ERRORS_PER_SESSION``.
 
     Records the rejection and asks for the disconnect, so a caller only has to
     return the 421. Bulk address enumeration and dictionary attacks otherwise
     keep hammering a single TCP session.
     """
-    if _count(counters, _SOFT_ERRORS_ATTR) < settings.PYMTA_HARD_ERROR_LIMIT:
+    if _count(counters, _SOFT_ERRORS_ATTR) < settings.PYMTA_MAX_ERRORS_PER_SESSION:
         return False
-    metrics.SECURITY_REJECTIONS.labels(reason="hard_error_limit").inc()
-    metrics.DISCONNECTS_421.labels(reason="hard_error_limit").inc()
+    metrics.SECURITY_REJECTIONS.labels(reason="max_errors_per_session").inc()
+    metrics.DISCONNECTS_421.labels(reason="max_errors_per_session").inc()
     _request_disconnect(server)
     return True
 
@@ -297,8 +297,8 @@ class InboundHandler:
             clean = validate_envelope_address(
                 address,
                 allow_empty=True,
-                max_local=settings.PYMTA_MAX_LOCAL_PART,
-                max_domain=settings.PYMTA_MAX_DOMAIN,
+                max_local=settings.MAX_LOCAL_PART,
+                max_domain=settings.MAX_DOMAIN,
             )
         except AddressError as err:
             metrics.SECURITY_REJECTIONS.labels(reason=err.reason).inc()
@@ -313,7 +313,7 @@ class InboundHandler:
                 except ValueError:
                     _bump(counters, _SOFT_ERRORS_ATTR)
                     return "501 5.5.4 Bad SIZE parameter"
-                if announced > settings.MAX_INCOMING_EMAIL_SIZE:
+                if announced > settings.PYMTA_MAX_INCOMING_EMAIL_SIZE:
                     metrics.SECURITY_REJECTIONS.labels(reason="oversize_announced").inc()
                     _bump(counters, _SOFT_ERRORS_ATTR)
                     return "552 5.3.4 Message size exceeds fixed maximum"
@@ -332,8 +332,8 @@ class InboundHandler:
             return "421 4.7.0 Too many errors, goodbye"
 
         # Per-envelope recipient cap.
-        if len(envelope.rcpt_tos) >= settings.PYMTA_MAX_RECIPIENTS:
-            metrics.SECURITY_REJECTIONS.labels(reason="max_recipients").inc()
+        if len(envelope.rcpt_tos) >= settings.PYMTA_MAX_RECIPIENTS_PER_ENVELOPE:
+            metrics.SECURITY_REJECTIONS.labels(reason="max_recipients_per_envelope").inc()
             metrics.RCPT_TOTAL.labels(result="rejected_temp").inc()
             _bump(counters, _SOFT_ERRORS_ATTR)
             return "452 4.5.3 Too many recipients"
@@ -342,8 +342,8 @@ class InboundHandler:
             clean = validate_envelope_address(
                 address,
                 allow_empty=False,
-                max_local=settings.PYMTA_MAX_LOCAL_PART,
-                max_domain=settings.PYMTA_MAX_DOMAIN,
+                max_local=settings.MAX_LOCAL_PART,
+                max_domain=settings.MAX_DOMAIN,
             )
         except AddressError as err:
             metrics.SECURITY_REJECTIONS.labels(reason=err.reason).inc()
@@ -388,8 +388,8 @@ class InboundHandler:
             _bump(counters, _SOFT_ERRORS_ATTR)
             misses = _bump(counters, _RCPT_MISSES_ATTR)
             if misses >= settings.PYMTA_MAX_RCPT_MISSES_PER_SESSION:
-                metrics.SECURITY_REJECTIONS.labels(reason="max_rcpt_misses").inc()
-                metrics.DISCONNECTS_421.labels(reason="max_rcpt_misses").inc()
+                metrics.SECURITY_REJECTIONS.labels(reason="max_rcpt_misses_per_session").inc()
+                metrics.DISCONNECTS_421.labels(reason="max_rcpt_misses_per_session").inc()
                 _request_disconnect(server)
                 return "421 4.7.0 Too many unknown recipients, goodbye"
             return "550 5.1.1 No such recipient"
@@ -403,8 +403,8 @@ class InboundHandler:
     async def handle_DATA(self, server, session, envelope):  # noqa: PLR0911
         counters = _counters(server, session)
         envelopes = _bump(counters, _ENVELOPES_ATTR)
-        if envelopes > settings.PYMTA_MAX_ENVELOPES_PER_CONNECTION:
-            metrics.SECURITY_REJECTIONS.labels(reason="max_envelopes").inc()
+        if envelopes > settings.PYMTA_MAX_ENVELOPES_PER_SESSION:
+            metrics.SECURITY_REJECTIONS.labels(reason="max_envelopes_per_session").inc()
             metrics.MESSAGES_TOTAL.labels(result="rejected_temp").inc()
             _bump(counters, _SOFT_ERRORS_ATTR)
             return "451 4.7.0 Too many messages this session"
@@ -419,10 +419,12 @@ class InboundHandler:
             _bump(counters, _SOFT_ERRORS_ATTR)
             return "554 5.6.0 NUL byte in message body"
 
-        if len(content) > settings.MAX_INCOMING_EMAIL_SIZE:
+        if len(content) > settings.PYMTA_MAX_INCOMING_EMAIL_SIZE:
             # aiosmtpd already replies 552 itself when the in-flight DATA
             # exceeds data_size_limit, so reaching here is defensive only.
-            metrics.SECURITY_REJECTIONS.labels(reason="oversize_announced").inc()
+            # Distinct from oversize_announced: nothing was announced here, the
+            # body itself came in over the cap.
+            metrics.SECURITY_REJECTIONS.labels(reason="oversize_message").inc()
             metrics.MESSAGES_TOTAL.labels(result="rejected_perm").inc()
             _bump(counters, _SOFT_ERRORS_ATTR)
             return "552 5.3.4 Message size exceeds fixed maximum"
@@ -453,6 +455,10 @@ class InboundHandler:
                 timeout=budget,
             )
         except TimeoutError:
+            # Without its own reason this is indistinguishable from an MDA
+            # defer, and the two call for opposite responses: raise the budget
+            # versus go fix the MDA.
+            metrics.SECURITY_REJECTIONS.labels(reason="data_timeout").inc()
             metrics.MESSAGES_TOTAL.labels(result="rejected_temp").inc()
             metrics.MESSAGE_BYTES.observe(len(content))
             _bump(counters, _SOFT_ERRORS_ATTR)

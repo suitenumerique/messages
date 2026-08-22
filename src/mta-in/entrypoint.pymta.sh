@@ -20,7 +20,7 @@ start_pymta() {
     # Wait until the SMTP port accepts connections (max ~15s). Uses stdlib
     # socket rather than nc so the runtime image doesn't need netcat just
     # for this probe.
-    port="${PYMTA_SMTP_PORT:-25}"
+    port="${PYMTA_SMTP_BIND_PORT:-25}"
     for i in $(seq 1 30); do
         if python -c "import socket, sys; s=socket.socket(); s.settimeout(0.5); s.connect(('127.0.0.1', int('$port'))); s.close()" 2>/dev/null; then
             echo "pymta SMTP ready on port $port"

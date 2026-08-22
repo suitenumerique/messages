@@ -6,10 +6,30 @@ loudly, rather than surfacing later as strange SMTP behaviour.
 
 from __future__ import annotations
 
+import importlib
+
 import pytest
 
 from pymta import settings
 from pymta.settings import _env_bool, _env_int, _env_str, _env_token
+
+
+@pytest.fixture
+def reload_settings(monkeypatch):
+    """Re-import the settings module under a patched environment.
+
+    Every constant is computed once at import, so re-running the module is the
+    only way to exercise a fallback chain. The rest of the package reads these
+    through the module object at call time, so the patched values have to be
+    undone before the next test sees them.
+    """
+
+    def _reload():
+        return importlib.reload(settings)
+
+    yield _reload
+    monkeypatch.undo()
+    importlib.reload(settings)
 
 
 def test_int_reads_env_over_default(monkeypatch):
@@ -34,7 +54,7 @@ def test_int_rejects_non_numeric(monkeypatch):
 def test_int_rejects_values_below_the_minimum(monkeypatch, raw):
     # The settings that treat 0 as "disabled" declare minimum=0; everywhere
     # else 0 is nonsense that would otherwise fail silently, e.g. a
-    # PYMTA_MAX_RECIPIENTS of 0 would 452 every recipient.
+    # PYMTA_MAX_RECIPIENTS_PER_ENVELOPE of 0 would 452 every recipient.
     monkeypatch.setenv("PYMTA_TEST_INT", raw)
     with pytest.raises(ValueError, match="must be >= 1"):
         _env_int("PYMTA_TEST_INT", 7, minimum=1)
@@ -67,7 +87,7 @@ def test_token_rejects_control_characters(monkeypatch, raw):
 
 
 def test_token_checks_the_default_too(monkeypatch):
-    # PYMTA_HOSTNAME defaults to $MYHOSTNAME, which on k8s can come from the
+    # PYMTA_SMTP_HOSTNAME defaults to $MYHOSTNAME, which on k8s can come from the
     # downward API, so the fallback value needs the same check as the direct one.
     monkeypatch.delenv("PYMTA_TEST_TOKEN", raising=False)
     with pytest.raises(ValueError, match="control characters"):
@@ -112,3 +132,131 @@ def test_bool_blank_and_missing_take_the_default(monkeypatch):
 def test_str_treats_blank_as_unset(monkeypatch):
     monkeypatch.setenv("PYMTA_TEST_STR", "")
     assert _env_str("PYMTA_TEST_STR", "fallback") == "fallback"
+
+
+# ---------------------------------------------------------------------------
+# The size cap is the one setting with a two-name fallback: MAX_INCOMING_EMAIL_SIZE
+# is deployment-wide (Postfix's message_size_limit, the MDA's own cap), and the
+# prefixed name overrides it for pymta alone.
+# ---------------------------------------------------------------------------
+
+
+def test_size_cap_inherits_the_deployment_wide_name(monkeypatch, reload_settings):
+    monkeypatch.delenv("PYMTA_MAX_INCOMING_EMAIL_SIZE", raising=False)
+    monkeypatch.setenv("MAX_INCOMING_EMAIL_SIZE", "30000000")
+    assert reload_settings().PYMTA_MAX_INCOMING_EMAIL_SIZE == 30_000_000
+
+
+def test_size_cap_prefixed_name_wins(monkeypatch, reload_settings):
+    monkeypatch.setenv("MAX_INCOMING_EMAIL_SIZE", "30000000")
+    monkeypatch.setenv("PYMTA_MAX_INCOMING_EMAIL_SIZE", "5000000")
+    assert reload_settings().PYMTA_MAX_INCOMING_EMAIL_SIZE == 5_000_000
+
+
+def test_size_cap_falls_back_to_the_mda_default(monkeypatch, reload_settings):
+    # 10 MiB, matching the MDA's own MAX_INCOMING_EMAIL_SIZE default so neither
+    # side accepts a message the other will refuse.
+    monkeypatch.delenv("PYMTA_MAX_INCOMING_EMAIL_SIZE", raising=False)
+    monkeypatch.delenv("MAX_INCOMING_EMAIL_SIZE", raising=False)
+    assert reload_settings().PYMTA_MAX_INCOMING_EMAIL_SIZE == 10 * 1024 * 1024
+
+
+def test_size_cap_validates_the_inherited_name_too(monkeypatch, reload_settings):
+    # The shared name is parsed even when it is only the fallback, so a typo
+    # there fails at startup instead of silently reverting to the default.
+    monkeypatch.delenv("PYMTA_MAX_INCOMING_EMAIL_SIZE", raising=False)
+    monkeypatch.setenv("MAX_INCOMING_EMAIL_SIZE", "10MB")
+    with pytest.raises(ValueError, match="must be an integer"):
+        reload_settings()
+
+
+# ---------------------------------------------------------------------------
+# Both PROXY-protocol names are parsed the same way, with `haproxy` — the only
+# protocol postscreen defines, and the one implemented here — an alias for true.
+# entrypoint.sh refuses the values rejected here, so neither image can end up
+# reading a value the other would read differently.
+# ---------------------------------------------------------------------------
+
+
+@pytest.mark.parametrize("raw", ["haproxy", "HAProxy", " haproxy ", "true", "1", "on"])
+def test_proxy_protocol_haproxy_is_an_alias_for_true(monkeypatch, reload_settings, raw):
+    monkeypatch.delenv("PYMTA_ENABLE_PROXY_PROTOCOL", raising=False)
+    monkeypatch.setenv("ENABLE_PROXY_PROTOCOL", raw)
+    assert reload_settings().PYMTA_ENABLE_PROXY_PROTOCOL is True
+
+
+@pytest.mark.parametrize("raw", ["", "false", "off", "no", "0"])
+def test_proxy_protocol_inherits_an_off_value(monkeypatch, reload_settings, raw):
+    monkeypatch.delenv("PYMTA_ENABLE_PROXY_PROTOCOL", raising=False)
+    monkeypatch.setenv("ENABLE_PROXY_PROTOCOL", raw)
+    assert reload_settings().PYMTA_ENABLE_PROXY_PROTOCOL is False
+
+
+def test_proxy_protocol_refuses_a_typo_on_either_name(monkeypatch, reload_settings):
+    monkeypatch.delenv("PYMTA_ENABLE_PROXY_PROTOCOL", raising=False)
+    monkeypatch.setenv("ENABLE_PROXY_PROTOCOL", "haprox")
+    with pytest.raises(ValueError, match="not a recognised boolean"):
+        reload_settings()
+
+
+# ---------------------------------------------------------------------------
+# Settings whose misconfiguration would otherwise be silent.
+# ---------------------------------------------------------------------------
+
+
+@pytest.mark.parametrize("cert, key", [("/tls/cert.pem", ""), ("", "/tls/key.pem")])
+def test_half_configured_starttls_is_refused(monkeypatch, reload_settings, cert, key):
+    # load_tls_context() returns None unless it has both, so one alone would
+    # serve plaintext and simply not advertise STARTTLS — encryption lost with
+    # nothing in the log to say so.
+    monkeypatch.delenv("STARTTLS_CHAIN_FILES", raising=False)
+    monkeypatch.setenv("PYMTA_TLS_CERT_FILE", cert)
+    monkeypatch.setenv("PYMTA_TLS_KEY_FILE", key)
+    with pytest.raises(ValueError, match="must be set together"):
+        reload_settings()
+
+
+def test_starttls_off_when_both_are_empty(monkeypatch, reload_settings):
+    monkeypatch.delenv("STARTTLS_CHAIN_FILES", raising=False)
+    monkeypatch.setenv("PYMTA_TLS_CERT_FILE", "")
+    monkeypatch.setenv("PYMTA_TLS_KEY_FILE", "")
+    assert reload_settings().PYMTA_TLS_CERT_FILE == ""
+
+
+def test_chain_files_fallback_sets_both_sides(monkeypatch, reload_settings):
+    monkeypatch.delenv("PYMTA_TLS_CERT_FILE", raising=False)
+    monkeypatch.delenv("PYMTA_TLS_KEY_FILE", raising=False)
+    monkeypatch.setenv("STARTTLS_CHAIN_FILES", "/tls/bundle.pem,/tls/second.pem")
+    reloaded = reload_settings()
+    assert reloaded.PYMTA_TLS_CERT_FILE == "/tls/bundle.pem"
+    assert reloaded.PYMTA_TLS_KEY_FILE == "/tls/bundle.pem"
+
+
+def test_log_level_typo_is_refused(monkeypatch, reload_settings):
+    # Otherwise `getattr(logging, "INF0", INFO)` resolves it to INFO and the
+    # operator never learns the level they asked for was not applied.
+    monkeypatch.setenv("PYMTA_LOG_LEVEL", "INF0")
+    with pytest.raises(ValueError, match="PYMTA_LOG_LEVEL"):
+        reload_settings()
+
+
+def test_log_level_is_case_insensitive(monkeypatch, reload_settings):
+    monkeypatch.setenv("PYMTA_LOG_LEVEL", "debug")
+    assert reload_settings().PYMTA_LOG_LEVEL == "DEBUG"
+
+
+@pytest.mark.parametrize("shared", ["haproxy", "false"])
+def test_proxy_protocol_prefixed_name_wins_either_way(monkeypatch, reload_settings, shared):
+    # The recommended name overrides the inherited one in both directions,
+    # otherwise pymta could not be run in a topology of its own during a
+    # side-by-side migration.
+    monkeypatch.setenv("ENABLE_PROXY_PROTOCOL", shared)
+    monkeypatch.setenv("PYMTA_ENABLE_PROXY_PROTOCOL", "true" if shared == "false" else "false")
+    assert reload_settings().PYMTA_ENABLE_PROXY_PROTOCOL is (shared == "false")
+
+
+@pytest.mark.parametrize("raw", ["haproxy", "HAPROXY", " haproxy ", "true", "1", "on"])
+def test_proxy_protocol_prefixed_name_takes_the_same_spellings(monkeypatch, reload_settings, raw):
+    monkeypatch.delenv("ENABLE_PROXY_PROTOCOL", raising=False)
+    monkeypatch.setenv("PYMTA_ENABLE_PROXY_PROTOCOL", raw)
+    assert reload_settings().PYMTA_ENABLE_PROXY_PROTOCOL is True

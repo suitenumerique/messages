@@ -170,7 +170,7 @@ async def test_data_phase_start_is_published_for_the_handler(monkeypatch):
 
 @pytest.mark.asyncio
 async def test_session_deadline_uses_the_configured_limit(monkeypatch):
-    monkeypatch.setattr(settings, "PYMTA_MAX_SESSION_SECONDS", 1800)
+    monkeypatch.setattr(settings, "PYMTA_SESSION_TIMEOUT", 1800)
     smtp = HardenedSMTP(_NullHandler(), hostname="mta.test", timeout=120)
 
     armed: list[float] = []
@@ -195,7 +195,7 @@ async def test_starttls_transport_swap_does_not_extend_the_deadline(monkeypatch)
     # aiosmtpd calls connection_made a second time when STARTTLS replaces the
     # transport. Re-arming there would hand the peer a fresh budget for the
     # price of one STARTTLS.
-    monkeypatch.setattr(settings, "PYMTA_MAX_SESSION_SECONDS", 1800)
+    monkeypatch.setattr(settings, "PYMTA_SESSION_TIMEOUT", 1800)
     smtp = _server()
     first = smtp._session_deadline_handle
     assert first is not None
@@ -206,7 +206,7 @@ async def test_starttls_transport_swap_does_not_extend_the_deadline(monkeypatch)
 
 @pytest.mark.asyncio
 async def test_session_deadline_disabled_by_zero(monkeypatch):
-    monkeypatch.setattr(settings, "PYMTA_MAX_SESSION_SECONDS", 0)
+    monkeypatch.setattr(settings, "PYMTA_SESSION_TIMEOUT", 0)
     smtp = HardenedSMTP(_NullHandler(), hostname="mta.test", timeout=120)
     smtp._arm_session_deadline()
     assert smtp._session_deadline_handle is None
@@ -214,7 +214,7 @@ async def test_session_deadline_disabled_by_zero(monkeypatch):
 
 @pytest.mark.asyncio
 async def test_expired_session_announces_then_closes(monkeypatch):
-    monkeypatch.setattr(settings, "PYMTA_MAX_SESSION_SECONDS", 1800)
+    monkeypatch.setattr(settings, "PYMTA_SESSION_TIMEOUT", 1800)
     smtp = _server()
 
     smtp._session_expired()

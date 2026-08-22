@@ -89,6 +89,11 @@ The application uses a new environment file structure with `.defaults` and `.loc
 
 ### MTA Settings
 
+These are the settings read by the backend. The inbound MTA runs as its own
+container and is configured separately — see
+[`src/mta-in/README.md`](../src/mta-in/README.md) for the complete env var list
+of each implementation (Postfix + milter, and the pure-Python pymta).
+
 | Variable | Default | Description | Required |
 |----------|---------|-------------|----------|
 | `MTA_OUT_MODE` | `direct` | Outbound MTA mode ('direct' or 'relay') | Required |

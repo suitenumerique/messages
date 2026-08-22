@@ -46,7 +46,7 @@ _MIN_SECRET_LENGTH = 32
 # has to be the safe one: deferring costs a retry, bouncing loses the mail.
 #
 #   400: the MDA could not parse the message, or the request was malformed.
-#   413: over MAX_INCOMING_EMAIL_SIZE. Retrying sends the same oversized bytes.
+#   413: over the MDA's own size limit. Retrying sends the same oversized bytes.
 #   415: wrong Content-Type. Ours to fix, but no retry will change it.
 #
 # Everything else defers:
@@ -115,14 +115,10 @@ class MDAClient:
         self.timeout = timeout if timeout is not None else settings.MDA_API_TIMEOUT
         self.jwt_ttl = jwt_ttl if jwt_ttl is not None else settings.MDA_API_JWT_TTL
         self._breaker_threshold = (
-            breaker_threshold
-            if breaker_threshold is not None
-            else settings.PYMTA_MDA_BREAKER_THRESHOLD
+            breaker_threshold if breaker_threshold is not None else settings.MDA_BREAKER_THRESHOLD
         )
         self._breaker_cooldown = (
-            breaker_cooldown
-            if breaker_cooldown is not None
-            else settings.PYMTA_MDA_BREAKER_COOLDOWN
+            breaker_cooldown if breaker_cooldown is not None else settings.MDA_BREAKER_COOLDOWN
         )
         self._clock = clock
         # Counts consecutive failures. Reset to 0 by any successful call.
@@ -198,6 +194,7 @@ class MDAClient:
             # Cool-down elapsed; let the next request probe upstream.
             self._open_until = None
             self._consecutive_failures = 0
+            metrics.MDA_BREAKER_OPEN.set(0)
             return False
         return True
 
@@ -207,6 +204,7 @@ class MDAClient:
         self._consecutive_failures += 1
         if self._consecutive_failures >= self._breaker_threshold and self._open_until is None:
             self._open_until = self._clock() + self._breaker_cooldown
+            metrics.MDA_BREAKER_OPEN.set(1)
             logger.warning(
                 "MDA circuit breaker OPEN after %d consecutive failures; fast-failing for %ds",
                 self._consecutive_failures,
