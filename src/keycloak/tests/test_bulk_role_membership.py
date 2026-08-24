@@ -31,8 +31,10 @@ CLIENT_ID = os.environ.get("KEYCLOAK_CLIENT_ID", "rest-api")
 CLIENT_SECRET = os.environ.get(
     "KEYCLOAK_CLIENT_SECRET", "ServiceAccountClientSecretForDev"
 )
-MASTER_ADMIN_USER = os.environ.get("KC_BOOTSTRAP_ADMIN_USERNAME", "admin")
-MASTER_ADMIN_PASS = os.environ.get("KC_BOOTSTRAP_ADMIN_PASSWORD", "admin")
+MASTER_CLIENT_ID = os.environ.get("KC_BOOTSTRAP_ADMIN_CLIENT_ID", "bootstrap-admin")
+MASTER_CLIENT_SECRET = os.environ.get(
+    "KC_BOOTSTRAP_ADMIN_CLIENT_SECRET", "BootstrapAdminClientSecretForDev"
+)
 
 ENDPOINT_PATH = f"/realms/{TARGET_REALM}/bulk-role-membership/check"
 ENDPOINT_URL = f"{KEYCLOAK_URL}{ENDPOINT_PATH}"
@@ -52,7 +54,7 @@ def _post_with_token(token, body, *, raw_data=None, content_type="application/js
     )
 
 
-def _password_token(realm, client_id, username, password, *, client_secret=None):
+def _password_token(realm, client_id, username, password):
     """Fetch an access token via the OIDC password grant."""
     data = {
         "grant_type": "password",
@@ -60,8 +62,6 @@ def _password_token(realm, client_id, username, password, *, client_secret=None)
         "username": username,
         "password": password,
     }
-    if client_secret is not None:
-        data["client_secret"] = client_secret
     response = requests.post(
         f"{KEYCLOAK_URL}/realms/{realm}/protocol/openid-connect/token",
         data=data,
@@ -91,12 +91,27 @@ def main() -> int:
         client_id=CLIENT_ID,
         client_secret_key=CLIENT_SECRET,
     )
-    admin_token_payload = openid.token(grant_type="client_credentials")
-    admin_token = admin_token_payload["access_token"]
+    admin_token = openid.token(grant_type="client_credentials")["access_token"]
+
+    # Master rights come from the bootstrap admin service account, not the
+    # bootstrap admin user: that user has an empty profile, so Keycloak asks
+    # it to fill one in and refuses the password grant.
+    master_openid = KeycloakOpenID(
+        server_url=KEYCLOAK_URL,
+        realm_name="master",
+        client_id=MASTER_CLIENT_ID,
+        client_secret_key=MASTER_CLIENT_SECRET,
+    )
+    master_token_payload = master_openid.token(grant_type="client_credentials")
+    master_admin_token = master_token_payload["access_token"]
+
+    # The fixtures create realm roles and users, which needs more than the
+    # three user roles the rest-api service account holds. That token stays
+    # for the endpoint calls below.
     admin = KeycloakAdmin(
         server_url=KEYCLOAK_URL,
         realm_name=TARGET_REALM,
-        token=admin_token_payload,
+        token=master_token_payload,
         verify=False,
     )
 
@@ -139,16 +154,10 @@ def main() -> int:
                 ],
             }
         )
+        # Take this token through admin-cli, the built-in public client, so
+        # the rest-api client keeps its direct-access grant switched off.
         lowpriv_token = _password_token(
-            TARGET_REALM,
-            CLIENT_ID,
-            lowpriv_username,
-            lowpriv_password,
-            client_secret=CLIENT_SECRET,
-        )
-
-        master_admin_token = _password_token(
-            "master", "admin-cli", MASTER_ADMIN_USER, MASTER_ADMIN_PASS
+            TARGET_REALM, "admin-cli", lowpriv_username, lowpriv_password
         )
 
         print("Fixture ready: roles, users, low-priv token, master token")
@@ -284,10 +293,8 @@ def main() -> int:
         # rejects this even if Keycloak's per-realm getRoleById ever leaked.
         master_admin_client = KeycloakAdmin(
             server_url=KEYCLOAK_URL,
-            username=MASTER_ADMIN_USER,
-            password=MASTER_ADMIN_PASS,
             realm_name="master",
-            user_realm_name="master",
+            token=master_token_payload,
             verify=False,
         )
         master_admin_role_id = master_admin_client.get_realm_role("admin")["id"]

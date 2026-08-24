@@ -430,7 +430,7 @@
     "disableableCredentialTypes" : [ ],
     "requiredActions" : [ ],
     "clientRoles" : {
-      "realm-management" : [ "query-users", "manage-users", "view-users" ]
+      "realm-management" : [ "query-users", "manage-users", "view-users", "view-realm" ]
     },
     "notBefore" : 0,
     "groups" : [ ]
@@ -743,7 +743,7 @@
     "consentRequired" : false,
     "standardFlowEnabled" : false,
     "implicitFlowEnabled" : false,
-    "directAccessGrantsEnabled" : true,
+    "directAccessGrantsEnabled" : false,
     "serviceAccountsEnabled" : true,
     "authorizationServicesEnabled" : true,
     "publicClient" : false,

@@ -532,6 +532,8 @@ Used for provisioning-side operations against Keycloak (e.g. toggling
 mandatory 2FA on a mail domain). Distinct from the OIDC login settings
 above, which handle end-user authentication.
 
+See [identity-provider.md](identity-provider.md) for the full setup guide.
+
 | Variable | Default | Description | Required |
 |----------|---------|-------------|----------|
 | `IDENTITY_PROVIDER` | None | Identity-provider integration to enable (e.g. `keycloak`). Unset disables provisioning-side IdP calls. | Optional |

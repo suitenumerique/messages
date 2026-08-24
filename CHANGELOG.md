@@ -8,9 +8,22 @@ and this project adheres to
 
 ## [Unreleased]
 
+### Added
+
+- Setup guides for the authentication provider and the identity provider
+
 ### Changed
 
 - Bump keycloak to 26.7.2
+
+### Fixed
+
+- Grant view-realm to the Keycloak service account, needed by the 2FA toggle
+- Run make test-keycloak against a freshly imported Keycloak realm
+
+### Security
+
+- Turn the direct access grant off on the Keycloak rest-api client
 
 ## [0.9.0] - 2026-07-22
 
