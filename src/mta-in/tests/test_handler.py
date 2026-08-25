@@ -22,6 +22,7 @@ from pymta.handler import (
     _SOFT_ERRORS_ATTR,
     NULL_SENDER_SENTINEL,
     InboundHandler,
+    _peer_ip,
     _remaining_data_budget,
 )
 from pymta.mda_async import MDAResult
@@ -303,6 +304,30 @@ def test_data_budget_subtracts_time_already_spent(monkeypatch):
     assert 120 - 20 - _REPLY_RESERVE_SECONDS - 1 < remaining <= 120 - 20 - _REPLY_RESERVE_SECONDS
 
 
+def test_data_budget_uses_the_value_the_transport_was_armed_at(monkeypatch):
+    """PYMTA_DATA_TIMEOUT is reloadable, so it can move mid-phase.
+
+    The protocol arms the transport once, at DATA, and records what it used.
+    Re-reading the setting here would size the deliver call against a deadline
+    nobody set: raise it mid-phase and wait_for gets longer than the transport
+    will allow, so the transport tears the session down first and the peer gets
+    a bare 421 instead of the 451 the reply reserve exists to buy.
+    """
+    server = types.SimpleNamespace(
+        data_phase_started=time.monotonic() - 10, data_phase_budget=60.0
+    )
+    monkeypatch.setattr(settings, "PYMTA_DATA_TIMEOUT", 600)  # the SIGHUP
+    remaining = _remaining_data_budget(server)
+    assert remaining <= 60 - 10 - _REPLY_RESERVE_SECONDS
+
+
+def test_data_budget_falls_back_when_no_budget_was_recorded(monkeypatch):
+    """Unit-test fakes and any future caller that only sets the timestamp."""
+    monkeypatch.setattr(settings, "PYMTA_DATA_TIMEOUT", 120)
+    server = types.SimpleNamespace(data_phase_started=time.monotonic() - 20)
+    assert _remaining_data_budget(server) <= 120 - 20 - _REPLY_RESERVE_SECONDS
+
+
 def test_data_budget_raises_once_spent(monkeypatch):
     # A slow receive that ate the whole budget must not still be granted a
     # deliver call: that would overrun the transport deadline the reserve is
@@ -401,6 +426,7 @@ class _FakeServer:
         self.data_phase_started = None
 
     async def acquire_gate_post_proxy(self, ip: str) -> bool:
+        self.gate_key = ip
         return True
 
     def request_disconnect(self) -> None:
@@ -633,6 +659,40 @@ async def test_proxy_header_from_trusted_peer_is_accepted(monkeypatch):
     session = types.SimpleNamespace(host_name=None, peer=("10.89.0.2", 5555), proxy_data=None)
     accepted = await _handler().handle_PROXY(server, session, _envelope(), _proxy_data())
     assert accepted is True
+    assert server.gate_key == "203.0.113.9"
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize(
+    "claimed",
+    [
+        b"/var/run/haproxy-\x00\x00\x00",  # PROXY v2 AF_UNIX: raw off the wire
+        "not-an-address",
+        "203.0.113.9 extra",
+        "",
+    ],
+)
+async def test_an_unparseable_proxy_source_does_not_become_a_gate_key(monkeypatch, claimed):
+    """A claim that is not an address shares the "unknown" bucket.
+
+    aiosmtpd validates src_addr for the INET families but assigns AF_UNIX's
+    straight from the wire, so a PROXY v2 UNIX header carries an arbitrary
+    108-byte string. Used as the per-source key it would be a fresh bucket per
+    connection: the share stops applying and the dict grows without bound.
+    """
+    monkeypatch.setattr(settings, "PYMTA_ENABLE_PROXY_PROTOCOL", True)
+    monkeypatch.setattr(settings, "PYMTA_TRUSTED_PROXIES", [ip_network("10.89.0.0/24")])
+    server = _FakeServer()
+    session = types.SimpleNamespace(host_name=None, peer=("10.89.0.2", 5555), proxy_data=None)
+    proxy_data = types.SimpleNamespace(src_addr=claimed, src_port=52000, version=2, protocol=1)
+
+    accepted = await _handler().handle_PROXY(server, session, _envelope(), proxy_data)
+
+    assert accepted is True, "an odd header is not grounds to drop the connection"
+    assert server.gate_key == "unknown"
+    # And it must not be recorded as the client address either: it would reach
+    # the MDA and the Received header as a plausible-looking origin.
+    assert _peer_ip(session, server) is None
 
 
 @pytest.mark.parametrize("allowlist", [[], [ip_network("0.0.0.0/0")]])

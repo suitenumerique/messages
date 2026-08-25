@@ -24,8 +24,13 @@ CONNECTIONS_TOTAL = Counter(
     f"{_METRICS_NAMESPACE}_connections_total",
     "Total inbound TCP connections, by post-accept outcome.",
     # accepted | rejected_blocked | rejected_drain | rejected_global |
-    # rejected_per_ip | rejected_untrusted_proxy
+    # rejected_per_ip | rejected_untrusted_proxy | no_wire_peer
     labelnames=("result",),
+)
+
+SCRAPES_REFUSED = Counter(
+    f"{_METRICS_NAMESPACE}_scrapes_refused_total",
+    "Metrics HTTP connections refused because the scrape thread cap was reached.",
 )
 
 SESSIONS_ACTIVE = Gauge(
@@ -208,10 +213,54 @@ class _QuietHandler(WSGIRequestHandler):
             self.close_connection = True
 
 
+# Concurrent scrape threads. A Prometheus deployment uses one connection per
+# scrape; anything beyond a handful at once is not a scraper.
+_MAX_SCRAPE_THREADS = 8
+
+
 class _MetricsServer(socketserver.ThreadingMixIn, WSGIServer):
+    """Exposition server, bounded in the number of threads it will spawn.
+
+    ``ThreadingMixIn`` has no ceiling, and the thread is started before the WSGI
+    app checks the bearer token, so authentication does not gate it. The handler
+    timeout below bounds how long each thread lives but not how many exist: at N
+    connections a second an attacker holds 10N of them, inside the process that
+    is also serving SMTP. Refusing past the cap keeps a reachable metrics port
+    from being a way to take down mail delivery.
+    """
+
     daemon_threads = True
     # Do not block process shutdown waiting on in-flight scrapes.
     block_on_close = False
+
+    def __init__(self, *args, **kwargs):
+        super().__init__(*args, **kwargs)
+        self._scrapes = 0
+        self._scrape_lock = threading.Lock()
+
+    def _end_scrape(self) -> None:
+        with self._scrape_lock:
+            self._scrapes -= 1
+
+    def process_request(self, request, client_address):
+        with self._scrape_lock:
+            if self._scrapes >= _MAX_SCRAPE_THREADS:
+                SCRAPES_REFUSED.inc()
+                self.shutdown_request(request)
+                return
+            self._scrapes += 1
+        try:
+            super().process_request(request, client_address)
+        except BaseException:
+            # The thread never started, so nothing will run the decrement.
+            self._end_scrape()
+            raise
+
+    def process_request_thread(self, request, client_address):
+        try:
+            super().process_request_thread(request, client_address)
+        finally:
+            self._end_scrape()
 
 
 def start_metrics_server(host: str, port: int, api_key: str = "") -> WSGIServer | None:
@@ -244,10 +293,16 @@ def start_metrics_server(host: str, port: int, api_key: str = "") -> WSGIServer 
             },
         )
 
-    if ":" in host:
-        _MetricsServer.address_family = socket.AF_INET6
-
-    httpd = make_server(host, port, app, _MetricsServer, _QuietHandler)
+    # Per-call subclass rather than rebinding the attribute on _MetricsServer:
+    # the family is a class attribute read by the constructor, so setting it on
+    # the shared class would leave it there for every later call. Production
+    # starts one server and would not notice; the tests start several.
+    server_cls = type(
+        "_BoundMetricsServer",
+        (_MetricsServer,),
+        {"address_family": socket.AF_INET6 if ":" in host else socket.AF_INET},
+    )
+    httpd = make_server(host, port, app, server_cls, _QuietHandler)
     threading.Thread(target=httpd.serve_forever, daemon=True).start()
     logger.info(
         "metrics_listening",

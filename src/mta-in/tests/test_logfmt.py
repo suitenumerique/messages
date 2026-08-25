@@ -145,17 +145,113 @@ def test_configure_replaces_handlers_rather_than_adding():
 # ---------------------------------------------------------------------------
 
 
+# Every event an unauthenticated peer can provoke. Membership is the *claim*;
+# the test below checks the claim against the level in the source.
 PEER_TRIGGERABLE = {
-    # event -> the module that emits it
-    "session_timeout": "pymta.smtp_protocol",
-    "command_timeout": "pymta.smtp_protocol",
-    "connection_blocked": "pymta.smtp_protocol",
-    "connection_capped": "pymta.smtp_protocol",
-    "helo_control_chars": "pymta.handler",
-    "bare_newline_normalised": "pymta.handler",
-    "data_timeout": "pymta.handler",
-    "proxy_header": "pymta.handler",
+    "session_timeout",
+    "command_timeout",
+    "connection_blocked",
+    "connection_capped",
+    "data_slots_exhausted",
+    "session_without_peer",
+    "helo_control_chars",
+    "bare_newline_normalised",
+    "data_timeout",
+    "proxy_header",
+    "proxy_header_untrusted",
 }
+
+# Everything else: caused by our own configuration, our own infrastructure, or
+# our own bugs, and therefore bounded in volume by us rather than by a peer.
+OPERATOR_TRIGGERABLE = {
+    "smtp_listening",
+    "memory_ceiling",
+    "metrics_listening",
+    "metrics_disabled",
+    "metrics_unauthenticated",
+    "proxy_trust_configured",
+    "proxy_trust_unrestricted",
+    "legacy_setting_in_use",
+    "reload_applied",
+    "reload_noop",
+    "reload_rejected",
+    "shutdown_started",
+    "shutdown_drained",
+    "shutdown_complete",
+    "shutdown_already_in_progress",
+    "shutdown_deadline_exceeded",
+    "mda_url_plaintext",
+    "mda_secret_missing",
+    "mda_secret_weak",
+    "mda_unhealthy",
+    "mda_recovered",
+    "mda_breaker_opened",
+    "mda_transport_error",
+    "mda_timeout",
+    "mda_check_no_verdict",
+    "mda_body_not_an_object",
+    "handler_error",
+    # Fires per EHLO, but handler._EXTENSIONS_REPORTED holds it to once per verb
+    # per process, so the volume is ours and the level can stay WARNING.
+    "ehlo_extension_stripped",
+}
+
+# The one deliberate exception. These name envelope addresses at INFO because
+# they are the mail audit trail: "what became of the message from X to Y" has no
+# other answer, and a metric cannot give it. A peer influences the rate — bounded
+# by PYMTA_MAX_ENVELOPES_PER_SESSION per connection — but a session that never
+# delivers never reaches them, so the cost tracks real mail rather than raw
+# connections. Written as ``"message_" + outcome`` at the call site.
+AUDIT = {"message_delivered", "message_deferred", "message_rejected"}
+
+# Event names the scanner sees as a literal prefix because the suffix is a
+# variable. Maps what appears in the source to what is actually emitted.
+_DYNAMIC_PREFIXES = {"message_": AUDIT}
+
+
+def _log_sites():
+    """Every ``logger.<level>("<event>"`` in the package, as (module, event, level).
+
+    Read out of the source rather than by calling each site, so a call at the
+    wrong level is caught even where no test exercises that path.
+    """
+    import pathlib
+    import re
+
+    root = pathlib.Path(__file__).resolve().parents[1] / "src" / "pymta"
+    # Without this the test passes vacuously if the package ever moves: an empty
+    # glob yields no sites, which reads exactly like "every site is correct".
+    assert root.is_dir(), root
+    sites = []
+    for path in sorted(root.glob("*.py")):
+        for match in re.finditer(
+            r"logger\.(debug|info|warning|error|exception)\(\s*\"(\w+)\"", path.read_text()
+        ):
+            level, name = match.group(1), match.group(2)
+            for event in _DYNAMIC_PREFIXES.get(name, {name}):
+                sites.append((path.name, event, level))
+    assert sites, "no logging call sites found — the pattern stopped matching"
+    return sites
+
+
+def test_every_event_is_classified():
+    """A new event has to be declared peer- or operator-triggerable.
+
+    This is the half the previous version of this test could not do. Iterating a
+    hand-kept list of peer events only re-checks the ones already known to be
+    right; an event added at WARNING that a peer *can* provoke is invisible to
+    it, which is exactly how ``proxy_header_untrusted`` shipped at WARNING and
+    handed anyone on the internet one log line per TCP connection.
+
+    Classification is a judgement no test can make, so the test does not try. It
+    only refuses to let the judgement go unmade.
+    """
+    known = PEER_TRIGGERABLE | OPERATOR_TRIGGERABLE | AUDIT
+    unclassified = sorted({event for _, event, _ in _log_sites() if event not in known})
+    assert not unclassified, (
+        f"unclassified log events: {unclassified}. Add each to PEER_TRIGGERABLE "
+        "if an unauthenticated peer can provoke it, OPERATOR_TRIGGERABLE otherwise."
+    )
 
 
 def test_peer_triggerable_events_are_debug():
@@ -164,24 +260,76 @@ def test_peer_triggerable_events_are_debug():
     Not a style rule. Each of these is already counted in a Prometheus metric,
     which is where volume belongs; logging them higher means anyone who can
     open a TCP connection can drive unbounded log output.
-
-    Read out of the source rather than by calling each site, so a new call at
-    the wrong level is caught even if no test exercises that path.
     """
-    import pathlib
-    import re
-
-    root = pathlib.Path(__file__).resolve().parents[1] / "src" / "pymta"
-    offenders = []
-    for path in root.glob("*.py"):
-        text = path.read_text()
-        for event in PEER_TRIGGERABLE:
-            for match in re.finditer(
-                r"logger\.(debug|info|warning|error|exception)\(\s*\"" + event + r"\"", text
-            ):
-                if match.group(1) != "debug":
-                    offenders.append(f"{path.name}: {event} at {match.group(1)}")
+    offenders = [
+        f"{module}: {event} at {level}"
+        for module, event, level in _log_sites()
+        if event in PEER_TRIGGERABLE and level != "debug"
+    ]
     assert not offenders, offenders
+
+
+def test_the_classification_lists_do_not_overlap():
+    """An event is in exactly one; two homes would make the level check vacuous."""
+    assert not (PEER_TRIGGERABLE & OPERATOR_TRIGGERABLE)
+    assert not (PEER_TRIGGERABLE & AUDIT)
+    assert not (OPERATOR_TRIGGERABLE & AUDIT)
+
+
+@pytest.mark.parametrize(
+    "char, name",
+    [
+        (" ", "LINE SEPARATOR"),
+        (" ", "PARAGRAPH SEPARATOR"),
+        ("\x85", "NEXT LINE"),
+        ("\x0b", "VERTICAL TAB"),
+        ("\x0c", "FORM FEED"),
+        ("\x1c", "FILE SEPARATOR"),
+        ("\n", "LINE FEED"),
+        ("\r", "CARRIAGE RETURN"),
+    ],
+)
+def test_no_value_can_split_a_record(char, name):
+    """One record in, one record out — for every character Python breaks on.
+
+    logfmt only knows CR and LF, but ``str.splitlines`` breaks on six more, so a
+    consumer written in Python reads a line we never emitted. SMTPUTF8 puts these
+    inside envelope addresses, which reach the log as ``sender``.
+    """
+    line = _render("message_rejected", sender=f"a{char}b@example.com")
+    assert len(line.splitlines()) == 1, f"{name} split the record: {line!r}"
+    assert char not in line
+
+
+def test_a_forged_record_does_not_survive_quoting():
+    """The whole point, stated as the attack rather than as the mechanism."""
+    forged = "x ts=2026-01-01T00:00:00Z level=info event=message_delivered"
+    line = _render("message_rejected", sender=forged)
+    assert len(line.splitlines()) == 1
+    # The forged text survives as *content* — that is fine and unavoidable, it
+    # is what the peer sent. What must not survive is its separator, without
+    # which no parser will ever read it as a record of its own.
+    assert _parse(line)["event"] == "message_rejected"
+    assert "\\u2028" in line
+
+
+def test_escape_sequences_cannot_reach_a_terminal():
+    line = _render("connection_capped", client_ip="\x1b[2J\x1b[1;31mBIG RED TEXT")
+    assert "\x1b" not in line
+    assert "\\u001b" in line
+
+
+def test_printable_non_ascii_is_left_alone():
+    """Escaping is about control characters, not about being non-English."""
+    line = _render("message_delivered", sender="José@example.com")
+    assert "José@example.com" in line
+
+
+def test_the_classification_lists_have_no_dead_entries():
+    """A name kept after its call site went away protects nothing."""
+    emitted = {event for _, event, _ in _log_sites()}
+    stale = sorted((PEER_TRIGGERABLE | OPERATOR_TRIGGERABLE | AUDIT) - emitted)
+    assert not stale, f"classified but never emitted: {stale}"
 
 
 # ---------------------------------------------------------------------------

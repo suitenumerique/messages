@@ -97,10 +97,23 @@ _STANDARD = frozenset(
 
 _NEEDS_QUOTING = frozenset(' "=\\\n\r\t')
 
+# The escapes worth spelling out, because a reader recognises them. Everything
+# else unprintable goes to \uXXXX; see :func:`quote`.
+_SIMPLE_ESCAPES = {"\\": "\\\\", '"': '\\"', "\n": "\\n", "\r": "\\r", "\t": "\\t"}
+
 # Callers pass prose as ``extra={"detail": ...}`` and it is emitted as ``msg``.
 # The obvious spellings are not available: ``logging`` reserves both ``msg`` and
 # ``message`` on LogRecord and raises KeyError if ``extra`` tries to set either.
 _PROSE = "detail"
+
+
+def _escape(char: str) -> str:
+    simple = _SIMPLE_ESCAPES.get(char)
+    if simple is not None:
+        return simple
+    if char.isprintable():
+        return char
+    return f"\\u{ord(char):04x}"
 
 
 def quote(value: object) -> str:
@@ -108,6 +121,16 @@ def quote(value: object) -> str:
 
     ``None`` and booleans get their lowercase spellings so a consumer can read
     them back as the types they were, rather than as Python's ``None``/``True``.
+
+    Everything unprintable is escaped, not only CR and LF. logfmt knows just
+    those two, but ``str.splitlines`` also breaks on VT, FF, NEL, U+2028 and
+    U+2029, so a consumer written in Python reads a line break we never emitted
+    and a record we never wrote. Under SMTPUTF8 those characters arrive inside
+    envelope addresses and reach this function through ``sender``, which would
+    make a forged log line cost one MAIL FROM. ESC goes the same way: a value
+    should not be able to repaint the terminal of whoever tails the log.
+
+    This is the only place that decides, so a caller never has to sanitise.
     """
     if value is None:
         return "null"
@@ -118,15 +141,8 @@ def quote(value: object) -> str:
     if isinstance(value, (int, float)):
         return repr(value)
     text = str(value)
-    if text == "" or any(c in _NEEDS_QUOTING for c in text):
-        escaped = (
-            text.replace("\\", "\\\\")
-            .replace('"', '\\"')
-            .replace("\n", "\\n")
-            .replace("\r", "\\r")
-            .replace("\t", "\\t")
-        )
-        return f'"{escaped}"'
+    if text == "" or any(c in _NEEDS_QUOTING or not c.isprintable() for c in text):
+        return '"' + "".join(_escape(c) for c in text) + '"'
     return text
 
 

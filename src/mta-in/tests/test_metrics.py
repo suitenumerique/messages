@@ -7,6 +7,8 @@ against the Postfix implementation, which has no Prometheus endpoint).
 import logging
 import smtplib
 import socket
+import threading
+import time
 import urllib.request
 from email.mime.text import MIMEText
 
@@ -217,6 +219,8 @@ def test_config_limits_are_exported(metrics_url):
         "max_errors_per_session",
         "max_rcpt_misses_per_session",
         "max_sessions_total",
+        "max_concurrent_data",
+        "max_line_length",
         "command_timeout",
         "data_timeout",
         "session_timeout",
@@ -237,6 +241,57 @@ def test_breaker_gauge_is_exported(metrics_url):
     text = _scrape(metrics_url)
     assert "pymta_mda_breaker_open" in text
     assert _metric_value(text, "pymta_mda_breaker_open") == 0
+
+
+# ---------------------------------------------------------------------------
+# The exposition port must not be a way to take down the SMTP process.
+# ---------------------------------------------------------------------------
+
+
+def test_slow_clients_cannot_spawn_unbounded_threads(open_port):
+    """ThreadingMixIn has no ceiling and the thread starts before auth runs.
+
+    A peer that opens connections and never completes a request would otherwise
+    hold one thread each for the full handler timeout, inside the process that
+    is also serving SMTP. Driven over real sockets that connect and say nothing,
+    which is the whole attack.
+    """
+    from pymta.metrics import _MAX_SCRAPE_THREADS
+
+    before = threading.active_count()
+    hangers = []
+    try:
+        for _ in range(_MAX_SCRAPE_THREADS * 4):
+            s = socket.create_connection(("127.0.0.1", open_port), timeout=5)
+            s.sendall(b"GET /metrics HTTP/1.1\r\n")  # deliberately unfinished
+            hangers.append(s)
+        time.sleep(0.5)
+        grown = threading.active_count() - before
+        assert grown <= _MAX_SCRAPE_THREADS, (
+            f"{len(hangers)} idle connections spawned {grown} threads, "
+            f"cap is {_MAX_SCRAPE_THREADS}"
+        )
+    finally:
+        for s in hangers:
+            s.close()
+
+
+def test_a_real_scrape_still_works_after_the_cap_is_hit(open_port):
+    """The cap must shed load, not wedge the endpoint."""
+    from pymta.metrics import _MAX_SCRAPE_THREADS
+
+    hangers = []
+    try:
+        for _ in range(_MAX_SCRAPE_THREADS * 4):
+            s = socket.create_connection(("127.0.0.1", open_port), timeout=5)
+            s.sendall(b"GET /metrics HTTP/1.1\r\n")
+            hangers.append(s)
+        time.sleep(0.5)
+    finally:
+        for s in hangers:
+            s.close()
+    time.sleep(0.5)
+    assert b"200 OK" in _raw_get(open_port, None)
 
 
 def test_rcpt_rejected_increments_rcpt_total(metrics_url, mock_api_server, smtp_client):

@@ -155,7 +155,7 @@ PYMTA_MAX_INCOMING_EMAIL_SIZE = _env_int(
 # RCPT TO per SMTP transaction. Mirrors Postfix `smtpd_recipient_limit=100`.
 #
 # Note the multiplication downstream: controller.py derives the per-verb
-# ``command_call_limit`` for RCPT as (this x MAX_ENVELOPES_PER_CONNECTION) + 10,
+# ``command_call_limit`` for RCPT as (this x PYMTA_MAX_ENVELOPES_PER_SESSION) + 10,
 # which on the defaults is 1010 commands before aiosmtpd force-closes. Raising
 # either of these raises that ceiling as their product, and it is the ceiling
 # on how many commands one connection can spend re-arming the idle timer.
@@ -525,7 +525,17 @@ PYMTA_TLS_KEY_FILE = _env_str("PYMTA_TLS_KEY_FILE", "")
 _chain = os.environ.get("STARTTLS_CHAIN_FILES", "").strip()
 if _chain and not PYMTA_TLS_CERT_FILE and not PYMTA_TLS_KEY_FILE:
     LEGACY_IN_USE.add(("STARTTLS_CHAIN_FILES", "PYMTA_TLS_CERT_FILE + PYMTA_TLS_KEY_FILE"))
-    PYMTA_TLS_CERT_FILE = PYMTA_TLS_KEY_FILE = _chain.split(",", 1)[0].strip()
+    _first = _chain.split(",", 1)[0].strip()
+    # A leading comma would otherwise make both paths empty, which reads as
+    # "STARTTLS deliberately off" to the pair check below and disables
+    # encryption without a word. Same posture as that check: refuse it.
+    if not _first:
+        raise ValueError(
+            "Environment variable STARTTLS_CHAIN_FILES is set to "
+            f"{_chain!r}, whose first entry is empty. Give the bundle path "
+            "first, or set PYMTA_TLS_CERT_FILE and PYMTA_TLS_KEY_FILE instead."
+        )
+    PYMTA_TLS_CERT_FILE = PYMTA_TLS_KEY_FILE = _first
 
 # Both or neither. ``load_tls_context`` returns None unless it has a pair, so a
 # half-configured STARTTLS would not fail — it would serve plaintext and simply

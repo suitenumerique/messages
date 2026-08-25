@@ -232,15 +232,17 @@ async def test_command_timeout_is_rearmed_by_activity(monkeypatch):
     exists: this deadline is reset by every accepted command, so it bounds
     silence rather than session length.
     """
-    monkeypatch.setattr(settings, "PYMTA_COMMAND_TIMEOUT", 0.3)
+    monkeypatch.setattr(settings, "PYMTA_COMMAND_TIMEOUT", 1.0)
     loop = asyncio.get_running_loop()
     server, port, _ = await _listener(loop)
     try:
         reader, writer = await asyncio.open_connection("127.0.0.1", port)
         await asyncio.wait_for(reader.readline(), timeout=5)
-        # Four NOOPs at 0.12s spacing spans 0.48s, well past the 0.3s deadline.
+        # Four NOOPs at 0.4s spacing spans 1.6s, well past the 1.0s deadline.
+        # The absolute slack per interval (0.6s), not the ratio, is what has to
+        # survive scheduler jitter on a loaded CI box.
         for _ in range(4):
-            await asyncio.sleep(0.12)
+            await asyncio.sleep(0.4)
             writer.write(b"NOOP\r\n")
             await writer.drain()
             reply = await asyncio.wait_for(reader.readline(), timeout=5)

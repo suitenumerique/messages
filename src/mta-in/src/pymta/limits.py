@@ -1,14 +1,23 @@
 """Connection-level admission control for the pymta server.
 
-The :class:`IPGate` enforces three ceilings on inbound TCP sessions:
+The :class:`IPGate` enforces two things, each on two axes:
 
-* a process-wide cap, defending against a generic flood;
-* a per-IP concurrent cap, defending against a single remote opening thousands
-  of half-idle connections (aiosmtpd does not enforce any per-IP cap);
+* **TCP sessions** — a process-wide cap (``PYMTA_MAX_SESSIONS_TOTAL``) against a
+  generic flood, and each source's share of it against a single remote opening
+  thousands of half-idle connections. aiosmtpd enforces neither.
+* **DATA phases** — a process-wide cap (``PYMTA_MAX_CONCURRENT_DATA``) and each
+  source's share of that. This is the one that bounds memory: aiosmtpd holds
+  every message in RAM, so messages in flight times the size cap is the heap.
 
-All caps are skipped when set to 0, matching the existing Postfix default
-(``smtpd_client_event_limit_exceptions = static:all``), which is useful in dev/test
-where the whole load comes from the same loopback address.
+Neither share is a configured number. Both come from :meth:`IPGate._fair_share`,
+which divides by the sources present rather than by a constant, so filling the
+slots takes as many hosts as there are slots.
+
+A cap of 0 disables the *refusal* on that axis, matching the shipped Postfix
+config (``smtpd_client_event_limit_exceptions = static:all``) and useful in
+dev/test where the whole load comes from one loopback address. Slots are still
+counted when disabled, so the gauges stay honest and acquire/release stay
+symmetric across a SIGHUP; see :meth:`IPGate.acquire_data`.
 """
 
 from __future__ import annotations
@@ -130,23 +139,31 @@ class IPGate:
         messages in flight times the size cap is the heap. The per-IP one is
         monopolisation, which the total alone does not prevent, since one host
         can hold every slot for a whole PYMTA_DATA_TIMEOUT by dribbling bodies.
+
+        Slots are counted even when the limit is disabled, and only the refusal
+        is conditional. Counting on the same terms in both modes is what keeps
+        acquire and release symmetric across a SIGHUP: the limit is reloadable,
+        so a phase can begin under one value and end under another, and a
+        release that consulted the *current* limit would either skip a
+        decrement it owed or make one it never earned.
         """
         total = self.max_data
-        if not total:
-            return True
-        if self._data_total >= total:
-            return False
         key = ip or "unknown"
-        if self._data_per_ip.get(key, 0) >= self._fair_share(total, len(self._data_per_ip)):
-            return False
+        if total:
+            if self._data_total >= total:
+                return False
+            if self._data_per_ip.get(key, 0) >= self._fair_share(total, len(self._data_per_ip)):
+                return False
         self._data_total += 1
         self._data_per_ip[key] = self._data_per_ip.get(key, 0) + 1
         metrics.DATA_PHASES_ACTIVE.inc()
         return True
 
     def release_data(self, ip: str | None) -> None:
-        if not self.max_data:
-            return
+        """Give back a slot taken by :meth:`acquire_data`.
+
+        Unconditional by design; see the note there on reloads.
+        """
         key = ip or "unknown"
         remaining = self._data_per_ip.get(key, 0) - 1
         if remaining > 0:

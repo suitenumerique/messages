@@ -95,6 +95,34 @@ def _check_proxy_trust_config() -> None:
     )
 
 
+def _export_config_limits() -> None:
+    """Publish the ceilings currently in force as gauges.
+
+    Alongside the counters that report hitting them, so a dashboard plots usage
+    against the limit and an alert fires on approach without the deployment's
+    numbers being duplicated into the alert rule.
+
+    Called at startup and again after an accepted SIGHUP, because four of these
+    are reloadable and a gauge that still reported the startup value would
+    describe a configuration no longer in force.
+    """
+    metrics.export_config_limits(
+        {
+            "max_incoming_email_size": settings.PYMTA_MAX_INCOMING_EMAIL_SIZE,
+            "max_recipients_per_envelope": settings.PYMTA_MAX_RECIPIENTS_PER_ENVELOPE,
+            "max_envelopes_per_session": settings.PYMTA_MAX_ENVELOPES_PER_SESSION,
+            "max_errors_per_session": settings.PYMTA_MAX_ERRORS_PER_SESSION,
+            "max_rcpt_misses_per_session": settings.PYMTA_MAX_RCPT_MISSES_PER_SESSION,
+            "max_sessions_total": settings.PYMTA_MAX_SESSIONS_TOTAL,
+            "max_concurrent_data": settings.PYMTA_MAX_CONCURRENT_DATA,
+            "command_timeout": settings.PYMTA_COMMAND_TIMEOUT,
+            "data_timeout": settings.PYMTA_DATA_TIMEOUT,
+            "max_line_length": settings.PYMTA_MAX_LINE_LENGTH,
+            "session_timeout": settings.PYMTA_SESSION_TIMEOUT,
+        }
+    )
+
+
 def _reload_settings() -> None:
     """Re-read the runtime-reloadable settings on SIGHUP.
 
@@ -109,10 +137,13 @@ def _reload_settings() -> None:
         logger.error("reload_rejected", exc_info=True, extra={"applied": False})
         return
     if changed:
-        logger.info(
-            "reload_applied",
-            extra={"changed": ",".join(f"{k}={v!r}" for k, v in changed.items())},
-        )
+        # Names only. The reloadable set includes PYMTA_BLOCKED_RECIPIENTS,
+        # whose value is a list of real addresses; serialising it would put
+        # recipient mail addresses in the log every time an operator adjusts a
+        # blocklist. The values that are not sensitive are on the metrics
+        # endpoint, republished just below.
+        logger.info("reload_applied", extra={"changed": ",".join(sorted(changed))})
+        _export_config_limits()
     else:
         logger.info("reload_noop")
 
@@ -299,24 +330,7 @@ def main() -> None:
         settings.PYMTA_METRICS_BIND_PORT,
         settings.PYMTA_METRICS_API_KEY,
     )
-    # Publish the ceilings alongside the counters that report hitting them, so a
-    # dashboard plots usage against the limit and an alert fires on approach
-    # without the deployment's numbers being duplicated into the alert rule.
-    metrics.export_config_limits(
-        {
-            "max_incoming_email_size": settings.PYMTA_MAX_INCOMING_EMAIL_SIZE,
-            "max_recipients_per_envelope": settings.PYMTA_MAX_RECIPIENTS_PER_ENVELOPE,
-            "max_envelopes_per_session": settings.PYMTA_MAX_ENVELOPES_PER_SESSION,
-            "max_errors_per_session": settings.PYMTA_MAX_ERRORS_PER_SESSION,
-            "max_rcpt_misses_per_session": settings.PYMTA_MAX_RCPT_MISSES_PER_SESSION,
-            "max_sessions_total": settings.PYMTA_MAX_SESSIONS_TOTAL,
-            "max_concurrent_data": settings.PYMTA_MAX_CONCURRENT_DATA,
-            "command_timeout": settings.PYMTA_COMMAND_TIMEOUT,
-            "data_timeout": settings.PYMTA_DATA_TIMEOUT,
-            "max_line_length": settings.PYMTA_MAX_LINE_LENGTH,
-            "session_timeout": settings.PYMTA_SESSION_TIMEOUT,
-        }
-    )
+    _export_config_limits()
     try:
         asyncio.run(_serve())
     except KeyboardInterrupt:

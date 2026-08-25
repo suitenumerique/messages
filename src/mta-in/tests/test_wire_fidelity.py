@@ -108,9 +108,9 @@ def test_overlong_body_line(mock_api_server, mta_impl):
         pytest.xfail(
             f"KNOWN GAP: {mta_impl} rejects a 2000-octet body line with "
             f"{reply[:60]!r}. Postfix accepts it, so this is a permanent bounce "
-            "for mail that lands today. aiosmtpd caps at line_length_limit=1001 "
-            "and answers 500; raising the class attribute on HardenedSMTP is the "
-            "one-line fix, wrapping like Postfix's cleanup is the faithful one."
+            "for mail that lands today. pymta clears it by overriding aiosmtpd's "
+            "line_length_limit (1001) with PYMTA_MAX_LINE_LENGTH, so reaching "
+            "this branch means that value was lowered below the line sent here."
         )
 
 
@@ -196,14 +196,8 @@ def test_bare_lf_in_header_is_not_passed_through(mock_api_server, mta_impl):
     # The injected text may survive as *content*; what must not survive is a
     # bare LF acting as a line terminator in front of it.
     leaked = b"\nX-Injected" in raw.replace(b"\r\n", b"__CRLF__")
-    if leaked and mta_impl == "pymta":
-        pytest.xfail(
-            "KNOWN GAP: pymta passes bare LF through verbatim, so any parser "
-            "that splits on LF — Python's email package included — reads an "
-            "attacker-chosen header on the stored message. Postfix normalises "
-            "via smtpd_forbid_bare_newline in etc/main.cf; pymta has no "
-            "equivalent, so switching implementations drops the defence."
-        )
+    # Postfix normalises via smtpd_forbid_bare_newline in etc/main.cf, pymta via
+    # handler._normalize_line_endings. A failure here means one of them stopped.
     assert not leaked, f"{mta_impl} passed a bare LF into the delivered message"
 
 
@@ -233,16 +227,9 @@ def test_non_utf8_byte_in_rcpt_is_cleanly_rejected(mta_impl):
         s.close()
 
     logger.info("non-UTF-8 RCPT on %s -> %r", mta_impl, reply[:80])
-    if reply.startswith(b"421") and mta_impl == "pymta":
-        pytest.xfail(
-            "KNOWN BUG: address.validate_envelope_address calls "
-            "local.encode('utf-8') on a string aiosmtpd decoded with "
-            "surrogateescape, so a lone surrogate raises UnicodeEncodeError. "
-            "That is not an AddressError, so it escapes the validator's except "
-            "clause, reaches handle_exception, and becomes 421 + disconnect. "
-            "Postfix answers 5xx. Fix: catch UnicodeEncodeError in the "
-            "validator (or measure length on the surrogateescape'd bytes)."
-        )
+    # pymta holds this line in address.validate_envelope_address, which encodes
+    # the address before the length checks so a lone surrogate becomes an
+    # AddressError rather than a UnicodeEncodeError escaping as 421.
     assert not reply.startswith(b"421"), (
         f"{mta_impl} answered {reply[:40]!r} — an internal error escaped as a "
         "temporary failure. A malformed address is permanent; 421 makes the "

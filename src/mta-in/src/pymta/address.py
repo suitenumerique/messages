@@ -85,8 +85,13 @@ def validate_envelope_address(  # noqa: PLR0912
         )
 
     # ----- 1b. control / CRLF / NUL injection --------------------------------
-    bad = _FORBIDDEN_CHARS & set(address)
-    if bad:
+    # The explicit set above, plus anything else unprintable. SMTPUTF8 makes the
+    # local-part arbitrary UTF-8, which includes U+2028, U+0085, VT and FF —
+    # characters no mailer emits on purpose and that several parsers, Python's
+    # ``str.splitlines`` among them, treat as line terminators. ``logfmt.quote``
+    # escapes them on the way to the log; refusing them here means they never
+    # reach the MDA, a Received header or a bounce message either.
+    if _FORBIDDEN_CHARS & set(address) or not address.isprintable():
         raise AddressError(
             reason="control_char",
             smtp_code=501,

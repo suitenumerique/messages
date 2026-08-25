@@ -229,6 +229,44 @@ def test_reload_leaves_everything_alone_when_the_new_value_is_bad(monkeypatch, r
     assert settings.PYMTA_DEFER_ALL is False, "a later setting was applied despite the failure"
 
 
+def test_reload_logs_names_without_values(monkeypatch, restore_settings, caplog):
+    """The reloadable set includes a blocklist of real addresses.
+
+    Logging what changed must not mean logging who: an operator adding a
+    recipient to PYMTA_BLOCKED_RECIPIENTS would otherwise publish that address
+    to whatever ingests these logs, every time they touched the list.
+    """
+    from pymta import server
+
+    caplog.set_level("INFO")
+    monkeypatch.setattr(settings, "PYMTA_BLOCKED_RECIPIENTS", set())
+    monkeypatch.setenv("PYMTA_BLOCKED_RECIPIENTS", "victim@example.com")
+    server._reload_settings()
+
+    record = next(r for r in caplog.records if r.message == "reload_applied")
+    assert "PYMTA_BLOCKED_RECIPIENTS" in record.changed
+    assert "victim@example.com" not in caplog.text
+    assert "victim" not in record.changed
+
+
+def test_reload_republishes_the_limit_gauges(monkeypatch, restore_settings):
+    """Four of the exported limits are reloadable.
+
+    A gauge still reporting the startup value would have a dashboard plotting
+    usage against a ceiling no longer in force — worst at exactly the moment
+    someone reloaded because they were watching that dashboard.
+    """
+    from pymta import metrics, server
+
+    monkeypatch.setattr(settings, "PYMTA_MAX_CONCURRENT_DATA", 40)
+    monkeypatch.setenv("PYMTA_MAX_CONCURRENT_DATA", "12")
+    server._reload_settings()
+
+    assert metrics.CONFIG_LIMIT.labels(name="max_concurrent_data")._value.get() == 12
+    # The derived one has to follow, or the pair describes two configurations.
+    assert metrics.CONFIG_LIMIT.labels(name="max_sessions_total")._value.get() == 36
+
+
 # ---------------------------------------------------------------------------
 # 7. SIGTERM runs the whole drain protocol.
 # ---------------------------------------------------------------------------
@@ -454,6 +492,43 @@ def test_saturating_needs_as_many_hosts_as_slots():
 def test_zero_disables_the_data_bound():
     gate = _gate(0)
     assert all(gate.acquire_data(f"198.51.100.{n}") for n in range(50))
+
+
+@pytest.mark.parametrize("before, after", [(0, 4), (4, 0)])
+def test_slots_survive_a_limit_change_mid_phase(before, after):
+    """PYMTA_MAX_CONCURRENT_DATA is reloadable, so a phase can outlive its value.
+
+    Acquire under one limit, SIGHUP, release under another. If release consulted
+    the limit in force at the time it ran, turning the bound on would decrement a
+    slot never taken and turning it off would strand one forever — the second
+    losing capacity permanently, because the leak persists once it is back on.
+    """
+    from pymta import metrics
+
+    gauge = metrics.DATA_PHASES_ACTIVE
+    before_value = gauge._value.get()
+    gate = _gate(before)
+    assert gate.acquire_data("198.51.100.1") is True
+    gate._max_data = after
+    gate.release_data("198.51.100.1")
+    assert gate._data_total == 0
+    assert gate._data_per_ip == {}
+    # The gauge is the half that survives the process: a decrement without a
+    # matching increment drives pymta_data_phases_active negative for good.
+    assert gauge._value.get() == before_value
+
+
+def test_slots_are_counted_while_the_bound_is_off():
+    """The gauge has to mean the same thing in both modes.
+
+    Counting only when the limit is set would make pymta_data_phases_active read
+    zero under load for anyone who disabled the bound, which is exactly when an
+    operator is watching it.
+    """
+    gate = _gate(0)
+    for n in range(3):
+        assert gate.acquire_data(f"198.51.100.{n}") is True
+    assert gate._data_total == 3
 
 
 def test_released_slots_do_not_leak_per_ip_entries():

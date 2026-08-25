@@ -124,8 +124,11 @@ def test_starttls_negotiation(mta_impl):
 
         # Complete the handshake. The cert is self-signed and the name will not
         # match, so verification is off: we are testing our side of the
-        # negotiation, not the trust chain.
+        # negotiation, not the trust chain. The floor stays explicit, so the
+        # test also asserts the server negotiates TLS 1.2+ rather than quietly
+        # passing on whatever the platform still permits.
         ctx = ssl.SSLContext(ssl.PROTOCOL_TLS_CLIENT)
+        ctx.minimum_version = ssl.TLSVersion.TLSv1_2
         ctx.check_hostname = False
         ctx.verify_mode = ssl.CERT_NONE
         with ctx.wrap_socket(s, server_hostname="mta-in.test") as tls:
@@ -165,6 +168,7 @@ def test_starttls_resets_envelope_state(mta_impl):
         assert s.recv(1024).startswith(b"220")
 
         ctx = ssl.SSLContext(ssl.PROTOCOL_TLS_CLIENT)
+        ctx.minimum_version = ssl.TLSVersion.TLSv1_2
         ctx.check_hostname = False
         ctx.verify_mode = ssl.CERT_NONE
         with ctx.wrap_socket(s, server_hostname="mta-in.test") as tls:
@@ -180,7 +184,7 @@ def test_starttls_resets_envelope_state(mta_impl):
 def test_connection_limits(mock_api_server):
     """Concurrent connections below the per-IP cap all succeed.
 
-    Deliberately under PYMTA_MAX_SESSIONS_PER_IP: the whole suite connects from
+    Deliberately under the per-source share: the whole suite connects from
     loopback, so every session buckets under one IP. Exceeding the cap is
     covered by test_per_ip_connection_cap below.
     """

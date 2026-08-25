@@ -174,6 +174,25 @@ def test_half_configured_starttls_is_refused(monkeypatch, reload_settings, cert,
         reload_settings()
 
 
+def test_chain_files_with_an_empty_first_entry_is_refused(monkeypatch, reload_settings):
+    # A leading comma would otherwise set both paths to "", which the pair check
+    # then reads as "STARTTLS deliberately off" — the same silent loss of
+    # encryption that check exists to prevent, arrived at from the other side.
+    monkeypatch.delenv("PYMTA_TLS_CERT_FILE", raising=False)
+    monkeypatch.delenv("PYMTA_TLS_KEY_FILE", raising=False)
+    monkeypatch.setenv("STARTTLS_CHAIN_FILES", ",/tls/chain.pem")
+    with pytest.raises(ValueError, match="first entry is empty"):
+        reload_settings()
+
+
+def test_chain_files_takes_the_first_entry(monkeypatch, reload_settings):
+    monkeypatch.delenv("PYMTA_TLS_CERT_FILE", raising=False)
+    monkeypatch.delenv("PYMTA_TLS_KEY_FILE", raising=False)
+    monkeypatch.setenv("STARTTLS_CHAIN_FILES", "/tls/rsa.pem, /tls/ecdsa.pem")
+    fresh = reload_settings()
+    assert fresh.PYMTA_TLS_CERT_FILE == fresh.PYMTA_TLS_KEY_FILE == "/tls/rsa.pem"
+
+
 def test_starttls_off_when_both_are_empty(monkeypatch, reload_settings):
     monkeypatch.setenv("PYMTA_TLS_CERT_FILE", "")
     monkeypatch.setenv("PYMTA_TLS_KEY_FILE", "")

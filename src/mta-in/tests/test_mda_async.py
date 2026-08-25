@@ -14,7 +14,7 @@ import jwt
 import pytest
 
 from pymta import settings
-from pymta.mda_async import MDAClient
+from pymta.mda_async import _MIN_SECRET_LENGTH, MDAClient
 
 
 class _FakeClock:
@@ -310,10 +310,15 @@ def test_non_local_http_url_logs_warning(caplog):
 
 def test_short_secret_logs_warning(caplog):
     caplog.set_level("WARNING")
-    MDAClient(base_url="https://mda.example.com/api/", secret="too-short")
+    secret = "too-short"
+    MDAClient(base_url="https://mda.example.com/api/", secret=secret)
     record = next(r for r in caplog.records if r.message == "mda_secret_weak")
     assert record.levelname == "WARNING"
-    assert record.length == len("too-short")
+    assert record.minimum == _MIN_SECRET_LENGTH
+    # The threshold is reported, the secret's own length is not: it would narrow
+    # the search for anyone holding the log and a captured JWT.
+    assert not hasattr(record, "length")
+    assert secret not in caplog.text
 
 
 def test_local_http_url_is_silent(caplog):

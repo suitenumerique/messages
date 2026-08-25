@@ -182,6 +182,11 @@ def _remaining_data_budget(server) -> float:
     and equal deadlines fire in scheduling order), leaving the peer with a bare
     disconnect instead of a reason to retry.
 
+    The budget comes from the protocol, which recorded the value it armed the
+    transport at, rather than from settings: PYMTA_DATA_TIMEOUT is reloadable,
+    and re-reading it here would size the deliver call against a deadline that
+    was never set.
+
     Falls back to the full budget when the caller has no DATA start timestamp
     (unit-test fakes). Raises ``TimeoutError`` when the receive already spent
     the whole budget: issuing the deliver call anyway would overrun the
@@ -191,8 +196,9 @@ def _remaining_data_budget(server) -> float:
     started = getattr(server, "data_phase_started", None)
     if started is None:
         return float(settings.PYMTA_DATA_TIMEOUT)
+    budget = getattr(server, "data_phase_budget", None) or float(settings.PYMTA_DATA_TIMEOUT)
     spent = time.monotonic() - started
-    remaining = settings.PYMTA_DATA_TIMEOUT - spent - _REPLY_RESERVE_SECONDS
+    remaining = budget - spent - _REPLY_RESERVE_SECONDS
     if remaining <= 0:
         raise TimeoutError("DATA budget spent before the deliver call")
     return remaining
@@ -224,8 +230,9 @@ def _normalize_line_endings(content: bytes) -> tuple[bytes, bool]:
     over CRLF, so there is no intact signature left to preserve.
 
     Both steps are written for memory rather than speed, because this runs on
-    the whole message body while up to PYMTA_MAX_SESSIONS_TOTAL other sessions
-    are doing the same:
+    the whole message body while up to PYMTA_MAX_CONCURRENT_DATA other messages
+    are doing the same — that cap, not the session one, because only a session
+    holding a DATA slot ever reaches here:
 
     * ``count`` walks the buffer without allocating, so a message that is
       already clean, which is nearly all of them, is returned as the same object
@@ -334,6 +341,11 @@ def _log_outcome(ctx, envelope, outcome, size, **extra) -> None:
     )
 
 
+# EHLO extensions already reported by ``handle_EHLO``. Process-wide, so the
+# warning is emitted once rather than once per connection.
+_EXTENSIONS_REPORTED: set[str] = set()
+
+
 class InboundHandler:
     """One instance per server process; called concurrently from many sessions."""
 
@@ -362,14 +374,21 @@ class InboundHandler:
             verb = after.split(" ", 1)[0].upper()
             if verb in denied_verbs:
                 metrics.SECURITY_REJECTIONS.labels(reason="auth_offered").inc()
-                logger.warning(
-                    "ehlo_extension_stripped",
-                    extra={
-                        "session_id": _session_id(server),
-                        "verb": verb,
-                        "detail": "the SMTP configuration should not advertise this",
-                    },
-                )
+                # Once per verb per process, not once per EHLO. The condition is
+                # a misconfiguration that persists, so repeating it adds nothing
+                # after the first line and would otherwise let a peer choose how
+                # often we say it. Loud once beats quiet forever: demoting this
+                # to DEBUG to bound the volume would hide AUTH being advertised
+                # on a public MX. The counter carries the rate.
+                if verb not in _EXTENSIONS_REPORTED:
+                    _EXTENSIONS_REPORTED.add(verb)
+                    logger.warning(
+                        "ehlo_extension_stripped",
+                        extra={
+                            "verb": verb,
+                            "detail": "the SMTP configuration should not advertise this",
+                        },
+                    )
                 continue
             clean.append(line)
 
@@ -687,7 +706,12 @@ class InboundHandler:
         if not _proxy_header_is_trusted(session):
             metrics.SECURITY_REJECTIONS.labels(reason="untrusted_proxy").inc()
             metrics.CONNECTIONS_TOTAL.labels(result="rejected_untrusted_proxy").inc()
-            logger.warning(
+            # DEBUG, not WARNING: any host that can reach port 25 provokes this
+            # once per connection, so a higher level hands the internet control
+            # of our log volume. The two counters above are where the volume
+            # belongs, and pymta_security_rejections_total{reason="untrusted_proxy"}
+            # is what an alert should watch.
+            logger.debug(
                 "proxy_header_untrusted",
                 extra={
                     "session_id": _session_id(server),
@@ -699,15 +723,19 @@ class InboundHandler:
             return False
 
         real_ip = "unknown"
-        if proxy_data is not None and getattr(proxy_data, "src_addr", None):
-            real_ip = str(proxy_data.src_addr)
+        claimed = getattr(proxy_data, "src_addr", None) if proxy_data is not None else None
+        # Only an address that parses becomes the gate key. aiosmtpd validates
+        # the INET families but assigns AF_UNIX's src_addr straight off the wire,
+        # so a PROXY v2 UNIX header hands us an arbitrary 108-byte string. Used
+        # as a key it is a fresh bucket per connection: the per-source share
+        # stops applying and the dict grows without bound. Falling back to the
+        # shared "unknown" bucket makes an unparseable claim cost the sender
+        # capacity rather than win it.
+        if claimed is not None and settings.parse_client_ip(str(claimed)) is not None:
+            real_ip = str(claimed)
             # Stash on the server so the real client IP outlives the STARTTLS
             # session rebuild that would otherwise drop session.proxy_data.
-            setattr(
-                server,
-                _PROXY_SRC_ATTR,
-                (str(proxy_data.src_addr), getattr(proxy_data, "src_port", None)),
-            )
+            setattr(server, _PROXY_SRC_ATTR, (real_ip, getattr(proxy_data, "src_port", None)))
         if proxy_data is not None:
             # Permanent forensic record: ties the SMTP session to the real
             # origin IP carried in the PROXY header. Every other mail.log line

@@ -115,6 +115,19 @@ def test_residual_brackets_rejected(address):
         "user @example.com",
         "user%@example.com",
         "user\x7f@example.com",
+        # Line terminators for readers other than logfmt's. SMTPUTF8 makes the
+        # local-part arbitrary UTF-8, so these arrive from the wire, and
+        # str.splitlines() breaks on every one of them: an address carrying one
+        # is a forged record in any consumer that splits that way.
+        "user @example.com",
+        "user @example.com",
+        "user\x85@example.com",
+        "user\x0b@example.com",
+        "user\x0c@example.com",
+        "user\x1c@example.com",
+        "user\x1b@example.com",
+        # In the domain half too, which is the part we lower-case and hand on.
+        "user@exam ple.com",
     ],
 )
 def test_control_chars_rejected(address):
@@ -122,6 +135,15 @@ def test_control_chars_rejected(address):
         _validate(address)
     assert exc.value.reason == "control_char"
     assert exc.value.smtp_code == 501
+
+
+@pytest.mark.parametrize(
+    "address",
+    ["josé@example.com", "wörter@例え.テスト", "user+tag@example.com"],
+)
+def test_printable_non_ascii_still_accepted(address):
+    """The rule is unprintable, not non-English. SMTPUTF8 has to keep working."""
+    assert _validate(address)
 
 
 # ---------------------------------------------------------------------------

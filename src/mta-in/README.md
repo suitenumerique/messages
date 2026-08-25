@@ -185,7 +185,7 @@ Every value is checked at startup and a bad one stops the process rather than be
 
 The local-part and domain length caps are **not** configurable. They are the RFC 5321 §4.5.3.1 constants (64 / 255 octets), and raising them would only widen the gap between what pymta accepts at RCPT and what the MDA can store.
 
-Three more limits come from aiosmtpd itself and are inherited at their defaults: a 1001-octet line length (§4.5.3.1.6, enforced at the transport so an endless line never buffers), a 512-octet command line (§4.5.3.1.4), and 5 unrecognised commands per session before it hangs up. Two aiosmtpd options are deliberately left unset: `require_starttls`, because refusing a sender that does not offer STARTTLS loses mail rather than protecting it on a public MX, and the authenticator hooks, because AUTH is answered `502` outright.
+Two more limits come from aiosmtpd itself and are inherited at their defaults: a 512-octet command line (§4.5.3.1.4) and 5 unrecognised commands per session before it hangs up. A third, aiosmtpd's 1001-octet line length (§4.5.3.1.6), is the one pymta overrides — `PYMTA_MAX_LINE_LENGTH` replaces it. That value is the `StreamReader` limit, so an endless line is still refused at the transport rather than buffered, and it bounds DATA lines only: commands stay under the separate 512-octet cap however high it is set. Two aiosmtpd options are deliberately left unset: `require_starttls`, because refusing a sender that does not offer STARTTLS loses mail rather than protecting it on a public MX, and the authenticator hooks, because AUTH is answered `502` outright.
 
 ### Crisis toggles
 
@@ -238,7 +238,7 @@ Each limit is set against what Postfix does for the same thing, since the two ru
 | Command idle timeout | `smtpd_timeout` = 300 s | 300 s | 120 s |
 | Line length | `line_length_limit` = 2048 (wraps output) | 2048 | 65536 (accepts) |
 
-Two need explaining. Per-IP concurrency is a tightening, not a loosening: the shipping Postfix config turns per-client limits off entirely, so pymta's 50 is stricter than production is today. Read the queue-flush note in the checklist below before lowering it further. Global concurrency is 10x Postfix's, which is reasonable for one async process rather than 100 forked ones, but it sets the memory ceiling:
+Two need explaining. Per-IP concurrency is a tightening, not a loosening: the shipping Postfix config turns per-client limits off entirely, so any per-source ceiling at all is stricter than production is today. pymta has no flag for it — a source's ceiling is its share of `PYMTA_MAX_SESSIONS_TOTAL`, which for a host arriving alone is half of it (60 of 120) and shrinks as others turn up. Read the queue-flush note in the checklist below before lowering the total. Global concurrency is 10x Postfix's, which is reasonable for one async process rather than 100 forked ones, but it sets the memory ceiling:
 
 > **`PYMTA_MAX_CONCURRENT_DATA` (40) is the bound on memory.** aiosmtpd holds each message in RAM with no spool file, so messages in flight times the size cap is the heap. The session caps do not bound it: a connection costs a few kB until it says DATA.
 >
@@ -277,7 +277,7 @@ Two need explaining. Per-IP concurrency is a tightening, not a loosening: the sh
 >
 > It also removes the throttle on a large sender that a fixed cap imposes: alone at 3am, Gmail gets half the slots rather than a fixed few, and its share shrinks only when someone else actually turns up. The same sharing applies to connection slots, so one host cannot take all 120 either.
 >
-> Measured against a 512 MiB container: 40 concurrent 10 MiB messages, which previously OOM-killed the process and lost all 40, now peaks at **74 MiB** and stays up; 4 concurrent from one source all deliver.
+> Note the two ceilings are not the same number: the share bounds what *one host* can hold, the 40 slots bound what *everyone together* can. Memory has to be sized against the 40, not against the share — 40 x 10 MiB x 2.2 is about 944 MiB, so the shipped defaults want a container of 1 GiB or more. Drop `PYMTA_MAX_CONCURRENT_DATA` to 20 for 512 MiB.
 >
 > **One oversized message is a floor no concurrency limit lowers.** `PYMTA_MAX_INCOMING_EMAIL_SIZE x 2.2` has to fit on its own, so a 400 MB size cap needs roughly a gigabyte whatever the concurrency is set to.
 

@@ -45,17 +45,19 @@ class HardenedSMTP(BaseSMTP):
     """SMTP subclass that locks down VRFY/EXPN/AUTH and applies the IP gate.
 
     Three of aiosmtpd's protections are class attributes rather than constructor
-    arguments, so they are invisible in ``build_smtp_kwargs`` and are inherited
-    at their defaults. Recorded here because they matter and nothing else in the
-    tree mentions them:
+    arguments, so they are invisible in ``build_smtp_kwargs``. Recorded here
+    because they matter and nothing else in the tree mentions them:
 
-    * ``line_length_limit = 1001`` — RFC 5321 §4.5.3.1.6. Enforced as the
-      ``StreamReader`` limit, so an endless line is refused at the transport
-      instead of buffering.
+    * ``line_length_limit`` — RFC 5321 §4.5.3.1.6, aiosmtpd's 1001 replaced by
+      ``PYMTA_MAX_LINE_LENGTH`` below. Enforced as the ``StreamReader`` limit,
+      so an endless line is refused at the transport instead of buffering.
     * ``command_size_limit = 512`` — RFC 5321 §4.5.3.1.4, per command line.
+      Inherited, and checked after the line is read, so it caps commands
+      independently of how high ``line_length_limit`` goes.
     * ``BOGUS_LIMIT = 5`` (module constant) — unrecognised commands per session
       before aiosmtpd hangs up. Narrower and stricter than
       ``PYMTA_MAX_ERRORS_PER_SESSION``, which counts every 4xx/5xx we emit.
+      Inherited.
 
     ``local_part_limit`` is aiosmtpd's own address check and stays at its
     default of 0 (disabled) on purpose: :mod:`pymta.address` enforces the same
@@ -88,8 +90,10 @@ class HardenedSMTP(BaseSMTP):
         # announced the disconnect is on the wire.
         self._disconnect_after_reply = False
         # Monotonic timestamp of the 354 that opened the current DATA phase,
-        # or None outside DATA. Read by the handler to size its own deadline.
+        # or None outside DATA. Read by the handler to size its own deadline,
+        # together with the budget the transport was actually armed at.
         self.data_phase_started: float | None = None
+        self.data_phase_budget: float | None = None
         # One-shot timer for the whole-session deadline. Armed on connect,
         # never re-armed. See _arm_session_deadline.
         self._session_deadline_handle = None
@@ -260,12 +264,20 @@ class HardenedSMTP(BaseSMTP):
             await self.push("451 4.3.1 Insufficient resources, please retry")
             return
 
+        # Read once and kept for the phase. PYMTA_DATA_TIMEOUT is reloadable, so
+        # a SIGHUP between here and the deliver call would otherwise have the
+        # handler size its budget against a value the transport was never armed
+        # at: raise the setting mid-phase and it computes a budget longer than
+        # the deadline already ticking, spending the reply reserve that exists
+        # to answer 451 before the transport tears the session down.
         self.data_phase_started = time.monotonic()
-        self._reset_timeout(settings.PYMTA_DATA_TIMEOUT)
+        self.data_phase_budget = float(settings.PYMTA_DATA_TIMEOUT)
+        self._reset_timeout(self.data_phase_budget)
         try:
             await super().smtp_DATA(arg)
         finally:
             self.data_phase_started = None
+            self.data_phase_budget = None
             if self._ip_gate is not None:
                 self._ip_gate.release_data(self._gate_held_ip)
             if self.transport is not None:
@@ -388,7 +400,10 @@ class HardenedSMTP(BaseSMTP):
         peer = getattr(self.session, "peer", None) if self.session else None
         if peer:
             return str(peer[0])
-        # All sessions without a wire peer collapse into one bucket; log so a
-        # spike here doesn't go invisible.
-        logger.warning("session_without_peer", extra={"session_id": self.session_id})
+        # All sessions without a wire peer collapse into one bucket, so they
+        # share a single source's slots. Counted rather than logged at WARNING:
+        # a peer that resets the connection between accept() and here can race
+        # peername into None, and that must not be a way to pick our log rate.
+        metrics.CONNECTIONS_TOTAL.labels(result="no_wire_peer").inc()
+        logger.debug("session_without_peer", extra={"session_id": self.session_id})
         return "unknown"

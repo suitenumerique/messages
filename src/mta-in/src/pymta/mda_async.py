@@ -156,8 +156,10 @@ class MDAClient:
         elif len(self.secret) < _MIN_SECRET_LENGTH:
             logger.warning(
                 "mda_secret_weak",
+                # The actual length is deliberately not reported: it narrows the
+                # search for anyone who reads the log and then captures a JWT,
+                # and the operator can measure their own secret.
                 extra={
-                    "length": len(self.secret),
                     "minimum": _MIN_SECRET_LENGTH,
                     "detail": "short HS256 secrets are brute-forceable from one captured JWT",
                 },
