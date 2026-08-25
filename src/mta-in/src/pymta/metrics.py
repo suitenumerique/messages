@@ -6,8 +6,13 @@ labels) to keep the time-series space bounded.
 """
 
 import logging
+import socket
+import socketserver
+import threading
+from secrets import compare_digest
+from wsgiref.simple_server import WSGIRequestHandler, WSGIServer, make_server
 
-from prometheus_client import Counter, Gauge, Histogram, start_http_server
+from prometheus_client import Counter, Gauge, Histogram, make_wsgi_app
 
 logger = logging.getLogger(__name__)
 
@@ -18,8 +23,8 @@ _METRICS_NAMESPACE = "pymta"
 CONNECTIONS_TOTAL = Counter(
     f"{_METRICS_NAMESPACE}_connections_total",
     "Total inbound TCP connections, by post-accept outcome.",
-    # accepted | rejected_global | rejected_per_ip | rejected_per_ip_rate |
-    # rejected_untrusted_proxy
+    # accepted | rejected_blocked | rejected_drain | rejected_global |
+    # rejected_per_ip | rejected_untrusted_proxy
     labelnames=("result",),
 )
 
@@ -31,6 +36,12 @@ SESSIONS_ACTIVE = Gauge(
 SESSIONS_PER_IP = Gauge(
     f"{_METRICS_NAMESPACE}_sessions_per_ip",
     "Distinct remote IPs currently holding at least one session.",
+)
+
+DATA_PHASES_ACTIVE = Gauge(
+    f"{_METRICS_NAMESPACE}_data_phases_active",
+    "Messages currently held in memory (DATA received or being delivered). "
+    "Times the size limit, this is the process's live memory exposure.",
 )
 
 SESSION_DURATION = Histogram(
@@ -79,9 +90,9 @@ MDA_REQUEST_DURATION = Histogram(
 DISCONNECTS_421 = Counter(
     f"{_METRICS_NAMESPACE}_disconnects_421_total",
     "Sessions where pymta replied 421 and closed the TCP connection.",
-    labelnames=("reason",),  # gate_global | gate_per_ip | gate_per_ip_rate |
-    # max_errors_per_session | max_rcpt_misses_per_session | session_timeout |
-    # internal_error
+    labelnames=("reason",),  # gate_global | gate_per_ip | command_timeout |
+    # session_timeout | max_errors_per_session | max_rcpt_misses_per_session |
+    # max_envelopes_per_session | internal_error
 )
 
 
@@ -91,15 +102,24 @@ SECURITY_REJECTIONS = Counter(
     labelnames=("reason",),
     # Reasons that name a configurable limit use that setting's name (minus the
     # PYMTA_ prefix), so a series lines up with the CONFIG_LIMIT gauge below:
-    #   max_recipients_per_envelope, max_envelopes_per_session,
-    #   max_errors_per_session, max_rcpt_misses_per_session, session_timeout,
-    #   data_timeout
+    #   max_concurrent_data, max_recipients_per_envelope,
+    #   max_envelopes_per_session, max_errors_per_session,
+    #   max_rcpt_misses_per_session, command_timeout, data_timeout,
+    #   session_timeout
     # The size cap is the exception, split by the phase that caught it:
     #   oversize_announced (MAIL FROM SIZE=), oversize_message (the body itself)
-    # The rest are fixed checks:
-    #   source_route, control_char, oversize_local, oversize_domain, nul_byte,
-    #   bad_address, address_literal, bad_helo, auth_offered, untrusted_proxy,
-    #   internal_error
+    # The rest are fixed checks, the first five from pymta.address:
+    #   source_route, control_char, invalid_encoding, oversize_local,
+    #   oversize_domain, bad_address, address_literal, nul_byte, bad_helo,
+    #   auth_offered, untrusted_proxy, defer_all, blocked_network,
+    #   blocked_sender_domain, blocked_recipient, internal_error
+)
+
+BARE_NEWLINE_MESSAGES = Counter(
+    f"{_METRICS_NAMESPACE}_bare_newline_messages_total",
+    "Messages whose body carried a bare LF or CR and was normalised to CRLF. "
+    "A steady rate is sloppy mailers; a spike is worth looking at, since a bare "
+    "LF mid-header is how a sender tries to add one.",
 )
 
 MDA_BREAKER_OPEN = Gauge(
@@ -132,14 +152,105 @@ def export_config_limits(limits: dict[str, int]) -> None:
         CONFIG_LIMIT.labels(name=name).set(value)
 
 
-def start_metrics_server(host: str, port: int) -> None:
+def require_bearer(app, api_key: str):
+    """Wrap a WSGI app so it answers 401 without ``Authorization: Bearer <key>``.
+
+    Mirrors ``core.middlewares.PrometheusAuthMiddleware`` on the Django side, so
+    both exposition endpoints in this project are scraped the same way.
+
+    The comparison is on bytes, not str. ``secrets.compare_digest`` raises
+    TypeError when handed a str containing non-ASCII, so comparing the raw
+    header as text would turn a garbage Authorization value into a 500, letting
+    an unauthenticated peer choose our failure mode. WSGI hands us the header
+    latin-1-decoded (PEP 3333), so encoding it back is lossless.
+    """
+    expected = f"Bearer {api_key}".encode()
+
+    def wrapped(environ, start_response):
+        provided = environ.get("HTTP_AUTHORIZATION", "").encode("latin-1", "replace")
+        if not compare_digest(provided, expected):
+            start_response("401 Unauthorized", [("Content-Type", "text/plain")])
+            return [b"Unauthorized\n"]
+        return app(environ, start_response)
+
+    return wrapped
+
+
+def active_sessions() -> int:
+    """Live session count, read back off the gauge the gate maintains."""
+    try:
+        return int(SESSIONS_ACTIVE._value.get())  # noqa: SLF001
+    except (AttributeError, TypeError):  # pragma: no cover - prometheus internals
+        return -1
+
+
+class _QuietHandler(WSGIRequestHandler):
+    """Request handler that neither logs to stderr nor waits forever.
+
+    ``timeout`` is the reason this class exists: the exposition server threads
+    one connection at a time with no ceiling, so without a socket deadline a
+    peer that opens connections and never completes a request accumulates
+    threads inside the SMTP process. Ten seconds is far more than a local
+    scrape needs.
+    """
+
+    timeout = 10
+
+    def log_message(self, format, *args):
+        pass
+
+    def handle(self):
+        # A timed-out read raises here rather than in handle_one_request; let
+        # the connection go quietly instead of dumping a traceback per probe.
+        try:
+            super().handle()
+        except (TimeoutError, socket.timeout, ConnectionError):
+            self.close_connection = True
+
+
+class _MetricsServer(socketserver.ThreadingMixIn, WSGIServer):
+    daemon_threads = True
+    # Do not block process shutdown waiting on in-flight scrapes.
+    block_on_close = False
+
+
+def start_metrics_server(host: str, port: int, api_key: str = "") -> WSGIServer | None:
     """Start the Prometheus exposition HTTP server in a daemon thread.
 
-    ``prometheus_client.start_http_server`` already spawns a background
-    thread, so this just adds a log line. Pass ``port=0`` to skip.
+    Built from ``make_wsgi_app`` rather than ``start_http_server`` because the
+    latter has no hook for authentication.
+
+    Returns the server so a caller can shut it down. Nothing in production does,
+    since it lives as long as the process, but tests need to start one, scrape
+    it over real HTTP and stop it again.
     """
     if port <= 0:
-        logger.info("Prometheus metrics endpoint disabled (PYMTA_METRICS_BIND_PORT=0)")
-        return
-    start_http_server(port, addr=host)
-    logger.info("Prometheus metrics endpoint listening on %s:%d/metrics", host, port)
+        logger.info("metrics_disabled")
+        return None
+
+    app = make_wsgi_app()
+    if api_key:
+        app = require_bearer(app, api_key)
+    else:
+        logger.warning(
+            "metrics_unauthenticated",
+            extra={
+                "bind": f"{host}:{port}",
+                "detail": (
+                    "set PYMTA_METRICS_API_KEY or restrict the port; the exposition "
+                    "leaks volumes, rejection reasons and the configured limits, and "
+                    "is served from the SMTP process"
+                ),
+            },
+        )
+
+    if ":" in host:
+        _MetricsServer.address_family = socket.AF_INET6
+
+    httpd = make_server(host, port, app, _MetricsServer, _QuietHandler)
+    threading.Thread(target=httpd.serve_forever, daemon=True).start()
+    logger.info(
+        "metrics_listening",
+        extra={"bind": f"{host}:{port}", "auth": "bearer" if api_key else "none"},
+    )
+    return httpd

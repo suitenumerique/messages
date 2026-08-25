@@ -465,7 +465,6 @@ dependencies = [
     { name = "httpx" },
     { name = "prometheus-client" },
     { name = "pyjwt" },
-    { name = "requests" },
 ]
 
 [package.optional-dependencies]
@@ -481,6 +480,7 @@ dev = [
 ]
 postfix = [
     { name = "pymilter" },
+    { name = "requests" },
 ]
 
 [package.metadata]
@@ -495,7 +495,7 @@ requires-dist = [
     { name = "pytest", marker = "extra == 'dev'", specifier = "==8.3.5" },
     { name = "pytest-asyncio", marker = "extra == 'dev'", specifier = "==0.24.0" },
     { name = "pytest-cov", marker = "extra == 'dev'", specifier = "==6.0.0" },
-    { name = "requests", specifier = "==2.34.2" },
+    { name = "requests", marker = "extra == 'postfix'", specifier = "==2.34.2" },
     { name = "ruff", marker = "extra == 'dev'", specifier = "==0.9.3" },
     { name = "types-requests", marker = "extra == 'dev'", specifier = "==2.33.0.20260518" },
     { name = "uvicorn", marker = "extra == 'dev'", specifier = "==0.34.1" },

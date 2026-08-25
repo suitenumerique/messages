@@ -93,6 +93,27 @@ def validate_envelope_address(  # noqa: PLR0912
             smtp_text="5.1.7 Address contains forbidden control characters",
         )
 
+    # ----- 1c. valid UTF-8 ---------------------------------------------------
+    # aiosmtpd decodes command arguments with ``errors="surrogateescape"``, so a
+    # byte that is not valid UTF-8 survives as a lone surrogate (0xE9 becomes
+    # ``\udce9``). RFC 6531 requires an SMTPUTF8 envelope address to be valid
+    # UTF-8, so this is malformed and permanent.
+    #
+    # It has to be caught *here* rather than left to the length checks below:
+    # those call ``.encode("utf-8")``, which raises UnicodeEncodeError on a
+    # surrogate. That is not an AddressError, so it escapes the caller's except
+    # clause and surfaces as a 421 internal error, telling the sender to retry
+    # an address that can never be accepted, and logging our own bug metric for
+    # something the peer chose.
+    try:
+        address.encode("utf-8")
+    except UnicodeEncodeError as exc:
+        raise AddressError(
+            reason="invalid_encoding",
+            smtp_code=553,
+            smtp_text="5.1.3 Address is not valid UTF-8",
+        ) from exc
+
     # ----- 2. source routes  @host1,@host2:user@host3  -----------------------
     # RFC 5321 §4.1.1.3 allows ignoring source routes; we reject outright.
     if address.startswith("@"):

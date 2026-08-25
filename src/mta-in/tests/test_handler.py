@@ -49,7 +49,7 @@ class _FakeMDA:
         )
         self.deliver_kwargs: dict | None = None
 
-    async def check_recipient(self, address: str) -> MDAResult:
+    async def check_recipient(self, address: str, session: str | None = None) -> MDAResult:
         if self.check_result is not None:
             return self.check_result
         return MDAResult(
@@ -134,11 +134,17 @@ async def test_data_oversize_bumps_soft_errors():
 
 
 @pytest.mark.asyncio
-async def test_data_max_envelopes_bumps_soft_errors():
+async def test_data_max_envelopes_closes_the_session():
+    """421 rather than 451: the budget is spent and cannot be won back.
+
+    Every further MAIL/DATA on this connection would fail the same way, so
+    holding the channel open only invites attempts that must all be refused.
+    421 means "closing transmission channel", and the disconnect follows.
+    """
     session, envelope = _session(), _envelope()
     setattr(session, _ENVELOPES_ATTR, settings.PYMTA_MAX_ENVELOPES_PER_SESSION)
     reply = await _handler().handle_DATA(None, session, envelope)
-    assert reply.startswith("451")
+    assert reply.startswith("421")
     assert getattr(session, _SOFT_ERRORS_ATTR) == 1
 
 

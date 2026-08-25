@@ -263,6 +263,13 @@ def test_tab_in_address_rejected(mta_impl):
         # TAB inside the address is a header-unfolding vector.
         resp = _send_cmd(s, b"MAIL FROM:<bad\taddr@example.com>\r\n")
         assert resp[:1] in (b"4", b"5"), resp
+        # A malformed address is permanently malformed, so pymta must say so.
+        # Accepting 4xx here as well would have hidden the bug where a non-UTF-8
+        # byte in an address produced 421 and the sender retried a message that
+        # could never be accepted. Postfix's milter path genuinely tempfails, so
+        # only the strict side is pinned.
+        if mta_impl == "pymta":
+            assert resp[:1] == b"5", resp
     finally:
         s.close()
 
@@ -282,6 +289,11 @@ def test_overlong_local_part_rejected(mta_impl):
         # 4xx (Postfix milter tempfail path) or 5xx (pymta strict reject) both
         # satisfy the security requirement: the address must not be delivered.
         assert resp[:1] in (b"4", b"5"), resp
+        # But an over-length local part can never become valid, so a deferral
+        # would have the sender retry until its queue expires. Pin pymta to a
+        # permanent answer; the Postfix milter tempfails by design.
+        if mta_impl == "pymta":
+            assert resp[:1] == b"5", resp
     finally:
         s.close()
 
@@ -295,7 +307,7 @@ def test_size_overlimit_rejected(mock_api_server, smtp_client):
     s = _raw_session()
     try:
         _send_cmd(s, b"EHLO example.com\r\n")
-        # 1 GB announced — well above the configured size cap (30 MB in dev).
+        # 1 GB announced, far above any configured size cap.
         resp = _send_cmd(s, b"MAIL FROM:<a@example.com> SIZE=1000000000\r\n")
         assert resp[:3] in (b"552", b"452", b"550"), resp
     finally:

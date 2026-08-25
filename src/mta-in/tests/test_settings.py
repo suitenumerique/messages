@@ -61,13 +61,13 @@ def test_int_rejects_values_below_the_minimum(monkeypatch, raw):
 
 
 def test_data_timeout_must_exceed_the_reply_reserve(monkeypatch):
-    # The handler subtracts REPLY_RESERVE_SECONDS from this budget. A DATA
+    # The handler subtracts PYMTA_REPLY_RESERVE_SECONDS from this budget. A DATA
     # timeout at or below it leaves the deliver call nothing, which would defer
     # every message rather than fail loudly at startup.
-    monkeypatch.setenv("PYMTA_TEST_INT", str(settings.REPLY_RESERVE_SECONDS))
+    monkeypatch.setenv("PYMTA_TEST_INT", str(settings.PYMTA_REPLY_RESERVE_SECONDS))
     with pytest.raises(ValueError, match="must be >="):
-        _env_int("PYMTA_TEST_INT", 300, minimum=settings.REPLY_RESERVE_SECONDS + 1)
-    assert settings.PYMTA_DATA_TIMEOUT > settings.REPLY_RESERVE_SECONDS
+        _env_int("PYMTA_TEST_INT", 300, minimum=settings.PYMTA_REPLY_RESERVE_SECONDS + 1)
+    assert settings.PYMTA_DATA_TIMEOUT > settings.PYMTA_REPLY_RESERVE_SECONDS
 
 
 def test_int_allows_zero_where_it_means_disabled(monkeypatch):
@@ -135,66 +135,25 @@ def test_str_treats_blank_as_unset(monkeypatch):
 
 
 # ---------------------------------------------------------------------------
-# The size cap is the one setting with a two-name fallback: MAX_INCOMING_EMAIL_SIZE
-# is deployment-wide (Postfix's message_size_limit, the MDA's own cap), and the
-# prefixed name overrides it for pymta alone.
-# ---------------------------------------------------------------------------
-
-
-def test_size_cap_inherits_the_deployment_wide_name(monkeypatch, reload_settings):
-    monkeypatch.delenv("PYMTA_MAX_INCOMING_EMAIL_SIZE", raising=False)
-    monkeypatch.setenv("MAX_INCOMING_EMAIL_SIZE", "30000000")
-    assert reload_settings().PYMTA_MAX_INCOMING_EMAIL_SIZE == 30_000_000
-
-
-def test_size_cap_prefixed_name_wins(monkeypatch, reload_settings):
-    monkeypatch.setenv("MAX_INCOMING_EMAIL_SIZE", "30000000")
-    monkeypatch.setenv("PYMTA_MAX_INCOMING_EMAIL_SIZE", "5000000")
-    assert reload_settings().PYMTA_MAX_INCOMING_EMAIL_SIZE == 5_000_000
-
-
-def test_size_cap_falls_back_to_the_mda_default(monkeypatch, reload_settings):
-    # 10 MiB, matching the MDA's own MAX_INCOMING_EMAIL_SIZE default so neither
-    # side accepts a message the other will refuse.
-    monkeypatch.delenv("PYMTA_MAX_INCOMING_EMAIL_SIZE", raising=False)
-    monkeypatch.delenv("MAX_INCOMING_EMAIL_SIZE", raising=False)
-    assert reload_settings().PYMTA_MAX_INCOMING_EMAIL_SIZE == 10 * 1024 * 1024
-
-
-def test_size_cap_validates_the_inherited_name_too(monkeypatch, reload_settings):
-    # The shared name is parsed even when it is only the fallback, so a typo
-    # there fails at startup instead of silently reverting to the default.
-    monkeypatch.delenv("PYMTA_MAX_INCOMING_EMAIL_SIZE", raising=False)
-    monkeypatch.setenv("MAX_INCOMING_EMAIL_SIZE", "10MB")
-    with pytest.raises(ValueError, match="must be an integer"):
-        reload_settings()
-
-
-# ---------------------------------------------------------------------------
-# Both PROXY-protocol names are parsed the same way, with `haproxy` — the only
-# protocol postscreen defines, and the one implemented here — an alias for true.
-# entrypoint.sh refuses the values rejected here, so neither image can end up
-# reading a value the other would read differently.
+# PROXY protocol: `haproxy` is an alias for true, because that is the only
+# protocol postscreen defines and the one implemented here.
 # ---------------------------------------------------------------------------
 
 
 @pytest.mark.parametrize("raw", ["haproxy", "HAProxy", " haproxy ", "true", "1", "on"])
 def test_proxy_protocol_haproxy_is_an_alias_for_true(monkeypatch, reload_settings, raw):
-    monkeypatch.delenv("PYMTA_ENABLE_PROXY_PROTOCOL", raising=False)
-    monkeypatch.setenv("ENABLE_PROXY_PROTOCOL", raw)
+    monkeypatch.setenv("PYMTA_ENABLE_PROXY_PROTOCOL", raw)
     assert reload_settings().PYMTA_ENABLE_PROXY_PROTOCOL is True
 
 
 @pytest.mark.parametrize("raw", ["", "false", "off", "no", "0"])
-def test_proxy_protocol_inherits_an_off_value(monkeypatch, reload_settings, raw):
-    monkeypatch.delenv("PYMTA_ENABLE_PROXY_PROTOCOL", raising=False)
-    monkeypatch.setenv("ENABLE_PROXY_PROTOCOL", raw)
+def test_proxy_protocol_off_spellings(monkeypatch, reload_settings, raw):
+    monkeypatch.setenv("PYMTA_ENABLE_PROXY_PROTOCOL", raw)
     assert reload_settings().PYMTA_ENABLE_PROXY_PROTOCOL is False
 
 
-def test_proxy_protocol_refuses_a_typo_on_either_name(monkeypatch, reload_settings):
-    monkeypatch.delenv("PYMTA_ENABLE_PROXY_PROTOCOL", raising=False)
-    monkeypatch.setenv("ENABLE_PROXY_PROTOCOL", "haprox")
+def test_proxy_protocol_refuses_a_typo(monkeypatch, reload_settings):
+    monkeypatch.setenv("PYMTA_ENABLE_PROXY_PROTOCOL", "haprox")
     with pytest.raises(ValueError, match="not a recognised boolean"):
         reload_settings()
 
@@ -209,7 +168,6 @@ def test_half_configured_starttls_is_refused(monkeypatch, reload_settings, cert,
     # load_tls_context() returns None unless it has both, so one alone would
     # serve plaintext and simply not advertise STARTTLS — encryption lost with
     # nothing in the log to say so.
-    monkeypatch.delenv("STARTTLS_CHAIN_FILES", raising=False)
     monkeypatch.setenv("PYMTA_TLS_CERT_FILE", cert)
     monkeypatch.setenv("PYMTA_TLS_KEY_FILE", key)
     with pytest.raises(ValueError, match="must be set together"):
@@ -217,19 +175,9 @@ def test_half_configured_starttls_is_refused(monkeypatch, reload_settings, cert,
 
 
 def test_starttls_off_when_both_are_empty(monkeypatch, reload_settings):
-    monkeypatch.delenv("STARTTLS_CHAIN_FILES", raising=False)
     monkeypatch.setenv("PYMTA_TLS_CERT_FILE", "")
     monkeypatch.setenv("PYMTA_TLS_KEY_FILE", "")
     assert reload_settings().PYMTA_TLS_CERT_FILE == ""
-
-
-def test_chain_files_fallback_sets_both_sides(monkeypatch, reload_settings):
-    monkeypatch.delenv("PYMTA_TLS_CERT_FILE", raising=False)
-    monkeypatch.delenv("PYMTA_TLS_KEY_FILE", raising=False)
-    monkeypatch.setenv("STARTTLS_CHAIN_FILES", "/tls/bundle.pem,/tls/second.pem")
-    reloaded = reload_settings()
-    assert reloaded.PYMTA_TLS_CERT_FILE == "/tls/bundle.pem"
-    assert reloaded.PYMTA_TLS_KEY_FILE == "/tls/bundle.pem"
 
 
 def test_log_level_typo_is_refused(monkeypatch, reload_settings):

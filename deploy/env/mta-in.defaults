@@ -1,4 +1,17 @@
+# Shared by both inbound MTA implementations (mta-in and mta-in-py).
+#
+# Keep this to values the dev stack genuinely needs to differ on. A line that
+# merely restates the shipped default means the default is never what CI runs
+# against, so a regression in it goes unnoticed.
+
 MDA_API_BASE_URL=http://backend-dev:8000/api/v1.0/
 MDA_API_SECRET=my-shared-secret-mda
+
+# The mock MDA in tests/conftest.py sleeps 3s for the `*-timeout@example.com`
+# addresses, so this has to sit under 3 or the timeout paths never fire.
+# Production uses the shipped default of 30.
 MDA_API_TIMEOUT=2
-MAX_INCOMING_EMAIL_SIZE=30000000
+
+# MAX_INCOMING_EMAIL_SIZE is deliberately unset so both images run on their
+# shipped default (10 MiB for pymta, 10240000 for Postfix). The attachment
+# sizes in tests/test_attachments.py are chosen to sit either side of it.

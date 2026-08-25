@@ -1,51 +1,20 @@
 # Defaults for the pure-Python (aiosmtpd) inbound MTA. The Postfix-based
 # `mta-in` service does not consume these.
-
+#
+# Deliberately empty of limits. Anything that merely restates the value already
+# in src/pymta/settings.py is left out: pinning it here would mean the shipped
+# default is never the one the test suite runs against, so a change to it (or
+# a regression in it) would pass CI unnoticed.
+#
 # PYMTA_SMTP_HOSTNAME is intentionally left unset so the shared MYHOSTNAME env
 # wins (matching the Postfix variant). Set explicitly to override.
-PYMTA_SMTP_BIND_HOST=0.0.0.0
-PYMTA_SMTP_BIND_PORT=25
-PYMTA_METRICS_BIND_HOST=0.0.0.0
-PYMTA_METRICS_BIND_PORT=9100
-PYMTA_LOG_LEVEL=INFO
-
-# Match the existing Postfix dev config: per-IP cap off (the dev/test load
-# all comes from loopback), large global cap for `test_connection_limits`.
-PYMTA_MAX_SESSIONS_PER_IP=0
-PYMTA_MAX_SESSIONS_TOTAL=2000
-
-# Inbound limits. PYMTA_MAX_INCOMING_EMAIL_SIZE is left unset here so the dev
-# stack exercises the migration fallback to MAX_INCOMING_EMAIL_SIZE (set in
-# mta-in.defaults, and what tests/test_security.py asserts against). Set the
-# prefixed name in a real deployment.
-PYMTA_MAX_RECIPIENTS_PER_ENVELOPE=100
-PYMTA_MAX_ENVELOPES_PER_SESSION=20
-
-# Timeouts (seconds). PYMTA_COMMAND_TIMEOUT is the idle gap allowed between
-# complete commands; PYMTA_DATA_TIMEOUT is a separate total budget for the
-# whole DATA phase (354 -> last body byte -> MDA deliver -> reply).
-PYMTA_COMMAND_TIMEOUT=120
-PYMTA_DATA_TIMEOUT=300
-
-# STARTTLS off by default in dev (no cert wired).
-PYMTA_TLS_CERT_FILE=
-PYMTA_TLS_KEY_FILE=
-
-# SMTPUTF8 advertised: the MDA accepts UTF-8 envelope addresses.
-PYMTA_ENABLE_SMTPUTF8=true
-
-# PROXY protocol off in dev: the test suite connects to pymta directly, so the
-# TCP peer IS the client.
 #
-# Behind a load balancer, set PYMTA_ENABLE_PROXY_PROTOCOL=true AND
-# PYMTA_TRUSTED_PROXIES to the balancer's IPs/CIDRs. With PROXY protocol on and
-# no allowlist pymta still starts, but logs a SECURITY warning: every peer's
-# header is then trusted. (Left unset, this inherits the Postfix image's
-# ENABLE_PROXY_PROTOCOL=haproxy so an env file written for that image still
-# describes the topology; the prefixed name is the one to set going forward.)
+# PROXY protocol stays off: the test suite connects to pymta directly, so the
+# TCP peer IS the client. Behind a load balancer, set
+# PYMTA_ENABLE_PROXY_PROTOCOL=true AND PYMTA_TRUSTED_PROXIES to the balancer's
+# IPs/CIDRs. With PROXY protocol on and no allowlist pymta still starts, but
+# logs a SECURITY warning: every peer's header is then trusted.
 #
 # A balancer WITHOUT PROXY protocol is not a supported configuration: every
 # session would bucket under the balancer's IP and every message would be
 # stamped with it as the sender's address.
-PYMTA_ENABLE_PROXY_PROTOCOL=false
-PYMTA_TRUSTED_PROXIES=

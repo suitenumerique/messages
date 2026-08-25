@@ -27,7 +27,6 @@ requires-python = ">=3.14.6,<4.0"
 
 # Note: after changing this list you must re-run `make deps-lock-mta-in`
 dependencies = [
-    "requests==2.34.2",
     "PyJWT==2.13.0",
     "aiosmtpd==1.4.6",
     "httpx==0.28.1",
@@ -45,6 +44,11 @@ dependencies = [
 # behind an extra so the pure-Python pymta image can build without libmilter.
 postfix = [
     "pymilter==1.0.5",
+    # Only src/api/mda.py uses requests, and only the milter imports that.
+    # Kept out of the base deps so the pymta image does not ship a second HTTP
+    # client (requests + urllib3 + charset_normalizer) that it never imports,
+    # on the process that faces port 25. pymta talks to the MDA over httpx.
+    "requests==2.34.2",
 ]
 dev = [
     "pytest==8.3.5",

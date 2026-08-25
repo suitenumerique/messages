@@ -94,7 +94,9 @@ class MockAPIServer:
                     content={"status": "error", "detail": "Inbound email error"},
                 )
             if "inbound-email-timeout@example.com" in request.state.payload["original_recipients"]:
-                time.sleep(3)
+                # Just past MDA_API_TIMEOUT=2 so the timeout path fires without
+                # the test paying a full extra second for it.
+                time.sleep(2.4)
                 return
 
             logger.info(
@@ -113,7 +115,9 @@ class MockAPIServer:
             if "check-recipients-error@example.com" in addresses:
                 return JSONResponse(status_code=500, content={})
             if "check-recipients-timeout@example.com" in addresses:
-                time.sleep(3)
+                # Just past MDA_API_TIMEOUT=2 so the timeout path fires without
+                # the test paying a full extra second for it.
+                time.sleep(2.4)
                 return
 
             exists = {address: address in self.mailboxes for address in addresses}
