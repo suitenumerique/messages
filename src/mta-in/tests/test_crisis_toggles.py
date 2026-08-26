@@ -374,6 +374,25 @@ async def test_drain_gives_up_at_the_deadline(monkeypatch):
     assert 1 <= elapsed < 5, elapsed
 
 
+@pytest.mark.asyncio
+async def test_drain_does_not_read_an_unknown_count_as_drained(monkeypatch):
+    """``active_sessions()`` returns -1 when the gauge cannot be read; treating
+    that as an empty server cuts live sessions. The elapsed time is how the
+    test tells "waited for the deadline" from "left immediately"."""
+    from pymta import metrics, runtime, server
+
+    monkeypatch.setattr(settings, "PYMTA_SHUTDOWN_TIMEOUT", 1)
+    monkeypatch.setattr(metrics, "active_sessions", lambda: -1)
+    loop = asyncio.get_running_loop()
+    srv, _ = await _listener(loop)
+
+    runtime.request_shutdown()
+    started = asyncio.get_running_loop().time()
+    await asyncio.wait_for(server._drain_and_close(srv), timeout=10)
+    elapsed = asyncio.get_running_loop().time() - started
+    assert 1 <= elapsed < 5, elapsed
+
+
 # ---------------------------------------------------------------------------
 # 8. IPv4-mapped IPv6, the form a dual-stack listener reports.
 # ---------------------------------------------------------------------------

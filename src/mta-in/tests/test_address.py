@@ -146,6 +146,17 @@ def test_printable_non_ascii_still_accepted(address):
     assert _validate(address)
 
 
+@pytest.mark.parametrize(
+    "address",
+    ["maryam‌ahmadi@example.com", "nams‍te@example.com"],
+)
+def test_zero_width_format_characters_are_accepted(address):
+    """Category Cf, which ``str.isprintable`` refuses along with the line
+    terminators we want. Required in Persian and several Indic scripts, so a
+    sender's RFC 6531 MAIL FROM may carry one."""
+    assert _validate(address)
+
+
 # ---------------------------------------------------------------------------
 # Source routes (RFC 5321 §4.1.1.3)
 # ---------------------------------------------------------------------------

@@ -12,12 +12,19 @@ or unwrapped form; :func:`strip_brackets` runs unconditionally on entry.
 
 from __future__ import annotations
 
+import unicodedata
+
 # Characters that must never appear unquoted in an envelope address. CR, LF,
 # and NUL are the CRLF-injection and frame-confusion vectors. TAB is a header
 # unfolding vector. ``%`` is included to keep us out of historical
 # "percent-routing" relay tricks (RFC 1123 §5.2.16). DEL (0x7f) and bare
 # space have no place in an address received from the wire.
 _FORBIDDEN_CHARS = frozenset({"\r", "\n", "\x00", "\t", " ", "%", "\x7f"})
+
+# Controls, line/paragraph separators, spaces. Narrower than
+# ``str.isprintable()``, which also rejects format chars (Cf) such as ZWNJ --
+# orthographically required in Persian and legal in an RFC 6531 address.
+_FORBIDDEN_CATEGORIES = frozenset({"Cc", "Zl", "Zp", "Zs"})
 
 
 class AddressError(ValueError):
@@ -85,13 +92,12 @@ def validate_envelope_address(  # noqa: PLR0912
         )
 
     # ----- 1b. control / CRLF / NUL injection --------------------------------
-    # The explicit set above, plus anything else unprintable. SMTPUTF8 makes the
-    # local-part arbitrary UTF-8, which includes U+2028, U+0085, VT and FF —
-    # characters no mailer emits on purpose and that several parsers, Python's
-    # ``str.splitlines`` among them, treat as line terminators. ``logfmt.quote``
-    # escapes them on the way to the log; refusing them here means they never
-    # reach the MDA, a Received header or a bounce message either.
-    if _FORBIDDEN_CHARS & set(address) or not address.isprintable():
+    # SMTPUTF8 makes the local-part arbitrary UTF-8, so U+2028, U+0085, VT and
+    # FF arrive from the wire and ``str.splitlines`` breaks on every one.
+    # Refused here so they never reach the MDA, a Received header or a bounce.
+    if _FORBIDDEN_CHARS & set(address) or any(
+        unicodedata.category(ch) in _FORBIDDEN_CATEGORIES for ch in address
+    ):
         raise AddressError(
             reason="control_char",
             smtp_code=501,

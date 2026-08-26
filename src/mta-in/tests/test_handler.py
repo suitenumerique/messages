@@ -23,6 +23,7 @@ from pymta.handler import (
     NULL_SENDER_SENTINEL,
     InboundHandler,
     _peer_ip,
+    _peer_port,
     _remaining_data_budget,
 )
 from pymta.mda_async import MDAResult
@@ -690,9 +691,14 @@ async def test_an_unparseable_proxy_source_does_not_become_a_gate_key(monkeypatc
 
     assert accepted is True, "an odd header is not grounds to drop the connection"
     assert server.gate_key == "unknown"
+    # aiosmtpd hangs the parsed header off the session; without this the
+    # assertions below take the empty-session path and never reach _peer_ip's.
+    session.proxy_data = proxy_data
     # And it must not be recorded as the client address either: it would reach
     # the MDA and the Received header as a plausible-looking origin.
     assert _peer_ip(session, server) is None
+    # Nor the port that rode in on the same rejected header.
+    assert _peer_port(session, server) is None
 
 
 @pytest.mark.parametrize("allowlist", [[], [ip_network("0.0.0.0/0")]])

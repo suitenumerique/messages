@@ -263,7 +263,13 @@ def test_slow_clients_cannot_spawn_unbounded_threads(open_port):
     try:
         for _ in range(_MAX_SCRAPE_THREADS * 4):
             s = socket.create_connection(("127.0.0.1", open_port), timeout=5)
-            s.sendall(b"GET /metrics HTTP/1.1\r\n")  # deliberately unfinished
+            try:
+                s.sendall(b"GET /metrics HTTP/1.1\r\n")  # deliberately unfinished
+            except OSError:
+                # Past the cap the server closes at accept, so this write can
+                # land on a reset socket. Keep only the ones it held.
+                s.close()
+                continue
             hangers.append(s)
         time.sleep(0.5)
         grown = threading.active_count() - before
@@ -284,7 +290,12 @@ def test_a_real_scrape_still_works_after_the_cap_is_hit(open_port):
     try:
         for _ in range(_MAX_SCRAPE_THREADS * 4):
             s = socket.create_connection(("127.0.0.1", open_port), timeout=5)
-            s.sendall(b"GET /metrics HTTP/1.1\r\n")
+            try:
+                s.sendall(b"GET /metrics HTTP/1.1\r\n")
+            except OSError:
+                # Refused past the cap; see the note in the test above.
+                s.close()
+                continue
             hangers.append(s)
         time.sleep(0.5)
     finally:

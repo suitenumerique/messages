@@ -190,17 +190,22 @@ async def _drain_and_close(server: asyncio.AbstractServer) -> None:
     deadline = started + settings.PYMTA_SHUTDOWN_TIMEOUT
     while True:
         active = metrics.active_sessions()
-        if active <= 0:
+        if active == 0:
             logger.info(
                 "shutdown_drained", extra={"elapsed_seconds": round(time.monotonic() - started, 2)}
             )
             break
         if time.monotonic() >= deadline:
-            metrics.SESSIONS_ABANDONED.inc(active)
+            # A negative count is active_sessions()'s "gauge unreadable"
+            # sentinel, not an empty server, and inc() refuses a negative.
+            known = active > 0
+            if known:
+                metrics.SESSIONS_ABANDONED.inc(active)
             logger.warning(
                 "shutdown_deadline_exceeded",
                 extra={
-                    "abandoned_sessions": active,
+                    "abandoned_sessions": active if known else -1,
+                    "session_count_known": known,
                     "deadline_seconds": settings.PYMTA_SHUTDOWN_TIMEOUT,
                 },
             )
@@ -284,23 +289,26 @@ async def _serve() -> None:
         # Logged rather than capped because the honest fix is either sizing the
         # two settings together or bounding concurrent DATA phases, and an
         # operator cannot make that call without seeing the number.
-        # The bound is the DATA gate when it is on, because a session that has
-        # not reached DATA holds no message. Falling back to the session cap
-        # reports the unbounded case honestly rather than flattering it.
+        # The DATA gate is the bound when on; a session that has not reached
+        # DATA holds no message. With it off there is no finite ceiling to
+        # report, so say so rather than skipping the line.
         concurrent = settings.PYMTA_MAX_CONCURRENT_DATA
+        ceiling = {
+            "max_concurrent_data": concurrent,
+            "bounded": bool(concurrent),
+            "size_limit": settings.PYMTA_MAX_INCOMING_EMAIL_SIZE,
+        }
         if concurrent:
             in_flight = concurrent * settings.PYMTA_MAX_INCOMING_EMAIL_SIZE
-            logger.info(
-                "memory_ceiling",
-                extra={
-                    "max_concurrent_data": concurrent,
-                    "bounded": bool(settings.PYMTA_MAX_CONCURRENT_DATA),
-                    "size_limit": settings.PYMTA_MAX_INCOMING_EMAIL_SIZE,
-                    "in_flight_gib": round(in_flight / 1024**3, 1),
-                    "required_gib": round(_MEMORY_FACTOR * in_flight / 1024**3, 1),
-                    "detail": "keep the container memory limit above required_gib",
-                },
+            ceiling["in_flight_gib"] = round(in_flight / 1024**3, 1)
+            ceiling["required_gib"] = round(_MEMORY_FACTOR * in_flight / 1024**3, 1)
+            ceiling["detail"] = "keep the container memory limit above required_gib"
+        else:
+            ceiling["detail"] = (
+                "concurrent DATA phases are unlimited, so heap use has no ceiling; "
+                "set PYMTA_MAX_CONCURRENT_DATA to bound it"
             )
+        logger.info("memory_ceiling", extra=ceiling)
 
         stop = asyncio.Event()
         loop = asyncio.get_running_loop()

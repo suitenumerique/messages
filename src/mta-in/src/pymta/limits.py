@@ -18,13 +18,16 @@ config (``smtpd_client_event_limit_exceptions = static:all``) and useful in
 dev/test where the whole load comes from one loopback address. Slots are still
 counted when disabled, so the gauges stay honest and acquire/release stay
 symmetric across a SIGHUP; see :meth:`IPGate.acquire_data`.
+
+The axes are not independent at zero: ``PYMTA_MAX_SESSIONS_TOTAL`` is derived
+as ``PYMTA_MAX_CONCURRENT_DATA * 3``, so a zero DATA cap disables both refusals
+and one host can hold unlimited sessions.
 """
 
 from __future__ import annotations
 
 import asyncio
 import logging
-import time
 
 from . import metrics, settings
 
@@ -55,7 +58,6 @@ class IPGate:
         *,
         max_total: int | None = None,
         max_data: int | None = None,
-        clock=time.monotonic,
     ):
         self._max_data = max_data
         self._data_total = 0
@@ -67,7 +69,6 @@ class IPGate:
         # count falls back under it. Tests pass explicit values so they do not
         # depend on the ambient environment.
         self._max_total = max_total
-        self._clock = clock
         self._lock = asyncio.Lock()
         self._per_ip: dict[str, int] = {}
         self._total = 0

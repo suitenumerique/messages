@@ -116,8 +116,11 @@ SECURITY_REJECTIONS = Counter(
     # The rest are fixed checks, the first five from pymta.address:
     #   source_route, control_char, invalid_encoding, oversize_local,
     #   oversize_domain, bad_address, address_literal, nul_byte, bad_helo,
-    #   auth_offered, untrusted_proxy, defer_all, blocked_network,
+    #   untrusted_proxy, defer_all, blocked_network,
     #   blocked_sender_domain, blocked_recipient, internal_error
+    # Plus one per EHLO extension handle_EHLO refuses to advertise:
+    #   ehlo_auth_stripped, ehlo_chunking_stripped, ehlo_bdat_stripped,
+    #   ehlo_pipelining_stripped
 )
 
 BARE_NEWLINE_MESSAGES = Counter(

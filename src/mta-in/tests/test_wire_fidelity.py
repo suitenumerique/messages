@@ -38,12 +38,12 @@ def _read_reply(s: socket.socket, max_bytes: int = 65536) -> bytes:
         if not chunk:
             break
         buf += chunk
-        lines = buf.split(b"\r\n")
+        # An unterminated "250 O" also matches `xxx<SP>`, so drop a mid-line tail.
+        lines = buf.split(b"\r\n") if buf.endswith(b"\r\n") else buf.split(b"\r\n")[:-1]
         # Last complete line is a final reply when it is `xxx<SP>`.
-        for line in reversed([ln for ln in lines if ln]):
-            if len(line) >= 4 and line[3:4] == b" ":
-                return buf
-            break
+        complete = [ln for ln in lines if ln]
+        if complete and len(complete[-1]) >= 4 and complete[-1][3:4] == b" ":
+            return buf
     return buf
 
 

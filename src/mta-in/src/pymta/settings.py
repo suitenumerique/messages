@@ -180,7 +180,12 @@ PYMTA_MAX_ENVELOPES_PER_SESSION = _env_int("PYMTA_MAX_ENVELOPES_PER_SESSION", 10
 # after the line is read.
 PYMTA_MAX_LINE_LENGTH = _env_int("PYMTA_MAX_LINE_LENGTH", 65536, minimum=1001)
 
-# Messages that may be in memory at once. 0 disables the bound.
+# Messages that may be in memory at once.
+#
+# 0 does not disable only this bound: PYMTA_MAX_SESSIONS_TOTAL is derived from
+# it (see below) and IPGate reads a zero cap as "no refusal", so a zero here
+# also removes the global session cap and the per-source share. To let more
+# mail through, raise the number; 0 is for dev and test.
 #
 # aiosmtpd holds each message in RAM, so this is what stands between a burst of
 # large mail and the OOM killer. The session caps do not: a connection costs a
@@ -280,6 +285,10 @@ PYMTA_SHUTDOWN_TIMEOUT = _env_int("PYMTA_SHUTDOWN_TIMEOUT", 25, minimum=0)
 # PYMTA_ marks what belongs to this server, MDA_ what belongs to the channel to
 # the MDA, and a bare name what is shared with the Postfix image. Whether a
 # value comes from the environment is a separate question from whose it is.
+#
+# It inherits the zero: PYMTA_MAX_CONCURRENT_DATA=0 makes this 0, disabling
+# both refusals in IPGate. Documented rather than floored, so dev and test keep
+# the single-source behaviour.
 _SESSIONS_PER_DATA_SLOT = 3
 PYMTA_MAX_SESSIONS_TOTAL = PYMTA_MAX_CONCURRENT_DATA * _SESSIONS_PER_DATA_SLOT
 

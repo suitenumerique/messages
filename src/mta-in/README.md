@@ -148,7 +148,7 @@ Grouped as `src/pymta/settings.py` groups them.
 | `PYMTA_MAX_ENVELOPES_PER_SESSION` | `10` | MAIL FROM…DATA cycles per TCP session |
 | `PYMTA_MAX_ERRORS_PER_SESSION` | `50` | 4xx/5xx replies before forcing 421 + disconnect (Postfix's `smtpd_hard_error_limit`) |
 | `PYMTA_MAX_RCPT_MISSES_PER_SESSION` | `10` | Unknown-mailbox lookups before 421 + disconnect |
-| `PYMTA_MAX_CONCURRENT_DATA` | `40` (0 = off) | Messages held in memory at once. **The bound on memory**, see below |
+| `PYMTA_MAX_CONCURRENT_DATA` | `40` | Messages held in memory at once. **The bound on memory**, see below. `0` disables far more than the memory bound — see the warning under "The session cap is derived" |
 | `PYMTA_MAX_LINE_LENGTH` | `65536` | Longest single line accepted, in octets. aiosmtpd's RFC-strict 1001 permanently rejects mail Postfix accepts |
 
 **Timeouts**
@@ -259,6 +259,8 @@ Two need explaining. Per-IP concurrency is a tightening, not a loosening: the sh
 > A message over the limit is refused at the `DATA` command, **before the `354`**, so a refused peer never starts uploading and the refusal costs one reply instead of a buffer. It gets `451`: delayed, not lost.
 >
 > **The session cap is derived, not configured.** `PYMTA_MAX_SESSIONS_TOTAL = PYMTA_MAX_CONCURRENT_DATA x 3` (120 on the default), because a session is only *in* DATA for part of its life — the rest is the handshake and the RCPT checks — so about three sessions are needed to keep one message slot busy at typical sizes. Fewer wastes the memory set aside for messages; more only admits connections that must queue for a slot, each having paid for its RCPT checks against the MDA before finding that out. It keeps the `PYMTA_` prefix regardless: the prefix says whose setting it is, not where the value came from.
+>
+> ⚠️ **`PYMTA_MAX_CONCURRENT_DATA=0` removes every connection limit, not just the memory one.** The session cap is derived from it, so a zero makes `PYMTA_MAX_SESSIONS_TOTAL` zero too, and the gate reads a zero cap as "no refusal" — the global cap and the per-source share both come off, and one host can hold unlimited connections. Use `0` in dev and test only; to let more mail through in production, raise the number. The startup `memory_ceiling` line reports `bounded=false` when you are in this state.
 >
 > **There is no per-source flag either.** A fixed per-source cap divides the slots by a constant, which decides in advance how few hosts can take everything: 20 slots at 5 each is four hosts, and no choice of constant changes that shape. Instead the gate gives each source an equal share of what exists, keeping one share spare:
 >

@@ -96,6 +96,10 @@ def _full_reply(sock) -> bytes:
         if not chunk:
             return buf
         buf += chunk
+        # A recv() stopping right after "250 " leaves a tail that looks like a
+        # final reply and would return the message truncated.
+        if not buf.endswith(b"\r\n"):
+            continue
         lines = [ln for ln in buf.split(b"\r\n") if ln]
         if lines and len(lines[-1]) >= 4 and lines[-1][3:4] == b" ":
             return buf

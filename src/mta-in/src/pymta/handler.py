@@ -146,8 +146,12 @@ def _peer_ip(session, server=None) -> str | None:
     if stashed is not None and stashed[0]:
         return str(stashed[0])
     proxy_data = getattr(session, "proxy_data", None)
-    if proxy_data is not None and getattr(proxy_data, "src_addr", None):
-        return str(proxy_data.src_addr)
+    claimed = getattr(proxy_data, "src_addr", None) if proxy_data is not None else None
+    if claimed:
+        # Same gate handle_PROXY applies to the key: aiosmtpd takes AF_UNIX's
+        # src_addr straight off the wire, so an unparseable claim is arbitrary
+        # bytes. It earns nothing, not even the wire peer below (the balancer).
+        return str(claimed) if settings.parse_client_ip(str(claimed)) is not None else None
     if settings.PYMTA_ENABLE_PROXY_PROTOCOL:
         return None
     peer = getattr(session, "peer", None)
@@ -162,7 +166,8 @@ def _peer_port(session, server=None) -> str | None:
         return str(stashed[1])
     proxy_data = getattr(session, "proxy_data", None)
     if proxy_data is not None and getattr(proxy_data, "src_port", None) is not None:
-        return str(proxy_data.src_port)
+        # Only next to an address we accepted: same rejected header.
+        return str(proxy_data.src_port) if _peer_ip(session, server) is not None else None
     if settings.PYMTA_ENABLE_PROXY_PROTOCOL:
         return None
     peer = getattr(session, "peer", None)
@@ -373,7 +378,9 @@ class InboundHandler:
             after = line[4:] if len(line) > 4 else ""
             verb = after.split(" ", 1)[0].upper()
             if verb in denied_verbs:
-                metrics.SECURITY_REJECTIONS.labels(reason="auth_offered").inc()
+                # Per verb: one shared reason could not tell AUTH on a public MX
+                # from PIPELINING, and the log below fires once per process.
+                metrics.SECURITY_REJECTIONS.labels(reason=f"ehlo_{verb.lower()}_stripped").inc()
                 # Once per verb per process, not once per EHLO. The condition is
                 # a misconfiguration that persists, so repeating it adds nothing
                 # after the first line and would otherwise let a peer choose how
@@ -497,6 +504,9 @@ class InboundHandler:
             _bump(counters, _SOFT_ERRORS_ATTR)
             return f"{err.smtp_code} {err.smtp_text}"
 
+        # Case-insensitive both sides. Stricter than the MDA's mailbox lookup,
+        # which matches local_part case-sensitively; blocking more spellings
+        # than exist is the safe direction. Fixing the MDA half is a follow-up.
         if clean.lower() in settings.PYMTA_BLOCKED_RECIPIENTS:
             metrics.SECURITY_REJECTIONS.labels(reason="blocked_recipient").inc()
             metrics.RCPT_TOTAL.labels(result="rejected_perm").inc()
