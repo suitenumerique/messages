@@ -96,16 +96,26 @@ class ProxySMTP(smtplib.SMTP):
 def _header_block(message_content: bytes) -> bytes:
     """Return everything before the first blank line.
 
-    CRLF is checked first because that is what our composer emits; a
-    caller-supplied raw MIME body may use bare LF. A message with no blank
-    line at all is treated as all headers, which only ever errs toward
-    requiring more of the next hop.
+    Whichever separator comes *first* wins. Preferring CRLFCRLF would read
+    an LF-separated message (which a caller-supplied raw MIME body may well
+    be) as all-headers up to the first CRLFCRLF inside its body, dragging
+    body bytes into the header check.
+
+    A message with no blank line at all is treated as all headers, which
+    only ever errs toward requiring more of the next hop.
     """
-    for separator in (b"\r\n\r\n", b"\n\n"):
-        head, found, _ = message_content.partition(separator)
-        if found:
-            return head
-    return message_content
+    cut = min(
+        (
+            index
+            for index in (
+                message_content.find(b"\r\n\r\n"),
+                message_content.find(b"\n\n"),
+            )
+            if index != -1
+        ),
+        default=-1,
+    )
+    return message_content if cut == -1 else message_content[:cut]
 
 
 def _build_tls_context(level: str) -> ssl.SSLContext:
@@ -313,14 +323,9 @@ def send_smtp_mail(
     # At this stage, we now have a connected, valid SMTP session.
     # Start trying to deliver the message.
 
-    # RFC 6531 is required when any envelope address carries a non-ASCII
-    # local part, or when the *headers* are not ASCII (RFC 6532). This
-    # mirrors Postfix's rule: deliver over a plain session only if the
-    # sender, every recipient and every header value are ASCII.
-    #
-    # Headers only, not the whole message: an 8-bit *body* needs 8BITMIME
-    # and nothing more, and the raw-MIME submit path accepts caller-supplied
-    # bytes that may well be 8-bit while every address stays ASCII.
+    # RFC 6531 is required when an envelope address has a non-ASCII local
+    # part, or when the headers are non-ASCII (RFC 6532). Headers, not the
+    # whole message: an 8-bit body needs only 8BITMIME.
     header_block = _header_block(message_content)
     eai_recipients = sorted(
         email for email in recipient_emails if needs_smtputf8(email)
@@ -332,16 +337,9 @@ def send_smtp_mail(
     )
 
     if requires_smtputf8 and not client.has_extn("smtputf8"):
-        # Everyone in this transaction fails, including plain ASCII
-        # recipients. There is one composed, signed copy of the message, so
-        # there is no ASCII variant to hand them instead, and splitting the
-        # transaction to rescue the few cases where the message itself stayed
-        # ASCII is not worth the branch: the compose-time warning already
-        # tells the sender that one accented address can cost the whole send.
-        #
-        # No downgrade exists either: RFC 6530 defines none, and punycode
-        # cannot encode a local part. Permanent, so retry=False — the
-        # extension will not appear on a later attempt to the same host.
+        # One signed copy per message and no downgrade (RFC 6530 defines
+        # none), so every recipient of this transaction fails, ASCII ones
+        # included. Permanent: the extension won't appear on a later attempt.
         logger.warning(
             "SMTP: %s does not advertise SMTPUTF8 (%d EAI recipient(s))",
             smtp_host,
@@ -358,19 +356,10 @@ def send_smtp_mail(
     mail_options = []
     if requires_smtputf8:
         mail_options.append("SMTPUTF8")
-    # Declare 8BITMIME whenever the bytes actually need it and the host
-    # advertised it. RFC 6531 §3.1 makes this implied for an SMTPUTF8 server,
-    # but it is equally the right declaration for an 8-bit body on an
-    # otherwise plain message.
-    #
-    # When the body is 8-bit and the host does NOT advertise 8BITMIME we send
-    # it anyway, undeclared. That is a spec violation, and it is deliberate:
-    # it is what this client already did before it passed any mail_options at
-    # all, most MTAs accept it, and the only correct alternative — recoding
-    # the body to quoted-printable — would change the bytes and invalidate
-    # the DKIM signature we already applied. Our own composer never emits an
-    # 8-bit body except under SMTPUTF8 (see compose_options_for), so this only
-    # arises for caller-supplied MIME on the raw submit path.
+    # An 8-bit body on a host that doesn't advertise 8BITMIME is still sent,
+    # undeclared: recoding it to quoted-printable would invalidate the DKIM
+    # signature already applied. Only reachable from the raw submit path —
+    # our composer emits 8-bit only under SMTPUTF8.
     if not message_content.isascii() and client.has_extn("8bitmime"):
         mail_options.append("BODY=8BITMIME")
 

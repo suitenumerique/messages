@@ -13,7 +13,7 @@ export interface MailDomainAdminWriteRequest {
   /**
    * @minLength 1
    * @maxLength 253
-   * @pattern ^(?=.{2,253}$)[a-z0-9]([a-z0-9-]*[a-z0-9])?(\.[a-z0-9]([a-z0-9-]*[a-z0-9])?)*$
+   * @pattern ^(?=.{2,253}$)(?=[a-z0-9-]{1,63}(?:\.|$))[a-z0-9](?:[a-z0-9-]*[a-z0-9])?(?:\.(?=[a-z0-9-]{1,63}(?:\.|$))[a-z0-9](?:[a-z0-9-]*[a-z0-9])?)*$
    */
   name: string;
   /** Create mailboxes automatically based on OIDC emails. */

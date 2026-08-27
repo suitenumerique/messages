@@ -43,12 +43,21 @@ class TestMailDomainModel:
             "bad-.example.com",
             "example.-com",
             "example..com",
+            # RFC 1035 2.3.4: a label is at most 63 octets
+            "a" * 64 + ".example.com",
+            "example." + "b" * 64 + ".com",
         ]:
             with pytest.raises(ValidationError):
                 MailDomainFactory(name=name)
 
         domain = MailDomainFactory(name="va-lid.example.com")
         assert domain.name == "va-lid.example.com"
+
+        # ...and exactly 63 is still fine.
+        longest = "c" * 63
+        assert MailDomainFactory(name=f"{longest}.example.com").name == (
+            f"{longest}.example.com"
+        )
 
     def test_models_maildomain_name_is_canonicalized(self):
         """Mixed case, surrounding whitespace and IDN are folded, not rejected."""

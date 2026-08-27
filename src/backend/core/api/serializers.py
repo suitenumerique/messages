@@ -17,7 +17,7 @@ from rest_framework import serializers
 from rest_framework.exceptions import PermissionDenied
 
 from core import enums, models
-from core.mda.addresses import ascii_lower, normalize_domain
+from core.mda.addresses import ascii_lower, normalize_address, normalize_domain
 from core.mda.dispatch_webhooks import (
     VALID_FORMATS,
 )
@@ -1469,9 +1469,15 @@ class UserAccessWriteField(serializers.PrimaryKeyRelatedField):
     def to_internal_value(self, data):
         """Convert UUID string or email to User instance."""
         if isinstance(data, str) and "@" in data:
-            user = models.User.objects.filter(email=data).first()
+            # Fold before the lookup: User.email is stored canonical, and it
+            # carries no unique constraint, so an unfolded miss would silently
+            # create a second stub for someone who already has an account —
+            # granting the access to a phantom user, and leaving two sub-less
+            # rows that make the real user's next OIDC login ambiguous.
+            email = normalize_address(data)
+            user = models.User.objects.filter(email=email).first()
             if user is None:
-                user = models.User(email=data)
+                user = models.User(email=email)
                 user.set_unusable_password()
                 user.save()
             return user

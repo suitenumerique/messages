@@ -11,17 +11,24 @@ from django.core.exceptions import ValidationError
 
 import pytest
 import rest_framework as drf
+from rest_framework.test import APIClient
 
 from core import factories, models
 from core.enums import MessageDeliveryStatusChoices
-from core.mda.draft import create_draft
+from core.mda.draft import create_draft, update_draft
 from core.mda.inbound import check_local_recipient, check_local_recipients
+from core.mda.inbound_tasks import _is_selfcheck
 from core.mda.outbound import (
     prepare_outbound_message,
     send_message,
     send_outbound_email,
 )
-from core.tests.mda.test_addresses import UNICODE_ASCII_LOOKALIKES
+from core.mda.outbound_direct import group_recipients_by_mx
+from core.tests.mda.test_addresses import (
+    ASCII_FOLD_PAIRS,
+    KELVIN_SIGN,
+    UNICODE_ASCII_LOOKALIKES,
+)
 
 pytestmark = pytest.mark.django_db
 
@@ -87,14 +94,23 @@ class TestInboundRecipientResolution:
         assert created.local_part == "new.user"
         assert created.domain.name == "example.com"
 
-    @pytest.mark.parametrize("lookalike", UNICODE_ASCII_LOOKALIKES)
-    def test_lookalike_local_part_does_not_resolve(self, lookalike, settings):
-        """``nicK@`` (Kelvin sign) must not be delivered to ``nick@``."""
+    @pytest.mark.parametrize(("lookalike", "ascii_char"), ASCII_FOLD_PAIRS)
+    def test_lookalike_local_part_does_not_resolve(
+        self, lookalike, ascii_char, settings
+    ):
+        """A homoglyph must not be delivered to the address it folds onto.
+
+        The victim is built FROM the pair, so every case is a real collision:
+        parametrizing over look-alikes that fold onto some other letter would
+        pass against correct and broken code alike.
+        """
         settings.MESSAGES_ACCEPT_ALL_EMAILS = False
         domain = factories.MailDomainFactory(name="lookalike.example")
-        factories.MailboxFactory(local_part="nick", domain=domain)
+        victim = f"nic{ascii_char}"
+        factories.MailboxFactory(local_part=victim, domain=domain)
 
         spoofed = f"nic{lookalike}@lookalike.example"
+        assert check_local_recipient(f"{victim}@lookalike.example") is True
         assert check_local_recipient(spoofed) is False
         assert check_local_recipients([spoofed]) == set()
 
@@ -261,9 +277,10 @@ class TestComposedHeadersKeepTheirCase:
     def test_eai_in_bcc_keeps_the_headers_ascii(self, mailbox):
         """Bcc never reaches the header block, so it cannot force RFC 6532.
 
-        This is what makes the ``can_split`` branch in ``send_smtp_mail``
-        reachable: the message stays ASCII, so a hop without SMTPUTF8 can
-        still take the other recipients and only the Bcc address fails.
+        The message stays ASCII, which matters for every *other* hop: an
+        ASCII recipient on a different MX is still handed a plain message.
+        Within one transaction an accented Bcc address does block its
+        co-recipients, since we do not split the transaction.
         """
         message = create_draft(
             mailbox=mailbox,
@@ -298,6 +315,30 @@ class TestComposedHeadersKeepTheirCase:
         """
         mime = self._compose(mailbox, "josé@other.example")
         assert "josé@other.example" in mime
+
+    def test_a_bad_address_does_not_wipe_the_existing_recipients(self, mailbox):
+        """Validation runs before anything is deleted.
+
+        ``update_draft`` clears the recipients of a type before recreating
+        them, so a mid-loop raise would leave the draft half wiped while the
+        caller sees only the 400.
+        """
+        message = create_draft(
+            mailbox=mailbox, subject="Keep", to_emails=["first@other.example"]
+        )
+        assert message.recipients.count() == 1
+
+        with pytest.raises(drf.exceptions.ValidationError):
+            update_draft(
+                mailbox,
+                message,
+                {"to": ["ok@other.example", "two@example.com, addresses@example.com"]},
+            )
+
+        # Untouched: still the original recipient, not zero and not a partial set.
+        assert [r.contact.email for r in message.recipients.all()] == [
+            "first@other.example"
+        ]
 
     def test_malformed_recipient_is_a_bad_request_not_a_500(self, mailbox):
         """A value that is not one addr-spec is the client's error.
@@ -452,3 +493,89 @@ class TestInternalDelivery:
         parsed = delivered.get_parsed_data()
         assert parsed is not None
         assert "josé@other.example" in str(parsed.get("to"))
+
+
+class TestFoldingOnSecurityGates:
+    """Comparisons that gate something must fold ASCII-only.
+
+    Reachable: pymta advertises SMTPUTF8, so a homoglyph really can arrive.
+    The submit endpoint's From check is covered in ``test_submit.py``.
+    """
+
+    def test_selfcheck_gate_rejects_a_homoglyph(self, settings):
+        """The self-probe gate skips spam checking, so it must not fold.
+
+        The homoglyph goes in the *local part*: that is the half folded
+        ASCII-only. A homoglyph in the domain is a different question, since
+        UTS-46 maps some of those onto ASCII by design (they really are the
+        same DNS name) — see ``TestNormalizeDomain``.
+        """
+        settings.MESSAGES_SELFCHECK_FROM = "probek@example.com"
+        settings.MESSAGES_SELFCHECK_TO = "sink@example.com"
+
+        spoofed = {"from": [{"email": f"probe{KELVIN_SIGN}@example.com"}]}
+        assert _is_selfcheck(spoofed, "sink@example.com") is False
+
+        # The real probe still matches, whatever case it arrives in.
+        genuine = {"from": [{"email": "ProbeK@Example.com"}]}
+        assert _is_selfcheck(genuine, "SINK@example.com") is True
+
+
+class TestMxGrouping:
+    """Every recipient handed to MX grouping must come back out."""
+
+    def test_quoted_local_part_is_not_dropped(self):
+        """A quoted local part may contain @, and Contact.email now allows it.
+
+        Dropping it here yields no delivery status, which ``send_message``
+        reads as "outcome unknown" and retries for the whole backoff window.
+        """
+        grouped = group_recipients_by_mx(['"a@b"@example.com', "plain@example.com"])
+
+        offered = {email for group in grouped.values() for email in group["recipients"]}
+        assert offered == {'"a@b"@example.com', "plain@example.com"}
+
+    def test_domain_is_canonicalized_for_grouping(self):
+        """Case variants of one domain must share a single MX lookup."""
+        grouped = group_recipients_by_mx(["a@Example.COM", "b@example.com"])
+
+        assert list(grouped) == ["example.com"]
+        assert len(grouped["example.com"]["recipients"]) == 2
+
+    def test_malformed_is_still_dropped(self):
+        assert group_recipients_by_mx(["nodomain", "user@"]) == {}
+
+
+@pytest.mark.django_db
+class TestDraftApiAcceptsEai:
+    """The documented contract and the code must agree.
+
+    The draft endpoint's schema block is documentation only (the view reads
+    ``request.data``), so an ``EmailField`` there published a narrower
+    contract than the endpoint actually honours. This asserts the real one.
+    """
+
+    def test_accented_recipient_round_trips_through_the_api(self, mailbox):
+        user = factories.UserFactory()
+        factories.MailboxAccessFactory(
+            mailbox=mailbox, user=user, role=models.MailboxRoleChoices.EDITOR
+        )
+        client = APIClient()
+        client.force_login(user)
+
+        response = client.post(
+            "/api/v1.0/draft/",
+            {
+                "senderId": str(mailbox.id),
+                "subject": "EAI",
+                "draftBody": "hi",
+                "to": ["josé@other.example"],
+            },
+            format="json",
+        )
+
+        assert response.status_code == 201, response.content
+        message = models.Message.objects.get(id=response.json()["id"])
+        assert [r.contact.email for r in message.recipients.all()] == [
+            "josé@other.example"
+        ]

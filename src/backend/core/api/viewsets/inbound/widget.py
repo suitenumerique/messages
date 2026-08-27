@@ -256,7 +256,7 @@ class InboundWidgetViewSet(viewsets.GenericViewSet):
             logger.info(
                 "Widget submission rejected: cannot compose MIME for sender "
                 "at domain %r",
-                sender_email.split("@", 1)[-1],
+                sender_email.rpartition("@")[2],
             )
             return Response(
                 {"detail": "Invalid email format"}, status=status.HTTP_400_BAD_REQUEST
@@ -282,9 +282,10 @@ class InboundWidgetViewSet(viewsets.GenericViewSet):
             )
 
         logger.info(
-            "Successfully created message from widget for channel %s, sender: %s",
+            "Successfully created message from widget for channel %s, sender "
+            "at domain %r",
             channel.id,
-            sender_email,
+            sender_email.rpartition("@")[2],
         )
 
         return Response(

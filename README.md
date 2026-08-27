@@ -138,7 +138,6 @@ When running the project, the following services are available:
 | **Celery UI** | [http://localhost:8903](http://localhost:8903) | Task queue monitoring | No auth required |
 | **Mailcatcher** | [http://localhost:8904](http://localhost:8904) | Email testing interface | No auth required |
 | **MTA-in (SMTP)** | 8910 | Incoming email server | No auth required |
-| **MTA-out (SMTP)** | 8911 | Outgoing email server | `user` / `pass` |
 | **PostgreSQL** | 8912 | Database server | `user` / `pass` |
 | **Redis** | 8913 | Cache and message broker | No auth required |
 | **OpenSearch** | 8914 | Search engine | No auth required |
@@ -194,10 +193,7 @@ swaks --to=user1@example.local --server localhost:8910
 # Send a test message to the mailcatcher, then read it on http://localhost:8904/
 swaks --to=user1@example.local --server localhost:8917
 
-# Send a test message to the MTA-out, which will then relay it to mailcatcher on http://localhost:8904/
-swaks -tls --to=test@example.external --server localhost:8911 --auth-user user --auth-password=pass
-
-# You can also send emails using Messages itself instead of the frontend
+# Send an outbound message through Messages itself, relayed to mailcatcher
 make shell-back
 MTA_OUT_MODE=relay MTA_OUT_RELAY_HOST=mailcatcher:1025 python manage.py send_mail --to=user1@example.local --subject="Test" --body="Hello World"
 

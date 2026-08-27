@@ -96,9 +96,13 @@ const ASCII_ONLY = /^[\x00-\x7F]*$/;
 export const UNICODE_EMAIL_REGEX = new RegExp(
     // local part: max 64, no leading dot, no consecutive dots, no trailing dot
     "^(?=.{1,64}@)(?!\\.)(?!.*\\.\\.)[\\p{L}\\p{M}\\p{N}_'+\\-.]*[\\p{L}\\p{M}\\p{N}_+-]"
-    // domain: max 255, one or more labels, then a TLD of 2+ starting with a letter
-    + '@(?=.{1,255}$)(?:[\\p{L}\\p{M}\\p{N}][\\p{L}\\p{M}\\p{N}\\-]*\\.)+'
-    + '\\p{L}[\\p{L}\\p{M}\\p{N}\\-]*[\\p{L}\\p{M}\\p{N}]$',
+    // domain: max 255, one or more labels, then a TLD of 2+ starting with a letter.
+    // Each label starts with a letter or number (never a combining mark, which
+    // has no base to attach to at the start of a label) and ends with a
+    // non-hyphen, so `foo-.com` and `́foo.com` are both rejected.
+    + '@(?=.{1,255}$)'
+    + '(?:[\\p{L}\\p{N}](?:[\\p{L}\\p{M}\\p{N}\\-]*[\\p{L}\\p{M}\\p{N}])?\\.)+'
+    + '\\p{L}(?:[\\p{L}\\p{M}\\p{N}\\-]*[\\p{L}\\p{M}\\p{N}])$',
     'u'
 );
 

@@ -100,18 +100,15 @@ def needs_smtputf8(address: str) -> bool:
 class AddrSpecValidator:
     """Validate a single RFC 5322 / RFC 6532 addr-spec.
 
-    Used instead of Django's ``validate_email`` for addresses we merely
-    carry. That validator's local-part pattern is ``[0-9A-Z...]`` compiled
-    with ``IGNORECASE``, which under Unicode matches any code point that
-    case-folds into the range: it rejects ``josé@`` while accepting
-    ``nicK@`` (U+212A). Refusing a valid RFC 6531 sender is worse than
-    useless here, since we already accept the SMTP session that carried it
-    and would otherwise have to discard the address.
+    Replaces Django's ``validate_email`` for addresses we merely carry: that
+    one rejects ``josé@`` yet accepts ``nicK@`` (its local-part pattern is
+    ASCII compiled with IGNORECASE, which under Unicode matches anything
+    case-folding into range). We accept the SMTPUTF8 sessions that carry
+    such senders, so refusing them here would just discard the address.
 
-    ``is_valid_addr_spec`` still enforces what actually matters for safety:
-    exactly one mailbox (no comma, no unquoted whitespace) and no control
-    characters, so a stored value cannot become two recipients when joined
-    into a mailbox-list.
+    Still enforces what matters: exactly one mailbox (no comma, no unquoted
+    whitespace) and no control characters, so a stored value cannot become
+    two recipients when joined into a mailbox-list.
     """
 
     message = "Enter a valid email address."

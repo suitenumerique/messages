@@ -4,6 +4,7 @@ Django management command to check DNS records for mail domains.
 
 from django.core.management.base import BaseCommand, CommandError
 
+from core.mda.addresses import normalize_domain
 from core.models import MailDomain
 from core.services.dns.check import check_dns_records
 
@@ -25,7 +26,7 @@ class Command(BaseCommand):
 
         if domain_name:
             try:
-                maildomain = MailDomain.objects.get(name=domain_name)
+                maildomain = MailDomain.objects.get(name=normalize_domain(domain_name))
                 domains = [maildomain]
             except MailDomain.DoesNotExist:
                 raise CommandError(f"Domain '{domain_name}' not found") from None

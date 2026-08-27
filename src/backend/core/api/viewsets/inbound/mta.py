@@ -195,7 +195,12 @@ class InboundMTAViewSet(viewsets.GenericViewSet):
         )
 
         def sanitize_header(header: str) -> str:
-            return header.replace("\r", "").replace("\n", "")[0:255]
+            # NUL and TAB alongside CR/LF: pymta forbids all four in these
+            # fields, but the backend cannot assume the calling MTA validated
+            # them, and a NUL would land literally in a stored header.
+            for char in ("\r", "\n", "\x00", "\t"):
+                header = header.replace(char, "")
+            return header[0:255]
 
         # Bake the immutable envelope facts as standard headers at ingest, on
         # top of the received bytes and BEFORE the blob is created, so they ride

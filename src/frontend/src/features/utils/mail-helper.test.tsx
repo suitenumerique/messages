@@ -1118,6 +1118,16 @@ describe('MailHelper', () => {
       expect(MailHelper.isValidEmail(email)).toBe(false);
     });
 
+    it.each([
+      'user@foo-.com',
+      'user@\u0301foo.com',
+      'user@-foo.com',
+    ])('should reject the malformed domain label %p', (email) => {
+      // A label may not end with a hyphen, nor start with a hyphen or a
+      // combining mark (which has no base character to attach to there).
+      expect(MailHelper.isValidEmail(email)).toBe(false);
+    });
+
     it('should accept a punycode domain', () => {
       expect(MailHelper.isValidEmail('user@xn--exempl-gva.example')).toBe(true);
     });

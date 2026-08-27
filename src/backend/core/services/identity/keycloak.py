@@ -10,6 +10,7 @@ from django.conf import settings
 from keycloak import KeycloakAdmin, KeycloakOpenID
 from keycloak.exceptions import KeycloakError
 
+from core.mda.addresses import normalize_address
 from core.models import Mailbox, MailDomain
 
 logger = logging.getLogger(__name__)
@@ -449,8 +450,8 @@ def batch_realm_role_membership(usernames, role_id):
         data=json.dumps({"role_id": role_id, "usernames": list(usernames)}),
     )
     response.raise_for_status()
-    matched = {m.lower() for m in response.json().get("members", [])}
-    return {u: u.lower() in matched for u in usernames}
+    matched = {normalize_address(m) for m in response.json().get("members", [])}
+    return {u: normalize_address(u) in matched for u in usernames}
 
 
 def set_realm_role(username, role_id, *, assigned):

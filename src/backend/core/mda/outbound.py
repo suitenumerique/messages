@@ -867,7 +867,7 @@ def send_message(message: models.Message, force_mta_out: bool = False):
 def send_outbound_message(
     recipient_emails: set[str], message: models.Message, mime_data: bytes
 ) -> dict[str, Any]:
-    """Send an existing Message object via MTA out (SMTP) or direct MX if not configured."""
+    """Send an existing Message object, direct to MX or via an SMTP relay."""
 
     return send_outbound_email(
         recipient_emails,
@@ -883,7 +883,7 @@ def send_outbound_email(
     mime_data: bytes,
     custom_settings: dict[str, Any],
 ) -> dict[str, Any]:
-    """Send an existing email via MTA out (SMTP) or direct MX if not configured.
+    """Send an existing email, direct to MX or via an SMTP relay.
 
     Envelope addresses are converted to their SMTP wire form here (IDNA
     A-label domain, local part untouched) and the returned statuses are
@@ -893,17 +893,14 @@ def send_outbound_email(
 
     mta_out_mode = custom_settings.get("MTA_OUT_MODE") or settings.MTA_OUT_MODE
 
-    # A recipient with no wire form at all — malformed, or a non-ASCII domain
-    # with no IDNA encoding — is failed here, before a connection is opened.
-    # A non-ASCII *local part* is not in that category: it has a wire form and
-    # travels fine once the hop advertises SMTPUTF8, which only
-    # ``send_smtp_mail`` can know.
+    # No wire form at all (malformed, or a non-ASCII domain with no IDNA
+    # encoding) fails here, before any connection. A non-ASCII local part is
+    # not in that category — only the hop's SMTPUTF8 support decides that.
     #
-    # Several originals can share one wire form (``user@Example.com`` and
-    # ``user@example.com`` both fold to the latter), so the mapping back is
-    # one-to-many: dropping all but one would leave the others with no status
-    # at all, which ``send_message`` reads as "outcome unknown" and retries —
-    # re-sending mail the MTA already accepted.
+    # One wire form can have several originals (``user@Example.com`` and
+    # ``user@example.com`` fold together), so the map back is one-to-many:
+    # a recipient left without a status reads as "outcome unknown" upstream
+    # and gets the message re-sent.
     wire_addresses: dict[str, list[str]] = {}
     statuses: dict[str, Any] = {}
     for email in recipient_emails:

@@ -293,20 +293,16 @@ class User(AbstractBaseUser, BaseModel, auth_models.PermissionsMixin):
 class MailDomain(BaseModel):
     """Mail domain model to store mail domain information."""
 
-    # Per-label rules, not just per-string: every label must start and end
-    # alphanumeric. The previous string-wide pattern accepted "a-.b.com",
-    # which is not a resolvable host and which ``idna`` rejects outright —
-    # so an IDN name was validated more strictly than its ASCII equivalent.
-    # The leading lookahead keeps the historical two-character minimum.
+    # Per-label rules: every label starts and ends alphanumeric and is at
+    # most 63 octets (RFC 1035 §2.3.4), matching what ``idna`` enforces for
+    # the IDN form. The leading lookahead sets a two-character minimum.
+    _DOMAIN_LABEL = r"(?=[a-z0-9-]{1,63}(?:\.|$))[a-z0-9](?:[a-z0-9-]*[a-z0-9])?"
     name_validator = validators.RegexValidator(
-        regex=(
-            r"^(?=.{2,253}$)[a-z0-9]([a-z0-9-]*[a-z0-9])?"
-            r"(\.[a-z0-9]([a-z0-9-]*[a-z0-9])?)*$"
-        ),
+        regex=rf"^(?=.{{2,253}}$){_DOMAIN_LABEL}(?:\.{_DOMAIN_LABEL})*$",
         message=(
             "Enter a valid domain name. This value may contain only lowercase "
-            "letters, numbers, dots and - characters, and each label must "
-            "start and end with a letter or a number."
+            "letters, numbers, dots and - characters; each label must start "
+            "and end with a letter or a number and be at most 63 characters."
         ),
     )
 
@@ -2488,7 +2484,9 @@ class Message(BaseModel):
         Delegates to :func:`core.mda.utils.generate_mime_id` so the format
         stays uniform across every Message-ID minting path.
         """
-        return generate_mime_id(self.sender.email.split("@")[1])
+        # rpartition, not split: a quoted local part may contain @, and
+        # split("@")[1] would put a fragment of it in the Message-ID.
+        return generate_mime_id(self.sender.email.rpartition("@")[2])
 
     def get_all_recipient_contacts(self) -> Dict[str, List[Contact]]:
         """Get all recipients of the message."""

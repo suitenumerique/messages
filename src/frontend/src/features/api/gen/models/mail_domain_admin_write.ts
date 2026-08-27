@@ -14,7 +14,7 @@ export interface MailDomainAdminWrite {
   readonly id: string;
   /**
    * @maxLength 253
-   * @pattern ^(?=.{2,253}$)[a-z0-9]([a-z0-9-]*[a-z0-9])?(\.[a-z0-9]([a-z0-9-]*[a-z0-9])?)*$
+   * @pattern ^(?=.{2,253}$)(?=[a-z0-9-]{1,63}(?:\.|$))[a-z0-9](?:[a-z0-9-]*[a-z0-9])?(?:\.(?=[a-z0-9-]{1,63}(?:\.|$))[a-z0-9](?:[a-z0-9-]*[a-z0-9])?)*$
    */
   name: string;
   /** date and time at which a record was created */

@@ -22,6 +22,7 @@ from celery.utils.log import get_task_logger
 from jmap_email import first_address_email, parse_email
 
 from core import models
+from core.mda.addresses import normalize_address
 from core.services.ssrf import SSRFValidationError, validate_hostname
 from core.utils import ThreadReindexDeferrer, ThreadStatsUpdateDeferrer
 
@@ -798,7 +799,9 @@ def _run_imap(channel, state) -> tuple[int, int, int]:
                     parsed_from = parse_email(raw)
                     if parsed_from is not None:
                         sender = first_address_email(parsed_from.get("from")) or ""
-                        is_sender = sender.lower() == username.lower()
+                        is_sender = normalize_address(sender) == normalize_address(
+                            username
+                        )
                     if deliver(
                         raw,
                         recipient,

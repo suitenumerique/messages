@@ -107,7 +107,7 @@ class Command(BaseCommand):
                 # diagnose the missing-mailbox case.
                 logger.warning(
                     "Mailbox not found in domain '%s', sending without DKIM",
-                    from_email.split("@", 1)[-1],
+                    from_email.rpartition("@")[2],
                 )
         else:
             # Use minimal setup without mailbox
@@ -116,22 +116,22 @@ class Command(BaseCommand):
 
         from_name = (
             sender_mailbox.contact.name if sender_mailbox else None
-        ) or from_email.split("@")[0]
+        ) or from_email.rpartition("@")[0]
 
         # Domain-only in logs to avoid PII leakage; the full address is
         # in the recipient model and the MIME envelope for forensics.
         logger.info(
             "Sending email from <%s> to <%s>",
-            from_email.split("@", 1)[-1],
-            to_email.split("@", 1)[-1],
+            from_email.rpartition("@")[2],
+            to_email.rpartition("@")[2],
         )
         logger.info("Subject length: %d", len(subject or ""))
 
-        mime_id = generate_mime_id(from_email.split("@")[1])
+        mime_id = generate_mime_id(from_email.rpartition("@")[2])
 
         mime_data = {
             "from": [{"name": from_name, "email": from_email}],
-            "to": [{"name": to_email.split("@")[0], "email": to_email}],
+            "to": [{"name": to_email.rpartition("@")[0], "email": to_email}],
             "cc": [],
             "subject": subject,
             "sentAt": current_sent_at(),

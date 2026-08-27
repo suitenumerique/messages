@@ -14,7 +14,7 @@ import pytest
 
 from core import factories, models
 from core.authentication.backends import OIDCAuthenticationBackend
-from core.tests.mda.test_addresses import UNICODE_ASCII_LOOKALIKES
+from core.tests.mda.test_addresses import ASCII_FOLD_PAIRS
 
 pytestmark = pytest.mark.django_db
 
@@ -58,9 +58,9 @@ class TestUserIdentityFolding:
         assert first.pk == second.pk
         assert models.User.objects.filter(email="jane@example.com").count() == 1
 
-    @pytest.mark.parametrize("lookalike", UNICODE_ASCII_LOOKALIKES)
+    @pytest.mark.parametrize(("lookalike", "ascii_char"), ASCII_FOLD_PAIRS)
     def test_lookalike_claim_never_reaches_an_existing_account(
-        self, login, lookalike, settings
+        self, login, lookalike, ascii_char, settings
     ):
         """The CVE-2019-19844 shape, asserted as an invariant.
 
@@ -70,7 +70,7 @@ class TestUserIdentityFolding:
         """
         settings.OIDC_CREATE_USER = True
         settings.OIDC_FALLBACK_TO_EMAIL_FOR_IDENTIFICATION = True
-        victim = factories.UserFactory(email="nick@example.com", sub=None)
+        victim = factories.UserFactory(email=f"nic{ascii_char}@example.com", sub=None)
 
         try:
             attacker = login(sub="attacker-sub", email=f"nic{lookalike}@example.com")
@@ -126,12 +126,12 @@ class TestAutojoinMailbox:
         assert not victim.accesses.exists()
         assert models.Mailbox.objects.filter(domain=domain).count() == 1
 
-    @pytest.mark.parametrize("lookalike", UNICODE_ASCII_LOOKALIKES)
+    @pytest.mark.parametrize(("lookalike", "ascii_char"), ASCII_FOLD_PAIRS)
     def test_lookalike_claim_never_joins_an_existing_mailbox(
-        self, login, domain, lookalike
+        self, login, domain, lookalike, ascii_char
     ):
         """Whatever happens to the attacker, the victim's mailbox is untouched."""
-        victim = factories.MailboxFactory(local_part="nick", domain=domain)
+        victim = factories.MailboxFactory(local_part=f"nic{ascii_char}", domain=domain)
 
         try:
             login(sub="attacker-sub", email=f"nic{lookalike}@example.com")
@@ -171,8 +171,8 @@ class TestAdminLoginFolding:
         with pytest.raises(models.User.DoesNotExist):
             models.User.objects.get_by_natural_key("someone@example.com")
 
-    @pytest.mark.parametrize("lookalike", UNICODE_ASCII_LOOKALIKES)
-    def test_lookup_rejects_a_lookalike_local_part(self, lookalike):
+    @pytest.mark.parametrize(("lookalike", "ascii_char"), ASCII_FOLD_PAIRS)
+    def test_lookup_rejects_a_lookalike_local_part(self, lookalike, ascii_char):
         """An admin credential must not be reachable by a look-alike spelling.
 
         The local part is where this matters, and where folding is ASCII-only.
@@ -180,7 +180,10 @@ class TestAdminLoginFolding:
         of those onto ASCII by design, because that is what DNS itself does
         (see ``TestNormalizeDomain.test_uts46_maps_fullwidth_to_ascii``).
         """
-        factories.UserFactory(admin_email="admin@example.com")
+        victim = f"{ascii_char}dmin@example.com"
+        factories.UserFactory(admin_email=victim)
 
+        # Sanity: the ASCII form does resolve, so the negative below is real.
+        assert models.User.objects.get_by_natural_key(victim) is not None
         with pytest.raises(models.User.DoesNotExist):
             models.User.objects.get_by_natural_key(f"{lookalike}dmin@example.com")

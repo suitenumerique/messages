@@ -48,19 +48,13 @@ COMPOSE_OPTIONS = ComposeOptions(idna_encode_domains=True)
 def compose_options_for(header_addresses: Iterable[str | None]) -> ComposeOptions:
     """Return the compose policy for a message with these header addresses.
 
-    ``allow_smtputf8`` is turned on only when an address that will appear in
-    the *header block* has a non-ASCII local part. That is what forces RFC
-    6532 headers, which are 8-bit by construction, and it makes every hop of
-    the message require the extension.
+    ``allow_smtputf8`` only when an address bound for the *header block* has
+    a non-ASCII local part: that forces RFC 6532 headers, which every hop of
+    the message must then support.
 
-    Bcc is deliberately not part of the input: ``emit_bcc`` is off, so a
-    Bcc-only EAI recipient never reaches the headers and constrains its own
-    SMTP transaction rather than the whole message. ``core.mda.smtp`` adds
-    that per-transaction requirement back.
-
-    There is no ASCII variant to fall back to. RFC 6530 defines no downgrade,
-    and a recipient whose hop refuses the extension is failed explicitly (see
-    ``send_smtp_mail``) rather than silently dropped from the header block.
+    Bcc is not part of the input — ``emit_bcc`` is off, so it never reaches
+    the headers and the message stays ASCII for hops carrying no EAI
+    recipient. ``send_smtp_mail`` applies the per-transaction requirement.
     """
     return ComposeOptions(
         idna_encode_domains=True,

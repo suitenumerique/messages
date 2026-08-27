@@ -234,10 +234,10 @@ For production deployment, create your own Docker Compose configuration based on
    - Verify DNS MX records point to your technical domain
    - Check MTA-in logs for API connection issues
 
-2. **MTA-out not sending emails**
-   - Verify SMTP credentials in environment files
-   - Check relay host configuration
-   - Review MTA-out logs for authentication errors
+2. **Outbound mail not being sent**
+   - Check the Celery worker logs — delivery runs there, not in a separate service
+   - Inspect per-recipient `delivery_status` / `delivery_message` on the message
+   - In relay mode, verify `MTA_OUT_RELAY_HOST` and its credentials
 
 3. **DNS issues**
    - Use `dns_check` command to verify records

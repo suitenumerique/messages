@@ -31,11 +31,41 @@ UNICODE_ASCII_LOOKALIKES = [
 ]
 
 
+# Code points paired with the ASCII letter they actually fold onto, and the
+# transform that does it. A collision test must use a MATCHED pair: spoofing
+# "nick" with U+017F can never collide (it folds to "s"), so such a case would
+# pass against correct and broken code alike.
+ASCII_FOLD_PAIRS = [
+    ("\u212a", "k"),  # KELVIN SIGN, folds under str.lower()
+    ("\u017f", "s"),  # LATIN SMALL LETTER LONG S, folds under str.casefold()
+    ("\uff41", "a"),  # FULLWIDTH LATIN SMALL LETTER A, folds under NFKC
+]
+
+
 def test_lookalikes_are_really_non_ascii():
     """Guard the guard: an escape that degraded to ASCII voids every test."""
     for lookalike in UNICODE_ASCII_LOOKALIKES:
         assert not lookalike.isascii(), repr(lookalike)
     assert KELVIN_SIGN.lower() == "k"
+
+
+@pytest.mark.parametrize(("lookalike", "ascii_char"), ASCII_FOLD_PAIRS)
+def test_fold_pairs_really_collide(lookalike, ascii_char):
+    """Each pair must collide under at least one plausible naive fold.
+
+    A pair whose look-alike folds onto some other letter would make every
+    collision test below vacuous: it would pass against correct and broken
+    code alike.
+    """
+    import unicodedata
+
+    folds = {
+        lookalike.lower(),
+        lookalike.casefold(),
+        unicodedata.normalize("NFKC", lookalike).lower(),
+    }
+    assert ascii_char in folds, (repr(lookalike), folds)
+    assert not lookalike.isascii()
 
 
 class TestAsciiLower:

@@ -22,7 +22,7 @@
 ### Mail Transfer Layer
 
 - **MTA-In (Inbound)**: Postfix server with Python-based recipient validation
-- **MTA-Out (Outbound)**: Celery‑based SMTP delivery (direct to MX or via relay), with optional SOCKS proxying
+- **Outbound delivery**: Celery‑based SMTP delivery (direct to MX or via relay), with optional SOCKS proxying
 - **Mail Processing Agent**: rspamd for spam filtering and mail processing
 
 ### Data Storage

@@ -10,6 +10,7 @@ from django.db import transaction
 from django.utils import timezone
 
 import rest_framework as drf
+from jmap_email import is_valid_addr_spec
 
 from core import enums, models
 from core.api.utils import get_attachment_from_blob_id
@@ -529,6 +530,18 @@ def update_draft(
         "bcc": enums.MessageRecipientTypeChoices.BCC,
     }
     recipient_types = ["to", "cc", "bcc"]
+
+    # Validate every supplied address up front. The loop below deletes the
+    # existing recipients of a type before recreating them, so raising
+    # partway through would leave the draft with its recipients half wiped
+    # — and the caller only ever sees the 400.
+    for recipient_type in recipient_types:
+        for email in update_data.get(recipient_type) or []:
+            if not is_valid_addr_spec(email):
+                raise drf.exceptions.ValidationError(
+                    {recipient_type: f"Invalid email address: {email}"}
+                )
+
     for recipient_type in recipient_types:
         if recipient_type in update_data:
             # Delete existing recipients of this type
@@ -548,7 +561,7 @@ def update_draft(
                         mailbox=mailbox,
                         defaults={
                             "email": email,
-                            "name": email.split("@")[0],
+                            "name": email.rpartition("@")[0],
                         },
                     )
                 except DjangoValidationError as exc:

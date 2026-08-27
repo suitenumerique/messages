@@ -31,11 +31,19 @@ import core.mda.addresses
 ASCII_LOWER = str.maketrans(string.ascii_uppercase, string.ascii_lowercase)
 
 
-def _report(collisions, label):
-    if collisions:
+def _report(collision_ids, label):
+    """Report collisions by primary key only.
+
+    Migration output lands in deploy logs, so it names rows rather than
+    addresses: a local part is PII, and the operator needs the id to look
+    the row up and merge it by hand anyway.
+    """
+    if collision_ids:
+        listed = ", ".join(str(pk) for pk in sorted(collision_ids)[:20])
+        more = "" if len(collision_ids) <= 20 else ", ..."
         print(
-            f"\n  WARNING: {len(collisions)} {label} left unfolded, a lowercase "
-            f"twin already exists: {', '.join(sorted(collisions)[:20])}"
+            f"\n  WARNING: {len(collision_ids)} {label} left unfolded, a "
+            f"lowercase twin already exists. Affected ids: {listed}{more}"
         )
 
 
@@ -49,7 +57,7 @@ def fold_maildomains(apps, schema_editor):
         if folded == domain.name:
             continue
         if folded in taken:
-            collisions.append(domain.name)
+            collisions.append(domain.pk)
             continue
         taken.discard(domain.name)
         taken.add(folded)
@@ -72,7 +80,7 @@ def fold_mailboxes(apps, schema_editor):
         if folded == mailbox.local_part:
             continue
         if (mailbox.domain_id, folded) in taken:
-            collisions.append(f"{mailbox.local_part}@{mailbox.domain.name}")
+            collisions.append(mailbox.pk)
             continue
         taken.discard((mailbox.domain_id, mailbox.local_part))
         taken.add((mailbox.domain_id, folded))
@@ -119,7 +127,7 @@ def fold_users(apps, schema_editor):
         if folded == user.admin_email:
             continue
         if folded in taken:
-            collisions.append(user.admin_email)
+            collisions.append(user.pk)
             continue
         taken.discard(user.admin_email)
         taken.add(folded)
@@ -157,12 +165,14 @@ class Migration(migrations.Migration):
                         message=(
                             "Enter a valid domain name. This value may contain "
                             "only lowercase letters, numbers, dots and - "
-                            "characters, and each label must start and end with "
-                            "a letter or a number."
+                            "characters; each label must start and end with a "
+                            "letter or a number and be at most 63 characters."
                         ),
                         regex=(
-                            r"^(?=.{2,253}$)[a-z0-9]([a-z0-9-]*[a-z0-9])?"
-                            r"(\.[a-z0-9]([a-z0-9-]*[a-z0-9])?)*$"
+                            r"^(?=.{2,253}$)"
+                            r"(?=[a-z0-9-]{1,63}(?:\.|$))[a-z0-9](?:[a-z0-9-]*[a-z0-9])?"
+                            r"(?:\.(?=[a-z0-9-]{1,63}(?:\.|$))"
+                            r"[a-z0-9](?:[a-z0-9-]*[a-z0-9])?)*$"
                         ),
                     )
                 ],

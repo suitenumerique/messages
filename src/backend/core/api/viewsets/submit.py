@@ -23,6 +23,7 @@ from core import models
 from core.api.authentication import ChannelApiKeyAuthentication
 from core.api.permissions import channel_scope
 from core.enums import MAILBOX_ROLES_CAN_SEND, ChannelApiKeyScope
+from core.mda.addresses import normalize_address
 from core.mda.inbound_create import _create_message_from_inbound
 from core.mda.outbound import prepare_outbound_message
 from core.mda.outbound_tasks import send_message_task
@@ -116,12 +117,14 @@ class SubmitRawEmailView(APIView):
         # unrelated identity that the receiver may display instead —
         # the From header must collapse to exactly one entry, the
         # acting mailbox.
+        # Compared folded, never ``str.lower()``: that maps non-ASCII onto
+        # ASCII, so ``nicK@`` (U+212A) would satisfy a check for ``nick@``
+        # and get a homoglyph From DKIM-signed as this mailbox.
         from_list = parsed.get("from") or []
         mailbox_email = str(mailbox)
-        if (
-            len(from_list) != 1
-            or (from_list[0].get("email") or "").lower() != mailbox_email.lower()
-        ):
+        if len(from_list) != 1 or normalize_address(
+            from_list[0].get("email") or ""
+        ) != normalize_address(mailbox_email):
             return Response(
                 {"detail": f"From header does not match mailbox '{mailbox_email}'."},
                 status=status.HTTP_403_FORBIDDEN,
@@ -172,16 +175,16 @@ class SubmitRawEmailView(APIView):
             # true BCC recipients appear only in the envelope (X-Rcpt-To), never
             # in the MIME headers — that's how BCC works in SMTP.
             mime_recipients = {
-                e.lower()
+                normalize_address(e)
                 for e in message.recipients.values_list("contact__email", flat=True)
             }
             for addr in recipient_emails:
-                if addr.lower() not in mime_recipients:
+                if normalize_address(addr) not in mime_recipients:
                     try:
                         contact, _ = models.Contact.objects.get_or_create(
                             email=addr,
                             mailbox=mailbox,
-                            defaults={"name": addr.split("@")[0]},
+                            defaults={"name": addr.rpartition("@")[0]},
                         )
                         models.MessageRecipient.objects.get_or_create(
                             message=message,

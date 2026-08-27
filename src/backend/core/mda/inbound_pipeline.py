@@ -30,13 +30,13 @@ from typing import Any, Callable, Dict, List, Optional, Set, Tuple
 
 from django.conf import settings
 from django.db.models import Q
-from django.db.models.functions import Lower
 from django.utils import timezone
 
 from jmap_email.types import JmapEmail
 
 from core import enums, models
 from core.mda import spam
+from core.mda.addresses import normalize_address
 from core.mda.arc import _sealer_trusted, arc_result
 from core.mda.inbound_auth import (
     check_inbound_authentication,
@@ -545,22 +545,24 @@ def _resolve_assignable_users(
     # belt-and-suspenders dedup here in case a future caller forgets.
     # ``dict.fromkeys`` dedups while preserving input order so the
     # resolved assignee payload is deterministic.
-    target_emails = list(dict.fromkeys(e.lower() for e in emails if e))
+    target_emails = list(dict.fromkeys(normalize_address(e) for e in emails if e))
     if not target_emails:
         return []
 
-    # ``User.email`` is NOT normalized to lowercase on save, so match
-    # case-insensitively against the already-lowercased ``target_emails``.
+    # ``User.email`` is stored canonical (User.clean_fields), so match it
+    # directly. Folding ASCII-only matters here: a webhook receiver supplies
+    # these addresses, and str.lower() would let a homoglyph resolve to a
+    # real user.
     matches = list(
-        models.User.objects.annotate(email_lower=Lower("email"))
-        .filter(email_lower__in=target_emails)
-        .only("id", "email", "full_name")
+        models.User.objects.filter(email__in=target_emails).only(
+            "id", "email", "full_name"
+        )
     )
 
     # Group by lowercased email to detect ambiguity per address.
     by_email: Dict[str, List[models.User]] = {}
     for user in matches:
-        key = (user.email or "").lower()
+        key = normalize_address(user.email or "")
         by_email.setdefault(key, []).append(user)
 
     candidate_ids: List[Any] = []

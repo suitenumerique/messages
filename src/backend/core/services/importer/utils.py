@@ -16,6 +16,7 @@ from celery.utils.log import get_task_logger
 from jmap_email import first_address_email, parse_email
 
 from core import models
+from core.mda.addresses import normalize_address
 from core.mda.inbound import deliver_inbound_message
 from core.utils import ThreadReindexDeferrer, ThreadStatsUpdateDeferrer
 
@@ -130,9 +131,9 @@ def deliver(
         # Treat as sent mail when From matches the destination mailbox, so a
         # user's own sent mail skips the inbox.
         sender_email = first_address_email(parsed_email.get("from")) or ""
-        is_sender = (
-            bool(sender_email) and sender_email.lower() == recipient_email.lower()
-        )
+        is_sender = bool(sender_email) and normalize_address(
+            sender_email
+        ) == normalize_address(recipient_email)
 
     delivered = bool(
         deliver_inbound_message(

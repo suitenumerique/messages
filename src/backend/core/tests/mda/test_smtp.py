@@ -640,6 +640,35 @@ class TestSMTPUTF8Negotiation:
         # Nothing was offered to a server that cannot take the transaction.
         assert handler.rcpt_tos_seen == []
 
+    def test_lf_separated_message_does_not_read_its_body_as_headers(self):
+        """The earliest blank line wins, whichever form it takes.
+
+        A raw-MIME submission may use bare LF. Preferring CRLFCRLF would
+        treat everything up to the first CRLFCRLF *inside the body* as
+        headers, so an 8-bit body would be misread as 8-bit headers and
+        wrongly demand SMTPUTF8 from the hop.
+        """
+        handler = self._server(advertise_smtputf8=False, advertise_8bitmime=True)
+        lf_message = (
+            b"Subject: Test\nTo: user@example.com\n\n"
+            + "Caf\u00e9".encode("utf-8")
+            + b"\r\n\r\nmore body\r\n"
+        )
+        try:
+            result = send_smtp_mail(
+                smtp_host="127.0.0.1",
+                smtp_port=handler.port,
+                envelope_from="sender@example.com",
+                recipient_emails={"user@example.com"},
+                message_content=lf_message,
+                timeout=5,
+            )
+        finally:
+            handler.stop()
+
+        assert result["user@example.com"]["delivered"] is True
+        assert "SMTPUTF8" not in handler.mail_from_seen
+
     def test_eight_bit_body_is_sent_undeclared_when_8bitmime_is_missing(self):
         """A hop with no 8BITMIME still gets the bytes, without the option.
 

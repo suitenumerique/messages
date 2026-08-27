@@ -37,8 +37,25 @@ export const ComboBox = (props: ComboBoxProps) => {
         const transformed = canonical(value);
         return { label: transformed, value: transformed };
     }, [canonical]);
+    /**
+     * Keep one option per canonical value, first occurrence wins.
+     *
+     * Two entries that differ only by what the transformer folds (domain
+     * case, say) become the same address once transformed, so without this
+     * a restored draft renders duplicate chips and `onChange` submits the
+     * same recipient twice.
+     */
+    const dedupe = useCallback((options: Option[]): Option[] => {
+        const seen = new Set<string>();
+        return options.filter((option) => {
+            const key = option.value ?? option.label;
+            if (seen.has(key)) return false;
+            seen.add(key);
+            return true;
+        });
+    }, []);
     const { getSelectedItemProps, getDropdownProps, removeSelectedItem, addSelectedItem, selectedItems, setSelectedItems } = useMultipleSelection<Option>({
-        initialSelectedItems: (props.value || props.defaultValue || []).map(toOption),
+        initialSelectedItems: dedupe((props.value || props.defaultValue || []).map(toOption)),
         stateReducer: (state, { type, changes}) => {
             if(type === useMultipleSelection.stateChangeTypes.DropdownKeyDownBackspace) {
                 // Give focus to the last selected item instead of deleting it when pressing backspace
@@ -83,7 +100,7 @@ export const ComboBox = (props: ComboBoxProps) => {
     const extractNewItemsIfNeeded = () => {
         const [newItems, rest] = parseInputValue(inputValue);
         if (newItems.length > 0) {
-            setSelectedItems([...selectedItems, ...newItems]);
+            setSelectedItems(dedupe([...selectedItems, ...newItems]));
             setInputValue(rest);
             return true;
         }
@@ -114,7 +131,7 @@ export const ComboBox = (props: ComboBoxProps) => {
                 const isPasted = newInputValue.length - inputValue?.length > 1
                 const [newItems, rest] = parseInputValue(newInputValue);
                 if (isPasted && newItems.length > 0) {
-                    setSelectedItems([...selectedItems, ...newItems]);
+                    setSelectedItems(dedupe([...selectedItems, ...newItems]));
                     setInputValue(rest);
                     props.onInputChange?.(rest);
                     return;
