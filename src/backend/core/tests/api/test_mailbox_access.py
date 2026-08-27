@@ -1,9 +1,13 @@
 """Tests for the MailboxAccessViewSet API endpoint (nested under mailboxes)."""
 # pylint: disable=unused-argument
 
+import threading
+from contextlib import contextmanager
 from datetime import timedelta
+from unittest import mock
 
 from django.contrib.auth.models import AnonymousUser
+from django.db import connection
 from django.urls import reverse
 from django.utils import timezone
 
@@ -11,6 +15,7 @@ import pytest
 from rest_framework import status
 
 from core import factories, models
+from core.api import serializers
 from core.enums import MailboxRoleChoices, MailDomainAccessRoleChoices
 
 pytestmark = pytest.mark.django_db
@@ -334,6 +339,49 @@ class TestMailboxAccessViewSet:  # pylint: disable=too-many-public-methods
         assert models.MailboxAccess.objects.filter(
             mailbox=mailbox1_domain1, user=stub, role=MailboxRoleChoices.EDITOR
         ).exists()
+
+    @pytest.mark.django_db(transaction=True)
+    def test_concurrent_invites_of_the_same_email_create_one_stub(self):
+        """Two concurrent grants for one unknown address must not double-create.
+
+        ``User.email`` carries no unique constraint, so both callers can miss
+        the pre-lock lookup and insert, leaving two sub-less rows that make the
+        invitee's next OIDC login ambiguous.
+        """
+        barrier = threading.Barrier(2, timeout=10)
+        real_lock = serializers._user_email_lock  # pylint: disable=protected-access
+
+        @contextmanager
+        def barriered_lock(email):
+            # Both threads have already missed the pre-lock lookup by the time
+            # they reach this, so releasing them together makes the race
+            # deterministic rather than timing-dependent.
+            barrier.wait()
+            with real_lock(email):
+                yield
+
+        errors = []
+
+        def invite():
+            try:
+                field = serializers.UserAccessWriteField(
+                    queryset=models.User.objects.all()
+                )
+                field.to_internal_value("Invitee@Example.com")
+            except Exception as exc:  # pylint: disable=broad-exception-caught
+                errors.append(exc)
+            finally:
+                connection.close()
+
+        with mock.patch.object(serializers, "_user_email_lock", barriered_lock):
+            threads = [threading.Thread(target=invite) for _ in range(2)]
+            for thread in threads:
+                thread.start()
+            for thread in threads:
+                thread.join(timeout=20)
+
+        assert not errors, errors
+        assert models.User.objects.filter(email="invitee@example.com").count() == 1
 
     def test_admin_maildomain_mailbox_create_access_by_mailbox_admin_for_unmanaged_mailbox_forbidden(
         self, api_client, mailbox1_admin_user, mailbox1_domain2, user_beta

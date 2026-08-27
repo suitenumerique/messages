@@ -4,11 +4,12 @@
 import hashlib
 import json
 import uuid
+from contextlib import contextmanager
 from urllib.parse import urlparse
 
 from django.conf import settings
 from django.core.exceptions import ValidationError as DjangoValidationError
-from django.db import transaction
+from django.db import connection, transaction
 from django.db.models import Count, Max, Q
 from django.middleware.csrf import get_token
 
@@ -1458,6 +1459,34 @@ class MailboxAccessReadSerializer(serializers.ModelSerializer):
         read_only_fields = fields  # All fields are effectively read-only from this serializer's perspective
 
 
+# Distinct from the inbound (see core.mda.inbound_create) and blob-cohort
+# (see core.services.tiered_storage) classids so the three never collide in
+# Postgres' single global advisory-lock keyspace.
+_ADVISORY_LOCK_CLASSID_USER_EMAIL = 0x75736572  # 'user' in ASCII
+
+
+@contextmanager
+def _user_email_lock(email: str):
+    """Serialize stub-user creation for one canonical email.
+
+    Must be called inside ``transaction.atomic()`` — ``pg_advisory_xact_lock``
+    binds the lock to the current transaction and releases it on
+    commit/rollback.
+    """
+    # First 4 bytes of the email's sha256 as a signed int32 — the two-arg
+    # pg_advisory_xact_lock(classid, objid) form takes two int4s. A 2^-32
+    # false-share collision is operationally invisible given the short,
+    # DB-only critical section it guards.
+    digest = hashlib.sha256(email.encode("utf-8")).digest()
+    objid = int.from_bytes(digest[:4], byteorder="big", signed=True)
+    with connection.cursor() as cursor:
+        cursor.execute(
+            "SELECT pg_advisory_xact_lock(%s, %s)",
+            [_ADVISORY_LOCK_CLASSID_USER_EMAIL, objid],
+        )
+        yield
+
+
 class UserAccessWriteField(serializers.PrimaryKeyRelatedField):
     """Custom field that accepts either UUID or email address for user lookup.
 
@@ -1469,17 +1498,24 @@ class UserAccessWriteField(serializers.PrimaryKeyRelatedField):
     def to_internal_value(self, data):
         """Convert UUID string or email to User instance."""
         if isinstance(data, str) and "@" in data:
-            # Fold before the lookup: User.email is stored canonical, and it
-            # carries no unique constraint, so an unfolded miss would silently
-            # create a second stub for someone who already has an account —
-            # granting the access to a phantom user, and leaving two sub-less
-            # rows that make the real user's next OIDC login ambiguous.
+            # Fold before the lookup: User.email is stored canonical, so an
+            # unfolded miss would create a second stub for someone who already
+            # has an account — granting the access to a phantom user.
             email = normalize_address(data)
             user = models.User.objects.filter(email=email).first()
             if user is None:
-                user = models.User(email=email)
-                user.set_unusable_password()
-                user.save()
+                # ``User.email`` carries no unique constraint (duplicates are
+                # legal under OIDC_ALLOW_DUPLICATE_EMAILS), so nothing stops
+                # two concurrent grants for the same address from both missing
+                # and both inserting. Two sub-less rows sharing an email make
+                # the real user's next OIDC login ambiguous, so serialize the
+                # find-or-create and re-read inside the lock.
+                with transaction.atomic(), _user_email_lock(email):
+                    user = models.User.objects.filter(email=email).first()
+                    if user is None:
+                        user = models.User(email=email)
+                        user.set_unusable_password()
+                        user.save()
             return user
         return super().to_internal_value(data)
 

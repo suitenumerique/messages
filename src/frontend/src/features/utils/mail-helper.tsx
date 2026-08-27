@@ -100,8 +100,15 @@ export const UNICODE_EMAIL_REGEX = new RegExp(
     // Each label starts with a letter or number (never a combining mark, which
     // has no base to attach to at the start of a label) and ends with a
     // non-hyphen, so `foo-.com` and `́foo.com` are both rejected.
+    //
+    // The per-label lookaheads cap each label at 63 characters (RFC 1035
+    // §2.3.4). That is a lower bound for a Unicode label, whose A-label is
+    // longer than its source: only the backend, which actually punycodes the
+    // domain, can enforce the 63-octet limit exactly.
     + '@(?=.{1,255}$)'
-    + '(?:[\\p{L}\\p{N}](?:[\\p{L}\\p{M}\\p{N}\\-]*[\\p{L}\\p{M}\\p{N}])?\\.)+'
+    + '(?:(?=[\\p{L}\\p{M}\\p{N}\\-]{1,63}\\.)'
+    + '[\\p{L}\\p{N}](?:[\\p{L}\\p{M}\\p{N}\\-]*[\\p{L}\\p{M}\\p{N}])?\\.)+'
+    + '(?=[\\p{L}\\p{M}\\p{N}\\-]{1,63}$)'
     + '\\p{L}(?:[\\p{L}\\p{M}\\p{N}\\-]*[\\p{L}\\p{M}\\p{N}])$',
     'u'
 );

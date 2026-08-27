@@ -92,7 +92,7 @@ def group_recipients_by_mx(recipients: List[str]) -> Dict[str, Dict[str, Any]]:
         # unknown" and retries for the full backoff window.
         parts = split_address(email)
         if parts is None:
-            logger.error("Invalid email format while MX grouping: %s", email)
+            logger.error("Invalid email format while MX grouping")
             continue
         domain = normalize_domain(parts[1])
         if domain not in domain_map:

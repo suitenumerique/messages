@@ -1128,6 +1128,20 @@ describe('MailHelper', () => {
       expect(MailHelper.isValidEmail(email)).toBe(false);
     });
 
+    it.each([
+      ['é'.repeat(63), true],
+      ['é'.repeat(64), false],
+      ['a'.repeat(63), true],
+      ['a'.repeat(64), false],
+    ])('should cap the domain label %p at 63 characters', (label, valid) => {
+      expect(MailHelper.isValidEmail(`user@${label}.com`)).toBe(valid);
+    });
+
+    it('should cap the top-level domain label at 63 characters', () => {
+      expect(MailHelper.isValidEmail(`user@example.${'a'.repeat(63)}`)).toBe(true);
+      expect(MailHelper.isValidEmail(`user@example.${'a'.repeat(64)}`)).toBe(false);
+    });
+
     it('should accept a punycode domain', () => {
       expect(MailHelper.isValidEmail('user@xn--exempl-gva.example')).toBe(true);
     });
