@@ -77,6 +77,31 @@ const blobUrlRegexSource = (): string => {
         .replace(placeholder, '([a-f0-9-]+)');
 };
 
+/** Matches only if every character is ASCII. */
+const ASCII_ONLY = /^[\x00-\x7F]*$/;
+
+/**
+ * Zod's own `z.email()` pattern is ASCII-only, which would reject the
+ * accented addresses we want to accept-and-warn-about; its `unicodeEmail`
+ * alternative is `/^[^\s@"]{1,64}@[^\s@]{1,255}$/u`, which accepts `a@com`
+ * and `a@example..com`. So this is `z.email()`'s shape with the letter
+ * classes widened to Unicode, keeping the structural checks the ASCII one
+ * has: at least two labels, no empty label, no leading or doubled dot in
+ * the local part.
+ *
+ * One check is deliberately looser than `z.email()`: its TLD is
+ * `[A-Za-z]{2,}`, which would reject a punycode TLD such as `xn--p1ai`, so
+ * digits and hyphens are allowed after the first letter.
+ */
+export const UNICODE_EMAIL_REGEX = new RegExp(
+    // local part: max 64, no leading dot, no consecutive dots, no trailing dot
+    "^(?=.{1,64}@)(?!\\.)(?!.*\\.\\.)[\\p{L}\\p{M}\\p{N}_'+\\-.]*[\\p{L}\\p{M}\\p{N}_+-]"
+    // domain: max 255, one or more labels, then a TLD of 2+ starting with a letter
+    + '@(?=.{1,255}$)(?:[\\p{L}\\p{M}\\p{N}][\\p{L}\\p{M}\\p{N}\\-]*\\.)+'
+    + '\\p{L}[\\p{L}\\p{M}\\p{N}\\-]*[\\p{L}\\p{M}\\p{N}]$',
+    'u'
+);
+
 /** An helper which aims to gather all utils related write and send a message */
 class MailHelper {
 
@@ -144,9 +169,69 @@ class MailHelper {
 
     /**
      * Test if an email address is valid.
+     *
+     * Unicode-aware on purpose: the backend can send to an accented domain
+     * (it IDNA-encodes it on the way out), so refusing those here would
+     * reject addresses that actually work. Accented *local* parts are not
+     * supported and are surfaced by `hasNonAsciiLocalPart` instead of being
+     * silently unselectable.
      */
     static isValidEmail(email: string): boolean {
-        return z.email().safeParse(email).success;
+        return z.email({ pattern: UNICODE_EMAIL_REGEX }).safeParse(email).success;
+    }
+
+    /**
+     * Lowercase `A-Z` and nothing else. Mirrors the backend's `ascii_lower`.
+     *
+     * Use this, never `toLowerCase()`, on a local part. Unicode lowercasing
+     * maps non-ASCII code points onto ASCII (U+212A KELVIN SIGN becomes "k"),
+     * so `nicK` would fold onto an existing `nick` and collide with someone
+     * else's mailbox.
+     *
+     * A domain is the opposite case and deliberately uses `toLowerCase()`:
+     * DNS is case-insensitive and UTS-46 performs exactly that mapping.
+     */
+    static asciiLower(value: string): string {
+        return value.replace(/[A-Z]/g, (char) =>
+            String.fromCharCode(char.charCodeAt(0) + 32)
+        );
+    }
+
+    /**
+     * Split an address into [localPart, domain], or undefined if malformed.
+     * Splits on the last "@", which is the domain separator.
+     */
+    static splitEmail(email: string): [string, string] | undefined {
+        const at = email.lastIndexOf('@');
+        if (at <= 0 || at === email.length - 1) return undefined;
+        return [email.slice(0, at), email.slice(at + 1)];
+    }
+
+    /**
+     * Lowercase the domain of an address, leaving the local part alone.
+     *
+     * DNS is case-insensitive so the domain has one canonical spelling, but
+     * RFC 5321 §2.4 leaves the local part to the destination host — we are
+     * not it, so we send back exactly what was typed.
+     *
+     * Returns the input unchanged when it has no domain to normalize.
+     */
+    static normalizeEmailDomain(email: string): string {
+        const parts = this.splitEmail(email.trim());
+        if (!parts) return email.trim();
+        return `${parts[0]}@${parts[1].toLowerCase()}`;
+    }
+
+    /** True when the local part carries a character outside ASCII. */
+    static hasNonAsciiLocalPart(email: string): boolean {
+        const parts = this.splitEmail(email);
+        return !!parts && !ASCII_ONLY.test(parts[0]);
+    }
+
+    /** True when the domain carries a character outside ASCII (an IDN). */
+    static hasNonAsciiDomain(email: string): boolean {
+        const parts = this.splitEmail(email);
+        return !!parts && !ASCII_ONLY.test(parts[1]);
     }
 
     /**

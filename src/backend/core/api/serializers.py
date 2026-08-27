@@ -17,6 +17,7 @@ from rest_framework import serializers
 from rest_framework.exceptions import PermissionDenied
 
 from core import enums, models
+from core.mda.addresses import ascii_lower, normalize_domain
 from core.mda.dispatch_webhooks import (
     VALID_FORMATS,
 )
@@ -1626,6 +1627,18 @@ class MaildomainAccessWriteSerializer(serializers.ModelSerializer):
 class MailDomainAdminWriteSerializer(serializers.ModelSerializer):
     """Serialize mail domains for creating / editing admin view."""
 
+    def to_internal_value(self, data):
+        """Canonicalize ``name`` before the field validators see it.
+
+        ``validate_name`` would run too late: the model's lowercase-only
+        regex and its uniqueness check are field validators, so mixed-case
+        or IDN input has to be folded on the way in or it is rejected
+        outright rather than normalized.
+        """
+        if isinstance(data, dict) and isinstance(data.get("name"), str):
+            data = {**data, "name": normalize_domain(data["name"])}
+        return super().to_internal_value(data)
+
     class Meta:
         model = models.MailDomain
         fields = [
@@ -1772,8 +1785,8 @@ class MailboxAdminSerializer(serializers.ModelSerializer):
         if metadata.get("type") == "personal":
             local_part = attrs.get("local_part", "")
             denylist = settings.MESSAGES_MAILBOX_LOCALPART_DENYLIST_PERSONAL
-            lower_value = local_part.lower()
-            if any(lower_value == prefix.lower() for prefix in denylist):
+            lower_value = ascii_lower(local_part)
+            if any(lower_value == ascii_lower(prefix) for prefix in denylist):
                 raise serializers.ValidationError(
                     {
                         "local_part_denied": (
@@ -1785,7 +1798,13 @@ class MailboxAdminSerializer(serializers.ModelSerializer):
         return super().validate(attrs)
 
     def validate_local_part(self, value):
-        """Validate the local part of the mailbox."""
+        """Fold the local part, then check it is free in this domain.
+
+        Field-level validation runs before ``validate()`` and before
+        ``create()``, so folding here is what makes the denylist, the
+        uniqueness check and the stored value all agree on one form.
+        """
+        value = ascii_lower(value)
         if models.Mailbox.objects.filter(
             domain=self.context.get("domain"), local_part=value
         ).exists():
@@ -3097,7 +3116,11 @@ class PartialDriveItemSerializer(serializers.Serializer):
 
 
 class DomainsField(serializers.Field):
-    """Accepts either a JSON list of strings or a comma-separated string."""
+    """Accepts either a JSON list of strings or a comma-separated string.
+
+    Names are passed through as supplied; the view canonicalizes each one so
+    a rejected domain can still be echoed back in the caller's own spelling.
+    """
 
     def to_internal_value(self, data):
         if isinstance(data, str):

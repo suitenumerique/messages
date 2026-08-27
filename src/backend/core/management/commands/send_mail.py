@@ -21,9 +21,10 @@ from django.core.management.base import BaseCommand, CommandError
 from jmap_email import ComposeError, compose_email, parse_address
 
 from core import models
+from core.mda.addresses import ascii_lower, normalize_domain, split_address
 from core.mda.outbound import send_outbound_email
 from core.mda.signing import sign_message_dkim
-from core.mda.utils import COMPOSE_OPTIONS, current_sent_at, generate_mime_id
+from core.mda.utils import compose_options_for, current_sent_at, generate_mime_id
 
 logger = logging.getLogger(__name__)
 
@@ -90,11 +91,14 @@ class Command(BaseCommand):
         sender_mailbox = None
         maildomain_custom_settings = {}
 
-        if from_email:
+        # ``parse_address`` above already guaranteed a real addr-spec.
+        from_parts = split_address(from_email) if from_email else None
+
+        if from_parts:
             try:
                 sender_mailbox = models.Mailbox.objects.get(
-                    local_part=from_email.split("@")[0],
-                    domain__name=from_email.split("@")[1],
+                    local_part=ascii_lower(from_parts[0]),
+                    domain__name=normalize_domain(from_parts[1]),
                 )
                 maildomain_custom_settings = sender_mailbox.domain.custom_settings or {}
             except models.Mailbox.DoesNotExist:
@@ -139,7 +143,9 @@ class Command(BaseCommand):
         # Compose the email. A malformed addr-spec surfaces here rather
         # than at parse time, so it gets the same CommandError treatment.
         try:
-            raw_mime = compose_email(mime_data, options=COMPOSE_OPTIONS)
+            raw_mime = compose_email(
+                mime_data, options=compose_options_for([from_email, to_email])
+            )
         except ComposeError as e:
             raise CommandError(f"Cannot compose message: {e}") from e
 

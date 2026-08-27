@@ -52,7 +52,7 @@
 1. User composes message in frontend
 2. Frontend sends draft via REST API
 3. Backend validates and queues message
-4. **Celery** processes sending via **MTA-Out** if `MTA_OUT_MODE=relay`, or directly to MX servers if `MTA_OUT_MODE=direct`
+4. **Celery** delivers directly to each recipient's MX servers (`MTA_OUT_MODE=direct`), or through an external SMTP relay if `MTA_OUT_MODE=relay`
 5. In development, MailCatcher intercepts messages and displays them in its web interface
 
 ### Search Operations

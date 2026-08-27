@@ -16,6 +16,7 @@ from django.urls import path
 from django.utils.html import escape, format_html
 from django.utils.text import slugify
 
+from core.mda.addresses import normalize_address
 from core.mda.outbound_tasks import retry_messages_task
 from core.services import thread_events as thread_events_service
 from core.services.dns.provisioning import provision_domain_dns
@@ -154,8 +155,13 @@ class PasswordlessUserForm(forms.Form):
     email = forms.EmailField(label="Email", required=True)
 
     def clean_email(self):
-        """Reject emails that are already in use."""
-        email = self.cleaned_data["email"]
+        """Canonicalize the email, then reject it if it is already in use.
+
+        User.email is stored folded, so the duplicate check has to run on
+        the folded value or a differently-cased spelling slips past it and
+        creates a second account for the same person.
+        """
+        email = normalize_address(self.cleaned_data["email"])
         if models.User.objects.filter(email=email).exists():
             raise forms.ValidationError("A user with this email already exists.")
         return email

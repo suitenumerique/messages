@@ -57,6 +57,12 @@ from core.enums import (
     thread_event_type_choices,
     user_event_type_choices,
 )
+from core.mda.addresses import (
+    AddrSpecValidator,
+    ascii_lower,
+    normalize_address,
+    normalize_domain,
+)
 from core.mda.signing import generate_dkim_key as _generate_dkim_key
 from core.mda.utils import generate_mime_id, message_snippet
 from core.services.tiered_storage import TieredStorageService, sha256_advisory_lock
@@ -114,6 +120,19 @@ class BaseModel(models.Model):
 
 class UserManager(auth_models.UserManager):
     """Custom manager for User model with additional methods."""
+
+    def get_by_natural_key(self, username):
+        """Look up the admin login by its canonical form.
+
+        ``admin_email`` is stored folded (see ``User.clean_fields``), and this
+        is the single funnel Django's auth backend and ``createsuperuser`` use
+        to resolve USERNAME_FIELD. Without folding here, an admin created as
+        ``Admin@Example.com`` is stored as ``admin@example.com`` and could
+        never sign in with what they typed.
+        """
+        return self.get(
+            **{self.model.USERNAME_FIELD: normalize_address(username or "")}
+        )
 
     def get_user_by_sub_or_email(self, sub, email):
         """Fetch existing user by sub or email."""
@@ -232,6 +251,18 @@ class User(AbstractBaseUser, BaseModel, auth_models.PermissionsMixin):
         self.full_clean()
         super().save(*args, **kwargs)
 
+    def clean_fields(self, exclude=None):
+        """Fold both identity addresses before they are validated or compared.
+
+        Both are looked up by exact match (OIDC sub-less matching, admin
+        login), so the stored value has to already be the canonical one.
+        """
+        if self.email:
+            self.email = normalize_address(self.email)
+        if self.admin_email:
+            self.admin_email = normalize_address(self.admin_email)
+        super().clean_fields(exclude=exclude)
+
     def clean(self):
         """Validate fields values."""
         validate_json_schema(
@@ -262,11 +293,20 @@ class User(AbstractBaseUser, BaseModel, auth_models.PermissionsMixin):
 class MailDomain(BaseModel):
     """Mail domain model to store mail domain information."""
 
+    # Per-label rules, not just per-string: every label must start and end
+    # alphanumeric. The previous string-wide pattern accepted "a-.b.com",
+    # which is not a resolvable host and which ``idna`` rejects outright —
+    # so an IDN name was validated more strictly than its ASCII equivalent.
+    # The leading lookahead keeps the historical two-character minimum.
     name_validator = validators.RegexValidator(
-        regex=r"^[a-z0-9][a-z0-9.-]*[a-z0-9]$",
+        regex=(
+            r"^(?=.{2,253}$)[a-z0-9]([a-z0-9-]*[a-z0-9])?"
+            r"(\.[a-z0-9]([a-z0-9-]*[a-z0-9])?)*$"
+        ),
         message=(
             "Enter a valid domain name. This value may contain only lowercase "
-            "letters, numbers, dots and - characters."
+            "letters, numbers, dots and - characters, and each label must "
+            "start and end with a letter or a number."
         ),
     )
 
@@ -318,6 +358,17 @@ class MailDomain(BaseModel):
         """Enforce validation before saving."""
         self.full_clean()
         super().save(*args, **kwargs)
+
+    def clean_fields(self, exclude=None):
+        """Canonicalize the domain before ``name_validator`` runs.
+
+        Normalizing here rather than in ``clean()`` means mixed-case and
+        IDN input is accepted and stored as the lowercase A-label the
+        validator (and every DNS lookup) expects, instead of being rejected.
+        """
+        if self.name:
+            self.name = normalize_domain(self.name)
+        super().clean_fields(exclude=exclude)
 
     def clean(self):
         """Validate custom attributes."""
@@ -871,6 +922,17 @@ class Mailbox(BaseModel):
 
     def __str__(self):
         return f"{self.local_part}@{self.domain.name}"
+
+    def clean_fields(self, exclude=None):
+        """Fold the local part before validation and the uniqueness check.
+
+        ``full_clean`` runs ``clean_fields`` → ``validate_unique``, so the
+        ``(local_part, domain)`` constraint is enforced on the folded value:
+        ``John`` and ``john`` cannot coexist in the same domain.
+        """
+        if self.local_part:
+            self.local_part = ascii_lower(self.local_part)
+        super().clean_fields(exclude=exclude)
 
     @property
     def can_reset_password(self) -> bool:
@@ -2074,7 +2136,12 @@ class Contact(BaseModel):
     """Contact model to store contact information."""
 
     name = models.CharField("name", max_length=255, null=True, blank=True)
-    email = models.EmailField("email")
+    # A contact is an address we carry, not one we own, so it holds whatever
+    # the sender used — including an RFC 6531 local part. See
+    # AddrSpecValidator for why Django's validate_email is not used here.
+    # max_length matches the EmailField this replaced, so the column is
+    # unchanged.
+    email = models.CharField("email", max_length=254, validators=[AddrSpecValidator()])
     mailbox = models.ForeignKey(
         "Mailbox",
         on_delete=models.CASCADE,

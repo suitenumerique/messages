@@ -3,6 +3,7 @@
 import logging
 
 from django.core.exceptions import SuspiciousOperation
+from django.core.exceptions import ValidationError as DjangoValidationError
 
 from lasuite.oidc_login.backends import (
     OIDCAuthenticationBackend as LaSuiteOIDCAuthenticationBackend,
@@ -10,6 +11,12 @@ from lasuite.oidc_login.backends import (
 
 from core.entitlements import EntitlementsUnavailableError, get_user_entitlements
 from core.enums import MailboxRoleChoices, MailDomainAccessRoleChoices
+from core.mda.addresses import (
+    ascii_lower,
+    normalize_address,
+    normalize_domain,
+    split_address,
+)
 from core.models import (
     Contact,
     DuplicateEmailError,
@@ -60,7 +67,10 @@ class OIDCAuthenticationBackend(LaSuiteOIDCAuthenticationBackend):
                 "User info contained no recognizable user identification"
             )
 
-        email = user_info.get("email")
+        # Fold before anything keys off it: the stored User.email is the
+        # canonical form (see User.clean_fields), so an IdP that varies the
+        # casing of a claim between logins must not fork a second account.
+        email = normalize_address(user_info.get("email") or "") or None
 
         claims = {
             self.OIDC_USER_SUB_FIELD: sub,
@@ -117,8 +127,14 @@ class OIDCAuthenticationBackend(LaSuiteOIDCAuthenticationBackend):
             )
             return
 
-        # Resolve domain names to MailDomain objects that exist in DB
-        entitled_domains = list(MailDomain.objects.filter(name__in=admin_domains))
+        # Resolve domain names to MailDomain objects that exist in DB.
+        # MailDomain.name is stored canonicalized, so the entitlement list has
+        # to be canonicalized too or an upper-case entry silently grants nothing.
+        entitled_domains = list(
+            MailDomain.objects.filter(
+                name__in=[normalize_domain(str(name)) for name in admin_domains]
+            )
+        )
         entitled_domain_ids = {d.id for d in entitled_domains}
 
         # Get current ADMIN accesses for this user
@@ -174,9 +190,13 @@ class OIDCAuthenticationBackend(LaSuiteOIDCAuthenticationBackend):
         if self.get_settings("OIDC_CREATE_USER", True):
             return True
 
+        parts = split_address(email)
+        if parts is None:
+            return False
+
         # If the email address ends with a domain that has autojoin enabled
         if MailDomain.objects.filter(
-            name=email.split("@")[1], oidc_autojoin=True
+            name=normalize_domain(parts[1]), oidc_autojoin=True
         ).exists():
             return True
 
@@ -184,26 +204,44 @@ class OIDCAuthenticationBackend(LaSuiteOIDCAuthenticationBackend):
         return False
 
     def autojoin_mailbox(self, user):
-        """Setup autojoin mailbox for user."""
+        """Setup autojoin mailbox for user.
 
-        email = None
-        if user.email:
-            # TODO aliases?
-            if MailDomain.objects.filter(
-                name=user.email.split("@")[1], oidc_autojoin=True
-            ).exists():
-                email = user.email
+        The mailbox is keyed on the folded address, never on the raw claim:
+        an IdP that returns ``John.Doe@`` today and ``john.doe@`` tomorrow
+        must land on one mailbox, and folding ASCII-only keeps a Unicode
+        look-alike local part from resolving onto someone else's.
+        """
 
-        if not email:
+        # TODO aliases?
+        parts = split_address(user.email or "")
+        if parts is None:
             return
 
-        maildomain = MailDomain.objects.get(name=email.split("@")[1])
+        local_part = ascii_lower(parts[0])
+        domain_name = normalize_domain(parts[1])
 
-        # Create a mailbox for the user if missing
-        mailbox, _ = Mailbox.objects.get_or_create(
-            local_part=email.split("@")[0],
-            domain=maildomain,
-        )
+        maildomain = MailDomain.objects.filter(
+            name=domain_name, oidc_autojoin=True
+        ).first()
+        if not maildomain:
+            return
+
+        # Mailbox local parts are ASCII-only (see Mailbox.local_part's
+        # validator). A claim that doesn't fit — a non-ASCII local part, a
+        # space — means no mailbox, not a failed login: autojoin is a
+        # convenience, and letting the ValidationError escape here would lock
+        # the user out of the product entirely.
+        try:
+            mailbox, _ = Mailbox.objects.get_or_create(
+                local_part=local_part,
+                domain=maildomain,
+            )
+        except DjangoValidationError:
+            logger.warning(
+                "Skipping mailbox autojoin on %s: unsupported local part",
+                domain_name,
+            )
+            return
 
         # Create an admin mailbox access for the user if needed
         mailbox_access, _ = MailboxAccess.objects.get_or_create(
@@ -215,10 +253,13 @@ class OIDCAuthenticationBackend(LaSuiteOIDCAuthenticationBackend):
             mailbox_access.role = MailboxRoleChoices.ADMIN
             mailbox_access.save()
 
+        # The mailbox's own contact is an address we own, so it carries the
+        # folded form rather than whatever casing the IdP happened to send.
+        email = str(mailbox)
         contact, _ = Contact.objects.get_or_create(
             email=email,
             mailbox=mailbox,
-            defaults={"name": user.full_name or email.split("@")[0]},
+            defaults={"name": user.full_name or local_part},
         )
         mailbox.contact = contact
         mailbox.save()

@@ -54,6 +54,7 @@ export const RhfContactComboBox = (props: Omit<ComboBoxProps, 'options'> & { nam
                     aria-invalid={!!fieldState.error}
                     value={field.value}
                     valueValidator={MailHelper.isValidEmail}
+                    valueTransformer={MailHelper.normalizeEmailDomain.bind(MailHelper)}
                     onChange={(value) => setValue(props.name, value, { shouldDirty: true })}
                     onInputChange={(value) => setSearchQuery(value.trim())}
                     options={contactsOptions}

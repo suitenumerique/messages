@@ -521,48 +521,6 @@ services:
     volumes:
       - ./src/mta-in:/app
 
-  mta-out:
-    build:
-      context: src/mta-out
-      target: runtime-prod
-    env_file:
-      - deploy/env/mta-out.defaults
-      - deploy/env/mta-out.local
-    ports:
-      - "8911:587"
-    depends_on:
-      mailcatcher:
-        condition: service_started
-
-  mta-out-test:
-    profiles:
-      - tools
-    build:
-      context: src/mta-out
-      target: runtime-dev
-    env_file:
-      - deploy/env/mta-out.defaults
-      - deploy/env/mta-out.local
-    environment:
-      - EXEC_CMD=true
-      - MTA_OUT_SMTP_HOST=localhost:587
-      - MTA_OUT_SMTP_USERNAME=user
-      - MTA_OUT_SMTP_PASSWORD=pass
-      - SMTP_RELAY_HOST=localhost:2525
-    command: pytest -vvs tests/
-    volumes:
-      - ./src/mta-out:/app
-
-  mta-out-uv:
-    profiles:
-      - tools
-    volumes:
-      - ./src/mta-out:/app
-    build:
-      context: src/mta-out
-      target: uv
-    pull_policy: build
-
   socks-proxy:
     build:
       context: src/socks-proxy

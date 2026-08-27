@@ -1,6 +1,6 @@
 # Shared Python base image — the single source of truth for the Debian base, the
 # uv version, and the uv-managed CPython version used by every uv-based Python
-# service (backend, mta-in, mta-out, and the mta-in pymta variant).
+# service (backend, mta-in, and the mta-in pymta variant).
 #
 # Built + published by `make build-python-base` (locally, tagged
 # `messages-python-uv:local`) and by the `python-uv` job in messages-ghcr.yml

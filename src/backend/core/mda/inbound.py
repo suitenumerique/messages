@@ -12,6 +12,7 @@ from jmap_email import first_msgid
 from jmap_email.types import JmapEmail
 
 from core import enums, models
+from core.mda.addresses import ascii_lower, normalize_domain, split_address
 from core.mda.inbound_tasks import process_inbound_message_task
 from core.services.importer.labels import (
     handle_duplicate_message,
@@ -25,14 +26,28 @@ logger = logging.getLogger(__name__)
 def check_local_recipient(
     email_address: str, create_if_missing: bool = False
 ) -> bool | models.Mailbox:
-    """Check if a recipient email is locally deliverable."""
+    """Check if a recipient email is locally deliverable.
+
+    Resolution is case-insensitive: the local part is ASCII-folded and the
+    domain canonicalized (see ``core.mda.addresses``), so ``John.Doe@`` and
+    ``john.doe@`` reach the same mailbox — and a mailbox created here is
+    created under that same folded name.
+    """
 
     is_deliverable = False
 
-    try:
-        local_part, domain_name = email_address.split("@", 1)
-    except ValueError:
+    parts = split_address(email_address)
+    if parts is None:
         return False  # Invalid format
+    local_part = ascii_lower(parts[0])
+    domain_name = normalize_domain(parts[1])
+
+    # We do not host mailboxes with a non-ASCII local part, so such an address
+    # is never local — even under MESSAGES_ACCEPT_ALL_EMAILS, whose
+    # create-if-missing path would otherwise raise ValidationError out of
+    # ``send_message`` and leave the message retrying forever.
+    if not local_part.isascii():
+        return False
 
     # For unit testing, we accept all emails
     if settings.MESSAGES_ACCEPT_ALL_EMAILS:
@@ -63,7 +78,10 @@ def check_local_recipients(email_addresses: list[str]) -> set[str]:
     """
     Check which email addresses are locally deliverable (batch version).
 
-    Returns a set of email addresses that are deliverable locally.
+    Returns a subset of ``email_addresses``, verbatim: MTA-in keys its RCPT
+    verdict by the exact string it sent us, so the folded form used for the
+    lookup must never leak into the result.
+
     An email is deliverable if:
     - MESSAGES_ACCEPT_ALL_EMAILS is True (test mode), or
     - A mailbox exists for that email address
@@ -78,16 +96,16 @@ def check_local_recipients(email_addresses: list[str]) -> set[str]:
     deliverable = set()
 
     # Parse emails and collect unique domains
-    email_parts = {}  # email -> (local_part, domain)
+    email_parts = {}  # email -> (local_part, domain), both folded
     domains = set()
 
     for email in email_addresses:
-        try:
-            local_part, domain = email.rsplit("@", 1)
-            email_parts[email] = (local_part, domain)
-            domains.add(domain)
-        except ValueError:
-            pass  # Invalid email format, not deliverable
+        parts = split_address(email)
+        if parts is None:
+            continue  # Invalid email format, not deliverable
+        domain = normalize_domain(parts[1])
+        email_parts[email] = (ascii_lower(parts[0]), domain)
+        domains.add(domain)
 
     # Query all mailboxes on the relevant domains in a single query
     if domains:

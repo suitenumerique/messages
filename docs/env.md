@@ -19,7 +19,6 @@ The application uses a new environment file structure with `.defaults` and `.loc
 - `postgresql.defaults` - PostgreSQL database configuration
 - `keycloak.defaults` - Keycloak configuration
 - `mta-in.defaults` - Inbound mail server settings
-- `mta-out.defaults` - Outbound mail server settings
 - `crowdin.defaults` - Translation service configuration
 
 ## Core Application Configuration
@@ -97,7 +96,7 @@ of each implementation (Postfix + milter, and the pure-Python pymta).
 | Variable | Default | Description | Required |
 |----------|---------|-------------|----------|
 | `MTA_OUT_MODE` | `direct` | Outbound MTA mode ('direct' or 'relay') | Required |
-| `MTA_OUT_RELAY_HOST` | `mta-out:587` | Outbound SMTP server host for relay mode | Required |
+| `MTA_OUT_RELAY_HOST` | _(unset)_ | External SMTP relay `host:port`, used when `MTA_OUT_MODE=relay` | Required in relay mode |
 | `MTA_OUT_RELAY_USERNAME` | `user` | Outbound SMTP username for relay mode | Optional |
 | `MTA_OUT_RELAY_PASSWORD` | `pass` | Outbound SMTP password for relay mode | Optional |
 | `MTA_OUT_DIRECT_PROXIES` | `[]` | List of SOCKS proxy URLs (randomly chosen when non-empty; used in direct mode) | Optional |
@@ -644,7 +643,6 @@ The application uses environment files located in `deploy/env/` for different se
 - `postgresql.defaults` - PostgreSQL database configuration
 - `keycloak.defaults` - Keycloak configuration
 - `mta-in.defaults` - Inbound mail server settings
-- `mta-out.defaults` - Outbound mail server settings
 - `crowdin.defaults` - Translation service configuration
 
 ### Local Overrides

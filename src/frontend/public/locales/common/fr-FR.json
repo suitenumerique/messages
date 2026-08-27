@@ -1,4 +1,6 @@
 {
+  "{{addresses}} contains accented characters after the @ sign. The address will be converted to its standard form before sending. Check the spelling with your recipient.": "{{addresses}} contient des caractères accentués après le signe @. L'adresse sera convertie dans sa forme standard avant l'envoi. Vérifiez l'orthographe avec votre destinataire.",
+  "{{addresses}} contains accented characters before the @ sign. We will try to send it, but mail servers that do not support internationalized addresses will reject it. Check the spelling with your recipient.": "{{addresses}} contient des caractères accentués avant le signe @. Nous tenterons l'envoi, mais les serveurs de messagerie qui ne prennent pas en charge les adresses internationalisées le refuseront. Vérifiez l'orthographe avec votre destinataire.",
   "{{assignees}} was unassigned_one": "{{assignees}} a été désassigné",
   "{{assignees}} was unassigned_many": "{{assignees}} ont été désassignés",
   "{{assignees}} was unassigned_other": "{{assignees}} ont été désassignés",
@@ -549,6 +551,7 @@
   "I have an issue or a feature request": "J'ai un problème ou une demande d'amélioration",
   "Identity": "Identifiant",
   "Identity synchronization is disabled for this domain, so no password will be created here. The user will sign in through a third-party identity provider, and the mailbox can receive emails straight away.": "La synchronisation des identités est désactivée pour ce domaine : aucun mot de passe ne sera créé ici. L'utilisateur se connectera via un fournisseur d'identité tiers, et la boîte aux lettres pourra recevoir des e-mails immédiatement.",
+  "If it is rejected, the other recipients of this message may not receive it either.": "En cas de refus, les autres destinataires de ce message risquent de ne pas le recevoir non plus.",
   "Image + Text": "Image + Texte",
   "Image size limit exceeded": "Taille de l'image trop grande",
   "IMAP port": "Port IMAP",

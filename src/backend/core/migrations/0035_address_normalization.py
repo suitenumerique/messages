@@ -1,0 +1,175 @@
+"""Address normalization: field validators, then a fold of existing rows.
+
+Two validator changes, neither of which touches a column's type or length:
+
+- ``Contact.email`` was an ``EmailField``, whose validator rejects an RFC
+  6531 local part. We accept SMTPUTF8 sessions inbound, so that validator
+  was discarding the real sender of mail we had already taken delivery of.
+- ``MailDomain.name`` now validates per label rather than per string.
+
+Then the data fold. Mailbox local parts, mail domain names and user identity
+emails are now stored ASCII-lowercased (see ``core.mda.addresses``) and
+looked up by exact match. Rows written before that would stop resolving.
+
+Folding can collide with a row that already holds the lowercase form. Those
+are left untouched and reported: merging two mailboxes (or two users) means
+moving threads, accesses and contacts between them, which is an operator
+decision, not something a migration should guess at.
+
+The translate table is inlined rather than imported from
+``core.mda.addresses`` so this migration keeps replaying identically if that
+module changes.
+"""
+
+import string
+
+from django.db import migrations, models
+import django.core.validators
+
+import core.mda.addresses
+
+ASCII_LOWER = str.maketrans(string.ascii_uppercase, string.ascii_lowercase)
+
+
+def _report(collisions, label):
+    if collisions:
+        print(
+            f"\n  WARNING: {len(collisions)} {label} left unfolded, a lowercase "
+            f"twin already exists: {', '.join(sorted(collisions)[:20])}"
+        )
+
+
+def fold_maildomains(apps, schema_editor):
+    """Lowercase mail domain names (DNS is case-insensitive)."""
+    MailDomain = apps.get_model("core", "MailDomain")
+    taken = set(MailDomain.objects.values_list("name", flat=True))
+    collisions = []
+    for domain in MailDomain.objects.all().iterator():
+        folded = domain.name.translate(ASCII_LOWER)
+        if folded == domain.name:
+            continue
+        if folded in taken:
+            collisions.append(domain.name)
+            continue
+        taken.discard(domain.name)
+        taken.add(folded)
+        domain.name = folded
+        domain.save(update_fields=["name"])
+    _report(collisions, "mail domains")
+
+
+def fold_mailboxes(apps, schema_editor):
+    """Lowercase mailbox local parts, and their own identity contact with them."""
+    Mailbox = apps.get_model("core", "Mailbox")
+    Contact = apps.get_model("core", "Contact")
+
+    taken = set(Mailbox.objects.values_list("domain_id", "local_part"))
+    collisions = []
+    for mailbox in (
+        Mailbox.objects.select_related("domain", "contact").all().iterator()
+    ):
+        folded = mailbox.local_part.translate(ASCII_LOWER)
+        if folded == mailbox.local_part:
+            continue
+        if (mailbox.domain_id, folded) in taken:
+            collisions.append(f"{mailbox.local_part}@{mailbox.domain.name}")
+            continue
+        taken.discard((mailbox.domain_id, mailbox.local_part))
+        taken.add((mailbox.domain_id, folded))
+        mailbox.local_part = folded
+        mailbox.save(update_fields=["local_part"])
+
+        # Keep the mailbox's own contact — the one that becomes the From
+        # header of everything it sends — on the same address as the mailbox.
+        contact = mailbox.contact
+        if contact is None:
+            continue
+        new_email = f"{folded}@{mailbox.domain.name}"
+        if contact.email == new_email:
+            continue
+        twin = Contact.objects.filter(mailbox=mailbox, email=new_email).first()
+        if twin is not None:
+            mailbox.contact = twin
+            mailbox.save(update_fields=["contact"])
+        else:
+            contact.email = new_email
+            contact.save(update_fields=["email"])
+    _report(collisions, "mailboxes")
+
+
+def fold_users(apps, schema_editor):
+    """Lowercase the two identity addresses users are matched on."""
+    User = apps.get_model("core", "User")
+
+    for user in User.objects.exclude(email=None).exclude(email="").iterator():
+        folded = user.email.translate(ASCII_LOWER)
+        if folded != user.email:
+            user.email = folded
+            user.save(update_fields=["email"])
+
+    # admin_email is unique, so a folded value can collide.
+    taken = set(
+        User.objects.exclude(admin_email=None).values_list("admin_email", flat=True)
+    )
+    collisions = []
+    for user in (
+        User.objects.exclude(admin_email=None).exclude(admin_email="").iterator()
+    ):
+        folded = user.admin_email.translate(ASCII_LOWER)
+        if folded == user.admin_email:
+            continue
+        if folded in taken:
+            collisions.append(user.admin_email)
+            continue
+        taken.discard(user.admin_email)
+        taken.add(folded)
+        user.admin_email = folded
+        user.save(update_fields=["admin_email"])
+    _report(collisions, "admin emails")
+
+
+class Migration(migrations.Migration):
+    dependencies = [
+        ("core", "0034_channel_lookup_hash"),
+    ]
+
+    operations = [
+        # Validators first, data second: the fold below writes through
+        # historical models, which do not run these anyway, but keeping
+        # schema before data is the order the rest of the project uses.
+        migrations.AlterField(
+            model_name="contact",
+            name="email",
+            field=models.CharField(
+                max_length=254,
+                validators=[core.mda.addresses.AddrSpecValidator()],
+                verbose_name="email",
+            ),
+        ),
+        migrations.AlterField(
+            model_name="maildomain",
+            name="name",
+            field=models.CharField(
+                max_length=253,
+                unique=True,
+                validators=[
+                    django.core.validators.RegexValidator(
+                        message=(
+                            "Enter a valid domain name. This value may contain "
+                            "only lowercase letters, numbers, dots and - "
+                            "characters, and each label must start and end with "
+                            "a letter or a number."
+                        ),
+                        regex=(
+                            r"^(?=.{2,253}$)[a-z0-9]([a-z0-9-]*[a-z0-9])?"
+                            r"(\.[a-z0-9]([a-z0-9-]*[a-z0-9])?)*$"
+                        ),
+                    )
+                ],
+                verbose_name="name",
+            ),
+        ),
+        migrations.RunPython(fold_maildomains, migrations.RunPython.noop),
+        migrations.RunPython(fold_mailboxes, migrations.RunPython.noop),
+        migrations.RunPython(fold_users, migrations.RunPython.noop),
+    ]

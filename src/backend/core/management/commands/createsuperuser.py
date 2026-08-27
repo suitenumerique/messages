@@ -3,6 +3,8 @@
 from django.contrib.auth import get_user_model
 from django.core.management.base import BaseCommand
 
+from core.mda.addresses import normalize_address
+
 UserModel = get_user_model()
 
 
@@ -27,7 +29,8 @@ class Command(BaseCommand):
         Given an email and a password, create a superuser or upgrade the existing
         user to superuser status.
         """
-        email = options.get("email")
+        # Both identity fields are stored folded, so look them up folded.
+        email = normalize_address(options.get("email") or "")
         try:
             user = UserModel.objects.get(admin_email=email)
         except UserModel.DoesNotExist:

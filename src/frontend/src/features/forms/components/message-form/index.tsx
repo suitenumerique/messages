@@ -9,7 +9,7 @@ import { zodResolver } from "@hookform/resolvers/zod";
 import { Attachment, DraftMessageRequestRequest, draftCreateResponse200, Message, sendCreateResponse200, useDraftCreate, useDraftUpdate2, useMessagesDestroy, useSendCreate, ThreadAccessRoleChoices } from "@/features/api/gen";
 import { MessageComposer, MessageComposerHandle, QuoteType } from "@/features/forms/components/message-composer";
 import { useMailboxContext } from "@/features/providers/mailbox";
-import MailHelper from "@/features/utils/mail-helper";
+import MailHelper, { UNICODE_EMAIL_REGEX } from "@/features/utils/mail-helper";
 import { RhfInput, RhfSelect } from "../react-hook-form";
 import { addToast, ToasterItem } from "@/features/ui/components/toaster";
 import { toast } from "react-toastify";
@@ -46,8 +46,12 @@ interface MessageFormProps {
     onDeletableChange?: (deletable: boolean) => void;
 }
 
-// Zod schema for form validation
-const emailArraySchema = z.array(z.email({ error: i18n.t("The email {{email}} is invalid.") }));
+// Zod schema for form validation. Shares MailHelper's pattern so the combobox
+// and the form agree: an accented address is accepted here and warned about
+// below, rather than being reported as a plain syntax error.
+const emailArraySchema = z.array(
+    z.email({ pattern: UNICODE_EMAIL_REGEX, error: i18n.t("The email {{email}} is invalid.") })
+);
 const attachmentSchema = z.object({
     blobId: z.string(), // Can be UUID or msg_{messageId}_{index} format
     name: z.string(),
@@ -313,6 +317,27 @@ export const MessageForm = forwardRef<MessageFormHandle, MessageFormProps>(({
         const maxRecipients = config.MAX_RECIPIENTS_PER_MESSAGE;
         return maxRecipients > 0 && totalRecipients > maxRecipients;
     }, [config.MAX_RECIPIENTS_PER_MESSAGE, totalRecipients]);
+
+    const allRecipients = useMemo(
+        () => [...currentToRecipients, ...currentCcRecipients, ...currentBccRecipients],
+        [currentToRecipients, currentCcRecipients, currentBccRecipients]
+    );
+
+    // Accented recipients split into two very different cases, so they get two
+    // different warnings. An accented domain always sends (the server IDNA-encodes
+    // it). An accented local part needs SMTPUTF8 (RFC 6531) from the receiving
+    // server, which has no fallback: it either supports it or the message is
+    // undeliverable there. The backend fails the whole SMTP transaction in that
+    // case rather than splitting it, so one accented address can cost the send.
+    const accentedLocalPartRecipients = useMemo(
+        () => allRecipients.filter(MailHelper.hasNonAsciiLocalPart, MailHelper),
+        [allRecipients]
+    );
+    const accentedDomainRecipients = useMemo(
+        () => allRecipients.filter(MailHelper.hasNonAsciiDomain, MailHelper),
+        [allRecipients]
+    );
+    const hasOtherRecipients = allRecipients.length > accentedLocalPartRecipients.length;
 
     const messageMutation = useSendCreate({
         mutation: {
@@ -849,6 +874,19 @@ export const MessageForm = forwardRef<MessageFormHandle, MessageFormProps>(({
                 {showRecipientLimitWarning &&
                     <Banner type="warning">
                         {t("You have {{count}} recipients, which exceeds the maximum of {{max}} recipients per message. The message cannot be sent until you reduce the number of recipients.", { count: totalRecipients, max: config.MAX_RECIPIENTS_PER_MESSAGE })}
+                    </Banner>
+                }
+
+                {accentedLocalPartRecipients.length > 0 &&
+                    <Banner type="warning">
+                        {t("{{addresses}} contains accented characters before the @ sign. We will try to send it, but mail servers that do not support internationalized addresses will reject it. Check the spelling with your recipient.", { addresses: accentedLocalPartRecipients.join(', ') })}
+                        {hasOtherRecipients && ' ' + t("If it is rejected, the other recipients of this message may not receive it either.")}
+                    </Banner>
+                }
+
+                {accentedDomainRecipients.length > 0 &&
+                    <Banner type="info">
+                        {t("{{addresses}} contains accented characters after the @ sign. The address will be converted to its standard form before sending. Check the spelling with your recipient.", { addresses: accentedDomainRecipients.join(', ') })}
                     </Banner>
                 }
 

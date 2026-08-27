@@ -22,6 +22,7 @@ from jmap_email import (
 
 from core import models
 from core.enums import InboundOrigin, MessageDeliveryStatusChoices
+from core.mda.addresses import envelope_address
 from core.mda.inbound import check_local_recipient, deliver_inbound_message
 from core.mda.inline_images import (
     extract_inline_images_html,
@@ -31,7 +32,7 @@ from core.mda.outbound_direct import send_message_via_mx
 from core.mda.replies import make_forward, make_reply
 from core.mda.signing import sign_message_dkim, verify_message_dkim
 from core.mda.smtp import send_smtp_mail
-from core.mda.utils import COMPOSE_OPTIONS, current_sent_at
+from core.mda.utils import compose_options_for, current_sent_at
 from core.services.blob_gc import schedule_for_gc
 from core.services.dns.check import check_spf_status
 from core.services.throttle import check_and_increment_throttle
@@ -220,11 +221,20 @@ def compose_and_sign_mime(
         mime_data["attachments"] = all_attachments
     message.has_attachments = bool(all_attachments)
 
+    # Bcc is excluded on purpose: it never reaches the header block, so an
+    # EAI Bcc recipient constrains only its own SMTP transaction rather than
+    # forcing 8-bit headers on every hop of the message.
     raw_mime = compose_email(
         mime_data,
         in_reply_to=message.parent.mime_id if message.parent else None,
         prepend_headers=prepend_headers,
-        options=COMPOSE_OPTIONS,
+        options=compose_options_for(
+            [
+                entry["email"]
+                for field in ("from", "to", "cc")
+                for entry in mime_data[field]
+            ]
+        ),
     )
 
     # Bcc/Cc-only send: the composed MIME has no To header. Add the empty-group
@@ -873,13 +883,71 @@ def send_outbound_email(
     mime_data: bytes,
     custom_settings: dict[str, Any],
 ) -> dict[str, Any]:
-    """Send an existing email via MTA out (SMTP) or direct MX if not configured."""
+    """Send an existing email via MTA out (SMTP) or direct MX if not configured.
+
+    Envelope addresses are converted to their SMTP wire form here (IDNA
+    A-label domain, local part untouched) and the returned statuses are
+    mapped back to the caller's original strings, which is what the
+    ``MessageRecipient`` rows are keyed on.
+    """
 
     mta_out_mode = custom_settings.get("MTA_OUT_MODE") or settings.MTA_OUT_MODE
 
+    # A recipient with no wire form at all — malformed, or a non-ASCII domain
+    # with no IDNA encoding — is failed here, before a connection is opened.
+    # A non-ASCII *local part* is not in that category: it has a wire form and
+    # travels fine once the hop advertises SMTPUTF8, which only
+    # ``send_smtp_mail`` can know.
+    #
+    # Several originals can share one wire form (``user@Example.com`` and
+    # ``user@example.com`` both fold to the latter), so the mapping back is
+    # one-to-many: dropping all but one would leave the others with no status
+    # at all, which ``send_message`` reads as "outcome unknown" and retries —
+    # re-sending mail the MTA already accepted.
+    wire_addresses: dict[str, list[str]] = {}
+    statuses: dict[str, Any] = {}
+    for email in recipient_emails:
+        wire = envelope_address(email)
+        if wire is None:
+            statuses[email] = {
+                "delivered": False,
+                "error": (
+                    "This address cannot be used on the wire: it is malformed, "
+                    "or its domain has no standard (IDNA) encoding"
+                ),
+                "retry": False,
+            }
+        else:
+            wire_addresses.setdefault(wire, []).append(email)
+
+    # The sender is one of our own mailboxes, whose domain is already an
+    # A-label, but route it through the same conversion so a hand-built
+    # ``envelope_from`` (management command, self-check) can't slip through.
+    wire_from = envelope_address(envelope_from)
+    if wire_from is None:
+        # Domain only: this message reaches logger.error(exc_info=True) in
+        # send_message, and the local part is PII (same convention as the
+        # send_mail command and the widget view).
+        raise ValueError(
+            f"Sender address has no SMTP wire form, domain "
+            f"{envelope_from.rpartition('@')[2]!r}"
+        )
+
+    if not wire_addresses:
+        return statuses
+
+    def _to_original(sent_statuses: dict[str, Any]) -> dict[str, Any]:
+        """Re-key MTA statuses from wire form back to the caller's strings."""
+        for wire, status in sent_statuses.items():
+            for original in wire_addresses.get(wire, [wire]):
+                statuses[original] = status
+        return statuses
+
     # Use direct MX delivery
     if mta_out_mode == "direct":
-        return send_message_via_mx(envelope_from, recipient_emails, mime_data)
+        return _to_original(
+            send_message_via_mx(wire_from, set(wire_addresses), mime_data)
+        )
 
     if mta_out_mode == "relay":
         mta_out_smtp_host = (
@@ -896,20 +964,21 @@ def send_outbound_email(
         if not mta_out_smtp_host:
             raise ValueError("MTA_OUT_RELAY_HOST is not configured")
 
-        statuses = send_smtp_mail(
-            smtp_host=(mta_out_smtp_host or "").split(":")[0],
-            smtp_port=int(
-                (mta_out_smtp_host or "").split(":")[1]
-                if ":" in mta_out_smtp_host
-                else 587
-            ),
-            envelope_from=envelope_from,
-            recipient_emails=recipient_emails,
-            message_content=mime_data,
-            smtp_username=mta_out_smtp_username,
-            smtp_password=mta_out_smtp_password,
-            smtp_tls_security_level=settings.MTA_OUT_SMTP_TLS_SECURITY_LEVEL,
+        return _to_original(
+            send_smtp_mail(
+                smtp_host=(mta_out_smtp_host or "").split(":")[0],
+                smtp_port=int(
+                    (mta_out_smtp_host or "").split(":")[1]
+                    if ":" in mta_out_smtp_host
+                    else 587
+                ),
+                envelope_from=wire_from,
+                recipient_emails=set(wire_addresses),
+                message_content=mime_data,
+                smtp_username=mta_out_smtp_username,
+                smtp_password=mta_out_smtp_password,
+                smtp_tls_security_level=settings.MTA_OUT_SMTP_TLS_SECURITY_LEVEL,
+            )
         )
-        return statuses
 
     raise ValueError(f"Invalid MTA out mode: {mta_out_mode}")

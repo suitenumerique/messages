@@ -38,14 +38,31 @@ class TestMailDomainModel:
             "invalid-",
             "invalid.example.com/",
             "",
-            "invalid.example.com ",
             " ",
+            # Labels must start and end alphanumeric, not just the whole string
+            "bad-.example.com",
+            "example.-com",
+            "example..com",
         ]:
             with pytest.raises(ValidationError):
                 MailDomainFactory(name=name)
 
         domain = MailDomainFactory(name="va-lid.example.com")
         assert domain.name == "va-lid.example.com"
+
+    def test_models_maildomain_name_is_canonicalized(self):
+        """Mixed case, surrounding whitespace and IDN are folded, not rejected."""
+
+        assert MailDomainFactory(name="EXAMPLE.COM").name == "example.com"
+        assert MailDomainFactory(name=" spaced.example.com ").name == (
+            "spaced.example.com"
+        )
+        # IDN is stored as the A-label: that is what DNS and inbound SMTP carry
+        assert MailDomainFactory(name="exemplé.example").name == (
+            "xn--exempl-gva.example"
+        )
+        # ...and looking the U-label up again finds the same row
+        assert models.MailDomain.objects.filter(name="xn--exempl-gva.example").exists()
 
     def test_models_maildomain_auto_generates_dkim_key(self):
         """Test that DKIM key is automatically generated when creating a new domain."""

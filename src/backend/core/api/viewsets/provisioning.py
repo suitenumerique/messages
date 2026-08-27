@@ -20,6 +20,12 @@ from core.api.serializers import (
 )
 from core.api.viewsets import Pagination
 from core.enums import ChannelApiKeyScope, MailboxRoleChoices
+from core.mda.addresses import (
+    ascii_lower,
+    normalize_address,
+    normalize_domain,
+    split_address,
+)
 
 logger = logging.getLogger(__name__)
 
@@ -46,9 +52,12 @@ class ProvisioningMailDomainView(IsGlobalChannelMixin, APIView):
         errors = []
 
         for domain_name in domains:
+            # Canonicalize before the lookup: without it a mixed-case or IDN
+            # name misses the existing row and then fails uniqueness on insert,
+            # since MailDomain folds it anyway.
             try:
                 domain, was_created = models.MailDomain.objects.get_or_create(
-                    name=domain_name,
+                    name=normalize_domain(domain_name),
                     defaults={
                         "custom_attributes": custom_attributes,
                         "oidc_autojoin": oidc_autojoin,
@@ -56,7 +65,7 @@ class ProvisioningMailDomainView(IsGlobalChannelMixin, APIView):
                     },
                 )
                 if was_created:
-                    created.append(domain_name)
+                    created.append(domain.name)
                 else:
                     updated = False
                     if domain.custom_attributes != custom_attributes:
@@ -70,7 +79,7 @@ class ProvisioningMailDomainView(IsGlobalChannelMixin, APIView):
                         updated = True
                     if updated:
                         domain.save()
-                    existing.append(domain_name)
+                    existing.append(domain.name)
             except ValidationError as e:
                 errors.append({"domain": domain_name, "error": str(e)})
             except IntegrityError:
@@ -211,7 +220,9 @@ class ProvisioningMailboxView(IsGlobalChannelMixin, APIView):
 
     def _list_by_user(self, user_email, maildomain_attrs=None):
         accesses = (
-            models.MailboxAccess.objects.filter(user__email=user_email)
+            models.MailboxAccess.objects.filter(
+                user__email=normalize_address(user_email)
+            )
             .select_related("mailbox__domain", "mailbox__contact")
             .prefetch_related("mailbox__accesses__user")
         )
@@ -227,13 +238,14 @@ class ProvisioningMailboxView(IsGlobalChannelMixin, APIView):
         return Response({"results": results})
 
     def _list_by_email(self, email, maildomain_attrs=None):
-        if "@" not in email:
+        parts = split_address(email)
+        if parts is None:
             return Response({"results": []})
 
-        local_part, domain_name = email.rsplit("@", 1)
         mailboxes = (
             models.Mailbox.objects.filter(
-                local_part=local_part, domain__name=domain_name
+                local_part=ascii_lower(parts[0]),
+                domain__name=normalize_domain(parts[1]),
             )
             .select_related("domain", "contact")
             .prefetch_related("accesses__user")

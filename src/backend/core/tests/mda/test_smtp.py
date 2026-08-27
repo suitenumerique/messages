@@ -22,11 +22,29 @@ class MixedResponseSMTPHandler:
         self.data_response = None  # Configure DATA command response
         self.ehlo_sleep = None  # Configure EHLO timeout
         self.advertise_starttls = False  # Add STARTTLS to EHLO extensions
+        self.advertise_smtputf8 = False  # Add SMTPUTF8 to EHLO extensions
+        self.advertise_8bitmime = False  # Add 8BITMIME to EHLO extensions
         self.starttls_break_handshake = False  # Reply 220 then close socket
+        self.mail_from_seen = None  # Raw MAIL FROM argument, options included
+        self.rcpt_tos_seen = []  # Every address the client actually offered
         self.server_socket = None
         self.server_thread = None
         self.running = False
         self.port = 0
+
+    def ehlo_response(self) -> bytes:
+        """Build the EHLO reply from the configured extension flags."""
+        extensions = []
+        if self.advertise_starttls:
+            extensions.append("STARTTLS")
+        if self.advertise_smtputf8:
+            extensions.append("SMTPUTF8")
+        if self.advertise_8bitmime:
+            extensions.append("8BITMIME")
+        lines = [f"250-{ext}" for ext in extensions]
+        return (
+            "250-mock.example\r\n" + "\r\n".join(lines + ["250 OK"]) + "\r\n"
+        ).encode("utf-8")
 
     def configure_recipient_response(self, email: str, code: int, message: str):
         """Configure response for a specific recipient."""
@@ -70,12 +88,7 @@ class MixedResponseSMTPHandler:
                     if command in {"EHLO", "HELO"}:
                         if self.ehlo_sleep:
                             time.sleep(self.ehlo_sleep)
-                        if self.advertise_starttls:
-                            client_socket.send(
-                                b"250-mock.example\r\n250-STARTTLS\r\n250 OK\r\n"
-                            )
-                        else:
-                            client_socket.send(b"250 OK\r\n")
+                        client_socket.send(self.ehlo_response())
                     elif command == "STARTTLS":
                         client_socket.send(b"220 Ready to start TLS\r\n")
                         if self.starttls_break_handshake:
@@ -84,6 +97,7 @@ class MixedResponseSMTPHandler:
                             break
                     elif command == "MAIL" and rest.upper().startswith("FROM:"):
                         rest = rest[5:].strip()
+                        self.mail_from_seen = rest
                         if self.mail_from_response:
                             code, message = self.mail_from_response
                             response = f"{code} {message}\r\n".encode("utf-8")
@@ -99,6 +113,7 @@ class MixedResponseSMTPHandler:
                             else rest.split(":")[1].strip()
                         )
                         logger.info("RCPT TO: %s", email)
+                        self.rcpt_tos_seen.append(email)
 
                         if email in self.recipient_responses:
                             code, message = self.recipient_responses[email]
@@ -509,3 +524,175 @@ class TestSMTPClient:
 
         finally:
             smtp_handler.stop()
+
+
+class TestSMTPUTF8Negotiation:
+    """RFC 6531 is negotiated per hop, and refused hops fail explicitly.
+
+    There is no downgrade to fall back to (RFC 6530 defines none, and
+    punycode cannot encode a local part), so the only correct outcomes are
+    "sent over an SMTPUTF8 session" or "failed with a reason the user can
+    act on".
+    """
+
+    ASCII_MESSAGE = b"Subject: Test\r\n\r\nHello."
+    # An RFC 6532 header block: what compose_options_for produces once any
+    # header address has a non-ASCII local part.
+    UTF8_MESSAGE = "Subject: Test\r\nTo: josé@example.com\r\n\r\nHello.".encode("utf-8")
+
+    def _server(self, **flags):
+        handler = MixedResponseSMTPHandler()
+        for key, value in flags.items():
+            setattr(handler, key, value)
+        handler.start()
+        return handler
+
+    def test_eai_recipient_sent_with_smtputf8_option(self):
+        handler = self._server(advertise_smtputf8=True, advertise_8bitmime=True)
+        try:
+            result = send_smtp_mail(
+                smtp_host="127.0.0.1",
+                smtp_port=handler.port,
+                envelope_from="sender@example.com",
+                recipient_emails={"josé@example.com"},
+                message_content=self.UTF8_MESSAGE,
+                timeout=5,
+            )
+        finally:
+            handler.stop()
+
+        assert result["josé@example.com"]["delivered"] is True
+        assert "SMTPUTF8" in handler.mail_from_seen
+        assert "BODY=8BITMIME" in handler.mail_from_seen
+        # The address goes on the wire intact, not mangled into ASCII.
+        assert handler.rcpt_tos_seen == ["josé@example.com"]
+
+    def test_no_smtputf8_option_for_a_plain_ascii_message(self):
+        """The common path must be byte-for-byte what it was before."""
+        handler = self._server(advertise_smtputf8=True, advertise_8bitmime=True)
+        try:
+            result = send_smtp_mail(
+                smtp_host="127.0.0.1",
+                smtp_port=handler.port,
+                envelope_from="sender@example.com",
+                recipient_emails={"user@example.com"},
+                message_content=self.ASCII_MESSAGE,
+                timeout=5,
+            )
+        finally:
+            handler.stop()
+
+        assert result["user@example.com"]["delivered"] is True
+        assert "SMTPUTF8" not in handler.mail_from_seen
+
+    def test_hop_without_smtputf8_fails_explicitly_and_permanently(self):
+        handler = self._server(advertise_smtputf8=False)
+        try:
+            result = send_smtp_mail(
+                smtp_host="127.0.0.1",
+                smtp_port=handler.port,
+                envelope_from="sender@example.com",
+                recipient_emails={"josé@example.com"},
+                message_content=self.UTF8_MESSAGE,
+                timeout=5,
+            )
+        finally:
+            handler.stop()
+
+        status = result["josé@example.com"]
+        assert status["delivered"] is False
+        # Permanent: the extension will not appear on a later attempt.
+        assert status["retry"] is False
+        assert "SMTPUTF8" in status["error"]
+        assert "RFC 6531" in status["error"]
+        # Nothing was offered to a server that cannot take it.
+        assert handler.rcpt_tos_seen == []
+
+    @pytest.mark.parametrize("message_is_utf8", [True, False])
+    def test_one_eai_recipient_blocks_every_other_recipient(self, message_is_utf8):
+        """One accented recipient costs the others, by design.
+
+        There is a single composed and signed copy of the message, so an
+        ASCII recipient in the same transaction cannot be served a different
+        one. We deliberately do not split the transaction even when the
+        message itself stayed ASCII (the Bcc shape, parametrized here): the
+        compose-time warning tells the sender this can happen, and the extra
+        branch is not worth that one narrow case.
+        """
+        handler = self._server(advertise_smtputf8=False)
+        try:
+            result = send_smtp_mail(
+                smtp_host="127.0.0.1",
+                smtp_port=handler.port,
+                envelope_from="sender@example.com",
+                recipient_emails={"josé@example.com", "ascii@example.com"},
+                message_content=(
+                    self.UTF8_MESSAGE if message_is_utf8 else self.ASCII_MESSAGE
+                ),
+                timeout=5,
+            )
+        finally:
+            handler.stop()
+
+        assert result["josé@example.com"]["delivered"] is False
+        assert result["ascii@example.com"]["delivered"] is False
+        assert "SMTPUTF8" in result["ascii@example.com"]["error"]
+        # Nothing was offered to a server that cannot take the transaction.
+        assert handler.rcpt_tos_seen == []
+
+    def test_eight_bit_body_is_sent_undeclared_when_8bitmime_is_missing(self):
+        """A hop with no 8BITMIME still gets the bytes, without the option.
+
+        Deliberate: this is the pre-existing behaviour of this client, most
+        MTAs accept it, and recoding the body to quoted-printable would
+        invalidate the DKIM signature already applied. Only reachable from
+        the raw-MIME submit path.
+        """
+        handler = self._server(advertise_smtputf8=False, advertise_8bitmime=False)
+        eight_bit_body = (
+            b"Subject: Test\r\nTo: user@example.com\r\n\r\n"
+            + "Caf\u00e9".encode("utf-8")
+        )
+        try:
+            result = send_smtp_mail(
+                smtp_host="127.0.0.1",
+                smtp_port=handler.port,
+                envelope_from="sender@example.com",
+                recipient_emails={"user@example.com"},
+                message_content=eight_bit_body,
+                timeout=5,
+            )
+        finally:
+            handler.stop()
+
+        assert result["user@example.com"]["delivered"] is True
+        assert "BODY=8BITMIME" not in handler.mail_from_seen
+        assert "SMTPUTF8" not in handler.mail_from_seen
+
+    def test_eight_bit_body_alone_does_not_require_smtputf8(self):
+        """An 8-bit body needs 8BITMIME, not SMTPUTF8.
+
+        The raw-MIME submit path forwards caller-supplied bytes, which may
+        be 8-bit while every address stays ASCII. Demanding RFC 6531 for
+        those would fail deliveries that have nothing international in them.
+        """
+        handler = self._server(advertise_smtputf8=False, advertise_8bitmime=True)
+        eight_bit_body = (
+            b"Subject: Test\r\nTo: user@example.com\r\n\r\n"
+            + "Caf\u00e9".encode("utf-8")
+        )
+        try:
+            result = send_smtp_mail(
+                smtp_host="127.0.0.1",
+                smtp_port=handler.port,
+                envelope_from="sender@example.com",
+                recipient_emails={"user@example.com"},
+                message_content=eight_bit_body,
+                timeout=5,
+            )
+        finally:
+            handler.stop()
+
+        assert result["user@example.com"]["delivered"] is True
+        assert "SMTPUTF8" not in handler.mail_from_seen
+        assert "BODY=8BITMIME" in handler.mail_from_seen

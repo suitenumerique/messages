@@ -22,6 +22,7 @@ Three groups of helpers live here:
 import re
 import shlex
 from collections import defaultdict
+from collections.abc import Iterable
 from email.utils import make_msgid
 
 from django.utils import timezone
@@ -34,16 +35,40 @@ from jmap_email import (
 )
 from jmap_email.types import JmapEmail
 
-# Compose policy shared by every path that builds MIME for us.
+from core.mda.addresses import needs_smtputf8
+
+# Compose policy for a message whose header addresses are all ASCII, which
+# is the overwhelming majority.
 #
-# ``idna_encode_domains``: we send over plain 7-bit SMTP (``core.mda.smtp``
-# passes no ``mail_options``), and an A-label is the only form that carries
-# there. Without it such addresses never send.
-#
-# A non-ASCII *local part* stays unsendable — that needs SMTPUTF8, which we
-# never negotiate — and raises ``InvalidAddressError`` for callers to
-# handle. RFC 6530 provides no downgrade, so there is no fallback variant.
+# ``idna_encode_domains``: an A-label is the only form a non-ASCII domain can
+# take on a 7-bit session, and it is the form DNS wants anyway.
 COMPOSE_OPTIONS = ComposeOptions(idna_encode_domains=True)
+
+
+def compose_options_for(header_addresses: Iterable[str | None]) -> ComposeOptions:
+    """Return the compose policy for a message with these header addresses.
+
+    ``allow_smtputf8`` is turned on only when an address that will appear in
+    the *header block* has a non-ASCII local part. That is what forces RFC
+    6532 headers, which are 8-bit by construction, and it makes every hop of
+    the message require the extension.
+
+    Bcc is deliberately not part of the input: ``emit_bcc`` is off, so a
+    Bcc-only EAI recipient never reaches the headers and constrains its own
+    SMTP transaction rather than the whole message. ``core.mda.smtp`` adds
+    that per-transaction requirement back.
+
+    There is no ASCII variant to fall back to. RFC 6530 defines no downgrade,
+    and a recipient whose hop refuses the extension is failed explicitly (see
+    ``send_smtp_mail``) rather than silently dropped from the header block.
+    """
+    return ComposeOptions(
+        idna_encode_domains=True,
+        allow_smtputf8=any(
+            needs_smtputf8(address) for address in header_addresses if address
+        ),
+    )
+
 
 # Archive reconstruction (PST import) additionally keeps Bcc: the list was
 # already in the source file, so dropping it would lose data the user owns.
@@ -59,6 +84,7 @@ __all__ = [
     "ARCHIVE_COMPOSE_OPTIONS",
     "COMPOSE_OPTIONS",
     "SNIPPET_MAX_CHARS",
+    "compose_options_for",
     "current_sent_at",
     "generate_mime_id",
     "gmail_labels",

@@ -18,7 +18,7 @@ from rest_framework.throttling import SimpleRateThrottle
 from core import enums, models
 from core.api.permissions import IsAuthenticated
 from core.mda.inbound import deliver_inbound_message
-from core.mda.utils import COMPOSE_OPTIONS, current_sent_at
+from core.mda.utils import compose_options_for, current_sent_at
 
 logger = logging.getLogger(__name__)
 
@@ -240,16 +240,17 @@ class InboundWidgetViewSet(viewsets.GenericViewSet):
             "textBody": [{"content": message_text}],
         }
 
-        # ``parse_address`` above accepts an RFC 6531 address — it is a
-        # valid one — but the composer cannot carry a non-ASCII local part
-        # over the 7-bit SMTP we emit, and refuses. That is a property of
-        # the address this caller typed into a public form, so it is a 400
-        # like the shape check above, not a 500.
+        # A widget submission is delivered to a local mailbox, never
+        # retransmitted over SMTP, so an RFC 6531 sender costs nothing here
+        # and keeping it means the mailbox owner can actually reply. The
+        # composer can still refuse a malformed addr-spec, which is a
+        # property of what this caller typed into a public form, so it is a
+        # 400 like the shape check above, not a 500.
         try:
             raw_mime = compose_email(
                 parsed_email,
                 prepend_headers=prepend_headers,
-                options=COMPOSE_OPTIONS,
+                options=compose_options_for([sender_email, target_email]),
             )
         except ComposeError:
             logger.info(

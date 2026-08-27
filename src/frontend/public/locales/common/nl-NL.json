@@ -1,4 +1,6 @@
 {
+  "{{addresses}} contains accented characters after the @ sign. The address will be converted to its standard form before sending. Check the spelling with your recipient.": "{{addresses}} bevat letters met accenten na het @-teken. Het adres wordt vóór verzending omgezet naar de standaardvorm. Controleer de spelling met je ontvanger.",
+  "{{addresses}} contains accented characters before the @ sign. We will try to send it, but mail servers that do not support internationalized addresses will reject it. Check the spelling with your recipient.": "{{addresses}} bevat letters met accenten vóór het @-teken. We proberen het te versturen, maar mailservers die geen geïnternationaliseerde adressen ondersteunen zullen het weigeren. Controleer de spelling met je ontvanger.",
   "{{assignees}} was unassigned_one": "",
   "{{assignees}} was unassigned_other": "",
   "{{author}} assigned {{assignees}}_one": "",
@@ -468,6 +470,7 @@
   "I have an issue or a feature request": "Ik heb een probleem of een verzoek voor een functie",
   "Identity": "Identiteit",
   "Identity synchronization is disabled for this domain, so no password will be created here. The user will sign in through a third-party identity provider, and the mailbox can receive emails straight away.": "Identiteitssynchronisatie is uitgeschakeld voor dit domein, dus er wordt hier geen wachtwoord aangemaakt. De gebruiker meldt zich aan via een externe identiteitsprovider en de mailbox kan meteen e-mails ontvangen.",
+  "If it is rejected, the other recipients of this message may not receive it either.": "Als het wordt geweigerd, ontvangen de andere ontvangers van dit bericht het mogelijk ook niet.",
   "Image + Text": "Afbeelding + tekst",
   "Image size limit exceeded": "Limiet afbeeldingsgrootte overschreden",
   "IMAP port": "IMAP-poort",
