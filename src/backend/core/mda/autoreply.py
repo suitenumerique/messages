@@ -16,6 +16,7 @@ from core.enums import (
     MessageRecipientTypeChoices,
     MessageTemplateTypeChoices,
 )
+from core.mda.addresses import normalize_address
 from core.mda.outbound import compose_and_sign_mime
 from core.mda.replies import reply_subject
 from core.services.throttle import ThrottleLimitExceeded, ThrottleManager
@@ -64,10 +65,15 @@ def _is_recipient_explicit(mailbox_email: str, parsed_email: JmapEmail) -> bool:
     the received headers, which is exactly the behaviour we want
     (no autoreply for BCC'd copies).
     """
-    target = mailbox_email.lower()
+    # Folded, not lowercased: over-folding here answers "yes, we were
+    # addressed" for a homoglyph of our address and autoreplies to it.
+    target = normalize_address(mailbox_email)
     for field in ("to", "cc"):
         for entry in parsed_email.get(field) or []:
-            if isinstance(entry, dict) and (entry.get("email") or "").lower() == target:
+            if (
+                isinstance(entry, dict)
+                and normalize_address(entry.get("email") or "") == target
+            ):
                 return True
     return False
 
@@ -130,11 +136,11 @@ def should_send_autoreply(
         return None
 
     # 3. Self-reply prevention: skip if sender == mailbox email
-    sender_email = first_address_email(parsed_email.get("from")).lower()
+    sender_email = normalize_address(first_address_email(parsed_email.get("from")))
     if not sender_email:
         return None
 
-    mailbox_email = str(mailbox).lower()
+    mailbox_email = normalize_address(str(mailbox))
     if sender_email == mailbox_email:
         return None
 

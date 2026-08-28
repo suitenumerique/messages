@@ -117,7 +117,6 @@ Messages uses environment variables as the primary configuration method:
 - `deploy/env/production/backend.defaults` - Main Django application settings
 - `deploy/env/production/frontend.defaults` - Frontend configuration
 - `deploy/env/production/mta-in.defaults` - Inbound mail server settings
-- `deploy/env/production/mta-out.defaults` - Outbound mail server settings
 - `deploy/env/production/postgresql.defaults` - Database configuration
 - `deploy/env/production/keycloak.defaults` - Identity provider settings
 
@@ -130,10 +129,10 @@ Messages uses environment variables as the primary configuration method:
 - Uses custom milter for synchronous delivery during SMTP sessions
 - Validates recipients via REST API before accepting messages
 
-#### MTA-out (Outbound Email)
-- Configured via `deploy/env/production/mta-out.defaults`
-- Supports relay configuration for external SMTP providers
-- Requires TLS certificates for production
+#### Outbound Email
+- Configured via `MTA_OUT_*` in `deploy/env/production/backend.defaults`
+- `MTA_OUT_MODE=direct` delivers straight to each recipient's MX (the default)
+- `MTA_OUT_MODE=relay` sends everything through `MTA_OUT_RELAY_HOST` instead
 
 ### 4. DNS Management
 
@@ -235,10 +234,10 @@ For production deployment, create your own Docker Compose configuration based on
    - Verify DNS MX records point to your technical domain
    - Check MTA-in logs for API connection issues
 
-2. **MTA-out not sending emails**
-   - Verify SMTP credentials in environment files
-   - Check relay host configuration
-   - Review MTA-out logs for authentication errors
+2. **Outbound mail not being sent**
+   - Check the Celery worker logs — delivery runs there, not in a separate service
+   - Inspect per-recipient `delivery_status` / `delivery_message` on the message
+   - In relay mode, verify `MTA_OUT_RELAY_HOST` and its credentials
 
 3. **DNS issues**
    - Use `dns_check` command to verify records

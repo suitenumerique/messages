@@ -156,7 +156,6 @@ PEER_TRIGGERABLE = {
     "session_without_peer",
     "helo_control_chars",
     "bare_newline_normalised",
-    "data_timeout",
     "proxy_header",
     "proxy_header_untrusted",
 }
@@ -191,9 +190,6 @@ OPERATOR_TRIGGERABLE = {
     "mda_check_no_verdict",
     "mda_body_not_an_object",
     "handler_error",
-    # Fires per EHLO, but handler._EXTENSIONS_REPORTED holds it to once per verb
-    # per process, so the volume is ours and the level can stay WARNING.
-    "ehlo_extension_stripped",
 }
 
 # The one deliberate exception. These name envelope addresses at INFO because
@@ -203,6 +199,18 @@ OPERATOR_TRIGGERABLE = {
 # delivers never reaches them, so the cost tracks real mail rather than raw
 # connections. Written as ``"message_" + outcome`` at the call site.
 AUDIT = {"message_delivered", "message_deferred", "message_rejected"}
+
+# The second deliberate exception, on the same reasoning as AUDIT and with a
+# tighter bound. A refusal is the only record that a command was refused and
+# why: without it "why did mail from X bounce?" has no answer, since the
+# metrics count rejections without naming one. A peer influences the rate but
+# cannot run it away — every one of these either spends a unit of
+# PYMTA_MAX_ERRORS_PER_SESSION (50) or asks for the disconnect, and unknown
+# recipients stop at PYMTA_MAX_RCPT_MISSES_PER_SESSION (10), so a connection
+# buys at most ~50 lines before it is closed. That is the same shape as AUDIT
+# (bounded per connection), not the shape of proxy_header_untrusted (one line
+# per TCP connection, unbounded).
+REFUSALS = {"reject"}
 
 # Event names the scanner sees as a literal prefix because the suffix is a
 # variable. Maps what appears in the source to what is actually emitted.
@@ -246,7 +254,7 @@ def test_every_event_is_classified():
     Classification is a judgement no test can make, so the test does not try. It
     only refuses to let the judgement go unmade.
     """
-    known = PEER_TRIGGERABLE | OPERATOR_TRIGGERABLE | AUDIT
+    known = PEER_TRIGGERABLE | OPERATOR_TRIGGERABLE | AUDIT | REFUSALS
     unclassified = sorted({event for _, event, _ in _log_sites() if event not in known})
     assert not unclassified, (
         f"unclassified log events: {unclassified}. Add each to PEER_TRIGGERABLE "
@@ -274,6 +282,9 @@ def test_the_classification_lists_do_not_overlap():
     assert not (PEER_TRIGGERABLE & OPERATOR_TRIGGERABLE)
     assert not (PEER_TRIGGERABLE & AUDIT)
     assert not (OPERATOR_TRIGGERABLE & AUDIT)
+    assert not (PEER_TRIGGERABLE & REFUSALS)
+    assert not (OPERATOR_TRIGGERABLE & REFUSALS)
+    assert not (AUDIT & REFUSALS)
 
 
 @pytest.mark.parametrize(

@@ -23,6 +23,7 @@ import pypff
 from jmap_email import compose_email, is_valid_msg_id, parse_address, parse_addresses
 from jmap_email.types import EmailAddress
 
+from core.mda.addresses import address_domain
 from core.mda.utils import ARCHIVE_COMPOSE_OPTIONS
 from core.services.s3_seekable import BUFFER_NONE, S3SeekableReader
 
@@ -595,7 +596,8 @@ def _resolve_smtp_address(item) -> str | None:
     Handles Exchange "EX" address types by checking PR_SMTP_ADDRESS first.
     """
     addr_type = get_mapi_property_string(item, PR_ADDRTYPE)
-    if addr_type and addr_type.upper() == "EX":
+    # PR_ADDRTYPE is a MAPI address *kind* ("EX", "SMTP"), not an address.
+    if addr_type and addr_type.upper() == "EX":  # pylint: disable=address-unicode-case
         # Exchange address — try PR_SMTP_ADDRESS first
         smtp = get_mapi_property_string(item, PR_SMTP_ADDRESS)
         if smtp and "@" in smtp:
@@ -986,9 +988,7 @@ def _synthesize_message_id(message, recipient_email: str | None) -> str:
 
     digest = hashlib.sha256("\x00".join(parts).encode("utf-8")).hexdigest()[:32]
 
-    domain = "localhost"
-    if recipient_email and "@" in recipient_email:
-        domain = recipient_email.rsplit("@", 1)[1]
+    domain = (recipient_email and address_domain(recipient_email)) or "localhost"
     return f"pst-synth-{digest}@{domain}"
 
 
@@ -1145,9 +1145,7 @@ def reconstruct_eml(
     # compose_email accepts the message. inbound_create.py keeps this value
     # as-is (it only substitutes when the email is empty).
     if "from" not in jmap_data:
-        fallback_domain = None
-        if recipient_email and "@" in recipient_email:
-            fallback_domain = recipient_email.rsplit("@", 1)[1]
+        fallback_domain = recipient_email and address_domain(recipient_email)
         fallback_email = (
             f"unknown-sender@{fallback_domain}"
             if fallback_domain

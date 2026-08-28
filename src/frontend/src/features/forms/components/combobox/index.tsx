@@ -14,6 +14,12 @@ export type ComboBoxProps =  {
     onChange?: (value: string[]) => void,
     renderChipLabel?: (item: Option) => string,
     valueValidator?: (value: string) => boolean,
+    /**
+     * Canonicalizes a value on its way in, from any source: typed, pasted,
+     * picked from the menu, or restored from a saved draft. Applied before
+     * the chip is built so what the user sees is what gets submitted.
+     */
+    valueTransformer?: (value: string) => string,
     autoFocus?: boolean,
 } & Omit<SelectProps, 'value' | 'defaultValue' | 'onChange'>;
 
@@ -22,11 +28,34 @@ export const ComboBox = (props: ComboBoxProps) => {
     const [inputValue, setInputValue] = useState('');
     const [inputFocused, setInputFocused] = useState(false);
     const inputRef = useRef<HTMLInputElement>(null);
+    const { valueTransformer } = props;
+    const canonical = useCallback(
+        (value: string): string => (valueTransformer ? valueTransformer(value) : value),
+        [valueTransformer]
+    );
+    const toOption = useCallback((value: string): Option => {
+        const transformed = canonical(value);
+        return { label: transformed, value: transformed };
+    }, [canonical]);
+    /**
+     * Keep one option per canonical value, first occurrence wins.
+     *
+     * Two entries that differ only by what the transformer folds (domain
+     * case, say) become the same address once transformed, so without this
+     * a restored draft renders duplicate chips and `onChange` submits the
+     * same recipient twice.
+     */
+    const dedupe = useCallback((options: Option[]): Option[] => {
+        const seen = new Set<string>();
+        return options.filter((option) => {
+            const key = option.value ?? option.label;
+            if (seen.has(key)) return false;
+            seen.add(key);
+            return true;
+        });
+    }, []);
     const { getSelectedItemProps, getDropdownProps, removeSelectedItem, addSelectedItem, selectedItems, setSelectedItems } = useMultipleSelection<Option>({
-        initialSelectedItems: (props.value || props.defaultValue || []).map(item => ({
-            label: item,
-            value: item,
-        })),
+        initialSelectedItems: dedupe((props.value || props.defaultValue || []).map(toOption)),
         stateReducer: (state, { type, changes}) => {
             if(type === useMultipleSelection.stateChangeTypes.DropdownKeyDownBackspace) {
                 // Give focus to the last selected item instead of deleting it when pressing backspace
@@ -52,9 +81,18 @@ export const ComboBox = (props: ComboBoxProps) => {
         },
     })
     const filteredOptions = useMemo(() => {
+        // Compare on the transformed value: a stored contact whose address
+        // differs only by what the transformer canonicalizes (e.g. domain
+        // case) would otherwise stay offered after being picked, and could be
+        // added a second time.
+        const selected = new Set(selectedItems.map(item => item.value || item.label));
         // Limit the options list to 10 items to avoid performance issues
-        return props.options.filter(option => !selectedItems.find(item => item.value === option.value)).slice(0, 10);
-    }, [props.options, selectedItems])
+        return props.options.filter(option => {
+            const raw = option.value ?? option.label;
+            // An option carrying no string value cannot match a selected chip.
+            return typeof raw !== 'string' || !selected.has(canonical(raw));
+        }).slice(0, 10);
+    }, [props.options, selectedItems, canonical])
     const showLabelAsPlaceholder = useMemo(
         () => selectedItems.length === 0 && !inputValue && !inputFocused,
         [inputFocused, inputValue, selectedItems]
@@ -62,7 +100,7 @@ export const ComboBox = (props: ComboBoxProps) => {
     const extractNewItemsIfNeeded = () => {
         const [newItems, rest] = parseInputValue(inputValue);
         if (newItems.length > 0) {
-            setSelectedItems([...selectedItems, ...newItems]);
+            setSelectedItems(dedupe([...selectedItems, ...newItems]));
             setInputValue(rest);
             return true;
         }
@@ -83,7 +121,9 @@ export const ComboBox = (props: ComboBoxProps) => {
             itemToString: (item) => item?.label || item?.value || '',
             onSelectedItemChange: ({ selectedItem }) => {
                 if (!selectedItem) return;
-                addSelectedItem(selectedItem);
+                // Menu entries come from stored contacts, which keep the case
+                // they were received in; canonicalize them like typed input.
+                addSelectedItem(toOption(selectedItem.value || selectedItem.label));
                 setInputValue('');
             },
             defaultHighlightedIndex: 0,
@@ -91,7 +131,7 @@ export const ComboBox = (props: ComboBoxProps) => {
                 const isPasted = newInputValue.length - inputValue?.length > 1
                 const [newItems, rest] = parseInputValue(newInputValue);
                 if (isPasted && newItems.length > 0) {
-                    setSelectedItems([...selectedItems, ...newItems]);
+                    setSelectedItems(dedupe([...selectedItems, ...newItems]));
                     setInputValue(rest);
                     props.onInputChange?.(rest);
                     return;
@@ -141,11 +181,11 @@ export const ComboBox = (props: ComboBoxProps) => {
             invalidValues = values.filter(item => !validValues.includes(item));
         }
 
-        return [validValues.map(item => ({
-            label: item,
-            value: item,
-        })), validValues.length === 0 ? value : invalidValues.join(', ')];
-    }, [props.valueValidator]);
+        // Rejected values go back into the input verbatim so the user can fix
+        // what they actually typed; only accepted ones are canonicalized.
+        return [validValues.map(toOption),
+            validValues.length === 0 ? value : invalidValues.join(', ')];
+    }, [props.valueValidator, toOption]);
 
     useEffect(() => {
         props.onChange?.(selectedItems.map(item => item.value || item.label));

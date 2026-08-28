@@ -56,19 +56,24 @@ logger = logging.getLogger(__name__)
                 allow_blank=True,
                 help_text="Content of the draft message as arbitrary text (usually JSON)",
             ),
+            # CharField, not EmailField: the endpoint accepts any RFC 6532
+            # addr-spec (see AddrSpecValidator), which Django's email
+            # validator rejects. This block only documents the schema (the
+            # view reads request.data), so the type here is the published
+            # contract and must match what is actually accepted.
             "to": drf_serializers.ListField(
-                child=drf_serializers.EmailField(),
+                child=drf_serializers.CharField(),
                 required=False,
                 help_text="List of recipient email addresses",
             ),
             "cc": drf_serializers.ListField(
-                child=drf_serializers.EmailField(),
+                child=drf_serializers.CharField(),
                 required=False,
                 default=list,
                 help_text="List of CC recipient email addresses",
             ),
             "bcc": drf_serializers.ListField(
-                child=drf_serializers.EmailField(),
+                child=drf_serializers.CharField(),
                 required=False,
                 default=list,
                 help_text="List of BCC recipient email addresses",

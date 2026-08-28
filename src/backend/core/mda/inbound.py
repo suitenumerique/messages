@@ -12,6 +12,7 @@ from jmap_email import first_msgid
 from jmap_email.types import JmapEmail
 
 from core import enums, models
+from core.mda.addresses import ascii_lower, normalize_domain, split_address
 from core.mda.inbound_tasks import process_inbound_message_task
 from core.services.importer.labels import (
     handle_duplicate_message,
@@ -25,14 +26,28 @@ logger = logging.getLogger(__name__)
 def check_local_recipient(
     email_address: str, create_if_missing: bool = False
 ) -> bool | models.Mailbox:
-    """Check if a recipient email is locally deliverable."""
+    """Check if a recipient email is locally deliverable.
+
+    Resolution is case-insensitive: the local part is ASCII-folded and the
+    domain canonicalized (see ``core.mda.addresses``), so ``John.Doe@`` and
+    ``john.doe@`` reach the same mailbox — and a mailbox created here is
+    created under that same folded name.
+    """
 
     is_deliverable = False
 
-    try:
-        local_part, domain_name = email_address.split("@", 1)
-    except ValueError:
+    parts = split_address(email_address)
+    if parts is None:
         return False  # Invalid format
+    local_part = ascii_lower(parts[0])
+    domain_name = normalize_domain(parts[1])
+
+    # We do not host mailboxes with a non-ASCII local part, so such an address
+    # is never local — even under MESSAGES_ACCEPT_ALL_EMAILS, whose
+    # create-if-missing path would otherwise raise ValidationError out of
+    # ``send_message`` and leave the message retrying forever.
+    if not local_part.isascii():
+        return False
 
     # For unit testing, we accept all emails
     if settings.MESSAGES_ACCEPT_ALL_EMAILS:
@@ -63,7 +78,10 @@ def check_local_recipients(email_addresses: list[str]) -> set[str]:
     """
     Check which email addresses are locally deliverable (batch version).
 
-    Returns a set of email addresses that are deliverable locally.
+    Returns a subset of ``email_addresses``, verbatim: MTA-in keys its RCPT
+    verdict by the exact string it sent us, so the folded form used for the
+    lookup must never leak into the result.
+
     An email is deliverable if:
     - MESSAGES_ACCEPT_ALL_EMAILS is True (test mode), or
     - A mailbox exists for that email address
@@ -71,23 +89,32 @@ def check_local_recipients(email_addresses: list[str]) -> set[str]:
     if not email_addresses:
         return set()
 
-    # For unit testing, all emails are deliverable
-    if settings.MESSAGES_ACCEPT_ALL_EMAILS:
-        return set(email_addresses)
-
     deliverable = set()
 
     # Parse emails and collect unique domains
-    email_parts = {}  # email -> (local_part, domain)
+    email_parts = {}  # email -> (local_part, domain), both folded
     domains = set()
 
     for email in email_addresses:
-        try:
-            local_part, domain = email.rsplit("@", 1)
-            email_parts[email] = (local_part, domain)
-            domains.add(domain)
-        except ValueError:
-            pass  # Invalid email format, not deliverable
+        parts = split_address(email)
+        if parts is None:
+            continue  # Invalid email format, not deliverable
+        local_part = ascii_lower(parts[0])
+        # No mailbox can have a non-ASCII local part, so such an address is
+        # never local. Checked before MESSAGES_ACCEPT_ALL_EMAILS below, which
+        # widens which *domains* we take and not which local parts can exist:
+        # answering yes here accepts the RCPT and then fails at DATA, which
+        # MTA-in maps to a 451, so the sender retries the whole envelope for
+        # its full backoff window. Mirrors ``check_local_recipient``.
+        if not local_part.isascii():
+            continue
+        domain = normalize_domain(parts[1])
+        email_parts[email] = (local_part, domain)
+        domains.add(domain)
+
+    # For unit testing, every address that could name a mailbox is deliverable
+    if settings.MESSAGES_ACCEPT_ALL_EMAILS:
+        return set(email_parts)
 
     # Query all mailboxes on the relevant domains in a single query
     if domains:

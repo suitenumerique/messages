@@ -14,6 +14,12 @@ from jmap_email import ComposeError, body_text_joined
 
 from core import models
 from core.enums import is_delivered
+from core.mda.addresses import (
+    ascii_lower,
+    normalize_address,
+    normalize_domain,
+    split_address,
+)
 from core.mda.draft import create_draft
 from core.mda.outbound import prepare_outbound_message, send_message
 from core.mda.selfcheck_reporting import (
@@ -113,9 +119,11 @@ def _create_test_mailboxes(
 ) -> Tuple[models.Mailbox, models.Mailbox]:
     """Create test mailboxes for FROM and TO addresses if they don't exist."""
 
-    # Parse email addresses
-    from_local, from_domain = from_email.split("@", 1)
-    to_local, to_domain = to_email.split("@", 1)
+    # Parse email addresses into the canonical form mailboxes are stored under
+    from_local, from_domain = split_address(from_email)
+    to_local, to_domain = split_address(to_email)
+    from_local, from_domain = ascii_lower(from_local), normalize_domain(from_domain)
+    to_local, to_domain = ascii_lower(to_local), normalize_domain(to_domain)
 
     # Create or get mail domains
     from_maildomain, _ = models.MailDomain.objects.get_or_create(name=from_domain)
@@ -134,11 +142,11 @@ def _create_test_mailboxes(
 
     # Create contacts for the mailboxes if they don't exist
     from_contact, _ = models.Contact.objects.get_or_create(
-        email=from_email, mailbox=from_mailbox, defaults={"name": from_local}
+        email=str(from_mailbox), mailbox=from_mailbox, defaults={"name": from_local}
     )
 
     to_contact, _ = models.Contact.objects.get_or_create(
-        email=to_email, mailbox=to_mailbox, defaults={"name": to_local}
+        email=str(to_mailbox), mailbox=to_mailbox, defaults={"name": to_local}
     )
 
     # Link contacts to mailboxes if not already linked
@@ -248,9 +256,11 @@ def run_selfcheck() -> SelfCheckResult:
         "reception_time": None,
     }
 
-    # Get configuration
-    from_email = settings.MESSAGES_SELFCHECK_FROM
-    to_email = settings.MESSAGES_SELFCHECK_TO
+    # Get configuration. Both addresses are ours, so fold them once here:
+    # everything downstream (mailbox lookup, sender contact match) compares
+    # against the canonical form.
+    from_email = normalize_address(settings.MESSAGES_SELFCHECK_FROM or "")
+    to_email = normalize_address(settings.MESSAGES_SELFCHECK_TO or "")
     secret = f"{settings.MESSAGES_SELFCHECK_SECRET}/{secrets.token_hex(8)}"
 
     received_message = None

@@ -5,6 +5,7 @@ Django management command to provision DNS records for mail domains.
 from django.conf import settings
 from django.core.management.base import BaseCommand, CommandError
 
+from core.mda.addresses import normalize_domain
 from core.models import MailDomain
 from core.services.dns.provisioning import (
     detect_dns_provider,
@@ -45,7 +46,7 @@ class Command(BaseCommand):
 
         try:
             if domain_name:
-                maildomain = MailDomain.objects.get(name=domain_name)
+                maildomain = MailDomain.objects.get(name=normalize_domain(domain_name))
             else:
                 maildomain = MailDomain.objects.get(id=domain_id)
         except MailDomain.DoesNotExist:

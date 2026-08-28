@@ -5,6 +5,7 @@
 import datetime
 import hashlib
 import json
+import logging
 from unittest.mock import ANY, patch
 
 from django.conf import settings
@@ -654,6 +655,91 @@ class TestMTAJWTHardening:
             HTTP_AUTHORIZATION=f"Bearer {token}",
         )
         assert response.status_code == status.HTTP_401_UNAUTHORIZED
+
+
+@pytest.fixture(name="mta_logs")
+def fixture_mta_logs(caplog):
+    """``caplog`` wired to the MTA viewset's logger.
+
+    Settings give the ``core`` logger its own handler with ``propagate:
+    False``. Records stop climbing there, so they never reach the root handler
+    ``caplog`` installs and ``caplog.text`` would silently stay empty — which
+    reads as "nothing was logged" rather than "nothing was captured".
+    """
+    core_logger = logging.getLogger("core")
+    original = core_logger.propagate
+    core_logger.propagate = True
+    try:
+        with caplog.at_level(logging.INFO, logger="core.api.viewsets.inbound.mta"):
+            yield caplog
+    finally:
+        core_logger.propagate = original
+
+
+@pytest.mark.django_db
+class TestMTASessionCorrelation:
+    """``mta_session`` joins mta-in's SMTP lines to ours."""
+
+    @staticmethod
+    def _post(api_client, sample_email, valid_jwt_token, mta_session):
+        metadata = {"original_recipients": ["recipient@example.com"]}
+        if mta_session is not None:
+            metadata["mta_session"] = mta_session
+        token = valid_jwt_token(sample_email, metadata)
+        return api_client.post(
+            "/api/v1.0/inbound/mta/deliver/",
+            data=sample_email,
+            content_type="message/rfc822",
+            HTTP_AUTHORIZATION=f"Bearer {token}",
+        )
+
+    @patch("core.api.viewsets.inbound.mta.deliver_inbound_message")
+    def test_the_claim_reaches_the_log(
+        self, mock_deliver, api_client, sample_email, valid_jwt_token, mta_logs
+    ):
+        mock_deliver.return_value = True
+        self._post(api_client, sample_email, valid_jwt_token, "deadbeef")
+        assert "[mta_session=deadbeef]" in mta_logs.text
+
+    @patch("core.api.viewsets.inbound.mta.deliver_inbound_message")
+    def test_an_older_mta_in_sends_no_claim(
+        self, mock_deliver, api_client, sample_email, valid_jwt_token, mta_logs
+    ):
+        """Absent is a placeholder, not a refusal: delivery must not depend on it."""
+        mock_deliver.return_value = True
+        response = self._post(api_client, sample_email, valid_jwt_token, None)
+        assert response.status_code == status.HTTP_200_OK
+        assert "[mta_session=-]" in mta_logs.text
+
+    @pytest.mark.parametrize(
+        "hostile",
+        [
+            "dead\nINFO Raw email received: 0 bytes for [] [mta_session=beef]",
+            "dead\rbeef",
+            # Terminal, not embedded: an anchored ``$`` matches just before a
+            # trailing newline, so only ``fullmatch`` keeps this out.
+            "deadbeef\n",
+            "deadbeef\r\n",
+            "x" * 65,
+            "semi;colon",
+            "",
+        ],
+    )
+    @patch("core.api.viewsets.inbound.mta.deliver_inbound_message")
+    def test_a_claim_that_could_forge_a_record_is_dropped(
+        self, mock_deliver, api_client, sample_email, valid_jwt_token, mta_logs, hostile
+    ):
+        """Our logging does no escaping, so the shape is checked before it lands.
+
+        Only reachable with the shared secret, which is when trustworthy logs
+        matter most.
+        """
+        mock_deliver.return_value = True
+        self._post(api_client, sample_email, valid_jwt_token, hostile)
+        assert "[mta_session=-]" in mta_logs.text
+        for record in mta_logs.records:
+            assert "\n" not in record.getMessage()
+            assert "\r" not in record.getMessage()
 
 
 @pytest.mark.django_db

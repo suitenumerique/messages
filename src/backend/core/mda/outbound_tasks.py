@@ -160,7 +160,7 @@ def retry_messages_task(self, message_ids=None, force_mta_out=False, batch_size=
         message_filter_q &= Q(id__in=message_ids)
 
     # ``sender__mailbox__domain`` is hit per message on the external-send
-    # path (SPF check, DKIM verify, MTA-out envelope) in send_message.
+    # path (SPF check, DKIM verify, SMTP envelope) in send_message.
     messages_to_process = models.Message.objects.filter(
         message_filter_q
     ).select_related("sender", "sender__mailbox__domain")

@@ -34,9 +34,11 @@ class _StubAsyncClient:
     def __init__(self, script):
         self.script = list(script)
         self.calls = 0
+        self.headers = []
 
     async def post(self, url, content=None, headers=None):
         self.calls += 1
+        self.headers.append(headers or {})
         action = self.script.pop(0) if self.script else None
         if isinstance(action, Exception):
             raise action
@@ -359,6 +361,54 @@ def test_metadata_cannot_shadow_exp_or_body_hash():
     assert decoded["body_hash"] != "deadbeef"
     # Sender (non-conflicting metadata) survives.
     assert decoded["sender"] == "u@x"
+
+
+def _claims_of(stub, client) -> dict:
+    """Decode the JWT the stub was called with."""
+    token = stub.headers[0]["Authorization"].split(" ", 1)[1]
+    return jwt.decode(token, client.secret, algorithms=["HS256"])
+
+
+@pytest.mark.asyncio
+async def test_the_session_id_travels_as_a_signed_claim():
+    """The MDA logs it, so it has to be signed rather than a header.
+
+    A header could be retagged by anything on the path, which would attach one
+    delivery's SMTP session to another's MDA lines.
+    """
+    client, _ = _new_client()
+    stub = _StubAsyncClient([_resp(200), _resp(200)])
+    client._client = stub
+
+    await client.check_recipient("a@example.com", session="deadbeef")
+    assert _claims_of(stub, client)["mta_session"] == "deadbeef"
+
+    stub.headers.clear()
+    await client.deliver(
+        message=b"body",
+        sender="s@example.com",
+        original_recipients=["a@example.com"],
+        client_address=None,
+        client_port=None,
+        client_hostname=None,
+        client_helo=None,
+        session="cafe1234",
+    )
+    claims = _claims_of(stub, client)
+    assert claims["mta_session"] == "cafe1234"
+    # Alongside the delivery metadata, not instead of it.
+    assert claims["sender"] == "s@example.com"
+
+
+@pytest.mark.asyncio
+async def test_no_session_means_no_claim():
+    """Rather than a null one, which reads as an id the MDA could log."""
+    client, _ = _new_client()
+    stub = _StubAsyncClient([_resp(200)])
+    client._client = stub
+
+    await client.check_recipient("a@example.com")
+    assert "mta_session" not in _claims_of(stub, client)
 
 
 def test_jwt_ttl_is_configurable():

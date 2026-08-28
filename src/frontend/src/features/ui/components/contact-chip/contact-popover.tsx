@@ -6,6 +6,7 @@ import { useEffect, useRef, useState } from "react";
 import { useTranslation } from "react-i18next";
 import clsx from "clsx";
 import { handle } from "@/features/utils/errors";
+import MailHelper from "@/features/utils/mail-helper";
 import type { ContactChipDeliveryStatus, ContactChipDeliveryAction } from "./index";
 
 type ContactPopoverProps = PopoverProps & {
@@ -69,7 +70,7 @@ export const ContactPopover = ({ contact, senderUserName, deliveryStatus, delive
                     <UserAvatar fullName={contact.name || contact.email} size="large" />
                     <div className="contact-popover__identity-info">
                         <p title={contact.name || contact.email}>
-                            <strong className="contact-popover__identity-name">{contact.name || contact.email.split('@')[0]}</strong>
+                            <strong className="contact-popover__identity-name">{contact.name || MailHelper.splitEmail(contact.email)?.[0] || contact.email}</strong>
                         </p>
                         <button type="button" className="contact-popover__identity-email" onClick={handleCopy}>
                             <span>{contact.email}</span>

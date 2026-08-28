@@ -7957,7 +7957,6 @@
                     },
                     "email": {
                         "type": "string",
-                        "format": "email",
                         "maxLength": 254
                     }
                 },
@@ -8076,7 +8075,6 @@
                         "type": "array",
                         "items": {
                             "type": "string",
-                            "format": "email",
                             "minLength": 1
                         },
                         "description": "List of recipient email addresses"
@@ -8085,7 +8083,6 @@
                         "type": "array",
                         "items": {
                             "type": "string",
-                            "format": "email",
                             "minLength": 1
                         },
                         "description": "List of CC recipient email addresses"
@@ -8094,7 +8091,6 @@
                         "type": "array",
                         "items": {
                             "type": "string",
-                            "format": "email",
                             "minLength": 1
                         },
                         "description": "List of BCC recipient email addresses"
@@ -8579,7 +8575,7 @@
                     },
                     "name": {
                         "type": "string",
-                        "pattern": "^[a-z0-9][a-z0-9.-]*[a-z0-9]$",
+                        "pattern": "^(?=.{2,253}$)(?=[a-z0-9-]{1,63}(?:\\.|$))[a-z0-9](?:[a-z0-9-]*[a-z0-9])?(?:\\.(?=[a-z0-9-]{1,63}(?:\\.|$))[a-z0-9](?:[a-z0-9-]*[a-z0-9])?)*$",
                         "maxLength": 253
                     },
                     "created_at": {
@@ -8622,7 +8618,7 @@
                     "name": {
                         "type": "string",
                         "minLength": 1,
-                        "pattern": "^[a-z0-9][a-z0-9.-]*[a-z0-9]$",
+                        "pattern": "^(?=.{2,253}$)(?=[a-z0-9-]{1,63}(?:\\.|$))[a-z0-9](?:[a-z0-9-]*[a-z0-9])?(?:\\.(?=[a-z0-9-]{1,63}(?:\\.|$))[a-z0-9](?:[a-z0-9-]*[a-z0-9])?)*$",
                         "maxLength": 253
                     },
                     "oidc_autojoin": {

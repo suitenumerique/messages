@@ -59,22 +59,6 @@ jobs:
       build_args: |
         PYTHON_UV_IMAGE=${{ needs.docker-publish-python-uv.outputs.image_ref }}
 
-  docker-publish-mta-out:
-    needs: docker-publish-python-uv
-    uses: ./.github/workflows/docker-publish.yml
-    permissions:
-      contents: read
-      packages: write
-      attestations: write
-      id-token: write
-    secrets: inherit
-    with:
-      image_name: "mta-out"
-      context: "src/mta-out"
-      target: runtime-prod
-      build_args: |
-        PYTHON_UV_IMAGE=${{ needs.docker-publish-python-uv.outputs.image_ref }}
-
   docker-publish-socks-proxy:
     uses: ./.github/workflows/docker-publish.yml
     permissions:

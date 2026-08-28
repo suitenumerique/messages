@@ -20,6 +20,7 @@ from core.enums import (
     ThreadAccessRoleChoices,
     ThreadEventTypeChoices,
 )
+from core.mda.addresses import address_local_part
 from core.mda.inbound import deliver_inbound_message
 from core.services.identity.keycloak import get_keycloak_admin_client
 
@@ -153,7 +154,7 @@ class Command(BaseCommand):
         self, email, domain, is_domain_admin=False, is_superuser=False
     ):
         """Create a user with a personal mailbox."""
-        local_part = email.split("@")[0]
+        local_part = address_local_part(email)
         full_name = local_part.replace(".", " ").replace("-", " ").title()
 
         # Create or get user
@@ -562,7 +563,7 @@ class Command(BaseCommand):
         )
         for user, _mailbox in regular_users:
             # Extract "{browser}" from "user.e2e.{browser}@{domain}".
-            browser = user.email.split("@")[0].removeprefix("user.e2e.")
+            browser = address_local_part(user.email).removeprefix("user.e2e.")
             content = f"[e2e-aged-{browser}] Message past edit delay"
             event = models.ThreadEvent.objects.create(
                 thread=thread,

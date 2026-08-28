@@ -72,19 +72,25 @@ def build_smtp_kwargs(*, tls_context: ssl.SSLContext | None) -> dict:
 
 
 def load_tls_context() -> ssl.SSLContext | None:
-    """Build a TLS context from the configured cert/key, or None.
+    """Build a TLS context from the configured cert/key pairs, or None.
 
     Returning None disables STARTTLS, so aiosmtpd will not advertise it.
+
+    Loading more than one pair is how dual certificates work: OpenSSL holds a
+    slot per key type and, at each handshake, presents the certificate the
+    client said it can verify. Two pairs of the *same* key type is not an
+    error — the later simply takes the slot — so the second of two RSA certs
+    is the one served.
     """
-    cert = settings.PYMTA_TLS_CERT_FILE
-    key = settings.PYMTA_TLS_KEY_FILE
-    if not cert or not key:
+    pairs = settings.PYMTA_TLS_CERT_PAIRS
+    if not pairs:
         return None
     ctx = ssl.create_default_context(ssl.Purpose.CLIENT_AUTH)
     # As an MTA we accept any client identity; we just want our side encrypted.
     ctx.check_hostname = False
     ctx.verify_mode = ssl.CERT_NONE
-    ctx.load_cert_chain(cert, key)
+    for cert, key in pairs:
+        ctx.load_cert_chain(cert, key)
     return ctx
 
 

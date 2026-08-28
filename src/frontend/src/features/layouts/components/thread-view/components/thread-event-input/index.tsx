@@ -64,7 +64,9 @@ export const ThreadEventInput = ({ threadId, editingEvent, onCancelEdit, onEvent
         if (!mentionFilter) return true;
         const filter = StringHelper.normalizeForSearch(mentionFilter);
         const name = StringHelper.normalizeForSearch(user.full_name ?? "");
-        const email = user.email?.toLowerCase() ?? "";
+        // Same normalization as the name above: the filter is accent-stripped,
+        // so a plain toLowerCase() here would fail to match "josé@…" on "jose".
+        const email = StringHelper.normalizeForSearch(user.email ?? "");
         return name.includes(filter) || email.includes(filter);
     });
 

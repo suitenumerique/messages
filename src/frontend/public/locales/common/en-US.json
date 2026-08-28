@@ -1,4 +1,6 @@
 {
+  "{{addresses}} contains accented characters after the @ sign. The address will be converted to its standard form before sending. Check the spelling with your recipient.": "{{addresses}} contains accented characters after the @ sign. The address will be converted to its standard form before sending. Check the spelling with your recipient.",
+  "{{addresses}} contains accented characters before the @ sign. We will try to send it, but mail servers that do not support internationalized addresses will reject it. Check the spelling with your recipient.": "{{addresses}} contains accented characters before the @ sign. We will try to send it, but mail servers that do not support internationalized addresses will reject it. Check the spelling with your recipient.",
   "{{assignees}} was unassigned_one": "{{assignees}} was unassigned",
   "{{assignees}} was unassigned_other": "{{assignees}} were unassigned",
   "{{author}} assigned {{assignees}}_one": "{{author}} assigned {{assignees}}",
@@ -469,6 +471,7 @@
   "I have an issue or a feature request": "I have an issue or a feature request",
   "Identity": "Identity",
   "Identity synchronization is disabled for this domain, so no password will be created here. The user will sign in through a third-party identity provider, and the mailbox can receive emails straight away.": "Identity synchronization is disabled for this domain, so no password will be created here. The user will sign in through a third-party identity provider, and the mailbox can receive emails straight away.",
+  "If it is rejected, the other recipients of this message may not receive it either.": "If it is rejected, the other recipients of this message may not receive it either.",
   "Image + Text": "Image + Text",
   "Image size limit exceeded": "Image size limit exceeded",
   "IMAP port": "IMAP port",

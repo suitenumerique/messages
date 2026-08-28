@@ -5,13 +5,16 @@ import uuid
 from typing import Optional
 
 from django.conf import settings
+from django.core.exceptions import ValidationError as DjangoValidationError
 from django.db import transaction
 from django.utils import timezone
 
 import rest_framework as drf
+from jmap_email import is_valid_addr_spec
 
 from core import enums, models
 from core.api.utils import get_attachment_from_blob_id
+from core.mda.addresses import address_local_part
 from core.services.attachments import (
     UNNAMED_ATTACHMENT_STEM,
     get_attachment_display_name,
@@ -528,6 +531,18 @@ def update_draft(
         "bcc": enums.MessageRecipientTypeChoices.BCC,
     }
     recipient_types = ["to", "cc", "bcc"]
+
+    # Validate every supplied address up front. The loop below deletes the
+    # existing recipients of a type before recreating them, so raising
+    # partway through would leave the draft with its recipients half wiped
+    # — and the caller only ever sees the 400.
+    for recipient_type in recipient_types:
+        for email in update_data.get(recipient_type) or []:
+            if not is_valid_addr_spec(email):
+                raise drf.exceptions.ValidationError(
+                    {recipient_type: f"Invalid email address: {email}"}
+                )
+
     for recipient_type in recipient_types:
         if recipient_type in update_data:
             # Delete existing recipients of this type
@@ -536,17 +551,29 @@ def update_draft(
                     type=recipient_type_mapping[recipient_type]
                 ).delete()
 
-            # Create new recipients
+            # Create new recipients. The address is stored exactly as typed:
+            # only the destination host may fold a local part, so a draft
+            # keeps the casing the user chose.
             emails = update_data.get(recipient_type) or []
             for email in emails:
-                contact, _created = models.Contact.objects.get_or_create(
-                    email=email,
-                    mailbox=mailbox,
-                    defaults={
-                        "email": email,
-                        "name": email.split("@")[0],
-                    },
-                )
+                try:
+                    contact, _created = models.Contact.objects.get_or_create(
+                        email=email,
+                        mailbox=mailbox,
+                        defaults={
+                            "email": email,
+                            "name": address_local_part(email),
+                        },
+                    )
+                except DjangoValidationError as exc:
+                    # Contact.email must be exactly one addr-spec, so a value
+                    # carrying a comma, whitespace or a control character is
+                    # refused (see AddrSpecValidator). That is a bad request
+                    # from the client, not a server fault — without this it
+                    # escapes DRF's handler as a 500.
+                    raise drf.exceptions.ValidationError(
+                        {recipient_type: f"Invalid email address: {email}"}
+                    ) from exc
                 # Only create MessageRecipient if message has been saved
                 if message.pk:
                     models.MessageRecipient.objects.get_or_create(

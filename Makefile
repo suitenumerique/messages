@@ -67,7 +67,6 @@ create-env-files: \
 	deploy/env/frontend.local \
 	deploy/env/mta-in.local \
 	deploy/env/mta-in-py.local \
-	deploy/env/mta-out.local \
 	deploy/env/socks-proxy.local
 .PHONY: create-env-files
 
@@ -282,8 +281,7 @@ lint: \
   lint-front \
   typecheck-front \
   lint-mta-in \
-  lint-mta-in-py \
-  lint-mta-out
+  lint-mta-in-py
 .PHONY: lint
 
 lint-check:  ## run all linters in check mode (no auto-fix)
@@ -341,9 +339,6 @@ lint-mta-in-py: ## lint mta-in python sources (pure-Python pymta implementation)
 	$(COMPOSE_RUN) --rm -e EXEC_CMD_ONLY=true mta-in-py-test ruff check . --fix
 .PHONY: lint-mta-in-py
 
-lint-mta-out: ## lint mta-out python sources
-	$(COMPOSE_RUN) --rm -e EXEC_CMD_ONLY=true mta-out-test ruff format .
-.PHONY: lint-mta-out
 
 # -- Tests
 
@@ -353,7 +348,6 @@ test: \
   test-front \
   test-mta-in \
   test-mta-in-py \
-  test-mta-out \
   test-mpa \
   test-socks-proxy
 .PHONY: test
@@ -401,9 +395,6 @@ test-mta-in-py: build-python-base ## run the mta-in tests against the pure-Pytho
 	@$(COMPOSE) run --build --rm mta-in-py-test
 .PHONY: test-mta-in-py
 
-test-mta-out: build-python-base ## run the mta-out tests
-	@$(COMPOSE) run --build --rm mta-out-test
-.PHONY: test-mta-out
 
 test-mpa: build-python-base ## run the mpa tests
 	@$(COMPOSE) run --build --rm mpa-test
@@ -830,6 +821,3 @@ deps-lock-mta-in: build-python-base ## lock the dependencies for mta-in (shared 
 	@$(COMPOSE) run --rm --build mta-in-uv uv lock
 .PHONY: deps-lock-mta-in
 
-deps-lock-mta-out: build-python-base ## lock the dependencies
-	@$(COMPOSE) run --rm --build mta-out-uv uv lock
-.PHONY: deps-lock-mta-out

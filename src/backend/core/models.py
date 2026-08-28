@@ -57,6 +57,13 @@ from core.enums import (
     thread_event_type_choices,
     user_event_type_choices,
 )
+from core.mda.addresses import (
+    AddrSpecValidator,
+    address_domain,
+    ascii_lower,
+    normalize_address,
+    normalize_domain,
+)
 from core.mda.signing import generate_dkim_key as _generate_dkim_key
 from core.mda.utils import generate_mime_id, message_snippet
 from core.services.tiered_storage import TieredStorageService, sha256_advisory_lock
@@ -115,6 +122,19 @@ class BaseModel(models.Model):
 class UserManager(auth_models.UserManager):
     """Custom manager for User model with additional methods."""
 
+    def get_by_natural_key(self, username):
+        """Look up the admin login by its canonical form.
+
+        ``admin_email`` is stored folded (see ``User.clean_fields``), and this
+        is the single funnel Django's auth backend and ``createsuperuser`` use
+        to resolve USERNAME_FIELD. Without folding here, an admin created as
+        ``Admin@Example.com`` is stored as ``admin@example.com`` and could
+        never sign in with what they typed.
+        """
+        return self.get(
+            **{self.model.USERNAME_FIELD: normalize_address(username or "")}
+        )
+
     def get_user_by_sub_or_email(self, sub, email):
         """Fetch existing user by sub or email."""
         try:
@@ -126,16 +146,35 @@ class UserManager(auth_models.UserManager):
             # Always claim sub-less "stub" users (created via invite/admin) by email,
             # regardless of OIDC_FALLBACK_TO_EMAIL_FOR_IDENTIFICATION: a stub has no
             # other way to ever be linked to its OIDC identity.
+            # ``email`` has no unique constraint, so both lookups below can
+            # match more than one row: duplicates are legal under
+            # OIDC_ALLOW_DUPLICATE_EMAILS, and migration 0035 can create a
+            # pair by folding two spellings of one address together. Picking
+            # one arbitrarily would hand this login someone else's mailboxes,
+            # so it fails closed, as a handled auth error rather than the
+            # unhandled MultipleObjectsReturned 500 it would otherwise be.
             try:
                 return self.get(email=email, sub__isnull=True)
             except self.model.DoesNotExist:
                 pass
+            except self.model.MultipleObjectsReturned as exc:
+                raise DuplicateEmailError(
+                    "Several accounts share this email address and none can be "
+                    "claimed safely; they have to be merged.",
+                    email=email,
+                ) from exc
 
             if settings.OIDC_FALLBACK_TO_EMAIL_FOR_IDENTIFICATION:
                 try:
                     return self.get(email=email)
                 except self.model.DoesNotExist:
                     pass
+                except self.model.MultipleObjectsReturned as exc:
+                    raise DuplicateEmailError(
+                        "Several accounts share this email address and none "
+                        "can be claimed safely; they have to be merged.",
+                        email=email,
+                    ) from exc
             elif (
                 self.filter(email=email).exists()
                 and not settings.OIDC_ALLOW_DUPLICATE_EMAILS
@@ -232,6 +271,18 @@ class User(AbstractBaseUser, BaseModel, auth_models.PermissionsMixin):
         self.full_clean()
         super().save(*args, **kwargs)
 
+    def clean_fields(self, exclude=None):
+        """Fold both identity addresses before they are validated or compared.
+
+        Both are looked up by exact match (OIDC sub-less matching, admin
+        login), so the stored value has to already be the canonical one.
+        """
+        if self.email:
+            self.email = normalize_address(self.email)
+        if self.admin_email:
+            self.admin_email = normalize_address(self.admin_email)
+        super().clean_fields(exclude=exclude)
+
     def clean(self):
         """Validate fields values."""
         validate_json_schema(
@@ -262,11 +313,16 @@ class User(AbstractBaseUser, BaseModel, auth_models.PermissionsMixin):
 class MailDomain(BaseModel):
     """Mail domain model to store mail domain information."""
 
+    # Per-label rules: every label starts and ends alphanumeric and is at
+    # most 63 octets (RFC 1035 §2.3.4), matching what ``idna`` enforces for
+    # the IDN form. The leading lookahead sets a two-character minimum.
+    _DOMAIN_LABEL = r"(?=[a-z0-9-]{1,63}(?:\.|$))[a-z0-9](?:[a-z0-9-]*[a-z0-9])?"
     name_validator = validators.RegexValidator(
-        regex=r"^[a-z0-9][a-z0-9.-]*[a-z0-9]$",
+        regex=rf"^(?=.{{2,253}}$){_DOMAIN_LABEL}(?:\.{_DOMAIN_LABEL})*$",
         message=(
             "Enter a valid domain name. This value may contain only lowercase "
-            "letters, numbers, dots and - characters."
+            "letters, numbers, dots and - characters; each label must start "
+            "and end with a letter or a number and be at most 63 characters."
         ),
     )
 
@@ -318,6 +374,17 @@ class MailDomain(BaseModel):
         """Enforce validation before saving."""
         self.full_clean()
         super().save(*args, **kwargs)
+
+    def clean_fields(self, exclude=None):
+        """Canonicalize the domain before ``name_validator`` runs.
+
+        Normalizing here rather than in ``clean()`` means mixed-case and
+        IDN input is accepted and stored as the lowercase A-label the
+        validator (and every DNS lookup) expects, instead of being rejected.
+        """
+        if self.name:
+            self.name = normalize_domain(self.name)
+        super().clean_fields(exclude=exclude)
 
     def clean(self):
         """Validate custom attributes."""
@@ -871,6 +938,17 @@ class Mailbox(BaseModel):
 
     def __str__(self):
         return f"{self.local_part}@{self.domain.name}"
+
+    def clean_fields(self, exclude=None):
+        """Fold the local part before validation and the uniqueness check.
+
+        ``full_clean`` runs ``clean_fields`` → ``validate_unique``, so the
+        ``(local_part, domain)`` constraint is enforced on the folded value:
+        ``John`` and ``john`` cannot coexist in the same domain.
+        """
+        if self.local_part:
+            self.local_part = ascii_lower(self.local_part)
+        super().clean_fields(exclude=exclude)
 
     @property
     def can_reset_password(self) -> bool:
@@ -2074,7 +2152,12 @@ class Contact(BaseModel):
     """Contact model to store contact information."""
 
     name = models.CharField("name", max_length=255, null=True, blank=True)
-    email = models.EmailField("email")
+    # A contact is an address we carry, not one we own, so it holds whatever
+    # the sender used — including an RFC 6531 local part. See
+    # AddrSpecValidator for why Django's validate_email is not used here.
+    # max_length matches the EmailField this replaced, so the column is
+    # unchanged.
+    email = models.CharField("email", max_length=254, validators=[AddrSpecValidator()])
     mailbox = models.ForeignKey(
         "Mailbox",
         on_delete=models.CASCADE,
@@ -2421,7 +2504,7 @@ class Message(BaseModel):
         Delegates to :func:`core.mda.utils.generate_mime_id` so the format
         stays uniform across every Message-ID minting path.
         """
-        return generate_mime_id(self.sender.email.split("@")[1])
+        return generate_mime_id(address_domain(self.sender.email))
 
     def get_all_recipient_contacts(self) -> Dict[str, List[Contact]]:
         """Get all recipients of the message."""

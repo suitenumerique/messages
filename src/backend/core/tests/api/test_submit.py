@@ -332,6 +332,49 @@ class TestSubmitValidation:
         )
         assert response.status_code == 403
 
+    def test_homoglyph_sender_returns_403(self, client, auth_header, domain):
+        """``nicK@`` (U+212A) must not satisfy the From-matches-mailbox check.
+
+        Unicode lowercasing folds that onto ``nick@``. Accepting it would
+        DKIM-sign a From this mailbox does not own, which is precisely what
+        this check exists to prevent.
+        """
+        mailbox = MailboxFactory(local_part="nick", domain=domain)
+        spoofed = (
+            "From: nic\u212a@" + domain.name + "\r\n"
+            "To: attendee@example.com\r\n"
+            "Subject: Homoglyph\r\n\r\nBody\r\n"
+        ).encode("utf-8")
+
+        response = client.post(
+            SUBMIT_URL,
+            data=spoofed,
+            content_type="message/rfc822",
+            HTTP_X_MAIL_FROM=str(mailbox.id),
+            HTTP_X_RCPT_TO="attendee@example.com",
+            **auth_header,
+        )
+        assert response.status_code == 403
+
+    def test_sender_case_variant_is_accepted(self, client, auth_header, domain):
+        """Plain ASCII case still matches: only the folding rule changed."""
+        mailbox = MailboxFactory(local_part="nick", domain=domain)
+        cased = (
+            "From: NiCk@" + domain.name.upper() + "\r\n"
+            "To: attendee@example.com\r\n"
+            "Subject: Cased\r\n\r\nBody\r\n"
+        ).encode("utf-8")
+
+        response = client.post(
+            SUBMIT_URL,
+            data=cased,
+            content_type="message/rfc822",
+            HTTP_X_MAIL_FROM=str(mailbox.id),
+            HTTP_X_RCPT_TO="attendee@example.com",
+            **auth_header,
+        )
+        assert response.status_code == 202, response.content
+
     def test_empty_rcpt_to_returns_400(self, client, auth_header, mailbox):
         response = client.post(
             SUBMIT_URL,

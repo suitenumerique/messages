@@ -23,6 +23,7 @@ from jmap_email import first_address_email, parse_email
 from jmap_email.types import JmapEmail
 
 from core import models
+from core.mda.addresses import normalize_address
 from core.mda.dispatch_webhooks import (
     dispatch_recorded_webhooks,
     load_cached_webhook_results,
@@ -121,15 +122,18 @@ def _is_selfcheck(parsed_email: JmapEmail, recipient_email: str) -> bool:
     still flows through the rest of the pipeline (inbound auth, after-
     spam webhooks, message creation).
     """
-    selfcheck_from = (settings.MESSAGES_SELFCHECK_FROM or "").strip().lower()
-    selfcheck_to = (settings.MESSAGES_SELFCHECK_TO or "").strip().lower()
+    # Folded, never ``str.lower()``: this gate skips spam checking, and
+    # Unicode lowercasing maps non-ASCII onto ASCII, so a sender could reach
+    # it with a homoglyph of the configured probe address.
+    selfcheck_from = normalize_address(settings.MESSAGES_SELFCHECK_FROM or "")
+    selfcheck_to = normalize_address(settings.MESSAGES_SELFCHECK_TO or "")
     if not selfcheck_from or not selfcheck_to:
         return False
 
-    from_email = first_address_email(parsed_email.get("from")).strip().lower()
+    from_email = normalize_address(first_address_email(parsed_email.get("from")))
     if from_email != selfcheck_from:
         return False
-    return (recipient_email or "").strip().lower() == selfcheck_to
+    return normalize_address(recipient_email or "") == selfcheck_to
 
 
 def _safe_finalize(label, inbound_message_id, gate, fn):

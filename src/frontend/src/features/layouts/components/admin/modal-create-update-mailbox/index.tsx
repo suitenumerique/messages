@@ -19,6 +19,7 @@ import { convertJsonSchemaToZod, ItemJsonSchema } from "@/features/forms/compone
 import { useConfig } from "@/features/providers/config";
 import { JSONSchema } from "zod/v4/core";
 import MailboxHelper from "@/features/utils/mailbox-helper";
+import MailHelper from "@/features/utils/mail-helper";
 import { addToast, ToasterItem } from "@/features/ui/components/toaster";
 import { Icon, IconType } from "@gouvfr-lasuite/ui-kit";
 import i18n from "@/features/i18n/initI18n";
@@ -231,7 +232,10 @@ export const ModalCreateOrUpdateMailbox = ({ isOpen, mailbox, onClose, onSuccess
     try {
       const customAttributeKeys = Object.keys(SCHEMA_CUSTOM_ATTRIBUTES_USER?.properties ?? {});
       const payload: MailboxAdminCreatePayloadRequest = {
-        local_part: data.prefix,
+        // Mailboxes are stored with a lowercase local part; send what will
+        // actually be created so the success screen and the address match.
+        // ASCII-only folding, not toLowerCase(): see MailHelper.asciiLower.
+        local_part: MailHelper.asciiLower(data.prefix),
         metadata: {
           type: data.type,
           custom_attributes: {

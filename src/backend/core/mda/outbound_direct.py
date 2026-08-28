@@ -14,6 +14,7 @@ from django.conf import settings
 
 import dns.resolver
 
+from core.mda.addresses import normalize_domain, split_address
 from core.mda.smtp import SmtpProxy, send_smtp_mail
 from core.services.ssrf import SSRFValidationError, assert_public_ip
 
@@ -85,12 +86,15 @@ def group_recipients_by_mx(recipients: List[str]) -> Dict[str, Dict[str, Any]]:
     """
     domain_map = {}
     for email in recipients:
-        # Validate email format and extract domain
-        parts = email.split("@")
-        if len(parts) != 2 or not parts[1].strip():
-            logger.error("Invalid email format while MX grouping: %s", email)
+        # Split on the LAST @: a quoted local part may legally contain one
+        # (``"a@b"@example.com``). Dropping such a recipient here leaves it
+        # with no delivery status, which the caller reads as "outcome
+        # unknown" and retries for the full backoff window.
+        parts = split_address(email)
+        if parts is None:
+            logger.error("Invalid email format while MX grouping")
             continue
-        domain = parts[1].lower().strip()
+        domain = normalize_domain(parts[1])
         if domain not in domain_map:
             domain_map[domain] = {
                 "mx_records": resolve_mx_records(domain),

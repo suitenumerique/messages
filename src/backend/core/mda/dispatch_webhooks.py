@@ -53,6 +53,7 @@ from jmap_email import parse_email
 from jmap_email.types import JmapEmail
 
 from core import enums, models
+from core.mda.addresses import normalize_address
 from core.mda.inbound_pipeline import (
     DEFERRAL_MAX_AGE,
     Decision,
@@ -423,7 +424,7 @@ def _classify_response_body(body_bytes: bytes) -> _HttpResult:
         for item in assign_to[:MAX_ASSIGN_TO_PER_RESPONSE]:
             if not isinstance(item, str):
                 continue
-            email = item.strip().lower()
+            email = normalize_address(item)
             if not email or "@" not in email or email in seen:
                 continue
             seen.add(email)

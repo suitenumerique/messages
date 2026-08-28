@@ -4,11 +4,12 @@
 import hashlib
 import json
 import uuid
+from contextlib import contextmanager
 from urllib.parse import urlparse
 
 from django.conf import settings
 from django.core.exceptions import ValidationError as DjangoValidationError
-from django.db import transaction
+from django.db import connection, transaction
 from django.db.models import Count, Max, Q
 from django.middleware.csrf import get_token
 
@@ -17,6 +18,7 @@ from rest_framework import serializers
 from rest_framework.exceptions import PermissionDenied
 
 from core import enums, models
+from core.mda.addresses import ascii_lower, normalize_address, normalize_domain
 from core.mda.dispatch_webhooks import (
     VALID_FORMATS,
 )
@@ -1457,6 +1459,34 @@ class MailboxAccessReadSerializer(serializers.ModelSerializer):
         read_only_fields = fields  # All fields are effectively read-only from this serializer's perspective
 
 
+# Distinct from the inbound (see core.mda.inbound_create) and blob-cohort
+# (see core.services.tiered_storage) classids so the three never collide in
+# Postgres' single global advisory-lock keyspace.
+_ADVISORY_LOCK_CLASSID_USER_EMAIL = 0x75736572  # 'user' in ASCII
+
+
+@contextmanager
+def _user_email_lock(email: str):
+    """Serialize stub-user creation for one canonical email.
+
+    Must be called inside ``transaction.atomic()`` — ``pg_advisory_xact_lock``
+    binds the lock to the current transaction and releases it on
+    commit/rollback.
+    """
+    # First 4 bytes of the email's sha256 as a signed int32 — the two-arg
+    # pg_advisory_xact_lock(classid, objid) form takes two int4s. A 2^-32
+    # false-share collision is operationally invisible given the short,
+    # DB-only critical section it guards.
+    digest = hashlib.sha256(email.encode("utf-8")).digest()
+    objid = int.from_bytes(digest[:4], byteorder="big", signed=True)
+    with connection.cursor() as cursor:
+        cursor.execute(
+            "SELECT pg_advisory_xact_lock(%s, %s)",
+            [_ADVISORY_LOCK_CLASSID_USER_EMAIL, objid],
+        )
+        yield
+
+
 class UserAccessWriteField(serializers.PrimaryKeyRelatedField):
     """Custom field that accepts either UUID or email address for user lookup.
 
@@ -1468,11 +1498,24 @@ class UserAccessWriteField(serializers.PrimaryKeyRelatedField):
     def to_internal_value(self, data):
         """Convert UUID string or email to User instance."""
         if isinstance(data, str) and "@" in data:
-            user = models.User.objects.filter(email=data).first()
+            # Fold before the lookup: User.email is stored canonical, so an
+            # unfolded miss would create a second stub for someone who already
+            # has an account — granting the access to a phantom user.
+            email = normalize_address(data)
+            user = models.User.objects.filter(email=email).first()
             if user is None:
-                user = models.User(email=data)
-                user.set_unusable_password()
-                user.save()
+                # ``User.email`` carries no unique constraint (duplicates are
+                # legal under OIDC_ALLOW_DUPLICATE_EMAILS), so nothing stops
+                # two concurrent grants for the same address from both missing
+                # and both inserting. Two sub-less rows sharing an email make
+                # the real user's next OIDC login ambiguous, so serialize the
+                # find-or-create and re-read inside the lock.
+                with transaction.atomic(), _user_email_lock(email):
+                    user = models.User.objects.filter(email=email).first()
+                    if user is None:
+                        user = models.User(email=email)
+                        user.set_unusable_password()
+                        user.save()
             return user
         return super().to_internal_value(data)
 
@@ -1626,6 +1669,18 @@ class MaildomainAccessWriteSerializer(serializers.ModelSerializer):
 class MailDomainAdminWriteSerializer(serializers.ModelSerializer):
     """Serialize mail domains for creating / editing admin view."""
 
+    def to_internal_value(self, data):
+        """Canonicalize ``name`` before the field validators see it.
+
+        ``validate_name`` would run too late: the model's lowercase-only
+        regex and its uniqueness check are field validators, so mixed-case
+        or IDN input has to be folded on the way in or it is rejected
+        outright rather than normalized.
+        """
+        if isinstance(data, dict) and isinstance(data.get("name"), str):
+            data = {**data, "name": normalize_domain(data["name"])}
+        return super().to_internal_value(data)
+
     class Meta:
         model = models.MailDomain
         fields = [
@@ -1772,8 +1827,8 @@ class MailboxAdminSerializer(serializers.ModelSerializer):
         if metadata.get("type") == "personal":
             local_part = attrs.get("local_part", "")
             denylist = settings.MESSAGES_MAILBOX_LOCALPART_DENYLIST_PERSONAL
-            lower_value = local_part.lower()
-            if any(lower_value == prefix.lower() for prefix in denylist):
+            lower_value = ascii_lower(local_part)
+            if any(lower_value == ascii_lower(prefix) for prefix in denylist):
                 raise serializers.ValidationError(
                     {
                         "local_part_denied": (
@@ -1785,7 +1840,13 @@ class MailboxAdminSerializer(serializers.ModelSerializer):
         return super().validate(attrs)
 
     def validate_local_part(self, value):
-        """Validate the local part of the mailbox."""
+        """Fold the local part, then check it is free in this domain.
+
+        Field-level validation runs before ``validate()`` and before
+        ``create()``, so folding here is what makes the denylist, the
+        uniqueness check and the stored value all agree on one form.
+        """
+        value = ascii_lower(value)
         if models.Mailbox.objects.filter(
             domain=self.context.get("domain"), local_part=value
         ).exists():
@@ -3097,7 +3158,11 @@ class PartialDriveItemSerializer(serializers.Serializer):
 
 
 class DomainsField(serializers.Field):
-    """Accepts either a JSON list of strings or a comma-separated string."""
+    """Accepts either a JSON list of strings or a comma-separated string.
+
+    Names are passed through as supplied; the view canonicalizes each one so
+    a rejected domain can still be echoed back in the caller's own spelling.
+    """
 
     def to_internal_value(self, data):
         if isinstance(data, str):

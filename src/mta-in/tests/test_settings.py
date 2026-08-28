@@ -7,10 +7,14 @@ loudly, rather than surfacing later as strange SMTP behaviour.
 from __future__ import annotations
 
 import importlib
+import socket
+import ssl
+import subprocess
+import threading
 
 import pytest
 
-from pymta import settings
+from pymta import controller, settings
 from pymta.settings import _env_bool, _env_int, _env_str, _env_token
 
 
@@ -174,29 +178,154 @@ def test_half_configured_starttls_is_refused(monkeypatch, reload_settings, cert,
         reload_settings()
 
 
-def test_chain_files_with_an_empty_first_entry_is_refused(monkeypatch, reload_settings):
-    # A leading comma would otherwise set both paths to "", which the pair check
-    # then reads as "STARTTLS deliberately off" — the same silent loss of
-    # encryption that check exists to prevent, arrived at from the other side.
+@pytest.mark.parametrize(
+    "value, expected",
+    [
+        ("/tls/chain.pem,", ("/tls/chain.pem",)),
+        (",/tls/chain.pem", ("/tls/chain.pem",)),
+        ("/tls/a.pem,,/tls/b.pem", ("/tls/a.pem", "/tls/b.pem")),
+    ],
+)
+def test_a_stray_comma_is_tolerated(monkeypatch, reload_settings, value, expected):
+    """Postfix tolerated these, and the value may have been written for it.
+
+    Refusing one would turn a working configuration into a process that will
+    not boot, which on an MX stops inbound mail — a worse outcome than the
+    typo. Nothing is lost silently: each surviving path is still loaded.
+    """
     monkeypatch.delenv("PYMTA_TLS_CERT_FILE", raising=False)
     monkeypatch.delenv("PYMTA_TLS_KEY_FILE", raising=False)
-    monkeypatch.setenv("STARTTLS_CHAIN_FILES", ",/tls/chain.pem")
-    with pytest.raises(ValueError, match="first entry is empty"):
+    monkeypatch.setenv("STARTTLS_CHAIN_FILES", value)
+    assert reload_settings().PYMTA_TLS_CERT_PAIRS == tuple((path, path) for path in expected)
+
+
+@pytest.mark.parametrize("value", [",", ",,", " , "])
+def test_a_value_naming_no_path_is_refused(monkeypatch, reload_settings, value):
+    # It would otherwise leave both paths empty, which the pair check reads as
+    # "STARTTLS deliberately off" — losing encryption without a word.
+    monkeypatch.delenv("PYMTA_TLS_CERT_FILE", raising=False)
+    monkeypatch.delenv("PYMTA_TLS_KEY_FILE", raising=False)
+    monkeypatch.setenv("STARTTLS_CHAIN_FILES", value)
+    with pytest.raises(ValueError, match="STARTTLS_CHAIN_FILES.*names no path"):
         reload_settings()
 
 
-def test_chain_files_takes_the_first_entry(monkeypatch, reload_settings):
+def test_chain_files_keeps_every_entry(monkeypatch, reload_settings):
+    """Postfix's dual-cert list survives the move; dropping one would quietly
+    stop serving that key type."""
     monkeypatch.delenv("PYMTA_TLS_CERT_FILE", raising=False)
     monkeypatch.delenv("PYMTA_TLS_KEY_FILE", raising=False)
     monkeypatch.setenv("STARTTLS_CHAIN_FILES", "/tls/rsa.pem, /tls/ecdsa.pem")
-    fresh = reload_settings()
-    assert fresh.PYMTA_TLS_CERT_FILE == fresh.PYMTA_TLS_KEY_FILE == "/tls/rsa.pem"
+    # A Postfix bundle carries key and chain together, so each entry is both.
+    assert reload_settings().PYMTA_TLS_CERT_PAIRS == (
+        ("/tls/rsa.pem", "/tls/rsa.pem"),
+        ("/tls/ecdsa.pem", "/tls/ecdsa.pem"),
+    )
+
+
+def test_separate_cert_and_key_lists_are_paired_in_order(monkeypatch, reload_settings):
+    monkeypatch.setenv("PYMTA_TLS_CERT_FILE", "/tls/rsa.crt,/tls/ecdsa.crt")
+    monkeypatch.setenv("PYMTA_TLS_KEY_FILE", "/tls/rsa.key,/tls/ecdsa.key")
+    assert reload_settings().PYMTA_TLS_CERT_PAIRS == (
+        ("/tls/rsa.crt", "/tls/rsa.key"),
+        ("/tls/ecdsa.crt", "/tls/ecdsa.key"),
+    )
+
+
+def test_mismatched_list_lengths_are_refused(monkeypatch, reload_settings):
+    # Otherwise a cert is loaded against another's key, and OpenSSL's complaint
+    # about key values names neither variable.
+    monkeypatch.setenv("PYMTA_TLS_CERT_FILE", "/tls/rsa.crt,/tls/ecdsa.crt")
+    monkeypatch.setenv("PYMTA_TLS_KEY_FILE", "/tls/rsa.key")
+    with pytest.raises(ValueError, match="paired in order"):
+        reload_settings()
 
 
 def test_starttls_off_when_both_are_empty(monkeypatch, reload_settings):
     monkeypatch.setenv("PYMTA_TLS_CERT_FILE", "")
     monkeypatch.setenv("PYMTA_TLS_KEY_FILE", "")
-    assert reload_settings().PYMTA_TLS_CERT_FILE == ""
+    fresh = reload_settings()
+    assert fresh.PYMTA_TLS_CERT_FILE == ""
+    assert fresh.PYMTA_TLS_CERT_PAIRS == ()
+
+
+def _self_signed(tmp_path, name, keyopts):
+    """A throwaway self-signed pair, built with the openssl already in the image."""
+    key, crt = tmp_path / f"{name}.key", tmp_path / f"{name}.crt"
+    subprocess.run(
+        [
+            "openssl",
+            "req",
+            "-x509",
+            "-nodes",
+            "-days",
+            "1",
+            *keyopts,
+            "-keyout",
+            str(key),
+            "-out",
+            str(crt),
+            "-subj",
+            f"/CN={name}.invalid",
+        ],
+        check=True,
+        capture_output=True,
+    )
+    return str(crt), str(key)
+
+
+def _cert_presented_to(ctx, ciphers):
+    """DER of the certificate *ctx* serves a client offering only *ciphers*."""
+    with socket.socket() as server:
+        server.bind(("127.0.0.1", 0))
+        server.listen(1)
+
+        def serve():
+            try:
+                conn, _ = server.accept()
+                with ctx.wrap_socket(conn, server_side=True):
+                    pass
+            except OSError:
+                pass
+
+        thread = threading.Thread(target=serve, daemon=True)
+        thread.start()
+
+        client = ssl.SSLContext(ssl.PROTOCOL_TLS_CLIENT)
+        client.check_hostname = False
+        client.verify_mode = ssl.CERT_NONE
+        # TLS 1.3 drops these suite names, so pin 1.2 to make the server's
+        # choice of key type observable from the cipher list alone.
+        client.maximum_version = ssl.TLSVersion.TLSv1_2
+        client.set_ciphers(ciphers)
+        with socket.create_connection(server.getsockname()) as raw:
+            with client.wrap_socket(raw, server_hostname="x.invalid") as tls:
+                der = tls.getpeercert(binary_form=True)
+        thread.join(timeout=5)
+        return der
+
+
+def test_both_certificates_are_served_one_per_key_type(monkeypatch, reload_settings, tmp_path):
+    """The point of configuring two: OpenSSL keeps a slot per key type and
+    presents whichever the client said it can verify, so one listener serves
+    ECDSA to modern senders and RSA to everything else."""
+    rsa_crt, rsa_key = _self_signed(tmp_path, "rsa", ["-newkey", "rsa:2048"])
+    ec_crt, ec_key = _self_signed(
+        tmp_path, "ecdsa", ["-newkey", "ec", "-pkeyopt", "ec_paramgen_curve:prime256v1"]
+    )
+    monkeypatch.setenv("PYMTA_TLS_CERT_FILE", f"{rsa_crt},{ec_crt}")
+    monkeypatch.setenv("PYMTA_TLS_KEY_FILE", f"{rsa_key},{ec_key}")
+    reload_settings()
+
+    ctx = controller.load_tls_context()
+    assert ctx is not None
+
+    def der_of(path):
+        with open(path, encoding="ascii") as handle:
+            return ssl.PEM_cert_to_DER_cert(handle.read())
+
+    assert _cert_presented_to(ctx, "ECDHE-ECDSA-AES128-GCM-SHA256") == der_of(ec_crt)
+    assert _cert_presented_to(ctx, "ECDHE-RSA-AES128-GCM-SHA256") == der_of(rsa_crt)
 
 
 def test_log_level_typo_is_refused(monkeypatch, reload_settings):

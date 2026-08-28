@@ -997,4 +997,157 @@ describe('MailHelper', () => {
       ]));
     });
   });
+
+  // U+212A KELVIN SIGN: lowercases to ASCII "k". Written as an escape so a
+  // literal degraded through a lossy encoding cannot quietly void the test.
+  const KELVIN_SIGN = '\u212a';
+
+  describe('asciiLower', () => {
+    it('should lowercase ASCII A-Z', () => {
+      expect(MailHelper.asciiLower('John.DOE-1_x')).toBe('john.doe-1_x');
+    });
+
+    it('should leave accented characters untouched', () => {
+      expect(MailHelper.asciiLower('JOSE\u0301')).toBe('jose\u0301');
+      expect(MailHelper.asciiLower('\u00c9')).toBe('\u00c9');
+    });
+
+    it('should never fold a Unicode look-alike onto ASCII', () => {
+      // The whole point: toLowerCase() would turn this into "nick" and let it
+      // collide with someone else's mailbox.
+      expect(MailHelper.asciiLower(`nic${KELVIN_SIGN}`)).toBe(`nic${KELVIN_SIGN}`);
+      expect(`nic${KELVIN_SIGN}`.toLowerCase()).toBe('nick');
+    });
+  });
+
+  describe('splitEmail', () => {
+    it('should split on the last @', () => {
+      expect(MailHelper.splitEmail('"a@b"@example.com')).toEqual(['"a@b"', 'example.com']);
+    });
+
+    it.each(['', 'nodomain', '@example.com', 'user@'])(
+      'should return undefined for %p',
+      (value) => {
+        expect(MailHelper.splitEmail(value)).toBeUndefined();
+      }
+    );
+  });
+
+  describe('normalizeEmailDomain', () => {
+    it('should lowercase the domain', () => {
+      expect(MailHelper.normalizeEmailDomain('user@EXAMPLE.COM')).toBe('user@example.com');
+    });
+
+    it('should keep the local part exactly as typed', () => {
+      // RFC 5321 2.4: only the destination host may fold a local part.
+      expect(MailHelper.normalizeEmailDomain('John.Doe@Example.com')).toBe('John.Doe@example.com');
+    });
+
+    it('should not fold a Unicode look-alike in the local part', () => {
+      const input = `nic${KELVIN_SIGN}@Example.com`;
+      expect(MailHelper.normalizeEmailDomain(input)).toBe(`nic${KELVIN_SIGN}@example.com`);
+    });
+
+    it('should lowercase an accented domain without transliterating it', () => {
+      expect(MailHelper.normalizeEmailDomain('user@EXEMPLÉ.example')).toBe('user@exemplé.example');
+    });
+
+    it('should trim surrounding whitespace', () => {
+      expect(MailHelper.normalizeEmailDomain('  user@Example.com  ')).toBe('user@example.com');
+    });
+
+    it('should leave a value with no domain untouched', () => {
+      expect(MailHelper.normalizeEmailDomain('not-an-email')).toBe('not-an-email');
+    });
+  });
+
+  describe('hasNonAsciiLocalPart / hasNonAsciiDomain', () => {
+    it('should flag an accented local part only', () => {
+      expect(MailHelper.hasNonAsciiLocalPart('josé@example.com')).toBe(true);
+      expect(MailHelper.hasNonAsciiDomain('josé@example.com')).toBe(false);
+    });
+
+    it('should flag an accented domain only', () => {
+      expect(MailHelper.hasNonAsciiDomain('user@exemplé.example')).toBe(true);
+      expect(MailHelper.hasNonAsciiLocalPart('user@exemplé.example')).toBe(false);
+    });
+
+    it('should flag a Unicode look-alike in the local part', () => {
+      expect(MailHelper.hasNonAsciiLocalPart(`nic${KELVIN_SIGN}@example.com`)).toBe(true);
+    });
+
+    it('should flag nothing for a plain ASCII address', () => {
+      expect(MailHelper.hasNonAsciiLocalPart('John.Doe@Example.com')).toBe(false);
+      expect(MailHelper.hasNonAsciiDomain('John.Doe@Example.com')).toBe(false);
+    });
+
+    it('should flag nothing for a malformed value', () => {
+      expect(MailHelper.hasNonAsciiLocalPart('josé')).toBe(false);
+      expect(MailHelper.hasNonAsciiDomain('josé')).toBe(false);
+    });
+  });
+
+  describe('isValidEmail with accents', () => {
+    it('should accept an accented domain, which the backend can send to', () => {
+      expect(MailHelper.isValidEmail('user@exemplé.example')).toBe(true);
+    });
+
+    it('should accept an accented local part so it can be warned about', () => {
+      // Rejecting it here would leave the user with an unexplained
+      // unselectable value instead of the "not supported" warning.
+      expect(MailHelper.isValidEmail('josé@example.com')).toBe(true);
+    });
+
+    it('should still reject values that are not addresses', () => {
+      expect(MailHelper.isValidEmail('nodomain')).toBe(false);
+      expect(MailHelper.isValidEmail('user@')).toBe(false);
+      expect(MailHelper.isValidEmail('a b@example.com')).toBe(false);
+    });
+
+    // Widening to Unicode must not widen the domain checks. Zod's own
+    // `unicodeEmail` (/^[^\s@"]{1,64}@[^\s@]{1,255}$/u) accepts every one
+    // of these, which is why UNICODE_EMAIL_REGEX is hand-written.
+    it.each([
+      'test@com',
+      'test@.com',
+      'test@example.',
+      '.test@example.com',
+      'test@example..com',
+      'text@example_23.com',
+    ])('should keep rejecting the malformed domain %p', (email) => {
+      expect(MailHelper.isValidEmail(email)).toBe(false);
+    });
+
+    it.each([
+      'user@foo-.com',
+      'user@\u0301foo.com',
+      'user@-foo.com',
+    ])('should reject the malformed domain label %p', (email) => {
+      // A label may not end with a hyphen, nor start with a hyphen or a
+      // combining mark (which has no base character to attach to there).
+      expect(MailHelper.isValidEmail(email)).toBe(false);
+    });
+
+    it.each([
+      ['é'.repeat(63), true],
+      ['é'.repeat(64), false],
+      ['a'.repeat(63), true],
+      ['a'.repeat(64), false],
+    ])('should cap the domain label %p at 63 characters', (label, valid) => {
+      expect(MailHelper.isValidEmail(`user@${label}.com`)).toBe(valid);
+    });
+
+    it('should cap the top-level domain label at 63 characters', () => {
+      expect(MailHelper.isValidEmail(`user@example.${'a'.repeat(63)}`)).toBe(true);
+      expect(MailHelper.isValidEmail(`user@example.${'a'.repeat(64)}`)).toBe(false);
+    });
+
+    it('should accept a punycode domain', () => {
+      expect(MailHelper.isValidEmail('user@xn--exempl-gva.example')).toBe(true);
+    });
+
+    it('should accept an IDN top-level domain', () => {
+      expect(MailHelper.isValidEmail('user@example.xn--p1ai')).toBe(true);
+    });
+  });
 });

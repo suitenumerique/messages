@@ -168,7 +168,7 @@ Grouped as `src/pymta/settings.py` groups them.
 | `PYMTA_ENABLE_PROXY_PROTOCOL` | `false` | Enable PROXY-protocol v1/v2. `haproxy` is an alias for `true` — it is the only protocol postscreen defines and the only one implemented here — so both names take either spelling |
 | `PYMTA_BLOCKED_NETWORKS` | empty | Comma-separated IPs/CIDRs refused at connect time with `554 5.7.1 Access denied`, before the banner. Matched against the **client** address: the PROXY-header source when PROXY protocol is on, the TCP peer otherwise. Nothing to do with `PYMTA_TRUSTED_PROXIES`. Permanent rather than a 421 on purpose, since a deferral invites the retries you are trying to shed; a block covering a legitimate sender therefore bounces their mail, so keep the ranges narrow |
 | `PYMTA_TRUSTED_PROXIES` | empty | Comma-separated IPs/CIDRs allowed to send a PROXY header. Strongly recommended when PROXY protocol is on: empty means *every* peer's header is trusted, and startup only warns. Ignored when PROXY protocol is off |
-| `PYMTA_TLS_CERT_FILE` / `PYMTA_TLS_KEY_FILE` | empty | STARTTLS cert + key paths. **Both or neither** — one alone is refused at startup, since it would serve plaintext and simply not advertise STARTTLS. Both empty disables STARTTLS deliberately |
+| `PYMTA_TLS_CERT_FILE` / `PYMTA_TLS_KEY_FILE` | empty | STARTTLS cert + key paths, comma-separated for dual certificates (see below). **Both or neither** — one alone is refused at startup, since it would serve plaintext and simply not advertise STARTTLS. Both empty disables STARTTLS deliberately. A single PEM holding both the key and the chain (the Postfix layout) is given to *both*: `ssl.load_cert_chain` reads each from the same file |
 
 **Metrics, logging, container**
 
@@ -244,7 +244,7 @@ Two need explaining. Per-IP concurrency is a tightening, not a loosening: the sh
 >
 > Size it against the memory you gave the container. A message peaks at about **2.2x** its size — aiosmtpd needs a second copy while it joins the received lines, and freed arenas are not returned promptly — so:
 >
-> ```
+> ```text
 > peak RSS  ~=  PYMTA_MAX_CONCURRENT_DATA x PYMTA_MAX_INCOMING_EMAIL_SIZE x 2.2  +  ~64 MiB
 > ```
 >
@@ -264,7 +264,7 @@ Two need explaining. Per-IP concurrency is a tightening, not a loosening: the sh
 >
 > **There is no per-source flag either.** A fixed per-source cap divides the slots by a constant, which decides in advance how few hosts can take everything: 20 slots at 5 each is four hosts, and no choice of constant changes that shape. Instead the gate gives each source an equal share of what exists, keeping one share spare:
 >
-> ```
+> ```text
 > share = max(1, slots / (sources currently active + 1))
 > ```
 >
@@ -305,7 +305,7 @@ Every configurable limit publishes its value as `pymta_config_limit{name="<setti
 
 ### Naming
 
-Every variable pymta reads is namespaced: `PYMTA_*` for the SMTP server itself, `MDA_*` for the channel to the MDA. It reads no unprefixed variable and therefore shares none with the Postfix image, so neither can change the other's behaviour by accident. `MYORIGIN` and `MYDOMAIN` have no counterpart at all, because pymta never rewrites or completes an envelope address: it requires a fully-qualified one and rejects the rest.
+Every variable pymta owns is namespaced: `PYMTA_*` for the SMTP server itself, `MDA_*` for the channel to the MDA. The only unprefixed names it reads are the four Postfix-image fallbacks listed below — `MAX_INCOMING_EMAIL_SIZE`, `MYHOSTNAME`, `ENABLE_PROXY_PROTOCOL` and `STARTTLS_CHAIN_FILES` — and each is read only when its prefixed counterpart is unset, so nothing else the Postfix image defines can change pymta's behaviour by accident. `MYORIGIN` and `MYDOMAIN` have no counterpart at all, because pymta never rewrites or completes an envelope address: it requires a fully-qualified one and rejects the rest.
 
 Four Postfix-image variables are still **read as fallbacks**, so one env file can drive both images through a switchover and pymta starts correctly against a file written for Postfix. The prefixed name always wins when both are set:
 
@@ -317,6 +317,30 @@ Four Postfix-image variables are still **read as fallbacks**, so one env file ca
 | `STARTTLS_CHAIN_FILES` | `PYMTA_TLS_CERT_FILE` + `PYMTA_TLS_KEY_FILE` |
 
 Each one that is actually doing the work is named at startup with `event=legacy_setting_in_use` and the variable to set instead, so the fallback is a bridge rather than a resting place.
+
+The last row is the only one that is not a rename. Postfix packs the key and the chain into one PEM; Python's `ssl` takes the two separately, so a bundle at `/path/chain.pem` becomes:
+
+```yaml
+PYMTA_TLS_CERT_FILE: /path/chain.pem
+PYMTA_TLS_KEY_FILE: /path/chain.pem
+```
+
+The same path twice, which is what the fallback does for you. Two distinct files work too, and are what most certificate tooling emits. A comma-separated list carries over unchanged — see dual certificates below.
+
+### Dual certificates (RSA + ECDSA)
+
+Both TLS variables take a comma-separated list, paired by position:
+
+```yaml
+PYMTA_TLS_CERT_FILE: /tls/ecdsa.crt,/tls/rsa.crt
+PYMTA_TLS_KEY_FILE:  /tls/ecdsa.key,/tls/rsa.key
+```
+
+OpenSSL keeps one certificate slot per key type and, at each handshake, presents whichever the client said it can verify. So one listener serves the smaller, faster ECDSA certificate to senders that support it and RSA to everything else, without SNI or a second port.
+
+Order does not select the certificate — the client's advertised algorithms do. It only matters between two certificates of the *same* key type, where the later one takes the slot and is the one served; that is a configuration mistake pymta cannot detect, since it never parses the certificates.
+
+Mismatched list lengths are refused at startup: the pairing is positional, so a cert would otherwise be loaded against another's key and OpenSSL's complaint names neither variable. An empty entry (a stray comma) is refused for the same reason a half-configured pair is — it would quietly become "STARTTLS off".
 
 ## Production checklist
 

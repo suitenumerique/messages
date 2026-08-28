@@ -17,6 +17,7 @@ import {
     createContactFromAttendee,
     collapseRecurringEvents,
 } from "./calendar-helper";
+import { buildAttendeeList } from "./index";
 
 // Simple pass-through translation mock
 const t = (key: string, options?: Record<string, unknown>): string => {
@@ -846,5 +847,50 @@ describe("malformed ICS: missing DTSTART", () => {
         // Duration + missing start: cannot compute end, should return undefined (not crash)
         expect(() => getEventEnd(event)).not.toThrow();
         expect(getEventEnd(event)).toBeUndefined();
+    });
+});
+
+describe("buildAttendeeList", () => {
+    const event = (organizer: unknown, attendees: unknown[]) =>
+        ({ organizer, attendees }) as unknown as IcsEvent;
+
+    it("should fold the organizer and its attendee entry into one row", () => {
+        // A CalDAV server may spell the organizer differently in the ATTENDEE
+        // list; two rows for one person is the bug this dedupe exists to stop.
+        const entries = buildAttendeeList(
+            event({ email: "Org@Example.com" }, [
+                { email: "org@example.com" },
+                { email: "someone@example.com" },
+            ]),
+        );
+        expect(entries).toHaveLength(2);
+        expect(entries[0].isOrganizer).toBe(true);
+        expect(entries[1].attendee.email).toBe("someone@example.com");
+    });
+
+    it("should keep every attendee when the organizer has no address", () => {
+        // Comparing two absent addresses as equal would show an arbitrary
+        // attendee as the organizer and drop the other address-less ones.
+        const entries = buildAttendeeList(
+            event({ name: "Anonymous" }, [
+                { name: "First" },
+                { name: "Second" },
+                { email: "third@example.com" },
+            ]),
+        );
+        const rest = entries.filter((e) => !e.isOrganizer);
+        expect(rest).toHaveLength(3);
+        expect(entries[0].attendee).toEqual({ name: "Anonymous" });
+    });
+
+    it("should not treat a lookalike as the organizer", () => {
+        // U+212A KELVIN SIGN: Unicode-lowercases to "k", ASCII folding does not.
+        const entries = buildAttendeeList(
+            event({ email: "nick@example.com" }, [
+                { email: "nicK@example.com" },
+            ]),
+        );
+        expect(entries).toHaveLength(2);
+        expect(entries[1].attendee.email).toBe("nicK@example.com");
     });
 });

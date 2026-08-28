@@ -16,6 +16,7 @@ from rest_framework.views import APIView
 from core.api.authentication import ChannelApiKeyAuthentication
 from core.api.permissions import IsGlobalChannelMixin, channel_scope
 from core.enums import ChannelApiKeyScope
+from core.mda.addresses import ascii_lower, normalize_domain, split_address
 from core.models import (
     Attachment,
     Blob,
@@ -286,12 +287,17 @@ class MailboxUsageMetricsApiView(IsGlobalChannelMixin, APIView):
                 status=400,
             )
 
+        # Both filters match stored values, which are canonicalized, so the
+        # caller's spelling has to be canonicalized too.
         if domain:
-            queryset = queryset.filter(domain__name=domain)
+            queryset = queryset.filter(domain__name=normalize_domain(domain))
         if account_email:
-            parts = account_email.rsplit("@", 1)
-            if len(parts) == 2:
-                queryset = queryset.filter(local_part=parts[0], domain__name=parts[1])
+            parts = split_address(account_email)
+            if parts:
+                queryset = queryset.filter(
+                    local_part=ascii_lower(parts[0]),
+                    domain__name=normalize_domain(parts[1]),
+                )
         if account_id_key and account_id_value:
             queryset = queryset.filter(
                 **{f"domain__custom_attributes__{account_id_key}": account_id_value}

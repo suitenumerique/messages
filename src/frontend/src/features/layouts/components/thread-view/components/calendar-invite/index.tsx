@@ -13,6 +13,7 @@ import {
 import { Attachment } from "@/features/api/gen/models";
 import { StatusEnum } from "@/features/api/gen";
 import { AttachmentHelper } from "@/features/utils/attachment-helper";
+import MailHelper from "@/features/utils/mail-helper";
 import { ContactChip } from "@/features/ui/components/contact-chip";
 import { Badge } from "@/features/ui/components/badge";
 import { addToast, ToasterItem } from "@/features/ui/components/toaster";
@@ -316,22 +317,26 @@ type AttendeeEntry = {
  * remaining attendees. If the organizer also appears in the attendees list,
  * it is deduplicated so a single entry is shown.
  */
-function buildAttendeeList(event: IcsEvent): AttendeeEntry[] {
+export function buildAttendeeList(event: IcsEvent): AttendeeEntry[] {
     const attendees = event.attendees ?? [];
     const organizer = event.organizer;
     if (!organizer) {
         return attendees.map((a) => ({ attendee: a, isOrganizer: false }));
     }
-    const organizerEmail = organizer.email?.toLowerCase();
-    const organizerAsAttendee = attendees.find(
-        (a) => a.email?.toLowerCase() === organizerEmail,
-    );
+    // An organizer with no address matches nothing: comparing two absent
+    // addresses as equal would show an arbitrary attendee as the organizer
+    // and drop every other address-less one from the list.
+    const fold = (email?: string) => (email ? MailHelper.asciiLower(email) : undefined);
+    const organizerEmail = fold(organizer.email);
+    const organizerAsAttendee = organizerEmail
+        ? attendees.find((a) => fold(a.email) === organizerEmail)
+        : undefined;
     const organizerEntry: AttendeeEntry = {
         attendee: organizerAsAttendee ?? (organizer as IcsAttendee),
         isOrganizer: true,
     };
     const rest = attendees
-        .filter((a) => a.email?.toLowerCase() !== organizerEmail)
+        .filter((a) => !organizerEmail || fold(a.email) !== organizerEmail)
         .map<AttendeeEntry>((a) => ({ attendee: a, isOrganizer: false }));
     return [organizerEntry, ...rest];
 }
@@ -746,7 +751,7 @@ export const CalendarInvite = ({
     const attendeeEmails = useMemo(() => {
         const set = new Set<string>();
         for (const a of firstEvent?.attendees ?? []) {
-            if (a.email) set.add(a.email.toLowerCase());
+            if (a.email) set.add(MailHelper.asciiLower(a.email));
         }
         return set;
     }, [firstEvent]);
@@ -759,10 +764,10 @@ export const CalendarInvite = ({
     const calendarMatchesAttendee = useCallback(
         (cal: CalendarInfo): boolean => {
             if (cal.owner_email) {
-                return attendeeEmails.has(cal.owner_email.toLowerCase());
+                return attendeeEmails.has(MailHelper.asciiLower(cal.owner_email));
             }
             if (mailboxEmail) {
-                return attendeeEmails.has(mailboxEmail.toLowerCase());
+                return attendeeEmails.has(MailHelper.asciiLower(mailboxEmail));
             }
             return false;
         },
@@ -797,11 +802,12 @@ export const CalendarInvite = ({
     // Identity the selected calendar speaks for — its owner when the CalDAV
     // server exposes it, otherwise the acting mailbox. RSVP state is keyed
     // by this so switching calendars reflects the right prior response.
-    const activeIdentity = (
-        selectedCalendar?.owner_email ??
-        mailboxEmail ??
-        ""
-    ).toLowerCase();
+    // ASCII-folded like the seed key below and like the backend's
+    // existing_partstats keys, so a prior response is found whatever the
+    // casing each side stored.
+    const activeIdentity = MailHelper.asciiLower(
+        selectedCalendar?.owner_email ?? mailboxEmail ?? "",
+    );
     const currentResponse = rsvpByIdentity[activeIdentity] ?? null;
 
     // Only show RSVP when the *selected* calendar's identity is on the
@@ -872,7 +878,7 @@ export const CalendarInvite = ({
                 partstat === "DECLINED" ||
                 partstat === "TENTATIVE"
             ) {
-                seed[identity.toLowerCase()] = partstat;
+                seed[MailHelper.asciiLower(identity)] = partstat;
             }
         }
         seededFromExistingRef.current = eventUid;

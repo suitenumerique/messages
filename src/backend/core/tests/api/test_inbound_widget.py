@@ -273,19 +273,21 @@ class TestInboundWidgetDeliver:
         assert response.json() == {"detail": "Invalid email format"}
 
     def test_inbound_widget_deliver_non_ascii_local_part(self, api_client, channel):
-        """An RFC 6531 local part is a *valid* address, so ``parse_address``
-        accepts it and the shape check above lets it through — but we emit
-        7-bit SMTP and never negotiate SMTPUTF8, so the composer refuses it.
-        That is a property of what this public form was given, so it must be
-        a 400 like any other unusable address, not a 500."""
+        """An RFC 6531 local part is a valid address and is accepted.
+
+        The submission is delivered to a local mailbox and never
+        retransmitted over SMTP, so the extension the sender's own server
+        would need is irrelevant here. Keeping the address is what lets the
+        mailbox owner reply at all.
+        """
         response = api_client.post(
             "/api/v1.0/inbound/widget/deliver/",
             data={"email": "josé@example.com", "textBody": "hello"},
             HTTP_X_CHANNEL_ID=str(channel.id),
         )
 
-        assert response.status_code == status.HTTP_400_BAD_REQUEST
-        assert response.json() == {"detail": "Invalid email format"}
+        assert response.status_code == status.HTTP_200_OK
+        assert models.Contact.objects.filter(email="josé@example.com").exists()
 
     def test_compose_rejection_log_carries_only_the_domain(self, api_client, channel):
         """The rejection is logged so operators can see widgets failing,
@@ -298,24 +300,26 @@ class TestInboundWidgetDeliver:
         ``caplog.text`` assertion would pass whether or not the address
         leaked.
         """
+        # A domain with an empty label is a valid addr-spec, so it reaches
+        # the composer, which has no IDNA encoding to give it and refuses.
         with patch.object(widget_module, "logger") as mock_logger:
-            api_client.post(
+            response = api_client.post(
                 "/api/v1.0/inbound/widget/deliver/",
-                data={"email": "josé.secret@example.com", "textBody": "hello"},
+                data={"email": "secret.local@a..é", "textBody": "hello"},
                 HTTP_X_CHANNEL_ID=str(channel.id),
             )
 
+        assert response.status_code == status.HTTP_400_BAD_REQUEST
         assert mock_logger.info.called
         logged = " ".join(
             str(a) for call in mock_logger.info.call_args_list for a in call.args
         )
-        assert "example.com" in logged
-        assert "josé.secret" not in logged
+        assert "a..é" in logged
+        assert "secret.local" not in logged
 
     def test_inbound_widget_deliver_idn_domain_is_accepted(self, api_client, channel):
-        """The other half: an IDN *domain* has an exact ASCII wire form, so
-        ``COMPOSE_OPTIONS`` converts it and the submission goes through
-        rather than being rejected alongside the case above."""
+        """An IDN *domain* has an exact ASCII wire form, so it is converted
+        to its A-label rather than being refused."""
         response = api_client.post(
             "/api/v1.0/inbound/widget/deliver/",
             data={"email": "contact@exemplé.fr", "textBody": "hello"},

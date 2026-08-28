@@ -8,6 +8,8 @@ from typing import Any, Dict, Optional
 
 import socks
 
+from core.mda.addresses import needs_smtputf8
+
 
 @dataclass(frozen=True)
 class SmtpProxy:
@@ -89,6 +91,31 @@ class ProxySMTP(smtplib.SMTP):
             self.proxy_password,
             timeout,
         )
+
+
+def _header_block(message_content: bytes) -> bytes:
+    """Return everything before the first blank line.
+
+    Whichever separator comes *first* wins. Preferring CRLFCRLF would read
+    an LF-separated message (which a caller-supplied raw MIME body may well
+    be) as all-headers up to the first CRLFCRLF inside its body, dragging
+    body bytes into the header check.
+
+    A message with no blank line at all is treated as all headers, which
+    only ever errs toward requiring more of the next hop.
+    """
+    cut = min(
+        (
+            index
+            for index in (
+                message_content.find(b"\r\n\r\n"),
+                message_content.find(b"\n\n"),
+            )
+            if index != -1
+        ),
+        default=-1,
+    )
+    return message_content if cut == -1 else message_content[:cut]
 
 
 def _build_tls_context(level: str) -> ssl.SSLContext:
@@ -296,9 +323,49 @@ def send_smtp_mail(
     # At this stage, we now have a connected, valid SMTP session.
     # Start trying to deliver the message.
 
+    # RFC 6531 is required when an envelope address has a non-ASCII local
+    # part, or when the headers are non-ASCII (RFC 6532). Headers, not the
+    # whole message: an 8-bit body needs only 8BITMIME.
+    header_block = _header_block(message_content)
+    eai_recipients = sorted(
+        email for email in recipient_emails if needs_smtputf8(email)
+    )
+    requires_smtputf8 = (
+        bool(eai_recipients)
+        or needs_smtputf8(envelope_from)
+        or not header_block.isascii()
+    )
+
+    if requires_smtputf8 and not client.has_extn("smtputf8"):
+        # One signed copy per message and no downgrade (RFC 6530 defines
+        # none), so every recipient of this transaction fails, ASCII ones
+        # included. Permanent: the extension won't appear on a later attempt.
+        logger.warning(
+            "SMTP: %s does not advertise SMTPUTF8 (%d EAI recipient(s))",
+            smtp_host,
+            len(eai_recipients),
+        )
+        _quit()
+        return error_for_all_recipients(
+            f"The receiving mail server ({smtp_host}) does not support "
+            "internationalized email addresses (SMTPUTF8, RFC 6531), which "
+            "is required to deliver this message",
+            False,
+        )
+
+    mail_options = []
+    if requires_smtputf8:
+        mail_options.append("SMTPUTF8")
+    # An 8-bit body on a host that doesn't advertise 8BITMIME is still sent,
+    # undeclared: recoding it to quoted-printable would invalidate the DKIM
+    # signature already applied. Only reachable from the raw submit path —
+    # our composer emits 8-bit only under SMTPUTF8.
+    if not message_content.isascii() and client.has_extn("8bitmime"):
+        mail_options.append("BODY=8BITMIME")
+
     try:
         recipient_errors = client.sendmail(
-            envelope_from, recipient_emails, message_content
+            envelope_from, recipient_emails, message_content, mail_options
         )
     except smtplib.SMTPSenderRefused as e:
         return error_for_all_recipients(

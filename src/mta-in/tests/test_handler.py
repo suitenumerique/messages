@@ -7,6 +7,7 @@ stand-ins: no Docker stack, no real SMTP traffic.
 
 from __future__ import annotations
 
+import logging
 import time
 import types
 from ipaddress import ip_address, ip_network
@@ -580,6 +581,64 @@ async def test_deliver_defers_on_every_status_outside_the_permanent_set(status):
 # aiosmtpd pushes whatever a hook returns and loops back for the next command,
 # so "goodbye" is only a promise until the handler asks for the disconnect.
 # ---------------------------------------------------------------------------
+
+
+# ---------------------------------------------------------------------------
+# A refusal has to leave a trace.
+#
+# The metrics count rejections without naming one, so without these lines the
+# most common failure of all — an unknown recipient — is unanswerable from the
+# log: no sender, no recipient, no IP.
+# ---------------------------------------------------------------------------
+
+
+@pytest.mark.asyncio
+async def test_unknown_recipient_logs_one_info_line(caplog):
+    server = _FakeServer()
+    handler, session, envelope = _handler(), _session(), _envelope()
+
+    with caplog.at_level(logging.INFO, logger="pymta.handler"):
+        reply = await handler.handle_RCPT(server, session, envelope, "<miss@example.com>", [])
+
+    assert reply.startswith("550")
+    rejects = [r for r in caplog.records if r.getMessage() == "reject"]
+    assert len(rejects) == 1, caplog.records
+    assert rejects[0].levelno == logging.INFO
+    assert rejects[0].verb == "rcpt"
+    assert rejects[0].reason == "unknown_recipient"
+    assert rejects[0].recipient == "miss@example.com"
+    assert rejects[0].client_ip == "203.0.113.5"
+
+
+@pytest.mark.asyncio
+async def test_malformed_recipient_logs_the_address_it_refused(caplog):
+    server = _FakeServer()
+    handler, session, envelope = _handler(), _session(), _envelope()
+
+    with caplog.at_level(logging.INFO, logger="pymta.handler"):
+        reply = await handler.handle_RCPT(server, session, envelope, "<a b@example.com>", [])
+
+    assert reply.startswith("5")
+    rejects = [r for r in caplog.records if r.getMessage() == "reject"]
+    assert len(rejects) == 1
+    # The raw value, so a malformed address can be recognised in the log.
+    assert "a b@example.com" in rejects[0].recipient
+
+
+@pytest.mark.asyncio
+async def test_a_refusal_is_logged_once_not_once_per_gate(monkeypatch, caplog):
+    """The miss cutoff replaces the unknown-recipient line, it does not add to it."""
+    monkeypatch.setattr(settings, "PYMTA_MAX_RCPT_MISSES_PER_SESSION", 1)
+    server = _FakeServer()
+    handler, session, envelope = _handler(), _session(), _envelope()
+
+    with caplog.at_level(logging.INFO, logger="pymta.handler"):
+        reply = await handler.handle_RCPT(server, session, envelope, "<miss@example.com>", [])
+
+    assert reply.startswith("421")
+    rejects = [r for r in caplog.records if r.getMessage() == "reject"]
+    assert len(rejects) == 1, [r.reason for r in rejects]
+    assert rejects[0].reason == "max_rcpt_misses_per_session"
 
 
 @pytest.mark.asyncio

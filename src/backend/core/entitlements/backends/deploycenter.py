@@ -9,6 +9,7 @@ import requests
 
 from core.entitlements import EntitlementsUnavailableError
 from core.entitlements.backends.base import EntitlementsBackend
+from core.mda.addresses import address_domain
 
 logger = logging.getLogger(__name__)
 
@@ -68,7 +69,7 @@ class DeployCenterEntitlementsBackend(EntitlementsBackend):
             response.raise_for_status()
             return response.json()
         except (requests.RequestException, ValueError):
-            email_domain = user_email.split("@")[-1] if "@" in user_email else "?"
+            email_domain = address_domain(user_email) or "?"
             logger.warning(
                 "DeployCenter entitlements request failed for user@%s",
                 email_domain,

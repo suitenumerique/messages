@@ -105,6 +105,71 @@ def _full_reply(sock) -> bytes:
             return buf
 
 
+# What we are willing to advertise on inbound port 25, before and after
+# STARTTLS. Pinned rather than merely "AUTH must be absent": aiosmtpd decides
+# what to offer, so a version bump can start advertising something we never
+# reviewed, and only an allow-list notices. A failure here is not necessarily a
+# bug — it is a new keyword to rule on, then add here or to
+# ``handler.handle_EHLO``'s denied set.
+#
+# This is what the runtime ``ehlo_extension_stripped`` line used to guard. CI
+# is the right place for it: the log line could only tell you after it shipped.
+_ALLOWED_EHLO_KEYWORDS = frozenset(
+    {"SIZE", "8BITMIME", "SMTPUTF8", "ENHANCEDSTATUSCODES", "HELP", "STARTTLS"}
+)
+
+
+def _ehlo_keywords(reply: bytes) -> set[str]:
+    """The extension keyword of each 250 line, ignoring its parameters.
+
+    The first line is the greeting (``250-<hostname>``), not an extension.
+    """
+    keywords = set()
+    for line in reply.decode("ascii", "replace").splitlines()[1:]:
+        after = line[4:].strip()
+        if after:
+            keywords.add(after.split(" ", 1)[0].upper())
+    return keywords
+
+
+def test_ehlo_advertises_only_the_pinned_extensions(mta_impl):
+    """Nothing unreviewed reaches the wire, in either phase of the session.
+
+    The post-STARTTLS half is the one that matters: aiosmtpd's ``smtp_EHLO``
+    yields ``250-AUTH`` whenever the connection is inside TLS, without
+    consulting whether an authenticator exists, so a plaintext-only check
+    cannot see it. That is exactly the gap that let AUTH reach the strip
+    filter unnoticed in every STARTTLS deployment.
+    """
+    if mta_impl == "postfix":
+        pytest.skip("Postfix advertises its own set; this pins pymta's")
+
+    with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as s:
+        s.connect((MTA_HOST, 25))
+        s.settimeout(10)
+        assert s.recv(1024).startswith(b"220")
+
+        s.send(b"EHLO example.com\r\n")
+        plaintext = _ehlo_keywords(_full_reply(s))
+        assert plaintext <= _ALLOWED_EHLO_KEYWORDS, plaintext - _ALLOWED_EHLO_KEYWORDS
+
+        s.send(b"STARTTLS\r\n")
+        assert s.recv(1024).startswith(b"220")
+
+        ctx = ssl.SSLContext(ssl.PROTOCOL_TLS_CLIENT)
+        ctx.minimum_version = ssl.TLSVersion.TLSv1_2
+        ctx.check_hostname = False
+        ctx.verify_mode = ssl.CERT_NONE
+        with ctx.wrap_socket(s, server_hostname="mta-in.test") as tls:
+            tls.settimeout(10)
+            tls.send(b"EHLO example.com\r\n")
+            inside_tls = _ehlo_keywords(_full_reply(tls))
+            assert inside_tls <= _ALLOWED_EHLO_KEYWORDS, inside_tls - _ALLOWED_EHLO_KEYWORDS
+            # The one we know aiosmtpd offers and we strip.
+            assert "AUTH" not in inside_tls
+            tls.send(b"QUIT\r\n")
+
+
 def test_starttls_negotiation(mta_impl):
     """STARTTLS is advertised, the handshake completes, and mail flows after it.
 
