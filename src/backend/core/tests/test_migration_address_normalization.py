@@ -180,6 +180,49 @@ class TestFoldUsers:
         assert str(second.pk) in reported or str(first.pk) in reported
         assert "dup@example.com" not in reported
 
+    @pytest.mark.parametrize("moved_row_first", [True, False])
+    def test_collision_is_reported_whichever_row_is_seen_first(
+        self, capsys, moved_row_first
+    ):
+        """Only one of the pair moves here, and it may be scanned either way.
+
+        ``.iterator()`` carries no ordering guarantee, so a detector that
+        accumulates as it goes sees the collision only when the row that stays
+        put comes first. Getting it backwards means the warning is silent for
+        the operator, who then learns about it from a locked-out user.
+        """
+        stays = factories.UserFactory(email="stays@example.com")
+        moves = factories.UserFactory(email="moves@example.com")
+        order = [(moves, "John@example.com"), (stays, "john@example.com")]
+        if not moved_row_first:
+            order.reverse()
+        # Written in scan order: a small table comes back in insertion order.
+        for user, email in order:
+            force(models.User.objects.filter(pk=user.pk), email=email)
+
+        migration.fold_users(apps, None)
+
+        stays.refresh_from_db()
+        moves.refresh_from_db()
+        assert stays.email == moves.email == "john@example.com"
+
+        reported = capsys.readouterr().out
+        assert "onto an identity email another row already held" in reported
+        # The row that moved is the one an operator has to look at.
+        assert str(moves.pk) in reported
+        assert str(stays.pk) not in reported
+
+    def test_a_lone_uppercase_row_is_not_reported(self, capsys):
+        """Folding it collides with nothing, so it is not a merge."""
+        user = factories.UserFactory(email="placeholder@example.com")
+        force(models.User.objects.filter(pk=user.pk), email="Solo@Example.com")
+
+        migration.fold_users(apps, None)
+
+        user.refresh_from_db()
+        assert user.email == "solo@example.com"
+        assert "already held" not in capsys.readouterr().out
+
     # Asserted on ``fold_address`` rather than through ``fold_users``.
     #
     # The real migration writes through a historical model, whose ``save()``

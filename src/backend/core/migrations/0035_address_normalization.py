@@ -143,19 +143,35 @@ def fold_users(apps, schema_editor):
     # which then raises MultipleObjectsReturned and 500s that user's login.
     # Folded anyway (leaving one unfolded would strand it instead), but
     # reported, because only an operator can decide which row survives.
-    taken = set()
+    # Which canonical forms more than one spelling maps onto, computed before
+    # anything moves. Accumulating this during the fold would only catch a
+    # collision when the row that stays put happens to be scanned first, and
+    # ``.iterator()`` promises no order — so half of them would go unreported,
+    # which is the half an operator finds out about from a locked-out user.
+    first_spelling = {}
+    ambiguous = set()
+    for email in (
+        User.objects.exclude(email=None)
+        .exclude(email="")
+        .values_list("email", flat=True)
+        .iterator()
+    ):
+        canonical = fold_address(email)
+        if first_spelling.setdefault(canonical, email) != email:
+            ambiguous.add(canonical)
+
     merged = []
     for user in User.objects.exclude(email=None).exclude(email="").iterator():
         folded = fold_address(user.email)
-        if folded != user.email:
-            # Only a row this migration *moves* can create a new collision;
-            # rows that already shared an address did so before it ran and are
-            # legal under OIDC_ALLOW_DUPLICATE_EMAILS.
-            if folded in taken:
-                merged.append(user.pk)
-            user.email = folded
-            user.save(update_fields=["email"])
-        taken.add(folded)
+        if folded == user.email:
+            # Already canonical: it is the row others land on, not one that
+            # moves. Rows that already shared an address did so before this
+            # ran and are legal under OIDC_ALLOW_DUPLICATE_EMAILS.
+            continue
+        if folded in ambiguous:
+            merged.append(user.pk)
+        user.email = folded
+        user.save(update_fields=["email"])
     if merged:
         listed = ", ".join(str(pk) for pk in sorted(merged)[:20])
         more = "" if len(merged) <= 20 else ", ..."
