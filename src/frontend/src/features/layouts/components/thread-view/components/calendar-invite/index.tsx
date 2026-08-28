@@ -802,11 +802,12 @@ export const CalendarInvite = ({
     // Identity the selected calendar speaks for — its owner when the CalDAV
     // server exposes it, otherwise the acting mailbox. RSVP state is keyed
     // by this so switching calendars reflects the right prior response.
-    const activeIdentity = (
-        selectedCalendar?.owner_email ??
-        mailboxEmail ??
-        ""
-    ).toLowerCase();
+    // ASCII-folded like the seed key below and like the backend's
+    // existing_partstats keys, so a prior response is found whatever the
+    // casing each side stored.
+    const activeIdentity = MailHelper.asciiLower(
+        selectedCalendar?.owner_email ?? mailboxEmail ?? "",
+    );
     const currentResponse = rsvpByIdentity[activeIdentity] ?? null;
 
     // Only show RSVP when the *selected* calendar's identity is on the
@@ -877,7 +878,7 @@ export const CalendarInvite = ({
                 partstat === "DECLINED" ||
                 partstat === "TENTATIVE"
             ) {
-                seed[identity.toLowerCase()] = partstat;
+                seed[MailHelper.asciiLower(identity)] = partstat;
             }
         }
         seededFromExistingRef.current = eventUid;

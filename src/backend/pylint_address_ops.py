@@ -104,9 +104,12 @@ class AddressOpsChecker(BaseChecker):
         dotted = _dotted(receiver).lower()
         if any(hint in dotted for hint in _ADDRESS_HINTS):
             return True
-        return any(hint in dotted for hint in _PARTY_HINTS) and not dotted.endswith(
-            "name"
-        )
+        if not any(hint in dotted for hint in _PARTY_HINTS):
+            return False
+        # Per segment, not on the whole string: a chained call puts the method
+        # last, so the receiver of ``sender_name.strip().lower()`` reads as
+        # ``sender_name.strip`` and would otherwise lose the exclusion.
+        return not any(part.endswith("name") for part in dotted.split("."))
 
 
 def register(linter) -> None:

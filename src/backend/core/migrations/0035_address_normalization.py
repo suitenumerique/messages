@@ -109,11 +109,31 @@ def fold_users(apps, schema_editor):
     """Lowercase the two identity addresses users are matched on."""
     User = apps.get_model("core", "User")
 
+    # ``email`` carries no unique constraint, so folding cannot fail — it can
+    # merge. Two rows differing only in case become the same string, and
+    # ``get_user_by_sub_or_email`` resolves stubs with ``.get(email=...)``,
+    # which then raises MultipleObjectsReturned and 500s that user's login.
+    # Folded anyway (leaving one unfolded would strand it instead), but
+    # reported, because only an operator can decide which row survives.
+    taken = set()
+    merged = []
     for user in User.objects.exclude(email=None).exclude(email="").iterator():
         folded = user.email.translate(ASCII_LOWER)
+        if folded in taken:
+            merged.append(user.pk)
+        taken.add(folded)
         if folded != user.email:
             user.email = folded
             user.save(update_fields=["email"])
+    if merged:
+        listed = ", ".join(str(pk) for pk in sorted(merged)[:20])
+        more = "" if len(merged) <= 20 else ", ..."
+        print(
+            f"\n  WARNING: {len(merged)} user(s) now share an identity email "
+            f"with another row. Their next OIDC login raises "
+            f"MultipleObjectsReturned until the duplicates are merged. "
+            f"Affected ids: {listed}{more}"
+        )
 
     # admin_email is unique, so a folded value can collide.
     taken = set(

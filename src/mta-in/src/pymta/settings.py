@@ -542,26 +542,35 @@ if _chain and not PYMTA_TLS_CERT_FILE and not PYMTA_TLS_KEY_FILE:
 
 
 def _tls_paths(raw: str, name: str) -> tuple[str, ...]:
-    """Split a comma-separated path list, refusing an empty entry.
+    """Split a comma-separated path list, dropping stray empty entries.
 
-    An empty entry would otherwise silently become a missing path, and the
-    pair check below reads a missing path as "STARTTLS deliberately off" —
-    losing transport encryption without a word, which is the thing that check
-    exists to prevent.
+    A trailing comma is tolerated because Postfix tolerated it and the value
+    may have been written for that image: refusing it would turn a working
+    configuration into a process that will not boot, which on an MX means
+    inbound mail stops. A value that names *no* path is still refused, since
+    the pair check below would read it as "STARTTLS deliberately off" and lose
+    transport encryption without a word.
     """
     if not raw:
         return ()
-    paths = tuple(part.strip() for part in raw.split(","))
-    if not all(paths):
+    paths = tuple(part.strip() for part in raw.split(",") if part.strip())
+    if not paths:
         raise ValueError(
-            f"Environment variable {name} is set to {raw!r}, which has an "
-            "empty entry. Give one path per certificate, comma-separated."
+            f"Environment variable {name} is set to {raw!r}, which names no "
+            "path. Give one path per certificate, comma-separated, or leave it "
+            "empty to disable STARTTLS deliberately."
         )
     return paths
 
 
-_certs = _tls_paths(PYMTA_TLS_CERT_FILE, "PYMTA_TLS_CERT_FILE")
-_keys = _tls_paths(PYMTA_TLS_KEY_FILE, "PYMTA_TLS_KEY_FILE")
+# Named for what the operator actually set, so the error above points at the
+# variable in their env file rather than at the one the fallback copied into.
+_tls_names = ("PYMTA_TLS_CERT_FILE", "PYMTA_TLS_KEY_FILE")
+if _chain and PYMTA_TLS_CERT_FILE == PYMTA_TLS_KEY_FILE == _chain:
+    _tls_names = ("STARTTLS_CHAIN_FILES", "STARTTLS_CHAIN_FILES")
+
+_certs = _tls_paths(PYMTA_TLS_CERT_FILE, _tls_names[0])
+_keys = _tls_paths(PYMTA_TLS_KEY_FILE, _tls_names[1])
 
 # Both or neither. ``load_tls_context`` returns None unless it has a pair, so a
 # half-configured STARTTLS would not fail — it would serve plaintext and simply

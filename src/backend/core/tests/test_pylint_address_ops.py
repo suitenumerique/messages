@@ -61,6 +61,9 @@ def test_flags_manual_split(source):
         "user.email.lower()",
         "from_email.strip().rstrip('.').lower()",
         "sender_email.casefold()",
+        # The address half of the same pair still fires through a chain.
+        "sender_email.strip().lower()",
+        "recipient_email.strip().lower()",
         "recipient.upper()",
         "domain.lower()",
         "local_part.lower()",
@@ -84,6 +87,11 @@ def test_flags_unicode_case_fold(source):
         "sender_name.lower()",
         "recipient_name.lower()",
         "message.sender_name.lower()",
+        # Chained: the receiver reads as ``sender_name.strip``, so the
+        # exclusion has to survive the method on the end.
+        "sender_name.strip().lower()",
+        "recipient_name.strip().casefold()",
+        "message.sender_name.strip().lower()",
         # Not a split on '@'.
         'email.split(",")',
         "email.split()",

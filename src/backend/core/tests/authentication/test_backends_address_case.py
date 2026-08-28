@@ -51,6 +51,34 @@ class TestUserIdentityFolding:
         assert user.pk == existing.pk
         assert models.User.objects.filter(email="john.doe@example.com").count() == 1
 
+    def test_duplicate_identities_fail_closed_instead_of_500(self):
+        """Two rows can share an email: no unique constraint, and migration
+        0035 folds two spellings of one address together.
+
+        Claiming one arbitrarily would hand the login someone else's
+        mailboxes, so the lookup refuses. ``DuplicateEmailError`` is what the
+        OIDC backend already turns into a handled auth failure; an uncaught
+        MultipleObjectsReturned would be a 500.
+        """
+        factories.UserFactory(email="twin@example.com", sub=None)
+        factories.UserFactory(email="twin@example.com", sub=None)
+
+        with pytest.raises(models.DuplicateEmailError):
+            models.User.objects.get_user_by_sub_or_email(
+                "unknown-sub", "twin@example.com"
+            )
+
+    def test_duplicate_identities_fail_closed_on_the_email_fallback(self, settings):
+        """Same, through the OIDC_FALLBACK_TO_EMAIL_FOR_IDENTIFICATION path."""
+        settings.OIDC_FALLBACK_TO_EMAIL_FOR_IDENTIFICATION = True
+        factories.UserFactory(email="twin@example.com", sub="sub-a")
+        factories.UserFactory(email="twin@example.com", sub="sub-b")
+
+        with pytest.raises(models.DuplicateEmailError):
+            models.User.objects.get_user_by_sub_or_email(
+                "unknown-sub", "twin@example.com"
+            )
+
     def test_two_casings_do_not_fork_two_accounts(self, login, settings):
         settings.OIDC_CREATE_USER = True
         first = login(sub="sub-1", email="jane@example.com")

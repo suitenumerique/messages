@@ -27,7 +27,10 @@ logger = logging.getLogger(__name__)
 # (``secrets.token_hex(4)``), carried as a JWT claim so its SMTP-side lines and
 # ours can be joined. Named for its origin: a bare ``session`` would read as a
 # Django session here.
-_MTA_SESSION_RE = re.compile(r"^[A-Za-z0-9_-]{1,64}$")
+# Matched with ``fullmatch``: ``$`` also matches just before a trailing
+# newline, so an anchored ``match`` would accept ``"deadbeef\n"`` — the exact
+# shape the check exists to keep out of a log record.
+_MTA_SESSION_RE = re.compile(r"[A-Za-z0-9_-]{1,64}")
 
 
 def _mta_session(mta_metadata) -> str:
@@ -40,7 +43,7 @@ def _mta_session(mta_metadata) -> str:
     placeholder rather than a refusal.
     """
     value = (mta_metadata or {}).get("mta_session")
-    return value if isinstance(value, str) and _MTA_SESSION_RE.match(value) else "-"
+    return value if isinstance(value, str) and _MTA_SESSION_RE.fullmatch(value) else "-"
 
 
 class MTAJWTAuthentication(BaseAuthentication):

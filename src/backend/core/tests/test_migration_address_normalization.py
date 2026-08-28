@@ -152,8 +152,14 @@ class TestFoldUsers:
         user.refresh_from_db()
         assert user.email == "john.doe@example.com"
 
-    def test_duplicate_emails_are_both_folded(self):
-        """User.email is not unique, so there is nothing to skip."""
+    def test_duplicate_emails_are_both_folded_and_reported(self, capsys):
+        """``User.email`` is not unique, so there is nothing to skip.
+
+        Leaving one unfolded would strand it, so both fold — but the pair now
+        resolves to one string, and ``get_user_by_sub_or_email`` refuses a
+        login it cannot attribute. Only an operator can decide which row
+        survives, so the migration has to say which rows to look at.
+        """
         first = factories.UserFactory(email="a@example.com")
         second = factories.UserFactory(email="b@example.com")
         force(models.User.objects.filter(pk=first.pk), email="Dup@Example.com")
@@ -165,6 +171,13 @@ class TestFoldUsers:
         second.refresh_from_db()
         assert first.email == "dup@example.com"
         assert second.email == "dup@example.com"
+
+        reported = capsys.readouterr().out
+        assert "share an identity email" in reported
+        # Named by primary key, so an operator can find them; the address
+        # itself is PII and stays out of the deploy log.
+        assert str(second.pk) in reported or str(first.pk) in reported
+        assert "dup@example.com" not in reported
 
     def test_admin_email_is_folded(self):
         user = factories.UserFactory(admin_email="placeholder@example.com")

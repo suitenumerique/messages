@@ -19,7 +19,7 @@ import requests
 from defusedxml.ElementTree import ParseError as DefusedParseError
 from icalendar import Calendar as ICalendar
 
-from core.mda.addresses import ascii_lower
+from core.mda.addresses import ascii_lower, normalize_address
 from core.services.calendar.ics_rebuild import rebuild_for_storage
 from core.services.ssrf import (
     SSRFProtectedAdapter,
@@ -44,6 +44,22 @@ LASUITE_NS = "http://lasuite.numerique.gouv.fr/ns/"
 # anything else is treated as no color (defensive against attacker-controlled
 # values flowing into React inline styles).
 _HEX_COLOR_RE = re.compile(r"^#(?:[0-9a-fA-F]{3}|[0-9a-fA-F]{6})$")
+
+
+def _attendee_key(value) -> str:
+    """Canonical identity for an ICS ATTENDEE or a calendar owner address.
+
+    Drops the ``mailto:`` URI prefix, ASCII-folds the local part and
+    canonicalizes the domain, so one identity written as a U-label and as its
+    A-label compares equal. Used for every ATTENDEE match, so both sides of a
+    comparison are folded the same way rather than each site rolling its own.
+    """
+    address = str(value or "").strip()
+    # ASCII fold for the scheme test too: a URI scheme is ASCII by definition
+    # (RFC 3986 §3.1), so nothing outside it should be able to spell one.
+    if ascii_lower(address).startswith("mailto:"):
+        address = address[len("mailto:") :]
+    return normalize_address(address)
 
 
 def _q(ns, tag):
@@ -435,6 +451,10 @@ class CalDAVService:  # pylint: disable=too-many-instance-attributes
             # The identity a copy in this calendar speaks for: its owner
             # when the server exposes it, otherwise the acting mailbox
             # (servers without owner metadata behave as before).
+            # ASCII fold only, not the full ``_attendee_key``: this becomes a
+            # key in the ``existing_partstats`` payload and the client looks
+            # its own identity up in it, with no way to punycode a domain. The
+            # matching below still uses the full key on both sides.
             owner_lc = (
                 ascii_lower(cal.get("owner_email") or attendee_email or "") or None
             )
@@ -475,10 +495,7 @@ class CalDAVService:  # pylint: disable=too-many-instance-attributes
             if not isinstance(attendees, list):
                 attendees = [attendees]
             for att in attendees:
-                addr = ascii_lower(str(att).strip())
-                if addr.startswith("mailto:"):
-                    addr = addr[len("mailto:") :]
-                if addr == attendee_email_lc:
+                if _attendee_key(att) == _attendee_key(attendee_email_lc):
                     val = att.params.get("PARTSTAT")
                     return str(val) if val else None
         return None
@@ -660,7 +677,7 @@ class CalDAVService:  # pylint: disable=too-many-instance-attributes
         from "no-op write" — for ``respond_to_event``, a False result
         means the iTIP REPLY would never reach the organizer.
         """
-        email_folded = ascii_lower(attendee_email)
+        target = _attendee_key(attendee_email)
         updated = False
         for comp in cal.walk("VEVENT"):
             attendees = comp.get("ATTENDEE")
@@ -669,10 +686,7 @@ class CalDAVService:  # pylint: disable=too-many-instance-attributes
             if not isinstance(attendees, list):
                 attendees = [attendees]
             for att in attendees:
-                addr = ascii_lower(str(att).strip())
-                if addr.startswith("mailto:"):
-                    addr = addr[len("mailto:") :]
-                if addr != email_folded:
+                if _attendee_key(att) != target:
                     continue
                 att.params["PARTSTAT"] = new_partstat
                 att.params.pop("RSVP", None)

@@ -146,16 +146,35 @@ class UserManager(auth_models.UserManager):
             # Always claim sub-less "stub" users (created via invite/admin) by email,
             # regardless of OIDC_FALLBACK_TO_EMAIL_FOR_IDENTIFICATION: a stub has no
             # other way to ever be linked to its OIDC identity.
+            # ``email`` has no unique constraint, so both lookups below can
+            # match more than one row: duplicates are legal under
+            # OIDC_ALLOW_DUPLICATE_EMAILS, and migration 0035 can create a
+            # pair by folding two spellings of one address together. Picking
+            # one arbitrarily would hand this login someone else's mailboxes,
+            # so it fails closed, as a handled auth error rather than the
+            # unhandled MultipleObjectsReturned 500 it would otherwise be.
             try:
                 return self.get(email=email, sub__isnull=True)
             except self.model.DoesNotExist:
                 pass
+            except self.model.MultipleObjectsReturned as exc:
+                raise DuplicateEmailError(
+                    "Several accounts share this email address and none can be "
+                    "claimed safely; they have to be merged.",
+                    email=email,
+                ) from exc
 
             if settings.OIDC_FALLBACK_TO_EMAIL_FOR_IDENTIFICATION:
                 try:
                     return self.get(email=email)
                 except self.model.DoesNotExist:
                     pass
+                except self.model.MultipleObjectsReturned as exc:
+                    raise DuplicateEmailError(
+                        "Several accounts share this email address and none "
+                        "can be claimed safely; they have to be merged.",
+                        email=email,
+                    ) from exc
             elif (
                 self.filter(email=email).exists()
                 and not settings.OIDC_ALLOW_DUPLICATE_EMAILS

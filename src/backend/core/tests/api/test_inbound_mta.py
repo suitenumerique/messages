@@ -716,6 +716,10 @@ class TestMTASessionCorrelation:
         [
             "dead\nINFO Raw email received: 0 bytes for [] [mta_session=beef]",
             "dead\rbeef",
+            # Terminal, not embedded: an anchored ``$`` matches just before a
+            # trailing newline, so only ``fullmatch`` keeps this out.
+            "deadbeef\n",
+            "deadbeef\r\n",
             "x" * 65,
             "semi;colon",
             "",

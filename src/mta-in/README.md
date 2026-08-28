@@ -244,7 +244,7 @@ Two need explaining. Per-IP concurrency is a tightening, not a loosening: the sh
 >
 > Size it against the memory you gave the container. A message peaks at about **2.2x** its size — aiosmtpd needs a second copy while it joins the received lines, and freed arenas are not returned promptly — so:
 >
-> ```
+> ```text
 > peak RSS  ~=  PYMTA_MAX_CONCURRENT_DATA x PYMTA_MAX_INCOMING_EMAIL_SIZE x 2.2  +  ~64 MiB
 > ```
 >
@@ -264,7 +264,7 @@ Two need explaining. Per-IP concurrency is a tightening, not a loosening: the sh
 >
 > **There is no per-source flag either.** A fixed per-source cap divides the slots by a constant, which decides in advance how few hosts can take everything: 20 slots at 5 each is four hosts, and no choice of constant changes that shape. Instead the gate gives each source an equal share of what exists, keeping one share spare:
 >
-> ```
+> ```text
 > share = max(1, slots / (sources currently active + 1))
 > ```
 >
@@ -305,7 +305,7 @@ Every configurable limit publishes its value as `pymta_config_limit{name="<setti
 
 ### Naming
 
-Every variable pymta reads is namespaced: `PYMTA_*` for the SMTP server itself, `MDA_*` for the channel to the MDA. It reads no unprefixed variable and therefore shares none with the Postfix image, so neither can change the other's behaviour by accident. `MYORIGIN` and `MYDOMAIN` have no counterpart at all, because pymta never rewrites or completes an envelope address: it requires a fully-qualified one and rejects the rest.
+Every variable pymta owns is namespaced: `PYMTA_*` for the SMTP server itself, `MDA_*` for the channel to the MDA. The only unprefixed names it reads are the four Postfix-image fallbacks listed below — `MAX_INCOMING_EMAIL_SIZE`, `MYHOSTNAME`, `ENABLE_PROXY_PROTOCOL` and `STARTTLS_CHAIN_FILES` — and each is read only when its prefixed counterpart is unset, so nothing else the Postfix image defines can change pymta's behaviour by accident. `MYORIGIN` and `MYDOMAIN` have no counterpart at all, because pymta never rewrites or completes an envelope address: it requires a fully-qualified one and rejects the rest.
 
 Four Postfix-image variables are still **read as fallbacks**, so one env file can drive both images through a switchover and pymta starts correctly against a file written for Postfix. The prefixed name always wins when both are set:
 

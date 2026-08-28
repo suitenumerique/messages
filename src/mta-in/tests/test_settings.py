@@ -178,16 +178,35 @@ def test_half_configured_starttls_is_refused(monkeypatch, reload_settings, cert,
         reload_settings()
 
 
-@pytest.mark.parametrize("value", [",/tls/chain.pem", "/tls/a.pem,", "/tls/a.pem,,/b.pem"])
-def test_an_empty_path_entry_is_refused(monkeypatch, reload_settings, value):
-    # A stray comma would otherwise contribute a missing path, and the pair
-    # check reads a missing path as "STARTTLS deliberately off" — the same
-    # silent loss of encryption that check exists to prevent, from the other
-    # side.
+@pytest.mark.parametrize(
+    "value, expected",
+    [
+        ("/tls/chain.pem,", ("/tls/chain.pem",)),
+        (",/tls/chain.pem", ("/tls/chain.pem",)),
+        ("/tls/a.pem,,/tls/b.pem", ("/tls/a.pem", "/tls/b.pem")),
+    ],
+)
+def test_a_stray_comma_is_tolerated(monkeypatch, reload_settings, value, expected):
+    """Postfix tolerated these, and the value may have been written for it.
+
+    Refusing one would turn a working configuration into a process that will
+    not boot, which on an MX stops inbound mail — a worse outcome than the
+    typo. Nothing is lost silently: each surviving path is still loaded.
+    """
     monkeypatch.delenv("PYMTA_TLS_CERT_FILE", raising=False)
     monkeypatch.delenv("PYMTA_TLS_KEY_FILE", raising=False)
     monkeypatch.setenv("STARTTLS_CHAIN_FILES", value)
-    with pytest.raises(ValueError, match="empty entry"):
+    assert reload_settings().PYMTA_TLS_CERT_PAIRS == tuple((path, path) for path in expected)
+
+
+@pytest.mark.parametrize("value", [",", ",,", " , "])
+def test_a_value_naming_no_path_is_refused(monkeypatch, reload_settings, value):
+    # It would otherwise leave both paths empty, which the pair check reads as
+    # "STARTTLS deliberately off" — losing encryption without a word.
+    monkeypatch.delenv("PYMTA_TLS_CERT_FILE", raising=False)
+    monkeypatch.delenv("PYMTA_TLS_KEY_FILE", raising=False)
+    monkeypatch.setenv("STARTTLS_CHAIN_FILES", value)
+    with pytest.raises(ValueError, match="STARTTLS_CHAIN_FILES.*names no path"):
         reload_settings()
 
 
