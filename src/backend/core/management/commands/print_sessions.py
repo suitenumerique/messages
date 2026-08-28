@@ -9,6 +9,8 @@ from django.core.management.base import BaseCommand
 
 from django_redis import get_redis_connection
 
+from core.mda.addresses import ascii_lower
+
 logger = logging.getLogger(__name__)
 
 User = get_user_model()
@@ -67,9 +69,8 @@ class Command(BaseCommand):
             user, session_key, data = session_data
 
             # Apply user email filter
-            if (
-                user_email_filter
-                and user_email_filter.lower() not in user.email.lower()
+            if user_email_filter and ascii_lower(user_email_filter) not in ascii_lower(
+                user.email
             ):
                 continue
 

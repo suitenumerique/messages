@@ -59,6 +59,7 @@ from core.enums import (
 )
 from core.mda.addresses import (
     AddrSpecValidator,
+    address_domain,
     ascii_lower,
     normalize_address,
     normalize_domain,
@@ -2484,9 +2485,7 @@ class Message(BaseModel):
         Delegates to :func:`core.mda.utils.generate_mime_id` so the format
         stays uniform across every Message-ID minting path.
         """
-        # rpartition, not split: a quoted local part may contain @, and
-        # split("@")[1] would put a fragment of it in the Message-ID.
-        return generate_mime_id(self.sender.email.rpartition("@")[2])
+        return generate_mime_id(address_domain(self.sender.email))
 
     def get_all_recipient_contacts(self) -> Dict[str, List[Contact]]:
         """Get all recipients of the message."""

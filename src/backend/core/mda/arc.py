@@ -21,6 +21,8 @@ from typing import Any, Dict, Optional, Set, Tuple
 from dkim import ARC, CV_Pass, arc_verify, get_txt
 from dkim.util import parse_tag_value
 
+from core.mda.addresses import ascii_lower
+
 logger = logging.getLogger(__name__)
 
 
@@ -41,12 +43,17 @@ def _sealer_trusted(sealer: Optional[str], trusted: Set[str]) -> bool:
 
 
 def _normalize_domain(raw: Any) -> Optional[str]:
-    """Lowercase, strip surrounding whitespace and a trailing dot from a d=."""
+    """Lowercase, strip surrounding whitespace and a trailing dot from a d=.
+
+    ASCII-folded, never ``str.lower()``: the result is matched against the
+    ``trusted_arc_sealers`` allowlist, and Unicode folding would let a sealer
+    we do not trust compare equal to one we do.
+    """
     if isinstance(raw, (bytes, bytearray)):
         raw = raw.decode("ascii", "replace")
     if not isinstance(raw, str):
         return None
-    return raw.strip().rstrip(".").lower() or None
+    return ascii_lower(raw.strip().rstrip(".")) or None
 
 
 def _outermost_sealer(raw_data: bytes) -> Tuple[Optional[str], int]:

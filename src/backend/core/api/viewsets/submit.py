@@ -23,7 +23,7 @@ from core import models
 from core.api.authentication import ChannelApiKeyAuthentication
 from core.api.permissions import channel_scope
 from core.enums import MAILBOX_ROLES_CAN_SEND, ChannelApiKeyScope
-from core.mda.addresses import normalize_address
+from core.mda.addresses import address_local_part, normalize_address
 from core.mda.inbound_create import _create_message_from_inbound
 from core.mda.outbound import prepare_outbound_message
 from core.mda.outbound_tasks import send_message_task
@@ -184,7 +184,7 @@ class SubmitRawEmailView(APIView):
                         contact, _ = models.Contact.objects.get_or_create(
                             email=addr,
                             mailbox=mailbox,
-                            defaults={"name": addr.rpartition("@")[0]},
+                            defaults={"name": address_local_part(addr)},
                         )
                         models.MessageRecipient.objects.get_or_create(
                             message=message,

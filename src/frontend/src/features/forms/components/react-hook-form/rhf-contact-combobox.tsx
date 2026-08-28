@@ -22,7 +22,7 @@ export const RhfContactComboBox = (props: Omit<ComboBoxProps, 'options'> & { nam
         () => {
             const contacts = contactsQuery.data?.data || [];
             if (!searchQuery) return contacts;
-            return contacts.filter(contact => contact.name?.toLowerCase().includes(searchQuery.toLowerCase()) || contact.email.toLowerCase().includes(searchQuery.toLowerCase()));
+            return contacts.filter(contact => contact.name?.toLowerCase().includes(searchQuery.toLowerCase()) || MailHelper.asciiLower(contact.email).includes(MailHelper.asciiLower(searchQuery)));
         },
         [contactsQuery.data?.data, searchQuery]
     );

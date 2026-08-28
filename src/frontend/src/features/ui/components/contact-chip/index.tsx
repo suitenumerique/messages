@@ -61,11 +61,11 @@ export const ContactChip = ({ contact, status, displayOnlyEmail = false, display
                     <>
                         <strong className="contact-chip__identity-name">{isUser ? t('You') : contact.name}</strong>{' '}
                         {!displayOnlyFullName && (
-                            <span className="contact-chip__identity-email">&lt;{contact.email.toLowerCase()}&gt;</span>
+                            <span className="contact-chip__identity-email">&lt;{contact.email}&gt;</span>
                         )}
                     </>
                 ) : (
-                    <span className="contact-chip__identity-email">{contact.email.toLowerCase()}</span>
+                    <span className="contact-chip__identity-email">{contact.email}</span>
                 )
                 }
             </button>

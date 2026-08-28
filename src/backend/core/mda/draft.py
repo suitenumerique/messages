@@ -14,6 +14,7 @@ from jmap_email import is_valid_addr_spec
 
 from core import enums, models
 from core.api.utils import get_attachment_from_blob_id
+from core.mda.addresses import address_local_part
 from core.services.attachments import (
     UNNAMED_ATTACHMENT_STEM,
     get_attachment_display_name,
@@ -561,7 +562,7 @@ def update_draft(
                         mailbox=mailbox,
                         defaults={
                             "email": email,
-                            "name": email.rpartition("@")[0],
+                            "name": address_local_part(email),
                         },
                     )
                 except DjangoValidationError as exc:

@@ -7,6 +7,7 @@ from django.core.management.base import BaseCommand
 from django.db.models import Exists, OuterRef
 
 from core import models
+from core.mda.addresses import ascii_lower, split_address
 
 logger = logging.getLogger(__name__)
 
@@ -72,10 +73,11 @@ class Command(BaseCommand):
 
         # Sort helper by domain then prefix (local part)
         def sort_key(email):
-            if "@" not in email:
+            parts = split_address(email)
+            if parts is None:
                 return ("", email)
-            local_part, domain = email.rsplit("@", 1)
-            return (domain.lower(), local_part.lower())
+            local_part, domain = parts
+            return (ascii_lower(domain), ascii_lower(local_part))
 
         if custom_attr:
             # Build (attribute_value, email) pairs from each user's mail domains

@@ -19,6 +19,7 @@ import requests
 from defusedxml.ElementTree import ParseError as DefusedParseError
 from icalendar import Calendar as ICalendar
 
+from core.mda.addresses import ascii_lower
 from core.services.calendar.ics_rebuild import rebuild_for_storage
 from core.services.ssrf import (
     SSRFProtectedAdapter,
@@ -657,7 +658,7 @@ class CalDAVService:  # pylint: disable=too-many-instance-attributes
         from "no-op write" — for ``respond_to_event``, a False result
         means the iTIP REPLY would never reach the organizer.
         """
-        email_lower = attendee_email.lower()
+        email_folded = ascii_lower(attendee_email)
         updated = False
         for comp in cal.walk("VEVENT"):
             attendees = comp.get("ATTENDEE")
@@ -666,10 +667,10 @@ class CalDAVService:  # pylint: disable=too-many-instance-attributes
             if not isinstance(attendees, list):
                 attendees = [attendees]
             for att in attendees:
-                addr = str(att).strip().lower()
+                addr = ascii_lower(str(att).strip())
                 if addr.startswith("mailto:"):
                     addr = addr[len("mailto:") :]
-                if addr != email_lower:
+                if addr != email_folded:
                     continue
                 att.params["PARTSTAT"] = new_partstat
                 att.params.pop("RSVP", None)

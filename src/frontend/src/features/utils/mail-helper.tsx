@@ -250,7 +250,7 @@ class MailHelper {
      */
     static getDomainFromEmail(email: string) {
         if (!this.isValidEmail(email)) return undefined;
-        return email.split('@')[1];
+        return this.splitEmail(email)?.[1];
     }
 
     /**

@@ -22,7 +22,7 @@ from jmap_email import (
 
 from core import models
 from core.enums import InboundOrigin, MessageDeliveryStatusChoices
-from core.mda.addresses import envelope_address
+from core.mda.addresses import address_domain, envelope_address
 from core.mda.inbound import check_local_recipient, deliver_inbound_message
 from core.mda.inline_images import (
     extract_inline_images_html,
@@ -927,7 +927,7 @@ def send_outbound_email(
         # send_mail command and the widget view).
         raise ValueError(
             f"Sender address has no SMTP wire form, domain "
-            f"{envelope_from.rpartition('@')[2]!r}"
+            f"{address_domain(envelope_from)!r}"
         )
 
     if not wire_addresses:

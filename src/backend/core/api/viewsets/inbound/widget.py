@@ -17,6 +17,7 @@ from rest_framework.throttling import SimpleRateThrottle
 
 from core import enums, models
 from core.api.permissions import IsAuthenticated
+from core.mda.addresses import address_domain
 from core.mda.inbound import deliver_inbound_message
 from core.mda.utils import compose_options_for, current_sent_at
 
@@ -256,7 +257,7 @@ class InboundWidgetViewSet(viewsets.GenericViewSet):
             logger.info(
                 "Widget submission rejected: cannot compose MIME for sender "
                 "at domain %r",
-                sender_email.rpartition("@")[2],
+                address_domain(sender_email),
             )
             return Response(
                 {"detail": "Invalid email format"}, status=status.HTTP_400_BAD_REQUEST
@@ -285,7 +286,7 @@ class InboundWidgetViewSet(viewsets.GenericViewSet):
             "Successfully created message from widget for channel %s, sender "
             "at domain %r",
             channel.id,
-            sender_email.rpartition("@")[2],
+            address_domain(sender_email),
         )
 
         return Response(

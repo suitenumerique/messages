@@ -29,7 +29,7 @@ from core.ai.utils import (
     is_ai_summary_enabled,
     is_auto_labels_enabled,
 )
-from core.mda.addresses import normalize_address
+from core.mda.addresses import address_local_part, normalize_address
 from core.services.importer.labels import (
     compute_labels_and_flags,
 )
@@ -351,7 +351,7 @@ def _create_message_from_inbound(  # pylint: disable=too-many-arguments
                 email=sender_email,
                 mailbox=mailbox,  # Associate contact with the recipient mailbox
                 defaults={
-                    "name": sender_name or sender_email.rpartition("@")[0],
+                    "name": sender_name or address_local_part(sender_email),
                     "email": sender_email,  # Ensure correct casing is saved
                 },
             )
@@ -550,7 +550,10 @@ def _create_message_from_inbound(  # pylint: disable=too-many-arguments
                 recipient_contact, created = models.Contact.objects.get_or_create(
                     email=email,
                     mailbox=mailbox,  # Associate contact with the recipient mailbox
-                    defaults={"name": name or email.rpartition("@")[0], "email": email},
+                    defaults={
+                        "name": name or address_local_part(email),
+                        "email": email,
+                    },
                 )
                 if created:
                     logger.info(

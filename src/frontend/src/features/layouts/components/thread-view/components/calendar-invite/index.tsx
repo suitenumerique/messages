@@ -13,6 +13,7 @@ import {
 import { Attachment } from "@/features/api/gen/models";
 import { StatusEnum } from "@/features/api/gen";
 import { AttachmentHelper } from "@/features/utils/attachment-helper";
+import MailHelper from "@/features/utils/mail-helper";
 import { ContactChip } from "@/features/ui/components/contact-chip";
 import { Badge } from "@/features/ui/components/badge";
 import { addToast, ToasterItem } from "@/features/ui/components/toaster";
@@ -322,16 +323,19 @@ function buildAttendeeList(event: IcsEvent): AttendeeEntry[] {
     if (!organizer) {
         return attendees.map((a) => ({ attendee: a, isOrganizer: false }));
     }
-    const organizerEmail = organizer.email?.toLowerCase();
+    // Both sides of every comparison below go through this, so an absent
+    // address stays comparable to another absent one.
+    const fold = (email?: string) => (email ? MailHelper.asciiLower(email) : undefined);
+    const organizerEmail = fold(organizer.email);
     const organizerAsAttendee = attendees.find(
-        (a) => a.email?.toLowerCase() === organizerEmail,
+        (a) => fold(a.email) === organizerEmail,
     );
     const organizerEntry: AttendeeEntry = {
         attendee: organizerAsAttendee ?? (organizer as IcsAttendee),
         isOrganizer: true,
     };
     const rest = attendees
-        .filter((a) => a.email?.toLowerCase() !== organizerEmail)
+        .filter((a) => fold(a.email) !== organizerEmail)
         .map<AttendeeEntry>((a) => ({ attendee: a, isOrganizer: false }));
     return [organizerEntry, ...rest];
 }
@@ -746,7 +750,7 @@ export const CalendarInvite = ({
     const attendeeEmails = useMemo(() => {
         const set = new Set<string>();
         for (const a of firstEvent?.attendees ?? []) {
-            if (a.email) set.add(a.email.toLowerCase());
+            if (a.email) set.add(MailHelper.asciiLower(a.email));
         }
         return set;
     }, [firstEvent]);
@@ -759,10 +763,10 @@ export const CalendarInvite = ({
     const calendarMatchesAttendee = useCallback(
         (cal: CalendarInfo): boolean => {
             if (cal.owner_email) {
-                return attendeeEmails.has(cal.owner_email.toLowerCase());
+                return attendeeEmails.has(MailHelper.asciiLower(cal.owner_email));
             }
             if (mailboxEmail) {
-                return attendeeEmails.has(mailboxEmail.toLowerCase());
+                return attendeeEmails.has(MailHelper.asciiLower(mailboxEmail));
             }
             return false;
         },

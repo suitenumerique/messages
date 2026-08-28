@@ -28,6 +28,8 @@ from jmap_email import is_valid_addr_spec
 
 __all__ = [
     "AddrSpecValidator",
+    "address_domain",
+    "address_local_part",
     "ascii_lower",
     "envelope_address",
     "needs_smtputf8",
@@ -54,6 +56,25 @@ def split_address(address: str) -> tuple[str, str] | None:
     if not separator or not local_part or not domain:
         return None
     return local_part, domain
+
+
+def address_local_part(address: str) -> str:
+    """Return the local part of *address*, or ``""`` if it has no domain.
+
+    Case is preserved. Fold it with :func:`ascii_lower` for a lookup key.
+    """
+    parts = split_address(address)
+    return parts[0] if parts else ""
+
+
+def address_domain(address: str) -> str:
+    """Return the domain of *address*, or ``""`` if it has none.
+
+    Returned as written. Wrap in :func:`normalize_domain` for a lookup or
+    comparison key.
+    """
+    parts = split_address(address)
+    return parts[1] if parts else ""
 
 
 def normalize_domain(domain: str) -> str:

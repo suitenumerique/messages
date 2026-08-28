@@ -3,6 +3,8 @@
 import pytest
 
 from core.mda.addresses import (
+    address_domain,
+    address_local_part,
     ascii_lower,
     envelope_address,
     needs_smtputf8,
@@ -108,6 +110,29 @@ class TestSplitAddress:
     )
     def test_returns_none_on_malformed(self, value):
         assert split_address(value) is None
+
+
+class TestAddressParts:
+    """``address_local_part`` / ``address_domain`` project ``split_address``."""
+
+    def test_splits_on_the_last_at_sign(self):
+        address = '"weird@local"@example.com'
+        assert address_local_part(address) == '"weird@local"'
+        assert address_domain(address) == "example.com"
+
+    def test_preserves_case(self):
+        address = "John.Doe@Example.COM"
+        assert address_local_part(address) == "John.Doe"
+        assert address_domain(address) == "Example.COM"
+
+    @pytest.mark.parametrize(
+        "value", ["", "   ", "nodomain", "@example.com", "user@", "@"]
+    )
+    def test_returns_empty_on_malformed(self, value):
+        # Empty rather than None: every caller uses these for a display-name
+        # fallback or a log field, where a falsy string is the useful default.
+        assert address_local_part(value) == ""
+        assert address_domain(value) == ""
 
 
 class TestNormalizeDomain:

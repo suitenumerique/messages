@@ -43,6 +43,7 @@ from typing import Any
 from jmap_email import first_address_email
 from jmap_email.types import JmapEmail
 
+from core.mda.addresses import address_domain, ascii_lower, normalize_domain
 from core.mda.arc import arc_result
 from core.mda.signing import verify_message_dkim
 from core.mda.utils import headers_blocks
@@ -173,11 +174,16 @@ def _ar_outcome(check: str, ar_values: list[str]) -> str | None:
 
 
 def _from_header_domain(parsed_email: JmapEmail) -> str | None:
-    """Return the lowercased domain of the RFC5322 From address, or ``None``."""
+    """Return the canonical domain of the RFC5322 From address, or ``None``.
+
+    ASCII-folded, never ``str.lower()``: this domain is compared against a
+    DKIM ``d=`` for alignment, and Unicode folding would let two different
+    domains compare equal.
+    """
     from_email = first_address_email(parsed_email.get("from"))
     if not from_email:
         return None
-    domain = from_email.strip().rstrip(".").lower().rpartition("@")[2]
+    domain = normalize_domain(address_domain(from_email.strip()).rstrip("."))
     return domain or None
 
 
@@ -241,7 +247,7 @@ def trusted_arc_sealers(spam_config: dict[str, Any]) -> set[str]:
         sealers = []
 
     return {
-        s.strip().rstrip(".").lower()
+        ascii_lower(s.strip().rstrip("."))
         for s in sealers
         if isinstance(s, str) and s.strip()
     }

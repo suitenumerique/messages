@@ -21,7 +21,13 @@ from django.core.management.base import BaseCommand, CommandError
 from jmap_email import ComposeError, compose_email, parse_address
 
 from core import models
-from core.mda.addresses import ascii_lower, normalize_domain, split_address
+from core.mda.addresses import (
+    address_domain,
+    address_local_part,
+    ascii_lower,
+    normalize_domain,
+    split_address,
+)
 from core.mda.outbound import send_outbound_email
 from core.mda.signing import sign_message_dkim
 from core.mda.utils import compose_options_for, current_sent_at, generate_mime_id
@@ -107,7 +113,7 @@ class Command(BaseCommand):
                 # diagnose the missing-mailbox case.
                 logger.warning(
                     "Mailbox not found in domain '%s', sending without DKIM",
-                    from_email.rpartition("@")[2],
+                    address_domain(from_email),
                 )
         else:
             # Use minimal setup without mailbox
@@ -116,22 +122,22 @@ class Command(BaseCommand):
 
         from_name = (
             sender_mailbox.contact.name if sender_mailbox else None
-        ) or from_email.rpartition("@")[0]
+        ) or address_local_part(from_email)
 
         # Domain-only in logs to avoid PII leakage; the full address is
         # in the recipient model and the MIME envelope for forensics.
         logger.info(
             "Sending email from <%s> to <%s>",
-            from_email.rpartition("@")[2],
-            to_email.rpartition("@")[2],
+            address_domain(from_email),
+            address_domain(to_email),
         )
         logger.info("Subject length: %d", len(subject or ""))
 
-        mime_id = generate_mime_id(from_email.rpartition("@")[2])
+        mime_id = generate_mime_id(address_domain(from_email))
 
         mime_data = {
             "from": [{"name": from_name, "email": from_email}],
-            "to": [{"name": to_email.rpartition("@")[0], "email": to_email}],
+            "to": [{"name": address_local_part(to_email), "email": to_email}],
             "cc": [],
             "subject": subject,
             "sentAt": current_sent_at(),

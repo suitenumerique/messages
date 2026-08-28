@@ -7,6 +7,7 @@ from typing import Any, Dict, Optional
 
 from django.conf import settings
 
+from core.mda.addresses import ascii_lower
 from core.services.search.index import get_opensearch_client
 from core.services.search.mapping import MESSAGE_INDEX
 from core.services.search.parse import parse_search_query
@@ -110,12 +111,12 @@ def search_threads(  # pylint: disable=too-many-branches
                 if "@" in sender and not sender.startswith("@"):
                     # Exact email match
                     search_body["query"]["bool"]["filter"].append(
-                        {"term": {"sender_email": sender.lower()}}
+                        {"term": {"sender_email": ascii_lower(sender)}}
                     )
                 else:
                     # Substring match
                     search_body["query"]["bool"]["should"].append(
-                        {"wildcard": {"sender_email": f"*{sender.lower()}*"}}
+                        {"wildcard": {"sender_email": f"*{ascii_lower(sender)}*"}}
                     )
                     search_body["query"]["bool"]["should"].append(
                         {"wildcard": {"sender_name": f"*{sender}*"}}
@@ -142,7 +143,7 @@ def search_threads(  # pylint: disable=too-many-branches
                         # Exact email match - must match at least one of the email fields
                         search_body["query"]["bool"]["should"].extend(
                             [
-                                {"term": {field: recipient.lower()}}
+                                {"term": {field: ascii_lower(recipient)}}
                                 for field in email_fields
                             ]
                         )
@@ -152,7 +153,7 @@ def search_threads(  # pylint: disable=too-many-branches
                         should_clauses = []
                         for field in email_fields:
                             should_clauses.append(
-                                {"match": {field + ".text": recipient.lower()}}
+                                {"match": {field + ".text": ascii_lower(recipient)}}
                             )
                         for field in name_fields:
                             should_clauses.append(

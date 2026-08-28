@@ -10,6 +10,7 @@ from dkim import DKIM
 from dkim import sign as dkim_sign
 
 from core.enums import DKIMAlgorithmChoices
+from core.mda.addresses import ascii_lower
 
 logger = logging.getLogger(__name__)
 
@@ -181,7 +182,7 @@ def verify_message_dkim(raw_mime_message: bytes) -> str | None:
         signing_domain = dkim_obj.domain
         if not signing_domain:
             return None
-        return signing_domain.decode("ascii", "replace").rstrip(".").lower()
+        return ascii_lower(signing_domain.decode("ascii", "replace").rstrip("."))
 
     except Exception as e:  # pylint: disable=broad-exception-caught
         logger.error("Error during DKIM verification: %s", e, exc_info=True)
