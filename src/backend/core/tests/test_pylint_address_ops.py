@@ -64,6 +64,10 @@ def test_flags_manual_split(source):
         # The address half of the same pair still fires through a chain.
         "sender_email.strip().lower()",
         "recipient_email.strip().lower()",
+        # Dict values: how addresses arrive from parsed MIME and webhooks.
+        'entry["email"].lower()',
+        'row["sender_email"].strip().lower()',
+        'payload["from"]["email"].lower()',
         "recipient.upper()",
         "domain.lower()",
         "local_part.lower()",
@@ -95,6 +99,9 @@ def test_flags_unicode_case_fold(source):
         # Not a split on '@'.
         'email.split(",")',
         "email.split()",
+        # A non-literal key carries no hint, so the receiver stays unnamed.
+        "data[0].lower()",
+        'row["subject"].lower()',
         # ASCII folding is the sanctioned helper, not a violation.
         "ascii_lower(email)",
     ],

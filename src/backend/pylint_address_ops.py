@@ -51,7 +51,15 @@ def _dotted(node) -> str:
     if isinstance(node, nodes.Call):
         return _dotted(node.func)
     if isinstance(node, nodes.Subscript):
-        return _dotted(node.value)
+        base = _dotted(node.value)
+        # Fold a literal string key into the path, so ``entry["email"]`` reads
+        # as ``entry.email``. Addresses reach this code as dict values at least
+        # as often as attributes (parsed MIME, webhook payloads), and without
+        # the key those receivers carry no hint at all.
+        index = node.slice
+        if isinstance(index, nodes.Const) and isinstance(index.value, str):
+            return f"{base}.{index.value}" if base else index.value
+        return base
     return ""
 
 

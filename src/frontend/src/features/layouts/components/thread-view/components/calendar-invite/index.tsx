@@ -317,7 +317,7 @@ type AttendeeEntry = {
  * remaining attendees. If the organizer also appears in the attendees list,
  * it is deduplicated so a single entry is shown.
  */
-function buildAttendeeList(event: IcsEvent): AttendeeEntry[] {
+export function buildAttendeeList(event: IcsEvent): AttendeeEntry[] {
     const attendees = event.attendees ?? [];
     const organizer = event.organizer;
     if (!organizer) {

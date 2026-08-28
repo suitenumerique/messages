@@ -17,6 +17,7 @@ from django.apps import apps
 import pytest
 
 from core import factories, models
+from core.mda.addresses import normalize_address
 from core.tests.mda.test_addresses import KELVIN_SIGN
 
 # The module name starts with a digit, so it cannot be imported by statement.
@@ -173,11 +174,52 @@ class TestFoldUsers:
         assert second.email == "dup@example.com"
 
         reported = capsys.readouterr().out
-        assert "share an identity email" in reported
+        assert "onto an identity email another row already held" in reported
         # Named by primary key, so an operator can find them; the address
         # itself is PII and stays out of the deploy log.
         assert str(second.pk) in reported or str(first.pk) in reported
         assert "dup@example.com" not in reported
+
+    # Asserted on ``fold_address`` rather than through ``fold_users``.
+    #
+    # The real migration writes through a historical model, whose ``save()``
+    # runs no validation. This module drives the live one, whose ``save()``
+    # calls ``clean_fields`` — whichitself applies ``normalize_address``. So a
+    # round trip here re-canonicalizes the value on the way in and reports the
+    # fold as correct however it was computed: with the IDNA step deleted, a
+    # round-trip assertion still passes. Only the pure function shows what the
+    # migration would actually write to a production row.
+    @pytest.mark.parametrize(
+        "stored, expected",
+        [
+            # EmailField guarded these columns and accepts a U-label, while
+            # every lookup now canonicalizes to the A-label.
+            ("John@MÜNCHEN.example", "john@xn--mnchen-3ya.example"),
+            ("USER@Exemplé.example", "user@xn--exempl-gva.example"),
+            # Already canonical: unchanged.
+            ("user@xn--exempl-gva.example", "user@xn--exempl-gva.example"),
+            # No A-label exists, so nothing would match it either way. Left as
+            # written rather than mangled.
+            ("User@a..é", "user@a..é"),
+            # No domain at all: still ASCII-folded, never Unicode-folded.
+            ("NoDomain", "nodomain"),
+            (f"nic{KELVIN_SIGN}@example.com", f"nic{KELVIN_SIGN}@example.com"),
+        ],
+    )
+    def test_fold_matches_the_form_lookups_ask_for(self, stored, expected):
+        assert migration.fold_address(stored) == expected
+
+    @pytest.mark.parametrize(
+        "value",
+        ["John@MÜNCHEN.example", "USER@Exemplé.example", "John.Doe@EXAMPLE.com"],
+    )
+    def test_fold_agrees_with_normalize_address(self, value):
+        """The inlined copy and the live policy must not drift apart.
+
+        They are separate on purpose — the migration has to replay identically
+        if the module changes — so nothing but a test holds them level.
+        """
+        assert migration.fold_address(value) == normalize_address(value)
 
     def test_admin_email_is_folded(self):
         user = factories.UserFactory(admin_email="placeholder@example.com")

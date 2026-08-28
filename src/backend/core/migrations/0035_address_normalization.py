@@ -26,9 +26,37 @@ import string
 from django.db import migrations, models
 import django.core.validators
 
+import idna
+
 import core.mda.addresses
 
 ASCII_LOWER = str.maketrans(string.ascii_uppercase, string.ascii_lowercase)
+
+
+def fold_address(value: str) -> str:
+    """Mirror of ``normalize_address`` as it stood when this ran.
+
+    Inlined for the same reason as the translate table: the fold has to keep
+    replaying identically if ``core.mda.addresses`` changes.
+
+    The domain half matters here. ``EmailField``, which guarded these columns
+    before this migration, accepts a U-label (``john@münchen.de``), while every
+    lookup now canonicalizes to the A-label. ASCII-folding alone would leave
+    such a row unreachable by its own owner.
+    """
+    value = value.strip()
+    local_part, separator, domain = value.rpartition("@")
+    if not separator:
+        return value.translate(ASCII_LOWER)
+    domain = domain.translate(ASCII_LOWER)
+    if not domain.isascii():
+        try:
+            domain = idna.encode(domain, uts46=True).decode("ascii")
+        except idna.IDNAError:
+            # No A-label exists, so nothing would match it either way. Left as
+            # written rather than mangled.
+            pass
+    return f"{local_part.translate(ASCII_LOWER)}@{domain}"
 
 
 def _report(collision_ids, label):
@@ -118,21 +146,25 @@ def fold_users(apps, schema_editor):
     taken = set()
     merged = []
     for user in User.objects.exclude(email=None).exclude(email="").iterator():
-        folded = user.email.translate(ASCII_LOWER)
-        if folded in taken:
-            merged.append(user.pk)
-        taken.add(folded)
+        folded = fold_address(user.email)
         if folded != user.email:
+            # Only a row this migration *moves* can create a new collision;
+            # rows that already shared an address did so before it ran and are
+            # legal under OIDC_ALLOW_DUPLICATE_EMAILS.
+            if folded in taken:
+                merged.append(user.pk)
             user.email = folded
             user.save(update_fields=["email"])
+        taken.add(folded)
     if merged:
         listed = ", ".join(str(pk) for pk in sorted(merged)[:20])
         more = "" if len(merged) <= 20 else ", ..."
         print(
-            f"\n  WARNING: {len(merged)} user(s) now share an identity email "
-            f"with another row. Their next OIDC login raises "
-            f"MultipleObjectsReturned until the duplicates are merged. "
-            f"Affected ids: {listed}{more}"
+            f"\n  WARNING: folding moved {len(merged)} user(s) onto an identity "
+            f"email another row already held. A login that has to resolve by "
+            f"email — claiming a sub-less stub, or the OIDC email fallback — "
+            f"now refuses rather than guess between them. Affected ids: "
+            f"{listed}{more}"
         )
 
     # admin_email is unique, so a folded value can collide.
@@ -143,7 +175,7 @@ def fold_users(apps, schema_editor):
     for user in (
         User.objects.exclude(admin_email=None).exclude(admin_email="").iterator()
     ):
-        folded = user.admin_email.translate(ASCII_LOWER)
+        folded = fold_address(user.admin_email)
         if folded == user.admin_email:
             continue
         if folded in taken:

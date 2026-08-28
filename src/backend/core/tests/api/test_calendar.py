@@ -838,6 +838,63 @@ class TestCalendarRsvpView:
                 attendee_email=str(mailbox),
             )
 
+    @pytest.mark.parametrize(
+        "attendee_in_ics, responding_as",
+        [
+            # Case, the ordinary one.
+            ("mailto:User@Exemple.example", "user@exemple.example"),
+            # A CalDAV server may write the ATTENDEE as a U-label while our
+            # own mailbox address is stored as its A-label, and vice versa.
+            ("mailto:user@exemplé.example", "user@xn--exempl-gva.example"),
+            ("mailto:user@xn--exempl-gva.example", "user@exemplé.example"),
+            # The URI scheme is case-insensitive (RFC 3986 §3.1).
+            ("MAILTO:user@exemple.example", "user@exemple.example"),
+        ],
+    )
+    def test_partstat_matches_an_equivalent_spelling_of_the_attendee(
+        self, caldav_channel, attendee_in_ics, responding_as
+    ):
+        """An RSVP has to find the attendee however either side spelled it.
+
+        A miss is silent by design: ``_update_partstat`` returns False, the
+        PUT still happens, and the organizer never receives the iTIP REPLY —
+        so the user is told their response was saved when it was not.
+        """
+        service = CalDAVService.from_channel(caldav_channel)
+        ics = (
+            "BEGIN:VCALENDAR\r\nVERSION:2.0\r\nPRODID:-//Test//Test//EN\r\n"
+            "BEGIN:VEVENT\r\nUID:idn@example.com\r\n"
+            "DTSTAMP:20260101T000000Z\r\n"
+            "DTSTART:20260601T100000Z\r\nDTEND:20260601T110000Z\r\n"
+            "SUMMARY:Invite\r\nORGANIZER:mailto:org@example.com\r\n"
+            f"ATTENDEE;PARTSTAT=NEEDS-ACTION;RSVP=TRUE:{attendee_in_ics}\r\n"
+            "END:VEVENT\r\nEND:VCALENDAR\r\n"
+        )
+        cal = ICalendar.from_ical(ics)
+
+        assert service._update_partstat(cal, responding_as, "ACCEPTED") is True
+
+        attendee = cal.walk("VEVENT")[0].get("ATTENDEE")
+        assert attendee.params.get("PARTSTAT") == "ACCEPTED"
+
+    def test_partstat_still_refuses_a_different_address(self, caldav_channel):
+        """The widened match must not make every attendee equivalent."""
+        service = CalDAVService.from_channel(caldav_channel)
+        ics = (
+            "BEGIN:VCALENDAR\r\nVERSION:2.0\r\nPRODID:-//Test//Test//EN\r\n"
+            "BEGIN:VEVENT\r\nUID:other@example.com\r\n"
+            "DTSTAMP:20260101T000000Z\r\n"
+            "DTSTART:20260601T100000Z\r\nDTEND:20260601T110000Z\r\n"
+            "SUMMARY:Invite\r\nORGANIZER:mailto:org@example.com\r\n"
+            "ATTENDEE;PARTSTAT=NEEDS-ACTION:mailto:someone@exemple.example\r\n"
+            "END:VEVENT\r\nEND:VCALENDAR\r\n"
+        )
+        cal = ICalendar.from_ical(ics)
+
+        assert (
+            service._update_partstat(cal, "user@exemple.example", "ACCEPTED") is False
+        )
+
     def test_rsvp_no_channel(self, api_client, mailbox, user_with_mailbox):
         """Without a caldav channel, returns 404 and does NOT schedule a task."""
         api_client.force_authenticate(user=user_with_mailbox)
