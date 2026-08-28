@@ -99,17 +99,18 @@ def _bump(holder, attr: str) -> int:
     return n
 
 
-def _hard_error_limit_reached(server, counters) -> bool:
+def _hard_error_limit_reached(server, session, counters, verb) -> bool:
     """True when this connection has spent its ``PYMTA_MAX_ERRORS_PER_SESSION``.
 
-    Records the rejection and asks for the disconnect, so a caller only has to
-    return the 421. Bulk address enumeration and dictionary attacks otherwise
-    keep hammering a single TCP session.
+    Records the rejection, logs it and asks for the disconnect, so a caller
+    only has to return the 421. Bulk address enumeration and dictionary
+    attacks otherwise keep hammering a single TCP session.
     """
     if _count(counters, _SOFT_ERRORS_ATTR) < settings.PYMTA_MAX_ERRORS_PER_SESSION:
         return False
     metrics.SECURITY_REJECTIONS.labels(reason="max_errors_per_session").inc()
     metrics.DISCONNECTS_421.labels(reason="max_errors_per_session").inc()
+    _log_reject(server, session, verb, "max_errors_per_session", code=421)
     _request_disconnect(server)
     return True
 
@@ -303,12 +304,68 @@ def _safe_hostname(raw: str | None, session=None, server=None) -> str | None:
 # recipient_count carries the true number either way.
 _MAX_LOGGED_RECIPIENTS = 10
 
+# RFC 5321 §4.5.3.1.3 caps a forward/reverse path at 256 octets. A refusal can
+# name an address that never passed validation, so bound what reaches the log
+# rather than trusting the peer to have stayed inside the limit.
+_MAX_LOGGED_ADDRESS = 256
+
 
 def _recipients_field(rcpts: list[str]) -> str:
     if len(rcpts) <= _MAX_LOGGED_RECIPIENTS:
         return ",".join(rcpts)
     shown = ",".join(rcpts[:_MAX_LOGGED_RECIPIENTS])
     return f"{shown},+{len(rcpts) - _MAX_LOGGED_RECIPIENTS} more"
+
+
+def _address_field(address) -> str:
+    """A peer-supplied address, bounded, for a log field.
+
+    ``logfmt.quote`` escapes CR/LF and every unprintable code point, so the
+    value cannot forge a line; only its length is left to bound here.
+    """
+    text = address if isinstance(address, str) else str(address or "")
+    if len(text) <= _MAX_LOGGED_ADDRESS:
+        return text
+    return f"{text[:_MAX_LOGGED_ADDRESS]}...+{len(text) - _MAX_LOGGED_ADDRESS}"
+
+
+def _log_reject(server, session, verb, reason, **extra) -> None:
+    """One line per refused command, at INFO.
+
+    The counterpart to :func:`_log_outcome`: that one records what became of a
+    message, this one records why a command never became part of any. Without
+    it the most common failure of all, an unknown recipient, leaves nothing
+    behind but a counter, and "why did mail from X bounce?" has no answer in
+    the log at all.
+
+    Bounded per connection by ``PYMTA_MAX_ERRORS_PER_SESSION`` (50): every
+    caller either spends a unit of that budget or asks for the disconnect
+    outright, so a peer cannot spin more of these than the budget allows.
+    Unknown recipients stop even sooner, at
+    ``PYMTA_MAX_RCPT_MISSES_PER_SESSION`` (10).
+
+    One ``event=reject`` for every refusal, with the verb and the reason as
+    fields rather than baked into the name, so ``event=reject`` groups them
+    all and ``reason=`` splits them. ``reason`` reuses the metrics label of
+    the same rejection wherever one exists, so a spike on a counter and the
+    lines explaining it group by the same word.
+
+    Names the address, as :func:`_log_outcome` does and as every MTA's reject
+    log does; the same retention consequence applies.
+    """
+    logger.info("reject", extra=_trace(server, session, verb=verb, reason=reason, **extra))
+
+
+def _refuse(reject_ctx, verb, reason, reply, **extra) -> str:
+    """Spend one unit of the error budget, log the refusal, return the reply.
+
+    ``reject_ctx`` is ``(server, session, counters)``, bundled to stay inside
+    the argument-count budget, as :func:`_log_outcome` does.
+    """
+    server, session, counters = reject_ctx
+    _bump(counters, _SOFT_ERRORS_ATTR)
+    _log_reject(server, session, verb, reason, code=int(reply[:3]), **extra)
+    return reply
 
 
 def _log_outcome(ctx, envelope, outcome, size, **extra) -> None:
@@ -346,11 +403,6 @@ def _log_outcome(ctx, envelope, outcome, size, **extra) -> None:
     )
 
 
-# EHLO extensions already reported by ``handle_EHLO``. Process-wide, so the
-# warning is emitted once rather than once per connection.
-_EXTENSIONS_REPORTED: set[str] = set()
-
-
 class InboundHandler:
     """One instance per server process; called concurrently from many sessions."""
 
@@ -366,10 +418,15 @@ class InboundHandler:
         misconfigured), CHUNKING/BDAT (smuggling parser-confusion surface),
         and PIPELINING (announcing it advertises that we accept rapid command
         coalescing; the per-verb call ceiling lives in
-        ``controller.py:command_call_limit``). aiosmtpd already omits these
-        by default; we keep the filter as a guard against future regressions
-        or a contributor wiring an authenticator without re-reading the
-        security rationale.
+        ``controller.py:command_call_limit``).
+
+        Silent, because there is nothing to report: aiosmtpd's ``smtp_EHLO``
+        yields ``250-AUTH`` on every connection inside TLS without consulting
+        whether an authenticator exists, so with STARTTLS on this strips AUTH
+        on every session forever. What is worth catching is aiosmtpd starting
+        to offer something we never reviewed, and
+        ``test_smtp_protocol.py:test_ehlo_advertises_only_the_pinned_extensions``
+        catches that in CI, where it can be acted on.
         """
         denied_verbs = {"AUTH", "CHUNKING", "BDAT", "PIPELINING"}
         clean: list[str] = []
@@ -378,24 +435,6 @@ class InboundHandler:
             after = line[4:] if len(line) > 4 else ""
             verb = after.split(" ", 1)[0].upper()
             if verb in denied_verbs:
-                # Per verb: one shared reason could not tell AUTH on a public MX
-                # from PIPELINING, and the log below fires once per process.
-                metrics.SECURITY_REJECTIONS.labels(reason=f"ehlo_{verb.lower()}_stripped").inc()
-                # Once per verb per process, not once per EHLO. The condition is
-                # a misconfiguration that persists, so repeating it adds nothing
-                # after the first line and would otherwise let a peer choose how
-                # often we say it. Loud once beats quiet forever: demoting this
-                # to DEBUG to bound the volume would hide AUTH being advertised
-                # on a public MX. The counter carries the rate.
-                if verb not in _EXTENSIONS_REPORTED:
-                    _EXTENSIONS_REPORTED.add(verb)
-                    logger.warning(
-                        "ehlo_extension_stripped",
-                        extra={
-                            "verb": verb,
-                            "detail": "the SMTP configuration should not advertise this",
-                        },
-                    )
                 continue
             clean.append(line)
 
@@ -419,11 +458,12 @@ class InboundHandler:
     # ------------------------------------------------------------------ MAIL
     async def handle_MAIL(self, server, session, envelope, address, mail_options):
         counters = _counters(server, session)
+        reject_ctx = (server, session, counters)
 
         # Same hard-error budget as handle_RCPT: a peer can burn errors on
         # MAIL alone (malformed senders, bad SIZE), so the guard has to sit on
         # this verb too or the budget is trivially sidestepped.
-        if _hard_error_limit_reached(server, counters):
+        if _hard_error_limit_reached(server, session, counters, "mail"):
             return "421 4.7.0 Too many errors, goodbye"
 
         try:
@@ -435,8 +475,13 @@ class InboundHandler:
             )
         except AddressError as err:
             metrics.SECURITY_REJECTIONS.labels(reason=err.reason).inc()
-            _bump(counters, _SOFT_ERRORS_ATTR)
-            return f"{err.smtp_code} {err.smtp_text}"
+            return _refuse(
+                reject_ctx,
+                "mail",
+                err.reason,
+                f"{err.smtp_code} {err.smtp_text}",
+                sender=_address_field(address),
+            )
 
         # Honour MAIL FROM:... SIZE=N if announced, to fail fast before DATA.
         for opt in mail_options or []:
@@ -444,19 +489,33 @@ class InboundHandler:
                 try:
                     announced = int(opt.split("=", 1)[1])
                 except ValueError:
-                    _bump(counters, _SOFT_ERRORS_ATTR)
-                    return "501 5.5.4 Bad SIZE parameter"
+                    return _refuse(
+                        reject_ctx,
+                        "mail",
+                        "bad_size_parameter",
+                        "501 5.5.4 Bad SIZE parameter",
+                    )
                 if announced > settings.PYMTA_MAX_INCOMING_EMAIL_SIZE:
                     metrics.SECURITY_REJECTIONS.labels(reason="oversize_announced").inc()
-                    _bump(counters, _SOFT_ERRORS_ATTR)
-                    return "552 5.3.4 Message size exceeds fixed maximum"
+                    return _refuse(
+                        reject_ctx,
+                        "mail",
+                        "oversize_announced",
+                        "552 5.3.4 Message size exceeds fixed maximum",
+                        announced_bytes=announced,
+                    )
 
         if clean and settings.PYMTA_BLOCKED_SENDER_DOMAINS:
             domain = clean.rpartition("@")[2].lower()
             if domain in settings.PYMTA_BLOCKED_SENDER_DOMAINS:
                 metrics.SECURITY_REJECTIONS.labels(reason="blocked_sender_domain").inc()
-                _bump(counters, _SOFT_ERRORS_ATTR)
-                return "554 5.7.1 Sender domain not accepted"
+                return _refuse(
+                    reject_ctx,
+                    "mail",
+                    "blocked_sender_domain",
+                    "554 5.7.1 Sender domain not accepted",
+                    sender=_address_field(clean),
+                )
 
         envelope.mail_from = clean if clean else NULL_SENDER_SENTINEL
         envelope.mail_options.extend(mail_options or [])
@@ -465,9 +524,10 @@ class InboundHandler:
     # ------------------------------------------------------------------ RCPT
     async def handle_RCPT(self, server, session, envelope, address, rcpt_options):  # noqa: PLR0911
         counters = _counters(server, session)
+        reject_ctx = (server, session, counters)
 
         # First gate: hard-error budget, shared with handle_MAIL.
-        if _hard_error_limit_reached(server, counters):
+        if _hard_error_limit_reached(server, session, counters, "rcpt"):
             metrics.RCPT_TOTAL.labels(result="rejected_temp").inc()
             return "421 4.7.0 Too many errors, goodbye"
 
@@ -481,15 +541,24 @@ class InboundHandler:
             # refusal. Without this a sender could sit on one connection
             # issuing RCPTs for as long as command_call_limit allowed, which is
             # exactly the load a deferring node is trying to shed.
-            _bump(counters, _SOFT_ERRORS_ATTR)
-            return "451 4.3.2 Service temporarily unavailable, please retry"
+            return _refuse(
+                reject_ctx,
+                "rcpt",
+                "defer_all",
+                "451 4.3.2 Service temporarily unavailable, please retry",
+            )
 
         # Per-envelope recipient cap.
         if len(envelope.rcpt_tos) >= settings.PYMTA_MAX_RECIPIENTS_PER_ENVELOPE:
             metrics.SECURITY_REJECTIONS.labels(reason="max_recipients_per_envelope").inc()
             metrics.RCPT_TOTAL.labels(result="rejected_temp").inc()
-            _bump(counters, _SOFT_ERRORS_ATTR)
-            return "452 4.5.3 Too many recipients"
+            return _refuse(
+                reject_ctx,
+                "rcpt",
+                "max_recipients_per_envelope",
+                "452 4.5.3 Too many recipients",
+                recipient_count=len(envelope.rcpt_tos),
+            )
 
         try:
             clean = validate_envelope_address(
@@ -501,30 +570,54 @@ class InboundHandler:
         except AddressError as err:
             metrics.SECURITY_REJECTIONS.labels(reason=err.reason).inc()
             metrics.RCPT_TOTAL.labels(result="rejected_perm").inc()
-            _bump(counters, _SOFT_ERRORS_ATTR)
-            return f"{err.smtp_code} {err.smtp_text}"
+            return _refuse(
+                reject_ctx,
+                "rcpt",
+                err.reason,
+                f"{err.smtp_code} {err.smtp_text}",
+                recipient=_address_field(address),
+            )
 
-        # Case-insensitive both sides. Stricter than the MDA's mailbox lookup,
-        # which matches local_part case-sensitively; blocking more spellings
-        # than exist is the safe direction. Fixing the MDA half is a follow-up.
+        # Case-insensitive both sides, and deliberately a wider fold than the
+        # MDA's: it ASCII-folds a local part, this also folds the code points
+        # that are not ASCII but lower onto it. The difference can only block
+        # spellings the MDA would refuse anyway, never let one through, so it
+        # stays on the blocking side of the denylist.
         if clean.lower() in settings.PYMTA_BLOCKED_RECIPIENTS:
             metrics.SECURITY_REJECTIONS.labels(reason="blocked_recipient").inc()
             metrics.RCPT_TOTAL.labels(result="rejected_perm").inc()
-            _bump(counters, _SOFT_ERRORS_ATTR)
-            return "550 5.1.1 Recipient not accepted"
+            return _refuse(
+                reject_ctx,
+                "rcpt",
+                "blocked_recipient",
+                "550 5.1.1 Recipient not accepted",
+                recipient=_address_field(clean),
+            )
 
         result = await self.mda.check_recipient(clean, session=_session_id(server))
         if result.temp_fail:
             metrics.RCPT_TOTAL.labels(result="rejected_temp").inc()
-            _bump(counters, _SOFT_ERRORS_ATTR)
-            return "451 4.3.0 Recipient verification temporarily unavailable"
+            return _refuse(
+                reject_ctx,
+                "rcpt",
+                "mda_temp_fail",
+                "451 4.3.0 Recipient verification temporarily unavailable",
+                recipient=_address_field(clean),
+                status=result.status_code,
+            )
         # Unreachable while ``check_recipient`` names no permanent statuses:
         # every non-200 there comes back as a temp_fail above. Kept as the
         # landing spot if one is ever added.
         if not result.ok:
             metrics.RCPT_TOTAL.labels(result="rejected_perm").inc()
-            _bump(counters, _SOFT_ERRORS_ATTR)
-            return "550 5.1.1 Recipient verification failed"
+            return _refuse(
+                reject_ctx,
+                "rcpt",
+                "mda_verification_failed",
+                "550 5.1.1 Recipient verification failed",
+                recipient=_address_field(clean),
+                status=result.status_code,
+            )
 
         # Only an explicit true/false for this exact address is a verdict. The
         # MDA answers with one boolean per address it was asked about, so a
@@ -537,11 +630,16 @@ class InboundHandler:
         if not isinstance(verdict, bool):
             metrics.RCPT_TOTAL.labels(result="rejected_temp").inc()
             _bump(counters, _SOFT_ERRORS_ATTR)
+            # Stays a warning rather than becoming a ``_log_reject`` line: it
+            # reports the MDA breaking its contract, not the peer doing
+            # anything wrong, and that deserves the higher level. It is still
+            # this refusal's one line, so it carries the recipient too.
             logger.warning(
                 "mda_check_no_verdict",
                 extra=_trace(
                     server,
                     session,
+                    recipient=_address_field(clean),
                     status=result.status_code,
                     verdict_type=type(verdict).__name__,
                 ),
@@ -550,14 +648,29 @@ class InboundHandler:
 
         if not verdict:
             metrics.RCPT_TOTAL.labels(result="rejected_perm").inc()
-            _bump(counters, _SOFT_ERRORS_ATTR)
-            misses = _bump(counters, _RCPT_MISSES_ATTR)
+            misses = _count(counters, _RCPT_MISSES_ATTR) + 1
             if misses >= settings.PYMTA_MAX_RCPT_MISSES_PER_SESSION:
                 metrics.SECURITY_REJECTIONS.labels(reason="max_rcpt_misses_per_session").inc()
                 metrics.DISCONNECTS_421.labels(reason="max_rcpt_misses_per_session").inc()
                 _request_disconnect(server)
-                return "421 4.7.0 Too many unknown recipients, goodbye"
-            return "550 5.1.1 No such recipient"
+                # One line per refusal: this address is unknown *and* it spent
+                # the session's last miss, so the reason that names the
+                # disconnect is the one worth having.
+                reason, reply = (
+                    "max_rcpt_misses_per_session",
+                    "421 4.7.0 Too many unknown recipients, goodbye",
+                )
+            else:
+                reason, reply = "unknown_recipient", "550 5.1.1 No such recipient"
+            _bump(counters, _RCPT_MISSES_ATTR)
+            return _refuse(
+                reject_ctx,
+                "rcpt",
+                reason,
+                reply,
+                recipient=_address_field(clean),
+                misses=misses,
+            )
 
         envelope.rcpt_tos.append(clean)
         envelope.rcpt_options.extend(rcpt_options or [])
@@ -567,18 +680,24 @@ class InboundHandler:
     # ------------------------------------------------------------------ DATA
     async def handle_DATA(self, server, session, envelope):  # noqa: PLR0911
         counters = _counters(server, session)
+        reject_ctx = (server, session, counters)
         envelopes = _bump(counters, _ENVELOPES_ATTR)
         if envelopes > settings.PYMTA_MAX_ENVELOPES_PER_SESSION:
             metrics.SECURITY_REJECTIONS.labels(reason="max_envelopes_per_session").inc()
             metrics.DISCONNECTS_421.labels(reason="max_envelopes_per_session").inc()
             metrics.MESSAGES_TOTAL.labels(result="rejected_temp").inc()
-            _bump(counters, _SOFT_ERRORS_ATTR)
             # 421 rather than 451: the session has spent its envelope budget and
             # nothing the peer does can win it back, so keeping the channel open
             # only invites more attempts that must all fail. 421 says "closing
             # transmission channel", which is precisely what happens next.
             _request_disconnect(server)
-            return "421 4.7.0 Too many messages this session, closing connection"
+            return _refuse(
+                reject_ctx,
+                "data",
+                "max_envelopes_per_session",
+                "421 4.7.0 Too many messages this session, closing connection",
+                envelopes=envelopes,
+            )
 
         started = time.monotonic()
         content: bytes = envelope.content or b""
@@ -603,8 +722,15 @@ class InboundHandler:
         if b"\x00" in content:
             metrics.SECURITY_REJECTIONS.labels(reason="nul_byte").inc()
             metrics.MESSAGES_TOTAL.labels(result="rejected_perm").inc()
-            _bump(counters, _SOFT_ERRORS_ATTR)
-            return "554 5.6.0 NUL byte in message body"
+            return _refuse(
+                reject_ctx,
+                "data",
+                "nul_byte",
+                "554 5.6.0 NUL byte in message body",
+                sender=_address_field(envelope.mail_from),
+                recipient_count=len(envelope.rcpt_tos),
+                size_bytes=len(content),
+            )
 
         if len(content) > settings.PYMTA_MAX_INCOMING_EMAIL_SIZE:
             # aiosmtpd already replies 552 itself when the in-flight DATA
@@ -613,8 +739,15 @@ class InboundHandler:
             # body itself came in over the cap.
             metrics.SECURITY_REJECTIONS.labels(reason="oversize_message").inc()
             metrics.MESSAGES_TOTAL.labels(result="rejected_perm").inc()
-            _bump(counters, _SOFT_ERRORS_ATTR)
-            return "552 5.3.4 Message size exceeds fixed maximum"
+            return _refuse(
+                reject_ctx,
+                "data",
+                "oversize_message",
+                "552 5.3.4 Message size exceeds fixed maximum",
+                sender=_address_field(envelope.mail_from),
+                recipient_count=len(envelope.rcpt_tos),
+                size_bytes=len(content),
+            )
 
         try:
             # Before building the coroutine: a budget already spent raises
@@ -649,17 +782,16 @@ class InboundHandler:
             metrics.SECURITY_REJECTIONS.labels(reason="data_timeout").inc()
             metrics.MESSAGES_TOTAL.labels(result="rejected_temp").inc()
             metrics.MESSAGE_BYTES.observe(len(content))
-            _bump(counters, _SOFT_ERRORS_ATTR)
-            logger.debug(
+            return _refuse(
+                reject_ctx,
+                "data",
                 "data_timeout",
-                extra=_trace(
-                    server,
-                    session,
-                    limit_seconds=settings.PYMTA_DATA_TIMEOUT,
-                    size_bytes=len(content),
-                ),
+                "451 4.3.0 Delivery timed out, please retry",
+                sender=_address_field(envelope.mail_from),
+                recipients=_recipients_field(envelope.rcpt_tos),
+                limit_seconds=settings.PYMTA_DATA_TIMEOUT,
+                size_bytes=len(content),
             )
-            return "451 4.3.0 Delivery timed out, please retry"
 
         metrics.MESSAGE_BYTES.observe(len(content))
 

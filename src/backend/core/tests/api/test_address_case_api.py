@@ -93,6 +93,94 @@ class TestInboundMTACheckEndpoint:
         assert response.json() == {f"nic{KELVIN_SIGN}@example.com": False}
 
 
+class TestCheckAndDeliverAgree:
+    """The two endpoints must reach the same verdict for the same address.
+
+    ``/check`` answers RCPT TO and ``/deliver`` answers DATA. A "yes" at RCPT
+    followed by a failure at DATA is the worst outcome available: the backend
+    returns 500, mta-in maps that to 451, and the sender retries the whole
+    envelope for its full backoff window before giving up. The address is
+    unroutable either way, so the refusal belongs at RCPT where it costs one
+    5xx and the sender learns immediately.
+    """
+
+    CHECK_URL = "/api/v1.0/inbound/mta/check/"
+    DELIVER_URL = "/api/v1.0/inbound/mta/deliver/"
+
+    @staticmethod
+    def _token(body, **claims):
+        return jwt.encode(
+            {
+                "exp": 9999999999,
+                "body_hash": hashlib.sha256(body).hexdigest(),
+                **claims,
+            },
+            settings.MDA_API_SECRET,
+            algorithm="HS256",
+        )
+
+    def _check(self, api_client, address):
+        body = json.dumps({"addresses": [address]}).encode("utf-8")
+        response = api_client.post(
+            self.CHECK_URL,
+            data=body,
+            content_type="application/json",
+            HTTP_AUTHORIZATION=f"Bearer {self._token(body)}",
+        )
+        assert response.status_code == status.HTTP_200_OK
+        return response.json()[address]
+
+    def _deliver(self, api_client, address):
+        raw = (
+            b"From: Sender <sender@other.example>\r\n"
+            b"Subject: Parity\r\n"
+            b"Message-ID: <parity@other.example>\r\n"
+            b"\r\n"
+            b"Body.\r\n"
+        )
+        return api_client.post(
+            self.DELIVER_URL,
+            data=raw,
+            content_type="message/rfc822",
+            HTTP_AUTHORIZATION=f"Bearer {self._token(raw, original_recipients=[address])}",
+        )
+
+    def test_an_idn_recipient_resolves_to_its_a_label_mailbox(self, api_client):
+        """mta-in lowercases the domain but does not punycode it.
+
+        So an IDN recipient arrives as a U-label while the mailbox is stored
+        under its A-label, and only the IDNA step in ``normalize_domain``
+        joins the two. Both endpoints have to take that step or RCPT and DATA
+        disagree.
+        """
+        idn = factories.MailDomainFactory(name="xn--exempl-gva.fr")
+        factories.MailboxFactory(local_part="user", domain=idn)
+
+        # Uppercase too: UTS-46 case-folds the non-ASCII label as well.
+        address = "User@EXEMPLÉ.FR"
+        with override_settings(MESSAGES_ACCEPT_ALL_EMAILS=False):
+            assert self._check(api_client, address) is True
+            assert self._deliver(api_client, address).status_code == status.HTTP_200_OK
+
+    @pytest.mark.parametrize("accept_all", [False, True])
+    def test_a_non_ascii_local_part_is_refused_at_rcpt(
+        self, api_client, domain, accept_all
+    ):
+        """We host no mailbox with a non-ASCII local part, under either setting.
+
+        ``MESSAGES_ACCEPT_ALL_EMAILS`` widens which domains we take, not which
+        local parts can exist, so it must not turn this into a 250 at RCPT
+        followed by a permanent inability to deliver.
+        """
+        address = "josé@example.com"
+        with override_settings(MESSAGES_ACCEPT_ALL_EMAILS=accept_all):
+            assert self._check(api_client, address) is False
+            # And the DATA half agrees, so neither can drift alone.
+            assert self._deliver(api_client, address).status_code == (
+                status.HTTP_500_INTERNAL_SERVER_ERROR
+            )
+
+
 class TestInboundMTADeliver:
     """A mixed-case RCPT lands in the folded mailbox, and only there."""
 

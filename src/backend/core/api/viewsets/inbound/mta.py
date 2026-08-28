@@ -2,6 +2,7 @@
 
 import hashlib
 import logging
+import re
 import secrets
 
 from django.conf import settings
@@ -21,6 +22,25 @@ from core.mda.inbound import check_local_recipients, deliver_inbound_message
 from core.mda.raw_mime import remove_mime_headers
 
 logger = logging.getLogger(__name__)
+
+# ``mta_session`` is mta-in's per-connection correlation id
+# (``secrets.token_hex(4)``), carried as a JWT claim so its SMTP-side lines and
+# ours can be joined. Named for its origin: a bare ``session`` would read as a
+# Django session here.
+_MTA_SESSION_RE = re.compile(r"^[A-Za-z0-9_-]{1,64}$")
+
+
+def _mta_session(mta_metadata) -> str:
+    """The correlation id from *mta_metadata*, or ``"-"`` if unusable.
+
+    Shape-checked before it reaches a log line: our logging does no escaping,
+    so a value carrying a newline would forge records. The claim is signed, so
+    this only matters if the shared secret leaks — but that is exactly when
+    trustworthy logs matter most. Absent for an older mta-in, hence a
+    placeholder rather than a refusal.
+    """
+    value = (mta_metadata or {}).get("mta_session")
+    return value if isinstance(value, str) and _MTA_SESSION_RE.match(value) else "-"
 
 
 class MTAJWTAuthentication(BaseAuthentication):
@@ -179,9 +199,10 @@ class InboundMTAViewSet(viewsets.GenericViewSet):
             )
 
         logger.info(
-            "Raw email received: %d bytes for %s",
+            "Raw email received: %d bytes for %s [mta_session=%s]",
             len(raw_data),
             mta_metadata["original_recipients"],  # Log all intended recipients
+            _mta_session(mta_metadata),
         )
 
         # Strip sender-supplied headers we own or authoritatively rewrite:
@@ -288,7 +309,10 @@ class InboundMTAViewSet(viewsets.GenericViewSet):
         # Determine overall status based on counts
         if failure_count > 0 and success_count == 0:
             # If all deliveries failed, return a server error
-            logger.error("All deliveries failed for inbound email.")
+            logger.error(
+                "All deliveries failed for inbound email. [mta_session=%s]",
+                _mta_session(mta_metadata),
+            )
             return Response(
                 {
                     "status": "error",
@@ -301,9 +325,10 @@ class InboundMTAViewSet(viewsets.GenericViewSet):
         if failure_count > 0:
             # If some deliveries failed, return 207 Multi-Status
             logger.warning(
-                "Partial delivery failure: %d successful, %d failed",
+                "Partial delivery failure: %d successful, %d failed [mta_session=%s]",
                 success_count,
                 failure_count,
+                _mta_session(mta_metadata),
             )
             return Response(
                 {
@@ -316,5 +341,9 @@ class InboundMTAViewSet(viewsets.GenericViewSet):
             )
 
         # All deliveries successful
-        logger.info("All %d deliveries successful for inbound email.", success_count)
+        logger.info(
+            "All %d deliveries successful for inbound email. [mta_session=%s]",
+            success_count,
+            _mta_session(mta_metadata),
+        )
         return Response({"status": "ok", "delivered": success_count})

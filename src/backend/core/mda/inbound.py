@@ -89,10 +89,6 @@ def check_local_recipients(email_addresses: list[str]) -> set[str]:
     if not email_addresses:
         return set()
 
-    # For unit testing, all emails are deliverable
-    if settings.MESSAGES_ACCEPT_ALL_EMAILS:
-        return set(email_addresses)
-
     deliverable = set()
 
     # Parse emails and collect unique domains
@@ -103,9 +99,22 @@ def check_local_recipients(email_addresses: list[str]) -> set[str]:
         parts = split_address(email)
         if parts is None:
             continue  # Invalid email format, not deliverable
+        local_part = ascii_lower(parts[0])
+        # No mailbox can have a non-ASCII local part, so such an address is
+        # never local. Checked before MESSAGES_ACCEPT_ALL_EMAILS below, which
+        # widens which *domains* we take and not which local parts can exist:
+        # answering yes here accepts the RCPT and then fails at DATA, which
+        # MTA-in maps to a 451, so the sender retries the whole envelope for
+        # its full backoff window. Mirrors ``check_local_recipient``.
+        if not local_part.isascii():
+            continue
         domain = normalize_domain(parts[1])
-        email_parts[email] = (ascii_lower(parts[0]), domain)
+        email_parts[email] = (local_part, domain)
         domains.add(domain)
+
+    # For unit testing, every address that could name a mailbox is deliverable
+    if settings.MESSAGES_ACCEPT_ALL_EMAILS:
+        return set(email_parts)
 
     # Query all mailboxes on the relevant domains in a single query
     if domains:

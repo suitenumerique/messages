@@ -255,9 +255,10 @@ class MDAClient:
         metadata: dict,
         endpoint_label: str,
         permanent_statuses: frozenset[int] = frozenset(),
-        # Correlation id of the SMTP session this call serves. Carried purely so
-        # an infrastructure failure logged here can be joined to the mail it
-        # affected; without it "mda_unhealthy status=503" names no victim.
+        # Correlation id of the SMTP session this call serves. Logged here, so
+        # an infrastructure failure can be joined to the mail it affected
+        # ("mda_unhealthy status=503" otherwise names no victim), and sent on
+        # as the ``mta_session`` claim so the MDA's own lines join up too.
         session: str | None = None,
     ) -> MDAResult:
         if self._breaker_open():
@@ -269,6 +270,11 @@ class MDAClient:
         client = self._client or await self.start()
 
         url = self.base_url + path.lstrip("/")
+        # In the JWT rather than a header: the MDA logs it, and a claim is
+        # signed, so nothing between us can retag someone else's delivery.
+        # Named for its origin because the MDA has Django sessions of its own.
+        if session:
+            metadata = {**metadata, "mta_session": session}
         token = self._build_jwt(body, metadata)
         headers = {"Content-Type": content_type, "Authorization": f"Bearer {token}"}
 

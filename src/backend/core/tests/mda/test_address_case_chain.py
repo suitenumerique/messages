@@ -120,17 +120,32 @@ class TestInboundRecipientResolution:
         addresses = ["John.Doe@EXAMPLE.COM", "nobody@example.com"]
         assert check_local_recipients(addresses) == {"John.Doe@EXAMPLE.COM"}
 
-    def test_batch_check_matches_single_check(self, mailbox, settings):
-        settings.MESSAGES_ACCEPT_ALL_EMAILS = False
+    @pytest.mark.parametrize("accept_all", [False, True])
+    def test_batch_check_matches_single_check(self, mailbox, settings, accept_all):
+        """One invariant, under both settings and every address shape.
+
+        The batch answers RCPT TO and the single one answers DATA, so an
+        address they disagree on is accepted at RCPT and then fails at DATA —
+        which MTA-in maps to a 451, so the sender retries the whole envelope
+        for its full backoff window rather than learning at RCPT.
+
+        Both axes matter: pinning only ``accept_all=False`` leaves the branch
+        that skips the mailbox lookup entirely unchecked.
+        """
+        settings.MESSAGES_ACCEPT_ALL_EMAILS = accept_all
+        factories.MailDomainFactory(name="exemplé.example")
         addresses = [
             "john.doe@example.com",
             "JOHN.DOE@example.com",
             "john.doe@EXAMPLE.COM",
             "other@example.com",
+            "josé@example.com",  # no mailbox can carry this local part
+            "user@exemplé.example",  # IDN domain, U-label as MTA-in sends it
+            "nodomain",  # malformed
         ]
         batch = check_local_recipients(addresses)
         for address in addresses:
-            assert (address in batch) is bool(check_local_recipient(address))
+            assert (address in batch) is bool(check_local_recipient(address)), address
 
     def test_eai_address_is_never_local_even_when_accepting_all(self, settings):
         """We host no EAI mailboxes, so such an address must never resolve.

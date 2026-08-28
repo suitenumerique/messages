@@ -521,42 +521,72 @@ def reload_runtime_settings() -> dict[str, object]:
 # ---------------------------------------------------------------------------
 # STARTTLS (opportunistic). When both files are set, STARTTLS is advertised.
 #
-# Both paths are required together; see the check below.
+# Both are comma-separated lists, paired positionally, so a server can hold one
+# certificate per key type: OpenSSL keeps a slot per type and picks the one the
+# client can actually verify, which is how a single listener serves ECDSA to
+# modern senders and RSA to everything else. One entry each is the normal case.
+#
+# Both lists are required, and must be the same length; see the checks below.
 # ---------------------------------------------------------------------------
 
 PYMTA_TLS_CERT_FILE = _env_str("PYMTA_TLS_CERT_FILE", "")
 PYMTA_TLS_KEY_FILE = _env_str("PYMTA_TLS_KEY_FILE", "")
 
 # Postfix-style bundle, read only when neither path is set. Postfix packs the
-# key and the chain into one PEM and takes a comma-separated list for RSA+ECDSA
-# dual certs; Python's ssl accepts such a bundle as both certfile and keyfile,
-# so the first entry is used for each and SNI is left for later if wanted.
+# key and the chain into one PEM, and Python's ssl accepts such a bundle as both
+# certfile and keyfile, so each entry stands in for both halves of a pair.
 _chain = os.environ.get("STARTTLS_CHAIN_FILES", "").strip()
 if _chain and not PYMTA_TLS_CERT_FILE and not PYMTA_TLS_KEY_FILE:
     LEGACY_IN_USE.add(("STARTTLS_CHAIN_FILES", "PYMTA_TLS_CERT_FILE + PYMTA_TLS_KEY_FILE"))
-    _first = _chain.split(",", 1)[0].strip()
-    # A leading comma would otherwise make both paths empty, which reads as
-    # "STARTTLS deliberately off" to the pair check below and disables
-    # encryption without a word. Same posture as that check: refuse it.
-    if not _first:
+    PYMTA_TLS_CERT_FILE = PYMTA_TLS_KEY_FILE = _chain
+
+
+def _tls_paths(raw: str, name: str) -> tuple[str, ...]:
+    """Split a comma-separated path list, refusing an empty entry.
+
+    An empty entry would otherwise silently become a missing path, and the
+    pair check below reads a missing path as "STARTTLS deliberately off" —
+    losing transport encryption without a word, which is the thing that check
+    exists to prevent.
+    """
+    if not raw:
+        return ()
+    paths = tuple(part.strip() for part in raw.split(","))
+    if not all(paths):
         raise ValueError(
-            "Environment variable STARTTLS_CHAIN_FILES is set to "
-            f"{_chain!r}, whose first entry is empty. Give the bundle path "
-            "first, or set PYMTA_TLS_CERT_FILE and PYMTA_TLS_KEY_FILE instead."
+            f"Environment variable {name} is set to {raw!r}, which has an "
+            "empty entry. Give one path per certificate, comma-separated."
         )
-    PYMTA_TLS_CERT_FILE = PYMTA_TLS_KEY_FILE = _first
+    return paths
+
+
+_certs = _tls_paths(PYMTA_TLS_CERT_FILE, "PYMTA_TLS_CERT_FILE")
+_keys = _tls_paths(PYMTA_TLS_KEY_FILE, "PYMTA_TLS_KEY_FILE")
 
 # Both or neither. ``load_tls_context`` returns None unless it has a pair, so a
 # half-configured STARTTLS would not fail — it would serve plaintext and simply
 # not advertise STARTTLS, which is the quietest possible way to lose transport
 # encryption. Refuse it here instead.
-if bool(PYMTA_TLS_CERT_FILE) != bool(PYMTA_TLS_KEY_FILE):
+if bool(_certs) != bool(_keys):
     raise ValueError(
         "PYMTA_TLS_CERT_FILE and PYMTA_TLS_KEY_FILE must be set together; "
-        f"only {'PYMTA_TLS_CERT_FILE' if PYMTA_TLS_CERT_FILE else 'PYMTA_TLS_KEY_FILE'} "
+        f"only {'PYMTA_TLS_CERT_FILE' if _certs else 'PYMTA_TLS_KEY_FILE'} "
         "is set, which would leave STARTTLS off without saying so. Leave both "
         "empty to disable STARTTLS deliberately."
     )
+
+# Paired positionally, so a mismatch means at least one certificate would be
+# loaded against another's key. That fails inside OpenSSL with a message about
+# key values, naming neither variable; refuse it here where both are in hand.
+if len(_certs) != len(_keys):
+    raise ValueError(
+        f"PYMTA_TLS_CERT_FILE lists {len(_certs)} path(s) and "
+        f"PYMTA_TLS_KEY_FILE lists {len(_keys)}. They are paired in order, so "
+        "each certificate needs its key at the same position."
+    )
+
+# What ``load_tls_context`` consumes: one (cert, key) pair per certificate.
+PYMTA_TLS_CERT_PAIRS: tuple[tuple[str, str], ...] = tuple(zip(_certs, _keys, strict=True))
 
 
 # ---------------------------------------------------------------------------
