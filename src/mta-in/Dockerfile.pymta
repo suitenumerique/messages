@@ -82,14 +82,50 @@ FROM runtime-base AS runtime-dev
 # Full managed Python (with headers, pip) is already present from the shared base.
 COPY --from=base-with-deps-dev /venv /venv
 
+# Throwaway self-signed cert so the test suite can exercise STARTTLS. Without
+# one the whole TLS path is untested, including the session rebuild aiosmtpd
+# does on the transport swap, which is where our PROXY-source stash and the
+# non-re-armed session deadline have to keep working.
+#
+# Dev image only: no prod stage gets a cert, and /certs sits outside /app so the
+# source bind-mount does not shadow it. World-readable because the container
+# runs as an unprivileged uid that varies by DOCKER_USER.
+ARG DOCKER_USER=65532
+USER root
+RUN mkdir -p /certs \
+    && openssl req -x509 -newkey rsa:2048 -nodes -days 3650 \
+        -subj "/CN=mta-in.test" \
+        -keyout /certs/pymta-test.key -out /certs/pymta-test.crt \
+    && chmod 644 /certs/pymta-test.key /certs/pymta-test.crt
+USER ${DOCKER_USER}
+
 ENV PYTHONPATH="/app/src"
 
 # /app will be mounted as a volume in the development container
 
 
 # ---- Production application source (strip tests, dev tooling, build files) ----
-FROM ${PYTHON_UV_IMAGE} AS app-prod
-COPY ./src /app/src
+# Derived from base-with-deps purely because that stage already has an
+# interpreter at /venv/bin/python; the uv image alone has none on PATH.
+FROM base-with-deps AS app-prod
+# Only the pymta package. ./src also holds delivery_milter.py and api/mda.py,
+# which belong to the Postfix image and drag in `requests`; neither is imported
+# here, so shipping them would put a second HTTP client and an unused milter on
+# the process that faces port 25.
+COPY ./src/pymta /app/src/pymta
+
+# Compile ahead of time so the runtime never does. PYTHONDONTWRITEBYTECODE is
+# set in the runtime stages (the rootfs is read-only, so writing would fail
+# anyway), which means without this every start recompiles these modules in
+# memory. Also guarantees the .pyc match the .py shipped beside them, rather
+# than whatever a developer's machine happened to leave in __pycache__.
+RUN /venv/bin/python -m compileall -q /app/src
+
+# COPY preserves the mode the file had on the build host, so a developer whose
+# umask or editor wrote 0600 ships an image the unprivileged runtime user cannot
+# read, and it fails at import with PermissionError rather than at build. Make
+# the tree readable regardless of where it came from.
+RUN chmod -R a+rX /app/src
 
 
 # ---- Production runtime (slim) ----
@@ -115,7 +151,7 @@ CMD ["python", "-m", "pymta.server"]
 # Liveness probe: TCP-connect the SMTP listener. Uses stdlib socket — works in
 # both slim and distroless variants without curl/nc.
 HEALTHCHECK --interval=30s --timeout=2s --start-period=15s \
-    CMD ["python", "-c", "import os, socket; s=socket.socket(); s.settimeout(1); s.connect(('127.0.0.1', int(os.getenv('PYMTA_SMTP_PORT', '25')))); s.close()"]
+    CMD ["python", "-c", "import os,socket;h=os.getenv('PYMTA_SMTP_BIND_HOST','').strip() or '127.0.0.1';h='127.0.0.1' if h in ('0.0.0.0','::') else h;socket.create_connection((h,int(os.getenv('PYMTA_SMTP_BIND_PORT','25'))),timeout=1).close()"]
 
 
 # ---- Distroless production runtime ----
@@ -144,4 +180,4 @@ ENV PYTHONPATH="/app/src"
 CMD ["python", "-m", "pymta.server"]
 
 HEALTHCHECK --interval=30s --timeout=2s --start-period=15s \
-    CMD ["python", "-c", "import os, socket; s=socket.socket(); s.settimeout(1); s.connect(('127.0.0.1', int(os.getenv('PYMTA_SMTP_PORT', '25')))); s.close()"]
+    CMD ["python", "-c", "import os,socket;h=os.getenv('PYMTA_SMTP_BIND_HOST','').strip() or '127.0.0.1';h='127.0.0.1' if h in ('0.0.0.0','::') else h;socket.create_connection((h,int(os.getenv('PYMTA_SMTP_BIND_PORT','25'))),timeout=1).close()"]

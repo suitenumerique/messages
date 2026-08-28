@@ -17,9 +17,29 @@ echo >> /etc/postfix/main.cf
 [[ -n "${MYDOMAIN}" ]] && echo "mydomain = ${MYDOMAIN}" >> /etc/postfix/main.cf
 echo "message_size_limit=${MAX_INCOMING_EMAIL_SIZE:-10240000}" >> /etc/postfix/main.cf
 
-if [ "${ENABLE_PROXY_PROTOCOL:-false}" = "haproxy" ]; then
-  echo "postscreen_upstream_proxy_protocol = haproxy" >> /etc/postfix/main.cf
-fi
+# Parsed exactly as pymta parses the same variable (see settings._env_proxy_protocol
+# and _env_bool): `haproxy` or any true boolean enables it, an explicit false
+# spelling disables it, and anything else stops the process rather than being
+# read as off. Silently disabling would stamp every message with the balancer's
+# IP as the client's.
+#
+# Only surrounding whitespace is trimmed. Stripping it everywhere would read
+# `ha proxy` as `haproxy` and enable PROXY protocol off a typo.
+proxy_raw=$(printf '%s' "${ENABLE_PROXY_PROTOCOL:-}" | tr '[:upper:]' '[:lower:]')
+proxy_raw="${proxy_raw#"${proxy_raw%%[![:space:]]*}"}"
+proxy_raw="${proxy_raw%"${proxy_raw##*[![:space:]]}"}"
+case "$proxy_raw" in
+  haproxy|1|true|yes|on)
+    echo "postscreen_upstream_proxy_protocol = haproxy" >> /etc/postfix/main.cf
+    ;;
+  ""|0|false|no|off)
+    ;;
+  *)
+    echo "ERROR: ENABLE_PROXY_PROTOCOL is '${ENABLE_PROXY_PROTOCOL}'; use 'haproxy'" >&2
+    echo "       (or a true boolean) to enable, unset/false to disable." >&2
+    exit 1
+    ;;
+esac
 
 if [ ! -z "${STARTTLS_CHAIN_FILES}" ]; then
   cat >> /etc/postfix/main.cf <<_EOF

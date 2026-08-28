@@ -484,8 +484,6 @@ services:
       - ALL
     security_opt:
       - no-new-privileges:true
-    tmpfs:
-      - /tmp:rw,noexec,nosuid,size=16m
     depends_on:
       - backend-dev
 
@@ -515,6 +513,10 @@ services:
       - MTA_PORT=25
       - MTA_IMPL=pymta
       - MTA_METRICS_URL=http://localhost:9100/metrics
+      # Self-signed cert baked into the runtime-dev stage, so STARTTLS is
+      # advertised and tests/test_smtp_protocol.py can exercise the TLS path.
+      - PYMTA_TLS_CERT_FILE=/certs/pymta-test.crt
+      - PYMTA_TLS_KEY_FILE=/certs/pymta-test.key
     command: pytest -vvs tests/
     volumes:
       - ./src/mta-in:/app

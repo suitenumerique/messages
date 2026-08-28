@@ -187,7 +187,7 @@ def test_relay(mock_api_server, smtp_client):
     assert excinfo.value.recipients["other@example.com"][0] // 100 == 5
 
     # No email should be received
-    time.sleep(1)  # Give some time for processing
+    time.sleep(0.2)  # settle; delivery is synchronous, so this is belt-and-braces
     assert len(mock_api_server.received_emails) == 0
 
 
@@ -208,7 +208,7 @@ def test_check_recipients_error(mock_api_server, smtp_client):
     assert excinfo.value.recipients["check-recipients-error@example.com"][0] // 100 == 4
 
     # No email should be received
-    time.sleep(1)  # Give some time for processing
+    time.sleep(0.2)  # settle; delivery is synchronous, so this is belt-and-braces
     assert len(mock_api_server.received_emails) == 0
 
 
@@ -229,7 +229,7 @@ def test_check_recipients_timeout(mock_api_server, smtp_client):
     assert excinfo.value.recipients["check-recipients-timeout@example.com"][0] // 100 == 4
 
     # No email should be received
-    time.sleep(1)  # Give some time for processing
+    time.sleep(0.2)  # settle; delivery is synchronous, so this is belt-and-braces
     assert len(mock_api_server.received_emails) == 0
 
 
@@ -250,7 +250,7 @@ def test_inbound_email_error(mock_api_server, smtp_client):
     assert excinfo.value.smtp_code // 100 == 4
 
     # No email should be received
-    time.sleep(1)  # Give some time for processing
+    time.sleep(0.2)  # settle; delivery is synchronous, so this is belt-and-braces
     assert len(mock_api_server.received_emails) == 0
 
 
@@ -271,5 +271,5 @@ def test_inbound_email_timeout(mock_api_server, smtp_client):
     assert excinfo.value.smtp_code // 100 == 4
 
     # No email should be received
-    time.sleep(1)  # Give some time for processing
+    time.sleep(0.2)  # settle; delivery is synchronous, so this is belt-and-braces
     assert len(mock_api_server.received_emails) == 0

@@ -63,8 +63,11 @@ def test_email_with_attachment(mock_api_server, smtp_client):
 @pytest.mark.parametrize(
     "attachment_size, will_fail",
     [
-        (11 * 1024 * 1024, False),
-        (40 * 1024 * 1024, True),
+        # Sized against the shipped 10 MiB cap rather than a raised dev one, so
+        # the default under test is the one that ships. Base64 inflates by ~4/3:
+        # 5 MiB lands near 6.8 MB and fits, 12 MiB lands near 16 MB and does not.
+        (5 * 1024 * 1024, False),
+        (12 * 1024 * 1024, True),
     ],
 )
 def test_email_with_large_attachments(mock_api_server, smtp_client, attachment_size, will_fail):

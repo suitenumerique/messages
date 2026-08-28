@@ -14,7 +14,7 @@ import jwt
 import pytest
 
 from pymta import settings
-from pymta.mda_async import MDAClient
+from pymta.mda_async import _MIN_SECRET_LENGTH, MDAClient
 
 
 class _FakeClock:
@@ -310,14 +310,21 @@ def test_non_local_http_url_logs_warning(caplog):
 
 def test_short_secret_logs_warning(caplog):
     caplog.set_level("WARNING")
-    MDAClient(base_url="https://mda.example.com/api/", secret="too-short")
-    assert any("MDA_API_SECRET" in rec.message for rec in caplog.records)
+    secret = "too-short"
+    MDAClient(base_url="https://mda.example.com/api/", secret=secret)
+    record = next(r for r in caplog.records if r.message == "mda_secret_weak")
+    assert record.levelname == "WARNING"
+    assert record.minimum == _MIN_SECRET_LENGTH
+    # The threshold is reported, the secret's own length is not: it would narrow
+    # the search for anyone holding the log and a captured JWT.
+    assert not hasattr(record, "length")
+    assert secret not in caplog.text
 
 
 def test_local_http_url_is_silent(caplog):
     caplog.set_level("WARNING")
     MDAClient(base_url="http://127.0.0.1:8000/api/", secret="x" * 32)
-    assert not any("plaintext" in rec.message for rec in caplog.records)
+    assert not any(rec.message == "mda_url_plaintext" for rec in caplog.records)
 
 
 def test_empty_secret_logs_warning(caplog, monkeypatch):
@@ -329,7 +336,10 @@ def test_empty_secret_logs_warning(caplog, monkeypatch):
     monkeypatch.setattr(settings, "MDA_API_SECRET", "")
     caplog.set_level("WARNING")
     MDAClient(base_url="https://mda.example.com/api/", secret="")
-    assert any("MDA_API_SECRET is empty" in rec.message for rec in caplog.records)
+    # ERROR, not WARNING: an unset secret is a deployment fault that defers
+    # every message, and no peer can cause it.
+    record = next(r for r in caplog.records if r.message == "mda_secret_missing")
+    assert record.levelname == "ERROR"
 
 
 # ---------------------------------------------------------------------------
@@ -360,3 +370,68 @@ def test_jwt_ttl_is_configurable():
     decoded = jwt.decode(client._build_jwt(b"body", {}), client.secret, algorithms=["HS256"])
     ttl = datetime.datetime.fromtimestamp(decoded["exp"], tz=datetime.UTC) - before
     assert 590 <= ttl.total_seconds() <= 600
+
+
+# ---------------------------------------------------------------------------
+# Client construction. Everything above replaces ``client._client`` with a stub,
+# which means the real one is never built and its options are never checked.
+# ---------------------------------------------------------------------------
+
+
+@pytest.mark.asyncio
+async def test_client_ignores_proxy_environment(monkeypatch):
+    """A proxy in the environment must not capture MDA traffic.
+
+    httpx defaults ``trust_env=True``, which routes requests through whatever
+    ALL_PROXY / HTTPS_PROXY names. These carry a bearer JWT and the full message
+    body, and the MDA is one known internal endpoint, so there is nothing here a
+    proxy should be selecting. This stack ships a socks-proxy service and an
+    MTA_OUT_DIRECT_PROXIES setting, so a stray variable is a real possibility.
+
+    Asserted on the built client's mount table rather than on the keyword we
+    passed: the keyword is what we wrote, an empty mount table is what it has to
+    mean. With trust_env left at its default this same code yields one mount.
+    """
+    monkeypatch.setenv("ALL_PROXY", "http://proxy.invalid:3128")
+    monkeypatch.setenv("HTTPS_PROXY", "http://proxy.invalid:3128")
+
+    client = MDAClient(secret="x" * 32)
+    try:
+        http = await client.start()
+        assert http._mounts == {}, f"proxy environment captured MDA traffic: {http._mounts}"
+    finally:
+        await client.close()
+
+
+@pytest.mark.asyncio
+async def test_client_does_not_follow_redirects():
+    """A redirect would replay the Authorization header at the named host.
+
+    body_hash would still validate there, so the token stays usable for exactly
+    the request it was minted for, against a server we never chose.
+    """
+    client = MDAClient(secret="x" * 32)
+    try:
+        http = await client.start()
+        assert http.follow_redirects is False
+    finally:
+        await client.close()
+
+
+@pytest.mark.asyncio
+async def test_breaker_reads_closed_once_the_cooldown_lapses_without_traffic():
+    """The gauge must not stay stuck at 1 on an idle process.
+
+    Nothing calls the MDA after the last failure, so nothing runs the code that
+    notices the cooldown elapsed. A gauge assigned at the moment the breaker
+    tripped would still read "open" long after calls stopped being
+    short-circuited, which is why it is computed instead.
+    """
+    client, clock = _new_client(threshold=1, cooldown=30)
+    client._client = _StubAsyncClient([_resp(503, b"{}")])
+    await client.check_recipient("a@example.com")
+    assert client.breaker_is_open() is True
+
+    # No further requests: only time passes.
+    clock.now += 31
+    assert client.breaker_is_open() is False

@@ -28,8 +28,11 @@ def test_proxy_protocol_without_allowlist_starts_with_a_warning(monkeypatch, cap
     monkeypatch.setattr(settings, "PYMTA_TRUSTED_PROXIES", [])
     with caplog.at_level(logging.WARNING):
         _check_proxy_trust_config()
-    assert "SECURITY" in caplog.text
-    assert "PYMTA_TRUSTED_PROXIES is empty" in caplog.text
+    # Assert on the event name and its fields, not on rendered prose: the
+    # message is now a stable identifier and the detail is structured.
+    record = caplog.records[-1]
+    assert record.message == "proxy_trust_unrestricted"
+    assert "PYMTA_TRUSTED_PROXIES is empty" in record.detail
 
 
 def test_proxy_protocol_with_allowlist_starts_without_warning(monkeypatch, caplog):
@@ -48,7 +51,9 @@ def test_proxy_protocol_with_catch_all_allowlist_warns(monkeypatch, caplog, catc
     monkeypatch.setattr(settings, "PYMTA_TRUSTED_PROXIES", [ip_network(catch_all)])
     with caplog.at_level(logging.WARNING):
         _check_proxy_trust_config()
-    assert "matches every peer" in caplog.text
+    record = caplog.records[-1]
+    assert record.message == "proxy_trust_unrestricted"
+    assert "matches every peer" in record.detail
 
 
 def test_catch_all_warns_even_beside_a_real_network(monkeypatch, caplog):
@@ -60,7 +65,9 @@ def test_catch_all_warns_even_beside_a_real_network(monkeypatch, caplog):
     )
     with caplog.at_level(logging.WARNING):
         _check_proxy_trust_config()
-    assert "matches every peer" in caplog.text
+    record = caplog.records[-1]
+    assert record.message == "proxy_trust_unrestricted"
+    assert "matches every peer" in record.detail
 
 
 def test_catch_all_is_irrelevant_without_proxy_protocol(monkeypatch, caplog):
@@ -80,25 +87,42 @@ def test_allowlist_is_irrelevant_without_proxy_protocol(monkeypatch, caplog):
     assert caplog.records == []
 
 
-@pytest.mark.parametrize(
-    "env, enabled",
-    [
-        ("true", True),
-        ("false", False),
-        (None, False),
-    ],
-)
-def test_proxy_protocol_reads_only_the_pymta_name(monkeypatch, env, enabled):
-    # The Postfix image drives the same feature from its own
-    # ENABLE_PROXY_PROTOCOL=haproxy; pymta must not inherit it, so the two
-    # services can share an env file.
+@pytest.mark.parametrize("env, enabled", [("true", True), ("haproxy", True), ("false", False)])
+def test_proxy_protocol_prefers_its_own_name(monkeypatch, env, enabled):
+    """The prefixed name decides, whatever the Postfix one says."""
     monkeypatch.setenv("ENABLE_PROXY_PROTOCOL", "haproxy")
-    if env is None:
-        monkeypatch.delenv("PYMTA_ENABLE_PROXY_PROTOCOL", raising=False)
-    else:
-        monkeypatch.setenv("PYMTA_ENABLE_PROXY_PROTOCOL", env)
+    monkeypatch.setenv("PYMTA_ENABLE_PROXY_PROTOCOL", env)
     try:
         assert importlib.reload(settings).PYMTA_ENABLE_PROXY_PROTOCOL is enabled
+    finally:
+        monkeypatch.undo()
+        importlib.reload(settings)
+
+
+def test_the_postfix_name_still_works_and_is_reported(monkeypatch):
+    """The old name keeps working so one env file can drive both images.
+
+    Recorded rather than silent: startup names it and says what to set instead,
+    which is what turns a switchover into a migration that finishes.
+    """
+    monkeypatch.setenv("ENABLE_PROXY_PROTOCOL", "haproxy")
+    monkeypatch.delenv("PYMTA_ENABLE_PROXY_PROTOCOL", raising=False)
+    try:
+        reloaded = importlib.reload(settings)
+        assert reloaded.PYMTA_ENABLE_PROXY_PROTOCOL is True
+        assert ("ENABLE_PROXY_PROTOCOL", "PYMTA_ENABLE_PROXY_PROTOCOL") in reloaded.LEGACY_IN_USE
+    finally:
+        monkeypatch.undo()
+        importlib.reload(settings)
+
+
+def test_the_prefixed_name_wins_and_is_not_reported(monkeypatch):
+    monkeypatch.setenv("ENABLE_PROXY_PROTOCOL", "haproxy")
+    monkeypatch.setenv("PYMTA_ENABLE_PROXY_PROTOCOL", "false")
+    try:
+        reloaded = importlib.reload(settings)
+        assert reloaded.PYMTA_ENABLE_PROXY_PROTOCOL is False
+        assert reloaded.LEGACY_IN_USE == set()
     finally:
         monkeypatch.undo()
         importlib.reload(settings)

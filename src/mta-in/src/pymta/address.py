@@ -12,12 +12,19 @@ or unwrapped form; :func:`strip_brackets` runs unconditionally on entry.
 
 from __future__ import annotations
 
+import unicodedata
+
 # Characters that must never appear unquoted in an envelope address. CR, LF,
 # and NUL are the CRLF-injection and frame-confusion vectors. TAB is a header
 # unfolding vector. ``%`` is included to keep us out of historical
 # "percent-routing" relay tricks (RFC 1123 §5.2.16). DEL (0x7f) and bare
 # space have no place in an address received from the wire.
 _FORBIDDEN_CHARS = frozenset({"\r", "\n", "\x00", "\t", " ", "%", "\x7f"})
+
+# Controls, line/paragraph separators, spaces. Narrower than
+# ``str.isprintable()``, which also rejects format chars (Cf) such as ZWNJ --
+# orthographically required in Persian and legal in an RFC 6531 address.
+_FORBIDDEN_CATEGORIES = frozenset({"Cc", "Zl", "Zp", "Zs"})
 
 
 class AddressError(ValueError):
@@ -85,13 +92,38 @@ def validate_envelope_address(  # noqa: PLR0912
         )
 
     # ----- 1b. control / CRLF / NUL injection --------------------------------
-    bad = _FORBIDDEN_CHARS & set(address)
-    if bad:
+    # SMTPUTF8 makes the local-part arbitrary UTF-8, so U+2028, U+0085, VT and
+    # FF arrive from the wire and ``str.splitlines`` breaks on every one.
+    # Refused here so they never reach the MDA, a Received header or a bounce.
+    if _FORBIDDEN_CHARS & set(address) or any(
+        unicodedata.category(ch) in _FORBIDDEN_CATEGORIES for ch in address
+    ):
         raise AddressError(
             reason="control_char",
             smtp_code=501,
             smtp_text="5.1.7 Address contains forbidden control characters",
         )
+
+    # ----- 1c. valid UTF-8 ---------------------------------------------------
+    # aiosmtpd decodes command arguments with ``errors="surrogateescape"``, so a
+    # byte that is not valid UTF-8 survives as a lone surrogate (0xE9 becomes
+    # ``\udce9``). RFC 6531 requires an SMTPUTF8 envelope address to be valid
+    # UTF-8, so this is malformed and permanent.
+    #
+    # It has to be caught *here* rather than left to the length checks below:
+    # those call ``.encode("utf-8")``, which raises UnicodeEncodeError on a
+    # surrogate. That is not an AddressError, so it escapes the caller's except
+    # clause and surfaces as a 421 internal error, telling the sender to retry
+    # an address that can never be accepted, and logging our own bug metric for
+    # something the peer chose.
+    try:
+        address.encode("utf-8")
+    except UnicodeEncodeError as exc:
+        raise AddressError(
+            reason="invalid_encoding",
+            smtp_code=553,
+            smtp_text="5.1.3 Address is not valid UTF-8",
+        ) from exc
 
     # ----- 2. source routes  @host1,@host2:user@host3  -----------------------
     # RFC 5321 §4.1.1.3 allows ignoring source routes; we reject outright.

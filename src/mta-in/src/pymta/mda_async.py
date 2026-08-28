@@ -46,7 +46,7 @@ _MIN_SECRET_LENGTH = 32
 # has to be the safe one: deferring costs a retry, bouncing loses the mail.
 #
 #   400: the MDA could not parse the message, or the request was malformed.
-#   413: over MAX_INCOMING_EMAIL_SIZE. Retrying sends the same oversized bytes.
+#   413: over the MDA's own size limit. Retrying sends the same oversized bytes.
 #   415: wrong Content-Type. Ours to fix, but no retry will change it.
 #
 # Everything else defers:
@@ -115,14 +115,10 @@ class MDAClient:
         self.timeout = timeout if timeout is not None else settings.MDA_API_TIMEOUT
         self.jwt_ttl = jwt_ttl if jwt_ttl is not None else settings.MDA_API_JWT_TTL
         self._breaker_threshold = (
-            breaker_threshold
-            if breaker_threshold is not None
-            else settings.PYMTA_MDA_BREAKER_THRESHOLD
+            breaker_threshold if breaker_threshold is not None else settings.MDA_BREAKER_THRESHOLD
         )
         self._breaker_cooldown = (
-            breaker_cooldown
-            if breaker_cooldown is not None
-            else settings.PYMTA_MDA_BREAKER_COOLDOWN
+            breaker_cooldown if breaker_cooldown is not None else settings.MDA_BREAKER_COOLDOWN
         )
         self._clock = clock
         # Counts consecutive failures. Reset to 0 by any successful call.
@@ -146,30 +142,50 @@ class MDAClient:
         host = (parsed.hostname or "").lower()
         if parsed.scheme == "http" and host not in _LOCAL_HOSTNAMES:
             logger.warning(
-                "MDA_API_BASE_URL uses plaintext http:// for non-local host %r "
-                "(%r). The JWT bearer token will traverse the network in clear. "
-                "Configure https:// in production.",
-                host,
-                self.base_url,
+                "mda_url_plaintext",
+                extra={
+                    "host": host,
+                    "detail": "the JWT bearer token will cross the network in clear; use https",
+                },
             )
         if not self.secret:
-            logger.warning(
-                "MDA_API_SECRET is empty; every MDA call will fail to sign and "
-                "all mail will be deferred. Configure the shared secret."
+            logger.error(
+                "mda_secret_missing",
+                extra={"detail": "every MDA call fails to sign, so all mail defers"},
             )
         elif len(self.secret) < _MIN_SECRET_LENGTH:
             logger.warning(
-                "MDA_API_SECRET is %d bytes; recommended minimum is %d. "
-                "Short HS256 secrets are brute-forceable from a captured JWT.",
-                len(self.secret),
-                _MIN_SECRET_LENGTH,
+                "mda_secret_weak",
+                # The actual length is deliberately not reported: it narrows the
+                # search for anyone who reads the log and then captures a JWT,
+                # and the operator can measure their own secret.
+                extra={
+                    "minimum": _MIN_SECRET_LENGTH,
+                    "detail": "short HS256 secrets are brute-forceable from one captured JWT",
+                },
             )
 
     async def start(self) -> httpx.AsyncClient:
         """Open the persistent HTTP client. Idempotent."""
         if self._client is None:
             limits = httpx.Limits(max_keepalive_connections=20, max_connections=100)
-            self._client = httpx.AsyncClient(timeout=self.timeout, limits=limits)
+            self._client = httpx.AsyncClient(
+                timeout=self.timeout,
+                limits=limits,
+                # httpx defaults this True, which would let HTTP_PROXY /
+                # HTTPS_PROXY / ALL_PROXY in the environment redirect these
+                # calls, bearer JWT and full message body included, through a
+                # host nobody chose deliberately. This stack ships a socks-proxy
+                # service and an MTA_OUT_DIRECT_PROXIES setting, so a proxy
+                # variable landing in a shared env file is a live possibility.
+                # The MDA is one known internal endpoint; there is nothing here
+                # a proxy should be selecting.
+                trust_env=False,
+                # Explicit rather than default: a redirect we followed would
+                # replay the Authorization header to whatever host the response
+                # names, and the body_hash claim would still validate there.
+                follow_redirects=False,
+            )
         return self._client
 
     async def close(self) -> None:
@@ -201,6 +217,17 @@ class MDAClient:
             return False
         return True
 
+    def breaker_is_open(self) -> bool:
+        """Whether calls are being short-circuited right now.
+
+        Separate from ``_breaker_open`` because that one resets the counters as
+        a side effect of noticing the cooldown elapsed, so it cannot answer a
+        scrape. This is also why the gauge is computed rather than assigned: set
+        imperatively, it would keep reading 1 after a cooldown expired on an
+        idle process, since nothing would call in to clear it.
+        """
+        return self._open_until is not None and self._clock() < self._open_until
+
     def _record_failure(self) -> None:
         if not self._breaker_threshold:
             return
@@ -208,14 +235,16 @@ class MDAClient:
         if self._consecutive_failures >= self._breaker_threshold and self._open_until is None:
             self._open_until = self._clock() + self._breaker_cooldown
             logger.warning(
-                "MDA circuit breaker OPEN after %d consecutive failures; fast-failing for %ds",
-                self._consecutive_failures,
-                self._breaker_cooldown,
+                "mda_breaker_opened",
+                extra={
+                    "consecutive_failures": self._consecutive_failures,
+                    "cooldown_seconds": self._breaker_cooldown,
+                },
             )
 
     def _record_success(self) -> None:
         if self._consecutive_failures and self._open_until is None:
-            logger.info("MDA recovered after %d consecutive failures", self._consecutive_failures)
+            logger.info("mda_recovered", extra={"after_failures": self._consecutive_failures})
         self._consecutive_failures = 0
 
     async def _post(  # noqa: PLR0913
@@ -226,6 +255,10 @@ class MDAClient:
         metadata: dict,
         endpoint_label: str,
         permanent_statuses: frozenset[int] = frozenset(),
+        # Correlation id of the SMTP session this call serves. Carried purely so
+        # an infrastructure failure logged here can be joined to the mail it
+        # affected; without it "mda_unhealthy status=503" names no victim.
+        session: str | None = None,
     ) -> MDAResult:
         if self._breaker_open():
             metrics.MDA_REQUEST_DURATION.labels(
@@ -246,14 +279,24 @@ class MDAClient:
             metrics.MDA_REQUEST_DURATION.labels(endpoint=endpoint_label, result="timeout").observe(
                 self._clock() - start
             )
-            logger.warning("MDA %s timeout after %.2fs", endpoint_label, self._clock() - start)
+            logger.warning(
+                "mda_timeout",
+                extra={
+                    "endpoint": endpoint_label,
+                    "session_id": session,
+                    "elapsed_seconds": round(self._clock() - start, 3),
+                    "limit_seconds": self.timeout,
+                },
+            )
             self._record_failure()
             return MDAResult(ok=False, temp_fail=True, payload={}, status_code=0)
         except httpx.HTTPError:
             metrics.MDA_REQUEST_DURATION.labels(endpoint=endpoint_label, result="error").observe(
                 self._clock() - start
             )
-            logger.exception("MDA %s transport error", endpoint_label)
+            logger.exception(
+                "mda_transport_error", extra={"endpoint": endpoint_label, "session_id": session}
+            )
             self._record_failure()
             return MDAResult(ok=False, temp_fail=True, payload={}, status_code=0)
 
@@ -267,11 +310,16 @@ class MDAClient:
         except json.JSONDecodeError:
             payload = {}
         if not isinstance(payload, dict):
-            logger.warning(
-                "MDA %s returned HTTP %d with a non-object JSON body (%s)",
-                endpoint_label,
-                response.status_code,
-                type(payload).__name__,
+            # Debug: whenever this matters the caller logs the consequence
+            # (mda_check_no_verdict / mda_unhealthy) with the session attached.
+            # Two warnings for one incident is two alerts for one problem.
+            logger.debug(
+                "mda_body_not_an_object",
+                extra={
+                    "endpoint": endpoint_label,
+                    "status": response.status_code,
+                    "body_type": type(payload).__name__,
+                },
             )
             payload = {}
 
@@ -301,10 +349,13 @@ class MDAClient:
             elapsed
         )
         logger.warning(
-            "MDA %s returned HTTP %d (%s)",
-            endpoint_label,
-            status,
-            "deferring" if temp else "rejecting permanently",
+            "mda_unhealthy",
+            extra={
+                "endpoint": endpoint_label,
+                "session_id": session,
+                "status": status,
+                "outcome": "defer" if temp else "reject",
+            },
         )
         if unhealthy:
             self._record_failure()
@@ -312,7 +363,7 @@ class MDAClient:
             self._record_success()
         return MDAResult(ok=False, temp_fail=temp, payload=payload, status_code=status)
 
-    async def check_recipient(self, address: str) -> MDAResult:
+    async def check_recipient(self, address: str, session: str | None = None) -> MDAResult:
         """Ask the MDA whether a single recipient mailbox exists."""
         body = json.dumps({"addresses": [address]}, separators=(",", ":")).encode("utf-8")
         return await self._post(
@@ -321,6 +372,7 @@ class MDAClient:
             body,
             metadata={},
             endpoint_label="check",
+            session=session,
         )
 
     async def deliver(  # noqa: PLR0913
@@ -333,6 +385,7 @@ class MDAClient:
         client_port: str | None,
         client_hostname: str | None,
         client_helo: str | None,
+        session: str | None = None,
     ) -> MDAResult:
         """Push the complete message to the MDA for synchronous delivery."""
         metadata = {
@@ -351,4 +404,5 @@ class MDAClient:
             metadata=metadata,
             endpoint_label="deliver",
             permanent_statuses=_PERMANENT_STATUSES,
+            session=session,
         )
