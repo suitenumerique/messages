@@ -64,6 +64,12 @@
         margin-left: auto;
     }
 
+    .thread-panel__trashbin-notice {
+        padding: var(--c--globals--spacings--3xs) var(--c--globals--spacings--sm)
+            var(--c--globals--spacings--2xs);
+        flex-shrink: 0;
+    }
+
     .thread-panel__threads_list {
         overflow-y: auto;
         padding-inline: var(--c--globals--spacings--xs);

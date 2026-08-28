@@ -789,6 +789,130 @@ def test_api_flag_mark_messages_untrashed_success(api_client):
     assert thread.has_trashed is False
 
 
+# --- trashed_at belongs to the trashbin pair (is_trashed OR is_spam) ---
+#
+# The cutoff sweep ages an item by trashed_at, falling back to created_at when
+# it is NULL. Clearing one half of the pair while the other is still set would
+# leave the message in the bin with a NULL timestamp, so old mail would be
+# permanently deleted on the next nightly run instead of getting its grace
+# period. See core.services.trashbin and viewsets/flag.trashbin_timestamp.
+
+
+def test_api_flag_unspam_keeps_trashed_at_while_still_trashed(api_client):
+    """Un-spamming a message that is also trashed must keep trashed_at set."""
+    user = UserFactory()
+    api_client.force_authenticate(user=user)
+    mailbox = MailboxFactory(users_admin=[user])
+    thread = ThreadFactory()
+    ThreadAccessFactory(
+        mailbox=mailbox, thread=thread, role=enums.ThreadAccessRoleChoices.EDITOR
+    )
+    binned_at = timezone.now() - timedelta(days=3)
+    msg = MessageFactory(
+        thread=thread, is_trashed=True, is_spam=True, trashed_at=binned_at
+    )
+
+    data = {"flag": "spam", "value": False, "message_ids": [str(msg.id)]}
+    response = api_client.post(API_URL, data=data, format="json")
+    assert response.status_code == status.HTTP_200_OK
+
+    msg.refresh_from_db()
+    assert msg.is_spam is False
+    assert msg.is_trashed is True
+    # Still in the bin, so the original entry time survives untouched.
+    assert msg.trashed_at == binned_at
+
+
+def test_api_flag_untrash_keeps_trashed_at_while_still_spam(api_client):
+    """Un-trashing a message that is also spam must keep trashed_at set."""
+    user = UserFactory()
+    api_client.force_authenticate(user=user)
+    mailbox = MailboxFactory(users_admin=[user])
+    thread = ThreadFactory()
+    ThreadAccessFactory(
+        mailbox=mailbox, thread=thread, role=enums.ThreadAccessRoleChoices.EDITOR
+    )
+    binned_at = timezone.now() - timedelta(days=3)
+    msg = MessageFactory(
+        thread=thread, is_trashed=True, is_spam=True, trashed_at=binned_at
+    )
+
+    data = {"flag": "trashed", "value": False, "message_ids": [str(msg.id)]}
+    response = api_client.post(API_URL, data=data, format="json")
+    assert response.status_code == status.HTTP_200_OK
+
+    msg.refresh_from_db()
+    assert msg.is_trashed is False
+    assert msg.is_spam is True
+    assert msg.trashed_at == binned_at
+
+
+def test_api_flag_leaving_the_bin_entirely_clears_trashed_at(api_client):
+    """Clearing the last remaining trashbin flag does clear trashed_at."""
+    user = UserFactory()
+    api_client.force_authenticate(user=user)
+    mailbox = MailboxFactory(users_admin=[user])
+    thread = ThreadFactory()
+    ThreadAccessFactory(
+        mailbox=mailbox, thread=thread, role=enums.ThreadAccessRoleChoices.EDITOR
+    )
+    msg = MessageFactory(thread=thread, is_spam=True, trashed_at=timezone.now())
+
+    data = {"flag": "spam", "value": False, "message_ids": [str(msg.id)]}
+    response = api_client.post(API_URL, data=data, format="json")
+    assert response.status_code == status.HTTP_200_OK
+
+    msg.refresh_from_db()
+    assert msg.is_spam is False
+    assert msg.trashed_at is None
+
+
+def test_api_flag_reflagging_does_not_restart_the_retention_clock(api_client):
+    """Flagging the other half of the pair keeps the original bin entry time.
+
+    Otherwise toggling spam on an already-trashed message would postpone its
+    permanent deletion indefinitely.
+    """
+    user = UserFactory()
+    api_client.force_authenticate(user=user)
+    mailbox = MailboxFactory(users_admin=[user])
+    thread = ThreadFactory()
+    ThreadAccessFactory(
+        mailbox=mailbox, thread=thread, role=enums.ThreadAccessRoleChoices.EDITOR
+    )
+    binned_at = timezone.now() - timedelta(days=20)
+    msg = MessageFactory(thread=thread, is_trashed=True, trashed_at=binned_at)
+
+    data = {"flag": "spam", "value": True, "message_ids": [str(msg.id)]}
+    response = api_client.post(API_URL, data=data, format="json")
+    assert response.status_code == status.HTTP_200_OK
+
+    msg.refresh_from_db()
+    assert msg.is_spam is True
+    assert msg.trashed_at == binned_at
+
+
+def test_api_flag_entering_the_bin_stamps_trashed_at(api_client):
+    """A message with no timestamp gets one when it first enters the bin."""
+    user = UserFactory()
+    api_client.force_authenticate(user=user)
+    mailbox = MailboxFactory(users_admin=[user])
+    thread = ThreadFactory()
+    ThreadAccessFactory(
+        mailbox=mailbox, thread=thread, role=enums.ThreadAccessRoleChoices.EDITOR
+    )
+    msg = MessageFactory(thread=thread)
+    assert msg.trashed_at is None
+
+    data = {"flag": "spam", "value": True, "message_ids": [str(msg.id)]}
+    response = api_client.post(API_URL, data=data, format="json")
+    assert response.status_code == status.HTTP_200_OK
+
+    msg.refresh_from_db()
+    assert msg.is_spam is True
+    assert msg.trashed_at is not None
+
+
 # --- Tests for Archived Flag ---
 
 

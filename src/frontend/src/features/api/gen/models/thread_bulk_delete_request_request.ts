@@ -5,7 +5,7 @@
  * This is the messages API schema.
  * OpenAPI spec version: 1.0.0 (v1.0)
  */
-import type { ScopeEnum } from "./scope_enum";
+import type { ThreadBulkDeleteRequestScopeEnum } from "./thread_bulk_delete_request_scope_enum";
 
 /**
  * Payload for the bulk-delete endpoint: a scope and the threads/messages
@@ -15,7 +15,7 @@ export interface ThreadBulkDeleteRequestRequest {
   /** Which messages to permanently delete. Only 'draft' (draft messages) is supported.
 
 * `draft` - draft */
-  scope: ScopeEnum;
+  scope: ThreadBulkDeleteRequestScopeEnum;
   /** Threads whose scope-matching messages should be deleted. */
   thread_ids?: string[];
   /** Specific messages to delete (still scope-filtered). */

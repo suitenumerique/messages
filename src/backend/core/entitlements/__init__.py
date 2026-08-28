@@ -26,3 +26,23 @@ def get_user_entitlements(user_sub, user_email, user_info=None, force_refresh=Fa
     return backend.get_user_entitlements(
         user_sub, user_email, user_info=user_info, force_refresh=force_refresh
     )
+
+
+def get_mailbox_entitlements(mailbox, force_refresh=False):
+    """Get storage entitlements for a mailbox, delegating to the configured backend.
+
+    Args:
+        mailbox: The Mailbox instance to resolve entitlements for.
+        force_refresh: If True, bypass backend cache and fetch fresh data.
+
+    Returns:
+        dict: {
+            "account": {"storage_used": int, "max_storage": int | None},
+            "organization": {"storage_used": int, "max_storage": int | None} | None,
+        }
+
+    Raises:
+        EntitlementsUnavailableError: If the backend cannot be reached and no cache exists.
+    """
+    backend = get_entitlements_backend()
+    return backend.get_mailbox_entitlements(mailbox, force_refresh=force_refresh)

@@ -18,13 +18,13 @@ from core.api.permissions import IsGlobalChannelMixin, channel_scope
 from core.enums import ChannelApiKeyScope
 from core.models import (
     Attachment,
-    Blob,
     Mailbox,
     MailboxAccess,
     MailDomain,
     Message,
     MessageTemplate,
 )
+from core.services.storage import mailbox_storage_used_expr
 
 # name: threshold (in days)
 ACTIVE_USER_METRICS = {
@@ -218,56 +218,6 @@ class MailboxUsageMetricsApiView(IsGlobalChannelMixin, APIView):
         Returns per-mailbox storage usage computed as:
         storage_used = messages_count * OVERHEAD + sum(blobs.size_compressed)
         """
-        overhead = settings.METRICS_STORAGE_USED_OVERHEAD_BY_MESSAGE
-
-        # Use subqueries to avoid cross-product issues.
-        # All blob sizes are counted through their message/attachment
-        # relationships (via ThreadAccess), NOT through blob.mailbox.
-
-        messages_count_subquery = Subquery(
-            Message.objects.filter(thread__accesses__mailbox=OuterRef("pk"))
-            .order_by()
-            .values("thread__accesses__mailbox")
-            .annotate(cnt=Count("id", distinct=True))
-            .values("cnt")[:1]
-        )
-
-        # Raw MIME blobs linked via Message.blob
-        mime_blobs_subquery = Subquery(
-            Blob.objects.filter(messages__thread__accesses__mailbox=OuterRef("pk"))
-            .order_by()
-            .values("messages__thread__accesses__mailbox")
-            .annotate(total=Sum("size_compressed"))
-            .values("total")[:1]
-        )
-
-        # Draft body blobs linked via Message.draft_blob
-        draft_blobs_subquery = Subquery(
-            Blob.objects.filter(drafts__thread__accesses__mailbox=OuterRef("pk"))
-            .order_by()
-            .values("drafts__thread__accesses__mailbox")
-            .annotate(total=Sum("size_compressed"))
-            .values("total")[:1]
-        )
-
-        # Attachment blobs linked via Attachment.mailbox
-        attachment_blobs_subquery = Subquery(
-            Attachment.objects.filter(mailbox=OuterRef("pk"))
-            .order_by()
-            .values("mailbox")
-            .annotate(total=Sum("blob__size_compressed"))
-            .values("total")[:1]
-        )
-
-        # Template/signature blobs linked via MessageTemplate.mailbox
-        template_blobs_subquery = Subquery(
-            MessageTemplate.objects.filter(mailbox=OuterRef("pk"), blob__isnull=False)
-            .order_by()
-            .values("mailbox")
-            .annotate(total=Sum("blob__size_compressed"))
-            .values("total")[:1]
-        )
-
         queryset = Mailbox.objects.select_related("domain")
 
         # Apply filters
@@ -309,13 +259,7 @@ class MailboxUsageMetricsApiView(IsGlobalChannelMixin, APIView):
                 status=400,
             )
 
-        storage_expr = (
-            Coalesce(messages_count_subquery, Value(0)) * overhead
-            + Coalesce(mime_blobs_subquery, Value(0))
-            + Coalesce(draft_blobs_subquery, Value(0))
-            + Coalesce(attachment_blobs_subquery, Value(0))
-            + Coalesce(template_blobs_subquery, Value(0))
-        )
+        storage_expr = mailbox_storage_used_expr()
 
         # Build results based on account_type
         if account_type == "organization":

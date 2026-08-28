@@ -1064,8 +1064,37 @@ class Base(Configuration):
         "REDOC_DIST": "SIDECAR",
     }
 
-    TRASHBIN_CUTOFF_DAYS = values.Value(
+    # The "trashbin" is the union of trashed and spam messages
+    # (``is_trashed OR is_spam``); see ``core.services.trashbin``. Items are
+    # permanently deleted from it in two ways: automatically once older than
+    # ``TRASHBIN_CUTOFF_DAYS`` (the ``cleanup_trashbin_task`` sweep), or manually
+    # when a user "empties" a folder — allowed only to the roles named by
+    # ``TRASHBIN_ALLOW_EMPTY``.
+    #
+    # 0 DISABLES automatic deletion entirely: the sweep becomes a no-op and
+    # trashbin items are kept until someone empties the folder by hand. (0 must
+    # not mean "delete everything nightly" — an operator reaching for 0 is
+    # turning the feature off, and the retention banner in the UI is hidden at
+    # 0 on exactly that reading.)
+    TRASHBIN_CUTOFF_DAYS = values.PositiveIntegerValue(
         30, environ_name="TRASHBIN_CUTOFF_DAYS", environ_prefix=None
+    )
+    # Who may manually empty the trashbin: "never" (only the cutoff sweep
+    # deletes), "admins" (mailbox role ADMIN), or "editors" (role >= EDITOR).
+    # Validated on read, against ``core.enums.TrashbinAllowEmpty`` — an
+    # unrecognised value raises rather than silently meaning "nobody".
+    TRASHBIN_ALLOW_EMPTY = values.Value(
+        "admins", environ_name="TRASHBIN_ALLOW_EMPTY", environ_prefix=None
+    )
+
+    # How long (seconds) a mailbox/organization's computed storage usage is
+    # cached at the service layer (the quota gauge and entitlements). The
+    # computation is ~100ms for a large mailbox, so caching keeps the sidebar
+    # gauge from recomputing on every load. Emptying the trashbin invalidates
+    # the mailbox entry so freed space shows immediately; every other change
+    # (new mail, sends) is reflected within this TTL. 0 disables the cache.
+    STORAGE_USAGE_CACHE_TTL = values.PositiveIntegerValue(
+        60, environ_name="STORAGE_USAGE_CACHE_TTL", environ_prefix=None
     )
 
     AUTH_USER_MODEL = "core.User"

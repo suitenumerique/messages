@@ -11,6 +11,7 @@ import useArchive from "@/features/message/use-archive";
 import useSpam from "@/features/message/use-spam";
 import useTrash from "@/features/message/use-trash";
 import useDeleteDrafts from "@/features/message/use-delete-drafts";
+import useEmptyTrash from "@/features/message/use-empty-trash";
 import useStarred from "@/features/message/use-starred";
 import useCanEditThreads from "@/features/message/use-can-edit-threads";
 import { ThreadPanelFilter } from "./thread-panel-filter";
@@ -38,6 +39,7 @@ const ThreadPanelTitle = ({ selectedThreadIds, isAllSelected, isSomeSelected, is
     const { markAsArchived, markAsUnarchived } = useArchive();
     const { markAsTrashed, markAsUntrashed } = useTrash();
     const { deleteDrafts } = useDeleteDrafts();
+    const { emptyTrashbin } = useEmptyTrash();
     const { markAsSpam, markAsNotSpam } = useSpam();
     const { markAsStarred, markAsUnstarred } = useStarred();
     const [isDropdownOpen, setIsDropdownOpen] = useState(false);
@@ -98,6 +100,13 @@ const ThreadPanelTitle = ({ selectedThreadIds, isAllSelected, isSomeSelected, is
     const canReportSpam = canEditSelection && !isTrashedView && !isSentView && !isDraftsView;
     const canTrash = canEditSelection && !isDraftsView;
     const canDeleteDrafts = canEditSelection && isDraftsView;
+    // "Empty trashbin" is a folder-level action (deletes the whole Trash or Spam
+    // folder), independent of any thread selection. The backend `empty_trash`
+    // ability encodes the TRASHBIN_ALLOW_EMPTY policy. (Hook called
+    // unconditionally; the view check gates the button, not the hook.)
+    const canEmptyTrashbin = useAbility(Abilities.CAN_EMPTY_TRASH, selectedMailbox);
+    const canEmptyTrash = (isTrashedView || isSpamView) && canEmptyTrashbin;
+    const emptyTrashLabel = isSpamView ? t('Empty spam') : t('Empty trash');
     const canManageLabels = useAbility(Abilities.CAN_MANAGE_MAILBOX_LABELS, selectedMailbox);
     const canAssignLabel = canManageLabels && !isSpamView && !isTrashedView && !isDraftsView;
     const hasSelectionActions = canArchive || canReportSpam || canTrash || canDeleteDrafts || canAssignLabel;
@@ -199,6 +208,33 @@ const ThreadPanelTitle = ({ selectedThreadIds, isAllSelected, isSomeSelected, is
                             aria-label={mainReadTooltip}
                         />
                     </Tooltip>
+                    {canEmptyTrash && (
+                        <Tooltip content={emptyTrashLabel}>
+                            <Button
+                                onClick={() => {
+                                    if (!selectedMailbox) return;
+                                    emptyTrashbin({
+                                        mailboxId: selectedMailbox.id,
+                                        scope: isSpamView ? 'spam' : 'trashed',
+                                        // Clear only once the delete went through. Unlike the
+                                        // other actions here, emptyTrashbin opens a confirmation
+                                        // modal first, so clearing up-front would discard the
+                                        // open thread and the checkbox selection even when the
+                                        // user backs out.
+                                        onSuccess: () => {
+                                            unselectThread();
+                                            onClearSelection();
+                                        },
+                                    });
+                                }}
+                                icon={<Icon name="delete_forever" type={IconType.OUTLINED} />}
+                                variant="tertiary"
+                                size="nano"
+                                color="error"
+                                aria-label={emptyTrashLabel}
+                            />
+                        </Tooltip>
+                    )}
                     {isSelectionMode && (
                         <>
                             {hasSelectionActions && <VerticalSeparator withPadding={false} />}
