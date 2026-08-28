@@ -323,19 +323,20 @@ function buildAttendeeList(event: IcsEvent): AttendeeEntry[] {
     if (!organizer) {
         return attendees.map((a) => ({ attendee: a, isOrganizer: false }));
     }
-    // Both sides of every comparison below go through this, so an absent
-    // address stays comparable to another absent one.
+    // An organizer with no address matches nothing: comparing two absent
+    // addresses as equal would show an arbitrary attendee as the organizer
+    // and drop every other address-less one from the list.
     const fold = (email?: string) => (email ? MailHelper.asciiLower(email) : undefined);
     const organizerEmail = fold(organizer.email);
-    const organizerAsAttendee = attendees.find(
-        (a) => fold(a.email) === organizerEmail,
-    );
+    const organizerAsAttendee = organizerEmail
+        ? attendees.find((a) => fold(a.email) === organizerEmail)
+        : undefined;
     const organizerEntry: AttendeeEntry = {
         attendee: organizerAsAttendee ?? (organizer as IcsAttendee),
         isOrganizer: true,
     };
     const rest = attendees
-        .filter((a) => fold(a.email) !== organizerEmail)
+        .filter((a) => !organizerEmail || fold(a.email) !== organizerEmail)
         .map<AttendeeEntry>((a) => ({ attendee: a, isOrganizer: false }));
     return [organizerEntry, ...rest];
 }

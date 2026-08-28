@@ -435,7 +435,9 @@ class CalDAVService:  # pylint: disable=too-many-instance-attributes
             # The identity a copy in this calendar speaks for: its owner
             # when the server exposes it, otherwise the acting mailbox
             # (servers without owner metadata behave as before).
-            owner_lc = (cal.get("owner_email") or attendee_email or "").lower() or None
+            owner_lc = (
+                ascii_lower(cal.get("owner_email") or attendee_email or "") or None
+            )
             for ics_text in events:
                 summary = self._summarize_event(ics_text, cal["name"])
                 if summary is None:
@@ -473,7 +475,7 @@ class CalDAVService:  # pylint: disable=too-many-instance-attributes
             if not isinstance(attendees, list):
                 attendees = [attendees]
             for att in attendees:
-                addr = str(att).strip().lower()
+                addr = ascii_lower(str(att).strip())
                 if addr.startswith("mailto:"):
                     addr = addr[len("mailto:") :]
                 if addr == attendee_email_lc:

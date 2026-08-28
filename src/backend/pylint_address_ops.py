@@ -33,9 +33,12 @@ _ADDRESS_HINTS = (
     "local_part",
     "localpart",
     "domain",
-    "sender",
-    "recipient",
 )
+
+# A party is named by an address *or* by a display name, so these only mark a
+# receiver when it does not end in ``name``: ``sender_email`` is an address,
+# ``sender_name`` is the human-readable label beside it.
+_PARTY_HINTS = ("sender", "recipient")
 
 
 def _dotted(node) -> str:
@@ -99,7 +102,11 @@ class AddressOpsChecker(BaseChecker):
     def _is_address(receiver) -> bool:
         """True when the receiver's dotted source names an address."""
         dotted = _dotted(receiver).lower()
-        return any(hint in dotted for hint in _ADDRESS_HINTS)
+        if any(hint in dotted for hint in _ADDRESS_HINTS):
+            return True
+        return any(hint in dotted for hint in _PARTY_HINTS) and not dotted.endswith(
+            "name"
+        )
 
 
 def register(linter) -> None:

@@ -157,7 +157,15 @@ def envelope_address(address: str) -> str | None:
     Only the domain is rewritten, to a lowercase A-label. None means the
     address has no wire form at all (malformed, or a non-ASCII domain with
     no IDNA encoding), which is a permanent failure for that recipient.
+
+    This is the last step before an address becomes a ``MAIL FROM`` /
+    ``RCPT TO`` argument, so the full addr-spec is revalidated here even
+    though every upstream model already does: a local part carrying CR/LF
+    or a bare space has no wire form, and must not reach the socket.
     """
+    address = address.strip()
+    if not is_valid_addr_spec(address):
+        return None
     parts = split_address(address)
     if parts is None:
         return None

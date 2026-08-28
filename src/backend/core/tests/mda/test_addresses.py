@@ -199,6 +199,30 @@ class TestEnvelopeAddress:
     def test_refuses_malformed(self, value):
         assert envelope_address(value) is None
 
+    @pytest.mark.parametrize(
+        "value",
+        [
+            "foo\r\nRCPT TO:<victim@example.com>@example.com",
+            "foo\nDATA@example.com",
+            "a b@example.com",
+            "two,addresses@example.com",
+        ],
+    )
+    def test_refuses_a_local_part_with_no_wire_form(self, value):
+        """The result becomes a MAIL FROM / RCPT TO argument.
+
+        A local part carrying CR/LF could otherwise continue the SMTP
+        dialogue, and one carrying a comma or a bare space could split into
+        two recipients wherever the wire form is joined into a list.
+        """
+        assert envelope_address(value) is None
+
+    def test_still_accepts_a_quoted_local_part(self):
+        """Legal per RFC 5321, and the '@' inside must not be treated as one."""
+        assert envelope_address('"weird@local"@Example.com') == (
+            '"weird@local"@example.com'
+        )
+
     def test_domain_is_always_ascii_encodable(self):
         """The domain must survive DNS and the RCPT TO command either way."""
         wire = envelope_address("User+tag@Exemplé.example")

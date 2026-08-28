@@ -79,6 +79,11 @@ def test_flags_unicode_case_fold(source):
         "subject.lower()",
         "header_name.lower()",
         "value.casefold()",
+        # A party is named by an address or by a display name; only the
+        # address side is ours to fold.
+        "sender_name.lower()",
+        "recipient_name.lower()",
+        "message.sender_name.lower()",
         # Not a split on '@'.
         'email.split(",")',
         "email.split()",
