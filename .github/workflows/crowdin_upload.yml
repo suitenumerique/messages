@@ -6,6 +6,9 @@ on:
     branches:
       - main
 
+permissions:
+  contents: read
+
 jobs:
 
   synchronize-with-crowdin:
@@ -15,6 +18,8 @@ jobs:
     steps:
       - name: Checkout repository
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
       - name: Install frontend dependencies
         run: make install-frozen-front
       - name: Generate frontend source translations
@@ -30,7 +35,6 @@ jobs:
           download_translations: false
           create_pull_request: false
         env:
-          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           # A numeric ID, found at https://crowdin.com/project/<projectName>/tools/api
           CROWDIN_PROJECT_ID: ${{ secrets.CROWDIN_PROJECT_ID }}
 
