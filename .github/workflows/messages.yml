@@ -135,6 +135,14 @@ jobs:
       - name: Build frontend
         run: make build-front
 
+  test-front-distroless:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v6
+      - name: Build and smoke-test the frontend production image
+        run: make test-front-distroless
+
   check-api-state:
     runs-on: ubuntu-latest
     steps:

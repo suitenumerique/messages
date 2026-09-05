@@ -382,6 +382,29 @@ The following build-time variables are **deprecated**: they only act as fallback
 | `NEXT_PUBLIC_SENTRY_ENVIRONMENT` | `ENVIRONMENT` (backend environment) |
 | `NEXT_PUBLIC_MOBILE_OTA_MANIFEST_URL` | `MOBILE_OTA_MANIFEST_URL` |
 
+### Frontend Production Proxy (Caddy)
+
+The production frontend image runs Caddy (`src/frontend/caddy/Caddyfile`).
+Caddy reads these variables at start.
+
+| Variable | Default | Description | Required |
+|----------|---------|-------------|----------|
+| `PORT` | `8080` | Port Caddy listens on. Do not change it in the Docker image: the container HEALTHCHECK hardcodes 8080. | Optional |
+| `MESSAGES_FRONTEND_ROOT` | `/app` | Directory of the built SPA files that Caddy serves. | Optional |
+| `MESSAGES_FRONTEND_BACKEND_SERVER` | `localhost:8000` | `host:port` of the Django backend. Caddy proxies `/api/*`, `/static/*` and the admin URL to it. | Optional |
+| `DJANGO_ADMIN_IP_ALLOWLIST` | `0.0.0.0/0 ::/0` | Space-separated CIDR list of client IPs allowed on the Django admin URL. The default allows all (no filtering). Caddy answers 403 to denied requests. The client IP is the TCP peer unless `MESSAGES_FRONTEND_TRUSTED_PROXIES` is set. | Optional |
+| `MESSAGES_FRONTEND_TRUSTED_PROXIES` | _(empty)_ | Space-separated CIDR list of upstream proxies whose `X-Forwarded-For` sets the client IP. Empty = trust no proxy. Set only the exact addresses of your load balancer. Caddy walks the header from right to left and takes the first address that is not a trusted proxy. | Optional |
+
+To turn the admin filter off, leave `DJANGO_ADMIN_IP_ALLOWLIST`
+unset. Do not set it to an empty value: an empty list matches no client IP,
+so Caddy answers 403 to every admin request.
+
+On Scalingo, the routers set `X-Forwarded-For` and the container port is only
+reachable through them, but their IP ranges are not published. Set
+`MESSAGES_FRONTEND_TRUSTED_PROXIES=private_ranges` there: the Caddy keyword
+covers the private ranges the routers use. Do not use `private_ranges` when
+untrusted machines share the private network with Caddy.
+
 ## Development Tools
 
 ### Crowdin (Translations)

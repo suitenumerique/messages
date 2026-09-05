@@ -11,6 +11,8 @@ and this project adheres to
 ### Added
 
 - Setup guides for the authentication provider and the identity provider
+- IP allowlist for the Django admin URL in the frontend Caddy proxy
+- Smoke test for the frontend production image (make test-front-distroless)
 
 ### Changed
 

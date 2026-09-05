@@ -1,0 +1,173 @@
+#!/usr/bin/env bash
+# Smoke-test the frontend production image (runtime-prod: distroless +
+# Caddy + lprobe). The script picks the network mode from the daemon:
+# - bridge mode (normal Docker, Docker Desktop): publish port 8080 and
+#   reach the stub backend through host.docker.internal.
+# - host mode (a daemon without bridge networking): share the host
+#   network; the image default backend localhost:8000 then matches.
+# Host ports 8080 (Caddy, hardcoded in the image HEALTHCHECK) and 8000
+# (stub backend) must be free.
+# Requires: docker, curl, python3.
+set -o errexit -o nounset -o pipefail
+
+IMAGE="${1:-messages-frontend-distroless}"
+BASE=http://127.0.0.1:8080
+CID=""
+STUB_PID=""
+
+command -v python3 >/dev/null || { echo "FAIL: python3 is required." >&2; exit 1; }
+
+if docker network inspect bridge >/dev/null 2>&1; then
+  NET_MODE=bridge
+  STUB_BIND=0.0.0.0
+  RUN_FLAGS=(-p 8080:8080 --add-host=host.docker.internal:host-gateway
+    -e MESSAGES_FRONTEND_BACKEND_SERVER=host.docker.internal:8000)
+else
+  NET_MODE=host
+  STUB_BIND=127.0.0.1
+  RUN_FLAGS=(--network host)
+fi
+
+cleanup() {
+  [ -n "$CID" ] && docker rm -f "$CID" >/dev/null 2>&1 || true
+  [ -n "$STUB_PID" ] && kill "$STUB_PID" 2>/dev/null || true
+}
+trap cleanup EXIT
+trap 'cleanup; trap - EXIT; exit 130' INT TERM
+
+fail() {
+  echo "FAIL: $*" >&2
+  [ -n "$CID" ] && docker logs "$CID" >&2 || true
+  exit 1
+}
+
+port_open() { (exec 3<>"/dev/tcp/127.0.0.1/$1") 2>/dev/null; }
+
+for port in 8080 8000; do
+  if port_open "$port"; then
+    echo "FAIL: port ${port} is already in use on the host." >&2
+    echo "Stop the process that uses it, then run the test again." >&2
+    exit 1
+  fi
+done
+
+# The stub echoes X-Forwarded-For, which Caddy sets to {client_ip}: the
+# script reads it back to learn the client IP that Caddy sees. The wide
+# 0.0.0.0 bind in bridge mode is deliberate: the container reaches the
+# stub through the bridge gateway or the Docker Desktop VM, not through
+# the host loopback.
+python3 - "$STUB_BIND" <<'EOF' &
+import sys
+from http.server import BaseHTTPRequestHandler, HTTPServer
+class H(BaseHTTPRequestHandler):
+    def do_GET(self):
+        xff = self.headers.get("X-Forwarded-For", "")
+        self.send_response(200)
+        self.end_headers()
+        self.wfile.write(f"stub-backend\nXFF={xff}\n".encode())
+    def log_message(self, *args):
+        pass
+HTTPServer((sys.argv[1], 8000), H).serve_forever()
+EOF
+STUB_PID=$!
+
+for _ in $(seq 1 50); do
+  port_open 8000 && break
+  sleep 0.1
+done
+port_open 8000 || fail "the stub backend did not start on port 8000"
+
+start_container() {
+  CID=$(docker run -d "${RUN_FLAGS[@]}" "$@" "$IMAGE") \
+    || fail "docker run did not start the container"
+  for _ in $(seq 1 100); do
+    if curl -fs -o /dev/null --connect-timeout 3 --max-time 10 \
+      "$BASE/__lbheartbeat__" 2>/dev/null; then
+      return 0
+    fi
+    sleep 0.2
+  done
+  fail "container did not become ready on $BASE"
+}
+
+stop_container() {
+  docker rm -f "$CID" >/dev/null
+  CID=""
+}
+
+code() { curl -s -o /dev/null -w '%{http_code}' --connect-timeout 3 --max-time 10 "$@"; }
+
+assert_code() {
+  local expected="$1" label="$2"; shift 2
+  # curl prints 000 on a connection error; keep going so fail() can dump
+  # the container logs.
+  local got; got=$(code "$@" || true)
+  [ "$got" = "$expected" ] || fail "$label: expected HTTP $expected, got $got"
+  echo "ok: $label ($expected)"
+}
+
+# Boot + heartbeat: proves Caddy starts on distroless.
+start_container
+assert_code 200 "heartbeat" "$BASE/__lbheartbeat__"
+
+# Run the exact HEALTHCHECK command in the network namespace of the
+# running container, without a wait for the first health tick.
+docker run --rm --network "container:$CID" --entrypoint /usr/bin/lprobe "$IMAGE" \
+  -mode=http -port=8080 -endpoint=/__lbheartbeat__ \
+  || fail "lprobe healthcheck command"
+echo "ok: lprobe healthcheck"
+
+# Proxy path first: a 502 here means the container cannot reach the
+# stub (host firewall on the bridge, host.docker.internal:8000), not an
+# allowlist problem.
+assert_code 200 "api proxy" "$BASE/api/hello"
+
+# Backward compatibility: no allowlist -> admin reaches the stub.
+assert_code 200 "default admin passthrough" "$BASE/admin/"
+
+# The client IP Caddy sees depends on the network mode (loopback,
+# bridge gateway, Docker Desktop proxy): read it from the stub echo.
+CLIENT_IP=$(curl -s --max-time 10 "$BASE/api/echo" | sed -n 's/^XFF=//p' || true)
+[ -n "$CLIENT_IP" ] || fail "could not detect the client IP through the stub"
+case "$CLIENT_IP" in
+  *:*) CLIENT_CIDR="$CLIENT_IP/128" ;;
+  *) CLIENT_CIDR="$CLIENT_IP/32" ;;
+esac
+echo "ok: client IP detected ($CLIENT_CIDR, $NET_MODE mode)"
+stop_container
+
+# Allowlist without the client IP -> admin 403, the rest stays open.
+start_container -e 'DJANGO_ADMIN_IP_ALLOWLIST=192.0.2.0/24'
+assert_code 403 "admin denied" "$BASE/admin/"
+assert_code 403 "admin denied (no slash)" "$BASE/admin"
+assert_code 200 "SPA root still open" "$BASE/"
+assert_code 200 "api still open" "$BASE/api/hello"
+assert_code 403 "spoofed XFF ignored" -H 'X-Forwarded-For: 192.0.2.10' "$BASE/admin/"
+stop_container
+
+# Allowlist contains the client IP -> admin passes through.
+start_container -e "DJANGO_ADMIN_IP_ALLOWLIST=$CLIENT_CIDR"
+assert_code 200 "admin allowed for client IP" "$BASE/admin/"
+stop_container
+
+# Trusted proxy: XFF from a trusted peer sets client_ip.
+start_container \
+  -e "MESSAGES_FRONTEND_TRUSTED_PROXIES=$CLIENT_CIDR" \
+  -e 'DJANGO_ADMIN_IP_ALLOWLIST=192.0.2.0/24'
+assert_code 200 "trusted proxy: XFF accepted" -H 'X-Forwarded-For: 192.0.2.10' "$BASE/admin/"
+# trusted_proxies_strict: the rightmost untrusted address wins, so a
+# client-appended allowlisted prefix stays ineffective.
+assert_code 403 "trusted proxy: appended XFF chain denied" \
+  -H 'X-Forwarded-For: 192.0.2.10, 198.51.100.10' "$BASE/admin/"
+assert_code 403 "trusted proxy: no XFF -> peer IP denied" "$BASE/admin/"
+stop_container
+
+# private_ranges is the documented Scalingo value; the client IP is a
+# loopback or private bridge address in both modes, so it is trusted.
+start_container \
+  -e 'MESSAGES_FRONTEND_TRUSTED_PROXIES=private_ranges' \
+  -e 'DJANGO_ADMIN_IP_ALLOWLIST=192.0.2.0/24'
+assert_code 200 "private_ranges: XFF accepted" -H 'X-Forwarded-For: 192.0.2.10' "$BASE/admin/"
+stop_container
+
+echo "OK: frontend production image smoke test passed"

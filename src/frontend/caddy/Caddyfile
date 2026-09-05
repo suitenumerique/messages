@@ -1,6 +1,13 @@
 {
 	auto_https off
 	admin off
+	servers {
+		trusted_proxies static {$MESSAGES_FRONTEND_TRUSTED_PROXIES}
+		# Walk X-Forwarded-For right to left and take the first address
+		# that is not a trusted proxy. Without this, the leftmost entry
+		# wins and a client-appended prefix defeats the admin allowlist.
+		trusted_proxies_strict
+	}
 }
 
 :{$PORT} {
@@ -26,25 +33,34 @@
 
 		reverse_proxy /__heartbeat__/* {$MESSAGES_FRONTEND_BACKEND_SERVER:localhost:8000} {
 			header_up X-Forwarded-Proto https
-			header_up X-Forwarded-For {remote_host}
+			header_up X-Forwarded-For {client_ip}
 		}
 
 		# Django backend proxy
 		reverse_proxy /api/* {$MESSAGES_FRONTEND_BACKEND_SERVER:localhost:8000} {
 			header_up X-Forwarded-Proto https
-			header_up X-Forwarded-For {remote_host}
+			header_up X-Forwarded-For {client_ip}
 		}
+
+		# Django admin IP allowlist. The default allows all (no filtering).
+		# client_ip uses X-Forwarded-For only from the proxies listed in
+		# MESSAGES_FRONTEND_TRUSTED_PROXIES.
+		@admin_denied {
+			path /{$DJANGO_ADMIN_URL:admin} /{$DJANGO_ADMIN_URL:admin}/*
+			not client_ip {$DJANGO_ADMIN_IP_ALLOWLIST:0.0.0.0/0 ::/0}
+		}
+		respond @admin_denied 403
 
 		redir /{$DJANGO_ADMIN_URL:admin} /{$DJANGO_ADMIN_URL:admin}/ 301
 
 		reverse_proxy /{$DJANGO_ADMIN_URL:admin}/* {$MESSAGES_FRONTEND_BACKEND_SERVER:localhost:8000} {
 			header_up X-Forwarded-Proto https
-			header_up X-Forwarded-For {remote_host}
+			header_up X-Forwarded-For {client_ip}
 		}
 
 		reverse_proxy /static/* {$MESSAGES_FRONTEND_BACKEND_SERVER:localhost:8000} {
 			header_up X-Forwarded-Proto https
-			header_up X-Forwarded-For {remote_host}
+			header_up X-Forwarded-For {client_ip}
 		}
 
 		# --- Cache policy for the static SPA output ---

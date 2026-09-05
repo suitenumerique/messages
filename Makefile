@@ -153,6 +153,14 @@ test-back-distroless: build-back-distroless ## build and smoke-test the distrole
 		print(f'OK: Python {sys.version.split()[0]}, {ssl.OPENSSL_VERSION}')"
 .PHONY: test-back-distroless
 
+build-front-distroless: ## build the frontend distroless production image (Caddy + static bundle)
+	@docker build --target runtime-prod -t messages-frontend-distroless src/frontend/
+.PHONY: build-front-distroless
+
+test-front-distroless: build-front-distroless ## build and smoke-test the frontend distroless production image
+	@bin/smoke-test-front messages-frontend-distroless
+.PHONY: test-front-distroless
+
 build-pymta-distroless: build-python-base ## build the pymta distroless production image
 	@docker build --target runtime-distroless-prod -t messages-pymta-distroless -f src/mta-in/Dockerfile.pymta src/mta-in/
 .PHONY: build-pymta-distroless
