@@ -15,6 +15,7 @@ and this project adheres to
 ### Changed
 
 - Bump keycloak to 26.7.2
+- Bump Caddy to 2.11.4 and lprobe to v0.2.0 in the frontend image
 
 ### Fixed
 
