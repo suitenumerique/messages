@@ -13,7 +13,7 @@ mv src/backend/* ./
 mkdir -p messages_backend && touch messages_backend/__init__.py
 
 # Download Caddy binary
-CADDY_VERSION="2.9.1"
+CADDY_VERSION="2.11.4"
 curl -fsSL "https://github.com/caddyserver/caddy/releases/download/v${CADDY_VERSION}/caddy_${CADDY_VERSION}_linux_amd64.tar.gz" | tar -xz -C bin/ caddy
 chmod +x bin/caddy
 

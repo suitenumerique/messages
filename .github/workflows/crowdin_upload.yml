@@ -6,6 +6,9 @@ on:
     branches:
       - main
 
+permissions:
+  contents: read
+
 jobs:
 
   synchronize-with-crowdin:
@@ -14,13 +17,15 @@ jobs:
       DJANGO_CONFIGURATION: Build
     steps:
       - name: Checkout repository
-        uses: actions/checkout@v6
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
       - name: Install frontend dependencies
         run: make install-frozen-front
       - name: Generate frontend source translations
         run: make i18n-generate
       - name: crowdin action
-        uses: crowdin/github-action@v2
+        uses: crowdin/github-action@0d5670f539973aea2f01abce61a8989934df0025 # v3.0.2
         with:
           config: crowdin/config.yml
           upload_sources: true
@@ -30,7 +35,6 @@ jobs:
           download_translations: false
           create_pull_request: false
         env:
-          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           # A numeric ID, found at https://crowdin.com/project/<projectName>/tools/api
           CROWDIN_PROJECT_ID: ${{ secrets.CROWDIN_PROJECT_ID }}
 
