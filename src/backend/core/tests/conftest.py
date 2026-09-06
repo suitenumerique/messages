@@ -2,16 +2,49 @@
 
 # pylint: disable=import-outside-toplevel
 
+import itertools
 import os
+from datetime import timedelta
 from unittest import mock
 
 from django.db.models import F
+from django.utils import timezone
 
 import pytest
 
 USER = "user"
 TEAM = "team"
 VIA = [USER, TEAM]
+
+
+@pytest.fixture
+def monotonic_now(monkeypatch):
+    """Give every row created in this test a distinct, increasing timestamp.
+
+    ``created_at`` is ``auto_now_add``, so Django stamps it with
+    ``timezone.now()`` at insert and discards anything the factory passed.
+    Row order therefore follows the wall clock — and a wall clock is allowed
+    to move backwards. A host whose guest clock is being disciplined can step
+    back a couple of hundred milliseconds between two inserts, which hands the
+    later row the earlier ``created_at`` and silently rotates anything ordered
+    by it (``Thread.messaged_at`` is derived from exactly this field).
+
+    Patched on the module, which is where ``DateTimeField.pre_save`` reads it,
+    so no factory or test body needs to change: request the fixture and the
+    ordering assertions become a statement about insert order.
+
+    Starts from the real ``now`` rather than a fixed epoch, so tests that
+    filter on recency still behave, and advances 1ms per call — far enough
+    apart to be distinct, close enough that nothing ages meaningfully during
+    a test.
+    """
+    base = timezone.now()
+    counter = itertools.count()
+    monkeypatch.setattr(
+        timezone,
+        "now",
+        lambda: base + timedelta(milliseconds=next(counter)),
+    )
 
 
 @pytest.fixture

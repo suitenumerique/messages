@@ -12,10 +12,18 @@ from urllib.parse import urlparse
 
 from django.conf import settings
 
-import dns.resolver
-
 from core.mda.addresses import normalize_domain, split_address
 from core.mda.smtp import SmtpProxy, send_smtp_mail
+from core.services.dns.resolver import (
+    DNSSECError,
+    DNSSECMaterialUnavailableError,
+    InvalidNameError,
+    NoAnswerError,
+    NXDOMAINError,
+    ResolutionTimeoutError,
+    ServfailError,
+    resolve_answer,
+)
 from core.services.ssrf import SSRFValidationError, assert_public_ip
 
 logger = logging.getLogger(__name__)
@@ -27,24 +35,41 @@ def resolve_mx_records(domain: str) -> List[Tuple[int, str]]:
     Falls back to A record if no MX is found.
     """
     try:
-        answers = dns.resolver.resolve(domain, "MX", lifetime=10)
+        answer = resolve_answer(domain, "MX")
         mx_records = sorted(
-            [(r.preference, str(r.exchange).rstrip(".")) for r in answers],
+            [(r.preference, str(r.exchange).rstrip(".")) for r in answer.rrset],
             key=lambda x: x[0],
         )
         if mx_records:
             return mx_records
-    except dns.resolver.NoAnswer:
+    except NoAnswerError:
         logger.warning("No MX records for %s, falling back to A record.", domain)
 
         # Fallback to A record
         return [(10, domain)]
-    except dns.resolver.NoNameservers:
-        logger.warning("Domain %s has no nameservers", domain)
-    except (dns.resolver.NXDOMAIN, dns.resolver.YXDOMAIN):
-        logger.warning("Domain %s does not exist or is too long", domain)
-    except dns.resolver.LifetimeTimeout:
+    except ServfailError:
+        logger.warning("Domain %s has no working nameservers", domain)
+    except (NXDOMAINError, InvalidNameError):
+        logger.warning("Domain %s does not exist or is not a valid name", domain)
+    except ResolutionTimeoutError:
         logger.warning("DNS resolution timeout for %s", domain)
+    except DNSSECMaterialUnavailableError:
+        # A DNSKEY or DS could not be fetched, so no verdict was reached. Not
+        # a DNSSECError on purpose (see the resolver library): nothing failed
+        # to validate, we just never got the material — a lame nameserver in
+        # the zone's NS set, say. Transient, so warn rather than shout.
+        logger.warning("Could not retrieve DNSSEC material for MX of %s", domain)
+    except DNSSECError:
+        # The answer did not meet the resolver's DNSSEC requirements — today
+        # that means bogus signatures on a signed zone. Nothing that comes out
+        # of it can be trusted to name a mail server, so there is no MX to try
+        # — better to leave the recipients for retry than to hand the message
+        # to whatever a tampered answer points at.
+        #
+        # The base class, matching the DKIM and DNS-check paths: if the shared
+        # resolver is ever built with ``require_dnssec``, an insecure answer
+        # raises a sibling of this and must be refused the same way.
+        logger.error("DNSSEC validation failed for MX of %s, refusing to send", domain)
     except Exception as e:  # pylint: disable=broad-exception-caught
         logger.error("Error resolving MX for %s: %s", domain, e)
 
@@ -60,14 +85,15 @@ def resolve_hostname_ip(hostname: str) -> Optional[str]:
     (loopback / link-local / private / reserved / multicast / cloud-metadata)
     is skipped — the SMTP worker must never be steered into dialing internal
     infrastructure. Returns None when the host has no usable public IP, which
-    makes the caller skip this MX and ultimately permanent-fail the recipient
-    rather than connecting anywhere unsafe. Because we connect to exactly the
-    IP returned here, there is no DNS-rebinding window between check and dial.
+    makes the caller skip this MX; if that exhausts every MX for the domain,
+    ``send_message_via_mx`` marks the recipient ``retry=True`` rather than
+    failing it permanently, so a domain that only ever resolves to private
+    space rides the retry ladder to its end instead of bouncing at once.
+    Because we connect to exactly the IP returned here, there is no
+    DNS-rebinding window between check and dial.
     """
     try:
-        answers = dns.resolver.resolve(hostname, "A", lifetime=10)
-        for r in answers:
-            ip_str = str(r)
+        for ip_str in resolve_answer(hostname, "A").records:
             try:
                 assert_public_ip(ip_str, hostname)
             except SSRFValidationError as e:
