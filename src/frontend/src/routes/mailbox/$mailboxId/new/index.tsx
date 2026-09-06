@@ -1,54 +1,31 @@
-import { createFileRoute, useNavigate, useRouter } from "@tanstack/react-router";
-import { useTranslation } from "react-i18next";
-import { Spinner } from "@gouvfr-lasuite/ui-kit";
+import { createFileRoute, useNavigate } from "@tanstack/react-router";
+import { useEffect, useRef } from "react";
 
-import { MessageForm } from "@/features/forms/components/message-form";
-import { useMailboxContext } from "@/features/providers/mailbox";
+import { useComposeWindows } from "@/features/providers/compose-windows";
 import { MAILBOX_FOLDERS } from "@/features/layouts/components/mailbox-panel/components/mailbox-list";
-import { SKIP_LINK_TARGET_ID } from "@/features/ui/components/skip-link";
-import { useDocumentTitle } from "@/hooks/use-document-title";
 
-const NewMessageFormPage = () => {
-  const { t } = useTranslation();
+/**
+ * Backward-compatibility redirect: composing now happens in a floating
+ * window, so deep links to the old full-page form open a window over the
+ * mailbox default folder instead.
+ */
+const NewMessageRedirect = () => {
   const navigate = useNavigate();
-  const router = useRouter();
-  const { queryStates, selectedMailbox } = useMailboxContext();
+  const { mailboxId } = Route.useParams();
+  const { openComposeWindow } = useComposeWindows();
+  const hasRedirected = useRef(false);
 
-  useDocumentTitle(selectedMailbox?.name ?? selectedMailbox?.email, t("New message"));
+  useEffect(() => {
+    if (hasRedirected.current) return;
+    hasRedirected.current = true;
+    openComposeWindow({ mode: "new", mailboxId });
+    const defaultFolder = MAILBOX_FOLDERS()[0];
+    navigate({ to: "/mailbox/$mailboxId", params: { mailboxId }, search: defaultFolder.filter, replace: true });
+  }, [mailboxId, navigate, openComposeWindow]);
 
-  const handleClose = () => {
-    if (window.history.length > 1) {
-      router.history.back();
-    } else if (!selectedMailbox) {
-      navigate({ to: '/' });
-    } else {
-      const defaultFolder = MAILBOX_FOLDERS()[0];
-      navigate({ to: '/mailbox/$mailboxId', params: { mailboxId: selectedMailbox.id }, search: defaultFolder.filter });
-    }
-  };
-
-  if (queryStates.mailboxes.isLoading) {
-    return (
-      <div className="thread-view thread-view--loading">
-        <Spinner />
-      </div>
-    );
-  }
-
-  return (
-    <div className="new-message-form" id={SKIP_LINK_TARGET_ID}>
-      <div className="new-message-form-container">
-        <h1>{t("New message")}</h1>
-        <MessageForm
-          showSubject={true}
-          onSuccess={handleClose}
-          onClose={handleClose}
-        />
-      </div>
-    </div>
-  );
+  return null;
 };
 
 export const Route = createFileRoute("/mailbox/$mailboxId/new/")({
-  component: NewMessageFormPage,
+  component: NewMessageRedirect,
 });

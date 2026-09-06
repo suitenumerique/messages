@@ -1,7 +1,7 @@
 import { useState, useCallback, forwardRef, useEffect, useRef, useMemo } from "react";
 import clsx from "clsx";
 import { useTranslation } from "react-i18next";
-import { Icon, IconType, Spinner } from "@gouvfr-lasuite/ui-kit";
+import { Icon, IconType, Spinner, useResponsive } from "@gouvfr-lasuite/ui-kit";
 import { useMailboxContext } from "@/features/providers/mailbox";
 import { useConfig } from "@/features/providers/config";
 import { Banner } from "@/features/ui/components/banner";
@@ -12,8 +12,11 @@ import MailHelper from "@/features/utils/mail-helper";
 import useAbility, { Abilities } from "@/hooks/use-ability";
 import { useThreadViewContext } from "../../provider";
 import usePrevious from "@/hooks/use-previous";
+import { useComposeWindows } from "@/features/providers/compose-windows";
+import { useOpenDraftInWindow } from "@/features/message/use-open-draft-in-window";
 import ThreadMessageBody from "./thread-message-body";
 import MessageReplyForm from "../message-reply-form";
+import { ComposeDraftPlaceholder } from "../compose-draft-placeholder";
 import ThreadMessageHeader from "./thread-message-header";
 import ThreadMessageFooter from "./thread-message-footer";
 import { CalendarInvite } from "../calendar-invite";
@@ -154,19 +157,46 @@ export const ThreadMessage = forwardRef<HTMLSpanElement, ThreadMessageProps>(
             }
             // eslint-disable-next-line react-hooks/exhaustive-deps
         }, []);
-        const [replyFormMode, setReplyFormMode] = useState<MessageFormMode | null>(() => {
-            if (draftMessage?.is_draft) return 'reply';
-            if (!message.is_draft || message.is_trashed) return null;
-            return 'new';
-        });
+        // The inline form hosts compose sessions started here (reply/forward)
+        // and, on desktop, the edition of an existing draft (auto-opened
+        // below). On mobile and for drafts already opened in a compose
+        // window, the card shows a placeholder instead.
+        const [replyFormMode, setReplyFormMode] = useState<MessageFormMode | null>(null);
         const previousReplyFormMode = usePrevious<MessageFormMode | null>(replyFormMode);
 
         // Computed flags
         const showReplyForm = replyFormMode !== null;
+        // The draft handled by this card, when it is being edited in a
+        // floating compose window: the placeholder points at that window,
+        // which also prevents double edition.
+        const { getWindowByDraftId, openComposeWindow } = useComposeWindows();
+        const { isMobile } = useResponsive();
+
+        // On mobile the inline reply surface has no room: reply/forward
+        // opens the compose sheet directly. Re-asking for the same
+        // reply focuses the already-open window (reducer dedup).
+        const requestReplyForm = (mode: MessageFormMode | null) => {
+            if (mode && isMobile && selectedMailbox) {
+                openComposeWindow({
+                    mode,
+                    mailboxId: selectedMailbox.id,
+                    threadId: message.thread_id ?? undefined,
+                    parentMessageId: message.id,
+                });
+                return;
+            }
+            setReplyFormMode(mode);
+        };
+        const { openDraftInWindow } = useOpenDraftInWindow();
+        const cardDraft = draftMessage?.is_draft ? draftMessage : (message.is_draft ? message : undefined);
+        const detachedWindow = cardDraft ? getWindowByDraftId(cardDraft.id) : undefined;
+        // Existing draft with no active session nor window: show the
+        // clickable placeholder at its position in the feed.
+        const forcePlaceholder = !!cardDraft && !detachedWindow && !showReplyForm && !(message.is_draft && message.is_trashed);
         // When the card *is* a draft being composed, it must read as a pure
         // compose surface: the message chrome (sender header, reply/forward/fold
         // actions, body) is redundant and nonsensical on your own draft.
-        const renderAsComposeOnly = message.is_draft && showReplyForm;
+        const renderAsComposeOnly = message.is_draft && (showReplyForm || !!detachedWindow || forcePlaceholder);
         // Reply/Reply All/Forward require BOTH sending rights on the mailbox
         // AND full edit rights on the thread. A user with only VIEWER access
         // (mailbox or thread) must not see these buttons — the backend would
@@ -254,14 +284,25 @@ export const ThreadMessage = forwardRef<HTMLSpanElement, ThreadMessageProps>(
         }, [message.id, updateDeliveryStatus, invalidateMailbox, invalidateThreadsStats]);
 
         // Effects
+        // On desktop an existing draft is ready to edit as soon as the thread
+        // opens, like a reply session the user would have started. Mobile
+        // keeps the placeholder (the compose sheet owns edition there), and
+        // so does a draft already opened in a compose window.
         useEffect(() => {
-            const getReplyFormMode = (): MessageFormMode | null => {
-                if (draftMessage?.is_draft) return 'reply';
-                if (!message.is_draft || message.is_trashed) return null;
-                return 'new';
-            };
-            setReplyFormMode(getReplyFormMode());
-        }, [message, draftMessage]);
+            if (isMobile || !cardDraft || cardDraft.is_trashed || detachedWindow) return;
+            if (!canSendMessages || !canEditThread) return;
+            setReplyFormMode(cardDraft.parent_id ? "reply" : "new");
+            // Once per card: reopening the form after the user closed it (or
+            // closed the window that superseded it) must stay a user action.
+            // eslint-disable-next-line react-hooks/exhaustive-deps
+        }, []);
+
+        // A window opening on this card's draft (detach button, placeholder
+        // click) supersedes any inline session; when it closes the card shows
+        // the placeholder, not the form — drafts always resume in a window.
+        useEffect(() => {
+            if (detachedWindow) setReplyFormMode(null);
+        }, [detachedWindow]);
 
         // Smooth scroll to the reply form when it is opened by the user
         useEffect(() => {
@@ -273,6 +314,27 @@ export const ThreadMessage = forwardRef<HTMLSpanElement, ThreadMessageProps>(
                 }
             }
         }, [showReplyForm, threadViewContext.isReady, previousReplyFormMode]);
+
+        // Open the reply form when the mobile toolbar requests it. Only the
+        // latest message owns the reply affordance; the initial render is
+        // skipped so switching threads (the counter is shared) doesn't auto-open.
+        const replyRequestSeen = useRef(threadViewContext.replyRequest);
+        useEffect(() => {
+            if (threadViewContext.replyRequest === replyRequestSeen.current) return;
+            replyRequestSeen.current = threadViewContext.replyRequest;
+            if (!isLatest || !canSendMessages || !canEditThread || message.is_draft || message.is_trashed) return;
+            if (showReplyForm) {
+                // A reply draft is already being composed: put the caret back
+                // in its editor instead of resetting the form mode.
+                replyFormRef.current?.querySelector<HTMLElement>('[contenteditable="true"]')?.focus();
+            } else if (draftMessage) {
+                // A reply draft already exists: resume it in a compose window.
+                openDraftInWindow(draftMessage);
+            } else {
+                requestReplyForm(threadViewContext.replyRequestMode);
+            }
+            // eslint-disable-next-line react-hooks/exhaustive-deps
+        }, [threadViewContext.replyRequest, threadViewContext.replyRequestMode, isLatest, canSendMessages, canEditThread, message.is_draft, message.is_trashed, draftMessage, showReplyForm, openDraftInWindow]);
 
         useEffect(() => {
             if (isThreadMessageBodyLoaded && !queryStates.messages.isFetching) {
@@ -356,7 +418,7 @@ export const ThreadMessage = forwardRef<HTMLSpanElement, ThreadMessageProps>(
                             canRetry={canRetry}
                             hasSeveralRecipients={hasSeveralRecipients}
                             onToggleFold={toggleFold}
-                            onSetReplyFormMode={setReplyFormMode}
+                            onSetReplyFormMode={requestReplyForm}
                             onUpdateRecipientStatus={canUpdateDeliveryStatus ? handleUpdateRecipientStatus : undefined}
                         />
 
@@ -388,32 +450,38 @@ export const ThreadMessage = forwardRef<HTMLSpanElement, ThreadMessageProps>(
                             driveAttachments={driveAttachments}
                             showReplyButton={showReplyButton}
                             hasSeveralRecipients={hasSeveralRecipients}
-                            onSetReplyFormMode={setReplyFormMode}
+                            onSetReplyFormMode={requestReplyForm}
                             intersectionRef={ref}
                         />
                     </>
                 )}
-
-                {isMessageReady && showReplyForm && (
-                    <section
-                        className="thread-message__reply-form thread-message__reply-form--detached"
-                        ref={replyFormRef}
-                        onFocus={() => threadViewContext.setIsMessageFormFocused(true)}
-                        onBlur={(e) => {
-                            if (!e.currentTarget.contains(e.relatedTarget as Node)) {
-                                threadViewContext.setIsMessageFormFocused(false);
-                            }
-                        }}
-                    >
-                        <MessageReplyForm
-                            mode={replyFormMode}
-                            handleClose={handleCloseReplyForm}
-                            message={draftMessage || message}
-                            detached
-                        />
-                    </section>
+                {isMessageReady && (
+                    <footer className="thread-message__footer">
+                        {(detachedWindow || forcePlaceholder || showReplyForm) && (
+                            cardDraft && (detachedWindow || forcePlaceholder) ? (
+                                <ComposeDraftPlaceholder draft={cardDraft} detachedWindow={detachedWindow} />
+                            ) : (
+                                <section
+                                    className="thread-message__reply-form thread-message__reply-form--detached"
+                                    ref={replyFormRef}
+                                    onFocus={() => threadViewContext.setIsMessageFormFocused(true)}
+                                    onBlur={(e) => {
+                                        if (!e.currentTarget.contains(e.relatedTarget as Node)) {
+                                            threadViewContext.setIsMessageFormFocused(false);
+                                        }
+                                    }}
+                                >
+                                    <MessageReplyForm
+                                        mode={replyFormMode ?? undefined}
+                                        handleClose={handleCloseReplyForm}
+                                        message={draftMessage || message}
+                                        detached
+                                    />
+                                </section>
+                            )
+                        )}
+                    </footer>
                 )}
-
                 {!isFolded && !isMessageReady && (
                     <div className="thread-message__loading">
                         <Spinner />

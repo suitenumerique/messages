@@ -41,6 +41,10 @@
     display: grid;
     place-items: center;
     cursor: text;
+
+    & > svg {
+        color: var(--c--contextuals--content--semantic--neutral--tertiary);
+    }
 }
 
 .search__input {

@@ -1,0 +1,28 @@
+@use "../../../../../styles/utils" as *;
+
+// Two floating controls only: the quick filter hugs the left edge, the compose
+// button the right one — nothing in between to catch a thumb by mistake.
+.mobile-filter-compose-bar {
+  justify-content: space-between;
+
+  .thread-panel__filter-trigger {
+    display: inline-flex;
+    flex: 0 0 auto;
+
+    // The shared filter button is sized for a dense desktop toolbar: bring it
+    // up to the 40px touch box the compose button already uses.
+    .c__button {
+      width: 40px;
+      height: 40px;
+
+      @include control-surface;
+    }
+  }
+
+  // Primary action: keeps its brand background, borrows the shared shape.
+  &__compose.c__button {
+    flex: 0 0 auto;
+
+    @include control-surface;
+  }
+}

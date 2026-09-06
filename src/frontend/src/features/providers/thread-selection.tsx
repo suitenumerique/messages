@@ -23,6 +23,7 @@ interface ThreadSelectionState {
     toggleThread: (threadId: string) => void;
     selectRange: (threadId: string, fallbackAnchorId?: string) => void;
     selectAllThreads: () => void;
+    deselectAllThreads: () => void;
     clearSelection: () => void;
     enableSelectionMode: () => void;
     isAllSelected: boolean;
@@ -80,6 +81,16 @@ const useThreadSelectionState = (threads: Thread[] | undefined, selectedThread: 
         setSelectedThreadIds(allIds);
         setIsSelectionMode(true);
     }, [threads]);
+
+    /**
+     * Empty the selection but stay in selection mode, so the user keeps the
+     * bulk-action bar and can start picking again. Touch relies on this: its
+     * only other way back into selection mode is a long press on a thread.
+     */
+    const deselectAllThreads = useCallback(() => {
+        setSelectedThreadIds(new Set());
+        anchorThreadIdRef.current = null;
+    }, []);
 
     const clearSelection = useCallback(() => {
         setSelectedThreadIds(new Set());
@@ -179,6 +190,7 @@ const useThreadSelectionState = (threads: Thread[] | undefined, selectedThread: 
         toggleThread,
         selectRange,
         selectAllThreads,
+        deselectAllThreads,
         clearSelection,
         enableSelectionMode,
         isAllSelected,

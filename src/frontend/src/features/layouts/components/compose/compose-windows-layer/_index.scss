@@ -1,0 +1,48 @@
+@use "../../../../../styles/utils" as *;
+
+// Floating layer docked at the bottom right of the viewport. Sits above the
+// app header (z-index 1000) but below Cunningham modals (999999) and toasts.
+.compose-windows-layer {
+    position: fixed;
+    bottom: 0;
+    right: var(--c--globals--spacings--xl);
+    z-index: 1500;
+    display: flex;
+    // The windows array is MRU-ordered: most recent tab and the expanded
+    // window (always last) end up on the right, like Gmail.
+    flex-direction: row;
+    align-items: flex-end;
+    gap: var(--c--globals--spacings--sm);
+    max-width: calc(100vw - var(--c--globals--spacings--xl));
+    // Let clicks pass through the empty parts of the row.
+    pointer-events: none;
+
+    > * {
+        pointer-events: auto;
+    }
+}
+
+.compose-dock-overflow .c__button {
+    // Align the "+X" pill with the dock tab headers.
+    // padding-bottom: var(--c--globals--spacings--3xs);
+    border-bottom-left-radius: 0px;
+    border-bottom-right-radius: 0px;
+    border-bottom: none;
+    font-weight: 700;
+    background-color: var(--c--contextuals--background--surface--tertiary);
+    color: var(--c--contextuals--text--surface--primary);
+
+    &:hover,
+    &:focus-visible {
+      background-color: var(--c--contextuals--background--semantic--neutral--tertiary);
+    }
+}
+
+@media screen and (max-width: breakpoint(mobile)) {
+    .compose-windows-layer {
+        // Full-width so the mobile stack bar spans the viewport.
+        left: 0;
+        right: 0;
+        max-width: 100vw;
+    }
+}

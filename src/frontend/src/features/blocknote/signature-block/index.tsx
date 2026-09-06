@@ -1,6 +1,10 @@
 import { createReactBlockSpec, useBlockNoteEditor, useComponentsContext, useEditorSelectionChange, useEditorChange, useEditorState } from "@blocknote/react";
-import { Icon, IconSize, Spinner } from "@gouvfr-lasuite/ui-kit";
+import { IconSize, Spinner } from "@gouvfr-lasuite/ui-kit";
 import { useCallback, useMemo, useState } from "react";
+import { createPortal } from "react-dom";
+import { MobileToolbarButton } from "@/features/blocknote/mobile-toolbar/buttons";
+import { useMobileToolbarDrawer } from "@/features/blocknote/mobile-toolbar/drawer-context";
+import { Drawer } from "@/features/ui/components/drawer";
 import { Props } from "@blocknote/core";
 import DomPurify from "dompurify";
 import { keepPreviousData } from "@tanstack/react-query";
@@ -9,6 +13,8 @@ import { MessageComposerBlockSchema, MessageComposerInlineContentSchema, Message
 import { useTranslation } from "react-i18next";
 import { MessageComposerHelper } from "@/features/utils/composer-helper";
 import { useHtmlWithObjectUrls } from "@/features/blocknote/image-block/use-html-with-object-urls";
+import { Icon } from "@/features/ui/components/icon";
+import { Lock as LockIcon } from "@gouvfr-lasuite/ui-kit/icons";
 
 
 /**
@@ -48,6 +54,8 @@ function replaceLayoutTablesWithDivs(html: string): string {
     return doc.body.innerHTML;
 }
 
+const SIGNATURES_DRAWER_ID = "signature-templates";
+
 type SignatureTemplateSelectorProps = {
     mailboxId?: string;
     messageId?: string;
@@ -64,6 +72,9 @@ export const SignatureTemplateSelector = ({ mailboxId, messageId, templates = []
     const editor = useBlockNoteEditor<MessageComposerBlockSchema, MessageComposerInlineContentSchema, MessageComposerStyleSchema>();
     const { t } = useTranslation();
     const Components = useComponentsContext()!;
+    // Non-null when rendered inside the mobile toolbar: signatures are then
+    // picked from a bottom drawer instead of the desktop inline select.
+    const mobileDrawer = useMobileToolbarDrawer();
 
     const hasInlineContent = useEditorState({
         editor,
@@ -95,6 +106,16 @@ export const SignatureTemplateSelector = ({ mailboxId, messageId, templates = []
     if (!hasInlineContent) return null;
 
     if (isLoading) {
+        if (mobileDrawer) {
+            return (
+                <MobileToolbarButton
+                    icon={<Spinner size="sm" />}
+                    label={t("Loading templates...")}
+                    isDisabled
+                    onClick={() => {}}
+                />
+            );
+        }
         return (
             <Components.FormattingToolbar.Button
                 icon={<Spinner size="sm" />}
@@ -110,6 +131,16 @@ export const SignatureTemplateSelector = ({ mailboxId, messageId, templates = []
     }
 
     if (isForced) {
+        if (mobileDrawer) {
+            return (
+                <MobileToolbarButton
+                    icon={<Icon icon={LockIcon} size={IconSize.MEDIUM} />}
+                    label={t("This signature is forced")}
+                    isDisabled
+                    onClick={() => {}}
+                />
+            );
+        }
         return <Components.FormattingToolbar.Button
                 className="signature-block-selector signature-block-selector--forced"
                 icon={<Icon name="lock" size={IconSize.SMALL} />}
@@ -117,30 +148,30 @@ export const SignatureTemplateSelector = ({ mailboxId, messageId, templates = []
                 secondaryTooltip={t("You cannot modify it.")}
             >
                 <div className="signature-block-selector__content">
-                    <Icon name="lock" size={IconSize.SMALL} />
+                    <Icon icon={LockIcon} size={IconSize.SMALL} />
                     <p>{forcedTemplate.name}</p>
                 </div>
             </Components.FormattingToolbar.Button>;
     }
 
-    return (
-      <Components.FormattingToolbar.Select
-        key="signatureTemplateSelector"
-        items={[
-          {
+    // Shared between the desktop inline select and the mobile drawer list.
+    const signatureItems = [
+        {
             text: t("No signatures"),
             isSelected: !isSelected,
             isDisabled: false,
-            icon: <Icon name="drive_file_rename_outline" size={IconSize.SMALL} />,
+            icon: <Icon name="signature" size={IconSize.SMALL} />,
             onClick: () => {
                 editor.removeBlocks(["signature"]);
             },
-          },
-          ...templates.map((template) => ({
+        },
+        ...templates.map((template) => ({
             text: template.name,
             isSelected: isSelected === template.id,
             isDisabled: template.is_forced,
-            icon: <Icon name={template.is_forced ? "lock" : "drive_file_rename_outline"} size={IconSize.SMALL} />,
+            icon: template.is_forced
+                ? <Icon icon={LockIcon} size={IconSize.SMALL} />
+                : <Icon name="sign" size={IconSize.SMALL} />,
             onClick: () => {
                 const signatureBlock = editor.getBlock('signature');
 
@@ -183,8 +214,56 @@ export const SignatureTemplateSelector = ({ mailboxId, messageId, templates = []
                     MessageComposerHelper.insertSignatureBlock(editor, newBlock);
                 }
             }
-          })),
-        ]}
+        })),
+    ];
+
+    if (mobileDrawer) {
+        return (
+            <>
+                <MobileToolbarButton
+                    icon={<Icon name="signature" size={IconSize.MEDIUM} />}
+                    label={t("Signature")}
+                    isActive={!!isSelected || mobileDrawer.openId === SIGNATURES_DRAWER_ID}
+                    onClick={() => mobileDrawer.open(SIGNATURES_DRAWER_ID)}
+                />
+                {mobileDrawer.openId === SIGNATURES_DRAWER_ID &&
+                    mobileDrawer.slot &&
+                    createPortal(
+                        <Drawer title={t("Signature")} onClose={mobileDrawer.close}>
+                            <div className="drawer-list">
+                                {signatureItems.map((item) => (
+                                    <button
+                                        type="button"
+                                        key={item.text}
+                                        className={`drawer-list__item${item.isSelected ? " drawer-list__item--selected" : ""}`}
+                                        disabled={item.isDisabled}
+                                        aria-pressed={item.isSelected}
+                                        onClick={() => {
+                                            item.onClick();
+                                            mobileDrawer.close();
+                                        }}
+                                    >
+                                        {item.icon}
+                                        <span className="drawer-list__item-label">
+                                            {item.text}
+                                        </span>
+                                        {item.isSelected && (
+                                            <Icon name="check" size={IconSize.SMALL} />
+                                        )}
+                                    </button>
+                                ))}
+                            </div>
+                        </Drawer>,
+                        mobileDrawer.slot,
+                    )}
+            </>
+        );
+    }
+
+    return (
+      <Components.FormattingToolbar.Select
+        key="signatureTemplateSelector"
+        items={signatureItems}
       />
     );
   }

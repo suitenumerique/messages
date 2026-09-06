@@ -1,13 +1,35 @@
-.suite__toaster {
-  &__wrapper {
-    // Remove toastify styles
-    box-shadow: none;
-    background-color: transparent;
-    min-height: 0;
-    width: auto;
-    padding: 0;
-  }
+@use "../../../../styles/utils/" as *;
 
+// react-toastify only stretches its container below 480px, but our toasts
+// switch to bottom-center at the mobile breakpoint (768px): between the two,
+// the container stays at fit-content and lets wide toasts overflow the screen.
+@media (max-width: breakpoint("mobile")) {
+  .Toastify__toast-container--bottom-center {
+    width: 100%;
+    left: 0;
+    transform: none;
+  }
+}
+
+// Remove toastify styles. react-toastify injects its stylesheet at runtime,
+// after our bundled CSS: the compound selector outranks its single-class
+// rules (.Toastify__toast, .Toastify__toast-theme--light) regardless of
+// injection order.
+.Toastify__toast.suite__toaster__wrapper {
+  box-shadow: none;
+  background-color: transparent;
+  min-height: 0;
+  width: auto;
+  padding: 0;
+
+  @media (max-width: breakpoint("mobile")) {
+    min-width: 0;
+    width: 100%;
+    padding: var(--c--globals--spacings--xs);
+  }
+}
+
+.suite__toaster {
   &__item {
     border-width: 1px;
     border-style: solid;
@@ -21,6 +43,12 @@
     font-size: var(--c--globals--font--sizes--sm);
     font-weight: 500;
     font-family: var(--c--globals--font--families--base);
+
+    @media (max-width: breakpoint("mobile")) {
+      min-width: 0;
+      width: 100%;
+      max-width: 100%;
+    }
 
     &__content {
       display: flex;

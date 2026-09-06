@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useMemo, useRef, useState } from "react"
+import { ComponentProps, useCallback, useEffect, useMemo, useRef, useState } from "react"
 import { FEATURE_KEYS, useFeatureFlag } from "@/hooks/use-feature";
 import { ThreadActionBar } from "./components/thread-action-bar"
 import { ThreadMessage } from "./components/thread-message"
@@ -11,7 +11,7 @@ import { useDebounceCallback } from "@/hooks/use-debounce-callback"
 import { useIsSharedContext } from "@/hooks/use-is-shared-context"
 import { useVisibilityObserver } from "@/hooks/use-visibility-observer"
 import { MailboxRoleChoices, Message, Thread, ThreadEvent as ThreadEventModel } from "@/features/api/gen/models"
-import { Icon, IconType, Spinner } from "@gouvfr-lasuite/ui-kit"
+import { Spinner } from "@gouvfr-lasuite/ui-kit"
 import { Banner } from "@/features/ui/components/banner"
 import { SKIP_LINK_TARGET_ID } from "@/features/ui/components/skip-link"
 import { useTranslation } from "react-i18next"
@@ -22,16 +22,65 @@ import clsx from "clsx";
 import ThreadViewProvider, { useThreadViewContext } from "./provider";
 import useSpam from "@/features/message/use-spam";
 import ViewHelper from "@/features/utils/view-helper";
+import { isNativePlatform } from "@/features/native/platform";
+import { MobileThreadHeader } from "@/features/layouts/components/mobile/thread-header";
+import { MobileThreadToolbar, QuickReplyMode } from "@/features/layouts/components/mobile/thread-toolbar";
+import { ThreadAccessesWidget, type ThreadAccessesWidgetHandle } from "./components/thread-accesses-widget";
+import { Star, StarFilled, Trash, Error as ErrorIcon } from "@gouvfr-lasuite/ui-kit/icons";
+import useStarred from "@/features/message/use-starred";
+import { Button, Tooltip } from "@gouvfr-lasuite/cunningham-react";
+import { Icon } from "@/features/ui/components/icon";
 
 /**
- * Fallback height (px) used when measuring the sticky header before the
- * DOM ref is populated. Matches the rendered header height closely enough
+ * Fallback height (px) used when measuring the sticky action-bar row before
+ * the DOM ref is populated. Matches the rendered row height closely enough
  * for the IntersectionObserver to ignore content hidden behind it.
  */
-const STICKY_HEADER_FALLBACK_HEIGHT = 125;
+const STICKY_HEADER_FALLBACK_HEIGHT = 56;
 
 type MessageWithDraftChild = Message & {
     draft_message?: Message;
+}
+
+type ThreadStarButtonProps = {
+    thread: Thread;
+    size?: ComponentProps<typeof Button>["size"];
+    className?: string;
+}
+
+/**
+ * Star/unstar toggle shared by the full header subject and its compact
+ * recall inside the sticky action-bar row.
+ */
+const ThreadStarButton = ({ thread, size = "small", className }: ThreadStarButtonProps) => {
+    const { t } = useTranslation();
+    const { markAsStarred, markAsUnstarred } = useStarred();
+
+    return thread.has_starred ? (
+        <Tooltip content={t('Unstar this thread')}>
+            <Button
+                className={className}
+                onClick={() => markAsUnstarred({ threadIds: [thread.id] })}
+                aria-label={t('Unstar this thread')}
+                size={size}
+                color="warning"
+                variant="tertiary"
+                icon={<StarFilled className="thread-view__subject__star" aria-label={t('Starred')} />}
+            />
+        </Tooltip>
+    ) : (
+        <Tooltip content={t('Star this thread')}>
+            <Button
+                className={className}
+                onClick={() => markAsStarred({ threadIds: [thread.id] })}
+                aria-label={t('Star this thread')}
+                size={size}
+                color="neutral"
+                variant="tertiary"
+                icon={<Star className="thread-view__subject__star" aria-label={t('Starred')} />}
+            />
+        </Tooltip>
+    );
 }
 
 type ThreadViewComponentProps = {
@@ -56,6 +105,10 @@ const ThreadViewComponent = ({ threadItems, mailboxId, thread, showTrashedMessag
     }, 150);
 
     const rootRef = useRef<HTMLDivElement>(null);
+    const headerRef = useRef<HTMLElement>(null);
+    // True once the full header (subject + labels) is hidden behind or above
+    // the pinned action bar, which reveals the compact subject recall.
+    const [isHeaderOutOfView, setIsHeaderOutOfView] = useState(false);
     const isAISummaryEnabled = useFeatureFlag(FEATURE_KEYS.AI_SUMMARY);
     const { isReady, reset, hasBeenInitialized, setHasBeenInitialized } = useThreadViewContext();
     // Refs for all unread messages
@@ -133,6 +186,12 @@ const ThreadViewComponent = ({ threadItems, mailboxId, thread, showTrashedMessag
     const debouncedFlushMentions = useDebounceCallback(flushPendingMentions, 150);
     const isThreadTrashed = stats.trashed === stats.total;
     const isThreadArchived = stats.archived === stats.total;
+    // Anywhere in the trash view — even on a partially trashed thread —
+    // star/archive/spam actions are irrelevant, as they are on a fully
+    // trashed thread opened from any other view.
+    const isTrashContext = ViewHelper.isTrashedView() || isThreadTrashed;
+    // Starring a trashed or spam thread makes no sense, hide the toggle there.
+    const canStar = !isTrashContext && !thread.is_spam;
     // Talk mode (left/right alternating layout) only makes sense for an actual
     // back-and-forth: at least one received message AND at least one truly sent
     // one. A draft doesn't count as sent, so a lone draft stays full-width.
@@ -143,6 +202,16 @@ const ThreadViewComponent = ({ threadItems, mailboxId, thread, showTrashedMessag
         }
         return acc;
     }, messages[0]);
+    const isNative = isNativePlatform();
+    const accessesWidgetRef = useRef<ThreadAccessesWidgetHandle>(null);
+    // Quick-reply CTA of the mobile toolbar: reply-all when the latest
+    // message has several recipients (same rule as the message footer),
+    // nothing when it cannot be replied to. A message with an open reply
+    // draft keeps the CTA — pressing it focuses the existing form.
+    const quickReplyMode: QuickReplyMode | null =
+        latestMessage && !latestMessage.is_draft && !latestMessage.is_trashed
+            ? (latestMessage.to.length + latestMessage.cc.length > 1 ? "reply_all" : "reply")
+            : null;
 
     /**
      * Scroll to the bottom of the thread view.
@@ -155,6 +224,30 @@ const ThreadViewComponent = ({ threadItems, mailboxId, thread, showTrashedMessag
             });
         });
     }, []);
+
+    /**
+     * Reveals the compact subject recall once the full header (subject +
+     * labels) is no longer visible below the pinned action bar. The recall is
+     * a pure overlay — it never changes the document layout — so a plain
+     * IntersectionObserver is enough: no hysteresis, no scroll resync.
+     */
+    useEffect(() => {
+        const header = headerRef.current;
+        const root = rootRef.current;
+        if (!header || !root) return;
+        const stickyHeight = stickyContainerRef.current?.getBoundingClientRect().height || STICKY_HEADER_FALLBACK_HEIGHT;
+        const observer = new IntersectionObserver(
+            ([entry]) => setIsHeaderOutOfView(!entry.isIntersecting),
+            // Shrink the intersection area by the sticky row height so the
+            // header counts as gone as soon as it slips underneath the bar.
+            { root, rootMargin: `-${Math.round(stickyHeight)}px 0px 0px 0px` }
+        );
+        observer.observe(header);
+        return () => {
+            observer.disconnect();
+            setIsHeaderOutOfView(false);
+        };
+    }, [thread.id]);
 
     /**
      * Mark messages as read once they scroll into view. Tracks the latest
@@ -216,7 +309,9 @@ const ThreadViewComponent = ({ threadItems, mailboxId, thread, showTrashedMessag
                 scrollBehavior = 'smooth';
                 highlightTargetId = hash.slice(1);
             } else if (draftMessageIds.length > 0) {
-                selector = `#thread-message-${draftMessageIds[0]} > .thread-message__reply-form`;
+                // The draft renders either as an inline form (active session)
+                // or as the resume placeholder: land on whichever is there.
+                selector = `#thread-message-${draftMessageIds[0]} > :is(.thread-message__reply-form, .compose-draft-placeholder)`;
             } else {
                 const firstUnreadItem = threadItems.find((item) => {
                     if (item.type === 'message') {
@@ -319,23 +414,31 @@ const ThreadViewComponent = ({ threadItems, mailboxId, thread, showTrashedMessag
     return (
         <div id={SKIP_LINK_TARGET_ID} className={clsx("thread-view", { "thread-view--talk": isTalkMode })} ref={rootRef}>
             <div className="thread-view__sticky-container" ref={stickyContainerRef}>
-                <header className="thread-view__header">
-                    <div className="thread-view__header__top">
-                        <ThreadActionBar canUndelete={isThreadTrashed} canUnarchive={isThreadArchived} />
-                        <h2 className="thread-view__subject">
-                            {thread.has_starred &&
-                                <Icon name="star" type={IconType.FILLED} className="thread-view__subject__star" aria-label={t('Starred')} />
-                            }
+                {isHeaderOutOfView && (
+                    <div className="thread-view__sticky-subject">
+                        {canStar && <ThreadStarButton thread={thread} size="nano" />}
+                        {/* Purely visual recall of the h2 below, hidden from AT
+                            to avoid announcing the subject twice. */}
+                        <span className="thread-view__sticky-subject__text" aria-hidden="true">
                             {thread.subject || t('No subject')}
-                        </h2>
+                        </span>
                     </div>
-                </header>
+                )}
+                {isNative ? (
+                    <MobileThreadHeader onOpenAccesses={() => accessesWidgetRef.current?.open()} />
+                ) : (
+                    <ThreadActionBar canUndelete={isThreadTrashed} canUnarchive={isThreadArchived} />
+                )}
             </div>
-            {
-                thread.labels.length > 0 && (
+            <header className="thread-view__header" ref={headerRef}>
+                <h2 className="thread-view__subject">
+                    {canStar && <ThreadStarButton thread={thread} className="thread-view__subject__star-button" />}
+                    {thread.subject || t('No subject')}
+                </h2>
+                {thread.labels.length > 0 && (
                     <ThreadViewLabelsList labels={thread.labels} />
-                )
-            }
+                )}
+            </header>
             {isAISummaryEnabled && (
                 <ThreadSummary
                     threadId={thread.id}
@@ -347,7 +450,7 @@ const ThreadViewComponent = ({ threadItems, mailboxId, thread, showTrashedMessag
             <div className="thread-view__messages-list">
                 {thread.is_spam && (
                     <Banner
-                        icon={<Icon name="report" type={IconType.OUTLINED} />}
+                        icon={<Icon icon={ErrorIcon} />}
                         type="warning"
                         actions={[{ label: t('Remove report'), onClick: () => markAsNotSpam({ threadIds: [thread.id] }) }]}
                     >
@@ -356,7 +459,7 @@ const ThreadViewComponent = ({ threadItems, mailboxId, thread, showTrashedMessag
                 )}
                 {stats.trashed > 0 && !showTrashedMessages && (
                     <Banner
-                        icon={<Icon name="delete" type={IconType.OUTLINED} />}
+                        icon={<Icon icon={Trash} />}
                         type="info" actions={[{
                             label: t('Show'),
                             onClick: () => setShowTrashedMessages(!showTrashedMessages)
@@ -428,6 +531,21 @@ const ThreadViewComponent = ({ threadItems, mailboxId, thread, showTrashedMessag
                     onEventCreated={scrollToBottom}
                     containerRef={rootRef}
                 />
+            )}
+            {isNative && (
+                <>
+                    <MobileThreadToolbar
+                        thread={thread}
+                        isArchived={isThreadArchived}
+                        isTrashed={isTrashContext}
+                        quickReplyMode={quickReplyMode}
+                        onOpenAccesses={() => accessesWidgetRef.current?.open()}
+                    />
+                    {/* Modal shared by the header assignees widget and the
+                        drawer's "Manage accesses" entry; the desktop trigger
+                        lives in ThreadActionBar, hidden here. */}
+                    <ThreadAccessesWidget ref={accessesWidgetRef} accesses={thread.accesses} hideTrigger />
+                </>
             )}
         </div>
     )

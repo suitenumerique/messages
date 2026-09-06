@@ -19,7 +19,7 @@ import { MessageTemplateTypeChoices, useMailboxesMessageTemplatesAvailableList }
 import { Attachment } from '@/features/api/gen/models/attachment';
 import { MessageComposerHelper } from '@/features/utils/composer-helper';
 import { SmartTrailingBlock } from '@/features/blocknote/smart-trailing-block';
-import { createBlockNoteDictionary, dropUnsupportedBlocks, SUPPORTED_BLOCK_SPECS } from '@/features/blocknote/utils';
+import { createBlockNoteDictionary, createNativeLinkOptions, dropUnsupportedBlocks, SUPPORTED_BLOCK_SPECS } from '@/features/blocknote/utils';
 import { PasteColorSanitizer } from '@/features/blocknote/paste-sanitizer';
 import { handle } from '@/features/utils/errors';
 import { findOrphanInlineImages } from './orphan-inline-images';
@@ -67,6 +67,7 @@ type MessageComposerProps = FieldProps & {
     quoteType?: QuoteType;
     uploadInlineImage: (file: File) => Promise<{ url: string; blobId: string } | null>;
     uploadFiles: (files: File[]) => Promise<void>;
+    onDriveAttachmentPick?: (files: DriveFile[]) => void;
     removeInlineImage: (blobId: string) => void;
     attachments: (Attachment | DriveFile)[];
 }
@@ -81,7 +82,7 @@ type MessageComposerProps = FieldProps & {
  * creating real DOM elements on every keystroke.
  */
 
-export const MessageComposer = React.forwardRef<MessageComposerHandle, MessageComposerProps>(({ mailboxId, blockNoteOptions, defaultValue, quotedMessage, quoteType, disabled = false, draft, submitDraft, ensureDraft, uploadInlineImage, uploadFiles, removeInlineImage, attachments, ...props }, ref) => {
+export const MessageComposer = React.forwardRef<MessageComposerHandle, MessageComposerProps>(({ mailboxId, blockNoteOptions, defaultValue, quotedMessage, quoteType, disabled = false, draft, submitDraft, ensureDraft, uploadInlineImage, uploadFiles, onDriveAttachmentPick, removeInlineImage, attachments, ...props }, ref) => {
     const form = useFormContext<MessageFormValues>();
     const { t, i18n } = useTranslation();
     const { data: { data: activeSignatures = [] } = {}, isLoading: isLoadingSignatures } = useMailboxesMessageTemplatesAvailableList(
@@ -120,6 +121,22 @@ export const MessageComposer = React.forwardRef<MessageComposerHandle, MessageCo
     uploadFilesRef.current = uploadFiles;
 
     const editorRef = useRef<BlockNoteEditor<MessageComposerBlockSchema, MessageComposerInlineContentSchema, MessageComposerStyleSchema>>(null);
+
+    // Raised around editor mutations we perform ourselves (signature
+    // insertion/removal, messageId patch, initial serialization): their
+    // onChange must not mark the form dirty, otherwise a merely-consulted
+    // draft looks user-edited — dirtyFields drives the autosave, the
+    // blur-save and the window recycling check. BlockNote dispatches
+    // onChange synchronously with the transaction, so a plain ref works.
+    const isProgrammaticChangeRef = useRef(false);
+    const withProgrammaticChange = (mutate: () => void) => {
+        isProgrammaticChangeRef.current = true;
+        try {
+            mutate();
+        } finally {
+            isProgrammaticChangeRef.current = false;
+        }
+    };
 
     const uploadFile = async (file: File, blockId?: string) => {
         const attachment = await uploadInlineImageRef.current(file);
@@ -173,6 +190,12 @@ export const MessageComposer = React.forwardRef<MessageComposerHandle, MessageCo
             : [{ type: "paragraph", content: "" }];
 
         if (!quotedMessage) return initialContent;
+        // A resumed draft already carries its quoted-message block in the
+        // saved body: appending again would stack one more quote on every
+        // editor mount (each compose window opening).
+        if (initialContent.some((block) => block.type === "quoted-message")) {
+            return initialContent;
+        }
         return initialContent.concat([{
             type: "quoted-message",
             content: undefined,
@@ -196,6 +219,7 @@ export const MessageComposer = React.forwardRef<MessageComposerHandle, MessageCo
         initialContent: getInitialContent(),
         uploadFile,
         dictionary: createBlockNoteDictionary(locale, t),
+        ...createNativeLinkOptions(),
         ...blockNoteOptions,
         _tiptapOptions: {
             extensions: [SmartTrailingBlock, PasteColorSanitizer],
@@ -310,7 +334,7 @@ export const MessageComposer = React.forwardRef<MessageComposerHandle, MessageCo
 
     const handleChange = async (editor: BlockNoteEditor<MessageComposerBlockSchema, MessageComposerInlineContentSchema, MessageComposerStyleSchema>, submitNeeded: boolean = true) => {
         registerImageLoadListeners(editor);
-        form.setValue("messageDraftBody", JSON.stringify(editor.document), { shouldDirty: true });
+        form.setValue("messageDraftBody", JSON.stringify(editor.document), { shouldDirty: !isProgrammaticChangeRef.current });
 
         // Detect inline image blocks that were removed since the last change
         // and delete their corresponding attachment. If no attachment matches
@@ -333,8 +357,11 @@ export const MessageComposer = React.forwardRef<MessageComposerHandle, MessageCo
         const signatureId = (signatureBlock?.type === 'signature' ? signatureBlock.props.templateId : undefined);
         form.setValue("signatureId", signatureId);
 
-        // If signature block has changed, fire update immediately
-        if (submitNeeded && signatureId !== draft?.signature?.id) {
+        // If the user changed the signature block, fire update immediately.
+        // Programmatic applications (see withProgrammaticChange) are excluded:
+        // they must not persist anything on their own — the normalized body
+        // converges with the server on the next genuine user edit.
+        if (submitNeeded && !isProgrammaticChangeRef.current && signatureId !== draft?.signature?.id) {
             submitDraft?.();
         }
     }
@@ -345,7 +372,11 @@ export const MessageComposer = React.forwardRef<MessageComposerHandle, MessageCo
     useEffect(() => {
         editorRef.current = editor;
         if (!editor) return;
-        handleChange(editor, false);
+        // The initial serialization only mirrors the loaded content into the
+        // form; BlockNote normalization must not count as a user edit.
+        withProgrammaticChange(() => {
+            void handleChange(editor, false);
+        });
     }, [editor])
 
     useEffect(() => {
@@ -386,7 +417,7 @@ export const MessageComposer = React.forwardRef<MessageComposerHandle, MessageCo
             const shouldUpdateToNewDefault = !draft && signatureToUse && signatureToUse.id !== blockSignatureId;
 
             if (isSignatureStale || forcedSignatureMismatch || draftSignatureMismatch || shouldUpdateToNewDefault) {
-                editor.removeBlocks(["signature"]);
+                withProgrammaticChange(() => editor.removeBlocks(["signature"]));
             } else {
                 return;
             }
@@ -412,7 +443,7 @@ export const MessageComposer = React.forwardRef<MessageComposerHandle, MessageCo
             };
 
             // Put signature at the end of the document or before the quote block if it exists
-            MessageComposerHelper.insertSignatureBlock(editor, signatureBlock);
+            withProgrammaticChange(() => MessageComposerHelper.insertSignatureBlock(editor, signatureBlock));
 
             // Set the signatureId in the form
             form.setValue('signatureId', signatureToUse.id);
@@ -430,9 +461,9 @@ export const MessageComposer = React.forwardRef<MessageComposerHandle, MessageCo
         if (signatureBlock) {
             const blockProps = signatureBlock.props as BlockSignatureConfigProps;
             if (blockProps.messageId !== draft.id) {
-                editor.updateBlock('signature', {
+                withProgrammaticChange(() => editor.updateBlock('signature', {
                     props: { messageId: draft.id }
-                });
+                }));
             }
         }
     }, [editor, draft?.id]);
@@ -470,19 +501,22 @@ export const MessageComposer = React.forwardRef<MessageComposerHandle, MessageCo
                     onChange: (editor) => handleChange(editor, true),
                 }}
             >
-                <Toolbar>
-                    <MessageTemplateSelector
-                        mailboxId={mailboxId}
-                        messageId={draft?.id}
-                        ensureDraft={ensureDraft}
-                        uploadInlineImage={uploadInlineImage}
-                    />
+                <Toolbar
+                    onAttachFiles={uploadFiles}
+                    onDriveAttachmentPick={onDriveAttachmentPick}
+                >
                     <SignatureTemplateSelector
                         templates={activeSignatures}
                         isLoading={isLoadingSignatures}
                         mailboxId={mailboxId}
                         messageId={draft?.id}
                         defaultSelected={draft?.signature?.id}
+                    />
+                    <MessageTemplateSelector
+                        mailboxId={mailboxId}
+                        messageId={draft?.id}
+                        ensureDraft={ensureDraft}
+                        uploadInlineImage={uploadInlineImage}
                     />
                 </Toolbar>
             </BlockNoteViewField>

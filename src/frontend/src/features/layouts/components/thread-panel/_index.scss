@@ -1,4 +1,11 @@
+@use "../../../../styles/utils" as *;
+
 .thread-panel {
+    // How far the thread list slides up behind the header (see the negative
+    // margin on the list): the strip where threads dissolve into the header
+    // veil instead of being clipped at a hard edge.
+    --thread-panel-header-overlap: 3rem;
+
     display: flex;
     flex-direction: column;
     max-height: 100%;
@@ -8,11 +15,128 @@
     &__header {
         padding: var(--c--globals--spacings--sm) var(--c--globals--spacings--base);
         padding-right: var(--c--globals--spacings--xs);
+        // Above the list so the veil below paints over the threads sliding
+        // behind the header.
+        position: relative;
+        z-index: 2;
+
+        // Same floating treatment as the mobile bottom bar, mirrored
+        // downward: the list scrolls up behind the header and fades out in a
+        // blurry gradient over the overlap strip, instead of vanishing under
+        // an opaque edge — the panel reads as taller than it is.
+        &::after {
+            content: "";
+            position: absolute;
+            inset: 0 0 -10px 0;
+            // Behind the header controls, above the list.
+            z-index: -1;
+            pointer-events: none;
+            // Fully opaque down to the clip line (the scroll viewport's real
+            // top edge, hidden behind the header), so threads finish
+            // dissolving before the browser clips them.
+            background: linear-gradient(to bottom,
+                    var(--c--contextuals--background--surface--secondary) calc(100% - var(--thread-panel-header-overlap)),
+                    transparent 100%);
+            backdrop-filter: blur(6px);
+            // The blur dissolves along with the tint, so the veil has no
+            // visible bottom edge — same recipe as the bottom bar.
+            -webkit-mask-image: linear-gradient(
+                to bottom,
+                #000 0%, #000 60%,
+                rgba(0, 0, 0, .7) 78%,
+                rgba(0, 0, 0, .3) 90%,
+                transparent 100%
+            );
+            mask-image: linear-gradient(
+                to bottom,
+                #000 0%,
+                #000 60%,
+                rgba(0, 0, 0, .5) 78%,
+                rgba(0, 0, 0, .3) 90%,
+                transparent 100%
+            );
+        }
 
         .thread-panel__header--title-row {
             display: flex;
             align-items: center;
             justify-content: space-between;
+        }
+
+        // Touch layout: title and count stacked in one column, actions in the
+        // other. Bottom-aligned so the boxed bar spans both text lines instead
+        // of pushing the count row down to its own height. Selection mode
+        // overrides this — see the grid variant below.
+        .thread-panel__header--columns {
+            display: flex;
+            align-items: flex-end;
+            gap: var(--c--globals--spacings--xs);
+        }
+
+        // Selection mode. The title here is a running count ("12 conversations
+        // sélectionnées"), far longer than the folder name it replaces — and
+        // longest in French. Sharing its row with the action bar left it barely
+        // half the panel and wrapped it onto two or three lines, deepening the
+        // header every time the selection crossed a digit.
+        //
+        // So the title takes the whole first line, and the two boxed control
+        // groups face each other underneath — which they can do unaided, unlike
+        // the count row of the non-selection layout that has no right-hand
+        // group to balance the bar against.
+        .thread-panel__header--columns--selection {
+            display: grid;
+            grid-template-columns: 1fr auto;
+            grid-template-areas:
+                "title title"
+                "controls actions";
+            align-items: center;
+            row-gap: var(--c--globals--spacings--2xs);
+
+            // The wrapper exists only to stack title over count for the flex
+            // layout; here its two children are grid items in their own right.
+            .thread-panel__header--text {
+                display: contents;
+            }
+
+            .thread-panel__header--title-row {
+                grid-area: title;
+                min-width: 0;
+            }
+
+            .thread-panel__header--title {
+                // A full line to itself, so one line is all it needs. Truncate
+                // rather than wrap if a translation ever overflows: the header
+                // height must not depend on the selection size.
+                white-space: nowrap;
+                overflow: hidden;
+                text-overflow: ellipsis;
+                // The nudge that lines the title up with the count below is
+                // wrong once what sits underneath is the bordered controls box.
+                transform: none;
+            }
+
+            .thread-panel__header--details {
+                grid-area: controls;
+            }
+
+            .thread-panel__bar {
+                grid-area: actions;
+                // margin-left:auto is the flex-row trick for pushing the bar
+                // right; the grid column already sizes to it.
+                margin-left: 0;
+            }
+        }
+
+        .thread-panel__header--text {
+            // Owns the leftover width so the count can still ellipsize.
+            flex: 1 1 auto;
+            min-width: 0;
+        }
+
+        // Wrapper capturing the pointer position the context menu opened at:
+        // it must not add a box of its own around the filter button.
+        .thread-panel__filter-trigger {
+            display: inline-flex;
         }
 
         .thread-panel__header--title {
@@ -22,6 +146,12 @@
             line-height: 1.27;
             // Adjust title position to align with message count below
             transform: translateX(-3px);
+
+            @media screen and (max-width: breakpoint("mobile")) {
+                font-size: var(--c--globals--font--sizes--base);
+                font-weight: 700;
+                line-height: 1.375rem;
+            }
         }
 
         .thread-panel__header--details {
@@ -52,6 +182,37 @@
                 min-width: 0;
                 flex: 1 1 auto;
             }
+
+            .thread-panel__header--mailbox {
+                font-weight: 500;
+                color: var(--c--contextuals--content--semantic--neutral--primary);
+            }
+        }
+
+        // Selection mode on touch: select-all and the exit button on the left,
+        // bulk actions on the right. Nothing else — the count and mailbox name
+        // would leave no room, and the selection size is the title above.
+        .thread-panel__header--details--selection {
+            .c__checkbox {
+                // Big enough to be a comfortable touch target, unlike the
+                // mouse-sized default of the row above.
+                --c--components--forms-checkbox--size: 1.25rem;
+                // The nudge that lines the checkbox up with the title above
+                // is wrong once it sits inside a box of its own.
+                transform: none;
+            }
+        }
+
+        // Select-all + exit: the same floating box as the bulk actions facing
+        // them, so the row reads as two groups rather than loose controls.
+        .thread-panel__selection-controls {
+            display: flex;
+            align-items: center;
+            flex-shrink: 0;
+            gap: var(--c--globals--spacings--2xs);
+            padding: var(--c--globals--spacings--3xs) var(--c--globals--spacings--2xs);
+
+            @include control-surface;
         }
     }
 
@@ -64,8 +225,37 @@
         margin-left: auto;
     }
 
+    // On touch the actions read as one floating control, same box as the
+    // thread action bar and the native bottom bars.
+    .thread-panel__bar--floating {
+        padding: var(--c--globals--spacings--3xs);
+        gap: var(--c--globals--spacings--3xs);
+
+        @include control-surface;
+    }
+
     .thread-panel__threads_list {
+        // Fill the remaining height even when the threads don't, so the
+        // pull-to-refresh touch surface spans the whole panel and the gesture
+        // works below the last item. min-height:0 keeps overflow scrolling
+        // working inside the flex column.
+        flex: 1 1 auto;
+        min-height: 0;
         overflow-y: auto;
+        // Keep the native overscroll bounce from fighting the custom
+        // pull-to-refresh gesture on iOS/Android web views.
+        overscroll-behavior-y: contain;
+        // Extend the scroll viewport up behind the header, where the veil
+        // (see the header ::after) dissolves the threads before the clip
+        // line. The padding puts the resting position back where it was, so
+        // the strip only fills once the user scrolls — at rest the veil sits
+        // over the panel background and is invisible, and the pull-to-refresh
+        // indicator (which only shows at scrollTop 0) never gets veiled.
+        margin-top: calc(-1 * var(--thread-panel-header-overlap));
+        padding-top: var(--thread-panel-header-overlap);
+        // Keep keyboard focus (roving tabindex scrolling an option into view)
+        // clear of the veiled strip.
+        scroll-padding-top: var(--thread-panel-header-overlap);
         padding-inline: var(--c--globals--spacings--xs);
         display: flex;
         flex-direction: column;
@@ -89,14 +279,14 @@
         flex: 1;
         padding-inline: var(--c--globals--spacings--sm);
 
-        & > div {
+        &>div {
             font-size: var(--c--globals--font--sizes--h6);
             display: flex;
             flex-direction: column;
             align-items: center;
             gap: 1rem;
 
-            & > * {
+            &>* {
                 margin-block: 0;
             }
 
@@ -116,9 +306,8 @@
         gap: var(--c--globals--spacings--md);
         padding-inline: var(--c--globals--spacings--base);
 
-        & > .c__spinner {
+        &>.c__spinner {
             flex-shrink: 0;
         }
     }
 }
-

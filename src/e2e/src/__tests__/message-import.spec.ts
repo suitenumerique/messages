@@ -122,9 +122,11 @@ test.describe("Import Message", () => {
     // idling through it.
     await page.getByRole("button", { name: "Refresh" }).click();
 
-    // Then expect the new message to be visible in the thread list
+    // Then expect the new message to be visible in the thread list. The item's
+    // accessible name is senders + subject only: the date moved to
+    // `aria-describedby`, so naming it here would never match.
     await expect(
-      page.getByRole("option", { name: "Sardine 18/11/2025 An old message" })
+      page.getByRole("option", { name: "Sardine An old message" })
     ).toBeVisible({ timeout: 15_000 });
   });
 

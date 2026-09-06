@@ -14,18 +14,27 @@ import {
 } from "@blocknote/react";
 import { useMemo } from "react";
 
+import { DriveFile } from "@/features/forms/components/message-form/drive-attachment-picker";
+import { isNativePlatform } from "@/features/native/platform";
 import { ColumnLayoutInsertButton } from "./column-layout-block/column-layout-insert-button";
 import { ImageUploadButton } from "./image-upload-button";
+import { MobileToolbar } from "./mobile-toolbar";
+import { ToolbarSeparator } from "./toolbar-separator";
 import { isHiddenBlockTypeSelectItem } from "./utils";
-
-const ToolbarSeparator = () => (
-    <div className="bn-toolbar-separator" role="separator" />
-);
 
 type ToolbarProps = {
     children?: React.ReactNode;
+    /**
+     * Adds files as message attachments. Only surfaced by the mobile
+     * toolbar ("insert a file" popover); on desktop the attachment
+     * uploader below the editor covers it.
+     */
+    onAttachFiles?: (files: File[]) => Promise<void> | void;
+    /** Same as onAttachFiles, for files picked from Drive. */
+    onDriveAttachmentPick?: (files: DriveFile[]) => void;
 }
-export const Toolbar = ({ children }: ToolbarProps) => {
+
+const DesktopToolbar = ({ children }: ToolbarProps) => {
     const editor = useBlockNoteEditor();
     const filteredItems = useMemo(
         () => blockTypeSelectItems(editor.dictionary).filter(
@@ -38,6 +47,7 @@ export const Toolbar = ({ children }: ToolbarProps) => {
         <FormattingToolbar>
             <BlockTypeSelect key={"blockTypeSelect"} items={filteredItems} />
             <ImageUploadButton />
+            <CreateLinkButton key={"createLinkButton"} />
             <ColumnLayoutInsertButton />
 
             <ToolbarSeparator key={"separator-1"} />
@@ -73,10 +83,28 @@ export const Toolbar = ({ children }: ToolbarProps) => {
             <TextAlignButton textAlignment={"center"} key={"textAlignCenterButton"} />
             <TextAlignButton textAlignment={"right"} key={"textAlignRightButton"} />
 
-            <ToolbarSeparator key={"separator-4"} />
-
-            <CreateLinkButton key={"createLinkButton"} />
-            {children}
+            {children && (
+                <>
+                    <ToolbarSeparator key={"separator-4"} />
+                    {children}
+                </>
+            )}
         </FormattingToolbar>
-    )
+    );
+};
+
+export const Toolbar = ({ children, onAttachFiles, onDriveAttachmentPick }: ToolbarProps) => {
+    // The platform never changes at runtime, so branching to components with
+    // different hooks is safe.
+    if (isNativePlatform()) {
+        return (
+            <MobileToolbar
+                onAttachFiles={onAttachFiles}
+                onDriveAttachmentPick={onDriveAttachmentPick}
+            >
+                {children}
+            </MobileToolbar>
+        );
+    }
+    return <DesktopToolbar>{children}</DesktopToolbar>;
 }

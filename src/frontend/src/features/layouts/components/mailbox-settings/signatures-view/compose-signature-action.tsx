@@ -1,27 +1,30 @@
-import { Button, ButtonProps } from "@gouvfr-lasuite/cunningham-react";
-import { Icon } from "@gouvfr-lasuite/ui-kit";
+import { Button } from "@gouvfr-lasuite/cunningham-react";
+import { useResponsive } from "@gouvfr-lasuite/ui-kit";
 import { useTranslation } from "react-i18next";
 import { useModal } from "@gouvfr-lasuite/cunningham-react";
 import { Mailbox } from "@/features/api/gen";
 import { ModalComposeMailboxSignature } from "../modal-compose-mailbox-signature";
+import { Icon } from "@/features/ui/components/icon";
+import { Plus } from "@gouvfr-lasuite/ui-kit/icons";
 
 type ComposeSignatureActionProps = {
     mailbox: Mailbox;
-    size?: ButtonProps["size"];
 };
 
-export const ComposeSignatureAction = ({ mailbox, size }: ComposeSignatureActionProps) => {
+export const ComposeSignatureAction = ({ mailbox }: ComposeSignatureActionProps) => {
     const { t } = useTranslation();
     const modal = useModal();
+    const { isMobile } = useResponsive();
 
     return (
         <>
             <Button
-                size={size}
+                size={isMobile ? "small" : "nano"}
                 onClick={() => modal.open()}
-                icon={<Icon name="add" />}
+                icon={<Icon icon={Plus} />}
+                aria-label={isMobile ? t("New signature") : undefined}
             >
-                {t("New signature")}
+                {!isMobile && t("New signature")}
             </Button>
             <ModalComposeMailboxSignature
                 isOpen={modal.isOpen}

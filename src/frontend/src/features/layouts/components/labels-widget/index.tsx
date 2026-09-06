@@ -1,10 +1,11 @@
 import { Label, ThreadLabel, TreeLabel, useLabelsList } from "@/features/api/gen";
 import { Thread } from "@/features/api/gen/models";
-import { Icon, IconType, Spinner } from "@gouvfr-lasuite/ui-kit";
+import { Spinner, useResponsive } from "@gouvfr-lasuite/ui-kit";
 import { Button, Checkbox, Input, Tooltip } from "@gouvfr-lasuite/cunningham-react";
-import { RefObject, useEffect, useMemo, useRef, useState } from "react";
+import { forwardRef, RefObject, useEffect, useImperativeHandle, useMemo, useRef, useState } from "react";
 import { createPortal } from "react-dom";
 import { useTranslation } from "react-i18next";
+import { Drawer } from "@/features/ui/components/drawer";
 import { useMailboxContext } from "@/features/providers/mailbox";
 import StringHelper from "@/features/utils/string-helper";
 import useAbility, { Abilities } from "@/hooks/use-ability";
@@ -12,12 +13,24 @@ import { usePopupPosition } from "@/hooks/use-popup-position";
 import { LabelModal } from "@/features/layouts/components/mailbox-panel/components/mailbox-labels/components/label-form-modal";
 import useDeleteLabel from "@/features/message/use-delete-label";
 import useAddLabel from "@/features/message/use-add-label";
+import { Icon } from "@/features/ui/components/icon";
+import { Plus, TagAdd, Zoom } from "@gouvfr-lasuite/ui-kit/icons";
+
+export type LabelsWidgetHandle = {
+    open: () => void;
+};
 
 type LabelsWidgetProps = {
     threadIds: string[];
     // Fallback for a deep-linked single thread that is not in `threads.results`
     // yet (e.g. filter active). Lets the popup display the right checked state.
     initialLabels?: readonly ThreadLabel[];
+    /**
+     * Render only the popup/drawer, without the "Add label" trigger button.
+     * Used on mobile where the widget is opened through the `open()` handle
+     * (more-options drawer) instead of a dedicated button.
+     */
+    hideTrigger?: boolean;
 }
 
 type CreateModalState = {
@@ -46,7 +59,8 @@ const findTreeLabelById = (labels: readonly TreeLabel[], id: string): TreeLabel 
     return undefined;
 };
 
-export const LabelsWidget = ({ threadIds, initialLabels }: LabelsWidgetProps) => {
+export const LabelsWidget = forwardRef<LabelsWidgetHandle, LabelsWidgetProps>(
+    function LabelsWidget({ threadIds, initialLabels, hideTrigger = false }, ref) {
     const { t } = useTranslation();
     const { selectedMailbox, threads } = useMailboxContext();
     const canManageLabels = useAbility(Abilities.CAN_MANAGE_MAILBOX_LABELS, selectedMailbox);
@@ -57,6 +71,10 @@ export const LabelsWidget = ({ threadIds, initialLabels }: LabelsWidgetProps) =>
     const [isPopupOpen, setIsPopupOpen] = useState(false);
     const [createModal, setCreateModal] = useState<CreateModalState>({ isOpen: false, initialName: '' });
     const anchorRef = useRef<HTMLDivElement>(null);
+
+    useImperativeHandle(ref, () => ({
+        open: () => setIsPopupOpen(true),
+    }), []);
 
     const { addLabel } = useAddLabel();
     const { deleteLabel } = useDeleteLabel();
@@ -90,6 +108,7 @@ export const LabelsWidget = ({ threadIds, initialLabels }: LabelsWidgetProps) =>
     if (!canManageLabels) return null;
 
     if (isLoadingLabelsList) {
+        if (hideTrigger) return null;
         return (
             <div className="labels-widget" aria-busy={true}>
                 <Tooltip
@@ -104,7 +123,7 @@ export const LabelsWidget = ({ threadIds, initialLabels }: LabelsWidgetProps) =>
                         size="nano"
                         variant="tertiary"
                         aria-label={t('Add label')}
-                        icon={<Icon type={IconType.OUTLINED} name="new_label" />}
+                        icon={<Icon icon={TagAdd} />}
                     />
                 </Tooltip>
             </div>
@@ -113,16 +132,18 @@ export const LabelsWidget = ({ threadIds, initialLabels }: LabelsWidgetProps) =>
 
     return (
         <div className="labels-widget" ref={anchorRef}>
-            <Tooltip content={t('Add label')}>
-                <Button
-                    onClick={() => setIsPopupOpen(true)}
-                    size="nano"
-                    variant="tertiary"
-                    aria-label={t('Add label')}
-                    disabled={threadIds.length === 0}
-                    icon={<Icon type={IconType.OUTLINED} name="new_label" />}
-                />
-            </Tooltip>
+            {!hideTrigger && (
+                <Tooltip content={t('Add label')}>
+                    <Button
+                        onClick={() => setIsPopupOpen(true)}
+                        size="nano"
+                        variant="tertiary"
+                        aria-label={t('Add label')}
+                        disabled={threadIds.length === 0}
+                        icon={<Icon icon={TagAdd} />}
+                    />
+                </Tooltip>
+            )}
             {isPopupOpen && (
                 <LabelsPopup
                     anchorRef={anchorRef}
@@ -132,8 +153,15 @@ export const LabelsWidget = ({ threadIds, initialLabels }: LabelsWidgetProps) =>
                     labelCounts={labelCounts}
                     onAddLabel={handleAddLabel}
                     onDeleteLabel={handleDeleteLabel}
-                    onCreateLabel={(initialName) => setCreateModal({ isOpen: true, initialName })}
-                    closeOnEsc={!createModal.isOpen}
+                    // Closing before opening the modal: Cunningham modals carry
+                    // no z-index (react-modal portaled to body), so the popup
+                    // and its overlay would paint above the modal and swallow
+                    // its clicks. The created label is applied by `onSuccess`,
+                    // so the popup has nothing left to show anyway.
+                    onCreateLabel={(initialName) => {
+                        setIsPopupOpen(false);
+                        setCreateModal({ isOpen: true, initialName });
+                    }}
                 />
             )}
             <LabelModal
@@ -144,7 +172,7 @@ export const LabelsWidget = ({ threadIds, initialLabels }: LabelsWidgetProps) =>
             />
         </div>
     );
-};
+});
 
 export type LabelsPopupProps = {
     labels: TreeLabel[];
@@ -155,9 +183,6 @@ export type LabelsPopupProps = {
     onAddLabel: (labelId: string) => void;
     onDeleteLabel: (labelId: string, labelSlug: string) => void;
     onCreateLabel: (initialName: string) => void;
-    // Set to false when a modal stacked above should own Escape — otherwise
-    // the popup's capture-phase listener races with the modal's and both close.
-    closeOnEsc?: boolean;
 }
 
 type LabelOption = {
@@ -177,12 +202,14 @@ export const LabelsPopup = ({
     onAddLabel,
     onDeleteLabel,
     onCreateLabel,
-    closeOnEsc = true,
 }: LabelsPopupProps) => {
     const { t } = useTranslation();
+    const { isMobile } = useResponsive();
     const [searchQuery, setSearchQuery] = useState('');
     const totalThreads = threadIds.length;
-    const position = usePopupPosition(anchorRef, true, (rect) => {
+    // On mobile the widget renders as a bottom drawer instead: an anchored
+    // popup is cramped and half-covered by the keyboard there.
+    const position = usePopupPosition(anchorRef, !isMobile, (rect) => {
         const top = rect.bottom + 4;
         return {
             top,
@@ -192,7 +219,6 @@ export const LabelsPopup = ({
     });
 
     useEffect(() => {
-        if (!closeOnEsc) return;
         const onKey = (e: KeyboardEvent) => {
             if (e.key !== 'Escape') return;
             e.stopImmediatePropagation();
@@ -200,7 +226,7 @@ export const LabelsPopup = ({
         };
         window.addEventListener('keydown', onKey, true);
         return () => window.removeEventListener('keydown', onKey, true);
-    }, [onClose, closeOnEsc]);
+    }, [onClose]);
 
     const getFlattenLabelOptions = (label: TreeLabel): LabelOption[] => {
         const children: LabelOption[] = label.children.length > 0
@@ -241,62 +267,79 @@ export const LabelsPopup = ({
         }
     }
 
-    if (!position) return null;
+    if (!isMobile && !position) return null;
 
-    // Portal into #__next rather than document.body so the popup shares the
-    // same stacking context as Cunningham's Modal (rendered via ModalProvider
-    // inside #__next). Portalling to body places the popup on a higher paint
-    // layer than anything isolated inside #__next, regardless of z-index.
-    const portalTarget = document.getElementById('__next') ?? document.body;
+    const searchInput = (
+        <Input
+            className="labels-widget__popup__search"
+            type="search"
+            icon={<Icon icon={Zoom} />}
+            label={t('Search a label')}
+            value={searchQuery}
+            onChange={(e) => setSearchQuery(e.target.value)}
+            fullWidth
+        />
+    );
+
+    const optionsList = (
+        <ul className="labels-widget__popup__content">
+            {labelsOptions.map((option) => (
+                <li key={option.value}>
+                    <Checkbox
+                        checked={option.checked}
+                        indeterminate={option.indeterminate}
+                        onChange={() => handleToggle(option)}
+                        label={option.label}
+                    />
+                </li>
+            ))}
+            <li className="labels-widget__popup__content__empty">
+                <Button color="brand" variant="primary" onClick={() => onCreateLabel(searchQuery)} fullWidth icon={<Icon icon={Plus} />}>
+                    <span className="labels-widget__popup__content__empty__button-label">
+                    {searchQuery && labelsOptions.length === 0 ? t('Create the label "{{label}}"', { label: searchQuery }) : t('Create a new label')}
+                    </span>
+                </Button>
+            </li>
+        </ul>
+    );
 
     return createPortal(
-        <>
-            <div className="labels-widget__popup__overlay" onClick={onClose}></div>
-            <div
-                className="labels-widget__popup"
-                role="dialog"
-                aria-modal="true"
-                aria-label={t('Add labels')}
-                style={{
-                    position: 'fixed',
-                    top: position.top,
-                    right: position.right,
-                    maxHeight: position.maxHeight,
-                }}
-            >
-                <header className="labels-widget__popup__header">
-                    <h3><Icon type={IconType.OUTLINED} name="new_label" /> {t('Add labels')}</h3>
-                    <Input
-                        className="labels-widget__popup__search"
-                        type="search"
-                        icon={<Icon type={IconType.OUTLINED} name="search" />}
-                        label={t('Search a label')}
-                        value={searchQuery}
-                        onChange={(e) => setSearchQuery(e.target.value)}
-                        fullWidth
-                    />
-                </header>
-                <ul className="labels-widget__popup__content">
-                    {labelsOptions.map((option) => (
-                        <li key={option.value}>
-                            <Checkbox
-                                checked={option.checked}
-                                indeterminate={option.indeterminate}
-                                onChange={() => handleToggle(option)}
-                                label={option.label}
-                            />
-                        </li>
-                    ))}
-                    <li className="labels-widget__popup__content__empty">
-                        <Button color="brand" variant="primary" onClick={() => onCreateLabel(searchQuery)} fullWidth icon={<Icon type={IconType.OUTLINED} name="add" />}>
-                            <span className="labels-widget__popup__content__empty__button-label">
-                            {searchQuery && labelsOptions.length === 0 ? t('Create the label "{{label}}"', { label: searchQuery }) : t('Create a new label')}
-                            </span>
-                        </Button>
-                    </li>
-                </ul>
-            </div>
-        </>,
-        portalTarget
+        isMobile ? (
+            <>
+                <div
+                    className="labels-widget__popup__overlay labels-widget__popup__overlay--scrim"
+                    onClick={onClose}
+                ></div>
+                <div className="labels-widget__drawer">
+                    <Drawer title={t('Add labels')} onClose={onClose}>
+                        <div className="labels-widget__drawer__search">{searchInput}</div>
+                        {optionsList}
+                    </Drawer>
+                </div>
+            </>
+        ) : (
+            <>
+                <div className="labels-widget__popup__overlay" onClick={onClose}></div>
+                <div
+                    className="labels-widget__popup"
+                    role="dialog"
+                    aria-modal="true"
+                    aria-label={t('Add labels')}
+                    style={{
+                        position: 'fixed',
+                        top: position?.top,
+                        right: position?.right,
+                        maxHeight: position?.maxHeight,
+                    }}
+                >
+                    <header className="labels-widget__popup__header">
+                        <h3><Icon icon={TagAdd} /> {t('Add labels')}</h3>
+                        {searchInput}
+                    </header>
+                    {optionsList}
+                </div>
+            </>
+        ),
+        document.body
     );
 };

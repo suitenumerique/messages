@@ -97,7 +97,8 @@ App                         System browser                  Backend             
 Step by step:
 
 1. **App starts the flow.** `nativeLogin()` generates a PKCE verifier
-   (`generateCodeVerifier`), computes its S256 challenge, and opens
+   (`generateCodeVerifier`), computes its S256 challenge, **persists the
+   verifier** (see *Surviving the background* below), and opens
    `/api/v1.0/authenticate/?mobile_scheme=stmessages&code_challenge=…` in the
    system browser.
 2. **Backend flags the session.** `OIDCAuthenticationRequestView` checks the
@@ -134,13 +135,44 @@ The token is a bearer secret for ~60 s; **PKCE is what makes a stolen deep link
 useless** (the attacker lacks the verifier), which matters because custom URL
 schemes can be claimed by other apps.
 
-The `stmessages` return scheme must be registered natively on **both** platforms
-(source of truth: `AUTH_CALLBACK_SCHEME` in `auth.ts`): an `intent-filter` in
+The return scheme (`MOBILE_AUTH_SCHEME`, default `stmessages`) must be
+registered natively on **both** platforms — both substitute it at build time
+from that one variable, and `sso-invariants.test.ts` pins the wiring (source of
+truth: `AUTH_CALLBACK_SCHEME` in `auth.ts`): an `intent-filter` in
 `AndroidManifest.xml`, and `CFBundleURLTypes` in the iOS `Info.plist` — the
 latter is required because `ASWebAuthenticationSession` runs with
 `prefersEphemeralWebBrowserSession = false` (needed to share the IdP cookie), and
 in that mode iOS only delivers the callback for an app-registered scheme. Both
 are independent of `MOBILE_APP_ID`.
+
+### Surviving the background
+
+The whole flow runs while the app is **backgrounded** — the system browser is
+on top — and a backgrounded WebView is not a safe place to keep state. Two
+things can wipe the JS context mid-flow: the native updater installing a staged
+OTA bundle (`appMovedToBackground()` → `installNext()` reloads the WebView,
+whatever `autoUpdate` says), and Android reclaiming the process. Either one
+used to strand the login *and* poison the following attempts, because
+`@capacitor/app` notifies `appUrlOpen` with `retainUntilConsumed`: a callback
+nobody was listening for is retained and replayed to the **next** listener that
+subscribes, so the next attempt exchanged the previous attempt's expired token
+— forever, until the app was killed. Three rules keep that shut:
+
+- **The verifier outlives its context.** `nativeLogin()` persists
+  `{codeVerifier, startedAt}` before opening the browser, and the exchange
+  reads it back from storage. It is the only value the exchange cannot
+  re-derive. The record expires after 15 min (the user's time on the IdP, not
+  the 60 s life of the token) and is cleared on every exit path.
+- **One deep-link listener, for the whole app lifetime.** `deep-link.ts` owns
+  the single `appUrlOpen` subscription, registered at boot in `bootstrap.tsx`;
+  flows *capture* routing from it while they run. Nothing is ever left
+  unconsumed for a later attempt to inherit — a link arriving outside a flow
+  either resumes a pending login (`resumeNativeLogin`, which is how a login
+  whose context died still completes) or is dropped.
+- **OTA installs are held for the duration.** `openAuthSession()` brackets the
+  browser round-trip with `holdOtaInstall()` / `releaseOtaInstall()`, a Capgo
+  delay condition that makes `installNext()` return early. The staged bundle
+  applies at the next background *after* the flow instead.
 
 ### Cross-app SSO conditions (both bit us during the POC)
 
@@ -194,6 +226,20 @@ exchange and cached in `localStorage`:
   `X-CSRFToken`. This works with the backend's `CSRF_USE_SESSIONS` (the secret
   lives in the session, replayed by the native cookie jar).
 
+**CSRF `Origin` on HTTPS.** Against a secure backend (staging/prod), Django
+additionally requires an `Origin` or `Referer` on every mutation ("Referer
+checking failed - no Referer" otherwise) — headers the native HTTP client never
+sends on its own. `getHeaders()` injects `Origin: <API origin>` on native
+(same-origin for the backend, so no `CSRF_TRUSTED_ORIGINS` entry is needed),
+but the bridge's patched `window.fetch` normalizes headers through
+`new Request()`, whose browser "request" guard silently drops forbidden names —
+`Origin` included. Mutations (POST/PUT/PATCH/DELETE) therefore bypass the patch
+and call the `CapacitorHttp` plugin directly via `nativeFetch()`
+(`src/features/native/fetch.ts`), which passes headers verbatim to the same
+native stack; reads stay on the patched fetch and keep request cancellation.
+The plain-HTTP dev backend never triggers the check, which is why this only
+shows up outside dev.
+
 **Downloads** can't use `<a download>`: on native it escapes the WebView into the
 system browser, which has no session and gets a 401. `nativeDownloadFile()`
 fetches the bytes through `CapacitorHttp` (carrying the session), writes them to
@@ -216,27 +262,35 @@ soon as OTA is on: `ota.ts` refuses to apply a manifest when the build embeds no
 deprecated baked `NEXT_PUBLIC_MOBILE_OTA_MANIFEST_URL` is set without it), so an
 OTA-enabled app can never apply an unverified bundle.
 
-- **Publish** (`make ota-publish [VERSION=x] [CHANNEL=x]`, i.e. the frontend
+- **Publish** (`make mobile-ota-publish [VERSION=x] [CHANNEL=x]`, i.e. the frontend
   node script `src/frontend/scripts/publish-ota.mjs` — no Django involved):
   `capgo bundle zip` `dist/` (with `index.html` at the zip root), `capgo bundle
   encrypt` it (→ encrypted zip + encrypted `checksum` + `ivSessionKey`), upload
-  the *encrypted* zip to `channels/<channel>/bundles/<version>.zip`, and write
-  `channels/<channel>/manifest.json` = `{version, url, checksum, sessionKey}`
-  (the last two feed native verification). Publishing also refuses a version
-  that does not order above the channel's current manifest (mirror of the
-  client-side downgrade guard, see *Bundle versioning*; `--force` overrides).
-- **Consume** (`src/features/native/ota.ts`, called at startup):
-  `notifyOtaAppReady()` first (confirms the running bundle booted, so
-  a broken update auto-rolls-back on next launch), then
-  `checkAndApplyOtaUpdate()` polls the manifest URL served by the backend
+  the *encrypted* zip to `channels/<channel>/bundles/<version>.zip`, archive the
+  release metadata as `channels/<channel>/releases/<version>.json` (immutable —
+  what makes the version re-pointable later, see *Rollback*), and write
+  `channels/<channel>/manifest.json` = `{version, url, checksum, sessionKey,
+  sequence, publishedAt}` (`checksum` + `sessionKey` feed native verification;
+  `sequence` orders releases, see *Release sequence*). Publishing also refuses a
+  version that does not order above the channel's current manifest (mirror of
+  the legacy client guard; the sanctioned downgrade path is `make mobile-ota-rollback`,
+  `--force` overrides).
+- **Consume** (`src/features/native/ota.ts`, called at startup and on app
+  foreground with a 30 min throttle): `notifyOtaAppReady()` first (confirms the
+  running bundle booted, so a broken update auto-rolls-back on next launch),
+  then `checkAndStageOtaUpdate()` polls the manifest URL served by the backend
   `MOBILE_OTA_MANIFEST_URL` setting (`/config` endpoint, resolved in
-  `bootstrap.tsx`) and applies the
-  advertised bundle **only if it is genuinely newer** — it must differ from
-  `CapacitorUpdater.current()`, carry a *strictly greater* version count (see
-  *Bundle versioning*), and not be recorded as a prior failed
-  boot (see *Rollback*). It then downloads (passing `checksum` + `sessionKey`,
-  verified against the baked-in public key) and `set()`s it, which reloads the
-  WebView.
+  `bootstrap.tsx`) and accepts the advertised bundle only when it clears the
+  guards — different from `CapacitorUpdater.current()`, a *strictly greater*
+  `sequence` (see *Release sequence*; pre-sequence manifests fall back to the
+  version-count guard of *Bundle versioning*), never older than the native
+  builtin bundle, and not recorded as a prior failed boot (see *Rollback*). It
+  then downloads (passing `checksum` + `sessionKey`, verified against the
+  baked-in public key) and **stages** it via `next()` — no mid-session reload.
+  A persistent, non-dismissible toast (`use-ota-update-toast.tsx`, mounted by
+  the main layout) offers the single action "Update", which `reload()`s onto
+  the staged bundle; never tapping it is fine, Capgo applies the staged bundle
+  when the app next goes to the background or relaunches.
 
 OTA replaces the *web* bundle only. Anything native (a new Capacitor plugin, a
 permission, the Swift/Gradle side) still requires a store release.
@@ -261,7 +315,7 @@ zips under their channel also prevents two channels publishing the same commit
 (same `<count>-<sha>` id) from overwriting each other's bundle.
 
 The publish target comes from `MOBILE_OTA_CHANNEL` (or `--channel` /
-`make ota-publish CHANNEL=…`), and must match the channel the apps follow
+`make mobile-ota-publish CHANNEL=…`), and must match the channel the apps follow
 through the backend `MOBILE_OTA_MANIFEST_URL`: publishing a bundle built for
 another environment would strand the fleet on that other backend's config.
 
@@ -291,27 +345,59 @@ build (the public key is baked in), so treat it as long-lived.
 ### Bundle versioning
 
 The manifest `version` (and the `channels/<channel>/bundles/<version>.zip` key)
-is a **hybrid id**, `<count>-<sha>` — e.g. `1234-a1b2c3d`:
+is the **bare short commit sha**, pinned to 8 characters — e.g. `a1b2c3d4`. It
+carries *identity only*: release ordering lives entirely in the manifest
+`sequence` (see *Release sequence*). The `version` field is a free-form string —
+Capgo treats it as a *"version code/name"* and does **not** require semver — so
+a commit sha is fine.
 
-- `<count>` = `git rev-list --count HEAD`, a **monotonic** commit count that
-  orders releases;
-- `<sha>` = `git rev-parse --short HEAD`, tracing the exact source commit.
+The Makefile derives it as `MOBILE_OTA_BUILD_ID` (`git rev-parse --short=8`);
+`make mobile-ota-publish` uses it as the default `VERSION` (override with `VERSION=…`
+to pin a release). Scalingo deploys have no `.git` and derive the very same id
+as `${SOURCE_VERSION:0:8}` — the `--short=8` pin exists because the
+builtin-vs-manifest freshness check is a plain string equality, so both sides
+must produce identical ids for the same commit (see *Publishing from Scalingo
+deploys*).
 
-The Makefile derives it once as `MOBILE_OTA_BUILD_ID`; `make ota-publish` uses it as the
-default `VERSION` (override with `VERSION=…` to pin a release). The `version`
-field is a free-form string — Capgo treats it as a *"version code/name"* and does
-**not** require semver — so a commit-based id is fine. We use `-` (not the semver
-`+` build-metadata separator) to keep the id safe in the bundle URL/S3 key.
+Earlier releases used a hybrid `<count>-<sha>` id whose leading commit count
+carried the ordering. The count-based guards remain in the code and self-disable
+on sha ids (`versionCount()` returns `null`); they still bite on hybrid-era
+artifacts:
 
-The count drives **ordering, and the client enforces it**: `checkAndApplyOtaUpdate()`
-applies a manifest only when its count is *strictly greater* than the running
-bundle's, so **republishing an older build cannot downgrade the fleet** (an
-accidental old publish or a replayed old bundle is refused). A bare SHA would
-carry no such order. Ids without the numeric prefix — the literal `"builtin"`, or
-a manually pinned non-hybrid version — can't be ordered and fall back to a plain
-inequality check. Because the count comes from `git rev-list --count HEAD`, it is
-only monotonic **along a single line of history**: always publish OTA from the
-release branch, or two diverging branches can mint colliding counts.
+- **Legacy guard**: a manifest *without* a `sequence` (pre-sequence publish) is
+  only applied when its count is strictly greater than the running bundle's.
+  Sha ids can't be ordered and fall back to a plain inequality check.
+- **Native floor** (retired de facto): with hybrid ids,
+  `checkAndStageOtaUpdate()` refused to stage a bundle whose count was below
+  the native builtin's. Sha ids carry no order, so this bound no longer
+  applies — the compensating rule is operational: **cut store builds from a
+  commit at or behind the deployed web prod**, so a fresh install's builtin is
+  never ahead of the channel. A bundle older than its binary that fails to
+  boot is still caught by the automatic revert + blacklist (see *Rollback*).
+- **Publish-side accident guard**: `make mobile-ota-publish` refuses a *hybrid*
+  version that does not order above the channel's current manifest. Sha
+  publishes skip it — on the Scalingo path the guard's job is done structurally
+  (the manifest only moves on a successful deployment), and the dev channel is
+  disposable.
+
+### Release sequence
+
+`sequence` is a per-channel **monotonic release counter** carried by the
+manifest and bumped by *every* manifest write — publish, forced republish and
+rollback alike. It decouples the order of *releases* from the order of *builds*:
+devices persist the highest sequence they staged (WebView storage,
+`ota-applied-sequence`) and accept any manifest with a strictly greater one,
+**even when it points at an older build** — which is exactly what a rollback is.
+A stale or replayed manifest can never drag a device backward (its sequence is
+not above the floor), while a deliberate rollback always can (its sequence is).
+
+A device with **no persisted floor** — pre-sequence client just updated, or
+storage wiped — accepts the current manifest on trust-on-first-use, bounded by
+the native floor and by bundle signatures; its floor starts there. Migration
+caveat: a device still *running* a pre-sequence client ignores `sequence`
+entirely and keeps the count-only guard, so **it will not follow a rollback
+until it has received a sequence-aware build through a normal forward publish**.
+Ship this feature to the fleet before relying on `make mobile-ota-rollback`.
 
 **Builtin stamping.** `make mobile-build` passes `MOBILE_OTA_BUILD_ID` to `cap sync`,
 which stamps it as the store build's builtin bundle version
@@ -328,42 +414,126 @@ There are two kinds, plus a per-device safety net:
 - **Automatic (a bundle that fails to boot).** If the new bundle never calls
   `notifyAppReady()` (crash / white screen), the plugin reverts to the last
   good bundle — the builtin if there is none — on the next launch and records
-  the version as its *last failed update*. `checkAndApplyOtaUpdate()` mirrors
+  the version as its *last failed update*. `checkAndStageOtaUpdate()` mirrors
   that record (which self-clears on read) into WebView storage and refuses to
   re-apply the version, so a broken publish can't trap the app in a
   download → crash → revert → re-download loop. The record is boot-specific:
   a transient download failure does not blacklist the version, it is simply
   retried on the next check.
-- **Deliberate (a bundle that boots but is bad).** You **cannot** point the
-  manifest back at the older, lower-count bundle — the downgrade guard refuses
-  it. Roll *forward* instead: `git revert` the bad commit(s) and
-  `make ota-publish`. The revert has a **higher** count, so it passes the guard
-  and the fleet converges onto the (restored) good code with a clean git trail.
-  Escape hatch if you can't revert: `make ota-publish VERSION=<count-above-current>-<oldsha>`
-  from the old build — but that breaks the count↔commit invariant, so prefer the
-  revert.
+- **Deliberate (a bundle that boots but is bad).**
+  `make mobile-ota-rollback VERSION=<id> [CHANNEL=<name>]` re-points the channel
+  manifest at the archived release metadata
+  (`channels/<channel>/releases/<version>.json`) under a **higher sequence**:
+  no rebuild, devices follow at their next check (launch or foreground,
+  30 min throttle) even though the build id goes backward. Limits:
+  - Releases published **before** release archiving existed have no
+    `releases/<version>.json` (their encrypted `checksum`/`sessionKey` died
+    with the overwritten manifest) — for those, check out the old git ref and
+    `make mobile-ota-publish` it again; the fresh sequence makes devices follow.
+  - Devices still running a **pre-sequence client** ignore the rollback (see
+    *Release sequence*).
+  - A device that **blacklisted** the target version (it boot-looped there)
+    skips it — re-staging it would just loop again. Those devices wait for the
+    next forward publish. Related caveat: the blacklist is keyed by version id
+    while `--force` can re-point an id at new content, so recovery publishes
+    must use a fresh id (the default sha id does: a recovery publish comes from
+    a new commit).
+
+  Rolling *forward* (`git revert` + `make mobile-ota-publish`) remains the cleanest
+  exit from an incident when build time is not the constraint: it reaches even
+  blacklisted/pre-sequence devices.
+
+  On a Scalingo-driven channel, the nominal rollback is neither of these:
+  **redeploy the old commit** (see *Publishing from Scalingo deploys*).
 - **Per-device safety net.** `CapacitorUpdater.reset()` returns a single device to
   the builtin (store) bundle, which is always bootable. Not fleet-wide; useful to
   wire onto a support/debug action.
 
-**Never prune old bundles from the bucket** — the plugin's fallback and any
-revert build may still reference them.
+**Never prune old bundles or `releases/*.json` from the bucket** — the plugin's
+fallback, a rollback and any revert build may still reference them.
+
+### Publishing from Scalingo deploys
+
+On Scalingo the OTA release is not a separate pipeline: **every deployment of an
+OTA-configured app publishes the exact `dist/` the web is about to serve**, in
+two halves that bracket the deployment outcome:
+
+1. **Stage, at build time** — the frontend `scalingo-postbuild` npm script
+   runs `deploy/paas/scalingo_stage_ota` inside the Node.js buildpack compile,
+   the only window where node and the devDependencies `publish-ota.mjs` needs
+   are both available (gated on `MOBILE_OTA_S3_BUCKET`; with the gate set, any
+   other missing `MOBILE_OTA_*` variable fails the build loudly). It runs
+   `publish-ota.mjs --stage-only --version ${SOURCE_VERSION:0:8}`: zip, encrypt,
+   upload the bundle and archive `releases/<sha8>.json` — but **never touch the
+   channel manifest**. Any failure here fails the whole deployment, so a broken
+   bundle can't ship; a deployment that fails *later* (python buildpack,
+   container boot) leaves at worst orphaned bundle artifacts, never a moved
+   pointer. A marker (`build/ota-release-id`) records the staged
+   version+channel for step 2.
+2. **Flip, at postdeploy** — the Procfile chains
+   `python deploy/paas/scalingo_ota_promote.py` after `migrate`. Scalingo runs
+   the `postdeploy` hook only when the deployment is otherwise successful, and
+   a hook failure marks the deployment `hook-error` with the previous version
+   kept serving ([postdeploy hook](https://doc.scalingo.com/platform/app/postdeploy-hook)).
+   The script re-points `manifest.json` at the staged release under a bumped
+   `sequence` (idempotent: a retry or a same-commit redeploy is a no-op).
+
+The invariant this buys: **the channel manifest can only ever point at a
+version that actually serves as the web prod** — mobile and web move as one, in
+both directions:
+
+- **Rollback = redeploy the old commit.** Nothing OTA-specific to do: the build
+  re-stages that commit's bundle (`releases/<sha8>.json` usually already
+  exists) and the flip re-points the manifest under a higher `sequence`;
+  devices follow backward at their next check. `make mobile-ota-rollback` remains a
+  dev/emergency tool — on a Scalingo-driven channel it can desync mobile from
+  web, so reach for a redeploy instead.
+- The flip runs seconds *before* the routing switch, so there is a short window
+  where the manifest is new and the web still old — same order of magnitude as
+  CDN propagation, and the best ordering Scalingo offers (nothing runs "after
+  the switch").
+
+Operational rules:
+
+- **Cut store builds from a commit at or behind the deployed web prod.** The
+  builtin stamp (`make mobile-build`, sha8) then matches a published manifest —
+  no spurious first-launch download/toast — and a fresh install can never sit
+  ahead of the channel (the native floor no longer guards this, see *Bundle
+  versioning*).
+- The vite build must inline `MOBILE_OTA_SIGNING_PUBLIC_KEY_B64` and
+  `MOBILE_AUTH_SCHEME` — the hook refuses to publish without either, because
+  each defaults to something that only breaks on device: a key-less bundle
+  refuses every later update, and a bundle carrying the generic `stmessages`
+  scheme cannot log in at all on an environment that uses its own (the backend
+  answers `400` on `/authenticate/`, and the deep link would not route back to
+  the app). Set `MOBILE_AUTH_SCHEME` on the PaaS app to the very value its
+  store/dev builds were built with, even when that is the default: the web
+  deploy is also the OTA publisher, so a variable that only exists in
+  `frontend.local` reaches the native shells and never the bundle that
+  replaces them.
+- `NEXT_PUBLIC_API_ORIGIN` must be **absolute** — the same dist serves the
+  mobile app from a `capacitor://` origin where a relative origin resolves
+  nowhere.
+- The backend of the same environment points devices at the channel:
+  `MOBILE_OTA_MANIFEST_URL=<MOBILE_OTA_PUBLIC_BASE_URL>/channels/<channel>/manifest.json`.
 
 ## Codebase map
 
 | Concern | Location |
 | --- | --- |
-| Capacitor config (appId via `MOBILE_APP_ID`, plugins, HTTP, SystemBars, OTA signing key) | `src/frontend/capacitor.config.ts` |
+| Capacitor config (appId via `MOBILE_APP_ID`, store version via `appVersion`, plugins, HTTP, SystemBars, OTA signing key) | `src/frontend/capacitor.config.ts` |
+| Versions shown to users (native + web) | `src/frontend/src/features/hooks/use-app-version.ts` |
 | Platform detection | `src/frontend/src/features/native/platform.ts` |
 | PKCE helpers | `src/frontend/src/features/native/pkce.ts` |
 | System-browser session | `src/frontend/src/features/native/auth-session.ts` |
 | Native login / logout | `src/frontend/src/features/native/auth.ts` |
+| Deep-link dispatcher (single `appUrlOpen` owner) | `src/frontend/src/features/native/deep-link.ts` |
 | Native CSRF token store | `src/frontend/src/features/native/csrf.ts` |
 | Native download → share | `src/frontend/src/features/native/download.ts` |
 | Native push client (enable / on-launch refresh / tap deep-link) | `src/frontend/src/features/native/push.ts` |
 | Push opt-in marker + token-hash contract (shared web/native) | `src/frontend/src/features/push/shared.ts` |
 | OTA client | `src/frontend/src/features/native/ota.ts` |
-| Startup wiring (OTA, `native` html class) | `src/frontend/src/main.tsx` |
+| Startup wiring (OTA, deep links, `native` html class) | `src/frontend/src/bootstrap.tsx` |
 | CSRF / API origin wiring | `src/frontend/src/features/api/utils.ts` |
 | Login/logout routing | `src/frontend/src/features/auth/index.tsx` |
 | iOS ASWebAuthenticationSession plugin | `src/frontend/ios/App/App/WebAuthSessionPlugin.swift` |
@@ -375,6 +545,7 @@ revert build may still reference them.
 | Backend mobile-aware OIDC views | `src/backend/core/authentication/views.py` |
 | Backend token → session exchange & mobile logout | `src/backend/core/api/viewsets/mobile_auth.py` |
 | OTA publish scripts | `src/frontend/scripts/publish-ota.mjs`, `create-ota-bucket.mjs`, `ota-lib.mjs` |
+| Scalingo OTA staging (frontend `scalingo-postbuild`) + flip | `deploy/paas/scalingo_stage_ota`, `deploy/paas/scalingo_ota_promote.py` |
 
 **Native/web branching contract:** the single source of truth is
 `isNativePlatform()`. `main.tsx` also tags `<html class="native">` so stylesheets
@@ -392,6 +563,16 @@ can opt into mobile-only chrome without every component re-deriving the platform
   the native toolchains below. If you do run `npm` on the host anyway, it must
   be **Node 22** (`>=22 <23`): any other version corrupts the lockfile and
   breaks the container build.
+- **The frontend dependencies live in `src/frontend/node_modules` on the host**,
+  installed there by the container through the bind mount (`make update`,
+  `make install-front`, …). Gradle and SPM resolve the Capacitor plugins through
+  relative paths into that tree (`../node_modules/@capacitor/<plugin>/android`,
+  `../../../node_modules/@capacitor/<plugin>`), so it must not be masked by a
+  Docker volume — that is why `node_modules` is deliberately kept inside the bind
+  mount, see `compose.yaml`. If those paths are missing, run
+  `make install-frozen-front`. The installed binaries are the container's (Linux)
+  ones: Gradle and Xcode only read sources from them, but never point a host
+  `npm`/`vite` at that tree.
 - Backend settings must allowlist the scheme:
   `MOBILE_AUTH_CALLBACK_SCHEMES=["stmessages"]` (empty list = mobile login
   disabled). See [env.md](./env.md).
@@ -447,14 +628,15 @@ with a bare `npm run build` would inline none of them. The native compile, IDE,
 | Command | What it does |
 | --- | --- |
 | `make mobile-build` | web build (container) + `cap sync` into `ios/` and `android/` |
-| `make mobile-assets` | regenerate native icons & splashscreens from `src/frontend/assets/` |
+| `make mobile-assets` | regenerate native icons & splashscreens from the vector mark — see [`mobile-assets.md`](./mobile-assets.md) |
 | `make mobile-android` | `mobile-build`, then open the Android project in Android Studio (host) |
 | `make mobile-android-run` | `mobile-build` + `gradlew assembleDebug` + `adb install` + `adb reverse` (host) |
+| `make mobile-android-release` | `mobile-build` + `gradlew bundleRelease` → signed `.aab` for Play (host, see [Publishing to Google Play](#publishing-to-google-play)) |
 | `make mobile-android-reverse` | (re)apply the `adb reverse` port mapping |
 | `make mobile-ios` | `mobile-build`, then open the Xcode project (host, macOS) |
 | `make mobile-ota-keygen` | generate a per-instance OTA signing key pair (base64 PEMs) |
 | `make mobile-ota-bucket` | create the public `messages-ota` bucket |
-| `make ota-publish [VERSION=x] [CHANNEL=x]` | build + publish a signed OTA bundle and its channel manifest (VERSION defaults to `<count>-<sha>`, CHANNEL to `MOBILE_OTA_CHANNEL`) |
+| `make mobile-ota-publish [VERSION=x] [CHANNEL=x]` | build + publish a signed OTA bundle and its channel manifest (VERSION defaults to `<count>-<sha>`, CHANNEL to `MOBILE_OTA_CHANNEL`) |
 
 **Android port forwarding.** The in-app WebView reaches the dev stack through an
 `adb reverse` tunnel for ports **8900, 8901, 8902, 8906** (frontend, backend,
@@ -566,14 +748,16 @@ Mobile-specific environment variables (full reference in [env.md](./env.md)):
 
 | Variable | Purpose |
 | --- | --- |
-| `MOBILE_APP_ID` | Store/OS bundle identifier (default `local.suitenumerique.messages`). Read by `cap sync` (container) **and** the native builds (gradle `applicationId`, iOS `PRODUCT_BUNDLE_IDENTIFIER`), so it must be exported in both contexts. Independent of the `stmessages` auth scheme |
-| `MOBILE_AUTH_CALLBACK_SCHEMES` | JSON list of allowlisted deep-link schemes (e.g. `["stmessages"]`); empty disables mobile login |
+| `MOBILE_APP_ID` | Store/OS bundle identifier (default `local.suitenumerique.messages`). Read by `cap sync` (container) **and** the native builds — gradle reads the host env (the `mobile-android-*` targets export it), Xcode reads the gitignored `ios/App/generated.xcconfig` written by `make mobile-build`. Release builds fail on a divergence from the synced config on both platforms (gradle guard / "Check synced Capacitor identity" build phase). Independent of the auth scheme (`MOBILE_AUTH_SCHEME`) |
+| `MOBILE_APP_NAME` | Displayed application name (default `ST Messages`, a neutral placeholder an organisation overrides with its own). Reaches the native builds through the same two channels as `MOBILE_APP_ID` (gradle `resValue app_name` / iOS `PRODUCT_DISPLAY_NAME` in the generated xcconfig), with the same release-time divergence guards |
+| `MOBILE_AUTH_SCHEME` | OIDC deep-link scheme (default `stmessages`). Read by Vite **and** the native builds (Android `manifestPlaceholders` from the host env, iOS `AUTH_CALLBACK_SCHEME` from the generated xcconfig). Give each environment its own so two builds can coexist on a device |
+| `MOBILE_AUTH_CALLBACK_SCHEMES` | Backend allowlist: JSON list of accepted deep-link schemes (e.g. `["stmessages"]`); empty disables mobile login. Must contain every `MOBILE_AUTH_SCHEME` in use |
 | `MOBILE_DEV_SERVER_URL` | Dev only: Vite dev server URL baked as Capacitor `server.url` at `cap sync` (hot reload). Set to `http://localhost:8900` in `frontend.defaults`; disable with an empty value in `frontend.local`; never set for release builds (see *Hot reload*) |
 | `MOBILE_ALLOW_CLEARTEXT_FOR_DEV` | Dev only: baked as Capacitor `server.cleartext` at `cap sync` (`android:usesCleartextTraffic`), allowing plain HTTP to the dev backend / Vite / RustFS. Set to `1` in `frontend.defaults`; never set for release builds — the manifest then stays cleartext-free |
 | `MOBILE_AUTH_TOKEN_TTL` | Lifetime (s) of the one-time exchange token (default 60) |
 | `NEXT_PUBLIC_API_ORIGIN` | API base URL — **must be set explicitly** for mobile builds (no meaningful `window.location.origin` in the WebView) |
-| `MOBILE_OTA_MANIFEST_URL` | Backend setting served through `/config`: OTA channel manifest polled at startup — the followed channel changes without a new native build; unset disables OTA (deprecated build-time fallback: `NEXT_PUBLIC_MOBILE_OTA_MANIFEST_URL`) |
-| `MOBILE_OTA_CHANNEL` | Release channel `ota-publish` targets (`dev` locally, `staging`/`prod` in the pipeline); must match the channel the build follows (see *Release channels*) |
+| `MOBILE_OTA_MANIFEST_URL` | Backend setting served through `/config`: OTA channel manifest polled at startup and on app foreground (30 min throttle) — the followed channel changes without a new native build; unset disables OTA (deprecated build-time fallback: `NEXT_PUBLIC_MOBILE_OTA_MANIFEST_URL`) |
+| `MOBILE_OTA_CHANNEL` | Release channel `mobile-ota-publish` targets (`dev` locally, `staging`/`prod` in the pipeline); must match the channel the build follows (see *Release channels*) |
 | `MOBILE_OTA_S3_*`, `MOBILE_OTA_PUBLIC_BASE_URL` | OTA publish: S3 write credentials/endpoint (frontend env, not Django) and the device-reachable public base URL written into the manifest |
 | `MOBILE_OTA_SIGNING_PUBLIC_KEY_B64` | Base64 PEM public key baked into the app (`capacitor.config.ts`, native verification) and inlined by Vite (`ota.ts` refuses a server-provided manifest URL without it); required for any OTA-enabled build |
 | `MOBILE_OTA_SIGNING_PRIVATE_KEY_B64` | Base64 PEM private key that signs bundles at publish time (`publish-ota.mjs`, CI-only) |
@@ -583,20 +767,15 @@ Mobile-specific environment variables (full reference in [env.md](./env.md)):
 The following are POC-scoped shortcuts that must be resolved before shipping.
 Treat this list as the "definition of ready for production".
 
-- **OTA over HTTPS.** Bundle signing/encryption (Capgo v2, RSA+AES) and a
-  strictly-increasing version guard are in place (see the OTA section), so a
-  substituted or replayed old zip is refused. What remains for production is to
-  serve the bucket/CDN over **HTTPS** (dev uses cleartext RustFS). A hard
-  minimum-version *floor* baked into the app — rejecting anything below a known
-  release regardless of the running bundle — would further harden a device stuck
-  on a very old build, but the monotonic guard already covers accidental
-  downgrades.
+- **OTA over HTTPS.** Bundle signing/encryption (Capgo v2, RSA+AES), the
+  monotonic `sequence` floor persisted per device (anti-replay, see *Release
+  sequence*) and the native-builtin floor (never below the store build) are in
+  place, so a substituted or replayed old zip is refused. What remains for
+  production is to serve the bucket/CDN over **HTTPS** (dev uses cleartext
+  RustFS).
 - **Move off custom URL schemes.** Custom schemes can be claimed by other apps
   (mitigated today by the one-time token + PKCE). Production should move to
   **Universal Links (iOS) / App Links (Android)**.
-- **CSRF `Origin` on HTTPS.** Native requests carry no `Origin`/`Referer`, which
-  Django requires on secure requests. The fetch wrapper must inject an `Origin`
-  listed in `CSRF_TRUSTED_ORIGINS`.
 - **Cleartext transport is dev-only, build-gated on both platforms.** On
   Android, `preReleaseBuild` fails when the synced `capacitor.config.json`
   carries a dev `server.url` or `server.cleartext` (i.e. when
@@ -604,15 +783,20 @@ Treat this list as the "definition of ready for production".
   `cap sync` env). On iOS, the "Strip dev ATS exception" build phase deletes
   the `NSAppTransportSecurity` dict (`NSAllowsLocalNetworking`) from the built
   product in every non-Debug configuration, so it never ships in an Archive.
-- **IdP logout & session renewal.** Logout ends the Django session but not
-  the IdP one; the 12 h Django session has no refresh-token renewal yet.
-  Confirm ProConnect SSO session duration and persistent-cookie behaviour
+- **Session renewal.** The 12 h Django session has no refresh-token renewal
+  yet. Confirm ProConnect SSO session duration and persistent-cookie behaviour
   (esp. iOS) in production.
 - **Safe-area insets.** Disabling Capacitor's `SystemBars` inset handling (to fix
   the double keyboard inset, Capacitor #8181) means Android no longer receives
   the `--safe-area-inset-*` CSS variables; `MainActivity.java` re-injects them
-  from the window insets (system bars + display cutout), without touching the
-  keyboard behavior. iOS resolves `env(safe-area-inset-*)` natively. The app
+  from the window insets (system bars + display cutout). The same listener also
+  owns the keyboard resize on **Android 15+**: the OS draws every app edge to
+  edge there, and an edge-to-edge window is never resized by the keyboard, so
+  `windowSoftInputMode=adjustResize` does nothing and the composer toolbar would
+  hide behind the keyboard — the listener applies the `ime()` inset as padding,
+  and only above API 34 (below it the system resize still runs, and adding
+  padding is exactly what #8181 was). iOS resolves `env(safe-area-inset-*)`
+  natively and resizes through `@capacitor/keyboard`. The app
   shell folds the top inset into `--header-height` (`globals.scss`), so
   anything laid out from it clears the status bar / notch automatically.
 - **Iframe subresources.** Inline images proxied through the API use the WebView
@@ -620,6 +804,260 @@ Treat this list as the "definition of ready for production".
   itself renders.
 - **App Store guideline 4.2.** A pure web wrapper needs native-feeling
   differentiators (push notifications, share targets…) to pass review.
+
+## Publishing to Google Play
+
+Everything below is **per-instance**: the app id, the signing key and the
+Firebase config belong to the publishing organisation and are deliberately
+absent from this repo. The commands run on the **host** (the Android SDK is
+there), the web bundle is still built in the container.
+
+### 1. Upload key (once, and never lose it)
+
+Play App Signing splits the key in two: Google holds the *app signing key* that
+end users verify, you hold an *upload key* that only proves uploads come from
+you. A lost upload key can be reset by support; a lost app signing key without
+Play App Signing would end the app.
+
+One upload key per Play listing, shared by **every** track: the bundle sent to
+internal testing and the one that reaches production are signed with the same
+key — which is what lets a tested release be promoted rather than rebuilt. The
+key generated for a first internal test *is* the production key, so it belongs
+in the organisation's secret manager from day one, passwords included.
+
+Generate the upload key:
+
+```bash
+keytool -genkeypair -v \
+  -keystore ~/.android-keystores/messages-upload.jks \
+  -alias messages-upload \
+  -keyalg RSA -keysize 4096 -validity 10000
+```
+
+The parameters are constrained, not stylistic. **RSA is mandatory** — Play
+requires "an RSA key of 2048 bits or more" for the upload key and rejects
+EC/ECDSA, even though the APK signature format itself supports them; 4096
+matches what Google generates for the app signing key. **Validity is ~27 years**
+(10000 days) because Android recommends at least 25 and Play rejects any
+certificate expiring before 22 October 2033. Nothing here should be shortened
+out of TLS habit: this certificate is the app's *identity*, not a link in a
+renewable trust chain — Android treats an app signed by another certificate as a
+different app.
+
+Keep the `.jks` itself **outside the repository** (`chmod 600`). `.gitignore`
+stops commits, not Docker: `src/frontend/.dockerignore` only excludes
+`node_modules`/`out`/`.next`, so anything under `src/frontend/android/` is sent
+to the daemon as build context and lands in a layer through the Dockerfile's
+`COPY . ./` — a keystore there would end up cached in a build image.
+
+Store it (and the passwords) in the organisation's secret manager, then point
+gradle at it through `src/frontend/android/keystore.properties` — gitignored,
+alongside the project, never committed. Use an **absolute** `storeFile` path: a
+relative one resolves from `src/frontend/android/app/`, not from where you
+stand.
+
+```properties
+storeFile=/absolute/path/to/messages-upload.jks
+storePassword=…
+keyAlias=messages-upload
+keyPassword=…
+```
+
+CI has no such file and uses `ANDROID_KEYSTORE_FILE` & co. instead
+([env.md](./env.md#android-store-release-hostci-only)). With neither, release
+builds fail up front rather than producing a bundle Play would reject.
+
+### 2. Release configuration
+
+In `deploy/env/frontend.local` (gitignored) — the container build reads it, and
+`make mobile-android-release` re-reads `MOBILE_APP_ID` from it so the host
+gradle build cannot diverge:
+
+```bash
+MOBILE_APP_ID=fr.gouv.example.messages   # frozen for the lifetime of the app
+MOBILE_APP_NAME=Messages
+MOBILE_FIREBASE_PROJECT_ID=messages-prod # the google-services.json must match
+NEXT_PUBLIC_API_ORIGIN=https://<publicly reachable backend>
+MOBILE_DEV_SERVER_URL=                   # empty: no hot reload in a store build
+MOBILE_ALLOW_CLEARTEXT_FOR_DEV=          # empty: no cleartext in the manifest
+```
+
+The `applicationId` is **frozen once uploaded** — Play identifies the app by it
+forever. Two more per-instance pieces, both silent when missing:
+
+- `src/frontend/android/app/google-services.json` from the **production**
+  Firebase project, containing a client for that exact id — otherwise push
+  notifications simply never arrive (see *Push environment pairing* in the
+  release checklist). Set `MOBILE_FIREBASE_PROJECT_ID` so a mismatched file
+  fails the build instead.
+- backend `MOBILE_AUTH_CALLBACK_SCHEMES=["stmessages"]`, or mobile login is
+  disabled.
+
+#### Keeping environments apart
+
+Push isolation comes from **separate Firebase projects**, one per environment
+(`PUSH_FCM_PROJECT_ID` backend side, `google-services.json` app side) — not from
+a flag. FCM registration tokens are scoped to the project that issued them, so a
+staging backend holding staging credentials *cannot* notify production devices
+even if it somehow held their tokens: FCM rejects the mismatch. The residual
+risk is purely a deployment one — production FCM credentials pasted into a
+staging backend.
+
+Sharing one `applicationId` across environments is fine for that isolation, but
+it means only one build can be installed at a time, and a wrong
+`google-services.json` still compiles (the package name matches). Giving each
+environment its own id fixes both — and turns a mismatched Firebase file into a
+build failure, since the `google-services` plugin finds no client for the
+package name.
+
+Two builds side by side also need **their own callback scheme**
+(`MOBILE_AUTH_SCHEME`): two apps claiming one scheme make Android prompt the
+user to pick an app in the middle of the login. The value flows from a single
+variable to three places — `auth.ts` (inlined by Vite), the Android manifest
+(gradle `manifestPlaceholders`), and the iOS `Info.plist` (the
+`AUTH_CALLBACK_SCHEME` build setting) — and `sso-invariants.test.ts` pins that
+wiring, including that their fallbacks agree. Because gradle runs on the host
+and Vite in the container, both must see it: `make mobile-android-run` and
+`make mobile-android-release` pass it through, but a bare `./gradlew` does not.
+Add every scheme in use to the backend's `MOBILE_AUTH_CALLBACK_SCHEMES` list.
+
+A staging `frontend.local` then reads:
+
+```bash
+MOBILE_APP_ID=org.acme.example.messages.local
+MOBILE_APP_NAME=Messages (staging)
+MOBILE_AUTH_SCHEME=stmessages.local
+MOBILE_FIREBASE_PROJECT_ID=messages-local
+```
+
+Scheme shape follows RFC 3986 — a letter, then letters, digits, `+`, `-`, `.`
+— and must be **lowercase**: Android matches the manifest scheme literally
+against a lowercased URI, and Django's redirect validation compares against
+`urlparse`, which lowercases too. Neither says anything when it does not match,
+the login simply never returns. `_` is not in the grammar and fails silently on
+the Python side (`urlparse` yields an empty scheme). Add every scheme in use to
+the backend `MOBILE_AUTH_CALLBACK_SCHEMES` list.
+
+What this does *not* solve: both apps still ship the same icon and near-identical
+names, which is how a real mail gets sent from the staging build. Differentiated
+icons mean generating from a second mark — the generator takes `--icon` /
+`--icon-dark` for exactly that, but the output paths are fixed, so the two sets
+cannot coexist in one checkout (see [`mobile-assets.md`](./mobile-assets.md)).
+
+### 3. Build the bundle
+
+```bash
+make mobile-android-release
+```
+
+It runs `make mobile-build` (container: web bundle + `cap sync`) then
+`gradlew bundleRelease` (host), and produces
+`src/frontend/android/app/build/outputs/bundle/release/app-release.aab`.
+
+#### App versioning
+
+The **displayed version** (Android `versionName`, iOS `MARKETING_VERSION` /
+`CFBundleShortVersionString`) has a single source of truth: the `appVersion`
+property of `src/frontend/capacitor.config.ts`, **bumped manually** when
+releasing:
+
+```ts
+const appVersion = "0.1.0";
+```
+
+`cap sync` copies it verbatim into each platform's `capacitor.config.json`,
+and both native builds read it from there — gradle for the `versionName`, and
+`scripts/generate-ios-xcconfig.mjs` for the xcconfig `MOBILE_VERSION_NAME`
+(`make mobile-build`). Bumping the one line needs no other change on either
+platform. It is a marketing string — users read it in the store listing — and
+carries no ordering constraint.
+
+It deliberately does **not** live in `package.json`: that field versions the
+web app, which ships on its own cadence (a web deploy or an OTA bundle never
+reaches the stores). The two numbers are therefore expected to diverge, and
+the app shows them as distinct values — see *Version displayed to users*.
+
+The **technical version** is separate and automatic: `MOBILE_VERSION_CODE`
+defaults to the commit count, so it grows on its own; override it
+(`make mobile-android-release MOBILE_VERSION_CODE=42`) for a pinned build.
+Play refuses a `versionCode` it has already accepted, so every upload needs
+a fresh one — including a rebuild of the same commit; App Store Connect
+applies the same rule to `CFBundleVersion` within a given `MARKETING_VERSION`.
+
+Both platforms read that one variable, by different routes. Gradle takes it
+straight from the environment at `make mobile-android-release`. Xcode cannot:
+release builds run from the IDE on the host, where the container's environment
+never lands — so `make mobile-build` passes it to
+`scripts/generate-ios-xcconfig.mjs`, which writes it into `generated.xcconfig`
+as `MOBILE_VERSION_CODE`, and the Xcode project resolves
+`CURRENT_PROJECT_VERSION = "$(MOBILE_VERSION_CODE:default=1)"` from there.
+A build made without a prior `make mobile-build` therefore falls back to `1`
+rather than failing — check the number before an upload.
+
+Using the commit count (rather than a counter reset per marketing version)
+keeps it globally monotonic, so it satisfies both stores without any
+bookkeeping and reads identically on both platforms in a support report. It is
+branch-dependent, though: two branches can produce the same count, so store
+releases should always be cut from the same branch.
+
+Five guards fail the build rather than shipping something broken: a leftover dev
+`server.url`, cleartext traffic, a missing signing key, an `applicationId`
+that does not match the `appId` `cap sync` baked into `capacitor.config.json`
+(the `MOBILE_APP_ID`-exported-on-only-one-side trap), and a `versionName` that
+is either the unsynced placeholder (`0.0.0`) or stale against the synced
+`appVersion`.
+
+#### Version displayed to users
+
+The version is readable in-app, as the last entry of the help/support menu
+(`SurveyButton`, `src/frontend/src/features/ui/components/feedback-button/`).
+It reads the numbers through `useAppVersion()`
+(`src/frontend/src/features/hooks/use-app-version.ts`):
+
+| Shown | Source | Read |
+| --- | --- | --- |
+| `Version 1.2.0` (native) | `appVersion` in `capacitor.config.ts` | at runtime from the OS, via `@capacitor/app` |
+| `Web interface 0.1.0` (native only) | `version` in `package.json` | baked in at build time (`__WEB_APP_VERSION__`) |
+| `Version 0.1.0` (web) | `version` in `package.json` | idem |
+
+On a native platform the store version leads and the bundle version sits
+underneath, because OTA moves the bundle ahead of the installed app between
+two store releases (see *OTA live updates*) — a single number could not stand
+for both. Reading the native half from the OS rather than from the build means
+it reflects what the user actually installed.
+
+Clicking the entry copies a one-line report — `app 1.2.0 (42) · web 0.1.0
+(a1b2c3d) · ios` — including the build stamp of the running bundle, so a bug
+report pins the exact code without the user reading numbers out.
+
+That stamp is the commit SHA only when the build received a `SOURCE_VERSION`
+(Scalingo's buildpack sets it natively, and the CI image build passes it as a
+build-arg). A bundle built through the local containers gets neither: the repo
+mounts `src/frontend/` alone, so they see no `.git`, and the image carries no
+`git` binary — `vite.config.ts` then falls back to a `t<timestamp>` stamp,
+still unique per build but not traceable to a commit. It applies to anything
+built by `make mobile-build` / `make mobile-ota-publish` on a workstation, the Play
+`.aab` included. Passing the host's SHA in (as the Makefile already does for
+`MOBILE_OTA_BUILD_ID`) is what would close the gap.
+
+### 4. Internal testing track
+
+In the [Play Console](https://play.google.com/console): *Create app*, then
+**Testing → Internal testing → Create new release** and upload the `.aab`.
+Internal testing reaches up to 100 testers, needs no review wait, and skips the
+closed-testing requirements that gate production.
+
+Testers are Google accounts listed in an email list you attach to the track;
+each opts in through the generated link before the app appears for them on Play.
+
+Play still gates the *release* on the app-content declarations (privacy policy
+URL, data safety form, ads, content rating, target audience). For a mail client
+the data safety form is the substantive one: declare what the app collects and
+transmits, matching what the backend actually stores.
+
+Because the app is SSO-only, reviewers and testers cannot sign in without an
+account on an instance — provide credentials in *App access* when the track ever
+moves beyond internal testing.
 
 ## Release checklist (manual)
 
@@ -683,4 +1121,7 @@ or the Capacitor version.
   test with curl, running on emulators/devices, re-testing cross-app SSO with a
   throwaway second app, and objective SSO proofs (Keycloak events, negative
   controls).
+- [`mobile-assets.md`](./mobile-assets.md) — app icons and splash screens: the
+  vector mark everything is derived from, the platform safe zones, and what each
+  OS actually reads at launch.
 - [`env.md`](./env.md) — full environment-variable reference.

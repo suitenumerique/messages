@@ -34,7 +34,7 @@ export const MailboxSettingsMessageTemplatesTab = ({
                 ? t("No message template")
                 : t("{{count}} message template", { count })
           }
-          action={<ComposeTemplateAction mailbox={mailbox} size="nano" />}
+          action={<ComposeTemplateAction mailbox={mailbox} />}
         />
         <MessageTemplateDataGrid mailbox={mailbox} />
       </section>

@@ -3,6 +3,8 @@ import { Button, ButtonProps, Tooltip } from "@gouvfr-lasuite/cunningham-react"
 import { openPicker, type Item, type PickerResult } from "@gouvfr-lasuite/drive-sdk";
 import { useTranslation } from "react-i18next";
 import { Spinner } from "@gouvfr-lasuite/ui-kit";
+import { openNativeDrivePicker } from "@/features/native/drive-picker";
+import { isNativePlatform } from "@/features/native/platform";
 import { useConfig } from "@/features/providers/config";
 import { FEATURE_KEYS, useFeatureFlag } from "@/hooks/use-feature";
 import { DriveIcon } from "./drive-icon";
@@ -18,39 +20,44 @@ type DriveAttachmentPickerProps = ButtonProps & {
 // TODO: Remove this type once the Drive SDK is updated to include mimetype
 type PatchedItem = Item & { mimetype?: string };
 
+const serializeToDriveFile = (item: PatchedItem): DriveFile => ({
+    id: item.id,
+    name: item.title,
+    url: item.url_permalink ?? item.url,
+    type: item.mimetype || "application/octet-stream",
+    size: item.size,
+    created_at: new Date().toISOString(),
+});
+
 /**
- * DriveAttachmentPicker is a component that allows the user to pick files
- * from a Drive instance if one is configured otherwise it will return null.
+ * Picking files from the configured Drive instance, shared by the
+ * attachment uploader button and the mobile toolbar's "insert a file" menu.
  *
- * Drive Config is retrieved from the backend. Take a look at the `DRIVE_CONFIG`
- * in the `settings.py` file in the backend.
+ * Drive Config is retrieved from the backend. Take a look at the
+ * `DRIVE_CONFIG` in the `settings.py` file in the backend.
  *
  * https://github.com/suitenumerique/drive
  */
-export const DriveAttachmentPicker = ({ onPick, ...buttonProps }: DriveAttachmentPickerProps) => {
-    const { t } = useTranslation();
+export const useDrivePicker = () => {
     const [isLoading, setIsLoading] = useState(false);
     const config = useConfig();
     const isDriveDisabled = !useFeatureFlag(FEATURE_KEYS.DRIVE);
-    const serializeToDriveFile = (item: PatchedItem): DriveFile => ({
-        id: item.id,
-        name: item.title,
-        url: item.url_permalink ?? item.url,
-        type: item.mimetype || "application/octet-stream",
-        size: item.size,
-        created_at: new Date().toISOString(),
-    });
 
-    const pick = useCallback(async () => {
-        if (isDriveDisabled) return;
+    const pick = useCallback(async (): Promise<DriveFile[]> => {
+        if (isDriveDisabled) return [];
         setIsLoading(true);
         let result: PickerResult | null = null;
 
         try {
-            result = await openPicker({
+            const pickerConfig = {
                 url: config.DRIVE!.sdk_url,
                 apiUrl: config.DRIVE!.api_url,
-            });
+            };
+            // The SDK's picker popup breaks inside the Capacitor shell (system
+            // browser, suspended poll) — see openNativeDrivePicker.
+            result = isNativePlatform()
+                ? await openNativeDrivePicker(pickerConfig)
+                : await openPicker(pickerConfig);
         } catch (error) {
             handle(new Error("Failed to open picker."), { extra: { error } });
         } finally {
@@ -58,23 +65,46 @@ export const DriveAttachmentPicker = ({ onPick, ...buttonProps }: DriveAttachmen
         }
 
         if (result?.type === "picked" && result.items) {
-            onPick((result.items as PatchedItem[]).map(serializeToDriveFile));
+            return (result.items as PatchedItem[]).map(serializeToDriveFile);
         }
+        return [];
     }, [isDriveDisabled]);
 
-    if (isDriveDisabled) return null;
+    return {
+        isAvailable: !isDriveDisabled,
+        isLoading,
+        appName: config.DRIVE?.app_name,
+        pick,
+    };
+};
+
+/**
+ * DriveAttachmentPicker is a component that allows the user to pick files
+ * from a Drive instance if one is configured otherwise it will return null.
+ */
+export const DriveAttachmentPicker = ({ onPick, ...buttonProps }: DriveAttachmentPickerProps) => {
+    const { t } = useTranslation();
+    const config = useConfig();
+    const { isAvailable, isLoading, pick } = useDrivePicker();
+
+    const handlePick = useCallback(async () => {
+        const files = await pick();
+        if (files.length > 0) onPick(files);
+    }, [pick, onPick]);
+
+    if (!isAvailable) return null;
 
     return (
         <Tooltip content={t('Add attachment from {{driveAppName}}', { driveAppName: config.DRIVE.app_name })}>
             <Button
                 aria-label={t('Add attachment from {{driveAppName}}')}
-                {...buttonProps}
                 variant="secondary"
+                disabled={isLoading || buttonProps.disabled}
+                {...buttonProps}
                 icon={isLoading ? <Spinner size="sm" /> : <DriveIcon />}
                 type="button"
-                disabled={isLoading || buttonProps.disabled}
                 aria-busy={isLoading}
-                onClick={pick}
+                onClick={handlePick}
                 className="drive-attachment-picker"
             />
         </Tooltip>

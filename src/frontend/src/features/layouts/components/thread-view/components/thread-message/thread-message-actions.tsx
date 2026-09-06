@@ -1,7 +1,7 @@
 import { useState, useMemo, useCallback } from "react";
 import { useTranslation } from "react-i18next";
 import { Button, Tooltip, useModals } from "@gouvfr-lasuite/cunningham-react";
-import { DropdownMenu, Icon, IconType } from "@gouvfr-lasuite/ui-kit";
+import { DropdownMenu, IconSize, IconType } from "@gouvfr-lasuite/ui-kit";
 import { getMessagesEmlRetrieveUrl } from "@/features/api/gen/messages/messages";
 import { getRequestUrl } from "@/features/api/utils";
 import { isNativePlatform } from "@/features/native/platform";
@@ -15,6 +15,8 @@ import { FEATURE_KEYS, useFeatureFlag } from "@/hooks/use-feature";
 import useAbility, { Abilities } from "@/hooks/use-ability";
 import useCopyDeepLink from "@/features/message/use-copy-deep-link";
 import { ThreadMessageActionsProps } from "./types";
+import { Icon } from "@/features/ui/components/icon";
+import { Divergence, Download, Link, Print, Trash } from "@gouvfr-lasuite/ui-kit/icons";
 
 const ThreadMessageActions = ({
     message,
@@ -111,12 +113,12 @@ const ThreadMessageActions = ({
     const dropdownOptions = [
         ...(canReply && hasSeveralRecipients ? [{
             label: t('Reply all'),
-            icon: <Icon type={IconType.FILLED} name="reply_all" />,
+            icon: <Icon name="reply-all" />,
             callback: () => onSetReplyFormMode('reply_all')
         }] : []),
         ...(canReply ? [{
             label: t('Forward'),
-            icon: <Icon type={IconType.FILLED} name="forward" />,
+            icon: <Icon name="forward" />,
             callback: () => onSetReplyFormMode('forward'),
             showSeparator: true
         }] : []),
@@ -127,33 +129,33 @@ const ThreadMessageActions = ({
         }] :
         [{
             label: hasSiblingMessages ? t('Mark as unread from here') : t('Mark as unread'),
-            icon: <Icon type={IconType.FILLED} name="mark_email_unread" />,
+            icon: <Icon type={IconType.FILLED} name="mail-unread" />,
             callback: () => toggleReadStateFrom(true)
         }]),
         ...(canSplitThread ? [{
             label: t('Split thread from here'),
-            icon: <Icon type={IconType.FILLED} name="call_split" />,
+            icon: <Icon icon={Divergence} />,
             callback: handleSplitThread,
         }] : []),
         {
             label: t('Copy link to message'),
-            icon: <Icon type={IconType.FILLED} name="link" />,
+            icon: <Icon icon={Link} />,
             callback: () => copyDeepLink({ messageId: message.id }),
             showSeparator: true,
         },
         {
             label: t('Print'),
-            icon: <Icon type={IconType.FILLED} name="print" />,
+            icon: <Icon icon={Print} />,
             callback: () => print(message)
         },
         {
             label: t('Download raw email'),
-            icon: <Icon type={IconType.FILLED} name="download" />,
+            icon: <Icon icon={Download} />,
             callback: handleDownloadRawEmail
         },
         ...(canEditThread && !message.is_trashed ? [{
             label: t('Delete'),
-            icon: <Icon type={IconType.FILLED} name="delete" />,
+            icon: <Icon icon={Trash} />,
             callback: handleMarkAsTrashed
         }] : []),
     ];
@@ -198,7 +200,7 @@ const ThreadMessageActions = ({
                         color="brand"
                         variant="tertiary"
                         size="small"
-                        icon={<Icon type={IconType.FILLED} name={isFolded ? "unfold_more" : "unfold_less"} />}
+                        icon={<Icon name={isFolded ? "unfold" : "fold"} size={IconSize.SMALL} />}
                         aria-label={isFolded ? t('Unfold message') : t('Fold message')}
                         onClick={onToggleFold}
                     />

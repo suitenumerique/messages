@@ -80,17 +80,31 @@ export const ToasterItem = ({
   );
 };
 
+// Same breakpoint as `useResponsive().isMobile` (ui-kit) and `breakpoint("mobile")` (SCSS)
+const MOBILE_MEDIA_QUERY = "(max-width: 768px)";
+
 export const addToast = (
   children: React.ReactNode,
   options: Parameters<typeof toast>[1] = {}
 ) => {
+  const isMobile =
+    typeof window !== "undefined" &&
+    window.matchMedia(MOBILE_MEDIA_QUERY).matches;
+
   return toast(children, {
-    position: "bottom-left",
+    position: isMobile ? "bottom-center" : "bottom-left",
     closeButton: false,
     className: "suite__toaster__wrapper",
     autoClose: 5000,
     transition: Slide,
     hideProgressBar: true,
+    // On mobile the toast is bottom-centered and nearly full-width: the
+    // horizontal dismiss threshold (80% of the toast width) is out of reach,
+    // so dismiss with a downward swipe instead (threshold based on height).
+    // The percent must differ from the default 80: react-toastify silently
+    // multiplies 80 by 1.5 for the "y" direction (120% of the toast height).
+    draggableDirection: isMobile ? "y" : "x",
+    draggablePercent: isMobile ? 40 : 80,
     ...options,
   });
 };

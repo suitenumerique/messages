@@ -9,8 +9,103 @@ import { useAttachmentPreview } from '@/features/providers/attachment-preview';
 import { useConfig } from '@/features/providers/config';
 import { DropZone } from './dropzone';
 import { DriveAttachmentPicker, DriveFile } from './drive-attachment-picker';
-import { Icon } from '@gouvfr-lasuite/ui-kit';
 import clsx from 'clsx';
+import { AttachFile } from '@gouvfr-lasuite/ui-kit/icons';
+import { Icon } from '@/features/ui/components/icon';
+
+type AttachmentBucketProps = {
+    attachments: (DriveFile | Attachment)[];
+    uploadingQueue: File[];
+    failedQueue: File[];
+    onRemove: (entry: Attachment | DriveFile) => void;
+    onRemoveFailedUpload: (file: File) => void;
+    onRetry: (file: File) => void;
+    disabled?: boolean;
+}
+
+/**
+ * The list of current attachments (uploaded, uploading and failed) with their
+ * preview/remove/retry actions. Rendered inside the default uploader block,
+ * and standalone by the compact message form which provides its own triggers.
+ */
+export const AttachmentBucket = ({
+    attachments,
+    uploadingQueue,
+    failedQueue,
+    onRemove,
+    onRemoveFailedUpload,
+    onRetry,
+    disabled = false,
+}: AttachmentBucketProps) => {
+    const { t, i18n } = useTranslation();
+    const { openPreview } = useAttachmentPreview();
+    const { DRIVE } = useConfig();
+
+    // The preview modal builds its file list from the thread's persisted
+    // messages, which never include a draft's PJ. We therefore feed it the
+    // draft's own attachments (local state) so they can be previewed.
+    const previewFiles = useMemo(
+        () => attachments.map((entry) =>
+            isAttachment(entry)
+                ? AttachmentHelper.toFilePreviewType(entry)
+                : AttachmentHelper.driveFileToFilePreviewType(entry, DRIVE.preview_url),
+        ),
+        [attachments, DRIVE.preview_url],
+    );
+    const driveUrlById = useMemo(() => {
+        const map = new Map<string, string>();
+        for (const entry of attachments) {
+            if (isDriveFile(entry)) map.set(entry.id, entry.url);
+        }
+        return map;
+    }, [attachments]);
+    const handlePreview = useCallback(
+        (fileId: string) => openPreview(fileId, { files: previewFiles, driveUrlById }),
+        [openPreview, previewFiles, driveUrlById],
+    );
+
+    if ([...attachments, ...uploadingQueue, ...failedQueue].length === 0) return null;
+
+    return (
+        <div className="attachment-uploader__bucket">
+            <p className="attachment-bucket__counter">
+                <strong>
+                {attachments.length > 0
+                    ? t("{{count}} attachments", { count: attachments.length, defaultValue_one: "{{count}} attachment" })
+                    : t("No attachments")}
+                </strong>{' '}
+                {attachments.filter(isAttachment).length > 0 && (
+                    `(${AttachmentHelper.getFormattedTotalSize(attachments.filter(isAttachment), i18n.resolvedLanguage)})`
+                )}
+            </p>
+            <div className="attachment-bucket__list">
+                {failedQueue.map((entry) => (
+                    <AttachmentItem
+                        key={`failed-${entry.name}-${entry.size}-${entry.lastModified}`}
+                        attachment={entry}
+                        variant="error"
+                        errorAction={() => onRetry(entry)}
+                        onDelete={disabled ? undefined : () => onRemoveFailedUpload(entry)}
+                        canDownload={false}
+                        errorMessage={t("The upload failed. Please try again.")}
+                    />
+                ))}
+                {uploadingQueue.map((entry) => (
+                    <AttachmentItem key={`uploading-${entry.name}-${entry.size}-${entry.lastModified}`} attachment={entry} isLoading />
+                ))}
+                {attachments.map((entry) => (
+                    <AttachmentItem
+                        key={'blobId' in entry ? entry.blobId : entry.id}
+                        canDownload={false}
+                        attachment={entry}
+                        onDelete={disabled ? undefined : () => onRemove(entry)}
+                        onPreview={handlePreview}
+                    />
+                ))}
+            </div>
+        </div>
+    );
+};
 
 interface AttachmentUploaderProps {
     attachments: (DriveFile | Attachment)[];
@@ -38,8 +133,6 @@ export const AttachmentUploader = ({
     maxAttachmentSize,
 }: AttachmentUploaderProps) => {
     const { t, i18n } = useTranslation();
-    const { openPreview } = useAttachmentPreview();
-    const { DRIVE } = useConfig();
 
     const { getRootProps, getInputProps, isDragActive } = useDropzone({
         onDrop: (acceptedFiles) => onUploadFiles(acceptedFiles),
@@ -47,32 +140,12 @@ export const AttachmentUploader = ({
         maxSize: maxAttachmentSize,
     });
 
-    // The preview modal builds its file list from the thread's persisted
-    // messages, which never include a draft's PJ. We therefore feed it the
-    // draft's own attachments (local state) so they can be previewed.
-    const previewFiles = useMemo(
-        () => attachments.map((entry) =>
-            isAttachment(entry)
-                ? AttachmentHelper.toFilePreviewType(entry)
-                : AttachmentHelper.driveFileToFilePreviewType(entry, DRIVE.preview_url),
-        ),
-        [attachments, DRIVE.preview_url],
-    );
-    const driveUrlById = useMemo(() => {
-        const map = new Map<string, string>();
-        for (const entry of attachments) {
-            if (isDriveFile(entry)) map.set(entry.id, entry.url);
-        }
-        return map;
-    }, [attachments]);
-    const handlePreview = useCallback(
-        (fileId: string) => openPreview(fileId, { files: previewFiles, driveUrlById }),
-        [openPreview, previewFiles, driveUrlById],
-    );
-
     const handleClick: MouseEventHandler<HTMLElement> = (event) => {
-        const hasClickInBucketList = (event.target as HTMLElement).closest('.attachment-bucket__list');
-        if (!hasClickInBucketList) {
+        // Clicks already handled by an inner control (attachment items, the
+        // Drive picker button) must not also open the local file dialog.
+        const hasClickInInnerControl = (event.target as HTMLElement)
+            .closest('.attachment-bucket__list, .drive-attachment-picker');
+        if (!hasClickInInnerControl) {
             getRootProps().onClick?.(event);
         }
     }
@@ -90,7 +163,7 @@ export const AttachmentUploader = ({
             <div className="attachment-uploader__input">
                 <Button
                     variant="secondary"
-                    icon={<Icon name="attach_file" />}
+                    icon={<Icon icon={AttachFile} />}
                     type="button"
                     disabled={disabled}
                 >
@@ -103,45 +176,15 @@ export const AttachmentUploader = ({
                 {/* This input is not focusable so we hide it from the screen reader and we give the priority to the button*/}
                 <input {...getInputProps()} disabled={disabled} aria-hidden={true} />
             </div>
-            { [...attachments, ...uploadingQueue, ...failedQueue].length > 0 && (
-                <div className="attachment-uploader__bucket">
-                    <p className="attachment-bucket__counter">
-                        <strong>
-                        {attachments.length > 0
-                            ? t("{{count}} attachments", { count: attachments.length, defaultValue_one: "{{count}} attachment" })
-                            : t("No attachments")}
-                        </strong>{' '}
-                        {attachments.filter(isAttachment).length > 0 && (
-                            `(${AttachmentHelper.getFormattedTotalSize(attachments.filter(isAttachment), i18n.resolvedLanguage)})`
-                        )}
-                    </p>
-                    <div className="attachment-bucket__list">
-                        {failedQueue.map((entry) => (
-                            <AttachmentItem
-                                key={`failed-${entry.name}-${entry.size}-${entry.lastModified}`}
-                                attachment={entry}
-                                variant="error"
-                                errorAction={() => onRetry(entry)}
-                                onDelete={disabled ? undefined : () => onRemoveFailedUpload(entry)}
-                                canDownload={false}
-                                errorMessage={t("The upload failed. Please try again.")}
-                            />
-                        ))}
-                        {uploadingQueue.map((entry) => (
-                            <AttachmentItem key={`uploading-${entry.name}-${entry.size}-${entry.lastModified}`} attachment={entry} isLoading />
-                        ))}
-                        {attachments.map((entry) => (
-                            <AttachmentItem
-                                key={'blobId' in entry ? entry.blobId : entry.id}
-                                canDownload={false}
-                                attachment={entry}
-                                onDelete={disabled ? undefined : () => onRemove(entry)}
-                                onPreview={handlePreview}
-                            />
-                        ))}
-                    </div>
-                </div>
-                )}
+            <AttachmentBucket
+                attachments={attachments}
+                uploadingQueue={uploadingQueue}
+                failedQueue={failedQueue}
+                onRemove={onRemove}
+                onRemoveFailedUpload={onRemoveFailedUpload}
+                onRetry={onRetry}
+                disabled={disabled}
+            />
             </section>
         </Field>
     );

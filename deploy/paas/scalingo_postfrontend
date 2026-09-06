@@ -5,6 +5,12 @@ set -o pipefail   # don't ignore exit codes when piping output
 
 echo "-----> Running post-frontend script"
 
+# Mobile OTA staging happens earlier, inside the nodejs buildpack compile, as
+# the frontend `scalingo-postbuild` npm script (deploy/paas/scalingo_stage_ota):
+# this hook runs with neither node on PATH nor the frontend devDependencies
+# (pruned at the end of the nodejs compile). Only build/ota-release-id, written
+# there, is consumed later by the postdeploy flip (scalingo_ota_promote.py).
+
 # Move the frontend build to the app root and clean up
 mkdir -p build/
 mv src/frontend/dist build/frontend-out

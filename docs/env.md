@@ -183,7 +183,7 @@ blob stays in PG.
 Public (anonymous read) bucket holding the mobile OTA artifacts, one
 self-contained folder per release channel (`channels/<channel>/manifest.json` +
 `channels/<channel>/bundles/<version>.zip`). Created with `make mobile-ota-bucket`;
-bundles are published with `make ota-publish [CHANNEL=…]`. Channels are fully
+bundles are published with `make mobile-ota-publish [CHANNEL=…]`. Channels are fully
 independent: `NEXT_PUBLIC_*` vars are inlined into the bundle at build time, so
 each channel ships its own build — never copy a bundle across channels.
 
@@ -202,17 +202,17 @@ in the frontend env files; in CI they come from secrets.
 | Variable | Default | Description | Required |
 |----------|---------|-------------|----------|
 | `MOBILE_OTA_S3_ENDPOINT` | `http://objectstorage:9000` | S3 endpoint the script **writes** to (compose network in dev; target S3 in CI) | Optional |
-| `MOBILE_OTA_S3_BUCKET` | `messages-ota` | S3 bucket name for OTA bundles | Optional |
+| `MOBILE_OTA_S3_BUCKET` | `messages-ota` | S3 bucket name for OTA bundles. On Scalingo it is also the **activation gate**: set, every deploy stages an OTA bundle at build time and flips the channel manifest at postdeploy (any other missing `MOBILE_OTA_*` var then fails the build); unset, deploys skip OTA entirely. See [mobile.md](./mobile.md#publishing-from-scalingo-deploys) | Optional |
 | `MOBILE_OTA_S3_ACCESS_KEY` | `st-messages` | S3 access key | Optional |
 | `MOBILE_OTA_S3_SECRET_KEY` | `password` | S3 secret key | Optional |
 | `MOBILE_OTA_S3_REGION` | `us-east-1` | S3 region | Optional |
 | `MOBILE_OTA_S3_KEY_PREFIX` | `` (empty) | Object key prefix; empty for a dedicated bucket root, `messages/mobileapp/` for a shared bucket. Must stay consistent with `MOBILE_OTA_PUBLIC_BASE_URL` | Optional |
-| `MOBILE_OTA_CHANNEL` | `dev` (dev env) | Release channel `mobile:ota:publish` targets (`channels/<channel>/…`); overridable per run with `--channel` / `make ota-publish CHANNEL=…`. The deploy pipeline uses `staging` and `prod`, each publishing its own build. Must match the channel segment of the `MOBILE_OTA_MANIFEST_URL` served by the backend this deployment's apps talk to | Optional |
+| `MOBILE_OTA_CHANNEL` | `dev` (dev env) | Release channel `mobile:ota:publish` targets (`channels/<channel>/…`); overridable per run with `--channel` / `make mobile-ota-publish CHANNEL=…`. The deploy pipeline uses `staging` and `prod`, each publishing its own build. Must match the channel segment of the `MOBILE_OTA_MANIFEST_URL` served by the backend this deployment's apps talk to | Optional |
 | `MOBILE_OTA_MANIFEST_URL` | None (**backend** env) | OTA channel manifest URL the apps poll at startup, served through the `/config` endpoint — so the followed channel can change without shipping a new native build. Must point to the channel this deployment publishes to. Unset disables OTA | Optional |
 | `MOBILE_OTA_PUBLIC_BASE_URL` | `http://localhost:8906/messages-ota` | Device-reachable **read** base URL written into the manifest | Optional |
 | `MOBILE_OTA_SIGNING_PRIVATE_KEY_B64` | None | Base64-encoded (single-line) RSA private-key PEM signing/encrypting each bundle at publish time (`publish-ota.mjs`). CI secret only — never commit. Unset ⇒ publish fails. See [mobile.md](./mobile.md#generating-the-signing-key-pair) | Optional |
 | `MOBILE_OTA_SIGNING_PUBLIC_KEY_B64` | None | Base64-encoded (single-line) RSA public-key PEM baked into the app at `cap sync` time (`capacitor.config.ts`, native verification) **and** inlined by Vite into the JS bundle (`ota.ts` refuses a server-provided manifest URL on a key-less build). Read by the builds, not the publish scripts — an OTA-enabled build can never apply an unsigned bundle | Required if OTA enabled |
-| `MOBILE_OTA_BUILD_ID` | `<count>-<sha>` (git-derived) | Hybrid release id stamped into the builtin bundle version at `cap sync` (`capacitor.config.ts`) and used as the default OTA `VERSION`. Computed by the Makefile from git; override in CI to pin a build. See [mobile.md](./mobile.md#bundle-versioning) | Optional |
+| `MOBILE_OTA_BUILD_ID` | short sha, 8 chars (git-derived) | Release id stamped into the builtin bundle version at `cap sync` (`capacitor.config.ts`) and used as the default OTA `VERSION`. Pinned to `--short=8` so it string-matches the `${SOURCE_VERSION:0:8}` id Scalingo deploys publish. Computed by the Makefile from git; override in CI to pin a build. See [mobile.md](./mobile.md#bundle-versioning) | Optional |
 
 ### Static Files
 
@@ -280,11 +280,27 @@ _Those settings are deprecated and will be removed in the future._
 |----------|---------|-------------|----------|
 | `MOBILE_APP_ID` | `local.suitenumerique.messages` | Store/OS bundle identifier of the native app. The repo ships a neutral placeholder; an organisation publishing to the App Store / Play Store overrides it with its own signed id. Read by `cap sync` (container) **and** the native builds: gradle `applicationId` reads the host/CI env (`make mobile-android-run` exports it for you), while Xcode reads `ios/App/generated.xcconfig`, written by `make mobile-build` from the container env — no export can reach an IDE build. Independent of the auth callback scheme (`MOBILE_AUTH_SCHEME`). | Optional |
 | `MOBILE_APP_NAME` | `ST Messages` | The application name displayed on the device. The repo ships a neutral placeholder; an organisation publishing to the App Store / Play Store overrides it with its own name. Read by `cap sync` (container) **and** the native builds, through the same two channels as `MOBILE_APP_ID`: gradle `resValue app_name` (host/CI env, exported by `make mobile-android-run`) and the iOS `PRODUCT_DISPLAY_NAME` setting in `ios/App/generated.xcconfig` (written by `make mobile-build`). | Optional |
-| `MOBILE_AUTH_SCHEME` | `stmessages` | Deep-link scheme ending the mobile OIDC flow. Give each environment its own value so a staging and a production build can be installed side by side — sharing it makes Android ask the user which app should receive the login callback, mid-flow. Read by Vite for the JS side **and** by the native builds: Android `manifestPlaceholders` reads the host/CI env (`make mobile-android-run` exports it for you), iOS reads the `AUTH_CALLBACK_SCHEME` setting from `ios/App/generated.xcconfig` (written by `make mobile-build`). Must be listed in the backend's `MOBILE_AUTH_CALLBACK_SCHEMES`. | Optional |
+| `MOBILE_AUTH_SCHEME` | `stmessages` | Deep-link scheme ending the mobile OIDC flow. Give each environment its own value so a staging and a production build can be installed side by side — sharing it makes Android ask the user which app should receive the login callback, mid-flow. Read by Vite for the JS side **and** by the native builds: Android `manifestPlaceholders` reads the host/CI env (`make mobile-android-run` exports it for you), iOS reads the `AUTH_CALLBACK_SCHEME` setting from `ios/App/generated.xcconfig` (written by `make mobile-build`). Must be listed in the backend's `MOBILE_AUTH_CALLBACK_SCHEMES`. Also required on an OTA-publishing PaaS app (`MOBILE_OTA_S3_BUCKET` set): that build produces the bundle devices download, so leaving it to the default there ships a bundle whose login is rejected — the staging hook refuses to publish without it. | Optional |
 | `MOBILE_DEV_SERVER_URL` | `http://localhost:8900` (dev env, `frontend.defaults`) | **Dev only.** URL of the Vite dev server baked as Capacitor `server.url` at `cap sync` (`capacitor.config.ts`): the WebView then loads the app from Vite with hot reload instead of the embedded bundle. To disable (embedded bundle / OTA testing), set it **empty** in `frontend.local` and rerun `make mobile-build`. Must never be set for a release build — a gradle guard fails Android release builds carrying it. See [mobile.md](./mobile.md#hot-reload-on-by-default-in-dev) | Optional |
 | `MOBILE_ALLOW_CLEARTEXT_FOR_DEV` | `1` (dev env, `frontend.defaults`) | **Dev only.** Baked as Capacitor `server.cleartext` at `cap sync` (`capacitor.config.ts`), i.e. `android:usesCleartextTraffic` in the Android manifest: allows plain HTTP for the whole app — the WebView reaching the Vite dev server and the native fetch/OTA layer reaching the `http://localhost:8901` backend and the RustFS OTA bucket (needed even with hot reload disabled). Must never be set for a release build — the manifest then stays cleartext-free. iOS equivalent: `NSAllowsLocalNetworking` (`Info.plist`, manual). | Optional |
 
 > **Note**: overriding `MOBILE_APP_ID` only changes the app identity; the OIDC deep-link scheme is a separate knob (`MOBILE_AUTH_SCHEME`), declared in the iOS `Info.plist` (`CFBundleURLTypes`) and the Android manifest. Changing one without the other is valid — but two builds installed together need **both** to differ.
+
+### Android Store Release (host/CI only)
+
+Read by gradle on the **host**, not by the container build — they are release
+parameters and signing secrets, so they live in the shell / CI secrets or in the
+gitignored `src/frontend/android/keystore.properties`, never in
+`deploy/env/`. See [mobile.md](./mobile.md#publishing-to-google-play).
+
+| Variable | Default | Description | Required |
+|----------|---------|-------------|----------|
+| `MOBILE_FIREBASE_PROJECT_ID` | — | Firebase project the bundled `android/app/google-services.json` must belong to. Optional but strongly recommended: environments are separate Firebase projects (see `PUSH_FCM_PROJECT_ID`), and building with the wrong file is silent — the app installs and logs in, it just never receives a push. When set, a release build fails on a mismatch. Read from `deploy/env/frontend.*` by `make mobile-android-release`. | Optional |
+| `MOBILE_VERSION_CODE` | commit count (`git rev-list --count HEAD`, via the Makefile) | Store build number, on both platforms: Android `versionCode` (read from the env by gradle) and iOS `CFBundleVersion` (written into `generated.xcconfig` at `make mobile-build`, since Xcode builds run from the host IDE). Play refuses any upload reusing a code it has already seen, and App Store Connect refuses a `CFBundleVersion` already uploaded for the same `MARKETING_VERSION`, so it must strictly grow; the git-derived default guarantees that without manual tracking. Override to pin a build. See [mobile.md](./mobile.md#app-versioning) | Optional |
+| `ANDROID_KEYSTORE_FILE` | — | Path to the Play **upload** keystore (`.jks`). Fallback for the `storeFile` entry of `keystore.properties`; setting neither fails release builds early rather than producing a bundle Play would reject. | Required for a release build |
+| `ANDROID_KEYSTORE_PASSWORD` | — | Keystore password (`storePassword` fallback). | Required for a release build |
+| `ANDROID_KEY_ALIAS` | — | Alias of the signing key inside the keystore (`keyAlias` fallback). | Required for a release build |
+| `ANDROID_KEY_PASSWORD` | — | Password of that key (`keyPassword` fallback). | Required for a release build |
 
 ### Mobile App Authentication (Capacitor)
 

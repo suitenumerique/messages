@@ -1,0 +1,283 @@
+@use "../../../../../styles/utils" as *;
+
+.compose-window {
+    display: flex;
+    flex-direction: column;
+    width: 510px;
+    max-width: calc(100vw - var(--c--globals--spacings--base));
+    // Sized by its content (the composer imposes its minimum), capped so the
+    // tab never towers over the mailbox; past the cap the body scrolls.
+    height: auto;
+    max-height: 60vh;
+    background-color: var(--c--contextuals--background--surface--primary);
+    border: 1px solid var(--c--contextuals--border--surface--primary);
+    border-bottom: none;
+    border-radius: var(--c--globals--spacings--2xs) var(--c--globals--spacings--2xs) 0 0;
+    // box-shadow: 0 -2px 12px 0 rgba(0, 0, 0, 0.18);
+    box-shadow: 1px 2px rgba(0, 0, 0, 0.04), 0 8px 20px -8px var(--c--contextuals--background--semantic--contextual--primary-hover);
+    overflow: hidden;
+
+    &:focus {
+        outline: none;
+    }
+}
+
+.compose-window--minimized {
+    // Dock tab: clamped between 250 and 350px, shrinking with the row.
+    width: auto;
+    flex: 0 1 350px;
+    min-width: 250px;
+    height: auto;
+}
+
+.compose-window--overflow {
+    display: none;
+}
+
+.compose-window--floating {
+    position: fixed;
+    inset: 0;
+    margin: auto;
+    width: min(960px, 92vw);
+    height: min(84vh, 800px);
+    max-height: none;
+    border-radius: var(--c--globals--spacings--2xs);
+    border-bottom: 1px solid var(--c--contextuals--border--surface--primary);
+    z-index: 1;
+}
+
+.compose-window-backdrop {
+    position: fixed;
+    inset: 0;
+    background-color: rgba(0, 0, 0, 0.35);
+}
+
+.compose-window__header {
+    display: flex;
+    align-items: center;
+    gap: var(--c--globals--spacings--2xs);
+    padding: var(--c--globals--spacings--3xs) var(--c--globals--spacings--2xs);
+    // Grey tab surface — only the minimized tab keeps it; the expanded
+    // window swaps it for the scroll veil below.
+    background-color: var(--c--contextuals--background--surface--tertiary);
+    flex-shrink: 0;
+}
+
+// Expanded window (docked, floating or sheet): no opaque header.
+// The body's scroll viewport slides under the header and its content
+// dissolves in a blurry white gradient instead of hitting a hard grey edge —
+// same veil recipe as the thread panel header.
+.compose-window:not(.compose-window--minimized) {
+    // How far the body hides under the header: content must finish
+    // dissolving in the veil before the browser clips it at this line.
+    --compose-header-overlap: 1.5rem;
+
+    .compose-window__header {
+        // Above the body so the veil paints over the scrolling form.
+        position: relative;
+        z-index: 2;
+        background: none;
+        border-bottom: none;
+
+        &::after {
+            content: "";
+            position: absolute;
+            inset: 0 0 -6px 0;
+            // Behind the header controls, above the form.
+            z-index: -1;
+            pointer-events: none;
+            background: linear-gradient(to bottom,
+                    var(--c--contextuals--background--surface--primary) calc(100% - var(--compose-header-overlap)),
+                    transparent 100%);
+            backdrop-filter: blur(6px);
+            // The blur dissolves along with the tint, so the veil has no
+            // visible bottom edge.
+            -webkit-mask-image: linear-gradient(
+                to bottom,
+                #000 0%,
+                #000 60%,
+                rgba(0, 0, 0, .7) 78%,
+                rgba(0, 0, 0, .3) 90%,
+                transparent 100%
+            );
+            mask-image: linear-gradient(
+                to bottom,
+                #000 0%,
+                #000 60%,
+                rgba(0, 0, 0, .5) 78%,
+                rgba(0, 0, 0, .3) 90%,
+                transparent 100%
+            );
+        }
+    }
+
+    .compose-window__body {
+        margin-top: calc(-1 * var(--compose-header-overlap));
+        padding-top: calc(var(--compose-header-overlap) + var(--c--globals--spacings--2xs));
+    }
+}
+
+.compose-window__title {
+    // The title doubles as the minimize/restore toggle, like Gmail.
+    flex: 1;
+    min-width: 0;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+    text-align: left;
+    border: none;
+    background: none;
+    cursor: pointer;
+    padding: var(--c--globals--spacings--3xs) var(--c--globals--spacings--2xs);
+    font-size: var(--c--globals--font--sizes--sm);
+    font-weight: 700;
+    color: var(--c--contextuals--content--semantic--neutral--primary);
+}
+
+.compose-window__actions {
+    display: flex;
+    align-items: center;
+    flex-shrink: 0;
+}
+
+.compose-window__body {
+    display: flex;
+    flex-direction: column;
+    flex: 1;
+    min-height: 0;
+    // The body is the scroller: the whole form scrolls under the sticky
+    // footer, which carries the bottom padding itself.
+    overflow-y: auto;
+    padding: var(--c--globals--spacings--2xs) var(--c--globals--spacings--sm) 0;
+
+    &[hidden] {
+        display: none;
+    }
+
+    .message-form--compact {
+        flex: 1;
+    }
+}
+
+.compose-window__loading {
+    display: flex;
+    flex: 1;
+    align-items: center;
+    justify-content: center;
+}
+
+.compose-window-close-confirm__actions {
+    display: flex;
+    flex-wrap: wrap;
+    justify-content: flex-end;
+    gap: var(--c--globals--spacings--2xs);
+    margin-top: var(--c--globals--spacings--base);
+}
+
+// Mobile expanded window: full-screen bottom sheet, whatever the stored
+// presentation. Minimized windows are folded behind the stack bar (hidden
+// through .compose-window--overflow), so they need no mobile styling.
+.compose-window--sheet {
+    position: fixed;
+    // Full-height sheet standing in for the app chrome: its header padding
+    // reuses the app header metrics so the Close/Send CTAs land exactly
+    // where the header controls live, below the top safe area.
+    inset: 0;
+    width: 100%;
+    max-width: 100vw;
+    height: auto;
+    // The docked tab's 60vh cap must not apply here: the sheet fills the
+    // whole available height.
+    max-height: none;
+    margin: 0;
+    border: none;
+    border-radius: 0;
+    animation: compose-sheet-in 250ms ease-out;
+
+    .compose-window__header {
+        position: relative;
+        // Same block/inline padding as .c__main-layout__header.
+        padding: calc(var(--safe-area-inset-top) + var(--c--globals--spacings--2xs)) 1.125rem var(--c--globals--spacings--2xs);
+        // Grab handle hinting at the swipe-down-to-minimize gesture; same
+        // pill as .drawer__grab-handle so every draggable sheet reads alike.
+        touch-action: none;
+
+        &::before {
+            @include grab-handle;
+
+            content: "";
+            position: absolute;
+            top: calc(var(--safe-area-inset-top) + var(--c--globals--spacings--3xs));
+            left: 50%;
+            transform: translateX(-50%);
+        }
+    }
+
+    // Close on the left, Send on the right: the title sits between them.
+    .compose-window__title {
+        text-align: center;
+    }
+
+    // Same affordance as the other mobile CTAs: comfortable touch target
+    // with the floating-control surface (border + soft shadow).
+    .compose-window__header .c__button {
+        @include control-surface;
+
+        flex: 0 0 auto;
+        width: 40px;
+        height: 40px;
+    }
+
+    // The sheet header owns send and close: drop the footer duplicates,
+    // keeping the attachment controls and the save-time indicator.
+    .form-footer .dropdown-button,
+    .form-footer .form-footer__delete {
+        display: none;
+    }
+
+    // The sheet reaches the very bottom of the screen: the sticky footer
+    // must clear the iOS home indicator, like the other mobile bottom bars.
+    .form-footer {
+        padding-bottom: calc(var(--c--globals--spacings--sm) + var(--safe-area-inset-bottom));
+    }
+
+    // In the native app the footer scrolls with the form instead of
+    // sticking over it: send lives in the sheet header there, so pinning
+    // the remaining controls only eats composing space over the keyboard.
+    :root.native & .form-footer {
+        position: static;
+    }
+
+    // On the small viewport the attachment list must not stack full height
+    // under the composer: collapse it to a single horizontal rail scrolling
+    // with a snap per item, the next card peeking to hint at the scroll.
+    .attachment-bucket__list {
+        display: flex;
+        overflow-x: auto;
+        overscroll-behavior-x: contain;
+        scroll-snap-type: x mandatory;
+
+        > * {
+            flex: 0 0 auto;
+            width: 16rem;
+            max-width: 80%;
+            scroll-snap-align: start;
+        }
+    }
+}
+
+@keyframes compose-sheet-in {
+    from {
+        transform: translateY(100%);
+    }
+
+    to {
+        transform: none;
+    }
+}
+
+@media (prefers-reduced-motion: reduce) {
+    .compose-window--sheet {
+        animation: none;
+    }
+}

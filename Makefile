@@ -189,12 +189,12 @@ start-deps: ## start the slow infra deps (postgres, redis, keycloak) in the back
 .PHONY: start-deps
 
 # Fail fast (before booting a broken stack) when the project has not been
-# bootstrapped: `make bootstrap` creates the gitignored env files and the
-# frontend node_modules volume. start/start-full depend on this.
+# bootstrapped: `make bootstrap` creates the gitignored env files and installs
+# the frontend dependencies. start/start-full depend on this.
 check-bootstrapped:
 	@test -f deploy/env/backend.local || { \
 		printf "\n$(BOLD)✗ Not bootstrapped$(RESET): env files are missing.\n  Run $(BOLD)make bootstrap$(RESET) first.\n\n" >&2; exit 1; }
-	@docker volume inspect st-messages_frontend-node-modules >/dev/null 2>&1 || { \
+	@test -d src/frontend/node_modules/.bin || { \
 		printf "\n$(BOLD)✗ Not bootstrapped$(RESET): frontend dependencies are not installed.\n  Run $(BOLD)make bootstrap$(RESET) first.\n\n" >&2; exit 1; }
 .PHONY: check-bootstrapped
 
@@ -273,13 +273,23 @@ mobile-ota-bucket: ## create the public mobile OTA bucket in objectstorage
 # bind mount), then zip + upload it and the channel manifest to the public
 # bucket. Both steps run in the frontend toolchain: the OTA release is a
 # frontend artifact, Django is not involved. VERSION defaults to the git-derived
-# MOBILE_OTA_BUILD_ID (the hybrid <count>-<sha> id); override it to pin a specific
-# release. CHANNEL defaults to the MOBILE_OTA_CHANNEL env var (frontend env files).
-ota-publish: VERSION ?= $(MOBILE_OTA_BUILD_ID)
-ota-publish: ## build and publish a mobile OTA bundle (VERSION defaults to <count>-<sha>, CHANNEL to MOBILE_OTA_CHANNEL)
+# MOBILE_OTA_BUILD_ID (short sha); override it to pin a specific release.
+# CHANNEL defaults to the MOBILE_OTA_CHANNEL env var (frontend env files).
+mobile-ota-publish: VERSION ?= $(MOBILE_OTA_BUILD_ID)
+mobile-ota-publish: ## build and publish a mobile OTA bundle (VERSION defaults to the short sha, CHANNEL to MOBILE_OTA_CHANNEL)
 	@$(COMPOSE) up -d objectstorage --wait
 	@$(COMPOSE_RUN) frontend-mobile sh -c "npm run build && npm run mobile:ota:publish -- --version $(VERSION)$(if $(CHANNEL), --channel $(CHANNEL))"
-.PHONY: ota-publish
+.PHONY: mobile-ota-publish
+
+# Re-point the channel manifest at an already-published version (no rebuild):
+# reads the release metadata archived at publish time and bumps the manifest
+# sequence so devices follow even though the build id goes backward. VERSION is
+# required. CHANNEL defaults to the MOBILE_OTA_CHANNEL env var (frontend env files).
+mobile-ota-rollback: ## roll a channel back to a published OTA version (VERSION required, CHANNEL defaults to MOBILE_OTA_CHANNEL)
+	@test -n "$(VERSION)" || { echo "VERSION is required: make mobile-ota-rollback VERSION=<id> [CHANNEL=<name>]"; exit 1; }
+	@$(COMPOSE) up -d objectstorage --wait
+	@$(COMPOSE_RUN) frontend-mobile npm run mobile:ota:rollback -- --version $(VERSION)$(if $(CHANNEL), --channel $(CHANNEL))
+.PHONY: mobile-ota-rollback
 
 # -- Linters
 
@@ -704,25 +714,35 @@ build-front: ## build the frontend locally
 	@$(COMPOSE) run --rm --build frontend-tools npm run build
 .PHONY: build-front
 
-# Hybrid OTA/build version: a monotonic commit count (for ordering — enables a
-# future downgrade check) plus the short SHA (for traceability). Computed on the
-# HOST (git is not in the container) and injected; CI may override it.
-MOBILE_OTA_BUILD_ID ?= $(shell git rev-list --count HEAD)-$(shell git rev-parse --short HEAD)
+# OTA/build id: the bare short commit SHA. Release ordering is carried by the
+# manifest's `sequence` counter (and "redeploy = re-flip" on Scalingo), not by
+# the id — Scalingo builds have no .git and derive the same id from
+# SOURCE_VERSION, so `--short=8` is pinned: the builtin-vs-manifest freshness
+# check is a plain string equality and both sides must produce identical ids.
+# Computed on the HOST (git is not in the container) and injected; CI may
+# override it.
+MOBILE_OTA_BUILD_ID ?= $(shell git rev-parse --short=8 HEAD)
 
 # Mobile (Capacitor). The web bundle is built in a container (frontend-mobile,
 # which carries the env_file so the NEXT_PUBLIC_* vars are inlined) and synced
 # into the native projects. The sync (not a bare copy) also regenerates the
 # gitignored capacitor-cordova-android-plugins/ scaffolding that Gradle needs,
 # so always run `make mobile-build` after a fresh checkout. The native compile /
-# IDE / device steps are macOS- and SDK-bound, so they stay on the host.
+# IDE / device steps are macOS- and SDK-bound, so they stay on the host; they
+# read the dependencies straight from src/frontend/node_modules, which the
+# container shares through the bind mount.
 # MOBILE_OTA_BUILD_ID is passed so `cap sync` stamps it as the builtin bundle version
 # (capacitor.config.ts), letting the OTA freshness check match a same-commit
 # manifest instead of re-downloading on first launch.
+# MOBILE_VERSION_CODE is passed for the iOS build number: gradle reads it from the
+# env at `make mobile-android-release`, but Xcode builds run from the IDE, so the
+# value has to be written into generated.xcconfig here — the only moment the host
+# git state and the container meet (scripts/generate-ios-xcconfig.mjs).
 #
 # Hot reload: MOBILE_DEV_SERVER_URL (frontend env files, set by default in dev)
 # is baked as the WebView's server.url at `cap sync` — see docs/mobile.md.
 mobile-build: ## build the web bundle and sync it + native plugins into the projects (container, env-aware)
-	@$(COMPOSE) run --rm --build -e MOBILE_OTA_BUILD_ID=$(MOBILE_OTA_BUILD_ID) frontend-mobile npm run mobile:build
+	@$(COMPOSE) run --rm --build -e MOBILE_OTA_BUILD_ID=$(MOBILE_OTA_BUILD_ID) -e MOBILE_VERSION_CODE=$(MOBILE_VERSION_CODE) frontend-mobile npm run mobile:build
 .PHONY: mobile-build
 
 # Regenerate the native app icons and splashscreens from src/frontend/assets/
@@ -780,6 +800,32 @@ mobile-android-run: mobile-build ## (host) build+install the debug APK on a devi
 	@adb install -r $(ANDROID_DEBUG_APK)
 	@$(MAKE) mobile-android-reverse
 .PHONY: mobile-android-run
+
+# The build number both stores order releases by: Android versionCode (read
+# from the env by gradle below) and iOS CFBundleVersion (written into
+# generated.xcconfig at `make mobile-build`). Play refuses a versionCode it has
+# already seen and App Store Connect refuses a CFBundleVersion already uploaded
+# for the same MARKETING_VERSION, so it must strictly grow. Default to the
+# commit count so it can never be forgotten; override for a pinned/CI build.
+# Store-only numbering: OTA release ordering is a separate system (the manifest
+# `sequence`, see docs/mobile.md). The displayed version (versionName / iOS
+# MARKETING_VERSION) is not passed here either: both platforms read it from the
+# `appVersion` property of capacitor.config.ts, bumped manually per release
+# (docs/mobile.md, App versioning).
+MOBILE_VERSION_CODE ?= $(shell git rev-list --count HEAD)
+ANDROID_RELEASE_AAB = src/frontend/android/app/build/outputs/bundle/release/app-release.aab
+
+mobile-android-release: mobile-build ## (host) build the signed Play bundle (.aab) — see docs/mobile.md
+	@cd src/frontend/android && \
+		MOBILE_APP_ID="$(call mobile_env,MOBILE_APP_ID)" \
+		MOBILE_APP_NAME="$(call mobile_env,MOBILE_APP_NAME)" \
+		MOBILE_AUTH_SCHEME="$(call mobile_env,MOBILE_AUTH_SCHEME)" \
+		MOBILE_FIREBASE_PROJECT_ID="$(call mobile_env,MOBILE_FIREBASE_PROJECT_ID)" \
+		MOBILE_VERSION_CODE="$(MOBILE_VERSION_CODE)" \
+		./gradlew bundleRelease
+	@echo "$(GREEN)Signed bundle: $(ANDROID_RELEASE_AAB)$(RESET)"
+	@echo "versionCode $(MOBILE_VERSION_CODE) / versionName $$(sed -n 's/.*\"appVersion\": *\"\([^\"]*\)\".*/\1/p' src/frontend/android/app/src/main/assets/capacitor.config.json)"
+.PHONY: mobile-android-release
 
 i18n-generate-front: ## Extract the frontend translation inside a json to be used for crowdin
 	@$(COMPOSE) run --rm --build frontend-tools npm run i18n:extract

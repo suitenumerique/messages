@@ -1,5 +1,5 @@
 import { Button } from "@gouvfr-lasuite/cunningham-react";
-import { Icon } from "@gouvfr-lasuite/ui-kit";
+import { useResponsive } from "@gouvfr-lasuite/ui-kit";
 import { useTranslation } from "react-i18next";
 import { useQueryClient } from "@tanstack/react-query";
 import {
@@ -7,6 +7,8 @@ import {
   getMailboxesImportsListQueryKey,
   useMailboxesImportsList,
 } from "@/features/api/gen";
+import { Icon } from "@/features/ui/components/icon";
+import { Plus } from "@gouvfr-lasuite/ui-kit/icons";
 import { addToast, ToasterItem } from "@/features/ui/components/toaster";
 import { ImportsDataGrid } from "../../imports-view/imports-data-grid";
 import { ImportNewView } from "../../imports-view/import-new-view";
@@ -30,6 +32,7 @@ export const MailboxSettingsImportsTab = ({
 }: MailboxSettingsImportsTabProps) => {
   const { t } = useTranslation();
   const queryClient = useQueryClient();
+  const { isMobile } = useResponsive();
   const { data } = useMailboxesImportsList(mailbox.id, {
     query: { enabled: !!mailbox.id },
   });
@@ -78,11 +81,12 @@ export const MailboxSettingsImportsTab = ({
           }
           action={
             <Button
-              size="nano"
-              icon={<Icon name="add" />}
+              size={isMobile ? "small" : "nano"}
+              icon={<Icon icon={Plus} />}
               onClick={() => onViewChange("new")}
+              aria-label={isMobile ? t("New import") : undefined}
             >
-              {t("New import")}
+              {!isMobile && t("New import")}
             </Button>
           }
         />

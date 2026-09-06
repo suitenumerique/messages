@@ -1,22 +1,174 @@
+// Swipe-to-reveal wrapper (touch only). The action panels are laid out
+// underneath the row, which slides over them: nothing needs to be measured or
+// animated on the panels themselves, they are simply uncovered.
+.thread-item-swipe {
+    position: relative;
+    border-radius: 4px;
+    // Clips the action panels, which are wider than the row is tall and would
+    // otherwise spill over the neighbouring rows.
+    overflow: hidden;
+    // MUST stay alongside `overflow: hidden`. The thread list is a scrollable
+    // flex column, so its children are shrinkable by default; a row survives
+    // that because its automatic minimum size is its content height — but only
+    // as long as its overflow is visible. Clipping the box resolves that
+    // minimum to zero instead, and the whole list collapses to nothing (and
+    // the infinite scroll then walks through every page, its loader never
+    // leaving the viewport).
+    flex-shrink: 0;
+    // Reserve the vertical axis for the list scroll so the browser never
+    // claims the horizontal moves — those are ours to interpret.
+    touch-action: pan-y;
+}
+
+// Neutralised wrapper: off the gesture path it must leave the row exactly as
+// it was, both in layout (the row stays the flex item of the list) and in
+// painting (no clipping of the focus ring or of raised badges).
+.thread-item-swipe--disabled,
+.thread-item-swipe--disabled > .thread-item-swipe__content {
+    display: contents;
+}
+
+.thread-item-swipe__content {
+    position: relative;
+    // Opaque, otherwise the panels below stay visible through the row at rest.
+    background-color: var(--c--contextuals--background--surface--secondary);
+    transition: transform 0.2s var(--c--globals--transitions--ease-out);
+    // The gesture writes `transition: none` here while the finger drives the
+    // row, and hands it back on release (see use-swipe-actions).
+}
+
+// Promoted only for the duration of the gesture: a permanent layer per row
+// would keep a compositor texture alive for the whole list.
+.thread-item-swipe--swiping > .thread-item-swipe__content {
+    will-change: transform;
+}
+
+.thread-item-swipe__panel {
+    position: absolute;
+    inset-block: 0;
+    display: flex;
+    align-items: stretch;
+}
+
+// Both panels span the full width so that pulling further than their buttons
+// keeps showing the action colour — the leading one during a commit pull, the
+// trailing one during the elastic overshoot — instead of a bare gap.
+.thread-item-swipe__panel--start {
+    inset-inline: 0;
+    justify-content: flex-start;
+    background-color: var(--c--contextuals--background--semantic--brand--primary);
+}
+
+.thread-item-swipe__panel--end {
+    inset-inline: 0;
+    justify-content: flex-end;
+    // Matches the outermost button so the overshoot reads as that button
+    // stretching.
+    background-color: var(--c--contextuals--background--semantic--error--primary);
+}
+
+// Spanning the full width means the two panels overlap, so the one that is not
+// being pulled has to step aside: without this, a long pull to one side
+// uncovers the other side's buttons from under the row. `data-side` is written
+// by the gesture straight to the DOM, so this costs no re-render.
+.thread-item-swipe[data-side="start"] .thread-item-swipe__panel--end,
+.thread-item-swipe[data-side="end"] .thread-item-swipe__panel--start,
+.thread-item-swipe:not([data-side]) .thread-item-swipe__panel,
+.thread-item-swipe[data-side=""] .thread-item-swipe__panel {
+    visibility: hidden;
+}
+
+.thread-item-swipe__action {
+    width: 76px;
+    flex-shrink: 0;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    gap: var(--c--globals--spacings--4xs);
+    border: none;
+    cursor: pointer;
+    padding: 0;
+    font-size: var(--c--globals--font--sizes--t);
+    line-height: 1.1;
+    text-align: center;
+}
+
+.thread-item-swipe__action-label {
+    max-width: 100%;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+    padding-inline: var(--c--globals--spacings--4xs);
+}
+
+.thread-item-swipe__action--read {
+    background-color: var(--c--contextuals--background--semantic--brand--primary);
+    color: var(--c--contextuals--content--semantic--brand--on-brand);
+    // Grows with the pull: past the commit threshold the icon slides along
+    // with the row, signalling that releasing now runs the action.
+    transition: transform 0.15s var(--c--globals--transitions--ease-out);
+}
+
+.thread-item-swipe[data-will-commit="true"] .thread-item-swipe__action--read {
+    transform: scale(1.15);
+}
+
+.thread-item-swipe__action--archive {
+    background-color: var(--c--contextuals--background--semantic--neutral--primary);
+    color: var(--c--contextuals--content--semantic--neutral--on-neutral);
+}
+
+.thread-item-swipe__action--trash {
+    background-color: var(--c--contextuals--background--semantic--error--primary);
+    color: var(--c--contextuals--content--semantic--error--on-error);
+}
+
+// A row held open is a dismiss surface: dim it so it reads as "tap to close"
+// rather than as a normal, tappable row.
+.thread-item-swipe--open .thread-item {
+    opacity: 0.85;
+}
+
+@media (prefers-reduced-motion: reduce) {
+    .thread-item-swipe__content,
+    .thread-item-swipe__action--read {
+        transition: none;
+    }
+}
+
 .thread-item {
     color: inherit;
-    text-decoration: none;
+    // Anchor for the stretched link overlay (.thread-item__link::after).
+    position: relative;
     display: flex;
     flex-direction: row;
+    align-items: flex-start;
     justify-content: space-between;
-    padding: var(--c--globals--spacings--3xs) var(--c--globals--spacings--4xs);
+    padding-block: var(--c--globals--spacings--3xs);
+    padding-inline: var(--c--globals--spacings--3xs) var(--c--globals--spacings--xs);
     box-sizing: border-box;
     border-radius: 4px;
     border: 1px solid transparent;
+    // A long press opens selection mode on touch: keep the OS text-selection
+    // and callout gestures from hijacking it.
+    user-select: none;
+    -webkit-user-select: none;
+    -webkit-touch-callout: none;
+    gap: var(--c--globals--spacings--sm);
 
-    & > div:first-child {
-        padding-top: 0.42rem;
-        padding-inline: var(--c--globals--spacings--2xs);
+    & > .thread-item__aside {
         flex-shrink: 0;
         display: flex;
-        flex-direction: column;
+        flex-direction: row;
         align-items: center;
         gap: var(--c--globals--spacings--3xs);
+    }
+
+    // The avatar is taller than the checkbox it replaces; pull the column
+    // back up so the row keeps the same top alignment in both modes.
+    &:not(:has(.thread-item__checkbox-wrapper)) > .thread-item__aside {
+        padding-top: var(--c--globals--spacings--4xs);
     }
 
     & > div:last-child {
@@ -28,8 +180,34 @@
     }
 }
 
+// Stretched-link pattern: the link only wraps the thread subject so no
+// interactive element (star button) ends up nested inside it; the ::after
+// overlay restores the full-row click surface. Elements that must stay
+// hoverable/clickable are raised above the overlay with z-index (badges
+// column, labels), and the item container's click handler takes over
+// navigation for plain clicks landing on them.
+.thread-item__link {
+    color: inherit;
+    text-decoration: none;
+    display: block;
+    flex: 1;
+    min-width: 0;
+
+    &::after {
+        content: '';
+        position: absolute;
+        inset: 0;
+    }
+
+    // The focus ring is drawn on the whole item (see below), not around
+    // the subject text alone.
+    &:focus-visible {
+        outline: none;
+    }
+}
+
 .thread-item:not(.thread-item--active):hover,
-.thread-item:not(.thread-item--active):focus {
+.thread-item:not(.thread-item--active):has(.thread-item__link:focus) {
     background-color: var(--c--contextuals--background--semantic--neutral--tertiary);
     border-color: var(--c--contextuals--border--semantic--neutral--tertiary);
 }
@@ -37,7 +215,7 @@
 // Keyboard focus ring, drawn inward so the scroll container does not clip
 // it. Outline does not conflict with the state backgrounds, so it stays
 // visible on selected and active rows too.
-.thread-item:focus-visible {
+.thread-item:has(.thread-item__link:focus-visible) {
     outline: 2px solid var(--c--contextuals--border--focus);
     outline-offset: -2px;
 }
@@ -53,7 +231,7 @@
 }
 
 .thread-item.thread-item--selected:not(.thread-item--active):hover,
-.thread-item.thread-item--selected:not(.thread-item--active):focus {
+.thread-item.thread-item--selected:not(.thread-item--active):has(.thread-item__link:focus) {
     background-color: var(--c--contextuals--background--semantic--brand--secondary);
     border-color: var(--c--contextuals--border--semantic--brand--secondary);
 }
@@ -69,6 +247,8 @@
     display: flex;
     flex-direction: row;
     justify-content: space-between;
+    gap: 4px;
+    align-items: baseline;
 
     &.thread-item__row--subject {
         align-items: center;
@@ -94,9 +274,10 @@
 .thread-item__checkbox-wrapper {
     display: inline-flex;
     flex-shrink: 0;
-    // The checkbox is presentational only; let clicks reach the Link so
-    // handleItemClick handles selection (and the checkbox stays in sync via
-    // its `checked` prop instead of fighting the click's preventDefault).
+    // The checkbox is presentational only; let clicks land on the identity
+    // slot so handleItemClick handles selection (and the checkbox stays in
+    // sync via its `checked` prop instead of fighting the click's
+    // preventDefault).
     pointer-events: none;
 }
 
@@ -104,16 +285,38 @@
     flex-shrink: 0;
     margin: 0;
     padding: 0;
-    --c--components--forms-checkbox--size: 1rem;
-    transform: translate(-3px, -30%);
+    --c--components--forms-checkbox--size: 1.25rem;
     & svg {
         width: var(--c--components--forms-checkbox--size);
         height: var(--c--components--forms-checkbox--size);
     }
 }
 
+.thread-item__avatar {
+    display: inline-flex;
+    flex-shrink: 0;
+    // Decorative: clicks are owned by the identity slot around it, which
+    // toggles selection (see handleItemClick).
+    pointer-events: none;
+}
+
+.thread-item__identity-slot {
+    padding: 3px;
+    min-width: 2.5rem;
+    min-height: 2.5rem;
+    box-sizing: border-box;
+    display: grid;
+    place-items: center;
+    // Raised above the stretched link overlay: a press here is the pointer
+    // entry into selection mode (Gmail-style avatar/checkbox toggle), owned
+    // by the item container's click handler — never a navigation.
+    position: relative;
+    z-index: 1;
+    cursor: pointer;
+}
+
 .thread-item__read-indicator {
-    --size: 0.5rem;
+    --size: 0.375rem;
     flex-shrink: 0;
     width: var(--size);
     height: var(--size);
@@ -163,7 +366,7 @@
 
 .thread-item__column:has(.thread-item__sender + .thread-item__message-count) {
     align-items: baseline;
-    gap: var(--c--globals--spacings--2xs);
+    gap: var(--c--globals--spacings--3xs);
 }
 
 .thread-item__snippet {
@@ -227,6 +430,12 @@
     gap: var(--c--globals--spacings--4xs);
     font-size: var(--c--globals--font--sizes--t);
     align-items: center;
+    // Above the stretched link overlay so the star button stays clickable
+    // and the badge/assignees tooltips keep receiving hover. The cursor
+    // matches the link surface it visually belongs to.
+    position: relative;
+    z-index: 1;
+    cursor: pointer;
 }
 
 .thread-item__labels {
@@ -237,6 +446,12 @@
     gap: var(--c--globals--spacings--2xs);
     min-width: 0;
     overflow: hidden;
+    // Above the stretched link overlay so the label name tooltips (title)
+    // keep receiving hover; clicks still open the thread via the item
+    // container's click handler.
+    position: relative;
+    z-index: 1;
+    cursor: pointer;
 }
 
 .thread-item__labels .badge {

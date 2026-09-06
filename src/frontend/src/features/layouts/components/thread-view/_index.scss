@@ -43,16 +43,8 @@
 }
 
 @media screen and (max-width: breakpoint(mobile)) {
-    .thread-view {
-        position: fixed;
-        top: var(--header-height);
-        left: 0;
-        right: 0;
-        bottom: 0;
-        z-index: 900;
-        height: auto;
-    }
-
+    // The thread view fills its panel in normal flow (the thread route renders
+    // it full-width on mobile), so no fixed overlay / header offset is needed.
     .thread-view--talk .thread-message:not(.thread-message--sender),
     .thread-view--talk .thread-message.thread-message--sender {
         margin-inline: 0;
@@ -66,14 +58,33 @@
     height: 100%;
 }
 
+// Single row: labels never steal a second line from the reading area, the
+// overflow is swiped through instead. Snapping stops a swipe on a label
+// boundary rather than mid-badge.
 .thread-view__labels-list {
     display: flex;
-    flex-wrap: wrap;
+    flex-wrap: nowrap;
     align-items: center;
     gap: 0.5rem;
-    padding: var(--c--globals--spacings--base);
-    padding-left: var(--c--globals--spacings--md);
-    padding-top: 0;
+    padding-top: var(--c--globals--spacings--xs);
+    // Breathing room for focus rings, which the scroll container clips.
+    padding-bottom: 2px;
+    overflow-x: auto;
+    overflow-y: hidden;
+    scroll-snap-type: x mandatory;
+    // The row is swiped/dragged, not scrolled with a visible bar: the bar
+    // would eat back the vertical space this row is meant to save.
+    scrollbar-width: none;
+    -ms-overflow-style: none;
+
+    &::-webkit-scrollbar {
+        display: none;
+    }
+
+    & > * {
+        flex: 0 0 auto;
+        scroll-snap-align: start;
+    }
 }
 
 
@@ -98,39 +109,10 @@
 }
 
 
+// Scrolls away with the content: only the action bar above stays pinned.
 .thread-view__header {
     padding-inline: var(--c--globals--spacings--md) var(--c--globals--spacings--base);
-    padding-block: var(--c--globals--spacings--b) var(--c--globals--spacings--base);
-    background: linear-gradient(to top, var(--c--globals--colors--black-000), var(--c--contextuals--background--surface--tertiary) 15px, var(--c--contextuals--background--surface--tertiary) 100%);
-    z-index: 10;
-    container-type: inline-size;
-}
-
-.thread-view__header__top {
-    display: flow-root;
-
-    .thread-action-bar__container {
-        float: right;
-        width: auto;
-        margin-left: var(--c--globals--spacings--base);
-        margin-bottom: var(--c--globals--spacings--4xs);
-    }
-
-    // Switch to a stacked layout before the title is squeezed down to a few
-    // orphan letters on its first line. Using a container query (not a media
-    // query) keeps the trigger in sync with the resizable thread panel width.
-    @container (max-width: 35rem) {
-        display: flex;
-        flex-direction: column;
-        gap: var(--c--globals--spacings--xs);
-
-        .thread-action-bar__container {
-            float: none;
-            align-self: flex-end;
-            margin-left: 0;
-            margin-bottom: 0;
-        }
-    }
+    padding-bottom: var(--c--globals--spacings--base);
 }
 
 .thread-view__subject {
@@ -138,17 +120,90 @@
     font-size: var(--c--globals--font--sizes--h4);
     vertical-align: baseline;
 
-    & > .thread-view__subject__star {
-        font-size: var(--c--globals--font--sizes--h4);
-        color: var(--c--contextuals--background--palette--yellow--secondary);
-        transform: translate(-4px, 3px)
+    & > .thread-view__subject__star-button {
+        transform: translate(-4px, 3px);
     }
 }
 
+// Only the action bar is pinned while reading. The row itself is transparent
+// and lets pointer events through, so the content scrolling underneath stays
+// readable and clickable around the floating controls.
 .thread-view__sticky-container {
     position: sticky;
     top: 0;
     z-index: 2;
+    display: flex;
+    align-items: center;
+    justify-content: flex-end;
+    gap: var(--c--globals--spacings--xs);
+    padding: var(--c--globals--spacings--xs) var(--c--globals--spacings--base);
+    pointer-events: none;
+    // Sizes the container query driving where the compact subject lands
+    // (beside or below the bar), in sync with the resizable panel width.
+    container-type: inline-size;
+
+    .thread-action-bar__container {
+        pointer-events: auto;
+    }
+}
+
+// One-line recall of the subject, revealed once the real header has scrolled
+// away. Same floating-control surface as the action bar so it stays readable
+// over the content passing underneath.
+.thread-view__sticky-subject {
+    @include control-surface;
+
+    display: flex;
+    align-items: center;
+    align-self: stretch;
+    gap: var(--c--globals--spacings--3xs);
+    // Anchors the recall to the left edge while the bar keeps hugging the right.
+    margin-right: auto;
+    min-width: 0;
+    padding: var(--c--globals--spacings--3xs) var(--c--globals--spacings--2xs);
+    font-weight: 700;
+    pointer-events: auto;
+    animation: thread-view-sticky-subject-in 150ms ease;
+}
+
+.thread-view__sticky-subject__text {
+    overflow: hidden;
+    white-space: nowrap;
+    text-overflow: ellipsis;
+}
+
+// Not enough room beside the action bar: the recall drops to its own line
+// below, still overlaying the content rather than pushing it down (keeping
+// the sticky row height stable is what spares us any collapse feedback loop).
+@container (max-width: 35rem) {
+    .thread-view__sticky-subject {
+        position: absolute;
+        top: 100%;
+        left: var(--c--globals--spacings--base);
+        right: var(--c--globals--spacings--base);
+        margin-right: 0;
+    }
+}
+
+// On mobile the recall lands on its own overlay line (see container query
+// above) and eats scarce reading space: drop it entirely, only the action
+// bar stays pinned. Desktop keeps the recall.
+@media screen and (max-width: breakpoint(mobile)) {
+    .thread-view__sticky-subject {
+        display: none;
+    }
+}
+
+@keyframes thread-view-sticky-subject-in {
+    from {
+        opacity: 0;
+        transform: translateY(-4px);
+    }
+
+    to {
+        opacity: 1;
+        transform: translateY(0);
+    }
 }
 
 // Magnetic-focus highlight applied after deep-link navigation lands on a
@@ -216,6 +271,9 @@
 }
 
 @media (prefers-reduced-motion: reduce) {
+    .thread-view__sticky-subject {
+        animation: none;
+    }
     .thread-message.thread-view__highlight,
     .thread-event.thread-view__highlight .thread-event__content {
         animation: none;

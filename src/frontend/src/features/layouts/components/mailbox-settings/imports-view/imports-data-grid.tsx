@@ -1,4 +1,4 @@
-import { DropdownMenu, DropdownMenuOption, Icon, Spinner } from "@gouvfr-lasuite/ui-kit";
+import { DropdownMenu, DropdownMenuOption, IconSize, Spinner } from "@gouvfr-lasuite/ui-kit";
 import { Button, Column, DataGrid, useModals } from "@gouvfr-lasuite/cunningham-react";
 import { useTranslation } from "react-i18next";
 import clsx from "clsx";
@@ -19,6 +19,8 @@ import { addToast, ToasterItem } from "@/features/ui/components/toaster";
 import { handle } from "@/features/utils/errors";
 import { DateHelper } from "@/features/utils/date-helper";
 import { isTerminal, STATUS_CANCELLED } from "@/hooks/import-status";
+import { Icon } from "@/features/ui/components/icon";
+import { Pause, Play, Trash } from "@gouvfr-lasuite/ui-kit/icons";
 
 type ImportsDataGridProps = {
     mailbox: Mailbox;
@@ -92,13 +94,13 @@ const RowActions = ({ row, pending, isOpen, onOpenChange, onPause, onResume, onM
         if (row.is_active !== false) {
             options.push({
                 label: t("Pause polling"),
-                icon: <Icon name="pause" />,
+                icon: <Icon icon={Pause} size={IconSize.SMALL} />,
                 callback: () => onPause(row),
             });
         } else {
             options.push({
                 label: t("Resume polling"),
-                icon: <Icon name="play_arrow" />,
+                icon: <Icon icon={Play} size={IconSize.SMALL} />,
                 callback: () => onResume(row),
             });
         }
@@ -123,7 +125,7 @@ const RowActions = ({ row, pending, isOpen, onOpenChange, onPause, onResume, onM
         label: isRunning(row)
             ? t("Cancel import and delete its messages")
             : t("Delete imported messages"),
-        icon: <Icon name="delete" />,
+        icon: <Icon icon={Trash} size={IconSize.SMALL} />,
         callback: () => onCancel(row),
         variant: "danger",
     });

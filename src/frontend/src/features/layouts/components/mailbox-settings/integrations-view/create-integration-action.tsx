@@ -1,5 +1,7 @@
-import { Button, ButtonProps } from "@gouvfr-lasuite/cunningham-react";
-import { Icon } from "@gouvfr-lasuite/ui-kit";
+import { Button } from "@gouvfr-lasuite/cunningham-react";
+import { useResponsive } from "@gouvfr-lasuite/ui-kit";
+import { Icon } from "@/features/ui/components/icon";
+import { Plus } from "@gouvfr-lasuite/ui-kit/icons";
 import { useTranslation } from "react-i18next";
 import { useModal } from "@gouvfr-lasuite/cunningham-react";
 import { Mailbox } from "@/features/api/gen";
@@ -7,21 +9,22 @@ import { ModalComposeIntegration } from "../modal-compose-integration";
 
 type CreateIntegrationActionProps = {
     mailbox: Mailbox;
-    size?: ButtonProps["size"];
 };
 
-export const CreateIntegrationAction = ({ mailbox, size }: CreateIntegrationActionProps) => {
+export const CreateIntegrationAction = ({ mailbox }: CreateIntegrationActionProps) => {
     const { t } = useTranslation();
     const modal = useModal();
+    const { isMobile } = useResponsive();
 
     return (
         <>
             <Button
-                size={size}
+                size={isMobile ? "small" : "nano"}
                 onClick={() => modal.open()}
-                icon={<Icon name="add" />}
+                icon={<Icon icon={Plus} />}
+                aria-label={isMobile ? t("New integration") : undefined}
             >
-                {t("New integration")}
+                {!isMobile && t("New integration")}
             </Button>
             <ModalComposeIntegration
                 isOpen={modal.isOpen}

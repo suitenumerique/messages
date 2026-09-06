@@ -1,6 +1,7 @@
 import { useMailboxContext } from "@/features/providers/mailbox";
 import { SKIP_LINK_TARGET_ID } from "@/features/ui/components/skip-link";
 import { ThreadItem } from "./components/thread-item";
+import { ThreadItemSwipe } from "./components/thread-item/thread-item-swipe";
 import { Spinner } from "@gouvfr-lasuite/ui-kit";
 import { useTranslation } from "react-i18next";
 import { Button } from "@gouvfr-lasuite/cunningham-react";
@@ -11,9 +12,17 @@ import { useThreadSelection } from "@/features/providers/thread-selection";
 import { useScrollRestore } from "@/features/providers/scroll-restore";
 import { useThreadPanelFilters } from "./hooks/use-thread-panel-filters";
 import { useThreadListbox } from "./hooks/use-thread-listbox";
+import { isNativePlatform } from "@/features/native/platform";
+import { usePullToRefresh } from "@/features/native/use-pull-to-refresh";
+import { PullToRefreshIndicator } from "@/features/native/pull-to-refresh-indicator";
+import { useRefreshFeedback } from "@/hooks/use-refresh-feedback";
+import { closeSwipedRows } from "@/hooks/use-swipe-actions";
+import { useThreadRowActions } from "@/features/message/use-thread-row-actions";
+
+const PULL_TO_REFRESH_THRESHOLD = 70;
 
 export const ThreadPanel = () => {
-    const { threads, queryStates, unselectThread, loadNextThreads, selectedThread, selectedMailbox } = useMailboxContext();
+    const { threads, queryStates, unselectThread, loadNextThreads, selectedThread, selectedMailbox, invalidateMailbox } = useMailboxContext();
     const searchParams = useUrlSearchParams();
     const isSearch = searchParams.has('search');
     const { hasActiveFilters, clearFilters } = useThreadPanelFilters();
@@ -30,6 +39,7 @@ export const ThreadPanel = () => {
         toggleThread,
         selectRange,
         selectAllThreads,
+        deselectAllThreads,
         clearSelection,
         enableSelectionMode,
         isAllSelected,
@@ -39,6 +49,30 @@ export const ThreadPanel = () => {
     } = useThreadSelection();
 
     const { getItemProps, onKeyDown: handleListboxKeyDown, onBlur: handleListboxBlur } = useThreadListbox(threads?.results);
+
+    const isNative = isNativePlatform();
+    // Mounted once for the whole list — see `useThreadRowActions`.
+    const rowActions = useThreadRowActions();
+    const { isRefreshing: isMailboxRefreshing, feedback: refreshFeedback, clearFeedback, refresh } = useRefreshFeedback();
+    const { containerRef: pullToRefreshRef, indicatorRef } = usePullToRefresh({
+        onRefresh: () => refresh(invalidateMailbox),
+        enabled: isNative,
+        threshold: PULL_TO_REFRESH_THRESHOLD,
+    });
+
+    // Single node feeding both the scroll-restore ref object and the
+    // pull-to-refresh callback ref.
+    const setThreadsListNode = useCallback((node: HTMLDivElement | null) => {
+        scrollContainerRef.current = node;
+        pullToRefreshRef(node);
+    }, [scrollContainerRef, pullToRefreshRef]);
+
+    const handleThreadsListScroll = useCallback(() => {
+        // A row left open by a swipe would otherwise scroll away still open,
+        // and come back holding actions the user has moved on from.
+        closeSwipedRows();
+        handleScroll();
+    }, [handleScroll]);
 
     const handleObserver = useCallback((entries: IntersectionObserverEntry[]) => {
         const target = entries[0];
@@ -104,9 +138,13 @@ export const ThreadPanel = () => {
                 selectionReadStatus={selectionReadStatus}
                 selectionStarredStatus={selectionStarredStatus}
                 onSelectAll={selectAllThreads}
+                onDeselectAll={deselectAllThreads}
                 onClearSelection={clearSelection}
                 onEnableSelectionMode={enableSelectionMode}
                 onDisableSelectionMode={clearSelection}
+                isRefreshing={isMailboxRefreshing}
+                refreshFeedback={refreshFeedback}
+                onClearRefreshFeedback={clearFeedback}
             />
             {isEmpty ? (
                 <div className="thread-panel__empty">
@@ -118,27 +156,38 @@ export const ThreadPanel = () => {
                     </div>
                 </div>
             ) : (
-                <div
-                    className="thread-panel__threads_list"
-                    ref={scrollContainerRef}
-                    onScroll={handleScroll}
-                    role="listbox"
-                    aria-multiselectable="true"
-                    aria-label={t('Thread list')}
-                    onKeyDown={handleListboxKeyDown}
-                    onBlur={handleListboxBlur}
-                >
+                <>
+                    {isNative && <PullToRefreshIndicator ref={indicatorRef} />}
+                    <div
+                        className="thread-panel__threads_list"
+                        ref={setThreadsListNode}
+                        onScroll={handleThreadsListScroll}
+                        role="listbox"
+                        aria-multiselectable="true"
+                        aria-label={t('Thread list')}
+                        onKeyDown={handleListboxKeyDown}
+                        onBlur={handleListboxBlur}
+                    >
                     {threads?.results.map((thread) => (
-                        <ThreadItem
+                        // Swiping and selecting compete for the same finger:
+                        // while a selection is running, taps stay dedicated to
+                        // picking rows.
+                        <ThreadItemSwipe
                             key={thread.id}
                             thread={thread}
-                            isSelected={selectedThreadIds.has(thread.id)}
-                            onToggle={toggleThread}
-                            onSelectRange={selectRange}
-                            selectedThreadIds={selectedThreadIds}
-                            isSelectionMode={isSelectionMode}
-                            {...getItemProps(thread.id)}
-                        />
+                            enabled={isNative && !isSelectionMode && selectedThreadIds.size === 0}
+                            actions={rowActions}
+                        >
+                            <ThreadItem
+                                thread={thread}
+                                isSelected={selectedThreadIds.has(thread.id)}
+                                onToggle={toggleThread}
+                                onSelectRange={selectRange}
+                                selectedThreadIds={selectedThreadIds}
+                                isSelectionMode={isSelectionMode}
+                                {...getItemProps(thread.id)}
+                            />
+                        </ThreadItemSwipe>
                     ))}
                     {threads!.next && (
                         <div className="thread-panel__page-loader" ref={loaderRef}>
@@ -150,7 +199,8 @@ export const ThreadPanel = () => {
                             )}
                         </div>
                     )}
-                </div>
+                    </div>
+                </>
             )}
         </div>
     );

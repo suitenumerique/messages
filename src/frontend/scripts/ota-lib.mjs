@@ -89,8 +89,37 @@ export const manifestKey = (prefix, channel) => {
 };
 
 /**
- * Parse the monotonic ordering prefix of a hybrid `<count>-<sha>` version.
- * Returns null for ids without it. Mirrors `versionCount()` in
+ * S3 key of a release's immutable metadata, written at publish time. The
+ * encrypted checksum and sessionKey of a version exist nowhere else once the
+ * channel manifest moves on, so this file is what makes an already-published
+ * bundle re-pointable by `rollback-ota.mjs`.
+ */
+export const releaseKey = (prefix, channel, version) => {
+  return `${prefix}channels/${channel}/releases/${version}.json`;
+};
+
+/**
+ * S3 key of a version's bundle zip under its channel.
+ */
+export const bundleKey = (prefix, channel, version) => {
+  return `${prefix}channels/${channel}/bundles/${version}.zip`;
+};
+
+/**
+ * Next value of the channel's monotonic release counter. Incremented on every
+ * manifest write — publish, forced republish and rollback alike — so devices
+ * can order releases independently of the build ids they point to (that is
+ * what lets a rollback go "backward" in build terms).
+ */
+export const computeNextSequence = (existingManifest) => {
+  const current = existingManifest?.sequence;
+  return (Number.isInteger(current) && current > 0 ? current : 0) + 1;
+};
+
+/**
+ * Parse the monotonic ordering prefix of a legacy hybrid `<count>-<sha>`
+ * version. Current ids are bare short shas (returns null — count guards
+ * self-disable, `sequence` rules). Mirrors `versionCount()` in
  * src/features/native/ota.ts (browser vs node context, kept in sync by hand).
  */
 export const versionCount = (version) => {
@@ -98,8 +127,8 @@ export const versionCount = (version) => {
   return match ? Number(match[1]) : null;
 };
 
-/** Read and parse a channel manifest, or return null when it does not exist. */
-export const readManifest = async ({ client, bucket }, key) => {
+/** Read and parse a JSON object, or return null when it does not exist. */
+export const readJson = async ({ client, bucket }, key) => {
   try {
     const response = await client.send(
       new GetObjectCommand({ Bucket: bucket, Key: key }),
@@ -123,6 +152,18 @@ export const writeManifest = async ({ client, bucket }, key, manifest) => {
       ContentType: "application/json",
       // Never let a CDN serve a stale manifest: it is the freshness signal.
       CacheControl: "no-cache",
+    }),
+  );
+};
+
+/** Write a release's immutable metadata (default caching is fine: it never changes). */
+export const writeRelease = async ({ client, bucket }, key, release) => {
+  await client.send(
+    new PutObjectCommand({
+      Bucket: bucket,
+      Key: key,
+      Body: JSON.stringify(release),
+      ContentType: "application/json",
     }),
   );
 };

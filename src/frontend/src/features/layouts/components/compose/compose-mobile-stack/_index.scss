@@ -1,0 +1,94 @@
+.compose-mobile-stack {
+    position: relative;
+    width: 100%;
+    // Dark seam above the card, like the dimmed gap behind Apple Mail's
+    // minimized draft: separates the stack from the bottom bar / content
+    // above it. Opaque on purpose — the main view scrolls right behind the
+    // bar, a translucent seam would show the items sliding underneath.
+    background-color: #000;
+    padding-top: var(--c--globals--spacings--2xs);
+
+    // Room for the card edges peeking above the bar.
+    &--pile {
+        padding-top: var(--c--globals--spacings--sm);
+    }
+
+    // Inverted corners: two dark ears just above the seam carve a bottom
+    // border-radius into the view (or lifted bottom bar) sitting above it.
+    &__corners {
+        position: absolute;
+        bottom: 100%;
+        left: 0;
+        right: 0;
+        height: var(--c--globals--spacings--sm);
+        pointer-events: none;
+
+        &::before,
+        &::after {
+            content: "";
+            position: absolute;
+            bottom: 0;
+            width: var(--c--globals--spacings--sm);
+            height: var(--c--globals--spacings--sm);
+        }
+
+        &::before {
+            left: 0;
+            background: radial-gradient(
+                circle at 100% 0,
+                transparent calc(var(--c--globals--spacings--sm) - 0.5px),
+                #000 var(--c--globals--spacings--sm)
+            );
+        }
+
+        &::after {
+            right: 0;
+            background: radial-gradient(
+                circle at 0 0,
+                transparent calc(var(--c--globals--spacings--sm) - 0.5px),
+                #000 var(--c--globals--spacings--sm)
+            );
+        }
+    }
+
+    &--pile::before{
+        content: "";
+        position: absolute;
+        top: calc(var(--c--globals--spacings--sm) - 4px);
+        left: var(--c--globals--spacings--xs);
+        right: var(--c--globals--spacings--xs);
+        height: 6px;
+        border: 1px solid var(--c--contextuals--border--surface--primary);
+        border-bottom: none;
+        border-radius: var(--c--globals--spacings--xs) var(--c--globals--spacings--xs) 0 0;
+        background-color: var(--c--contextuals--background--surface--secondary);
+    }
+
+    &__bar {
+        position: relative;
+        display: flex;
+        align-items: center;
+        gap: var(--c--globals--spacings--2xs);
+        width: 100%;
+        padding: var(--c--globals--spacings--sm) var(--c--globals--spacings--md);
+        padding-bottom: calc(var(--c--globals--spacings--sm) + var(--safe-area-inset-bottom));
+        background-color: var(--c--contextuals--background--surface--primary);
+        border: none;
+        border-radius: var(--c--globals--spacings--sm) var(--c--globals--spacings--sm) 0 0;
+        box-shadow: 0 -2px 12px 0 rgba(0, 0, 0, 0.18);
+        cursor: pointer;
+        text-align: left;
+        color: var(--c--contextuals--content--semantic--neutral--primary);
+    }
+
+    &__title {
+        flex: 1;
+        min-width: 0;
+        overflow: hidden;
+        text-overflow: ellipsis;
+        white-space: nowrap;
+        font-size: var(--c--globals--font--sizes--sm);
+        font-weight: 700;
+    }
+
+}

@@ -14,6 +14,90 @@
     align-items: flex-start;
 }
 
+// Compact variant, designed for small surfaces (floating compose window):
+// dense fields, no permanent helper texts, the composer fills the remaining
+// height and attachments are driven from the footer toolbar.
+.message-form--compact {
+    position: relative;
+    gap: var(--c--globals--spacings--2xs);
+    // Content-driven height inside the scrolling window body; stretched so
+    // the sticky footer reaches the bottom even with little content.
+    height: auto;
+    min-height: 100%;
+
+    .c__input__wrapper {
+        height: 3rem;
+    }
+
+    .c__combobox .c__select__wrapper,
+    .c__select__wrapper {
+        --c--components--forms-select--height: 3rem;
+        min-height: 3rem;
+    }
+
+    // Only error messages remain in field footers; tighten them.
+    .c__field__footer {
+        padding-top: 0;
+        padding-left: var(--c--globals--spacings--2xs);
+    }
+
+    .form-field-row--composer {
+        // Grows with the content and never shrinks below the composer's
+        // minimum; the window body owns the scrolling.
+        flex: 1 0 auto;
+        align-items: stretch;
+
+        .composer-field {
+            display: flex;
+            flex-direction: column;
+            width: 100%;
+            min-height: 100%;
+        }
+
+        .composer-field-input {
+            --min-height: 250px;
+            flex: 1;
+        }
+
+        // In this narrow height-constrained surface the toolbar wraps to
+        // several rows, but the editor's default min-height reserves the
+        // height of a single one (--toolbar-height): the excess overflows
+        // the column-reverse field on the clipped (top) side and swallows
+        // the toolbar's first row. Let flex share the height instead.
+        .composer-field-input .bn-editor {
+            min-height: 0;
+        }
+    }
+
+    .attachment-uploader__bucket {
+        margin-top: 0;
+    }
+
+    .form-footer {
+        align-items: center;
+        gap: var(--c--globals--spacings--2xs);
+        // Pinned to the bottom of the scrolling window body: send, delete,
+        // attachments and the save-time label stay reachable while the form
+        // scrolls underneath.
+        position: sticky;
+        bottom: 0;
+        z-index: 2;
+        background-color: var(--c--contextuals--background--surface--primary);
+        outline: 4px solid var(--c--contextuals--background--surface--primary);
+        padding-block: var(--c--globals--spacings--2xs) var(--c--globals--spacings--sm);
+    }
+
+    .form-footer__save-time {
+        display: inline-flex;
+        align-items: center;
+        gap: var(--c--globals--spacings--2xs);
+        margin-left: auto;
+        font-size: var(--c--globals--font--sizes--xs);
+        color: var(--c--contextuals--content--semantic--neutral--secondary);
+        text-align: right;
+    }
+}
+
 .form-field-options {
     display: flex;
     flex-direction: row;
