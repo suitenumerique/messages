@@ -6,7 +6,9 @@ This document provides a comprehensive overview of all environment variables use
 
 ### Environment Files Structure
 
-The application uses a new environment file structure with `.defaults` and `.local` files:
+All environment files live in `deploy/env/`. Each service is given its
+`.defaults` then its `.local`, in that order, so a variable set in `.local`
+overrides the same variable in `.defaults`:
 
 - `*.defaults` - Committed default configurations
 - `*.local` - Gitignored local overrides (created by `make bootstrap`)
@@ -14,12 +16,16 @@ The application uses a new environment file structure with `.defaults` and `.loc
 #### Available Environment Files
 
 - `backend.defaults` - Main Django application settings
-- `common.defaults` - Shared settings across services
 - `frontend.defaults` - Frontend configuration
 - `postgresql.defaults` - PostgreSQL database configuration
 - `keycloak.defaults` - Keycloak configuration
-- `mta-in.defaults` - Inbound mail server settings
+- `mta-in.defaults` - Inbound mail server settings (Postfix)
+- `mta-in-py.defaults` - Inbound mail server settings (pymta)
+- `socks-proxy.defaults` - SOCKS proxy used for outbound delivery
 - `crowdin.defaults` - Translation service configuration
+
+`*.e2e` files also exist for a few services; they are only read by the
+end-to-end test stack.
 
 ## Core Application Configuration
 
@@ -101,7 +107,8 @@ of each implementation (Postfix + milter, and the pure-Python pymta).
 | `MTA_OUT_RELAY_PASSWORD` | `pass` | Outbound SMTP password for relay mode | Optional |
 | `MTA_OUT_DIRECT_PROXIES` | `[]` | List of SOCKS proxy URLs (randomly chosen when non-empty; used in direct mode) | Optional |
 | `MTA_OUT_DIRECT_PORT` | `25` | TCP port for direct mode on remote MX servers | Optional |
-| `MTA_OUT_SMTP_TLS_SECURITY_LEVEL` | `may` | SMTP TLS security level: `none`, `may` (opportunistic, no cert check, matches Postfix), or `secure` (mandatory TLS + CA chain + hostname check). Applied to both direct and relay modes — set to `secure` when running against a controlled relay with a valid cert. | Optional |
+| `MTA_OUT_SMTP_TLS_SECURITY_LEVEL` | `may` | SMTP TLS security level on the **direct-MX** path: `none`, `may` (opportunistic, no cert check, matches Postfix), or `secure` (mandatory TLS + CA chain + hostname check). Neither DANE nor MTA-STS is implemented, so there is no way to learn that a destination promised TLS — `may` is the only workable default here, and a STARTTLS-stripping MITM on this path remains possible. | Optional |
+| `MTA_OUT_RELAY_TLS_SECURITY_LEVEL` | `may` | Same levels, applied to the **relay** path. Set this to `secure` if your relay presents a valid certificate: it is a host you chose, so the "public MXes serve bad certs" excuse for opportunistic TLS does not apply, and SMTP AUTH credentials travel inside the tunnel. It defaults to `may` only because relays that speak plaintext on port 25 are common and `secure` would defer all outbound mail on such a host. | Optional |
 | `MDA_API_SECRET` | `my-shared-secret-mda` | Shared secret for MDA API | Required |
 | `MDA_API_BASE_URL` | `http://backend-dev:8000/api/v1.0/` | Base URL for MDA API | Dev |
 
@@ -120,8 +127,30 @@ of each implementation (Postfix + milter, and the pure-Python pymta).
 | `MESSAGES_DKIM_DOMAINS` | `[]` | List of domains for DKIM signing | Optional |
 | `MESSAGES_DKIM_PRIVATE_KEY_B64` | None | Base64 encoded DKIM private key | Optional |
 | `MESSAGES_DKIM_PRIVATE_KEY_FILE` | None | Path to DKIM private key file | Optional |
-| `MESSAGES_DKIM_VERIFY_OUTGOING` | `False` | Verify the DKIM signature on outgoing messages before sending. | Optional |
+| `MESSAGES_DKIM_VERIFY_OUTGOING` | `False` | Require outgoing mail to actually authenticate, in two ways. **Signature:** re-verify the DKIM signature against public DNS before sending, so a key that does not resolve is caught here rather than at the recipient. **Alignment:** refuse (HTTP 400) to send a message whose `From` domain is not the domain its signature is minted with — such a message fails DMARC at every enforcing receiver, and silently, since the failure happens at the far end. Verifying the signature while letting it go out unaligned would confirm the wrong half, so the two are one switch. Messages composed through the API are unaffected: the `From` is set to the mailbox that sends them, so they always align. In practice this only refuses a raw MIME submission carrying a `From` on a domain you hold no key for. With the setting off, a misaligned send is logged and still sent. | Optional |
+| `MESSAGES_DKIM_VERIFY_OUTGOING_REQUIRE_DNSSEC` | `False` | Sub-option of `MESSAGES_DKIM_VERIFY_OUTGOING`, and has no effect unless that is enabled: refuse a DKIM key lookup whose answer is not DNSSEC-secure while re-checking our own signature before sending. Validation is performed locally by the recursive resolver, so this does not depend on an upstream resolver's AD bit. Does **not** affect inbound DKIM verification, which never requires DNSSEC — most sending domains are still unsigned, and requiring it there would mark ordinary mail as unverified. | Optional |
 | `MESSAGES_SPF_CHECK_OUTGOING` | `False` | Block outgoing messages when the sending domain's SPF includes are not correctly set up. | Optional |
+
+### DNS resolution
+
+Every DNS record lookup the backend makes — MX routing for outbound mail, DKIM
+and ARC key retrieval, SPF include chains, and the mail-domain DNS check —
+goes through a single recursive resolver that walks the delegation chain from
+the root servers and validates DNSSEC locally. There is no stub-resolver
+fallback and `/etc/resolv.conf` is not consulted for these lookups.
+
+**Deployment requirement:** the backend and worker containers need outbound
+UDP and TCP port 53 **over IPv4** to arbitrary authoritative nameservers on the
+internet. An egress policy that only permits DNS to a local resolver will break
+outbound sending and the domain DNS check, and so will an IPv6-only egress: the
+resolver reaches nameservers over IPv4 only, so it has no path to their AAAA
+addresses. (Hostname resolution for ordinary outbound HTTP — the image proxy,
+IMAP import — still uses the system resolver and is unaffected.)
+
+| Variable | Default | Description | Required |
+|----------|---------|-------------|----------|
+| `DNS_RESOLVER_TIMEOUT` | `5.0` | Timeout in seconds for a single query to one nameserver, not for a whole resolution. Every nameserver is tried once per sweep, with up to 2 further sweeps. Each query's timeout is clamped to what remains of `DNS_RESOLVER_MAX_RESOLUTION_TIME`, so raising this cannot make one resolution take longer. | Optional |
+| `DNS_RESOLVER_MAX_RESOLUTION_TIME` | `15.0` | Overall deadline in seconds for resolving one name, covering the entire walk from the root servers. Leaves room for one dead nameserver plus the rest of the delegation chain. This bounds a single name only: a whole mail-domain check is capped at 30s, hardcoded, and records it does not reach report `error` ("could not check") rather than a verdict on the domain's DNS. | Optional |
 
 ## Storage Configuration
 
@@ -635,15 +664,9 @@ _Read by nothing any more. Unset them: a stale value silently does nothing._
 
 ## Environment Files
 
-The application uses environment files located in `deploy/env/` for different services:
-
-- `backend.defaults` - Main Django application settings
-- `common.defaults` - Shared settings across services
-- `frontend.defaults` - Frontend configuration
-- `postgresql.defaults` - PostgreSQL database configuration
-- `keycloak.defaults` - Keycloak configuration
-- `mta-in.defaults` - Inbound mail server settings
-- `crowdin.defaults` - Translation service configuration
+The application uses environment files located in `deploy/env/` for different
+services — see [Environment Files Structure](#environment-files-structure) for
+the full list and the `.defaults` / `.local` precedence.
 
 ### Local Overrides
 

@@ -1,25 +1,36 @@
 """Tests for the core.mda.outbound module."""
 # pylint: disable=unused-argument,too-many-lines
 
+import logging
 import re
 import threading
 import time
-from unittest.mock import MagicMock, call, patch
+from unittest.mock import call, patch
 
 from django.conf import settings
 from django.core.cache import cache
 from django.test import TransactionTestCase, override_settings
 
-import dns.resolver
 import pytest
 import rest_framework as drf
 from dkim import verify as dkim_verify
 
 from core import enums, factories, models
 from core.mda import outbound
-from core.mda.outbound_direct import resolve_hostname_ip, send_message_via_mx
-from core.mda.signing import generate_dkim_key, sign_message_dkim
+from core.mda.outbound_direct import (
+    resolve_hostname_ip,
+    resolve_mx_records,
+    send_message_via_mx,
+)
+from core.mda.signing import DKIMSigningError, generate_dkim_key, sign_message_dkim
 from core.mda.smtp import SmtpProxy
+from core.services.dns.resolver import (
+    DNSSECMaterialUnavailableError,
+    DNSSECValidationError,
+    NoAnswerError,
+    NXDOMAINError,
+)
+from core.tests.dns_answers import a_answer, mx_answer, txt_answer
 
 SCHEMA_CUSTOM_ATTRIBUTES = {
     "$schema": "https://json-schema.org/draft/2020-12/schema",
@@ -242,7 +253,56 @@ class TestSendOutboundMessage:
             == 1
         )
 
-    @patch("core.mda.outbound_direct.dns.resolver.resolve")
+    @patch("core.mda.outbound.send_smtp_mail")
+    @override_settings(
+        MTA_OUT_MODE="relay",
+        MTA_OUT_RELAY_HOST="smtp.test:1025",
+        OPENSEARCH_INDEX_THREADS=False,
+    )
+    def test_sent_at_is_stamped_on_the_first_attempt_only(
+        self, mock_smtp_send, draft_message
+    ):
+        """A retry must not restamp ``sent_at``.
+
+        It is the user-visible "sent" time and it drives thread ordering, so
+        rewriting it on each attempt makes a message that took three tries
+        look sent hours after the user pressed send.
+        """
+        mock_smtp_send.return_value = {
+            email: {"delivered": False, "error": "Temp refused", "retry": True}
+            for email in (
+                "to@example.com",
+                "cc@example.com",
+                "cc2@example.com",
+                "bcc@example2.com",
+            )
+        }
+
+        outbound.send_message(draft_message)
+        draft_message.refresh_from_db()
+        first_attempt = draft_message.sent_at
+        assert first_attempt is not None
+
+        # The per-message send lock is held for 30 minutes; a real retry runs
+        # in a later task, well after it has expired.
+        cache.clear()
+
+        mock_smtp_send.return_value = {
+            email: {"delivered": True, "error": None}
+            for email in (
+                "to@example.com",
+                "cc@example.com",
+                "cc2@example.com",
+                "bcc@example2.com",
+            )
+        }
+
+        outbound.send_message(draft_message)
+        draft_message.refresh_from_db()
+
+        assert draft_message.sent_at == first_attempt
+
+    @patch("core.mda.outbound_direct.resolve_answer")
     @patch("core.mda.outbound_direct.send_smtp_mail")
     @override_settings(
         MTA_OUT_MODE="direct",
@@ -297,24 +357,26 @@ class TestSendOutboundMessage:
 
         def resolve_return_value(domain, record_type, **kwargs):
             lookup_data = {
-                ("example.com", "MX"): [
-                    MagicMock(preference=10, exchange="mx1.example.com"),
-                    MagicMock(preference=15, exchange="mx1-5.example.com"),
-                    MagicMock(preference=20, exchange="mx2.example.com"),
-                    MagicMock(preference=30, exchange="mx3.example.com"),
-                ],
-                ("example2.com", "MX"): [
-                    MagicMock(preference=10, exchange="mx1.example2.com"),
-                    MagicMock(preference=20, exchange="mx2.example2.com"),
-                ],
-                ("mx1.example.com", "A"): ["1.1.0.9"],
-                ("mx2.example.com", "A"): ["1.2.0.9"],
-                ("mx3.example.com", "A"): None,
-                ("mx1-5.example.com", "A"): None,
-                ("mx1.example2.com", "A"): ["2.1.0.9"],
-                ("mx2.example2.com", "A"): ["2.2.0.9"],
+                ("example.com", "MX"): mx_answer(
+                    (10, "mx1.example.com."),
+                    (15, "mx1-5.example.com."),
+                    (20, "mx2.example.com."),
+                    (30, "mx3.example.com."),
+                ),
+                ("example2.com", "MX"): mx_answer(
+                    (10, "mx1.example2.com."),
+                    (20, "mx2.example2.com."),
+                ),
+                ("mx1.example.com", "A"): a_answer("1.1.0.9"),
+                ("mx2.example.com", "A"): a_answer("1.2.0.9"),
+                ("mx1.example2.com", "A"): a_answer("2.1.0.9"),
+                ("mx2.example2.com", "A"): a_answer("2.2.0.9"),
             }
-            return lookup_data.get((domain, record_type))
+            try:
+                return lookup_data[(domain, record_type)]
+            except KeyError:
+                # mx3 / mx1-5 have no address record at all.
+                raise NoAnswerError(domain, record_type) from None
 
         mock_resolve.side_effect = resolve_return_value
 
@@ -399,7 +461,7 @@ class TestSendOutboundMessage:
             proxy=expected_proxy,
         )
 
-    @patch("core.mda.outbound_direct.dns.resolver.resolve")
+    @patch("core.mda.outbound_direct.resolve_answer")
     @patch("core.mda.outbound_direct.send_smtp_mail")
     @override_settings(
         MTA_OUT_MODE="direct",
@@ -411,12 +473,12 @@ class TestSendOutboundMessage:
         """Test sending via direct connection with no MX records."""
 
         def resolve_return_value(domain, record_type, **kwargs):
-            # Without MX records, we should retry on the A record
-            if domain == "example2.com" and record_type == "MX":
-                raise dns.resolver.NoAnswer()
-            return {("example.com", "MX"): [], ("example2.com", "A"): ["1.2.0.8"]}[
-                (domain, record_type)
-            ]
+            # Neither domain publishes MX, so both fall back to their A
+            # record. example2.com has one and takes delivery; example.com has
+            # none either, so its recipients are left for retry.
+            if (domain, record_type) == ("example2.com", "A"):
+                return a_answer("1.2.0.8")
+            raise NoAnswerError(domain, record_type)
 
         mock_resolve.side_effect = resolve_return_value
 
@@ -706,6 +768,70 @@ class TestPrepareOutboundMessageSignature:
         content = message.blob.get_content().decode()
         assert "Hello world!" in content
         assert "Best regards" not in content
+
+    def test_composed_path_reports_dkim_signing_failure_specifically(
+        self, user, mailbox_sender, mailbox_access
+    ):
+        """A DKIM signing failure is named, not folded into a generic error.
+
+        Letting ``DKIMSigningError`` fall into the composed-body path's broad
+        handler returns False, which the view turns into a generic compose
+        error — the same cause the raw-MIME path reports precisely. The
+        operator can only act on it if they are told which it was.
+        """
+        message = factories.MessageFactory(
+            thread=factories.ThreadFactory(),
+            sender=factories.ContactFactory(mailbox=mailbox_sender),
+            is_draft=True,
+            subject="Test Message",
+            signature=None,
+        )
+
+        # The composed path signs via ``sign_message_dkim`` inside
+        # ``compose_and_sign_mime``, not the raw path's ``_sign_mime``.
+        with patch(
+            "core.mda.outbound.sign_message_dkim",
+            side_effect=DKIMSigningError("key unusable"),
+        ):
+            with pytest.raises(drf.exceptions.ValidationError) as excinfo:
+                outbound.prepare_outbound_message(
+                    mailbox_sender, message, "Hello world!", "<p>Hello world!</p>", user
+                )
+
+        assert "DKIM key" in str(excinfo.value)
+
+    def test_raw_mime_path_reports_dkim_signing_failure_specifically(
+        self, user, mailbox_sender, mailbox_access
+    ):
+        """The raw-MIME submit path reports it as a 400, not a 500.
+
+        It signs through ``_sign_mime`` rather than ``compose_and_sign_mime``,
+        so it needs its own guard: unhandled, ``DKIMSigningError`` escapes the
+        submit view.
+        """
+        sender = factories.ContactFactory(mailbox=mailbox_sender)
+        message = factories.MessageFactory(
+            thread=factories.ThreadFactory(),
+            sender=sender,
+            is_draft=True,
+            subject="Test Message",
+            signature=None,
+        )
+        raw_mime = (
+            f"From: {sender.email}\r\nTo: recipient@external.test\r\n"
+            "Subject: Test Message\r\n\r\nHello world!\r\n"
+        ).encode()
+
+        with patch(
+            "core.mda.outbound.sign_message_dkim",
+            side_effect=DKIMSigningError("key unusable"),
+        ):
+            with pytest.raises(drf.exceptions.ValidationError) as excinfo:
+                outbound.prepare_outbound_message(
+                    mailbox_sender, message, "", "", user, raw_mime=raw_mime
+                )
+
+        assert "DKIM key" in str(excinfo.value)
 
     @override_settings(SCHEMA_CUSTOM_ATTRIBUTES_USER=SCHEMA_CUSTOM_ATTRIBUTES)
     def test_prepare_outbound_message_with_reply_and_signature(
@@ -1207,7 +1333,7 @@ class TestSendMessageDKIMVerification:
     """Test DKIM verification in send_message."""
 
     @override_settings(MESSAGES_DKIM_VERIFY_OUTGOING=True)
-    @patch("core.mda.signing.dns.resolver.resolve")
+    @patch("core.mda.signing.dkim_dns_txt")
     @patch("core.mda.outbound.send_outbound_message")
     def test_dkim_verification_success(
         self, mock_send_outbound, mock_dns_resolve, mailbox_sender
@@ -1263,15 +1389,11 @@ class TestSendMessageDKIMVerification:
         )
 
         # Mock DNS to return the DKIM public key
-        def mock_dns_resolve_func(query_name, record_type, **kwargs):
+        def mock_dns_resolve_func(query_name, **kwargs):
             expected_fqdn = f"testselector._domainkey.{mailbox_sender.domain.name}"
-            if record_type == "TXT" and query_name == expected_fqdn:
-                mock_answer = MagicMock()
-                mock_answer.strings = [
-                    f"v=DKIM1; k=rsa; p={dkim_key.public_key}".encode()
-                ]
-                return [mock_answer]
-            raise dns.resolver.NoAnswer()
+            if query_name == expected_fqdn:
+                return txt_answer(f"v=DKIM1; k=rsa; p={dkim_key.public_key}")
+            raise NoAnswerError(query_name, "TXT")
 
         mock_dns_resolve.side_effect = mock_dns_resolve_func
 
@@ -1294,7 +1416,7 @@ class TestSendMessageDKIMVerification:
         assert mock_send_outbound.called
 
     @override_settings(MESSAGES_DKIM_VERIFY_OUTGOING=True)
-    @patch("core.mda.signing.dns.resolver.resolve")
+    @patch("core.mda.signing.dkim_dns_txt")
     @patch("core.mda.outbound.send_outbound_message")
     def test_dkim_verification_failure_marks_for_retry(
         self, mock_send_outbound, mock_dns_resolve, mailbox_sender
@@ -1349,7 +1471,7 @@ class TestSendMessageDKIMVerification:
         )
 
         # Mock DNS to fail (no DKIM record found)
-        mock_dns_resolve.side_effect = dns.resolver.NoAnswer()
+        mock_dns_resolve.side_effect = NoAnswerError("selector._domainkey.x", "TXT")
 
         # Send the message
         outbound.send_message(message)
@@ -1367,7 +1489,7 @@ class TestSendMessageDKIMVerification:
         assert "DKIM verification failed" in recipient.delivery_message
 
     @override_settings(MESSAGES_DKIM_VERIFY_OUTGOING=True)
-    @patch("core.mda.signing.dns.resolver.resolve")
+    @patch("core.mda.signing.dkim_dns_txt")
     @patch("core.mda.outbound.deliver_inbound_message")
     def test_dkim_verification_skipped_for_internal_recipients(
         self, mock_deliver_inbound, mock_dns_resolve, mailbox_sender
@@ -1534,7 +1656,7 @@ class TestSendMessageSPFCheck:
         cache.clear()
 
     @override_settings(MESSAGES_SPF_CHECK_OUTGOING=True)
-    @patch("core.services.dns.check.dns.resolver.resolve")
+    @patch("core.services.dns.check.resolve_answer")
     @patch("core.mda.outbound.send_outbound_message")
     def test_spf_check_failure_marks_for_retry(
         self, mock_send_outbound, mock_dns_resolve, mailbox_sender
@@ -1543,7 +1665,7 @@ class TestSendMessageSPFCheck:
         message, _, _, recipient, _ = _create_spf_test_message(mailbox_sender)
 
         # DNS returns no SPF record → check_spf_status returns False
-        mock_dns_resolve.side_effect = dns.resolver.NXDOMAIN()
+        mock_dns_resolve.side_effect = NXDOMAINError("example.com", "TXT")
 
         outbound.send_message(message)
 
@@ -1557,7 +1679,7 @@ class TestSendMessageSPFCheck:
         MESSAGES_DNS_RECORDS='[{"target":"","type":"txt",'
         '"value":"v=spf1 ip4:1.2.3.4 -all"}]',
     )
-    @patch("core.services.dns.check.dns.resolver.resolve")
+    @patch("core.services.dns.check.resolve_answer")
     @patch("core.mda.outbound.send_outbound_message")
     def test_spf_check_success_sends_message(
         self, mock_send_outbound, mock_dns_resolve, mailbox_sender
@@ -1567,12 +1689,8 @@ class TestSendMessageSPFCheck:
 
         def resolve_side_effect(name, record_type):
             if name == mailbox_sender.domain.name:
-                rr = MagicMock()
-                rr.strings = (b"v=spf1 ip4:1.2.3.4 -all",)
-                answer = MagicMock()
-                answer.rrset = [rr]
-                return answer
-            raise dns.resolver.NXDOMAIN()
+                return txt_answer("v=spf1 ip4:1.2.3.4 -all", name=name)
+            raise NXDOMAINError(name, record_type)
 
         mock_dns_resolve.side_effect = resolve_side_effect
         mock_send_outbound.return_value = {"external@other.com": {"delivered": True}}
@@ -1589,7 +1707,7 @@ class TestSendMessageSPFCheck:
         mock_send_outbound.return_value = {"external@other.com": {"delivered": True}}
 
         # No DNS mock needed — SPF check should not run
-        with patch("core.services.dns.check.dns.resolver.resolve") as mock_resolve:
+        with patch("core.services.dns.check.resolve_answer") as mock_resolve:
             outbound.send_message(message)
             # check_spf_status should not have been called
             assert not mock_resolve.called
@@ -1782,37 +1900,35 @@ class TestOutboundDirectSSRF:
     direct-delivery worker connect there.
     """
 
-    @patch("core.mda.outbound_direct.dns.resolver.resolve")
+    @patch("core.mda.outbound_direct.resolve_answer")
     def test_resolve_hostname_ip_rejects_internal(self, mock_resolve):
         """An MX host whose only A record is internal yields no IP (skipped)."""
-        mock_resolve.return_value = ["10.0.0.5"]
+        mock_resolve.return_value = a_answer("10.0.0.5")
         assert resolve_hostname_ip("mx.evil.test") is None
 
-    @patch("core.mda.outbound_direct.dns.resolver.resolve")
+    @patch("core.mda.outbound_direct.resolve_answer")
     def test_resolve_hostname_ip_allows_public(self, mock_resolve):
         """A public A record is accepted and returned."""
-        mock_resolve.return_value = ["93.184.216.34"]
+        mock_resolve.return_value = a_answer("93.184.216.34")
         assert resolve_hostname_ip("mx.good.test") == "93.184.216.34"
 
-    @patch("core.mda.outbound_direct.dns.resolver.resolve")
+    @patch("core.mda.outbound_direct.resolve_answer")
     def test_resolve_hostname_ip_skips_internal_returns_public(self, mock_resolve):
         """Multi-A: the internal record is skipped, the public one is used."""
-        mock_resolve.return_value = ["10.0.0.5", "93.184.216.34"]
+        mock_resolve.return_value = a_answer("10.0.0.5", "93.184.216.34")
         assert resolve_hostname_ip("mx.mixed.test") == "93.184.216.34"
 
     @patch("core.mda.outbound_direct.send_smtp_mail")
-    @patch("core.mda.outbound_direct.dns.resolver.resolve")
+    @patch("core.mda.outbound_direct.resolve_answer")
     def test_send_via_mx_never_dials_internal_mx(self, mock_resolve, mock_smtp_send):
         """End to end: a domain whose MX → internal IP triggers no SMTP connect."""
 
         def resolve_side_effect(name, record_type, **kwargs):
             data = {
-                ("evil.test", "MX"): [
-                    MagicMock(preference=10, exchange="mx.evil.test"),
-                ],
-                ("mx.evil.test", "A"): ["10.0.0.5"],
+                ("evil.test", "MX"): mx_answer((10, "mx.evil.test.")),
+                ("mx.evil.test", "A"): a_answer("10.0.0.5"),
             }
-            return data.get((name, record_type))
+            return data[(name, record_type)]
 
         mock_resolve.side_effect = resolve_side_effect
 
@@ -1823,4 +1939,98 @@ class TestOutboundDirectSSRF:
         # The worker was never asked to open an SMTP connection.
         mock_smtp_send.assert_not_called()
         # And the recipient was not delivered.
+        assert statuses["victim@evil.test"]["delivered"] is False
+
+
+@pytest.fixture(name="outbound_direct_caplog")
+def fixture_outbound_direct_caplog(caplog):
+    """Capture records from ``core.mda.outbound_direct``.
+
+    The ``core`` logger sets ``propagate=False`` in ``messages.settings``, so
+    records never reach the root logger ``caplog`` listens on; attaching its
+    handler directly restores visibility for the test.
+    """
+    direct_logger = logging.getLogger("core.mda.outbound_direct")
+    # WARNING, not ERROR: a retrieval failure is logged as a warning precisely
+    # because it is transient, and that distinction is what one test asserts.
+    caplog.set_level(logging.WARNING, logger="core.mda.outbound_direct")
+    direct_logger.addHandler(caplog.handler)
+    try:
+        yield caplog
+    finally:
+        direct_logger.removeHandler(caplog.handler)
+
+
+class TestOutboundDirectDNSSEC:
+    """A signed zone whose signatures do not verify names no mail server."""
+
+    @patch("core.mda.outbound_direct.resolve_answer")
+    def test_bogus_mx_zone_yields_no_records(
+        self, mock_resolve, outbound_direct_caplog
+    ):
+        """A DNSSEC failure is not a reason to fall back to the A record.
+
+        The A-record fallback exists for a domain that simply publishes no MX.
+        Applying it to a zone we could not validate would hand the message to
+        whatever a tampered answer points at.
+
+        The log line is asserted, not just the empty result: the generic
+        handler also returns no records, so only the message tells the
+        operator that this domain's DNS is being tampered with rather than
+        merely misconfigured.
+        """
+        mock_resolve.side_effect = DNSSECValidationError(
+            "evil.test", "MX", "signature expired"
+        )
+
+        assert resolve_mx_records("evil.test") == []
+
+        assert (
+            "DNSSEC validation failed for MX of evil.test"
+            in outbound_direct_caplog.text
+        )
+
+    @patch("core.mda.outbound_direct.resolve_answer")
+    def test_unretrievable_dnssec_material_is_not_reported_as_tampering(
+        self, mock_resolve, outbound_direct_caplog
+    ):
+        """A DNSKEY we could not fetch is a transient fault, not an attack.
+
+        ``DNSSECMaterialUnavailableError`` is deliberately not a
+        ``DNSSECError``: one lame nameserver in a zone's NS set means the
+        validation material never arrived, and nothing was validated or found
+        wanting. Recipients are still deferred, but the operator must not be
+        told the domain's DNS is being tampered with.
+        """
+        mock_resolve.side_effect = DNSSECMaterialUnavailableError("slow.test", "DNSKEY")
+
+        assert resolve_mx_records("slow.test") == []
+
+        # Match on our own wording, not the exception's: the catch-all handler
+        # logs `str(exc)`, which starts with the same words, so a looser
+        # assertion passes even with this branch deleted.
+        records = outbound_direct_caplog.records
+        assert len(records) == 1
+        assert "Could not retrieve DNSSEC material for MX of slow.test" in (
+            records[0].getMessage()
+        )
+        # Transient, so it must not be shouted as an error or read as tampering.
+        assert records[0].levelname == "WARNING"
+        assert "validation failed" not in outbound_direct_caplog.text
+
+    @patch("core.mda.outbound_direct.send_smtp_mail")
+    @patch("core.mda.outbound_direct.resolve_answer")
+    def test_send_via_mx_does_not_dial_on_bogus_zone(
+        self, mock_resolve, mock_smtp_send
+    ):
+        """End to end: no MX to try means no SMTP connection, no delivery."""
+        mock_resolve.side_effect = DNSSECValidationError(
+            "evil.test", "MX", "signature expired"
+        )
+
+        statuses = send_message_via_mx(
+            "from@ours.test", ["victim@evil.test"], b"raw mime"
+        )
+
+        mock_smtp_send.assert_not_called()
         assert statuses["victim@evil.test"]["delivered"] is False

@@ -10,13 +10,55 @@ from django.utils import timezone
 from celery.utils.log import get_task_logger
 
 from core import models
-from core.enums import MessageDeliveryStatusChoices
+from core.enums import MessageDeliveryStatusChoices, is_delivered
 from core.mda.outbound import send_message
 from core.mda.selfcheck import run_selfcheck
 
 from messages.celery_app import app as celery_app
 
 logger = get_task_logger(__name__)
+
+
+def aggregate_delivery_status(message) -> dict:
+    """Summarize a send from its per-recipient delivery statuses.
+
+    ``completed``  every recipient reached a delivered status
+    ``partial``    at least one delivered and at least one did not
+    ``pending``    nothing failed yet but some recipients are unresolved
+    ``cancelled``  nothing delivered, nothing failed, and the rest cancelled
+    ``failed``     no recipient was delivered and at least one failed
+    """
+    counts = {"delivered": 0, "failed": 0, "cancelled": 0, "pending": 0}
+    for status in message.recipients.values_list("delivery_status", flat=True):
+        if is_delivered(status):
+            counts["delivered"] += 1
+        elif status == MessageDeliveryStatusChoices.FAILED:
+            counts["failed"] += 1
+        elif status == MessageDeliveryStatusChoices.CANCELLED:
+            counts["cancelled"] += 1
+        else:
+            # RETRY or NULL: not resolved either way yet.
+            counts["pending"] += 1
+
+    total = sum(counts.values())
+    if total == 0:
+        return {"status": "completed", "counts": counts}
+    if counts["delivered"] == total:
+        return {"status": "completed", "counts": counts}
+    if counts["delivered"] == 0 and counts["pending"] == 0:
+        # Nothing left in flight and nothing delivered. Distinguish "the user
+        # called it off" from "we could not deliver it" — reporting a wholly
+        # cancelled send as failed sends people looking for a fault.
+        if counts["failed"] == 0 and counts["cancelled"] > 0:
+            return {"status": "cancelled", "counts": counts}
+        return {"status": "failed", "counts": counts}
+    # Recipients are still in flight here. "partial" is only honest once
+    # something actually failed: a greylisting MX leaves the recipient in
+    # RETRY, and calling that a shortfall shows the user "not to every
+    # recipient" for mail that lands minutes later on the normal ladder.
+    if counts["failed"] == 0 or counts["delivered"] == 0:
+        return {"status": "pending", "counts": counts}
+    return {"status": "partial", "counts": counts}
 
 
 @celery_app.task(bind=True)
@@ -39,15 +81,18 @@ def send_message_task(self, message_id, force_mta_out=False, must_archive=False)
 
         send_message(message, force_mta_out)
 
-        # Update task state with progress information
-        self.update_state(
-            state="SUCCESS",
-            meta={
-                "status": "completed",  # TODO fetch recipients statuses
-                "message_id": str(message_id),
-                "success": True,
-            },
-        )
+        # Report what actually happened per recipient, and report it in the
+        # RETURN VALUE rather than via ``update_state``: on a normal return
+        # Celery calls ``mark_as_done`` -> ``store_result``, which overwrites
+        # whatever meta the task stored, so anything published with
+        # ``update_state(state="SUCCESS", meta=...)`` is discarded
+        # microseconds later and never reaches ``AsyncResult.result``.
+        #
+        # And it travels under its own key, not ``status``: the task endpoint
+        # reserves ``status`` for the Celery state and the client polls it
+        # against SUCCESS/FAILURE to decide when to stop
+        # (``use-task-status.ts``), so a "partial" there would poll forever.
+        delivery = aggregate_delivery_status(message)
 
         # If requested, archive the whole thread after sending
         if must_archive:
@@ -66,9 +111,15 @@ def send_message_task(self, message_id, force_mta_out=False, must_archive=False)
                     e,
                 )
 
+        # ``success`` means the send did something for at least one recipient.
+        # A wholly cancelled send delivered nothing, so it is not a success —
+        # but it is not a fault either, and callers that need to tell the two
+        # apart read ``delivery_status``, which is why it distinguishes them.
         return {
             "message_id": str(message_id),
-            "success": True,
+            "success": delivery["status"] not in ("failed", "cancelled"),
+            "delivery_status": delivery["status"],
+            "recipients": delivery["counts"],
         }
     # pylint: disable=broad-exception-caught
     except Exception as e:
