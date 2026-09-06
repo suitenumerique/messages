@@ -7,12 +7,13 @@ import logging
 from django import forms
 from django.contrib import admin, messages
 from django.contrib.auth import admin as auth_admin
+from django.core.exceptions import ValidationError as DjangoValidationError
 from django.db import transaction
 from django.db.models import Exists, JSONField, OuterRef, Q
 from django.http import HttpResponse, HttpResponseNotAllowed
 from django.shortcuts import redirect
 from django.template.response import TemplateResponse
-from django.urls import path
+from django.urls import path, reverse
 from django.utils.html import escape, format_html
 from django.utils.text import slugify
 
@@ -402,6 +403,34 @@ class MailboxAccessInline(admin.TabularInline):
         return super().get_queryset(request).select_related("user")
 
 
+class ExportMailboxForm(forms.Form):
+    """Choose the exported mailbox and where its download link should land."""
+
+    mailbox = forms.ModelChoiceField(
+        queryset=models.Mailbox.objects.select_related("domain").order_by(
+            "domain__name", "local_part"
+        ),
+        label="Mailbox to export",
+    )
+    destination = forms.ModelChoiceField(
+        queryset=models.Mailbox.objects.none(),
+        label="Mailbox receiving the download link",
+        help_text=(
+            "The export runs in the background; once ready, a message with "
+            "the download link is delivered to this mailbox."
+        ),
+    )
+
+    def __init__(self, *args, user=None, **kwargs):
+        super().__init__(*args, **kwargs)
+        if user is not None and user.is_authenticated:
+            self.fields["destination"].queryset = (
+                models.Mailbox.objects.filter(accesses__user=user)
+                .select_related("domain")
+                .order_by("domain__name", "local_part")
+            )
+
+
 @admin.register(models.Mailbox)
 class MailboxAdmin(admin.ModelAdmin):
     """Admin class for the Mailbox model"""
@@ -434,6 +463,11 @@ class MailboxAdmin(admin.ModelAdmin):
         urls = super().get_urls()
         custom_urls = [
             path(
+                "export/",
+                self.admin_site.admin_view(self.export_messages_view),
+                name="core_mailbox_export_form",
+            ),
+            path(
                 "<path:object_id>/export/",
                 self.admin_site.admin_view(self.export_messages_view),
                 name="core_mailbox_export",
@@ -441,37 +475,73 @@ class MailboxAdmin(admin.ModelAdmin):
         ]
         return custom_urls + urls
 
-    def export_messages_view(self, request, object_id):
-        """View for exporting all messages from a mailbox."""
-        if request.method != "POST":
-            return HttpResponseNotAllowed(["POST"])
+    def export_messages_view(self, request, object_id=None):
+        """Render the export form (GET) or queue an export (POST).
 
-        mailbox_obj = self.get_object(request, object_id)
+        The download link is delivered to the destination mailbox chosen in
+        the form — validated here, when the task is queued. When reached from
+        a mailbox change page, the exported mailbox comes pre-filled.
+        """
+        initial_mailbox = None
+        source_id = object_id or request.GET.get("mailbox")
+        if source_id:
+            try:
+                initial_mailbox = models.Mailbox.objects.select_related("domain").get(
+                    pk=source_id
+                )
+            except (
+                models.Mailbox.DoesNotExist,
+                DjangoValidationError,
+                ValueError,
+                TypeError,
+            ):
+                initial_mailbox = None
 
-        if mailbox_obj is None:
-            messages.error(request, "Mailbox not found.")
-            return redirect("..")
-
-        # Start the export task
-        try:
-            task = export_mailbox_task.delay(str(mailbox_obj.id), str(request.user.id))
-        except Exception:  # pylint: disable=broad-exception-caught
-            logging.exception(
-                "Failed to queue export task for mailbox %s", mailbox_obj.id
+        if request.method == "POST":
+            form = ExportMailboxForm(request.POST, user=request.user)
+            if form.is_valid():
+                mailbox_obj = form.cleaned_data["mailbox"]
+                destination = form.cleaned_data["destination"]
+                try:
+                    task = export_mailbox_task.delay(
+                        str(mailbox_obj.id),
+                        str(request.user.id),
+                        str(destination.id),
+                    )
+                except Exception:  # pylint: disable=broad-exception-caught
+                    logging.exception(
+                        "Failed to queue export task for mailbox %s",
+                        mailbox_obj.id,
+                    )
+                    messages.error(
+                        request,
+                        "Failed to queue export task. Please try again later.",
+                    )
+                    return redirect(request.path)
+                messages.success(
+                    request,
+                    f"Export task has been queued for mailbox {mailbox_obj}. "
+                    f"The download link will be delivered to {destination} when "
+                    f"the export is complete (task id: {task.id}).",
+                )
+                return redirect(
+                    reverse("admin:core_mailbox_change", args=[mailbox_obj.pk])
+                )
+        elif request.method == "GET":
+            form = ExportMailboxForm(
+                user=request.user,
+                initial={"mailbox": initial_mailbox} if initial_mailbox else None,
             )
-            messages.error(
-                request, "Failed to queue export task. Please try again later."
-            )
-            return redirect("..")
+        else:
+            return HttpResponseNotAllowed(["GET", "POST"])
 
-        messages.success(
-            request,
-            f"Export task has been queued for mailbox {mailbox_obj}. "
-            f"You will receive a message with the download link when the export "
-            f"is complete (task id: {task.id}).",
-        )
-
-        return redirect("..")
+        context = {
+            **self.admin_site.each_context(request),
+            "opts": self.model._meta,  # noqa: SLF001
+            "form": form,
+            "title": "Export mailbox",
+        }
+        return TemplateResponse(request, "admin/core/mailbox/export_form.html", context)
 
     @admin.display(description="Throttle Status (External Recipients)")
     def throttle_status_display(self, obj):

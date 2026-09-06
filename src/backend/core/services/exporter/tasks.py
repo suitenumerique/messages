@@ -8,6 +8,7 @@ from datetime import datetime, timezone
 from typing import Any, Dict
 
 from django.conf import settings
+from django.core.exceptions import ValidationError as DjangoValidationError
 from django.core.files.storage import storages
 from django.db.models import OuterRef, Subquery
 
@@ -19,7 +20,7 @@ from sentry_sdk import capture_exception
 from core.api.utils import generate_presigned_url
 from core.mda.inbound import deliver_inbound_message
 from core.mda.utils import COMPOSE_OPTIONS, current_sent_at
-from core.models import Label, Mailbox, Message, ThreadAccess
+from core.models import Label, Mailbox, Message, ThreadAccess, User
 
 from messages.celery_app import app as celery_app
 
@@ -403,15 +404,23 @@ def _create_mbox_entry(
 
 
 @celery_app.task(bind=True)  # pylint: disable=too-many-locals
-def export_mailbox_task(self, mailbox_id: str, user_id: str) -> Dict[str, Any]:  # pylint: disable=unused-argument
+def export_mailbox_task(
+    self, mailbox_id: str, user_id: str, recipient_mailbox_id: str
+) -> Dict[str, Any]:
     """
     Export all messages from a mailbox to an MBOX file and upload to S3.
 
     Uses streaming multipart upload to avoid storing large files locally.
 
+    The download link is delivered to ``recipient_mailbox_id``, explicitly
+    chosen by the requester among the mailboxes they can access — never
+    defaulted to the exported mailbox. Access to the recipient was validated
+    when the export was queued, so only its existence is re-checked here.
+
     Args:
         mailbox_id: The UUID of the mailbox to export
         user_id: The UUID of the user who triggered the export
+        recipient_mailbox_id: The UUID of the mailbox receiving the link
 
     Returns:
         Dict with task status and result
@@ -422,24 +431,44 @@ def export_mailbox_task(self, mailbox_id: str, user_id: str) -> Dict[str, Any]: 
     current_message = 0
     s3_key = None
 
+    def _failure(error_msg):
+        """Record a failure state and build the task's return value."""
+        failed = {
+            "message_status": "Failed to export messages",
+            "total_messages": total_messages,
+            "exported_count": exported_count,
+            "skipped_count": skipped_count,
+            "error": error_msg,
+        }
+        self.update_state(state="FAILURE", meta={"result": failed, "error": error_msg})
+        return {"status": "FAILURE", "result": failed, "error": error_msg}
+
     try:
         mailbox_obj = Mailbox.objects.select_related("domain").get(id=mailbox_id)
     except Mailbox.DoesNotExist:
-        error_msg = f"Mailbox {mailbox_id} not found"
-        result = {
-            "message_status": "Failed to export messages",
-            "total_messages": 0,
-            "exported_count": 0,
-            "skipped_count": 0,
-            "error": error_msg,
-        }
-        self.update_state(
-            state="FAILURE",
-            meta={"result": result, "error": error_msg},
+        return _failure(f"Mailbox {mailbox_id} not found")
+
+    if not User.objects.filter(id=user_id).exists():
+        return _failure(f"User {user_id} not found")
+
+    # The recipient was chosen by the requester and access-checked when the
+    # export was queued. Only re-check existence here: the mailbox may have
+    # been deleted while the task waited, and exporting gigabytes to S3 for
+    # an unreachable link would be pure waste.
+    try:
+        recipient_mailbox = Mailbox.objects.select_related("domain").get(
+            id=recipient_mailbox_id
         )
-        return {"status": "FAILURE", "result": result, "error": error_msg}
+    except (
+        Mailbox.DoesNotExist,
+        DjangoValidationError,
+        ValueError,
+        TypeError,
+    ):
+        return _failure(f"Recipient mailbox {recipient_mailbox_id} not found")
 
     mailbox_email = str(mailbox_obj)
+    recipient_email = str(recipient_mailbox)
 
     try:
         # Update state to show we're starting
@@ -589,6 +618,7 @@ def export_mailbox_task(self, mailbox_id: str, user_id: str) -> Dict[str, Any]: 
 
         try:
             _create_notification_message(
+                recipient_email=recipient_email,
                 mailbox_email=mailbox_email,
                 presigned_url=presigned_url,
                 exported_count=exported_count,
@@ -598,7 +628,8 @@ def export_mailbox_task(self, mailbox_id: str, user_id: str) -> Dict[str, Any]: 
         except Exception as notif_exc:  # pylint: disable=broad-exception-caught
             capture_exception(notif_exc)
             logger.warning(
-                "Failed to create notification for mailbox %s: %s",
+                "Failed to notify %s of the export of mailbox %s: %s",
+                recipient_email,
                 mailbox_id,
                 notif_exc,
             )
@@ -610,6 +641,7 @@ def export_mailbox_task(self, mailbox_id: str, user_id: str) -> Dict[str, Any]: 
             "exported_count": exported_count,
             "skipped_count": skipped_count,
             "s3_key": s3_key,
+            "recipient": recipient_email,
         }
 
         self.update_state(
@@ -620,30 +652,16 @@ def export_mailbox_task(self, mailbox_id: str, user_id: str) -> Dict[str, Any]: 
         return {"status": "SUCCESS", "result": result, "error": None}
 
     except Exception as e:  # pylint: disable=broad-exception-caught
-        error_msg = str(e)
         logger.exception(
             "Error exporting mailbox %s: %s",
             mailbox_id,
             e,
         )
-
-        result = {
-            "message_status": "Failed to export messages",
-            "total_messages": total_messages,
-            "exported_count": exported_count,
-            "skipped_count": skipped_count,
-            "error": error_msg,
-        }
-
-        self.update_state(
-            state="FAILURE",
-            meta={"result": result, "error": error_msg},
-        )
-
-        return {"status": "FAILURE", "result": result, "error": error_msg}
+        return _failure(str(e))
 
 
 def _create_notification_message(
+    recipient_email: str,
     mailbox_email: str,
     presigned_url: str,
     exported_count: int,
@@ -651,10 +669,12 @@ def _create_notification_message(
     total_messages: int,
 ) -> bool:
     """
-    Create a notification message in the mailbox with the download link.
+    Deliver the download link to the requester's own mailbox.
 
     Args:
-        mailbox_email: The email address of the mailbox
+        recipient_email: The address of the requester's mailbox, where the
+            link is delivered
+        mailbox_email: The email address of the exported mailbox
         presigned_url: The presigned S3 URL for download
         exported_count: Number of messages exported
         skipped_count: Number of messages skipped
@@ -663,23 +683,25 @@ def _create_notification_message(
     Returns:
         True if message was delivered successfully, False otherwise
     """
-    body_text = f"""Your mailbox export is ready for download.
+    body_text = f"""The export of {mailbox_email} is ready for download.
 
 Export Summary:
 - Total messages in mailbox: {total_messages}
 - Messages exported: {exported_count}
 - Messages skipped: {skipped_count}
 
-Download your export here (link valid for 7 days):
+Download the export here (link valid for 7 days):
 {presigned_url}
 
 This file is in MBOX format and can be imported into most email clients.
+Anyone with this link can download the whole mailbox: do not share it.
 """
 
     escaped_url = html.escape(presigned_url)
+    escaped_mailbox = html.escape(mailbox_email)
     body_html = f"""<html>
 <body>
-<h2>Your mailbox export is ready for download</h2>
+<h2>The export of {escaped_mailbox} is ready for download</h2>
 
 <h3>Export Summary</h3>
 <ul>
@@ -688,16 +710,17 @@ This file is in MBOX format and can be imported into most email clients.
 <li>Messages skipped: {skipped_count}</li>
 </ul>
 
-<p><strong><a href="{escaped_url}">Download your export</a></strong> (link valid for 7 days)</p>
+<p><strong><a href="{escaped_url}">Download the export</a></strong> (link valid for 7 days)</p>
 
-<p><em>This file is in MBOX format and can be imported into most email clients.</em></p>
+<p><em>This file is in MBOX format and can be imported into most email clients.
+Anyone with this link can download the whole mailbox: do not share it.</em></p>
 </body>
 </html>"""
 
     notification: JmapEmail = {
         "from": [{"email": f"noreply@{settings.MESSAGES_TECHNICAL_DOMAIN}"}],
-        "to": [{"email": mailbox_email}],
-        "subject": "Your mailbox export is ready",
+        "to": [{"email": recipient_email}],
+        "subject": f"The export of {mailbox_email} is ready",
         "sentAt": current_sent_at(),
         "textBody": [{"partId": "1", "type": "text/plain", "content": body_text}],
         "htmlBody": [{"partId": "2", "type": "text/html", "content": body_html}],
@@ -710,7 +733,7 @@ This file is in MBOX format and can be imported into most email clients.
         raise RuntimeError("Exporter notification failed to round-trip parse_email")
 
     return deliver_inbound_message(
-        recipient_email=mailbox_email,
+        recipient_email=recipient_email,
         parsed_email=parsed_email,
         raw_data=raw_data,
         is_import=True,  # Skip spam checking; bypass queue and webhooks

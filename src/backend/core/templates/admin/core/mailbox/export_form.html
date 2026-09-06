@@ -1,0 +1,26 @@
+{% extends "admin/base_site.html" %}
+{% load i18n admin_urls %}
+
+{% block breadcrumbs %}
+<div class="breadcrumbs">
+    <a href="{% url 'admin:index' %}">{% translate 'Home' %}</a>
+    &rsaquo; <a href="{% url 'admin:app_list' app_label=opts.app_label %}">{{ opts.app_config.verbose_name }}</a>
+    &rsaquo; <a href="{% url 'admin:core_mailbox_changelist' %}">{{ opts.verbose_name_plural|capfirst }}</a>
+    &rsaquo; {% translate "Export mailbox" %}
+</div>
+{% endblock %}
+
+{% block content %}
+<h1>{% translate "Export mailbox" %}</h1>
+
+<p>{% blocktranslate %}All messages of the selected mailbox are exported to an MBOX archive in the background. Once ready, a message carrying a download link valid for 7 days is delivered to the mailbox you choose below.{% endblocktranslate %}</p>
+
+<form method="post">
+    {% csrf_token %}
+    {{ form.as_p }}
+    <div class="submit-row">
+        <input type="submit" value="{% translate 'Start export' %}" class="default">
+        <a class="button" href="{% url 'admin:core_mailbox_changelist' %}">{% translate "Cancel" %}</a>
+    </div>
+</form>
+{% endblock %}
