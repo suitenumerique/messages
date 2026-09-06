@@ -9361,6 +9361,28 @@
                     "user"
                 ]
             },
+            "MentionReadByUser": {
+                "type": "object",
+                "description": "Describes a user who has read a mention on a ThreadEvent.\n\nExists solely to produce a named component in the OpenAPI schema;\nonly used as a return type of ``ThreadEventSerializer.mention_read_by``.",
+                "properties": {
+                    "id": {
+                        "type": "string",
+                        "format": "uuid"
+                    },
+                    "name": {
+                        "type": "string"
+                    },
+                    "read_at": {
+                        "type": "string",
+                        "format": "date-time"
+                    }
+                },
+                "required": [
+                    "id",
+                    "name",
+                    "read_at"
+                ]
+            },
             "Message": {
                 "type": "object",
                 "description": "Serialize messages, getting parsed details from the Message model.\nAligns field names with JMAP where appropriate (textBody, htmlBody, to, cc, bcc).",
@@ -10936,6 +10958,14 @@
                         "type": "boolean",
                         "readOnly": true
                     },
+                    "mention_read_by": {
+                        "type": "array",
+                        "items": {
+                            "$ref": "#/components/schemas/MentionReadByUser"
+                        },
+                        "nullable": true,
+                        "readOnly": true
+                    },
                     "created_at": {
                         "type": "string",
                         "format": "date-time",
@@ -10960,6 +10990,7 @@
                     "has_unread_mention",
                     "id",
                     "is_editable",
+                    "mention_read_by",
                     "thread",
                     "type",
                     "updated_at"
