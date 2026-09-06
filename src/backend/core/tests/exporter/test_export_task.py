@@ -12,28 +12,52 @@ from django.utils import timezone
 import pytest
 
 from core import enums, factories
-from core.models import Blob, Label, Mailbox, MailDomain, Message, Thread, ThreadAccess
+from core.models import (
+    Blob,
+    Label,
+    Mailbox,
+    MailboxAccess,
+    MailDomain,
+    Message,
+    Thread,
+    ThreadAccess,
+)
 from core.services.exporter.tasks import export_mailbox_task
 from core.services.importer.channel import create_import_channel
 from core.services.importer.mbox import run_mbox
 
 
 @pytest.fixture
-def admin_user(db):
-    """Create a superuser for admin access."""
-    return factories.UserFactory(
-        email="admin@example.com",
+def domain(db):
+    """Create a test domain."""
+    return MailDomain.objects.create(name="example.com")
+
+
+@pytest.fixture
+def admin_user(db, domain):
+    """Create a superuser for admin access, with a mailbox of their own.
+
+    Exports deliver the download link to a mailbox the requester picks among
+    the ones they can access, so whoever triggers one needs such a mailbox.
+    """
+    user = factories.UserFactory(
+        email=f"admin@{domain.name}",
         password="adminpass123",
         full_name="Admin User",
         is_superuser=True,
         is_staff=True,
     )
+    mailbox = Mailbox.objects.create(local_part="admin", domain=domain)
+    MailboxAccess.objects.create(
+        mailbox=mailbox, user=user, role=enums.MailboxRoleChoices.ADMIN
+    )
+    return user
 
 
 @pytest.fixture
-def domain(db):
-    """Create a test domain."""
-    return MailDomain.objects.create(name="example.com")
+def admin_mailbox(admin_user):
+    """A mailbox the admin user can pick as export link destination."""
+    return admin_user.mailbox_accesses.get().mailbox
 
 
 @pytest.fixture
@@ -107,7 +131,9 @@ def test_export_empty_mailbox(mailbox_fixture, admin_user, cleanup_exports):
             "core.services.exporter.tasks.deliver_inbound_message", return_value=True
         ),
     ):
-        result = export_mailbox_task(str(mailbox_fixture.id), str(admin_user.id))
+        result = export_mailbox_task(
+            str(mailbox_fixture.id), str(admin_user.id), str(mailbox_fixture.id)
+        )
 
     assert result["status"] == "SUCCESS"
     assert result["result"]["exported_count"] == 0
@@ -141,7 +167,9 @@ def test_export_single_message(mailbox_fixture, admin_user, cleanup_exports):
             "core.services.exporter.tasks.deliver_inbound_message", return_value=True
         ),
     ):
-        result = export_mailbox_task(str(mailbox_fixture.id), str(admin_user.id))
+        result = export_mailbox_task(
+            str(mailbox_fixture.id), str(admin_user.id), str(mailbox_fixture.id)
+        )
 
     assert result["status"] == "SUCCESS"
     assert result["result"]["exported_count"] == 1
@@ -177,7 +205,9 @@ def test_export_multiple_messages(mailbox_fixture, admin_user, cleanup_exports):
             "core.services.exporter.tasks.deliver_inbound_message", return_value=True
         ),
     ):
-        result = export_mailbox_task(str(mailbox_fixture.id), str(admin_user.id))
+        result = export_mailbox_task(
+            str(mailbox_fixture.id), str(admin_user.id), str(mailbox_fixture.id)
+        )
 
     assert result["status"] == "SUCCESS"
     assert result["result"]["exported_count"] == 3
@@ -211,7 +241,9 @@ def test_export_skips_missing_blob(mailbox_fixture, admin_user, cleanup_exports)
             "core.services.exporter.tasks.deliver_inbound_message", return_value=True
         ),
     ):
-        result = export_mailbox_task(str(mailbox_fixture.id), str(admin_user.id))
+        result = export_mailbox_task(
+            str(mailbox_fixture.id), str(admin_user.id), str(mailbox_fixture.id)
+        )
 
     assert result["status"] == "SUCCESS"
     assert result["result"]["exported_count"] == 1
@@ -223,9 +255,9 @@ def test_export_skips_missing_blob(mailbox_fixture, admin_user, cleanup_exports)
 
 @pytest.mark.django_db
 def test_export_creates_notification_message(
-    mailbox_fixture, admin_user, cleanup_exports
+    mailbox_fixture, admin_user, admin_mailbox, cleanup_exports
 ):
-    """Test that a notification message is created after export."""
+    """The download link is delivered to the chosen mailbox, not the exported one."""
     create_test_message(mailbox_fixture, "Test Message", "Test body")
     mock_task = MagicMock()
 
@@ -242,26 +274,70 @@ def test_export_creates_notification_message(
             side_effect=mock_deliver,
         ),
     ):
-        result = export_mailbox_task(str(mailbox_fixture.id), str(admin_user.id))
+        result = export_mailbox_task(
+            str(mailbox_fixture.id), str(admin_user.id), str(admin_mailbox.id)
+        )
 
     assert result["status"] == "SUCCESS"
     # Verify deliver_inbound_message was called
     assert len(deliver_called) == 1
     args, kwargs = deliver_called[0]
-    assert kwargs["recipient_email"] == str(mailbox_fixture)
+    assert kwargs["recipient_email"] == str(admin_mailbox)
+    assert kwargs["recipient_email"] != str(mailbox_fixture)
     assert kwargs["is_import"] is True
+    # The notification names the mailbox it is about, since it no longer
+    # lands in that mailbox.
+    assert str(mailbox_fixture) in kwargs["parsed_email"]["subject"]
+    assert result["result"]["recipient"] == str(admin_mailbox)
 
     cleanup_exports.append(result["result"]["s3_key"])
 
 
 @pytest.mark.django_db
-def test_export_nonexistent_mailbox(admin_user):
+def test_export_unknown_recipient_fails(mailbox_fixture, admin_user):
+    """A recipient mailbox deleted while the task waited fails cleanly."""
+    mock_task = MagicMock()
+    missing_recipient_id = "00000000-0000-0000-0000-000000000000"
+
+    with (
+        patch.object(export_mailbox_task, "update_state", mock_task.update_state),
+        patch("core.services.exporter.tasks.storages") as mock_storages,
+    ):
+        result = export_mailbox_task(
+            str(mailbox_fixture.id), str(admin_user.id), missing_recipient_id
+        )
+
+    assert result["status"] == "FAILURE"
+    assert "not found" in result["error"]
+    # Nothing was uploaded: the check runs before any S3 work.
+    mock_storages.__getitem__.assert_not_called()
+
+
+@pytest.mark.django_db
+def test_export_unknown_requester_fails(mailbox_fixture):
+    """An export queued for a user that no longer exists fails cleanly."""
+    mock_task = MagicMock()
+    missing_user_id = "00000000-0000-0000-0000-000000000000"
+
+    with patch.object(export_mailbox_task, "update_state", mock_task.update_state):
+        result = export_mailbox_task(
+            str(mailbox_fixture.id), missing_user_id, str(mailbox_fixture.id)
+        )
+
+    assert result["status"] == "FAILURE"
+    assert "not found" in result["error"]
+
+
+@pytest.mark.django_db
+def test_export_nonexistent_mailbox(admin_user, mailbox_fixture):
     """Test exporting a non-existent mailbox returns failure."""
     mock_task = MagicMock()
 
     with patch.object(export_mailbox_task, "update_state", mock_task.update_state):
         result = export_mailbox_task(
-            "00000000-0000-0000-0000-000000000000", str(admin_user.id)
+            "00000000-0000-0000-0000-000000000000",
+            str(admin_user.id),
+            str(mailbox_fixture.id),
         )
 
     assert result["status"] == "FAILURE"
@@ -278,25 +354,72 @@ def test_admin_export_button_visible(admin_client, mailbox_fixture):
 
 
 @pytest.mark.django_db
-def test_admin_export_view_requires_post(admin_client, mailbox_fixture):
-    """Test that the export view requires POST method."""
+def test_admin_export_form_renders(admin_client, mailbox_fixture, admin_mailbox):
+    """GET on the export page renders the source/destination form."""
     url = reverse("admin:core_mailbox_export", args=[mailbox_fixture.pk])
     response = admin_client.get(url)
-    assert response.status_code == 405  # Method Not Allowed
+
+    assert response.status_code == 200
+    assert "destination" in response.context["form"].fields
+    assert response.context["form"].initial["mailbox"].pk == mailbox_fixture.pk
 
 
 @pytest.mark.django_db
-def test_admin_export_view_starts_task(admin_client, mailbox_fixture):
-    """Test that POST to export view starts the celery task."""
+def test_admin_export_form_prefills_from_query_param(admin_client, mailbox_fixture):
+    """The generic export page pre-fills the source from ?mailbox=."""
+    url = reverse("admin:core_mailbox_export_form") + f"?mailbox={mailbox_fixture.pk}"
+    response = admin_client.get(url)
+
+    assert response.status_code == 200
+    assert response.context["form"].initial["mailbox"].pk == mailbox_fixture.pk
+
+
+@pytest.mark.django_db
+def test_admin_export_view_starts_task(
+    admin_client, admin_user, mailbox_fixture, admin_mailbox
+):
+    """POST with a chosen destination queues the export for that mailbox."""
     url = reverse("admin:core_mailbox_export", args=[mailbox_fixture.pk])
 
     with patch("core.admin.export_mailbox_task") as mock_task:
         mock_task.delay.return_value = Mock(id="test-task-id")
 
-        response = admin_client.post(url)
+        response = admin_client.post(
+            url,
+            data={
+                "mailbox": str(mailbox_fixture.pk),
+                "destination": str(admin_mailbox.pk),
+            },
+        )
 
         assert response.status_code == 302  # Redirect
-        mock_task.delay.assert_called_once()
+        mock_task.delay.assert_called_once_with(
+            str(mailbox_fixture.id),
+            str(admin_user.id),
+            str(admin_mailbox.id),
+        )
+
+
+@pytest.mark.django_db
+def test_admin_export_view_rejects_foreign_destination(
+    admin_client, mailbox_fixture, domain
+):
+    """A destination the requester cannot access fails form validation."""
+    outsider_box = Mailbox.objects.create(local_part="outsider", domain=domain)
+    url = reverse("admin:core_mailbox_export", args=[mailbox_fixture.pk])
+
+    with patch("core.admin.export_mailbox_task") as mock_task:
+        response = admin_client.post(
+            url,
+            data={
+                "mailbox": str(mailbox_fixture.pk),
+                "destination": str(outsider_box.pk),
+            },
+        )
+
+        assert response.status_code == 200  # Form re-rendered with errors
+        assert response.context["form"].errors
+        mock_task.delay.assert_not_called()
 
 
 @pytest.mark.django_db
@@ -309,6 +432,12 @@ def test_export_reimport_roundtrip(domain, cleanup_exports):
     mailbox_a = Mailbox.objects.create(local_part="source", domain=domain)
     mailbox_b = Mailbox.objects.create(local_part="target", domain=domain)
     user = factories.UserFactory(is_superuser=True, is_staff=True)
+    requester_mailbox = Mailbox.objects.create(local_part="requester", domain=domain)
+    MailboxAccess.objects.create(
+        mailbox=requester_mailbox,
+        user=user,
+        role=enums.MailboxRoleChoices.ADMIN,
+    )
 
     # Create multiple test messages with different content
     subjects = ["First message", "Second message", "Third message"]
@@ -338,7 +467,9 @@ def test_export_reimport_roundtrip(domain, cleanup_exports):
             "core.services.exporter.tasks.deliver_inbound_message", return_value=True
         ),
     ):
-        export_result = export_mailbox_task(str(mailbox_a.id), str(user.id))
+        export_result = export_mailbox_task(
+            str(mailbox_a.id), str(user.id), str(requester_mailbox.id)
+        )
 
     assert export_result["status"] == "SUCCESS"
     assert export_result["result"]["exported_count"] == 3
@@ -429,7 +560,9 @@ def test_export_includes_status_headers(mailbox_fixture, admin_user, cleanup_exp
             "core.services.exporter.tasks.deliver_inbound_message", return_value=True
         ),
     ):
-        result = export_mailbox_task(str(mailbox_fixture.id), str(admin_user.id))
+        result = export_mailbox_task(
+            str(mailbox_fixture.id), str(admin_user.id), str(mailbox_fixture.id)
+        )
 
     assert result["status"] == "SUCCESS"
 
@@ -484,7 +617,7 @@ def test_export_starred_flag_is_mailbox_scoped(
         ),
     ):
         result_starred = export_mailbox_task(
-            str(mailbox_fixture.id), str(admin_user.id)
+            str(mailbox_fixture.id), str(admin_user.id), str(mailbox_fixture.id)
         )
 
     assert result_starred["status"] == "SUCCESS"
@@ -498,7 +631,7 @@ def test_export_starred_flag_is_mailbox_scoped(
         ),
     ):
         result_not_starred = export_mailbox_task(
-            str(other_mailbox.id), str(admin_user.id)
+            str(other_mailbox.id), str(admin_user.id), str(other_mailbox.id)
         )
 
     assert result_not_starred["status"] == "SUCCESS"
@@ -571,7 +704,9 @@ Body content here
             "core.services.exporter.tasks.deliver_inbound_message", return_value=True
         ),
     ):
-        result = export_mailbox_task(str(mailbox_fixture.id), str(admin_user.id))
+        result = export_mailbox_task(
+            str(mailbox_fixture.id), str(admin_user.id), str(mailbox_fixture.id)
+        )
 
     assert result["status"] == "SUCCESS"
 
@@ -620,7 +755,9 @@ def test_export_includes_labels_as_x_keywords(
             "core.services.exporter.tasks.deliver_inbound_message", return_value=True
         ),
     ):
-        result = export_mailbox_task(str(mailbox_fixture.id), str(admin_user.id))
+        result = export_mailbox_task(
+            str(mailbox_fixture.id), str(admin_user.id), str(mailbox_fixture.id)
+        )
 
     assert result["status"] == "SUCCESS"
 
@@ -662,7 +799,9 @@ def test_export_labels_with_spaces_are_quoted(
             "core.services.exporter.tasks.deliver_inbound_message", return_value=True
         ),
     ):
-        result = export_mailbox_task(str(mailbox_fixture.id), str(admin_user.id))
+        result = export_mailbox_task(
+            str(mailbox_fixture.id), str(admin_user.id), str(mailbox_fixture.id)
+        )
 
     assert result["status"] == "SUCCESS"
 
@@ -694,7 +833,9 @@ def test_export_unread_message_status(mailbox_fixture, admin_user, cleanup_expor
             "core.services.exporter.tasks.deliver_inbound_message", return_value=True
         ),
     ):
-        result = export_mailbox_task(str(mailbox_fixture.id), str(admin_user.id))
+        result = export_mailbox_task(
+            str(mailbox_fixture.id), str(admin_user.id), str(mailbox_fixture.id)
+        )
 
     assert result["status"] == "SUCCESS"
 

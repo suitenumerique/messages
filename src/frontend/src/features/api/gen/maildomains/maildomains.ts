@@ -29,6 +29,11 @@ import type {
   MailboxAdmin,
   MailboxAdminCreate,
   MailboxAdminCreatePayloadRequest,
+  MailboxAdminExportError,
+  MailboxAdminExportInternalServerError,
+  MailboxAdminExportNotFound,
+  MailboxAdminExportPayloadRequest,
+  MailboxAdminExportResponse,
   MailboxAdminMandatoryTotpPayloadRequest,
   MailboxAdminMandatoryTotpResponse,
   MailboxAdminResetTotpResponse,
@@ -1400,6 +1405,158 @@ export const useMaildomainsMailboxesDestroy = <
 > => {
   const mutationOptions =
     getMaildomainsMailboxesDestroyMutationOptions(options);
+
+  return useMutation(mutationOptions, queryClient);
+};
+/**
+ * Export every message of a mailbox to an MBOX archive. The task runs in the background and delivers the download link to the mailbox chosen by the requester.
+ */
+export type maildomainsMailboxesExportResponse202 = {
+  data: MailboxAdminExportResponse;
+  status: 202;
+};
+
+export type maildomainsMailboxesExportResponse400 = {
+  data: MailboxAdminExportError;
+  status: 400;
+};
+
+export type maildomainsMailboxesExportResponse404 = {
+  data: MailboxAdminExportNotFound;
+  status: 404;
+};
+
+export type maildomainsMailboxesExportResponse500 = {
+  data: MailboxAdminExportInternalServerError;
+  status: 500;
+};
+
+export type maildomainsMailboxesExportResponseSuccess =
+  maildomainsMailboxesExportResponse202 & {
+    headers: Headers;
+  };
+export type maildomainsMailboxesExportResponseError = (
+  | maildomainsMailboxesExportResponse400
+  | maildomainsMailboxesExportResponse404
+  | maildomainsMailboxesExportResponse500
+) & {
+  headers: Headers;
+};
+
+export type maildomainsMailboxesExportResponse =
+  | maildomainsMailboxesExportResponseSuccess
+  | maildomainsMailboxesExportResponseError;
+
+export const getMaildomainsMailboxesExportUrl = (
+  maildomainPk: string,
+  id: string,
+) => {
+  return `/api/v1.0/maildomains/${maildomainPk}/mailboxes/${id}/export/`;
+};
+
+export const maildomainsMailboxesExport = async (
+  maildomainPk: string,
+  id: string,
+  mailboxAdminExportPayloadRequest: MailboxAdminExportPayloadRequest,
+  options?: RequestInit,
+): Promise<maildomainsMailboxesExportResponse> => {
+  return fetchAPI<maildomainsMailboxesExportResponse>(
+    getMaildomainsMailboxesExportUrl(maildomainPk, id),
+    {
+      ...options,
+      method: "POST",
+      headers: { "Content-Type": "application/json", ...options?.headers },
+      body: JSON.stringify(mailboxAdminExportPayloadRequest),
+    },
+  );
+};
+
+export const getMaildomainsMailboxesExportMutationOptions = <
+  TError = ErrorType<
+    | MailboxAdminExportError
+    | MailboxAdminExportNotFound
+    | MailboxAdminExportInternalServerError
+  >,
+  TContext = unknown,
+>(options?: {
+  mutation?: UseMutationOptions<
+    Awaited<ReturnType<typeof maildomainsMailboxesExport>>,
+    TError,
+    {
+      maildomainPk: string;
+      id: string;
+      data: MailboxAdminExportPayloadRequest;
+    },
+    TContext
+  >;
+  request?: SecondParameter<typeof fetchAPI>;
+}): UseMutationOptions<
+  Awaited<ReturnType<typeof maildomainsMailboxesExport>>,
+  TError,
+  { maildomainPk: string; id: string; data: MailboxAdminExportPayloadRequest },
+  TContext
+> => {
+  const mutationKey = ["maildomainsMailboxesExport"];
+  const { mutation: mutationOptions, request: requestOptions } = options
+    ? options.mutation &&
+      "mutationKey" in options.mutation &&
+      options.mutation.mutationKey
+      ? options
+      : { ...options, mutation: { ...options.mutation, mutationKey } }
+    : { mutation: { mutationKey }, request: undefined };
+
+  const mutationFn: MutationFunction<
+    Awaited<ReturnType<typeof maildomainsMailboxesExport>>,
+    { maildomainPk: string; id: string; data: MailboxAdminExportPayloadRequest }
+  > = (props) => {
+    const { maildomainPk, id, data } = props ?? {};
+
+    return maildomainsMailboxesExport(maildomainPk, id, data, requestOptions);
+  };
+
+  return { mutationFn, ...mutationOptions };
+};
+
+export type MaildomainsMailboxesExportMutationResult = NonNullable<
+  Awaited<ReturnType<typeof maildomainsMailboxesExport>>
+>;
+export type MaildomainsMailboxesExportMutationBody =
+  MailboxAdminExportPayloadRequest;
+export type MaildomainsMailboxesExportMutationError = ErrorType<
+  | MailboxAdminExportError
+  | MailboxAdminExportNotFound
+  | MailboxAdminExportInternalServerError
+>;
+
+export const useMaildomainsMailboxesExport = <
+  TError = ErrorType<
+    | MailboxAdminExportError
+    | MailboxAdminExportNotFound
+    | MailboxAdminExportInternalServerError
+  >,
+  TContext = unknown,
+>(
+  options?: {
+    mutation?: UseMutationOptions<
+      Awaited<ReturnType<typeof maildomainsMailboxesExport>>,
+      TError,
+      {
+        maildomainPk: string;
+        id: string;
+        data: MailboxAdminExportPayloadRequest;
+      },
+      TContext
+    >;
+    request?: SecondParameter<typeof fetchAPI>;
+  },
+  queryClient?: QueryClient,
+): UseMutationResult<
+  Awaited<ReturnType<typeof maildomainsMailboxesExport>>,
+  TError,
+  { maildomainPk: string; id: string; data: MailboxAdminExportPayloadRequest },
+  TContext
+> => {
+  const mutationOptions = getMaildomainsMailboxesExportMutationOptions(options);
 
   return useMutation(mutationOptions, queryClient);
 };

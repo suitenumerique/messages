@@ -8,6 +8,7 @@ import { keepPreviousData } from "@tanstack/react-query";
 import { useEffect, useState } from "react";
 import { useTranslation } from "react-i18next";
 import ModalMailboxResetPassword from "../modal-mailbox-reset-password";
+import ModalMailboxExport from "../modal-mailbox-export";
 import { addToast, ToasterItem } from "@/features/ui/components/toaster";
 import { ModalCreateOrUpdateMailbox } from "../modal-create-update-mailbox";
 import MailboxHelper from "@/features/utils/mailbox-helper";
@@ -24,6 +25,7 @@ enum MailboxEditAction {
     UPDATE = 'update',
     RESET_PASSWORD = 'resetPassword',
     MANAGE_ACCESS = 'manageAccess',
+    EXPORT = 'export',
 }
 
 export const AdminMailboxDataGrid = ({ domain, pagination, searchQuery }: AdminUserDataGridProps) => {
@@ -120,6 +122,11 @@ export const AdminMailboxDataGrid = ({ domain, pagination, searchQuery }: AdminU
                 },
             }
         );
+    }
+
+    const handleExport = (mailbox: MailboxAdmin) => {
+        setEditAction(MailboxEditAction.EXPORT);
+        setEditedMailbox(mailbox);
     }
 
     const handleDelete = async (mailbox: MailboxAdmin) => {
@@ -243,6 +250,7 @@ export const AdminMailboxDataGrid = ({ domain, pagination, searchQuery }: AdminU
                 onResetTotp={isMandatoryTotpEnabled && domain.identity_sync && row.has_mandatory_totp !== null && row.has_mandatory_totp !== undefined
                     ? () => handleResetTotp(row)
                     : undefined}
+                onExport={() => handleExport(row)}
                 onDelete={() => handleDelete(row)}
                 onUpdate={() => handleUpdate(row)}
             />,
@@ -315,6 +323,12 @@ export const AdminMailboxDataGrid = ({ domain, pagination, searchQuery }: AdminU
                         mailbox={editedMailbox}
                         domainId={domain.id}
                     />
+                    <ModalMailboxExport
+                        isOpen={editAction === MailboxEditAction.EXPORT}
+                        onClose={handleCloseEditUserModal}
+                        mailbox={editedMailbox}
+                        domainId={domain.id}
+                    />
                 </>
             )}
         </div>
@@ -325,11 +339,12 @@ type ActionsRowProps = {
     onManageAccess: () => void;
     onResetPassword?: () => void;
     onResetTotp?: () => void;
+    onExport: () => void;
     onDelete: () => void;
     onUpdate: () => void;
 };
 
-const ActionsRow = ({ onManageAccess, onResetPassword, onResetTotp, onDelete, onUpdate }: ActionsRowProps) => {
+const ActionsRow = ({ onManageAccess, onResetPassword, onResetTotp, onExport, onDelete, onUpdate }: ActionsRowProps) => {
     const [isMoreActionsOpen, setMoreActionsOpen] = useState<boolean>(false);
     const { t } = useTranslation();
 
@@ -339,6 +354,7 @@ const ActionsRow = ({ onManageAccess, onResetPassword, onResetTotp, onDelete, on
         { icon: <Icon name="group" size={IconSize.SMALL} />, label: t('Manage accesses'), callback: onManageAccess },
         ...(onResetPassword ? [{ icon: <Icon name="lock" size={IconSize.SMALL} />, label: t('Reset password'), callback: onResetPassword }] : []),
         ...(onResetTotp ? [{ icon: <Icon name="security" size={IconSize.SMALL} />, label: t('Reset 2FA'), callback: onResetTotp }] : []),
+        { icon: <Icon name="file_download" size={IconSize.SMALL} />, label: t('Export mailbox'), callback: onExport },
     ];
     const destructive: DropdownMenuItem = {
       icon: <Icon name="delete" size={IconSize.SMALL} />, label: t('Delete'), callback: onDelete, variant: 'danger'

@@ -10,6 +10,8 @@ and this project adheres to
 
 ### Added
 
+- Export a mailbox from the domain admin UI and the Django admin, with the
+  download link delivered to a mailbox chosen by the requester
 - Setup guides for the authentication provider and the identity provider
 - IP allowlist for the Django admin URL in the frontend Caddy proxy
 - Smoke test for the frontend production image (make test-front-distroless)

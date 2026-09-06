@@ -17,6 +17,20 @@ MBOX is a standard format for storing email messages in a single file. Messages 
 
 When exporting a mailbox, Messages creates a gzip-compressed MBOX file (`.mbox.gz`) containing all messages with their metadata preserved in standard headers.
 
+### Triggering an export
+
+Domain administrators export a mailbox from the domain administration screen:
+open the "more options" menu on the mailbox row and pick **Export mailbox**.
+A dialog asks which of **your own mailboxes** should receive the download
+link — nothing is ever picked for you. The export runs in the background
+and, once the archive is uploaded, a message carrying a download link valid
+for 7 days is delivered to that mailbox. The chosen mailbox is validated
+when the export is queued: it must exist and you must be able to access it.
+
+The same action is available to superusers on the Django admin mailbox page
+(`Export Messages`), with the same rule: the form asks both which mailbox to
+export and which of your mailboxes receives the link.
+
 ### Message Flags
 
 Message flags are exported using the standard mbox `Status` and `X-Status` headers:

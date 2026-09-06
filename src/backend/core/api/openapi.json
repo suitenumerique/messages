@@ -4753,6 +4753,98 @@
                 }
             }
         },
+        "/api/v1.0/maildomains/{maildomain_pk}/mailboxes/{id}/export/": {
+            "post": {
+                "operationId": "maildomains_mailboxes_export",
+                "description": "Export every message of a mailbox to an MBOX archive. The task runs in the background and delivers the download link to the mailbox chosen by the requester.",
+                "parameters": [
+                    {
+                        "in": "path",
+                        "name": "id",
+                        "schema": {
+                            "type": "string",
+                            "format": "uuid",
+                            "description": "primary key for the record as UUID"
+                        },
+                        "required": true
+                    },
+                    {
+                        "in": "path",
+                        "name": "maildomain_pk",
+                        "schema": {
+                            "type": "string",
+                            "format": "uuid"
+                        },
+                        "required": true
+                    }
+                ],
+                "tags": [
+                    "maildomains"
+                ],
+                "requestBody": {
+                    "content": {
+                        "application/json": {
+                            "schema": {
+                                "$ref": "#/components/schemas/MailboxAdminExportPayloadRequest"
+                            }
+                        },
+                        "multipart/form-data": {
+                            "schema": {
+                                "$ref": "#/components/schemas/MailboxAdminExportPayloadRequest"
+                            }
+                        }
+                    },
+                    "required": true
+                },
+                "security": [
+                    {
+                        "cookieAuth": []
+                    }
+                ],
+                "responses": {
+                    "202": {
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "$ref": "#/components/schemas/MailboxAdminExportResponse"
+                                }
+                            }
+                        },
+                        "description": ""
+                    },
+                    "400": {
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "$ref": "#/components/schemas/MailboxAdminExportError"
+                                }
+                            }
+                        },
+                        "description": ""
+                    },
+                    "404": {
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "$ref": "#/components/schemas/MailboxAdminExportNotFound"
+                                }
+                            }
+                        },
+                        "description": ""
+                    },
+                    "500": {
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "$ref": "#/components/schemas/MailboxAdminExportInternalServerError"
+                                }
+                            }
+                        },
+                        "description": ""
+                    }
+                }
+            }
+        },
         "/api/v1.0/maildomains/{maildomain_pk}/mailboxes/{id}/mandatory-totp/": {
             "post": {
                 "operationId": "maildomains_mailboxes_set_mandatory_totp",
@@ -9166,6 +9258,66 @@
                 "required": [
                     "local_part",
                     "metadata"
+                ]
+            },
+            "MailboxAdminExportError": {
+                "type": "object",
+                "properties": {
+                    "error": {
+                        "type": "string"
+                    }
+                },
+                "required": [
+                    "error"
+                ]
+            },
+            "MailboxAdminExportInternalServerError": {
+                "type": "object",
+                "properties": {
+                    "error": {
+                        "type": "string"
+                    }
+                },
+                "required": [
+                    "error"
+                ]
+            },
+            "MailboxAdminExportNotFound": {
+                "type": "object",
+                "properties": {
+                    "error": {
+                        "type": "string"
+                    }
+                },
+                "required": [
+                    "error"
+                ]
+            },
+            "MailboxAdminExportPayloadRequest": {
+                "type": "object",
+                "properties": {
+                    "recipient_mailbox_id": {
+                        "type": "string",
+                        "format": "uuid"
+                    }
+                },
+                "required": [
+                    "recipient_mailbox_id"
+                ]
+            },
+            "MailboxAdminExportResponse": {
+                "type": "object",
+                "properties": {
+                    "task_id": {
+                        "type": "string"
+                    },
+                    "recipient": {
+                        "type": "string"
+                    }
+                },
+                "required": [
+                    "recipient",
+                    "task_id"
                 ]
             },
             "MailboxAdminMandatoryTotpPayloadRequest": {
