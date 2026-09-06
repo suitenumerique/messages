@@ -6,7 +6,6 @@ the low-level scan it (and the exporter tests) build the ordered plan from.
 """
 
 # pylint: disable=broad-exception-caught
-import io
 from collections.abc import Callable
 from dataclasses import dataclass
 from datetime import datetime
@@ -127,13 +126,11 @@ def index_mbox_messages(
 
     # Handle last message
     if message_start is not None:
-        # Get file end position
-        current_pos = file.tell()
-        file.seek(0, io.SEEK_END)
-        file_end = file.tell()
-        total_end = file_end - 1
-        # Restore position for _extract_and_store_index
-        file.seek(current_pos)
+        # The scan loop only breaks at EOF, so ``buffer`` holds every byte from
+        # ``file_offset`` to the end of the file — the final offset follows from
+        # the tracked scan state without a seek. That keeps the documented
+        # optional-seek contract: a valid non-seekable stream stays indexable.
+        total_end = file_offset + len(buffer) - 1
         if total_end >= message_start:
             _extract_and_store_index(
                 file,
@@ -147,32 +144,56 @@ def index_mbox_messages(
     return indices
 
 
+# A message's Date can sit past a long Received/DKIM/ARC preamble, so header
+# parsing must not stop at a fixed byte cut-off. Scanning still stops at the
+# blank-line terminator (or this cap), so a malformed message with no terminator
+# can't pull its whole body into memory just to look for a Date.
+_MAX_HEADER_SCAN = 65536
+
+
 def _extract_and_store_index(
     file, indices, msg_start, msg_end, buffer, buf_file_offset
 ):
     """Extract date from a message and add an index entry."""
-    # Try to read first 2048 bytes of the message for header parsing
-    header_size = min(2048, msg_end - msg_start + 1)
+    header_bytes = _read_message_headers(
+        file, msg_start, msg_end, buffer, buf_file_offset
+    )
+    date = extract_date_from_headers(header_bytes)
+    indices.append(MboxMessageIndex(start_byte=msg_start, end_byte=msg_end, date=date))
 
-    # Check if the header bytes are in our buffer
+
+def _read_message_headers(file, msg_start, msg_end, buffer, buf_file_offset):
+    """Return the message's header block: bytes from ``msg_start`` up to and
+    including the first blank-line terminator, growing the read until the
+    terminator is found (or ``_MAX_HEADER_SCAN`` / end-of-message is reached).
+
+    Reuses the caller's ``buffer`` when it already spans the requested range and
+    only falls back to a seek+read otherwise, restoring the file position.
+    """
+    msg_len = msg_end - msg_start + 1
     buf_start = buf_file_offset
     buf_end = buf_start + len(buffer) - 1
 
-    if buf_start <= msg_start and msg_start + header_size - 1 <= buf_end:
-        offset_in_buf = msg_start - buf_start
-        header_bytes = buffer[offset_in_buf : offset_in_buf + header_size]
-    else:
+    def _slice(size):
+        if buf_start <= msg_start and msg_start + size - 1 <= buf_end:
+            offset_in_buf = msg_start - buf_start
+            return buffer[offset_in_buf : offset_in_buf + size]
         # Need to seek and read
         current_pos = file.tell() if hasattr(file, "tell") else None
         try:
             file.seek(msg_start)
-            header_bytes = file.read(header_size)
+            return file.read(size)
         finally:
             if current_pos is not None:
                 file.seek(current_pos)
 
-    date = extract_date_from_headers(header_bytes)
-    indices.append(MboxMessageIndex(start_byte=msg_start, end_byte=msg_end, date=date))
+    cap = min(msg_len, _MAX_HEADER_SCAN)
+    size = min(2048, cap)
+    while True:
+        chunk = _slice(size)
+        if b"\r\n\r\n" in chunk or b"\n\n" in chunk or size >= cap:
+            return chunk
+        size = min(size * 2, cap)
 
 
 def _mbox_plan(
