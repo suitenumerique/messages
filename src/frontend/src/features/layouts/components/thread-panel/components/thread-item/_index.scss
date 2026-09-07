@@ -163,7 +163,7 @@
 
 .thread-item__column:has(.thread-item__sender + .thread-item__message-count) {
     align-items: baseline;
-    gap: var(--c--globals--spacings--2xs);
+    gap: var(--c--globals--spacings--3xs);
 }
 
 .thread-item__snippet {
@@ -179,6 +179,7 @@
 .thread-item__column--metadata {
     align-items: center;
     gap: var(--c--globals--spacings--3xs);
+    margin-left: var(--c--globals--spacings--xs);
 }
 
 .thread-item__label-bullets {
@@ -210,6 +211,14 @@
     overflow: hidden;
     font-weight: 500;
     font-size: var(--c--globals--font--sizes--sm);
+}
+
+// In a narrow panel, cap the sender so the message count next to it keeps
+// its room instead of being pushed out by a long name.
+@container thread-panel (max-width: 320px) {
+    .thread-item__sender {
+        max-width: 70%;
+    }
 }
 
 .thread-item[data-unread="true"] .thread-item__sender {

@@ -4,6 +4,9 @@
     max-height: 100%;
     background-color: var(--c--contextuals--background--surface--secondary);
     height: 100%;
+    // Named container so descendants can adapt to the resizable panel width
+    // instead of the viewport width.
+    container: thread-panel / inline-size;
 
     &__header {
         padding: var(--c--globals--spacings--sm) var(--c--globals--spacings--base);
