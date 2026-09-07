@@ -933,6 +933,90 @@ class TestThreadStatsAPI:
         # Get all threads
         assert response.data == {"has_messages": 2}
 
+    def test_stats_excludes_spam_and_trashed_by_default(self, api_client, url):
+        """Stats must apply the same spam/trash defaults as the list endpoint.
+
+        Otherwise every sidebar badge over-counts: spam and trashed threads
+        contribute to the number while the folder they point at hides them.
+        """
+        user = UserFactory()
+        api_client.force_authenticate(user=user)
+        mailbox = MailboxFactory(users_read=[user])
+
+        for thread in [
+            ThreadFactory(has_messages=True),
+            ThreadFactory(has_messages=True, is_spam=True),
+            ThreadFactory(has_messages=True, is_trashed=True),
+        ]:
+            ThreadAccessFactory(
+                mailbox=mailbox,
+                thread=thread,
+                role=enums.ThreadAccessRoleChoices.EDITOR,
+            )
+
+        response = api_client.get(
+            url, {"mailbox_id": str(mailbox.id), "stats_fields": "has_messages"}
+        )
+
+        assert response.status_code == 200
+        assert response.data == {"has_messages": 1}
+
+    def test_stats_counts_spam_when_explicitly_requested(self, api_client, url):
+        """The Spam folder passes ``is_spam=1``, so its own count is preserved."""
+        user = UserFactory()
+        api_client.force_authenticate(user=user)
+        mailbox = MailboxFactory(users_read=[user])
+
+        for thread in [
+            ThreadFactory(has_messages=True),
+            ThreadFactory(has_messages=True, is_spam=True),
+        ]:
+            ThreadAccessFactory(
+                mailbox=mailbox,
+                thread=thread,
+                role=enums.ThreadAccessRoleChoices.EDITOR,
+            )
+
+        response = api_client.get(
+            url,
+            {
+                "mailbox_id": str(mailbox.id),
+                "is_spam": "1",
+                "stats_fields": "has_messages",
+            },
+        )
+
+        assert response.status_code == 200
+        assert response.data == {"has_messages": 1}
+
+    def test_stats_counts_trashed_when_explicitly_requested(self, api_client, url):
+        """The Trash folder passes ``has_trashed=1``, so its own count is preserved."""
+        user = UserFactory()
+        api_client.force_authenticate(user=user)
+        mailbox = MailboxFactory(users_read=[user])
+
+        for thread in [
+            ThreadFactory(has_messages=True),
+            ThreadFactory(has_messages=True, has_trashed=True, is_trashed=True),
+        ]:
+            ThreadAccessFactory(
+                mailbox=mailbox,
+                thread=thread,
+                role=enums.ThreadAccessRoleChoices.EDITOR,
+            )
+
+        response = api_client.get(
+            url,
+            {
+                "mailbox_id": str(mailbox.id),
+                "has_trashed": "1",
+                "stats_fields": "has_messages",
+            },
+        )
+
+        assert response.status_code == 200
+        assert response.data == {"has_messages": 1}
+
     def test_stats_specific_fields(self, api_client, url):
         """Test retrieving stats for specific fields."""
 
@@ -1277,8 +1361,6 @@ class TestThreadStatsAPI:
                     "has_starred_unread,"
                     "has_sender,"
                     "has_sender_unread,"
-                    "is_spam,"
-                    "is_spam_unread,"
                     "has_active,"
                     "has_active_unread"
                 ),
@@ -1291,8 +1373,8 @@ class TestThreadStatsAPI:
             "has_starred_unread": 1,  # Only thread1 is starred AND unread
             "has_sender": 2,  # thread1 and thread2 have has_sender=True
             "has_sender_unread": 1,  # Only thread1 is sender AND unread
-            "is_spam": 1,  # Only thread3 is spam
-            "is_spam_unread": 0,  # thread3 has no messaged_at so not unread
+            # thread3 is spam: excluded from the default scope, exactly as the
+            # list excludes it.
             "has_active": 2,  # thread1 and thread2 have has_active=True
             "has_active_unread": 1,  # Only thread1 is active AND unread
         }
@@ -1388,6 +1470,20 @@ class TestThreadStatsAPI:
         assert response.status_code == 400
         assert (
             "Invalid field requested in stats_fields: invalid_field"
+            in response.data["detail"]
+        )
+
+    def test_stats_rejects_is_spam(self, api_client, url):
+        """`is_spam` is not countable: spam is scoped through the query param."""
+
+        user = UserFactory()
+        api_client.force_authenticate(user=user)
+        MailboxFactory(users_read=[user])
+
+        response = api_client.get(url, {"stats_fields": "all_unread,is_spam"})
+        assert response.status_code == 400
+        assert (
+            "Invalid field requested in stats_fields: is_spam"
             in response.data["detail"]
         )
 

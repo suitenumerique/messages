@@ -265,6 +265,42 @@ class TestThreadStatsAssignment:
         assert response.status_code == status.HTTP_200_OK
         assert response.data["has_unassigned"] == 1
 
+    def test_stats_has_unassigned_matches_list(self, api_client):
+        """The "Unassigned" badge must count exactly what the folder lists.
+
+        A thread whose first message is spam keeps ``has_active=True`` when a
+        later message is not spam, so it stays out of the list but used to be
+        counted by the badge — a counter pointing at an empty folder.
+        """
+        user, mailbox, thread = setup_user_with_thread_access()
+        api_client.force_authenticate(user=user)
+        thread.has_active = True
+        thread.save()
+
+        spam_thread = factories.ThreadFactory(has_active=True, is_spam=True)
+        factories.ThreadAccessFactory(
+            mailbox=mailbox,
+            thread=spam_thread,
+            role=enums.ThreadAccessRoleChoices.EDITOR,
+        )
+
+        params = {
+            "mailbox_id": str(mailbox.id),
+            "has_unassigned": "1",
+            "has_active": "1",
+        }
+        stats_response = api_client.get(
+            reverse("threads-stats"), {**params, "stats_fields": "all"}
+        )
+        list_response = api_client.get(reverse("threads-list"), params)
+
+        assert stats_response.status_code == status.HTTP_200_OK
+        assert list_response.status_code == status.HTTP_200_OK
+        assert stats_response.data["all"] == list_response.data["count"] == 1
+        assert [item["id"] for item in list_response.data["results"]] == [
+            str(thread.id)
+        ]
+
     def test_stats_all_with_assigned_to_me_filter(self, api_client):
         """Stats with all field and has_assigned_to_me filter should return correct total."""
         user, mailbox, thread1 = setup_user_with_thread_access()

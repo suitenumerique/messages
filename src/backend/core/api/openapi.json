@@ -7004,6 +7004,14 @@
                     },
                     {
                         "in": "query",
+                        "name": "is_spam",
+                        "schema": {
+                            "type": "integer"
+                        },
+                        "description": "Filter threads that are spam (1=true, 0=false)."
+                    },
+                    {
+                        "in": "query",
                         "name": "label_slug",
                         "schema": {
                             "type": "string"
@@ -7043,7 +7051,7 @@
                                 "has_unread_mention"
                             ]
                         },
-                        "description": "Comma-separated list of fields to aggregate.\n                Special values: 'all' (count all threads), 'all_unread' (count all unread threads).\n                Boolean fields: has_trashed, has_draft, has_starred, has_attachments, has_archived,\n                has_sender, has_active, has_delivery_pending, has_delivery_failed, is_spam, has_messages, has_unread_mention, has_mention, has_assigned_to_me, has_unassigned.\n                Unread variants ('_unread' suffix): count threads where the condition is true AND the thread is unread.\n                Examples: 'all,all_unread', 'has_starred,has_starred_unread', 'is_spam,is_spam_unread'",
+                        "description": "Comma-separated list of fields to aggregate.\n                Special values: 'all' (count all threads), 'all_unread' (count all unread threads).\n                Boolean fields: has_trashed, has_draft, has_starred, has_attachments, has_archived,\n                has_sender, has_active, has_delivery_pending, has_delivery_failed, has_messages, has_unread_mention, has_mention, has_assigned_to_me, has_unassigned.\n                Unread variants ('_unread' suffix): count threads where the condition is true AND the thread is unread.\n                Examples: 'all,all_unread', 'has_starred,has_starred_unread'",
                         "required": true,
                         "explode": false,
                         "style": "form"

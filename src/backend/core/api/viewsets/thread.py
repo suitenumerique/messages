@@ -321,6 +321,12 @@ class ThreadViewSet(
                 description="Filter threads that are archived (1=true, 0=false).",
             ),
             OpenApiParameter(
+                name="is_spam",
+                type=OpenApiTypes.INT,
+                location=OpenApiParameter.QUERY,
+                description="Filter threads that are spam (1=true, 0=false).",
+            ),
+            OpenApiParameter(
                 name="has_draft",
                 type=OpenApiTypes.INT,
                 location=OpenApiParameter.QUERY,
@@ -384,9 +390,9 @@ class ThreadViewSet(
                 description="""Comma-separated list of fields to aggregate.
                 Special values: 'all' (count all threads), 'all_unread' (count all unread threads).
                 Boolean fields: has_trashed, has_draft, has_starred, has_attachments, has_archived,
-                has_sender, has_active, has_delivery_pending, has_delivery_failed, is_spam, has_messages, has_unread_mention, has_mention, has_assigned_to_me, has_unassigned.
+                has_sender, has_active, has_delivery_pending, has_delivery_failed, has_messages, has_unread_mention, has_mention, has_assigned_to_me, has_unassigned.
                 Unread variants ('_unread' suffix): count threads where the condition is true AND the thread is unread.
-                Examples: 'all,all_unread', 'has_starred,has_starred_unread', 'is_spam,is_spam_unread'""",
+                Examples: 'all,all_unread', 'has_starred,has_starred_unread'""",
                 enum=list(enums.THREAD_STATS_FIELDS_MAP.keys()),
                 style="form",
                 explode=False,
@@ -425,7 +431,13 @@ class ThreadViewSet(
     )
     def stats(self, request):
         """Retrieve aggregated statistics for threads accessible by the user."""
-        queryset = self.get_queryset(exclude_spam=False, exclude_trashed=False)
+        # Same defaults as ``list``: a counter must describe exactly the set of
+        # threads the folder will show. Keeping spam/trash in here made badges
+        # count threads the list then filtered out — e.g. a thread whose first
+        # message is spam (``Thread.is_spam``) but which still has an active
+        # one (``has_active``). The Spam and Trash folders pass ``is_spam=1`` /
+        # ``has_trashed=1`` explicitly, so they keep their own counts.
+        queryset = self.get_queryset()
         stats_fields_param = request.query_params.get("stats_fields", "")
 
         if not stats_fields_param:
@@ -436,7 +448,12 @@ class ThreadViewSet(
 
         requested_fields = [field.strip() for field in stats_fields_param.split(",")]
 
-        # Define valid base fields that can be counted
+        # Define valid base fields that can be counted.
+        # ``is_spam`` is deliberately absent: the queryset excludes spam by
+        # default, so the counter could only ever return 0 — or, with an
+        # explicit ``is_spam=1``, a duplicate of ``all``. Folders scope their
+        # counts through that query parameter instead (the Spam folder asks
+        # for ``is_spam=1&stats_fields=all_unread``).
         valid_base_fields = {
             "has_trashed",
             "has_archived",
@@ -451,7 +468,6 @@ class ThreadViewSet(
             "has_mention",
             "has_assigned_to_me",
             "has_unassigned",
-            "is_spam",
             "has_messages",
         }
 

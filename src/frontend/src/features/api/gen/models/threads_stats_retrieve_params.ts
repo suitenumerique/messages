@@ -53,6 +53,10 @@ export type ThreadsStatsRetrieveParams = {
    */
   has_unread_mention?: number;
   /**
+   * Filter threads that are spam (1=true, 0=false).
+   */
+  is_spam?: number;
+  /**
    * Filter threads by label slug.
    */
   label_slug?: string;
@@ -68,9 +72,9 @@ export type ThreadsStatsRetrieveParams = {
  * Comma-separated list of fields to aggregate.
                 Special values: 'all' (count all threads), 'all_unread' (count all unread threads).
                 Boolean fields: has_trashed, has_draft, has_starred, has_attachments, has_archived,
-                has_sender, has_active, has_delivery_pending, has_delivery_failed, is_spam, has_messages, has_unread_mention, has_mention, has_assigned_to_me, has_unassigned.
+                has_sender, has_active, has_delivery_pending, has_delivery_failed, has_messages, has_unread_mention, has_mention, has_assigned_to_me, has_unassigned.
                 Unread variants ('_unread' suffix): count threads where the condition is true AND the thread is unread.
-                Examples: 'all,all_unread', 'has_starred,has_starred_unread', 'is_spam,is_spam_unread'
+                Examples: 'all,all_unread', 'has_starred,has_starred_unread'
  */
   stats_fields: ThreadsStatsRetrieveStatsFields;
 };
