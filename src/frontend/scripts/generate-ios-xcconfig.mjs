@@ -20,7 +20,7 @@ const scriptDir = dirname(fileURLToPath(import.meta.url));
 // The displayed version, read from the config `cap sync` just wrote (this
 // script runs right after it, see the mobile:build npm script). Unlike the
 // per-instance identity below it is project truth — the `appVersion` property
-// of capacitor.config.ts, bumped manually per release (docs/mobile.md, App
+// of capacitor.config.ts, bumped manually per release (docs/mobile-release.md, App
 // versioning) — and the Android versionName reads the very same key from its
 // own synced copy. Missing means `cap sync` did not run: fail loudly rather
 // than write an xcconfig that silently drops MARKETING_VERSION.
@@ -37,7 +37,7 @@ try {
 if (!syncedAppVersion) {
   throw new Error(
     `${syncedConfigPath} carries no appVersion: capacitor.config.ts must ` +
-      "declare it (see docs/mobile.md, App versioning).",
+      "declare it (see docs/mobile-release.md, App versioning).",
   );
 }
 

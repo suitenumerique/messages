@@ -8,7 +8,7 @@
  * "simplifying" back to the default Browser plugin, a Keycloak realm reset —
  * so these tests pin the files themselves and turn a silent break into a red
  * CI. They cannot prove the runtime behavior: the manual two-app test in the
- * release checklist (docs/mobile.md) remains required before a store release.
+ * release checklist (docs/mobile-release.md) remains required before a store release.
  *
  * Out of reach here: the IdP-side conditions. The dev Keycloak `acr.loa.map`
  * mapping (src/keycloak/realm.json) lives outside the frontend mount the

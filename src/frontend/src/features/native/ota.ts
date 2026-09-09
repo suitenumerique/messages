@@ -316,7 +316,7 @@ const runOtaCheck = async (manifestUrl: string): Promise<void> => {
     // last failed update. Re-applying it would just crash and revert again,
     // forever — so refuse a version already known bad, and let it win over a
     // rollback pointing at it: recovery for such a device is a *new* publish
-    // (see docs/mobile.md, "Rollback"). Unlike bundle statuses in `list()`,
+    // (see docs/mobile-release.md, "Rollback"). Unlike bundle statuses in `list()`,
     // this record is boot-specific: a transient download/install failure never
     // sets it, so those versions stay retryable.
     const failed = await CapacitorUpdater.getFailedUpdate();
