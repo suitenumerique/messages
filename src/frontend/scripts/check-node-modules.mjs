@@ -23,10 +23,10 @@ const ROOT = 'node_modules';
 const LIMIT_GB = 1.0;
 const LIMIT_BYTES = LIMIT_GB * 1024 ** 3;
 
-// Package names that must never come back.
+// Package names that must never come back. The linked install strategy keeps
+// the real copies under `.store/<scope>/<name>@<ver>-<hash>/node_modules/<scope>/
+// <name>`, so the plain path match below covers them too.
 const FORBIDDEN = ['@adobe/react-spectrum', '@react-spectrum', '@spectrum-icons'];
-// Same, as encoded in the linked strategy's `.store/` dir names (scope+name@ver).
-const FORBIDDEN_STORE = [/^@adobe\+react-spectrum@/, /^@react-spectrum\+/, /^@spectrum-icons\+/];
 
 let bytes = 0;
 const offenders = new Set();
@@ -34,13 +34,10 @@ const offenders = new Set();
 // over-limit tree look fine, so these are surfaced as a hard failure below.
 const scanErrors = [];
 
-function flagIfForbidden(fullPath, entryName) {
+function flagIfForbidden(fullPath) {
   const posix = fullPath.split(sep).join('/');
   for (const f of FORBIDDEN) {
     if (posix.includes(`/${f}/`) || posix.endsWith(`/${f}`)) offenders.add(f);
-  }
-  for (const re of FORBIDDEN_STORE) {
-    if (re.test(entryName)) offenders.add(entryName.replace(/@[^@]*$/, '').replace(/\+/g, '/'));
   }
 }
 
@@ -58,7 +55,7 @@ function walk(dir) {
     const p = join(dir, e.name);
     if (e.isSymbolicLink()) continue; // don't follow: avoids double-counting + cycles
     if (e.isDirectory()) {
-      flagIfForbidden(p, e.name);
+      flagIfForbidden(p);
       walk(p);
     } else if (e.isFile()) {
       try {
