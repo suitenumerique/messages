@@ -9,6 +9,7 @@
   "scripts": {
     "dev": "vite",
     "build": "tsc --noEmit && vite build",
+    "scalingo-postbuild": "npm run build && bash ../../deploy/paas/scalingo_stage_ota",
     "preview": "vite preview",
     "start": "vite preview",
     "lint": "eslint .",
@@ -29,6 +30,7 @@
     "mobile:ota:keygen": "node scripts/generate-ota-keys.mjs",
     "mobile:ota:publish": "node scripts/publish-ota.mjs",
     "mobile:assets": "capacitor-assets generate --ios --android --pwa --iconBackgroundColor '#ffffff' --iconBackgroundColorDark '#161B28' --splashBackgroundColor '#ffffff' --splashBackgroundColorDark '#161B28'",
+    "mobile:ota:rollback": "node scripts/rollback-ota.mjs",
     "check:deps": "node scripts/check-node-modules.mjs"
   },
   "dependencies": {

@@ -238,8 +238,27 @@ OTA-enabled app can never apply an unverified bundle.
   verified against the baked-in public key) and `set()`s it, which reloads the
   WebView.
 
-OTA replaces the *web* bundle only. Anything native (a new Capacitor plugin, a
-permission, the Swift/Gradle side) still requires a store release.
+1. `notifyOtaAppReady()` first — confirms the running bundle booted, so a broken
+   update auto-rolls-back on next launch.
+2. `checkAndStageOtaUpdate()` polls the manifest URL served by the backend
+   (`MOBILE_OTA_MANIFEST_URL` setting, `/config` endpoint, resolved in
+   `bootstrap.tsx`) and accepts the advertised bundle only when it clears the
+   guards: different from `CapacitorUpdater.current()`, a *strictly greater*
+   `sequence` (a per-channel monotonic release counter the device persists —
+   which is what lets a deliberate rollback point at an older build while a
+   replayed manifest can never drag a device backward), never older than the
+   native builtin bundle, and not recorded as a prior failed boot (a bundle
+   that boot-looped is blacklisted on that device).
+3. It downloads (passing `checksum` + `sessionKey`, verified against the
+   baked-in public key — a manifest missing either is refused outright, since
+   the Android plugin would otherwise fall back to the plain checksum the
+   manifest itself advertises) and **stages** it via `next()` — no mid-session
+   reload.
+   A persistent, non-dismissible toast (`use-ota-update-toast.tsx`, mounted by
+   the main layout) offers the single action "Update", which `reload()`s onto
+   the staged bundle; never tapping it is fine, Capgo applies the staged bundle
+   when the app next goes to the background or relaunches (except during a
+   login flow, see *Surviving the background*).
 
 ### Release channels
 
