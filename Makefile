@@ -720,11 +720,15 @@ MOBILE_OTA_BUILD_ID ?= $(shell git rev-list --count HEAD)-$(shell git rev-parse 
 # MOBILE_OTA_BUILD_ID is passed so `cap sync` stamps it as the builtin bundle version
 # (capacitor.config.ts), letting the OTA freshness check match a same-commit
 # manifest instead of re-downloading on first launch.
+# MOBILE_VERSION_CODE is passed for the iOS build number: gradle reads it from the
+# env at `make mobile-android-release`, but Xcode builds run from the IDE, so the
+# value has to be written into generated.xcconfig here — the only moment the host
+# git state and the container meet (scripts/generate-ios-xcconfig.mjs).
 #
 # Hot reload: MOBILE_DEV_SERVER_URL (frontend env files, set by default in dev)
 # is baked as the WebView's server.url at `cap sync` — see docs/mobile.md.
 mobile-build: ## build the web bundle and sync it + native plugins into the projects (container, env-aware)
-	@$(COMPOSE) run --rm --build -e MOBILE_OTA_BUILD_ID=$(MOBILE_OTA_BUILD_ID) frontend-mobile npm run mobile:build
+	@$(COMPOSE) run --rm --build -e MOBILE_OTA_BUILD_ID=$(MOBILE_OTA_BUILD_ID) -e MOBILE_VERSION_CODE=$(MOBILE_VERSION_CODE) frontend-mobile npm run mobile:build
 .PHONY: mobile-build
 
 # Regenerate the native app icons and splashscreens from src/frontend/assets/
@@ -782,6 +786,31 @@ mobile-android-run: mobile-build ## (host) build+install the debug APK on a devi
 	@adb install -r $(ANDROID_DEBUG_APK)
 	@$(MAKE) mobile-android-reverse
 .PHONY: mobile-android-run
+
+# The build number both stores order releases by: Android versionCode (read
+# from the env by gradle below) and iOS CFBundleVersion (written into
+# generated.xcconfig at `make mobile-build`). Play refuses a versionCode it has
+# already seen and App Store Connect refuses a CFBundleVersion already uploaded
+# for the same MARKETING_VERSION, so it must strictly grow. Default to the
+# commit count — the monotonic half of MOBILE_OTA_BUILD_ID — so it can never be
+# forgotten; override for a pinned/CI build. The displayed version (versionName
+# / iOS MARKETING_VERSION) is not passed here: both platforms read it from the
+# `appVersion` property of capacitor.config.ts, bumped manually per release
+# (docs/mobile.md, App versioning).
+MOBILE_VERSION_CODE ?= $(shell git rev-list --count HEAD)
+ANDROID_RELEASE_AAB = src/frontend/android/app/build/outputs/bundle/release/app-release.aab
+
+mobile-android-release: mobile-build ## (host) build the signed Play bundle (.aab) — see docs/mobile.md
+	@cd src/frontend/android && \
+		MOBILE_APP_ID="$(call mobile_env,MOBILE_APP_ID)" \
+		MOBILE_APP_NAME="$(call mobile_env,MOBILE_APP_NAME)" \
+		MOBILE_AUTH_SCHEME="$(call mobile_env,MOBILE_AUTH_SCHEME)" \
+		MOBILE_FIREBASE_PROJECT_ID="$(call mobile_env,MOBILE_FIREBASE_PROJECT_ID)" \
+		MOBILE_VERSION_CODE="$(MOBILE_VERSION_CODE)" \
+		./gradlew bundleRelease
+	@echo "$(GREEN)Signed bundle: $(ANDROID_RELEASE_AAB)$(RESET)"
+	@echo "versionCode $(MOBILE_VERSION_CODE) / versionName $$(sed -n 's/.*\"appVersion\": *\"\([^\"]*\)\".*/\1/p' src/frontend/android/app/src/main/assets/capacitor.config.json)"
+.PHONY: mobile-android-release
 
 i18n-generate-front: ## Extract the frontend translation inside a json to be used for crowdin
 	@$(COMPOSE) run --rm --build frontend-tools npm run i18n:extract

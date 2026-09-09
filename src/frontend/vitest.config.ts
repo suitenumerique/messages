@@ -16,6 +16,9 @@ export default mergeConfig(
     // make every run compile to different output for no benefit.
     define: {
       __SOURCE_VERSION__: JSON.stringify('test'),
+      // Pinned for the same reason, and so the version assertions do not have
+      // to be rewritten every time package.json is bumped.
+      __WEB_APP_VERSION__: JSON.stringify('0.0.0-test'),
     },
     test: {
       globals: true,
