@@ -18,7 +18,15 @@
 
     <style name="AppTheme.NoActionBarLaunch" parent="Theme.SplashScreen">
         <item name="windowSplashScreenBackground">@color/splashScreenBackground</item>
-        <!-- Android ≤ 11 only: full-screen splash image, ignored by the Android 12+ system splash -->
-        <item name="android:background">@drawable/splash</item>
+        <!-- Android 12+ draws the background above and this icon, masked to 192dp
+             inside a 288dp canvas; the splash bitmaps below are never read there.
+             Without it the system falls back to the launcher icon, disc included.
+             Generated (with its -night variant) by scripts/generate-mobile-assets.mjs. -->
+        <item name="windowSplashScreenAnimatedIcon">@drawable/splash_icon</item>
+        <!-- Android ≤ 11 only, ignored by the Android 12+ system splash: the same
+             icon centred over the same background, as a layer-list rather than a
+             bitmap — a bitmap here is stretched to the window and comes out
+             distorted on any screen that is not its own aspect ratio. -->
+        <item name="android:background">@drawable/splash_legacy</item>
     </style>
 </resources>
