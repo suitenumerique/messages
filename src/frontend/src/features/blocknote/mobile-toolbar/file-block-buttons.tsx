@@ -6,7 +6,7 @@ import { RiImageEditFill } from "react-icons/ri";
 import { ALLOWED_IMAGE_MIME_TYPES } from "../image-block";
 import { MobileToolbarButton } from "./buttons";
 import { Icon } from "@/features/ui/components/icon";
-import { Trash } from "@gouvfr-lasuite/ui-kit/icons";
+import { Trash } from "@gouvfr-lasuite/ui-components/icons";
 
 /**
  * The single selected file-carrying block, or undefined. Mirrors the

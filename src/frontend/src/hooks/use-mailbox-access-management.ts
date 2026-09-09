@@ -1,4 +1,4 @@
-import { useModals } from "@gouvfr-lasuite/cunningham-react";
+import { useModals } from "@gouvfr-lasuite/ui-components";
 import { useState } from "react";
 import { useTranslation } from "react-i18next";
 import {

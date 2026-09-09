@@ -8,7 +8,7 @@ import useAbility, { Abilities } from "@/hooks/use-ability";
 import { useDocumentTitle } from "@/hooks/use-document-title";
 import { ErrorPage } from "@/features/ui/components/error-page";
 import { Toaster } from "@/features/ui/components/toaster";
-import { Badge, Icon, IconSize, IconType } from "@gouvfr-lasuite/ui-kit";
+import { Badge, Icon, IconSize, IconType } from "@gouvfr-lasuite/ui-components";
 import { useTheme } from "@/features/providers/theme";
 import { LayoutProvider } from "@/features/layouts/components/layout-context";
 

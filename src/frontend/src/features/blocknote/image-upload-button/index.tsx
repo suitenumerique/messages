@@ -1,7 +1,7 @@
 import { BlockNoteEditor, DefaultBlockSchema, DefaultInlineContentSchema, DefaultStyleSchema } from "@blocknote/core";
 import { useBlockNoteEditor, useComponentsContext, useEditorState } from "@blocknote/react";
 import { useTranslation } from "react-i18next";
-import { Icon, IconSize } from "@gouvfr-lasuite/ui-kit";
+import { Icon, IconSize } from "@gouvfr-lasuite/ui-components";
 
 // Default-schema typing, matching what `useBlockNoteEditor()` returns without
 // explicit generics — the composers' extended schemas degrade to this.

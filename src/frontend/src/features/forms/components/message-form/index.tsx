@@ -1,5 +1,5 @@
-import { IconType, Spinner } from "@gouvfr-lasuite/ui-kit";
-import { Button, Tooltip, useModals } from "@gouvfr-lasuite/cunningham-react";
+import { IconType, Spinner } from "@gouvfr-lasuite/ui-components";
+import { Button, Tooltip, useModals } from "@gouvfr-lasuite/ui-components";
 import { clsx } from "clsx";
 import { useEffect, useMemo, useState, useRef, forwardRef, useImperativeHandle } from "react";
 import { FormProvider, useForm, useWatch } from "react-hook-form";
@@ -31,7 +31,7 @@ import { DriveAttachmentPicker, DriveFile } from "./drive-attachment-picker";
 import { useAttachments } from "@/features/forms/hooks/use-attachments";
 import { MessageComposerHelper } from "@/features/utils/composer-helper";
 import { Icon } from "@/features/ui/components/icon";
-import { AttachFile, Send, Trash } from "@gouvfr-lasuite/ui-kit/icons";
+import { AttachFile, Send, Trash } from "@gouvfr-lasuite/ui-components/icons";
 
 export type MessageFormMode = "new" | "reply" | "reply_all" | "forward";
 
@@ -853,7 +853,7 @@ export const MessageForm = forwardRef<MessageFormHandle, MessageFormProps>(({
             await saveDraftPromiseRef.current;
 
             // Ensure a draft exists before sending (creates one on-the-fly if needed)
-            const messageId = draft?.id ?? await ensureDraft();
+            const messageId = draft?.id ?? (await ensureDraft());
             if (!messageId) {
                 abortSend();
                 return;

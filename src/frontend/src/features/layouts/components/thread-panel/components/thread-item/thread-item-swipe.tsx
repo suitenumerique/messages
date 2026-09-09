@@ -2,7 +2,7 @@ import { useMemo } from "react";
 import { useTranslation } from "react-i18next";
 import { useLocation } from "@tanstack/react-router";
 import clsx from "clsx";
-import { IconType } from "@gouvfr-lasuite/ui-kit";
+import { IconType } from "@gouvfr-lasuite/ui-components";
 
 import { Thread } from "@/features/api/gen/models";
 import { ThreadRowActions } from "@/features/message/use-thread-row-actions";
@@ -10,7 +10,7 @@ import useThreadUnread from "@/features/message/use-thread-unread";
 import useAbility, { Abilities } from "@/hooks/use-ability";
 import { useSwipeActions } from "@/hooks/use-swipe-actions";
 import ViewHelper from "@/features/utils/view-helper";
-import { Archive, Restore, Trash } from "@gouvfr-lasuite/ui-kit/icons";
+import { Archive, Restore, Trash } from "@gouvfr-lasuite/ui-components/icons";
 import { Icon, IconProps } from "@/features/ui/components/icon";
 
 /** Width (px) of a single revealed action button. Mirrors the SCSS. */

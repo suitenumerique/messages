@@ -1,5 +1,5 @@
 import { Controller, useFormContext } from "react-hook-form";
-import { Input, InputProps } from "@gouvfr-lasuite/cunningham-react";
+import { Input, InputProps } from "@gouvfr-lasuite/ui-components";
 
 /**
  * A wrapper component for the Input component that integrates with react-hook-form.

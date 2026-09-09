@@ -1,7 +1,7 @@
 import { useState } from "react";
 import { createFileRoute, useNavigate } from "@tanstack/react-router";
 import { useTranslation } from "react-i18next";
-import { Spinner } from "@gouvfr-lasuite/ui-kit";
+import { Spinner } from "@gouvfr-lasuite/ui-components";
 
 import AuthenticatedView from "@/features/layouts/components/main/authenticated-view";
 import { MailboxProvider } from "@/features/providers/mailbox";

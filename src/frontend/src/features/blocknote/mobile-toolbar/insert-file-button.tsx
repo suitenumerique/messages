@@ -1,5 +1,5 @@
 import { useBlockNoteEditor, useEditorState } from "@blocknote/react";
-import { IconSize } from "@gouvfr-lasuite/ui-kit";
+import { IconSize } from "@gouvfr-lasuite/ui-components";
 import { useRef, useState } from "react";
 import { createPortal } from "react-dom";
 import { useTranslation } from "react-i18next";
@@ -12,7 +12,7 @@ import { DriveIcon } from "@/features/forms/components/message-form/drive-icon";
 import { cursorHasInlineContent, insertImageBlock } from "../image-upload-button";
 import { MobileToolbarButton } from "./buttons";
 import { useKeepEditorFocusOnTap } from "./hooks";
-import { AttachFile, Picture } from "@gouvfr-lasuite/ui-kit/icons";
+import { AttachFile, Picture } from "@gouvfr-lasuite/ui-components/icons";
 import { Icon } from "@/features/ui/components/icon";
 
 const MENU_MIN_WIDTH = 240;

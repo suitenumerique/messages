@@ -1,5 +1,5 @@
-import { Button } from "@gouvfr-lasuite/cunningham-react";
-import { Icon } from "@gouvfr-lasuite/ui-kit";
+import { Button } from "@gouvfr-lasuite/ui-components";
+import { Icon } from "@gouvfr-lasuite/ui-components";
 import clsx from "clsx";
 import { useMemo } from "react";
 import { useTranslation } from "react-i18next";

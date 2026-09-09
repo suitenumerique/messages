@@ -1,14 +1,14 @@
 import { useBlockNoteEditor, useComponentsContext, useEditorState } from "@blocknote/react";
 import { createPortal } from "react-dom";
 import { useTranslation } from "react-i18next";
-import { IconSize, IconType, Spinner } from "@gouvfr-lasuite/ui-kit";
-import { Modal, ModalSize } from "@gouvfr-lasuite/cunningham-react";
+import { IconSize, IconType, Spinner } from "@gouvfr-lasuite/ui-components";
+import { Modal, ModalSize } from "@gouvfr-lasuite/ui-components";
 import { MobileToolbarButton } from "@/features/blocknote/mobile-toolbar/buttons";
 import { useMobileToolbarDrawer } from "@/features/blocknote/mobile-toolbar/drawer-context";
 import { Drawer } from "@/features/ui/components/drawer";
 import { MessageTemplateTypeChoices, ReadMessageTemplate, useMailboxesMessageTemplatesAvailableList, draftPlaceholdersRetrieve, DraftPlaceholdersRetrieve200 } from "@/features/api/gen";
 import { MessageComposerBlockSchema, MessageComposerInlineContentSchema, MessageComposerStyleSchema, PartialMessageComposerBlockSchema } from "@/features/forms/components/message-composer";
-import { useModal } from "@gouvfr-lasuite/cunningham-react";
+import { useModal } from "@gouvfr-lasuite/ui-components";
 import { handle } from "@/features/utils/errors";
 import MailHelper from "@/features/utils/mail-helper";
 import { resolveTemplateVariables } from "@/features/blocknote/utils";
@@ -60,7 +60,7 @@ export const MessageTemplateSelector = ({ mailboxId, messageId, ensureDraft, upl
     const handleSelect = async (template: ReadMessageTemplate) => {
         if (!template.raw_body || !template.id) return;
 
-        const resolvedMessageId = messageId ?? await ensureDraft?.();
+        const resolvedMessageId = messageId ?? (await ensureDraft?.());
         if (!resolvedMessageId) return;
 
         try {

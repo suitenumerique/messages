@@ -3,7 +3,7 @@ import React, { useMemo } from "react";
 import { useBlockNoteEditor, useComponentsContext } from "@blocknote/react";
 import { BlockSchema, StyleSchema, Styles, defaultInlineContentSpecs, InlineContentSchemaFromSpecs } from "@blocknote/core";
 import { createPortal } from "react-dom";
-import { Icon, IconSize, Spinner } from "@gouvfr-lasuite/ui-kit";
+import { Icon, IconSize, Spinner } from "@gouvfr-lasuite/ui-components";
 import { useTranslation } from "react-i18next";
 import { MobileToolbarButton } from "@/features/blocknote/mobile-toolbar/buttons";
 import { useMobileToolbarDrawer } from "@/features/blocknote/mobile-toolbar/drawer-context";

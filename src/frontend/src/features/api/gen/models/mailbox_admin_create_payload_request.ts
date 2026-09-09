@@ -7,9 +7,9 @@
  */
 import type { MailboxAdminCreateMetadataRequest } from "./mailbox_admin_create_metadata_request";
 
-export interface MailboxAdminCreatePayloadRequest {
+export type MailboxAdminCreatePayloadRequest = {
   /** @minLength 1 */
   local_part: string;
   alias_of?: string;
   metadata: MailboxAdminCreateMetadataRequest;
-}
+};

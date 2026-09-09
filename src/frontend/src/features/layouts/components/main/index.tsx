@@ -16,7 +16,7 @@ import { ComposeWindowsProvider } from "@/features/providers/compose-windows";
 import { ComposeWindowsLayer } from "@/features/layouts/components/compose/compose-windows-layer";
 import { Link } from "@tanstack/react-router";
 import { useTranslation } from "react-i18next";
-import { useResponsive } from "@gouvfr-lasuite/ui-kit";
+import { useResponsive } from "@gouvfr-lasuite/ui-components";
 
 export const MainLayout = ({ children }: PropsWithChildren) => {
     return (

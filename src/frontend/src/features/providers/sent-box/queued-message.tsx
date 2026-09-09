@@ -1,7 +1,7 @@
 import { StatusEnum, useTasksRetrieve } from "@/features/api/gen";
 import { addToast, ToasterItem } from "@/features/ui/components/toaster";
 import soundbox from "@/features/utils/soundbox";
-import { Icon, Spinner } from "@gouvfr-lasuite/ui-kit";
+import { Icon, Spinner } from "@gouvfr-lasuite/ui-components";
 import { useEffect, useMemo, useState } from "react";
 import { useTranslation } from "react-i18next";
 import { Id, toast } from "react-toastify";

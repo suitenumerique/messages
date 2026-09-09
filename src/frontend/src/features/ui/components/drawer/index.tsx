@@ -1,10 +1,10 @@
-import { Icon, IconSize } from "@gouvfr-lasuite/ui-kit";
+import { Icon, IconSize } from "@gouvfr-lasuite/ui-components";
 import clsx from "clsx";
 import { useCallback, useRef, useState } from "react";
 import { useTranslation } from "react-i18next";
 
 import { useDragGesture } from "@/hooks/use-drag-gesture";
-import { Button } from "@gouvfr-lasuite/cunningham-react";
+import { Button } from "@gouvfr-lasuite/ui-components";
 
 type DrawerProps = {
     title: string;

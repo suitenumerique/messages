@@ -2,15 +2,15 @@ import { useRef, useState } from "react";
 import { Message } from "@/features/api/gen";
 import { MessageForm, MessageFormHandle, MessageFormMode } from "@/features/forms/components/message-form";
 import { useQueryClient } from "@tanstack/react-query";
-import { IconType } from "@gouvfr-lasuite/ui-kit";
-import { Button, Tooltip } from "@gouvfr-lasuite/cunningham-react";
+import { IconType } from "@gouvfr-lasuite/ui-components";
+import { Button, Tooltip } from "@gouvfr-lasuite/ui-components";
 import { useTranslation } from "react-i18next";
 import clsx from "clsx";
 import { DateHelper } from "@/features/utils/date-helper";
 import { useComposeWindows } from "@/features/providers/compose-windows";
 import { useMailboxContext } from "@/features/providers/mailbox";
 import DraftActionsMenu from "./draft-actions-menu";
-import { PlusDashed } from "@gouvfr-lasuite/ui-kit/icons";
+import { PlusDashed } from "@gouvfr-lasuite/ui-components/icons";
 import { Icon } from "@/features/ui/components/icon";
 
 type MessageReplyFormProps = {

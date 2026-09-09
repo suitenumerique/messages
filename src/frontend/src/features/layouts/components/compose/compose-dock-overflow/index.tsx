@@ -1,7 +1,7 @@
 import { useState } from "react";
 import { useTranslation } from "react-i18next";
-import { Button } from "@gouvfr-lasuite/cunningham-react";
-import { DropdownMenu } from "@gouvfr-lasuite/ui-kit";
+import { Button } from "@gouvfr-lasuite/ui-components";
+import { DropdownMenu } from "@gouvfr-lasuite/ui-components";
 import { useComposeWindows } from "@/features/providers/compose-windows";
 import { ComposeWindowDescriptor } from "@/features/providers/compose-windows/types";
 import { Icon } from "@/features/ui/components/icon";

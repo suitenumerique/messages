@@ -4,7 +4,7 @@ import {
     IconSvgProps,
     IconType,
     getIconSize,
-} from "@gouvfr-lasuite/ui-kit";
+} from "@gouvfr-lasuite/ui-components";
 import clsx from "clsx";
 import { useEffect, useMemo, useReducer } from "react";
 
@@ -74,7 +74,7 @@ export type IconProps = IconCommonProps &
         | {
               /**
                * An SVG icon component imported from
-               * `@gouvfr-lasuite/ui-kit/icons`. Passed as a component (not a
+               * `@gouvfr-lasuite/ui-components/icons`. Passed as a component (not a
                * name) so only the icons actually imported end up in the bundle.
                */
               icon: (props: IconSvgProps) => React.JSX.Element;

@@ -1,5 +1,5 @@
-import { Spinner, UserRow } from "@gouvfr-lasuite/ui-kit";
-import { Button } from "@gouvfr-lasuite/cunningham-react";
+import { Spinner, UserRow } from "@gouvfr-lasuite/ui-components";
+import { Button } from "@gouvfr-lasuite/ui-components";
 import { useTranslation } from "react-i18next";
 import clsx from "clsx";
 import type { ThreadAccessDetail, UserWithoutAbilities } from "@/features/api/gen";

@@ -1,5 +1,5 @@
 import { useState } from "react";
-import { useResponsive } from "@gouvfr-lasuite/ui-kit";
+import { useResponsive } from "@gouvfr-lasuite/ui-components";
 import { Portal } from "@/features/ui/components/portal";
 import { useComposeWindows } from "@/features/providers/compose-windows";
 import { ComposeWindow } from "../compose-window";

@@ -1,6 +1,6 @@
 import { createFileRoute, useSearch } from "@tanstack/react-router";
 import { useTranslation } from "react-i18next";
-import { Hero, HomeGutter, Footer, ProConnectButton, useResponsive } from "@gouvfr-lasuite/ui-kit";
+import { Hero, HomeGutter, Footer, ProConnectButton, useResponsive } from "@gouvfr-lasuite/ui-components";
 
 import { login, useAuth } from "@/features/auth";
 import { MainLayout } from "@/features/layouts/components/main";

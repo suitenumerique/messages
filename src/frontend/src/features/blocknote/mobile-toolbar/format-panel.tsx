@@ -1,5 +1,5 @@
 import { useBlockNoteEditor, useEditorState } from "@blocknote/react";
-import { Icon, IconSize } from "@gouvfr-lasuite/ui-kit";
+import { Icon, IconSize } from "@gouvfr-lasuite/ui-components";
 import clsx from "clsx";
 import { useEffect, useMemo, useRef } from "react";
 import { useTranslation } from "react-i18next";

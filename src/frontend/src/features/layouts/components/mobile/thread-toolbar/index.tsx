@@ -1,8 +1,8 @@
 import { Fragment, useRef, useState } from "react";
 import { createPortal } from "react-dom";
 import { useTranslation } from "react-i18next";
-import { Button } from "@gouvfr-lasuite/cunningham-react";
-import { IconType } from "@gouvfr-lasuite/ui-kit";
+import { Button } from "@gouvfr-lasuite/ui-components";
+import { IconType } from "@gouvfr-lasuite/ui-components";
 import { Thread } from "@/features/api/gen/models";
 import { useMailboxContext } from "@/features/providers/mailbox";
 import { useThreadViewContext } from "@/features/layouts/components/thread-view/provider";
@@ -20,7 +20,7 @@ import useAbility, { Abilities } from "@/hooks/use-ability";
 import ViewHelper from "@/features/utils/view-helper";
 import { isNativePlatform } from "@/features/native/platform";
 import { MobileBottomBar } from "../bottom-bar";
-import { Archive, Link, Restore, Star, StarFilled, TagAdd, Trash, Error as ErrorIcon } from "@gouvfr-lasuite/ui-kit/icons";
+import { Archive, Link, Restore, Star, StarFilled, TagAdd, Trash, Error as ErrorIcon } from "@gouvfr-lasuite/ui-components/icons";
 import { Icon, IconProps } from "@/features/ui/components/icon";
 
 /** Modes offered by the quick-reply CTA (bottom-right of the toolbar). */

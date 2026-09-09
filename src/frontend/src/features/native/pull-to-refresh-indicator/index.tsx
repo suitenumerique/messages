@@ -1,4 +1,4 @@
-import { Spinner } from "@gouvfr-lasuite/ui-kit";
+import { Spinner } from "@gouvfr-lasuite/ui-components";
 
 type PullToRefreshIndicatorProps = {
     /** Wired to `usePullToRefresh().indicatorRef` — the gesture drives it. */

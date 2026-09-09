@@ -1,5 +1,5 @@
-import { Icon, IconType } from "@gouvfr-lasuite/ui-kit";
-import { Button, ButtonProps } from "@gouvfr-lasuite/cunningham-react";
+import { Icon, IconType } from "@gouvfr-lasuite/ui-components";
+import { Button, ButtonProps } from "@gouvfr-lasuite/ui-components";
 import clsx from "clsx";
 import { useId } from "react";
 

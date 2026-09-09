@@ -1,12 +1,12 @@
 import { useTranslation } from "react-i18next";
 import { useEffect, useState, useRef } from "react";
-import { Button } from "@gouvfr-lasuite/cunningham-react";
+import { Button } from "@gouvfr-lasuite/ui-components";
 import { SearchFiltersForm } from "../search-filters-form";
 import { SearchFiltersModal } from "../search-filters-modal";
 import { useSearchQuery } from "./use-search-query";
-import { IconSize, useResponsive } from "@gouvfr-lasuite/ui-kit";
+import { IconSize, useResponsive } from "@gouvfr-lasuite/ui-components";
 import { Icon } from "@/features/ui/components/icon";
-import { Settings, XMark, Zoom } from "@gouvfr-lasuite/ui-kit/icons";
+import { Settings, XMark, Zoom } from "@gouvfr-lasuite/ui-components/icons";
 
 type SearchInputProps = {
     /**

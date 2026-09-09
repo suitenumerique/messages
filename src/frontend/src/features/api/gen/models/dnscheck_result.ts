@@ -6,8 +6,8 @@
  * OpenAPI spec version: 1.0.0 (v1.0)
  */
 
-export interface DNSCheckResult {
+export type DNSCheckResult = {
   status: string;
   found?: string[];
   error?: string;
-}
+};

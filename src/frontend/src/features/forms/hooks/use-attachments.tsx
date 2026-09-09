@@ -8,7 +8,7 @@ import { getRequestUrl } from '@/features/api/utils';
 import { useDebounceCallback } from '@/hooks/use-debounce-callback';
 import { isAttachment } from '@/features/layouts/components/thread-view/components/thread-attachment-list/attachment-item';
 import { useTranslation } from 'react-i18next';
-import { useModals, VariantType } from '@gouvfr-lasuite/cunningham-react';
+import { useModals, VariantType } from "@gouvfr-lasuite/ui-components";
 import { AttachmentHelper } from '@/features/utils/attachment-helper';
 
 interface UseAttachmentsOptions {

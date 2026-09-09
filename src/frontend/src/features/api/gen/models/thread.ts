@@ -14,7 +14,7 @@ import type { ThreadEventUser } from "./thread_event_user";
 /**
  * Serialize threads.
  */
-export interface Thread {
+export type Thread = {
   /** primary key for the record as UUID */
   readonly id: string;
   /** @nullable */
@@ -77,4 +77,4 @@ export interface Thread {
   readonly events_count: number;
   readonly abilities: ThreadAbilities;
   readonly assigned_users: readonly ThreadEventUser[];
-}
+};

@@ -9,7 +9,7 @@
 /**
  * Serializer for tree label response structure (OpenAPI purpose only...).
  */
-export interface TreeLabel {
+export type TreeLabel = {
   readonly id: string;
   readonly name: string;
   readonly slug: string;
@@ -18,4 +18,4 @@ export interface TreeLabel {
   readonly children: readonly TreeLabel[];
   readonly description: string;
   readonly is_auto: boolean;
-}
+};

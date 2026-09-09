@@ -44,8 +44,8 @@ vi.mock("@/features/ui/components/icon", () => ({
     Icon: ({ name }: { name?: string }) => <span data-icon={name ?? "svg"} />,
 }));
 
-import { ContextMenuProvider } from "@gouvfr-lasuite/ui-kit";
-import { CunninghamProvider } from "@gouvfr-lasuite/cunningham-react";
+import { ContextMenuProvider } from "@gouvfr-lasuite/ui-components";
+import { CunninghamProvider } from "@gouvfr-lasuite/ui-components";
 import { setSelectedFilters } from "../hooks/use-selected-filters";
 import { DEFAULT_SELECTED_FILTERS } from "../hooks/use-thread-panel-filters";
 import { THREAD_SELECTED_FILTERS_KEY } from "@/features/config/constants";
@@ -62,10 +62,14 @@ const menuItems = () =>
         document.querySelectorAll<HTMLElement>("[data-testid^='context-menu-item-']"),
     );
 
-/** Label of every filter currently ticked in the open menu. */
+/**
+ * Label of every filter currently ticked in the open menu. The ui-components
+ * menu marks a checked item with a decorative checkmark only — no
+ * `aria-checked` to key off — so its class is the sole ticked/unticked signal.
+ */
 const checkedLabels = () =>
     menuItems()
-        .filter((el) => el.querySelector("[data-icon='check_box']"))
+        .filter((el) => el.querySelector(".c__dropdown-menu-item__check"))
         .map((el) => el.textContent);
 
 const openMenu = () => {

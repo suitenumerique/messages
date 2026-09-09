@@ -1,5 +1,5 @@
 import { useTranslation } from "react-i18next";
-import { Button } from "@gouvfr-lasuite/cunningham-react";
+import { Button } from "@gouvfr-lasuite/ui-components";
 import { AttachmentList } from "../thread-attachment-list";
 import { ThreadMessageFooterProps } from "./types";
 import { Icon } from "@/features/ui/components/icon";

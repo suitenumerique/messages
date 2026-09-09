@@ -1,4 +1,4 @@
-import type { FilePreviewType } from "@gouvfr-lasuite/ui-kit";
+import type { FilePreviewType } from "@gouvfr-lasuite/ui-components";
 import { Attachment } from "@/features/api/gen/models";
 import { CALC_EXTENSIONS, MIME_TO_CATEGORY, MIME_TO_FORMAT_TRANSLATION_KEY, MIME_TO_ICON, MIME_TO_ICON_MINI, MimeCategory } from "./constants";
 import { getBlobDownloadRetrieveUrl, getBlobPreviewRetrieveUrl } from "@/features/api/gen/blob/blob";

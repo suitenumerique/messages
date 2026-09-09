@@ -1,5 +1,5 @@
-import { Icon, IconSize, IconType, Spinner, useResponsive } from "@gouvfr-lasuite/ui-kit";
-import { Trash } from "@gouvfr-lasuite/ui-kit/icons";
+import { Icon, IconSize, IconType, Spinner, useResponsive } from "@gouvfr-lasuite/ui-components";
+import { Trash } from "@gouvfr-lasuite/ui-components/icons";
 import {
     Button,
     Column,
@@ -9,7 +9,7 @@ import {
     ModalSize,
     Tooltip,
     useModals,
-} from "@gouvfr-lasuite/cunningham-react";
+} from "@gouvfr-lasuite/ui-components";
 import { useTranslation } from "react-i18next";
 import { ReactNode, useEffect, useMemo, useState } from "react";
 import { useQueryClient } from "@tanstack/react-query";

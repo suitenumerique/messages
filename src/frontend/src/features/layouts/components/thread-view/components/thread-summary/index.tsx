@@ -1,6 +1,6 @@
 import { useMemo } from "react";
-import { Button } from "@gouvfr-lasuite/cunningham-react";
-import { Icon, IconType } from "@gouvfr-lasuite/ui-kit";
+import { Button } from "@gouvfr-lasuite/ui-components";
+import { Icon, IconType } from "@gouvfr-lasuite/ui-components";
 import { addToast, ToasterItem } from "@/features/ui/components/toaster";
 import ReactMarkdown from "react-markdown";
 import { useThreadsRefreshSummaryCreate } from "@/features/api/gen";

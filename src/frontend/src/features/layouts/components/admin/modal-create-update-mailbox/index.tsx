@@ -1,4 +1,4 @@
-import { ModalSize, Button, Modal } from "@gouvfr-lasuite/cunningham-react";
+import { ModalSize, Button, Modal } from "@gouvfr-lasuite/ui-components";
 import { useState, useEffect } from "react";
 import { useTranslation } from "react-i18next";
 import { FieldErrors, FormProvider, useForm } from "react-hook-form";
@@ -21,7 +21,7 @@ import { JSONSchema } from "zod/v4/core";
 import MailboxHelper from "@/features/utils/mailbox-helper";
 import MailHelper from "@/features/utils/mail-helper";
 import { addToast, ToasterItem } from "@/features/ui/components/toaster";
-import { Icon, IconType } from "@gouvfr-lasuite/ui-kit";
+import { Icon, IconType } from "@gouvfr-lasuite/ui-components";
 import i18n from "@/features/i18n/initI18n";
 
 export const MODAL_CREATE_ADDRESS_ID = "modal-create-address";

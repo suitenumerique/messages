@@ -2,7 +2,7 @@ import { describe, expect, it, vi } from "vitest";
 import { renderToStaticMarkup } from "react-dom/server";
 import { AssigneesAvatarGroup, type AssigneesAvatarGroupUser } from "./index";
 
-vi.mock("@gouvfr-lasuite/ui-kit", () => ({
+vi.mock("@gouvfr-lasuite/ui-components", () => ({
     UserAvatar: ({ fullName }: { fullName: string }) => (
         <span data-testid="avatar">{fullName}</span>
     ),

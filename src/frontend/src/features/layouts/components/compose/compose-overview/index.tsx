@@ -1,12 +1,12 @@
 import { useEffect } from "react";
 import { useTranslation } from "react-i18next";
-import { Button } from "@gouvfr-lasuite/cunningham-react";
-import { IconSize, IconType } from "@gouvfr-lasuite/ui-kit";
+import { Button } from "@gouvfr-lasuite/ui-components";
+import { IconSize, IconType } from "@gouvfr-lasuite/ui-components";
 import { MessageFormMode } from "@/features/forms/components/message-form";
 import { useComposeWindows } from "@/features/providers/compose-windows";
 import { ComposeWindowDescriptor } from "@/features/providers/compose-windows/types";
 import { useComposeSender } from "../use-compose-sender";
-import { Edit } from "@gouvfr-lasuite/ui-kit/icons";
+import { Edit } from "@gouvfr-lasuite/ui-components/icons";
 import { Icon } from "@/features/ui/components/icon";
 
 type ComposeOverviewProps = {

@@ -1,6 +1,6 @@
 import { useTranslation } from "react-i18next";
-import { Button } from "@gouvfr-lasuite/cunningham-react";
-import { Icon, Spinner } from "@gouvfr-lasuite/ui-kit";
+import { Button } from "@gouvfr-lasuite/ui-components";
+import { Icon, Spinner } from "@gouvfr-lasuite/ui-components";
 import type { Attachment } from "@/features/api/gen/models";
 import { useConfig } from "@/features/providers/config";
 import { FEATURE_KEYS, useFeatureFlag } from "@/hooks/use-feature";

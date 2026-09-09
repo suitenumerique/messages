@@ -1,4 +1,4 @@
-import { LanguagePicker as BaseLanguagePicker, LanguagePickerProps } from "@gouvfr-lasuite/ui-kit";
+import { LanguagePicker as BaseLanguagePicker, LanguagePickerProps } from "@gouvfr-lasuite/ui-components";
 import { useTranslation } from "react-i18next";
 import { useConfig } from "@/features/providers/config";
 import { handle } from "@/features/utils/errors";

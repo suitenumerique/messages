@@ -9,7 +9,7 @@
 /**
  * Serializer to get labels details for a thread.
  */
-export interface ThreadLabel {
+export type ThreadLabel = {
   /** primary key for the record as UUID */
   readonly id: string;
   /**
@@ -35,4 +35,4 @@ export interface ThreadLabel {
   description?: string;
   /** Whether this label should be automatically applied by AI */
   is_auto?: boolean;
-}
+};

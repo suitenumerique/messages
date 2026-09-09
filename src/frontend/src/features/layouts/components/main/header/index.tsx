@@ -1,4 +1,4 @@
-import { HeaderProps } from "@gouvfr-lasuite/ui-kit";
+import { HeaderProps } from "@gouvfr-lasuite/ui-components";
 import { useAuth } from "@/features/auth";
 import { AuthenticatedHeader } from "./authenticated";
 import { AnonymousHeader } from "./anonymous";

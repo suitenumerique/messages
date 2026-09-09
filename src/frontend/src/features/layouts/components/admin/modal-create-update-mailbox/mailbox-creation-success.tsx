@@ -1,7 +1,7 @@
 import { MailboxAdminCreate } from "@/features/api/gen";
 import { Banner } from "@/features/ui/components/banner";
-import { Icon, IconType } from "@gouvfr-lasuite/ui-kit";
-import { Button } from "@gouvfr-lasuite/cunningham-react";
+import { Icon, IconType } from "@gouvfr-lasuite/ui-components";
+import { Button } from "@gouvfr-lasuite/ui-components";
 import { Trans, useTranslation } from "react-i18next";
 import AdminMailboxCredentials from "../mailbox-credentials";
 import MailboxHelper from "@/features/utils/mailbox-helper";

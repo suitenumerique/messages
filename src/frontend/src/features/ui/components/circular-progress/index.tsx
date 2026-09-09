@@ -1,6 +1,6 @@
 import { CSSProperties } from "react";
 import clsx from "clsx";
-import { Icon, IconType } from "@gouvfr-lasuite/ui-kit";
+import { Icon, IconType } from "@gouvfr-lasuite/ui-components";
 
 interface CircularProgressProps {
   progress?: number;

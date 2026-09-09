@@ -8,7 +8,7 @@ import { tokens } from '@/styles/cunningham-tokens'
 import { useTheme } from "@/features/providers/theme";
 import { useConfig } from "@/features/providers/config";
 import { useMailboxContext } from "@/features/providers/mailbox";
-import { Icon } from "@gouvfr-lasuite/ui-kit";
+import { Icon } from "@gouvfr-lasuite/ui-components";
 import { Banner } from "@/features/ui/components/banner";
 import { getMailboxesImageProxyListUrl } from "@/features/api/gen/mailboxes/mailboxes";
 import { EXTERNAL_IMAGES_CONSENT_KEY } from "@/features/config/constants";

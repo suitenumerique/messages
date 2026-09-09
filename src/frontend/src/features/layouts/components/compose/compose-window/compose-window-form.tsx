@@ -1,5 +1,5 @@
 import { RefObject, useEffect } from "react";
-import { Spinner } from "@gouvfr-lasuite/ui-kit";
+import { Spinner } from "@gouvfr-lasuite/ui-components";
 import { MessageForm, MessageFormHandle } from "@/features/forms/components/message-form";
 import { useComposeWindows } from "@/features/providers/compose-windows";
 import { ComposeWindowDescriptor } from "@/features/providers/compose-windows/types";

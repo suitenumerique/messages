@@ -2,8 +2,8 @@ import {
   Modal,
   ModalSize,
   ModalTab,
-} from "@gouvfr-lasuite/cunningham-react";
-import { HorizontalSeparator, useResponsive } from "@gouvfr-lasuite/ui-kit";
+} from "@gouvfr-lasuite/ui-components";
+import { HorizontalSeparator, useResponsive } from "@gouvfr-lasuite/ui-components";
 import { useEffect, useMemo, useState } from "react";
 import { useTranslation } from "react-i18next";
 import { useMailboxContext } from "@/features/providers/mailbox";

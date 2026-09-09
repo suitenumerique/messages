@@ -17,7 +17,7 @@ discriminator, so the polymorphic create endpoint documents the push shape
 ({type:"push", platform, token, keys?, name?, app_version?}) alongside the
 generic channel shape. Validation at runtime still uses the parent.
  */
-export interface PushChannelCreateRequest {
+export type PushChannelCreateRequest = {
   platform: PlatformEnum;
   /**
    * @minLength 1
@@ -30,4 +30,4 @@ export interface PushChannelCreateRequest {
   /** @maxLength 255 */
   name?: string;
   type: PushChannelCreateTypeEnum;
-}
+};

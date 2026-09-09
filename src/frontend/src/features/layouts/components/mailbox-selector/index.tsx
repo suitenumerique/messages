@@ -1,6 +1,6 @@
-import { DropdownMenu, UserAvatar } from "@gouvfr-lasuite/ui-kit";
-import { ChevronDown } from "@gouvfr-lasuite/ui-kit/icons";
-import { Button } from "@gouvfr-lasuite/cunningham-react";
+import { DropdownMenu, UserAvatar } from "@gouvfr-lasuite/ui-components";
+import { ChevronDown } from "@gouvfr-lasuite/ui-components/icons";
+import { Button } from "@gouvfr-lasuite/ui-components";
 import { useState } from "react";
 import { useTranslation } from "react-i18next";
 import { Mailbox } from "@/features/api/gen";

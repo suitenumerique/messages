@@ -1,4 +1,4 @@
-import { HeaderProps } from "@gouvfr-lasuite/ui-kit";
+import { HeaderProps } from "@gouvfr-lasuite/ui-components";
 import { LanguagePicker } from "../language-picker";
 import { LagaufreButton } from "@/features/ui/components/lagaufre";
 import { isNativePlatform } from "@/features/native/platform";

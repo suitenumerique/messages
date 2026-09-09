@@ -1,7 +1,7 @@
 import { ALL_MESSAGES_FOLDER, MAILBOX_FOLDERS } from "@/features/layouts/components/mailbox-panel/components/mailbox-list";
 import { SearchHelper } from "@/features/utils/search-helper";
-import { IconSize, Label } from "@gouvfr-lasuite/ui-kit";
-import { Button, Checkbox, Input, Select } from "@gouvfr-lasuite/cunningham-react";
+import { IconSize, Label } from "@gouvfr-lasuite/ui-components";
+import { Button, Checkbox, Input, Select } from "@gouvfr-lasuite/ui-components";
 import { useEffect, useId, useRef } from "react";
 import { useTranslation } from "react-i18next";
 import { Icon, IconProps } from "@/features/ui/components/icon";

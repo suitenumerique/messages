@@ -2,9 +2,9 @@ import { useMailboxContext } from "@/features/providers/mailbox";
 import useRead from "@/features/message/use-read";
 import useTrash from "@/features/message/use-trash";
 import useAbility, { Abilities } from "@/hooks/use-ability";
-import { DropdownMenu, IconType, VerticalSeparator } from "@gouvfr-lasuite/ui-kit"
-import { Error as ErrorIcon } from "@gouvfr-lasuite/ui-kit/icons";
-import { Button, Tooltip } from "@gouvfr-lasuite/cunningham-react"
+import { DropdownMenu, IconType, VerticalSeparator } from "@gouvfr-lasuite/ui-components"
+import { Error as ErrorIcon } from "@gouvfr-lasuite/ui-components/icons";
+import { Button, Tooltip } from "@gouvfr-lasuite/ui-components"
 import { useRef, useState } from "react";
 import { useTranslation } from "react-i18next";
 import { ThreadAccessesWidget, type ThreadAccessesWidgetHandle } from "../thread-accesses-widget";
@@ -17,7 +17,7 @@ import useLeaveThread from "@/features/message/use-leave-thread";
 import ViewHelper from "@/features/utils/view-helper";
 import useCopyDeepLink from "@/features/message/use-copy-deep-link";
 import { Icon } from "@/features/ui/components/icon";
-import { Archive, Link, MoreVertical, Trash } from "@gouvfr-lasuite/ui-kit/icons";
+import { Archive, Link, MoreVertical, Trash } from "@gouvfr-lasuite/ui-components/icons";
 
 type ThreadActionBarProps = {
     canUndelete: boolean;

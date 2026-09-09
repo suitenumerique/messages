@@ -10,8 +10,8 @@ import type { MailDomainAccessRoleChoices } from "./mail_domain_access_role_choi
 /**
  * Serializer for creating and updating maildomain access records.
  */
-export interface MaildomainAccessWriteRequest {
+export type MaildomainAccessWriteRequest = {
   /** User ID (UUID) or email address */
   user: string;
   role: MailDomainAccessRoleChoices;
-}
+};

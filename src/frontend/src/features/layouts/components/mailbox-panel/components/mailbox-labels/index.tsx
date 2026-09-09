@@ -1,6 +1,6 @@
 import { Mailbox, TreeLabel, useLabelsList, useLabelsPartialUpdate } from "@/features/api/gen";
-import { IconType, Spinner } from "@gouvfr-lasuite/ui-kit";
-import { Button, useModal, Tooltip } from "@gouvfr-lasuite/cunningham-react";
+import { IconType, Spinner } from "@gouvfr-lasuite/ui-components";
+import { Button, useModal, Tooltip } from "@gouvfr-lasuite/ui-components";
 import { useTranslation } from "react-i18next";
 import { LabelModal, SubLabelCreation } from "./components/label-form-modal";
 import { LabelItem, LabelTransferData } from "./components/label-item";
@@ -11,7 +11,7 @@ import { useQueryClient } from "@tanstack/react-query";
 import { handle } from "@/features/utils/errors";
 import clsx from "clsx";
 import { Icon } from "@/features/ui/components/icon";
-import { Plus } from "@gouvfr-lasuite/ui-kit/icons";
+import { Plus } from "@gouvfr-lasuite/ui-components/icons";
 
 type MailboxLabelsProps = {
   mailbox: Mailbox;

@@ -2,7 +2,7 @@ import { BlockNoteViewField } from "@/features/blocknote/blocknote-view-field";
 import { BlockNoteEditor, BlockNoteEditorOptions, BlockNoteSchema, defaultInlineContentSpecs, PartialBlock } from "@blocknote/core";
 import { filterSuggestionItems } from "@blocknote/core/extensions";
 import { SuggestionMenuController } from "@blocknote/react";
-import { FieldProps } from "@gouvfr-lasuite/cunningham-react";
+import { FieldProps } from "@gouvfr-lasuite/ui-components";
 import { forwardRef, useImperativeHandle } from "react";
 import { useFormContext } from "react-hook-form";
 import { buildTemplateVariableInsertion, InlineTemplateVariable, TemplateVariableSelector } from "@/features/blocknote/inline-template-variable";

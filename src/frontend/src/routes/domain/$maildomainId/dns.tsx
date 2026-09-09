@@ -1,15 +1,15 @@
 import { createFileRoute } from "@tanstack/react-router";
 import { useState, useEffect, useRef } from "react";
-import { Button, DataGrid } from "@gouvfr-lasuite/cunningham-react";
+import { Button, DataGrid } from "@gouvfr-lasuite/ui-components";
 import { useTranslation, Trans } from "react-i18next";
-import { Badge, Spinner } from "@gouvfr-lasuite/ui-kit";
+import { Badge, Spinner } from "@gouvfr-lasuite/ui-components";
 
 import { AdminLayout } from "@/features/layouts/components/admin/admin-layout";
 import { MailDomainAdmin, DNSRecordCheck } from "@/features/api/gen";
 import { Banner } from "@/features/ui/components/banner";
 import { useMaildomainsCheckDnsCreate, useMaildomainsRetrieve } from "@/features/api/gen/maildomains/maildomains";
 import { CopyableInput } from "@/features/ui/components/copyable-input";
-import { Icon } from "@gouvfr-lasuite/ui-kit";
+import { Icon } from "@gouvfr-lasuite/ui-components";
 import { handle } from "@/features/utils/errors";
 import { useParams } from "@tanstack/react-router";
 

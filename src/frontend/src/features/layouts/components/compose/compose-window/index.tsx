@@ -1,7 +1,7 @@
 import { useEffect, useRef, useState } from "react";
-import { Button, Tooltip } from "@gouvfr-lasuite/cunningham-react";
-import { DropdownMenu, IconType, UserAvatar, useResponsive } from "@gouvfr-lasuite/ui-kit";
-import { ChevronUp, Maximize, Minimize, Minus, Send, Shortcut, XMark } from "@gouvfr-lasuite/ui-kit/icons";
+import { Button, Tooltip } from "@gouvfr-lasuite/ui-components";
+import { DropdownMenu, IconType, UserAvatar, useResponsive } from "@gouvfr-lasuite/ui-components";
+import { ChevronUp, Maximize, Minimize, Minus, Send, Shortcut, XMark } from "@gouvfr-lasuite/ui-components/icons";
 import { Icon } from "@/features/ui/components/icon";
 import { useTranslation } from "react-i18next";
 import clsx from "clsx";

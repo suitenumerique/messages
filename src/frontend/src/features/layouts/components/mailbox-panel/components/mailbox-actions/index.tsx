@@ -1,5 +1,5 @@
 import { useTranslation } from "react-i18next";
-import { Button } from "@gouvfr-lasuite/cunningham-react";
+import { Button } from "@gouvfr-lasuite/ui-components";
 import { useRefreshFeedback } from "@/hooks/use-refresh-feedback";
 import { useComposeMessage } from "@/features/message/use-compose-message";
 import { TransientTooltip } from "@/features/ui/components/transient-tooltip";

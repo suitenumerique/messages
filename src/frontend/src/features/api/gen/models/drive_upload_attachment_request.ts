@@ -6,10 +6,10 @@
  * OpenAPI spec version: 1.0.0 (v1.0)
  */
 
-export interface DriveUploadAttachmentRequest {
+export type DriveUploadAttachmentRequest = {
   /**
    * ID of the attachment to upload (format: msg_{message_id}_{attachment_index})
    * @minLength 1
    */
   blob_id: string;
-}
+};

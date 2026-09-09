@@ -7,9 +7,9 @@
  */
 import type { DNSCheckResult } from "./dnscheck_result";
 
-export interface DNSRecordCheck {
+export type DNSRecordCheck = {
   target: string;
   type: string;
   value: string;
   _check: DNSCheckResult;
-}
+};

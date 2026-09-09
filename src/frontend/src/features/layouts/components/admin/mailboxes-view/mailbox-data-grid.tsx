@@ -2,8 +2,8 @@ import { MailboxAdmin, MailDomainAdmin, useMaildomainsMailboxesDestroy, useMaild
 import { ModalMailboxManageAccesses } from "@/features/layouts/components/admin/modal-mailbox-manage-accesses";
 import { Banner } from "@/features/ui/components/banner";
 import useAbility, { Abilities } from "@/hooks/use-ability";
-import { IconType, DropdownMenu, IconSize, Spinner, DropdownMenuItem } from "@gouvfr-lasuite/ui-kit";
-import { Button, DataGrid, Switch, Tooltip, useModals, usePagination } from "@gouvfr-lasuite/cunningham-react";
+import { IconType, DropdownMenu, IconSize, Spinner, DropdownMenuItem } from "@gouvfr-lasuite/ui-components";
+import { Button, DataGrid, Switch, Tooltip, useModals, usePagination } from "@gouvfr-lasuite/ui-components";
 import { keepPreviousData } from "@tanstack/react-query";
 import { useEffect, useState } from "react";
 import { useTranslation } from "react-i18next";
@@ -14,7 +14,7 @@ import MailboxHelper from "@/features/utils/mailbox-helper";
 import { FEATURE_KEYS, useFeatureFlag } from "@/hooks/use-feature";
 import { EmptyCell } from "@/features/ui/components/empty-cell";
 import { Icon } from "@/features/ui/components/icon";
-import { Trash } from "@gouvfr-lasuite/ui-kit/icons";
+import { Trash } from "@gouvfr-lasuite/ui-components/icons";
 
 type AdminUserDataGridProps = {
     domain: MailDomainAdmin;

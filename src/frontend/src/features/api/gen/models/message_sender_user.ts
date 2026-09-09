@@ -9,11 +9,11 @@
 /**
  * Lightweight serializer for the user who sent a message.
  */
-export interface MessageSenderUser {
+export type MessageSenderUser = {
   /** primary key for the record as UUID */
   readonly id: string;
   /** @nullable */
   readonly full_name: string | null;
   /** @nullable */
   readonly email: string | null;
-}
+};

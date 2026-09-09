@@ -3,7 +3,7 @@ import React, { PropsWithChildren, useEffect, useMemo } from "react";
 import { getRequestUrl } from "@/features/api/utils";
 import { setWebCsrfToken } from "@/features/api/csrf";
 import { useUsersMeRetrieve } from "@/features/api/gen/users/users";
-import { Spinner } from "@gouvfr-lasuite/ui-kit";
+import { Spinner } from "@gouvfr-lasuite/ui-components";
 import { UserWithAbilities } from "../api/gen/models/user_with_abilities";
 import { addToast, ToasterItem } from "../ui/components/toaster";
 import { useTranslation } from "react-i18next";

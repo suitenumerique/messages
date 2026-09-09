@@ -1,8 +1,8 @@
 import { useEffect, useMemo, useRef } from "react";
 import { useTranslation } from "react-i18next";
-import { Button, Tooltip } from "@gouvfr-lasuite/cunningham-react";
-import { ContextMenu, useContextMenuContext } from "@gouvfr-lasuite/ui-kit";
-import type { MenuItem, MenuItemAction } from "@gouvfr-lasuite/ui-kit";
+import { Button, Tooltip } from "@gouvfr-lasuite/ui-components";
+import { ContextMenu, useContextMenuContext } from "@gouvfr-lasuite/ui-components";
+import type { MenuItem, MenuItemAction } from "@gouvfr-lasuite/ui-components";
 import { useMailboxContext } from "@/features/providers/mailbox";
 import { isNativePlatform } from "@/features/native/platform";
 import { useLongPress, type LongPressPosition } from "@/hooks/use-long-press";
@@ -18,7 +18,7 @@ import {
   useSelectedFilters,
 } from "../hooks/use-selected-filters";
 import { Icon } from "@/features/ui/components/icon";
-import { Filter, Star } from "@gouvfr-lasuite/ui-kit/icons";
+import { Filter, Star } from "@gouvfr-lasuite/ui-components/icons";
 
 // Items captured in the menu snapshot hold frozen callbacks, and a remount
 // (route change…) would leave them bound to an instance that no longer

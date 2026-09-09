@@ -1,7 +1,7 @@
 import { useConfig } from "@/features/providers/config";
 import { FEATURE_KEYS, useFeatureFlag } from "@/hooks/use-feature";
-import { Button } from "@gouvfr-lasuite/cunningham-react";
-import { Icon } from "@gouvfr-lasuite/ui-kit";
+import { Button } from "@gouvfr-lasuite/ui-components";
+import { Icon } from "@gouvfr-lasuite/ui-components";
 import { useTranslation } from "react-i18next";
 
 type DrivePreviewLinkProps = {

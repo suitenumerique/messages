@@ -1,8 +1,8 @@
 import { useCallback, useState } from "react"
-import { Button, ButtonProps, Tooltip } from "@gouvfr-lasuite/cunningham-react"
+import { Button, ButtonProps, Tooltip } from "@gouvfr-lasuite/ui-components"
 import { openPicker, type Item, type PickerResult } from "@gouvfr-lasuite/drive-sdk";
 import { useTranslation } from "react-i18next";
-import { Spinner } from "@gouvfr-lasuite/ui-kit";
+import { Spinner } from "@gouvfr-lasuite/ui-components";
 import { openNativeDrivePicker } from "@/features/native/drive-picker";
 import { isNativePlatform } from "@/features/native/platform";
 import { useConfig } from "@/features/providers/config";

@@ -1,5 +1,5 @@
-import { Spinner } from "@gouvfr-lasuite/ui-kit";
-import { Button, Checkbox, Column, DataGrid, useModal, useModals } from "@gouvfr-lasuite/cunningham-react";
+import { Spinner } from "@gouvfr-lasuite/ui-components";
+import { Button, Checkbox, Column, DataGrid, useModal, useModals } from "@gouvfr-lasuite/ui-components";
 import { useTranslation } from "react-i18next";
 import { useState } from "react";
 import { useQueryClient } from "@tanstack/react-query";
@@ -7,7 +7,7 @@ import { Mailbox, ReadMessageTemplate, MessageTemplateTypeChoices, useMailboxesM
 import { Banner } from "@/features/ui/components/banner";
 import { addToast, ToasterItem } from "@/features/ui/components/toaster";
 import { ModalComposeMailboxSignature } from "../modal-compose-mailbox-signature";
-import { Trash } from "@gouvfr-lasuite/ui-kit/icons";
+import { Trash } from "@gouvfr-lasuite/ui-components/icons";
 
 type SignatureDataGridProps = {
     mailbox: Mailbox;

@@ -16,7 +16,7 @@ as a poller; ``mode=oneshot`` demotes a continuous poller (stops polling);
 poll cadence itself is a global operator setting, not settable here.
 Validation is source-aware: only IMAP imports can go continuous.
  */
-export interface PatchedImportUpdateRequest {
+export type PatchedImportUpdateRequest = {
   mode?: ModeEnum;
   is_active?: boolean;
-}
+};

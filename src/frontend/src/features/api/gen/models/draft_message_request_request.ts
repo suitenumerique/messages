@@ -7,7 +7,7 @@
  */
 import type { DraftMessageRequestRequestAttachmentsItem } from "./draft_message_request_request_attachments_item";
 
-export interface DraftMessageRequestRequest {
+export type DraftMessageRequestRequest = {
   /**
    * Message ID if updating an existing draft
    * @nullable
@@ -40,4 +40,4 @@ export interface DraftMessageRequestRequest {
    * @nullable
    */
   signatureId?: string | null;
-}
+};

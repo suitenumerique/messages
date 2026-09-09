@@ -1,7 +1,7 @@
 import { useState, useCallback, forwardRef, useEffect, useRef, useMemo } from "react";
 import clsx from "clsx";
 import { useTranslation } from "react-i18next";
-import { Icon, IconType, Spinner, useResponsive } from "@gouvfr-lasuite/ui-kit";
+import { Icon, IconType, Spinner, useResponsive } from "@gouvfr-lasuite/ui-components";
 import { useMailboxContext } from "@/features/providers/mailbox";
 import { useConfig } from "@/features/providers/config";
 import { Banner } from "@/features/ui/components/banner";

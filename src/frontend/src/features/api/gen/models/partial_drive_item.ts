@@ -11,9 +11,9 @@
 It supports partially the Drive Item resource response structure.
 We declare only fields that are useful in the Messages context.
  */
-export interface PartialDriveItem {
+export type PartialDriveItem = {
   id: string;
   filename: string;
   mimetype: string;
   size: number;
-}
+};

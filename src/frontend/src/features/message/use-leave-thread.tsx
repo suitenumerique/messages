@@ -1,4 +1,4 @@
-import { useModals } from "@gouvfr-lasuite/cunningham-react";
+import { useModals } from "@gouvfr-lasuite/ui-components";
 import { useTranslation } from "react-i18next";
 import { MailboxRoleChoices, ThreadAccessRoleChoices } from "@/features/api/gen";
 import { useMailboxContext } from "@/features/providers/mailbox";

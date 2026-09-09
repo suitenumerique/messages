@@ -1,4 +1,4 @@
-import { Modal, ModalDefaultVariantProps } from "@gouvfr-lasuite/cunningham-react";
+import { Modal, ModalDefaultVariantProps } from "@gouvfr-lasuite/ui-components";
 import { useModalStore } from ".";
 
 type ControlledModalProps = Omit<ModalDefaultVariantProps, "isOpen" | "onClose"> & { modalId: string; onClose?: () => void, confirmFn?: () => Promise<boolean> }

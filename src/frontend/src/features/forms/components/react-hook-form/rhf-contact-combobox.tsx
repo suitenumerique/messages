@@ -2,7 +2,7 @@ import { useContactsList } from "@/features/api/gen";
 import { ComboBox, ComboBoxProps } from "../combobox";
 import { useMemo, useState } from "react";
 import { useMailboxContext } from "@/features/providers/mailbox";
-import { UserRow } from "@gouvfr-lasuite/ui-kit";
+import { UserRow } from "@gouvfr-lasuite/ui-components";
 import { Controller, useFormContext } from "react-hook-form";
 import MailHelper from "@/features/utils/mail-helper";
 import clsx from "clsx";

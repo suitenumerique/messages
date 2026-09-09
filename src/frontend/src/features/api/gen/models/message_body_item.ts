@@ -9,8 +9,8 @@
 /**
  * Message body item serializer.
  */
-export interface MessageBodyItem {
+export type MessageBodyItem = {
   partId: string;
   type: string;
   content: string;
-}
+};

@@ -2,8 +2,7 @@ import { FocusEventHandler, useEffect, useMemo, useState } from "react";
 import z from "zod";
 import { zodResolver } from "@hookform/resolvers/zod";
 import { FormProvider, useForm, useWatch } from "react-hook-form";
-import { Button } from "@gouvfr-lasuite/cunningham-react";
-import { Icon, Spinner } from "@gouvfr-lasuite/ui-kit";
+import { Button, Spinner } from "@gouvfr-lasuite/ui-components";
 import { useTranslation } from "react-i18next";
 import { ImportRun, useMailboxesImportsCreate } from "@/features/api/gen";
 import { APIError, errorToString } from "@/features/api/api-error";
@@ -314,11 +313,13 @@ export const StepForm = ({ mailboxId, onUploading, onSuccess, onError, error, st
                             <RhfFileUploader
                                 name="archive_file"
                                 accept=".eml,.mbox,.pst"
-                                icon={<Icon name="inventory_2" />}
-                                fileSelectedIcon={<Icon name="inventory_2" />}
-                                bigText={t('Drag and drop an archive here')}
-                                text={t('EML, MBOX or PST')}
-                                fullWidth
+                                labels={{
+                                    noFileYet: t('Drag and drop an archive here'),
+                                    // The empty dropzone exposes a single secondary hint slot,
+                                    // normally the max-size one: reuse it to keep advertising
+                                    // the accepted archive formats.
+                                    maxSize: t('EML, MBOX or PST'),
+                                }}
                             />
                             {[BucketUploadState.INITIATING, BucketUploadState.IMPORTING, BucketUploadState.COMPLETING, BucketUploadState.COMPLETED].includes(bucketUploadManager.state) && (
                                 <div className="progress-bar-container">

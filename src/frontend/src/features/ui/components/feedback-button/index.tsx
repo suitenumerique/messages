@@ -1,5 +1,5 @@
-import { DropdownMenu, DropdownMenuItem, Icon, IconType } from "@gouvfr-lasuite/ui-kit"
-import { Button, ButtonProps, Tooltip } from "@gouvfr-lasuite/cunningham-react"
+import { DropdownMenu, DropdownMenuItem, Icon, IconType } from "@gouvfr-lasuite/ui-components"
+import { Button, ButtonProps, Tooltip } from "@gouvfr-lasuite/ui-components"
 import { useTranslation } from "react-i18next"
 import { useAuth } from "@/features/auth";
 import { useConfig } from "@/features/providers/config";

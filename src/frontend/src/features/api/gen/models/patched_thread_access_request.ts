@@ -10,10 +10,10 @@ import type { ThreadAccessRoleChoices } from "./thread_access_role_choices";
 /**
  * Serialize thread access information.
  */
-export interface PatchedThreadAccessRequest {
+export type PatchedThreadAccessRequest = {
   /** primary key for the record as UUID */
   thread?: string;
   /** primary key for the record as UUID */
   mailbox?: string;
   role?: ThreadAccessRoleChoices;
-}
+};

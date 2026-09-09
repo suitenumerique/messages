@@ -9,7 +9,7 @@
 /**
  * Serializer for Label model.
  */
-export interface Label {
+export type Label = {
   /** primary key for the record as UUID */
   readonly id: string;
   /**
@@ -39,4 +39,4 @@ export interface Label {
   description?: string;
   /** Whether this label should be automatically applied by AI */
   is_auto?: boolean;
-}
+};

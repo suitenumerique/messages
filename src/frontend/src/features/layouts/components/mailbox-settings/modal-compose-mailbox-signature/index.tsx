@@ -2,8 +2,8 @@ import { Mailbox, ReadMessageTemplate, MessageTemplateTypeChoices, useMailboxesM
 import { RhfInput } from "@/features/forms/components/react-hook-form/rhf-input";
 import { RhfCheckbox } from "@/features/forms/components/react-hook-form/rhf-checkbox";
 import { zodResolver } from "@hookform/resolvers/zod";
-import { Button, Modal, ModalSize } from "@gouvfr-lasuite/cunningham-react";
-import { Spinner, useResponsive } from "@gouvfr-lasuite/ui-kit";
+import { Button, Modal, ModalSize } from "@gouvfr-lasuite/ui-components";
+import { Spinner, useResponsive } from "@gouvfr-lasuite/ui-components";
 import { FormProvider, useForm } from "react-hook-form";
 import { useTranslation } from "react-i18next";
 import { z } from "zod";
