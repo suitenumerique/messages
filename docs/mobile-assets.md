@@ -204,6 +204,7 @@ project's direct ones, so those four are declared in the frontend
 
 ## See also
 
-- `docs/mobile.md` — build & run workflow, OTA updates, release checklist
+- `docs/mobile.md` — onboarding, build & run workflow, technical concepts
+- `docs/mobile-release.md` — OTA publishing, store builds, release checklist
 - `docs/push-notifications.md` — the notification icon, which follows other rules
 - `docs/theme-customization.md` — the web theme, whose logos are *not* the app mark

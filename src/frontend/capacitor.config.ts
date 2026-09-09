@@ -30,7 +30,7 @@ if (process.env.NEXT_PUBLIC_MOBILE_OTA_MANIFEST_URL && !otaPublicKey) {
 // Release id stamped into the *builtin* bundle so a fresh store install reports
 // the same version an OTA manifest advertises — otherwise the builtin reports
 // the literal "builtin" and the first launch always re-downloads (see
-// docs/mobile.md, "Bundle versioning"). Derived from git at build time
+// docs/mobile-release.md, "Bundle versioning"). Derived from git at build time
 // (Makefile MOBILE_OTA_BUILD_ID); unset (e.g. web-only build) ⇒ the plugin falls back
 // to the native versionName.
 const otaBuildId = process.env.MOBILE_OTA_BUILD_ID;
@@ -49,7 +49,7 @@ const devServerUrl = process.env.MOBILE_DEV_SERVER_URL;
 // MARKETING_VERSION / CFBundleShortVersionString) — the string users read in
 // the store listing. Bumped manually here when cutting a store release; it
 // carries no ordering constraint (that is versionCode / CURRENT_PROJECT_VERSION,
-// see docs/mobile.md, App versioning).
+// see docs/mobile-release.md, App versioning).
 //
 // It lives here rather than in package.json because it versions the *shipped
 // app*, not the web codebase: a web deploy or an OTA bundle changes the latter
