@@ -2,6 +2,8 @@
 
 import { logout } from "../auth";
 import { markSessionExpired } from "../auth/login-state";
+import { nativeFetch } from "../native/fetch";
+import { isNativePlatform } from "../native/platform";
 import { APIError } from "./api-error";
 import { getHeaders, getRequestUrl, isJson } from "./utils";
 
@@ -19,12 +21,21 @@ export const fetchAPI= async <T>(
 ): Promise<T> => {
   const requestUrl = getRequestUrl(pathname, params);
   const isMultipartFormData = requestInit.body instanceof FormData;
-
-  const response = await fetch(requestUrl, {
+  const options: RequestInit = {
     ...requestInit,
     credentials: "include",
     headers: getHeaders(requestInit.headers, isMultipartFormData),
-  });
+  };
+
+  // In the Capacitor shell, mutations go through the CapacitorHttp plugin
+  // directly: the bridge's patched fetch strips the Origin header that
+  // Django's CSRF check requires over HTTPS (see nativeFetch). Reads stay on
+  // the patched fetch — no CSRF there, and they keep React Query cancellation.
+  const method = (requestInit.method ?? "GET").toUpperCase();
+  const useNativeFetch = isNativePlatform() && !["GET", "HEAD"].includes(method);
+  const response = useNativeFetch
+    ? await nativeFetch(requestUrl, options)
+    : await fetch(requestUrl, options);
 
   if (response.status === 401 && logoutOn401) {
     markSessionExpired();

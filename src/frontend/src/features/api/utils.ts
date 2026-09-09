@@ -37,6 +37,17 @@ export function getApiOrigin() {
 }
 
 /**
+ * Origin to use when building user-facing absolute links (shareable deep
+ * links…). Inside the Capacitor shell `window.location.origin` is the local
+ * WebView origin (https://localhost), meaningless outside the app — use the
+ * deployed origin instead: in production the API origin also serves the web
+ * app (the same assumption `getApiOrigin` relies on for its web fallback).
+ */
+export function getAppOrigin() {
+  return isNativePlatform() ? getApiOrigin() : window.location.origin;
+}
+
+/**
  * Build the request url from the context url and the base url
  *
  */
@@ -61,6 +72,14 @@ export const getHeaders = (headers: HeadersInit = {}, isMultipartFormData: boole
     ...(isMultipartFormData ? {} : { 'Content-Type': 'application/json' }),
     ...headers,
     ...(csrfToken && { "X-CSRFToken": csrfToken }),
+    // Django's CSRF middleware rejects HTTPS requests carrying neither Origin
+    // nor Referer ("Referer checking failed - no Referer"). The CapacitorHttp
+    // native client sends no browser headers, so declare our origin explicitly:
+    // it matches the request host, so Django's same-origin check passes without
+    // any server-side allowlisting. Browsers forbid setting Origin — and the
+    // Capacitor bridge's patched fetch strips it the same way — so it only
+    // reaches the wire through nativeFetch, which mutations use in the shell.
+    ...(isNativePlatform() && { Origin: getApiOrigin() }),
   };
 };
 

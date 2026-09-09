@@ -1,5 +1,6 @@
 import { useCallback } from "react";
 import { useTranslation } from "react-i18next";
+import { getAppOrigin } from "../api/utils";
 import { useMailboxContext } from "../providers/mailbox";
 import { addToast, ToasterItem } from "../ui/components/toaster";
 import { handle } from "../utils/errors";
@@ -25,7 +26,7 @@ const useCopyDeepLink = () => {
 
     return useCallback(async (target: CopyDeepLinkTarget = {}): Promise<boolean> => {
         if (!selectedMailbox || !selectedThread) return false;
-        const base = `${window.location.origin}/mailbox/${selectedMailbox.id}/thread/${selectedThread.id}`;
+        const base = `${getAppOrigin()}/mailbox/${selectedMailbox.id}/thread/${selectedThread.id}`;
         const anchor = target.messageId
             ? `#thread-message-${target.messageId}`
             : target.eventId

@@ -3,7 +3,8 @@ import { CapacitorCookies } from "@capacitor/core";
 import { getRequestUrl } from "@/features/api/utils";
 
 import { openAuthSession } from "./auth-session";
-import { getNativeCsrfToken, setNativeCsrfToken } from "./csrf";
+import { setNativeCsrfToken } from "./csrf";
+import { nativeFetch } from "./fetch";
 import { computeCodeChallenge, generateCodeVerifier } from "./pkce";
 
 /**
@@ -104,13 +105,19 @@ export const nativeLogout = async (): Promise<void> => {
     // Always flush the app-side server session too: the browser round-trip
     // only ends it when the browser still holds the same session cookie —
     // if the browser dropped it, the app session would otherwise survive.
-    // Anonymous no-op when the round-trip already ended it.
-    const csrfToken = getNativeCsrfToken();
-    await fetch(getRequestUrl("/api/v1.0/mobile/auth/logout/"), {
-      method: "POST",
-      credentials: "include",
-      headers: csrfToken ? { "X-CSRFToken": csrfToken } : undefined,
-    });
+    // Anonymous no-op when the round-trip already ended it. Like every
+    // other mutation in the shell it goes through nativeFetch: the view
+    // enforces CSRF, and only that path carries the Origin header Django
+    // requires over HTTPS (see fetch.ts).
+    const response = await nativeFetch(
+      getRequestUrl("/api/v1.0/mobile/auth/logout/"),
+      { method: "POST", credentials: "include", headers: getHeaders() },
+    );
+    if (!response.ok) {
+      // Surfaced rather than swallowed: a refused flush leaves the server
+      // session alive until its TTL, which matters on a shared device.
+      console.warn(`Mobile session logout refused (${response.status}).`);
+    }
     await CapacitorCookies.clearAllCookies();
   } catch (error) {
     // Best effort: an orphaned server-side session expires with its TTL.

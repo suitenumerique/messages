@@ -186,6 +186,15 @@ export const Auth = ({
     return () => document.removeEventListener("visibilitychange", clearBadge);
   }, [isAuthenticated]);
 
+  // Cache the session-bound CSRF token delivered with /users/me/ so mutations
+  // can echo it in the X-CSRFToken header (no `csrftoken` cookie any more under
+  // CSRF_USE_SESSIONS). The native shell uses its own token from the session
+  // exchange, so it is skipped here.
+  useEffect(() => {
+    if (isNativePlatform()) return;
+    if (user) setWebCsrfToken(user.csrf_token);
+  }, [user]);
+
   useEffect(() => {
     if (user !== null) return;
 
