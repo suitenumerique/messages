@@ -16,3 +16,12 @@
   background-color: var(--c--contextuals--background--surface--primary);
   border: 1px solid var(--c--contextuals--border--surface--primary);
 }
+
+// Pill marking the grab zone of a draggable sheet (bottom drawers, compose
+// sheet): appearance only, each surface positions it itself.
+@mixin grab-handle {
+  width: 48px;
+  height: 5px;
+  border-radius: 50vw;
+  background-color: var(--c--contextuals--border--surface--primary);
+}

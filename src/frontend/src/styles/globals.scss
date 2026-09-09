@@ -42,6 +42,21 @@
   padding-bottom: var(--mobile-bottom-bar-height);
 }
 
+// While the compose stack bar is pinned to the bottom (minimized compose
+// windows on mobile), the layout gives it its measured height back: the
+// native bottom bars lift above it (their safe-area padding is absorbed by
+// the stack, which hugs the screen edge) and the reserved height follows.
+:root.native.has-compose-stack {
+  --mobile-bottom-bar-height: calc(64px + var(--compose-stack-height, 0px));
+}
+
+// On the mobile web there is no bottom bar to lift: pad the scrollable views
+// directly so their last items and CTAs stay reachable above the stack.
+:root.has-compose-stack:not(.native) .thread-panel__threads_list,
+:root.has-compose-stack:not(.native) .thread-view {
+  padding-bottom: var(--compose-stack-height, 0px);
+}
+
 html, body {
   height: 100%;
 }

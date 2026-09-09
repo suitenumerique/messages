@@ -3,6 +3,14 @@
   left: 0;
   right: 0;
   bottom: 0;
+
+  // Lifted above the compose stack bar so the CTAs stay reachable; the
+  // stack hugs the screen edge and owns the safe-area inset, so the bar
+  // drops its own.
+  :root.has-compose-stack & {
+    bottom: var(--compose-stack-height, 0px);
+    padding-bottom: var(--c--globals--spacings--sm);
+  }
   z-index: 1000;
   display: flex;
   align-items: center;

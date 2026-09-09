@@ -17,8 +17,8 @@ const RootShell = () => {
     <QueryClientProvider client={queryClient}>
       {!isNativePlatform() && (
         <>
-        <ReactQueryDevtools initialIsOpen={false} buttonPosition="bottom-left" />
-        <TanStackRouterDevtools position="bottom-right" />
+          <ReactQueryDevtools initialIsOpen={false} buttonPosition="bottom-left" />
+          <TanStackRouterDevtools position="bottom-left" />
         </>
       )}
       <ErrorBoundary>

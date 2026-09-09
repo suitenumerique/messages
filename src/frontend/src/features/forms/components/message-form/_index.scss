@@ -2,10 +2,134 @@
 @use "../../../../styles/cunningham-tokens" as *;
 @use "../../../../styles/utils" as *;
 
+:root {
+    // Horizontal padding the message form's hosts must provide on desktop:
+    // the editor text is flush with the field labels, so the block drag
+    // handle BlockNote floats left of the hovered block (a 24px button)
+    // lands in the host's padding, which is also where an overflow scroller
+    // stops clipping.
+    --message-form-gutter: 28px;
+}
+
 .message-form {
     display: flex;
     flex-direction: column;
     gap: var(--c--globals--spacings--base);
+
+    // The body follows the header fields: no box around the editor, the
+    // text flush with the labels, the toolbar moved below the text, and a
+    // single rule between the text and the toolbar. That rule is the focus
+    // indicator (thicker, brand coloured), the same one the header fields
+    // use, so the field never loses its visible focus state.
+    .composer-field {
+        .composer-field-input {
+            border-width: 0;
+            border-radius: 0;
+            // The shared field is column-reverse (toolbar on top); here the
+            // text comes first and the toolbar closes the block.
+            flex-direction: column;
+        }
+
+        &:hover .composer-field-input,
+        &:focus-within .composer-field-input,
+        &--focus .composer-field-input,
+        &--disabled:hover .composer-field-input {
+            border-radius: 0;
+            box-shadow: none;
+        }
+
+        // The rule sits on the toolbar's top edge and carries the states.
+        // The toolbar sticks to the bottom of the scrolling surface while
+        // the text is long, above the compact footer when there is one
+        // (--form-footer-height is measured by the form, see index.tsx),
+        // and scrolls away with the end of the composer.
+        .composer-field-input .bn-toolbar.bn-formatting-toolbar {
+            position: sticky;
+            bottom: calc(var(--form-footer-height, 0px) + var(--form-footer-outline, 0px));
+            z-index: 1;
+            background-color: var(--bn-colors-editor-background);
+            border-radius: 0;
+            border-bottom: none;
+            border-top: 1px solid var(--c--components--forms-input--border-color);
+            transition:
+                border-color var(--c--globals--transitions--duration) var(--c--globals--transitions--ease-out),
+                box-shadow var(--c--globals--transitions--duration) var(--c--globals--transitions--ease-out);
+        }
+
+        &:hover .composer-field-input .bn-toolbar.bn-formatting-toolbar {
+            border-top-color: var(--c--components--forms-input--border-color--hover);
+        }
+
+        &:focus-within .composer-field-input .bn-toolbar.bn-formatting-toolbar,
+        &--focus .composer-field-input .bn-toolbar.bn-formatting-toolbar {
+            border-top-color: var(--c--components--forms-input--border-color--focus);
+            // A thicker rule on focus, without moving the layout.
+            box-shadow: 0 -1px 0 0 var(--c--components--forms-input--border-color--focus);
+        }
+
+        &.c__field--error .composer-field-input .bn-toolbar.bn-formatting-toolbar {
+            border-top-color: var(--c--contextuals--border--semantic--error--primary);
+        }
+
+        // Flush with the labels; the drag handle lives in the host gutter.
+        .composer-field-input .bn-editor {
+            padding-inline: 0;
+        }
+    }
+
+    // Header fields (from, to, cc, bcc, subject) use the ui-kit inline
+    // layout, stripped down to a single rule running under the whole row,
+    // label included: no box around the control, no radius, no focus ring.
+    // Hover, focus and states speak through that rule only.
+    .c__field--inline {
+        // The rule is a grid item of its own so it spans both columns
+        // (label + control) and stays above the field footer, which the
+        // grid pushes to the next row.
+        &::after {
+            content: "";
+            grid-column: 1 / -1;
+            grid-row: 2;
+            height: 1px;
+            background-color: var(--c--components--forms-input--border-color);
+            transition: background-color var(--c--globals--transitions--duration) var(--c--globals--transitions--ease-out);
+        }
+
+        &:hover::after {
+            background-color: var(--c--components--forms-input--border-color--hover);
+        }
+
+        &:focus-within::after {
+            background-color: var(--c--components--forms-input--border-color--focus);
+            // A thicker rule on focus, without moving the layout.
+            box-shadow: 0 1px 0 0 var(--c--components--forms-input--border-color--focus);
+        }
+
+        &.c__field--error::after {
+            background-color: var(--c--contextuals--border--semantic--error--primary);
+        }
+
+        > label,
+        > .c__field__label-block label {
+            font-weight: var(--c--globals--font--weights--bold);
+        }
+
+        // The ui-kit sets its focus ring with !important, hence the same here.
+        .c__input__wrapper,
+        .c__select__wrapper,
+        .c__combobox__wrapper {
+            border-width: 0;
+            border-radius: 0;
+            padding-inline: 0;
+            background-color: transparent;
+            box-shadow: none !important;
+
+            &:hover,
+            &:focus-within {
+                border-radius: 0;
+                box-shadow: none !important;
+            }
+        }
+    }
 }
 
 .form-field-row {
@@ -20,31 +144,29 @@
 .message-form--compact {
     position: relative;
     gap: var(--c--globals--spacings--2xs);
-    height: 100%;
-    min-height: 0;
+    // Bleed of the sticky footer over the content scrolling under it; the
+    // sticky toolbar offsets itself by the same amount.
+    --form-footer-outline: 4px;
 
-    .c__input__wrapper {
-        height: 2.5rem;
+    // The form-wide drop overlay covers everything pinned over the form:
+    // the sticky toolbar (z-index 1) and the sticky footer (z-index 2).
+    > .attachment-uploader__dropzone {
+        z-index: 3;
     }
-
-    .c__combobox .c__select__wrapper,
-    .c__select__wrapper {
-        --c--components--forms-select--height: 2.5rem;
-        min-height: 2.5rem;
-    }
+    // Content-driven height inside the scrolling window body; stretched so
+    // the sticky footer reaches the bottom even with little content.
+    height: auto;
+    min-height: 100%;
 
     // Only error messages remain in field footers; tighten them.
     .c__field__footer {
         padding-top: 0;
-        padding-left: var(--c--globals--spacings--2xs);
     }
 
     .form-field-row--composer {
-        flex: 1 1 auto;
-        min-height: 0;
-        overflow-y: auto;
-        // Override the flex-start of .form-field-row so the editor stretches
-        // to fill the window height while still growing with long content.
+        // Grows with the content and never shrinks below the composer's
+        // minimum; the window body owns the scrolling.
+        flex: 1 0 auto;
         align-items: stretch;
 
         .composer-field {
@@ -55,8 +177,16 @@
         }
 
         .composer-field-input {
-            --min-height: 12rem;
+            --min-height: 250px;
             flex: 1;
+        }
+
+        // In this narrow height-constrained surface the toolbar wraps to
+        // several rows, but the editor's default min-height reserves the
+        // height of a single one (--toolbar-height): the excess would push
+        // the toolbar out of the block. Let flex share the height instead.
+        .composer-field-input .bn-editor {
+            min-height: 0;
         }
     }
 
@@ -67,6 +197,15 @@
     .form-footer {
         align-items: center;
         gap: var(--c--globals--spacings--2xs);
+        // Pinned to the bottom of the scrolling window body: send, delete,
+        // attachments and the save-time label stay reachable while the form
+        // scrolls underneath.
+        position: sticky;
+        bottom: 0;
+        z-index: 2;
+        background-color: var(--c--contextuals--background--surface--primary);
+        outline: var(--form-footer-outline) solid var(--c--contextuals--background--surface--primary);
+        padding-block: var(--c--globals--spacings--2xs) var(--c--globals--spacings--sm);
     }
 
     .form-footer__save-time {
@@ -84,7 +223,6 @@
     display: flex;
     flex-direction: row;
     gap: var(--c--globals--spacings--2xs);
-    margin-right: -16px;
 }
 
 .form-field-row--hidden {
@@ -105,6 +243,18 @@
     flex-direction: row;
     gap: 10px;
     justify-content: flex-start;
+}
+
+// Tooltip anchor around the send button (see the form footer).
+.form-footer__send {
+    display: inline-flex;
+}
+
+// Body of the send confirmation modal.
+.message-form__send-warnings {
+    display: flex;
+    flex-direction: column;
+    gap: var(--c--globals--spacings--2xs);
 }
 
 .dropdown-button {

@@ -10,7 +10,7 @@ import { Badge } from "@/features/ui/components/badge"
 import { ThreadDragPreview } from "./thread-drag-preview"
 import { PORTALS } from "@/features/config/constants"
 import { Button, Checkbox, Tooltip } from "@gouvfr-lasuite/cunningham-react"
-import { Icon, IconSize, IconType, UserAvatar } from "@gouvfr-lasuite/ui-kit"
+import { IconSize, IconType, UserAvatar } from "@gouvfr-lasuite/ui-kit"
 import { AssigneesAvatarGroup } from "@/features/ui/components/assignees-avatar-group"
 import { LabelBadge } from "@/features/ui/components/label-badge"
 import { useLayoutDragContext } from "@/features/layouts/components/layout-context"
@@ -18,10 +18,12 @@ import ViewHelper from "@/features/utils/view-helper"
 import useCanEditThreads from "@/features/message/use-can-edit-threads"
 import { FEATURE_KEYS, useFeatureFlag } from "@/hooks/use-feature"
 import { ThreadListboxItemProps } from "../../hooks/use-thread-listbox"
-import { AttachFile, Star, StarFilled } from "@gouvfr-lasuite/ui-kit/icons"
+import { AttachFile, Edit, Star, StarFilled } from "@gouvfr-lasuite/ui-kit/icons"
 import useStarred from "@/features/message/use-starred"
 import useThreadUnread from "@/features/message/use-thread-unread"
+import { useOpenDraftInWindow } from "@/features/message/use-open-draft-in-window"
 import { useLongPress } from "@/hooks/use-long-press"
+import { Icon } from "@/features/ui/components/icon"
 
 /**
  * Shorter than the hook's default: nothing competes for the press anymore, so
@@ -123,6 +125,18 @@ export const ThreadItem = ({ thread, isSelected, onToggle, onSelectRange, select
     const isIdentitySlotClick = (e: React.MouseEvent<HTMLDivElement>) =>
         e.target instanceof Element && !!e.target.closest('.thread-item__identity-slot');
 
+    // A thread whose only message is a draft opens the compose window
+    // directly (like Gmail) instead of navigating to a mostly-empty thread
+    // view. The list does not know the draft id: the hook resolves it.
+    const isDraftOnlyThread = !thread.messaged_at && thread.has_draft;
+    const { openThreadDraftInWindow } = useOpenDraftInWindow();
+
+    // "Opening" clicks for a draft-only thread: the stretched subject link or
+    // any non-interactive area. Other links/buttons (labels, star…) keep
+    // their own behavior.
+    const isThreadOpeningClick = (e: React.MouseEvent<HTMLDivElement>) =>
+        e.target instanceof Element && !e.target.closest('a:not(.thread-item__link), button');
+
     // Cancelling the navigation has to happen on the way down: the Link
     // navigates from its own onClick handler on the <a>, which runs before
     // the event bubbles up to this container. It skips navigation when the
@@ -130,8 +144,15 @@ export const ThreadItem = ({ thread, isSelected, onToggle, onSelectRange, select
     // which is why modifier-driven selection worked without this, while a
     // plain tap in selection mode still opened the thread.
     const handleItemClickCapture = (e: React.MouseEvent<HTMLDivElement>) => {
-        if (isKeyboardActivation(e)) return;
+        if (isKeyboardActivation(e)) {
+            // Keyboard "open" on a draft-only thread must not navigate
+            // either: the bubble handler opens the compose window.
+            if (isDraftOnlyThread) e.preventDefault();
+            return;
+        }
         if (suppressNextClickRef.current || hasSelection || e.shiftKey || e.ctrlKey || e.metaKey) {
+            e.preventDefault();
+        } else if (isDraftOnlyThread && isThreadOpeningClick(e)) {
             e.preventDefault();
         }
     };
@@ -146,13 +167,18 @@ export const ThreadItem = ({ thread, isSelected, onToggle, onSelectRange, select
             e.preventDefault();
             return;
         }
-        if (isKeyboardActivation(e)) return;
+        if (isKeyboardActivation(e)) {
+            if (isDraftOnlyThread) void openThreadDraftInWindow(thread);
+            return;
+        }
         if (e.shiftKey) {
             e.preventDefault();
             onSelectRange(thread.id);
         } else if (e.ctrlKey || e.metaKey || hasSelection || isIdentitySlotClick(e)) {
             e.preventDefault();
             onToggle(thread.id);
+        } else if (isDraftOnlyThread && isThreadOpeningClick(e)) {
+            void openThreadDraftInWindow(thread);
         } else if (e.target instanceof Element && !e.target.closest('a, button')) {
             // Raised elements sit above the stretched link, so plain clicks
             // on them never reach it: navigate as the link would have.
@@ -357,10 +383,8 @@ export const ThreadItem = ({ thread, isSelected, onToggle, onSelectRange, select
                             {thread.has_draft && (
                                 <Badge aria-label={t('Draft')} title={t('Draft')} color="neutral" variant="tertiary" compact>
                                     <Icon
-                                        type={IconType.FILLED}
-                                        name="mode_edit"
-                                        className="icon--size-sm"
-                                        aria-hidden="true"
+                                        icon={Edit}
+                                        size={IconSize.SMALL}
                                     />
                                 </Badge>
                             )}
@@ -371,7 +395,7 @@ export const ThreadItem = ({ thread, isSelected, onToggle, onSelectRange, select
                                     color="neutral"
                                     variant="tertiary"
                                     compact>
-                                    <AttachFile size={IconSize.SMALL} aria-hidden="true" />
+                                    <Icon icon={AttachFile} size={IconSize.SMALL} />
                                 </Badge>
                             ) : null}
                             {thread.has_unread_mention && (
@@ -384,7 +408,6 @@ export const ThreadItem = ({ thread, isSelected, onToggle, onSelectRange, select
                                     <Icon
                                         type={IconType.OUTLINED}
                                         name="alternate_email"
-                                        aria-hidden="true"
                                         className="icon--size-sm"
                                     />
                                 </Badge>
@@ -400,7 +423,6 @@ export const ThreadItem = ({ thread, isSelected, onToggle, onSelectRange, select
                                         name="error"
                                         type={IconType.OUTLINED}
                                         size={IconSize.SMALL}
-                                        aria-hidden="true"
                                     />
                                 </Badge>
                             )}
@@ -415,7 +437,6 @@ export const ThreadItem = ({ thread, isSelected, onToggle, onSelectRange, select
                                         name="update"
                                         type={IconType.OUTLINED}
                                         size={IconSize.SMALL}
-                                        aria-hidden="true"
                                     />
                                 </Badge>
                             )}

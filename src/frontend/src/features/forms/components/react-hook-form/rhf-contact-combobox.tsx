@@ -5,8 +5,16 @@ import { useMailboxContext } from "@/features/providers/mailbox";
 import { UserRow } from "@gouvfr-lasuite/ui-kit";
 import { Controller, useFormContext } from "react-hook-form";
 import MailHelper from "@/features/utils/mail-helper";
+import clsx from "clsx";
 
-export const RhfContactComboBox = (props: Omit<ComboBoxProps, 'options'> & { name: string }) => {
+type RhfContactComboBoxProps = Omit<ComboBoxProps, 'options'> & {
+    name: string;
+    // Colours the field footer as a warning (Cunningham's Field only knows
+    // error / success); the items themselves come through `textItems`.
+    warning?: boolean;
+};
+
+export const RhfContactComboBox = ({ warning = false, ...props }: RhfContactComboBoxProps) => {
     const { control, setValue } = useFormContext();
     const [searchQuery, setSearchQuery] = useState("");
     const { selectedMailbox } = useMailboxContext();
@@ -45,13 +53,18 @@ export const RhfContactComboBox = (props: Omit<ComboBoxProps, 'options'> & { nam
         <Controller
             control={control}
             name={props.name}
-            render={({ field, fieldState }) => (
+            render={({ field, fieldState }) => {
+                // A caller-provided error state (e.g. a limit computed across
+                // several fields) must win over the field's own validation.
+                const hasError = !!fieldState.error || props.state === "error";
+                return (
                 <ComboBox
                     {...field}
                     {...props}
+                    className={clsx(props.className, { "c__combobox--warning": warning })}
                     clearable
-                    state={fieldState.error ? "error" : "default"}
-                    aria-invalid={!!fieldState.error}
+                    state={hasError ? "error" : "default"}
+                    aria-invalid={hasError}
                     value={field.value}
                     valueValidator={MailHelper.isValidEmail}
                     valueTransformer={MailHelper.normalizeEmailDomain.bind(MailHelper)}
@@ -59,7 +72,8 @@ export const RhfContactComboBox = (props: Omit<ComboBoxProps, 'options'> & { nam
                     onInputChange={(value) => setSearchQuery(value.trim())}
                     options={contactsOptions}
                 />
-            )}
+                );
+            }}
         />
     )
 }

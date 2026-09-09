@@ -14,6 +14,13 @@
     // Sit above the floating bottom bars (z-index 1000) so the open drawer
     // covers the search/compose bar and the thread toolbar.
     z-index: 1001;
+
+    // The compose stack bar (z-index 1500) pins to the viewport bottom: the
+    // open drawer must keep its full height above it, not lose its footer
+    // behind the pile.
+    :root.has-compose-stack & {
+        z-index: 1501;
+    }
 }
 
 .left-panel {

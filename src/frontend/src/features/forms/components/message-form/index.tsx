@@ -31,7 +31,7 @@ import { DriveAttachmentPicker, DriveFile } from "./drive-attachment-picker";
 import { useAttachments } from "@/features/forms/hooks/use-attachments";
 import { MessageComposerHelper } from "@/features/utils/composer-helper";
 import { Icon } from "@/features/ui/components/icon";
-import { Send, Trash } from "@gouvfr-lasuite/ui-kit/icons";
+import { AttachFile, Send, Trash } from "@gouvfr-lasuite/ui-kit/icons";
 
 export type MessageFormMode = "new" | "reply" | "reply_all" | "forward";
 
@@ -111,7 +111,20 @@ export type MessageFormHandle = {
     saveDraftNow: () => Promise<string | undefined>;
     ensureDraftId: () => Promise<string | undefined>;
     hasUnsavedContent: () => boolean;
+    // Whether the user actually touched this form since it mounted: a draft
+    // save was attempted (saves only trigger on user-caused dirtiness) or
+    // dirty fields are pending. Programmatic changes (signature application,
+    // BlockNote normalization) never count — see withProgrammaticChange in
+    // the composer. Drives the draft-window recycling.
+    wasUserEdited: () => boolean;
     getDraftId: () => string | undefined;
+    // Submits the form exactly like its internal Send button (validation
+    // and permission checks included), for external send CTAs such as the
+    // mobile sheet header. `archive` overrides the preferred send mode for
+    // this send only.
+    requestSend: (options?: { archive?: boolean }) => void;
+    getPreferredSendMode: () => PreferSendMode;
+    setPreferredSendMode: (mode: PreferSendMode) => void;
 };
 
 const DRAFT_TOAST_ID = "MESSAGE_FORM_DRAFT_TOAST";
@@ -137,6 +150,7 @@ export const MessageForm = forwardRef<MessageFormHandle, MessageFormProps>(({
     const config = useConfig();
     const modals = useModals();
     const composerRef = useRef<MessageComposerHandle>(null);
+    const footerRef = useRef<HTMLElement>(null);
     const [draft, setDraftState] = useState<Message | undefined>(draftMessage);
     const {
       selectedMailbox,
@@ -168,6 +182,10 @@ export const MessageForm = forwardRef<MessageFormHandle, MessageFormProps>(({
         return localStorage.getItem(PREFER_SEND_MODE_KEY) as PreferSendMode ?? PreferSendMode.SEND;
     });
     const saveDraftPromiseRef = useRef<Promise<string | undefined> | null>(null);
+    // Whether a draft save was attempted since mount. Set before the mutation
+    // fires (a failed save still means user content diverged from the server),
+    // it survives the form.reset that clears dirtyFields — see wasUserEdited.
+    const hasSavedSinceMountRef = useRef(false);
     // Blocks any non-forced draft save while a send is in flight: a draft PUT
     // racing the send rewrites the recipients of a message already being
     // delivered server-side. A ref (not state) so the guard is visible
@@ -283,6 +301,12 @@ export const MessageForm = forwardRef<MessageFormHandle, MessageFormProps>(({
         }
     }, [draft, defaultSenderId, toRecipients, ccRecipients, parentMessage, mode])
 
+    // The template the user started from, frozen at mount. `formDefaultValues`
+    // tracks `draft`, so it absorbs every autosave: comparing against it made
+    // saved content read as "nothing was written", and closing a window then
+    // silently deleted a perfectly good draft.
+    const initialFormValuesRef = useRef(formDefaultValues);
+
     const form = useForm({
         resolver: zodResolver(messageFormSchema),
         mode: "onBlur",
@@ -290,11 +314,6 @@ export const MessageForm = forwardRef<MessageFormHandle, MessageFormProps>(({
         shouldFocusError: false,
         defaultValues: formDefaultValues,
     });
-
-    const messageDraftBody = useWatch({
-        control: form.control,
-        name: "messageDraftBody",
-    }) || "";
 
     const currentToRecipients = useWatch({
         control: form.control,
@@ -357,10 +376,6 @@ export const MessageForm = forwardRef<MessageFormHandle, MessageFormProps>(({
         noKeyboard: true,
     });
 
-    const showAttachmentsForgetAlert = useMemo(() => {
-        return MailHelper.areAttachmentsMentionedInDraft(messageDraftBody) && attachmentHook.attachments.length === 0;
-    }, [messageDraftBody, attachmentHook.attachments]);
-
     const totalRecipients = useMemo(() => {
         return (currentToRecipients?.length || 0) + (currentCcRecipients?.length || 0) + (currentBccRecipients?.length || 0);
     }, [currentToRecipients, currentCcRecipients, currentBccRecipients]);
@@ -369,6 +384,16 @@ export const MessageForm = forwardRef<MessageFormHandle, MessageFormProps>(({
         const maxRecipients = config.MAX_RECIPIENTS_PER_MESSAGE;
         return maxRecipients > 0 && totalRecipients > maxRecipients;
     }, [config.MAX_RECIPIENTS_PER_MESSAGE, totalRecipients]);
+    const recipientLimitText = showRecipientLimitWarning
+        ? t("{{count}} recipients out of {{max}} max: shorten the list to send.", { count: totalRecipients, max: config.MAX_RECIPIENTS_PER_MESSAGE })
+        : undefined;
+    // The limit is counted across To, Cc and Bcc: every field holding
+    // recipients carries the error and its explanation, an empty one has
+    // nothing to shorten.
+    const getRecipientLimitItems = (recipients: string[]): string[] =>
+        recipientLimitText && recipients.length > 0 ? [recipientLimitText] : [];
+    const getRecipientLimitState = (recipients: string[]) =>
+        showRecipientLimitWarning && recipients.length > 0 ? "error" : undefined;
 
     const allRecipients = useMemo(
         () => [...currentToRecipients, ...currentCcRecipients, ...currentBccRecipients],
@@ -385,11 +410,46 @@ export const MessageForm = forwardRef<MessageFormHandle, MessageFormProps>(({
         () => allRecipients.filter(MailHelper.hasNonAsciiLocalPart, MailHelper),
         [allRecipients]
     );
-    const accentedDomainRecipients = useMemo(
-        () => allRecipients.filter(MailHelper.hasNonAsciiDomain, MailHelper),
-        [allRecipients]
-    );
     const hasOtherRecipients = allRecipients.length > accentedLocalPartRecipients.length;
+
+    // Per-recipient notice, shown on the chip and under the field. Kept to one
+    // short line on purpose: it has to fit a phone screen and the docked
+    // compose window without eating the writing area. The full explanation
+    // is only given at send time, where the user has a decision to make.
+    const getRecipientWarning = (email: string): string | undefined => {
+        if (MailHelper.hasNonAsciiLocalPart(email)) return t("Accented characters before the @: delivery is not guaranteed.");
+        if (MailHelper.hasNonAsciiDomain(email)) return t("Accented characters after the @: the address will be converted on send.");
+        return undefined;
+    };
+    // One line per kind of warning rather than per address: the marked chips
+    // already say which addresses are concerned.
+    const getRecipientWarnings = (recipients: string[]): string[] =>
+        [...new Set(recipients.map(getRecipientWarning).filter((warning): warning is string => !!warning))];
+    // Field footer: validation errors first (one per invalid address), then
+    // the warnings.
+    const getRecipientTextItems = (name: "to" | "cc" | "bcc", recipients: string[]): string[] => {
+        const errors = form.formState.errors[name];
+        const errorItems = Array.isArray(errors)
+            ? errors.map((error, index) => t(error!.message as string, { email: recipients[index] }))
+            : [];
+        return [...errorItems, ...getRecipientWarnings(recipients)];
+    };
+
+    // Everything the user should reconsider before the message leaves,
+    // asked once in a single confirmation.
+    const getSendWarnings = (data: MessageFormValues): string[] => {
+        const warnings: string[] = [];
+        if (MailHelper.areAttachmentsMentionedInDraft(data.messageDraftBody ?? "") && attachmentHook.attachments.length === 0) {
+            warnings.push(t("Did you forget an attachment?"));
+        }
+        if (accentedLocalPartRecipients.length > 0) {
+            warnings.push(
+                t("{{addresses}} contains accented characters before the @ sign. We will try to send it, but mail servers that do not support internationalized addresses will reject it. Check the spelling with your recipient.", { addresses: accentedLocalPartRecipients.join(', ') })
+                + (hasOtherRecipients ? ' ' + t("If it is rejected, the other recipients of this message may not receive it either.") : '')
+            );
+        }
+        return warnings;
+    };
 
     const messageMutation = useSendCreate({
         mutation: {
@@ -467,7 +527,15 @@ export const MessageForm = forwardRef<MessageFormHandle, MessageFormProps>(({
         await saveDraftPromiseRef.current;
         stopAutoSave();
 
-        const isSingleMessage = effectiveThread?.messages.length === 1;
+        // A detached compose window carries no thread context, but the draft
+        // itself knows which thread it created. Both are needed below, and
+        // reading them now matters: `setDraft(undefined)` clears the ref.
+        const threadId = effectiveThread?.id ?? draftRef.current?.thread_id ?? undefined;
+        // Without a thread we know the draft is the only message of the thread
+        // it created, so its deletion removes that thread from the list.
+        const isSingleMessage = effectiveThread
+            ? effectiveThread.messages.length === 1
+            : true;
         try {
             await deleteMessageMutation.mutateAsync({ id: messageId });
         } catch {
@@ -476,12 +544,13 @@ export const MessageForm = forwardRef<MessageFormHandle, MessageFormProps>(({
         }
         onClose?.();
         setDraft(undefined);
-        if (effectiveThread) {
-            removeMessages(effectiveThread.id, [messageId]);
+        if (threadId) {
+            removeMessages(threadId, [messageId]);
             // The thread may exit the active filter (e.g. drafts) once
             // its only draft is gone. Drop any pin so the next refetch
-            // is authoritative.
-            unpinThreads([effectiveThread.id]);
+            // is authoritative — draft creation pins it, and a pin left
+            // behind keeps the deleted draft listed whatever the refetch says.
+            unpinThreads([threadId]);
         }
         if (isSingleMessage) {
             invalidateThreadList();
@@ -526,7 +595,17 @@ export const MessageForm = forwardRef<MessageFormHandle, MessageFormProps>(({
         hasUnsavedContent: () =>
             hasUserDraftContent(form.getValues())
             || (!!draftRef.current && Object.keys(form.formState.dirtyFields).length > 0),
+        wasUserEdited: () =>
+            hasSavedSinceMountRef.current
+            || Object.keys(form.formState.dirtyFields).length > 0,
         getDraftId: () => draftRef.current?.id,
+        requestSend: (options) => {
+            void form.handleSubmit(() => handleSubmit({
+                archive: options?.archive ?? (preferredSendMode === PreferSendMode.SEND_AND_ARCHIVE),
+            }))();
+        },
+        getPreferredSendMode: () => preferredSendMode,
+        setPreferredSendMode,
     }));
 
     useEffect(() => {
@@ -598,20 +677,25 @@ export const MessageForm = forwardRef<MessageFormHandle, MessageFormProps>(({
      * Recipients alone do not trigger creation by design: only a subject, body
      * or attachment does.
      *
-     * Everything is measured against the initial template (`formDefaultValues`),
-     * not against zero, so reply/forward behave like a new message: the prefilled
+     * Everything is measured against the template the form started from, not
+     * against zero, so reply/forward behave like a new message: the prefilled
      * "Re:"/"Fwd:" subject and the attachments carried over from a forwarded
      * message do not, on their own, create a draft. The body is checked through
      * the editor blocks (not its raw length), and `hasUserBodyContent` ignores
      * the auto-inserted signature and quoted-message blocks — so a pristine
      * composer counts as empty in every mode.
+     *
+     * The reference is the mount-time snapshot, never the live
+     * `formDefaultValues`: the latter follows `draft`, so each autosave would
+     * move the goalposts and make written content look like an empty form.
      */
     const hasUserDraftContent = (data: MessageFormValues): boolean => {
+        const initialValues = initialFormValuesRef.current;
         const subjectChanged =
-            data.subject.trim() !== (formDefaultValues.subject ?? "").trim();
+            data.subject.trim() !== (initialValues.subject ?? "").trim();
         const initialAttachmentCount =
-            (formDefaultValues.attachments?.length ?? 0) +
-            (formDefaultValues.driveAttachments?.length ?? 0);
+            (initialValues.attachments?.length ?? 0) +
+            (initialValues.driveAttachments?.length ?? 0);
         const currentAttachmentCount =
             (data.attachments?.length ?? 0) + (data.driveAttachments?.length ?? 0);
         return (
@@ -636,9 +720,8 @@ export const MessageForm = forwardRef<MessageFormHandle, MessageFormProps>(({
         // Once a draft exists, keep the reactive behavior (save on any dirty
         // field, plus the 30s timer). Before a draft exists, only create one
         // when the user has actually entered content: relying on `dirtyFields`
-        // here is both unreliable (it lags behind the synchronous form values,
-        // hence the "save only on the second blur" bug) and too eager (the
-        // composer marks `messageDraftBody` dirty on mount with an empty doc).
+        // here is unreliable — it lags behind the synchronous form values,
+        // hence the "save only on the second blur" bug.
         const saveDraftNeeded = force || (
             draftRef.current
                 ? Object.keys(form.formState.dirtyFields).length > 0
@@ -648,6 +731,7 @@ export const MessageForm = forwardRef<MessageFormHandle, MessageFormProps>(({
         if (!saveDraftNeeded) {
             return draft?.id;
         }
+        hasSavedSinceMountRef.current = true;
 
         const payload = {
             to: data.to,
@@ -729,7 +813,27 @@ export const MessageForm = forwardRef<MessageFormHandle, MessageFormProps>(({
             form.setError("to", { message: t("At least one recipient is required.") });
             return;
         }
+        // Same gate as the disabled send button, for the send CTAs living
+        // outside the form (mobile sheet header) which cannot see it.
+        if (showRecipientLimitWarning) return;
         if (!canSendMessages || !composerRef.current) return;
+
+        // Asked before the send flow starts (draft materialization, autosave
+        // lock), so declining has nothing to undo.
+        const sendWarnings = getSendWarnings(data);
+        if (sendWarnings.length > 0) {
+            const decision = await modals.confirmationModal({
+                title: <span className="c__modal__text--centered">{t("Send anyway?")}</span>,
+                children: (
+                    <div className="message-form__send-warnings">
+                        {sendWarnings.map((warning) => (
+                            <Banner key={warning} type="warning">{warning}</Banner>
+                        ))}
+                    </div>
+                ),
+            });
+            if (decision !== "yes") return;
+        }
 
         setIsSubmitting(true);
         // Block autosave for the whole send: the ref also guards
@@ -808,6 +912,24 @@ export const MessageForm = forwardRef<MessageFormHandle, MessageFormProps>(({
         return () => stopAutoSave();
     }, [draft]);
 
+    // The composer toolbar sticks to the bottom of the scrolling surface,
+    // above the compact variant's sticky footer. That footer's height
+    // depends on its content (save-time label, safe area…), so it is
+    // measured and handed to the stylesheet as --form-footer-height.
+    useEffect(() => {
+        const footer = footerRef.current;
+        const form = footer?.closest<HTMLElement>(".message-form");
+        if (!compact || !footer || !form) return;
+        const update = () => form.style.setProperty("--form-footer-height", `${footer.offsetHeight}px`);
+        update();
+        const observer = new ResizeObserver(update);
+        observer.observe(footer);
+        return () => {
+            observer.disconnect();
+            form.style.removeProperty("--form-footer-height");
+        };
+    }, [compact]);
+
     // Update current time every 15 seconds for relative time display
     useEffect(() => {
         const timeUpdateInterval = setInterval(() => {
@@ -844,9 +966,40 @@ export const MessageForm = forwardRef<MessageFormHandle, MessageFormProps>(({
         onKeyDown: handleKeyDown,
     };
 
+    const sendControl = (
+        <span className="form-footer__send">
+            <DropdownButton
+                variant="primary"
+                disabled={!canSendMessages || isSubmittingMessage || showRecipientLimitWarning || isDeletingDraft}
+                icon={isSubmittingMessage ? <Spinner size="sm" /> : undefined}
+                type="submit"
+                dropdownOptions={[
+                    ...(mode !== 'new' ? [{
+                        label: preferredSendMode === PreferSendMode.SEND_AND_ARCHIVE ? t("Send") : t("Send and archive"),
+                        icon: preferredSendMode === PreferSendMode.SEND_AND_ARCHIVE
+                            ? <Icon icon={Send} />
+                            : <Icon name={"send_and_archive"} type={IconType.OUTLINED} />,
+                        callback: form.handleSubmit(() => handleSubmit({ archive: preferredSendMode !== PreferSendMode.SEND_AND_ARCHIVE })),
+                        showSeparator: true,
+                    }, {
+                        label: t("Use \"Send and archive\" by default"),
+                        icon: <Icon name={preferredSendMode === PreferSendMode.SEND_AND_ARCHIVE ? "check_box" : "check_box_outline_blank"} type={IconType.OUTLINED} />,
+                        callback: () => setPreferredSendMode(preferredSendMode === PreferSendMode.SEND_AND_ARCHIVE ? PreferSendMode.SEND : PreferSendMode.SEND_AND_ARCHIVE)
+                    }] : [])
+                ]}
+            >
+                {preferredSendMode === PreferSendMode.SEND_AND_ARCHIVE && t("Send and archive")}
+                {preferredSendMode === PreferSendMode.SEND && t("Send")}
+            </DropdownButton>
+        </span>
+    );
+
     return (
         <FormProvider {...form}>
-            <form {...(compact ? formDropzone.getRootProps(formElementProps) : formElementProps)}>
+            {/* The dropzone props are spread first: with `noKeyboard`,
+                getRootProps nulls out any onBlur/onKeyDown handed to it,
+                which would silently kill the blur-triggered draft save. */}
+            <form {...(compact ? { ...formDropzone.getRootProps(), ...formElementProps } : formElementProps)}>
                 {compact && (
                     <>
                         <DropZone isHidden={!formDropzone.isDragActive} />
@@ -857,28 +1010,32 @@ export const MessageForm = forwardRef<MessageFormHandle, MessageFormProps>(({
                     <RhfSelect
                         name="from"
                         options={getMailboxOptions()}
-                        label={t("From: ")}
+                        label={t("From")}
+                        variant="inline"
                         clearable={false}
                         disabled={!canChangeSender}
                         compact
                         fullWidth
-                        showLabelWhenSelected={false}
                         text={form.formState.errors.from && t(form.formState.errors.from.message as string)}
                     />
                 </div>
                 <div className="form-field-row">
                     <RhfContactComboBox
                         name="to"
-                        label={t("To:")}
+                        label={t("To")}
+                        variant="inline"
                         autoFocus={mode === "forward"}
-                        text={form.formState.errors.to && !Array.isArray(form.formState.errors.to) ? form.formState.errors.to.message : (compact ? undefined : t("Enter the email addresses of the recipients separated by commas"))}
-                        textItems={Array.isArray(form.formState.errors.to) ? form.formState.errors.to?.map((error, index) => t(error!.message as string, { email: form.getValues('to')?.[index] })) : []}
+                        text={form.formState.errors.to && !Array.isArray(form.formState.errors.to) ? form.formState.errors.to.message : undefined}
+                        textItems={[...getRecipientLimitItems(currentToRecipients), ...getRecipientTextItems("to", currentToRecipients)]}
+                        state={getRecipientLimitState(currentToRecipients)}
+                        warning={getRecipientWarnings(currentToRecipients).length > 0}
+                        getItemWarning={getRecipientWarning}
                         disabled={!canWriteMessages}
-                        rightText={
+                        actions={
                             <div className="form-field-options">
                                 <Button tabIndex={-1} type="button" size="nano" variant={showCCField ? "bordered" : "tertiary"} onClick={() => setShowCCField(!showCCField)} disabled={!canWriteMessages}>{t("cc")}</Button>
                                 <Button tabIndex={-1} type="button" size="nano" variant={showBCCField ? "bordered" : "tertiary"} onClick={() => setShowBCCField(!showBCCField)} disabled={!canWriteMessages}>{t("bcc")}</Button>
-                            </div> as unknown as string // TODO: Allow ReactNode as rightText in Cunningham
+                            </div>
                         }
                         fullWidth
                         clearable
@@ -889,9 +1046,13 @@ export const MessageForm = forwardRef<MessageFormHandle, MessageFormProps>(({
                     <div className="form-field-row">
                         <RhfContactComboBox
                             name="cc"
-                            label={t("Copy: ")}
-                            text={form.formState.errors.cc && !Array.isArray(form.formState.errors.cc) ? t(form.formState.errors.cc.message as string) : (compact ? undefined : t("Enter the email addresses of the recipients separated by commas"))}
-                            textItems={Array.isArray(form.formState.errors.cc) ? form.formState.errors.cc?.map((error, index) => t(error!.message as string, { email: form.getValues('cc')?.[index] })) : []}
+                            label={t("Cc")}
+                            variant="inline"
+                            text={form.formState.errors.cc && !Array.isArray(form.formState.errors.cc) ? t(form.formState.errors.cc.message as string) : undefined}
+                            textItems={[...getRecipientLimitItems(currentCcRecipients), ...getRecipientTextItems("cc", currentCcRecipients)]}
+                            state={getRecipientLimitState(currentCcRecipients)}
+                            warning={getRecipientWarnings(currentCcRecipients).length > 0}
+                            getItemWarning={getRecipientWarning}
                             disabled={!canWriteMessages}
                             fullWidth
                             clearable
@@ -903,9 +1064,13 @@ export const MessageForm = forwardRef<MessageFormHandle, MessageFormProps>(({
                     <div className="form-field-row">
                         <RhfContactComboBox
                             name="bcc"
-                            label={t("Blind copy: ")}
-                            text={form.formState.errors.bcc && !Array.isArray(form.formState.errors.bcc) ? t(form.formState.errors.bcc.message as string) : (compact ? undefined : t("Enter the email addresses of the recipients separated by commas"))}
-                            textItems={Array.isArray(form.formState.errors.bcc) ? form.formState.errors.bcc?.map((error, index) => t(error!.message as string, { email: form.getValues('bcc')?.[index] })) : []}
+                            label={t("Bcc")}
+                            variant="inline"
+                            text={form.formState.errors.bcc && !Array.isArray(form.formState.errors.bcc) ? t(form.formState.errors.bcc.message as string) : undefined}
+                            textItems={[...getRecipientLimitItems(currentBccRecipients), ...getRecipientTextItems("bcc", currentBccRecipients)]}
+                            state={getRecipientLimitState(currentBccRecipients)}
+                            warning={getRecipientWarnings(currentBccRecipients).length > 0}
+                            getItemWarning={getRecipientWarning}
                             disabled={!canWriteMessages}
                             fullWidth
                             clearable
@@ -916,7 +1081,8 @@ export const MessageForm = forwardRef<MessageFormHandle, MessageFormProps>(({
                 <div className={clsx("form-field-row", { 'form-field-row--hidden': hideSubjectField })}>
                     <RhfInput
                         name="subject"
-                        label={t("Subject: ")}
+                        label={t("Subject")}
+                        variant="inline"
                         text={form.formState.errors.subject && form.formState.errors.subject.message}
                         disabled={!canWriteMessages}
                         fullWidth
@@ -945,31 +1111,6 @@ export const MessageForm = forwardRef<MessageFormHandle, MessageFormProps>(({
                         attachments={attachmentHook.attachments}
                     />
                 </div>
-
-                {showAttachmentsForgetAlert &&
-                    <Banner type="warning">
-                        {t("Did you forget an attachment?")}
-                    </Banner>
-                }
-
-                {showRecipientLimitWarning &&
-                    <Banner type="warning">
-                        {t("You have {{count}} recipients, which exceeds the maximum of {{max}} recipients per message. The message cannot be sent until you reduce the number of recipients.", { count: totalRecipients, max: config.MAX_RECIPIENTS_PER_MESSAGE })}
-                    </Banner>
-                }
-
-                {accentedLocalPartRecipients.length > 0 &&
-                    <Banner type="warning">
-                        {t("{{addresses}} contains accented characters before the @ sign. We will try to send it, but mail servers that do not support internationalized addresses will reject it. Check the spelling with your recipient.", { addresses: accentedLocalPartRecipients.join(', ') })}
-                        {hasOtherRecipients && ' ' + t("If it is rejected, the other recipients of this message may not receive it either.")}
-                    </Banner>
-                }
-
-                {accentedDomainRecipients.length > 0 &&
-                    <Banner type="info">
-                        {t("{{addresses}} contains accented characters after the @ sign. The address will be converted to its standard form before sending. Check the spelling with your recipient.", { addresses: accentedDomainRecipients.join(', ') })}
-                    </Banner>
-                }
 
                 {compact ? (
                     <AttachmentBucket
@@ -1010,50 +1151,20 @@ export const MessageForm = forwardRef<MessageFormHandle, MessageFormProps>(({
                         }
                     </div>
                 )}
-                <footer className="form-footer">
-                    <DropdownButton
-                        variant="primary"
-                        disabled={!canSendMessages || isSubmittingMessage || showRecipientLimitWarning || isDeletingDraft}
-                        icon={isSubmittingMessage ? <Spinner size="sm" /> : undefined}
-                        type="submit"
-                        dropdownOptions={[
-                            ...(mode !== 'new' ? [{
-                                label: preferredSendMode === PreferSendMode.SEND_AND_ARCHIVE ? t("Send") : t("Send and archive"),
-                                icon: preferredSendMode === PreferSendMode.SEND_AND_ARCHIVE
-                                    ? <Icon icon={Send} />
-                                    : <Icon name={"send_and_archive"} type={IconType.OUTLINED} />,
-                                callback: form.handleSubmit(() => handleSubmit({ archive: preferredSendMode !== PreferSendMode.SEND_AND_ARCHIVE })),
-                                showSeparator: true,
-                            }, {
-                                label: t("Use \"Send and archive\" by default"),
-                                icon: <Icon name={preferredSendMode === PreferSendMode.SEND_AND_ARCHIVE ? "check_box" : "check_box_outline_blank"} type={IconType.OUTLINED} />,
-                                callback: () => setPreferredSendMode(preferredSendMode === PreferSendMode.SEND_AND_ARCHIVE ? PreferSendMode.SEND : PreferSendMode.SEND_AND_ARCHIVE)
-                            }] : [])
-                        ]}
-                    >
-                        {preferredSendMode === PreferSendMode.SEND_AND_ARCHIVE && t("Send and archive")}
-                        {preferredSendMode === PreferSendMode.SEND && t("Send")}
-                    </DropdownButton>
-                    {compact && (
-                        <>
-                            <Tooltip content={t("Add attachments")}>
-                                <Button
-                                    type="button"
-                                    variant="tertiary"
-                                    onClick={formDropzone.open}
-                                    disabled={!canWriteMessages}
-                                    aria-label={t("Add attachments")}
-                                    icon={<Icon name="attach_file" type={IconType.OUTLINED} />}
-                                />
-                            </Tooltip>
-                            <DriveAttachmentPicker onPick={attachmentHook.addDriveFiles} disabled={!canWriteMessages} />
-                        </>
-                    )}
+                <footer className="form-footer" ref={footerRef}>
+                    {/* A disabled button gets no pointer events, so the
+                        tooltip explaining the block hangs on a wrapper. */}
+                    {recipientLimitText ? (
+                        <Tooltip content={recipientLimitText} placement="top">
+                            {sendControl}
+                        </Tooltip>
+                    ) : sendControl}
                     {!draft && onClose && (
                         <Tooltip content={t("Delete")}>
                             <Button
                                 type="button"
                                 variant="tertiary"
+                                className="form-footer__delete"
                                 onClick={onClose}
                                 aria-label={t("Delete")}
                                 icon={<Icon icon={Trash} />}
@@ -1066,6 +1177,7 @@ export const MessageForm = forwardRef<MessageFormHandle, MessageFormProps>(({
                                 <Button
                                     type="button"
                                     variant="tertiary"
+                                    className="form-footer__delete"
                                     onClick={() => handleDeleteMessage(draft.id)}
                                     aria-label={t("Delete draft")}
                                     icon={<Icon icon={Trash} />}
@@ -1073,6 +1185,21 @@ export const MessageForm = forwardRef<MessageFormHandle, MessageFormProps>(({
                             </Tooltip>
                         )
                     }
+                    {compact && (
+                        <>
+                            <Tooltip content={t("Add attachments")} placement="top">
+                                <Button
+                                    type="button"
+                                    variant="tertiary"
+                                    onClick={formDropzone.open}
+                                    disabled={!canWriteMessages}
+                                    aria-label={t("Add attachments")}
+                                    icon={<Icon icon={AttachFile} />}
+                                />
+                            </Tooltip>
+                            <DriveAttachmentPicker onPick={attachmentHook.addDriveFiles} disabled={!canWriteMessages} variant="tertiary" />
+                        </>
+                    )}
                     {compact && (
                         <div className="form-footer__save-time">
                             {
