@@ -15,15 +15,18 @@ const browserslist = pkg.browserslist;
 // the runtime-fetched locale JSONs (their URLs are otherwise fixed, so a CDN /
 // browser keeps serving a stale copy after a deploy — a half-translated UI).
 // Resolution order, most authoritative first:
-//   - SOURCE_VERSION   commit SHA — injected by Scalingo's buildpack natively,
-//                      and passed as a build-arg from our CI Docker build
-//   - `git`            local builds / any context that ships the .git dir
+//   - SOURCE_VERSION   commit SHA — injected by Scalingo's buildpack natively
+//                      (full 40 chars), passed as a build-arg from our CI Docker
+//                      build, and by the Makefile for container builds
+//   - `git`            host builds / any context that ships the .git dir
 //   - timestamp        last-resort, still unique from one deploy to the next
+// Commit stamps are pinned to 8 chars so every environment reports the same id
+// as the OTA release (MOBILE_OTA_BUILD_ID, `git rev-parse --short=8`).
 const sourceVersion =
-  process.env.SOURCE_VERSION ||
+  process.env.SOURCE_VERSION?.slice(0, 8) ||
   (() => {
     try {
-      return execSync('git rev-parse --short HEAD', {
+      return execSync('git rev-parse --short=8 HEAD', {
         stdio: ['ignore', 'pipe', 'ignore'],
       })
         .toString()

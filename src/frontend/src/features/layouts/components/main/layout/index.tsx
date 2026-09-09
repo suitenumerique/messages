@@ -8,6 +8,7 @@ import {
 } from "react-resizable-panels";
 import { DropdownMenuOption, LeftPanel, useResponsive } from "@gouvfr-lasuite/ui-kit";
 import { useControllableState } from "../hooks/useControllableState";
+import { useOtaUpdateToast } from "@/features/native/use-ota-update-toast";
 import { Toaster } from "@/features/ui/components/toaster";
 import { SkipLink } from "@/features/ui/components/skip-link";
 import clsx from "clsx";
@@ -53,6 +54,8 @@ export const AppLayout = ({
   });
 
   const { isDesktop } = useResponsive();
+  // This layout mounts the <Toaster/> the staged-update toast needs.
+  useOtaUpdateToast();
   const [isResizing, setIsResizing] = useState(false);
   const resizeTimeoutRef = useRef<number>(undefined);
   // Track if panel was open before drag started, to restore state after drag ends

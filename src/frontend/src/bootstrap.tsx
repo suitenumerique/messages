@@ -11,7 +11,11 @@ import { installThemeFavicons } from "@/features/providers/theme-favicons";
 import { initSentry } from "@/features/sentry";
 import { handle } from '@/features/utils/errors';
 import { hideKeyboardAccessoryBar } from "./features/native/keyboard";
-import { checkAndApplyOtaUpdate, notifyOtaAppReady } from "./features/native/ota";
+import {
+  checkAndStageOtaUpdate,
+  listenForOtaUpdatesOnResume,
+  notifyOtaAppReady,
+} from "./features/native/ota";
 import { listenForNativePushTaps } from "./features/native/push";
 
 // Tag the document on the Capacitor native app so the stylesheet can opt into
@@ -80,9 +84,13 @@ export const bootstrap = async () => {
     }
 
     const config = resolveConfig(response?.data);
-    // Fire-and-forget: a pending update reloads the WebView once downloaded;
-    // until then the current bundle renders normally.
-    void checkAndApplyOtaUpdate(config.MOBILE_OTA_MANIFEST_URL);
+    // Fire-and-forget: a new release is downloaded and *staged* in the
+    // background (never a mid-session reload) — the update toast then offers
+    // to apply it, and backgrounding the app applies it anyway. Foreground
+    // returns re-check on a throttle so long-lived sessions catch releases
+    // (and emergency rollbacks) too.
+    void checkAndStageOtaUpdate(config.MOBILE_OTA_MANIFEST_URL);
+    listenForOtaUpdatesOnResume(config.MOBILE_OTA_MANIFEST_URL);
     initSentry(config);
     initI18n(config);
     installThemeFavicons(config.THEME_CONFIG.theme);
