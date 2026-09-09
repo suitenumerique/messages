@@ -1,5 +1,5 @@
 import { Mailbox, TreeLabel, useLabelsList, useLabelsPartialUpdate } from "@/features/api/gen";
-import { Icon, IconSize, IconType, Spinner } from "@gouvfr-lasuite/ui-kit";
+import { IconType, Spinner } from "@gouvfr-lasuite/ui-kit";
 import { Button, useModal, Tooltip } from "@gouvfr-lasuite/cunningham-react";
 import { useTranslation } from "react-i18next";
 import { LabelModal, SubLabelCreation } from "./components/label-form-modal";
@@ -10,6 +10,8 @@ import { FoldProvider, useFold } from "@/features/providers/fold";
 import { useQueryClient } from "@tanstack/react-query";
 import { handle } from "@/features/utils/errors";
 import clsx from "clsx";
+import { Icon } from "@/features/ui/components/icon";
+import { Plus } from "@gouvfr-lasuite/ui-kit/icons";
 
 type MailboxLabelsProps = {
   mailbox: Mailbox;
@@ -101,7 +103,7 @@ export const MailboxLabelsBase = ({ mailbox }: MailboxLabelsProps) => {
             {areAllFolded !== undefined && (
             <Tooltip content={areAllFolded ? t('Expand all') : t('Collapse all')} placement="bottom">
               <Button
-                icon={<Icon type={IconType.FILLED} name={areAllFolded ? "unfold_more" : "unfold_less"} size={IconSize.LARGE} />}
+                icon={<Icon type={IconType.FILLED} name={areAllFolded ? "unfold" : "fold"} />}
                 color="brand"
                 variant="tertiary"
                 size="nano"
@@ -115,7 +117,7 @@ export const MailboxLabelsBase = ({ mailbox }: MailboxLabelsProps) => {
               canManageLabels && (
                 <Tooltip content={t('Create a Label')} placement="bottom">
                   <Button
-                    icon={<Icon type={IconType.FILLED} name="add" />}
+                    icon={<Icon icon={Plus} />}
                     variant="primary"
                     size="nano"
                     onClick={open}

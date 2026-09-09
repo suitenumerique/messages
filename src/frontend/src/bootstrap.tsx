@@ -10,6 +10,7 @@ import { initI18n } from "@/features/i18n/initI18n";
 import { installThemeFavicons } from "@/features/providers/theme-favicons";
 import { initSentry } from "@/features/sentry";
 import { handle } from '@/features/utils/errors';
+import { hideKeyboardAccessoryBar } from "./features/native/keyboard";
 import { checkAndApplyOtaUpdate, notifyOtaAppReady } from "./features/native/ota";
 import { listenForNativePushTaps } from "./features/native/push";
 
@@ -18,6 +19,10 @@ import { listenForNativePushTaps } from "./features/native/push";
 // component re-deriving the platform.
 if (isNativePlatform()) {
   document.documentElement.classList.add("native");
+
+  // The composer pins its own formatting toolbar above the keyboard; iOS's
+  // form accessory bar would stack under it, so hide it once and for all.
+  void hideKeyboardAccessoryBar();
 
   // Pinch-zooming the whole shell makes it feel like a website, not an app, so
   // lock the viewport scale — but only here: on the web the index.html viewport

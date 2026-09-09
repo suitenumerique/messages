@@ -1,3 +1,5 @@
+@use "../../../../../../styles/utils" as *;
+
 .thread-action-bar__container {
     display: flex;
     flex-direction: row;
@@ -9,12 +11,13 @@
     display: flex;
     flex-direction: row;
     align-items: center;
-    background: var(--c--contextuals--background--surface--primary);
     width: inherit;
-    border-radius: 4px;
-    box-shadow: 0 2px 5px 0 var(--c--contextuals--background--semantic--contextual--primary-hover);
     padding: var(--c--globals--spacings--3xs);
     gap: var(--c--globals--spacings--2xs);
+
+    // Same box as the other floating controls (mobile header, bottom bars):
+    // the bar hovers over the thread, so it reads as one surface.
+    @include control-surface;
 
     & > .c__separator--vertical.with-padding {
         margin-inline: var(--c--globals--spacings--3xs);

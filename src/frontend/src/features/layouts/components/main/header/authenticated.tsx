@@ -1,6 +1,6 @@
-import { DropdownMenu, HeaderProps, Icon, useResponsive, UserMenu, VerticalSeparator } from "@gouvfr-lasuite/ui-kit";
-import { Controls, GearRounded, Upload } from "@gouvfr-lasuite/ui-kit/icons";
-import { Button, Tooltip, useCunningham } from "@gouvfr-lasuite/cunningham-react";
+import { DropdownMenu, HeaderProps, useResponsive, UserMenu, VerticalSeparator } from "@gouvfr-lasuite/ui-kit";
+import { Controls, GearRounded, LeftPanel, Upload, XMark } from "@gouvfr-lasuite/ui-kit/icons";
+import { Button, Tooltip } from "@gouvfr-lasuite/cunningham-react";
 import { useMemo, useState } from "react";
 import { useTranslation } from "react-i18next";
 import { useNavigate } from "@tanstack/react-router";
@@ -21,6 +21,9 @@ import { useOpenImporter } from "@/features/layouts/components/mailbox-settings/
 import { MODAL_NOTIFICATIONS_ID } from "@/features/layouts/components/notifications-settings/modal-notifications";
 import { useModalStore } from "@/features/providers/modal-store";
 import { useConfig } from "@/features/providers/config";
+import { isNativePlatform } from "@/features/native/platform";
+import { Icon } from "@/features/ui/components/icon";
+import { useSearchQuery } from "@/features/forms/components/search-input/use-search-query";
 
 
 type AuthenticatedHeaderProps = HeaderProps & {
@@ -33,8 +36,17 @@ export const AuthenticatedHeader = ({
   isPanelOpen,
   hideSearch = false,
 }: AuthenticatedHeaderProps) => {
-  const { t } = useCunningham();
+  const { t } = useTranslation();
   const { isDesktop } = useResponsive();
+  const { isSearching } = useSearchQuery();
+  // The native app has no room for the search field in its single-row header:
+  // it exposes a trigger in the trailing slot that opens the search form
+  // full-screen, and the field itself is never mounted. Once a search is
+  // applied, the bottom bar's search summary takes over as the single entry
+  // point, so the trigger leaves the header.
+  const isNative = isNativePlatform();
+  const showSearchField = !hideSearch && !isNative;
+  const showSearchTrigger = !hideSearch && isNative && !isSearching;
 
   return (
     <div className="c__header">
@@ -43,24 +55,23 @@ export const AuthenticatedHeader = ({
           size="medium"
           onClick={onTogglePanel}
           aria-label={isPanelOpen ? t("Close the menu") : t("Open the menu")}
-          color="brand"
+          color="neutral"
           variant="tertiary"
-          icon={
-            <Icon name={isPanelOpen ? "close" : "menu"} />
-          }
+          icon={<Icon icon={isPanelOpen ? XMark : LeftPanel} />}
         />
       </div>
       <div className="c__header__left">
         {leftIcon}
       </div>
-      <div className="c__header__center">
-        {!hideSearch && <SearchInput />}
-      </div>
-      {isDesktop && (
-        <div className="c__header__right">
-          <HeaderRight />
+      {showSearchField && (
+        <div className="c__header__center">
+          <SearchInput />
         </div>
       )}
+      <div className="c__header__right">
+        {showSearchTrigger && <SearchInput compact />}
+        {isDesktop && <HeaderRight />}
+      </div>
     </div>
   );
 };
@@ -154,14 +165,14 @@ const ImportIndicator = () => {
   );
   const progress = withTotal.length
     ? Math.min(
-        99,
-        Math.round(
-          withTotal.reduce(
-            (sum, r) => sum + (r.progress ?? 0) * (r.total_messages ?? 0),
-            0,
-          ) / totalMessages,
-        ),
-      )
+      99,
+      Math.round(
+        withTotal.reduce(
+          (sum, r) => sum + (r.progress ?? 0) * (r.total_messages ?? 0),
+          0,
+        ) / totalMessages,
+      ),
+    )
     : null;
 
   return (
@@ -198,7 +209,7 @@ export const HeaderRight = () => {
         <SurveyButton iconOnly color="brand" variant="tertiary" />
         <ApplicationMenu />
         {isDesktop && <VerticalSeparator size="24px" withPadding={false} />}
-        <LagaufreButton />
+        {!isNativePlatform() && <LagaufreButton />}
       </div>
       <UserMenu
         user={user ? {
@@ -207,6 +218,7 @@ export const HeaderRight = () => {
         } : null}
         logout={logout}
         termOfServiceUrl={themeConfig.terms_of_service_url}
+        withMobileView={false}
         actions={
           <div className="user-menu__footer-action">
             <LanguagePicker size="small" compact />
@@ -222,7 +234,8 @@ const ApplicationMenu = () => {
   const { openModal } = useModalStore();
   const openImporter = useOpenImporter();
   const { selectedMailbox } = useMailboxContext();
-  const canAccessDomainAdmin = useAbility(Abilities.CAN_VIEW_DOMAIN_ADMIN);
+  const isMobile = isNativePlatform();
+  const canAccessDomainAdmin = useAbility(Abilities.CAN_VIEW_DOMAIN_ADMIN) && !isMobile;
   const canImportMessages = useAbility(Abilities.CAN_IMPORT_MESSAGES, selectedMailbox);
   const canManageMessageTemplates = useAbility(Abilities.CAN_MANAGE_MESSAGE_TEMPLATES, selectedMailbox);
   const isIntegrationsEnabled = useFeatureFlag(FEATURE_KEYS.MAILBOX_ADMIN_CHANNELS);
@@ -263,37 +276,37 @@ const ApplicationMenu = () => {
 
   return (
     <>
-    <DropdownMenu
-          isOpen={isDropdownOpen}
-          onOpenChange={setIsDropdownOpen}
-          options={[
-              ...(canOpenMailboxSettings ? [{
-                label: t("All settings"),
-                icon: <Controls size="medium"  />,
-                callback: () => openModal(MODAL_MAILBOX_SETTINGS_ID),
-                showSeparator: canAccessDomainAdmin && !canImportMessages
-              }] : []),
-              ...(canImportMessages ? [importMessageOption] : []),
-              ...(canManageNotifications ? [{
-                label: t("Notifications"),
-                icon: <Icon name="notifications" style={{ fontSize: 24 }} />,
-                callback: () => openModal(MODAL_NOTIFICATIONS_ID),
-                showSeparator: canAccessDomainAdmin,
-              }] : []),
-              ...(canAccessDomainAdmin ? [{
-                label: t("Domain admin"),
-                icon: <Icon name="domain" style={{ fontSize: 24 }} />,
-                callback: () => navigate({ to: "/domain" }),
-              }] : []),
-          ]}
+      <DropdownMenu
+        isOpen={isDropdownOpen}
+        onOpenChange={setIsDropdownOpen}
+        options={[
+          ...(canOpenMailboxSettings ? [{
+            label: t("All settings"),
+            icon: <Controls size="medium" />,
+            callback: () => openModal(MODAL_MAILBOX_SETTINGS_ID),
+            showSeparator: canAccessDomainAdmin && !canImportMessages
+          }] : []),
+          ...(canImportMessages ? [importMessageOption] : []),
+          ...(canManageNotifications ? [{
+            label: t("Notifications"),
+            icon: <Icon name="notifications" />,
+            callback: () => openModal(MODAL_NOTIFICATIONS_ID),
+            showSeparator: canAccessDomainAdmin,
+          }] : []),
+          ...(canAccessDomainAdmin ? [{
+            label: t("Domain admin"),
+            icon: <Icon name="domain" />,
+            callback: () => navigate({ to: "/domain" }),
+          }] : []),
+        ]}
       >
-      <Button
+        <Button
           onClick={() => setIsDropdownOpen(true)}
           icon={<GearRounded />}
           aria-label={t("More options")}
           color="brand"
           variant="tertiary"
-      />
+        />
       </DropdownMenu>
     </>
   )

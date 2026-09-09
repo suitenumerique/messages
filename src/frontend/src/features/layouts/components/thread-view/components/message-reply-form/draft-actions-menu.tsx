@@ -1,9 +1,11 @@
 import { useState } from "react";
 import { useTranslation } from "react-i18next";
 import { Button, Tooltip } from "@gouvfr-lasuite/cunningham-react";
-import { DropdownMenu, Icon, IconType } from "@gouvfr-lasuite/ui-kit";
+import { DropdownMenu } from "@gouvfr-lasuite/ui-kit";
 import { Message } from "@/features/api/gen";
 import useCopyDeepLink from "@/features/message/use-copy-deep-link";
+import { Icon } from "@/features/ui/components/icon";
+import { Link, MoreVertical, Trash } from "@gouvfr-lasuite/ui-kit/icons";
 
 type DraftActionsMenuProps = {
     message: Message;
@@ -24,12 +26,12 @@ const DraftActionsMenu = ({ message, onDelete }: DraftActionsMenuProps) => {
     const options = [
         {
             label: t('Copy link to message'),
-            icon: <Icon type={IconType.FILLED} name="link" />,
+            icon: <Icon icon={Link} />,
             callback: () => copyDeepLink({ messageId: message.id }),
         },
         ...(onDelete ? [{
             label: t('Delete draft'),
-            icon: <Icon type={IconType.FILLED} name="delete" />,
+            icon: <Icon icon={Trash} />,
             callback: onDelete,
             showSeparator: true,
         }] : []),
@@ -40,7 +42,7 @@ const DraftActionsMenu = ({ message, onDelete }: DraftActionsMenuProps) => {
             <Tooltip content={t('More options')} placement="left">
                 <Button
                     onClick={() => setIsOpen(true)}
-                    icon={<Icon type={IconType.FILLED} name="more_vert" />}
+                    icon={<Icon icon={MoreVertical} />}
                     color="brand"
                     variant="tertiary"
                     size="small"

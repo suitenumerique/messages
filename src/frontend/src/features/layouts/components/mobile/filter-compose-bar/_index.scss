@@ -1,0 +1,76 @@
+@use "../../../../../styles/utils" as *;
+
+// The quick filter hugs the left edge, the compose button the right one. In
+// between: nothing to catch a thumb by mistake, unless a search is applied —
+// its summary then fills the gap.
+.mobile-filter-compose-bar {
+  justify-content: space-between;
+
+  .thread-panel__filter-trigger {
+    display: inline-flex;
+    flex: 0 0 auto;
+
+    // The shared filter button is sized for a dense desktop toolbar: bring it
+    // up to the 40px touch box the compose button already uses.
+    .c__button {
+      width: 40px;
+      height: 40px;
+
+      @include control-surface;
+    }
+  }
+
+  // Primary action: keeps its brand background, borrows the shared shape.
+  &__compose.c__button {
+    flex: 0 0 auto;
+
+    @include control-surface;
+  }
+
+  // Search summary: one floating surface for the tappable preview and its
+  // reset button, sized like the icon-only controls beside it.
+  &__search {
+    @include control-surface;
+
+    display: flex;
+    align-items: center;
+    flex: 1 1 auto;
+    min-width: 0;
+    height: 40px;
+    padding-right: var(--c--globals--spacings--4xs);
+  }
+
+  &__search-summary {
+    display: flex;
+    align-items: center;
+    flex: 1 1 auto;
+    min-width: 0;
+    height: 100%;
+    gap: var(--c--globals--spacings--2xs);
+    padding-inline: var(--c--globals--spacings--xs) var(--c--globals--spacings--3xs);
+    border: none;
+    background: none;
+    color: inherit;
+    font: inherit;
+    text-align: left;
+
+    & > svg {
+      flex: 0 0 auto;
+      color: var(--c--contextuals--content--semantic--neutral--tertiary);
+    }
+  }
+
+  &__search-query {
+    flex: 1 1 auto;
+    min-width: 0;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+    font-size: var(--c--globals--font--sizes--sm);
+    font-weight: 500;
+  }
+
+  &__search-reset.c__button {
+    flex: 0 0 auto;
+  }
+}

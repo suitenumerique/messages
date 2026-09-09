@@ -301,6 +301,17 @@
     display: flex;
     flex-direction: row;
     gap: var(--c--globals--spacings--base);
+    max-width: 100%;
+    overflow-x: auto;
+    scroll-snap-type: x mandatory;
+    // Leave room for the buttons' focus ring, which overflow-x would otherwise clip.
+    padding: var(--c--globals--spacings--3xs);
+    margin: calc(var(--c--globals--spacings--3xs) * -1);
+
+    > * {
+        flex-shrink: 0;
+        scroll-snap-align: start;
+    }
 }
 
 .thread-message__loading {

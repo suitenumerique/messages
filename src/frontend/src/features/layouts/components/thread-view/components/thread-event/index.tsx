@@ -1,4 +1,4 @@
-import React, { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import React, { useEffect, useMemo, useRef, useState } from "react";
 import { TextHelper } from "@/features/utils/text-helper";
 import { DateHelper } from "@/features/utils/date-helper";
 import { Message, ThreadEvent as ThreadEventType, ThreadEventTypeEnum, ThreadEventAssigneesData, ThreadEventIMData } from "@/features/api/gen/models";
@@ -7,11 +7,14 @@ import { useTranslation } from "react-i18next";
 import { useAuth } from "@/features/auth";
 import { useMailboxContext, TimelineItem } from "@/features/providers/mailbox";
 import { Badge } from "@/features/ui/components/badge";
-import { AVATAR_COLORS, Icon, IconSize, IconType, UserAvatar } from "@gouvfr-lasuite/ui-kit";
+import { AVATAR_COLORS, IconSize, IconType, UserAvatar } from "@gouvfr-lasuite/ui-kit";
 import { Button, useModals } from "@gouvfr-lasuite/cunningham-react";
 import useCopyDeepLink from "@/features/message/use-copy-deep-link";
+import { useLongPress } from "@/hooks/use-long-press";
 import clsx from "clsx";
 import { buildAssignmentMessage } from "./assignment-message";
+import { Icon } from "@/features/ui/components/icon";
+import { Edit, Link, Trash } from "@gouvfr-lasuite/ui-kit/icons";
 
 const TWO_MINUTES_MS = 2 * 60 * 1000;
 
@@ -160,27 +163,11 @@ export const ThreadEvent = ({ event, isCondensed = false, onEdit, onDelete, ment
 
     const deleteEvent = useThreadsEventsDestroy();
     const [showActions, setShowActions] = useState(false);
-    const longPressTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
     const bubbleRef = useRef<HTMLDivElement>(null);
 
-    const [pressing, setPressing] = useState(false);
-
-    const handleTouchStart = useCallback(() => {
-        setPressing(true);
-        longPressTimer.current = setTimeout(() => {
-            setPressing(false);
-            setShowActions(true);
-            navigator.vibrate?.(50);
-        }, 500);
-    }, []);
-
-    const cancelLongPress = useCallback(() => {
-        setPressing(false);
-        if (longPressTimer.current) {
-            clearTimeout(longPressTimer.current);
-            longPressTimer.current = null;
-        }
-    }, []);
+    const { handlers: longPressHandlers, pressing } = useLongPress(
+        () => setShowActions(true),
+    );
 
     useEffect(() => {
         if (!showActions) return;
@@ -294,10 +281,7 @@ export const ThreadEvent = ({ event, isCondensed = false, onEdit, onDelete, ment
                     )}
                     <div
                         className={`thread-event__content${pressing ? " thread-event__content--pressing" : ""}`}
-                        onTouchStart={canDelete ? handleTouchStart : undefined}
-                        onTouchEnd={canDelete ? cancelLongPress : undefined}
-                        onTouchMove={canDelete ? cancelLongPress : undefined}
-                        onTouchCancel={canDelete ? cancelLongPress : undefined}
+                        {...(canDelete ? longPressHandlers : {})}
                     >
                         {TextHelper.renderLinks(
                           TextHelper.renderMentions(
@@ -315,7 +299,7 @@ export const ThreadEvent = ({ event, isCondensed = false, onEdit, onDelete, ment
                             size="nano"
                             variant="tertiary"
                             color="brand"
-                            icon={<Icon type={IconType.OUTLINED} name="link" aria-hidden="true" />}
+                            icon={<Icon icon={Link} />} 
                             aria-label={t("Copy link to comment")}
                             title={t("Copy link to comment")}
                             onClick={handleCopyLink}
@@ -325,7 +309,7 @@ export const ThreadEvent = ({ event, isCondensed = false, onEdit, onDelete, ment
                                 size="nano"
                                 variant="tertiary"
                                 color="brand"
-                                icon={<Icon type={IconType.OUTLINED} name="edit" aria-hidden="true" />}
+                                icon={<Icon icon={Edit} />} 
                                 aria-label={t("Edit")}
                                 title={t("Edit")}
                                 onClick={() => {
@@ -339,7 +323,7 @@ export const ThreadEvent = ({ event, isCondensed = false, onEdit, onDelete, ment
                                 size="nano"
                                 variant="tertiary"
                                 color="brand"
-                                icon={<Icon type={IconType.OUTLINED} name="delete" aria-hidden="true" />}
+                                icon={<Icon icon={Trash} />}
                                 aria-label={t("Delete")}
                                 title={t("Delete")}
                                 onClick={() => {

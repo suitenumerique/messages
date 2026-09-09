@@ -1,5 +1,19 @@
+// ui-kit renders the mobile drawer as a position:fixed overlay sized off the
+// viewport (calc(100dvh - 52px)), which forced us to know the header height.
+// We re-anchor it as an absolute overlay filling .c__main-layout__content —
+// that area already starts below the in-flow header, so no header offset is
+// needed. Slides in from the left; ui-kit's `.open` resets the transform.
 .c__left-panel__mobile {
-    height: calc(100% - var(--header-height));
+    position: absolute;
+    top: 0;
+    bottom: 0;
+    left: 0;
+    width: 100%;
+    height: auto;
+    transform: translateX(-100%);
+    // Sit above the floating bottom bars (z-index 1000) so the open drawer
+    // covers the search/compose bar and the thread toolbar.
+    z-index: 1001;
 }
 
 .left-panel {

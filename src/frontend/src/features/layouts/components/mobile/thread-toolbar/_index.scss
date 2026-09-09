@@ -1,0 +1,73 @@
+@use "../../../../../styles/utils" as *;
+
+.mobile-thread-toolbar {
+  // Thread management on the left (thumb side), quick-reply CTA on the right.
+  justify-content: space-between;
+  // Sit a little lower than the other bottom bar: trim the extra bottom padding
+  // so the toolbar hugs the screen edge (still clearing the home indicator).
+  padding-bottom: calc(var(--c--globals--spacings--3xs) + var(--safe-area-inset-bottom));
+
+  // Single shared box for the management actions: the buttons inside stay
+  // flat, the group carries the floating-control surface.
+  &__group {
+    @include control-surface;
+
+    display: flex;
+    align-items: center;
+    gap: var(--c--globals--spacings--3xs);
+    padding: var(--c--globals--spacings--3xs);
+  }
+
+  .c__button {
+    flex: 0 0 auto;
+    width: 40px;
+    height: 40px;
+  }
+
+  &__group .c__button {
+    // The group's padding already provides the breathing room; keep the
+    // buttons compact so the box stays a single visual unit.
+    width: 36px;
+    height: 36px;
+  }
+
+  // Icon-only CTA carrying its own brand background: only the floating
+  // shape applies.
+  &__reply.c__button {
+    @include control-shape;
+  }
+}
+
+// Same overlay + fixed-bottom wrapper pattern as the labels widget drawer:
+// the Drawer component renders in place, the wrapper pins it to the viewport
+// bottom above the scrim.
+.mobile-thread-toolbar__drawer-overlay {
+  position: fixed;
+  inset: 0;
+  z-index: 1000;
+  background-color: rgb(0 0 0 / 30%);
+}
+
+.mobile-thread-toolbar__drawer {
+  position: fixed;
+  inset: auto 0 0 0;
+  z-index: 10000;
+
+  .drawer {
+    max-height: min(80dvh, 560px);
+  }
+
+  .drawer__body {
+    display: flex;
+    flex-direction: column;
+    padding-bottom: var(--safe-area-inset-bottom);
+  }
+}
+
+.mobile-thread-toolbar__drawer-separator {
+  align-self: stretch;
+  height: 1px;
+  margin: var(--c--globals--spacings--3xs) var(--c--globals--spacings--2xs);
+  border: none;
+  background-color: var(--c--contextuals--border--surface--primary);
+}

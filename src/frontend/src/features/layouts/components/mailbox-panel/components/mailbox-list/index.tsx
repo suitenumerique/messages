@@ -6,7 +6,7 @@ import { useUrlSearchParams } from "@/hooks/use-url-search-params"
 import { useMemo, useState } from "react"
 import { useLayoutContext } from "@/features/layouts/components/layout-context"
 import { useTranslation } from "react-i18next"
-import { Icon, IconSize, IconType } from "@gouvfr-lasuite/ui-kit"
+import { IconSize, IconType } from "@gouvfr-lasuite/ui-kit"
 import i18n from "@/features/i18n/initI18n";
 import useArchive from "@/features/message/use-archive";
 import useTrash from "@/features/message/use-trash";
@@ -16,6 +16,8 @@ import ViewHelper from "@/features/utils/view-helper";
 import { addToast, ToasterItem } from "@/features/ui/components/toaster";
 import { Tooltip } from "@gouvfr-lasuite/cunningham-react"
 import { EXPANDED_FOLDERS_KEY } from "@/features/config/constants"
+import { Archive, ChevronDown, Edit, Restore, Star, Trash, Error as ErrorIcon } from "@gouvfr-lasuite/ui-kit/icons"
+import { Icon, IconProps } from "@/features/ui/components/icon"
 
 type FolderVisibilityContext = {
     mailbox: Mailbox;
@@ -29,7 +31,7 @@ type FolderVisibilityRule = (ctx: FolderVisibilityContext) => boolean;
 type Folder = {
     id: string;
     name: string;
-    icon: string;
+    icon: IconProps;
     filter?: Record<string, string>;
     showStats: boolean;
     searchable?: boolean;
@@ -64,7 +66,7 @@ export const MAILBOX_FOLDERS = () => [
     {
         id: "inbox",
         name: i18n.t("Inbox"),
-        icon: "inbox",
+        icon: { name: "inbox", type: IconType.OUTLINED },
         searchable: false,
         showStats: true,
         filter: {
@@ -74,7 +76,7 @@ export const MAILBOX_FOLDERS = () => [
             {
                 id: "unread",
                 name: i18n.t("Unread"),
-                icon: "mark_email_unread",
+                icon: { name: "mail-unread" },
                 searchable: false,
                 showStats: true,
                 filter: {
@@ -85,7 +87,7 @@ export const MAILBOX_FOLDERS = () => [
             {
                 id: "starred",
                 name: i18n.t("Starred"),
-                icon: "star",
+                icon: { icon: Star },
                 searchable: false,
                 showStats: true,
                 filter: {
@@ -96,7 +98,7 @@ export const MAILBOX_FOLDERS = () => [
             {
                 id: "mentioned",
                 name: i18n.t("Mentioned"),
-                icon: "alternate_email",
+                icon: { name: "at-sign" },
                 searchable: false,
                 showStats: true,
                 isVisible: visibleIfSharedOrHasMention,
@@ -108,7 +110,7 @@ export const MAILBOX_FOLDERS = () => [
             {
                 id: "assigned_to_me",
                 name: i18n.t("Assigned to me"),
-                icon: "person",
+                icon: { name: "assign" },
                 searchable: false,
                 showStats: true,
                 isVisible: visibleIfSharedOrNonEmpty,
@@ -120,7 +122,7 @@ export const MAILBOX_FOLDERS = () => [
             {
                 id: "unassigned",
                 name: i18n.t("Unassigned"),
-                icon: "person_off",
+                icon: { name: "person_off" },
                 searchable: false,
                 showStats: true,
                 isVisible: visibleIfSharedMailbox,
@@ -134,7 +136,7 @@ export const MAILBOX_FOLDERS = () => [
     {
         id: "drafts",
         name: i18n.t("Drafts"),
-        icon: "mode_edit",
+        icon: { icon: Edit },
         searchable: true,
         showStats: true,
         filter: {
@@ -144,7 +146,7 @@ export const MAILBOX_FOLDERS = () => [
     {
         id: "outbox",
         name: i18n.t("Outbox"),
-        icon: "schedule_send",
+        icon: { name: "schedule_send", type: IconType.OUTLINED },
         searchable: false,
         isVisible: visibleIfNonEmpty,
         showStats: true,
@@ -156,7 +158,7 @@ export const MAILBOX_FOLDERS = () => [
     {
         id: "sent",
         name: i18n.t("Sent"),
-        icon: "outbox",
+        icon: { name: "outbox", type: IconType.OUTLINED },
         searchable: true,
         showStats: false,
         filter: {
@@ -167,7 +169,7 @@ export const MAILBOX_FOLDERS = () => [
     {
         id: "archives",
         name: i18n.t("Archives"),
-        icon: "inventory_2",
+        icon: { icon: Archive },
         searchable: true,
         showStats: true,
         filter: {
@@ -177,7 +179,7 @@ export const MAILBOX_FOLDERS = () => [
     {
         id: "spam",
         name: i18n.t("Spam"),
-        icon: "report",
+        icon: { icon: ErrorIcon },
         searchable: true,
         showStats: true,
         filter: {
@@ -187,7 +189,7 @@ export const MAILBOX_FOLDERS = () => [
     {
         id: "trash",
         name: i18n.t("Trash"),
-        icon: "delete",
+        icon: { icon: Trash },
         searchable: true,
         showStats: false,
         filter: {
@@ -205,7 +207,7 @@ export const MAILBOX_FOLDERS = () => [
 export const ALL_MESSAGES_FOLDER = () => ({
     id: "all_messages" as const,
     name: i18n.t("All messages"),
-    icon: "mark_as_unread",
+    icon:  { name: "mark_as_unread", type: IconType.OUTLINED },
     showStats: true,
     filter: {
         has_messages: "1",
@@ -461,7 +463,7 @@ const FolderItem = ({ folder, isChild, hasChildren, isExpanded, onToggleExpand, 
                                         type="info"
                                         actions={[{ label: t('Undo'), onClick: () => markAsArchived({ threadIds }) }]}
                                     >
-                                        <Icon name="unarchive" type={IconType.OUTLINED} />
+                                        <Icon name="inbox" />
                                         <span>{t('{{count}} threads have been unarchived.', { count: threadIds.length, defaultValue_one: 'The thread has been unarchived.' })}</span>
                                     </ToasterItem>
                                 );
@@ -476,7 +478,7 @@ const FolderItem = ({ folder, isChild, hasChildren, isExpanded, onToggleExpand, 
                                         type="info"
                                         actions={[{ label: t('Undo'), onClick: () => markAsSpam({ threadIds }) }]}
                                     >
-                                        <Icon name="report_off" type={IconType.OUTLINED} />
+                                        <Icon name="error-off" />
                                         <span>{t('Spam report removed from {{count}} threads.', { count: threadIds.length, defaultValue_one: 'Spam report removed from the thread.' })}</span>
                                     </ToasterItem>
                                 );
@@ -491,7 +493,7 @@ const FolderItem = ({ folder, isChild, hasChildren, isExpanded, onToggleExpand, 
                                         type="info"
                                         actions={[{ label: t('Undo'), onClick: () => markAsTrashed({ threadIds }) }]}
                                     >
-                                        <Icon name="restore_from_trash" type={IconType.OUTLINED} />
+                                        <Icon icon={Restore} />
                                         <span>{t('{{count}} threads have been restored.', { count: threadIds.length, defaultValue_one: 'The thread has been restored.' })}</span>
                                     </ToasterItem>
                                 );
@@ -547,7 +549,7 @@ const FolderItem = ({ folder, isChild, hasChildren, isExpanded, onToggleExpand, 
             onDrop={isDroppable ? handleDrop : undefined}
         >
             <p className="mailbox__item-label">
-                <Icon name={folder.icon} type={IconType.OUTLINED} aria-hidden="true" size={IconSize.SMALL} />
+                <Icon {...folder.icon} size={IconSize.SMALL} />
                 {t(folder.name)}
             </p>
             <div className="mailbox__item__metadata">
@@ -578,7 +580,7 @@ const FolderItem = ({ folder, isChild, hasChildren, isExpanded, onToggleExpand, 
                 aria-controls={childrenContainerId}
                 aria-label={chevronLabel}
             >
-                <Icon name="expand_more" type={IconType.OUTLINED} aria-hidden="true" />
+                <Icon icon={ChevronDown} />
             </button>
             {link}
         </div>

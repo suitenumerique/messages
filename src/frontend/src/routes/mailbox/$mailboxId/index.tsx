@@ -6,6 +6,7 @@ import { useTranslation } from "react-i18next";
 import { Panel, Group, Separator, useDefaultLayout } from "react-resizable-panels";
 
 import { ThreadPanel } from "@/features/layouts/components/thread-panel";
+import { MobileFilterComposeBar } from "@/features/layouts/components/mobile/filter-compose-bar";
 import { ThreadSelectionPlaceholder } from "@/features/layouts/components/thread-selection-placeholder";
 import { useThreadSelection } from "@/features/providers/thread-selection";
 import { useMailboxContext } from "@/features/providers/mailbox";
@@ -43,44 +44,50 @@ const Mailbox = () => {
 
   if (emptyMailbox) {
     return (
-      <div className="thread-view thread-view--empty" style={{ top: 0 }}>
-        <div>
-          <img src="/images/svg/read-mail.svg" alt="" width={60} height={60} />
-          <p>{t('No threads')}</p>
-          {showImportButton && (
-            <Button onClick={openImporter}>{t('Import messages')}</Button>
-          )}
+      <>
+        <div className="thread-view thread-view--empty" style={{ top: 0 }}>
+          <div>
+            <img src="/images/svg/read-mail.svg" alt="" width={60} height={60} />
+            <p>{t('No threads')}</p>
+            {showImportButton && (
+              <Button onClick={openImporter}>{t('Import messages')}</Button>
+            )}
+          </div>
+          <MobileFilterComposeBar />
         </div>
-      </div>
+      </>
     );
   }
 
-  return (
-    <Group defaultLayout={defaultLayout} onLayoutChange={onLayoutChange} orientation="horizontal" className="threads__container">
-      <Panel id={showThreadView ? "panel-thread-list" : "panel-thread-list-single"} className="thread-list-panel" defaultSize="35%" minSize="20%" maxSize="50%">
-        <ThreadPanel />
-      </Panel>
-      {showThreadView && (
+        return (
         <>
-          <Separator className="panel__resize-handle" />
-          <Panel id="panel-thread-view" className="thread-view-panel">
-            {selectedThreadIds.size > 0 ? (
-              <ThreadSelectionPlaceholder />
-            ) : (
-              <div className="thread-view thread-view--empty">
-                <div>
-                  <img src="/images/svg/read-mail.svg" alt="" width={60} height={60} />
-                  <p>{t('Select a thread')}</p>
-                </div>
-              </div>
+          <Group defaultLayout={defaultLayout} onLayoutChange={onLayoutChange} orientation="horizontal" className="threads__container">
+            <Panel id={showThreadView ? "panel-thread-list" : "panel-thread-list-single"} className="thread-list-panel" defaultSize="35%" minSize="20%" maxSize="50%">
+              <ThreadPanel />
+            </Panel>
+            {showThreadView && (
+              <>
+                <Separator className="panel__resize-handle" />
+                <Panel id="panel-thread-view" className="thread-view-panel">
+                  {selectedThreadIds.size > 0 ? (
+                    <ThreadSelectionPlaceholder />
+                  ) : (
+                    <div className="thread-view thread-view--empty">
+                      <div>
+                        <img src="/images/svg/read-mail.svg" alt="" width={60} height={60} />
+                        <p>{t('Select a thread')}</p>
+                      </div>
+                    </div>
+                  )}
+                </Panel>
+              </>
             )}
-          </Panel>
+          </Group>
+          <MobileFilterComposeBar />
         </>
-      )}
-    </Group>
-  );
+        );
 };
 
-export const Route = createFileRoute("/mailbox/$mailboxId/")({
-  component: Mailbox,
+        export const Route = createFileRoute("/mailbox/$mailboxId/")({
+          component: Mailbox,
 });

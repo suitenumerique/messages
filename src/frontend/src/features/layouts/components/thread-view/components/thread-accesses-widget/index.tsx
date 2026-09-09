@@ -31,6 +31,12 @@ export type ThreadAccessesWidgetHandle = {
 
 type ThreadAccessesWidgetProps = {
     accesses: readonly ThreadAccessDetail[];
+    /**
+     * Render only the ShareModal, without the "members" trigger button.
+     * Used on mobile where the modal is opened through the `open()` handle
+     * (more-options drawer, assignees widget) instead of a dedicated button.
+     */
+    hideTrigger?: boolean;
 };
 
 /**
@@ -55,7 +61,7 @@ type EnrichedAccess = ThreadAccessDetail & {
  * returning a ReactNode for the per-mailbox user list).
  */
 export const ThreadAccessesWidget = forwardRef<ThreadAccessesWidgetHandle, ThreadAccessesWidgetProps>(
-    function ThreadAccessesWidget({ accesses }, ref) {
+    function ThreadAccessesWidget({ accesses, hideTrigger = false }, ref) {
     const { t } = useTranslation();
     const [isShareModalOpen, setIsShareModalOpen] = useState(false);
     const [searchQuery, setSearchQuery] = useState("");
@@ -318,18 +324,20 @@ export const ThreadAccessesWidget = forwardRef<ThreadAccessesWidgetHandle, Threa
 
     return (
         <>
-            <Tooltip content={t('See members of this thread ({{count}} members)', { count: accesses.length })}>
-                <Button
-                    variant="tertiary"
-                    size="nano"
-                    aria-label={t('See members of this thread ({{count}} members)', { count: accesses.length })}
-                    className="thread-accesses-widget"
-                    onClick={() => setIsShareModalOpen(true)}
-                    icon={<Icon name="group" type={IconType.FILLED} />}
-                >
-                    {accesses.length}
-                </Button>
-            </Tooltip>
+            {!hideTrigger && (
+                <Tooltip content={t('See members of this thread ({{count}} members)', { count: accesses.length })}>
+                    <Button
+                        variant="tertiary"
+                        size="nano"
+                        aria-label={t('See members of this thread ({{count}} members)', { count: accesses.length })}
+                        className="thread-accesses-widget"
+                        onClick={() => setIsShareModalOpen(true)}
+                        icon={<Icon name="group" type={IconType.FILLED} />}
+                    >
+                        {accesses.length}
+                    </Button>
+                </Tooltip>
+            )}
             <ShareModal<MailboxLight, MailboxLight, EnrichedAccess>
                 modalTitle={isAssignmentContext ? t('Share and assign the thread') : t('Share the thread')}
                 isOpen={isShareModalOpen}

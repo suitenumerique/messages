@@ -1,5 +1,5 @@
 import { Modal, ModalSize, Button } from "@gouvfr-lasuite/cunningham-react";
-import { Icon, IconType, IconSize } from "@gouvfr-lasuite/ui-kit";
+import { Icon, IconType, IconSize, useResponsive } from "@gouvfr-lasuite/ui-kit";
 import { ArrowLeft } from "@gouvfr-lasuite/ui-kit/icons";
 import { useTranslation } from "react-i18next";
 import { useState, useEffect } from "react";
@@ -104,6 +104,7 @@ export const ModalComposeIntegration = ({
     channel: initialChannel,
     onSuccess,
 }: ModalComposeIntegrationProps) => {
+    const { isMobile } = useResponsive();
     const { t } = useTranslation();
     const config = useConfig();
     const [currentChannel, setCurrentChannel] = useState<Channel | undefined>(initialChannel);
@@ -176,7 +177,7 @@ export const ModalComposeIntegration = ({
             isOpen={isOpen}
             onClose={onClose}
             title={getTitle()}
-            size={ModalSize.LARGE}
+            size={isMobile ? ModalSize.FULL : ModalSize.LARGE}
         >
             <div className="modal-compose-integration">
                 {viewState === "select_type" && (

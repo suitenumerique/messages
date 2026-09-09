@@ -1,4 +1,4 @@
-import { Icon, IconSize, Spinner } from "@gouvfr-lasuite/ui-kit";
+import { IconSize, Spinner } from "@gouvfr-lasuite/ui-kit";
 import { Button, Checkbox, Column, DataGrid, useModal, useModals } from "@gouvfr-lasuite/cunningham-react";
 import { useTranslation } from "react-i18next";
 import { useState } from "react";
@@ -7,6 +7,8 @@ import { MailDomainAdmin, ReadMessageTemplate, MessageTemplateTypeChoices, useMa
 import { Banner } from "@/features/ui/components/banner";
 import { addToast, ToasterItem } from "@/features/ui/components/toaster";
 import { ModalComposeSignature } from "../modal-compose-signature";
+import { Trash } from "@gouvfr-lasuite/ui-kit/icons";
+import { Icon } from "@/features/ui/components/icon";
 
 type SignatureDataGridProps = {
     domain: MailDomainAdmin;
@@ -186,7 +188,7 @@ export const SignatureDataGrid = ({ domain }: SignatureDataGridProps) => {
                     <Button
                         color="error"
                         size="small"
-                        icon={isDeleting ? <Spinner size="sm" /> : <Icon name="delete" size={IconSize.SMALL} />}
+                        icon={isDeleting ? <Spinner size="sm" /> : <Icon icon={Trash} size={IconSize.SMALL} />}
                         onClick={() => handleDeleteRow(row)}
                         disabled={isDeleting}
                         aria-label={t("Delete")}

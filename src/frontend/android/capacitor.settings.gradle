@@ -14,6 +14,9 @@ project(':capacitor-device').projectDir = new File('../node_modules/.store/@capa
 include ':capacitor-filesystem'
 project(':capacitor-filesystem').projectDir = new File('../node_modules/.store/@capacitor/filesystem@8.1.2-8AGa1F8-qQiUj9CvPVuBVA/node_modules/@capacitor/filesystem/android')
 
+include ':capacitor-keyboard'
+project(':capacitor-keyboard').projectDir = new File('../node_modules/.store/@capacitor/keyboard@8.0.5-XJSuw5u2HZI5u2Cx0dPm6Q/node_modules/@capacitor/keyboard/android')
+
 include ':capacitor-push-notifications'
 project(':capacitor-push-notifications').projectDir = new File('../node_modules/.store/@capacitor/push-notifications@8.1.2-zTQz8cJkWcz-3GLwqDPGig/node_modules/@capacitor/push-notifications/android')
 

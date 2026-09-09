@@ -44,7 +44,7 @@ describe("nativeFetch", () => {
     });
   });
 
-  it("flattens FormData bodies to the plugin entry list and drops Content-Type", async () => {
+  it("flattens FormData bodies to the plugin entry list and announces a boundary-less multipart Content-Type", async () => {
     const formData = new FormData();
     formData.append("name", "report");
     formData.append(
@@ -54,14 +54,17 @@ describe("nativeFetch", () => {
 
     await nativeFetch("http://api.test/blob/", {
       method: "POST",
-      headers: { "content-type": "multipart/form-data" },
+      headers: { "content-type": "multipart/form-data; boundary=stale" },
       body: formData,
     });
 
     expect(http.request).toHaveBeenCalledWith({
       url: "http://api.test/blob/",
       method: "POST",
-      headers: {},
+      // Android sends no body at all without a Content-Type, and both
+      // platforms would reuse a caller boundary verbatim: announce multipart,
+      // boundary-less, so the native layer generates its own.
+      headers: { "content-type": "multipart/form-data" },
       data: [
         { key: "name", value: "report", type: "string" },
         {

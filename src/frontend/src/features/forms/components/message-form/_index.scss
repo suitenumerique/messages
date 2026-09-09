@@ -14,6 +14,72 @@
     align-items: flex-start;
 }
 
+// Compact variant, designed for small surfaces (floating compose window):
+// dense fields, no permanent helper texts, the composer fills the remaining
+// height and attachments are driven from the footer toolbar.
+.message-form--compact {
+    position: relative;
+    gap: var(--c--globals--spacings--2xs);
+    height: 100%;
+    min-height: 0;
+
+    .c__input__wrapper {
+        height: 2.5rem;
+    }
+
+    .c__combobox .c__select__wrapper,
+    .c__select__wrapper {
+        --c--components--forms-select--height: 2.5rem;
+        min-height: 2.5rem;
+    }
+
+    // Only error messages remain in field footers; tighten them.
+    .c__field__footer {
+        padding-top: 0;
+        padding-left: var(--c--globals--spacings--2xs);
+    }
+
+    .form-field-row--composer {
+        flex: 1 1 auto;
+        min-height: 0;
+        overflow-y: auto;
+        // Override the flex-start of .form-field-row so the editor stretches
+        // to fill the window height while still growing with long content.
+        align-items: stretch;
+
+        .composer-field {
+            display: flex;
+            flex-direction: column;
+            width: 100%;
+            min-height: 100%;
+        }
+
+        .composer-field-input {
+            --min-height: 12rem;
+            flex: 1;
+        }
+    }
+
+    .attachment-uploader__bucket {
+        margin-top: 0;
+    }
+
+    .form-footer {
+        align-items: center;
+        gap: var(--c--globals--spacings--2xs);
+    }
+
+    .form-footer__save-time {
+        display: inline-flex;
+        align-items: center;
+        gap: var(--c--globals--spacings--2xs);
+        margin-left: auto;
+        font-size: var(--c--globals--font--sizes--xs);
+        color: var(--c--contextuals--content--semantic--neutral--secondary);
+        text-align: right;
+    }
+}
+
 .form-field-options {
     display: flex;
     flex-direction: row;

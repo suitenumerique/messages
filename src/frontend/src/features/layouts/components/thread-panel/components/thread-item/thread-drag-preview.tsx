@@ -2,6 +2,7 @@ import clsx from "clsx";
 import { useEffect, useRef } from "react";
 import { useTranslation } from "react-i18next";
 import { useLayoutDragContext } from "@/features/layouts/components/layout-context";
+import { isNativePlatform } from "@/features/native/platform";
 
 type ThreadDragPreviewProps = {
     count: number;
@@ -19,6 +20,7 @@ export const ThreadDragPreview = ({ count, exiting, onExitEnd }: ThreadDragPrevi
     const { t } = useTranslation();
     const { dragAction } = useLayoutDragContext();
     const ref = useRef<HTMLSpanElement>(null);
+    const isNative = isNativePlatform();
 
     useEffect(() => {
         // Follow the cursor and mark the whole document as a valid drop target
@@ -28,8 +30,16 @@ export const ThreadDragPreview = ({ count, exiting, onExitEnd }: ThreadDragPrevi
         const handler = (e: DragEvent) => {
             e.preventDefault();
             if (ref.current) {
-                ref.current.style.left = `${e.clientX + 7}px`;
-                ref.current.style.top = `${e.clientY - 7}px`;
+                if (isNative) {
+                    // Above the finger centered
+                    ref.current.style.left = `${e.clientX - ref.current.offsetWidth / 2}px`;
+                    ref.current.style.top = `${e.clientY - ref.current.offsetHeight * 1.5}px`;
+                }
+                else {
+                    // Right of the cursor
+                    ref.current.style.left = `${e.clientX + 7}px`;
+                    ref.current.style.top = `${e.clientY - 7}px`;
+                }
             }
         };
         document.addEventListener('dragover', handler, true);

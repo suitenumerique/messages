@@ -4,6 +4,7 @@ import { Field, FieldProps } from "@gouvfr-lasuite/cunningham-react";
 import clsx from "clsx";
 import { PropsWithChildren } from "react";
 
+import { isNativePlatform } from "@/features/native/platform";
 import { CustomSideMenuController } from "../custom-side-menu";
 import { CustomSlashMenu } from "../custom-slash-menu";
 
@@ -22,6 +23,11 @@ export const BlockNoteViewField = <BSchema extends BlockSchema, ISchema extends 
                 sideMenu={false}
                 slashMenu={false}
                 formattingToolbar={false}
+                // The default link toolbar is a hover popover; on touch it
+                // only shows up once the link is tapped, and the tap itself
+                // navigates. The mobile toolbar replaces it with its own
+                // link editor, opened by tapping the link (see MobileToolbar).
+                linkToolbar={!isNativePlatform()}
                 {...composerProps}
                 className={clsx(composerProps.className, "composer-field-input")}
                 editable={!disabled}

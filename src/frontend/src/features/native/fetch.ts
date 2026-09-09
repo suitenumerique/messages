@@ -89,9 +89,12 @@ export const nativeFetch = async (
   if (body instanceof FormData) {
     data = await convertFormData(body);
     dataType = "formData";
-    // The native layer builds the multipart body and its boundary itself; a
-    // leftover Content-Type would desynchronize the two.
-    delete headers["content-type"];
+    // The native layers build the multipart body and generate their own
+    // boundary (rewriting this header with it), but the header must still
+    // announce multipart without one: Android's setRequestBody writes no body
+    // at all when Content-Type is absent, and a stale boundary from a caller
+    // would be reused verbatim while the entries were re-encoded.
+    headers["content-type"] = "multipart/form-data";
   } else if (typeof body === "string") {
     data = body;
   } else if (body !== undefined && body !== null) {

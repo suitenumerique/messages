@@ -1,3 +1,40 @@
+@use "../../../../../../styles/utils" as *;
+
+// The kit renders the preview inside a Cunningham fullscreen modal (100vh,
+// border-box) that globals.scss insets by the device safe area (padding
+// top/bottom). Two adjustments for the preview:
+// - the top inset is absorbed by the kit's header instead of the modal
+//   padding, so the header runs edge-to-edge under the status bar like the
+//   app's own header does (no backdrop strip above it);
+// - the kit's container is hardcoded to 100dvh, so it overflowed the padded
+//   box and the bottom of the viewer (zoom controls, sidebar end) got clipped.
+//   Size it from the space actually left inside the bottom padding.
+.c__modal--full:has(.file-preview__container) {
+    padding-top: 0;
+}
+
+.c__modal--full .file-preview__header {
+    height: calc(52px + var(--safe-area-inset-top));
+    padding-top: var(--safe-area-inset-top);
+}
+
+.c__modal--full .file-preview__container {
+    height: calc(100dvh - var(--safe-area-inset-bottom));
+}
+
+// The kit's sidebar is fixed below its header and sized 100vh - 52px, so it
+// runs past the taller header and the bottom inset by the same amount.
+.c__modal--full .file-preview-sidebar {
+    height: calc(100dvh - 52px - var(--safe-area-inset-top) - var(--safe-area-inset-bottom));
+}
+
+@media (max-width: breakpoint("mobile")) {
+    // Same correction for the kit's mobile min-height (100dvh - 84px).
+    .c__modal--full .file-preview__content > * {
+        min-height: calc(100dvh - 84px - var(--safe-area-inset-top) - var(--safe-area-inset-bottom));
+    }
+}
+
 .attachment-preview-sidebar {
     display: flex;
     flex-direction: column;

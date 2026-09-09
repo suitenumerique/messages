@@ -1,34 +1,43 @@
 import { ALL_MESSAGES_FOLDER, MAILBOX_FOLDERS } from "@/features/layouts/components/mailbox-panel/components/mailbox-list";
 import { SearchHelper } from "@/features/utils/search-helper";
-import { Icon, Label } from "@gouvfr-lasuite/ui-kit";
+import { IconSize, Label } from "@gouvfr-lasuite/ui-kit";
 import { Button, Checkbox, Input, Select } from "@gouvfr-lasuite/cunningham-react";
-import { useId, useRef } from "react";
+import { useEffect, useId, useRef } from "react";
 import { useTranslation } from "react-i18next";
+import { Icon, IconProps } from "@/features/ui/components/icon";
 
 type SearchFiltersFormProps = {
     query: string;
     onChange: (query: string, submit: boolean) => void;
+    autoFocusText?: boolean;
+    /** Form id, lets external buttons (e.g. a modal sticky footer) submit/reset it. */
+    id?: string;
+    /** Hide the inline footer when the submit/reset buttons live outside the form. */
+    hideFooter?: boolean;
 }
 
-export const SearchFiltersForm = ({ query, onChange }: SearchFiltersFormProps) => {
+export const SearchFiltersForm = ({ query, onChange, autoFocusText = false, id, hideFooter = false }: SearchFiltersFormProps) => {
     const { t, i18n } = useTranslation();
     const starredLabelId = useId();
     const formRef = useRef<HTMLFormElement>(null);
+
+    useEffect(() => {
+        if (!autoFocusText) return;
+        const textInput = formRef.current?.elements.namedItem("text");
+        if (textInput instanceof HTMLInputElement) textInput.focus();
+    }, [autoFocusText]);
 
     const updateQuery = (submit: boolean) => {
         const formData = new FormData(formRef.current as HTMLFormElement);
         const query = SearchHelper.serializeSearchFormData(formData, i18n.resolvedLanguage);
         onChange(query, submit);
-        formRef.current?.reset();
     }
 
     const handleSubmit = (event: React.FormEvent<HTMLFormElement>) => updateQuery(event.type === 'submit');
     const handleChange = () => updateQuery(false);
 
-    const handleReset = () => {
-        onChange('', false);
-        formRef.current?.reset();
-    }
+    // The native reset event clears the inputs; we only have to drop the query.
+    const handleReset = () => onChange('', false);
 
     const parsedQuery = SearchHelper.parseSearchQuery(query);
 
@@ -43,7 +52,7 @@ export const SearchFiltersForm = ({ query, onChange }: SearchFiltersFormProps) =
     }
 
     return (
-        <form className="search__filters" ref={formRef} onSubmit={handleSubmit} onChange={handleChange}>
+        <form id={id} className="search__filters" ref={formRef} onSubmit={handleSubmit} onChange={handleChange} onReset={handleReset}>
             <Input
                 name="from"
                 label={t("From")}
@@ -91,27 +100,29 @@ export const SearchFiltersForm = ({ query, onChange }: SearchFiltersFormProps) =
                 <Label htmlFor="is_starred" id={starredLabelId}>{t("Starred")} :</Label>
                 <Checkbox id="is_starred" aria-labelledby={starredLabelId} value="true" name="is_starred" checked={Boolean(parsedQuery.is_starred)} />
             </div>
-            <footer className="search__filters-footer">
-                <Button type="reset" variant="tertiary" onClick={handleReset}>
-                    {t("Reset")}
-                </Button>
-                <Button type="submit" variant="primary">
-                    {t("Search")}
-                </Button>
-            </footer>
+            {!hideFooter && (
+                <footer className="search__filters-footer">
+                    <Button type="reset" variant="tertiary">
+                        {t("Reset")}
+                    </Button>
+                    <Button type="submit" variant="primary">
+                        {t("Search")}
+                    </Button>
+                </footer>
+            )}
         </form>
     );
 };
 
 type FolderOptionProps = {
     label: string;
-    icon: string;
+    icon: IconProps;
 }
 
 const FolderOption = ({ label, icon }: FolderOptionProps) => {
     return (
         <div className="search__filters-folder-option">
-            <Icon name={icon} />
+            <Icon {...icon} size={IconSize.SMALL} />
             {label}
         </div>
     );
