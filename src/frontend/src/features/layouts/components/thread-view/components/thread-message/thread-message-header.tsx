@@ -1,7 +1,7 @@
 import { useCallback, useMemo } from "react";
 import { useTranslation } from "react-i18next";
 import { Tooltip } from "@gouvfr-lasuite/cunningham-react";
-import { Icon, IconType, IconSize, UserAvatar } from "@gouvfr-lasuite/ui-kit";
+import { IconType, IconSize, UserAvatar } from "@gouvfr-lasuite/ui-kit";
 import { MessageDeliveryStatusChoices, MessageRecipient } from "@/features/api/gen/models";
 import { Banner } from "@/features/ui/components/banner";
 import { Badge } from "@/features/ui/components/badge";
@@ -14,6 +14,8 @@ import { ThreadMessageHeaderProps } from "./types";
 import ThreadMessageActions from "./thread-message-actions";
 import ThreadMessageRecipients from "./thread-message-recipients";
 import { useAuth } from "@/features/auth";
+import { Edit } from "@gouvfr-lasuite/ui-kit/icons";
+import { Icon } from "@/features/ui/components/icon";
 
 const ThreadMessageHeader = ({
     message,
@@ -230,7 +232,7 @@ const ThreadMessageHeader = ({
                                         {(message.is_draft || draftMessage) && (
                                             <Tooltip placement="bottom" content={t('This message has a draft')}>
                                                 <Badge aria-label={t('Draft')} variant="tertiary" color="neutral">
-                                                    <Icon type={IconType.FILLED} name="mode_edit" className="icon--size-sm" />
+                                                    <Icon icon={Edit} size={IconSize.X_SMALL} />
                                                 </Badge>
                                             </Tooltip>
                                         )}

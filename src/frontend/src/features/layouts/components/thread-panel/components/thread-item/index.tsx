@@ -18,9 +18,10 @@ import ViewHelper from "@/features/utils/view-helper"
 import useCanEditThreads from "@/features/message/use-can-edit-threads"
 import { FEATURE_KEYS, useFeatureFlag } from "@/hooks/use-feature"
 import { ThreadListboxItemProps } from "../../hooks/use-thread-listbox"
-import { AttachFile, Star, StarFilled } from "@gouvfr-lasuite/ui-kit/icons"
+import { AttachFile, Edit, Star, StarFilled } from "@gouvfr-lasuite/ui-kit/icons"
 import useStarred from "@/features/message/use-starred"
 import useThreadUnread from "@/features/message/use-thread-unread"
+import { useOpenDraftInWindow } from "@/features/message/use-open-draft-in-window"
 import { useLongPress } from "@/hooks/use-long-press"
 import { AXIS_LOCK_THRESHOLD } from "@/hooks/use-swipe-actions"
 import { Icon } from "@/features/ui/components/icon"
@@ -131,6 +132,18 @@ export const ThreadItem = ({ thread, isSelected, onToggle, onSelectRange, select
     const isIdentitySlotClick = (e: React.MouseEvent<HTMLDivElement>) =>
         e.target instanceof Element && !!e.target.closest('.thread-item__identity-slot');
 
+    // A thread whose only message is a draft opens the compose window
+    // directly (like Gmail) instead of navigating to a mostly-empty thread
+    // view. The list does not know the draft id: the hook resolves it.
+    const isDraftOnlyThread = !thread.messaged_at && thread.has_draft;
+    const { openThreadDraftInWindow } = useOpenDraftInWindow();
+
+    // "Opening" clicks for a draft-only thread: the stretched subject link or
+    // any non-interactive area. Other links/buttons (labels, star…) keep
+    // their own behavior.
+    const isThreadOpeningClick = (e: React.MouseEvent<HTMLDivElement>) =>
+        e.target instanceof Element && !e.target.closest('a:not(.thread-item__link), button');
+
     // Cancelling the navigation has to happen on the way down: the Link
     // navigates from its own onClick handler on the <a>, which runs before
     // the event bubbles up to this container. It skips navigation when the
@@ -138,8 +151,15 @@ export const ThreadItem = ({ thread, isSelected, onToggle, onSelectRange, select
     // which is why modifier-driven selection worked without this, while a
     // plain tap in selection mode still opened the thread.
     const handleItemClickCapture = (e: React.MouseEvent<HTMLDivElement>) => {
-        if (isKeyboardActivation(e)) return;
+        if (isKeyboardActivation(e)) {
+            // Keyboard "open" on a draft-only thread must not navigate
+            // either: the bubble handler opens the compose window.
+            if (isDraftOnlyThread) e.preventDefault();
+            return;
+        }
         if (suppressNextClickRef.current || hasSelection || e.shiftKey || e.ctrlKey || e.metaKey) {
+            e.preventDefault();
+        } else if (isDraftOnlyThread && isThreadOpeningClick(e)) {
             e.preventDefault();
         }
     };
@@ -154,13 +174,18 @@ export const ThreadItem = ({ thread, isSelected, onToggle, onSelectRange, select
             e.preventDefault();
             return;
         }
-        if (isKeyboardActivation(e)) return;
+        if (isKeyboardActivation(e)) {
+            if (isDraftOnlyThread) void openThreadDraftInWindow(thread);
+            return;
+        }
         if (e.shiftKey) {
             e.preventDefault();
             onSelectRange(thread.id);
         } else if (e.ctrlKey || e.metaKey || hasSelection || isIdentitySlotClick(e)) {
             e.preventDefault();
             onToggle(thread.id);
+        } else if (isDraftOnlyThread && isThreadOpeningClick(e)) {
+            void openThreadDraftInWindow(thread);
         } else if (e.target instanceof Element && !e.target.closest('a, button')) {
             // Raised elements sit above the stretched link, so plain clicks
             // on them never reach it: navigate as the link would have.

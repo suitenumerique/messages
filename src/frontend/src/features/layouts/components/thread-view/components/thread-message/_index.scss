@@ -57,6 +57,7 @@
     > .thread-message__header,
     > .thread-message__body,
     > .thread-message__footer,
+    > .thread-message__reply-slot,
     > .thread-message__reply-form,
     > .thread-message__loading {
         padding-inline: var(--c--globals--spacings--base);
@@ -321,7 +322,9 @@
     margin-bottom: var(--c--globals--spacings--base);
 }
 
-.thread-message__reply-form {
+// Hosts the inline reply form or the placeholder of a draft edited elsewhere,
+// below the message footer.
+.thread-message__reply-slot {
     margin-bottom: var(--c--globals--spacings--base);
 }
 

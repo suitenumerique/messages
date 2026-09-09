@@ -51,8 +51,8 @@ export const useAttachments = ({
 }: UseAttachmentsOptions): UseAttachmentsReturn => {
     const { t, i18n } = useTranslation();
     const modals = useModals();
-    const [attachments, setAttachments] = useState<(DriveFile | Attachment)[]>(
-        initialAttachments.map((a) => ({ ...a })),
+    const [attachments, setAttachments] = useState<(DriveFile | Attachment)[]>(() =>
+        AttachmentHelper.dedupe(initialAttachments.map((a) => ({ ...a }))),
     );
     const [uploadingQueue, setUploadingQueue] = useState<File[]>([]);
     const [failedQueue, setFailedQueue] = useState<File[]>([]);
@@ -79,9 +79,12 @@ export const useAttachments = ({
     const removeToFailedQueue = (files: File[]) =>
         setFailedQueue((queue) => removeToQueue(queue, files));
 
+    // Entries already in the list win over the incoming ones: re-attaching
+    // a file (or re-picking a Drive file) is a no-op rather than a duplicate
+    // the server would silently collapse on the next draft save.
     const appendToAttachments = useCallback((newAttachments: (DriveFile | Attachment)[]) => {
         setAttachments((prev) =>
-            [...prev, ...newAttachments].sort(
+            AttachmentHelper.dedupe([...prev, ...newAttachments]).sort(
                 (a, b) => Number(new Date(b.created_at)) - Number(new Date(a.created_at)),
             ),
         );
@@ -190,12 +193,9 @@ export const useAttachments = ({
      * Remove a specific attachment (regular or drive).
      */
     const removeAttachment = useCallback((entry: Attachment | DriveFile) => {
+        const identity = AttachmentHelper.getIdentity(entry);
         setAttachments((prev) =>
-            prev.filter((a) => {
-                if ('blobId' in a && 'blobId' in entry) return a.blobId !== entry.blobId;
-                if ('id' in a && 'id' in entry) return a.id !== entry.id;
-                return true;
-            }),
+            prev.filter((a) => AttachmentHelper.getIdentity(a) !== identity),
         );
     }, []);
 

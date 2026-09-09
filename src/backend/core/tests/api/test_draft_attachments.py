@@ -268,6 +268,58 @@ class TestDraftWithAttachments:
         assert parts[4].get_content_disposition() == "attachment"
         assert parts[4].get_filename() == "test_attachment.txt"
 
+    def test_draft_update_promotes_existing_attachment_to_inline(
+        self, api_client, user_mailbox, blob
+    ):
+        """A blob attached as a regular part then pasted inline keeps a single
+        attachment row whose ``cid`` now reflects the inline usage."""
+        client, _ = api_client
+        url = reverse("draft-message")
+        attachment_payload = {"blobId": str(blob.id), "name": "image.png"}
+
+        response = client.post(
+            url,
+            {
+                "senderId": str(user_mailbox.id),
+                "subject": "Draft with image",
+                "attachments": [attachment_payload],
+            },
+            format="json",
+        )
+        assert response.status_code == status.HTTP_201_CREATED
+        draft = models.Message.objects.get(id=response.data["id"])
+        attachment = draft.attachments.get()
+        assert attachment.cid is None
+
+        response = client.put(
+            reverse("draft-message-detail", kwargs={"message_id": draft.id}),
+            {
+                "senderId": str(user_mailbox.id),
+                "subject": "Draft with image",
+                "attachments": [{**attachment_payload, "cid": str(blob.id)}],
+            },
+            format="json",
+        )
+        assert response.status_code == status.HTTP_200_OK
+        assert draft.attachments.count() == 1
+        attachment.refresh_from_db()
+        assert attachment.cid == str(blob.id)
+
+        # A payload without ``cid`` (a plain re-attach) leaves the inline
+        # binding untouched.
+        response = client.put(
+            reverse("draft-message-detail", kwargs={"message_id": draft.id}),
+            {
+                "senderId": str(user_mailbox.id),
+                "subject": "Draft with image",
+                "attachments": [attachment_payload],
+            },
+            format="json",
+        )
+        assert response.status_code == status.HTTP_200_OK
+        attachment.refresh_from_db()
+        assert attachment.cid == str(blob.id)
+
     def test_draft_attachment_size_limit_exceeded(self, api_client, user_mailbox):
         """Test that adding attachments exceeding the size limit raises ValidationError."""
         client, _ = api_client

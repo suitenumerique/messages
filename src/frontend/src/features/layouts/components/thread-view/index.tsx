@@ -309,7 +309,9 @@ const ThreadViewComponent = ({ threadItems, mailboxId, thread, showTrashedMessag
                 scrollBehavior = 'smooth';
                 highlightTargetId = hash.slice(1);
             } else if (draftMessageIds.length > 0) {
-                selector = `#thread-message-${draftMessageIds[0]} > .thread-message__reply-form`;
+                // The draft renders either as an inline form (active session)
+                // or as the resume placeholder: land on whichever is there.
+                selector = `#thread-message-${draftMessageIds[0]} > :is(.thread-message__reply-form, .compose-draft-placeholder)`;
             } else {
                 const firstUnreadItem = threadItems.find((item) => {
                     if (item.type === 'message') {

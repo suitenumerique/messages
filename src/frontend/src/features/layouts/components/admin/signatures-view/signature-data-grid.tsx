@@ -3,6 +3,7 @@ import { Button, Checkbox, Column, DataGrid, useModal, useModals } from "@gouvfr
 import { useTranslation } from "react-i18next";
 import { useState } from "react";
 import { useQueryClient } from "@tanstack/react-query";
+import { invalidateMaildomainMessageTemplates } from "@/features/providers/message-templates-cache";
 import { MailDomainAdmin, ReadMessageTemplate, MessageTemplateTypeChoices, useMaildomainsMessageTemplatesList, useMaildomainsMessageTemplatesDestroy, useMaildomainsMessageTemplatesPartialUpdate } from "@/features/api/gen";
 import { Banner } from "@/features/ui/components/banner";
 import { addToast, ToasterItem } from "@/features/ui/components/toaster";
@@ -34,7 +35,7 @@ export const SignatureDataGrid = ({ domain }: SignatureDataGridProps) => {
     const [selectedSignature, setSelectedSignature] = useState<ReadMessageTemplate | undefined>();
     const queryClient = useQueryClient();
     const invalidateMessageTemplates = async () => {
-        await queryClient.invalidateQueries({ queryKey: [`/api/v1.0/maildomains/${domain.id}/message-templates/`], exact: false });
+        await invalidateMaildomainMessageTemplates(queryClient, domain.id);
     }
     const handleModifyRow = (signature: ReadMessageTemplate) => {
         setSelectedSignature(signature);

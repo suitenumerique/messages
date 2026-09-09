@@ -9,8 +9,9 @@ import { useAttachmentPreview } from '@/features/providers/attachment-preview';
 import { useConfig } from '@/features/providers/config';
 import { DropZone } from './dropzone';
 import { DriveAttachmentPicker, DriveFile } from './drive-attachment-picker';
-import { Icon } from '@gouvfr-lasuite/ui-kit';
 import clsx from 'clsx';
+import { AttachFile } from '@gouvfr-lasuite/ui-kit/icons';
+import { Icon } from '@/features/ui/components/icon';
 
 type AttachmentBucketProps = {
     attachments: (DriveFile | Attachment)[];
@@ -94,7 +95,7 @@ export const AttachmentBucket = ({
                 ))}
                 {attachments.map((entry) => (
                     <AttachmentItem
-                        key={'blobId' in entry ? entry.blobId : entry.id}
+                        key={AttachmentHelper.getIdentity(entry)}
                         canDownload={false}
                         attachment={entry}
                         onDelete={disabled ? undefined : () => onRemove(entry)}
@@ -133,10 +134,12 @@ export const AttachmentUploader = ({
 }: AttachmentUploaderProps) => {
     const { t, i18n } = useTranslation();
 
+    // No `maxSize` here: react-dropzone would silently drop oversized files
+    // before `onDrop`, leaving the user without feedback. The size limit is
+    // enforced by the upload handler, which explains the refusal.
     const { getRootProps, getInputProps, isDragActive } = useDropzone({
         onDrop: (acceptedFiles) => onUploadFiles(acceptedFiles),
         disabled,
-        maxSize: maxAttachmentSize,
     });
 
     const handleClick: MouseEventHandler<HTMLElement> = (event) => {
@@ -162,7 +165,7 @@ export const AttachmentUploader = ({
             <div className="attachment-uploader__input">
                 <Button
                     variant="secondary"
-                    icon={<Icon name="attach_file" />}
+                    icon={<Icon icon={AttachFile} />}
                     type="button"
                     disabled={disabled}
                 >

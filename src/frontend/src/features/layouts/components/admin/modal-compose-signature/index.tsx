@@ -10,6 +10,7 @@ import { useTranslation } from "react-i18next";
 import z from "zod";
 import { useEffect, useRef, useState } from "react";
 import { useQueryClient } from "@tanstack/react-query";
+import { invalidateMaildomainMessageTemplates } from "@/features/providers/message-templates-cache";
 import { SignatureComposer } from "@/features/signatures/components/signature-composer";
 import { Base64ComposerHandle } from "@/features/blocknote/hooks/use-base64-composer";
 import ErrorBoundary from "@/features/errors/error-boundary";
@@ -36,7 +37,7 @@ export const ModalComposeSignature = ({ isOpen, onClose, signature }: ModalCompo
     const [isDirty, setIsDirty] = useState(false);
     const guardedOnClose = useConfirmBeforeClose(isDirty, onClose);
     const invalidateMessageTemplates = async () => {
-        await queryClient.invalidateQueries({ queryKey: [`/api/v1.0/maildomains/${selectedMailDomain?.id}/message-templates/`], exact: false });
+        await invalidateMaildomainMessageTemplates(queryClient, selectedMailDomain?.id);
     }
 
     const handleSuccess = async () => {

@@ -4,6 +4,7 @@ import { Button, Checkbox, Column, DataGrid, useModal, useModals } from "@gouvfr
 import { useTranslation } from "react-i18next";
 import { useState } from "react";
 import { useQueryClient } from "@tanstack/react-query";
+import { invalidateMailboxMessageTemplates } from "@/features/providers/message-templates-cache";
 import { Mailbox, ReadMessageTemplate, MessageTemplateTypeChoices, useMailboxesMessageTemplatesList, useMailboxesMessageTemplatesDestroy, useMailboxesMessageTemplatesPartialUpdate, MessageTemplateMetadata } from "@/features/api/gen";
 import { Banner } from "@/features/ui/components/banner";
 import { addToast, ToasterItem } from "@/features/ui/components/toaster";
@@ -61,7 +62,7 @@ export const AutoreplyDataGrid = ({ mailbox }: AutoreplyDataGridProps) => {
     const { t } = useTranslation();
     const modals = useModals();
     const modal = useModal();
-    const { data: autoreplies, isLoading, error, queryKey } = useMailboxesMessageTemplatesList(
+    const { data: autoreplies, isLoading, error } = useMailboxesMessageTemplatesList(
         mailbox.id,
         {
             type: [MessageTemplateTypeChoices.autoreply],
@@ -83,7 +84,7 @@ export const AutoreplyDataGrid = ({ mailbox }: AutoreplyDataGridProps) => {
     const queryClient = useQueryClient();
 
     const invalidateAutoreplies = async () => {
-        await queryClient.invalidateQueries({ queryKey, exact: true });
+        await invalidateMailboxMessageTemplates(queryClient, mailbox.id);
     }
 
     const handleModifyRow = (autoreply: ReadMessageTemplate) => {

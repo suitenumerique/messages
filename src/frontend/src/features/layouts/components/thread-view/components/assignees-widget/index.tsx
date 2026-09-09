@@ -1,5 +1,4 @@
 import { Button, Tooltip } from "@gouvfr-lasuite/cunningham-react";
-import { Icon, IconType } from "@gouvfr-lasuite/ui-kit";
 import { useRef, useState } from "react";
 import { useTranslation } from "react-i18next";
 import { useAssignedUsers } from "@/features/message/use-assigned-users";
@@ -8,6 +7,9 @@ import useAbility, { Abilities } from "@/hooks/use-ability";
 import { useIsSharedContext } from "@/hooks/use-is-shared-context";
 import { AssigneesAvatarGroup } from "@/features/ui/components/assignees-avatar-group";
 import { QuickAssignPopover } from "./quick-assign-popover";
+import { UserAdd } from "@gouvfr-lasuite/ui-kit/icons";
+import { Icon } from "@/features/ui/components/icon";
+import { isNativePlatform } from "@/features/native/platform";
 
 type AssigneesWidgetProps = {
     /**
@@ -25,8 +27,8 @@ type AssigneesWidgetProps = {
  *     to assign to);
  *   - on the read-only path, only when at least one user is assigned (just
  *     the avatars + tooltip — clicking falls back to `onClick`);
- *   - on the manage path, always (avatars when any, "person_add" icon
- *     otherwise) — click opens the QuickAssignPopover.
+ *   - on the manage path, always (avatars when any, icon otherwise) —
+ *     click opens the QuickAssignPopover.
  */
 export const AssigneesWidget = ({ onClick }: AssigneesWidgetProps) => {
     const { t } = useTranslation();
@@ -37,6 +39,7 @@ export const AssigneesWidget = ({ onClick }: AssigneesWidgetProps) => {
         Abilities.CAN_MANAGE_THREAD_ACCESS,
         [selectedMailbox!, selectedThread!],
     );
+    const isNative = isNativePlatform();
     const triggerRef = useRef<HTMLSpanElement>(null);
     const [isPopoverOpen, setIsPopoverOpen] = useState(false);
 
@@ -52,6 +55,7 @@ export const AssigneesWidget = ({ onClick }: AssigneesWidgetProps) => {
             <Tooltip content={assignedTooltip}>
                 <Button
                     type="button"
+                    color={isNative ? "neutral" : "brand"}
                     variant="tertiary"
                     className="assignees-widget"
                     onClick={onClick}
@@ -75,6 +79,7 @@ export const AssigneesWidget = ({ onClick }: AssigneesWidgetProps) => {
                 <Tooltip content={tooltipContent}>
                     <Button
                         type="button"
+                        color={isNative ? "neutral" : "brand"}
                         variant="tertiary"
                         className="assignees-widget"
                         onClick={() => setIsPopoverOpen((open) => !open)}
@@ -84,7 +89,7 @@ export const AssigneesWidget = ({ onClick }: AssigneesWidgetProps) => {
                         size="nano"
                         icon={
                             assignedUsers.length === 0
-                                ? <Icon name="person_add" type={IconType.OUTLINED} />
+                                ? <Icon icon={UserAdd} />
                                 : undefined
                         }
                     >

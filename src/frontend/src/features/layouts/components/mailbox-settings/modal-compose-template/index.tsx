@@ -1,4 +1,4 @@
-import { Mailbox, ReadMessageTemplate, MessageTemplateTypeChoices, useMailboxesMessageTemplatesCreate, useMailboxesMessageTemplatesUpdate, useMailboxesMessageTemplatesRetrieve, getMailboxesMessageTemplatesListUrl } from "@/features/api/gen";
+import { Mailbox, ReadMessageTemplate, MessageTemplateTypeChoices, useMailboxesMessageTemplatesCreate, useMailboxesMessageTemplatesUpdate, useMailboxesMessageTemplatesRetrieve } from "@/features/api/gen";
 import { RhfInput } from "@/features/forms/components/react-hook-form/rhf-input";
 import { zodResolver } from "@hookform/resolvers/zod";
 import { Button, Modal, ModalSize } from "@gouvfr-lasuite/cunningham-react";
@@ -8,6 +8,7 @@ import { useTranslation } from "react-i18next";
 import { z } from "zod";
 import { useEffect, useRef, useState } from "react";
 import { useQueryClient } from "@tanstack/react-query";
+import { invalidateMailboxMessageTemplates } from "@/features/providers/message-templates-cache";
 import { TemplateComposer } from "./template-composer";
 import { Base64ComposerHandle } from "@/features/blocknote/hooks/use-base64-composer";
 import ErrorBoundary from "@/features/errors/error-boundary";
@@ -35,7 +36,7 @@ export const ModalComposeTemplate = ({ isOpen, onClose, mailbox, template }: Mod
     const [isDirty, setIsDirty] = useState(false);
     const guardedOnClose = useConfirmBeforeClose(isDirty, onClose);
     const invalidateMessageTemplates = async () => {
-        await queryClient.invalidateQueries({ queryKey: [getMailboxesMessageTemplatesListUrl(mailbox.id)], exact: false });
+        await invalidateMailboxMessageTemplates(queryClient, mailbox.id);
     }
 
     const handleSuccess = async () => {

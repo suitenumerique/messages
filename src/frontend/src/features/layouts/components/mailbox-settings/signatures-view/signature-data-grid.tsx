@@ -3,7 +3,8 @@ import { Button, Checkbox, Column, DataGrid, useModal, useModals } from "@gouvfr
 import { useTranslation } from "react-i18next";
 import { useState } from "react";
 import { useQueryClient } from "@tanstack/react-query";
-import { Mailbox, ReadMessageTemplate, MessageTemplateTypeChoices, useMailboxesMessageTemplatesList, useMailboxesMessageTemplatesDestroy, useMailboxesMessageTemplatesPartialUpdate, getMailboxesMessageTemplatesListUrl } from "@/features/api/gen";
+import { invalidateMailboxMessageTemplates } from "@/features/providers/message-templates-cache";
+import { Mailbox, ReadMessageTemplate, MessageTemplateTypeChoices, useMailboxesMessageTemplatesList, useMailboxesMessageTemplatesDestroy, useMailboxesMessageTemplatesPartialUpdate } from "@/features/api/gen";
 import { Banner } from "@/features/ui/components/banner";
 import { addToast, ToasterItem } from "@/features/ui/components/toaster";
 import { ModalComposeMailboxSignature } from "../modal-compose-mailbox-signature";
@@ -35,7 +36,7 @@ export const SignatureDataGrid = ({ mailbox }: SignatureDataGridProps) => {
     const queryClient = useQueryClient();
 
     const invalidateSignatures = async () => {
-        await queryClient.invalidateQueries({ queryKey: [getMailboxesMessageTemplatesListUrl(mailbox.id)], exact: false });
+        await invalidateMailboxMessageTemplates(queryClient, mailbox.id);
     }
 
     const handleModifyRow = (signature: ReadMessageTemplate) => {

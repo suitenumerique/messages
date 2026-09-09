@@ -8,6 +8,7 @@ import { UserWithAbilities } from "../api/gen/models/user_with_abilities";
 import { addToast, ToasterItem } from "../ui/components/toaster";
 import { useTranslation } from "react-i18next";
 import { nativeLogin, nativeLogout } from "../native/auth";
+import { clearPersistedWindows } from "../providers/compose-windows/persistence";
 import { isNativePlatform } from "../native/platform";
 import {
   clearDeliveredNativeNotifications,
@@ -41,8 +42,13 @@ import { attemptSilentLogin, canAttemptSilentLogin } from "./silent-login";
  * their next login (`refreshWebPushSubscription`). A session that merely
  * expires (401 funnel) reaches the logout view anonymous, so nothing is
  * unregistered and notifications keep flowing — by design.
+ *
+ * The persisted compose windows are purged on both paths, expiry included:
+ * they belong to the account, and on a shared device the next one to sign in
+ * must not be handed the previous account's drafts to reopen.
  */
 export const logout = () => {
+  clearPersistedWindows();
   if (isNativePlatform()) {
     void nativeLogout();
     return;

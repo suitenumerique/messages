@@ -1,4 +1,4 @@
-import { Mailbox, ReadMessageTemplate, MessageTemplateTypeChoices, useMailboxesMessageTemplatesCreate, useMailboxesMessageTemplatesUpdate, useMailboxesMessageTemplatesRetrieve, useMailboxesMessageTemplatesList } from "@/features/api/gen";
+import { Mailbox, ReadMessageTemplate, MessageTemplateTypeChoices, useMailboxesMessageTemplatesCreate, useMailboxesMessageTemplatesUpdate, useMailboxesMessageTemplatesRetrieve } from "@/features/api/gen";
 import { RhfInput } from "@/features/forms/components/react-hook-form/rhf-input";
 import { RhfCheckbox } from "@/features/forms/components/react-hook-form/rhf-checkbox";
 import { RhfSelect } from "@/features/forms/components/react-hook-form/rhf-select";
@@ -10,6 +10,7 @@ import { useTranslation } from "react-i18next";
 import { z } from "zod";
 import { useEffect, useRef, useState } from "react";
 import { useQueryClient } from "@tanstack/react-query";
+import { invalidateMailboxMessageTemplates } from "@/features/providers/message-templates-cache";
 import { Base64ComposerHandle } from "@/features/blocknote/hooks/use-base64-composer";
 import ErrorBoundary from "@/features/errors/error-boundary";
 import { Banner } from "@/features/ui/components/banner";
@@ -33,14 +34,8 @@ export const ModalComposeMailboxAutoreply = ({ isOpen, onClose, mailbox, autorep
     const queryClient = useQueryClient();
     const [isDirty, setIsDirty] = useState(false);
     const guardedOnClose = useConfirmBeforeClose(isDirty, onClose);
-    const { queryKey } = useMailboxesMessageTemplatesList(
-        mailbox.id,
-        { type: [MessageTemplateTypeChoices.autoreply] },
-        { query: { enabled: false } }
-    );
-
     const invalidateAutoreplies = async () => {
-        await queryClient.invalidateQueries({ queryKey, exact: true });
+        await invalidateMailboxMessageTemplates(queryClient, mailbox.id);
     }
 
     const handleSuccess = async () => {

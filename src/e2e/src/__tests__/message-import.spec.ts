@@ -60,14 +60,21 @@ test.describe("Import Message", () => {
       exact: true,
     });
     await fileInput.setInputFiles(path.join(FIXTURES_PATH, "attachment.png"));
+    // The dropzone swaps its empty state for the picked file's name, which is
+    // the only visible proof the selection reached the form. Assert it before
+    // submitting: when the uploader drops the file, the submit silently falls
+    // back to the IMAP branch and every later step waits on something that can
+    // never happen.
+    await expect(settingsModal.getByText("attachment.png")).toBeVisible();
     await importButton.click();
 
     const errorBanner = page.getByRole("alert", {
       name: "An error occurred while uploading the archive file.",
     });
-    await errorBanner.waitFor({ state: "visible" });
+    await expect(errorBanner).toBeVisible();
 
     await fileInput.setInputFiles(path.join(FIXTURES_PATH, "old-message.eml"));
+    await expect(settingsModal.getByText("old-message.eml")).toBeVisible();
 
     // Armed before the click: the archive is small enough that the upload and
     // the import-run creation can both land before a post-click listener would
@@ -122,9 +129,11 @@ test.describe("Import Message", () => {
     // idling through it.
     await page.getByRole("button", { name: "Refresh" }).click();
 
-    // Then expect the new message to be visible in the thread list
+    // Then expect the new message to be visible in the thread list. The item's
+    // accessible name is senders + subject only: the date moved to
+    // `aria-describedby`, so naming it here would never match.
     await expect(
-      page.getByRole("option", { name: "Sardine 18/11/2025 An old message" })
+      page.getByRole("option", { name: "Sardine An old message" })
     ).toBeVisible({ timeout: 15_000 });
   });
 

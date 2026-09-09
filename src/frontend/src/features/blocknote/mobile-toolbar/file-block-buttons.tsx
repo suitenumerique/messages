@@ -1,7 +1,7 @@
 import { blockHasType } from "@blocknote/core";
 import { useBlockNoteEditor, useEditorState } from "@blocknote/react";
 import { useRef, useState } from "react";
-import { RiDeleteBin7Line, RiImageEditFill } from "react-icons/ri";
+import { RiImageEditFill } from "react-icons/ri";
 
 import { ALLOWED_IMAGE_MIME_TYPES } from "../image-block";
 import { MobileToolbarButton } from "./buttons";

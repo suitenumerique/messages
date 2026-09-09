@@ -35,23 +35,22 @@ test.describe("Thread starred", () => {
       })
       .waitFor({ state: "visible" });
 
-    // Verify the thread is not yet starred
-    const starButton = page.getByRole("button", {
-      name: "Star this thread",
-    });
-    await expect(starButton).toBeVisible();
+    // The toggle exists on every thread item of the list, and twice in the
+    // thread view (the subject heading and its sticky recall), so anchor on
+    // the heading's own button. Its accessible name carries the state.
+    const starToggle = page.locator(".thread-view__subject__star-button");
+    await expect(starToggle).toHaveAccessibleName("Star this thread");
 
     // Star the thread
-    await starButton.click();
+    await starToggle.click();
+    await expect(starToggle).toHaveAccessibleName("Unstar this thread");
 
-    // Verify the button updates to "Unstar"
-    await expect(
-      page.getByRole("button", { name: "Unstar this thread" }),
-    ).toBeVisible();
-
-    // Verify the star badge appears on the thread item in the list
+    // The list item reflects it too: its icon is aria-hidden, the state lives
+    // on the button that toggles it.
     const threadList = page.locator(".thread-panel__threads_list");
-    await expect(threadList.getByLabel("Starred").first()).toBeVisible();
+    await expect(
+      threadList.getByRole("button", { name: "Unstar this thread" }).first(),
+    ).toBeVisible();
   });
 
   test("should unstar a previously starred thread", async ({ page }) => {
@@ -73,23 +72,20 @@ test.describe("Thread starred", () => {
       })
       .waitFor({ state: "visible" });
 
-    // Verify it's currently starred
-    const unstarButton = page.getByRole("button", {
-      name: "Unstar this thread",
-    });
-    await expect(unstarButton).toBeVisible();
+    // Verify it's currently starred (see the previous test for why the
+    // heading's own button is the anchor).
+    const starToggle = page.locator(".thread-view__subject__star-button");
+    await expect(starToggle).toHaveAccessibleName("Unstar this thread");
 
     // Unstar the thread
-    await unstarButton.click();
+    await starToggle.click();
+    await expect(starToggle).toHaveAccessibleName("Star this thread");
 
-    // Verify the button reverts to "Star this thread"
-    await expect(
-      page.getByRole("button", { name: "Star this thread" }),
-    ).toBeVisible();
-
-    // Verify the star badge disappears from the thread list
+    // No list item advertises the starred state anymore.
     const threadList = page.locator(".thread-panel__threads_list");
-    await expect(threadList.getByLabel("Starred")).not.toBeVisible();
+    await expect(
+      threadList.getByRole("button", { name: "Unstar this thread" }),
+    ).toHaveCount(0);
   });
 });
 
@@ -170,8 +166,8 @@ test.describe("Thread read / unread", () => {
       .waitFor({ state: "visible" });
     await page.waitForLoadState("networkidle");
 
-    // Close the thread to go back to the list
-    await page.getByRole("button", { name: "Close this thread" }).click();
+    // No closing step: on desktop the list and the thread share the screen,
+    // and the refactor dropped the "Close this thread" button altogether.
 
     // The thread should still be visible in the list thanks to thread pinning logic
     // Check @/features/providers/mailbox-cache.ts
@@ -223,8 +219,7 @@ test.describe("Thread read / unread", () => {
       }),
     ).toBeVisible();
 
-    // Close the thread view to go back to the list
-    await page.getByRole("button", { name: "Close this thread" }).click();
+    // The list stays on screen next to the thread, so there is nothing to close.
 
     // Click the filter button to apply unread filter (default selected filter)
     await page.getByRole("button", { name: "Filter threads" }).click();

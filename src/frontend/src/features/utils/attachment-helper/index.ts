@@ -65,6 +65,38 @@ export class AttachmentHelper {
     };
 
     /**
+     * Stable identity of a composer entry. Blobs are content-addressed
+     * server-side (same file → same ``blobId``) and the draft endpoint
+     * upserts on ``(blob, message)``, so two entries sharing an identity
+     * are the same attachment and must be collapsed.
+     */
+    static getIdentity(attachment: DriveFile | Attachment) {
+        if ('blobId' in attachment) return `blob:${attachment.blobId}`;
+        return `drive:${attachment.id}`;
+    }
+
+    /**
+     * Collapse entries sharing an identity, keeping the first position.
+     * An inline usage (``cid``) wins over a plain one: the server stores a
+     * single row per blob and the outbound composer only emits a
+     * Content-ID part when that row carries a ``cid``, so dropping it
+     * would leave the body pointing at an image that is never attached.
+     */
+    static dedupe<T extends DriveFile | Attachment>(attachments: readonly T[]): T[] {
+        const byIdentity = new Map<string, T>();
+        for (const attachment of attachments) {
+            const identity = AttachmentHelper.getIdentity(attachment);
+            const existing = byIdentity.get(identity);
+            if (!existing) {
+                byIdentity.set(identity, attachment);
+            } else if (!('cid' in existing && existing.cid) && 'cid' in attachment && attachment.cid) {
+                byIdentity.set(identity, { ...existing, cid: attachment.cid });
+            }
+        }
+        return [...byIdentity.values()];
+    }
+
+    /**
      * Build the download url of an attachment blob
      */
     static getDownloadUrl(attachment: DriveFile | Attachment) {

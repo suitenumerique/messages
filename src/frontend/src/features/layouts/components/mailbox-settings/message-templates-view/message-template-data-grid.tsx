@@ -4,7 +4,8 @@ import { Button, Column, DataGrid, useModal, useModals } from "@gouvfr-lasuite/c
 import { useTranslation } from "react-i18next";
 import { useState } from "react";
 import { useQueryClient } from "@tanstack/react-query";
-import { Mailbox, ReadMessageTemplate, MessageTemplateTypeChoices, useMailboxesMessageTemplatesList, useMailboxesMessageTemplatesDestroy, getMailboxesMessageTemplatesListUrl } from "@/features/api/gen";
+import { invalidateMailboxMessageTemplates } from "@/features/providers/message-templates-cache";
+import { Mailbox, ReadMessageTemplate, MessageTemplateTypeChoices, useMailboxesMessageTemplatesList, useMailboxesMessageTemplatesDestroy } from "@/features/api/gen";
 import { Banner } from "@/features/ui/components/banner";
 import { addToast, ToasterItem } from "@/features/ui/components/toaster";
 import { ModalComposeTemplate } from "../modal-compose-template";
@@ -34,7 +35,7 @@ export const MessageTemplateDataGrid = ({ mailbox }: MessageTemplateDataGridProp
     const queryClient = useQueryClient();
 
     const invalidateMessageTemplates = async () => {
-        await queryClient.invalidateQueries({ queryKey: [getMailboxesMessageTemplatesListUrl(mailbox.id)], exact: false });
+        await invalidateMailboxMessageTemplates(queryClient, mailbox.id);
     }
 
     const handleModifyRow = (template: ReadMessageTemplate) => {
