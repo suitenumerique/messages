@@ -1,5 +1,6 @@
-import { Icon, IconSize, IconType } from "@gouvfr-lasuite/ui-kit";
+import { IconSize, IconType } from "@gouvfr-lasuite/ui-kit";
 import { Button } from "@gouvfr-lasuite/cunningham-react";
+import { Icon } from "@/features/ui/components/icon";
 import React, { ReactElement, ReactNode } from "react";
 import { useTranslation } from "react-i18next";
 

@@ -30,6 +30,8 @@
 @use "./../features/ui/components/suggestion-input";
 @use "./../features/ui/components/transient-tooltip";
 @use "./../features/ui/components/assignees-avatar-group";
+@use "./../features/ui/components/drawer";
+@use "./../features/ui/components/icon";
 @use "./../features/layouts/components/mailbox-selector";
 @use "./../features/layouts/components/mailbox-panel";
 @use "./../features/layouts/components/mailbox-panel/components/mailbox-actions";
@@ -39,6 +41,11 @@
 @use "./../features/layouts/components/mailbox-panel/components/mailbox-labels/components/label-item";
 @use "./../features/layouts/components/thread-panel";
 @use "./../features/layouts/components/thread-panel/components/thread-item";
+@use "./../features/layouts/components/mobile/bottom-bar";
+@use "./../features/layouts/components/mobile/filter-compose-bar";
+@use "./../features/layouts/components/mobile/thread-header";
+@use "./../features/layouts/components/mobile/thread-toolbar";
+@use "./../features/native/pull-to-refresh-indicator";
 @use "./../features/layouts/components/labels-widget";
 @use "./../features/layouts/components/thread-view";
 @use "./../features/layouts/components/thread-view/components/thread-action-bar";
@@ -72,6 +79,7 @@
 
 // Blocknote custom blocks and components
 @use "./../features/blocknote/blocknote-view-field";
+@use "./../features/blocknote/mobile-toolbar";
 @use "./../features/blocknote/inline-template-variable";
 @use "./../features/blocknote/signature-block";
 @use "./../features/blocknote/message-template-block";

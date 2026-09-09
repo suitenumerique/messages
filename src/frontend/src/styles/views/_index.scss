@@ -4,7 +4,9 @@
     overflow: auto;
 
     .c__hero {
-        height: calc(100vh - var(--header-height));
+        // Fills the content area, which already excludes the in-flow header.
+        height: 100%;
+        min-height: 70vh;
     }
 
     .c__hero__display img {

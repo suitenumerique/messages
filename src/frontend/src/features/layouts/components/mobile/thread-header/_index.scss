@@ -1,0 +1,31 @@
+@use "../../../../../styles/utils" as *;
+
+// Fills the thread view's sticky row on native: back button pinned left,
+// assignment widget pinned right. The row itself lets clicks fall through
+// (see .thread-view__sticky-container), only the controls are interactive.
+.mobile-thread-header {
+  display: flex;
+  flex: 1;
+  align-items: center;
+  justify-content: space-between;
+  pointer-events: none;
+
+  > * {
+    pointer-events: auto;
+  }
+
+  &__back.c__button,
+  .assignees-widget.c__button {
+    @include control-surface;
+
+    width: 40px;
+    height: 40px;
+  }
+
+  // The avatar group can be wider than a single icon button: keep the
+  // control's height but let it grow horizontally.
+  .assignees-widget.c__button {
+    width: auto;
+    min-width: 40px;
+  }
+}

@@ -1,6 +1,7 @@
 import { useTranslation } from "react-i18next";
 import { usePagination } from "@gouvfr-lasuite/cunningham-react";
-import { Icon, IconType, Spinner } from "@gouvfr-lasuite/ui-kit";
+import { IconType, Spinner } from "@gouvfr-lasuite/ui-kit";
+import { Icon } from "@/features/ui/components/icon";
 import { useAdminMailDomain } from "@/features/providers/admin-maildomain";
 import { AdminMailboxDataGrid } from "./mailbox-data-grid";
 import { Banner } from "@/features/ui/components/banner";

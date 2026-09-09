@@ -1,6 +1,7 @@
 import { RefObject, useCallback, useEffect, useRef, useState } from "react";
 import { useTranslation } from "react-i18next";
-import { Icon, IconSize, IconType, UserRow } from "@gouvfr-lasuite/ui-kit";
+import { IconSize, IconType, UserRow } from "@gouvfr-lasuite/ui-kit";
+import { Icon } from "@/features/ui/components/icon";
 import { useThreadsEventsCreate, useThreadsEventsPartialUpdate, useThreadsUsersList, ThreadMentionableUser, ThreadEventTypeEnum, ThreadEvent, ThreadEventIMData } from "@/features/api/gen";
 import { StringHelper } from "@/features/utils/string-helper";
 import { TextHelper } from "@/features/utils/text-helper";
@@ -261,7 +262,7 @@ export const ThreadEventInput = ({ threadId, editingEvent, onCancelEdit, onEvent
         >
             {isEditing && (
                 <div className="thread-event-input__edit-banner">
-                    <Icon name="edit" type={IconType.OUTLINED} size={IconSize.SMALL} aria-hidden="true" />
+                    <Icon name="edit" type={IconType.OUTLINED} size={IconSize.SMALL} />
                     <span className="thread-event-input__edit-banner__label">{t("Editing message")}</span>
                     <Button
                         size="nano"

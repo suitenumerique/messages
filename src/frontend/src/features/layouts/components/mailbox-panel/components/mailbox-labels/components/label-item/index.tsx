@@ -3,7 +3,7 @@ import { getThreadsStatsQueryKey, useMailboxContext } from "@/features/providers
 import useArchive from "@/features/message/use-archive";
 import useDeleteLabel from "@/features/message/use-delete-label";
 import useAddLabel from "@/features/message/use-add-label";
-import { DropdownMenu, Icon, IconSize, IconType } from "@gouvfr-lasuite/ui-kit";
+import { DropdownMenu, IconSize, IconType } from "@gouvfr-lasuite/ui-kit";
 import { Button, useModals } from "@gouvfr-lasuite/cunningham-react";
 import clsx from "clsx";
 import { Link, useLocation, useNavigate } from "@tanstack/react-router";
@@ -19,6 +19,8 @@ import { useFold } from "@/features/providers/fold";
 import { SubLabelCreation } from "../label-form-modal";
 import { handle } from "@/features/utils/errors";
 import ViewHelper from "@/features/utils/view-helper";
+import { Edit, More, Plus, Trash } from "@gouvfr-lasuite/ui-kit/icons";
+import { Icon } from "@/features/ui/components/icon";
 
 export type LabelTransferData = {
   type: 'label';
@@ -376,18 +378,18 @@ export const LabelItem = ({ level = 0, onEdit, canManage, defaultFoldState, ...l
                 options={[
                   {
                     label: t('Edit'),
-                    icon: <Icon name="edit" />,
+                    icon: <Icon icon={Edit} size={IconSize.SMALL}/>,
                     callback: () => onEdit(label),
                   },
                   {
                     label: t('Add a sub-label'),
-                    icon: <Icon name="add" />,
+                    icon: <Icon icon={Plus} size={IconSize.SMALL}/>,
                     callback: () => onEdit({ name: `${label.name}/`, color: label.color }),
                     showSeparator: true,
                   },
                   {
                     label: t('Delete'),
-                    icon: <Icon name="delete" />,
+                    icon: <Icon icon={Trash} size={IconSize.SMALL} />,
                     callback: handleDelete,
                     variant: 'danger'
                   },
@@ -395,7 +397,7 @@ export const LabelItem = ({ level = 0, onEdit, canManage, defaultFoldState, ...l
               >
                 <Button
                   onClick={() => setIsDropdownOpen(true)}
-                  icon={<Icon name="more_horiz" />}
+                  icon={<Icon icon={More} />}
                   variant="tertiary"
                   aria-label={t('More options')}
                   size="nano"

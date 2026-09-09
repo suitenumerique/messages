@@ -2,7 +2,8 @@ import { createFileRoute, useNavigate } from "@tanstack/react-router";
 import { useEffect, useState } from "react";
 import { Button, DataGrid, usePagination } from "@gouvfr-lasuite/cunningham-react";
 import { Trans, useTranslation } from "react-i18next";
-import { Icon, IconType, Spinner } from "@gouvfr-lasuite/ui-kit";
+import { IconType, Spinner } from "@gouvfr-lasuite/ui-kit";
+import { Icon } from "@/features/ui/components/icon";
 import { useQueryClient } from "@tanstack/react-query";
 
 import { AdminLayout } from "@/features/layouts/components/admin/admin-layout";

@@ -2,7 +2,7 @@ import { useTranslation } from "react-i18next";
 import { Button } from "@gouvfr-lasuite/cunningham-react";
 import { AttachmentList } from "../thread-attachment-list";
 import { ThreadMessageFooterProps } from "./types";
-import { Icon, IconType } from "@gouvfr-lasuite/ui-kit";
+import { Icon } from "@/features/ui/components/icon";
 
 const ThreadMessageFooter = ({
     message,
@@ -35,7 +35,7 @@ const ThreadMessageFooter = ({
                             color="brand"
                             variant="primary"
                             size="small"
-                            icon={<Icon name="reply_all" type={IconType.OUTLINED} />}
+                            icon={<Icon name="reply-all" />}
                             aria-label={t('Reply all')}
                             onClick={() => onSetReplyFormMode('reply_all')}
                         >
@@ -44,7 +44,7 @@ const ThreadMessageFooter = ({
                     )}
                     <Button
                         variant={hasSeveralRecipients ? 'tertiary' : 'primary'}
-                        icon={<Icon name="reply" type={IconType.OUTLINED} />}
+                        icon={<Icon name="reply" />}
                         aria-label={t('Reply')}
                         size="small"
                         onClick={() => onSetReplyFormMode('reply')}
@@ -54,7 +54,7 @@ const ThreadMessageFooter = ({
                     <Button
                         variant='tertiary'
                         size="small"
-                        icon={<Icon name="forward" type={IconType.OUTLINED} />}
+                        icon={<Icon name="forward" />}
                         onClick={() => onSetReplyFormMode('forward')}
                     >
                         {t('Forward')}

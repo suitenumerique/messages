@@ -2,7 +2,7 @@ import { Mailbox, ReadMessageTemplate, MessageTemplateTypeChoices, useMailboxesM
 import { RhfInput } from "@/features/forms/components/react-hook-form/rhf-input";
 import { zodResolver } from "@hookform/resolvers/zod";
 import { Button, Modal, ModalSize } from "@gouvfr-lasuite/cunningham-react";
-import { Spinner } from "@gouvfr-lasuite/ui-kit";
+import { Spinner, useResponsive } from "@gouvfr-lasuite/ui-kit";
 import { FormProvider, useForm } from "react-hook-form";
 import { useTranslation } from "react-i18next";
 import { z } from "zod";
@@ -29,6 +29,7 @@ type ModalComposeTemplateProps = {
 }
 
 export const ModalComposeTemplate = ({ isOpen, onClose, mailbox, template }: ModalComposeTemplateProps) => {
+    const { isMobile } = useResponsive();
     const { t } = useTranslation();
     const queryClient = useQueryClient();
     const [isDirty, setIsDirty] = useState(false);
@@ -53,7 +54,7 @@ export const ModalComposeTemplate = ({ isOpen, onClose, mailbox, template }: Mod
         <Modal
             isOpen={isOpen}
             title={template ? t('Edit template "{{template}}"', { template: template.name }) : t("Create a new template")}
-            size={ModalSize.LARGE}
+            size={isMobile ? ModalSize.FULL : ModalSize.LARGE}
             onClose={guardedOnClose}
         >
             <div className="modal-compose-template">

@@ -1,6 +1,7 @@
 import { useTranslation } from "react-i18next";
 import { Button, Tooltip } from "@gouvfr-lasuite/cunningham-react";
-import { type FilePreviewType, Icon, IconSize, IconType, UserAvatar } from "@gouvfr-lasuite/ui-kit";
+import { type FilePreviewType, IconSize, IconType, UserAvatar } from "@gouvfr-lasuite/ui-kit";
+import { Icon } from "@/features/ui/components/icon";
 import { useNavigate } from "@tanstack/react-router";
 import type { AttachmentOrigin } from "./index";
 import type { Attachment } from "@/features/api/gen/models";

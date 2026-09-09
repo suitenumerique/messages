@@ -2,12 +2,14 @@ import { describe, it, expect, vi } from 'vitest';
 import { Attachment } from "@/features/api/gen/models";
 import { AttachmentHelper } from "./index";
 import { MimeCategory } from "./constants";
-import { getBlobDownloadRetrieveUrl } from "@/features/api/gen/blob/blob";
+import { getBlobDownloadRetrieveUrl, getBlobPreviewRetrieveUrl } from "@/features/api/gen/blob/blob";
 import { getRequestUrl } from "@/features/api/utils";
+import { toNativeMediaUrl } from "@/features/native/media-url";
 
 // Mock the external dependencies
 vi.mock("@/features/api/gen/blob/blob");
 vi.mock("@/features/api/utils");
+vi.mock("@/features/native/media-url");
 
 describe("AttachmentHelper", () => {
     describe("getExtension", () => {
@@ -106,6 +108,33 @@ describe("AttachmentHelper", () => {
             expect(getBlobDownloadRetrieveUrl).toHaveBeenCalledWith(attachment.blobId);
             expect(getRequestUrl).toHaveBeenCalledWith(mockUrl);
             expect(result).toBe(mockUrl);
+        });
+    });
+
+    describe("toFilePreviewType", () => {
+        it("should route only the preview url through the native media rewrite", () => {
+            const attachment = {
+                type: "image/jpeg",
+                name: "photo.jpg",
+                blobId: "123",
+                size: 42,
+            } as Attachment;
+            vi.mocked(getBlobPreviewRetrieveUrl).mockReturnValue("/blob/123/preview/");
+            vi.mocked(getBlobDownloadRetrieveUrl).mockReturnValue("/blob/123/download/");
+            vi.mocked(getRequestUrl).mockImplementation((path) => `http://api.test${path}`);
+            vi.mocked(toNativeMediaUrl).mockImplementation((url) => `native:${url}`);
+
+            const result = AttachmentHelper.toFilePreviewType(attachment);
+
+            expect(result).toEqual({
+                id: "123",
+                size: 42,
+                title: "photo.jpg",
+                mimetype: "image/jpeg",
+                url_preview: "native:http://api.test/blob/123/preview/",
+                url: "http://api.test/blob/123/download/",
+                isSuspicious: false,
+            });
         });
     });
 

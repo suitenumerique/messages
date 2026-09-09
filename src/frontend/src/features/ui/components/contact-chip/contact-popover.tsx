@@ -1,6 +1,7 @@
 import { Contact } from "@/features/api/gen";
-import { Icon, IconSize, IconType, UserAvatar } from "@gouvfr-lasuite/ui-kit";
+import { IconSize, IconType, UserAvatar } from "@gouvfr-lasuite/ui-kit";
 import { Button } from "@gouvfr-lasuite/cunningham-react";
+import { Icon } from "@/features/ui/components/icon";
 import { Popover, PopoverProps } from "react-aria-components";
 import { useEffect, useRef, useState } from "react";
 import { useTranslation } from "react-i18next";

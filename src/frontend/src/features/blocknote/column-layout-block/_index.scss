@@ -34,3 +34,9 @@
     width: auto;
   }
 }
+
+// "Insert 2 columns" toolbar icon: Material's vertical_split has the narrow
+// pane on the left; the layout we insert puts it on the right.
+.column-layout-insert-icon {
+  transform: rotate(180deg);
+}

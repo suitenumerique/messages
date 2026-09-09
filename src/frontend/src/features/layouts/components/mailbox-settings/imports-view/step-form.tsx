@@ -11,6 +11,7 @@ import MailHelper, { IMAP_DOMAIN_REGEXES } from "@/features/utils/mail-helper";
 import { RhfInput } from "@/features/forms/components/react-hook-form";
 import { RhfFileUploader } from "@/features/forms/components/react-hook-form/rhf-file-uploader";
 import { RhfCheckbox } from "@/features/forms/components/react-hook-form/rhf-checkbox";
+import { isNativePlatform } from "@/features/native/platform";
 import { Banner } from "@/features/ui/components/banner";
 import i18n from "@/features/i18n/initI18n";
 import { BucketUploadState, useBucketUpload } from "./use-bucket-upload";
@@ -128,7 +129,12 @@ export const StepForm = ({ mailboxId, onUploading, onSuccess, onError, error, st
         [imapValues],
     );
     const showImapForm = useMemo(() => archiveFileInputValue.length === 0, [archiveFileInputValue]);
-    const showArchiveUpload = !isImapStarted;
+    // No archive import in the native shell: the upload is a raw XHR PUT of
+    // Blob chunks to storage, which the Capacitor bridge serializes as JSON
+    // ("{}") — the run would complete with a corrupt file — and a whole PST
+    // through the bridge as base64 would exhaust memory anyway. IMAP needs no
+    // upload (the backend connects itself) and stays available.
+    const showArchiveUpload = !isImapStarted && !isNativePlatform();
 
     /**
      * Try to guess the imap server from the email address

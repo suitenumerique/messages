@@ -3,7 +3,7 @@ import {
   ModalSize,
   ModalTab,
 } from "@gouvfr-lasuite/cunningham-react";
-import { HorizontalSeparator } from "@gouvfr-lasuite/ui-kit";
+import { HorizontalSeparator, useResponsive } from "@gouvfr-lasuite/ui-kit";
 import { useEffect, useMemo, useState } from "react";
 import { useTranslation } from "react-i18next";
 import { useMailboxContext } from "@/features/providers/mailbox";
@@ -14,6 +14,10 @@ import {
   useConfirmUnsavedChanges,
 } from "@/features/hooks/use-confirm-before-close";
 import { useRestoreFocusOnNestedModalClose } from "@/features/hooks/use-restore-focus-on-nested-modal-close";
+import {
+  COMPACT_TAB_MODAL_MEDIA_QUERY,
+  useCompactTabDrillDown,
+} from "@/features/hooks/use-compact-tab-drill-down";
 import { MailboxSettingsGeneralTab } from "./general-tab";
 import { MailboxSettingsAccessTab } from "./access-tab";
 import { MailboxSettingsSignaturesTab } from "./signatures-tab";
@@ -43,12 +47,6 @@ type ModalMailboxSettingsProps = {
 
 export const MODAL_MAILBOX_SETTINGS_ID = "modal-mailbox-settings";
 
-// Below this width Cunningham's tab modal collapses into a sidebar→content
-// drill-down (its internal `@media (max-width: 576px)`). We read the same
-// breakpoint so the open-time tab selection matches the layout actually shown —
-// the sidebar↔content view itself can't be driven from outside the component.
-const COMPACT_MODAL_MEDIA_QUERY = "(max-width: 576px)";
-
 /**
  * Settings modal for a mailbox the user can configure. Built on Cunningham's
  * "tab" modal layout: the sidebar lists setting categories (General — rename —,
@@ -70,6 +68,7 @@ export const ModalMailboxSettings = ({
   initialTab,
   initialImportsView,
 }: ModalMailboxSettingsProps) => {
+  const { isMobile } = useResponsive();
   const { t } = useTranslation();
   const { mailboxes, selectedMailbox } = useMailboxContext();
   const isIntegrationsEnabled = useFeatureFlag(FEATURE_KEYS.MAILBOX_ADMIN_CHANNELS);
@@ -108,6 +107,10 @@ export const ModalMailboxSettings = ({
   // keep a focus anchor and Escape keeps working.
   useRestoreFocusOnNestedModalClose(isOpen);
 
+  // Cunningham's compact layout would otherwise open on the bare sidebar even
+  // with `initialTab` set; this drills straight into the requested tab's content.
+  const drillDownRef = useCompactTabDrillDown(Boolean(initialTab));
+
   const settingsMailbox =
     settingsMailboxes.find((mailbox) => mailbox.id === selectedMailboxId) ??
     (selectedMailbox?.abilities.manage_accesses ||
@@ -132,7 +135,7 @@ export const ModalMailboxSettings = ({
     }
     if (
       typeof window !== "undefined" &&
-      window.matchMedia(COMPACT_MODAL_MEDIA_QUERY).matches
+      window.matchMedia(COMPACT_TAB_MODAL_MEDIA_QUERY).matches
     ) {
       return "";
     }
@@ -362,9 +365,13 @@ export const ModalMailboxSettings = ({
       isOpen={isOpen}
       aria-label={t("Settings")}
       onClose={guardedOnClose}
-      size={ModalSize.LARGE}
+      size={isMobile ? ModalSize.FULL : ModalSize.LARGE}
       variant="tab"
-      sidebarTitle={<div className="mailbox-settings__identity">{sidebarHeader}</div>}
+      sidebarTitle={
+        <div className="mailbox-settings__identity" ref={drillDownRef}>
+          {sidebarHeader}
+        </div>
+      }
       tabs={tabs}
       activeTab={activeTab}
       onTabChange={async (tabId) => {

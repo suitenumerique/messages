@@ -3,7 +3,7 @@ import { RhfInput } from "@/features/forms/components/react-hook-form/rhf-input"
 import { RhfCheckbox } from "@/features/forms/components/react-hook-form/rhf-checkbox";
 import { zodResolver } from "@hookform/resolvers/zod";
 import { Button, Modal, ModalSize } from "@gouvfr-lasuite/cunningham-react";
-import { Spinner } from "@gouvfr-lasuite/ui-kit";
+import { Spinner, useResponsive } from "@gouvfr-lasuite/ui-kit";
 import { FormProvider, useForm } from "react-hook-form";
 import { useTranslation } from "react-i18next";
 import { z } from "zod";
@@ -29,6 +29,7 @@ type ModalComposeMailboxSignatureProps = {
 }
 
 export const ModalComposeMailboxSignature = ({ isOpen, onClose, mailbox, signature }: ModalComposeMailboxSignatureProps) => {
+    const { isMobile } = useResponsive();
     const { t } = useTranslation();
     const queryClient = useQueryClient();
     const [isDirty, setIsDirty] = useState(false);
@@ -54,7 +55,7 @@ export const ModalComposeMailboxSignature = ({ isOpen, onClose, mailbox, signatu
         <Modal
             isOpen={isOpen}
             title={signature ? t('Edit signature "{{signature}}"', { signature: signature.name }) : t("Create a new signature")}
-            size={ModalSize.LARGE}
+            size={isMobile ? ModalSize.FULL : ModalSize.LARGE}
             onClose={guardedOnClose}
         >
             <div className="modal-compose-template">

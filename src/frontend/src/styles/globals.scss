@@ -28,13 +28,11 @@
   // fold it into --header-height — panels and the mobile thread view are all
   // laid out from it and follow automatically. The header itself pushes its
   // content below the inset (see main/header/_index.scss).
+  //
+  // No mobile override here, unlike the web: the native header keeps a single
+  // row at every width (its search opens from a trigger instead of taking a
+  // second row), so it never grows to 104px.
   --header-height: calc(52px + var(--safe-area-inset-top));
-}
-
-@media screen and (max-width: breakpoint(tablet)) {
-  :root.native {
-    --header-height: calc(104px + var(--safe-area-inset-top));
-  }
 }
 
 // Reserve room for the floating bottom bar so the last list item / message
@@ -42,36 +40,6 @@
 .native .thread-panel__threads_list,
 .native .thread-view {
   padding-bottom: var(--mobile-bottom-bar-height);
-}
-
-// BlockNote's mobile toolbar pins itself above the keyboard via its own
-// --bn-mobile-keyboard-offset (Visual Viewport based). The positioning rule
-// lives in @blocknote/react's stylesheet, which we don't load (mantine theme
-// only), so we declare it here.
-.native .bn-mobile-formatting-toolbar {
-  position: fixed;
-  left: 0;
-  right: 0;
-  bottom: var(--bn-mobile-keyboard-offset, 0px);
-  z-index: 1100;
-  display: flex;
-  overflow-x: auto;
-  touch-action: pan-x;
-  -webkit-overflow-scrolling: touch;
-  padding-bottom: var(--safe-area-inset-bottom);
-  transition: bottom 0.15s ease-out;
-  // Solid bar so the buttons read against the content scrolling behind.
-  background-color: var(--c--contextuals--background--surface--secondary);
-  border-top: 1px solid var(--c--contextuals--border--surface--primary);
-
-  // Keep all buttons on a single horizontally-scrollable row.
-  .bn-formatting-toolbar {
-    flex-wrap: nowrap;
-    width: max-content;
-    box-shadow: none;
-    border: none;
-    background: transparent;
-  }
 }
 
 html, body {
@@ -168,11 +136,15 @@ body {
   border-bottom: 1px solid var(--c--contextuals--border--surface--primary);
 }
 
+.c__datagrid .c__datagrid__empty-placeholder {
+  text-align: center;
+}
+
 .c__dropdown-menu-trigger .c__button {
   font-size: var(--c--globals--font--sizes--sm);
 }
 
-a.c__button.c__button--brand--primary.c__button--disabled {
+a.c__button.c__button--brand--primary[aria-disabled="true"] {
     background-color: var(--c--contextuals--background--semantic--disabled--primary);
     color: var(--c--contextuals--content--semantic--disabled--primary);
 }
@@ -205,6 +177,26 @@ a.c__button.c__button--brand--primary.c__button--disabled {
 .c__modal--full {
   padding-top: var(--safe-area-inset-top);
   padding-bottom: var(--safe-area-inset-bottom);
+}
+
+// Cunningham shrinks every modal's padding to 0.7rem under 420px while its close
+// button keeps the -1.1rem offset sized for the default 1.5rem padding: on
+// phones the button bleeds off-screen and the content nearly touches the edges.
+// Fullscreen modals take the same `base` padding as the tab modal's content
+// pane, with the close button kept inside it and the title clear of it.
+@media screen and (max-width: breakpoint("tablet")) {
+  .c__modal--full .c__modal__scroller {
+    padding: var(--c--globals--spacings--base);
+  }
+
+  .c__modal--full .c__modal__close .c__button {
+    right: 0;
+    top: 0;
+  }
+
+  .c__modal--full .c__modal__title {
+    padding-right: var(--c--globals--spacings--lg);
+  }
 }
 
 // On mobile, non-fullscreen modals are nearly full-width, so Cunningham's close
@@ -326,4 +318,8 @@ a.c__button.c__button--brand--primary.c__button--disabled {
 
 .text-nowrap {
   white-space: nowrap;
+}
+
+.text-center {
+  text-align: center;
 }

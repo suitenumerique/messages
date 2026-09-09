@@ -9,7 +9,7 @@ import { MailDomainAdmin, DNSRecordCheck } from "@/features/api/gen";
 import { Banner } from "@/features/ui/components/banner";
 import { useMaildomainsCheckDnsCreate, useMaildomainsRetrieve } from "@/features/api/gen/maildomains/maildomains";
 import { CopyableInput } from "@/features/ui/components/copyable-input";
-import { Icon } from "@gouvfr-lasuite/ui-kit";
+import { Icon } from "@/features/ui/components/icon";
 import { handle } from "@/features/utils/errors";
 import { useParams } from "@tanstack/react-router";
 

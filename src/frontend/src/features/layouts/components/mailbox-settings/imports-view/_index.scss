@@ -13,14 +13,21 @@
 // Rendered in the settings tab title slot: the back-link sits above the heading.
 .import-new-title {
     display: flex;
-    flex-direction: column;
-    align-items: flex-start;
-    gap: var(--c--globals--spacings--3xs);
+    flex-direction: row;
+    align-items: center;
+
+    &__heading {
+        line-height: 1rem;
+    }
 
     &__back {
         // Compact, secondary — a link back to the list, not a heading-sized CTA.
-        font-weight: 400;
+        margin-left: calc(var(--c--globals--spacings--sm) * -1);
     }
+}
+
+.c__modal__tab-content__header:has(.import-new-title) > .c__modal__tab-content__back {
+    display: none;
 }
 
 .import-form {

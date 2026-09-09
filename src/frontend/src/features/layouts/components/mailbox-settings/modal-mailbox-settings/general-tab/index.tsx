@@ -8,7 +8,7 @@ import { Mailbox, useMailboxesPartialUpdate } from "@/features/api/gen";
 import { RhfInput } from "@/features/forms/components/react-hook-form/rhf-input";
 import { useMailboxContext } from "@/features/providers/mailbox";
 import { addToast, ToasterItem } from "@/features/ui/components/toaster";
-import { Icon } from "@gouvfr-lasuite/ui-kit";
+import { Icon } from "@/features/ui/components/icon";
 import i18n from "@/features/i18n/initI18n";
 
 type MailboxSettingsGeneralTabProps = {

@@ -3,6 +3,7 @@ import { Attachment } from "@/features/api/gen/models";
 import { CALC_EXTENSIONS, MIME_TO_CATEGORY, MIME_TO_FORMAT_TRANSLATION_KEY, MIME_TO_ICON, MIME_TO_ICON_MINI, MimeCategory } from "./constants";
 import { getBlobDownloadRetrieveUrl, getBlobPreviewRetrieveUrl } from "@/features/api/gen/blob/blob";
 import { getRequestUrl } from "@/features/api/utils";
+import { toNativeMediaUrl } from "@/features/native/media-url";
 import { DriveFile } from "@/features/forms/components/message-form/drive-attachment-picker";
 
 /**
@@ -77,6 +78,12 @@ export class AttachmentHelper {
      * Map a Messages attachment to the shape expected by the kit's
      * FilePreview component. The id is stable per attachment so the
      * viewer can resolve which file to open via ``openedFileId``.
+     *
+     * The viewer loads ``url_preview`` as a plain ``<img>``/``<video>``
+     * subresource, which carries no session inside the native shell — hence
+     * the rewrite (see ``toNativeMediaUrl``). ``url`` stays raw: it is
+     * consumed by ``nativeDownloadFile`` through ``CapacitorHttp``, which
+     * already has the session and must not be pointed at the proxy.
      */
     static toFilePreviewType(attachment: Attachment): FilePreviewType {
         return {
@@ -84,7 +91,7 @@ export class AttachmentHelper {
             size: attachment.size,
             title: attachment.name,
             mimetype: attachment.type,
-            url_preview: getRequestUrl(getBlobPreviewRetrieveUrl(attachment.blobId)),
+            url_preview: toNativeMediaUrl(getRequestUrl(getBlobPreviewRetrieveUrl(attachment.blobId))),
             url: getRequestUrl(getBlobDownloadRetrieveUrl(attachment.blobId)),
             isSuspicious: false,
         };
@@ -94,10 +101,12 @@ export class AttachmentHelper {
      * Map a Drive attachment to FilePreviewType.
      *
      * ``url_preview`` points straight at Drive's own preview endpoint
-     * (``{drive}/media/preview/item/{id}/{name}``) — the viewer fetches it
-     * cross-origin, so Drive must accept CORS from Messages' origin and the
-     * user's Drive session cookie. When Drive isn't configured the URL is
-     * empty and the viewer falls back to NotSupportedPreview.
+     * (``{drive}/media/preview/item/{id}/{name}``): files attached from
+     * Drive are shared through a public link, so the viewer loads it
+     * cross-origin without any Drive session (Drive must still accept CORS
+     * from Messages' origin for the PDF viewer's fetch). When Drive isn't
+     * configured the URL is empty; the kit has no fallback for that and
+     * renders an empty viewer.
      *
      * ``url`` keeps the Drive permalink so the modal's "Open in Drive"
      * header action keeps working.

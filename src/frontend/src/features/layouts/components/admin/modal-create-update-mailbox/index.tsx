@@ -21,7 +21,8 @@ import { JSONSchema } from "zod/v4/core";
 import MailboxHelper from "@/features/utils/mailbox-helper";
 import MailHelper from "@/features/utils/mail-helper";
 import { addToast, ToasterItem } from "@/features/ui/components/toaster";
-import { Icon, IconType } from "@gouvfr-lasuite/ui-kit";
+import { IconType } from "@gouvfr-lasuite/ui-kit";
+import { Icon } from "@/features/ui/components/icon";
 import i18n from "@/features/i18n/initI18n";
 
 export const MODAL_CREATE_ADDRESS_ID = "modal-create-address";

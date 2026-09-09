@@ -1,27 +1,30 @@
-import { Button, ButtonProps } from "@gouvfr-lasuite/cunningham-react";
-import { Icon } from "@gouvfr-lasuite/ui-kit";
+import { Button } from "@gouvfr-lasuite/cunningham-react";
+import { Icon } from "@/features/ui/components/icon";
+import { Plus } from "@gouvfr-lasuite/ui-kit/icons";
 import { useTranslation } from "react-i18next";
 import { useModal } from "@gouvfr-lasuite/cunningham-react";
 import { Mailbox } from "@/features/api/gen";
 import { ModalComposeTemplate } from "../modal-compose-template";
+import { useResponsive } from "@gouvfr-lasuite/ui-kit";
 
 type ComposeTemplateActionProps = {
     mailbox: Mailbox;
-    size?: ButtonProps["size"];
 };
 
-export const ComposeTemplateAction = ({ mailbox, size }: ComposeTemplateActionProps) => {
+export const ComposeTemplateAction = ({ mailbox }: ComposeTemplateActionProps) => {
     const { t } = useTranslation();
     const modal = useModal();
+    const { isMobile } = useResponsive();
 
     return (
         <>
             <Button
-                size={size}
+                size={isMobile ? "small" : "nano"}
                 onClick={() => modal.open()}
-                icon={<Icon name="add" />}
+                icon={<Icon icon={Plus} />}
+                aria-label={isMobile ? t("New template") : undefined}
             >
-                {t("New template")}
+                {!isMobile && t("New template")}
             </Button>
             <ModalComposeTemplate
                 isOpen={modal.isOpen}

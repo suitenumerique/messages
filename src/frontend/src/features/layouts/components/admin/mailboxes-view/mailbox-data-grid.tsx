@@ -2,7 +2,7 @@ import { MailboxAdmin, MailDomainAdmin, useMaildomainsMailboxesDestroy, useMaild
 import { ModalMailboxManageAccesses } from "@/features/layouts/components/admin/modal-mailbox-manage-accesses";
 import { Banner } from "@/features/ui/components/banner";
 import useAbility, { Abilities } from "@/hooks/use-ability";
-import { IconType, DropdownMenu, Icon, IconSize, Spinner, DropdownMenuItem } from "@gouvfr-lasuite/ui-kit";
+import { IconType, DropdownMenu, IconSize, Spinner, DropdownMenuItem } from "@gouvfr-lasuite/ui-kit";
 import { Button, DataGrid, Switch, Tooltip, useModals, usePagination } from "@gouvfr-lasuite/cunningham-react";
 import { keepPreviousData } from "@tanstack/react-query";
 import { useEffect, useState } from "react";
@@ -14,6 +14,8 @@ import { ModalCreateOrUpdateMailbox } from "../modal-create-update-mailbox";
 import MailboxHelper from "@/features/utils/mailbox-helper";
 import { FEATURE_KEYS, useFeatureFlag } from "@/hooks/use-feature";
 import { EmptyCell } from "@/features/ui/components/empty-cell";
+import { Icon } from "@/features/ui/components/icon";
+import { Trash } from "@gouvfr-lasuite/ui-kit/icons";
 
 type AdminUserDataGridProps = {
     domain: MailDomainAdmin;
@@ -142,7 +144,7 @@ export const AdminMailboxDataGrid = ({ domain, pagination, searchQuery }: AdminU
                     refetchMailboxes();
                     addToast(
                         <ToasterItem type="error">
-                            <Icon name="delete" size={IconSize.SMALL} />
+                            <Icon icon={Trash} size={IconSize.SMALL} />
                             <span>{t('Mailbox {{mailbox}} has been deleted successfully.', { mailbox: email })}</span>
                         </ToasterItem>
                     );
@@ -357,7 +359,7 @@ const ActionsRow = ({ onManageAccess, onResetPassword, onResetTotp, onExport, on
         { icon: <Icon name="file_download" size={IconSize.SMALL} />, label: t('Export mailbox'), callback: onExport },
     ];
     const destructive: DropdownMenuItem = {
-      icon: <Icon name="delete" size={IconSize.SMALL} />, label: t('Delete'), callback: onDelete, variant: 'danger'
+      icon: <Icon icon={Trash} size={IconSize.SMALL} />, label: t('Delete'), callback: onDelete, variant: 'danger'
     };
     const options = [
         ...secondaryActions.map((opt, i) => ({

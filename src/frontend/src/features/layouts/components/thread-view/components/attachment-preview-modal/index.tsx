@@ -10,6 +10,7 @@ import MailHelper from "@/features/utils/mail-helper";
 import type { Attachment, Message } from "@/features/api/gen/models";
 import type { DriveFile } from "@/features/forms/components/message-form/drive-attachment-picker";
 import { AttachmentPreviewSidebar } from "./sidebar";
+import { withoutPrintAction } from "./without-print-action";
 
 /**
  * Error ``code`` returned by /blob/{id}/preview/ in a 415 body when the
@@ -224,6 +225,8 @@ export const AttachmentPreviewModal = () => {
             openedFileId={openedFileId ?? undefined}
             onChangeFile={(file) => setCurrentFileId(file?.id ?? null)}
             handleDownloadFile={handleDownloadFile}
+            // No printing in the native shell (see thread-message-actions).
+            customHeaderActions={isNativePlatform() ? withoutPrintAction : undefined}
             pdfWorkerSrc="/pdf.worker.min.mjs"
             sidebarContent={
                 currentDisplayFile ? (

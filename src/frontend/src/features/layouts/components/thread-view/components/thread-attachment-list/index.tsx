@@ -5,7 +5,8 @@ import { AttachmentHelper } from "@/features/utils/attachment-helper";
 import { DriveFile } from "@/features/forms/components/message-form/drive-attachment-picker";
 import { useMailboxContext } from "@/features/providers/mailbox";
 import { Banner } from "@/features/ui/components/banner";
-import { Icon, IconType } from "@gouvfr-lasuite/ui-kit";
+import { IconType } from "@gouvfr-lasuite/ui-kit";
+import { Icon } from "@/features/ui/components/icon";
 
 
 type AttachmentListProps = {

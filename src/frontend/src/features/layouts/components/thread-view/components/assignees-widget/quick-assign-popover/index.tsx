@@ -1,4 +1,5 @@
-import { Icon, IconSize, IconType, Spinner, UserAvatar } from "@gouvfr-lasuite/ui-kit";
+import { IconSize, IconType, Spinner, UserAvatar } from "@gouvfr-lasuite/ui-kit";
+import { Icon } from "@/features/ui/components/icon";
 import {
     Autocomplete,
     Dialog,
@@ -208,7 +209,6 @@ export const QuickAssignPopover = ({
                             type={IconType.OUTLINED}
                             size={IconSize.SMALL}
                             className="quick-assign-popover__search-icon"
-                            aria-hidden="true"
                         />
                         {/* autoFocus is essential: Dialog's FocusScope can
                         land on the wrapper instead of the Input depending on
@@ -283,7 +283,6 @@ export const QuickAssignPopover = ({
                                                 type={IconType.OUTLINED}
                                                 size={IconSize.SMALL}
                                                 className="quick-assign-popover__row-check"
-                                                aria-hidden="true"
                                             />
                                         )}
                                     </MenuItem>

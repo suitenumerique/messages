@@ -2,7 +2,8 @@ import { useCallback } from 'react';
 import { BlockNoteEditor } from '@blocknote/core';
 import { useBlockNoteEditor, useComponentsContext, useEditorState } from '@blocknote/react';
 import { useTranslation } from 'react-i18next';
-import { Icon, IconSize } from '@gouvfr-lasuite/ui-kit';
+import { IconSize } from '@gouvfr-lasuite/ui-kit';
+import { Icon } from "@/features/ui/components/icon";
 
 // ---------------------------------------------------------------------------
 // Column list block factory
@@ -69,7 +70,7 @@ export const ColumnLayoutInsertButton = () => {
 
     return (
         <Components.FormattingToolbar.Button
-            icon={<Icon name="vertical_split" size={IconSize.SMALL} style={{ transform: 'rotate(180deg)' }} />}
+            icon={<Icon name="vertical_split" size={IconSize.SMALL} className="column-layout-insert-icon" />}
             label={t('Insert 2 columns')}
             mainTooltip={t('Insert 2 columns')}
             isDisabled={insideColumn}

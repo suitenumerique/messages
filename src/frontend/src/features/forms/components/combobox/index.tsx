@@ -4,7 +4,7 @@ import { useCombobox, useMultipleSelection } from "downshift"
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { Chip } from "./chip";
 import { Button, Option } from "@gouvfr-lasuite/cunningham-react";
-import { Icon } from "@gouvfr-lasuite/ui-kit";
+import { Icon } from "@/features/ui/components/icon";
 import { useTranslation } from "react-i18next";
 
 export type ComboBoxProps =  {

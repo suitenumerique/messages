@@ -11,7 +11,7 @@ import { EmailExporter } from '@/features/blocknote/email-exporter';
 import { blocksToPlainText } from '@/features/blocknote/markdown-exporter';
 import { useConfig } from '@/features/providers/config';
 import MailHelper from '@/features/utils/mail-helper';
-import { backfillTemplateVariableContent, createBlockNoteDictionary, createNonImageFileBlockers, dropUnsupportedBlocks } from '@/features/blocknote/utils';
+import { backfillTemplateVariableContent, createBlockNoteDictionary, createNonImageFileBlockers, dropUnsupportedBlocks, createNativeLinkOptions } from '@/features/blocknote/utils';
 import { PasteColorSanitizer } from '@/features/blocknote/paste-sanitizer';
 import { handle } from '@/features/utils/errors';
 
@@ -128,6 +128,7 @@ export const useBase64Composer = <
         trailingBlock,
         uploadFile,
         dictionary: createBlockNoteDictionary(locale, t),
+        ...createNativeLinkOptions(),
         ...blockNoteOptions,
         _tiptapOptions: {
             extensions: [...(extensions ?? []), PasteColorSanitizer],

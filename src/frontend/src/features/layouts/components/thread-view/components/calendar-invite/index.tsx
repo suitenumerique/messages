@@ -3,7 +3,8 @@ import { useState, useMemo, useCallback, useEffect, useRef } from "react";
 import { useTranslation } from "react-i18next";
 import { useQuery } from "@tanstack/react-query";
 import { Button } from "@gouvfr-lasuite/cunningham-react";
-import { Icon, IconType, Spinner } from "@gouvfr-lasuite/ui-kit";
+import { IconType, Spinner } from "@gouvfr-lasuite/ui-kit";
+import { Icon } from "@/features/ui/components/icon";
 import {
     convertIcsCalendar,
     IcsCalendar,
@@ -13,6 +14,8 @@ import {
 import { Attachment } from "@/features/api/gen/models";
 import { StatusEnum } from "@/features/api/gen";
 import { AttachmentHelper } from "@/features/utils/attachment-helper";
+import { isNativePlatform } from "@/features/native/platform";
+import { useNativeDownload } from "@/features/native/use-native-download";
 import MailHelper from "@/features/utils/mail-helper";
 import { ContactChip } from "@/features/ui/components/contact-chip";
 import { Badge } from "@/features/ui/components/badge";
@@ -100,16 +103,33 @@ const DownloadButton = ({
     variant?: "primary" | "secondary" | "tertiary" | "link";
 }) => {
     const { t } = useTranslation();
+    const downloadNatively = useNativeDownload();
+    const filename = name.startsWith("unnamed") ? "invitation.ics" : name;
+    const label = t("Download invitation");
+    const commonProps = {
+        size: "small",
+        variant: variant === "link" ? "tertiary" : variant,
+        color: variant === "link" ? "neutral" : undefined,
+        icon: <Icon name="download" type={IconType.OUTLINED} />,
+    } as const;
+
+    // In the native shell an <a download> escapes to the system browser (no
+    // session → 401): fetch through the native HTTP layer instead.
+    if (isNativePlatform()) {
+        return (
+            <Button
+                {...commonProps}
+                type="button"
+                onClick={() => void downloadNatively(downloadUrl, filename)}
+            >
+                {label}
+            </Button>
+        );
+    }
+
     return (
-        <Button
-            size="small"
-            variant={variant === "link" ? "tertiary" : variant}
-            color={variant === "link" ? "neutral" : undefined}
-            icon={<Icon name="download" type={IconType.OUTLINED} />}
-            href={downloadUrl}
-            download={name.startsWith("unnamed") ? "invitation.ics" : name}
-        >
-            {t("Download invitation")}
+        <Button {...commonProps} href={downloadUrl} download={filename}>
+            {label}
         </Button>
     );
 };

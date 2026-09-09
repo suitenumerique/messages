@@ -30,13 +30,13 @@ import {
     type QuickSearchData,
     QuickSearchGroup,
     QuickSearchItemTemplate,
-    Icon,
     ShareInvitationItem,
     type DropdownMenuOption,
     type UserData,
     UserRow,
     useResponsive,
 } from "@gouvfr-lasuite/ui-kit";
+import { Icon } from "@/features/ui/components/icon";
 import { InvitationUserSelectorList } from "./invitation-user-selector";
 import { ShareMemberItem } from "./share-member-item";
 

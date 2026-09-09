@@ -1,5 +1,5 @@
 import { Mailbox, TreeLabel, ThreadLabel, useLabelsList } from "@/features/api/gen";
-import { Icon, IconType, IconSize, Spinner } from "@gouvfr-lasuite/ui-kit";
+import { IconSize, Spinner } from "@gouvfr-lasuite/ui-kit";
 import { Button, Checkbox, Field, Input, LabelledBox, useModal } from "@gouvfr-lasuite/cunningham-react";
 import { useState, useMemo, useRef } from "react";
 import { createPortal } from "react-dom";
@@ -10,6 +10,8 @@ import { LabelModal } from "@/features/layouts/components/mailbox-panel/componen
 import { Badge } from "@/features/ui/components/badge";
 import { ColorHelper } from "@/features/utils/color-helper";
 import { usePopupPosition } from "@/hooks/use-popup-position";
+import { Icon } from "@/features/ui/components/icon";
+import { Plus, TagAdd, XMark, Zoom } from "@gouvfr-lasuite/ui-kit/icons";
 
 type TagsSelectorProps = {
     mailbox: Mailbox;
@@ -152,7 +154,7 @@ export const TagsSelector = ({ mailbox, selectedTags, onTagsChange }: TagsSelect
                                         }}
                                         aria-label={t('Remove tag')}
                                     >
-                                        <Icon name="close" size={IconSize.SMALL} type={IconType.OUTLINED} />
+                                        <Icon icon={XMark} size={IconSize.SMALL} />
                                     </button>
                                 </Badge>
                             );
@@ -167,7 +169,7 @@ export const TagsSelector = ({ mailbox, selectedTags, onTagsChange }: TagsSelect
                                 e.stopPropagation();
                                 setIsPopupOpen(true);
                             }}
-                            icon={<Icon name="new_label" type={IconType.OUTLINED} />}
+                            icon={<Icon icon={TagAdd} />}
                             aria-label={t('Add tags')}
                         />
                     </div>
@@ -182,11 +184,11 @@ export const TagsSelector = ({ mailbox, selectedTags, onTagsChange }: TagsSelect
                         style={{ position: 'fixed', top: position.top, left: position.left, maxHeight: position.maxHeight }}
                     >
                         <header className="labels-widget__popup__header">
-                            <h3><Icon type={IconType.OUTLINED} name="new_label" /> {t('Add tags')}</h3>
+                            <h3><Icon icon={TagAdd} /> {t('Add tags')}</h3>
                             <Input
                                 className="labels-widget__popup__search"
                                 type="search"
-                                icon={<Icon type={IconType.OUTLINED} name="search" />}
+                                icon={<Icon icon={Zoom} />}
                                 label={t('Search a tag')}
                                 value={searchQuery}
                                 onChange={(e) => setSearchQuery(e.target.value)}
@@ -208,9 +210,16 @@ export const TagsSelector = ({ mailbox, selectedTags, onTagsChange }: TagsSelect
                                     type="button"
                                     color="brand"
                                     variant="primary"
-                                    onClick={open}
+                                    // Closing before opening the modal: Cunningham
+                                    // modals carry no z-index (react-modal portaled
+                                    // to body), so the popup and its overlay would
+                                    // paint above the modal and swallow its clicks.
+                                    onClick={() => {
+                                        setIsPopupOpen(false);
+                                        open();
+                                    }}
                                     fullWidth
-                                    icon={<Icon type={IconType.OUTLINED} name="add" />}
+                                    icon={<Icon icon={Plus} />}
                                 >
                                     <span className="labels-widget__popup__content__empty__button-label">
                                         {searchQuery && labelsOptions.length === 0
@@ -218,19 +227,19 @@ export const TagsSelector = ({ mailbox, selectedTags, onTagsChange }: TagsSelect
                                             : t('Create a new label')}
                                     </span>
                                 </Button>
-                                <LabelModal
-                                    isOpen={isOpen}
-                                    onClose={close}
-                                    mailbox={mailbox}
-                                    label={{ display_name: searchQuery }}
-                                    onSuccess={handleCreateLabel}
-                                />
                             </li>
                         </ul>
                     </div>
                 </>,
                 document.body
             )}
+            <LabelModal
+                isOpen={isOpen}
+                onClose={close}
+                mailbox={mailbox}
+                label={{ display_name: searchQuery }}
+                onSuccess={handleCreateLabel}
+            />
         </Field>
     );
 };
