@@ -11,7 +11,7 @@ import type { MailboxAbilities } from "./mailbox_abilities";
 /**
  * Serialize mailboxes.
  */
-export interface Mailbox {
+export type Mailbox = {
   /** primary key for the record as UUID */
   readonly id: string;
   readonly email: string;
@@ -43,4 +43,4 @@ identity mailbox. */
   readonly count_assigned: number;
   /** Instance permissions and capabilities */
   readonly abilities: MailboxAbilities;
-}
+};

@@ -1,4 +1,4 @@
-import { Button, IconType, Tooltip } from "@gouvfr-lasuite/cunningham-react";
+import { Button, IconType, Tooltip } from "@gouvfr-lasuite/ui-components";
 import { Icon } from "@/features/ui/components/icon";
 import clsx from "clsx";
 import { HTMLAttributes } from "react";

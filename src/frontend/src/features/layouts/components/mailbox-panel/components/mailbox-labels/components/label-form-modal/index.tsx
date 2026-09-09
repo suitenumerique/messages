@@ -3,7 +3,7 @@ import { useLabelsCreate, useLabelsList, useLabelsUpdate } from "@/features/api/
 import { RhfInput, RhfSelect, RhfCheckbox, RhfTextArea } from "@/features/forms/components/react-hook-form";
 import { useMailboxContext } from "@/features/providers/mailbox";
 import { zodResolver } from "@hookform/resolvers/zod";
-import { Button, Modal, ModalSize } from "@gouvfr-lasuite/cunningham-react";
+import { Button, Modal, ModalSize } from "@gouvfr-lasuite/ui-components";
 import { useQueryClient } from "@tanstack/react-query";
 import { useLocation, useNavigate } from "@tanstack/react-router";
 import { useUrlSearchParams } from "@/hooks/use-url-search-params";

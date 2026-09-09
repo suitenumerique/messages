@@ -1,4 +1,4 @@
-import { Button, useModal } from "@gouvfr-lasuite/cunningham-react";
+import { Button, useModal } from "@gouvfr-lasuite/ui-components";
 import { ModalComposeSignature } from "../modal-compose-signature";
 import { useTranslation } from "react-i18next";
 

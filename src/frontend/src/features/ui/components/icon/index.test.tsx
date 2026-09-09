@@ -2,7 +2,7 @@ import { describe, expect, it, vi } from "vitest";
 import { act } from "react";
 import { createRoot } from "react-dom/client";
 import { renderToStaticMarkup } from "react-dom/server";
-import type { IconSvgProps } from "@gouvfr-lasuite/ui-kit";
+import type { IconSvgProps } from "@gouvfr-lasuite/ui-components";
 
 import { APP_ICON_NAMES, Icon } from "./index";
 
@@ -13,7 +13,7 @@ type MockMaterialIconProps = {
     "aria-hidden"?: boolean;
 };
 
-vi.mock("@gouvfr-lasuite/ui-kit", () => ({
+vi.mock("@gouvfr-lasuite/ui-components", () => ({
     Icon: (props: MockMaterialIconProps) => (
         <span
             data-material-icon={props.name}

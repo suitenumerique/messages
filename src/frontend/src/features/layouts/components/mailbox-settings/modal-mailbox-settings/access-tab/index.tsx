@@ -1,5 +1,5 @@
-import { Button } from "@gouvfr-lasuite/cunningham-react";
-import { ShareMemberItem, ShareModal, useResponsive } from "@gouvfr-lasuite/ui-kit";
+import { Button } from "@gouvfr-lasuite/ui-components";
+import { ShareMemberItem, ShareModal, useResponsive } from "@gouvfr-lasuite/ui-components";
 import { Icon } from "@/features/ui/components/icon";
 import { useState } from "react";
 import { useTranslation } from "react-i18next";
@@ -15,7 +15,7 @@ import {
   useMailboxAccessManagement,
 } from "@/hooks/use-mailbox-access-management";
 import { ResourceSectionHeader } from "../resource-section-header";
-import { UserAdd } from "@gouvfr-lasuite/ui-kit/icons";
+import { UserAdd } from "@gouvfr-lasuite/ui-components/icons";
 
 type MailboxSettingsAccessTabProps = {
   mailbox: Mailbox;

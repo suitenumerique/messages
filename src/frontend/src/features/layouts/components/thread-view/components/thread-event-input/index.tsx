@@ -1,11 +1,10 @@
 import { RefObject, useCallback, useEffect, useRef, useState } from "react";
 import { useTranslation } from "react-i18next";
-import { IconSize, IconType, UserRow } from "@gouvfr-lasuite/ui-kit";
+import { Button, IconSize, IconType, UserRow } from "@gouvfr-lasuite/ui-components";
 import { Icon } from "@/features/ui/components/icon";
 import { useThreadsEventsCreate, useThreadsEventsPartialUpdate, useThreadsUsersList, ThreadMentionableUser, ThreadEventTypeEnum, ThreadEvent, ThreadEventIMData } from "@/features/api/gen";
 import { StringHelper } from "@/features/utils/string-helper";
 import { TextHelper } from "@/features/utils/text-helper";
-import { Button } from "@gouvfr-lasuite/cunningham-react";
 import { Badge } from "@/features/ui/components/badge";
 import { useMailboxContext } from "@/features/providers/mailbox";
 import { useAuth } from "@/features/auth";

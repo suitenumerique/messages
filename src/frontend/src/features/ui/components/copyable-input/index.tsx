@@ -1,5 +1,5 @@
 import React, { useState } from "react";
-import { Button } from "@gouvfr-lasuite/cunningham-react";
+import { Button } from "@gouvfr-lasuite/ui-components";
 import { useTranslation } from "react-i18next";
 import { handle } from "@/features/utils/errors";
 import { Icon } from "@/features/ui/components/icon";

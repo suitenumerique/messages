@@ -6,7 +6,7 @@
  * OpenAPI spec version: 1.0.0 (v1.0)
  */
 
-export interface MailboxAdminExportResponse {
+export type MailboxAdminExportResponse = {
   task_id: string;
   recipient: string;
-}
+};

@@ -1,7 +1,7 @@
 import { Label, ThreadLabel, TreeLabel, useLabelsList } from "@/features/api/gen";
 import { Thread } from "@/features/api/gen/models";
-import { Spinner, useResponsive } from "@gouvfr-lasuite/ui-kit";
-import { Button, Checkbox, Input, Tooltip } from "@gouvfr-lasuite/cunningham-react";
+import { Spinner, useResponsive } from "@gouvfr-lasuite/ui-components";
+import { Button, Checkbox, Input, Tooltip } from "@gouvfr-lasuite/ui-components";
 import { forwardRef, RefObject, useEffect, useImperativeHandle, useMemo, useRef, useState } from "react";
 import { createPortal } from "react-dom";
 import { useTranslation } from "react-i18next";
@@ -14,7 +14,7 @@ import { LabelModal } from "@/features/layouts/components/mailbox-panel/componen
 import useDeleteLabel from "@/features/message/use-delete-label";
 import useAddLabel from "@/features/message/use-add-label";
 import { Icon } from "@/features/ui/components/icon";
-import { Plus, TagAdd, Zoom } from "@gouvfr-lasuite/ui-kit/icons";
+import { Plus, TagAdd, Zoom } from "@gouvfr-lasuite/ui-components/icons";
 
 export type LabelsWidgetHandle = {
     open: () => void;

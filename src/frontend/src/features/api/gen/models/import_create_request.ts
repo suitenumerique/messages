@@ -18,7 +18,7 @@ nothing in the bucket is ever overwritten) plus the original ``filename``
 ``continuous`` mode is IMAP-only. Read-only run state is returned via
 ``ImportRunSerializer``.
  */
-export interface ImportCreateRequest {
+export type ImportCreateRequest = {
   /** 'file' (an uploaded archive — the backend sniffs eml/mbox/pst) or 'imap' (a live server).
 
 * `file` - file
@@ -47,4 +47,4 @@ export interface ImportCreateRequest {
   password?: string;
   use_ssl?: boolean;
   mode?: ModeEnum;
-}
+};

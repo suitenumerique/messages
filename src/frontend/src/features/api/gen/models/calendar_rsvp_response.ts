@@ -6,6 +6,6 @@
  * OpenAPI spec version: 1.0.0 (v1.0)
  */
 
-export interface CalendarRsvpResponse {
+export type CalendarRsvpResponse = {
   task_id: string;
-}
+};

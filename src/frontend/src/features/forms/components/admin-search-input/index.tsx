@@ -1,5 +1,4 @@
-import { IconType } from "@gouvfr-lasuite/ui-kit";
-import { Input } from "@gouvfr-lasuite/cunningham-react";
+import { Input, IconType } from "@gouvfr-lasuite/ui-components";
 import { Icon } from "@/features/ui/components/icon";
 import { useEffect, useState } from "react";
 import { useDebounceCallback } from "@/hooks/use-debounce-callback";

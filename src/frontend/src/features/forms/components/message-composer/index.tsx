@@ -7,7 +7,7 @@ import { imageBlockSpec, ALLOWED_IMAGE_MIME_TYPES } from '@/features/blocknote/i
 import { EmailExporter } from '@/features/blocknote/email-exporter';
 import { blocksToPlainText } from '@/features/blocknote/markdown-exporter';
 
-import { FieldProps } from '@gouvfr-lasuite/cunningham-react';
+import { FieldProps } from "@gouvfr-lasuite/ui-components";
 import { useFormContext } from 'react-hook-form';
 import React, { useEffect, useImperativeHandle, useRef } from 'react';
 import { QuotedMessageBlock } from '@/features/blocknote/quoted-message-block';

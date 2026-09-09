@@ -6,7 +6,7 @@ import {
   Separator,
   useDefaultLayout,
 } from "react-resizable-panels";
-import { DropdownMenuOption, LeftPanel, useResponsive } from "@gouvfr-lasuite/ui-kit";
+import { DropdownMenuOption, LeftPanel, useResponsive } from "@gouvfr-lasuite/ui-components";
 import { useControllableState } from "../hooks/useControllableState";
 import { useOtaUpdateToast } from "@/features/native/use-ota-update-toast";
 import { Toaster } from "@/features/ui/components/toaster";

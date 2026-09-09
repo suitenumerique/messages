@@ -1,4 +1,4 @@
-import { Button, Tooltip } from "@gouvfr-lasuite/cunningham-react";
+import { Button, Tooltip } from "@gouvfr-lasuite/ui-components";
 import { useRef, useState } from "react";
 import { useTranslation } from "react-i18next";
 import { useAssignedUsers } from "@/features/message/use-assigned-users";
@@ -7,7 +7,7 @@ import useAbility, { Abilities } from "@/hooks/use-ability";
 import { useIsSharedContext } from "@/hooks/use-is-shared-context";
 import { AssigneesAvatarGroup } from "@/features/ui/components/assignees-avatar-group";
 import { QuickAssignPopover } from "./quick-assign-popover";
-import { UserAdd } from "@gouvfr-lasuite/ui-kit/icons";
+import { UserAdd } from "@gouvfr-lasuite/ui-components/icons";
 import { Icon } from "@/features/ui/components/icon";
 import { isNativePlatform } from "@/features/native/platform";
 

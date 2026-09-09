@@ -1,5 +1,5 @@
 import { Controller, useFormContext } from "react-hook-form";
-import { Checkbox, InputProps } from "@gouvfr-lasuite/cunningham-react";
+import { Checkbox, InputProps } from "@gouvfr-lasuite/ui-components";
 
 /**
  * A wrapper component for the Checkbox component that integrates with react-hook-form.

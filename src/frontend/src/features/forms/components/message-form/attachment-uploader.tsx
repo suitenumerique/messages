@@ -1,6 +1,6 @@
 import { MouseEventHandler, useCallback, useMemo } from 'react';
 import { Attachment } from "@/features/api/gen/models";
-import { Button, Field } from '@gouvfr-lasuite/cunningham-react';
+import { Button, Field } from "@gouvfr-lasuite/ui-components";
 import { AttachmentItem, isAttachment, isDriveFile } from '@/features/layouts/components/thread-view/components/thread-attachment-list/attachment-item';
 import { useTranslation } from 'react-i18next';
 import { useDropzone } from 'react-dropzone';
@@ -10,7 +10,7 @@ import { useConfig } from '@/features/providers/config';
 import { DropZone } from './dropzone';
 import { DriveAttachmentPicker, DriveFile } from './drive-attachment-picker';
 import clsx from 'clsx';
-import { AttachFile } from '@gouvfr-lasuite/ui-kit/icons';
+import { AttachFile } from "@gouvfr-lasuite/ui-components/icons";
 import { Icon } from '@/features/ui/components/icon';
 
 type AttachmentBucketProps = {

@@ -22,8 +22,6 @@ import {
     Modal,
     ModalSize,
     useCunningham,
-} from "@gouvfr-lasuite/cunningham-react";
-import {
     type AccessData,
     type InvitationData,
     QuickSearch,
@@ -35,7 +33,7 @@ import {
     type UserData,
     UserRow,
     useResponsive,
-} from "@gouvfr-lasuite/ui-kit";
+} from "@gouvfr-lasuite/ui-components";
 import { Icon } from "@/features/ui/components/icon";
 import { InvitationUserSelectorList } from "./invitation-user-selector";
 import { ShareMemberItem } from "./share-member-item";

@@ -12,9 +12,9 @@ import type { MailboxRoleChoices } from "./mailbox_role_choices";
  * Serialize MailboxAccess for nesting within MailboxAdminSerializer.
 Shows user details and their role on the mailbox.
  */
-export interface MailboxAccessNestedUser {
+export type MailboxAccessNestedUser = {
   /** primary key for the record as UUID */
   readonly id: string;
   readonly user: UserWithoutAbilities;
   readonly role: MailboxRoleChoices;
-}
+};

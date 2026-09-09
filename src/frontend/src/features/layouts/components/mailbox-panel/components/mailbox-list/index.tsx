@@ -6,7 +6,7 @@ import { useUrlSearchParams } from "@/hooks/use-url-search-params"
 import { useMemo, useState } from "react"
 import { useLayoutContext } from "@/features/layouts/components/layout-context"
 import { useTranslation } from "react-i18next"
-import { IconSize, IconType } from "@gouvfr-lasuite/ui-kit"
+import { IconSize, IconType } from "@gouvfr-lasuite/ui-components"
 import i18n from "@/features/i18n/initI18n";
 import useArchive from "@/features/message/use-archive";
 import useTrash from "@/features/message/use-trash";
@@ -14,9 +14,9 @@ import useSpam from "@/features/message/use-spam";
 import { handle } from "@/features/utils/errors";
 import ViewHelper from "@/features/utils/view-helper";
 import { addToast, ToasterItem } from "@/features/ui/components/toaster";
-import { Tooltip } from "@gouvfr-lasuite/cunningham-react"
+import { Tooltip } from "@gouvfr-lasuite/ui-components"
 import { EXPANDED_FOLDERS_KEY } from "@/features/config/constants"
-import { Archive, ChevronDown, Edit, Restore, Star, Trash, Error as ErrorIcon } from "@gouvfr-lasuite/ui-kit/icons"
+import { Archive, ChevronDown, Edit, Restore, Star, Trash, Error as ErrorIcon } from "@gouvfr-lasuite/ui-components/icons"
 import { Icon, IconProps } from "@/features/ui/components/icon"
 
 type FolderVisibilityContext = {

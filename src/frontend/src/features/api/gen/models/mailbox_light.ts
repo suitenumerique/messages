@@ -9,11 +9,11 @@
 /**
  * Serializer for mailbox details in thread access.
  */
-export interface MailboxLight {
+export type MailboxLight = {
   /** primary key for the record as UUID */
   readonly id: string;
   readonly email: string;
   readonly name: string;
   /** Whether this mailbox identifies a person (i.e. is not an alias or a group) */
   readonly is_identity: boolean;
-}
+};

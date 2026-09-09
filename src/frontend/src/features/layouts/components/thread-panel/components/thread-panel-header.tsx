@@ -4,9 +4,9 @@ import { useCurrentFolderName } from "@/hooks/use-current-folder-name";
 import { useMailboxContext } from "@/features/providers/mailbox";
 import { useTranslation } from "react-i18next";
 import { useEffect, useMemo, useState } from "react";
-import { Button, Tooltip, Checkbox } from "@gouvfr-lasuite/cunningham-react";
+import { Button, Tooltip, Checkbox } from "@gouvfr-lasuite/ui-components";
 import useRead from "@/features/message/use-read";
-import { DropdownMenu, IconType, VerticalSeparator, useResponsive } from "@gouvfr-lasuite/ui-kit";
+import { DropdownMenu, IconType, VerticalSeparator, useResponsive } from "@gouvfr-lasuite/ui-components";
 import ViewHelper from "@/features/utils/view-helper";
 import useArchive from "@/features/message/use-archive";
 import useSpam from "@/features/message/use-spam";
@@ -20,7 +20,7 @@ import { SelectionReadStatus, SelectionStarredStatus } from "@/features/provider
 import { LabelsWidget } from "@/features/layouts/components/labels-widget";
 import useAbility, { Abilities } from "@/hooks/use-ability";
 import { isNativePlatform } from "@/features/native/platform";
-import { Archive, MoreVertical, Restore, Star, StarFilled, TodoList, Trash, Error as ErrorIcon } from "@gouvfr-lasuite/ui-kit/icons";
+import { Archive, MoreVertical, Restore, Star, StarFilled, TodoList, Trash, Error as ErrorIcon } from "@gouvfr-lasuite/ui-components/icons";
 import { Icon, IconProps } from "@/features/ui/components/icon";
 
 type ThreadPanelTitleProps = {

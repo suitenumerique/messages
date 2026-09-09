@@ -1,4 +1,4 @@
-import { useResponsive } from "@gouvfr-lasuite/ui-kit";
+import { useResponsive } from "@gouvfr-lasuite/ui-components";
 import { useAuth } from "@/features/auth";
 import { HeaderRight } from "../header/authenticated";
 import { MailboxPanel } from "../../mailbox-panel";

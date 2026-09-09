@@ -1,7 +1,7 @@
 import { useState } from "react";
 import { useTranslation } from "react-i18next";
-import { Button } from "@gouvfr-lasuite/cunningham-react";
-import { XMark, Zoom } from "@gouvfr-lasuite/ui-kit/icons";
+import { Button } from "@gouvfr-lasuite/ui-components";
+import { XMark, Zoom } from "@gouvfr-lasuite/ui-components/icons";
 import { ThreadPanelFilter } from "@/features/layouts/components/thread-panel/components/thread-panel-filter";
 import { SearchFiltersModal } from "@/features/forms/components/search-filters-modal";
 import { useSearchQuery } from "@/features/forms/components/search-input/use-search-query";

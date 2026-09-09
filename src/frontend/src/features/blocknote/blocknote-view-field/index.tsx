@@ -1,6 +1,6 @@
 import { BlockSchema, InlineContentSchema, StyleSchema } from "@blocknote/core";
 import { BlockNoteView } from "@blocknote/mantine";
-import { Field, FieldProps } from "@gouvfr-lasuite/cunningham-react";
+import { Field, FieldProps } from "@gouvfr-lasuite/ui-components";
 import clsx from "clsx";
 import { PropsWithChildren } from "react";
 

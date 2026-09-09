@@ -1,5 +1,5 @@
 import { createContext, PropsWithChildren, useCallback, useContext, useMemo, useState } from "react";
-import type { FilePreviewType } from "@gouvfr-lasuite/ui-kit";
+import type { FilePreviewType } from "@gouvfr-lasuite/ui-components";
 
 /**
  * File set supplied by the opener when the attachments to preview are not

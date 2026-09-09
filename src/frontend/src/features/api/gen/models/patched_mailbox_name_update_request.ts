@@ -9,10 +9,10 @@
 /**
  * Validate and apply a mailbox display-name update (its contact name).
  */
-export interface PatchedMailboxNameUpdateRequest {
+export type PatchedMailboxNameUpdateRequest = {
   /**
    * @minLength 1
    * @maxLength 255
    */
   name?: string;
-}
+};

@@ -11,7 +11,7 @@ import type { ScopeEnum } from "./scope_enum";
  * Payload for the bulk-delete endpoint: a scope and the threads/messages
 to permanently delete.
  */
-export interface ThreadBulkDeleteRequestRequest {
+export type ThreadBulkDeleteRequestRequest = {
   /** Which messages to permanently delete. Only 'draft' (draft messages) is supported.
 
 * `draft` - draft */
@@ -20,4 +20,4 @@ export interface ThreadBulkDeleteRequestRequest {
   thread_ids?: string[];
   /** Specific messages to delete (still scope-filtered). */
   message_ids?: string[];
-}
+};

@@ -1,9 +1,9 @@
-import { Field, LabelledBox, SelectProps } from "@gouvfr-lasuite/cunningham-react";
+import { Field, LabelledBox, SelectProps } from "@gouvfr-lasuite/ui-components";
 import clsx from "clsx";
 import { useCombobox, useMultipleSelection } from "downshift"
 import { ReactNode, useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { Chip } from "./chip";
-import { Button, Option } from "@gouvfr-lasuite/cunningham-react";
+import { Button, Option } from "@gouvfr-lasuite/ui-components";
 import { Icon } from "@/features/ui/components/icon";
 import { useTranslation } from "react-i18next";
 

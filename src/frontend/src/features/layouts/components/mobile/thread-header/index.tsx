@@ -1,6 +1,6 @@
 import { useTranslation } from "react-i18next";
-import { Button } from "@gouvfr-lasuite/cunningham-react";
-import { ChevronLeft } from "@gouvfr-lasuite/ui-kit/icons";
+import { Button } from "@gouvfr-lasuite/ui-components";
+import { ChevronLeft } from "@gouvfr-lasuite/ui-components/icons";
 import { Icon } from "@/features/ui/components/icon";
 import { useMailboxContext } from "@/features/providers/mailbox";
 import { AssigneesWidget } from "@/features/layouts/components/thread-view/components/assignees-widget";

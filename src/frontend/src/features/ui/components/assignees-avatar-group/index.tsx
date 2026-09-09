@@ -1,4 +1,4 @@
-import { UserAvatar } from "@gouvfr-lasuite/ui-kit";
+import { UserAvatar } from "@gouvfr-lasuite/ui-components";
 
 export type AssigneesAvatarGroupUser = {
     id: string;

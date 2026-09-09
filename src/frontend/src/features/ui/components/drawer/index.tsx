@@ -3,7 +3,6 @@ import clsx from "clsx";
 import { useCallback, useId, useRef, useState } from "react";
 import { Dialog, Modal, ModalOverlay } from "react-aria-components";
 import { useTranslation } from "react-i18next";
-
 import { Icon } from "@/features/ui/components/icon";
 import { useDragGesture } from "@/hooks/use-drag-gesture";
 

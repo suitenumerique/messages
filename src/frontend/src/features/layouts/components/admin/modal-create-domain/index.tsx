@@ -1,4 +1,4 @@
-import { Button, Modal, ModalSize } from '@gouvfr-lasuite/cunningham-react';
+import { Button, Modal, ModalSize } from "@gouvfr-lasuite/ui-components";
 import React, { useState } from 'react'
 import { useTranslation } from 'react-i18next';
 import { zodResolver } from "@hookform/resolvers/zod";

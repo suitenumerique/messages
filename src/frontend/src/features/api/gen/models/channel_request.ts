@@ -9,7 +9,7 @@
 /**
  * Serialize Channel model.
  */
-export interface ChannelRequest {
+export type ChannelRequest = {
   /**
    * Human-readable name for this channel
    * @minLength 1
@@ -26,4 +26,4 @@ export interface ChannelRequest {
   is_active?: boolean;
   /** Channel-specific configuration settings */
   settings?: unknown;
-}
+};

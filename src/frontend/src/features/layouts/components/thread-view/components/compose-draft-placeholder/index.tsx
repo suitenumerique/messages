@@ -1,6 +1,6 @@
 import { useTranslation } from "react-i18next";
-import { IconType } from "@gouvfr-lasuite/ui-kit";
-import { Edit } from "@gouvfr-lasuite/ui-kit/icons";
+import { IconType } from "@gouvfr-lasuite/ui-components";
+import { Edit } from "@gouvfr-lasuite/ui-components/icons";
 import { Icon } from "@/features/ui/components/icon";
 import { Message } from "@/features/api/gen";
 import { Banner } from "@/features/ui/components/banner";

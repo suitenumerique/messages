@@ -7,11 +7,11 @@
  */
 import type { MailboxAccessRead } from "./mailbox_access_read";
 
-export interface PaginatedMailboxAccessReadList {
+export type PaginatedMailboxAccessReadList = {
   count: number;
   /** @nullable */
   next?: string | null;
   /** @nullable */
   previous?: string | null;
   results: MailboxAccessRead[];
-}
+};

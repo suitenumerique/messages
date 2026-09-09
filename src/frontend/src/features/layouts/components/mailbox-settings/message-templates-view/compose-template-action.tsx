@@ -1,11 +1,11 @@
-import { Button } from "@gouvfr-lasuite/cunningham-react";
+import { Button } from "@gouvfr-lasuite/ui-components";
 import { Icon } from "@/features/ui/components/icon";
-import { Plus } from "@gouvfr-lasuite/ui-kit/icons";
+import { Plus } from "@gouvfr-lasuite/ui-components/icons";
 import { useTranslation } from "react-i18next";
-import { useModal } from "@gouvfr-lasuite/cunningham-react";
+import { useModal } from "@gouvfr-lasuite/ui-components";
 import { Mailbox } from "@/features/api/gen";
 import { ModalComposeTemplate } from "../modal-compose-template";
-import { useResponsive } from "@gouvfr-lasuite/ui-kit";
+import { useResponsive } from "@gouvfr-lasuite/ui-components";
 
 type ComposeTemplateActionProps = {
     mailbox: Mailbox;

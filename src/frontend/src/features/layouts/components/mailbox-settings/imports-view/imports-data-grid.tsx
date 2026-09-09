@@ -1,5 +1,5 @@
-import { DropdownMenu, DropdownMenuOption, IconSize, Spinner } from "@gouvfr-lasuite/ui-kit";
-import { Button, Column, DataGrid, useModals } from "@gouvfr-lasuite/cunningham-react";
+import { DropdownMenu, DropdownMenuOption, IconSize, Spinner } from "@gouvfr-lasuite/ui-components";
+import { Button, Column, DataGrid, useModals } from "@gouvfr-lasuite/ui-components";
 import { useTranslation } from "react-i18next";
 import clsx from "clsx";
 import { Fragment, ReactNode, useState } from "react";
@@ -20,7 +20,7 @@ import { handle } from "@/features/utils/errors";
 import { DateHelper } from "@/features/utils/date-helper";
 import { isTerminal, STATUS_CANCELLED } from "@/hooks/import-status";
 import { Icon } from "@/features/ui/components/icon";
-import { Pause, Play, Trash } from "@gouvfr-lasuite/ui-kit/icons";
+import { Pause, Play, Trash } from "@gouvfr-lasuite/ui-components/icons";
 
 type ImportsDataGridProps = {
     mailbox: Mailbox;

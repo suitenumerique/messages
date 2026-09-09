@@ -1,11 +1,11 @@
 import { useState } from "react";
 import { useTranslation } from "react-i18next";
-import { Button, Tooltip } from "@gouvfr-lasuite/cunningham-react";
-import { DropdownMenu } from "@gouvfr-lasuite/ui-kit";
+import { Button, Tooltip } from "@gouvfr-lasuite/ui-components";
+import { DropdownMenu } from "@gouvfr-lasuite/ui-components";
 import { Message } from "@/features/api/gen";
 import useCopyDeepLink from "@/features/message/use-copy-deep-link";
 import { Icon } from "@/features/ui/components/icon";
-import { Link, MoreVertical, Trash } from "@gouvfr-lasuite/ui-kit/icons";
+import { Link, MoreVertical, Trash } from "@gouvfr-lasuite/ui-components/icons";
 
 type DraftActionsMenuProps = {
     message: Message;

@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
-import { FilePreview, type FilePreviewType } from "@gouvfr-lasuite/ui-kit";
+import { FilePreview, type FilePreviewType } from "@gouvfr-lasuite/ui-components";
 import { useAttachmentPreview } from "@/features/providers/attachment-preview";
 import { useMailboxContext } from "@/features/providers/mailbox";
 import { useConfig } from "@/features/providers/config";

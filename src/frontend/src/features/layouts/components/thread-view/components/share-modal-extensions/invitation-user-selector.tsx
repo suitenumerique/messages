@@ -3,9 +3,8 @@
 // upstream CSS classes (c__add-share-user-list, c__add-share-user-item)
 // so the visual styling bundled in ui-kit's style.css applies as-is.
 import { ReactNode, useState } from "react";
-import { Button, useCunningham } from "@gouvfr-lasuite/cunningham-react";
-import type { DropdownMenuOption, UserData } from "@gouvfr-lasuite/ui-kit";
 import { Icon } from "@/features/ui/components/icon";
+import { Button, useCunningham, DropdownMenuOption, UserData } from "@gouvfr-lasuite/ui-components";
 import { useTranslation } from "react-i18next";
 import { AccessRoleDropdown } from "./access-role-dropdown";
 

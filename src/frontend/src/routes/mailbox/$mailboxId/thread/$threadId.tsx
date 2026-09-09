@@ -1,5 +1,5 @@
 import { createFileRoute } from "@tanstack/react-router";
-import { useResponsive } from "@gouvfr-lasuite/ui-kit";
+import { useResponsive } from "@gouvfr-lasuite/ui-components";
 import { Panel, Group, Separator, useDefaultLayout } from "react-resizable-panels";
 
 import { ThreadPanel } from "@/features/layouts/components/thread-panel";

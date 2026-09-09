@@ -5,7 +5,7 @@ import {
     Modal,
     ModalProvider,
     ModalSize,
-} from "@gouvfr-lasuite/cunningham-react";
+} from "@gouvfr-lasuite/ui-components";
 
 import { useCompactTabDrillDown } from "./use-compact-tab-drill-down";
 

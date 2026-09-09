@@ -1,7 +1,7 @@
 import { useMaildomainsMailboxesResetPassword } from "@/features/api/gen/maildomains/maildomains";
 import { MailboxAdmin } from "@/features/api/gen/models/mailbox_admin";
-import { Spinner } from "@gouvfr-lasuite/ui-kit";
-import { Button, Modal, ModalSize } from "@gouvfr-lasuite/cunningham-react";
+import { Spinner } from "@gouvfr-lasuite/ui-components";
+import { Button, Modal, ModalSize } from "@gouvfr-lasuite/ui-components";
 import { useEffect, useState } from "react";
 import { useTranslation } from "react-i18next";
 import AdminMailboxCredentials from "../mailbox-credentials";

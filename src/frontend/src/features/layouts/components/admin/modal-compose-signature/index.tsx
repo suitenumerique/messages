@@ -3,8 +3,8 @@ import { RhfCheckbox } from "@/features/forms/components/react-hook-form/rhf-che
 import { RhfInput } from "@/features/forms/components/react-hook-form/rhf-input";
 import { useAdminMailDomain } from "@/features/providers/admin-maildomain";
 import { zodResolver } from "@hookform/resolvers/zod";
-import { Button, Modal, ModalSize } from "@gouvfr-lasuite/cunningham-react";
-import { Spinner } from "@gouvfr-lasuite/ui-kit";
+import { Button, Modal, ModalSize } from "@gouvfr-lasuite/ui-components";
+import { Spinner } from "@gouvfr-lasuite/ui-components";
 import { FormProvider, useForm } from "react-hook-form";
 import { useTranslation } from "react-i18next";
 import z from "zod";

@@ -10,7 +10,7 @@ import type { ScopeLevelEnum } from "./scope_level_enum";
 /**
  * Serialize Channel model.
  */
-export interface Channel {
+export type Channel = {
   /** primary key for the record as UUID */
   readonly id: string;
   /**
@@ -51,4 +51,4 @@ export interface Channel {
   readonly created_at: string;
   /** date and time at which a record was last updated */
   readonly updated_at: string;
-}
+};

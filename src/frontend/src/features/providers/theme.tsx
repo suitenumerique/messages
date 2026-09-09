@@ -1,6 +1,6 @@
 import { createContext, PropsWithChildren, useContext, useEffect, useState } from "react";
 import { useTranslation } from "react-i18next";
-import { CunninghamProvider, ContextMenuProvider } from "@gouvfr-lasuite/ui-kit";
+import { CunninghamProvider, ContextMenuProvider } from "@gouvfr-lasuite/ui-components";
 import { THEME_KEY } from "../config/constants";
 import { tokens } from '@/styles/cunningham-tokens'
 import { ThemeConfig as AppThemeConfig } from "@/features/config/resolve";

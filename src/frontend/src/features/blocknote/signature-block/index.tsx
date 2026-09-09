@@ -1,5 +1,5 @@
 import { createReactBlockSpec, useBlockNoteEditor, useComponentsContext, useEditorSelectionChange, useEditorChange, useEditorState } from "@blocknote/react";
-import { IconSize, Spinner } from "@gouvfr-lasuite/ui-kit";
+import { IconSize, Spinner } from "@gouvfr-lasuite/ui-components";
 import { useCallback, useMemo, useState } from "react";
 import { createPortal } from "react-dom";
 import { MobileToolbarButton } from "@/features/blocknote/mobile-toolbar/buttons";
@@ -14,7 +14,7 @@ import { useTranslation } from "react-i18next";
 import { MessageComposerHelper } from "@/features/utils/composer-helper";
 import { useHtmlWithObjectUrls } from "@/features/blocknote/image-block/use-html-with-object-urls";
 import { Icon } from "@/features/ui/components/icon";
-import { Lock as LockIcon } from "@gouvfr-lasuite/ui-kit/icons";
+import { Lock as LockIcon } from "@gouvfr-lasuite/ui-components/icons";
 
 
 /**

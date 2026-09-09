@@ -1,7 +1,7 @@
 import { useCallback, useMemo } from "react";
 import { useTranslation } from "react-i18next";
-import { Tooltip } from "@gouvfr-lasuite/cunningham-react";
-import { IconType, IconSize, UserAvatar } from "@gouvfr-lasuite/ui-kit";
+import { Tooltip } from "@gouvfr-lasuite/ui-components";
+import { IconType, IconSize, UserAvatar } from "@gouvfr-lasuite/ui-components";
 import { MessageDeliveryStatusChoices, MessageRecipient } from "@/features/api/gen/models";
 import { Banner } from "@/features/ui/components/banner";
 import { Badge } from "@/features/ui/components/badge";
@@ -14,7 +14,7 @@ import { ThreadMessageHeaderProps } from "./types";
 import ThreadMessageActions from "./thread-message-actions";
 import ThreadMessageRecipients from "./thread-message-recipients";
 import { useAuth } from "@/features/auth";
-import { Edit } from "@gouvfr-lasuite/ui-kit/icons";
+import { Edit } from "@gouvfr-lasuite/ui-components/icons";
 import { Icon } from "@/features/ui/components/icon";
 
 const ThreadMessageHeader = ({

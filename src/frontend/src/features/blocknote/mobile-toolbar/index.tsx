@@ -25,8 +25,8 @@ import {
 } from "./hooks";
 import { MobileLinkEditor } from "./link-editor";
 import { Icon } from "@/features/ui/components/icon";
-import { IconSize } from "@gouvfr-lasuite/ui-kit";
-import { FormatText, KeyboardHide } from "@gouvfr-lasuite/ui-kit/icons";
+import { IconSize } from "@gouvfr-lasuite/ui-components";
+import { FormatText, KeyboardHide } from "@gouvfr-lasuite/ui-components/icons";
 
 type MobileToolbarProps = {
     children?: React.ReactNode;

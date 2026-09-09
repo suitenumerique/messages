@@ -7,7 +7,7 @@
  */
 import type { DNSRecordCheck } from "./dnsrecord_check";
 
-export interface DNSCheckResponse {
+export type DNSCheckResponse = {
   domain: string;
   records: DNSRecordCheck[];
-}
+};

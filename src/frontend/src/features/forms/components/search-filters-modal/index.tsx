@@ -1,6 +1,6 @@
 import { useState } from "react";
 import { useTranslation } from "react-i18next";
-import { Button, Modal, ModalSize } from "@gouvfr-lasuite/cunningham-react";
+import { Button, Modal, ModalSize } from "@gouvfr-lasuite/ui-components";
 import { SearchFiltersForm } from "../search-filters-form";
 
 const SEARCH_FILTERS_FORM_ID = "search-filters-form";

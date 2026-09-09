@@ -1,7 +1,7 @@
 import { useState, useMemo, useCallback } from "react";
 import { useTranslation } from "react-i18next";
-import { Button, Tooltip, useModals } from "@gouvfr-lasuite/cunningham-react";
-import { DropdownMenu, IconSize, IconType } from "@gouvfr-lasuite/ui-kit";
+import { Button, Tooltip, useModals } from "@gouvfr-lasuite/ui-components";
+import { DropdownMenu, IconSize, IconType } from "@gouvfr-lasuite/ui-components";
 import { getMessagesEmlRetrieveUrl } from "@/features/api/gen/messages/messages";
 import { getRequestUrl } from "@/features/api/utils";
 import { isNativePlatform } from "@/features/native/platform";
@@ -16,7 +16,7 @@ import useAbility, { Abilities } from "@/hooks/use-ability";
 import useCopyDeepLink from "@/features/message/use-copy-deep-link";
 import { ThreadMessageActionsProps } from "./types";
 import { Icon } from "@/features/ui/components/icon";
-import { Divergence, Download, Link, Print, Trash } from "@gouvfr-lasuite/ui-kit/icons";
+import { Divergence, Download, Link, Print, Trash } from "@gouvfr-lasuite/ui-components/icons";
 
 const ThreadMessageActions = ({
     message,

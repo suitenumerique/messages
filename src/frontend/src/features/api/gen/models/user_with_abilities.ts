@@ -12,7 +12,7 @@ import type { UserWithAbilitiesAbilities } from "./user_with_abilities_abilities
  * Serialize users with abilities.
 Allow to have separated OpenAPI definition for users with and without abilities.
  */
-export interface UserWithAbilities {
+export type UserWithAbilities = {
   /** primary key for the record as UUID */
   readonly id: string;
   /** @nullable */
@@ -29,4 +29,4 @@ authenticated ``/users/me/`` channel. */
   readonly csrf_token: string;
   /** Instance permissions and capabilities */
   readonly abilities: UserWithAbilitiesAbilities;
-}
+};

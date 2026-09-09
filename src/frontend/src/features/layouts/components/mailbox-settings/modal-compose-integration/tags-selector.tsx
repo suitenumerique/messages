@@ -1,6 +1,6 @@
 import { Mailbox, TreeLabel, ThreadLabel, useLabelsList } from "@/features/api/gen";
-import { IconSize, Spinner } from "@gouvfr-lasuite/ui-kit";
-import { Button, Checkbox, Field, Input, LabelledBox, useModal } from "@gouvfr-lasuite/cunningham-react";
+import { IconSize, Spinner } from "@gouvfr-lasuite/ui-components";
+import { Button, Checkbox, Field, Input, LabelledBox, useModal } from "@gouvfr-lasuite/ui-components";
 import { useState, useMemo, useRef } from "react";
 import { createPortal } from "react-dom";
 import { useTranslation } from "react-i18next";
@@ -11,7 +11,7 @@ import { Badge } from "@/features/ui/components/badge";
 import { ColorHelper } from "@/features/utils/color-helper";
 import { usePopupPosition } from "@/hooks/use-popup-position";
 import { Icon } from "@/features/ui/components/icon";
-import { Plus, TagAdd, XMark, Zoom } from "@gouvfr-lasuite/ui-kit/icons";
+import { Plus, TagAdd, XMark, Zoom } from "@gouvfr-lasuite/ui-components/icons";
 
 type TagsSelectorProps = {
     mailbox: Mailbox;

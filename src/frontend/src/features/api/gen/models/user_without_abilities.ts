@@ -11,7 +11,7 @@ import type { UserWithoutAbilitiesCustomAttributes } from "./user_without_abilit
  * Serialize users without abilities.
 Allow to have separated OpenAPI definition for users with and without abilities.
  */
-export interface UserWithoutAbilities {
+export type UserWithoutAbilities = {
   /** primary key for the record as UUID */
   readonly id: string;
   /** @nullable */
@@ -20,4 +20,4 @@ export interface UserWithoutAbilities {
   readonly full_name: string | null;
   /** Get custom attributes for the instance. */
   readonly custom_attributes: UserWithoutAbilitiesCustomAttributes;
-}
+};

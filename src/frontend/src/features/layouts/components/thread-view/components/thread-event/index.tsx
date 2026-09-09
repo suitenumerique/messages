@@ -7,14 +7,14 @@ import { useTranslation } from "react-i18next";
 import { useAuth } from "@/features/auth";
 import { useMailboxContext, TimelineItem } from "@/features/providers/mailbox";
 import { Badge } from "@/features/ui/components/badge";
-import { AVATAR_COLORS, IconSize, IconType, UserAvatar } from "@gouvfr-lasuite/ui-kit";
-import { Button, useModals } from "@gouvfr-lasuite/cunningham-react";
+import { AVATAR_COLORS, IconSize, IconType, UserAvatar } from "@gouvfr-lasuite/ui-components";
+import { Button, useModals } from "@gouvfr-lasuite/ui-components";
 import useCopyDeepLink from "@/features/message/use-copy-deep-link";
 import { useLongPress } from "@/hooks/use-long-press";
 import clsx from "clsx";
 import { buildAssignmentMessage } from "./assignment-message";
 import { Icon } from "@/features/ui/components/icon";
-import { Edit, Link, Trash } from "@gouvfr-lasuite/ui-kit/icons";
+import { Edit, Link, Trash } from "@gouvfr-lasuite/ui-components/icons";
 
 const TWO_MINUTES_MS = 2 * 60 * 1000;
 

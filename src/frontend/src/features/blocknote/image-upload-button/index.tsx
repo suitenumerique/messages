@@ -1,7 +1,7 @@
 import { BlockNoteEditor, DefaultBlockSchema, DefaultInlineContentSchema, DefaultStyleSchema } from "@blocknote/core";
 import { useBlockNoteEditor, useComponentsContext, useEditorState } from "@blocknote/react";
 import { useTranslation } from "react-i18next";
-import { IconSize } from "@gouvfr-lasuite/ui-kit";
+import { IconSize } from "@gouvfr-lasuite/ui-components";
 import { Icon } from "@/features/ui/components/icon";
 
 // Default-schema typing, matching what `useBlockNoteEditor()` returns without

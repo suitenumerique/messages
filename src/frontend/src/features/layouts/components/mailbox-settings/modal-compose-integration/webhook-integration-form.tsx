@@ -1,6 +1,5 @@
-import { Button, useModals } from "@gouvfr-lasuite/cunningham-react";
-import { IconSize, IconType } from "@gouvfr-lasuite/ui-kit";
 import { Icon } from "@/features/ui/components/icon";
+import { Button, useModals, IconSize, IconType } from "@gouvfr-lasuite/ui-components";
 import { useTranslation } from "react-i18next";
 import { useForm, FormProvider } from "react-hook-form";
 import { zodResolver } from "@hookform/resolvers/zod";

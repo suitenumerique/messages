@@ -1,6 +1,6 @@
 import { createFileRoute } from "@tanstack/react-router";
-import { useResponsive } from "@gouvfr-lasuite/ui-kit";
-import { Button } from "@gouvfr-lasuite/cunningham-react";
+import { useResponsive } from "@gouvfr-lasuite/ui-components";
+import { Button } from "@gouvfr-lasuite/ui-components";
 import { useMemo } from "react";
 import { useTranslation } from "react-i18next";
 import { Panel, Group, Separator, useDefaultLayout } from "react-resizable-panels";

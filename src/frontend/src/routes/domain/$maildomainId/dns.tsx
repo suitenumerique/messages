@@ -1,8 +1,8 @@
 import { createFileRoute } from "@tanstack/react-router";
 import { useState, useEffect, useRef } from "react";
-import { Button, DataGrid } from "@gouvfr-lasuite/cunningham-react";
+import { Button, DataGrid } from "@gouvfr-lasuite/ui-components";
 import { useTranslation, Trans } from "react-i18next";
-import { Badge, Spinner } from "@gouvfr-lasuite/ui-kit";
+import { Badge, Spinner } from "@gouvfr-lasuite/ui-components";
 
 import { AdminLayout } from "@/features/layouts/components/admin/admin-layout";
 import { MailDomainAdmin, DNSRecordCheck } from "@/features/api/gen";

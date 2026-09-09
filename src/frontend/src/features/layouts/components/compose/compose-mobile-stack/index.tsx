@@ -1,12 +1,12 @@
 import { useEffect, useRef } from "react";
 import { useTranslation } from "react-i18next";
 import clsx from "clsx";
-import { IconSize, UserAvatar } from "@gouvfr-lasuite/ui-kit";
+import { IconSize, UserAvatar } from "@gouvfr-lasuite/ui-components";
 import { useComposeWindows } from "@/features/providers/compose-windows";
 import { ComposeWindowDescriptor } from "@/features/providers/compose-windows/types";
 import { Icon } from "@/features/ui/components/icon";
 import MailboxHelper from "@/features/utils/mailbox-helper";
-import { Edit } from "@gouvfr-lasuite/ui-kit/icons";
+import { Edit } from "@gouvfr-lasuite/ui-components/icons";
 import { useComposeSender } from "../use-compose-sender";
 
 type ComposeMobileStackProps = {

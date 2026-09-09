@@ -3,8 +3,8 @@ import { getThreadsStatsQueryKey, useMailboxContext } from "@/features/providers
 import useArchive from "@/features/message/use-archive";
 import useDeleteLabel from "@/features/message/use-delete-label";
 import useAddLabel from "@/features/message/use-add-label";
-import { DropdownMenu, IconSize, IconType } from "@gouvfr-lasuite/ui-kit";
-import { Button, useModals } from "@gouvfr-lasuite/cunningham-react";
+import { DropdownMenu, IconSize, IconType } from "@gouvfr-lasuite/ui-components";
+import { Button, useModals } from "@gouvfr-lasuite/ui-components";
 import clsx from "clsx";
 import { Link, useLocation, useNavigate } from "@tanstack/react-router";
 import { useUrlSearchParams } from "@/hooks/use-url-search-params";
@@ -19,7 +19,7 @@ import { useFold } from "@/features/providers/fold";
 import { SubLabelCreation } from "../label-form-modal";
 import { handle } from "@/features/utils/errors";
 import ViewHelper from "@/features/utils/view-helper";
-import { Edit, More, Plus, Trash } from "@gouvfr-lasuite/ui-kit/icons";
+import { Edit, More, Plus, Trash } from "@gouvfr-lasuite/ui-components/icons";
 import { Icon } from "@/features/ui/components/icon";
 
 export type LabelTransferData = {

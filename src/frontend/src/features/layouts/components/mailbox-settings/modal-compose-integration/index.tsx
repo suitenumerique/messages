@@ -1,7 +1,6 @@
-import { Modal, ModalSize, Button } from "@gouvfr-lasuite/cunningham-react";
-import { IconType, IconSize, useResponsive } from "@gouvfr-lasuite/ui-kit";
-import { ArrowLeft } from "@gouvfr-lasuite/ui-kit/icons";
 import { Icon } from "@/features/ui/components/icon";
+import { Modal, ModalSize, Button, IconType, IconSize, useResponsive } from "@gouvfr-lasuite/ui-components";
+import { ArrowLeft } from "@gouvfr-lasuite/ui-components/icons";
 import { useTranslation } from "react-i18next";
 import { useState, useEffect } from "react";
 import { Channel, Mailbox } from "@/features/api/gen";

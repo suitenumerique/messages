@@ -1,5 +1,5 @@
-import { Button } from "@gouvfr-lasuite/cunningham-react";
-import { useResponsive } from "@gouvfr-lasuite/ui-kit";
+import { Button } from "@gouvfr-lasuite/ui-components";
+import { useResponsive } from "@gouvfr-lasuite/ui-components";
 import { useTranslation } from "react-i18next";
 import { useQueryClient } from "@tanstack/react-query";
 import {
@@ -8,7 +8,7 @@ import {
   useMailboxesImportsList,
 } from "@/features/api/gen";
 import { Icon } from "@/features/ui/components/icon";
-import { Plus } from "@gouvfr-lasuite/ui-kit/icons";
+import { Plus } from "@gouvfr-lasuite/ui-components/icons";
 import { addToast, ToasterItem } from "@/features/ui/components/toaster";
 import { ImportsDataGrid } from "../../imports-view/imports-data-grid";
 import { ImportNewView } from "../../imports-view/import-new-view";

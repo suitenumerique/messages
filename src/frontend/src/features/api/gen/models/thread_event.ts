@@ -12,7 +12,7 @@ import type { ThreadEventData } from "./thread_event_data";
 /**
  * Serialize thread event information.
  */
-export interface ThreadEvent {
+export type ThreadEvent = {
   /** primary key for the record as UUID */
   readonly id: string;
   /** primary key for the record as UUID */
@@ -38,4 +38,4 @@ export interface ThreadEvent {
   readonly created_at: string;
   /** date and time at which a record was last updated */
   readonly updated_at: string;
-}
+};

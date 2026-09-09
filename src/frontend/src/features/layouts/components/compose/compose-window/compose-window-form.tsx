@@ -1,6 +1,6 @@
 import { RefObject, useEffect } from "react";
-import { Button, Spinner } from "@gouvfr-lasuite/ui-kit";
 import { useTranslation } from "react-i18next";
+import { Button, Spinner } from "@gouvfr-lasuite/ui-components";
 import { MessageForm, MessageFormHandle } from "@/features/forms/components/message-form";
 import { useComposeWindows } from "@/features/providers/compose-windows";
 import { postComposeBroadcast } from "@/features/providers/compose-windows/broadcast";

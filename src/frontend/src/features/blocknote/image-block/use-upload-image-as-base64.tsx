@@ -1,6 +1,6 @@
 import { useCallback } from 'react';
 import { useTranslation } from 'react-i18next';
-import { useModals, VariantType } from '@gouvfr-lasuite/cunningham-react';
+import { useModals, VariantType } from "@gouvfr-lasuite/ui-components";
 import { ALLOWED_IMAGE_MIME_TYPES } from '@/features/blocknote/image-block';
 import { AttachmentHelper } from '@/features/utils/attachment-helper';
 
