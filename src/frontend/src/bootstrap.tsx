@@ -10,6 +10,8 @@ import { initI18n } from "@/features/i18n/initI18n";
 import { installThemeFavicons } from "@/features/providers/theme-favicons";
 import { initSentry } from "@/features/sentry";
 import { handle } from '@/features/utils/errors';
+import { resumeNativeLogin } from "./features/native/auth";
+import { initNativeDeepLinks } from "./features/native/deep-link";
 import { hideKeyboardAccessoryBar } from "./features/native/keyboard";
 import {
   checkAndStageOtaUpdate,
@@ -61,6 +63,14 @@ declare module "@tanstack/react-router" {
 // router history (an in-app navigation, not a WebView reload). Registered
 // before any await so the tap that cold-started the app is not missed.
 listenForNativePushTaps((url) => router.history.push(url));
+
+// Single owner of the appUrlOpen events, registered before any await for the
+// same reason — and one more: the native layer *retains* a deep link nobody
+// listened to and replays it to the first subscriber. Claiming it here, with
+// the login resumption as fallback, is what finishes an OIDC flow whose JS
+// context died in the background, instead of letting that stale link surface
+// in the middle of the next login attempt.
+initNativeDeepLinks(resumeNativeLogin);
 
 /**
  * Fetch the backend configuration then initialize everything that must be
