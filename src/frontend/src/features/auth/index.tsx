@@ -7,6 +7,7 @@ import { Spinner } from "@gouvfr-lasuite/ui-kit";
 import { UserWithAbilities } from "../api/gen/models/user_with_abilities";
 import { addToast, ToasterItem } from "../ui/components/toaster";
 import { useTranslation } from "react-i18next";
+import i18n from "@/features/i18n/initI18n";
 import { nativeLogin, nativeLogout } from "../native/auth";
 import { clearPersistedWindows } from "../providers/compose-windows/persistence";
 import { isNativePlatform } from "../native/platform";
@@ -75,7 +76,16 @@ const sanitizeNextUrl = (raw?: string): string | undefined => {
 
 export const login = (nextUrl?: string) => {
   if (isNativePlatform()) {
-    void nativeLogin();
+    // Only a real failure rejects (a dismissed browser sheet resolves
+    // quietly): tell the user, the login screen is still there to retry.
+    nativeLogin().catch((error: unknown) => {
+      console.error("Native login failed:", error);
+      addToast(
+        <ToasterItem type="error">
+          <span>{i18n.t("Login failed. Please try again.")}</span>
+        </ToasterItem>,
+      );
+    });
     return;
   }
   const safeNext = sanitizeNextUrl(nextUrl);

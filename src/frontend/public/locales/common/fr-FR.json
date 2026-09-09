@@ -661,6 +661,7 @@
   "Loading users": "Chargement des utilisateurs",
   "Loading variables...": "Chargement des variables...",
   "Loading…": "Chargement…",
+  "Login failed. Please try again.": "La connexion a échoué. Veuillez réessayer.",
   "logo": "logo",
   "Mailbox {{mailbox}} has been deleted successfully.": "La boîte aux lettres {{mailbox}} a été supprimée avec succès.",
   "Mailbox count": "Nombre de boîtes",
