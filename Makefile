@@ -189,12 +189,12 @@ start-deps: ## start the slow infra deps (postgres, redis, keycloak) in the back
 .PHONY: start-deps
 
 # Fail fast (before booting a broken stack) when the project has not been
-# bootstrapped: `make bootstrap` creates the gitignored env files and the
-# frontend node_modules volume. start/start-full depend on this.
+# bootstrapped: `make bootstrap` creates the gitignored env files and installs
+# the frontend dependencies. start/start-full depend on this.
 check-bootstrapped:
 	@test -f deploy/env/backend.local || { \
 		printf "\n$(BOLD)✗ Not bootstrapped$(RESET): env files are missing.\n  Run $(BOLD)make bootstrap$(RESET) first.\n\n" >&2; exit 1; }
-	@docker volume inspect st-messages_frontend-node-modules >/dev/null 2>&1 || { \
+	@test -d src/frontend/node_modules/.bin || { \
 		printf "\n$(BOLD)✗ Not bootstrapped$(RESET): frontend dependencies are not installed.\n  Run $(BOLD)make bootstrap$(RESET) first.\n\n" >&2; exit 1; }
 .PHONY: check-bootstrapped
 
@@ -714,7 +714,9 @@ MOBILE_OTA_BUILD_ID ?= $(shell git rev-list --count HEAD)-$(shell git rev-parse 
 # into the native projects. The sync (not a bare copy) also regenerates the
 # gitignored capacitor-cordova-android-plugins/ scaffolding that Gradle needs,
 # so always run `make mobile-build` after a fresh checkout. The native compile /
-# IDE / device steps are macOS- and SDK-bound, so they stay on the host.
+# IDE / device steps are macOS- and SDK-bound, so they stay on the host; they
+# read the dependencies straight from src/frontend/node_modules, which the
+# container shares through the bind mount.
 # MOBILE_OTA_BUILD_ID is passed so `cap sync` stamps it as the builtin bundle version
 # (capacitor.config.ts), letting the OTA freshness check match a same-commit
 # manifest instead of re-downloading on first launch.
