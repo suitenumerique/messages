@@ -1186,7 +1186,20 @@ def reconstruct_eml(
     # of them) beyond the per-message size limit. A crafted PST could otherwise
     # hold a multi-GB attachment that OOMs the worker before ``deliver`` — which
     # would reject the oversized message anyway — ever gets to check the size.
-    attachment_budget = settings.MAX_INCOMING_EMAIL_SIZE
+    #
+    # The budget is tracked in *raw* attachment bytes, but the assembled EML
+    # base64-encodes every attachment (~4/3 inflation, plus line wrapping and
+    # per-part MIME headers) and also carries the body and boundaries. Deflate
+    # the raw budget by that overhead and reserve room for the body so raw data
+    # alone can't consume the whole limit — otherwise an attachment just under
+    # MAX_INCOMING_EMAIL_SIZE passes here yet builds an EML that ``deliver``
+    # rejects for size (after ballooning memory past the intended cap).
+    _ENCODE_OVERHEAD = 1.4  # base64 (~1.37x) + line wrapping + per-part headers
+    _BODY_RESERVE = 64 * 1024  # text/html body + top-level MIME boundaries
+    attachment_budget = max(
+        0,
+        int((settings.MAX_INCOMING_EMAIL_SIZE - _BODY_RESERVE) / _ENCODE_OVERHEAD),
+    )
     try:
         num_attachments = message.number_of_attachments
         for i in range(num_attachments):

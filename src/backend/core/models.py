@@ -2821,7 +2821,13 @@ class BlobManager(models.Manager):
                 # the content-addressed object lands first, then the row that
                 # points at it commits. A crash in between leaves only an
                 # idempotently-overwritable object for ``verify_blobs`` to
-                # reconcile. Any upload failure falls back to the PG tier.
+                # reconcile. Only the *upload* falls back to the PG tier — the
+                # object-storage row insert stays outside this handler so a DB
+                # error propagates and rolls the transaction back normally.
+                # (Swallowing it here and retrying ``self.create`` below would
+                # issue a second query inside an already-broken atomic block and
+                # raise ``TransactionManagementError``.)
+                uploaded = None
                 try:
                     staged = self.model(
                         sha256=sha256_hash,
@@ -2829,7 +2835,16 @@ class BlobManager(models.Manager):
                         encryption_key_id=encryption_key_id,
                         compression=compression,
                     )
-                    key_id, compression_used = service.upload_blob(staged)
+                    uploaded = service.upload_blob(staged)
+                except Exception:  # pylint: disable=broad-exception-caught
+                    logger.warning(
+                        "Direct-to-object-storage write failed; storing blob "
+                        "in the PG tier instead (offload will retry later)",
+                        exc_info=True,
+                    )
+
+                if uploaded is not None:
+                    key_id, compression_used = uploaded
                     return self.create(
                         sha256=sha256_hash,
                         size=original_size,
@@ -2840,12 +2855,6 @@ class BlobManager(models.Manager):
                         storage_location=BlobStorageLocationChoices.OBJECT_STORAGE,
                         encryption_key_id=key_id,
                         **kwargs,
-                    )
-                except Exception:  # pylint: disable=broad-exception-caught
-                    logger.warning(
-                        "Direct-to-object-storage write failed; storing blob "
-                        "in the PG tier instead (offload will retry later)",
-                        exc_info=True,
                     )
 
             blob = self.create(
