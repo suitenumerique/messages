@@ -1,4 +1,4 @@
-import { Icon, IconSize, IconType, Spinner, UserAvatar } from "@gouvfr-lasuite/ui-kit";
+import { Icon, IconSize, IconType, Spinner, UserAvatar } from "@gouvfr-lasuite/ui-components";
 import {
     Autocomplete,
     Dialog,

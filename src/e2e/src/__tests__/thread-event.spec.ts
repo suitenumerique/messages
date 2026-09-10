@@ -501,11 +501,15 @@ test.describe("Thread Events (Internal Messages)", () => {
     // Primary UI assertion: the thread entry in the thread list shows the
     // "Unread mention" badge. The thread list is re-fetched on navigation,
     // which makes it the most reliable indicator that the mention landed.
-    const threadLink = page
-      .getByRole("option", { name: "Shared inbox thread for IM" })
+    // Anchored on the row, not on the option: the `role="option"` link only
+    // wraps the subject now, while the badges sit in a sibling column it
+    // merely references through `aria-describedby`.
+    const threadItem = page
+      .locator(".thread-item")
+      .filter({ hasText: "Shared inbox thread for IM" })
       .first();
     await expect(
-      threadLink.getByLabel("Unread mention").first(),
+      threadItem.getByLabel("Unread mention").first(),
     ).toBeVisible();
 
     // Secondary assertion: the "Mentioned" folder counter in the sidebar.

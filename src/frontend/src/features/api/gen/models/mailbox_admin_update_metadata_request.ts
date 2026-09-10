@@ -6,8 +6,8 @@
  * OpenAPI spec version: 1.0.0 (v1.0)
  */
 
-export interface MailboxAdminUpdateMetadataRequest {
+export type MailboxAdminUpdateMetadataRequest = {
   full_name?: string;
   name?: string;
   custom_attributes?: unknown;
-}
+};

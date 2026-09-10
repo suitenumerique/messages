@@ -11,7 +11,7 @@ import type { MailDomainAccessRoleChoices } from "./mail_domain_access_role_choi
 /**
  * Serialize maildomain access information for read operations with nested user details.
  */
-export interface MaildomainAccessRead {
+export type MaildomainAccessRead = {
   /** primary key for the record as UUID */
   readonly id: string;
   readonly user: UserWithoutAbilities;
@@ -20,4 +20,4 @@ export interface MaildomainAccessRead {
   readonly created_at: string;
   /** date and time at which a record was last updated */
   readonly updated_at: string;
-}
+};

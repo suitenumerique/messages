@@ -11,7 +11,7 @@ import type { ThreadEventDataRequest } from "./thread_event_data_request";
 /**
  * Serialize thread event information.
  */
-export interface PatchedThreadEventRequest {
+export type PatchedThreadEventRequest = {
   type?: ThreadEventTypeEnum;
   /**
    * primary key for the record as UUID
@@ -19,4 +19,4 @@ export interface PatchedThreadEventRequest {
    */
   message?: string | null;
   data?: ThreadEventDataRequest;
-}
+};

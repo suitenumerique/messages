@@ -1,8 +1,8 @@
 import { useRef, useState } from "react";
 import { useTranslation } from "react-i18next";
-import { Tooltip } from "@gouvfr-lasuite/cunningham-react";
+import { Tooltip } from "@gouvfr-lasuite/ui-components";
 import { Contact } from "@/features/api/gen/models";
-import { Icon, IconSize, IconType } from "@gouvfr-lasuite/ui-kit";
+import { Icon, IconSize, IconType } from "@gouvfr-lasuite/ui-components";
 import { ContactPopover } from "./contact-popover";
 import { DateHelper } from "@/features/utils/date-helper";
 import clsx from "clsx";

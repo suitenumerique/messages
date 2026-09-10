@@ -2,7 +2,8 @@
     border: 1px solid var(--c--contextuals--border--semantic--brand--primary);
     box-shadow: 0 2px 5px var(--c--contextuals--background--semantic--contextual--primary-hover);
     border-radius: 4px;
-    padding: var(--c--globals--spacings--base);
+    // Sides sized for the message form (see --message-form-gutter).
+    padding: var(--c--globals--spacings--base) var(--message-form-gutter);
 
     .message-reply-form-container__body {
         min-width: 0;
@@ -14,7 +15,10 @@
 .message-reply-form-container--detached {
     padding: 0;
     margin-inline: var(--c--globals--spacings--sm);
-    overflow: hidden;
+    // `clip`, not `hidden`: both round the header off, but `hidden` makes
+    // the surface a scroll container and would pin the composer's sticky
+    // toolbar to it instead of the thread view.
+    overflow: clip;
     border: 1px solid var(--c--contextuals--border--semantic--brand--secondary);
     border-radius: 8px;
     background-color: var(--c--contextuals--background--semantic--brand--tertiary);
@@ -59,12 +63,13 @@
     .message-reply-form-container__header-actions {
         // Push the options menu to the trailing edge of the header, and keep the
         // small icon button from inflating the strip's height.
+        display: flex;
         margin-left: auto;
         margin-block: calc(var(--c--globals--spacings--xs) * -1);
     }
 
     .message-reply-form-container__body {
-        padding: var(--c--globals--spacings--base);
+        padding: var(--c--globals--spacings--base) var(--message-form-gutter);
         // Lift the editor back onto a plain surface so writing stays comfortable
         // while the surrounding chrome carries the "draft" identity.
         background-color: var(--c--contextuals--background--surface--primary);

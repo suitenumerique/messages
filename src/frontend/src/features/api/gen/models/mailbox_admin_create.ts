@@ -12,7 +12,7 @@ import type { MailboxAdminCreateContact } from "./mailbox_admin_create_contact";
  * Serialize Mailbox details for create admin endpoint, including users with access and
 metadata.
  */
-export interface MailboxAdminCreate {
+export type MailboxAdminCreate = {
   /** primary key for the record as UUID */
   readonly id: string;
   readonly local_part: string;
@@ -47,4 +47,4 @@ export interface MailboxAdminCreate {
    * @nullable
    */
   readonly one_time_password: string | null;
-}
+};

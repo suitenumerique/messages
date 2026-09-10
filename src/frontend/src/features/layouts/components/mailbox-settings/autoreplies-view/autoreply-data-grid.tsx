@@ -1,6 +1,6 @@
-import { Spinner } from "@gouvfr-lasuite/ui-kit";
-import { Trash } from "@gouvfr-lasuite/ui-kit/icons";
-import { Button, Checkbox, Column, DataGrid, useModal, useModals } from "@gouvfr-lasuite/cunningham-react";
+import { Spinner } from "@gouvfr-lasuite/ui-components";
+import { Trash } from "@gouvfr-lasuite/ui-components/icons";
+import { Button, Checkbox, Column, DataGrid, useModal, useModals } from "@gouvfr-lasuite/ui-components";
 import { useTranslation } from "react-i18next";
 import { useState } from "react";
 import { useQueryClient } from "@tanstack/react-query";

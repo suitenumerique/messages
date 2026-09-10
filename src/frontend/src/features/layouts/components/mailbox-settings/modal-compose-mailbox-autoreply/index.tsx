@@ -3,8 +3,8 @@ import { RhfInput } from "@/features/forms/components/react-hook-form/rhf-input"
 import { RhfCheckbox } from "@/features/forms/components/react-hook-form/rhf-checkbox";
 import { RhfSelect } from "@/features/forms/components/react-hook-form/rhf-select";
 import { zodResolver } from "@hookform/resolvers/zod";
-import { Button, Modal, ModalSize } from "@gouvfr-lasuite/cunningham-react";
-import { Spinner } from "@gouvfr-lasuite/ui-kit";
+import { Button, Modal, ModalSize } from "@gouvfr-lasuite/ui-components";
+import { Spinner, useResponsive } from "@gouvfr-lasuite/ui-components";
 import { FormProvider, useForm, useWatch } from "react-hook-form";
 import { useTranslation } from "react-i18next";
 import { z } from "zod";
@@ -28,6 +28,7 @@ type ModalComposeMailboxAutoreplyProps = {
 }
 
 export const ModalComposeMailboxAutoreply = ({ isOpen, onClose, mailbox, autoreply }: ModalComposeMailboxAutoreplyProps) => {
+    const { isMobile } = useResponsive();
     const { t } = useTranslation();
     const queryClient = useQueryClient();
     const [isDirty, setIsDirty] = useState(false);
@@ -58,7 +59,7 @@ export const ModalComposeMailboxAutoreply = ({ isOpen, onClose, mailbox, autorep
         <Modal
             isOpen={isOpen}
             title={autoreply ? t('Edit auto-reply "{{autoreply}}"', { autoreply: autoreply.name }) : t("Create a new auto-reply")}
-            size={ModalSize.LARGE}
+            size={isMobile ? ModalSize.FULL : ModalSize.LARGE}
             onClose={guardedOnClose}
         >
             <div className="modal-compose-template">

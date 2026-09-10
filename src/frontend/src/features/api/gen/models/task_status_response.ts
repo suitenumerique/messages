@@ -8,10 +8,10 @@
 import type { StatusEnum } from "./status_enum";
 import type { TaskStatusResponseResult } from "./task_status_response_result";
 
-export interface TaskStatusResponse {
+export type TaskStatusResponse = {
   status: StatusEnum;
   /** @nullable */
   result: TaskStatusResponseResult;
   /** @nullable */
   error: string | null;
-}
+};

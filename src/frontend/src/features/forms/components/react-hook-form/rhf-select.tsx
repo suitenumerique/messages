@@ -1,6 +1,6 @@
 import { Controller, useFormContext } from "react-hook-form";
-import { Select } from "@gouvfr-lasuite/cunningham-react";
-import { SelectProps } from "@gouvfr-lasuite/cunningham-react";
+import { Select } from "@gouvfr-lasuite/ui-components";
+import { SelectProps } from "@gouvfr-lasuite/ui-components";
 
 /**
  * A wrapper component for the Select component that integrates with react-hook-form.

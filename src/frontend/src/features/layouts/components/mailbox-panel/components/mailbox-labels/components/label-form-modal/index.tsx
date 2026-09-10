@@ -3,7 +3,7 @@ import { useLabelsCreate, useLabelsList, useLabelsUpdate } from "@/features/api/
 import { RhfInput, RhfSelect, RhfCheckbox, RhfTextArea } from "@/features/forms/components/react-hook-form";
 import { useMailboxContext } from "@/features/providers/mailbox";
 import { zodResolver } from "@hookform/resolvers/zod";
-import { Button, Modal, ModalSize } from "@gouvfr-lasuite/cunningham-react";
+import { Button, Modal, ModalSize } from "@gouvfr-lasuite/ui-components";
 import { useQueryClient } from "@tanstack/react-query";
 import { useLocation, useNavigate } from "@tanstack/react-router";
 import { useUrlSearchParams } from "@/hooks/use-url-search-params";
@@ -138,7 +138,17 @@ export const LabelModal = ({ isOpen, onClose, label, onSuccess, mailbox }: Label
         closeOnClickOutside
       >
         <FormProvider {...form}>
-          <form onSubmit={form.handleSubmit(handleSubmit)} className="label-form">
+          <form
+            // The modal can be opened from inside another form (e.g. the
+            // widget integration form): the DOM portal escapes it but the
+            // React tree does not, so without this the submit bubbles up and
+            // triggers the outer form's validation.
+            onSubmit={(event) => {
+              event.stopPropagation();
+              form.handleSubmit(handleSubmit)(event);
+            }}
+            className="label-form"
+          >
             <div className="form-field-row">
               <RhfInput
                 name="name"

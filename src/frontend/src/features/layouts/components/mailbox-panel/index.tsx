@@ -1,4 +1,4 @@
-import { HorizontalSeparator, Spinner } from "@gouvfr-lasuite/ui-kit"
+import { HorizontalSeparator, Spinner } from "@gouvfr-lasuite/ui-components"
 import { MailboxPanelActions } from "./components/mailbox-actions"
 import { MailboxList } from "./components/mailbox-list"
 import { useMailboxContext } from "@/features/providers/mailbox";

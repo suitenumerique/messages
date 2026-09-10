@@ -1,6 +1,6 @@
 import { useMemo } from "react";
 import { useTranslation } from "react-i18next";
-import { Select } from "@gouvfr-lasuite/cunningham-react";
+import { Select } from "@gouvfr-lasuite/ui-components";
 
 type CalendarOption = {
     id: string;

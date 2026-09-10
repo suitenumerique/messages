@@ -9,9 +9,9 @@
 /**
  * The Web Push subscription key pair (``p256dh`` and ``auth``).
  */
-export interface WebPushKeysRequest {
+export type WebPushKeysRequest = {
   /** @minLength 1 */
   p256dh: string;
   /** @minLength 1 */
   auth: string;
-}
+};

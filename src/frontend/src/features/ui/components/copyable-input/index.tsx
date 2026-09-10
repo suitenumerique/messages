@@ -1,8 +1,8 @@
 import React, { useState } from "react";
-import { Button } from "@gouvfr-lasuite/cunningham-react";
+import { Button } from "@gouvfr-lasuite/ui-components";
 import { useTranslation } from "react-i18next";
 import { handle } from "@/features/utils/errors";
-import { Icon } from "@gouvfr-lasuite/ui-kit";
+import { Icon } from "@gouvfr-lasuite/ui-components";
 
 export type CopyableInputProps = Omit<React.DetailedHTMLProps<React.InputHTMLAttributes<HTMLInputElement>, HTMLInputElement>, 'value'> & {
   value: string | number;

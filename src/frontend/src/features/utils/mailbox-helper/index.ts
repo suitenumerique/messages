@@ -6,6 +6,12 @@ type MailboxKind = {
     email: string;
 };
 
+/** Minimal shape needed to label a mailbox for display. */
+type MailboxLabelled = {
+    name?: string | null;
+    email: string;
+};
+
 /**
  * Helper class for operations on Mailbox resources.
  */
@@ -16,6 +22,18 @@ class MailboxHelper {
      */
     static toString(mailbox: MailboxAdmin | MailboxAdminCreate): string {
         return `${mailbox.local_part}@${mailbox.domain_name}`;
+    }
+
+    /**
+     * Display name of a mailbox, falling back to its address when no contact
+     * name is set (a mailbox may legitimately have a null/blank name).
+     *
+     * Shared by every surface that names a mailbox — the switcher and the
+     * compose tabs — so a same mailbox always yields the same label, and
+     * therefore the same generated avatar.
+     */
+    static getLabel(mailbox: MailboxLabelled): string {
+        return mailbox.name?.trim() || mailbox.email;
     }
 
     /**

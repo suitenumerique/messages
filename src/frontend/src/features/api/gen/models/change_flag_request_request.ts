@@ -7,7 +7,7 @@
  */
 import type { FlagEnum } from "./flag_enum";
 
-export interface ChangeFlagRequestRequest {
+export type ChangeFlagRequestRequest = {
   flag: FlagEnum;
   value: boolean;
   /** List of message UUIDs to apply the flag change to. */
@@ -26,4 +26,4 @@ export interface ChangeFlagRequestRequest {
    * @nullable
    */
   starred_at?: string | null;
-}
+};

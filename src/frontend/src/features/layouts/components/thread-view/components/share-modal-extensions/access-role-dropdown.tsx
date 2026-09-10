@@ -2,14 +2,14 @@
 // original component is not publicly exported. Used by the invitation bar
 // and member rows to pick a role via DropdownMenu.
 import { useMemo } from "react";
-import { Button, useCunningham } from "@gouvfr-lasuite/cunningham-react";
+import { Button, useCunningham } from "@gouvfr-lasuite/ui-components";
 import {
     DropdownMenu,
     type DropdownMenuItem,
     type DropdownMenuOption,
     type DropdownMenuProps,
-} from "@gouvfr-lasuite/ui-kit";
-import { ChevronDown, ChevronUp } from "@gouvfr-lasuite/ui-kit/icons";
+} from "@gouvfr-lasuite/ui-components";
+import { ChevronDown, ChevronUp } from "@gouvfr-lasuite/ui-components/icons";
 
 type AccessRoleDropdownProps = {
     selectedRole: string;

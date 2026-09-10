@@ -1,6 +1,6 @@
 import test, { expect } from "@playwright/test";
 import { getMailboxEmail } from "../utils";
-import { signInKeycloakIfNeeded } from "../utils-test";
+import { openNewMessageWindow, signInKeycloakIfNeeded } from "../utils-test";
 import path from "path";
 import { FIXTURES_PATH } from "../constants";
 
@@ -14,9 +14,7 @@ test.describe("Inline Image in Composer", () => {
     await page.waitForLoadState("networkidle");
 
     // Navigate to new message form
-    await page.getByRole("link", { name: "New message" }).click();
-    await page.waitForURL("/mailbox/*/new");
-    await page.getByRole("heading", { name: "New message" }).waitFor({ state: "visible" });
+    await openNewMessageWindow(page);
 
     // The image upload button should be visible in the toolbar
     const imageButton = page.getByRole("button", { name: "Insert image" });
@@ -27,9 +25,7 @@ test.describe("Inline Image in Composer", () => {
     await page.waitForLoadState("networkidle");
 
     // Navigate to new message form
-    await page.getByRole("link", { name: "New message" }).click();
-    await page.waitForURL("/mailbox/*/new");
-    await page.getByRole("heading", { name: "New message" }).waitFor({ state: "visible" });
+    await openNewMessageWindow(page);
 
     // Fill required fields
     await page.getByRole("combobox", { name: "To" }).fill(getMailboxEmail('shared'));
@@ -64,9 +60,7 @@ test.describe("Inline Image in Composer", () => {
     await page.waitForLoadState("networkidle");
 
     // Navigate to new message form
-    await page.getByRole("link", { name: "New message" }).click();
-    await page.waitForURL("/mailbox/*/new");
-    await page.getByRole("heading", { name: "New message" }).waitFor({ state: "visible" });
+    await openNewMessageWindow(page);
 
     // Fill the message
     await page.getByRole("combobox", { name: "To" }).fill(getMailboxEmail('shared'));
@@ -132,9 +126,7 @@ test.describe("Inline Image in Composer", () => {
     await page.waitForLoadState("networkidle");
 
     // Navigate to new message form
-    await page.getByRole("link", { name: "New message" }).click();
-    await page.waitForURL("/mailbox/*/new");
-    await page.getByRole("heading", { name: "New message" }).waitFor({ state: "visible" });
+    await openNewMessageWindow(page);
 
     // Fill required fields
     await page.getByRole("combobox", { name: "To" }).fill(getMailboxEmail('shared'));
@@ -172,9 +164,7 @@ test.describe("Inline Image in Composer", () => {
     await page.waitForLoadState("networkidle");
 
     // Navigate to new message form
-    await page.getByRole("link", { name: "New message" }).click();
-    await page.waitForURL("/mailbox/*/new");
-    await page.getByRole("heading", { name: "New message" }).waitFor({ state: "visible" });
+    await openNewMessageWindow(page);
 
     // Fill required fields
     await page.getByRole("combobox", { name: "To" }).fill(getMailboxEmail('shared'));

@@ -34,7 +34,7 @@ export const MailboxSettingsSignaturesTab = ({
                 ? t("No signatures")
                 : t("{{count}} signature", { count })
           }
-          action={<ComposeSignatureAction mailbox={mailbox} size="nano" />}
+          action={<ComposeSignatureAction mailbox={mailbox} />}
         />
         <SignatureDataGrid mailbox={mailbox} />
       </section>

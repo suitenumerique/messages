@@ -7,11 +7,11 @@
  */
 import type { Thread } from "./thread";
 
-export interface PaginatedThreadList {
+export type PaginatedThreadList = {
   count: number;
   /** @nullable */
   next?: string | null;
   /** @nullable */
   previous?: string | null;
   results: Thread[];
-}
+};

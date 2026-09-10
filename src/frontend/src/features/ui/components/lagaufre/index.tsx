@@ -1,6 +1,6 @@
 import { useTranslation } from "react-i18next"
 import { useEffect, useRef } from "react"
-import { LaGaufreV2 } from "@gouvfr-lasuite/ui-kit";
+import { LaGaufreV2 } from "@gouvfr-lasuite/ui-components";
 import { useConfig } from "@/features/providers/config";
 
 const LAGAUFRE_SHADOW_HOST_ID = "lasuite-widget-lagaufre-shadow";

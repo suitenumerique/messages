@@ -1,5 +1,5 @@
-import { Button } from "@gouvfr-lasuite/cunningham-react";
-import { UserRow } from "@gouvfr-lasuite/ui-kit";
+import { Button } from "@gouvfr-lasuite/ui-components";
+import { UserRow } from "@gouvfr-lasuite/ui-components";
 import { useTranslation } from "react-i18next";
 
 type AssignedUsersSectionProps = {

@@ -1,5 +1,5 @@
 import { ConfigRetrieve200 } from "@/features/api/gen";
-import { FooterProps } from "@gouvfr-lasuite/ui-kit";
+import { FooterProps } from "@gouvfr-lasuite/ui-components";
 
 export type ThemeConfig = {
   theme: "white-label" | "anct" | "dsfr";

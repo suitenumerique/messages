@@ -1,4 +1,4 @@
-import { Button } from "@gouvfr-lasuite/cunningham-react";
+import { Button } from "@gouvfr-lasuite/ui-components";
 import { useEffect } from "react";
 import { FormProvider, useForm } from "react-hook-form";
 import { useTranslation } from "react-i18next";
@@ -8,7 +8,7 @@ import { Mailbox, useMailboxesPartialUpdate } from "@/features/api/gen";
 import { RhfInput } from "@/features/forms/components/react-hook-form/rhf-input";
 import { useMailboxContext } from "@/features/providers/mailbox";
 import { addToast, ToasterItem } from "@/features/ui/components/toaster";
-import { Icon } from "@gouvfr-lasuite/ui-kit";
+import { Icon } from "@gouvfr-lasuite/ui-components";
 import i18n from "@/features/i18n/initI18n";
 
 type MailboxSettingsGeneralTabProps = {

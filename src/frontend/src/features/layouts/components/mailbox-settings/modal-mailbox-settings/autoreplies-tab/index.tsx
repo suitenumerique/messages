@@ -34,7 +34,7 @@ export const MailboxSettingsAutorepliesTab = ({
                 ? t("No auto-reply")
                 : t("{{count}} auto-reply", { count })
           }
-          action={<ComposeAutoreplyAction mailbox={mailbox} size="nano" />}
+          action={<ComposeAutoreplyAction mailbox={mailbox} />}
         />
         <AutoreplyDataGrid mailbox={mailbox} />
       </section>

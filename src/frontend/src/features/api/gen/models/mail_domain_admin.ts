@@ -11,7 +11,7 @@ import type { MailDomainAdminAbilities } from "./mail_domain_admin_abilities";
 /**
  * Serialize mail domains for admin view.
  */
-export interface MailDomainAdmin {
+export type MailDomainAdmin = {
   /** primary key for the record as UUID */
   readonly id: string;
   readonly name: string;
@@ -28,4 +28,4 @@ export interface MailDomainAdmin {
   readonly identity_sync: boolean;
   /** Instance permissions and capabilities */
   readonly abilities: MailDomainAdminAbilities;
-}
+};

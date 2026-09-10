@@ -1,5 +1,5 @@
 import { useCallback } from 'react';
-import { useModals } from '@gouvfr-lasuite/cunningham-react';
+import { useModals } from "@gouvfr-lasuite/ui-components";
 import { useTranslation } from 'react-i18next';
 
 /**

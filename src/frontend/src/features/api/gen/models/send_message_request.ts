@@ -9,10 +9,10 @@
 /**
  * Serializer for sending messages.
  */
-export interface SendMessageRequest {
+export type SendMessageRequest = {
   messageId: string;
   senderId: string;
   archive?: boolean;
   textBody?: string;
   htmlBody?: string;
-}
+};

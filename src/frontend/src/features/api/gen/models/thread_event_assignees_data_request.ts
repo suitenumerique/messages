@@ -18,6 +18,6 @@ Not used for runtime validation (handled by
 exists solely to produce a named component in the OpenAPI schema consumed
 by the generated frontend client.
  */
-export interface ThreadEventAssigneesDataRequest {
+export type ThreadEventAssigneesDataRequest = {
   assignees: ThreadEventUserRequest[];
-}
+};

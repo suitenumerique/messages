@@ -11,7 +11,7 @@ import type { ThreadAccessRoleChoices } from "./thread_access_role_choices";
 /**
  * Serializer for thread access details.
  */
-export interface ThreadAccessDetail {
+export type ThreadAccessDetail = {
   /** primary key for the record as UUID */
   readonly id: string;
   mailbox: MailboxLight;
@@ -20,4 +20,4 @@ export interface ThreadAccessDetail {
   readonly read_at: string | null;
   /** @nullable */
   readonly starred_at: string | null;
-}
+};

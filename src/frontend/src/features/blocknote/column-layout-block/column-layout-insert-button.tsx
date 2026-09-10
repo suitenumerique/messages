@@ -2,7 +2,7 @@ import { useCallback } from 'react';
 import { BlockNoteEditor } from '@blocknote/core';
 import { useBlockNoteEditor, useComponentsContext, useEditorState } from '@blocknote/react';
 import { useTranslation } from 'react-i18next';
-import { Icon, IconSize } from '@gouvfr-lasuite/ui-kit';
+import { Icon, IconSize } from "@gouvfr-lasuite/ui-components";
 
 // ---------------------------------------------------------------------------
 // Column list block factory

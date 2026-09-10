@@ -1,5 +1,5 @@
 import { Controller, useFormContext } from "react-hook-form";
-import { TextAreaProps, TextArea } from "@gouvfr-lasuite/cunningham-react";
+import { TextAreaProps, TextArea } from "@gouvfr-lasuite/ui-components";
 
 /**
  * A wrapper component for the TextArea component that integrates with react-hook-form.

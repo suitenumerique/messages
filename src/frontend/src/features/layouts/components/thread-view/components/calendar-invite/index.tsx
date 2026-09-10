@@ -2,8 +2,8 @@ import type { ReactNode } from "react";
 import { useState, useMemo, useCallback, useEffect, useRef } from "react";
 import { useTranslation } from "react-i18next";
 import { useQuery } from "@tanstack/react-query";
-import { Button } from "@gouvfr-lasuite/cunningham-react";
-import { Icon, IconType, Spinner } from "@gouvfr-lasuite/ui-kit";
+import { Button } from "@gouvfr-lasuite/ui-components";
+import { Icon, IconType, Spinner } from "@gouvfr-lasuite/ui-components";
 import {
     convertIcsCalendar,
     IcsCalendar,

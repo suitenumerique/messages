@@ -7,7 +7,7 @@
  */
 import type { ResponseEnum } from "./response_enum";
 
-export interface CalendarRsvpRequestRequest {
+export type CalendarRsvpRequestRequest = {
   /**
    * Raw ICS content of the event
    * @minLength 1
@@ -25,4 +25,4 @@ export interface CalendarRsvpRequestRequest {
    * @nullable
    */
   calendar_id?: string | null;
-}
+};

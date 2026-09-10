@@ -8,8 +8,8 @@
 import type { CalendarConflictsResponseConflictsItem } from "./calendar_conflicts_response_conflicts_item";
 import type { CalendarConflictsResponseExistingPartstats } from "./calendar_conflicts_response_existing_partstats";
 
-export interface CalendarConflictsResponse {
+export type CalendarConflictsResponse = {
   conflicts: CalendarConflictsResponseConflictsItem[];
   /** PARTSTAT per attendee identity (calendar owner email, lowercased) on the prior copy of ``exclude_uid``. Lets the UI pre-select the right prior RSVP for the *selected* calendar when a mailbox can act through several attendee-owned calendars. */
   existing_partstats: CalendarConflictsResponseExistingPartstats;
-}
+};

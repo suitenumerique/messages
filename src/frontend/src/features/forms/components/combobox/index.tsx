@@ -1,10 +1,10 @@
-import { Field, LabelledBox, SelectProps } from "@gouvfr-lasuite/cunningham-react";
+import { Field, LabelledBox, SelectProps } from "@gouvfr-lasuite/ui-components";
 import clsx from "clsx";
 import { useCombobox, useMultipleSelection } from "downshift"
-import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { ReactNode, useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { Chip } from "./chip";
-import { Button, Option } from "@gouvfr-lasuite/cunningham-react";
-import { Icon } from "@gouvfr-lasuite/ui-kit";
+import { Button, Option } from "@gouvfr-lasuite/ui-components";
+import { Icon } from "@gouvfr-lasuite/ui-components";
 import { useTranslation } from "react-i18next";
 
 export type ComboBoxProps =  {
@@ -20,15 +20,34 @@ export type ComboBoxProps =  {
      * the chip is built so what the user sees is what gets submitted.
      */
     valueTransformer?: (value: string) => string,
+    /**
+     * Short warning to attach to a selected value (rendered on its chip).
+     * Return nothing for values that need no warning.
+     */
+    getItemWarning?: (value: string) => string | undefined,
+    /**
+     * "floating" (default) animates the label above the value, like the
+     * ui-kit Select. "inline" puts the label in a left column and the field
+     * in a right column, on the same grid as the ui-kit inline fields.
+     */
+    variant?: "floating" | "inline",
+    /**
+     * Controls rendered at the end of the value row, after the clear
+     * button (e.g. buttons toggling related fields).
+     */
+    actions?: ReactNode,
     autoFocus?: boolean,
-} & Omit<SelectProps, 'value' | 'defaultValue' | 'onChange'>;
+} & Omit<SelectProps, 'value' | 'defaultValue' | 'onChange' | 'variant'>;
 
 export const ComboBox = (props: ComboBoxProps) => {
     const { t } = useTranslation();
     const [inputValue, setInputValue] = useState('');
     const [inputFocused, setInputFocused] = useState(false);
     const inputRef = useRef<HTMLInputElement>(null);
-    const { valueTransformer } = props;
+    // `className` is merged into the root classes below instead of being
+    // spread, otherwise a caller-provided value would replace `c__combobox`.
+    const { valueTransformer, getItemWarning, className, variant = "floating", actions, ...fieldProps } = props;
+    const inline = variant === "inline";
     const canonical = useCallback(
         (value: string): string => (valueTransformer ? valueTransformer(value) : value),
         [valueTransformer]
@@ -195,66 +214,98 @@ export const ComboBox = (props: ComboBoxProps) => {
         if (props.autoFocus) inputRef.current?.focus();
     }, [props.autoFocus]);
 
+    const labelProps = getLabelProps();
+    const valueRow = (
+        <div className="c__combobox__value">
+            {selectedItems.map((selectedItem, index) => (
+                <input
+                    key={`input-${selectedItems.length}-${index}`}
+                    type="hidden"
+                    name={props.name}
+                    value={selectedItem.value || selectedItem.label}
+                />
+            ))}
+            {Array.from(selectedItems).map((item, index) => (
+                <Chip
+                    {...getSelectedItemProps({
+                        selectedItem: item,
+                        index,
+                    })}
+                    key={`chip-${selectedItems.length}-${index}`}
+                    label={item.label}
+                    warning={getItemWarning?.(item.value || item.label)}
+                    onRemove={() => {
+                        removeSelectedItem(item)
+                    }}
+                />
+            ))}
+            <span className="c__combobox__input" data-value={inputValue}>
+                <input {...inputProps} />
+            </span>
+        </div>
+    );
+    // Clicks on the actions must not bubble to the wrapper, which would
+    // steal the focus back to this input.
+    const actionsRow = (
+        <div className="c__select__inner__actions" onClick={(e) => e.stopPropagation()}>
+            {props.clearable && !props.disabled && selectedItems.length > 0 && (
+                <Button
+                  variant="tertiary"
+                  size="nano"
+                  aria-label={t('Clear selected items')}
+                  className="c__select__inner__actions__clear"
+                  onClick={() => setSelectedItems([])}
+                  icon={<Icon name="close" />}
+                  type="button"
+                />
+            )}
+            {actions}
+        </div>
+    );
+
     return (
         <Field className={clsx("c__combobox", {
             "c__combobox--disabled": props.disabled,
             "c__combobox--error": props.state === "error",
             "c__combobox--success": props.state === "success",
-        })} {...props}>
+            "c__combobox--inline": inline,
+            // Same grid as the ui-kit inline fields: the label below lands
+            // in the left column, the wrapper and footer in the right one.
+            "c__field--inline": inline,
+        }, className)} {...fieldProps}>
+            {inline && props.label && (
+                <label
+                    className={clsx("c__combobox__label", {
+                        "c__combobox__label--disabled": props.disabled,
+                        "c__offscreen": props.hideLabel,
+                    })}
+                    htmlFor={labelProps.htmlFor}
+                    id={labelProps.id}
+                >
+                    {props.label}
+                </label>
+            )}
             <div className="c__combobox__wrapper" onClick={() => {
                 inputRef.current?.focus();
             }}>
-                <LabelledBox
-                    label={props.label}
-                    labelAsPlaceholder={showLabelAsPlaceholder}
-                    htmlFor={getLabelProps().htmlFor}
-                    labelId={getLabelProps().id}
-                    hideLabel={props.hideLabel}
-                    disabled={props.disabled}
-                >
-                    <div className="c__combobox__value">
-                        {selectedItems.map((selectedItem, index) => (
-                            <input
-                                key={`input-${selectedItems.length}-${index}`}
-                                type="hidden"
-                                name={props.name}
-                                value={selectedItem.value || selectedItem.label}
-                            />
-                        ))}
-                        {Array.from(selectedItems).map((item, index) => (
-                            <Chip
-                                {...getSelectedItemProps({
-                                    selectedItem: item,
-                                    index,
-                                })}
-                                key={`chip-${selectedItems.length}-${index}`}
-                                label={item.label}
-                                onRemove={() => {
-                                    removeSelectedItem(item)
-                                }}
-                            />
-                        ))}
-                        <span className="c__combobox__input" data-value={inputValue}>
-                            <input {...inputProps} />
-                        </span>
-                    </div>
-                    <div className="c__select__inner__actions">
-                    {props.clearable && !props.disabled && selectedItems.length > 0 && (
-                        <Button
-                          variant="tertiary"
-                          size="nano"
-                          aria-label={t('Clear selected items')}
-                          className="c__select__inner__actions__clear"
-                          onClick={(e) => {
-                            e.stopPropagation();
-                            setSelectedItems([]);
-                          }}
-                          icon={<Icon name="close" />}
-                          type="button"
-                        />
-                    )}
-                    </div>
-                </LabelledBox>
+                {inline ? (
+                    <>
+                        {valueRow}
+                        {actionsRow}
+                    </>
+                ) : (
+                    <LabelledBox
+                        label={props.label}
+                        labelAsPlaceholder={showLabelAsPlaceholder}
+                        htmlFor={labelProps.htmlFor}
+                        labelId={labelProps.id}
+                        hideLabel={props.hideLabel}
+                        disabled={props.disabled}
+                    >
+                        {valueRow}
+                        {actionsRow}
+                    </LabelledBox>
+                )}
                 <ul className={
                     clsx("c__combobox__menu", {
                         "c__combobox__menu--opened": isOpen,

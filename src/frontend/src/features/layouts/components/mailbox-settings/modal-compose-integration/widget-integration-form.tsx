@@ -1,5 +1,5 @@
-import { Button } from "@gouvfr-lasuite/cunningham-react";
-import { Icon, IconType, IconSize } from "@gouvfr-lasuite/ui-kit";
+import { Button } from "@gouvfr-lasuite/ui-components";
+import { Icon, IconType, IconSize } from "@gouvfr-lasuite/ui-components";
 import { useTranslation } from "react-i18next";
 import { useForm, FormProvider } from "react-hook-form";
 import { zodResolver } from "@hookform/resolvers/zod";

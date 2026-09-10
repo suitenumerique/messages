@@ -1,7 +1,7 @@
-import { DropdownMenu, DropdownMenuOption } from "@gouvfr-lasuite/ui-kit";
-import { Button, ButtonProps } from "@gouvfr-lasuite/cunningham-react";
+import { DropdownMenu, DropdownMenuOption } from "@gouvfr-lasuite/ui-components";
+import { Button, ButtonProps } from "@gouvfr-lasuite/ui-components";
 import { PropsWithChildren, useState } from "react";
-import { ChevronDown } from "@gouvfr-lasuite/ui-kit/icons";
+import { ChevronDown } from "@gouvfr-lasuite/ui-components/icons";
 import { useTranslation } from "react-i18next";
 
 export type DropdownButtonProps = PropsWithChildren<ButtonProps & {

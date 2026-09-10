@@ -7,10 +7,10 @@
  */
 import type { MailboxAdminCreateMetadataTypeEnum } from "./mailbox_admin_create_metadata_type_enum";
 
-export interface MailboxAdminCreateMetadataRequest {
+export type MailboxAdminCreateMetadataRequest = {
   type: MailboxAdminCreateMetadataTypeEnum;
   first_name?: string;
   last_name?: string;
   name?: string;
   custom_attributes?: unknown;
-}
+};

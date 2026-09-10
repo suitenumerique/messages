@@ -6,7 +6,7 @@
  * OpenAPI spec version: 1.0.0 (v1.0)
  */
 
-export interface CalendarAddEventRequestRequest {
+export type CalendarAddEventRequestRequest = {
   /**
    * Raw ICS content of the event
    * @minLength 1
@@ -18,4 +18,4 @@ export interface CalendarAddEventRequestRequest {
    * @nullable
    */
   calendar_id?: string | null;
-}
+};

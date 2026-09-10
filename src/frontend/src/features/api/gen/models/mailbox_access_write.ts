@@ -11,7 +11,7 @@ import type { MailboxRoleChoices } from "./mailbox_role_choices";
  * Serializer for creating and updating mailbox access records.
 Mailbox is set from the view based on URL parameters.
  */
-export interface MailboxAccessWrite {
+export type MailboxAccessWrite = {
   /** primary key for the record as UUID */
   readonly id: string;
   /** User ID (UUID) or email address */
@@ -21,4 +21,4 @@ export interface MailboxAccessWrite {
   readonly created_at: string;
   /** date and time at which a record was last updated */
   readonly updated_at: string;
-}
+};

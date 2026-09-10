@@ -1,4 +1,4 @@
-import { usePagination } from "@gouvfr-lasuite/cunningham-react";
+import { usePagination } from "@gouvfr-lasuite/ui-components";
 import { useEffect, useState } from "react";
 import { DEFAULT_PAGE_SIZE } from "@/features/config/constants";
 import usePrevious from "./use-previous";

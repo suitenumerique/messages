@@ -13,6 +13,7 @@
             android:label="@string/title_activity_main"
             android:theme="@style/AppTheme.NoActionBarLaunch"
             android:launchMode="singleTask"
+            android:windowSoftInputMode="adjustResize"
             android:exported="true">
             <intent-filter>
                 <action android:name="android.intent.action.MAIN" />
@@ -46,10 +47,12 @@
         -->
         <meta-data
             android:name="com.google.firebase.messaging.default_notification_channel_id"
-            android:value="new_messages" />
+            android:value="new_messages"
+        />
         <meta-data
             android:name="com.google.firebase.messaging.default_notification_icon"
-            android:resource="@drawable/ic_stat_notification" />
+            android:resource="@drawable/ic_stat_notification"
+        />
 
         <provider
             android:name="androidx.core.content.FileProvider"

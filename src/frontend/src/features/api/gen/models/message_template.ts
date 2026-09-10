@@ -11,7 +11,7 @@ import type { MessageTemplateMetadata } from "./message_template_metadata";
 /**
  * Serialize message templates for POST/PUT/PATCH operations.
  */
-export interface MessageTemplate {
+export type MessageTemplate = {
   /** primary key for the record as UUID */
   readonly id: string;
   /**
@@ -36,4 +36,4 @@ export interface MessageTemplate {
   readonly created_at: string;
   /** date and time at which a record was last updated */
   readonly updated_at: string;
-}
+};

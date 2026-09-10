@@ -10,7 +10,14 @@ import { initI18n } from "@/features/i18n/initI18n";
 import { installThemeFavicons } from "@/features/providers/theme-favicons";
 import { initSentry } from "@/features/sentry";
 import { handle } from '@/features/utils/errors';
-import { checkAndApplyOtaUpdate, notifyOtaAppReady } from "./features/native/ota";
+import { resumeNativeLogin } from "./features/native/auth";
+import { initNativeDeepLinks } from "./features/native/deep-link";
+import { hideKeyboardAccessoryBar } from "./features/native/keyboard";
+import {
+  checkAndStageOtaUpdate,
+  listenForOtaUpdatesOnResume,
+  notifyOtaAppReady,
+} from "./features/native/ota";
 import { listenForNativePushTaps } from "./features/native/push";
 
 // Tag the document on the Capacitor native app so the stylesheet can opt into
@@ -18,6 +25,10 @@ import { listenForNativePushTaps } from "./features/native/push";
 // component re-deriving the platform.
 if (isNativePlatform()) {
   document.documentElement.classList.add("native");
+
+  // The composer pins its own formatting toolbar above the keyboard; iOS's
+  // form accessory bar would stack under it, so hide it once and for all.
+  void hideKeyboardAccessoryBar();
 
   // Pinch-zooming the whole shell makes it feel like a website, not an app, so
   // lock the viewport scale — but only here: on the web the index.html viewport
@@ -53,6 +64,14 @@ declare module "@tanstack/react-router" {
 // before any await so the tap that cold-started the app is not missed.
 listenForNativePushTaps((url) => router.history.push(url));
 
+// Single owner of the appUrlOpen events, registered before any await for the
+// same reason — and one more: the native layer *retains* a deep link nobody
+// listened to and replays it to the first subscriber. Claiming it here, with
+// the login resumption as fallback, is what finishes an OIDC flow whose JS
+// context died in the background, instead of letting that stale link surface
+// in the middle of the next login attempt.
+initNativeDeepLinks(resumeNativeLogin);
+
 /**
  * Fetch the backend configuration then initialize everything that must be
  * ready before the first React render: Sentry, i18n and the theme favicons.
@@ -75,9 +94,13 @@ export const bootstrap = async () => {
     }
 
     const config = resolveConfig(response?.data);
-    // Fire-and-forget: a pending update reloads the WebView once downloaded;
-    // until then the current bundle renders normally.
-    void checkAndApplyOtaUpdate(config.MOBILE_OTA_MANIFEST_URL);
+    // Fire-and-forget: a new release is downloaded and *staged* in the
+    // background (never a mid-session reload) — the update toast then offers
+    // to apply it, and backgrounding the app applies it anyway. Foreground
+    // returns re-check on a throttle so long-lived sessions catch releases
+    // (and emergency rollbacks) too.
+    void checkAndStageOtaUpdate(config.MOBILE_OTA_MANIFEST_URL);
+    listenForOtaUpdatesOnResume(config.MOBILE_OTA_MANIFEST_URL);
     initSentry(config);
     initI18n(config);
     installThemeFavicons(config.THEME_CONFIG.theme);

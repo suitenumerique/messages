@@ -52,3 +52,7 @@ interface ImportMeta {
 // Per-build version stamp injected by Vite (see vite.config.ts `define`). Used
 // to cache-bust runtime-loaded assets such as the locale JSON files.
 declare const __SOURCE_VERSION__: string;
+
+// The web app's released version (package.json), injected by Vite. Shown to
+// users; distinct from the native apps' own version (see use-app-version.ts).
+declare const __WEB_APP_VERSION__: string;

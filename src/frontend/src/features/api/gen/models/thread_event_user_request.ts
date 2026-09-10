@@ -15,8 +15,8 @@ Not used for runtime validation (handled by
 exists solely to produce a named component in the OpenAPI schema consumed
 by the generated frontend client.
  */
-export interface ThreadEventUserRequest {
+export type ThreadEventUserRequest = {
   id: string;
   /** @minLength 1 */
   name: string;
-}
+};

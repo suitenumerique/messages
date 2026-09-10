@@ -9,7 +9,7 @@
 /**
  * Serializer for Label model.
  */
-export interface PatchedLabelRequest {
+export type PatchedLabelRequest = {
   /**
    * Name of the label/folder (can use slashes for hierarchy, e.g. 'Work/Projects')
    * @minLength 1
@@ -33,4 +33,4 @@ export interface PatchedLabelRequest {
   description?: string;
   /** Whether this label should be automatically applied by AI */
   is_auto?: boolean;
-}
+};

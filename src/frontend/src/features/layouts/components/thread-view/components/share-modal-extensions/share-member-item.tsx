@@ -9,7 +9,7 @@ import {
     UserRow,
     type DropdownMenuOption,
     type DropdownMenuProps,
-} from "@gouvfr-lasuite/ui-kit";
+} from "@gouvfr-lasuite/ui-components";
 import clsx from "clsx";
 import { AccessRoleDropdown } from "./access-role-dropdown";
 

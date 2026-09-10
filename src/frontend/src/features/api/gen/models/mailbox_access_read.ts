@@ -12,7 +12,7 @@ import type { MailboxRoleChoices } from "./mailbox_role_choices";
  * Serialize mailbox access information for read operations with nested user details.
 Mailbox context is implied by the URL, so mailbox details are not included here.
  */
-export interface MailboxAccessRead {
+export type MailboxAccessRead = {
   /** primary key for the record as UUID */
   readonly id: string;
   readonly user_details: UserWithoutAbilities;
@@ -21,4 +21,4 @@ export interface MailboxAccessRead {
   readonly created_at: string;
   /** date and time at which a record was last updated */
   readonly updated_at: string;
-}
+};
