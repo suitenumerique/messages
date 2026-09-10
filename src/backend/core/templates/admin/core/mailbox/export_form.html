@@ -1,0 +1,41 @@
+{% extends "admin/base_site.html" %}
+{% load i18n admin_urls %}
+
+{# select2 assets for the mailbox autocomplete fields #}
+{% block extrahead %}{{ block.super }}{{ form.media }}{% endblock %}
+
+{% block breadcrumbs %}
+<div class="breadcrumbs">
+    <a href="{% url 'admin:index' %}">{% translate 'Home' %}</a>
+    &rsaquo; <a href="{% url 'admin:app_list' app_label=opts.app_label %}">{{ opts.app_config.verbose_name }}</a>
+    &rsaquo; <a href="{% url 'admin:core_mailbox_changelist' %}">{{ opts.verbose_name_plural|capfirst }}</a>
+    &rsaquo; {% translate "Export mailbox" %}
+</div>
+{% endblock %}
+
+{# admin/base.html already renders the view's ``title`` as the page <h1>. #}
+{% block content %}
+<p>{% blocktranslate %}All messages of the selected mailbox are exported to an MBOX archive in the background. Once ready, a message carrying a download link valid for 7 days is delivered to the mailbox you choose below.{% endblocktranslate %}</p>
+
+<form method="post">
+    {% csrf_token %}
+    {{ form.non_field_errors }}
+    {# Laid out like a change form so the pickers pick up the admin field styling. #}
+    <fieldset class="module aligned">
+        {% for field in form %}
+        <div class="form-row">
+            {{ field.errors }}
+            <div class="flex-container">
+                {{ field.label_tag }}
+                {{ field }}
+            </div>
+            {% if field.help_text %}<div class="help">{{ field.help_text }}</div>{% endif %}
+        </div>
+        {% endfor %}
+    </fieldset>
+    <div class="submit-row">
+        <input type="submit" value="{% translate 'Start export' %}" class="default">
+        <a class="button" href="{% url 'admin:core_mailbox_changelist' %}">{% translate "Cancel" %}</a>
+    </div>
+</form>
+{% endblock %}

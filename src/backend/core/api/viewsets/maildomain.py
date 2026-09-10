@@ -33,6 +33,7 @@ from core.api.viewsets.message_template import BODIES_PARAMETER
 from core.api.viewsets.mixins import MessageTemplateResponseMixin
 from core.enums import MailDomainAbilities, MessageTemplateTypeChoices
 from core.services.dns.check import check_dns_records, invalidate_spf_check_cache
+from core.services.exporter.tasks import export_mailbox_task
 from core.services.identity import keycloak as keycloak_service
 
 logger = getLogger(__name__)
@@ -42,6 +43,12 @@ class _MandatoryTotpPayloadSerializer(drf_serializers.Serializer):  # pylint: di
     """Strict validation for the ``set_mandatory_totp`` request body."""
 
     enabled = drf_serializers.BooleanField()
+
+
+class _MailboxExportPayloadSerializer(drf_serializers.Serializer):  # pylint: disable=abstract-method
+    """Strict validation for the ``export`` request body."""
+
+    recipient_mailbox_id = drf_serializers.UUIDField()
 
 
 class AdminMailDomainViewSet(
@@ -537,6 +544,104 @@ class AdminMailDomainMailboxViewSet(
             )
 
         return Response(result, status=status.HTTP_200_OK)
+
+    @extend_schema(
+        operation_id="maildomains_mailboxes_export",
+        description=(
+            "Export every message of a mailbox to an MBOX archive. The task "
+            "runs in the background and delivers the download link to the "
+            "mailbox chosen by the requester."
+        ),
+        request=inline_serializer(
+            name="MailboxAdminExportPayload",
+            fields={
+                "recipient_mailbox_id": drf_serializers.UUIDField(),
+            },
+        ),
+        responses={
+            202: inline_serializer(
+                name="MailboxAdminExportResponse",
+                fields={
+                    "task_id": drf_serializers.CharField(),
+                    "recipient": drf_serializers.CharField(),
+                },
+            ),
+            400: inline_serializer(
+                name="MailboxAdminExportError",
+                fields={"error": drf_serializers.CharField()},
+            ),
+            403: OpenApiResponse(
+                response=inline_serializer(
+                    name="MailboxAdminExportForbidden",
+                    fields={"error": drf_serializers.CharField()},
+                ),
+                description="No access to the recipient mailbox.",
+            ),
+            404: inline_serializer(
+                name="MailboxAdminExportNotFound",
+                fields={"error": drf_serializers.CharField()},
+            ),
+            500: inline_serializer(
+                name="MailboxAdminExportInternalServerError",
+                fields={"error": drf_serializers.CharField()},
+            ),
+        },
+    )
+    @action(detail=True, methods=["post"], url_path="export")
+    def export(self, request, *args, **kwargs):
+        """Queue a full export of the mailbox for the requesting domain admin."""
+        mailbox = self.get_object()
+
+        abilities = mailbox.domain.get_abilities(request.user)
+        if not abilities.get(MailDomainAbilities.CAN_MANAGE_MAILBOXES):
+            raise PermissionDenied("You cannot manage mailboxes in this domain.")
+
+        # The download link lands in a mailbox the requester picks among the
+        # ones they can access — validated here, when the task is queued.
+        payload = _MailboxExportPayloadSerializer(data=request.data)
+        if not payload.is_valid():
+            return Response(
+                {"error": "recipient_mailbox_id is required and must be a UUID."},
+                status=status.HTTP_400_BAD_REQUEST,
+            )
+        try:
+            recipient = models.Mailbox.objects.select_related("domain").get(
+                id=payload.validated_data["recipient_mailbox_id"]
+            )
+        except models.Mailbox.DoesNotExist:
+            return Response(
+                {"error": "Recipient mailbox not found."},
+                status=status.HTTP_404_NOT_FOUND,
+            )
+        if not recipient.accesses.filter(user=request.user).exists():
+            return Response(
+                {"error": "You have no access to the recipient mailbox."},
+                status=status.HTTP_403_FORBIDDEN,
+            )
+
+        try:
+            task = export_mailbox_task.delay(
+                str(mailbox.id), str(request.user.id), str(recipient.id)
+            )
+        except Exception:  # pylint: disable=broad-exception-caught
+            logger.exception("Failed to queue the export of mailbox %s", mailbox.id)
+            return Response(
+                {"error": "Could not queue the export."},
+                status=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            )
+
+        logger.info(
+            "User %s queued export task %s of mailbox %s, to be delivered to mailbox %s",
+            request.user.id,
+            task.id,
+            mailbox.id,
+            recipient.id,
+        )
+
+        return Response(
+            {"task_id": task.id, "recipient": str(recipient)},
+            status=status.HTTP_202_ACCEPTED,
+        )
 
 
 # pylint: disable=too-many-ancestors

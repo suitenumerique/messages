@@ -4,6 +4,7 @@
 {% block extrastyle %}
 {{ block.super }}
 <style>
+    .object-tools a.exportlink,
     .object-tools button.exportlink {
         appearance: none;
         background: var(--object-tools-bg);
@@ -18,10 +19,13 @@
         letter-spacing: 0.5px;
         line-height: inherit;
         padding: 3px 12px;
+        text-decoration: none;
         text-transform: uppercase;
         transition: color 0.15s, background 0.15s;
     }
 
+    .object-tools a.exportlink:focus,
+    .object-tools a.exportlink:hover,
     .object-tools button.exportlink:focus,
     .object-tools button.exportlink:hover {
         background-color: var(--object-tools-hover-bg);
@@ -32,12 +36,9 @@
 {% block object-tools-items %}
 {% if original %}
 <li>
-    <form method="post" action="{% url 'admin:core_mailbox_export' original.pk %}" style="display: inline;">
-        {% csrf_token %}
-        <button type="submit" class="exportlink">
-            {% translate "Export Messages" %}
-        </button>
-    </form>
+    <a href="{% url 'admin:core_mailbox_export' original.pk %}" class="exportlink">
+        {% translate "Export Messages" %}
+    </a>
 </li>
 {% endif %}
 {{ block.super }}

@@ -173,6 +173,13 @@ class TestAdminMailDomainMailboxViewSet:
             kwargs={"maildomain_pk": maildomain_pk, "pk": mailbox_pk},
         )
 
+    def export_url(self, maildomain_pk, mailbox_pk):
+        """Generate URL for the export action on a mailbox in a specific domain."""
+        return reverse(
+            "admin-maildomains-mailbox-export",
+            kwargs={"maildomain_pk": maildomain_pk, "pk": mailbox_pk},
+        )
+
     # pylint: disable=too-many-arguments
     def test_admin_maildomains_mailbox_list_for_domain_success(
         self,
@@ -1818,3 +1825,248 @@ class TestAdminMailDomainMailboxViewSet:
         mock_reset_totp.assert_called_once_with(
             f"{mailbox1_domain1.local_part}@{mail_domain1.name}"
         )
+
+    @patch("core.api.viewsets.maildomain.export_mailbox_task")
+    def test_admin_maildomains_mailbox_export_success(
+        self,
+        mock_export_task,
+        api_client,
+        domain_admin_user,
+        domain_admin_access1,
+        mail_domain1,
+        mailbox1_domain1,
+    ):
+        """A domain admin queues an export to a mailbox of their choice."""
+        requester_mailbox = factories.MailboxFactory(
+            domain=mail_domain1,
+            local_part="admin",
+            users_admin=[domain_admin_user],
+        )
+        mock_export_task.delay.return_value.id = "task-id-123"
+        api_client.force_authenticate(user=domain_admin_user)
+
+        response = api_client.post(
+            self.export_url(mail_domain1.pk, mailbox1_domain1.pk),
+            data={"recipient_mailbox_id": str(requester_mailbox.id)},
+        )
+
+        assert response.status_code == status.HTTP_202_ACCEPTED
+        assert response.data == {
+            "task_id": "task-id-123",
+            "recipient": str(requester_mailbox),
+        }
+        mock_export_task.delay.assert_called_once_with(
+            str(mailbox1_domain1.id),
+            str(domain_admin_user.id),
+            str(requester_mailbox.id),
+        )
+
+    @patch("core.api.viewsets.maildomain.export_mailbox_task")
+    def test_admin_maildomains_mailbox_export_requires_recipient(
+        self,
+        mock_export_task,
+        api_client,
+        domain_admin_user,
+        domain_admin_access1,
+        mail_domain1,
+        mailbox1_domain1,
+    ):
+        """No chosen destination means no export: nothing is auto-picked."""
+        api_client.force_authenticate(user=domain_admin_user)
+
+        response = api_client.post(
+            self.export_url(mail_domain1.pk, mailbox1_domain1.pk)
+        )
+
+        assert response.status_code == status.HTTP_400_BAD_REQUEST
+        assert "recipient_mailbox_id" in response.data["error"]
+        mock_export_task.delay.assert_not_called()
+
+    @patch("core.api.viewsets.maildomain.export_mailbox_task")
+    def test_admin_maildomains_mailbox_export_malformed_recipient(
+        self,
+        mock_export_task,
+        api_client,
+        domain_admin_user,
+        domain_admin_access1,
+        mail_domain1,
+        mailbox1_domain1,
+    ):
+        """A destination that isn't a UUID is a malformed payload, not a 404."""
+        api_client.force_authenticate(user=domain_admin_user)
+
+        response = api_client.post(
+            self.export_url(mail_domain1.pk, mailbox1_domain1.pk),
+            data={"recipient_mailbox_id": "not-a-uuid"},
+        )
+
+        assert response.status_code == status.HTTP_400_BAD_REQUEST
+        assert "recipient_mailbox_id" in response.data["error"]
+        mock_export_task.delay.assert_not_called()
+
+    @patch("core.api.viewsets.maildomain.export_mailbox_task")
+    def test_admin_maildomains_mailbox_export_unknown_recipient(
+        self,
+        mock_export_task,
+        api_client,
+        domain_admin_user,
+        domain_admin_access1,
+        mail_domain1,
+        mailbox1_domain1,
+    ):
+        """A destination that does not exist is reported as not found."""
+        api_client.force_authenticate(user=domain_admin_user)
+
+        response = api_client.post(
+            self.export_url(mail_domain1.pk, mailbox1_domain1.pk),
+            data={"recipient_mailbox_id": "00000000-0000-0000-0000-000000000000"},
+        )
+
+        assert response.status_code == status.HTTP_404_NOT_FOUND
+        mock_export_task.delay.assert_not_called()
+
+    @patch("core.api.viewsets.maildomain.export_mailbox_task")
+    def test_admin_maildomains_mailbox_export_foreign_recipient(
+        self,
+        mock_export_task,
+        api_client,
+        domain_admin_user,
+        domain_admin_access1,
+        mail_domain1,
+        mailbox1_domain1,
+    ):
+        """The destination must be a mailbox the requester can access."""
+        api_client.force_authenticate(user=domain_admin_user)
+
+        response = api_client.post(
+            self.export_url(mail_domain1.pk, mailbox1_domain1.pk),
+            data={"recipient_mailbox_id": str(mailbox1_domain1.id)},
+        )
+
+        assert response.status_code == status.HTTP_403_FORBIDDEN
+        mock_export_task.delay.assert_not_called()
+
+    @patch("core.api.viewsets.maildomain.export_mailbox_task")
+    def test_admin_maildomains_mailbox_export_requires_domain_admin(
+        self,
+        mock_export_task,
+        api_client,
+        other_user,
+        mail_domain1,
+        mailbox1_domain1,
+    ):
+        """A user who does not administer the domain cannot export its mailboxes."""
+        factories.MailboxFactory(
+            domain=mail_domain1, local_part="outsider", users_admin=[other_user]
+        )
+        api_client.force_authenticate(user=other_user)
+
+        response = api_client.post(
+            self.export_url(mail_domain1.pk, mailbox1_domain1.pk)
+        )
+
+        assert response.status_code == status.HTTP_403_FORBIDDEN
+        mock_export_task.delay.assert_not_called()
+
+    @patch("core.api.viewsets.maildomain.export_mailbox_task")
+    def test_admin_maildomains_mailbox_export_requires_admin_of_that_domain(
+        self,
+        mock_export_task,
+        api_client,
+        domain_admin_user,
+        domain_admin_access2,
+        mail_domain1,
+        mail_domain2,
+        mailbox1_domain1,
+    ):
+        """Administering one domain grants nothing over another domain.
+
+        Two independent guards refuse this, and the test only passes while at
+        least one holds: ``IsMailDomainAdmin`` matching the URL's
+        ``maildomain_pk`` (it widens to "admin of any domain" without one), and
+        the ``CAN_MANAGE_MAILBOXES`` re-check against the fetched mailbox's own
+        domain.
+        """
+        assert domain_admin_access2.maildomain_id == mail_domain2.pk
+        factories.MailboxFactory(
+            domain=mail_domain2, local_part="admin", users_admin=[domain_admin_user]
+        )
+        api_client.force_authenticate(user=domain_admin_user)
+
+        response = api_client.post(
+            self.export_url(mail_domain1.pk, mailbox1_domain1.pk)
+        )
+
+        assert response.status_code == status.HTTP_403_FORBIDDEN
+        mock_export_task.delay.assert_not_called()
+
+    @patch("core.api.viewsets.maildomain.export_mailbox_task")
+    def test_admin_maildomains_mailbox_export_mailbox_access_is_not_enough(
+        self,
+        mock_export_task,
+        api_client,
+        other_user,
+        mail_domain1,
+        mailbox1_domain1,
+    ):
+        """Holding ADMIN access on the mailbox itself does not allow exporting it.
+
+        Mailbox-level admin is a mailbox-sharing role; exporting the whole
+        archive is a domain-administration act.
+        """
+        factories.MailboxAccessFactory(
+            mailbox=mailbox1_domain1,
+            user=other_user,
+            role=MailboxRoleChoices.ADMIN,
+        )
+        api_client.force_authenticate(user=other_user)
+
+        response = api_client.post(
+            self.export_url(mail_domain1.pk, mailbox1_domain1.pk),
+            data={"recipient_mailbox_id": str(mailbox1_domain1.id)},
+        )
+
+        assert response.status_code == status.HTTP_403_FORBIDDEN
+        mock_export_task.delay.assert_not_called()
+
+    @patch("core.api.viewsets.maildomain.export_mailbox_task")
+    def test_admin_maildomains_mailbox_export_requires_authentication(
+        self,
+        mock_export_task,
+        api_client,
+        mail_domain1,
+        mailbox1_domain1,
+    ):
+        """Anonymous callers cannot queue an export."""
+        response = api_client.post(
+            self.export_url(mail_domain1.pk, mailbox1_domain1.pk)
+        )
+
+        assert response.status_code in (
+            status.HTTP_401_UNAUTHORIZED,
+            status.HTTP_403_FORBIDDEN,
+        )
+        mock_export_task.delay.assert_not_called()
+
+    @patch("core.api.viewsets.maildomain.export_mailbox_task")
+    def test_admin_maildomains_mailbox_export_other_domain_mailbox(
+        self,
+        mock_export_task,
+        api_client,
+        domain_admin_user,
+        domain_admin_access1,
+        mail_domain1,
+        mailbox1_domain2,
+    ):
+        """A mailbox of another domain is not reachable through this domain's URL."""
+        factories.MailboxFactory(
+            domain=mail_domain1, local_part="admin", users_admin=[domain_admin_user]
+        )
+        api_client.force_authenticate(user=domain_admin_user)
+
+        response = api_client.post(
+            self.export_url(mail_domain1.pk, mailbox1_domain2.pk)
+        )
+
+        assert response.status_code == status.HTTP_404_NOT_FOUND
+        mock_export_task.delay.assert_not_called()
