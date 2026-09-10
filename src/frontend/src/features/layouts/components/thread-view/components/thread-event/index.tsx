@@ -8,7 +8,7 @@ import { useAuth } from "@/features/auth";
 import { useMailboxContext, TimelineItem } from "@/features/providers/mailbox";
 import { Badge } from "@/features/ui/components/badge";
 import { AVATAR_COLORS, Icon, IconSize, IconType, UserAvatar } from "@gouvfr-lasuite/ui-kit";
-import { Button, useModals } from "@gouvfr-lasuite/cunningham-react";
+import { Button, Tooltip, useModals } from "@gouvfr-lasuite/cunningham-react";
 import useCopyDeepLink from "@/features/message/use-copy-deep-link";
 import clsx from "clsx";
 import { buildAssignmentMessage } from "./assignment-message";
@@ -310,6 +310,22 @@ export const ThreadEvent = ({ event, isCondensed = false, onEdit, onDelete, ment
                             <span className="thread-event__edited-badge">({t("edited")})</span>
                         )}
                     </div>
+                    {isAuthor && event.mention_read_by && event.mention_read_by.length > 0 && (
+                        <div className="thread-event__read-status">
+                            <Tooltip
+                                content={event.mention_read_by.map((u) => u.name).join(', ')}
+                                placement="bottom"
+                            >
+                                <span className="thread-event__read-indicator">
+                                    <Icon type={IconType.OUTLINED} size={IconSize.X_SMALL} name="done_all" aria-hidden="true" />
+                                    {t('read_by_count', {
+                                        count: event.mention_read_by.length,
+                                        total: (event.data as ThreadEventIMData).mentions?.length ?? 0,
+                                    })}
+                                </span>
+                            </Tooltip>
+                        </div>
+                    )}
                     <div className="thread-event__actions">
                         <Button
                             size="nano"
