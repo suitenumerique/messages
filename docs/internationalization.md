@@ -87,8 +87,8 @@ step.
 Some user-facing text is produced by the backend rather than the frontend, and
 is therefore **English only**. The main case today is the mailbox export
 notification email (`core/services/exporter/tasks.py`,
-`_create_notification_message`), delivered to the requester's mailbox with the
-download link.
+`_create_notification_message`), which carries the download link to the
+mailbox the requester picked as recipient when queueing the export.
 
 ### Why not Django i18n
 
@@ -126,7 +126,9 @@ Give the backend its own namespace in the same format and the same pipeline:
 -   A small loader, following `core/ai/thread_summarizer.py`
     (`Path(__file__).parent / …`, cached): `t(key, lang, **vars)` doing `{{var}}`
     substitution, falling back to `en-US` then to the key itself.
-    `User.language` already stores `en-us` / `fr-fr` / `nl-nl`.
+    `User.language` already stores `en-us` / `fr-fr` / `nl-nl`. The export
+    notification lands in a mailbox, which has no language of its own: it
+    would follow the language of the user who queued the export.
 
 One caveat: the `_one` / `_many` / `_other` suffixes in the frontend catalogs
 are CLDR plural rules (French uses one/many/other, Dutch one/other).

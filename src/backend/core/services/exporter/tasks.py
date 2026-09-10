@@ -669,14 +669,14 @@ def _create_notification_message(
     total_messages: int,
 ) -> bool:
     """
-    Deliver the download link to the requester's own mailbox.
+    Deliver the download link to the mailbox chosen by the requester.
 
     English only: the backend has no translation catalog (USE_I18N is False and
     there is no gettext anywhere). See docs/internationalization.md for the
     planned backend namespace.
 
     Args:
-        recipient_email: The address of the requester's mailbox, where the
+        recipient_email: The address of the recipient mailbox, where the
             link is delivered
         mailbox_email: The email address of the exported mailbox
         presigned_url: The presigned S3 URL for download
@@ -719,11 +719,13 @@ Anyone with this link can download the whole mailbox: do not share it.
 
 <tr><td style="padding:32px 32px 0 32px;">
 <h1 style="margin:0;font-size:20px;line-height:28px;font-weight:600;">Your export is ready</h1>
-<p style="margin:12px 0 0 0;font-size:15px;line-height:24px;color:#52525b;">The export of <strong style="color:#18181b;">{escaped_mailbox}</strong> is ready for download.</p>
+<p style="margin:12px 0 0 0;font-size:15px;line-height:24px;color:#52525b;">
+The export of <strong style="color:#18181b;">{escaped_mailbox}</strong> is ready for download.</p>
 </td></tr>
 
 <tr><td style="padding:28px 32px 0 32px;">
-<a href="{escaped_url}" style="display:inline-block;padding:12px 24px;background-color:#18181b;color:#ffffff;font-size:15px;line-height:20px;font-weight:600;text-decoration:none;border-radius:6px;">Download the export</a>
+<a href="{escaped_url}"
+style="display:inline-block;padding:12px 24px;background-color:#18181b;color:#ffffff;font-size:15px;line-height:20px;font-weight:600;text-decoration:none;border-radius:6px;">Download the export</a>
 <p style="margin:12px 0 0 0;font-size:13px;line-height:20px;color:#71717a;">This link is valid for 7 days.</p>
 </td></tr>
 
