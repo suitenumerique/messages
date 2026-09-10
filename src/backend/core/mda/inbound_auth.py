@@ -15,12 +15,14 @@ Rules applied for every backend:
 
 The backend is picked by ``SPAM_CONFIG["inbound_auth"]``:
   - ``"native"``: verify DKIM locally (crypto + DNS) AND require the signing
-    ``d=`` domain to match the From: domain (strict alignment). Raw DKIM only
-    proves *some* domain signed the message; without alignment an attacker who
-    controls any DKIM-enabled domain could sign a message bearing a forged
-    From:. Full DMARC policy lookup is not implemented for native, so an
-    unaligned-but-cryptographically-valid signature collapses to ``"none"``
-    (we can't call it forgery without the From domain's published policy).
+    ``d=`` domain to align with the From: domain, in the mode that domain's
+    DMARC record asks for. Raw DKIM only proves *some* domain signed the
+    message; without alignment an attacker who controls any DKIM-enabled
+    domain could sign a message bearing a forged From:. Alignment is as far
+    as it goes: native never returns ``"fail"``, because a message can pass
+    DMARC through aligned SPF with no DKIM at all, so calling a DKIM
+    non-match forgery would need an SPF evaluator we do not have. An
+    unaligned-but-cryptographically-valid signature collapses to ``"none"``.
   - ``"rspamd"``: read DKIM / DMARC symbols from the rspamd /checkv2 result
     (reused from the spam check, or fetched on demand by the caller).
   - ``"arc"``: dkim/dmarc from the ``ARC-Authentication-Results`` sealed by a
@@ -43,10 +45,17 @@ from typing import Any
 from jmap_email import first_address_email
 from jmap_email.types import JmapEmail
 
-from core.mda.addresses import address_domain, ascii_lower, normalize_domain
+from core.mda.addresses import (
+    address_domain,
+    ascii_lower,
+    normalize_domain,
+    organizational_domain,
+)
 from core.mda.arc import arc_result
+from core.mda.dmarc import dkim_alignment_mode
 from core.mda.signing import verify_message_dkim
 from core.mda.utils import headers_blocks
+from core.services.dns.records import DMARC_STRICT_ALIGNMENT
 
 logger = logging.getLogger(__name__)
 
@@ -187,21 +196,50 @@ def _from_header_domain(parsed_email: JmapEmail) -> str | None:
     return domain or None
 
 
+def _dkim_aligned(signing_domain: str, from_domain: str) -> bool:
+    """Whether a DKIM ``d=`` aligns with a From domain (RFC 7489 3.1.1).
+
+    Honours the ``adkim`` mode the From domain publishes: strict wants ``d=``
+    to equal the From domain exactly, relaxed — the default — accepts any name
+    sharing its organizational domain.
+
+    Ordered so the DMARC lookup happens only when the answer depends on it.
+    An exact match is aligned under either mode, and domains with different
+    organizational domains are unaligned under either, so both settle without
+    asking. What is left is one narrow case: a subdomain signing for its
+    parent, which relaxed accepts and strict does not. That is the only shape
+    that costs a DNS query.
+    """
+    if signing_domain == from_domain:
+        return True
+    if organizational_domain(signing_domain) != organizational_domain(from_domain):
+        return False
+    return dkim_alignment_mode(from_domain) != DMARC_STRICT_ALIGNMENT
+
+
 def _native_dkim_outcome(raw_data: bytes, parsed_email: JmapEmail) -> str | None:
     """Verify DKIM locally and require From/DKIM identifier alignment.
 
     A valid DKIM signature only proves that *some* domain signed the message,
-    so we additionally require the signing domain (``d=``) to match the From:
-    domain — strict alignment, an exact case-insensitive match. Without it an
-    attacker who owns any DKIM-enabled domain could sign a message carrying a
-    forged From: and have it shown as verified.
+    so we additionally require the signing domain (``d=``) to align with the
+    From: domain. Without it an attacker who owns any DKIM-enabled domain
+    could sign a message carrying a forged From: and have it shown as
+    verified.
 
-    Native mode never returns ``_FAIL``: it does no DMARC policy lookup, and a
-    bare DKIM verify can't tell a *missing* signature from an *invalid* one, so
-    it has no grounds to assert an explicit failure. Every non-pass outcome —
-    no/invalid signature, or a valid signature whose ``d=`` doesn't align with
-    From — collapses to ``_NONE`` ("unverified"). The unaligned case also logs
-    the mismatch, since a *valid* signature not matching From is the spoofing
+    Alignment follows the ``adkim`` mode the From domain publishes, defaulting
+    to relaxed as RFC 7489 6.3 does: the two organizational domains must
+    match, so ``mail.example.com`` signing for ``From: example.com`` is
+    aligned, and an attacker still has to own a name under the From domain's
+    registrable domain. A publisher asking for ``adkim=s`` gets the exact
+    match it asked for. This is a lookup of one tag, not DMARC evaluation —
+    see ``core.mda.dmarc``.
+
+    Native mode never returns ``_FAIL``. A broken signature is overwhelmingly
+    a mailing list or forwarder that rewrote the body, not an attack, and
+    ``_FAIL`` here means DMARC fail — the sender's domain explicitly
+    disavowing the message, which only a policy lookup can establish. So every
+    non-pass outcome collapses to ``_NONE`` ("unverified"). The unaligned case
+    logs, since a *valid* signature not matching From is the spoofing
     signature.
     """
     try:
@@ -210,11 +248,12 @@ def _native_dkim_outcome(raw_data: bytes, parsed_email: JmapEmail) -> str | None
         logger.warning("Native DKIM verification errored: %s", e)
         return None
     if not signing_domain:
-        # No signature, or one that didn't validate — a bare verify can't tell
-        # them apart, so this is "can't verify", not an explicit failure.
+        # No signature, or one that did not validate. The two are separable
+        # (the header is there or it is not), but neither is a forgery claim:
+        # see the note on ``_FAIL`` above.
         return _NONE
     from_domain = _from_header_domain(parsed_email)
-    if from_domain and signing_domain == from_domain:
+    if from_domain and _dkim_aligned(signing_domain, from_domain):
         return _PASS
     logger.info(
         "Native DKIM signature not aligned with From: d=%s from=%s -> unverified",

@@ -138,8 +138,20 @@ verdict, stored in `postmark["auth"]` and surfaced in the UI (below):
 The backend is selected by `SPAM_CONFIG["inbound_auth"]`:
 
 - **`native`** — verify the DKIM signature locally (crypto + DNS) and require
-  strict alignment between the signing `d=` domain and the `From:` domain. Never
-  returns `fail` (no DMARC policy lookup); worst case is `none`.
+  the signing `d=` domain to align with the `From:` domain, in the mode that
+  domain's DMARC record asks for: `adkim=s` wants an exact match, and the
+  default `adkim=r` accepts any name sharing its organizational domain
+  (per the [Public Suffix List](https://publicsuffix.org/)), so
+  `mail.example.com` may sign for `From: example.com`. The `_dmarc` lookup is
+  only made when it can change the answer — an exact match is aligned either
+  way, and unrelated domains are unaligned either way — so it costs a query
+  only for a subdomain signing for its parent, and falls back to relaxed if it
+  does not complete. Never returns `fail`; worst case is `none`.
+
+  > **This is one tag, not DMARC evaluation.** Declaring a message *failed*
+  > DMARC needs SPF, since a message can pass DMARC through an aligned SPF
+  > with no DKIM signature at all — so `aspf` is not honoured and a policy of
+  > `p=reject` is not enforced. Use `rspamd` if you want real DMARC.
 - **`rspamd`** — read DKIM/DMARC **symbols** from the rspamd `/checkv2` result
   (reusing the spam-step scan). Verdict precedence: `fail` > `pass` > `none`.
 - **`arc`** — read `dkim=`/`dmarc=` from the `ARC-Authentication-Results` that a
@@ -458,6 +470,10 @@ children) and recomputes thread stats, moving the thread in/out of the Junk view
 - **Per-mailbox** spam configuration (currently global → maildomain only).
 - **SPF** as a standalone user-visible verdict (today it only feeds rspamd
   scoring; the surfaced auth verdict is DKIM + DMARC).
+- **Native DMARC evaluation** — mode `native` reads `adkim` but cannot enforce
+  a policy or honour `aspf` without an SPF evaluator, so it never returns
+  `fail`. DMARC aggregate/failure reporting (RFC 9990/9991) is not implemented
+  in any mode.
 
 ## Implementation map
 
@@ -466,6 +482,7 @@ children) and recomputes thread stats, moving the thread in/out of the Junk view
 | Pipeline assembly, rspamd action mapping, deferral constants | `core/mda/inbound_pipeline.py` |
 | rspamd `/checkv2` client, hardcoded header rules | `core/mda/spam.py` |
 | DKIM/DMARC verdict, rspamd symbol table, AR parsing | `core/mda/inbound_auth.py` |
+| DMARC record discovery (`adkim`, org-domain fallback) | `core/mda/dmarc.py` |
 | Task wrapper, internal/selfcheck short-circuit, force-delivery | `core/mda/inbound_tasks.py` |
 | Webhook dispatch, phases, `is_spam` override, result cache | `core/mda/dispatch_webhooks.py` |
 | `SPAM_CONFIG` resolution (`get_spam_config`) | `core/models.py` (`MailDomain`) |

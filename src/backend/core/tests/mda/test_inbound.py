@@ -13,6 +13,7 @@ from jmap_email import parse_email
 from core import enums, factories, models
 from core.mda.inbound import deliver_inbound_message
 from core.mda.inbound_create import (
+    _canonicalize_subject,
     _create_message_from_inbound,
     _record_divergent_rcpt,
     find_thread_for_message,
@@ -61,6 +62,79 @@ class TestRecordDivergentRcpt:
         postmark = {}
         _record_divergent_rcpt(postmark, "", self._parsed())
         assert not postmark
+
+
+class TestCanonicalizeSubject:
+    """What two messages must share to be considered the same topic.
+
+    Under-stripping splits a real conversation; over-stripping can only group
+    messages that already share a message id, so the rule leans permissive.
+    """
+
+    @pytest.mark.parametrize(
+        "subject",
+        [
+            "Q3 invoice",
+            "Re: Q3 invoice",
+            "RE:Q3 invoice",  # mobile clients omit the space
+            "Re: Re: Fwd: Q3 invoice",
+            "AW: Q3 invoice",  # German
+            "SV: Q3 invoice",  # Danish / Norwegian / Swedish
+            "Antw: Q3 invoice",  # Dutch, four letters
+            "Doorst: Q3 invoice",  # Dutch forward, six
+            "Odp: Q3 invoice",  # Polish
+            "YNT: Q3 invoice",  # Turkish
+            "Rép : Q3 invoice",  # French, accented, spaced colon
+            "Re[2]: Q3 invoice",  # Lotus / older Outlook
+            "[dev] Q3 invoice",  # RFC 8621 names [List-Tag]
+            "Re: [dev] Q3 invoice",
+            "[dev] Re: Q3 invoice",
+            "Q3   invoice",  # RFC 8621 compares ignoring white space
+            "  Q3 invoice  ",
+        ],
+    )
+    def test_all_spellings_of_one_topic_agree(self, subject):
+        assert _canonicalize_subject(subject) == _canonicalize_subject("Q3 invoice")
+
+    def test_case_is_folded_including_accents(self):
+        """A subject is prose, so Unicode folding is what we want here.
+
+        Unlike an address, where ASCII-only folding is required: nothing here
+        is an identity, and a collision can only group messages that already
+        share a message id.
+        """
+        assert _canonicalize_subject("RÉUNION") == _canonicalize_subject("réunion")
+
+    @pytest.mark.parametrize("other", ["Q4 invoice", "Q3 invoices", "invoice Q3", ""])
+    def test_different_topics_stay_apart(self, other):
+        assert _canonicalize_subject(other) != _canonicalize_subject("Q3 invoice")
+
+    @pytest.mark.parametrize(
+        "all_noise", ["Re:", "Re: Re:", "[dev]", "Fwd:", "AW:", "Re: [dev]"]
+    )
+    def test_never_strips_to_nothing(self, all_noise):
+        """RFC 5256 2.1 removes a prefix only if what remains is non-empty.
+
+        Without the guard every all-prefix subject collapses to "" and they
+        all compare equal — to each other and to a message with no subject at
+        all. That would let anyone naming a subjectless message thread into
+        it with any prefix-only subject.
+        """
+        assert _canonicalize_subject(all_noise) != ""
+
+    def test_all_noise_subjects_stay_distinct(self):
+        canonical = {_canonicalize_subject(s) for s in ("Re:", "[dev]", "Fwd:", "AW:")}
+        assert len(canonical) == 4
+
+    @pytest.mark.parametrize("absent", [None, "", "   "])
+    def test_an_absent_subject_is_empty_and_matches_only_another(self, absent):
+        """A message genuinely without a subject still threads with one.
+
+        The guard above keeps that case separate from a subject that merely
+        stripped down to nothing.
+        """
+        assert _canonicalize_subject(absent) == ""
+        assert _canonicalize_subject(absent) != _canonicalize_subject("Re:")
 
 
 @pytest.mark.django_db
@@ -171,12 +245,17 @@ class TestFindThread:
         found_thread = find_thread_for_message(parsed_reply, self.mailbox)
         assert found_thread is None
 
-    def test_find_by_in_reply_to_with_rewritten_subject(self):
-        """In-Reply-To wins over a subject rewritten mid-conversation.
+    def test_rewritten_subject_starts_a_new_thread(self):
+        """A subject rewrite splits the thread, even under In-Reply-To.
 
-        Real-world case: the third message of a conversation replies to the
-        second one but its subject was edited, which used to start a brand
-        new thread on the delivery path.
+        RFC 8621 3 asks for "both of the following conditions" — a shared
+        message id *and* a matching subject — and Gmail breaks a conversation
+        on a subject change the same way. Threading on the message id alone
+        would place a message using only a value the sender chose, which is
+        what a forged ``In-Reply-To`` needs.
+
+        The cost is this case: a participant who genuinely renames the topic
+        mid-conversation starts a new thread.
         """
         first_mime_id = "first.789@example.com"
         second_mime_id = "second.789@example.com"
@@ -200,8 +279,64 @@ class TestFindThread:
             "from": [{"email": "replier@a.com"}],
         }
 
-        found_thread = find_thread_for_message(parsed_reply, self.mailbox)
-        assert found_thread == initial_thread
+        assert find_thread_for_message(parsed_reply, self.mailbox) is None
+
+    def test_forged_in_reply_to_with_a_foreign_subject_does_not_thread(self):
+        """Thread hijacking: a stolen Message-ID alone must not place a message.
+
+        A Message-ID is not secret — it travels in every reply and sits in
+        list archives — so an attacker who has seen one message of a thread
+        can name it. Requiring the subject to match too means their message
+        lands in its own thread instead of borrowing the conversation's
+        context.
+        """
+        parent_mime_id = "victim.thread@example.com"
+        victim_thread = factories.ThreadFactory(subject="Q3 invoice")
+        factories.ThreadAccessFactory(
+            mailbox=self.mailbox,
+            thread=victim_thread,
+            role=enums.ThreadAccessRoleChoices.EDITOR,
+        )
+        factories.MessageFactory(
+            thread=victim_thread, mime_id=parent_mime_id, subject="Q3 invoice"
+        )
+
+        forged = {
+            "subject": "Urgent: updated bank details",
+            "inReplyTo": [parent_mime_id],
+            "from": [{"email": "attacker@evil.test"}],
+        }
+
+        assert find_thread_for_message(forged, self.mailbox) is None
+
+    @pytest.mark.parametrize("verdict", ["none", "fail"])
+    def test_unverified_sender_is_never_threaded(self, verdict):
+        """With a From we could not verify, no sender-supplied header places it.
+
+        Both the Message-ID and the subject come from the sender, so matching
+        them proves nothing about who sent this. "none" is unverified and
+        "fail" is an explicit DMARC disavowal; either way the message starts
+        its own thread.
+        """
+        parent_mime_id = "verified.thread@example.com"
+        thread = factories.ThreadFactory(subject="Q3 invoice")
+        factories.ThreadAccessFactory(
+            mailbox=self.mailbox,
+            thread=thread,
+            role=enums.ThreadAccessRoleChoices.EDITOR,
+        )
+        factories.MessageFactory(
+            thread=thread, mime_id=parent_mime_id, subject="Q3 invoice"
+        )
+        reply = {
+            "subject": "Re: Q3 invoice",
+            "inReplyTo": [parent_mime_id],
+            "from": [{"email": "colleague@example.com"}],
+        }
+
+        # Same message threads normally when the sender is not in doubt.
+        assert find_thread_for_message(reply, self.mailbox) == thread
+        assert find_thread_for_message(reply, self.mailbox, sender_auth=verdict) is None
 
     def test_find_by_references_without_space_after_prefix(self):
         """A ``Re:`` prefix with no space after the colon still canonicalizes."""
@@ -377,7 +512,9 @@ class TestDeliverInboundMessage:
         )
 
         assert success is True
-        mock_find_thread.assert_called_once_with(sample_parsed_email, target_mailbox)
+        mock_find_thread.assert_called_once_with(
+            sample_parsed_email, target_mailbox, sender_auth=None
+        )
 
         assert models.Thread.objects.count() == 1
         assert models.Message.objects.count() == 1
@@ -507,7 +644,9 @@ class TestDeliverInboundMessage:
         )
 
         assert success is True
-        mock_find_thread.assert_called_once_with(sample_parsed_email, target_mailbox)
+        mock_find_thread.assert_called_once_with(
+            sample_parsed_email, target_mailbox, sender_auth=None
+        )
         assert models.Thread.objects.count() == 1  # No new thread
         assert models.Message.objects.count() == 1
         message = models.Message.objects.first()
@@ -753,12 +892,13 @@ class TestDeliverInboundMessage:
         assert thread2.subject == subject  # Make sure the original subject is kept
         assert message3.mime_id == parsed_email_3["messageId"][0]
 
-    def test_smtp_exchange_single_thread_with_rewritten_subject(self, target_mailbox):
-        """A reply whose subject was edited still lands in the same thread.
+    def test_smtp_exchange_splits_on_a_rewritten_subject(self, target_mailbox):
+        """End to end over the delivery path: a renamed subject splits.
 
-        Delivery path only (no import): this is the case that used to split a
-        conversation in two, since the subject was required to match even when
-        In-Reply-To pointed at a message we already held.
+        The same trade as ``test_rewritten_subject_starts_a_new_thread``,
+        asserted through real SMTP delivery rather than the threading helper:
+        matching on the message id alone would let a forged ``In-Reply-To``
+        place a message in this conversation.
         """
         recipient_addr = f"{target_mailbox.local_part}@{target_mailbox.domain.name}"
 
@@ -791,8 +931,9 @@ class TestDeliverInboundMessage:
         assert deliver_inbound_message(recipient_addr, parse_email(raw_3), raw_3)
 
         threads = models.Thread.objects.filter(accesses__mailbox=target_mailbox)
-        assert threads.count() == 1
-        assert threads.get().messages.count() == 3
+        # The first two share a subject; the third renamed it and splits off.
+        assert threads.count() == 2
+        assert sorted(t.messages.count() for t in threads) == [1, 2]
 
     def test_deliver_message_with_empty_subject(self, target_mailbox, raw_email_data):
         """Test delivery of message with empty subject."""

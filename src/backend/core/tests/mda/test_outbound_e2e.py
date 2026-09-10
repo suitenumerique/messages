@@ -5,7 +5,7 @@ import json
 import random
 import socket
 import time
-from unittest.mock import MagicMock, patch
+from unittest.mock import patch
 
 from django.test import override_settings
 from django.urls import reverse
@@ -18,6 +18,7 @@ from rest_framework.test import APIClient
 
 from core import enums, factories, models
 from core.mda.signing import generate_dkim_key
+from core.tests.dns_answers import a_answer, mx_answer
 
 # --- Fixtures (copied/adapted from test_messages_create.py) --- #
 
@@ -82,7 +83,7 @@ class TestE2EMessageOutboundFlow:
     # the outbound SSRF guard (assert_public_ip) rejects. Bypass it here so the
     # direct path can deliver to the local catcher.
     @patch("core.mda.outbound_direct.assert_public_ip")
-    @patch("core.mda.outbound_direct.dns.resolver.resolve")
+    @patch("core.mda.outbound_direct.resolve_answer")
     def test_draft_send_receive_verify_direct(
         self,
         mock_resolve,
@@ -97,12 +98,8 @@ class TestE2EMessageOutboundFlow:
 
         def resolve_return_value(domain, record_type, **kwargs):
             return {
-                ("external-test.com", "MX"): [
-                    MagicMock(preference=10, exchange="mx1.external-test.com"),
-                ],
-                ("mx1.external-test.com", "A"): [
-                    mailcatcher_ip,
-                ],
+                ("external-test.com", "MX"): mx_answer((10, "mx1.external-test.com.")),
+                ("mx1.external-test.com", "A"): a_answer(mailcatcher_ip),
             }[(domain, record_type)]
 
         mock_resolve.side_effect = resolve_return_value

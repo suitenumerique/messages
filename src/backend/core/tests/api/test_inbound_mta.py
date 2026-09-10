@@ -928,13 +928,15 @@ class TestMTAInboundEmailThreading:
         assert new_message.thread == initial_thread
         assert new_message.subject == reply_subject
 
-    def test_reply_keeps_thread_when_subject_rewritten(
+    def test_reply_splits_thread_when_subject_rewritten(
         self, api_client: APIClient, valid_jwt_token
     ):
-        """Test a reply stays in its thread even when its subject was rewritten.
+        """A reply whose subject was rewritten starts a new thread.
 
-        In-Reply-To points at a message we hold: that link is explicit and
-        wins over the subject, which participants routinely edit.
+        In-Reply-To is a value the sender chose, so on its own it cannot place
+        a message inside an existing conversation: RFC 8621 §3 asks for a
+        matching subject as well. Renaming the topic mid-thread is the
+        legitimate case that pays for it.
         """
         initial_subject = "Important Meeting"
         initial_mime_id = "meeting.789@example.com"
@@ -959,11 +961,11 @@ class TestMTAInboundEmailThreading:
         )
 
         assert response.status_code == status.HTTP_200_OK
-        assert models.Thread.objects.count() == 1  # No new thread created
+        assert models.Thread.objects.count() == 2  # Renamed subject splits off
         assert models.Message.objects.count() == 2
         new_message = models.Message.objects.exclude(id=initial_message.id).first()
         assert new_message is not None
-        assert new_message.thread == initial_thread
+        assert new_message.thread != initial_thread
         assert new_message.subject == reply_subject
 
     def test_references_only_creates_new_thread_different_subject(

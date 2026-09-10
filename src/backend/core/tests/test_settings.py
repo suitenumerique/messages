@@ -2,8 +2,12 @@
 Unit tests for the User model
 """
 
+import os
+from unittest.mock import patch
+
 import pytest
 
+from messages import settings as settings_module
 from messages.settings import Base
 
 
@@ -197,3 +201,99 @@ def test_web_push_subject_must_be_mailto_or_https():
         TestSettings().post_setup()
 
     assert "RFC 8292" in str(excinfo.value)
+
+
+class TestRelayTlsLevelSplit:
+    """MTA_OUT_RELAY_TLS_SECURITY_LEVEL was split out of the direct-MX one.
+
+    The old value is not inherited — the two legs face different peers and are
+    configured apart. An install that had hardened the old setting is told at
+    startup, so the split is announced rather than found in a packet capture.
+    """
+
+    LEVELS = ("MTA_OUT_SMTP_TLS_SECURITY_LEVEL", "MTA_OUT_RELAY_TLS_SECURITY_LEVEL")
+
+    @classmethod
+    def _env(cls, **overrides):
+        """Both names dropped before applying overrides.
+
+        The dev compose file pins MTA_OUT_RELAY_TLS_SECURITY_LEVEL, and the
+        warning keys off the variable being absent — left in place it reads as
+        a deliberate operator choice and every case below passes for the wrong
+        reason.
+        """
+        env = {k: v for k, v in os.environ.items() if k not in cls.LEVELS}
+        env.update(overrides)
+        return patch.dict("os.environ", env, clear=True)
+
+    @staticmethod
+    def _settings(smtp_level="may", relay_level="may"):
+        class TestSettings(Base):
+            """Fake test settings."""
+
+            MTA_OUT_SMTP_TLS_SECURITY_LEVEL = smtp_level
+            MTA_OUT_RELAY_TLS_SECURITY_LEVEL = relay_level
+
+        return TestSettings()
+
+    def test_old_value_is_not_inherited(self):
+        """The relay leg keeps its own default, whatever the old name says."""
+        with self._env(MTA_OUT_SMTP_TLS_SECURITY_LEVEL="secure"):
+            with patch.object(settings_module, "logger"):
+                settings = self._settings(smtp_level="secure")
+
+        assert settings.MTA_OUT_RELAY_TLS_SECURITY_LEVEL == "may"
+
+    def test_a_hardened_old_value_warns(self):
+        """Silence here is what let a hardened relay quietly drop to CERT_NONE."""
+        with self._env(MTA_OUT_SMTP_TLS_SECURITY_LEVEL="secure"):
+            with patch.object(settings_module, "logger") as mock_logger:
+                self._settings(smtp_level="secure")
+
+        assert mock_logger.warning.call_count == 1
+        message, *args = mock_logger.warning.call_args[0]
+        assert "MTA_OUT_RELAY_TLS_SECURITY_LEVEL" in message
+        assert "secure" in args
+
+    def test_matching_levels_stay_quiet(self):
+        """The common case — both on the default — is not worth a warning."""
+        with self._env(MTA_OUT_SMTP_TLS_SECURITY_LEVEL="may"):
+            with patch.object(settings_module, "logger") as mock_logger:
+                self._settings(smtp_level="may")
+
+        mock_logger.warning.assert_not_called()
+
+    def test_explicit_new_value_stays_quiet(self):
+        """An operator who set the new name has already made the choice."""
+        with self._env(
+            MTA_OUT_SMTP_TLS_SECURITY_LEVEL="secure",
+            MTA_OUT_RELAY_TLS_SECURITY_LEVEL="may",
+        ):
+            with patch.object(settings_module, "logger") as mock_logger:
+                settings = self._settings(smtp_level="secure")
+
+        assert settings.MTA_OUT_RELAY_TLS_SECURITY_LEVEL == "may"
+        mock_logger.warning.assert_not_called()
+
+    def test_neither_set_keeps_the_default(self):
+        with self._env():
+            settings = self._settings()
+
+        assert settings.MTA_OUT_RELAY_TLS_SECURITY_LEVEL == "may"
+
+    def test_relay_level_is_validated_on_its_own(self):
+        """The relay entry in the validation loop is reachable.
+
+        With a valid SMTP level the loop passes its first entry, so only the
+        relay entry can raise — otherwise deleting that entry would leave the
+        suite green while a typo silently downgraded the relay leg to
+        CERT_NONE.
+        """
+        with self._env(
+            MTA_OUT_SMTP_TLS_SECURITY_LEVEL="may",
+            MTA_OUT_RELAY_TLS_SECURITY_LEVEL="Secure",
+        ):
+            with pytest.raises(ValueError) as excinfo:
+                self._settings(smtp_level="may", relay_level="Secure")
+
+        assert "MTA_OUT_RELAY_TLS_SECURITY_LEVEL" in str(excinfo.value)
