@@ -1,13 +1,14 @@
 # Internationalization (i18n)
 
-Messages supports localization and internationalization on both
-**backend** and **frontend**:
+Only the **frontend** is translated today. It is powered by
+[i18next](https://www.i18next.com/),
+[react-i18next](https://react.i18next.com/), and
+[i18next-cli](https://github.com/i18next/i18next-cli).
 
--   **Backend**: powered by [Django
-    i18n](https://docs.djangoproject.com/en/5.2/topics/i18n/translation/)
--   **Frontend**: powered by [i18next](https://www.i18next.com/),
-    [react-i18next](https://react.i18next.com/), and
-    [i18next-cli](https://github.com/i18next/i18next-cli)
+The **backend has no translation catalog**: `USE_I18N` is `False`
+(`src/backend/messages/settings.py`), there are no `locale/` directories, and
+no `gettext` call anywhere in `core/`. Every string the backend emits is
+English. See [Backend strings](#backend-strings-not-translated-yet) below.
 
 ------------------------------------------------------------------------
 
@@ -15,23 +16,18 @@ Messages supports localization and internationalization on both
 
 ### Best practices during development
 
--   **Backend**: always write strings in **English** using Django's
-    translation utilities.
--   **Frontend**: always write strings in **English** using `i18next`.
+-   Always write strings in **English** using `i18next`.
 
 👉 Translations are updated **before each release**.
 
--   Backend strings are stored in:
-    `src/backend/locale/{locale}/LC_MESSAGES/django.po`
 -   Frontend strings are stored in:
     `src/frontend/public/locales/{ns}/{locale}.json`
 
 ------------------------------------------------------------------------
 
-### Extraction and compilation of translations
+### Extraction and download of translations
 
-The extraction and compilation process is **automated by the CI
-pipeline**:
+The process is **automated by the CI pipeline**:
 
 -   Whenever the `main` branch is updated, the CI
     will:
@@ -40,7 +36,7 @@ pipeline**:
 
 -   Whenever a branch with the prefix `release/` is created, the CI
     will:
-    -   download and compile the updated translations
+    -   download the updated translations
     -   create a pull request with the changes
 
 Those processes can also be triggered manually.
@@ -49,7 +45,7 @@ Those processes can also be triggered manually.
 
 You can perform these steps locally using the **Makefile**.
 ⚠️ Make sure you have Crowdin environment variables configured in:
-`.env/development/crowdin`
+`deploy/env/crowdin.local`
 and that you have **sufficient permissions** on the Crowdin project.
 
 -   **Extract and upload translations to Crowdin:**
@@ -76,16 +72,67 @@ It is possible (but discouraged) to manually edit translations locally:
 
 2.  Edit missing translations directly in the generated files.
 
-3.  Generate translation files:
+3.  Commit your changes.
 
-    ``` sh
-    make i18n-compile
-    ```
-
-4.  Commit your changes.
+The JSON catalogs are read as-is at runtime, so there is no compilation
+step.
 
 ⚠️ **Warning: these local changes are likely to be overwritten**
 **by the next Crowdin update.**
+
+------------------------------------------------------------------------
+
+## Backend strings (not translated yet)
+
+Some user-facing text is produced by the backend rather than the frontend, and
+is therefore **English only**. The main case today is the mailbox export
+notification email (`core/services/exporter/tasks.py`,
+`_create_notification_message`), delivered to the requester's mailbox with the
+download link.
+
+### Why not Django i18n
+
+Reintroducing `gettext` is not the plan: it means a second translation format
+(`.po`), a compile step, a second Crowdin file type, and `USE_I18N = True`
+across the whole app, for a handful of strings.
+
+### Why the backend cannot read `public/locales/common`
+
+Two blockers:
+
+1.  **Build context.** The backend image builds from context `src/backend`
+    (`compose.yaml`) with `COPY . /app/` (`src/backend/Dockerfile`).
+    `src/frontend/public/locales` is outside that context, so those files are
+    in no backend image. Sharing them means moving the backend build context to
+    the repository root, which touches every backend/worker/flower build stanza,
+    `.dockerignore`, and the CI publish workflow.
+2.  **The `common` namespace is generated.** `i18next-cli extract`
+    (`src/frontend/i18next.config.ts`) rewrites `common/en-US.json` from a
+    static scan of `src/**/*.tsx`. A key added by hand with no `t()` call behind
+    it is dropped on the next `make i18n-generate-front`.
+
+### Planned approach
+
+Give the backend its own namespace in the same format and the same pipeline:
+
+-   `src/backend/core/locales/{en-US,fr-FR,nl-NL}.json` — flat natural-key JSON,
+    identical in shape to the frontend catalogs (the key *is* the English source
+    string, `{{var}}` interpolation). It lives inside the backend build context,
+    so it ships in every image with no Dockerfile change.
+-   A third entry in `crowdin/config.yml` (source
+    `/backend/core/locales/en-US.json`, dest `/backend.json`, translation
+    `/backend/core/locales/%locale%.json`), so `make i18n-upload` and
+    `make i18n-download` cover it with no new tooling.
+-   A small loader, following `core/ai/thread_summarizer.py`
+    (`Path(__file__).parent / …`, cached): `t(key, lang, **vars)` doing `{{var}}`
+    substitution, falling back to `en-US` then to the key itself.
+    `User.language` already stores `en-us` / `fr-fr` / `nl-nl`.
+
+One caveat: the `_one` / `_many` / `_other` suffixes in the frontend catalogs
+are CLDR plural rules (French uses one/many/other, Dutch one/other).
+Reimplementing that selection in Python is the awkward part; backend strings can
+avoid it by wording counts as `Messages exported: {{count}}` rather than
+`{{count}} messages exported`.
 
 ------------------------------------------------------------------------
 
