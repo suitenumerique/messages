@@ -58,6 +58,12 @@ jobs:
       image_ref: "${{ inputs.registry }}/${{ github.repository }}-${{ inputs.image_name }}@${{ steps.create-manifest.outputs.digest }}"
     permissions:
       contents: read
+      # attest-build-provenance needs an OIDC token (id-token) and the
+      # attestations scope; without them the attestation step fails with
+      # "Unable to get ACTIONS_ID_TOKEN_REQUEST_URL" and downstream image
+      # jobs that `need` this one are skipped.
+      attestations: write
+      id-token: write
     steps:
       - name: Checkout repository
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
