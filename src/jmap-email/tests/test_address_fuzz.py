@@ -131,12 +131,81 @@ evil_text = st.one_of(
     ),  # Control chars
 )
 
+# Date-shaped evil inputs. ``evil_text`` alone never reaches the interesting
+# half of ``parse_date``: unstructured text does not survive ``parsedate_tz``,
+# so it only ever exercises the "unparseable -> None" branch. These keep the
+# RFC 5322 shape and attack the numeric fields instead, which is where the
+# stdlib builds a ``datetime``/``timedelta`` and can overflow a C int.
+evil_number = st.one_of(
+    st.integers(min_value=-100, max_value=100),
+    st.integers(min_value=0, max_value=10**30),
+    st.integers(min_value=-(10**30), max_value=0),
+    st.sampled_from([2**31 - 1, 2**31, 2**63, 9999999999, 0, -1]),
+)
+
+evil_date = st.one_of(
+    st.builds(
+        lambda day, year, hh, mm, ss, sign, zone: (
+            f"Mon, {day} Jan {year} {hh}:{mm}:{ss} {sign}{zone}"
+        ),
+        evil_number,
+        evil_number,
+        evil_number,
+        evil_number,
+        evil_number,
+        st.sampled_from(["+", "-", ""]),
+        evil_number.map(abs),
+    ),
+    # Named zones and the obsolete single-letter military ones.
+    st.builds(
+        lambda day, year, zone: f"{day} Jan {year} 00:00:00 {zone}",
+        evil_number,
+        evil_number,
+        st.sampled_from(["UT", "GMT", "EST", "Z", "A", "J", "XYZZY", ""]),
+    ),
+    # Structure kept, separators mangled.
+    st.builds(
+        lambda a, b: f"Mon, 1 Jan 2024 00:00:00 +{a}{b}",
+        evil_number.map(abs),
+        st.text(max_size=10),
+    ),
+)
+
+
+# Charset tokens for encoded-words. Random text only ever reaches the
+# LookupError path; these are *registered* stdlib codecs that reject the
+# ``bytes.decode(name, errors="replace")`` call itself (``idna`` on the
+# error handler, ``undefined`` on everything, the byte-to-byte codecs
+# because they are not text encodings). The charset is sender-controlled.
+evil_charset = st.one_of(
+    st.text(max_size=20),
+    st.sampled_from(
+        [
+            "utf-8",
+            "iso-8859-1",
+            "idna",
+            "undefined",
+            "punycode",
+            "unicode_escape",
+            "raw_unicode_escape",
+            "hex_codec",
+            "base64_codec",
+            "quopri_codec",
+            "uu_codec",
+            "zlib_codec",
+            "bz2_codec",
+            "rot_13",
+        ]
+    ),
+)
+
+
 # Header-specific evil inputs - things that commonly appear in email headers
 header_evil = st.one_of(
     # RFC 2047 encoded words - malformed variants
     st.builds(
         lambda charset, encoding, text: f"=?{charset}?{encoding}?{text}?=",
-        st.text(max_size=20),
+        evil_charset,
         st.sampled_from(["Q", "B", "q", "b", "", "X", "QQ", "?", "\x00"]),
         st.text(max_size=100),
     ),
@@ -269,10 +338,28 @@ class TestAddressParserFuzzing:
         result = decode_rfc2047_header(text)
         assert isinstance(result, str)
 
+    @given(text=header_evil)
+    @settings(**FUZZ_SETTINGS)
+    def test_decode_email_header_shaped_input_never_crashes(self, text):
+        """Same contract on header-shaped input. ``evil_text`` never forms a
+        well-formed encoded-word, so it never reaches the charset lookup —
+        which is where a sender-chosen codec can reject the decode call."""
+        result = decode_rfc2047_header(text)
+        assert isinstance(result, str)
+
     @given(date_str=evil_text)
     @settings(**FUZZ_SETTINGS)
     def test_parse_date_never_crashes(self, date_str):
         """parse_date should never crash on any input."""
+        result = parse_date(date_str)
+        assert result is None or hasattr(result, "year")
+
+    @given(date_str=evil_date)
+    @settings(**FUZZ_SETTINGS)
+    def test_parse_date_shaped_input_never_crashes(self, date_str):
+        """Same contract, but on input that actually reaches the stdlib's
+        ``datetime`` construction — out-of-range years and numeric zones
+        included. See ``evil_date`` for why ``evil_text`` cannot."""
         result = parse_date(date_str)
         assert result is None or hasattr(result, "year")
 

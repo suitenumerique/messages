@@ -14,6 +14,7 @@ from email.header import Header
 import pytest
 
 from jmap_email import DEFAULT_PARSE_OPTIONS
+from jmap_email import parser as parser_module
 from jmap_email.parser import (
     _parse_message_content,
     decode_rfc2047_header,
@@ -735,6 +736,89 @@ class TestDateParsing:
         assert parsed.year == 2022
         assert parsed.month == 9
         assert parsed.day == 15
+
+    @pytest.mark.parametrize(
+        "date_str",
+        [
+            "Mon, 1 Jan 2024 00:00:00 +99999999999999999999",
+            "Mon, 1 Jan 9999999999 00:00:00 +0000",
+        ],
+    )
+    def test_parse_date_out_of_range_returns_none(self, date_str):
+        """A numeric zone or year too large for the C int behind
+        ``timedelta``/``datetime`` must degrade to ``None``, not escape.
+
+        CPython 3.14.7 raises ``ValueError`` here; 3.14.6 raised
+        ``OverflowError`` (gh-153406). The supported range spans both, so
+        the assertion has to hold either way — see
+        ``test_parse_date_catches_overflow_error`` for the 3.14.6 shape
+        pinned independently of the running interpreter.
+        """
+        assert parse_date(date_str) is None
+
+    def test_parse_date_catches_overflow_error(self, monkeypatch):
+        """``OverflowError`` stays caught even on an interpreter that no
+        longer raises it, so the 3.14.6 floor keeps working.
+
+        Pinned by injection rather than by a crafted date: on 3.14.7 no
+        input reaches this branch, and without the injection the test
+        would silently stop testing anything.
+        """
+
+        def _raise(*_args, **_kwargs):
+            raise OverflowError("Python int too large to convert to C int")
+
+        monkeypatch.setattr(parser_module, "parsedate_to_datetime", _raise)
+        assert parse_date("Mon, 1 Jan 2024 00:00:00 +0000") is None
+
+    def test_hostile_charset_in_encoded_word_does_not_lose_the_message(self):
+        """A sender-chosen charset can make ``bytes.decode`` raise something
+        other than ``UnicodeDecodeError``: ``idna`` and ``undefined`` are
+        registered codecs that reject the call itself, and an embedded NUL
+        or a lone surrogate raises ``ValueError``. None of it may sink the
+        message — a one-line ``Subject:`` is the whole attack.
+        """
+        for charset in ("idna", "undefined", "\x00", "utf-8\x00", "\ud800"):
+            encoded = f"=?{charset}?B?gIGCgw==?="
+            assert isinstance(decode_rfc2047_header(encoded), str)
+
+            # ``errors="replace"``: a lone surrogate reaches the public API
+            # as ``str`` but has no UTF-8 wire form, so it cannot be encoded
+            # verbatim into the raw message.
+            raw = f"From: a@b.com\r\nSubject: {encoded}\r\n\r\nbody\r\n".encode(
+                "utf-8", errors="replace"
+            )
+            parsed = parse_email(raw)
+            assert parsed is not None, f"message lost for charset={charset}"
+
+    def test_hostile_charset_on_body_keeps_the_body(self):
+        """Same codecs on a body part. The body must survive via the UTF-8
+        fallback rather than being dropped by the body-structure walk."""
+        for charset in ("idna", "undefined", "bz2_codec"):
+            raw = (
+                b"From: a@b.com\r\nSubject: hi\r\nMIME-Version: 1.0\r\n"
+                b'Content-Type: text/plain; charset="' + charset.encode() + b'"\r\n'
+                b"\r\nsecret body text\r\n"
+            )
+            parsed = parse_email(raw)
+            assert parsed is not None
+            assert parsed["textBody"], f"body dropped for charset={charset}"
+            assert "secret body text" in parsed["preview"]
+
+    def test_out_of_range_date_does_not_lose_the_message(self):
+        """The rest of the message must survive an unparseable ``Date:``."""
+        raw = (
+            b"From: sender@example.com\r\n"
+            b"To: rcpt@example.com\r\n"
+            b"Subject: still here\r\n"
+            b"Date: Mon, 1 Jan 2024 00:00:00 +99999999999999999999\r\n"
+            b"\r\n"
+            b"body\r\n"
+        )
+        parsed = parse_email(raw)
+        assert parsed is not None
+        assert parsed["sentAt"] is None
+        assert parsed["subject"] == "still here"
 
 
 @pytest.mark.django_db

@@ -31,6 +31,13 @@ it carries
 policies), which materially affects the composer, plus the further
 `email` fixes shipped in 3.14.6.
 
+Where a later fix is one we can absorb ourselves, we do that instead of
+raising the floor — 3.14.7's
+[gh-153406](https://github.com/python/cpython/issues/153406)
+(`parsedate_to_datetime` raising `ValueError` rather than
+`OverflowError` on an out-of-range `Date:`) is handled by catching both,
+so a 3.14.6 deployment is not left behind by a bug-fix release.
+
 **Aligning on the latest 3.14.x patch is recommended for any
 production deployment.** Each CPython patch release that touches
 `email` is one less class of malformed-input edge case downstream
