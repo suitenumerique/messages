@@ -519,7 +519,9 @@ def _normalize_date(date) -> datetime.datetime:
             pass
         try:
             return _attach_utc_if_naive(parsedate_to_datetime(date))
-        except (ValueError, TypeError, IndexError):
+        except (ValueError, TypeError, IndexError, OverflowError):
+            # ``OverflowError``: see ``parse_date`` — below CPython 3.14.7 an
+            # out-of-range zone or year raises it instead of ``ValueError``.
             pass
         raise InvalidDateError(
             f"'sentAt' string is neither ISO-8601 nor RFC 2822: {date!r}"

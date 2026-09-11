@@ -582,6 +582,11 @@ services:
     build:
       context: src/jmap-email
     command: pytest -q tests/
+    environment:
+      # Hypothesis examples per `-m fuzz` test. The default matches
+      # FUZZ_SETTINGS in the suite; CI lowers it on pull requests so the
+      # job stays a few minutes and runs the full sweep on main.
+      FUZZ_EXAMPLES: ${FUZZ_EXAMPLES:-10000}
     volumes:
       - ./src/jmap-email/jmap_email:/app/jmap_email
       - ./src/jmap-email/tests:/app/tests

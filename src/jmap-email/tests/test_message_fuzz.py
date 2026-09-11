@@ -226,6 +226,23 @@ charsets = st.sampled_from(
         "utf_8",
         "UTF8",
         "UNKNOWN",
+        # Registered stdlib codecs that reject the *call* rather than the
+        # bytes: ``idna`` refuses ``errors="replace"``, ``undefined`` refuses
+        # everything, and the byte-to-byte codecs are not text encodings.
+        # A charset is sender-controlled, so all of them are reachable; the
+        # hand-written names above only ever exercised the LookupError path.
+        "idna",
+        "undefined",
+        "punycode",
+        "unicode_escape",
+        "raw_unicode_escape",
+        "hex_codec",
+        "base64_codec",
+        "quopri_codec",
+        "uu_codec",
+        "zlib_codec",
+        "bz2_codec",
+        "rot_13",
     ]
 )
 

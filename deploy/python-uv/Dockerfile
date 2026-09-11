@@ -33,8 +33,8 @@ WORKDIR /app
 FROM base AS uv
 
 # Pin uv by SHA256 digest for supply chain security.
-# Verify with: gh attestation verify --owner astral-sh oci://ghcr.io/astral-sh/uv:0.11.28
-COPY --from=ghcr.io/astral-sh/uv@sha256:0f36cb9361a3346885ca3677e3767016687b5a170c1a6b88465ec14aefec90aa /uv /uvx /bin/
+# Verify with: gh attestation verify --owner astral-sh oci://ghcr.io/astral-sh/uv:0.12.13
+COPY --from=ghcr.io/astral-sh/uv@sha256:b485bd65cc2cf1c9a93b3554012c9c3778cf7b1b5fd3d3096ce9e1226c97e1e6 /uv /uvx /bin/
 
 ENV UV_COMPILE_BYTECODE=1
 ENV UV_LINK_MODE=copy
@@ -45,7 +45,7 @@ ENV UV_PROJECT_ENVIRONMENT=/venv
 # Install Python via uv — integrity verified against SHA256 checksums embedded in
 # the uv binary. python-build-standalone statically links most C deps (ssl, ffi,
 # sqlite, zlib, lzma, bz2).
-RUN uv python install 3.14.6
+RUN uv python install 3.14.7
 
 # Prune list for the distroless images, shared by the backend and pymta builds
 # (they run `strip-python` in a stage off this image). Single source of truth.

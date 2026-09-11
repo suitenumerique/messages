@@ -279,7 +279,16 @@ def decode_rfc2047_header(header_text: str) -> str:
             else:
                 try:
                     result_parts.append(part.decode(charset, errors="replace"))
-                except (LookupError, UnicodeDecodeError):
+                except (LookupError, ValueError, TypeError):
+                    # The charset is sender-controlled, so the catch covers
+                    # every way ``bytes.decode`` can reject it, not just a
+                    # bad-bytes ``UnicodeDecodeError``: ``LookupError`` for an
+                    # unknown or non-text codec, ``ValueError`` for an
+                    # embedded NUL and for the codecs that refuse the call
+                    # itself (``idna`` rejects ``errors="replace"``,
+                    # ``undefined`` rejects everything — both raise a bare
+                    # ``UnicodeError``), ``TypeError`` for a non-``str``
+                    # charset out of the header parser.
                     result_parts.append(part.decode("utf-8", errors="replace"))
         else:
             # Part is already a string. Repair surrogate-escaped 8-bit
@@ -821,7 +830,11 @@ def parse_date(date_str: str) -> datetime | None:
     try:
         # Use email.utils which handles RFC 5322 date formats
         return parsedate_to_datetime(date_str)
-    except (TypeError, ValueError) as e:  # Catch specific errors
+    except (TypeError, ValueError, OverflowError) as e:
+        # ``OverflowError`` for a numeric zone or year too large for the C
+        # int behind ``timedelta``/``datetime``. CPython 3.14.7 turned that
+        # into a ``ValueError`` (gh-153406), but the floor is 3.14.6 and a
+        # ``Date:`` header is sender-controlled, so it stays caught here.
         logger.warning("Could not parse date string '%s': %s", date_str, e)
         return None
 
@@ -1372,7 +1385,10 @@ def _build_body_part_dict(part_info: dict[str, Any]) -> tuple[EmailBodyPart, boo
         charset = part_info.get("charset") or "utf-8"
         try:
             content = body.decode(charset, errors="replace")
-        except (LookupError, UnicodeDecodeError):
+        except (LookupError, ValueError, TypeError):
+            # See ``decode_rfc2047_header`` for why the catch is this wide:
+            # the charset comes off the wire, and a decode call can be
+            # rejected for reasons that are not ``UnicodeDecodeError``.
             content = body.decode("utf-8", errors="replace")
             encoding_problem = True
         size = len(body)
