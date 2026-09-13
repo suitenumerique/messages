@@ -13,11 +13,19 @@ and this project adheres to
 - Setup guides for the authentication provider and the identity provider
 - IP allowlist for the Django admin URL in the frontend Caddy proxy
 - Smoke test for the frontend production image (make test-front-distroless)
+- IP allowlist for the Keycloak admin console and master realm in the Keycloak image (Caddy)
+- Smoke test for the Keycloak production image (make test-keycloak-image)
 
 ### Changed
 
 - Bump keycloak to 26.7.2
 - Bump Caddy to 2.11.4 and lprobe to v0.2.0 in the frontend image
+- Keycloak image: Keycloak listens on 127.0.0.1:8081, Caddy serves port 8080
+- Keycloak image: proxy headers are fixed to xforwarded from Caddy, which sends X-Forwarded-Proto https
+
+### Removed
+
+- Scalingo buildpack for Keycloak (src/keycloak/buildpack, Procfile, system.properties)
 
 ### Fixed
 
