@@ -1,1 +1,0 @@
-web: source buildpack/scalingo_env.sh && ./keycloak/bin/kc.sh start --proxy-headers=xforwarded --hostname-strict=false --http-port=$PORT --http-enabled=true

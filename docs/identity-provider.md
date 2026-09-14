@@ -76,6 +76,12 @@ For now, Messages only supports Keycloak as an `IDENTITY_PROVIDER`.
    [st-ansible](https://github.com/suitenumerique/st-ansible) collection or
    yourself with the docker compose examples.
 
+   The image filters `/admin/*` and `/realms/master/*` by client IP when
+   `KEYCLOAK_ADMIN_IP_ALLOWLIST` is set. The backend network must be in
+   the list, because the backend uses the admin REST API. See the
+   [Keycloak Production Image Proxy (Caddy)](env.md#keycloak-production-image-proxy-caddy)
+   section of `env.md`.
+
 3. **Create a realm.** Create a dedicated Keycloak realm for Messages, for
    example `messages`.
 

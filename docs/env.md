@@ -405,6 +405,60 @@ reachable through them, but their IP ranges are not published. Set
 covers the private ranges the routers use. Do not use `private_ranges` when
 untrusted machines share the private network with Caddy.
 
+### Keycloak Production Image Proxy (Caddy)
+
+The image `ghcr.io/suitenumerique/messages-keycloak`
+(`src/keycloak/Dockerfile`) runs Caddy on port 8080 by default, in front
+of Keycloak. Keycloak itself listens on `127.0.0.1` only, on port 8081 by
+default.
+
+| Variable | Default | Description | Required |
+|----------|---------|-------------|----------|
+| `PORT` | `8080` | Port Caddy listens on. The container HEALTHCHECK follows it. | Optional |
+| `KEYCLOAK_ADMIN_IP_ALLOWLIST` | `0.0.0.0/0 ::/0` | Space-separated CIDR list of client IPs allowed on `/admin`, `/admin/*`, `/realms/master` and `/realms/master/*`. The default allows all (no filtering). Caddy answers 403 to denied requests. The client IP is the TCP peer unless `KEYCLOAK_TRUSTED_PROXIES` is set. | Optional |
+| `KEYCLOAK_TRUSTED_PROXIES` | _(empty)_ | Space-separated CIDR list of upstream proxies whose `X-Forwarded-For` sets the client IP. Empty = trust no proxy. Set only the exact addresses of your load balancer. | Optional |
+
+To turn the filter off, leave `KEYCLOAK_ADMIN_IP_ALLOWLIST` unset. Do not set
+it to an empty value: an empty list matches no client IP, so Caddy answers
+403 to every admin request.
+
+The backend calls the admin REST API `/admin/realms/<realm>/*` with its
+service account when `IDENTITY_PROVIDER=keycloak`. Add the egress CIDR of
+the backend to the allowlist. Without it, the identity sync fails with 403.
+Admin tools such as `kcadm` also need the master realm. Add the operator
+network too.
+
+When the load balancer ranges are not published, set
+`KEYCLOAK_TRUSTED_PROXIES=private_ranges`: the Caddy keyword covers the
+private ranges. Do not use `private_ranges` when untrusted machines share
+the private network with Caddy.
+
+Do not pass `--http-port`, `--http-host`, `--proxy-headers`, or
+`--proxy-trusted-addresses` (or their `KC_*` variables) to the container.
+Put the load balancer ranges in `KEYCLOAK_TRUSTED_PROXIES` instead. The
+image sets these options as `ENV` defaults. An environment variable
+overrides them. Caddy follows only `KC_HTTP_PORT`. A change to the other
+values breaks the proxy, because Caddy must stay the only peer of Keycloak.
+
+Set `KC_HOSTNAME` to the public URL: Caddy forwards the `Host` header of
+the client.
+
+A proxy in front of Caddy must do the TLS work. Caddy sends
+`X-Forwarded-Proto: https` to Keycloak. This image does not support
+Keycloak-terminated TLS (`https-port`).
+
+Caddy runs only with the `start` and `start-dev` commands. The other
+`kc.sh` commands (`export`, `import`, `build`, `show-config`) run alone.
+
+Keycloak serves `/health` and `/metrics` on the management port, on all
+interfaces. The default port is 9000. `KC_HTTP_MANAGEMENT_PORT` changes the
+port. The HEALTHCHECK follows it. Do not publish the management port to the
+internet.
+
+Keycloak logs "Keycloak is running inside a container, but is not PID 1"
+at each start. This is expected: a small entrypoint runs Caddy and
+Keycloak together and forwards signals.
+
 ## Development Tools
 
 ### Crowdin (Translations)

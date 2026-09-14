@@ -1,0 +1,62 @@
+{
+	auto_https off
+	admin off
+	servers {
+		trusted_proxies static {$KEYCLOAK_TRUSTED_PROXIES}
+		# Walk X-Forwarded-For right to left and take the first address
+		# that is not a trusted proxy. Without this, the leftmost entry
+		# wins and a client-appended prefix defeats the admin allowlist.
+		trusted_proxies_strict
+	}
+}
+
+:{$PORT:8080} {
+	header -Server
+
+	# Caddy writes the access log to stderr. The explicit JSON format also
+	# applies when the container has a TTY. Keycloak sends one-time secrets
+	# in the query string, so the filter redacts them.
+	log {
+		format filter {
+			wrap json
+			fields {
+				request>uri query {
+					replace key REDACTED
+					replace code REDACTED
+					replace session_code REDACTED
+				}
+			}
+		}
+	}
+
+	route {
+		# The HEALTHCHECK calls /__lbheartbeat__ every 30 s.
+		@probes path /__lbheartbeat__ /__lbheartbeat__/ /__heartbeat__ /__heartbeat__/
+		log_skip @probes
+
+		respond /__lbheartbeat__ 200
+		respond /__lbheartbeat__/ 200
+
+		# Keycloak reverse proxy guide: /admin/ and /realms/master/ are
+		# internal only. The `;*` forms cover matrix parameters, which
+		# the path matcher does not treat as a segment boundary.
+		@admin_denied {
+			path /admin /admin/* /admin;* /realms/master /realms/master/* /realms/master;*
+			# The default allows all (no filtering).
+			not client_ip {$KEYCLOAK_ADMIN_IP_ALLOWLIST:0.0.0.0/0 ::/0}
+		}
+		respond @admin_denied 403
+
+		# Literal IPv4: localhost can resolve to ::1, where Keycloak does not listen.
+		reverse_proxy 127.0.0.1:{$KC_HTTP_PORT:8081} {
+			header_up X-Forwarded-Proto https
+			header_up X-Forwarded-For {client_ip}
+			# Caddy only sanitises For, Proto and Host. Keycloak reads the
+			# other forwarded headers from any client.
+			header_up -Forwarded
+			header_up -X-Forwarded-Port
+			header_up -X-Forwarded-Prefix
+			header_up -X-Forwarded-Trusted-Proxy
+		}
+	}
+}

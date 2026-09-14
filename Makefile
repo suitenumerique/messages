@@ -161,6 +161,14 @@ test-front-distroless: build-front-distroless ## build and smoke-test the fronte
 	@bin/smoke-test-front messages-frontend-distroless
 .PHONY: test-front-distroless
 
+build-keycloak-image: ## build the Keycloak production image (Keycloak + Caddy allowlist proxy)
+	@docker build -t messages-keycloak src/keycloak/
+.PHONY: build-keycloak-image
+
+test-keycloak-image: build-keycloak-image ## build and smoke-test the Keycloak production image
+	@bin/smoke-test-keycloak messages-keycloak
+.PHONY: test-keycloak-image
+
 build-pymta-distroless: build-python-base ## build the pymta distroless production image
 	@docker build --target runtime-distroless-prod -t messages-pymta-distroless -f src/mta-in/Dockerfile.pymta src/mta-in/
 .PHONY: build-pymta-distroless

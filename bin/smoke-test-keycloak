@@ -1,0 +1,154 @@
+#!/usr/bin/env bash
+# Smoke-test the Keycloak production image (Keycloak + Caddy allowlist
+# proxy). The script picks the network mode from the daemon:
+# - bridge mode (normal Docker, Docker Desktop): publish port 8080.
+# - host mode (a daemon without bridge networking): share the host
+#   network.
+# Host port 8080 (Caddy) must be free.
+# Each boot waits on the container health status rather than a bare
+# HTTP probe: this exercises the image HEALTHCHECK (the Caddy
+# heartbeat and the Keycloak /health/ready check) instead of bypassing
+# it. The health status is used, and not a probe of /realms/master,
+# because that path is 403 in the restricted boots.
+# start-dev re-augments the config at each boot, so a boot takes
+# 30-45 s.
+# Requires: docker, curl.
+set -o errexit -o nounset -o pipefail
+
+IMAGE="${1:-messages-keycloak}"
+BASE=http://127.0.0.1:8080
+CID=""
+
+if docker network inspect bridge >/dev/null 2>&1; then
+  NET_MODE=bridge
+  RUN_FLAGS=(-p 8080:8080)
+else
+  NET_MODE=host
+  RUN_FLAGS=(--network host)
+fi
+
+cleanup() {
+  [ -n "$CID" ] && docker rm -f "$CID" >/dev/null 2>&1 || true
+}
+trap cleanup EXIT
+trap 'cleanup; trap - EXIT; exit 130' INT TERM
+
+fail() {
+  echo "FAIL: $*" >&2
+  [ -n "$CID" ] && docker logs "$CID" >&2 || true
+  exit 1
+}
+
+port_open() { (exec 3<>"/dev/tcp/127.0.0.1/$1") 2>/dev/null; }
+
+# In host mode the container also binds the Keycloak ports on the host.
+PORTS=(8080)
+[ "$NET_MODE" = host ] && PORTS+=(8081 9000)
+for port in "${PORTS[@]}"; do
+  if port_open "$port"; then
+    echo "FAIL: port ${port} is already in use on the host." >&2
+    echo "Stop the process that uses it, then run the test again." >&2
+    exit 1
+  fi
+done
+
+start_container() {
+  CID=$(docker run -d "${RUN_FLAGS[@]}" \
+    --health-interval=2s --health-start-period=0s --health-retries=90 \
+    "$@" "$IMAGE" start-dev --db=dev-file) \
+    || fail "docker run did not start the container"
+  for _ in $(seq 1 90); do
+    status=$(docker inspect -f '{{.State.Running}} {{.State.Health.Status}}' "$CID" 2>/dev/null || echo missing)
+    case "$status" in
+      "true healthy") return 0 ;;
+      "true unhealthy") fail "container reported unhealthy" ;;
+      "true starting") ;;
+      *) fail "container is not running ($status)" ;;
+    esac
+    sleep 2
+  done
+  fail "container did not become healthy on $BASE within 180 s"
+}
+
+code() { curl -s -o /dev/null -w '%{http_code}' --connect-timeout 3 --max-time 10 "$@"; }
+
+assert_code() {
+  local expected="$1" label="$2"; shift 2
+  # curl prints 000 on a connection error; keep going so fail() can dump
+  # the container logs.
+  local got; got=$(code "$@" || true)
+  [ "$got" = "$expected" ] || fail "$label: expected HTTP $expected, got $got"
+  echo "ok: $label ($expected)"
+}
+
+# Boot 1: defaults. The admin console and master realm stay open, as
+# the upstream image behaves without a filter.
+start_container
+assert_code 200 "heartbeat" "$BASE/__lbheartbeat__"
+assert_code 200 "master realm discovery" "$BASE/realms/master/.well-known/openid-configuration"
+assert_code 200 "admin console" "$BASE/admin/master/console/"
+assert_code 401 "admin REST API (unauthenticated)" "$BASE/admin/realms"
+# The allowlist is only as good as the loopback bind of Keycloak.
+docker logs "$CID" 2>&1 | grep -q 'Listening on: http://127.0.0.1:8081' \
+  || fail "Keycloak does not listen on 127.0.0.1:8081 only"
+echo "ok: Keycloak bound to loopback"
+
+access_log=$(docker logs "$CID" 2>&1 | grep '"logger":"http.log.access' || true)
+grep -q '/realms/master/.well-known/openid-configuration' <<<"$access_log" \
+  || fail "Caddy access log missing for the master realm discovery request"
+echo "ok: Caddy writes the access log"
+if grep -q '__lbheartbeat__' <<<"$access_log"; then
+  fail "Caddy access log contains the heartbeat probe"
+fi
+echo "ok: Caddy access log skips the heartbeat"
+
+# kc.sh traps TERM and forwards it to the JVM, so docker stop must not
+# fall back to the 10 s SIGKILL timeout.
+start=$SECONDS
+docker stop "$CID" >/dev/null
+elapsed=$((SECONDS - start))
+exit_code=$(docker inspect -f '{{.State.ExitCode}}' "$CID")
+[ "$exit_code" = "143" ] || fail "stop: expected exit code 143, got $exit_code"
+[ "$elapsed" -lt 10 ] || fail "stop: took ${elapsed}s, expected under 10 s"
+echo "ok: graceful stop (exit 143, ${elapsed}s)"
+docker rm "$CID" >/dev/null
+CID=""
+
+# Boot 2: an allowlist that excludes the client IP denies the admin
+# surface and the master realm, and leaves other realms and resources
+# on their normal 404/200 behaviour.
+start_container -e 'KEYCLOAK_ADMIN_IP_ALLOWLIST=192.0.2.0/24'
+assert_code 403 "admin denied" "$BASE/admin"
+assert_code 403 "admin denied (slash)" "$BASE/admin/"
+assert_code 403 "admin REST API denied" "$BASE/admin/realms"
+assert_code 403 "admin denied (matrix parameter)" --path-as-is "$BASE/admin;x/master/console/"
+assert_code 403 "admin console denied" "$BASE/admin/master/console/"
+assert_code 403 "master realm discovery denied" "$BASE/realms/master/.well-known/openid-configuration"
+assert_code 404 "other realm discovery unfiltered" "$BASE/realms/other/.well-known/openid-configuration"
+assert_code 404 "unrelated path unfiltered" "$BASE/resources/x"
+assert_code 403 "spoofed XFF ignored" -H 'X-Forwarded-For: 192.0.2.10' "$BASE/admin/master/console/"
+docker rm -f "$CID" >/dev/null
+CID=""
+
+# Boot 3: the private ranges cover loopback, docker0, Docker Desktop
+# and rootless gateways in both network modes, so no client IP
+# detection is needed.
+start_container -e 'KEYCLOAK_ADMIN_IP_ALLOWLIST=127.0.0.0/8 10.0.0.0/8 172.16.0.0/12 192.168.0.0/16'
+assert_code 200 "admin console allowed for private ranges" "$BASE/admin/master/console/"
+docker rm -f "$CID" >/dev/null
+CID=""
+
+# Boot 4: trusted proxy. XFF from a trusted peer sets client_ip.
+start_container \
+  -e 'KEYCLOAK_TRUSTED_PROXIES=private_ranges' \
+  -e 'KEYCLOAK_ADMIN_IP_ALLOWLIST=192.0.2.0/24'
+assert_code 200 "trusted proxy: XFF accepted" -H 'X-Forwarded-For: 192.0.2.10' "$BASE/admin/master/console/"
+# trusted_proxies_strict: the rightmost untrusted address wins, so a
+# client-appended allowlisted prefix stays ineffective.
+assert_code 403 "trusted proxy: appended XFF chain denied" \
+  -H 'X-Forwarded-For: 192.0.2.10, 198.51.100.10' "$BASE/admin/master/console/"
+assert_code 403 "trusted proxy: no XFF -> peer IP denied" "$BASE/admin/master/console/"
+docker rm -f "$CID" >/dev/null
+CID=""
+
+echo "OK: keycloak image smoke test passed"
