@@ -1,6 +1,6 @@
 [project]
 name = "jmap-email"
-version = "0.3.0"
+version = "0.3.1"
 description = "A strict-JMAP RFC 8621 Email object library for Python 3.14+ with lenient RFC 5322 / MIME parsing and strict-by-design composition. One runtime dependency: idna (UTS 46 domain encoding)."
 readme = "README.md"
 license = "MIT"
@@ -88,7 +88,7 @@ markers = [
 ]
 
 [tool.ruff]
-# Pin py313 even though the runtime floor is py314.5. Targeting py313
+# Pin py313 even though the runtime floor is higher. Targeting py313
 # keeps ruff's formatter from applying PEP 758 (un-parenthesized
 # ``except E1, E2:``) — valid Python 3.14 but trips static analysis
 # (CodeRabbit, IDEs on older Python, copy-pasted snippets).

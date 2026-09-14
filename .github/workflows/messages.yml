@@ -44,6 +44,50 @@ jobs:
         run: make typecheck-jmap-email
 
 
+  lint-jmap-email:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - name: Create env files
+        run: make create-env-files
+      - name: Run ruff + pylint on the jmap-email library
+        run: make lint-jmap-email
+
+
+  test-jmap-email:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - name: Create env files
+        run: make create-env-files
+      - name: Run jmap-email tests
+        run: make test-jmap-email
+
+
+  fuzz-jmap-email:
+    runs-on: ubuntu-latest
+    env:
+      # `-m fuzz` is excluded from the default selection, so it only ever
+      # runs here. Full sweep on main; a lighter one on pull requests to
+      # keep the job to a few minutes.
+      FUZZ_EXAMPLES: ${{ github.event_name == 'pull_request' && '2000' || '10000' }}
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - name: Create env files
+        run: make create-env-files
+      - name: Run the jmap-email Hypothesis fuzz suite
+        run: make fuzz-jmap-email
+
+
   test-back:
     runs-on: ubuntu-latest
     env:

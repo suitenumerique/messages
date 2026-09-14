@@ -1,5 +1,5 @@
 # Test harness for the socks-proxy (dante). Inherits the shared python-uv base
-# (managed CPython 3.14.6 + uv); built by `make build-python-base`.
+# (managed CPython + uv); built by `make build-python-base`.
 ARG PYTHON_UV_IMAGE=messages-python-uv:local
 FROM ${PYTHON_UV_IMAGE}
 

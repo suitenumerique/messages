@@ -2,7 +2,7 @@
 # (pure-Python aiosmtpd). This is the production default for now.
 #
 # Python comes from the shared uv-managed base (deploy/python-uv/Dockerfile:
-# debian-trixie + uv 0.11.28 digest-pinned + CPython 3.14.6), NOT the official
+# debian-trixie + uv digest-pinned + CPython pinned), NOT the official
 # python image — so the interpreter matches the backend and pymta images.
 #
 # Global ARG so PYTHON_UV_IMAGE can be used in `FROM`. Built by

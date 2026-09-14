@@ -5,6 +5,42 @@ All notable changes to `jmap-email` are documented here.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.3.1] - 2026-09-11
+
+### Fixed
+
+- A sender-chosen charset can no longer sink a message. `bytes.decode`
+  rejects some charsets with an exception that is not
+  `UnicodeDecodeError`, and the two decode sites only caught that one:
+  `idna` and `undefined` are registered codecs that refuse the call
+  itself (bare `UnicodeError`), and an embedded NUL raises `ValueError`.
+  A single `Subject: =?idna?B?...?=` header made `parse_email` return
+  `None` — the whole message lost — and the same charset on a body part
+  dropped every body part with a `BodyStructureWalkError` defect. Both
+  sites now fall back to UTF-8 with replacement, as they already did for
+  an unknown charset.
+
+- An out-of-range `Date:` can no longer sink a message on Python 3.14.6.
+  `parsedate_to_datetime` raised `OverflowError` for a numeric zone or
+  year too large for the C int behind `timedelta`/`datetime`, and neither
+  `parse_date` nor the composer's date coercion caught it — a header such
+  as `Date: Mon, 1 Jan 2024 00:00:00 +99999999999999999999` unwound into
+  `parse_email`'s catch-all and returned `None`. CPython 3.14.7 turned it
+  into a `ValueError`
+  ([gh-153406](https://github.com/python/cpython/issues/153406)); both
+  are now caught, so the fix applies across the supported range rather
+  than by raising the floor.
+
+### Testing
+
+- Fuzz strategies now cover date-shaped input and hostile charset names.
+  The previous strategies were generic evil text, which never survives
+  `parsedate_tz` (0 of 20000 samples produced a date tuple) and never
+  forms a well-formed encoded-word, so neither branch above was reachable.
+- Fuzz tests now fail when the parser's catch-all handlers fire. Every
+  oracle accepts `None` and a body-less message, so an internal exception
+  used to read as a pass.
+
 ## [0.3.0] - 2026-08-05
 
 ### Changed
@@ -196,6 +232,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 Initial release. Extracted from the
 [Messages](https://github.com/suitenumerique/messages) project.
 
+[0.3.1]: https://github.com/suitenumerique/messages/releases/tag/jmap-email-0.3.1
 [0.3.0]: https://github.com/suitenumerique/messages/releases/tag/jmap-email-0.3.0
 [0.2.0]: https://github.com/suitenumerique/messages/releases/tag/jmap-email-0.2.0
 [0.1.0]: https://github.com/suitenumerique/messages/releases/tag/jmap-email-0.1.0

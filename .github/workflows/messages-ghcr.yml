@@ -9,7 +9,7 @@ name: Build and publish OCI images
 
 jobs:
 
-  # Shared base (debian-trixie + uv + managed CPython 3.14.6), built + pushed once
+  # Shared base (debian-trixie + uv + managed CPython), built + pushed once
   # from deploy/python-uv/Dockerfile, then referenced by digest via
   # PYTHON_UV_IMAGE in the backend and MTA builds below.
   docker-publish-python-uv:

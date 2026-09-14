@@ -1,5 +1,5 @@
 # Shared base image (deploy/python-uv/Dockerfile): debian-trixie + apt upgrade +
-# ca-certificates + uv 0.11.28 (digest-pinned) + uv-managed CPython 3.14.6 at
+# ca-certificates + uv (digest-pinned) + uv-managed CPython (pinned) at
 # /opt/python. Global ARG so it can be used in `FROM` below. Built by
 # `make build-python-base`; overridden in CI.
 ARG PYTHON_UV_IMAGE=messages-python-uv:local

@@ -436,7 +436,7 @@ class TestOpaqueAndAmbiguousPartMarkers:
 
 
 class TestStdlibEmailCveRegressions:
-    """Behaviour we inherit from CPython, pinned because the 3.14.6 floor
+    """Behaviour we inherit from CPython, pinned because the version floor
     exists precisely to carry ``email`` fixes — a downgrade or a vendored
     stdlib would reintroduce these silently."""
 
