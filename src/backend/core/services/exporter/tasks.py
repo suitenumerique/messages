@@ -5,6 +5,7 @@ import html
 import io
 import re
 from datetime import datetime, timezone
+from email.header import Header
 from typing import Any, Dict
 
 from django.conf import settings
@@ -212,36 +213,80 @@ class S3MultipartGzipUploader:  # pylint: disable=too-many-instance-attributes
         return False
 
 
-# Pattern to match "From " at the start of a line (needs escaping in MBOX)
-FROM_LINE_PATTERN = re.compile(rb"^From ", re.MULTILINE)
+# Pattern to match "From " at the start of a line, including any already
+# escaped form of it (">From ", ">>From ", ...) which mboxrd escapes too.
+FROM_LINE_PATTERN = re.compile(rb"^(>*From )", re.MULTILINE)
+
+# Headers the exporter regenerates from the mailbox state, so any copy already
+# present in the stored MIME is stale and gets stripped first. X-Mozilla-Keys
+# is stripped without being rewritten: its tag keys would contradict the labels
+# we do write, and rebuilding them needs the IMAP mod-UTF-7 key of every tag.
+STRIPPED_HEADERS = frozenset(
+    (
+        b"status",
+        b"x-status",
+        b"x-keywords",
+        b"x-gmail-labels",
+        b"x-mozilla-status",
+        b"x-mozilla-status2",
+        b"x-mozilla-keys",
+    )
+)
+# Fast path: only walk the header block when one of them is actually there.
+# Kept in step with STRIPPED_HEADERS above.
+STALE_HEADER_PATTERN = re.compile(
+    rb"^(?:Status|X-Status|X-Keywords|X-Gmail-Labels"
+    rb"|X-Mozilla-Status2?|X-Mozilla-Keys)[ \t]*:",
+    re.MULTILINE | re.IGNORECASE,
+)
+
+# Anything that would break a header apart, CR and LF above all
+CONTROL_CHARS_PATTERN = re.compile(r"[\x00-\x1f\x7f]")
+
+# Thunderbird message flags, from mailnews/base/public/nsMsgMessageFlags.idl.
+# Only the ones our own state can fill in; see _build_mozilla_status_headers.
+MOZILLA_STATUS_READ = 0x0001
+MOZILLA_STATUS_MARKED = 0x0004
+MOZILLA_STATUS2_ATTACHMENT = 0x10000000
 
 
 def _escape_from_lines(content: bytes) -> bytes:
-    """Escape 'From ' at the start of lines by prepending '>'."""
-    return FROM_LINE_PATTERN.sub(b">From ", content)
+    """Escape 'From ' at the start of lines by prepending '>', mboxrd style.
+
+    mboxrd escapes the already-escaped forms as well (">From " becomes
+    ">>From "), which is what makes the escaping reversible: a reader strips
+    exactly one '>'. mboxo escapes only the bare form, so a line that already
+    read ">From " cannot be told apart from an escaped one, and the message
+    gains a '>' on every export/import roundtrip.
+    """
+    return FROM_LINE_PATTERN.sub(rb">\1", content)
 
 
 def _build_status_headers(
-    is_unread: bool, is_starred: bool, is_draft: bool, is_sender: bool
+    *, is_unread: bool, is_starred: bool, is_draft: bool, is_trashed: bool
 ) -> bytes:
     """
     Build Status and X-Status headers for mbox format.
+
+    These carry IMAP flags and nothing else: there is no flag for "sent",
+    which is a mailbox property in IMAP (RFC 6154 \\Sent), so sent mail is
+    marked through the label headers instead, as Gmail Takeout does.
 
     Status header flags:
         R - Read (seen)
         O - Old (not recent, always set for exports)
 
     X-Status header flags:
-        A - Answered (we use is_sender as proxy for replied messages)
         F - Flagged (starred)
         T - Draft
-        D - Deleted (not used)
+        D - Deleted (trashed)
+        A - Answered (not used: we do not track whether a message was replied to)
 
     Args:
         is_unread: Whether the message is unread
         is_starred: Whether the message is starred/flagged
         is_draft: Whether the message is a draft
-        is_sender: Whether this is a sent message (used as answered proxy)
+        is_trashed: Whether the message is in the trash
 
     Returns:
         Bytes containing Status and X-Status headers
@@ -251,14 +296,14 @@ def _build_status_headers(
     if not is_unread:
         status_flags = "R" + status_flags  # RO = read and old
 
-    # X-Status: A = answered, F = flagged, T = draft, D = deleted
+    # X-Status: F = flagged, T = draft, D = deleted
     x_status_flags = ""
-    if is_sender:
-        x_status_flags += "A"  # Answered/sent
     if is_starred:
         x_status_flags += "F"  # Flagged
     if is_draft:
         x_status_flags += "T"  # Draft
+    if is_trashed:
+        x_status_flags += "D"  # Deleted
 
     headers = f"Status: {status_flags}\n".encode()
     if x_status_flags:
@@ -267,26 +312,118 @@ def _build_status_headers(
     return headers
 
 
-def _build_keywords_header(labels: list) -> bytes:
+def _build_mozilla_status_headers(
+    *, is_unread: bool, is_starred: bool, has_attachments: bool
+) -> bytes:
     """
-    Build X-Keywords header from a list of label names.
+    Build the X-Mozilla-Status / X-Mozilla-Status2 headers.
 
-    Format: X-Keywords: label1, label2, "label with spaces"
+    Thunderbird keeps message flags in its .msf index, not in the mbox, and
+    only writes them into the file when a folder is compacted, so a plain mbox
+    imports as entirely unread. These two headers are the only way to hand it
+    read and starred state: it ignores X-Keywords and X-Gmail-Labels.
 
-    Labels containing commas or spaces are quoted.
-    This format is compatible with Dovecot, OfflineIMAP, and mu4e.
+    Flag values come from Thunderbird's nsMsgMessageFlags.idl. X-Mozilla-Status
+    holds the low 16 bits as 4 hex digits, X-Mozilla-Status2 the high bits as 8.
+
+    Deliberately never set: Expunged (0x0008), which means "deleted, pending
+    folder compaction" and lets Thunderbird drop the message for good on the
+    next compact. Trashed messages carry X-Status: D and the Trash label
+    instead. Replied (0x0002) and Forwarded (0x1000) are states we do not track.
 
     Args:
+        is_unread: Whether the message is unread
+        is_starred: Whether the message is starred/flagged
+        has_attachments: Whether the message has attachments
+
+    Returns:
+        Bytes containing both headers
+    """
+    status = 0
+    if not is_unread:
+        status |= MOZILLA_STATUS_READ
+    if is_starred:
+        status |= MOZILLA_STATUS_MARKED
+
+    status2 = MOZILLA_STATUS2_ATTACHMENT if has_attachments else 0
+
+    return (
+        f"X-Mozilla-Status: {status:04x}\nX-Mozilla-Status2: {status2:08x}\n"
+    ).encode()
+
+
+def _build_system_labels(
+    *,
+    is_unread: bool,
+    is_starred: bool,
+    is_sender: bool,
+    is_trashed: bool,
+    is_spam: bool,
+    is_archived: bool,
+) -> list:
+    """
+    Build the Gmail Takeout-style system labels describing where a message
+    lives in the mailbox.
+
+    mbox cannot express this any other way: Status/X-Status only carry IMAP
+    flags, which have no notion of a sent or archived message. Takeout solves
+    it with pseudo-labels in X-Gmail-Labels, and our own importer maps these
+    exact strings back to message flags (services/importer/labels.py), so the
+    spelling here must keep matching that table.
+
+    Returns:
+        List of label names, e.g. ["Sent", "Opened"]
+    """
+    labels = []
+    if is_sender:
+        labels.append("Sent")
+    if is_trashed:
+        labels.append("Trash")
+    if is_spam:
+        labels.append("Spam")
+    if is_archived:
+        labels.append("Archived")
+    if not (is_sender or is_trashed or is_spam or is_archived):
+        labels.append("Inbox")
+    if is_starred:
+        labels.append("Starred")
+    # Read state is in Status: R too, but the mbox importers (ours included)
+    # read labels, not Status.
+    labels.append("Unread" if is_unread else "Opened")
+    return labels
+
+
+def _build_labels_header(header_name: str, labels: list) -> bytes:
+    """
+    Build a comma-separated label header from a list of label names.
+
+    Format: <header_name>: label1, label2, "label with spaces"
+
+    Labels containing commas or spaces are quoted. This format is what
+    Google Takeout writes in X-Gmail-Labels and what Dovecot, OfflineIMAP
+    and mu4e read in X-Keywords.
+
+    Label names are user input with no validation on ``Label.name``, so they
+    are sanitized here: a newline in a name would end the header and turn the
+    rest of the name into forged headers of its own, which a re-import would
+    then read back as real ones.
+
+    Long values are folded (RFC 5322 caps a line at 998 octets, and a thread
+    with a handful of labels goes past that) and non-ASCII ones are RFC 2047
+    encoded, as Takeout does.
+
+    Args:
+        header_name: Header to build, e.g. "X-Keywords"
         labels: List of label name strings
 
     Returns:
-        Bytes containing X-Keywords header, or empty bytes if no labels
+        Bytes containing the header, or empty bytes if no labels
     """
-    if not labels:
-        return b""
-
     formatted_labels = []
-    for label in labels:
+    for raw_label in labels:
+        label = CONTROL_CHARS_PATTERN.sub(" ", raw_label).strip()
+        if not label:
+            continue
         # Quote labels that contain commas, spaces, or quotes
         if "," in label or " " in label or '"' in label:
             # Escape any quotes in the label
@@ -295,7 +432,62 @@ def _build_keywords_header(labels: list) -> bytes:
         else:
             formatted_labels.append(label)
 
-    return f"X-Keywords: {', '.join(formatted_labels)}\n".encode()
+    if not formatted_labels:
+        return b""
+
+    value = ", ".join(formatted_labels)
+    # ASCII values only get folded; non-ASCII ones are encoded into as many
+    # encoded-words as they need, each within the 75-octet limit of RFC 2047.
+    charset = "ascii" if value.isascii() else "utf-8"
+    folded = Header(value, charset=charset, header_name=header_name).encode()
+
+    return f"{header_name}: {folded}\n".encode()
+
+
+def _strip_stale_headers(raw_content: bytes) -> bytes:
+    """
+    Drop any existing copy of the headers this exporter regenerates.
+
+    A message imported from Gmail or an IMAP server keeps the Status /
+    X-Keywords / X-Gmail-Labels headers it arrived with, and the mailbox
+    state has moved on since (unstarred, untrashed, relabelled). Leaving
+    them in would make a re-import merge that stale state with ours, since
+    ``gmail_labels()`` reads every occurrence of the label headers. Dovecot
+    gives the same advice for Status/X-Status.
+
+    Only the header block is rewritten; the body is left untouched.
+
+    Args:
+        raw_content: Raw RFC 5322 email content
+
+    Returns:
+        The content without those headers
+    """
+    header_end = raw_content.find(b"\r\n\r\n")
+    if header_end == -1:
+        header_end = raw_content.find(b"\n\n")
+    if header_end == -1:
+        header_end = len(raw_content)
+
+    headers = raw_content[:header_end]
+    if not STALE_HEADER_PATTERN.search(headers):
+        return raw_content
+
+    kept = []
+    dropping = False
+    for line in headers.splitlines(keepends=True):
+        if line[:1] in (b" ", b"\t"):
+            # Folded continuation line: belongs to the header above it.
+            if dropping:
+                continue
+        else:
+            name = line.split(b":", 1)[0].strip().lower()
+            dropping = name in STRIPPED_HEADERS
+            if dropping:
+                continue
+        kept.append(line)
+
+    return b"".join(kept) + raw_content[header_end:]
 
 
 def _inject_headers(raw_content: bytes, extra_headers: bytes) -> bytes:
@@ -329,10 +521,15 @@ def _inject_headers(raw_content: bytes, extra_headers: bytes) -> bytes:
 def _create_mbox_entry(
     raw_content: bytes,
     timestamp: datetime,
+    *,
     is_unread: bool = True,
     is_starred: bool = False,
     is_draft: bool = False,
     is_sender: bool = False,
+    is_trashed: bool = False,
+    is_spam: bool = False,
+    is_archived: bool = False,
+    has_attachments: bool = False,
     labels: list = None,
 ) -> bytes:
     """
@@ -340,8 +537,12 @@ def _create_mbox_entry(
 
     Injects the following headers for compatibility with mail clients:
     - Status: R (read) O (old) - mbox standard
-    - X-Status: A (answered) F (flagged) T (draft) - mbox standard
-    - X-Keywords: comma-separated labels - Dovecot/OfflineIMAP/mu4e compatible
+    - X-Status: F (flagged) T (draft) D (deleted) - mbox standard
+    - X-Keywords: the user's own labels - Dovecot/OfflineIMAP/mu4e compatible
+    - X-Gmail-Labels: system labels (Sent, Trash, ...) plus the user's own -
+      Google Takeout compatible, and what our own importer reads back
+    - X-Mozilla-Status / X-Mozilla-Status2: read and starred state in the only
+      form Thunderbird reads
 
     Args:
         raw_content: Raw RFC 5322 email content
@@ -350,17 +551,46 @@ def _create_mbox_entry(
         is_starred: Whether the message is starred/flagged
         is_draft: Whether the message is a draft
         is_sender: Whether this is a sent message
-        labels: List of label names to include as X-Keywords
+        is_trashed: Whether the message is in the trash
+        is_spam: Whether the message is marked as spam
+        is_archived: Whether the message is archived
+        has_attachments: Whether the message has attachments
+        labels: List of the user's label names
 
     Returns:
         MBOX-formatted message bytes with metadata headers
     """
-    # Build extra headers for metadata
-    extra_headers = _build_status_headers(is_unread, is_starred, is_draft, is_sender)
-    extra_headers += _build_keywords_header(labels or [])
+    user_labels = labels or []
+    system_labels = _build_system_labels(
+        is_unread=is_unread,
+        is_starred=is_starred,
+        is_sender=is_sender,
+        is_trashed=is_trashed,
+        is_spam=is_spam,
+        is_archived=is_archived,
+    )
+
+    # Build extra headers for metadata. X-Keywords stays restricted to the
+    # user's own labels: IMAP keywords have no system-label vocabulary, so
+    # "Sent" there would show up as a tag of the user's in Dovecot or mu4e.
+    extra_headers = _build_status_headers(
+        is_unread=is_unread,
+        is_starred=is_starred,
+        is_draft=is_draft,
+        is_trashed=is_trashed,
+    )
+    extra_headers += _build_mozilla_status_headers(
+        is_unread=is_unread,
+        is_starred=is_starred,
+        has_attachments=has_attachments,
+    )
+    extra_headers += _build_labels_header("X-Keywords", user_labels)
+    extra_headers += _build_labels_header("X-Gmail-Labels", system_labels + user_labels)
 
     # Inject metadata headers into the email content
-    content_with_headers = _inject_headers(raw_content, extra_headers)
+    content_with_headers = _inject_headers(
+        _strip_stale_headers(raw_content), extra_headers
+    )
 
     # Format timestamp for MBOX "From " line (traditional Unix mbox format)
     # Format: "From sender@example.com Fri Dec 20 12:00:00 2024"
@@ -428,6 +658,7 @@ def export_mailbox_task(
     total_messages = 0
     exported_count = 0
     skipped_count = 0
+    draft_count = 0
     current_message = 0
     s3_key = None
 
@@ -438,6 +669,7 @@ def export_mailbox_task(
             "total_messages": total_messages,
             "exported_count": exported_count,
             "skipped_count": skipped_count,
+            "draft_count": draft_count,
             "error": error_msg,
         }
         self.update_state(state="FAILURE", meta={"result": failed, "error": error_msg})
@@ -545,16 +777,22 @@ def export_mailbox_task(
                                 "total_messages": total_messages,
                                 "exported_count": exported_count,
                                 "skipped_count": skipped_count,
+                                "draft_count": draft_count,
                                 "current_message": current_message,
                             },
                             "error": None,
                         },
                     )
 
-                # Skip messages without blobs
+                # Skip messages without blobs. A draft is the expected case:
+                # its body lives in a JSON blob and it has no MIME form yet,
+                # so it is counted apart rather than reported as a failure.
                 if not msg.blob:
-                    logger.warning("Message %s has no blob, skipping", msg.id)
-                    skipped_count += 1
+                    if msg.is_draft:
+                        draft_count += 1
+                    else:
+                        logger.warning("Message %s has no blob, skipping", msg.id)
+                        skipped_count += 1
                     continue
 
                 try:
@@ -584,6 +822,10 @@ def export_mailbox_task(
                         is_starred=is_starred,
                         is_draft=msg.is_draft,
                         is_sender=msg.is_sender,
+                        is_trashed=msg.is_trashed,
+                        is_spam=msg.is_spam,
+                        is_archived=msg.is_archived,
+                        has_attachments=msg.has_attachments,
                         labels=thread_labels,
                     )
                     uploader.write(mbox_entry)
@@ -611,6 +853,7 @@ def export_mailbox_task(
                     "total_messages": total_messages,
                     "exported_count": exported_count,
                     "skipped_count": skipped_count,
+                    "draft_count": draft_count,
                 },
                 "error": None,
             },
@@ -623,6 +866,7 @@ def export_mailbox_task(
                 presigned_url=presigned_url,
                 exported_count=exported_count,
                 skipped_count=skipped_count,
+                draft_count=draft_count,
                 total_messages=total_messages,
             )
         except Exception as notif_exc:  # pylint: disable=broad-exception-caught
@@ -640,6 +884,7 @@ def export_mailbox_task(
             "total_messages": total_messages,
             "exported_count": exported_count,
             "skipped_count": skipped_count,
+            "draft_count": draft_count,
             "s3_key": s3_key,
             "recipient": recipient_email,
         }
@@ -666,6 +911,7 @@ def _create_notification_message(
     presigned_url: str,
     exported_count: int,
     skipped_count: int,
+    draft_count: int,
     total_messages: int,
 ) -> bool:
     """
@@ -682,6 +928,7 @@ def _create_notification_message(
         presigned_url: The presigned S3 URL for download
         exported_count: Number of messages exported
         skipped_count: Number of messages skipped
+        draft_count: Number of drafts left out (they have no MIME form)
         total_messages: Total number of messages in mailbox
 
     Returns:
@@ -698,8 +945,12 @@ Export summary
 
   Total messages in mailbox: {total_messages}
   Messages exported:         {exported_count}
+  Drafts (not exportable):   {draft_count}
   Messages skipped:          {skipped_count}
 
+
+Drafts are left out: they have no sent form yet, so there is nothing to
+write to the file.
 
 The file is in MBOX format and can be imported into most email clients.
 
@@ -741,6 +992,10 @@ style="display:inline-block;padding:12px 24px;background-color:#18181b;color:#ff
 <td align="right" style="padding:8px 0 0 0;">{exported_count}</td>
 </tr>
 <tr>
+<td style="padding:8px 0 0 0;color:#52525b;">Drafts (not exportable)</td>
+<td align="right" style="padding:8px 0 0 0;">{draft_count}</td>
+</tr>
+<tr>
 <td style="padding:8px 0 0 0;color:#52525b;">Messages skipped</td>
 <td align="right" style="padding:8px 0 0 0;">{skipped_count}</td>
 </tr>
@@ -749,7 +1004,8 @@ style="display:inline-block;padding:12px 24px;background-color:#18181b;color:#ff
 
 <tr><td style="padding:28px 32px 32px 32px;">
 <div style="padding:16px;background-color:#fafafa;border:1px solid #e4e4e7;border-radius:6px;">
-<p style="margin:0;font-size:13px;line-height:20px;color:#52525b;">The file is in MBOX format and can be imported into most email clients.</p>
+<p style="margin:0;font-size:13px;line-height:20px;color:#52525b;">Drafts are left out: they have no sent form yet, so there is nothing to write to the file.</p>
+<p style="margin:8px 0 0 0;font-size:13px;line-height:20px;color:#52525b;">The file is in MBOX format and can be imported into most email clients.</p>
 <p style="margin:8px 0 0 0;font-size:13px;line-height:20px;color:#18181b;font-weight:600;">Anyone with this link can download the whole mailbox: do not share it.</p>
 </div>
 </td></tr>

@@ -5,9 +5,16 @@ import logging
 from jmap_email.types import JmapEmail
 
 from core import models
-from core.mda.utils import gmail_labels
+from core.mda.utils import gmail_labels, header_value
 
 logger = logging.getLogger(__name__)
+
+# Thunderbird message flags, from mailnews/base/public/nsMsgMessageFlags.idl.
+# Thunderbird keeps flags in its .msf index and only writes them into the mbox
+# on compaction, so X-Mozilla-Status is the only place a Thunderbird export
+# carries read and starred state: it writes no X-Keywords at all.
+MOZILLA_STATUS_READ = 0x0001
+MOZILLA_STATUS_MARKED = 0x0004
 
 IMAP_LABEL_TO_MESSAGE_FLAG = {
     "Drafts": "is_draft",
@@ -62,6 +69,23 @@ IMAP_LABELS_TO_IGNORE = [
 ]
 
 
+def _mozilla_status(parsed_email: JmapEmail) -> int | None:
+    """The X-Mozilla-Status flag word, or None when absent or unparseable.
+
+    Only X-Mozilla-Status is read: X-Mozilla-Status2 carries no state we
+    model (Attachment, Template, MDN), and X-Mozilla-Keys would need the
+    tag key of every label from the writer's profile to mean anything.
+    """
+    raw = header_value(parsed_email, "X-Mozilla-Status")
+    if raw is None:
+        return None
+    try:
+        return int(raw, 16)
+    except ValueError:
+        logger.warning("Ignoring unparseable X-Mozilla-Status: %r", raw[:32])
+        return None
+
+
 def compute_labels_and_flags(
     parsed_email: JmapEmail,
     imap_labels: list[str] | None,
@@ -94,6 +118,16 @@ def compute_labels_and_flags(
             message_flags[message_flag] = True
         elif cleaned_label not in IMAP_LABELS_TO_IGNORE:
             labels_to_add.add(cleaned_label)
+
+    # Read/starred state from a Thunderbird mbox. Applied before the IMAP
+    # flags below so a live \\Seen always wins: on an IMAP import the server
+    # is authoritative, and a message can carry an X-Mozilla-Status written by
+    # whoever sent it (Mozilla bug 196749).
+    mozilla_status = _mozilla_status(parsed_email)
+    if mozilla_status is not None:
+        message_flags["is_unread"] = not mozilla_status & MOZILLA_STATUS_READ
+        if mozilla_status & MOZILLA_STATUS_MARKED:
+            message_flags["_starred"] = True
 
     # Handle read/unread status via IMAP flags
     if imap_flags:
@@ -137,7 +171,16 @@ def handle_duplicate_message(
         if hasattr(existing_message, flag):
             setattr(existing_message, flag, value)
     if message_flags:
-        existing_message.save(update_fields=message_flags.keys())
+        update_fields = list(message_flags.keys())
+        # Timestamps stay in lockstep with the booleans: a trashed/archived
+        # row with a NULL timestamp breaks restore, ordering and auto-purge.
+        if existing_message.is_trashed and existing_message.trashed_at is None:
+            existing_message.trashed_at = existing_message.created_at
+            update_fields.append("trashed_at")
+        if existing_message.is_archived and existing_message.archived_at is None:
+            existing_message.archived_at = existing_message.created_at
+            update_fields.append("archived_at")
+        existing_message.save(update_fields=update_fields)
 
     # Update ThreadAccess.starred_at if the duplicate is starred
     if not import_is_unread or import_is_starred:

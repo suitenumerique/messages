@@ -156,6 +156,61 @@ Body
         assert len(indices) == 1
         assert indices[0].date is not None
 
+    def test_body_line_starting_with_from_is_not_a_separator(self):
+        """The oldest bug in the format: an unescaped "From " line in a body.
+
+        Here it even sits after a blank line, the way a paragraph does, so
+        position alone does not save us. It reads nothing like a postmark and
+        is not followed by a header, so it is not a boundary.
+        """
+        content = b"""From user@example.com Thu Jan 1 00:00:00 2024
+Subject: One message
+From: a@b.com
+Date: Mon, 1 Jan 2024 00:00:00 +0000
+
+Hello,
+
+From my point of view this line is prose.
+
+Regards
+"""
+        indices = index_mbox_messages(BytesIO(content))
+        assert len(indices) == 1
+        file = BytesIO(content)
+        file.seek(indices[0].start_byte)
+        body = file.read(indices[0].end_byte - indices[0].start_byte + 1)
+        assert b"From my point of view" in body
+
+    def test_from_line_mid_paragraph_is_not_a_separator(self):
+        """No empty line before it, so it cannot be a separator at all."""
+        content = b"""From user@example.com Thu Jan 1 00:00:00 2024
+Subject: One message
+From: a@b.com
+
+Quoting a header here:
+From user@example.com Thu Jan 1 00:00:00 2024
+and carrying on.
+"""
+        indices = index_mbox_messages(BytesIO(content))
+        assert len(indices) == 1
+
+    def test_separator_without_a_date_is_still_a_separator(self):
+        """Falls back on the next line being a header, as Mail::Box does."""
+        content = b"""From someone
+Subject: First
+From: a@b.com
+
+Body one
+
+From someone-else
+Subject: Second
+From: c@d.com
+
+Body two
+"""
+        indices = index_mbox_messages(BytesIO(content))
+        assert len(indices) == 2
+
     def test_index_message_without_date(self):
         """Test indexing a message without a Date header."""
         content = b"""From user@example.com Thu Jan 1 00:00:00 2024

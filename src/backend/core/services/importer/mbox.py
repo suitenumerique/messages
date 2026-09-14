@@ -7,6 +7,7 @@ the low-level scan it (and the exporter tests) build the ordered plan from.
 
 # pylint: disable=broad-exception-caught
 import io
+import re
 from collections.abc import Callable
 from dataclasses import dataclass
 from datetime import datetime
@@ -20,6 +21,52 @@ from core.services.s3_seekable import BUFFER_CENTERED, S3SeekableReader
 from .utils import beat, deliver, imports_storage, run_plan
 
 logger = get_task_logger(__name__)
+
+# An escaped "From " line: one '>' to strip, then the bare or still-escaped form
+ESCAPED_FROM_LINE_PATTERN = re.compile(rb"^>(>*From )", re.MULTILINE)
+
+# A "From " line that reads like a real postmark: a sender token, then the
+# weekday that opens the ctime timestamp. Covers every writer we care about:
+# Takeout ("From 1833…@xxx Mon May 26 …"), Thunderbird and ourselves
+# ("From - Mon Sep 14 …"), Python's mailbox ("From MAILER-DAEMON Wed Jan 1 …").
+POSTMARK_PATTERN = re.compile(rb"^From \S+ +(?:Mon|Tue|Wed|Thu|Fri|Sat|Sun) ")
+
+# A header field name followed by its colon (RFC 5322 §3.6.8: printable
+# US-ASCII except the colon itself)
+HEADER_LINE_PATTERN = re.compile(rb"^[\x21-\x39\x3b-\x7e]+:")
+
+
+def unescape_from_lines(content: bytes) -> bytes:
+    """Reverse the mbox "From " escaping: strip exactly one leading '>'.
+
+    Writers escape body lines starting with "From " so they cannot be taken
+    for a message separator. Stripping one '>' restores the original bytes of
+    anything we exported (mboxrd, see the exporter), and restores the common
+    case of an mboxo file such as Google Takeout's.
+
+    The mboxo ambiguity stays: in a file from an mboxo writer, a line the
+    author really did start with ">From " is indistinguishable from an escaped
+    "From " and loses its '>'. Not unescaping at all is worse, since then
+    every escaped line keeps a '>' it never had, which breaks bodies and DKIM
+    signatures alike.
+    """
+    return ESCAPED_FROM_LINE_PATTERN.sub(rb"\1", content)
+
+
+def strip_message_separator(content: bytes) -> bytes:
+    """Drop the blank line mbox writers put between messages.
+
+    A message's byte range runs up to the line before the next "From ", so it
+    ends with that blank line; left in, every message gains an empty line at
+    the end of its body on import. Only stripped when the content really ends
+    with a blank line, so the last message of a file written without one keeps
+    its bytes.
+    """
+    if content.endswith(b"\r\n\r\n"):
+        return content[:-2]
+    if content.endswith(b"\n\n"):
+        return content[:-1]
+    return content
 
 
 @dataclass
@@ -74,6 +121,14 @@ def index_mbox_messages(
     The file object must support read() and optionally seek(). ``on_progress``
     is invoked once per chunk read — the import runner passes it to beat the
     heartbeat during this (potentially long) full-file scan.
+
+    A "From " line only counts as a separator when it stands where one can
+    stand (start of file, or right after an empty line) *and* it either reads
+    like a postmark or is followed by a header line. A body line beginning
+    with "From " that the writer failed to escape would otherwise split one
+    message in two, silently, and the fragment is delivered as its own
+    message. This is the oldest bug in the format (Mozilla bug 355237), and
+    the rule is the one Mail::Box uses.
     """
     indices: list[MboxMessageIndex] = []
     # We need to scan through the file finding "From " lines at line starts
@@ -81,6 +136,12 @@ def index_mbox_messages(
     file_offset = initial_offset  # tracks where buffer starts in the file
     message_start: int | None = None
     scan_pos = 0  # position within buffer to scan from
+    # A separator can only follow an empty line; the start of the file counts
+    prev_line_empty = True
+    # A candidate separator waiting on the next line to confirm it:
+    # (line_start, content_start, the From line itself)
+    pending: tuple[int, int, bytes] | None = None
+    rejected = 0
 
     while True:
         # Read more data if needed
@@ -112,18 +173,54 @@ def index_mbox_messages(
         line_start_abs = file_offset + scan_pos
         line = buffer[scan_pos : nl + 1]
 
-        if line.startswith(b"From "):
-            if message_start is not None:
-                # End previous message (exclusive of this From line)
-                msg_end = line_start_abs - 1
-                # Read headers to extract date
-                _extract_and_store_index(
-                    file, indices, message_start, msg_end, buffer, file_offset
-                )
-            # Start new message (content begins after the "From " line)
-            message_start = line_start_abs + len(line)
+        if pending is not None:
+            # This line is the one right after a candidate separator
+            if POSTMARK_PATTERN.match(pending[2]) or HEADER_LINE_PATTERN.match(line):
+                if message_start is not None:
+                    # End previous message (exclusive of the From line)
+                    _extract_and_store_index(
+                        file,
+                        indices,
+                        message_start,
+                        pending[0] - 1,
+                        buffer,
+                        file_offset,
+                    )
+                # Start new message (content begins after the "From " line)
+                message_start = pending[1]
+            else:
+                rejected += 1
+            pending = None
 
+        if line.startswith(b"From "):
+            if prev_line_empty:
+                pending = (line_start_abs, line_start_abs + len(line), line)
+            else:
+                rejected += 1
+
+        prev_line_empty = line in (b"\n", b"\r\n")
         scan_pos = nl + 1
+
+    # A candidate on the very last line has no following line to confirm it,
+    # so it stands or falls on its own shape.
+    if pending is not None:
+        if POSTMARK_PATTERN.match(pending[2]):
+            if message_start is not None:
+                _extract_and_store_index(
+                    file, indices, message_start, pending[0] - 1, buffer, file_offset
+                )
+            message_start = pending[1]
+        else:
+            rejected += 1
+
+    if rejected:
+        # One line, not one per occurrence: a body with many "From " lines
+        # would otherwise flood the log.
+        logger.warning(
+            "mbox index: ignored %d 'From ' line(s) that do not stand where a "
+            "separator can stand; the writer most likely failed to escape them",
+            rejected,
+        )
 
     # Handle last message
     if message_start is not None:
@@ -213,6 +310,11 @@ def run_mbox(channel, state) -> tuple[int, int, int]:
         def deliver_item(loc, reasons):
             reader.seek(loc["start"])
             raw = reader.read(loc["end"] - loc["start"] + 1)
-            return deliver(raw, recipient, channel, reasons=reasons)
+            return deliver(
+                unescape_from_lines(strip_message_separator(raw)),
+                recipient,
+                channel,
+                reasons=reasons,
+            )
 
         return run_plan(channel, state, plan, deliver_item)

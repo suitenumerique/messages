@@ -19,7 +19,12 @@ from core import enums, factories, models
 from core.services.importer.channel import create_import_channel, read_state
 from core.services.importer.eml import run_eml
 from core.services.importer.imap import IMAPFolderSelectError, run_imap
-from core.services.importer.mbox import _mbox_plan, run_mbox
+from core.services.importer.mbox import (
+    _mbox_plan,
+    run_mbox,
+    strip_message_separator,
+    unescape_from_lines,
+)
 from core.services.importer.pst import run_pst
 from core.services.importer.tasks import run_import_task
 from core.services.importer.utils import TransientImportError, deliver
@@ -325,6 +330,105 @@ class TestRunMbox:
             assert all(item["end"] >= item["start"] for item in plan)
         finally:
             s3_client.delete_object(Bucket=storage.bucket_name, Key=key)
+
+
+class TestMozillaStatusImport:
+    """Reading Thunderbird's own flags out of an mbox it wrote."""
+
+    @staticmethod
+    def _mbox(status):
+        return (
+            b"From - Mon Jan  1 00:00:00 2024\r\n"
+            b"X-Mozilla-Status: " + status + b"\r\n"
+            b"X-Mozilla-Status2: 00000000\r\n"
+            b"From: sender@example.com\r\n"
+            b"To: someone@example.com\r\n"
+            b"Subject: From Thunderbird\r\n"
+            b"Message-ID: <moz-" + status + b"@example.com>\r\n"
+            b"Date: Mon, 1 Jan 2024 00:00:00 +0000\r\n"
+            b"\r\n"
+            b"body\r\n"
+            b"\r\n"
+        )
+
+    def _import(self, mailbox, user, status):
+        key = f"runner-mbox/moz-{status.decode()}.mbox"
+        _, storage, s3_client = _upload_to_s3(self._mbox(status), key)
+        try:
+            channel = create_import_channel(
+                recipient=mailbox,
+                user=user,
+                source_type=enums.ImportSource.MBOX.value,
+                file_key=key,
+            )
+            assert run_mbox(channel, {}) == (1, 0, 1)
+            message = models.Message.objects.get(channel=channel)
+            return models.ThreadAccess.objects.get(
+                thread=message.thread, mailbox=mailbox
+            )
+        finally:
+            s3_client.delete_object(Bucket=storage.bucket_name, Key=key)
+
+    def test_read_and_marked_are_applied(self, mailbox, user):
+        """0x0001 Read | 0x0004 Marked. A Thunderbird mbox carries this state
+        nowhere else: it writes no X-Keywords and no labels."""
+        access = self._import(mailbox, user, b"0005")
+        assert access.read_at is not None
+        assert access.starred_at is not None
+
+    def test_unset_flags_leave_the_message_unread(self, mailbox, user):
+        access = self._import(mailbox, user, b"0000")
+        assert access.read_at is None
+        assert access.starred_at is None
+
+    def test_unparseable_status_is_ignored(self, mailbox, user):
+        access = self._import(mailbox, user, b"zzzz")
+        assert access.read_at is None
+        assert access.starred_at is None
+
+
+class TestUnescapeFromLines:
+    """Reversing the mbox "From " escaping (mboxrd read rule)."""
+
+    def test_strips_exactly_one_marker(self):
+        assert (
+            unescape_from_lines(
+                b"Body\n>From here\n>>From quoted\n>>>From twice quoted\n"
+            )
+            == b"Body\nFrom here\n>From quoted\n>>From twice quoted\n"
+        )
+
+    def test_leaves_everything_else_alone(self):
+        content = (
+            b"From: someone@example.com\n"
+            b"\n"
+            b"From here, unescaped by the writer\n"
+            b"> From with a space after the marker\n"
+            b"not at line start: >From x\n"
+            b">Fromage\n"
+        )
+        assert unescape_from_lines(content) == content
+
+    def test_handles_crlf_line_endings(self):
+        assert (
+            unescape_from_lines(b"Body\r\n>From here\r\n") == b"Body\r\nFrom here\r\n"
+        )
+
+
+class TestStripMessageSeparator:
+    """Dropping the blank line that separates two mbox messages."""
+
+    def test_strips_one_blank_line(self):
+        assert strip_message_separator(b"Body\n\n") == b"Body\n"
+        assert strip_message_separator(b"Body\r\n\r\n") == b"Body\r\n"
+
+    def test_keeps_a_body_that_ends_on_a_blank_line(self):
+        # "Body\n" + an empty last body line + the separator
+        assert strip_message_separator(b"Body\n\n\n") == b"Body\n\n"
+
+    def test_leaves_content_without_a_separator_alone(self):
+        assert strip_message_separator(b"Body\n") == b"Body\n"
+        assert strip_message_separator(b"Body") == b"Body"
 
 
 # --- run_pst --------------------------------------------------------------
