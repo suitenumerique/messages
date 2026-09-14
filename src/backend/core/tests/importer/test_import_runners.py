@@ -18,7 +18,7 @@ import pytest
 from core import enums, factories, models
 from core.services.importer.channel import create_import_channel, read_state
 from core.services.importer.eml import run_eml
-from core.services.importer.imap import run_imap
+from core.services.importer.imap import IMAPFolderSelectError, run_imap
 from core.services.importer.mbox import _mbox_plan, run_mbox
 from core.services.importer.pst import run_pst
 from core.services.importer.tasks import run_import_task
@@ -674,10 +674,11 @@ class TestRunImap:
             == enums.MessageDeliveryStatusChoices.SENT_EXTERNAL
         )
 
-    def test_reselect_failure_is_transient_not_silent(self, mailbox, user):
+    def test_reselect_failure_is_permanent_not_silent(self, mailbox, user):
         """A folder that fails to re-select before its fetch pass must raise
-        (transient) rather than be skipped: skipping would let a oneshot run
-        end COMPLETED with the folder's mail silently missing forever."""
+        (permanent) rather than be skipped: skipping would let a oneshot run
+        end COMPLETED with the folder's mail silently missing forever, and a
+        transient error would hide the refusal behind the stall budget."""
         raw = _eml_bytes(frm="sender@example.com", subject="X", message_id="<rs@x>")
         uid_map = {"INBOX": {1: ([], raw)}}
         channel = _imap_channel(mailbox, user)
@@ -687,7 +688,7 @@ class TestRunImap:
                 "core.services.importer.imap.select_imap_folder",
                 return_value=False,
             ):
-                with pytest.raises(TransientImportError):
+                with pytest.raises(IMAPFolderSelectError):
                     run_imap(channel, {})
 
         _run_with_patches(_patch_imap(uid_map), run)

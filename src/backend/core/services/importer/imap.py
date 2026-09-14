@@ -68,6 +68,13 @@ class IMAPAuthError(RuntimeError):
     user)."""
 
 
+class IMAPFolderSelectError(RuntimeError):
+    """Raised when the server refuses to SELECT a folder it listed. The server
+    answered, so this is not a connectivity blip: retrying the same folder name
+    can only fail the same way, and treating it as transient would keep the run
+    paused for the whole stall budget before surfacing the real error."""
+
+
 def decode_imap_utf7(s):
     """Decode IMAP UTF-7 encoded string to UTF-8.
 
@@ -299,9 +306,12 @@ def _parse_imap_folder_info(folder_info: str) -> str | None:
             return None
 
         if parts[-1] == "":
-            folder_name = parts[-2]  # Last quoted string
+            folder_name = parts[-2]  # Quoted name: keep verbatim
         else:
-            folder_name = parts[-1]  # Last quoted string
+            # Bare atom (Dovecot/Courier send ``"/" INBOX`` unquoted): the
+            # split leaves the separating space in front of the name, and a
+            # `" INBOX"` folder is unselectable on every server.
+            folder_name = parts[-1].strip()
 
         if not folder_name or folder_name == "/":
             return None
@@ -363,7 +373,13 @@ def create_folder_mapping(
 
 
 def select_imap_folder(imap_connection, folder: str) -> bool:
-    """Select an IMAP folder with proper encoding handling."""
+    """Select an IMAP folder with proper encoding handling.
+
+    Returns `False` only when the server *answered* and refused every name
+    variation. A dropped connection (`OSError`/`imaplib.IMAP4.abort`)
+    propagates instead: the caller's `run_imap` maps it to a transient error,
+    whereas a refused SELECT is permanent (see `IMAPFolderSelectError`).
+    """
     try:
         # Try different folder name variations for compatibility
         folder_variations = [
@@ -400,9 +416,13 @@ def select_imap_folder(imap_connection, folder: str) -> bool:
                             folder_variant,
                         )
                         return True
+                except (OSError, imaplib.IMAP4.abort):
+                    raise
                 except Exception as e:
                     logger.debug("Failed to select folder with UTF-7 encoding: %s", e)
                     continue
+            except (OSError, imaplib.IMAP4.abort):
+                raise
             except Exception as e:
                 logger.debug(
                     "Failed to select folder variant %s: %s", folder_variant, e
@@ -412,6 +432,8 @@ def select_imap_folder(imap_connection, folder: str) -> bool:
         logger.error("Failed to select folder %s with any variation", folder)
         return False
 
+    except (OSError, imaplib.IMAP4.abort):
+        raise
     except Exception as e:
         logger.exception("Error selecting folder %s: %s", folder, e)
         return False
@@ -524,14 +546,14 @@ def uid_search_all(imap_connection, folder: str, since_uid: int = 0) -> list[int
     range is pushed to the server (``UID SEARCH UID <since+1>:*``) so a
     continuous poll of a large mailbox doesn't drag back every UID each time.
 
-    Raises ``TransientImportError`` when the folder cannot be selected:
-    treating it as empty would let a oneshot run end COMPLETED while silently
-    never importing this folder's mail. Raising keeps the watermark untouched
-    and the run resumable; a persistent select failure becomes a *visible*
-    FAILED through the cross-run stall budget.
+    Raises `IMAPFolderSelectError` when the server refuses to select the
+    folder: treating it as empty would let a oneshot run end COMPLETED while
+    silently never importing this folder's mail, and parking the run as
+    transient would only hide the same refusal behind the stall budget. The
+    run FAILS immediately with the folder name, watermark untouched.
     """
     if not select_imap_folder(imap_connection, folder):
-        raise TransientImportError(f"Cannot select IMAP folder {folder}")
+        raise IMAPFolderSelectError(f"Cannot select IMAP folder {folder}")
     if since_uid and since_uid > 0:
         status, data = imap_connection.uid("SEARCH", None, f"UID {since_uid + 1}:*")
         if status == "OK" and data and data[0]:
@@ -642,8 +664,9 @@ def run_imap(channel, state) -> tuple[int, int, int]:
     terminally FAIL the run — permanently disabling a continuous poller over
     one network blip. ``OSError`` covers the socket/ssl/connection family;
     ``imaplib.IMAP4.abort`` is the protocol-level "connection dropped".
-    Auth/security errors (``IMAPAuthError``/``IMAPSecurityError``) are
-    RuntimeErrors and deliberately stay permanent.
+    Auth/security errors (``IMAPAuthError``/``IMAPSecurityError``) and a
+    refused SELECT (`IMAPFolderSelectError`) are RuntimeErrors and
+    deliberately stay permanent.
     """
     try:
         return _run_imap(channel, state)
@@ -755,9 +778,10 @@ def _run_imap(channel, state) -> tuple[int, int, int]:
             # The planning pass left the last-searched folder selected;
             # re-select this one (``uid_fetch_message`` assumes it). Skipping a
             # folder that fails to re-select would let a oneshot run end
-            # COMPLETED with the folder's mail silently missing — raise as
-            # transient instead (watermark untouched, run resumable, and a
-            # persistent failure surfaces via the cross-run stall budget).
+            # COMPLETED with the folder's mail silently missing — fail the run
+            # instead (progress persisted, watermark untouched). A dropped
+            # connection propagates from `select_imap_folder` and stays
+            # transient through `run_imap`.
             if not select_imap_folder(conn, folder):
                 record_progress(
                     channel.id,
@@ -766,7 +790,7 @@ def _run_imap(channel, state) -> tuple[int, int, int]:
                     folders=folders_wm,
                     total=total,
                 )
-                raise TransientImportError(f"Cannot re-select IMAP folder {folder}")
+                raise IMAPFolderSelectError(f"Cannot re-select IMAP folder {folder}")
             display_name = mapping.get(folder, folder)
             for uid in uids:
                 beat(channel)

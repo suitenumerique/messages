@@ -12,6 +12,7 @@ import pytest
 from core.services.importer.imap import (
     IMAPAuthError,
     IMAPConnectionManager,
+    IMAPFolderSelectError,
     IMAPSecurityError,
     _extract_imap_flags_and_content,
     _IPPinnedIMAP4,
@@ -24,7 +25,6 @@ from core.services.importer.imap import (
     uid_fetch_message,
     uid_search_all,
 )
-from core.services.importer.utils import TransientImportError
 from core.services.ssrf import SSRFValidationError
 
 
@@ -92,6 +92,12 @@ class TestImapFolderHelpers:
         assert (
             _parse_imap_folder_info('(\\HasNoChildren) "/" "INBOX.Sent"')
             == "INBOX.Sent"
+        )
+        # Dovecot/Courier send INBOX as a bare atom: the separator space must
+        # not leak into the name (a ``" INBOX"`` folder is unselectable).
+        assert _parse_imap_folder_info('(\\HasNoChildren) "/" INBOX') == "INBOX"
+        assert (
+            _parse_imap_folder_info('(\\HasNoChildren) "." INBOX.Sent') == "INBOX.Sent"
         )
         # Non-selectable folders are skipped entirely.
         assert _parse_imap_folder_info('(\\Noselect) "/" "[Gmail]"') is None
@@ -208,17 +214,33 @@ class TestUidSearchAll:
         with patch("core.services.importer.imap.select_imap_folder", return_value=True):
             assert uid_search_all(conn, "INBOX", since_uid=10) == [3, 12, 13]
 
-    def test_unselectable_folder_raises_transient(self):
+    def test_unselectable_folder_raises_permanent(self):
         """An unselectable folder must not read as empty — a oneshot run would
-        complete with the folder's mail silently missing. Raising keeps the
-        run resumable; a persistent failure surfaces via the stall budget."""
+        complete with the folder's mail silently missing. The server answered
+        and refused, so the error is permanent (not parked as transient behind
+        the stall budget) and names the folder."""
         conn = self._conn([])
         with patch(
             "core.services.importer.imap.select_imap_folder", return_value=False
         ):
-            with pytest.raises(TransientImportError):
+            with pytest.raises(IMAPFolderSelectError, match="Ghost"):
                 uid_search_all(conn, "Ghost")
         conn.uid.assert_not_called()
+
+    def test_select_folder_propagates_connection_drop(self):
+        """A dropped connection during SELECT is not a refusal: it must reach
+        ``run_imap`` (which maps it to a transient error) instead of being
+        swallowed into a ``False`` that would fail the run permanently."""
+        conn = MagicMock()
+        conn.select.side_effect = imaplib.IMAP4.abort("socket error: EOF")
+        with pytest.raises(imaplib.IMAP4.abort):
+            select_imap_folder(conn, "INBOX")
+
+    def test_select_folder_refusal_returns_false(self):
+        """A server that answers NO to every variation is a refusal."""
+        conn = MagicMock()
+        conn.select.return_value = ("NO", [b"Mailbox doesn't exist"])
+        assert select_imap_folder(conn, "Ghost") is False
 
 
 # Store reference to the real error class before any patching
