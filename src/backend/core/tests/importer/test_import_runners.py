@@ -14,12 +14,19 @@ from unittest.mock import MagicMock, patch
 from django.core.files.storage import storages
 
 import pytest
+from jmap_email import parse_email
 
 from core import enums, factories, models
 from core.services.importer.channel import create_import_channel, read_state
 from core.services.importer.eml import run_eml
 from core.services.importer.imap import IMAPFolderSelectError, run_imap
-from core.services.importer.mbox import _mbox_plan, run_mbox
+from core.services.importer.labels import compute_labels_and_flags
+from core.services.importer.mbox import (
+    _mbox_plan,
+    run_mbox,
+    strip_message_separator,
+    unescape_from_lines,
+)
 from core.services.importer.pst import run_pst
 from core.services.importer.tasks import run_import_task
 from core.services.importer.utils import TransientImportError, deliver
@@ -325,6 +332,222 @@ class TestRunMbox:
             assert all(item["end"] >= item["start"] for item in plan)
         finally:
             s3_client.delete_object(Bucket=storage.bucket_name, Key=key)
+
+
+class TestMozillaStatusImport:
+    """Reading Thunderbird's own flags out of an mbox it wrote."""
+
+    @staticmethod
+    def _mbox(status):
+        return (
+            b"From - Mon Jan  1 00:00:00 2024\r\n"
+            b"X-Mozilla-Status: " + status + b"\r\n"
+            b"X-Mozilla-Status2: 00000000\r\n"
+            b"From: sender@example.com\r\n"
+            b"To: someone@example.com\r\n"
+            b"Subject: From Thunderbird\r\n"
+            b"Message-ID: <moz-" + status + b"@example.com>\r\n"
+            b"Date: Mon, 1 Jan 2024 00:00:00 +0000\r\n"
+            b"\r\n"
+            b"body\r\n"
+            b"\r\n"
+        )
+
+    def _import(self, mailbox, user, status):
+        key = f"runner-mbox/moz-{status.decode()}.mbox"
+        _, storage, s3_client = _upload_to_s3(self._mbox(status), key)
+        try:
+            channel = create_import_channel(
+                recipient=mailbox,
+                user=user,
+                source_type=enums.ImportSource.MBOX.value,
+                file_key=key,
+            )
+            assert run_mbox(channel, {}) == (1, 0, 1)
+            message = models.Message.objects.get(channel=channel)
+            return models.ThreadAccess.objects.get(
+                thread=message.thread, mailbox=mailbox
+            )
+        finally:
+            s3_client.delete_object(Bucket=storage.bucket_name, Key=key)
+
+    def test_read_and_marked_are_applied(self, mailbox, user):
+        """0x0001 Read | 0x0004 Marked. A Thunderbird mbox carries this state
+        nowhere else: it writes no X-Keywords and no labels."""
+        access = self._import(mailbox, user, b"0005")
+        assert access.read_at is not None
+        assert access.starred_at is not None
+
+    def test_unset_flags_leave_the_message_unread(self, mailbox, user):
+        access = self._import(mailbox, user, b"0000")
+        assert access.read_at is None
+        assert access.starred_at is None
+
+    def test_unparseable_status_is_ignored(self, mailbox, user):
+        access = self._import(mailbox, user, b"zzzz")
+        assert access.read_at is None
+        assert access.starred_at is None
+
+    @staticmethod
+    def _flags(raw, imap_labels=None, imap_flags=None):
+        _labels, flags = compute_labels_and_flags(
+            parse_email(raw), imap_labels, imap_flags
+        )
+        return flags
+
+    def test_label_headers_win_over_mozilla_status(self):
+        """Takeout and our own exports carry the mailbox state in X-Gmail-Labels.
+        An X-Mozilla-Status next to it came with the message from its sender
+        (Mozilla bug 196749), wherever it sits, and must not override it."""
+        raw = (
+            b"X-Mozilla-Status: 0005\r\n"
+            b"X-Gmail-Labels: Inbox, Unread\r\n"
+            b"From: sender@example.com\r\n"
+            b"Subject: s\r\n"
+            b"Message-ID: <sent-status@example.com>\r\n"
+            b"\r\n"
+            b"body\r\n"
+        )
+        flags = self._flags(raw)
+        assert flags["is_unread"] is True
+        assert "_starred" not in flags
+
+    @pytest.mark.parametrize("value", [b"", b" ", b'""'])
+    def test_empty_label_header_still_wins_over_mozilla_status(self, value):
+        """The header is there: its writer describes the state, with no label."""
+        raw = (
+            b"X-Mozilla-Status: 0005\r\n"
+            b"X-Gmail-Labels:" + value + b"\r\n"
+            b"From: sender@example.com\r\n"
+            b"Subject: s\r\n"
+            b"Message-ID: <empty-labels@example.com>\r\n"
+            b"\r\n"
+            b"body\r\n"
+        )
+        flags = self._flags(raw)
+        assert "is_unread" not in flags
+        assert "_starred" not in flags
+
+    @pytest.mark.parametrize("header", [b"X-Gmail-Labels: Opened\r\n", b""])
+    @pytest.mark.parametrize(
+        ("imap_labels", "imap_flags", "is_sender"),
+        [
+            (["Sent"], ["\\Flagged"], False),
+            (["INBOX"], ["\\Flagged"], True),
+            (["INBOX"], ["\\Draft"], False),
+            (["Unread"], ["\\Flagged"], True),
+        ],
+    )
+    def test_imap_sent_mail_and_drafts_are_read_as_before(
+        self, header, imap_labels, imap_flags, is_sender
+    ):
+        """For sources reporting flags themselves, a read-state label in the
+        message changes nothing: sent mail and drafts are read."""
+        raw = (
+            header + b"From: sender@example.com\r\n"
+            b"Subject: s\r\nMessage-ID: <imap-read@example.com>\r\n\r\nbody\r\n"
+        )
+        _labels, flags = compute_labels_and_flags(
+            parse_email(raw), imap_labels, imap_flags, is_sender=is_sender
+        )
+        assert flags["is_unread"] is False
+
+    @pytest.mark.parametrize("value", [b"-1", b"0x05", b"0_05", b"05", b"00005"])
+    def test_status_must_be_four_hex_digits(self, value):
+        """Thunderbird writes, and reads, exactly 4 hex digits."""
+        raw = self._mbox(value).split(b"\r\n", 1)[1]
+        flags = self._flags(raw)
+        assert "is_unread" not in flags
+        assert "_starred" not in flags
+
+    def test_only_the_first_status_counts_even_when_empty(self):
+        """A later copy came with the message: an empty first one does not
+        hand the decision over to it."""
+        raw = (
+            b"X-Mozilla-Status:\r\n"
+            b"From: sender@example.com\r\n"
+            b"X-Mozilla-Status: 0005\r\n"
+            b"Subject: s\r\n"
+            b"Message-ID: <empty-status@example.com>\r\n"
+            b"\r\n"
+            b"body\r\n"
+        )
+        flags = self._flags(raw)
+        assert "is_unread" not in flags
+        assert "_starred" not in flags
+
+    def test_pop3_account_headers_before_the_status(self):
+        """Thunderbird's POP3 code writes X-Account-Key and X-UIDL before its
+        status (nsPop3Sink.cpp), so the status is not the first header."""
+        raw = (
+            b"X-Account-Key: account2\r\n"
+            b"X-UIDL: 0000abcd\r\n"
+            b"X-Mozilla-Status: 0005\r\n"
+            b"X-Mozilla-Status2: 00000000\r\n"
+            b"From: sender@example.com\r\n"
+            b"Subject: s\r\n"
+            b"Message-ID: <pop3-status@example.com>\r\n"
+            b"\r\n"
+            b"body\r\n"
+        )
+        flags = self._flags(raw)
+        assert flags["is_unread"] is False
+        assert flags["_starred"] is True
+
+    def test_imap_flags_win_even_when_empty(self):
+        """An unread, unflagged IMAP message has no flags at all: the server is
+        still authoritative, the header is not consulted."""
+        raw = self._mbox(b"0005").split(b"\r\n", 1)[1]
+        flags = self._flags(raw, imap_labels=["INBOX"], imap_flags=[])
+        assert flags.get("is_unread", True) is True
+        assert "_starred" not in flags
+        flags = self._flags(raw, imap_labels=["INBOX"], imap_flags=["\\Seen"])
+        assert flags["is_unread"] is False
+        assert "_starred" not in flags
+
+
+class TestUnescapeFromLines:
+    """Reversing the mbox "From " escaping (mboxrd read rule)."""
+
+    def test_strips_exactly_one_marker(self):
+        assert (
+            unescape_from_lines(
+                b"Body\n>From here\n>>From quoted\n>>>From twice quoted\n"
+            )
+            == b"Body\nFrom here\n>From quoted\n>>From twice quoted\n"
+        )
+
+    def test_leaves_everything_else_alone(self):
+        content = (
+            b"From: someone@example.com\n"
+            b"\n"
+            b"From here, unescaped by the writer\n"
+            b"> From with a space after the marker\n"
+            b"not at line start: >From x\n"
+            b">Fromage\n"
+        )
+        assert unescape_from_lines(content) == content
+
+    def test_handles_crlf_line_endings(self):
+        assert (
+            unescape_from_lines(b"Body\r\n>From here\r\n") == b"Body\r\nFrom here\r\n"
+        )
+
+
+class TestStripMessageSeparator:
+    """Dropping the blank line that separates two mbox messages."""
+
+    def test_strips_one_blank_line(self):
+        assert strip_message_separator(b"Body\n\n") == b"Body\n"
+        assert strip_message_separator(b"Body\r\n\r\n") == b"Body\r\n"
+
+    def test_keeps_a_body_that_ends_on_a_blank_line(self):
+        # "Body\n" + an empty last body line + the separator
+        assert strip_message_separator(b"Body\n\n\n") == b"Body\n\n"
+
+    def test_leaves_content_without_a_separator_alone(self):
+        assert strip_message_separator(b"Body\n") == b"Body\n"
+        assert strip_message_separator(b"Body") == b"Body"
 
 
 # --- run_pst --------------------------------------------------------------

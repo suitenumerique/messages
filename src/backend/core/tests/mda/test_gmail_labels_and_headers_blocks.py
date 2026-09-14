@@ -7,6 +7,8 @@ Both functions consume a ``parsed_email`` dict and walk its
 so they work on any output of :func:`jmap_email.parse_email`.
 """
 
+import time
+
 import pytest
 from jmap_email import parse_email
 
@@ -38,9 +40,45 @@ class TestGmailLabels:
         assert gmail_labels(parsed) == ["Culture, associations, événements"]
 
     def test_dovecot_space_separated(self):
-        """When no comma is present, fall back to shlex-style space split."""
+        """When no comma is present, fall back to a space split."""
         parsed = self._parse("work important project", header_name="X-Keywords")
         assert gmail_labels(parsed) == ["work", "important", "project"]
+
+    def test_dovecot_quoted_label_with_comma_inside(self):
+        """A comma inside a quoted string does not select the comma format."""
+        parsed = self._parse('"Project, Q3" urgent personal', header_name="X-Keywords")
+        assert gmail_labels(parsed) == ["Project, Q3", "urgent", "personal"]
+
+    def test_unterminated_quotes_are_not_quadratic(self):
+        """Only the opening quote is unescaped: every other one sits in an
+        escape, so each is a place a quoted string can fail from."""
+        value = '"' + '\\"x' * 30_000
+        start = time.monotonic()
+        labels = gmail_labels({"headers": [{"name": "X-Keywords", "value": value}]})
+        assert time.monotonic() - start < 1
+        assert labels == [value]
+
+    def test_dovecot_atoms_keep_quotes_and_backslashes(self):
+        """Keywords are taken literally: no shell quoting or escaping."""
+        parsed = self._parse(r"rock'n'roll C:\temp", header_name="X-Keywords")
+        assert gmail_labels(parsed) == ["rock'n'roll", "C:\\temp"]
+
+    @pytest.mark.parametrize(
+        "value",
+        [
+            r'"say \"hi\"", "back\\slash", plain',
+            r'"say \"hi\"" "back\\slash" plain',
+        ],
+    )
+    def test_quoted_pairs_are_unescaped(self, value):
+        """Inside a quoted string, backslash escapes the next character
+        (RFC 5322 quoted-pair), with or without commas."""
+        parsed = self._parse(value, header_name="X-Keywords")
+        assert gmail_labels(parsed) == ['say "hi"', "back\\slash", "plain"]
+
+    def test_unquoted_label_with_quotes_inside_stays_whole(self):
+        parsed = self._parse('say "hi", other')
+        assert gmail_labels(parsed) == ['say "hi"', "other"]
 
     def test_empty_quoted_strings_are_dropped(self):
         """Empty quoted entries are filtered out — only real labels survive."""

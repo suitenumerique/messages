@@ -2,6 +2,7 @@
 # pylint: disable=redefined-outer-name, unused-argument, no-value-for-parameter
 
 import gzip
+import re
 from io import BytesIO
 from unittest.mock import MagicMock, Mock, patch
 
@@ -11,8 +12,11 @@ from django.urls import reverse
 from django.utils import timezone
 
 import pytest
+from jmap_email import parse_email
 
 from core import enums, factories
+from core.mda.draft import create_draft
+from core.mda.outbound import prepare_outbound_message
 from core.models import (
     Blob,
     Label,
@@ -23,9 +27,21 @@ from core.models import (
     Thread,
     ThreadAccess,
 )
-from core.services.exporter.tasks import export_mailbox_task
+from core.services.exporter.tasks import (
+    _build_labels_header,
+    _create_mbox_entry,
+    _inject_headers,
+    _strip_stale_headers,
+    export_mailbox_task,
+)
 from core.services.importer.channel import create_import_channel
-from core.services.importer.mbox import run_mbox
+from core.services.importer.labels import compute_labels_and_flags
+from core.services.importer.mbox import (
+    index_mbox_messages,
+    run_mbox,
+    strip_message_separator,
+    unescape_from_lines,
+)
 
 
 @pytest.fixture
@@ -292,6 +308,89 @@ def test_export_creates_notification_message(
     assert result["result"]["recipient"] == str(admin_mailbox)
 
     cleanup_exports.append(result["result"]["s3_key"])
+
+
+@pytest.mark.django_db
+def test_export_counts_drafts_apart_from_skipped(
+    mailbox_fixture, admin_user, admin_mailbox, cleanup_exports
+):
+    """A draft is not a failure: it has no MIME form, so it has its own count.
+
+    Lumped into "skipped" it looks like data loss to whoever reads the
+    notification, with no way to tell it from a message that failed.
+    """
+    create_test_message(mailbox_fixture, "Real message", "Content")
+
+    draft_thread = Thread.objects.create(subject="A draft")
+    ThreadAccess.objects.create(thread=draft_thread, mailbox=mailbox_fixture)
+    Message.objects.create(
+        thread=draft_thread,
+        subject="A draft",
+        sender=factories.ContactFactory(email="me@example.com"),
+        is_draft=True,
+        is_sender=True,
+    )
+
+    # A blobless message that is *not* a draft stays a skip
+    broken_thread = Thread.objects.create(subject="No blob")
+    ThreadAccess.objects.create(thread=broken_thread, mailbox=mailbox_fixture)
+    Message.objects.create(
+        thread=broken_thread,
+        subject="No blob",
+        sender=factories.ContactFactory(email="sender@example.com"),
+    )
+
+    mock_task = MagicMock()
+    delivered = []
+
+    with (
+        patch.object(export_mailbox_task, "update_state", mock_task.update_state),
+        patch(
+            "core.services.exporter.tasks.deliver_inbound_message",
+            side_effect=lambda *a, **kw: delivered.append(kw) or True,
+        ),
+    ):
+        result = export_mailbox_task(
+            str(mailbox_fixture.id), str(admin_user.id), str(admin_mailbox.id)
+        )
+
+    assert result["status"] == "SUCCESS"
+    cleanup_exports.append(result["result"]["s3_key"])
+    assert result["result"]["exported_count"] == 1
+    assert result["result"]["draft_count"] == 1
+    assert result["result"]["skipped_count"] == 1
+
+    raw = delivered[0]["raw_data"].decode("utf-8", errors="replace")
+    assert "Drafts (not exportable):   1" in raw
+    assert "Messages skipped:          1" in raw
+    assert "Drafts are left out" in raw
+
+
+@pytest.mark.django_db
+def test_export_notification_omits_drafts_when_there_are_none(
+    mailbox_fixture, admin_user, admin_mailbox, cleanup_exports
+):
+    """No draft left out, nothing to explain."""
+    create_test_message(mailbox_fixture, "Real message", "Content")
+    mock_task = MagicMock()
+    delivered = []
+
+    with (
+        patch.object(export_mailbox_task, "update_state", mock_task.update_state),
+        patch(
+            "core.services.exporter.tasks.deliver_inbound_message",
+            side_effect=lambda *a, **kw: delivered.append(kw) or True,
+        ),
+    ):
+        result = export_mailbox_task(
+            str(mailbox_fixture.id), str(admin_user.id), str(admin_mailbox.id)
+        )
+
+    assert result["status"] == "SUCCESS"
+    cleanup_exports.append(result["result"]["s3_key"])
+    raw = delivered[0]["raw_data"].decode("utf-8", errors="replace")
+    assert "Drafts" not in raw
+    assert "Messages exported:         1" in raw
 
 
 @pytest.mark.django_db
@@ -1036,3 +1135,812 @@ def test_export_unread_message_status(mailbox_fixture, admin_user, cleanup_expor
         assert b"Status: O\n" in mbox_content
         # Should NOT have RO which indicates read
         assert b"Status: RO" not in mbox_content
+
+
+def read_export(s3_key):
+    """Download and decompress an exported MBOX."""
+    storage = storages["message-imports"]
+    s3_client = storage.connection.meta.client
+    response = s3_client.get_object(Bucket=storage.bucket_name, Key=s3_key)
+    with gzip.open(BytesIO(response["Body"].read()), "rb") as f:
+        return f.read()
+
+
+def run_export(mailbox_obj, user, cleanup_exports):
+    """Run the export task for a mailbox and return the exported MBOX bytes."""
+    mock_task = MagicMock()
+    with (
+        patch.object(export_mailbox_task, "update_state", mock_task.update_state),
+        patch(
+            "core.services.exporter.tasks.deliver_inbound_message", return_value=True
+        ),
+    ):
+        result = export_mailbox_task(
+            str(mailbox_obj.id), str(user.id), str(mailbox_obj.id)
+        )
+
+    assert result["status"] == "SUCCESS"
+    cleanup_exports.append(result["result"]["s3_key"])
+    return read_export(result["result"]["s3_key"])
+
+
+@pytest.mark.django_db
+def test_export_sent_message_labels(mailbox_fixture, admin_user, cleanup_exports):
+    """Sent mail is marked through X-Gmail-Labels, not through X-Status.
+
+    ``A`` is \\Answered ("was replied to"), which says nothing about who sent
+    the message, and IMAP has no per-message sent flag at all.
+    """
+    msg = create_test_message(mailbox_fixture, "Sent Message", "Content")
+    Message.objects.filter(id=msg.id).update(is_sender=True)
+
+    mbox_content = run_export(mailbox_fixture, admin_user, cleanup_exports)
+
+    assert b"X-Gmail-Labels: Sent, Unread\n" in mbox_content
+    assert b"X-Status:" not in mbox_content
+    # X-Keywords carries the user's own labels only: "Sent" is not an IMAP
+    # keyword and would show up as a tag of the user's in Dovecot or mu4e.
+    assert b"X-Keywords:" not in mbox_content
+
+
+@pytest.mark.django_db
+def test_export_system_labels_per_flag(mailbox_fixture, admin_user, cleanup_exports):
+    """Each message flag maps to its Gmail-style system label."""
+    trashed = create_test_message(mailbox_fixture, "Trashed", "Content")
+    Message.objects.filter(id=trashed.id).update(
+        is_trashed=True, trashed_at=timezone.now()
+    )
+    spam = create_test_message(mailbox_fixture, "Spammy", "Content")
+    Message.objects.filter(id=spam.id).update(is_spam=True)
+    archived = create_test_message(mailbox_fixture, "Archived", "Content")
+    Message.objects.filter(id=archived.id).update(
+        is_archived=True, archived_at=timezone.now()
+    )
+    create_test_message(mailbox_fixture, "Plain", "Content")
+
+    mbox_content = run_export(mailbox_fixture, admin_user, cleanup_exports)
+
+    assert b"X-Gmail-Labels: Trash, Unread\n" in mbox_content
+    assert b"X-Gmail-Labels: Spam, Unread\n" in mbox_content
+    assert b"X-Gmail-Labels: Archived, Unread\n" in mbox_content
+    # Nothing set: the message is in the inbox, as Takeout spells it
+    assert b"X-Gmail-Labels: Inbox, Unread\n" in mbox_content
+    # X-Status: D is \Deleted to mutt and Dovecot, which purge it on expunge
+    assert b"X-Status:" not in mbox_content
+
+
+@pytest.mark.django_db
+def test_export_strips_stale_label_headers(
+    mailbox_fixture, admin_user, cleanup_exports
+):
+    """Label/status headers from a previous system are dropped, not merged.
+
+    A message imported from Takeout keeps the headers it arrived with; the
+    mailbox state has moved on since (here: untrashed, relabelled), and the
+    importer reads every occurrence of those headers.
+    """
+    eml_content = (
+        b"X-Gmail-Labels: Trash, Starred, old-label\r\n"
+        b"X-Keywords: old-label,\r\n"
+        b"\tsecond-old-label\r\n"
+        b"Status: RO\r\n"
+        b"X-Status: FD\r\n"
+        b"X-Mozilla-Status: 0005\r\n"
+        b"X-Mozilla-Status2: 10000000\r\n"
+        b"X-Mozilla-Keys: old-tag\r\n"
+        b"From: sender@example.com\r\n"
+        b"To: test@example.com\r\n"
+        b"Subject: Previously imported\r\n"
+        b"Date: Mon, 26 May 2025 20:13:44 +0200\r\n"
+        b"Message-ID: <stale-headers@example.com>\r\n"
+        b"\r\n"
+        b"Body content\r\n"
+    )
+    blob = Blob.objects.create_blob(content=eml_content, content_type="message/rfc822")
+    thread = Thread.objects.create(subject="Previously imported")
+    ThreadAccess.objects.create(thread=thread, mailbox=mailbox_fixture)
+    Message.objects.create(
+        thread=thread,
+        blob=blob,
+        subject="Previously imported",
+        sender=factories.ContactFactory(email="sender@example.com"),
+        is_sender=False,
+    )
+
+    mbox_content = run_export(mailbox_fixture, admin_user, cleanup_exports)
+
+    # Injected headers follow the message's own CRLF line endings
+    assert b"X-Gmail-Labels: Inbox, Unread\r\n" in mbox_content
+    assert b"old-label" not in mbox_content
+    assert b"second-old-label" not in mbox_content
+    assert b"Trash" not in mbox_content
+    assert b"X-Status:" not in mbox_content
+    assert b"Status: RO" not in mbox_content
+    # Thunderbird's own state is stale the same way: the message is not read,
+    # not starred and has no attachment in this mailbox
+    assert b"X-Mozilla-Status: 0000\r\n" in mbox_content
+    assert b"X-Mozilla-Status2: 00000000\r\n" in mbox_content
+    assert b"X-Mozilla-Status: 0005" not in mbox_content
+    assert b"X-Mozilla-Keys" not in mbox_content
+    assert b"old-tag" not in mbox_content
+    # The rest of the message is untouched
+    assert b"Subject: Previously imported" in mbox_content
+    assert b"Body content" in mbox_content
+
+
+@pytest.mark.django_db
+def test_export_includes_a_genuinely_sent_message(domain, cleanup_exports):
+    """A message composed and sent through the app lands in the export, tagged Sent.
+
+    The other sent-mail tests set ``is_sender`` with an UPDATE on a fabricated
+    row. This one builds the message the way the app does, so it also covers
+    the two things the export depends on that are set far away from it: the
+    ThreadAccess ``create_draft`` grants (mda/draft.py) and the blob the send
+    path fills in (mda/outbound.py). Either one going missing would empty sent
+    mail out of every export while the fabricated tests stayed green.
+    """
+    mailbox = Mailbox.objects.create(local_part="sender", domain=domain)
+    user = factories.UserFactory(is_superuser=True, is_staff=True)
+    MailboxAccess.objects.create(
+        mailbox=mailbox, user=user, role=enums.MailboxRoleChoices.ADMIN
+    )
+
+    message = create_draft(
+        mailbox=mailbox,
+        subject="A really sent message",
+        draft_body='{"text": "hello"}',
+        to_emails=["recipient@elsewhere.example"],
+        user=user,
+    )
+    assert prepare_outbound_message(
+        mailbox,
+        message,
+        "Body of a sent message",
+        "<p>Body of a sent message</p>",
+        user,
+    )
+
+    message.refresh_from_db()
+    assert message.is_sender is True
+    assert message.is_draft is False
+    assert message.blob is not None
+
+    mbox_content = run_export(mailbox, user, cleanup_exports)
+
+    assert b"Subject: A really sent message" in mbox_content
+    assert b"Body of a sent message" in mbox_content
+    # Tagged as sent, and read: it is the sender's own message
+    assert b"X-Gmail-Labels: Sent, Opened\r\n" in mbox_content
+    assert b"X-Mozilla-Status: 0001\r\n" in mbox_content
+    assert b"Status: RO\r\n" in mbox_content
+
+
+@pytest.mark.django_db
+def test_export_mozilla_status_headers(mailbox_fixture, admin_user, cleanup_exports):
+    """Read and starred state in the only form Thunderbird reads.
+
+    Thunderbird keeps flags in its .msf index, not in the mbox, and ignores
+    X-Keywords and X-Gmail-Labels, so without these an import is all-unread.
+    """
+    read_starred = create_test_message(mailbox_fixture, "Read starred", "Content")
+    access = ThreadAccess.objects.get(
+        thread=read_starred.thread, mailbox=mailbox_fixture
+    )
+    access.read_at = timezone.now()
+    access.starred_at = timezone.now()
+    access.save(update_fields=["read_at", "starred_at"])
+
+    create_test_message(mailbox_fixture, "Plain unread", "Content")
+
+    with_attachment = create_test_message(mailbox_fixture, "Attached", "Content")
+    Message.objects.filter(id=with_attachment.id).update(has_attachments=True)
+
+    trashed = create_test_message(mailbox_fixture, "Trashed", "Content")
+    Message.objects.filter(id=trashed.id).update(
+        is_trashed=True, trashed_at=timezone.now()
+    )
+
+    mbox_content = run_export(mailbox_fixture, admin_user, cleanup_exports)
+
+    # Read (0x0001) + Marked (0x0004)
+    assert b"X-Mozilla-Status: 0005\n" in mbox_content
+    assert b"X-Mozilla-Status: 0000\n" in mbox_content
+    assert b"X-Mozilla-Status2: 10000000\n" in mbox_content  # Attachment
+    # Expunged (0x0008) means "deleted, pending compaction": Thunderbird may
+    # drop the message for good on the next compact, so a trashed message must
+    # never carry it.
+    statuses = re.findall(rb"X-Mozilla-Status: ([0-9a-f]{4})\n", mbox_content)
+    assert len(statuses) == 4
+    assert all(int(value, 16) & 0x0008 == 0 for value in statuses)
+
+
+@pytest.mark.django_db
+def test_export_label_with_newline_cannot_inject_headers(domain, cleanup_exports):
+    """A label name is user input: a newline in it must not forge headers.
+
+    ``Label.name`` has no validation, so a name can carry CRLF. Written as is
+    into a label header it would end that header and turn the rest of the name
+    into headers of its own, which a re-import reads back as real ones.
+    """
+    mailbox_a = Mailbox.objects.create(local_part="inject-source", domain=domain)
+    mailbox_b = Mailbox.objects.create(local_part="inject-target", domain=domain)
+    user = factories.UserFactory(is_superuser=True, is_staff=True)
+    MailboxAccess.objects.create(
+        mailbox=mailbox_a, user=user, role=enums.MailboxRoleChoices.ADMIN
+    )
+
+    msg = create_test_message(mailbox_a, "Injected", "Content")
+    hostile = (
+        "ok\r\nFrom attacker@example.com Mon Jan  1 00:00:00 2035"
+        "\r\nX-Gmail-Labels: Trash"
+    )
+    label = Label.objects.create(name=hostile, slug="hostile", mailbox=mailbox_a)
+    msg.thread.labels.add(label)
+
+    mbox_content = run_export(mailbox_a, user, cleanup_exports)
+
+    # One message, one set of headers: no forged separator, no forged header.
+    # The hostile text survives as label text, but only ever inside a header
+    # value: any line it lands on through folding starts with whitespace.
+    assert mbox_content.count(b"\nFrom ") == 0
+    assert mbox_content.count(b"From - ") == 1
+    assert b"\nX-Gmail-Labels: Trash" not in mbox_content
+    assert b"attacker@example.com Mon" in mbox_content
+    hostile_lines = [
+        line
+        for line in mbox_content.split(b"\n")
+        if b"attacker@example.com" in line or b"X-Gmail-Labels: Trash" in line
+    ]
+    assert hostile_lines
+    assert all(
+        line.startswith((b" ", b"\t", b"X-Keywords:", b"X-Gmail-Labels: Inbox"))
+        for line in hostile_lines
+    )
+
+    storage = storages["message-imports"]
+    s3_client = storage.connection.meta.client
+    import_key = f"imports/{mailbox_b.id}/injected.mbox"
+    s3_client.put_object(
+        Bucket=storage.bucket_name,
+        Key=import_key,
+        Body=mbox_content,
+        ContentType="text/plain",
+    )
+    cleanup_exports.append(import_key)
+    channel = create_import_channel(
+        recipient=mailbox_b,
+        user=user,
+        source_type=enums.ImportSource.MBOX.value,
+        file_key=import_key,
+    )
+    assert run_mbox(channel, {}) == (1, 0, 1)
+
+    imported = Message.objects.get(thread__accesses__mailbox=mailbox_b)
+    # The forged "X-Gmail-Labels: Trash" would have landed here
+    assert imported.is_trashed is False
+    assert Label.objects.filter(mailbox=mailbox_b).count() == 1
+
+
+@pytest.mark.django_db
+def test_export_folds_and_encodes_label_headers(
+    mailbox_fixture, admin_user, cleanup_exports
+):
+    """Label headers stay inside the RFC 5322 line limit.
+
+    Non-ASCII is RFC 2047 encoded in X-Gmail-Labels, as Takeout does. It stays
+    raw UTF-8 in X-Keywords: Dovecot and mu4e do not decode encoded-words
+    there, and would see the whole value as a single opaque keyword.
+    """
+    msg = create_test_message(mailbox_fixture, "Many labels", "Content")
+    names = [f"label-{i}-" + "x" * 50 for i in range(20)]
+    names.append("Café")
+    for i, name in enumerate(names):
+        msg.thread.labels.add(
+            Label.objects.create(name=name, slug=f"l{i}", mailbox=mailbox_fixture)
+        )
+
+    mbox_content = run_export(mailbox_fixture, admin_user, cleanup_exports)
+
+    assert max(len(line) for line in mbox_content.split(b"\n")) <= 998
+    gmail_header = re.search(
+        rb"^X-Gmail-Labels:.*?\n(?![ \t])", mbox_content, re.MULTILINE | re.DOTALL
+    ).group(0)
+    assert gmail_header.isascii()
+    assert b"=?utf-8?" in gmail_header
+    keywords_header = re.search(
+        rb"^X-Keywords:.*?\n(?![ \t])", mbox_content, re.MULTILINE | re.DOTALL
+    ).group(0)
+    assert b"=?" not in keywords_header
+    assert "Café".encode() in keywords_header
+    # Folded between labels, never inside one
+    for line in keywords_header.split(b"\n")[1:-1]:
+        assert line.startswith(b" label-") or line.startswith(" Café".encode())
+
+
+def roundtrip_entries(raws, **flags):
+    """Export raw messages to mbox entries and read them back as the importer does."""
+    content = b"".join(_create_mbox_entry(raw, timezone.now(), **flags) for raw in raws)
+    return [
+        unescape_from_lines(
+            strip_message_separator(content[i.start_byte : i.end_byte + 1])
+        )
+        for i in index_mbox_messages(BytesIO(content))
+    ]
+
+
+@pytest.mark.parametrize(
+    "body",
+    [b"body\n", b"body\n\n", b"body\n\n\n", b"body\r\n", b"body\r\n\r\n"],
+)
+def test_mbox_entry_roundtrips_trailing_blank_lines(body):
+    """The separator the exporter adds is exactly the one the importer strips."""
+    raw = b"Subject: a\r\n\r\n" + body
+    imported = roundtrip_entries([raw, b"Subject: b\n\nnext\n"])
+    assert len(imported) == 2
+    assert imported[0].endswith(b"Subject: a\r\n\r\n" + body)
+
+
+def test_mbox_entry_roundtrips_quoted_separators_and_headers():
+    """A body quoting real separators, each followed by a header, stays one
+    message with its bytes intact: unescaped, both would split it."""
+    raw = (
+        b"Subject: a\n"
+        b"\n"
+        b"Here is the raw mbox:\n"
+        b"\n"
+        b"From user@example.com Thu Jan  1 00:00:00 2024\n"
+        b"Subject: Quoted\n"
+        b"and mid-paragraph:\n"
+        b"From user@example.com Thu Jan  1 00:00:00 2024\n"
+        b"Subject: Quoted again\n"
+        b">From user@example.com Thu Jan  1 00:00:00 2024\n"
+        b"Subject: Already quoted\n"
+    )
+    imported = roundtrip_entries([raw, b"Subject: b\n\nnext\n"])
+    assert len(imported) == 2
+    assert imported[0].endswith(raw)
+
+
+def test_mbox_entry_without_final_newline_gains_exactly_one():
+    """mbox cannot say a message had no final newline: it gets one, only one."""
+    imported = roundtrip_entries([b"Subject: a\n\nbody", b"Subject: b\n\nnext\n"])
+    assert imported[0].endswith(b"\n\nbody\n")
+
+
+def reimport_flags(raw, **flags):
+    """Export one message and compute what the mbox importer reads back."""
+    imported = roundtrip_entries([raw], **flags)
+    assert len(imported) == 1
+    return imported[0], compute_labels_and_flags(parse_email(imported[0]), None, None)
+
+
+LABEL_RAW = b"Subject: a\r\nMessage-ID: <labels@example.com>\r\n\r\nbody\r\n"
+
+
+@pytest.mark.parametrize(
+    "labels",
+    [
+        ['a", Trash, "b'],
+        ['x"', "y z", "w"],
+        ['say "hi"'],
+        ['"quoted"'],
+        ["=?utf-8?q?Trash?="],
+        ["=?utf-8?q?foo?=", "bar"],
+        ["INBOX/foo"],
+        ["INBOX.foo", "other"],
+        ["back\\slash"],
+        ["'quoted'"],
+        ["rock'n'roll", "C:\\temp", 'a\\"b'],
+        ["😀" * 255],
+        ["😀" * 255, "INBOX/" + "é" * 249],
+        ["Trash", "Unread", "Inbox", "Messages envoyés"],
+        ["Café", "project alpha", "a,b"],
+        ["a" * 70 + "  " + "b" * 10],
+        ["a" * 70 + ",  " + "b" * 10, "c" * 70 + "   d"],
+        ["x" * 200 + "  y", "é" * 100 + "  z"],
+    ],
+)
+def test_user_labels_roundtrip_exactly(labels):
+    """Whatever a label is made of, it comes back as itself and nothing else,
+    and it never turns into message state."""
+    exported, (imported_labels, imported_flags) = reimport_flags(
+        LABEL_RAW, labels=labels
+    )
+    assert imported_labels == set(labels)
+    assert imported_flags == {"is_unread": True}
+    assert max(len(line) for line in exported.splitlines()) <= 998
+
+
+@pytest.mark.parametrize(
+    "labels",
+    [
+        [f"{i:03d}" + "x" * 252 for i in range(400)],
+        [f"{i:03d}" + "😀" * 252 for i in range(80)],
+        [f"{i:03d}" + "中" * 252 for i in range(110)],
+    ],
+)
+def test_many_long_labels_keep_the_message_importable(labels):
+    """The parser rejects a message with a header value over 100 KiB: label
+    headers stay well under it, dropping the labels past their size cap."""
+    exported, (imported_labels, imported_flags) = reimport_flags(
+        LABEL_RAW, is_unread=False, is_starred=True, labels=labels
+    )
+    assert imported_flags == {"is_unread": False, "_starred": True}
+    assert imported_labels
+    assert imported_labels <= set(labels)
+    assert max(len(line) for line in exported.splitlines()) <= 998
+
+
+def test_labels_left_out_of_x_keywords_do_not_use_its_budget():
+    """A label too long for an X-Keywords line is not written there, so it
+    must not crowd out the ones after it, which may only travel there."""
+    labels = [f"{i}" + "😀" * 254 for i in range(9)] + ["Trash", "short"]
+    header = _build_labels_header("X-Keywords", labels, rfc2047=False)
+    assert header == b"X-Keywords: Trash, short\n"
+
+
+def test_label_headers_leave_the_date_readable():
+    """The importer orders messages by Date: our prepended label headers must
+    not push it out of the header bytes it reads."""
+    raw = (
+        b"From: a@example.com\r\nDate: Mon, 26 May 2025 20:13:44 +0200\r\n"
+        b"Subject: dated\r\n\r\nbody\r\n"
+    )
+    labels = [f"{i:03d} " + "long name " * 25 for i in range(400)]
+    content = _create_mbox_entry(raw, timezone.now(), labels=labels)
+    (index,) = index_mbox_messages(BytesIO(content))
+    assert index.date is not None
+
+
+def test_line_breaking_characters_in_labels_become_spaces():
+    """Header folding breaks lines on these too, like on CR and LF."""
+    _, (imported_labels, imported_flags) = reimport_flags(
+        LABEL_RAW, labels=["x y", "a b", "c\x85d", "e\x9ff"]
+    )
+    assert imported_labels == {"x y", "a b", "c d", "e f"}
+    assert imported_flags == {"is_unread": True}
+
+
+@pytest.mark.parametrize("continuation", [b" , Trash, Starred, secret", b"\t, Spam"])
+@pytest.mark.parametrize("line_end", [b"\n", b"\r\n"])
+def test_leading_continuation_line_cannot_extend_injected_headers(
+    continuation, line_end
+):
+    """A first line starting with whitespace belongs to no header (the
+    parser ignores it): prepended headers must not adopt it as their fold."""
+    raw = line_end.join(
+        [continuation, b"Subject: x", b"From: a@example.com", b"", b"body", b""]
+    )
+    _, (imported_labels, imported_flags) = reimport_flags(
+        raw, is_unread=False, labels=["mine"]
+    )
+    assert imported_labels == {"mine"}
+    assert imported_flags == {"is_unread": False}
+
+
+@pytest.mark.parametrize(
+    "flags",
+    [
+        {"is_sender": True},
+        {"is_draft": True},
+        {"is_sender": True, "is_draft": True},
+    ],
+)
+def test_unread_sent_and_drafts_stay_unread(flags):
+    """The exported read state wins over "sent mail and drafts are read"."""
+    _, (_, imported_flags) = reimport_flags(LABEL_RAW, is_unread=True, **flags)
+    assert imported_flags["is_unread"] is True
+
+
+def test_strip_stale_headers_lone_cr_is_a_line_break():
+    """The parser splits header lines on a lone CR too: a header behind one
+    is a header, and must be stripped like any other."""
+    raw = b"Subject: x\rX-Gmail-Labels: Trash, Starred\nFrom: a@example.com\n\nbody\n"
+    assert _strip_stale_headers(raw) == b"Subject: x\rFrom: a@example.com\n\nbody\n"
+    _, (_, imported_flags) = reimport_flags(raw, is_unread=False)
+    assert imported_flags == {"is_unread": False}
+
+
+@pytest.mark.parametrize(
+    ("raw", "line_end"),
+    [
+        (b"DKIM-Signature: " + b"a" * 300 + b"\r\nSubject: x\r\n\r\nbody\r\n", b"\r\n"),
+        (b"Subject: x\nX-Foo: y\r\nTo: z\n\nbody\n", b"\n"),
+    ],
+)
+def test_injected_headers_follow_the_first_line_break(raw, line_end):
+    """The injected headers use the line ending of the message's first line."""
+    injected = _inject_headers(raw, b"Status: O\nX-Status: F\n")
+    assert injected == b"Status: O" + line_end + b"X-Status: F" + line_end + raw
+
+
+def test_strip_stale_headers_leaves_the_body_alone():
+    """Only the header block is rewritten, whatever line endings the body has.
+
+    An LF message with a CRLF blank line in its body must not have that
+    blank line taken for the end of its headers.
+    """
+    raw = (
+        b"Subject: a\n"
+        b"X-Keywords: stale\n"
+        b"\n"
+        b"Order update\n"
+        b"Status: shipped\n"
+        b" tracking 123\n"
+        b"X-Keywords: kept\n"
+        b"end\r\n\r\nmore\n"
+    )
+    assert _strip_stale_headers(raw) == raw.replace(b"X-Keywords: stale\n", b"")
+
+
+@pytest.mark.parametrize("line_end", [b"\n", b"\r\n"])
+def test_strip_stale_headers_without_headers_leaves_everything(line_end):
+    """No header block at all: nothing in the body is taken for one."""
+    raw = line_end.join(
+        [b"", b"Order update", b"Status: shipped", b"", b"X-Keywords: kept", b""]
+    )
+    assert _strip_stale_headers(raw) == raw
+
+
+FROM_LINES_BODY = (
+    b"Body line one\n"
+    b"From here it looks like a separator\n"
+    b">From here it was already quoted\n"
+    b">>From here it was quoted twice\n"
+    b"Tail line\n"
+)
+
+
+def create_from_lines_message(mailbox_obj):
+    """A message whose body has every escaping-relevant form of a From line."""
+    eml_content = (
+        b"From: sender@example.com\n"
+        b"To: test@example.com\n"
+        b"Subject: From lines\n"
+        b"Date: Mon, 26 May 2025 20:13:44 +0200\n"
+        b"Message-ID: <from-lines@example.com>\n"
+        b"\n" + FROM_LINES_BODY
+    )
+    blob = Blob.objects.create_blob(content=eml_content, content_type="message/rfc822")
+    thread = Thread.objects.create(subject="From lines")
+    ThreadAccess.objects.create(thread=thread, mailbox=mailbox_obj)
+    Message.objects.create(
+        thread=thread,
+        blob=blob,
+        subject="From lines",
+        sender=factories.ContactFactory(email="sender@example.com"),
+        is_sender=False,
+    )
+
+
+@pytest.mark.django_db
+def test_export_escapes_from_lines_mboxrd(mailbox_fixture, admin_user, cleanup_exports):
+    """Every From line gets one more '>', including already-quoted ones.
+
+    That is the mboxrd rule, and the only escaping a reader can reverse:
+    mboxo leaves ">From " untouched, which makes it indistinguishable from
+    an escaped "From ".
+    """
+    create_from_lines_message(mailbox_fixture)
+
+    mbox_content = run_export(mailbox_fixture, admin_user, cleanup_exports)
+
+    assert b"\n>From here it looks like a separator\n" in mbox_content
+    assert b"\n>>From here it was already quoted\n" in mbox_content
+    assert b"\n>>>From here it was quoted twice\n" in mbox_content
+    # The separator line the exporter writes is the only unescaped one
+    assert mbox_content.count(b"\nFrom ") == 0
+    assert mbox_content.startswith(b"From - ")
+
+
+@pytest.mark.django_db
+def test_export_reimport_roundtrip_preserves_body_bytes(domain, cleanup_exports):
+    """A body with From lines comes back byte for byte."""
+    mailbox_a = Mailbox.objects.create(local_part="from-source", domain=domain)
+    mailbox_b = Mailbox.objects.create(local_part="from-target", domain=domain)
+    user = factories.UserFactory(is_superuser=True, is_staff=True)
+    MailboxAccess.objects.create(
+        mailbox=mailbox_a, user=user, role=enums.MailboxRoleChoices.ADMIN
+    )
+    create_from_lines_message(mailbox_a)
+
+    mbox_content = run_export(mailbox_a, user, cleanup_exports)
+
+    storage = storages["message-imports"]
+    s3_client = storage.connection.meta.client
+    import_key = f"imports/{mailbox_b.id}/from-lines.mbox"
+    s3_client.put_object(
+        Bucket=storage.bucket_name,
+        Key=import_key,
+        Body=mbox_content,
+        ContentType="text/plain",
+    )
+    cleanup_exports.append(import_key)
+
+    channel = create_import_channel(
+        recipient=mailbox_b,
+        user=user,
+        source_type=enums.ImportSource.MBOX.value,
+        file_key=import_key,
+    )
+    success_count, failure_count, total = run_mbox(channel, {})
+    assert (success_count, failure_count, total) == (1, 0, 1)
+
+    imported = Message.objects.get(thread__accesses__mailbox=mailbox_b)
+    _headers, _, body = imported.blob.get_content().partition(b"\n\n")
+    assert body == FROM_LINES_BODY
+
+
+@pytest.mark.django_db
+def test_export_reimport_keeps_own_sent_mail_unread(domain, cleanup_exports):
+    """Restoring into the mailbox that sent it: From matches the mailbox, and
+    the exported Unread still wins over "the sender has read it"."""
+    mailbox_a = Mailbox.objects.create(local_part="own-source", domain=domain)
+    mailbox_b = Mailbox.objects.create(local_part="own-target", domain=domain)
+    user = factories.UserFactory(is_superuser=True, is_staff=True)
+    MailboxAccess.objects.create(
+        mailbox=mailbox_a, user=user, role=enums.MailboxRoleChoices.ADMIN
+    )
+    sent = create_test_message(mailbox_a, "Own sent", "Content", sender=str(mailbox_b))
+    Message.objects.filter(id=sent.id).update(is_sender=True)
+
+    mbox_content = run_export(mailbox_a, user, cleanup_exports)
+
+    storage = storages["message-imports"]
+    s3_client = storage.connection.meta.client
+    import_key = f"imports/{mailbox_b.id}/own-sent.mbox"
+    s3_client.put_object(
+        Bucket=storage.bucket_name,
+        Key=import_key,
+        Body=mbox_content,
+        ContentType="text/plain",
+    )
+    cleanup_exports.append(import_key)
+    channel = create_import_channel(
+        recipient=mailbox_b,
+        user=user,
+        source_type=enums.ImportSource.MBOX.value,
+        file_key=import_key,
+    )
+    assert run_mbox(channel, {}) == (1, 0, 1)
+
+    imported = Message.objects.get(thread__accesses__mailbox=mailbox_b)
+    assert imported.is_sender is True
+    access = ThreadAccess.objects.get(thread=imported.thread, mailbox=mailbox_b)
+    assert access.read_at is None
+
+
+@pytest.mark.django_db
+def test_export_reimport_roundtrip_preserves_flags(domain, cleanup_exports):
+    """E2E: every flag the export writes is read back by the mbox importer."""
+    mailbox_a = Mailbox.objects.create(local_part="flags-source", domain=domain)
+    mailbox_b = Mailbox.objects.create(local_part="flags-target", domain=domain)
+    user = factories.UserFactory(is_superuser=True, is_staff=True)
+    MailboxAccess.objects.create(
+        mailbox=mailbox_a, user=user, role=enums.MailboxRoleChoices.ADMIN
+    )
+
+    # Every message is From a third party, so the importer's "From matches the
+    # destination mailbox" heuristic says is_sender=False for all of them: the
+    # Sent state can only come back through the exported labels.
+    sent = create_test_message(mailbox_a, "Sent one", "Content")
+    Message.objects.filter(id=sent.id).update(is_sender=True)
+    trashed = create_test_message(mailbox_a, "Trashed one", "Content")
+    Message.objects.filter(id=trashed.id).update(
+        is_trashed=True, trashed_at=timezone.now()
+    )
+    spam = create_test_message(mailbox_a, "Spam one", "Content")
+    Message.objects.filter(id=spam.id).update(is_spam=True)
+    archived = create_test_message(mailbox_a, "Archived one", "Content")
+    Message.objects.filter(id=archived.id).update(
+        is_archived=True, archived_at=timezone.now()
+    )
+    starred = create_test_message(mailbox_a, "Starred one", "Content")
+    starred_access = ThreadAccess.objects.get(thread=starred.thread, mailbox=mailbox_a)
+    starred_access.read_at = timezone.now()
+    starred_access.starred_at = timezone.now()
+    starred_access.save(update_fields=["read_at", "starred_at"])
+    labelled = create_test_message(mailbox_a, "Labelled one", "Content")
+    labelled_access = ThreadAccess.objects.get(
+        thread=labelled.thread, mailbox=mailbox_a
+    )
+    labelled_access.read_at = timezone.now()
+    labelled_access.save(update_fields=["read_at"])
+    # Besides a plain label: a non-ASCII one, and user labels spelled like
+    # system labels, which must neither be lost nor change the message state.
+    # "Messages envoyés" only travels in X-Keywords, as raw UTF-8.
+    user_label_names = {
+        "roundtrip-flags",
+        "Café",
+        "Unread",
+        "Trash",
+        "Inbox",
+        "Messages envoyés",
+    }
+    for i, name in enumerate(sorted(user_label_names)):
+        labelled.thread.labels.add(
+            Label.objects.create(name=name, slug=f"user-{i}", mailbox=mailbox_a)
+        )
+    # A draft that came in through an import has a MIME blob, so it is exported
+    imported_draft = create_test_message(mailbox_a, "Draft one", "Content")
+    Message.objects.filter(id=imported_draft.id).update(is_draft=True)
+    create_test_message(mailbox_a, "Plain one", "Content")
+
+    mbox_content = run_export(mailbox_a, user, cleanup_exports)
+
+    # Upload the uncompressed MBOX and import it into the target mailbox
+    storage = storages["message-imports"]
+    s3_client = storage.connection.meta.client
+    import_key = f"imports/{mailbox_b.id}/flags.mbox"
+    s3_client.put_object(
+        Bucket=storage.bucket_name,
+        Key=import_key,
+        Body=mbox_content,
+        ContentType="text/plain",
+    )
+    cleanup_exports.append(import_key)
+
+    channel = create_import_channel(
+        recipient=mailbox_b,
+        user=user,
+        source_type=enums.ImportSource.MBOX.value,
+        file_key=import_key,
+    )
+    success_count, failure_count, total = run_mbox(channel, {})
+    assert (success_count, failure_count, total) == (8, 0, 8)
+
+    imported = {
+        msg.subject: msg
+        for msg in Message.objects.filter(thread__accesses__mailbox=mailbox_b)
+    }
+    assert len(imported) == 8
+
+    assert imported["Sent one"].is_sender is True
+    assert imported["Trashed one"].is_trashed is True
+    # Timestamps stay in lockstep with the booleans, as the flag endpoint does
+    assert imported["Trashed one"].trashed_at is not None
+    assert imported["Spam one"].is_spam is True
+    assert imported["Archived one"].is_archived is True
+    assert imported["Archived one"].archived_at is not None
+    assert imported["Draft one"].is_draft is True
+
+    # User labels named like system ones did not touch the state
+    labelled_one = imported["Labelled one"]
+    assert (
+        labelled_one.is_trashed,
+        labelled_one.is_draft,
+        labelled_one.is_sender,
+    ) == (False, False, False)
+    assert (
+        ThreadAccess.objects.get(thread=labelled_one.thread, mailbox=mailbox_b).read_at
+        is not None
+    )
+
+    # Nothing leaks onto the messages that had no flag set
+    plain = imported["Plain one"]
+    assert (plain.is_sender, plain.is_trashed, plain.is_spam, plain.is_archived) == (
+        False,
+        False,
+        False,
+        False,
+    )
+
+    # Read and starred state live on ThreadAccess, not on the message
+    starred_access = ThreadAccess.objects.get(
+        thread=imported["Starred one"].thread, mailbox=mailbox_b
+    )
+    assert starred_access.starred_at is not None
+    assert starred_access.read_at is not None
+    plain_access = ThreadAccess.objects.get(thread=plain.thread, mailbox=mailbox_b)
+    assert plain_access.read_at is None
+    assert plain_access.starred_at is None
+
+    # The user's own labels roundtrip, and no system label became one
+    assert (
+        set(labelled_one.thread.labels.values_list("name", flat=True))
+        == user_label_names
+    )
+    assert (
+        set(Label.objects.filter(mailbox=mailbox_b).values_list("name", flat=True))
+        == user_label_names
+    )

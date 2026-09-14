@@ -20,7 +20,6 @@ Three groups of helpers live here:
 """
 
 import re
-import shlex
 from collections import defaultdict
 from collections.abc import Iterable
 from email.utils import make_msgid
@@ -82,6 +81,7 @@ __all__ = [
     "current_sent_at",
     "generate_mime_id",
     "gmail_labels",
+    "header_value",
     "headers_blocks",
     "message_snippet",
 ]
@@ -159,8 +159,13 @@ def message_snippet(parsed_email: JmapEmail) -> str:
 
 # Comma-separated form with optional quoted strings — the OfflineIMAP /
 # Google Takeout convention. Falls back to space-separated (Dovecot) when
-# no comma is present.
-_COMMA_LABEL_RE = re.compile(r'\s*"([^"]*)"\s*|\s*([^,]+)')
+# no comma is present outside quoted strings. A quoted string may hold
+# backslash escapes (RFC 5322 quoted-pair); anything unquoted is taken
+# literally.
+_QUOTED = r'"((?:[^"\\]|\\.)*)"'
+_COMMA_LABEL_RE = re.compile(r"\s*" + _QUOTED + r"\s*|\s*([^,]+)")
+_SPACE_LABEL_RE = re.compile(_QUOTED + r"|(\S+)")
+_QUOTED_PAIR_RE = re.compile(r"\\(.)")
 
 
 def _parse_labels_header(labels_str: str) -> list[str]:
@@ -172,31 +177,27 @@ def _parse_labels_header(labels_str: str) -> list[str]:
       ``label1, label2, "label three"``
     - Space-separated (Dovecot): ``label1 label2 "label three"``
     """
+    tokens = _SPACE_LABEL_RE.findall(labels_str)
+    if any("," in plain for _, plain in tokens):
+        tokens = _COMMA_LABEL_RE.findall(labels_str)
     result: list[str] = []
-    if "," in labels_str:
-        for quoted, plain in _COMMA_LABEL_RE.findall(labels_str):
-            label = (quoted if quoted else plain).strip()
-            if label:
-                result.append(label)
-    else:
-        try:
-            result = [
-                token.strip() for token in shlex.split(labels_str) if token.strip()
-            ]
-        except ValueError:
-            # Unmatched quotes — fall back to a simple split rather than
-            # losing the label list entirely.
-            result = [token.strip() for token in labels_str.split() if token.strip()]
+    for quoted, plain in tokens:
+        label = (_QUOTED_PAIR_RE.sub(r"\1", quoted) if quoted else plain).strip()
+        if label:
+            result.append(label)
     return result
 
 
-def gmail_labels(parsed_email: JmapEmail) -> list[str]:
+def gmail_labels(
+    parsed_email: JmapEmail,
+    header_names: tuple[str, ...] = ("x-gmail-labels", "x-keywords"),
+) -> list[str]:
     """Return labels harvested from ``X-Gmail-Labels`` / ``X-Keywords``.
 
-    Deduped in first-seen order. Empty list when neither header is
-    present. Reads the raw header list directly so the library does
-    not need to bake the Google / Dovecot label idiom into its
-    strict-JMAP wire shape.
+    ``header_names`` (lowercase) narrows the headers read. Deduped in
+    first-seen order. Empty list when none of them is present. Reads the
+    raw header list directly so the library does not need to bake the
+    Google / Dovecot label idiom into its strict-JMAP wire shape.
     """
     seen: set[str] = set()
     labels: list[str] = []
@@ -204,22 +205,41 @@ def gmail_labels(parsed_email: JmapEmail) -> list[str]:
         if not isinstance(header, dict):
             continue
         name = (header.get("name") or "").lower()
-        if name not in ("x-gmail-labels", "x-keywords"):
+        if name not in header_names:
             continue
         raw_value = header.get("value") or ""
         if not raw_value:
             continue
         # ``parsed["headers"][*]["value"]`` is the RFC 8621 Raw form
-        # (byte-faithful, no encoded-word decode). Labels routinely
-        # ship as RFC 2047 ``=?UTF-8?Q?…?=`` words (Google Takeout uses
-        # Q-encoding for non-ASCII label text) so decode before
-        # splitting.
-        value = decode_rfc2047_header(raw_value)
+        # (byte-faithful, no encoded-word decode). X-Gmail-Labels routinely
+        # ships RFC 2047 ``=?UTF-8?Q?…?=`` words (Google Takeout uses
+        # Q-encoding for non-ASCII label text) so decode before splitting.
+        # X-Keywords is taken as is, as Dovecot does: a keyword that looks
+        # like an encoded-word is that literal keyword.
+        value = (
+            decode_rfc2047_header(raw_value) if name == "x-gmail-labels" else raw_value
+        )
         for label in _parse_labels_header(value):
             if label not in seen:
                 seen.add(label)
                 labels.append(label)
     return labels
+
+
+def header_value(parsed_email: JmapEmail, name: str) -> str | None:
+    """Return the raw value of the first ``name`` header, stripped, or None
+    when absent. An empty first one gives "", never a later one's value.
+
+    Same reason as ``gmail_labels`` for reading the raw header list: these
+    are client conventions the JMAP wire shape does not model.
+    """
+    wanted = name.lower()
+    for header in parsed_email.get("headers") or []:
+        if not isinstance(header, dict):
+            continue
+        if (header.get("name") or "").lower() == wanted:
+            return (header.get("value") or "").strip()
+    return None
 
 
 # ────────────────────────────────────────────────────────────────────

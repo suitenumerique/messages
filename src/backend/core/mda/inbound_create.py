@@ -297,7 +297,7 @@ def _create_message_from_inbound(  # pylint: disable=too-many-arguments
         if is_import:
             # get labels from parsed_email
             labels, message_flags = compute_labels_and_flags(
-                parsed_email, imap_labels, imap_flags
+                parsed_email, imap_labels, imap_flags, is_sender=is_import_sender
             )
             for label in labels:
                 try:
@@ -450,9 +450,7 @@ def _create_message_from_inbound(  # pylint: disable=too-many-arguments
                     is_sender=is_sender,
                     is_trashed=is_trashed,
                     # Keep timestamps in lockstep with the booleans, as the
-                    # flag endpoint does — a NULL trashed_at/archived_at on a
-                    # trashed/archived row breaks restore, ordering and any
-                    # auto-purge that keys off the timestamp.
+                    # flag endpoint does.
                     trashed_at=(timezone.now() if is_trashed else None),
                     is_archived=is_archived,
                     archived_at=(timezone.now() if is_archived else None),
@@ -471,20 +469,25 @@ def _create_message_from_inbound(  # pylint: disable=too-many-arguments
                 for flag, value in message_flags.items():
                     if hasattr(message, flag):
                         setattr(message, flag, value)
-                message.save(
-                    update_fields=[
-                        "created_at",
-                        *message_flags.keys(),
-                    ]
-                )
+                flag_update_fields = ["created_at", *message_flags.keys()]
+                # Keep the timestamps in lockstep with the booleans, as the
+                # create above does.
+                if message.is_trashed and message.trashed_at is None:
+                    message.trashed_at = timezone.now()
+                    flag_update_fields.append("trashed_at")
+                if message.is_archived and message.archived_at is None:
+                    message.archived_at = timezone.now()
+                    flag_update_fields.append("archived_at")
+                message.save(update_fields=flag_update_fields)
                 # Update ThreadAccess for read/starred state
                 access = models.ThreadAccess.objects.filter(
                     thread=thread, mailbox=mailbox
                 ).first()
                 if access:
                     update_fields = []
-                    # Sent messages are always considered read by the sender
-                    if (is_sender or not import_is_unread) and (
+                    # Sent messages count as read, unless the import says
+                    # otherwise (see compute_labels_and_flags)
+                    if (is_outbound or not import_is_unread) and (
                         access.read_at is None or message.created_at > access.read_at
                     ):
                         access.read_at = message.created_at

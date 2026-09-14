@@ -1,13 +1,24 @@
 """Label and flag processing for imported messages."""
 
 import logging
+import re
+
+from django.utils import timezone
 
 from jmap_email.types import JmapEmail
 
 from core import models
-from core.mda.utils import gmail_labels
+from core.mda.utils import gmail_labels, header_value
 
 logger = logging.getLogger(__name__)
+
+# Thunderbird message flags, from mailnews/base/public/nsMsgMessageFlags.idl.
+# Thunderbird keeps flags in its .msf index and only writes them into the mbox
+# on compaction, so X-Mozilla-Status is the only place a Thunderbird export
+# carries read and starred state: it writes no X-Keywords at all.
+MOZILLA_STATUS_READ = 0x0001
+MOZILLA_STATUS_MARKED = 0x0004
+MOZILLA_STATUS_PATTERN = re.compile(r"[0-9A-Fa-f]{4}")
 
 IMAP_LABEL_TO_MESSAGE_FLAG = {
     "Drafts": "is_draft",
@@ -62,28 +73,77 @@ IMAP_LABELS_TO_IGNORE = [
 ]
 
 
+def _clean_label(label: str) -> str:
+    """Strip whitespace and the ``INBOX/`` / ``INBOX.`` folder prefix."""
+    cleaned_label = label.strip()
+    if cleaned_label.startswith("INBOX/"):
+        cleaned_label = "/".join(cleaned_label.split("/")[1:]).strip()
+    if cleaned_label.startswith("INBOX."):
+        cleaned_label = ".".join(cleaned_label.split(".")[1:]).strip()
+    return cleaned_label
+
+
+def is_plain_label(label: str) -> bool:
+    """Whether a folder/label name comes back from X-Gmail-Labels as itself:
+    not consumed as message state or ignored, and not altered by cleaning."""
+    cleaned_label = _clean_label(label)
+    return cleaned_label == label and not (
+        cleaned_label in IMAP_READ_UNREAD_LABELS
+        or cleaned_label in IMAP_LABEL_TO_MESSAGE_FLAG
+        or cleaned_label in IMAP_LABELS_TO_IGNORE
+    )
+
+
+def _mozilla_status(parsed_email: JmapEmail) -> int | None:
+    """The X-Mozilla-Status flag word, or None when absent, empty or unparseable.
+
+    The first occurrence, wherever it sits: Thunderbird writes its own above
+    the message's headers, but after X-Account-Key and X-UIDL for POP3 mail
+    (nsPop3Sink.cpp), and keeps one the message already carried, updating it
+    in place (nsLocalMailFolder.cpp).
+
+    Only X-Mozilla-Status is read: X-Mozilla-Status2 carries no state we
+    model (Attachment, Template, MDN), and X-Mozilla-Keys would need the
+    tag key of every label from the writer's profile to mean anything.
+    """
+    raw = header_value(parsed_email, "X-Mozilla-Status")
+    if not raw:
+        return None
+    # Exactly 4 hex digits, as Thunderbird writes and reads it (nsParseMailbox)
+    if not MOZILLA_STATUS_PATTERN.fullmatch(raw):
+        logger.warning("Ignoring unparseable X-Mozilla-Status header")
+        return None
+    return int(raw, 16)
+
+
 def compute_labels_and_flags(
     parsed_email: JmapEmail,
     imap_labels: list[str] | None,
     imap_flags: list[str] | None,
+    *,
+    is_sender: bool = False,
 ) -> tuple[set[str], dict[str, bool]]:
-    """Compute labels and flags for a parsed email."""
+    """Compute labels and flags for a parsed email.
 
-    # Combine both imap_labels and gmail_labels from parsed email
-    imap_labels = imap_labels or []
+    ``imap_labels`` and ``imap_flags`` are None for file sources (mbox, eml),
+    and lists (possibly empty) for sources that report flags themselves.
+    ``is_sender`` is True when the message was sent from the mailbox it is
+    imported into.
+    """
+    # Folder-like names: from the source, and from X-Gmail-Labels
+    from_file = imap_labels is None and imap_flags is None
+    header_labels = gmail_labels(parsed_email, ("x-gmail-labels",))
+    all_labels = list(imap_labels or []) + header_labels
     imap_flags = imap_flags or []
-    all_labels = list(imap_labels) + gmail_labels(parsed_email)
 
     message_flags = {}
     labels_to_add = set()
+    read_state_from_labels = False
     for original_label in all_labels:
-        cleaned_label = original_label.strip()
-        if cleaned_label.startswith("INBOX/"):
-            cleaned_label = "/".join(cleaned_label.split("/")[1:]).strip()
-        if cleaned_label.startswith("INBOX."):
-            cleaned_label = ".".join(cleaned_label.split(".")[1:]).strip()
+        cleaned_label = _clean_label(original_label)
         # Handle read/unread status
         if cleaned_label in IMAP_READ_UNREAD_LABELS:
+            read_state_from_labels = True
             if IMAP_READ_UNREAD_LABELS[cleaned_label] == "read":
                 message_flags["is_unread"] = False
             elif IMAP_READ_UNREAD_LABELS[cleaned_label] == "unread":
@@ -94,6 +154,26 @@ def compute_labels_and_flags(
             message_flags[message_flag] = True
         elif cleaned_label not in IMAP_LABELS_TO_IGNORE:
             labels_to_add.add(cleaned_label)
+
+    # X-Keywords holds IMAP keywords, i.e. tags, never folders: always plain
+    # labels. This is also how a user label spelled like a system one
+    # ("Trash", "Unread") survives a roundtrip through our own export.
+    labels_to_add.update(gmail_labels(parsed_email, ("x-keywords",)))
+
+    # Read/starred state from a Thunderbird mbox. It is not read for sources
+    # that report flags themselves (IMAP, PST), even with no flag set at all,
+    # nor next to X-Gmail-Labels (Takeout, our own exports): an
+    # X-Mozilla-Status there came with the message from its sender (Mozilla
+    # bug 196749). Presence is what counts: an empty header still describes
+    # the state.
+    has_label_header = header_value(parsed_email, "X-Gmail-Labels") is not None
+    mozilla_status = (
+        _mozilla_status(parsed_email) if from_file and not has_label_header else None
+    )
+    if mozilla_status is not None:
+        message_flags["is_unread"] = not mozilla_status & MOZILLA_STATUS_READ
+        if mozilla_status & MOZILLA_STATUS_MARKED:
+            message_flags["_starred"] = True
 
     # Handle read/unread status via IMAP flags
     if imap_flags:
@@ -109,8 +189,12 @@ def compute_labels_and_flags(
         if "\\Flagged" in imap_flags:
             message_flags["_starred"] = True
 
-    # Special case: if message is sender or draft, it should not be unread
-    if message_flags.get("is_sender") or message_flags.get("is_draft"):
+    # Sent mail and drafts are read, unless a file says otherwise with an
+    # explicit Opened/Unread label (our own exports always carry one). Sources
+    # reporting flags themselves keep the rule unconditionally.
+    if not (from_file and read_state_from_labels) and (
+        is_sender or message_flags.get("is_sender") or message_flags.get("is_draft")
+    ):
         message_flags["is_unread"] = False
 
     return labels_to_add, message_flags
@@ -137,7 +221,16 @@ def handle_duplicate_message(
         if hasattr(existing_message, flag):
             setattr(existing_message, flag, value)
     if message_flags:
-        existing_message.save(update_fields=message_flags.keys())
+        update_fields = list(message_flags.keys())
+        # Timestamps stay in lockstep with the booleans, as the flag endpoint
+        # and the create path set them.
+        if existing_message.is_trashed and existing_message.trashed_at is None:
+            existing_message.trashed_at = timezone.now()
+            update_fields.append("trashed_at")
+        if existing_message.is_archived and existing_message.archived_at is None:
+            existing_message.archived_at = timezone.now()
+            update_fields.append("archived_at")
+        existing_message.save(update_fields=update_fields)
 
     # Update ThreadAccess.starred_at if the duplicate is starred
     if not import_is_unread or import_is_starred:
