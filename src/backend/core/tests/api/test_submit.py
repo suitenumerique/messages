@@ -8,7 +8,12 @@ import pytest
 from dkim import verify as dkim_verify
 
 from core.enums import ChannelApiKeyScope, ChannelScopeLevel
-from core.factories import MailboxFactory, MailDomainFactory, make_api_key_channel
+from core.factories import (
+    LabelFactory,
+    MailboxFactory,
+    MailDomainFactory,
+    make_api_key_channel,
+)
 from core.mda.signing import generate_dkim_key
 
 SUBMIT_URL = "/api/v1.0/submit/"
@@ -535,7 +540,6 @@ class TestSubmitIntegration:
         self,
         mock_task,
         client,
-        auth_header,
         mailbox,
         django_capture_on_commit_callbacks,
     ):
@@ -544,6 +548,15 @@ class TestSubmitIntegration:
         # X-Rcpt-To matches the To: header in MINIMAL_MIME (attendee@example.com)
         rcpt_to = "attendee@example.com"
 
+        # The submitting channel carries a tag, so the thread must come out
+        # labeled with it (same channel-tags path as widget deliveries).
+        label = LabelFactory(mailbox=mailbox)
+        channel, plaintext = _make_api_key_channel(
+            scope_level=ChannelScopeLevel.MAILBOX,
+            mailbox=mailbox,
+            extra_settings={"tags": [str(label.id)]},
+        )
+
         with django_capture_on_commit_callbacks(execute=True):
             response = client.post(
                 SUBMIT_URL,
@@ -551,7 +564,8 @@ class TestSubmitIntegration:
                 content_type="message/rfc822",
                 HTTP_X_MAIL_FROM=str(mailbox.id),
                 HTTP_X_RCPT_TO=rcpt_to,
-                **auth_header,
+                HTTP_X_CHANNEL_ID=str(channel.id),
+                HTTP_X_API_KEY=plaintext,
             )
 
         assert response.status_code == 202
@@ -578,6 +592,10 @@ class TestSubmitIntegration:
         assert ThreadAccess.objects.filter(
             thread=message.thread, mailbox=mailbox
         ).exists()
+
+        # The api_key channel is recorded on the message and its tags applied.
+        assert message.channel_id == channel.id
+        assert list(message.thread.labels.values_list("id", flat=True)) == [label.id]
 
         # Recipient was created (from the parsed To: header)
         assert message.recipients.filter(contact__email=rcpt_to).exists()
