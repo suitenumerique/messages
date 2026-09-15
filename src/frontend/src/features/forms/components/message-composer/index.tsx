@@ -1,5 +1,5 @@
 "use client";
-import { useCreateBlockNote } from "@blocknote/react";
+import { useComponentsContext, useCreateBlockNote } from "@blocknote/react";
 import { useTranslation } from "react-i18next";
 import { BlockNoteEditor, BlockNoteEditorOptions, BlockNoteSchema, PartialBlock } from '@blocknote/core';
 import { MessageTemplateSelector } from '@/features/blocknote/message-template-block';
@@ -25,6 +25,7 @@ import { handle } from '@/features/utils/errors';
 import { findOrphanInlineImages } from './orphan-inline-images';
 import { MessageFormValues } from '../message-form';
 import { DriveFile } from '../message-form/drive-attachment-picker';
+import { Icon, IconSize } from "@gouvfr-lasuite/ui-kit";
 
 
 // Re-export for consumers that import from message-composer
@@ -53,6 +54,19 @@ export type QuoteType = "reply" | "forward";
 
 export type MessageComposerHandle = {
     exportContent: () => Promise<{ htmlBody: string; textBody: string }>;
+};
+
+const AiReplyButton = () => {
+    const { t } = useTranslation();
+    const Components = useComponentsContext()!;
+
+    return (
+        <Components.FormattingToolbar.Button
+            icon={<Icon name="auto_awesome" size={IconSize.SMALL} />}
+            label={t("AI")}
+            mainTooltip={t("AI")}
+        />
+    );
 };
 
 type MessageComposerProps = FieldProps & {
@@ -471,6 +485,7 @@ export const MessageComposer = React.forwardRef<MessageComposerHandle, MessageCo
                 }}
             >
                 <Toolbar>
+                    <AiReplyButton />
                     <MessageTemplateSelector
                         mailboxId={mailboxId}
                         messageId={draft?.id}
