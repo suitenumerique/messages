@@ -1,0 +1,26 @@
+[
+  {
+    "email": "pierre-feuille@entreprise.com",
+    "name": "Pierre Feuille",
+    "subject": "URGENT INFO BUG",
+    "message": "Coucou, comment retrouver mon mot de passe sur le site de la suite ?"
+  },
+  {
+    "email": "chaperon-rouge@entreprise.com",
+    "name": "Chaperon Rouge",
+    "subject": "Le loup est dans la bergerie",
+    "message": "Oups, je crois que j'ai perdu mes données sur grist..."
+  },
+  {
+    "email": "michelle-lamere@entreprise.com",
+    "name": "Michelle Lamere",
+    "subject": "Ou est il?",
+    "message": "Je cherche le document de comande n°3223. Sais-tu ou il est?"
+  },
+  {
+    "email": "passe-partout@entreprise.com",
+    "name": "Passe Partout",
+    "subject": "Bonne nouvelle!!",
+    "message": "J'ai les clefs!!! passe au fort pour les récupérer."
+  }
+]
