@@ -28,6 +28,7 @@ import { useConfig } from "@/features/providers/config";
 import { DriveFile } from "./drive-attachment-picker";
 import { useAttachments } from "@/features/forms/hooks/use-attachments";
 import { MessageComposerHelper } from "@/features/utils/composer-helper";
+import { fetchAPI } from "@/features/api/fetch-api";
 
 export type MessageFormMode = "new" | "reply" | "reply_all" | "forward";
 
@@ -88,6 +89,12 @@ export type MessageFormHandle = {
 };
 
 const DRAFT_TOAST_ID = "MESSAGE_FORM_DRAFT_TOAST";
+
+type AiDraftCreateResponse = {
+    status: number;
+    data: Message;
+    headers: Headers;
+};
 
 export const MessageForm = forwardRef<MessageFormHandle, MessageFormProps>(({
     parentMessage,
@@ -410,6 +417,75 @@ export const MessageForm = forwardRef<MessageFormHandle, MessageFormProps>(({
     const deleteMessageMutation = useMessagesDestroy();
     const isDeletingDraft = deleteMessageMutation.isPending;
     const isSubmittingMessage = isSubmitting || messageMutation.isPending;
+    const generateAiDraft = async (): Promise<Message | undefined> => {
+        const aiDraftSourceMessageId = parentMessage?.id ?? draftRef.current?.parent_id;
+
+        console.info("AI draft request context", {
+            parentMessageId: parentMessage?.id,
+            draftParentId: draftRef.current?.parent_id,
+            currentSenderId,
+            canWriteMessages,
+        });
+
+        if (!aiDraftSourceMessageId) {
+            addToast(
+                <ToasterItem type="error">
+                    <span>{t("Cannot generate an AI draft without an original message.")}</span>
+                </ToasterItem>,
+            );
+            return draftRef.current;
+        }
+
+        if (!currentSenderId || !canWriteMessages) {
+            addToast(
+                <ToasterItem type="error">
+                    <span>{t("You do not have permission to generate an AI draft from this mailbox.")}</span>
+                </ToasterItem>,
+            );
+            return draftRef.current;
+        }
+
+        stopAutoSave();
+        try {
+            const response = await fetchAPI<AiDraftCreateResponse>(
+                `/api/v1.0/messages/${aiDraftSourceMessageId}/ai-draft/`,
+                {
+                    method: "POST",
+                    body: JSON.stringify({ senderId: currentSenderId }),
+                },
+            );
+            const message = response.data;
+            if (draftRef.current) {
+                await deleteMessageMutation.mutateAsync({ id: draftRef.current.id });
+            }
+            setDraft(message);
+            if (message.thread_id) {
+                pinThreads([message.thread_id], (thread) => ({
+                    ...thread,
+                    has_draft: true,
+                    draft_messaged_at: message.created_at,
+                }));
+            }
+            invalidateMailbox();
+            invalidateThreadsStats();
+            addToast(
+                <ToasterItem type="info">
+                    <span>{t("AI draft generated")}</span>
+                </ToasterItem>,
+                { toastId: DRAFT_TOAST_ID },
+            );
+            return message;
+        } catch (error) {
+            addToast(
+                <ToasterItem type="error">
+                    <span>{t("Failed to generate AI draft")}</span>
+                </ToasterItem>,
+            );
+            throw error;
+        } finally {
+            if (draftRef.current) startAutoSave();
+        }
+    };
 
     const handleDeleteMessage = async (messageId: string) => {
         const decision = await modals.deleteConfirmationModal({
@@ -857,6 +933,7 @@ export const MessageForm = forwardRef<MessageFormHandle, MessageFormProps>(({
                         draft={draft}
                         submitDraft={form.handleSubmit(saveDraft)}
                         ensureDraft={ensureDraft}
+                        generateAiDraft={generateAiDraft}
                         blockNoteOptions={{ autofocus: canWriteMessages && mode !== "forward" ? "end" : undefined }}
                         uploadInlineImage={attachmentHook.uploadInlineImage}
                         uploadFiles={attachmentHook.uploadFiles}

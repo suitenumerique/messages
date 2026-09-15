@@ -5,6 +5,7 @@ from django.urls import include, path
 
 from rest_framework.routers import DefaultRouter
 
+from core.api.viewsets.ai_draft import AIDraftView
 from core.api.viewsets.blob import BlobViewSet
 from core.api.viewsets.calendar import (
     CalendarAddEventView,
@@ -276,6 +277,11 @@ urlpatterns = [
         f"api/{settings.API_VERSION}/draft/<uuid:message_id>/placeholders/",
         DraftPlaceholderView.as_view(),
         name="draft-placeholders",
+    ),
+    path(
+        f"api/{settings.API_VERSION}/messages/<uuid:message_id>/ai-draft/",
+        AIDraftView.as_view(),
+        name="ai-draft",
     ),
     path(
         f"api/{settings.API_VERSION}/send/",
