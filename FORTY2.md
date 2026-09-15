@@ -9,7 +9,7 @@ make start
 
 # Generate the emails
 
-_In the backend docker._
+_In the shell._
 ```shell
-python manage.py seed_citizen_email --mailbox user1@example.local --data-file core/data/generated_emails.json
+docker compose exec backend-dev-light python manage.py seed_citizen_email --mailbox user1@example.local --data-file core/data/generated_emails.json
 ```
