@@ -837,3 +837,8 @@ deps-lock-mta-in: build-python-base ## lock the dependencies for mta-in (shared 
 	@$(COMPOSE) run --rm --build mta-in-uv uv lock
 .PHONY: deps-lock-mta-in
 
+## New rules added for the forty project
+generate_emails:
+	docker compose exec backend-dev-light python manage.py seed_citizen_email --mailbox user1@example.local --data-file core/data/generated_emails.json
+.PHONY: generate_emails
+
