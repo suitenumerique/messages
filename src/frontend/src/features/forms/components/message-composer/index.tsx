@@ -9,7 +9,7 @@ import { blocksToPlainText } from '@/features/blocknote/markdown-exporter';
 
 import { FieldProps } from '@gouvfr-lasuite/cunningham-react';
 import { useFormContext } from 'react-hook-form';
-import React, { useEffect, useImperativeHandle, useRef } from 'react';
+import React, { useEffect, useImperativeHandle, useRef, useState } from 'react';
 import { QuotedMessageBlock } from '@/features/blocknote/quoted-message-block';
 import { Message } from '@/features/api/gen/models/message';
 import { BlockNoteViewField } from '@/features/blocknote/blocknote-view-field';
@@ -56,7 +56,15 @@ export type MessageComposerHandle = {
     exportContent: () => Promise<{ htmlBody: string; textBody: string }>;
 };
 
-const AiReplyButton = () => {
+const AiReplyButton = ({
+    disabled,
+    isLoading,
+    onClick,
+}: {
+    disabled?: boolean;
+    isLoading?: boolean;
+    onClick: () => void;
+}) => {
     const { t } = useTranslation();
     const Components = useComponentsContext()!;
 
@@ -64,7 +72,9 @@ const AiReplyButton = () => {
         <Components.FormattingToolbar.Button
             icon={<Icon name="auto_awesome" size={IconSize.SMALL} />}
             label={t("AI")}
-            mainTooltip={t("AI")}
+            mainTooltip={isLoading ? t("Generating AI draft") : t("Generate AI draft")}
+            isDisabled={disabled || isLoading}
+            onClick={onClick}
         />
     );
 };
@@ -77,6 +87,7 @@ type MessageComposerProps = FieldProps & {
     draft?: Message;
     submitDraft?: () => void;
     ensureDraft?: () => Promise<string | undefined>;
+    generateAiDraft?: () => Promise<Message | undefined>;
     quotedMessage?: Message;
     quoteType?: QuoteType;
     uploadInlineImage: (file: File) => Promise<{ url: string; blobId: string } | null>;
@@ -95,9 +106,10 @@ type MessageComposerProps = FieldProps & {
  * creating real DOM elements on every keystroke.
  */
 
-export const MessageComposer = React.forwardRef<MessageComposerHandle, MessageComposerProps>(({ mailboxId, blockNoteOptions, defaultValue, quotedMessage, quoteType, disabled = false, draft, submitDraft, ensureDraft, uploadInlineImage, uploadFiles, removeInlineImage, attachments, ...props }, ref) => {
+export const MessageComposer = React.forwardRef<MessageComposerHandle, MessageComposerProps>(({ mailboxId, blockNoteOptions, defaultValue, quotedMessage, quoteType, disabled = false, draft, submitDraft, ensureDraft, generateAiDraft, uploadInlineImage, uploadFiles, removeInlineImage, attachments, ...props }, ref) => {
     const form = useFormContext<MessageFormValues>();
     const { t, i18n } = useTranslation();
+    const [isGeneratingAiDraft, setIsGeneratingAiDraft] = useState(false);
     const { data: { data: activeSignatures = [] } = {}, isLoading: isLoadingSignatures } = useMailboxesMessageTemplatesAvailableList(
         mailboxId,
         {
@@ -353,6 +365,24 @@ export const MessageComposer = React.forwardRef<MessageComposerHandle, MessageCo
         }
     }
 
+    const handleAiReplyClick = async () => {
+        if (!generateAiDraft || isGeneratingAiDraft) return;
+
+        setIsGeneratingAiDraft(true);
+        try {
+            const aiDraft = await generateAiDraft();
+            if (!aiDraft?.draftBody) return;
+
+            const blocks = dropUnsupportedBlocks(JSON.parse(aiDraft.draftBody), SUPPORTED_BLOCK_TYPES);
+            editor.replaceBlocks(editor.document, blocks.length > 0 ? blocks : [{ type: "paragraph", content: "" }]);
+            await handleChange(editor, false);
+        } catch (error) {
+            handle(new Error("Error generating AI draft."), { extra: { error } });
+        } finally {
+            setIsGeneratingAiDraft(false);
+        }
+    };
+
     /**
      * Process the html and text content of the message when the editor is mounted.
      */
@@ -485,7 +515,13 @@ export const MessageComposer = React.forwardRef<MessageComposerHandle, MessageCo
                 }}
             >
                 <Toolbar>
-                    <AiReplyButton />
+                    {generateAiDraft && (
+                        <AiReplyButton
+                            disabled={disabled}
+                            isLoading={isGeneratingAiDraft}
+                            onClick={handleAiReplyClick}
+                        />
+                    )}
                     <MessageTemplateSelector
                         mailboxId={mailboxId}
                         messageId={draft?.id}
