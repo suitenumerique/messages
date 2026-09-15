@@ -1,74 +1,92 @@
 [
   {
-    "email": "john.smith@admin.gov",
-    "name": "John Smith",
-    "subject": "Driver's License Renewal Issue",
-    "message": "Hello, I tried to renew my driver's license online, but the system keeps rejecting my application. It says there's an error with my documentation. Can you help me resolve this?"
+    "email": "sophie.martin@citoyen.example",
+    "name": "Sophie Martin",
+    "subject": "Renouvellement de ma carte d'identité après un déménagement",
+    "message": "Bonjour,\n\nMa carte nationale d’identité expire en novembre et je viens également de déménager récemment de Lille à Lyon.\n\nJe voudrais savoir si je dois obligatoirement refaire ma carte à cause du changement d’adresse, ou si je peux simplement attendre son expiration pour la renouveler.\n\nPar ailleurs, je travaille actuellement à l’étranger et je ne serai en France que pendant une dizaine de jours en octobre. Est-ce que je peux faire la démarche dans n’importe quelle mairie, ou dois-je obligatoirement la faire dans ma commune de résidence ?\n\nMerci d’avance pour votre aide.\n\nCordialement,\nSophie Martin"
   },
   {
-    "email": "emily.clark@citizen.net",
-    "name": "Emily Clark",
-    "subject": "Lost National ID Card",
-    "message": "I lost my national ID card last week. What steps do I need to take to get a replacement? Is there a way to expedite the process?"
+    "email": "thomas.bernard@citoyen.example",
+    "name": "Thomas Bernard",
+    "subject": "Démission et congés payés non pris",
+    "message": "Bonjour,\n\nJe souhaite démissionner de mon poste en CDI et j’aurais quelques questions avant d’envoyer ma lettre à mon employeur.\n\nIl me reste environ deux semaines de congés payés que je n’ai pas prises. Est-ce qu’elles doivent obligatoirement être prises avant mon départ ou peuvent-elles être payées avec mon solde de tout compte ?\n\nJ’ai également trouvé un nouvel emploi qui commencerait assez rapidement. Je voudrais donc savoir combien de temps je dois normalement respecter pour mon préavis et s’il est possible de négocier une date de départ plus tôt avec mon employeur.\n\nMerci pour vos éclaircissements.\n\nCordialement,\nThomas Bernard"
   },
   {
-    "email": "michael.brown@retirement.org",
-    "name": "Michael Brown",
-    "subject": "Retirement Benefits Inquiry",
-    "message": "I applied for my retirement benefits three months ago, but I haven't received any updates. Could you check the status of my application?"
+    "email": "marc.durand@citoyen.example",
+    "name": "Marc Durand",
+    "subject": "Vol de mes papiers en Espagne",
+    "message": "Bonjour,\n\nJe suis actuellement en déplacement en Espagne et je viens de me faire voler mon portefeuille avec ma carte d’identité, mon permis de conduire et ma carte Vitale.\n\nJe rentre en France dans quatre jours et je dois prendre l’avion. Je voudrais savoir quelles démarches je dois effectuer immédiatement, notamment pour la carte d’identité, et quels documents je pourrai utiliser pour rentrer en France.\n\nEst-ce que je dois faire une déclaration auprès de la police espagnole et contacter le consulat français ? Si oui, est-ce que je dois prendre rendez-vous ?\n\nMerci beaucoup pour votre aide car je ne sais pas quelles démarches faire en priorité.\n\nCordialement,\nMarc Durand"
   },
   {
-    "email": "sarah.davis@unemployment.gov",
-    "name": "Sarah Davis",
-    "subject": "Unemployment Claim Delay",
-    "message": "My unemployment claim was submitted two weeks ago, but I still haven't received any payments. Is there a delay in processing, or did I miss something?"
+    "email": "claire.petit@citoyen.example",
+    "name": "Claire Petit",
+    "subject": "Changement d'adresse après un déménagement",
+    "message": "Bonjour,\n\nJe viens de déménager et je voudrais savoir quelles administrations je dois prévenir pour signaler mon changement d’adresse.\n\nJ’ai notamment une carte grise, des documents auprès de la CAF et des démarches en cours auprès de France Travail. Est-ce que je dois contacter chaque organisme séparément ou existe-t-il une démarche permettant de déclarer mon changement d’adresse à plusieurs administrations en même temps ?\n\nMerci pour votre aide.\n\nBien cordialement,\nClaire Petit"
   },
   {
-    "email": "david.wilson@admin.gov",
-    "name": "David Wilson",
-    "subject": "Incorrect Information on ID Card",
-    "message": "I received my new ID card, but there's a mistake in my address. How can I correct this error and get a new card issued?"
+    "email": "julie.robert@citoyen.example",
+    "name": "Julie Robert",
+    "subject": "Quelles aides puis-je demander ?",
+    "message": "Bonjour,\n\nJe suis actuellement sans emploi et je vais bientôt avoir 25 ans. Je vis encore chez mes parents mais je voudrais prendre mon propre appartement.\n\nJe travaille parfois avec des contrats très courts et mes revenus changent beaucoup d’un mois à l’autre. Je ne sais pas vraiment à quelles aides j’aurais droit ni quelles démarches je dois faire en premier.\n\nEst-ce que vous pourriez me dire ce que je peux demander et à qui je dois m’adresser ?\n\nMerci beaucoup.\n\nCordialement,\nJulie Robert"
   },
   {
-    "email": "lisa.johnson@retirement.org",
-    "name": "Lisa Johnson",
-    "subject": "Retirement Age Verification",
-    "message": "I need to verify my retirement age to ensure I qualify for early retirement. Could you provide the necessary forms or guide me through the process?"
+    "email": "antoine.leclerc@citoyen.example",
+    "name": "Antoine Leclerc",
+    "subject": "Retard de paiement de mes allocations chômage",
+    "message": "Bonjour,\n\nJe me suis inscrit comme demandeur d’emploi il y a environ trois semaines et j’ai effectué ma demande d’allocation. Je n’ai toujours rien reçu sur mon compte bancaire.\n\nJe voulais savoir si ce délai est normal et s’il y a quelque chose que je dois faire de mon côté pour débloquer la situation.\n\nMerci d’avance pour votre aide.\n\nCordialement,\nAntoine Leclerc"
   },
   {
-    "email": "james.miller@unemployment.gov",
-    "name": "James Miller",
-    "subject": "Unemployment Eligibility Question",
-    "message": "I was recently laid off and want to apply for unemployment benefits. What documents do I need to provide to confirm my eligibility?"
+    "email": "camille.moreau@citoyen.example",
+    "name": "Camille Moreau",
+    "subject": "Documents nécessaires pour une première carte d'identité",
+    "message": "Bonjour,\n\nMa fille de 16 ans va avoir besoin de sa première carte nationale d’identité pour un voyage scolaire à l’étranger.\n\nPouvez-vous me dire quels documents nous devons préparer et si elle doit être présente lors du dépôt de la demande ? Faut-il également prendre rendez-vous à la mairie ?\n\nMerci beaucoup.\n\nCordialement,\nCamille Moreau"
   },
   {
-    "email": "patricia.taylor@admin.gov",
-    "name": "Patricia Taylor",
-    "subject": "Driver's License Test Appointment",
-    "message": "I need to schedule a driver's license test, but the online booking system isn't working. Can you assist me in setting up an appointment?"
+    "email": "nicolas.girard@citoyen.example",
+    "name": "Nicolas Girard",
+    "subject": "Carte d'identité perdue",
+    "message": "Bonjour,\n\nJe viens de me rendre compte que j’ai perdu ma carte nationale d’identité. Je ne sais pas exactement où je l’ai perdue.\n\nQuelles sont les démarches à effectuer pour faire une nouvelle carte ? Est-ce que je dois d’abord faire une déclaration de perte ? Et combien coûte le renouvellement dans ce cas ?\n\nMerci pour votre aide.\n\nCordialement,\nNicolas Girard"
   },
   {
-    "email": "robert.anderson@citizen.net",
-    "name": "Robert Anderson",
-    "subject": "Missing Retirement Documents",
-    "message": "I was told to submit additional documents for my retirement application, but I never received the list. Could you resend the requirements?"
+    "email": "amelie.rousseau@citoyen.example",
+    "name": "Amélie Rousseau",
+    "subject": "Je viens de commencer un nouvel emploi",
+    "message": "Bonjour,\n\nJe viens de retrouver un emploi après plusieurs mois de chômage. Je commence mon nouveau travail lundi prochain.\n\nQuelles démarches dois-je effectuer auprès de France Travail ? Est-ce que je dois simplement déclarer ma reprise d’activité lors de ma prochaine actualisation ou dois-je les prévenir immédiatement ?\n\nMerci pour votre aide.\n\nCordialement,\nAmélie Rousseau"
   },
   {
-    "email": "linda.thomas@unemployment.gov",
-    "name": "Linda Thomas",
-    "subject": "Unemployment Payment Discrepancy",
-    "message": "My unemployment payment this month is less than expected. There seems to be a discrepancy. How can I resolve this issue?"
+    "email": "laurent.fournier@citoyen.example",
+    "name": "Laurent Fournier",
+    "subject": "Je n'arrive pas à faire ma demande en ligne",
+    "message": "Bonjour,\n\nJ’essaie depuis plusieurs jours de faire une démarche administrative en ligne mais je n’arrive pas à aller jusqu’au bout. Le site me demande plusieurs informations et je ne comprends pas exactement quels justificatifs je dois fournir.\n\nExiste-t-il un endroit où je peux être accompagné pour effectuer cette démarche ?\n\nMerci par avance.\n\nCordialement,\nLaurent Fournier"
   },
   {
-    "email": "pierre.paper@unemployment.gov",
-    "name": "Pierre Paper",
-    "subject": "How to win a simple game.",
-    "message": "I'm playing a rock paper scissors game and I want to know the best strategy to win. Can you provide some tips or strategies?"
+    "email": "marie.lambert@citoyen.example",
+    "name": "Marie Lambert",
+    "subject": "Retrait de ma nouvelle carte d'identité",
+    "message": "Bonjour,\n\nJ’ai reçu un message m’indiquant que ma nouvelle carte nationale d’identité est disponible, mais je suis actuellement en déplacement professionnel et je ne pourrai pas me rendre à la mairie avant plusieurs semaines.\n\nCombien de temps la carte est-elle conservée avant d’être détruite ? Est-ce qu’une autre personne peut la récupérer à ma place ?\n\nMerci pour votre réponse.\n\nCordialement,\nMarie Lambert"
   },
   {
-    "email": "Robinson.crusoe@unemployment.gov",
-    "name": "Robinson Crusoe",
-    "subject": "Lost on a island.",
-    "message": "Im stranded on a deserted island and I ngit eed help. Can you provide guidance on how to survive and signal for rescue?"
+    "email": "karim.benali@citoyen.example",
+    "name": "Karim Benali",
+    "subject": "Question concernant mon préavis",
+    "message": "Bonjour,\n\nJe travaille actuellement en CDI depuis quatre ans et je souhaite quitter mon entreprise car j’ai trouvé un nouvel emploi.\n\nMon contrat de travail ne précise pas clairement la durée de mon préavis. Comment puis-je savoir combien de temps je dois rester dans l’entreprise ? Est-ce que mon employeur peut accepter que je parte plus tôt ?\n\nMerci pour votre aide.\n\nCordialement,\nKarim Benali"
+  },
+  {
+    "email": "isabelle.mercier@citoyen.example",
+    "name": "Isabelle Mercier",
+    "subject": "Mon dossier administratif est toujours en cours",
+    "message": "Bonjour,\n\nJ’ai effectué une démarche administrative il y a plusieurs semaines et mon dossier apparaît toujours comme étant en cours de traitement.\n\nJe voudrais savoir s’il existe un délai normal de traitement et comment je peux vérifier l’état d’avancement de mon dossier.\n\nMerci d’avance pour votre réponse.\n\nCordialement,\nIsabelle Mercier"
+  },
+  {
+    "email": "pierre.martel@citoyen.example",
+    "name": "Pierre Martel",
+    "subject": "Question sur mes droits après une rupture de contrat",
+    "message": "Bonjour,\n\nMon contrat de travail vient de se terminer et je voudrais savoir si je peux bénéficier de l’allocation chômage.\n\nJ’ai travaillé pendant un peu plus de deux ans, mais la fin de mon contrat n’est pas exactement une démission. Pouvez-vous m’indiquer dans quelles conditions je pourrais avoir droit à une allocation et quelles démarches je dois effectuer ?\n\nMerci beaucoup.\n\nCordialement,\nPierre Martel"
+  },
+  {
+    "email": "elodie.fontaine@citoyen.example",
+    "name": "Élodie Fontaine",
+    "subject": "Question sans rapport avec une démarche administrative",
+    "message": "Bonjour,\n\nJe joue actuellement à pierre-papier-ciseaux avec mes amis et je voudrais connaître la meilleure stratégie pour gagner le plus souvent possible.\n\nMerci !\n\nÉlodie"
   }
 ]
