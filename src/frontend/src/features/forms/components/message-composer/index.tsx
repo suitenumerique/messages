@@ -87,7 +87,7 @@ type MessageComposerProps = FieldProps & {
     draft?: Message;
     submitDraft?: () => void;
     ensureDraft?: () => Promise<string | undefined>;
-    generateAiDraft?: () => Promise<Message | undefined>;
+    generateAiDraft?: (currentDraftText?: string) => Promise<Message | undefined>;
     quotedMessage?: Message;
     quoteType?: QuoteType;
     uploadInlineImage: (file: File) => Promise<{ url: string; blobId: string } | null>;
@@ -370,7 +370,11 @@ export const MessageComposer = React.forwardRef<MessageComposerHandle, MessageCo
 
         setIsGeneratingAiDraft(true);
         try {
-            const aiDraft = await generateAiDraft();
+            const currentDraftText = await blocksToPlainText(
+                editor,
+                editor.document.filter(block => block.type !== "quoted-message"),
+            );
+            const aiDraft = await generateAiDraft(currentDraftText);
             if (!aiDraft?.draftBody) return;
 
             const blocks = dropUnsupportedBlocks(JSON.parse(aiDraft.draftBody), SUPPORTED_BLOCK_TYPES);
