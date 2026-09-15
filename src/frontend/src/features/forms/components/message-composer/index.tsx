@@ -374,7 +374,11 @@ export const MessageComposer = React.forwardRef<MessageComposerHandle, MessageCo
             if (!aiDraft?.draftBody) return;
 
             const blocks = dropUnsupportedBlocks(JSON.parse(aiDraft.draftBody), SUPPORTED_BLOCK_TYPES);
-            editor.replaceBlocks(editor.document, blocks.length > 0 ? blocks : [{ type: "paragraph", content: "" }]);
+            const quotedBlocks = editor.document.filter(block => block.type === "quoted-message");
+            editor.replaceBlocks(
+                editor.document,
+                (blocks.length > 0 ? blocks : [{ type: "paragraph", content: "" }]).concat(quotedBlocks),
+            );
             await handleChange(editor, false);
         } catch (error) {
             handle(new Error("Error generating AI draft."), { extra: { error } });
