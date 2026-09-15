@@ -56,22 +56,37 @@ def _blocknote_paragraphs(text: str) -> str:
     return json.dumps(paragraphs)
 
 
-def _build_prompt(message: models.Message) -> str:
+def _build_prompt(message: models.Message, current_draft_text: str | None = None) -> str:
     """Build the prompt used to generate a citizen-facing reply."""
+    draft_instruction = ""
+    if current_draft_text and current_draft_text.strip():
+        draft_instruction = (
+            "Agent draft or intent to preserve and expand:\n"
+            f"{current_draft_text.strip()}\n\n"
+            "Use this draft as the main intent of the reply, even if it is very "
+            "short, for example yes/no/a day of the week. Expand it into a "
+            "complete formal reply suitable for a public administration or "
+            "government office.\n\n"
+        )
+
     return (
         "You are helping an agent draft a clear, polite email reply to a citizen.\n"
         "Write only the reply body. Do not include a subject line. "
+        "Use a formal, professional tone suitable for a public administration "
+        "or government office. "
         "Do not invent facts, promises, dates, or case details that are not in the "
         "email. If information is missing, ask for it briefly.\n\n"
         f"Citizen email:\n{message.get_as_text()}\n\n"
+        f"{draft_instruction}"
         "Draft reply:\n\n"
-        "TODO TODO!!!"
     )
 
 
-def generate_ai_reply_body(message: models.Message) -> str:
+def generate_ai_reply_body(
+    message: models.Message, current_draft_text: str | None = None
+) -> str:
     """Generate the reply body for a message using the configured AI service."""
-    return AIService().call_ai_api(_build_prompt(message))
+    return AIService().call_ai_api(_build_prompt(message, current_draft_text))
 
 
 def generate_preview_reply_body(message: models.Message) -> str:
@@ -158,6 +173,14 @@ class AIDraftView(APIView):
                     required=True,
                     help_text="Mailbox ID to use as the draft sender.",
                 ),
+                "currentDraftText": drf_serializers.CharField(
+                    required=False,
+                    allow_blank=True,
+                    help_text=(
+                        "Current composer draft or short intent to expand into the "
+                        "AI reply."
+                    ),
+                ),
             },
         ),
         responses={
@@ -193,12 +216,13 @@ class AIDraftView(APIView):
             request.data.get("senderId"),
             source_message.thread,
         )
+        current_draft_text = request.data.get("currentDraftText")
 
         if settings.AI_DRAFT_PREVIEW_ONLY:
             ai_reply = generate_preview_reply_body(source_message)
         else:
             try:
-                ai_reply = generate_ai_reply_body(source_message)
+                ai_reply = generate_ai_reply_body(source_message, current_draft_text)
             except ImproperlyConfigured:
                 logger.info(
                     "AI service is not configured; creating preview AI draft for message %s",
