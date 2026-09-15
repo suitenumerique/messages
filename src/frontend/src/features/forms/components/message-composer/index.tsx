@@ -515,9 +515,9 @@ export const MessageComposer = React.forwardRef<MessageComposerHandle, MessageCo
                 }}
             >
                 <Toolbar>
-                    {generateAiDraft && (
+                    {(generateAiDraft || draft) && (
                         <AiReplyButton
-                            disabled={disabled}
+                            disabled={disabled || !generateAiDraft}
                             isLoading={isGeneratingAiDraft}
                             onClick={handleAiReplyClick}
                         />
