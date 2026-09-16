@@ -1,4 +1,5 @@
 """Service for AI-powered features using OpenAI-compatible API."""
+import base64
 import mimetypes
 import logging
 import requests
@@ -25,6 +26,7 @@ ALLOWED_EXTENSIONS = {
     ".markdown": "text/markdown",
 }
 MAX_FILE_SIZE = 20 * 1024 * 1024  # 20 Mo
+OCR_TIMEOUT_SECONDS = 120
 DOCUMENTS_PAGE_SIZE = 100  # maximum accepté par GET /v1/documents
 
 class AIService:
@@ -73,6 +75,27 @@ class AIService:
                 f"Albert API {response.status_code} on {response.url}: {response.text[:500]}"
             ) from exc
 
+    def ocr_document(self, content: bytes, content_type: str) -> str:
+        """Extract the text of a PDF, image or Word document with the OCR model.
+
+        The file is sent inline as a base64 data URL; pages come back as
+        Markdown and are joined in order.
+        """
+        data_url = f"data:{content_type};base64,{base64.b64encode(content).decode()}"
+        chunk_type = "image_url" if content_type.startswith("image/") else "document_url"
+        response = requests.post(
+            url=f"{settings.AI_BASE_URL}/ocr",
+            headers=self.headers,
+            json={
+                "model": settings.AI_OCR_MODEL,
+                "document": {"type": chunk_type, chunk_type: data_url},
+            },
+            timeout=OCR_TIMEOUT_SECONDS,
+        )
+        self.__check_response(response)
+        pages = response.json().get("pages", [])
+        return "\n\n".join(page.get("markdown") or "" for page in pages).strip()
+
     def search_chunks(self, question: str) -> list[dict]:
         """Search relevant chunks in the Albert API vector store.
 
@@ -106,10 +129,12 @@ class AIService:
         # Réponse : {"object": "list", "data": [{"method", "score", "chunk": {...}}, ...]}
         return response.json()["data"]
 
-    def call_ai_api(self, prompt, system_prompt=None):
+    def call_ai_api(self, prompt, system_prompt=None, seed=None):
         """Helper method to call the OpenAI API and process the response.
 
         ``system_prompt`` carries the fixed rules; ``prompt`` the content.
+        ``seed`` makes the sampling reproducible for a given value; a new
+        random seed on each call gives a different wording.
         """
         messages = [{"role": "user", "content": prompt}]
         if system_prompt:
@@ -120,6 +145,8 @@ class AIService:
 #            "stream": False,
 #            "n": 1,
         }
+        if seed is not None:
+            data["seed"] = seed
 
         try:
             response = self.client.chat.completions.create(**data)

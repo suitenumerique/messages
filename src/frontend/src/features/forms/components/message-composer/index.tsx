@@ -24,6 +24,7 @@ import { createBlockNoteDictionary, dropUnsupportedBlocks, SUPPORTED_BLOCK_SPECS
 import { PasteColorSanitizer } from '@/features/blocknote/paste-sanitizer';
 import { handle } from '@/features/utils/errors';
 import { findOrphanInlineImages } from './orphan-inline-images';
+import { AiInstructionsModal } from './ai-instructions-modal';
 import { MessageFormValues } from '../message-form';
 import { DriveFile } from '../message-form/drive-attachment-picker';
 import { Icon, IconSize } from "@gouvfr-lasuite/ui-kit";
@@ -60,20 +61,26 @@ export type MessageComposerHandle = {
 const AiReplyButton = ({
     disabled,
     isLoading,
+    hasGenerated,
     onClick,
 }: {
     disabled?: boolean;
     isLoading?: boolean;
+    hasGenerated?: boolean;
     onClick: () => void;
 }) => {
     const { t } = useTranslation();
     const Components = useComponentsContext()!;
 
+    const tooltip = isLoading
+        ? t("Generating AI draft")
+        : hasGenerated ? t("Regenerate AI draft with instructions") : t("Generate AI draft");
+
     return (
         <Components.FormattingToolbar.Button
             icon={<Icon name="auto_awesome" size={IconSize.SMALL} />}
             label={t("AI")}
-            mainTooltip={isLoading ? t("Generating AI draft") : t("Generate AI draft")}
+            mainTooltip={tooltip}
             isDisabled={disabled || isLoading}
             onClick={onClick}
         />
@@ -88,7 +95,7 @@ type MessageComposerProps = FieldProps & {
     draft?: Message;
     submitDraft?: () => void;
     ensureDraft?: () => Promise<string | undefined>;
-    generateAiDraft?: (currentDraftText?: string) => Promise<Message | undefined>;
+    generateAiDraft?: (currentDraftText?: string, additionalInstructions?: string) => Promise<Message | undefined>;
     quotedMessage?: Message;
     quoteType?: QuoteType;
     uploadInlineImage: (file: File) => Promise<{ url: string; blobId: string } | null>;
@@ -111,6 +118,9 @@ export const MessageComposer = React.forwardRef<MessageComposerHandle, MessageCo
     const form = useFormContext<MessageFormValues>();
     const { t, i18n } = useTranslation();
     const [isGeneratingAiDraft, setIsGeneratingAiDraft] = useState(false);
+    // After a first AI draft, the AI button asks for extra instructions before regenerating.
+    const [hasGeneratedAiDraft, setHasGeneratedAiDraft] = useState(false);
+    const [isAiInstructionsOpen, setIsAiInstructionsOpen] = useState(false);
     const { data: { data: activeSignatures = [] } = {}, isLoading: isLoadingSignatures } = useMailboxesMessageTemplatesAvailableList(
         mailboxId,
         {
@@ -366,7 +376,7 @@ export const MessageComposer = React.forwardRef<MessageComposerHandle, MessageCo
         }
     }
 
-    const handleAiReplyClick = async () => {
+    const generateAiReply = async (additionalInstructions?: string) => {
         if (!generateAiDraft || isGeneratingAiDraft) return;
 
         setIsGeneratingAiDraft(true);
@@ -375,8 +385,9 @@ export const MessageComposer = React.forwardRef<MessageComposerHandle, MessageCo
                 editor,
                 editor.document.filter(block => block.type !== "quoted-message"),
             );
-            const aiDraft = await generateAiDraft(currentDraftText);
+            const aiDraft = await generateAiDraft(currentDraftText, additionalInstructions);
             if (!aiDraft?.draftBody) return;
+            setHasGeneratedAiDraft(true);
 
             const blocks = dropUnsupportedBlocks(JSON.parse(aiDraft.draftBody), SUPPORTED_BLOCK_TYPES);
             const quotedBlocks = editor.document.filter(block => block.type === "quoted-message");
@@ -390,6 +401,19 @@ export const MessageComposer = React.forwardRef<MessageComposerHandle, MessageCo
         } finally {
             setIsGeneratingAiDraft(false);
         }
+    };
+
+    const handleAiReplyClick = () => {
+        if (hasGeneratedAiDraft) {
+            setIsAiInstructionsOpen(true);
+            return;
+        }
+        generateAiReply();
+    };
+
+    const handleAiInstructionsSubmit = (additionalInstructions: string) => {
+        setIsAiInstructionsOpen(false);
+        generateAiReply(additionalInstructions);
     };
 
     /**
@@ -527,6 +551,7 @@ export const MessageComposer = React.forwardRef<MessageComposerHandle, MessageCo
                     <AiReplyButton
                         disabled={disabled}
                         isLoading={isGeneratingAiDraft}
+                        hasGenerated={hasGeneratedAiDraft}
                         onClick={handleAiReplyClick}
                     />
                     <MessageTemplateSelector
@@ -544,6 +569,11 @@ export const MessageComposer = React.forwardRef<MessageComposerHandle, MessageCo
                     />
                 </Toolbar>
             </BlockNoteViewField>
+            <AiInstructionsModal
+                isOpen={isAiInstructionsOpen}
+                onClose={() => setIsAiInstructionsOpen(false)}
+                onSubmit={handleAiInstructionsSubmit}
+            />
             <input {...form.register("messageDraftBody")} type="hidden" />
             <input {...form.register("signatureId")} type="hidden" />
         </>

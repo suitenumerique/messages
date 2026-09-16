@@ -1392,6 +1392,11 @@ class Base(Configuration):
     AI_PRIVATE_COLLECTION_ID = values.Value(
         None, environ_name="AI_PRIVATE_COLLECTION_ID", environ_prefix=None
     )
+    # OCR model used to read citizens' attachments (PDF, images, Word).
+    # Empty disables OCR: only plain text attachments are then read.
+    AI_OCR_MODEL = values.Value(
+        "mistral-ocr-2512", environ_name="AI_OCR_MODEL", environ_prefix=None
+    )
 
 
     # Entitlements

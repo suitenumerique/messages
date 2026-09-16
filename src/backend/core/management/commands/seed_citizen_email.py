@@ -1,8 +1,10 @@
 """Seed citizen email conversations into a mailbox for local draft/reply testing."""
 
 import json
+import mimetypes
 from email.message import EmailMessage
 from email.utils import formatdate, make_msgid
+from pathlib import Path
 
 from django.core.management.base import BaseCommand, CommandError
 
@@ -33,13 +35,24 @@ class Command(BaseCommand):
         mailbox_email = options["mailbox"]
         mailbox = self._get_mailbox(mailbox_email)
 
+        # Attachment paths in the JSON file are relative to the file itself.
+        base_dir = Path(options["data_file"]).resolve().parent
+
         # Load email data from the specified JSON file
-        with open(options["data_file"], "r") as f:
+        with open(options["data_file"], "r", encoding="utf-8") as f:
             data = json.load(f)
 
             for infos in data:
                 for seed_message in self._iter_seed_messages(infos, mailbox_email):
-                    raw_message = self._build_raw_message(**seed_message["raw"])
+                    raw = seed_message["raw"]
+                    raw_message = self._build_raw_message(
+                        **{
+                            **raw,
+                            "attachments": self._resolve_attachments(
+                                raw["attachments"], base_dir
+                            ),
+                        }
+                    )
 
                     delivered = deliver_inbound_message(
                         mailbox_email,
@@ -86,6 +99,7 @@ class Command(BaseCommand):
                     "from_name": infos["name"],
                     "subject": infos["subject"],
                     "body": infos["message"],
+                    "attachments": infos.get("attachments"),
                 },
             }
             return
@@ -127,6 +141,7 @@ class Command(BaseCommand):
                     "message_id": message_id,
                     "in_reply_to": item.get("in_reply_to") or previous_message_id,
                     "references": item.get("references") or references,
+                    "attachments": item.get("attachments"),
                 },
             }
 
@@ -159,6 +174,7 @@ class Command(BaseCommand):
         message_id=None,
         in_reply_to=None,
         references=None,
+        attachments=None,
     ):
         message = EmailMessage()
         message["From"] = f"{from_name} <{from_email}>"
@@ -171,4 +187,31 @@ class Command(BaseCommand):
         if references:
             message["References"] = " ".join(references)
         message.set_content(body)
+        for attachment in attachments or []:
+            Command._add_attachment(message, attachment)
         return message.as_bytes()
+
+    @staticmethod
+    def _resolve_attachments(attachments, base_dir):
+        """Make attachment paths, relative to the JSON data file, absolute."""
+        return [
+            {**attachment, "path": base_dir / attachment["path"]}
+            for attachment in attachments or []
+        ]
+
+    @staticmethod
+    def _add_attachment(message, attachment):
+        """Attach ``{"path", "filename"?, "content_type"?}`` to ``message``."""
+        path = Path(attachment["path"])
+        if not path.is_file():
+            raise CommandError(f"Seed attachment not found: {path}")
+        filename = attachment.get("filename") or path.name
+        content_type = (
+            attachment.get("content_type")
+            or mimetypes.guess_type(path.name)[0]
+            or "application/octet-stream"
+        )
+        maintype, subtype = content_type.split("/", 1)
+        message.add_attachment(
+            path.read_bytes(), maintype=maintype, subtype=subtype, filename=filename
+        )

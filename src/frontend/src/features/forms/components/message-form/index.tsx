@@ -417,7 +417,7 @@ export const MessageForm = forwardRef<MessageFormHandle, MessageFormProps>(({
     const deleteMessageMutation = useMessagesDestroy();
     const isDeletingDraft = deleteMessageMutation.isPending;
     const isSubmittingMessage = isSubmitting || messageMutation.isPending;
-    const generateAiDraft = async (currentDraftText?: string): Promise<Message | undefined> => {
+    const generateAiDraft = async (currentDraftText?: string, additionalInstructions?: string): Promise<Message | undefined> => {
         const aiDraftSourceMessageId = parentMessage?.id ?? draftRef.current?.parent_id;
 
         console.info("AI draft request context", {
@@ -451,7 +451,7 @@ export const MessageForm = forwardRef<MessageFormHandle, MessageFormProps>(({
                 `/api/v1.0/messages/${aiDraftSourceMessageId}/ai-draft/`,
                 {
                     method: "POST",
-                    body: JSON.stringify({ senderId: currentSenderId, currentDraftText }),
+                    body: JSON.stringify({ senderId: currentSenderId, currentDraftText, additionalInstructions }),
                 },
             );
             const message = response.data;

@@ -179,3 +179,47 @@ def test_call_ai_api_without_system_prompt_sends_only_user_prompt(
     ai_service.call_ai_api("contenu")
 
     assert completions.payload["messages"] == [{"role": "user", "content": "contenu"}]
+
+
+@responses.activate
+def test_ocr_document_sends_a_data_url_and_joins_pages(ai_service, settings):
+    """Documents go as document_url, pages are joined in order."""
+    settings.AI_OCR_MODEL = "ocr-model"
+    ocr = responses.post(
+        f"{BASE_URL}/ocr",
+        json={"pages": [{"markdown": "Page 1"}, {"markdown": "Page 2"}]},
+    )
+
+    text = ai_service.ocr_document(b"%PDF", "application/pdf")
+
+    assert text == "Page 1\n\nPage 2"
+    body = json.loads(ocr.calls[0].request.body)
+    assert body["model"] == "ocr-model"
+    assert body["document"] == {
+        "type": "document_url",
+        "document_url": "data:application/pdf;base64,JVBERg==",
+    }
+
+
+@responses.activate
+def test_ocr_document_sends_images_as_image_url(ai_service, settings):
+    """Images use the image_url chunk type."""
+    settings.AI_OCR_MODEL = "ocr-model"
+    ocr = responses.post(f"{BASE_URL}/ocr", json={"pages": [{"markdown": "Avis"}]})
+
+    ai_service.ocr_document(b"\x89PNG", "image/png")
+
+    assert json.loads(ocr.calls[0].request.body)["document"] == {
+        "type": "image_url",
+        "image_url": "data:image/png;base64,iVBORw==",
+    }
+
+
+@responses.activate
+def test_ocr_document_raises_with_api_error_detail(ai_service, settings):
+    """OCR errors keep the API detail."""
+    settings.AI_OCR_MODEL = "ocr-model"
+    responses.post(f"{BASE_URL}/ocr", status=503, json={"detail": "busy"})
+
+    with pytest.raises(requests.HTTPError, match="503"):
+        ai_service.ocr_document(b"%PDF", "application/pdf")

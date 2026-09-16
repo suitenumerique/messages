@@ -322,5 +322,99 @@
         "message": "Bonjour,\n\nMerci. Pour ma reponse actuelle, je souhaite surtout savoir quoi faire maintenant : attendre le bulletin de salaire ou envoyer un message a la CAF pour signaler que tout le reste a deja ete fourni ?\n\nCordialement,\nHugo Leroy"
       }
     ]
+  },
+  {
+    "email": "lea.fontaine@citoyen.example",
+    "name": "Léa Fontaine",
+    "subject": "Pièces pour mon rendez-vous passeport du 30 septembre",
+    "message": "Bonjour,\n\nJ'ai rendez-vous le 30 septembre à la mairie pour refaire mon passeport, l'ancien a expiré il y a plus de cinq ans.\n\nJe vous envoie en pièces jointes mon justificatif de domicile (ma dernière facture d'électricité) et un scan de mon extrait d'acte de naissance.\n\nPouvez-vous me confirmer que ces documents sont valables et que mon dossier sera complet ? J'apporterai la photo d'identité le jour du rendez-vous.\n\nMerci d'avance,\nLéa Fontaine",
+    "attachments": [
+      {
+        "path": "attachments/facture_energie_mars_2025.pdf"
+      },
+      {
+        "path": "attachments/acte_naissance_lea_fontaine.png"
+      }
+    ]
+  },
+  {
+    "email": "karim.benali@citoyen.example",
+    "name": "Karim Benali",
+    "subject": "Contestation d'un forfait post-stationnement",
+    "message": "Bonjour,\n\nJ'ai reçu un avis de forfait post-stationnements, alors que j'avais bien payé mon stationnement avec l'application.\n\nVous trouverez ci-joint l'avis reçu et le reçu de paiement de l'application. Je souhaite contester ce forfait : comment dois-je faire et avant quelle date ?\n\nCordialement,\nKarim Benali",
+    "attachments": [
+      {
+        "path": "attachments/avis_fps_2026-08-28.png"
+      },
+      {
+        "path": "attachments/recu_paiement_stationnement.txt"
+      }
+    ]
+  },
+   {
+    "email": "karim.benali@citoyen.example",
+    "name": "Karim Benali",
+    "subject": "",
+    "message": "\nKarim Benali",
+    "attachments": [
+      {
+        "path": "attachments/avis_fps_2026-08-28.png"
+      },
+      {
+        "path": "attachments/recu_paiement_stationnement.txt"
+      }
+    ]
+  },
+  {
+    "email": "nadia.roussel@citoyen.example",
+    "name": "Nadia Roussel",
+    "subject": "Mise à jour de ma demande de logement social",
+    "messages": [
+      {
+        "direction": "inbound",
+        "date": "Mon, 07 Sep 2026 09:12:00 +0200",
+        "message": "Bonjour,\n\nJe dois mettre à jour ma demande de logement social. Quels documents dois-je vous transmettre ?\n\nCordialement,\nNadia Roussel"
+      },
+      {
+        "direction": "outbound",
+        "date": "Tue, 08 Sep 2026 10:30:00 +0200",
+        "message": "Bonjour Madame,\n\nPour mettre à jour votre demande, merci de nous transmettre une pièce d'identité en cours de validité, votre dernier avis d'imposition et une attestation de votre employeur de moins de trois mois.\n\nCordialement,\nLe service logement"
+      },
+      {
+        "direction": "inbound",
+        "date": "Mon, 14 Sep 2026 18:45:00 +0200",
+        "message": "Bonjour,\n\nVoici l'attestation de mon employeur ainsi qu'une lettre qui explique ma situation actuelle.\n\nEst-ce que mon dossier est complet maintenant ?\n\nCordialement,\nNadia Roussel",
+        "attachments": [
+          {
+            "path": "attachments/attestation_employeur_nadia_roussel.pdf"
+          },
+          {
+            "path": "attachments/lettre_situation_nadia_roussel.docx"
+          }
+        ]
+      }
+    ]
+  },
+  {
+    "email": "henry.watiotienne@citoyen.example",
+    "name": "Henry Watiotienne",
+    "subject": "Justificatif de domicile pour ma carte d'identité",
+    "message": "Bonjour,\n\nJe dois refaire ma carte d'identité et j'habite chez mon père à Avesnes-les-Aubert. Je n'ai aucune facture à mon nom.\n\nJ'ai pris en photo l'attestation d'hébergement que mon père a remplie, vous la trouverez en pièce jointe. Est-ce que ce document suffit comme justificatif de domicile, ou faut-il autre chose ?\n\nMerci,\nHenry Watiotienne",
+    "attachments": [
+      {
+        "path": "attachments/attestation_hebergement_photo.png"
+      }
+    ]
+  },
+  {
+    "email": "philippe.watiotienne@citoyen.example",
+    "name": "Philippe Watiotienne",
+    "subject": "Inscription de mon fils sur les listes électorales",
+    "message": "Bonjour,\n\nMon fils Henry habite chez moi et souhaite s'inscrire sur les listes électorales de la commune avant les prochaines élections.\n\nJe vous transmets en pièce jointe le scan de l'attestation d'hébergement que nous avons signée. Pouvez-vous me dire si elle est recevable et quels autres documents il doit fournir ?\n\nBien cordialement,\nPhilippe Watiotienne",
+    "attachments": [
+      {
+        "path": "attachments/attestation_hebergement_scan.pdf"
+      }
+    ]
   }
 ]
