@@ -152,5 +152,169 @@
         "message": "Bonjour,\n\nMerci pour votre reponse. Je viens de joindre mon avis d'imposition et l'attestation de mon proprietaire indiquant que je dois quitter le logement le 30 septembre.\n\nPouvez-vous me confirmer que ces deux documents suffisent et que mon dossier peut maintenant etre traite en priorite compte tenu de l'urgence ?\n\nCordialement,\nLucas Morel"
       }
     ]
+  },
+  {
+    "email": "nadia.benamar@citoyen.example",
+    "name": "Nadia Benamar",
+    "subject": "Long suivi - renouvellement de titre de sejour et changement d'adresse",
+    "messages": [
+      {
+        "direction": "inbound",
+        "date": "Tue, 01 Sep 2026 08:45:00 +0200",
+        "message": "Bonjour,\n\nJ'ai depose une demande de renouvellement de titre de sejour le 12 juillet 2026 sur l'ANEF. Mon numero de dossier est ANEF-2026-774421. Depuis, j'ai demenage du 18 rue Voltaire a Saint-Denis vers le 42 avenue Jean Jaures a Montreuil.\n\nPouvez-vous me dire si je dois refaire toute ma demande ou seulement signaler le changement d'adresse ?\n\nCordialement,\nNadia Benamar"
+      },
+      {
+        "direction": "outbound",
+        "date": "Tue, 01 Sep 2026 14:10:00 +0200",
+        "message": "Bonjour Madame,\n\nVous n'avez pas a refaire toute votre demande. Vous devez signaler votre nouvelle adresse dans votre espace ANEF et joindre un justificatif de domicile recent.\n\nVotre dossier ANEF-2026-774421 reste en cours d'instruction.\n\nCordialement,\nLe bureau du sejour"
+      },
+      {
+        "direction": "inbound",
+        "date": "Wed, 02 Sep 2026 09:05:00 +0200",
+        "message": "Bonjour,\n\nMerci pour votre retour. J'ai ajoute une facture d'electricite a mon nom datant du 25 aout. Est-ce suffisant comme justificatif de domicile ?\n\nCordialement,\nNadia Benamar"
+      },
+      {
+        "direction": "outbound",
+        "date": "Wed, 02 Sep 2026 16:20:00 +0200",
+        "message": "Bonjour Madame,\n\nUne facture d'electricite recente a votre nom peut convenir comme justificatif de domicile. Nous vous invitons toutefois a verifier que l'adresse indiquee est bien le 42 avenue Jean Jaures a Montreuil.\n\nCordialement,\nLe bureau du sejour"
+      },
+      {
+        "direction": "inbound",
+        "date": "Fri, 04 Sep 2026 10:30:00 +0200",
+        "message": "Bonjour,\n\nL'adresse sur la facture est bien 42 avenue Jean Jaures a Montreuil. J'ai aussi recu une demande de piece complementaire pour mon contrat de travail. Je suis en CDI depuis le 1er juin 2026, mais mon employeur m'a donne une attestation employeur au lieu du contrat complet.\n\nEst-ce que cette attestation suffit ?\n\nCordialement,\nNadia Benamar"
+      },
+      {
+        "direction": "outbound",
+        "date": "Fri, 04 Sep 2026 15:05:00 +0200",
+        "message": "Bonjour Madame,\n\nPour l'instruction de votre dossier, l'attestation employeur peut etre utile, mais elle ne remplace pas toujours le contrat de travail si celui-ci est demande explicitement. Merci de transmettre le contrat signe si vous en disposez, ou d'indiquer clairement que vous ne l'avez pas encore recu.\n\nCordialement,\nLe bureau du sejour"
+      },
+      {
+        "direction": "inbound",
+        "date": "Mon, 07 Sep 2026 11:18:00 +0200",
+        "message": "Bonjour,\n\nJ'ai finalement obtenu mon contrat signe et je l'ai depose ce matin sur l'ANEF. Mon recepisse expire le 20 septembre 2026. Est-ce que je vais recevoir une nouvelle attestation avant cette date ?\n\nCordialement,\nNadia Benamar"
+      },
+      {
+        "direction": "outbound",
+        "date": "Mon, 07 Sep 2026 16:50:00 +0200",
+        "message": "Bonjour Madame,\n\nNous avons bien note que votre recepisse expire le 20 septembre 2026. Si votre dossier ne peut pas etre finalise avant cette date, une attestation de prolongation d'instruction pourra etre emise sous reserve que le dossier soit complet.\n\nCordialement,\nLe bureau du sejour"
+      },
+      {
+        "direction": "inbound",
+        "date": "Wed, 09 Sep 2026 08:52:00 +0200",
+        "message": "Bonjour,\n\nJe dois voyager en Belgique le 28 septembre pour mon travail. Mon employeur me demande de confirmer rapidement si je pourrai partir. Est-ce que l'attestation de prolongation permettra de revenir en France ?\n\nMerci,\nNadia Benamar"
+      },
+      {
+        "direction": "outbound",
+        "date": "Wed, 09 Sep 2026 13:25:00 +0200",
+        "message": "Bonjour Madame,\n\nNous ne pouvons pas vous garantir ici les conditions de franchissement de frontiere. Avant tout deplacement hors de France, vous devez verifier que vous disposez d'un document de sejour valide permettant le retour. Nous vous recommandons d'attendre la confirmation de validite de votre document avant de voyager.\n\nCordialement,\nLe bureau du sejour"
+      },
+      {
+        "direction": "inbound",
+        "date": "Fri, 11 Sep 2026 09:40:00 +0200",
+        "message": "Bonjour,\n\nJe comprends. J'ai annule le deplacement en Belgique. En revanche, mon employeur m'indique que mon autorisation de travail depend du renouvellement du titre. Pouvez-vous me fournir une attestation indiquant que le dossier est complet et en cours ?\n\nCordialement,\nNadia Benamar"
+      },
+      {
+        "direction": "outbound",
+        "date": "Fri, 11 Sep 2026 15:12:00 +0200",
+        "message": "Bonjour Madame,\n\nNous ne delivrons pas d'attestation libre redigee pour l'employeur. Lorsque votre dossier est complet et recevable, l'ANEF peut generer une attestation de prolongation d'instruction. Ce document fait foi pour le suivi administratif de votre demande.\n\nCordialement,\nLe bureau du sejour"
+      },
+      {
+        "direction": "inbound",
+        "date": "Mon, 14 Sep 2026 10:22:00 +0200",
+        "message": "Bonjour,\n\nSur mon espace ANEF, le statut est passe a \"instruction en cours\" mais je n'ai pas encore l'attestation. J'ai bien ajoute le contrat signe, la facture d'electricite et mon passeport. Pouvez-vous verifier s'il manque encore quelque chose ?\n\nCordialement,\nNadia Benamar"
+      },
+      {
+        "direction": "outbound",
+        "date": "Mon, 14 Sep 2026 16:18:00 +0200",
+        "message": "Bonjour Madame,\n\nA ce stade, les pieces que vous indiquez correspondent aux elements deja demandes : justificatif de domicile, contrat de travail signe et passeport. Si une autre piece est necessaire, elle apparaitra dans votre espace ANEF.\n\nCordialement,\nLe bureau du sejour"
+      },
+      {
+        "direction": "inbound",
+        "date": "Wed, 16 Sep 2026 09:15:00 +0200",
+        "message": "Bonjour,\n\nJe reviens vers vous car mon recepisse expire dans quatre jours et je n'ai toujours pas l'attestation de prolongation. Comme vous m'avez confirme que les pieces demandees ont ete ajoutees, pouvez-vous me dire si l'attestation peut etre emise avant le 20 septembre ?\n\nCordialement,\nNadia Benamar"
+      },
+      {
+        "direction": "outbound",
+        "date": "Wed, 16 Sep 2026 11:00:00 +0200",
+        "message": "Bonjour Madame,\n\nVotre demande est transmise au service instructeur pour verification prioritaire compte tenu de l'expiration proche du recepisse. Nous vous invitons a surveiller votre espace ANEF, ou l'attestation sera disponible si elle est emise.\n\nCordialement,\nLe bureau du sejour"
+      },
+      {
+        "direction": "inbound",
+        "date": "Wed, 16 Sep 2026 15:35:00 +0200",
+        "message": "Bonjour,\n\nMerci. Derniere question : si l'attestation apparait demain sur l'ANEF, dois-je imprimer le document ou la version numerique suffit-elle pour mon employeur ?\n\nCordialement,\nNadia Benamar"
+      }
+    ]
+  },
+  {
+    "email": "hugo.leroy@citoyen.example",
+    "name": "Hugo Leroy",
+    "subject": "Long suivi - regularisation CAF apres changement de situation",
+    "messages": [
+      {
+        "direction": "inbound",
+        "date": "Thu, 03 Sep 2026 08:20:00 +0200",
+        "message": "Bonjour,\n\nJ'ai signale a la CAF que j'ai commence un emploi a temps partiel le 10 aout 2026. Mon numero allocataire est 4582197. Je crains d'avoir encore recu une aide calculee sur mon ancienne situation.\n\nQue dois-je faire pour regulariser ?\n\nCordialement,\nHugo Leroy"
+      },
+      {
+        "direction": "outbound",
+        "date": "Thu, 03 Sep 2026 14:45:00 +0200",
+        "message": "Bonjour Monsieur,\n\nVous devez declarer votre reprise d'activite et vos revenus dans votre espace CAF. Si un paiement a ete effectue sur une base ancienne, la CAF recalculera vos droits et vous informera d'une eventuelle regularisation.\n\nCordialement,\nLe service accueil"
+      },
+      {
+        "direction": "inbound",
+        "date": "Fri, 04 Sep 2026 09:10:00 +0200",
+        "message": "Bonjour,\n\nJ'ai bien declare la reprise d'activite. On me demande maintenant mes bulletins de salaire d'aout, mais je ne recevrai le premier bulletin que fin septembre. Puis-je envoyer mon contrat de travail en attendant ?\n\nCordialement,\nHugo Leroy"
+      },
+      {
+        "direction": "outbound",
+        "date": "Fri, 04 Sep 2026 15:30:00 +0200",
+        "message": "Bonjour Monsieur,\n\nVous pouvez transmettre votre contrat de travail a titre provisoire, en precisant que le bulletin de salaire d'aout sera envoye des reception. La CAF pourra vous demander le bulletin pour finaliser le calcul.\n\nCordialement,\nLe service accueil"
+      },
+      {
+        "direction": "inbound",
+        "date": "Mon, 07 Sep 2026 10:05:00 +0200",
+        "message": "Bonjour,\n\nJ'ai transmis le contrat. Je vois aussi une notification disant que je dois rembourser 186 euros. Est-ce deja definitif ou est-ce que cela peut changer quand j'aurai envoye mon bulletin ?\n\nCordialement,\nHugo Leroy"
+      },
+      {
+        "direction": "outbound",
+        "date": "Mon, 07 Sep 2026 16:05:00 +0200",
+        "message": "Bonjour Monsieur,\n\nLe montant indique peut evoluer si de nouvelles pieces modifient le calcul de vos droits. Nous vous conseillons d'attendre la notification definitive dans votre espace CAF et de transmettre votre bulletin des qu'il sera disponible.\n\nCordialement,\nLe service accueil"
+      },
+      {
+        "direction": "inbound",
+        "date": "Wed, 09 Sep 2026 11:00:00 +0200",
+        "message": "Bonjour,\n\nMa situation familiale a aussi change : ma compagne a emmenage chez moi le 1er septembre. Elle ne travaille pas actuellement. Dois-je declarer ce changement tout de suite meme si mon dossier emploi est encore en cours ?\n\nCordialement,\nHugo Leroy"
+      },
+      {
+        "direction": "outbound",
+        "date": "Wed, 09 Sep 2026 15:35:00 +0200",
+        "message": "Bonjour Monsieur,\n\nOui, vous devez declarer tout changement de situation familiale des qu'il intervient, meme si une autre regularisation est deja en cours. La CAF recalculera vos droits en tenant compte de l'ensemble des informations.\n\nCordialement,\nLe service accueil"
+      },
+      {
+        "direction": "inbound",
+        "date": "Fri, 11 Sep 2026 08:55:00 +0200",
+        "message": "Bonjour,\n\nJ'ai declare la vie commune. On me demande maintenant les ressources de ma compagne pour juin, juillet et aout, mais elle n'avait aucun revenu. Faut-il fournir une attestation sur l'honneur ?\n\nCordialement,\nHugo Leroy"
+      },
+      {
+        "direction": "outbound",
+        "date": "Fri, 11 Sep 2026 14:20:00 +0200",
+        "message": "Bonjour Monsieur,\n\nSi votre compagne n'a percu aucun revenu, indiquez-le dans la declaration de ressources. Si la CAF demande un justificatif complementaire, une attestation sur l'honneur pourra etre jointe depuis votre espace.\n\nCordialement,\nLe service accueil"
+      },
+      {
+        "direction": "inbound",
+        "date": "Tue, 15 Sep 2026 09:35:00 +0200",
+        "message": "Bonjour,\n\nJ'ai complete les ressources a zero et ajoute une attestation sur l'honneur. Je voudrais eviter une suspension de mes droits pendant le recalcul car mon loyer est preleve le 5 octobre. Pouvez-vous confirmer que mon dossier est complet ?\n\nCordialement,\nHugo Leroy"
+      },
+      {
+        "direction": "outbound",
+        "date": "Tue, 15 Sep 2026 16:05:00 +0200",
+        "message": "Bonjour Monsieur,\n\nD'apres les elements que vous indiquez, vous avez transmis le contrat de travail, declare la vie commune et complete les ressources de votre compagne. Le bulletin de salaire reste attendu des que vous l'aurez recu. Le traitement depend ensuite de la CAF.\n\nCordialement,\nLe service accueil"
+      },
+      {
+        "direction": "inbound",
+        "date": "Wed, 16 Sep 2026 13:10:00 +0200",
+        "message": "Bonjour,\n\nMerci. Pour ma reponse actuelle, je souhaite surtout savoir quoi faire maintenant : attendre le bulletin de salaire ou envoyer un message a la CAF pour signaler que tout le reste a deja ete fourni ?\n\nCordialement,\nHugo Leroy"
+      }
+    ]
   }
 ]
