@@ -139,3 +139,43 @@ def test_search_chunks_searches_private_collection_alone(ai_service):
     ai_service.search_chunks("question")
 
     assert json.loads(search.calls[0].request.body)["collection_ids"] == [291828]
+
+
+class FakeCompletions:
+    """Record the chat completion payload and return a canned answer."""
+
+    def __init__(self):
+        self.payload = None
+
+    def create(self, **payload):
+        """Return an OpenAI-like response."""
+        self.payload = payload
+        message = type("Message", (), {"content": "réponse"})()
+        choice = type("Choice", (), {"message": message})()
+        return type("Response", (), {"choices": [choice]})()
+
+
+def test_call_ai_api_sends_system_prompt_before_user_prompt(ai_service, monkeypatch):
+    """Fixed rules go in a system message, the content in the user message."""
+    completions = FakeCompletions()
+    monkeypatch.setattr(ai_service.client.chat, "completions", completions)
+
+    answer = ai_service.call_ai_api("contenu", system_prompt="règles")
+
+    assert answer == "réponse"
+    assert completions.payload["messages"] == [
+        {"role": "system", "content": "règles"},
+        {"role": "user", "content": "contenu"},
+    ]
+
+
+def test_call_ai_api_without_system_prompt_sends_only_user_prompt(
+    ai_service, monkeypatch
+):
+    """Existing callers keep a single user message."""
+    completions = FakeCompletions()
+    monkeypatch.setattr(ai_service.client.chat, "completions", completions)
+
+    ai_service.call_ai_api("contenu")
+
+    assert completions.payload["messages"] == [{"role": "user", "content": "contenu"}]

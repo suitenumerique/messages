@@ -3,6 +3,7 @@
 import json
 import logging
 import os
+import re
 
 from django.conf import settings
 from django.core.exceptions import ImproperlyConfigured
@@ -27,17 +28,20 @@ logger = logging.getLogger(__name__)
 THREAD_CONTEXT_MAX_MESSAGES = 8
 THREAD_CONTEXT_MAX_CHARS_PER_MESSAGE = 2000
 
+# A line starting with "-", "*" or "•" (bullet) or "1." / "1)" (numbered).
+BULLET_LINE_RE = re.compile(r"^\s*[-*•]\s+(?P<text>\S.*)$")
+NUMBERED_LINE_RE = re.compile(r"^\s*\d+[.)]\s+(?P<text>\S.*)$")
 
-def build_rag_context(question: str, results: list[dict]) -> str:
-    """Build the RAG context block from the retrieved chunks."""
-    extraits = "\n\n".join(
+
+def build_rag_context(results: list[dict]) -> str:
+    """Build the RAG context block from the retrieved chunks.
+
+    The excerpts are one source among others: the agent's instructions keep
+    priority, so this block must not restrict the reply to the excerpts.
+    """
+    return "\n\n".join(
         f"[Extrait {i}]\n{result['chunk']['content']}"
         for i, result in enumerate(results, start=1)
-    )
-    return (
-        "Réponds uniquement en t'appuyant sur les extraits fournis.\n"
-        f"\n[Question]\n{question}\n"
-        f"\n[Extraits]\n{extraits}"
     )
 
 
@@ -88,7 +92,6 @@ def _rag_search_query(message: models.Message, current_draft_text: str | None) -
         return f"{citizen_text}\n\nAgent draft intent:\n{draft_text}"
     return citizen_text or draft_text
 
-
 class ServiceUnavailable(drf.exceptions.APIException):
     """503 response for unavailable upstream AI service."""
 
@@ -104,82 +107,151 @@ def _reply_subject(subject: str | None) -> str:
     return f"Re: {subject}" if subject else "Re:"
 
 
-def _blocknote_paragraphs(text: str) -> str:
-    """Serialize plain AI text into the draft editor's BlockNote JSON shape."""
-    paragraphs = []
-    for paragraph in text.splitlines():
-        paragraph = paragraph.strip()
-        if not paragraph:
-            continue
-        paragraphs.append(
-            {
-                "type": "paragraph",
-                "content": [{"type": "text", "text": paragraph, "styles": {}}],
-            }
-        )
-    if not paragraphs:
-        paragraphs = [{"type": "paragraph", "content": ""}]
-    return json.dumps(paragraphs)
+def _blocknote_block(line: str) -> dict:
+    """Map one line of AI text to a BlockNote paragraph or list item."""
+    block_type, text = "paragraph", line
+    if match := BULLET_LINE_RE.match(line):
+        block_type, text = "bulletListItem", match["text"]
+    elif match := NUMBERED_LINE_RE.match(line):
+        block_type, text = "numberedListItem", match["text"]
+    return {
+        "type": block_type,
+        "content": [{"type": "text", "text": text.strip(), "styles": {}}],
+    }
 
 
-def _build_prompt(message: models.Message, current_draft_text: str | None = None) -> str:
-    """Build the prompt used to generate a citizen-facing reply."""
-    draft_instruction = ""
-    if current_draft_text and current_draft_text.strip():
-        draft_instruction = (
-            "Agent draft or intent to preserve and expand:\n"
-            f"{current_draft_text.strip()}\n\n"
-            "Use this draft as the main intent of the reply, even if it is very "
-            "short, for example yes/no/a day of the week. Expand it into a "
-            "complete formal reply suitable for a public administration or "
-            "government office.\n"
-            "However, if the draft contradicts any information contained in "
-            "the citizen's email (dates, amounts, names, case details, or any "
-            "other fact), ignore the contradicting part of the draft and rely "
-            "solely on the citizen's email. Never include a statement from "
-            "the draft that conflicts with the information in the email.\n\n"
-        )
+def blocknote_blocks(text: str) -> str:
+    """Serialize plain AI text into the draft editor's BlockNote JSON shape.
 
+    Lines starting with a list marker become list items, so a list asked for
+    by the agent survives in the editor.
+    """
+    blocks = [_blocknote_block(line) for line in text.splitlines() if line.strip()]
+    return json.dumps(blocks or [{"type": "paragraph", "content": ""}])
+
+
+def draft_has_list(current_draft_text: str | None) -> bool:
+    """Return True when the agent's draft contains a bullet or numbered list."""
+    return any(
+        BULLET_LINE_RE.match(line) or NUMBERED_LINE_RE.match(line)
+        for line in (current_draft_text or "").splitlines()
+    )
+
+
+SYSTEM_PROMPT_ROLE = (
+    "You are helping a government agent draft a reply to a citizen.\n"
+    "Write only the reply body. Do not include a subject line.\n\n"
+    "Priority order, from highest to lowest:\n"
+    "1. The agent's instructions, when provided.\n"
+    "2. The official reference excerpts, when provided.\n"
+    "3. The general writing rules.\n\n"
+)
+
+SYSTEM_PROMPT_AGENT_RULES = (
+    "Agent's instructions:\n"
+    "- The agent is the author of the reply. Their instructions are a trusted "
+    "source: facts, decisions, dates and commitments they give are not "
+    "inventions and must appear in the reply.\n"
+    "- Treat each line or bullet point of the agent's instructions as a "
+    "separate point. Address every point in the reply: never drop a point, "
+    "and never merge or summarize points so much that one disappears.\n"
+    "- A point is either an instruction about the reply (tone, what to "
+    "mention or avoid) or content to write. Apply instructions about the "
+    "reply without copying them literally; write content points into the "
+    "reply.\n"
+    "- When the agent gives a wording, for example in quotes, reuse it "
+    "verbatim.\n"
+    "- Even a very short instruction (yes/no, a day of the week) is the main "
+    "intent of the reply: expand it into a complete formal reply.\n"
+    "- Only exception: when a point states a fact about the citizen's case "
+    "(date, amount, name, case reference) that contradicts the citizen's "
+    "email, or a rule that contradicts the official excerpts, use the email "
+    "or the excerpts for that fact and keep the rest of the point. Do not "
+    "mention the conflict to the citizen.\n\n"
+)
+
+SYSTEM_PROMPT_WRITING_RULES = (
+    "General writing rules:\n"
+    "- Use a formal and professional tone, as expected from a public "
+    "administration or government office.\n"
+    "- Structure the reply as a professional email: a formal salutation "
+    "(for example 'Madame, Monsieur'), a short body, and a formal closing "
+    "formula (for example 'Je vous prie d'agréer, Madame, Monsieur, "
+    "l'expression de mes salutations distinguées.') followed by the "
+    "signature placeholder of the administration.\n"
+    "- Be concise, ideally under 150 words. When the agent's instructions "
+    "contain several points, covering all of them matters more than this "
+    "length.\n"
+    "- Reply only in the language of the citizen's email.\n"
+    "- Do not use Markdown formatting: no headings, no bold, no italic, no "
+    "asterisks.\n"
+    "{list_rule}"
+    "- Do not invent facts, promises, dates, or case details that come "
+    "neither from the email thread, the official excerpts, nor the agent's "
+    "instructions. If information is missing, ask for it briefly.\n"
+    "- Consider the full email thread in chronological order. Reply to the "
+    "latest/source citizen message, while preserving relevant facts, "
+    "commitments, answers, and unresolved requests from earlier messages in "
+    "the same thread.\n"
+)
+
+LIST_ALLOWED_RULE = (
+    "- The agent's instructions contain a list: you may use a simple list in "
+    "the reply; start each item on its own line with '- ' (or '1.', '2.' for "
+    "a numbered list). Use a single level, no nested items, and keep the "
+    "salutation, introduction and closing as sentences.\n"
+)
+LIST_FORBIDDEN_RULE = "- Do not use lists; write plain paragraphs.\n"
+
+
+def build_system_prompt(allow_lists: bool) -> str:
+    """Build the fixed rules sent as the system message."""
+    list_rule = LIST_ALLOWED_RULE if allow_lists else LIST_FORBIDDEN_RULE
     return (
-        "You are helping a government agent draft a reply to a citizen.\n\n"
-        "Write only the reply body. Do not include a subject line.\n\n"
-        "Requirements:\n"
-        "- Be concise. Keep the reply short, ideally under 150 words.\n"
-        "- Use a formal and professional tone, as expected from a public "
-        "administration or government office.\n"
-        "- Structure the reply as a professional email: a formal salutation "
-        "(for example 'Madame, Monsieur'), a short body of one to three "
-        "paragraphs, and a formal closing formula (for example 'Je vous prie "
-        "d'agréer, Madame, Monsieur, l'expression de mes salutations "
-        "distinguées.') followed by the signature placeholder of the "
-        "administration.\n"
-        "- You only can reply in the language of the citizen's email.\n"
-        "- Make sure your response is in the same language as the citizen's email.\n"
-        "- Do not use any Markdown formatting: no headings, no bold, no "
-        "italic, no bullet lists, no asterisks. Plain text only.\n"
-        "- Do not invent facts, promises, dates, or case details that are "
-        "not in the email thread. If information is missing, ask for it briefly.\n"
-        "- Consider the full email thread below in chronological order. Reply "
-        "to the latest/source citizen message, while preserving relevant "
-        "facts, commitments, answers, and unresolved requests from earlier "
-        "messages in the same thread.\n\n"
-        f"Email thread:\n{_build_thread_context(message)}\n\n"
-        f"{draft_instruction}"
-        "Draft reply:\n\n"
+        SYSTEM_PROMPT_ROLE
+        + SYSTEM_PROMPT_AGENT_RULES
+        + SYSTEM_PROMPT_WRITING_RULES.format(list_rule=list_rule)
+    )
+
+
+def build_user_prompt(
+    message: models.Message,
+    current_draft_text: str | None = None,
+    rag_context: str | None = None,
+) -> str:
+    """Build the content of the request: thread, excerpts, then agent's instructions.
+
+    The agent's instructions come last, right before the reply, so they are
+    the freshest context when the model starts writing.
+    """
+    sections = [f"Email thread:\n{_build_thread_context(message)}"]
+    if rag_context:
+        sections.append(f"Official reference excerpts:\n{rag_context}")
+    draft_text = (current_draft_text or "").strip()
+    if draft_text:
+        sections.append(f"Agent's instructions (address every point):\n{draft_text}")
+    sections.append("Draft reply:")
+    return "\n\n".join(sections) + "\n"
+
+
+def _call_ai_for_reply(
+    message: models.Message,
+    current_draft_text: str | None,
+    rag_context: str | None = None,
+) -> str:
+    """Send the system rules and the user content to the AI service."""
+    return AIService().call_ai_api(
+        build_user_prompt(message, current_draft_text, rag_context),
+        system_prompt=build_system_prompt(draft_has_list(current_draft_text)),
     )
 
 
 def generate_ai_reply_body(
         message: models.Message, current_draft_text: str | None = None
 ) -> str:
-    """Generate the reply body for a message using the configured AI service.
-
-    Flow: search official-doc chunks via Albert API, then let the AI service
-    draft the reply with that context. If the RAG step fails or is not
-    configured, fall back to a plain AI reply without context.
-    """
+    """Generate the reply body for a message without RAG context."""
     try:
-        return AIService().call_ai_api(_build_prompt(message, current_draft_text))
+        return _call_ai_for_reply(message, current_draft_text)
     except Exception:
         logger.exception("AI service failed without RAG context, re-raising")
         raise
@@ -188,16 +260,20 @@ def generate_ai_reply_body(
 def generate_ai_reply_body_with_rag(
         message: models.Message, current_draft_text: str | None = None
 ) -> str:
-    """Generate the reply body enriched with RAG chunks from Albert API."""
+    """Generate the reply body enriched with RAG chunks from Albert API.
+
+    If the RAG step fails or is not configured, fall back to a plain AI reply
+    without context.
+    """
     query = _rag_search_query(message, current_draft_text)
-    context_block = None
+    rag_context = None
 
     if query:
         try:
             results = AIService().search_chunks(query)
             logger.info("Albert RAG: %d chunks retrieved for query: %s", len(results), query[:200])
             if results:
-                context_block = build_rag_context(query, results)
+                rag_context = build_rag_context(results)
         except ImproperlyConfigured:
             # Pas de clé Albert configurée : réponse IA sans contexte RAG.
             logger.warning("Albert API key not configured; skipping RAG context.")
@@ -205,24 +281,7 @@ def generate_ai_reply_body_with_rag(
             # Albert indisponible ou requête rejetée : dégradation propre.
             logger.exception("Albert RAG search failed; falling back without context.")
 
-    if context_block:
-        # Le bloc RAG est passé comme "draft/intent" complémentaire du prompt :
-        # le service IA conserve les consignes de ton et de non-invention.
-        prompt = _build_prompt(message, current_draft_text)
-        prompt = prompt.replace(
-            "Draft reply:\n\n",
-            f"Official reference excerpts to rely on:\n\n{context_block}\n\nDraft reply:\n\n"
-            "Conflict rule:\n"
-            "When the agent draft conflicts with these official excerpts, "
-            "ignore the draft and answer according to the excerpts. Do not "
-            "mention the conflict to the citizen unless clarification is "
-            "needed.\n\n"
-            "Draft reply:\n\n",
-        )
-    else:
-        prompt = _build_prompt(message, current_draft_text)
-
-    return AIService().call_ai_api(prompt)
+    return _call_ai_for_reply(message, current_draft_text, rag_context)
 
 
 def generate_preview_reply_body(message: models.Message) -> str:
@@ -374,7 +433,7 @@ class AIDraftView(APIView):
         draft = create_draft(
             mailbox=sender_mailbox,
             subject=_reply_subject(source_message.subject),
-            draft_body=_blocknote_paragraphs(ai_reply),
+            draft_body=blocknote_blocks(ai_reply),
             parent_id=str(source_message.id),
             to_emails=[source_message.sender.email],
             cc_emails=[],

@@ -106,11 +106,17 @@ class AIService:
         # Réponse : {"object": "list", "data": [{"method", "score", "chunk": {...}}, ...]}
         return response.json()["data"]
 
-    def call_ai_api(self, prompt):
-        """Helper method to call the OpenAI API and process the response."""
+    def call_ai_api(self, prompt, system_prompt=None):
+        """Helper method to call the OpenAI API and process the response.
+
+        ``system_prompt`` carries the fixed rules; ``prompt`` the content.
+        """
+        messages = [{"role": "user", "content": prompt}]
+        if system_prompt:
+            messages = [{"role": "system", "content": system_prompt}, *messages]
         data = {
             "model": settings.AI_MODEL,
-            "messages": [{"role": "user", "content": prompt}],
+            "messages": messages,
 #            "stream": False,
 #            "n": 1,
         }
