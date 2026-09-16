@@ -6,6 +6,12 @@
     "message": "Bonjour,\n\nMa carte nationale d’identité expire en novembre et je viens également de déménager récemment de Lille à Lyon.\n\nJe voudrais savoir si je dois obligatoirement refaire ma carte à cause du changement d’adresse, ou si je peux simplement attendre son expiration pour la renouveler.\n\nPar ailleurs, je travaille actuellement à l’étranger et je ne serai en France que pendant une dizaine de jours en octobre. Est-ce que je peux faire la démarche dans n’importe quelle mairie, ou dois-je obligatoirement la faire dans ma commune de résidence ?\n\nMerci d’avance pour votre aide.\n\nCordialement,\nSophie Martin"
   },
   {
+    "email": "leo.leo@citoyen.example",
+    "name": "Leo Leo",
+    "subject": "Question contribution projet",
+    "message": "bonjour, quelles sont les bonnes pratiques à savoir pour contribuer au projet, format des commits, des issues, merci."
+  },
+  {
     "email": "thomas.bernard@citoyen.example",
     "name": "Thomas Bernard",
     "subject": "Démission et congés payés non pris",

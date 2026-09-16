@@ -842,3 +842,7 @@ generate_emails:
 	docker compose exec backend-dev-light python manage.py seed_citizen_email --mailbox user1@example.local --data-file core/data/generated_emails.json
 .PHONY: generate_emails
 
+private_collection:
+	docker compose exec backend-dev-light python manage.py private_collection --source-directory core/data
+PHONY: private_collection
+

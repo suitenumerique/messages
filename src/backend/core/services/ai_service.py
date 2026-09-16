@@ -1,8 +1,10 @@
 """Service for AI-powered features using OpenAI-compatible API."""
-
+import mimetypes
 import logging
 import requests
 import json
+import os
+import ast
 
 from django.conf import settings
 from django.core.exceptions import ImproperlyConfigured
@@ -13,6 +15,16 @@ from core.ai.utils import is_ai_enabled
 
 logger = logging.getLogger(__name__)
 
+# Extensions et types MIME acceptés par POST /v1/documents
+ALLOWED_EXTENSIONS = {
+    ".pdf": "application/pdf",
+    ".txt": "text/plain",
+    ".html": "text/html",
+    ".htm": "text/html",
+    ".md": "text/markdown",
+    ".markdown": "text/markdown",
+}
+MAX_FILE_SIZE = 20 * 1024 * 1024  # 20 Mo
 
 class AIService:
     """Service class for AI-related operations."""
@@ -78,7 +90,12 @@ class AIService:
             "limit": settings.AI_SEARCH_LIMIT,
         }
         if settings.AI_COLLECTION_IDS:
-            payload["collection_ids"] = settings.AI_COLLECTION_IDS
+            logger.critical(f"settings.AI_COLLECTION_IDS: {settings.AI_COLLECTION_IDS}, {type(settings.AI_COLLECTION_IDS)}")
+            collections_ids = settings.AI_COLLECTION_IDS
+            if settings.AI_PRIVATE_COLLECTION_ID:
+                collections_ids.append(settings.AI_PRIVATE_COLLECTION_ID)
+            logger.critical(f'COLLECTIONS IDS USED: {collections_ids}')
+            payload["collection_ids"] = collections_ids
 
         response = requests.post(
             url=f"{settings.AI_BASE_URL}/search",
@@ -114,3 +131,44 @@ class AIService:
             raise ValueError("AI response does not contain an answer")
 
         return content
+
+    def upload_document(self, file_path: str) -> int:
+        """Importe un fichier (PDF, TXT, HTML, MARKDOWN, max 20 Mo) dans la collection.
+
+        L'API extrait le texte, le découpe en chunks, les vectorise puis les stocke.
+        """
+        if not os.path.isfile(file_path):
+            raise FileNotFoundError(f"Fichier introuvable : {file_path}")
+
+        extension = os.path.splitext(file_path)[1].lower()
+        if extension not in ALLOWED_EXTENSIONS:
+            raise ValueError(
+                f"Format non accepté : '{extension or 'sans extension'}'. "
+                f"Formats autorisés : {', '.join(sorted(ALLOWED_EXTENSIONS))}"
+            )
+
+        file_size = os.path.getsize(file_path)
+        if file_size > MAX_FILE_SIZE:
+            raise ValueError(
+                f"Fichier trop volumineux : {file_size / (1024 * 1024):.1f} Mo "
+                f"(max {MAX_FILE_SIZE // (1024 * 1024)} Mo)"
+            )
+
+        # Type MIME déterminé depuis la liste blanche (prioritaire sur mimetypes,
+        # qui peut renvoyer None ou une valeur inattendue selon la plateforme)
+        mime_type = ALLOWED_EXTENSIONS[extension]
+
+        with open(file_path, "rb") as f:
+            response = requests.post(
+                url=f"{settings.AI_BASE_URL}/documents",
+                headers=self.headers,
+                files={"file": (os.path.basename(file_path), f, mime_type)},
+                data={"collection_id": str(settings.AI_PRIVATE_COLLECTION_ID)},
+                timeout=300,
+            )
+        response.raise_for_status()
+        return response.json()["id"]
+
+    def get_private_collections(self) -> list:
+        """Return the dictionary of private collections."""
+        return settings.AI_PRIVATE_COLLECTION_ID
