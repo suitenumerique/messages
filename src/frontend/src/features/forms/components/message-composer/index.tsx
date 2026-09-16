@@ -24,7 +24,7 @@ import { createBlockNoteDictionary, dropUnsupportedBlocks, SUPPORTED_BLOCK_SPECS
 import { PasteColorSanitizer } from '@/features/blocknote/paste-sanitizer';
 import { handle } from '@/features/utils/errors';
 import { findOrphanInlineImages } from './orphan-inline-images';
-import { AiInstructionsModal } from './ai-instructions-modal';
+import { AiInstructionsInput } from './ai-instructions-input';
 import { MessageFormValues } from '../message-form';
 import { DriveFile } from '../message-form/drive-attachment-picker';
 import { Icon, IconSize } from "@gouvfr-lasuite/ui-kit";
@@ -405,7 +405,7 @@ export const MessageComposer = React.forwardRef<MessageComposerHandle, MessageCo
 
     const handleAiReplyClick = () => {
         if (hasGeneratedAiDraft) {
-            setIsAiInstructionsOpen(true);
+            setIsAiInstructionsOpen(isOpen => !isOpen);
             return;
         }
         generateAiReply();
@@ -554,6 +554,12 @@ export const MessageComposer = React.forwardRef<MessageComposerHandle, MessageCo
                         hasGenerated={hasGeneratedAiDraft}
                         onClick={handleAiReplyClick}
                     />
+                    {isAiInstructionsOpen && !isGeneratingAiDraft && (
+                        <AiInstructionsInput
+                            onClose={() => setIsAiInstructionsOpen(false)}
+                            onSubmit={handleAiInstructionsSubmit}
+                        />
+                    )}
                     <MessageTemplateSelector
                         mailboxId={mailboxId}
                         messageId={draft?.id}
@@ -569,11 +575,6 @@ export const MessageComposer = React.forwardRef<MessageComposerHandle, MessageCo
                     />
                 </Toolbar>
             </BlockNoteViewField>
-            <AiInstructionsModal
-                isOpen={isAiInstructionsOpen}
-                onClose={() => setIsAiInstructionsOpen(false)}
-                onSubmit={handleAiInstructionsSubmit}
-            />
             <input {...form.register("messageDraftBody")} type="hidden" />
             <input {...form.register("signatureId")} type="hidden" />
         </>
