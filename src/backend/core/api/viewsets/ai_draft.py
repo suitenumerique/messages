@@ -46,7 +46,9 @@ def _rag_search_query(message: models.Message, current_draft_text: str | None) -
     """
     citizen_text = (message.get_as_text() or "").strip()
     draft_text = (current_draft_text or "").strip()
-    return draft_text or citizen_text
+    if citizen_text and draft_text:
+        return f"{citizen_text}\n\nAgent draft intent:\n{draft_text}"
+    return citizen_text or draft_text
 
 
 class ServiceUnavailable(drf.exceptions.APIException):
@@ -113,7 +115,8 @@ def _build_prompt(message: models.Message, current_draft_text: str | None = None
         "d'agréer, Madame, Monsieur, l'expression de mes salutations "
         "distinguées.') followed by the signature placeholder of the "
         "administration.\n"
-        "- Reply in the language of the citizen's email.\n"
+        "- You only can reply in the language of the citizen's email.\n"
+        "- Make sure your response is in the same language as the citizen's email.\n"
         "- Do not use any Markdown formatting: no headings, no bold, no "
         "italic, no bullet lists, no asterisks. Plain text only.\n"
         "- Do not invent facts, promises, dates, or case details that are "
@@ -166,7 +169,13 @@ def generate_ai_reply_body_with_rag(
         prompt = _build_prompt(message, current_draft_text)
         prompt = prompt.replace(
             "Draft reply:\n\n",
-            f"Official reference excerpts to rely on:\n\n{context_block}\n\nDraft reply:\n\n",
+            f"Official reference excerpts to rely on:\n\n{context_block}\n\nDraft reply:\n\n"
+            "Conflict rule:\n"
+            "When the agent draft conflicts with these official excerpts, "
+            "ignore the draft and answer according to the excerpts. Do not "
+            "mention the conflict to the citizen unless clarification is "
+            "needed.\n\n"
+            "Draft reply:\n\n",
         )
     else:
         prompt = _build_prompt(message, current_draft_text)
