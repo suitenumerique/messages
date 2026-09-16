@@ -24,6 +24,9 @@ from .. import permissions, serializers
 
 logger = logging.getLogger(__name__)
 
+THREAD_CONTEXT_MAX_MESSAGES = 8
+THREAD_CONTEXT_MAX_CHARS_PER_MESSAGE = 2000
+
 
 def build_rag_context(question: str, results: list[dict]) -> str:
     """Build the RAG context block from the retrieved chunks."""
@@ -38,13 +41,48 @@ def build_rag_context(question: str, results: list[dict]) -> str:
     )
 
 
-def _rag_search_query(message: models.Message, current_draft_text: str | None) -> str:
-    """Build the search query: citizen email first, agent draft as fallback.
+def _clip_text(text: str, max_chars: int) -> str:
+    """Keep prompt chunks bounded while preserving the beginning of each message."""
+    if len(text) <= max_chars:
+        return text
+    return f"{text[:max_chars].rstrip()}\n[truncated]"
 
-    The citizen email is the actual question; the agent draft is only an
+
+def _build_thread_context(message: models.Message) -> str:
+    """Return a compact chronological transcript for the source message thread."""
+    if not message.thread_id:
+        return message.get_as_text()
+
+    thread_messages = list(
+        models.Message.objects.select_related("sender")
+        .prefetch_related("recipients__contact")
+        .filter(thread_id=message.thread_id, is_draft=False)
+        .order_by("-created_at", "-id")[:THREAD_CONTEXT_MAX_MESSAGES]
+    )
+    thread_messages.reverse()
+
+    if not thread_messages:
+        return message.get_as_text()
+
+    entries = []
+    for index, thread_message in enumerate(thread_messages, start=1):
+        marker = (
+            "source message" if thread_message.id == message.id else "thread message"
+        )
+        message_text = _clip_text(
+            thread_message.get_as_text(), THREAD_CONTEXT_MAX_CHARS_PER_MESSAGE
+        )
+        entries.append(f"[{marker} {index}]\n{message_text}")
+    return "\n\n".join(entries)
+
+
+def _rag_search_query(message: models.Message, current_draft_text: str | None) -> str:
+    """Build the search query: email thread first, agent draft as fallback.
+
+    The email thread is the actual question; the agent draft is only an
     intent and may be empty — it must never be sent as-is to /v1/search.
     """
-    citizen_text = (message.get_as_text() or "").strip()
+    citizen_text = (_build_thread_context(message) or "").strip()
     draft_text = (current_draft_text or "").strip()
     if citizen_text and draft_text:
         return f"{citizen_text}\n\nAgent draft intent:\n{draft_text}"
@@ -120,8 +158,12 @@ def _build_prompt(message: models.Message, current_draft_text: str | None = None
         "- Do not use any Markdown formatting: no headings, no bold, no "
         "italic, no bullet lists, no asterisks. Plain text only.\n"
         "- Do not invent facts, promises, dates, or case details that are "
-        "not in the email. If information is missing, ask for it briefly.\n\n"
-        f"Citizen email:\n{message.get_as_text()}\n\n"
+        "not in the email thread. If information is missing, ask for it briefly.\n"
+        "- Consider the full email thread below in chronological order. Reply "
+        "to the latest/source citizen message, while preserving relevant "
+        "facts, commitments, answers, and unresolved requests from earlier "
+        "messages in the same thread.\n\n"
+        f"Email thread:\n{_build_thread_context(message)}\n\n"
         f"{draft_instruction}"
         "Draft reply:\n\n"
     )
