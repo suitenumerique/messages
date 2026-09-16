@@ -846,3 +846,8 @@ private_collection:
 	docker compose exec backend-dev-light python manage.py private_collection --source-directory core/data
 PHONY: private_collection
 
+# Credentials: DOCS_EMAIL / DOCS_PASSWORD (asked if not set) or DOCS_SESSIONID
+private_collection_docs:
+	docker compose exec -e DOCS_EMAIL -e DOCS_PASSWORD -e DOCS_SESSIONID backend-dev-light python manage.py private_collection --from-docs $(ARGS)
+.PHONY: private_collection_docs
+

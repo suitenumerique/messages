@@ -1355,6 +1355,26 @@ class Base(Configuration):
     AI_DRAFT_PREVIEW_ONLY = values.BooleanValue(
         default=False, environ_name="AI_DRAFT_PREVIEW_ONLY", environ_prefix=None
     )
+    # Docs: source of the documents imported into the private AI collection
+    # (``manage.py private_collection --from-docs``).
+    DOCS_CONFIG = {
+        # URL of the Docs backend as seen by a browser: login redirects use it.
+        "base_url": values.Value(
+            "http://localhost:8071", environ_name="DOCS_BASE_URL", environ_prefix=None
+        ),
+        # From inside a container, "localhost" is the container itself: requests
+        # to localhost are sent to this host instead, keeping the Host header.
+        "network_host": values.Value(
+            None, environ_name="DOCS_NETWORK_HOST", environ_prefix=None
+        ),
+        "api_prefix": "/api/v1.0",
+        "session_cookie_name": "docs_sessionid",
+        "page_size": 100,
+        "max_documents": values.PositiveIntegerValue(
+            200, environ_name="DOCS_MAX_DOCUMENTS", environ_prefix=None
+        ),
+        "timeout_seconds": 30,
+    }
     #int
     AI_QUERY_MAX_CHARS = values.PositiveIntegerValue(
         1000, environ_name="AI_QUERY_MAX_CHARS", environ_prefix=None

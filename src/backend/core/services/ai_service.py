@@ -25,6 +25,7 @@ ALLOWED_EXTENSIONS = {
     ".markdown": "text/markdown",
 }
 MAX_FILE_SIZE = 20 * 1024 * 1024  # 20 Mo
+DOCUMENTS_PAGE_SIZE = 100  # maximum accepté par GET /v1/documents
 
 class AIService:
     """Service class for AI-related operations."""
@@ -40,7 +41,6 @@ class AIService:
             timeout=60,
             max_retries=1,
         )
-        logger.info(f"settings data: {settings}")
         self.__set_headers()
 
 
@@ -83,19 +83,18 @@ class AIService:
         if not question:
             # Ne jamais appeler l'API avec une requête vide : c'est un 422 garanti.
             return []
-        logger.debug(f"{settings}")
         payload = {
             "query": question[:settings.AI_QUERY_MAX_CHARS],
             "method": settings.AI_SEARCH_METHOD,
             "limit": settings.AI_SEARCH_LIMIT,
         }
-        if settings.AI_COLLECTION_IDS:
-            logger.critical(f"settings.AI_COLLECTION_IDS: {settings.AI_COLLECTION_IDS}, {type(settings.AI_COLLECTION_IDS)}")
-            collections_ids = settings.AI_COLLECTION_IDS
-            if settings.AI_PRIVATE_COLLECTION_ID:
-                collections_ids.append(settings.AI_PRIVATE_COLLECTION_ID)
-            logger.critical(f'COLLECTIONS IDS USED: {collections_ids}')
-            payload["collection_ids"] = collections_ids
+        # Build a new list: appending to settings.AI_COLLECTION_IDS would add the
+        # private collection again on every call.
+        collection_ids = [int(collection_id) for collection_id in settings.AI_COLLECTION_IDS]
+        if settings.AI_PRIVATE_COLLECTION_ID:
+            collection_ids.append(int(settings.AI_PRIVATE_COLLECTION_ID))
+        if collection_ids:
+            payload["collection_ids"] = collection_ids
 
         response = requests.post(
             url=f"{settings.AI_BASE_URL}/search",
@@ -163,11 +162,80 @@ class AIService:
                 url=f"{settings.AI_BASE_URL}/documents",
                 headers=self.headers,
                 files={"file": (os.path.basename(file_path), f, mime_type)},
-                data={"collection_id": str(settings.AI_PRIVATE_COLLECTION_ID)},
+                data={"collection_id": str(self.__private_collection_id())},
                 timeout=300,
             )
-        response.raise_for_status()
+        self.__check_response(response)
         return response.json()["id"]
+
+    def upload_text_document(self, name: str, content: str) -> int:
+        """Import a Markdown text into the private collection under ``name``.
+
+        The API chunks the text on Markdown separators, vectorizes and stores it.
+        """
+        if not name.strip():
+            raise ValueError("Le nom du document est vide.")
+        if not content.strip():
+            raise ValueError(f"Le document '{name}' est vide.")
+        payload = content.encode("utf-8")
+        if len(payload) > MAX_FILE_SIZE:
+            raise ValueError(
+                f"Document trop volumineux : '{name}' "
+                f"(max {MAX_FILE_SIZE // (1024 * 1024)} Mo)"
+            )
+
+        response = requests.post(
+            url=f"{settings.AI_BASE_URL}/documents",
+            headers=self.headers,
+            files={"file": ("document.md", payload, ALLOWED_EXTENSIONS[".md"])},
+            # ``name`` replaces the file name in the collection.
+            data={"collection_id": str(self.__private_collection_id()), "name": name},
+            timeout=300,
+        )
+        self.__check_response(response)
+        return response.json()["id"]
+
+    def find_document_ids_by_name(self, name: str) -> list[int]:
+        """Return the ids of the private collection documents named ``name``."""
+        document_ids = []
+        offset = 0
+        while True:
+            response = requests.get(
+                url=f"{settings.AI_BASE_URL}/documents",
+                headers=self.headers,
+                params={
+                    "collection_id": self.__private_collection_id(),
+                    "name": name,
+                    "limit": DOCUMENTS_PAGE_SIZE,
+                    "offset": offset,
+                },
+                timeout=60,
+            )
+            self.__check_response(response)
+            documents = response.json()["data"]
+            document_ids.extend(
+                document["id"] for document in documents if document["name"] == name
+            )
+            if len(documents) < DOCUMENTS_PAGE_SIZE:
+                return document_ids
+            offset += DOCUMENTS_PAGE_SIZE
+
+    def delete_document(self, document_id: int) -> None:
+        """Delete a document of the collection; an already deleted one is ignored."""
+        response = requests.delete(
+            url=f"{settings.AI_BASE_URL}/documents/{document_id}",
+            headers=self.headers,
+            timeout=60,
+        )
+        if response.status_code == 404:
+            return
+        self.__check_response(response)
+
+    @staticmethod
+    def __private_collection_id() -> int:
+        if not settings.AI_PRIVATE_COLLECTION_ID:
+            raise ImproperlyConfigured("AI_PRIVATE_COLLECTION_ID is not configured.")
+        return int(settings.AI_PRIVATE_COLLECTION_ID)
 
     def get_private_collections(self) -> list:
         """Return the dictionary of private collections."""
