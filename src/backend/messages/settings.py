@@ -1369,6 +1369,9 @@ class Base(Configuration):
     AI_COLLECTION_IDS = values.ListValue(
         default=[], environ_name="AI_COLLECTION_IDS", environ_prefix=None
     )
+    AI_PRIVATE_COLLECTION_ID = values.Value(
+        None, environ_name="AI_PRIVATE_COLLECTION_ID", environ_prefix=None
+    )
 
 
     # Entitlements
