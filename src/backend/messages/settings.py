@@ -1355,6 +1355,21 @@ class Base(Configuration):
     AI_DRAFT_PREVIEW_ONLY = values.BooleanValue(
         default=False, environ_name="AI_DRAFT_PREVIEW_ONLY", environ_prefix=None
     )
+    #int
+    AI_QUERY_MAX_CHARS = values.PositiveIntegerValue(
+        1000, environ_name="AI_QUERY_MAX_CHARS", environ_prefix=None
+    )
+    #string
+    AI_SEARCH_METHOD = values.Value(None, environ_name="AI_SEARCH_METHOD", environ_prefix=None)
+    #int
+    AI_SEARCH_LIMIT = values.PositiveIntegerValue(
+        10, environ_name="AI_SEARCH_LIMIT", environ_prefix=None
+    )
+    #list
+    AI_COLLECTION_IDS = values.ListValue(
+        default=[], environ_name="AI_COLLECTION_IDS", environ_prefix=None
+    )
+
 
     # Entitlements
     ENTITLEMENTS_BACKEND = values.Value(

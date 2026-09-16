@@ -88,5 +88,47 @@
     "name": "Élodie Fontaine",
     "subject": "Question sans rapport avec une démarche administrative",
     "message": "Bonjour,\n\nJe joue actuellement à pierre-papier-ciseaux avec mes amis et je voudrais connaître la meilleure stratégie pour gagner le plus souvent possible.\n\nMerci !\n\nÉlodie"
-  }
+  },
+  {
+    "email": "jack.fontaine@citoyen.example",
+    "name": "Jack Fontaine",
+    "subject": "Prendre rendez-vous pour un renouvellement de passeport",
+    "message": "Bonjour,\n\nQuand serait-il possible d'avoir un rendez-vous pour refaire mon passeport?\n\nMerci !\n\nÉlodie"
+  },
+  {
+    "email": "marie.fontaine@citoyen.example",
+    "name": "Marie Fontaine",
+    "subject": "Prendre un rendez-vous avec le service SI.",
+    "message": "Bonjour,\n\nMon pc ne marche plus, serait-il possible de prendre un rendez-vous avec le SI pour voir ça?\n\nMerci !\n\nMarie"
+  },
+  {
+    "email": "xiao.xiaohong@citoyen.example",
+    "name": "Xiao Xiaohong",
+    "subject": "URGENT – Titre étudiant et ADP expirée – Voyage en Croatie le 01/10/2026.",
+    "message": "Madame, Monsieur,\n\nJe vous contacte concernant ma demande de renouvellement de titre de séjour déposée sur l’ANEF en 23/03/2026. J’ai également transmis les documents complémentaires demandés en 19/08/2026\nMon titre de séjour a expiré le 15 juin 2026 et mon attestation de prolongation d’instruction est arrivée à expiration le 15 septembre 2026 (déjà )\nJe dois impérativement voyager en Croatie le 1er octobre 2026 et j’ai besoin d’un document de séjour valide pour pouvoir voyager et revenir en France.\nJe vous serais donc très reconnaissante de bien vouloir, si possible, finaliser mon dossier et me délivrer mon nouveau titre de séjour ou, à défaut, une nouvelle attestation de prolongation d’instruction me permettant de voyager et de revenir en France.\nJ’avais déjà signalé ma situation via l’ANEF début septembre.\nMes informations :\nNom : Xiao\nPrénom : Xiaohong\nDate de naissance :  2000 Octobre 24\nIdentifiant (N° étranger) : 98764536\nANEF N° de la demande : 930865657489493\n\n\nJe vous remercie sincèrement pour votre aide compte tenu de l’urgence de ma situation.\nCordialement,\nXiaohong Xiao (she/her)\n+337452226557"
+  },
+    {
+      "email": "xiao.xiaohong@citoyen.example",
+      "name": "Xiao Xiaohong",
+      "subject": "URGENT – Expired student residence permit and ADP – Travel to Croatia on 01/10/2026.",
+      "message": "Dear Sir or Madam,\n\nI am contacting you regarding my residence permit renewal application submitted via the ANEF on 23/03/2026. I also sent the additional documents requested on 19/08/2026.\nMy residence permit expired on 15 June 2026, and my extension of processing certificate (attestation de prolongation d'instruction) expired on 15 September 2026 (already expired).\nI must absolutely travel to Croatia on 1 October 2026, and I need a valid residence document in order to travel and return to France.\nI would therefore be very grateful if you could, if possible, finalize my file and issue my new residence permit or, failing that, a new extension of processing certificate allowing me to travel and return to France.\nI had already reported my situation via the ANEF in early September.\nMy information:\nLast name: Xiao\nFirst name: Xiaohong\nDate of birth: 24 October 2000\nID (foreign national number): 98764536\nANEF application number: 930865657489493\n\nThank you sincerely for your help, given the urgency of my situation.\nBest regards,\nXiaohong Xiao (she/her)\n+337452226557"
+    },
+    {
+      "email": "xiao.xiaohong@citoyen.example",
+      "name": "Xiao Xiaohong",
+      "subject": "URGENTE – Permesso di soggiorno da studentessa e attestazione ADP scaduti – Viaggio in Croazia il 01/10/2026.",
+      "message": "Gentile Signora, Signore,\n\nLa contatto in merito alla mia richiesta di rinnovo del permesso di soggiorno presentata tramite ANEF il 23/03/2026. Ho inoltre trasmesso i documenti aggiuntivi richiesti in data 19/08/2026.\nIl mio permesso di soggiorno è scaduto il 15 giugno 2026 e la mia attestazione di proroga dell'istruttoria è scaduta il 15 settembre 2026 (già scaduta).\nDevo assolutamente recarmi in Croazia il 1° ottobre 2026 e ho bisogno di un documento di soggiorno valido per poter viaggiare e rientrare in Francia.\nLe sarei quindi molto grata se potesse, se possibile, concludere la mia pratica e rilasciarmi il nuovo permesso di soggiorno oppure, in mancanza di ciò, una nuova attestazione di proroga dell'istruttoria che mi permetta di viaggiare e rientrare in Francia.\nAvevo già segnalato la mia situazione tramite ANEF all'inizio di settembre.\nLe mie informazioni:\nCognome: Xiao\nNome: Xiaohong\nData di nascita: 24 ottobre 2000\nIdentificativo (n° di straniero): 98764536\nANEF n° della domanda: 930865657489493\n\nLa ringrazio sinceramente per il vostro aiuto, data l'urgenza della mia situazione.\nCordiali saluti,\nXiaohong Xiao (she/her)\n+337452226557"
+    },
+    {
+      "email": "xiao.xiaohong@citoyen.example",
+      "name": "Xiao Xiaohong",
+      "subject": "紧急 – 学生居留证及审理延期证明已过期 – 2026年10月1日赴克罗地亚出行。",
+      "message": "尊敬的女士/先生：\n\n我就我于2026年3月23日通过ANEF平台提交的居留证续签申请与您联系。我已于2026年8月19日提交了所要求的补充材料。\n我的居留证已于2026年6月15日过期，我的审理延期证明（attestation de prolongation d'instruction）也已于2026年9月15日到期（已过期）。\n我必须于2026年10月1日前往克罗地亚，我需要一份有效的居留证件才能出行并返回法国。\n因此，如有可能，恳请您尽快办结我的申请并向我发放新的居留证；或者退而求其次，向我发放一份新的审理延期证明，以便我出行并返回法国。\n我已于九月初通过ANEF平台反映过我的情况。\n我的信息：\n姓：Xiao\n名：Xiaohong\n出生日期：2000年10月24日\n身份证件号（外国人编号）：98764536\nANEF申请编号：930865657489493\n\n鉴于我处境的紧迫性，衷心感谢您的帮助。\n此致敬意，\nXiaohong Xiao（她/她）\n+337452226557"
+    },
+    {
+      "email": "xiao.xiaohong@citoyen.example",
+      "name": "Xiao Xiaohong",
+      "subject": "عاجل – رخصة إقامة الطالبة وشهادة تمديد دراسة الملف منتهيتا الصلاحية – السفر إلى كرواتيا بتاريخ 01/10/2026.",
+      "message": "سيدتي، سيدي،\n\nأتصل بكم بخصوص طلب تجديد رخصة الإقامة الذي قدمته عبر منصة ANEF بتاريخ 23/03/2026. كما أرسلت الوثائق التكميلية المطلوبة بتاريخ 19/08/2026.\nلقد انتهت صلاحية رخصة إقامتي في 15 يونيو 2026، وانتهت صلاحية شهادة تمديد دراسة الملف (attestation de prolongation d'instruction) في 15 سبتمبر 2026 (منتهية بالفعل).\nيجب عليّ بشكل ضروري السفر إلى كرواتيا في 1 أكتوبر 2026، وأحتاج إلى وثيقة إقامة سارية المفعول كي أتمكن من السفر والعودة إلى فرنسا.\nلذا أكون لكم ممتنة للغاية إذا أمكنكم، إن أمكن، إنهاء دراسة ملفي وإصدار رخصة الإقامة الجديدة لي، أو في حال تعذر ذلك، إصدار شهادة تمديد دراسة جديدة تتيح لي السفر والعودة إلى فرنسا.\nكنت قد أبلغتكم مسبقًا بوضعيتي عبر منصة ANEF في مطلع شهر سبتمبر.\nمعلوماتي:\nالاسم العائلي: Xiao\nالاسم الشخصي: Xiaohong\nتاريخ الميلاد: 24 أكتوبر 2000\nالرقم التعريفي (رقم الأجنبي): 98764536\nرقم الطلب لدى ANEF: 930865657489493\n\nأشكركم بإخلاص على مساعدتكم نظرًا لطابع وضعيتي المستعجل.\nمع خالص التحية،\nXiaohong Xiao (هي/هي)\n+337452226557"
+    }
 ]

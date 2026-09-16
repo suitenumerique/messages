@@ -2,12 +2,14 @@
 
 import json
 import logging
+import os
 
 from django.conf import settings
 from django.core.exceptions import ImproperlyConfigured
 from django.db.models import Exists, OuterRef
 
 import rest_framework as drf
+import requests
 from drf_spectacular.utils import OpenApiExample, extend_schema, inline_serializer
 from rest_framework import serializers as drf_serializers
 from rest_framework import status
@@ -21,6 +23,32 @@ from core.services.ai_service import AIService
 from .. import permissions, serializers
 
 logger = logging.getLogger(__name__)
+
+
+def build_rag_context(question: str, results: list[dict]) -> str:
+    """Build the RAG context block from the retrieved chunks."""
+    extraits = "\n\n".join(
+        f"[Extrait {i}]\n{result['chunk']['content']}"
+        for i, result in enumerate(results, start=1)
+    )
+    return (
+        "Réponds uniquement en t'appuyant sur les extraits fournis.\n"
+        f"\n[Question]\n{question}\n"
+        f"\n[Extraits]\n{extraits}"
+    )
+
+
+def _rag_search_query(message: models.Message, current_draft_text: str | None) -> str:
+    """Build the search query: citizen email first, agent draft as fallback.
+
+    The citizen email is the actual question; the agent draft is only an
+    intent and may be empty — it must never be sent as-is to /v1/search.
+    """
+    citizen_text = (message.get_as_text() or "").strip()
+    draft_text = (current_draft_text or "").strip()
+    if citizen_text and draft_text:
+        return f"{citizen_text}\n\nAgent draft intent:\n{draft_text}"
+    return citizen_text or draft_text
 
 
 class ServiceUnavailable(drf.exceptions.APIException):
@@ -66,16 +94,33 @@ def _build_prompt(message: models.Message, current_draft_text: str | None = None
             "Use this draft as the main intent of the reply, even if it is very "
             "short, for example yes/no/a day of the week. Expand it into a "
             "complete formal reply suitable for a public administration or "
-            "government office.\n\n"
+            "government office.\n"
+            "However, if the draft contradicts any information contained in "
+            "the citizen's email (dates, amounts, names, case details, or any "
+            "other fact), ignore the contradicting part of the draft and rely "
+            "solely on the citizen's email. Never include a statement from "
+            "the draft that conflicts with the information in the email.\n\n"
         )
 
     return (
-        "You are helping an agent draft a clear, polite email reply to a citizen.\n"
-        "Write only the reply body. Do not include a subject line. "
-        "Use a formal, professional tone suitable for a public administration "
-        "or government office. "
-        "Do not invent facts, promises, dates, or case details that are not in the "
-        "email. If information is missing, ask for it briefly.\n\n"
+        "You are helping a government agent draft a reply to a citizen.\n\n"
+        "Write only the reply body. Do not include a subject line.\n\n"
+        "Requirements:\n"
+        "- Be concise. Keep the reply short, ideally under 150 words.\n"
+        "- Use a formal and professional tone, as expected from a public "
+        "administration or government office.\n"
+        "- Structure the reply as a professional email: a formal salutation "
+        "(for example 'Madame, Monsieur'), a short body of one to three "
+        "paragraphs, and a formal closing formula (for example 'Je vous prie "
+        "d'agréer, Madame, Monsieur, l'expression de mes salutations "
+        "distinguées.') followed by the signature placeholder of the "
+        "administration.\n"
+        "- You only can reply in the language of the citizen's email.\n"
+        "- Make sure your response is in the same language as the citizen's email.\n"
+        "- Do not use any Markdown formatting: no headings, no bold, no "
+        "italic, no bullet lists, no asterisks. Plain text only.\n"
+        "- Do not invent facts, promises, dates, or case details that are "
+        "not in the email. If information is missing, ask for it briefly.\n\n"
         f"Citizen email:\n{message.get_as_text()}\n\n"
         f"{draft_instruction}"
         "Draft reply:\n\n"
@@ -83,10 +128,59 @@ def _build_prompt(message: models.Message, current_draft_text: str | None = None
 
 
 def generate_ai_reply_body(
-    message: models.Message, current_draft_text: str | None = None
+        message: models.Message, current_draft_text: str | None = None
 ) -> str:
-    """Generate the reply body for a message using the configured AI service."""
-    return AIService().call_ai_api(_build_prompt(message, current_draft_text))
+    """Generate the reply body for a message using the configured AI service.
+
+    Flow: search official-doc chunks via Albert API, then let the AI service
+    draft the reply with that context. If the RAG step fails or is not
+    configured, fall back to a plain AI reply without context.
+    """
+    try:
+        return AIService().call_ai_api(_build_prompt(message, current_draft_text))
+    except Exception:
+        logger.exception("AI service failed without RAG context, re-raising")
+        raise
+
+
+def generate_ai_reply_body_with_rag(
+        message: models.Message, current_draft_text: str | None = None
+) -> str:
+    """Generate the reply body enriched with RAG chunks from Albert API."""
+    query = _rag_search_query(message, current_draft_text)
+    context_block = None
+
+    if query:
+        try:
+            results = AIService().search_chunks(query)
+            logger.info("Albert RAG: %d chunks retrieved for query: %s", len(results), query[:200])
+            if results:
+                context_block = build_rag_context(query, results)
+        except ImproperlyConfigured:
+            # Pas de clé Albert configurée : réponse IA sans contexte RAG.
+            logger.warning("Albert API key not configured; skipping RAG context.")
+        except requests.RequestException:
+            # Albert indisponible ou requête rejetée : dégradation propre.
+            logger.exception("Albert RAG search failed; falling back without context.")
+
+    if context_block:
+        # Le bloc RAG est passé comme "draft/intent" complémentaire du prompt :
+        # le service IA conserve les consignes de ton et de non-invention.
+        prompt = _build_prompt(message, current_draft_text)
+        prompt = prompt.replace(
+            "Draft reply:\n\n",
+            f"Official reference excerpts to rely on:\n\n{context_block}\n\nDraft reply:\n\n"
+            "Conflict rule:\n"
+            "When the agent draft conflicts with these official excerpts, "
+            "ignore the draft and answer according to the excerpts. Do not "
+            "mention the conflict to the citizen unless clarification is "
+            "needed.\n\n"
+            "Draft reply:\n\n",
+        )
+    else:
+        prompt = _build_prompt(message, current_draft_text)
+
+    return AIService().call_ai_api(prompt)
 
 
 def generate_preview_reply_body(message: models.Message) -> str:
@@ -177,8 +271,8 @@ class AIDraftView(APIView):
                     required=False,
                     allow_blank=True,
                     help_text=(
-                        "Current composer draft or short intent to expand into the "
-                        "AI reply."
+                            "Current composer draft or short intent to expand into the "
+                            "AI reply."
                     ),
                 ),
             },
@@ -203,9 +297,9 @@ class AIDraftView(APIView):
             ),
         },
         description=(
-            "Generate a citizen-facing reply with the configured AI service and "
-            "save it as a draft reply to the source message. The citizen email "
-            "address is taken from the source message sender."
+                "Generate a citizen-facing reply with the configured AI service and "
+                "save it as a draft reply to the source message. The citizen email "
+                "address is taken from the source message sender."
         ),
     )
     def post(self, request, message_id):
@@ -222,7 +316,9 @@ class AIDraftView(APIView):
             ai_reply = generate_preview_reply_body(source_message)
         else:
             try:
-                ai_reply = generate_ai_reply_body(source_message, current_draft_text)
+                ai_reply = generate_ai_reply_body_with_rag(
+                    source_message, current_draft_text
+                )
             except ImproperlyConfigured:
                 logger.info(
                     "AI service is not configured; creating preview AI draft for message %s",
