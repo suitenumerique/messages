@@ -130,5 +130,27 @@
       "name": "Xiao Xiaohong",
       "subject": "عاجل – رخصة إقامة الطالبة وشهادة تمديد دراسة الملف منتهيتا الصلاحية – السفر إلى كرواتيا بتاريخ 01/10/2026.",
       "message": "سيدتي، سيدي،\n\nأتصل بكم بخصوص طلب تجديد رخصة الإقامة الذي قدمته عبر منصة ANEF بتاريخ 23/03/2026. كما أرسلت الوثائق التكميلية المطلوبة بتاريخ 19/08/2026.\nلقد انتهت صلاحية رخصة إقامتي في 15 يونيو 2026، وانتهت صلاحية شهادة تمديد دراسة الملف (attestation de prolongation d'instruction) في 15 سبتمبر 2026 (منتهية بالفعل).\nيجب عليّ بشكل ضروري السفر إلى كرواتيا في 1 أكتوبر 2026، وأحتاج إلى وثيقة إقامة سارية المفعول كي أتمكن من السفر والعودة إلى فرنسا.\nلذا أكون لكم ممتنة للغاية إذا أمكنكم، إن أمكن، إنهاء دراسة ملفي وإصدار رخصة الإقامة الجديدة لي، أو في حال تعذر ذلك، إصدار شهادة تمديد دراسة جديدة تتيح لي السفر والعودة إلى فرنسا.\nكنت قد أبلغتكم مسبقًا بوضعيتي عبر منصة ANEF في مطلع شهر سبتمبر.\nمعلوماتي:\nالاسم العائلي: Xiao\nالاسم الشخصي: Xiaohong\nتاريخ الميلاد: 24 أكتوبر 2000\nالرقم التعريفي (رقم الأجنبي): 98764536\nرقم الطلب لدى ANEF: 930865657489493\n\nأشكركم بإخلاص على مساعدتكم نظرًا لطابع وضعيتي المستعجل.\nمع خالص التحية،\nXiaohong Xiao (هي/هي)\n+337452226557"
-    }
+    },
+  {
+    "email": "lucas.morel@citoyen.example",
+    "name": "Lucas Morel",
+    "subject": "Suivi de mon dossier de logement social",
+    "messages": [
+      {
+        "direction": "inbound",
+        "date": "Mon, 14 Sep 2026 09:12:00 +0200",
+        "message": "Bonjour,\n\nJ'ai depose une demande de logement social le 3 juin 2026 sous le numero LS-2026-18452. Ma situation a change depuis le depot : mon bail actuel se termine le 30 septembre et je vais devoir quitter mon logement.\n\nPouvez-vous m'indiquer si mon dossier est complet et s'il manque encore des justificatifs ?\n\nCordialement,\nLucas Morel"
+      },
+      {
+        "direction": "outbound",
+        "date": "Mon, 14 Sep 2026 15:40:00 +0200",
+        "message": "Bonjour Monsieur,\n\nNous avons bien retrouve votre demande de logement social LS-2026-18452. Le dossier est en cours d'instruction, mais il manque encore votre dernier avis d'imposition ainsi qu'une attestation de fin de bail ou tout document prouvant la date de depart du logement actuel.\n\nVous pouvez transmettre ces pieces en repondant a ce message.\n\nCordialement,\nLe service logement"
+      },
+      {
+        "direction": "inbound",
+        "date": "Wed, 16 Sep 2026 08:25:00 +0200",
+        "message": "Bonjour,\n\nMerci pour votre reponse. Je viens de joindre mon avis d'imposition et l'attestation de mon proprietaire indiquant que je dois quitter le logement le 30 septembre.\n\nPouvez-vous me confirmer que ces deux documents suffisent et que mon dossier peut maintenant etre traite en priorite compte tenu de l'urgence ?\n\nCordialement,\nLucas Morel"
+      }
+    ]
+  }
 ]
