@@ -222,6 +222,23 @@ def gmail_labels(parsed_email: JmapEmail) -> list[str]:
     return labels
 
 
+def header_value(parsed_email: JmapEmail, name: str) -> str | None:
+    """Return the first raw value of ``name``, or None when absent.
+
+    Same reason as ``gmail_labels`` for reading the raw header list: these
+    are client conventions the JMAP wire shape does not model.
+    """
+    wanted = name.lower()
+    for header in parsed_email.get("headers") or []:
+        if not isinstance(header, dict):
+            continue
+        if (header.get("name") or "").lower() == wanted:
+            value = (header.get("value") or "").strip()
+            if value:
+                return value
+    return None
+
+
 # ────────────────────────────────────────────────────────────────────
 # Received-bounded header trust scopes
 # ────────────────────────────────────────────────────────────────────

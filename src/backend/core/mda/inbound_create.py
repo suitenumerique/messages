@@ -471,12 +471,17 @@ def _create_message_from_inbound(  # pylint: disable=too-many-arguments
                 for flag, value in message_flags.items():
                     if hasattr(message, flag):
                         setattr(message, flag, value)
-                message.save(
-                    update_fields=[
-                        "created_at",
-                        *message_flags.keys(),
-                    ]
-                )
+                flag_update_fields = ["created_at", *message_flags.keys()]
+                # Keep the timestamps in lockstep with the booleans, as the
+                # create above does: a trashed/archived row with a NULL
+                # timestamp breaks restore, ordering and auto-purge.
+                if message.is_trashed and message.trashed_at is None:
+                    message.trashed_at = message.created_at
+                    flag_update_fields.append("trashed_at")
+                if message.is_archived and message.archived_at is None:
+                    message.archived_at = message.created_at
+                    flag_update_fields.append("archived_at")
+                message.save(update_fields=flag_update_fields)
                 # Update ThreadAccess for read/starred state
                 access = models.ThreadAccess.objects.filter(
                     thread=thread, mailbox=mailbox
