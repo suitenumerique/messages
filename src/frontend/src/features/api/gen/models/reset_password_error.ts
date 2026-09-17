@@ -6,6 +6,6 @@
  * OpenAPI spec version: 1.0.0 (v1.0)
  */
 
-export interface ResetPasswordError {
+export type ResetPasswordError = {
   error: string;
-}
+};

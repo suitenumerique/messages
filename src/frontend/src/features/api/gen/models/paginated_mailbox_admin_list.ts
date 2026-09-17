@@ -7,11 +7,11 @@
  */
 import type { MailboxAdmin } from "./mailbox_admin";
 
-export interface PaginatedMailboxAdminList {
+export type PaginatedMailboxAdminList = {
   count: number;
   /** @nullable */
   next?: string | null;
   /** @nullable */
   previous?: string | null;
   results: MailboxAdmin[];
-}
+};

@@ -23,8 +23,9 @@ export type ThreadListboxItemProps = {
  */
 export const useThreadListbox = (threads: Thread[] | undefined) => {
     const { toggleThread, selectRange } = useThreadSelection();
-    const { focusedThreadId, setFocusedThreadId, ownsFocusRef, lastFocusedIndexRef } = useThreadListboxFocus();
+    const { focusedThreadId, setFocusedThreadId, ownsFocusRef, lastFocusedIndexRef, lastOpenedThreadIdRef } = useThreadListboxFocus();
     const itemRefs = useRef(new Map<string, HTMLAnchorElement>());
+    const isMountedRef = useRef(false);
 
     const firstThreadId = threads?.[0]?.id ?? null;
 
@@ -72,12 +73,33 @@ export const useThreadListbox = (threads: Thread[] | undefined) => {
     // transitions. Without this, keyboard navigation dies after opening a
     // thread. preventScroll: useScrollRestore already restores the list
     // scroll position on remount, a focus-triggered scroll would fight it.
+    //
+    // On mount the ownership guard is waived: the panel mounts on a route
+    // transition, and a focus sitting on <body> then means the control the
+    // user just activated is gone — the thread view's Close/Back, or an
+    // action that closed the thread. Those blurred the list (desktop split
+    // view) or never touched it (deep link), so the flag is down while
+    // nobody holds the focus: taking it back is the expected return path.
+    // The row of the thread just closed comes first, as the opener the user
+    // came from; a thread pruned from the list falls back on the clamped
+    // focus. On updates the guard stays: a list reorder must not pull the
+    // focus out of a search field.
     useEffect(() => {
-        if (!ownsFocusRef.current) return;
+        const isMount = !isMountedRef.current;
+        isMountedRef.current = true;
+        if (!isMount && !ownsFocusRef.current) return;
         if (document.activeElement !== document.body) return;
-        const targetId = focusedThreadId ?? firstThreadId;
+        const openedId = lastOpenedThreadIdRef.current;
+        const openedNode = isMount && openedId ? itemRefs.current.get(openedId) : undefined;
+        const targetId = openedNode ? openedId : (focusedThreadId ?? firstThreadId);
         if (!targetId) return;
-        itemRefs.current.get(targetId)?.focus({ preventScroll: true });
+        const node = itemRefs.current.get(targetId);
+        if (!node) return;
+        if (isMount) {
+            ownsFocusRef.current = true;
+            if (targetId !== focusedThreadId) setFocusedThreadId(targetId);
+        }
+        node.focus({ preventScroll: true });
     });
 
     const onKeyDown = useCallback((e: React.KeyboardEvent<HTMLElement>) => {

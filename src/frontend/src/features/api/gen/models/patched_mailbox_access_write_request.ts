@@ -11,8 +11,8 @@ import type { MailboxRoleChoices } from "./mailbox_role_choices";
  * Serializer for creating and updating mailbox access records.
 Mailbox is set from the view based on URL parameters.
  */
-export interface PatchedMailboxAccessWriteRequest {
+export type PatchedMailboxAccessWriteRequest = {
   /** User ID (UUID) or email address */
   user?: string;
   role?: MailboxRoleChoices;
-}
+};

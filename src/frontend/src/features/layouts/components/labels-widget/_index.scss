@@ -68,6 +68,18 @@
     z-index: 1000;
 }
 
+// Mobile bottom drawer (ModalDrawer) replacing the anchored popup: rows sized
+// for touch, unlike the desktop popup's compact list.
+.labels-widget__drawer .labels-widget__popup__content li {
+    display: flex;
+    align-items: center;
+    min-height: 44px;
+}
+
+.labels-widget__drawer__search {
+    padding-inline: var(--c--globals--spacings--base);
+}
+
 .labels-widget__popup__content__empty .c__button {
     text-wrap: nowrap;
     text-overflow: ellipsis;

@@ -7,7 +7,7 @@
  */
 import type { CalendarListResponseCalendarsItem } from "./calendar_list_response_calendars_item";
 
-export interface CalendarListResponse {
+export type CalendarListResponse = {
   calendars: CalendarListResponseCalendarsItem[];
   /**
    * Public URL of the calendar web UI, if configured.
@@ -16,4 +16,4 @@ export interface CalendarListResponse {
   web_url: string | null;
   /** True when a CalDAV service is configured for this mailbox (per-mailbox channel or deployment default). False means the integration is disabled. */
   configured: boolean;
-}
+};

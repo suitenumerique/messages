@@ -9,7 +9,7 @@
 /**
  * Serialize mail domains for creating / editing admin view.
  */
-export interface MailDomainAdminWrite {
+export type MailDomainAdminWrite = {
   /** primary key for the record as UUID */
   readonly id: string;
   /**
@@ -27,4 +27,4 @@ export interface MailDomainAdminWrite {
   identity_sync?: boolean;
   /** Metadata to sync to the maildomain group in the identity provider. */
   custom_attributes?: unknown;
-}
+};

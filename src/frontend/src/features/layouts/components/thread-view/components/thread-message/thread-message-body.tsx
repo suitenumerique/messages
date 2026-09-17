@@ -8,9 +8,10 @@ import { tokens } from '@/styles/cunningham-tokens'
 import { useTheme } from "@/features/providers/theme";
 import { useConfig } from "@/features/providers/config";
 import { useMailboxContext } from "@/features/providers/mailbox";
-import { Icon } from "@gouvfr-lasuite/ui-kit";
+import { Icon } from "@/features/ui/components/icon";
 import { Banner } from "@/features/ui/components/banner";
 import { getMailboxesImageProxyListUrl } from "@/features/api/gen/mailboxes/mailboxes";
+import { getNativeServerUrl, toNativeMediaUrl } from "@/features/native/media-url";
 import { EXTERNAL_IMAGES_CONSENT_KEY } from "@/features/config/constants";
 import { renderBodyParts } from "./renderers";
 import { linkifyHtml } from "./renderers/linkify";
@@ -19,8 +20,11 @@ import { useLinkConfirmation } from "./use-link-confirmation";
 import { ThreadMessageBodyProps } from "./types";
 
 const CSP = [
-    // Allow images from our domain, data URIs, and API endpoints
-    `img-src 'self' data: ${getApiOrigin()}`,
+    // Allow images from our domain, data URIs, and API endpoints. Inside the
+    // native shell, blob and proxied images go through the bridge's HTTP
+    // interceptor on the shell origin — which is only 'self' when the page is
+    // served from the embedded bundle, not from the Vite dev server.
+    `img-src 'self' data: ${getApiOrigin()} ${getNativeServerUrl()}`.trimEnd(),
     // Disable everything else by default
     "default-src 'none'",
     // No scripts at all
@@ -93,12 +97,14 @@ const ThreadMessageBody = ({ bodyParts, attachments = [], isHidden = false, mess
         setDisplayExternalImages(true);
     };
 
-    // Build CID to blob URL mapping for inline image resolution
+    // Build CID to blob URL mapping for inline image resolution. The iframe
+    // loads these as <img> subresources, which carry no session inside the
+    // native shell — hence the rewrite (see toNativeMediaUrl).
     const cidToBlobUrlMap = useMemo(() => {
         const map = new Map<string, string>();
         attachments.forEach(attachment => {
             if (attachment.cid) {
-                const blobUrl = getRequestUrl(getBlobDownloadRetrieveUrl(attachment.blobId));
+                const blobUrl = toNativeMediaUrl(getRequestUrl(getBlobDownloadRetrieveUrl(attachment.blobId)));
                 map.set(attachment.cid, blobUrl);
             }
         });
@@ -112,7 +118,7 @@ const ThreadMessageBody = ({ bodyParts, attachments = [], isHidden = false, mess
         selectedMailboxId: selectedMailbox?.id,
         onExternalImageDetected: () => { hasExternalImagesRef.current = true; },
         getProxiedUrl: (url: string) => selectedMailbox
-            ? getRequestUrl(getMailboxesImageProxyListUrl(selectedMailbox.id, { url }))
+            ? toNativeMediaUrl(getRequestUrl(getMailboxesImageProxyListUrl(selectedMailbox.id, { url })))
             : url,
     }), [canDisplayExternalImages, displayExternalImages, selectedMailbox]);
 

@@ -6,7 +6,7 @@
  * OpenAPI spec version: 1.0.0 (v1.0)
  */
 
-export interface ThreadSplitRequestRequest {
+export type ThreadSplitRequestRequest = {
   /** ID of the message to split from. This message and all chronologically later messages will be moved to a new thread. */
   message_id: string;
-}
+};

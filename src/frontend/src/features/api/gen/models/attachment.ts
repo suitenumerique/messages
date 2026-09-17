@@ -9,7 +9,7 @@
 /**
  * Serialize attachments.
  */
-export interface Attachment {
+export type Attachment = {
   readonly blobId: string;
   /** Original filename of the attachment */
   readonly name: string;
@@ -24,4 +24,4 @@ export interface Attachment {
    * @nullable
    */
   readonly cid: string | null;
-}
+};

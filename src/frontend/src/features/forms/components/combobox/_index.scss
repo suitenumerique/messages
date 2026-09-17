@@ -60,50 +60,91 @@
     }
   }
 
+  // Same state colours as the ui-kit Input (`.c__input__wrapper--error`),
+  // which sits next to this field in forms: primary border, and the label
+  // colour left to the Field (`.c__field--error label`).
   &--error {
-
-    .c__combobox__wrapper {
-      border-color: var(--c--contextuals--border--semantic--error--secondary);
-
-      label {
-        color: var(--c--contextuals--content--semantic--error--secondary);
-      }
+    .c__combobox__wrapper,
+    &:not(.c__combobox--disabled) .c__combobox__wrapper:hover {
+      border-color: var(--c--contextuals--border--semantic--error--primary);
     }
 
-    &:not(.c__combobox--disabled) {
-      .c__combobox__wrapper:hover {
-        border-color: var(--c--contextuals--border--semantic--error--primary);
-        box-shadow: var(--c--contextuals--border--semantic--error--primary) 0 0 0 1px;
-
-        label {
-          color: var(--c--contextuals--content--semantic--error--primary);
-        }
-      }
+    &:not(.c__combobox--disabled) .c__combobox__wrapper:hover {
+      box-shadow: var(--c--contextuals--border--semantic--error--primary) 0 0 0 1px;
     }
   }
 
   &--success {
-
-    .c__combobox__wrapper {
-      border-color: var(--c--contextuals--border--semantic--success--secondary);
-
-      label {
-        color: var(--c--contextuals--content--semantic--success--secondary);
-      }
+    .c__combobox__wrapper,
+    &:not(.c__combobox--disabled) .c__combobox__wrapper:hover {
+      border-color: var(--c--contextuals--border--semantic--success--primary);
     }
 
-    &:not(.c__combobox--disabled) {
-      .c__combobox__wrapper:hover {
-        border-color: var(--c--contextuals--border--semantic--success--primary);
-        box-shadow: var(--c--contextuals--border--semantic--success--primary) 0 0 0 1px;
-
-        label {
-          color: var(--c--contextuals--content--semantic--success--primary);
-        }
-      }
+    &:not(.c__combobox--disabled) .c__combobox__wrapper:hover {
+      box-shadow: var(--c--contextuals--border--semantic--success--primary) 0 0 0 1px;
     }
   }
 
+}
+
+// Inline variant: label in the left column of the Field grid, value row and
+// actions side by side in the wrapper, on the ui-kit inline input metrics.
+.c__combobox--inline {
+  // The value row wraps over several lines: the label and the actions stay
+  // on the first row instead of floating in the middle of the block.
+  &.c__field--inline {
+    align-items: start;
+  }
+
+  // Same recipe as the ui-kit `.c__input__label` / `.c__select__label`.
+  // The colour lives in the single-class rules below on purpose.
+  .c__combobox__label {
+    display: block;
+    // Centred on the first chip row (wrapper padding + half a chip), the
+    // same fine-tune as the ui-kit inline textarea label.
+    padding-top: 0.6rem;
+    font-size: var(--c--components--forms-labelledbox--classic-label-font-size);
+    font-weight: var(--c--components--forms-labelledbox--classic-label-font-weight);
+    font-family: var(--c--globals--font--families--base);
+    line-height: var(--c--components--forms-labelledbox--classic-label-line-height);
+    cursor: pointer;
+    overflow: hidden;
+    text-overflow: ellipsis;
+  }
+
+  .c__combobox__wrapper {
+    align-items: flex-start;
+    min-height: var(--c--components--forms-input--inline-min-height);
+    border-radius: var(--c--components--forms-input--inline-border-radius);
+    padding: var(--c--components--forms-input--inline-padding-block) var(--c--components--forms-input--inline-padding-inline);
+    gap: var(--c--globals--spacings--xs);
+  }
+
+  .c__combobox__value {
+    margin-bottom: 0;
+    flex: 1;
+    min-width: 0;
+  }
+
+  // The ui-kit rule positions this block for the floating layout; here it is
+  // a plain flex item at the end of the row.
+  .c__select__inner__actions {
+    position: static;
+    height: auto;
+    flex-shrink: 0;
+    align-self: flex-start;
+  }
+}
+
+// Kept at single-class specificity so the ui-kit state rules of the Field
+// (`.c__field--error label`, `.c__field--success label`) still recolour it.
+.c__combobox__label {
+  color: var(--c--components--forms-labelledbox--classic-label-color);
+}
+
+.c__combobox__label--disabled {
+  color: var(--c--components--forms-labelledbox--label-color--small--disabled);
+  cursor: default;
 }
 
 .c__combobox__menu {
@@ -189,6 +230,34 @@
       font-size: 1.125rem;
     }
   }
+
+  &__warning {
+    display: inline-flex;
+    line-height: 1;
+
+    .material-icons {
+      font-size: 1rem;
+    }
+  }
+
+  &--warning {
+    background-color: var(--c--contextuals--background--semantic--warning--tertiary);
+    color: var(--c--contextuals--content--semantic--warning--primary);
+  }
+
+  // Tooltip anchor around a warned chip: takes the chip's place in the
+  // wrapping value row without changing its layout.
+  &__tooltip-anchor {
+    display: inline-flex;
+    max-width: 100%;
+    min-width: 0;
+  }
+}
+
+// The warning colour on the field footer, which Cunningham's Field state
+// (default / success / error) does not provide.
+.c__combobox--warning:not(.c__combobox--error) .c__field__footer__items {
+  color: var(--c--contextuals--content--semantic--warning--primary);
 }
 
 .c__combobox__input {

@@ -1,0 +1,45 @@
+.pull-to-refresh {
+    --pull-progress: 0;
+
+    flex-shrink: 0;
+    height: 0;
+    overflow: hidden;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    // Only the release settles through a transition; while the finger drives
+    // the pull the gesture writes the height frame by frame and `--active`
+    // takes the transition away.
+    transition: height 0.25s ease;
+
+    &--active {
+        transition: none;
+    }
+
+    &__spinner {
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        padding: var(--c--globals--spacings--xs);
+        // Fades in with the pull, straight from the value the gesture writes
+        // on the container — no React render involved.
+        opacity: var(--pull-progress);
+
+        & > .c__spinner {
+            flex-shrink: 0;
+        }
+    }
+
+    &--refreshing &__spinner {
+        opacity: 1;
+    }
+
+    // While pulling (before the refresh fires) the spinner is frozen on its
+    // base frame; only opacity reacts to the pull distance. Expressed as a
+    // negation so that the running state simply lets the design system's own
+    // animation through — `revert` here would fall back past it, to the user
+    // agent, and the spinner would never turn.
+    &:not(&--refreshing) &__spinner > .c__spinner {
+        animation: none;
+    }
+}

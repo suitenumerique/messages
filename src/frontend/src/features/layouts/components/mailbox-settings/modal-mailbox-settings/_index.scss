@@ -13,10 +13,15 @@
         padding: var(--c--globals--spacings--sm)
     }
 
+    // The title is a flex item whose default `min-width: auto` resolves to the
+    // min-content of the mailbox card, i.e. the full width of its nowrap name
+    // and address. A long one would then push the close button out of the
+    // sidebar and make it scroll horizontally instead of ellipsizing.
     & .c__modal__tab-sidebar__title {
         padding: var(--c--globals--spacings--sm);
         padding-bottom: 0;
-        width: 100%;
+        flex: 1;
+        min-width: 0;
     }
 
     & > .c__modal__tab-sidebar__nav {
@@ -36,12 +41,10 @@
   // macOS-style account card sitting at the very top of the settings sidebar:
   // mailbox avatar on the left, name in bold and (when set) the address in a
   // muted line underneath.
-  // Wrapper around the shared MailboxSelector in the sidebar header. Full width
-  // with min-width:0 so the selector's text column can shrink and ellipsize the
-  // long address instead of overflowing the narrow sidebar.
+  // Wrapper around the shared MailboxSelector in the sidebar header, spanning
+  // the full sidebar width so the card aligns with the nav items below.
   &__identity {
     width: 100%;
-    min-width: 0;
   }
 
   &__section {
@@ -51,9 +54,9 @@
   &__section-header {
     display: flex;
     justify-content: space-between;
-    align-items: baseline;
-    gap: var(--c--globals--spacings--s);
-    margin-bottom: var(--c--globals--spacings--xs);
+    align-items: center;
+    gap: var(--c--globals--spacings--2xs);
+    margin-bottom: var(--c--globals--spacings--base);
   }
 
   &__section-title {

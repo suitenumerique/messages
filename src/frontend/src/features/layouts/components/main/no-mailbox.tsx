@@ -1,4 +1,4 @@
-import { Button } from "@gouvfr-lasuite/cunningham-react"
+import { Button } from "@gouvfr-lasuite/ui-components"
 import { logout, useAuth } from "@/features/auth";
 import { useTranslation } from "react-i18next";
 import { SKIP_LINK_TARGET_ID } from "@/features/ui/components/skip-link";

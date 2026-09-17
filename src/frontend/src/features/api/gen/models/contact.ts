@@ -9,7 +9,7 @@
 /**
  * Serialize contacts.
  */
-export interface Contact {
+export type Contact = {
   /** primary key for the record as UUID */
   readonly id: string;
   /**
@@ -19,4 +19,4 @@ export interface Contact {
   name?: string | null;
   /** @maxLength 254 */
   email: string;
-}
+};

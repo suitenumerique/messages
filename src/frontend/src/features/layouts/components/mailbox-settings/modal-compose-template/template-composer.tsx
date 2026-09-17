@@ -3,7 +3,7 @@ import { BlockNoteEditor, BlockNoteEditorOptions, BlockNoteSchema, defaultInline
 import { buildTemplateVariableInsertion, InlineTemplateVariable, TemplateVariableSelector } from "@/features/blocknote/inline-template-variable";
 import { TemplateVariableEditingBehavior } from "@/features/blocknote/inline-template-variable/editing-behavior";
 import { usePlaceholderVariables } from "@/features/blocknote/inline-template-variable/use-placeholder-variables";
-import { FieldProps } from "@gouvfr-lasuite/cunningham-react";
+import { FieldProps } from "@gouvfr-lasuite/ui-components";
 import { forwardRef, useEffect, useImperativeHandle, useMemo } from "react";
 import { useFormContext } from "react-hook-form";
 import { Toolbar } from "@/features/blocknote/toolbar";

@@ -15,15 +15,18 @@ const browserslist = pkg.browserslist;
 // the runtime-fetched locale JSONs (their URLs are otherwise fixed, so a CDN /
 // browser keeps serving a stale copy after a deploy — a half-translated UI).
 // Resolution order, most authoritative first:
-//   - SOURCE_VERSION   commit SHA — injected by Scalingo's buildpack natively,
-//                      and passed as a build-arg from our CI Docker build
-//   - `git`            local builds / any context that ships the .git dir
+//   - SOURCE_VERSION   commit SHA — injected by Scalingo's buildpack natively
+//                      (full 40 chars), passed as a build-arg from our CI Docker
+//                      build, and by the Makefile for container builds
+//   - `git`            host builds / any context that ships the .git dir
 //   - timestamp        last-resort, still unique from one deploy to the next
-const appVersion =
-  process.env.SOURCE_VERSION ||
+// Commit stamps are pinned to 8 chars so every environment reports the same id
+// as the OTA release (MOBILE_OTA_BUILD_ID, `git rev-parse --short=8`).
+const sourceVersion =
+  process.env.SOURCE_VERSION?.slice(0, 8) ||
   (() => {
     try {
-      return execSync('git rev-parse --short HEAD', {
+      return execSync('git rev-parse --short=8 HEAD', {
         stdio: ['ignore', 'pipe', 'ignore'],
       })
         .toString()
@@ -35,7 +38,11 @@ const appVersion =
 
 export default defineConfig({
   define: {
-    __SOURCE_VERSION__: JSON.stringify(appVersion),
+    __SOURCE_VERSION__: JSON.stringify(sourceVersion),
+    // The web app's own version, shown to users (see use-app-version.ts). Read
+    // from package.json — unlike the native apps, which version separately in
+    // capacitor.config.ts because they ship on the stores' cadence, not ours.
+    __WEB_APP_VERSION__: JSON.stringify(pkg.version),
   },
   plugins: [
     // See ./tsr.config.json for tanstackRouter config

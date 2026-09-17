@@ -1,4 +1,4 @@
-import { ShareModal } from "@gouvfr-lasuite/ui-kit";
+import { ShareModal } from "@gouvfr-lasuite/ui-components";
 import { useState } from "react";
 import { useTranslation } from "react-i18next";
 import { UserWithoutAbilities, useMaildomainsAccessesCreate, useMaildomainsAccessesDestroy, MailDomainAdmin, useMaildomainsAccessesList, MailDomainAccessRoleChoices, MaildomainAccessRead, useUsersList } from "@/features/api/gen";

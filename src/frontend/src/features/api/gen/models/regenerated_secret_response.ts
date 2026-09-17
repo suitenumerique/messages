@@ -6,11 +6,11 @@
  * OpenAPI spec version: 1.0.0 (v1.0)
  */
 
-export interface RegeneratedSecretResponse {
+export type RegeneratedSecretResponse = {
   /** Channel id. */
   id: string;
   /** Present for ``api_key`` channels and webhook channels with ``auth_method='api_key'`` — the plaintext API key. api_key channels send it as ``X-API-Key`` on inbound API calls; api_key webhooks present it as ``Authorization: Bearer``. Returned ONCE; for api_key webhooks it changes whenever the root rotates. */
   api_key?: string;
   /** Present for webhook channels with ``auth_method='jwt'`` — the freshly minted root receivers use to verify the HMAC sig and JWT. */
   secret?: string;
-}
+};

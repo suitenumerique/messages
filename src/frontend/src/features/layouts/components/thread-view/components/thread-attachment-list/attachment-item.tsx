@@ -1,6 +1,6 @@
-import { Button } from "@gouvfr-lasuite/cunningham-react"
+import { Button, Spinner } from "@gouvfr-lasuite/ui-components"
 import { useTranslation } from "react-i18next";
-import { Icon, Spinner } from "@gouvfr-lasuite/ui-kit";
+import { Icon } from "@/features/ui/components/icon";
 import clsx from "clsx";
 import { Attachment } from "@/features/api/gen/models"
 import { AttachmentHelper } from "@/features/utils/attachment-helper";

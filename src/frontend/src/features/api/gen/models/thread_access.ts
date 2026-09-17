@@ -11,7 +11,7 @@ import type { UserWithoutAbilities } from "./user_without_abilities";
 /**
  * Serialize thread access information.
  */
-export interface ThreadAccess {
+export type ThreadAccess = {
   /** primary key for the record as UUID */
   readonly id: string;
   /** primary key for the record as UUID */
@@ -24,4 +24,4 @@ export interface ThreadAccess {
   /** date and time at which a record was last updated */
   readonly updated_at: string;
   readonly users: readonly UserWithoutAbilities[];
-}
+};

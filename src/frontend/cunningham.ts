@@ -1,7 +1,7 @@
 import deepmerge from "deepmerge";
 import {
   cunninghamConfig
-} from "@gouvfr-lasuite/ui-kit";
+} from "@gouvfr-lasuite/ui-components";
 
 const overrides = {
   components: {

@@ -9,7 +9,7 @@
 /**
  * Serialize mail domains for creating / editing admin view.
  */
-export interface MailDomainAdminWriteRequest {
+export type MailDomainAdminWriteRequest = {
   /**
    * @minLength 1
    * @maxLength 253
@@ -22,4 +22,4 @@ export interface MailDomainAdminWriteRequest {
   identity_sync?: boolean;
   /** Metadata to sync to the maildomain group in the identity provider. */
   custom_attributes?: unknown;
-}
+};

@@ -1,0 +1,53 @@
+.compose-draft-placeholder {
+    &--detached {
+        padding: var(--c--globals--spacings--sm) var(--c--globals--spacings--base);
+    }
+
+    // Clickable card marking the draft position in the feed.
+    &:not(.compose-draft-placeholder--detached) {
+        display: flex;
+        align-items: center;
+        gap: var(--c--globals--spacings--2xs);
+        width: 100%;
+        padding: var(--c--globals--spacings--xs) var(--c--globals--spacings--sm);
+        background-color: var(--c--contextuals--background--semantic--neutral--secondary);
+        border: 1px dashed var(--c--contextuals--border--semantic--neutral--primary);
+        border-radius: var(--c--globals--spacings--2xs);
+        color: var(--c--contextuals--content--semantic--neutral--primary);
+        cursor: pointer;
+        text-align: left;
+
+        &:hover {
+            background-color: var(--c--contextuals--background--semantic--neutral--tertiary);
+        }
+    }
+
+    &__label {
+        display: flex;
+        align-items: baseline;
+        gap: var(--c--globals--spacings--2xs);
+        flex: 1;
+        min-width: 0;
+    }
+
+    &__badge {
+        font-size: var(--c--globals--font--sizes--xs);
+        font-weight: 700;
+        text-transform: uppercase;
+    }
+
+    &__subject {
+        overflow: hidden;
+        text-overflow: ellipsis;
+        white-space: nowrap;
+        font-size: var(--c--globals--font--sizes--sm);
+        color: var(--c--contextuals--content--semantic--neutral--primary);
+    }
+
+    &__cta {
+        flex-shrink: 0;
+        font-size: var(--c--globals--font--sizes--sm);
+        font-weight: 500;
+        text-decoration: underline;
+    }
+}

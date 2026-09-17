@@ -1,5 +1,5 @@
 import { useAdminMailDomain } from "@/features/providers/admin-maildomain";
-import { Spinner } from "@gouvfr-lasuite/ui-kit";
+import { Spinner } from "@gouvfr-lasuite/ui-components";
 import { PropsWithChildren } from "react"
 import { useTranslation } from "react-i18next";
 

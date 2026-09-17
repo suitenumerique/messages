@@ -1,14 +1,10 @@
-import { DropdownMenu, UserAvatar } from "@gouvfr-lasuite/ui-kit";
-import { ChevronDown } from "@gouvfr-lasuite/ui-kit/icons";
-import { Button } from "@gouvfr-lasuite/cunningham-react";
+import { DropdownMenu, UserAvatar } from "@gouvfr-lasuite/ui-components";
+import { ChevronDown } from "@gouvfr-lasuite/ui-components/icons";
+import { Button } from "@gouvfr-lasuite/ui-components";
 import { useState } from "react";
 import { useTranslation } from "react-i18next";
 import { Mailbox } from "@/features/api/gen";
 import MailboxHelper from "@/features/utils/mailbox-helper";
-
-/** Display name of a mailbox, falling back to its address when no contact name
- * is set (a mailbox may legitimately have a null/blank name). */
-const getMailboxLabel = (mailbox: Mailbox) => mailbox.name?.trim() || mailbox.email;
 
 type MailboxSelectorProps = {
   /** Mailboxes the user can switch to (already the eligible subset). */
@@ -34,7 +30,7 @@ export const MailboxSelector = ({
   const { t } = useTranslation();
   const [isOpen, setIsOpen] = useState(false);
 
-  const label = getMailboxLabel(selectedMailbox);
+  const label = MailboxHelper.getLabel(selectedMailbox);
   const sublabel = selectedMailbox.name?.trim() ? selectedMailbox.email : null;
   const canSwitch = mailboxes.length > 1;
 
@@ -70,7 +66,7 @@ export const MailboxSelector = ({
   const options = sortedMailboxes.map((mailbox, index) => ({
     label: (<div className="mailbox-selector__option-label">
       <span className="mailbox-selector__option-name">
-        {getMailboxLabel(mailbox)}
+        {MailboxHelper.getLabel(mailbox)}
       </span>
       {mailbox.id !== selectedMailbox.id && mailbox.count_unread_threads > 0 && (
             <span
@@ -91,7 +87,7 @@ export const MailboxSelector = ({
           className="mailbox-selector__option-avatar"
           data-shared={!mailbox.is_identity}
         >
-          <UserAvatar fullName={getMailboxLabel(mailbox)} size="small" />
+          <UserAvatar fullName={MailboxHelper.getLabel(mailbox)} size="small" />
         </span>
     ),
     showSeparator: MailboxHelper.showSeparatorAfter(sortedMailboxes, index),

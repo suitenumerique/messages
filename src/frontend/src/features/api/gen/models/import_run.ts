@@ -14,7 +14,7 @@ Progress lives in Redis and terminal state on the channel; the serializer
 reads the merged view so the frontend can poll the import resource
 (``GET /mailboxes/{id}/imports/{id}/``) instead of the raw Celery task state.
  */
-export interface ImportRun {
+export type ImportRun = {
   /** primary key for the record as UUID */
   readonly id: string;
   /** Human-readable name for this channel */
@@ -57,4 +57,4 @@ export interface ImportRun {
   readonly created_at: string;
   /** date and time at which a record was last updated */
   readonly updated_at: string;
-}
+};

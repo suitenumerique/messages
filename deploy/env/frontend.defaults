@@ -49,7 +49,7 @@ MOBILE_ALLOW_CLEARTEXT_FOR_DEV=1
 ## (MOBILE_DEV_SERVER_URL set), the startup OTA check is skipped even when the
 ## manifest URL is configured.
 
-## Mobile OTA publishing (used by `make mobile-ota-bucket` / `make ota-publish`, i.e.
+## Mobile OTA publishing (used by `make mobile-ota-bucket` / `make mobile-ota-publish`, i.e.
 ## scripts/*-ota*.mjs — NOT inlined by Vite). The S3 endpoint is where the
 ## script writes (compose network); MOBILE_OTA_PUBLIC_BASE_URL is the device-reachable
 ## read URL written into the manifest (RustFS host port, see adb reverse).

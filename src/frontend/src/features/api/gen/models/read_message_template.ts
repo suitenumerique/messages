@@ -20,7 +20,7 @@ Mapping: ``raw`` → ``raw_body``, ``html`` → ``html_body``, ``text`` → ``te
 
 When neither query param nor kwarg is provided, no body field is returned.
  */
-export interface ReadMessageTemplate {
+export type ReadMessageTemplate = {
   /** primary key for the record as UUID */
   readonly id: string;
   /** Name of the template (e.g., 'Standard Reply', 'Out of Office', 'Work Signature') */
@@ -47,4 +47,4 @@ export interface ReadMessageTemplate {
   readonly created_at: string;
   /** date and time at which a record was last updated */
   readonly updated_at: string;
-}
+};

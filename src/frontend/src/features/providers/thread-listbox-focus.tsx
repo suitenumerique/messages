@@ -1,4 +1,5 @@
 import { createContext, Dispatch, PropsWithChildren, SetStateAction, useContext, useMemo, useRef, useState } from "react";
+import { useParams } from "@tanstack/react-router";
 
 interface ThreadListboxFocusState {
     focusedThreadId: string | null;
@@ -7,6 +8,12 @@ interface ThreadListboxFocusState {
     ownsFocusRef: { current: boolean };
     /** Index of the last focused thread, used to clamp focus after prune. */
     lastFocusedIndexRef: { current: number };
+    /**
+     * The thread last opened in the thread view, whether or not the list ever
+     * had the focus (deep link, notification tap). The row the focus should
+     * come back to when the view closes.
+     */
+    lastOpenedThreadIdRef: { current: string | null };
 }
 
 const ThreadListboxFocusContext = createContext<ThreadListboxFocusState | null>(null);
@@ -22,12 +29,19 @@ export const ThreadListboxFocusProvider = ({ children }: PropsWithChildren) => {
     const [focusedThreadId, setFocusedThreadId] = useState<string | null>(null);
     const ownsFocusRef = useRef(false);
     const lastFocusedIndexRef = useRef(0);
+    const lastOpenedThreadIdRef = useRef<string | null>(null);
+
+    // Tracked from the route rather than from the list: the thread view
+    // opens on a deep link too, with the list never touched.
+    const { threadId } = useParams({ strict: false }) as { threadId?: string };
+    if (threadId) lastOpenedThreadIdRef.current = threadId;
 
     const value = useMemo(() => ({
         focusedThreadId,
         setFocusedThreadId,
         ownsFocusRef,
         lastFocusedIndexRef,
+        lastOpenedThreadIdRef,
     }), [focusedThreadId]);
 
     return (

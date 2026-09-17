@@ -1,8 +1,11 @@
 import * as locales from '@blocknote/core/locales';
-import { Block, defaultBlockSpecs } from '@blocknote/core';
+import { Block, BlockNoteEditor, BlockSchema, InlineContentSchema, StyleSchema, defaultBlockSpecs } from '@blocknote/core';
 import { TFunction } from 'i18next';
 import { ALLOWED_IMAGE_MIME_TYPES } from '@/features/blocknote/image-block';
 import { TEMPLATE_VARIABLE_TYPE } from '@/features/blocknote/inline-template-variable';
+import { toNativeMediaUrl } from '@/features/native/media-url';
+import { isNativePlatform } from '@/features/native/platform';
+import MailHelper from '@/features/utils/mail-helper';
 
 /**
  * Builds the BlockNote i18n dictionary for the given locale.
@@ -15,6 +18,71 @@ export const createBlockNoteDictionary = (locale: string, t: TFunction) => ({
         default: t('Start typing...'),
     },
 });
+
+/**
+ * Bubbling custom event re-emitted from the tapped link when the native app
+ * suppresses BlockNote's open-on-click (see createNativeLinkOptions).
+ */
+export const NATIVE_LINK_TAP_EVENT = 'blocknote:native-link-tap';
+
+/**
+ * `links` editor options for the native app: BlockNote's built-in click
+ * handler `window.open`s the href from a ProseMirror `handleClick`, so no
+ * DOM-level `preventDefault` can stop it — supplying `links.onClick` is the
+ * documented way to disable it. The tap is re-emitted as a custom event so
+ * the mobile toolbar can turn it into an edit action (see useEditLinkOnTap);
+ * ProseMirror's `handleClick` fires on the simulated mouseup, which touch
+ * guarantees, unlike the synthesized DOM click.
+ *
+ * ProseMirror skips its own caret placement when a click handler consumes
+ * the event, so the caret is placed here from the tap coordinates — the
+ * link editor reads the URL to edit from the selection.
+ */
+export const createNativeLinkOptions = () =>
+    isNativePlatform()
+        ? {
+              links: {
+                  onClick: (
+                      event: MouseEvent,
+                      editor: BlockNoteEditor<
+                          BlockSchema,
+                          InlineContentSchema,
+                          StyleSchema
+                      >,
+                  ) => {
+                      const tapped = editor.prosemirrorView?.posAtCoords({
+                          left: event.clientX,
+                          top: event.clientY,
+                      });
+                      if (tapped) {
+                          editor._tiptapEditor.commands.setTextSelection(tapped.pos);
+                      }
+                      event.target?.dispatchEvent(
+                          new CustomEvent(NATIVE_LINK_TAP_EVENT, { bubbles: true }),
+                      );
+                      return true;
+                  },
+              },
+          }
+        : {};
+
+/**
+ * `resolveFileUrl` editor option for the native app: the image block keeps
+ * the blob download URL in `props.url` (the exporter turns it into a `cid:`
+ * reference and orphan detection matches it), but renders it as a plain
+ * `<img>` — a WebView subresource that carries no session inside the shell
+ * (see toNativeMediaUrl). BlockNote resolves the *display* URL through this
+ * hook, so the rewrite happens at render time only and the persisted URL
+ * stays canonical. Restricted to our own blob URLs: anything else (a pasted
+ * remote image) is left for the WebView to load as usual.
+ */
+export const createNativeFileUrlResolver = (): { resolveFileUrl?: (url: string) => Promise<string> } =>
+    isNativePlatform()
+        ? {
+              resolveFileUrl: async (url: string) =>
+                  MailHelper.extractBlobId(url) ? toNativeMediaUrl(url) : url,
+          }
+        : {};
 
 /**
  * Returns TipTap handleDOMEvents handlers that block non-image file

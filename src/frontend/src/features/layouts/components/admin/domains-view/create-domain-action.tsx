@@ -2,7 +2,7 @@ import { MailDomainAdminWrite } from "@/features/api/gen";
 import { ModalCreateDomain } from "@/features/layouts/components/admin/modal-create-domain";
 import useAbility, { Abilities } from "@/hooks/use-ability";
 import { FEATURE_KEYS, useFeatureFlag } from "@/hooks/use-feature";
-import { Button, useModal } from "@gouvfr-lasuite/cunningham-react";
+import { Button, useModal } from "@gouvfr-lasuite/ui-components";
 import { useTranslation } from "react-i18next";
 
 type CreateDomainActionProps = {

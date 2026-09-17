@@ -236,6 +236,15 @@ def _get_or_create_attachment_from_blob(
             # Once the Attachment exists, the reference graph covers
             # authz; drop the upload reservation row.
             release_upload(blob, mailbox)
+        elif "cid" in attachment_data and attachment.cid != cid:
+            # Blobs are content-addressed, so a file first attached as a
+            # regular part and later pasted inline resolves to this same
+            # row. The outbound composer decides ``inline`` vs
+            # ``attachment`` from ``cid`` alone: keeping the stale value
+            # would leave the body pointing at a Content-ID that no part
+            # carries, and the image renders broken once sent.
+            attachment.cid = cid
+            attachment.save(update_fields=["cid", "updated_at"])
 
         return attachment
 

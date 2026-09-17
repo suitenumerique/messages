@@ -1,6 +1,6 @@
 import { useConfigRetrieve } from "@/features/api/gen";
 import { AppConfig, resolveConfig } from "@/features/config/resolve";
-import { Spinner } from "@gouvfr-lasuite/ui-kit";
+import { Spinner } from "@gouvfr-lasuite/ui-components";
 import {
   PropsWithChildren,
   createContext,

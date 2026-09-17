@@ -7,6 +7,6 @@
  */
 import type { MailboxAdminUpdateMetadataRequest } from "./mailbox_admin_update_metadata_request";
 
-export interface PatchedMailboxAdminPartialUpdatePayloadRequest {
+export type PatchedMailboxAdminPartialUpdatePayloadRequest = {
   metadata?: MailboxAdminUpdateMetadataRequest;
-}
+};

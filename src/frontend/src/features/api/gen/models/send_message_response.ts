@@ -6,7 +6,7 @@
  * OpenAPI spec version: 1.0.0 (v1.0)
  */
 
-export interface SendMessageResponse {
+export type SendMessageResponse = {
   /** Task ID for tracking */
   task_id: string;
-}
+};

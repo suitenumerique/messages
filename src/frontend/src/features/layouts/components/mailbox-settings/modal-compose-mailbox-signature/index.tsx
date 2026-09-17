@@ -1,14 +1,15 @@
-import { Mailbox, ReadMessageTemplate, MessageTemplateTypeChoices, useMailboxesMessageTemplatesCreate, useMailboxesMessageTemplatesUpdate, useMailboxesMessageTemplatesRetrieve, getMailboxesMessageTemplatesListUrl } from "@/features/api/gen";
+import { Mailbox, ReadMessageTemplate, MessageTemplateTypeChoices, useMailboxesMessageTemplatesCreate, useMailboxesMessageTemplatesUpdate, useMailboxesMessageTemplatesRetrieve } from "@/features/api/gen";
 import { RhfInput } from "@/features/forms/components/react-hook-form/rhf-input";
 import { RhfCheckbox } from "@/features/forms/components/react-hook-form/rhf-checkbox";
 import { zodResolver } from "@hookform/resolvers/zod";
-import { Button, Modal, ModalSize } from "@gouvfr-lasuite/cunningham-react";
-import { Spinner } from "@gouvfr-lasuite/ui-kit";
+import { Button, Modal, ModalSize } from "@gouvfr-lasuite/ui-components";
+import { Spinner, useResponsive } from "@gouvfr-lasuite/ui-components";
 import { FormProvider, useForm } from "react-hook-form";
 import { useTranslation } from "react-i18next";
 import { z } from "zod";
 import { useEffect, useRef, useState } from "react";
 import { useQueryClient } from "@tanstack/react-query";
+import { invalidateMailboxMessageTemplates } from "@/features/providers/message-templates-cache";
 import { SignatureComposer } from "@/features/signatures/components/signature-composer";
 import { Base64ComposerHandle } from "@/features/blocknote/hooks/use-base64-composer";
 import ErrorBoundary from "@/features/errors/error-boundary";
@@ -29,13 +30,14 @@ type ModalComposeMailboxSignatureProps = {
 }
 
 export const ModalComposeMailboxSignature = ({ isOpen, onClose, mailbox, signature }: ModalComposeMailboxSignatureProps) => {
+    const { isMobile } = useResponsive();
     const { t } = useTranslation();
     const queryClient = useQueryClient();
     const [isDirty, setIsDirty] = useState(false);
     const guardedOnClose = useConfirmBeforeClose(isDirty, onClose);
 
     const invalidateSignatures = async () => {
-        await queryClient.invalidateQueries({ queryKey: [getMailboxesMessageTemplatesListUrl(mailbox.id)], exact: false });
+        await invalidateMailboxMessageTemplates(queryClient, mailbox.id);
     }
 
     const handleSuccess = async () => {
@@ -54,7 +56,7 @@ export const ModalComposeMailboxSignature = ({ isOpen, onClose, mailbox, signatu
         <Modal
             isOpen={isOpen}
             title={signature ? t('Edit signature "{{signature}}"', { signature: signature.name }) : t("Create a new signature")}
-            size={ModalSize.LARGE}
+            size={isMobile ? ModalSize.FULL : ModalSize.LARGE}
             onClose={guardedOnClose}
         >
             <div className="modal-compose-template">

@@ -6,7 +6,7 @@
  * OpenAPI spec version: 1.0.0 (v1.0)
  */
 
-export interface CalendarConflictsRequestRequest {
+export type CalendarConflictsRequestRequest = {
   /** Start of the time range (ISO 8601) */
   start: string;
   /** End of the time range (ISO 8601) */
@@ -16,4 +16,4 @@ export interface CalendarConflictsRequestRequest {
    * @nullable
    */
   exclude_uid?: string | null;
-}
+};

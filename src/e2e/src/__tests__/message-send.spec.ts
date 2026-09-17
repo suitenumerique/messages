@@ -1,6 +1,6 @@
 import test, { expect } from "@playwright/test";
 import { getMailboxEmail, resetDatabase } from "../utils";
-import { signInKeycloakIfNeeded } from "../utils-test";
+import { openNewMessageWindow, signInKeycloakIfNeeded } from "../utils-test";
 import path from "path";
 import { FIXTURES_PATH } from "../constants";
 
@@ -13,10 +13,7 @@ test.describe("Send Message", () => {
   test("should send a message then receive it", async ({ page, browserName }) => {
     await page.waitForLoadState("networkidle");
 
-    const newMessageButton = page.getByRole("link", { name: "New message" });
-    await newMessageButton.click();
-
-    await page.waitForURL("/mailbox/*/new");
+    const composeWindow = await openNewMessageWindow(page);
 
     const draftBoxLink = page.getByRole("link", { name: "Drafts" });
     let initialDraftCount = "0";
@@ -24,13 +21,11 @@ test.describe("Send Message", () => {
       initialDraftCount = (await draftBoxLink.locator("span.mailbox__item-counter").textContent()) ?? "0";
     }
 
-    const formHeading = page.getByRole("heading", { name: "New message" });
-    await formHeading.waitFor({ state: "visible" });
-    await page.getByRole("combobox", { name: "To" }).fill(getMailboxEmail('shared'));
-    await page.getByRole("textbox", { name: "Subject" }).fill("Hello everyone!");
-    await page.locator(".ProseMirror").pressSequentially("# E2E testing\n\nThis is a test message");
+    await composeWindow.getByRole("combobox", { name: "To" }).fill(getMailboxEmail('shared'));
+    await composeWindow.getByRole("textbox", { name: "Subject" }).fill("Hello everyone!");
+    await composeWindow.locator(".ProseMirror").pressSequentially("# E2E testing\n\nThis is a test message");
     const fileChooserPromise = page.waitForEvent("filechooser");
-    await page.getByRole("button", { name: "Add attachments" }).click();
+    await composeWindow.getByRole("button", { name: "Add attachments" }).click();
     const fileChooser = await fileChooserPromise;
     await fileChooser.setFiles(path.join(FIXTURES_PATH, "attachment.png"));
 
@@ -39,7 +34,7 @@ test.describe("Send Message", () => {
     // The number of drafts should be incremented by 1
     await draftBoxLink.locator("span.mailbox__item-counter", { hasText: (parseInt(initialDraftCount!) + 1).toString() }).waitFor({ state: "visible" });
 
-    await page.getByRole("button", { name: "Send" }).click();
+    await composeWindow.getByRole("button", { name: "Send" }).click();
     await page.getByText("Sending message...").waitFor({ state: "visible" });
 
     await page.getByText("Message sent successfully").waitFor({ state: "visible" });
@@ -55,7 +50,10 @@ test.describe("Send Message", () => {
     await page.getByRole("link", { name: "Sent" }).click();
     const threadItem = page.getByRole("option", { name: "Hello everyone!" }).first();
     await expect(threadItem).toBeVisible();
-    expect(await threadItem.textContent()).toMatch(new RegExp(`User E2E ${browserName}`, "i"));
+    // Assert on the accessible name, not on textContent: the senders live in a
+    // sibling node the option only references through aria-labelledby, so they
+    // are part of what is announced but not of the option's own text.
+    await expect(threadItem).toHaveAccessibleName(new RegExp(`User E2E ${browserName}`, "i"));
 
     // Go the shared mailbox and check if the message is there
     await page.getByRole("button", { name: getMailboxEmail('user', browserName) }).click();
@@ -66,7 +64,7 @@ test.describe("Send Message", () => {
 
     const messageItem = page.getByRole("option", { name: "Hello everyone!" }).first();
     await expect(messageItem).toBeVisible();
-    expect(await messageItem.textContent()).toMatch(new RegExp(`User E2E ${browserName}`, "i"));
+    await expect(messageItem).toHaveAccessibleName(new RegExp(`User E2E ${browserName}`, "i"));
 
     // Open the message and check its content
     await messageItem.click();
@@ -82,5 +80,28 @@ test.describe("Send Message", () => {
     await expect(messageBodyText).toBeVisible();
     await expect(page.getByText("1 attachment")).toBeVisible();
     await expect(page.getByText("attachment.png")).toBeVisible();
+  });
+
+  test("should send the subject typed right before sending, without a blur", async ({ page }) => {
+    await page.waitForLoadState("networkidle");
+
+    const composeWindow = await openNewMessageWindow(page);
+
+    await composeWindow.getByRole("combobox", { name: "To" }).fill(getMailboxEmail('shared'));
+    // The body first: its onChange creates the draft server-side, so the
+    // subject typed afterwards only reaches the server through a later save.
+    await composeWindow.locator(".ProseMirror").pressSequentially("Body typed before the subject");
+    
+    await composeWindow.getByRole("textbox", { name: "Subject" }).fill("Subject typed last");
+    await page.getByText("Draft saved").waitFor({ state: "visible" });
+
+    // Touch devices do not move the focus to a tapped button, so the subject
+    // field is never blurred before the send starts. A dispatched click
+    // reproduces that: unlike `click()`, it leaves the focus where it is.
+    await composeWindow.getByRole("button", { name: "Send" }).dispatchEvent("click");
+    await page.getByText("Message sent successfully").waitFor({ state: "visible" });
+
+    await page.getByRole("link", { name: "Sent" }).click();
+    await expect(page.getByRole("option", { name: "Subject typed last" }).first()).toBeVisible();
   });
 });

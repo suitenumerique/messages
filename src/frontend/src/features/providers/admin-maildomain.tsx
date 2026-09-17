@@ -2,7 +2,7 @@ import { createContext, PropsWithChildren, useContext, useEffect, useMemo } from
 import { MailDomainAdmin } from "../api/gen/models/mail_domain_admin";
 import { useMaildomainsList, useMaildomainsRetrieve } from "../api/gen";
 import { useParams } from "@tanstack/react-router";
-import { usePagination } from "@gouvfr-lasuite/cunningham-react";
+import { usePagination } from "@gouvfr-lasuite/ui-components";
 import { keepPreviousData } from "@tanstack/react-query";
 import { useSearchablePagination } from "@/hooks/use-searchable-pagination";
 

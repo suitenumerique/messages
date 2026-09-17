@@ -10,7 +10,7 @@ import type { MailDomainAccessRoleChoices } from "./mail_domain_access_role_choi
 /**
  * Serializer for creating and updating maildomain access records.
  */
-export interface MaildomainAccessWrite {
+export type MaildomainAccessWrite = {
   /** primary key for the record as UUID */
   readonly id: string;
   /** User ID (UUID) or email address */
@@ -20,4 +20,4 @@ export interface MaildomainAccessWrite {
   readonly created_at: string;
   /** date and time at which a record was last updated */
   readonly updated_at: string;
-}
+};

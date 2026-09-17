@@ -11,7 +11,7 @@ import type { PatchedMessageTemplateRequestMetadata } from "./patched_message_te
 /**
  * Serialize message templates for POST/PUT/PATCH operations.
  */
-export interface PatchedMessageTemplateRequest {
+export type PatchedMessageTemplateRequest = {
   /**
    * Name of the template (e.g., 'Standard Reply', 'Out of Office', 'Work Signature')
    * @minLength 1
@@ -34,4 +34,4 @@ export interface PatchedMessageTemplateRequest {
   metadata?: PatchedMessageTemplateRequestMetadata;
   /** @nullable */
   signature_id?: string | null;
-}
+};

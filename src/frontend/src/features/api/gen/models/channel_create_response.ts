@@ -17,7 +17,7 @@ declared here as read-only fields so generated API clients see them
 in the OpenAPI schema. This serializer is never used to serialize a
 response directly; the view assembles the body by hand.
  */
-export interface ChannelCreateResponse {
+export type ChannelCreateResponse = {
   /** primary key for the record as UUID */
   readonly id: string;
   /**
@@ -62,4 +62,4 @@ export interface ChannelCreateResponse {
   api_key?: string;
   /** webhook channels with auth_method=jwt — the HMAC/JWT signing secret. */
   secret?: string;
-}
+};

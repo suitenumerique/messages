@@ -1,5 +1,6 @@
-import { Button } from "@gouvfr-lasuite/cunningham-react";
-import { Icon } from "@gouvfr-lasuite/ui-kit";
+import { Icon } from "@/features/ui/components/icon";
+import { Button } from "@gouvfr-lasuite/ui-components";
+import { ChevronLeft } from "@gouvfr-lasuite/ui-components/icons";
 import { useTranslation } from "react-i18next";
 
 /**
@@ -13,15 +14,12 @@ export const ImportNewTitle = ({ onBack }: { onBack: () => void }) => {
     <span className="import-new-title">
       <Button
         className="import-new-title__back"
-        type="button"
-        size="small"
         color="neutral"
         variant="tertiary"
-        icon={<Icon name="arrow_back" />}
+        icon={<Icon icon={ChevronLeft} />}
         onClick={onBack}
-      >
-        {t("Back to imports")}
-      </Button>
+        aria-label={t("Back to imports list")}
+      />
       <span className="import-new-title__heading">{t("Start a new import")}</span>
     </span>
   );

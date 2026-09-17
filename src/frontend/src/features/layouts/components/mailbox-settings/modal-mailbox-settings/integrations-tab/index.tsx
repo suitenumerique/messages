@@ -28,7 +28,7 @@ export const MailboxSettingsIntegrationsTab = ({
                 ? t("No integration")
                 : t("{{count}} integration", { count })
           }
-          action={<CreateIntegrationAction mailbox={mailbox} size="nano" />}
+          action={<CreateIntegrationAction mailbox={mailbox} />}
         />
         <IntegrationsDataGrid mailbox={mailbox} />
       </section>

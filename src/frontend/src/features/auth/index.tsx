@@ -3,11 +3,13 @@ import React, { PropsWithChildren, useEffect, useMemo } from "react";
 import { getRequestUrl } from "@/features/api/utils";
 import { setWebCsrfToken } from "@/features/api/csrf";
 import { useUsersMeRetrieve } from "@/features/api/gen/users/users";
-import { Spinner } from "@gouvfr-lasuite/ui-kit";
+import { Spinner } from "@gouvfr-lasuite/ui-components";
 import { UserWithAbilities } from "../api/gen/models/user_with_abilities";
 import { addToast, ToasterItem } from "../ui/components/toaster";
 import { useTranslation } from "react-i18next";
+import i18n from "@/features/i18n/initI18n";
 import { nativeLogin, nativeLogout } from "../native/auth";
+import { clearPersistedWindows } from "../providers/compose-windows/persistence";
 import { isNativePlatform } from "../native/platform";
 import {
   clearDeliveredNativeNotifications,
@@ -41,8 +43,13 @@ import { attemptSilentLogin, canAttemptSilentLogin } from "./silent-login";
  * their next login (`refreshWebPushSubscription`). A session that merely
  * expires (401 funnel) reaches the logout view anonymous, so nothing is
  * unregistered and notifications keep flowing — by design.
+ *
+ * The persisted compose windows are purged on both paths, expiry included:
+ * they belong to the account, and on a shared device the next one to sign in
+ * must not be handed the previous account's drafts to reopen.
  */
 export const logout = () => {
+  clearPersistedWindows();
   if (isNativePlatform()) {
     void nativeLogout();
     return;
@@ -69,7 +76,16 @@ const sanitizeNextUrl = (raw?: string): string | undefined => {
 
 export const login = (nextUrl?: string) => {
   if (isNativePlatform()) {
-    void nativeLogin();
+    // Only a real failure rejects (a dismissed browser sheet resolves
+    // quietly): tell the user, the login screen is still there to retry.
+    nativeLogin().catch((error: unknown) => {
+      console.error("Native login failed:", error);
+      addToast(
+        <ToasterItem type="error">
+          <span>{i18n.t("Login failed. Please try again.")}</span>
+        </ToasterItem>,
+      );
+    });
     return;
   }
   const safeNext = sanitizeNextUrl(nextUrl);
@@ -185,6 +201,15 @@ export const Auth = ({
     document.addEventListener("visibilitychange", clearBadge);
     return () => document.removeEventListener("visibilitychange", clearBadge);
   }, [isAuthenticated]);
+
+  // Cache the session-bound CSRF token delivered with /users/me/ so mutations
+  // can echo it in the X-CSRFToken header (no `csrftoken` cookie any more under
+  // CSRF_USE_SESSIONS). The native shell uses its own token from the session
+  // exchange, so it is skipped here.
+  useEffect(() => {
+    if (isNativePlatform()) return;
+    if (user) setWebCsrfToken(user.csrf_token);
+  }, [user]);
 
   useEffect(() => {
     if (user !== null) return;

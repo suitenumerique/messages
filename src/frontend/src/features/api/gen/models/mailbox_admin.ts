@@ -11,7 +11,7 @@ import type { MailboxAdminContact } from "./mailbox_admin_contact";
 /**
  * Serialize Mailbox details for admin view, including users with access.
  */
-export interface MailboxAdmin {
+export type MailboxAdmin = {
   /** primary key for the record as UUID */
   readonly id: string;
   /**
@@ -45,4 +45,4 @@ export interface MailboxAdmin {
    * @nullable
    */
   readonly has_mandatory_totp: boolean | null;
-}
+};

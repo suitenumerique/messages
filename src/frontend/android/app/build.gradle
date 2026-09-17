@@ -2,6 +2,32 @@
 // never regenerated) — keep divergences from upstream minimal.
 apply plugin: 'com.android.application'
 
+// Release (upload) signing material. The key must never land in this
+// open-source repo: it is read from android/keystore.properties (gitignored,
+// developer machine) or, when that file is absent, from the environment
+// (CI secrets). With neither, the preReleaseBuild guard below fails the build
+// rather than handing over a bundle Play would reject at upload.
+def keystoreProperties = new Properties()
+def keystorePropertiesFile = rootProject.file('keystore.properties')
+if (keystorePropertiesFile.exists()) {
+    keystorePropertiesFile.withInputStream { keystoreProperties.load(it) }
+}
+def signingValue = { String key, String envVar ->
+    def value = keystoreProperties.getProperty(key) ?: System.getenv(envVar)
+    value?.trim() ?: null
+}
+def keystorePath = signingValue('storeFile', 'ANDROID_KEYSTORE_FILE')
+def hasSigningConfig = keystorePath != null
+
+// The config `cap sync` wrote, read once at configuration time — it carries the
+// displayed version (see versionName below). Gitignored, so it is absent until
+// the first `make mobile-build`; callers that must not proceed without it check
+// for null themselves (see the preReleaseBuild guard).
+def syncedConfigFile = file('src/main/assets/capacitor.config.json')
+def syncedConfig = syncedConfigFile.exists()
+        ? new groovy.json.JsonSlurper().parse(syncedConfigFile)
+        : null
+
 android {
     // namespace is the fixed Java/R package (an internal detail, never published);
     // it stays neutral in the repo. The store identity is applicationId below.
@@ -22,8 +48,20 @@ android {
         resValue "string", "title_activity_main", appDisplayName
         minSdkVersion rootProject.ext.minSdkVersion
         targetSdkVersion rootProject.ext.targetSdkVersion
-        versionCode 1
-        versionName "1.0"
+        // Play refuses any upload whose versionCode it has already seen, so it
+        // must be bumped on every store build — env-driven (see
+        // `make mobile-android-release`) instead of hardcoded, which would make
+        // the second upload fail in the console rather than at build time.
+        versionCode Integer.parseInt(System.getenv("MOBILE_VERSION_CODE") ?: "1")
+        // The displayed version is project truth, not per-instance config: the
+        // single source is the `appVersion` property of capacitor.config.ts,
+        // which iOS reads too, through the generated xcconfig — see
+        // docs/mobile.md, App versioning. Taking it from the synced config
+        // rather than the .ts keeps gradle out of the TS toolchain and pins the
+        // build to the version that was actually synced. The placeholder only
+        // ever serves a fresh checkout: shipping it is blocked by the
+        // preReleaseBuild guard below.
+        versionName syncedConfig?.appVersion ?: "0.0.0"
         // OIDC callback scheme declared by the manifest's intent-filter. Per
         // environment (like applicationId) so a staging and a production build
         // can coexist on one device: sharing it would make Android prompt the
@@ -39,8 +77,21 @@ android {
             ignoreAssetsPattern = '!.svn:!.git:!.ds_store:!*.scc:.*:!CVS:!thumbs.db:!picasa.ini:!*~'
         }
     }
+    signingConfigs {
+        release {
+            if (hasSigningConfig) {
+                storeFile file(keystorePath)
+                storePassword signingValue('storePassword', 'ANDROID_KEYSTORE_PASSWORD')
+                keyAlias signingValue('keyAlias', 'ANDROID_KEY_ALIAS')
+                keyPassword signingValue('keyPassword', 'ANDROID_KEY_PASSWORD')
+            }
+        }
+    }
     buildTypes {
         release {
+            if (hasSigningConfig) {
+                signingConfig signingConfigs.release
+            }
             minifyEnabled false
             proguardFiles getDefaultProguardFile('proguard-android.txt'), 'proguard-rules.pro'
         }
@@ -89,7 +140,7 @@ tasks.configureEach { task ->
                     "applicationId '${builtAppId}' does not match the appId " +
                     "'${syncedAppId}' synced into capacitor.config.json. " +
                     "Export the same MOBILE_APP_ID for the host gradle build " +
-                    "as for 'make mobile-build'.")
+                    "as for 'make mobile-build' (use 'make mobile-android-release').")
             }
             // Same double-read as MOBILE_APP_ID: the displayed name (resValue
             // above) comes from the host env, the synced appName from the
@@ -102,7 +153,59 @@ tasks.configureEach { task ->
                     "app name '${builtAppName}' does not match the appName " +
                     "'${syncedAppName}' synced into capacitor.config.json. " +
                     "Export the same MOBILE_APP_NAME for the host gradle build " +
-                    "as for 'make mobile-build'.")
+                    "as for 'make mobile-build' (use 'make mobile-android-release').")
+            }
+            // versionName is resolved at configuration time from the synced
+            // config; re-read it here so a release can neither ship the
+            // fresh-checkout placeholder (no sync at all) nor a version made
+            // stale by a `cap sync` that ran after gradle configured the build.
+            // Both would be silent: the store listing is where you'd notice.
+            def syncedVersion = parsed?.appVersion
+            def builtVersion = android.defaultConfig.versionName
+            if (!syncedVersion) {
+                throw new GradleException(
+                    "capacitor.config.json carries no appVersion, so this " +
+                    "release would ship the placeholder versionName " +
+                    "'${builtVersion}'. Run 'make mobile-build' first.")
+            }
+            if (syncedVersion != builtVersion) {
+                throw new GradleException(
+                    "versionName '${builtVersion}' is stale: " +
+                    "capacitor.config.json now declares '${syncedVersion}'. " +
+                    "A 'cap sync' ran after gradle configured this build — " +
+                    "rerun 'make mobile-android-release'.")
+            }
+            if (!hasSigningConfig) {
+                throw new GradleException(
+                    "No release signing key configured: Play would reject the " +
+                    "resulting bundle. Create android/keystore.properties " +
+                    "(storeFile/storePassword/keyAlias/keyPassword) or export " +
+                    "ANDROID_KEYSTORE_FILE & co. See docs/mobile.md.")
+            }
+            // Devices register with whichever Firebase project google-services.json
+            // points at, and environments are separate projects (see
+            // PUSH_FCM_PROJECT_ID in env.md). Shipping the staging file in a
+            // production build fails silently — the app installs, logs in, and
+            // simply never receives a push. Pinning the expected project id
+            // turns that into a build failure.
+            def expectedFirebaseProject = System.getenv("MOBILE_FIREBASE_PROJECT_ID")?.trim()
+            if (expectedFirebaseProject) {
+                def servicesFile = file('google-services.json')
+                if (!servicesFile.exists()) {
+                    throw new GradleException(
+                        "MOBILE_FIREBASE_PROJECT_ID is set but " +
+                        "android/app/google-services.json is missing: push " +
+                        "notifications would be silently dead in this build.")
+                }
+                def projectId = new groovy.json.JsonSlurper()
+                        .parse(servicesFile)?.project_info?.project_id
+                if (projectId != expectedFirebaseProject) {
+                    throw new GradleException(
+                        "google-services.json belongs to Firebase project " +
+                        "'${projectId}' but this build expects " +
+                        "'${expectedFirebaseProject}'. Devices would register " +
+                        "with the wrong environment.")
+                }
             }
         }
     }

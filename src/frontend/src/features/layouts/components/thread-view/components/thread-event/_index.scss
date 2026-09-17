@@ -112,6 +112,7 @@
 }
 
 .thread-event__bubble:hover > .thread-event__actions,
+.thread-event__bubble:focus-within > .thread-event__actions,
 .thread-event__actions:hover,
 .thread-event__bubble--actions-visible > .thread-event__actions {
     opacity: 1;

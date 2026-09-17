@@ -84,9 +84,17 @@
             flex-wrap: wrap;
             flex-shrink: 0;
             min-height: var(--toolbar-height);
+            // Upstream scrolls the toolbar horizontally (overflow-x: auto),
+            // which also clips its positioned children: the button tooltips,
+            // rendered inline by @blocknote/mantine, would be cut by the
+            // toolbar box. Wrapping makes the scroll pointless anyway.
+            overflow: visible;
 
-            .mantine-Menu-dropdown {
-                max-height: 250px !important;
+            // Trigger of a toolbar select (see ToolbarMenusPortal).
+            .toolbar-select__value {
+                display: inline-flex;
+                align-items: center;
+                gap: var(--c--globals--spacings--3xs);
             }
 
             .bn-toolbar-separator {
@@ -137,5 +145,20 @@
             min-height: calc(var(--min-height) - var(--toolbar-height));
             max-width: var(--max-block-width);
         }
+    }
+}
+
+// Toolbar menus are rendered in the editor's body-level portal element (see
+// ToolbarMenusPortal), which carries the same `composer-field-input` class as
+// the field. The cap beats the inline max-height Mantine computes from the
+// viewport, hence the !important.
+.composer-field-input .mantine-Menu-dropdown {
+    max-height: 250px !important;
+}
+
+// Specific styles for native platforms
+:root.native {
+    & .bn-editor {
+        padding-block: var(--c--globals--spacings--base);
     }
 }

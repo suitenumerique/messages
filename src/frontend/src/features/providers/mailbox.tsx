@@ -68,7 +68,8 @@ type MailboxContextType = {
     invalidateThreadsList: () => Promise<void>;
     invalidateThreadsStats: () => Promise<void>;
     invalidateLabels: () => Promise<void>;
-    refetchMailboxes: (options?: RefetchOptions) => Promise<unknown>;
+    /** Resolves (never rejects) with the query outcome, like a React Query refetch. */
+    refetchMailboxes: (options?: RefetchOptions) => Promise<{ isError: boolean } | void>;
     isPending: boolean;
     queryStates: {
         mailboxes: QueryState,

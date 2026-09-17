@@ -7,11 +7,11 @@
  */
 import type { PartialDriveItem } from "./partial_drive_item";
 
-export interface PaginatedDriveItemResponse {
+export type PaginatedDriveItemResponse = {
   count: number;
   /** @nullable */
   next: string | null;
   /** @nullable */
   previous: string | null;
   results: PartialDriveItem[];
-}
+};

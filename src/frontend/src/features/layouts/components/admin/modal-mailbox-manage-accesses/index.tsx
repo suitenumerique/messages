@@ -1,4 +1,4 @@
-import { ShareModal } from "@gouvfr-lasuite/ui-kit";
+import { ShareModal } from "@gouvfr-lasuite/ui-components";
 import { useTranslation } from "react-i18next";
 import { MailboxAdmin, UserWithoutAbilities } from "@/features/api/gen";
 import MailboxHelper from "@/features/utils/mailbox-helper";

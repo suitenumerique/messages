@@ -17,7 +17,7 @@ import type { MessageStmsgHeaders } from "./message_stmsg_headers";
  * Serialize messages, getting parsed details from the Message model.
 Aligns field names with JMAP where appropriate (textBody, htmlBody, to, cc, bcc).
  */
-export interface Message {
+export type Message = {
   /** primary key for the record as UUID */
   readonly id: string;
   /** @nullable */
@@ -56,4 +56,4 @@ export interface Message {
   /** Return the STMSG headers of the message. */
   readonly stmsg_headers: MessageStmsgHeaders;
   readonly snippet: string;
-}
+};

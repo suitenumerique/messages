@@ -1,12 +1,15 @@
-import { Icon, IconSize, Spinner } from "@gouvfr-lasuite/ui-kit";
-import { Button, Checkbox, Column, DataGrid, useModal, useModals } from "@gouvfr-lasuite/cunningham-react";
+import { IconSize, Spinner } from "@gouvfr-lasuite/ui-components";
+import { Button, Checkbox, Column, DataGrid, useModal, useModals } from "@gouvfr-lasuite/ui-components";
 import { useTranslation } from "react-i18next";
 import { useState } from "react";
 import { useQueryClient } from "@tanstack/react-query";
+import { invalidateMaildomainMessageTemplates } from "@/features/providers/message-templates-cache";
 import { MailDomainAdmin, ReadMessageTemplate, MessageTemplateTypeChoices, useMaildomainsMessageTemplatesList, useMaildomainsMessageTemplatesDestroy, useMaildomainsMessageTemplatesPartialUpdate } from "@/features/api/gen";
 import { Banner } from "@/features/ui/components/banner";
 import { addToast, ToasterItem } from "@/features/ui/components/toaster";
 import { ModalComposeSignature } from "../modal-compose-signature";
+import { Trash } from "@gouvfr-lasuite/ui-components/icons";
+import { Icon } from "@/features/ui/components/icon";
 
 type SignatureDataGridProps = {
     domain: MailDomainAdmin;
@@ -32,7 +35,7 @@ export const SignatureDataGrid = ({ domain }: SignatureDataGridProps) => {
     const [selectedSignature, setSelectedSignature] = useState<ReadMessageTemplate | undefined>();
     const queryClient = useQueryClient();
     const invalidateMessageTemplates = async () => {
-        await queryClient.invalidateQueries({ queryKey: [`/api/v1.0/maildomains/${domain.id}/message-templates/`], exact: false });
+        await invalidateMaildomainMessageTemplates(queryClient, domain.id);
     }
     const handleModifyRow = (signature: ReadMessageTemplate) => {
         setSelectedSignature(signature);
@@ -186,7 +189,7 @@ export const SignatureDataGrid = ({ domain }: SignatureDataGridProps) => {
                     <Button
                         color="error"
                         size="small"
-                        icon={isDeleting ? <Spinner size="sm" /> : <Icon name="delete" size={IconSize.SMALL} />}
+                        icon={isDeleting ? <Spinner size="sm" /> : <Icon icon={Trash} size={IconSize.SMALL} />}
                         onClick={() => handleDeleteRow(row)}
                         disabled={isDeleting}
                         aria-label={t("Delete")}
