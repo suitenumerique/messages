@@ -1,5 +1,5 @@
 import { createContext, PropsWithChildren, useContext, useEffect, useMemo, useRef, useState } from "react";
-import { Mailbox, MailboxRoleChoices, Message, PaginatedThreadList, Thread, ThreadEvent, ThreadsListParams, useLabelsList, useMailboxesList, useMessagesList, useThreadsEventsList, useThreadsListInfinite, useThreadsRetrieve, getThreadsEventsListQueryKey, getThreadsRetrieveQueryKey } from "../api/gen";
+import { Mailbox, Message, PaginatedThreadList, Thread, ThreadEvent, ThreadsListParams, useLabelsList, useMailboxesList, useMessagesList, useThreadsEventsList, useThreadsListInfinite, useThreadsRetrieve, getThreadsEventsListQueryKey, getThreadsRetrieveQueryKey } from "../api/gen";
 import { FetchStatus, InfiniteData, QueryStatus, RefetchOptions, useQueryClient } from "@tanstack/react-query";
 import type { threadsListResponse } from "../api/gen/threads/threads";
 import { useLocation, useNavigate, useParams } from "@tanstack/react-router";
@@ -18,6 +18,8 @@ import {
 } from "./mailbox-cache";
 import { threadsList } from "../api/gen/threads/threads";
 import { APIError } from "../api/api-error";
+import { useAuth } from "../auth";
+import MailboxHelper from "@/features/utils/mailbox-helper";
 
 type QueryState = {
     status: QueryStatus,
@@ -248,6 +250,7 @@ export const MailboxProvider = ({ children }: PropsWithChildren) => {
     const navigate = useNavigate();
     const location = useLocation();
     const routeParams = useParams({ strict: false }) as { mailboxId?: string; threadId?: string };
+    const { user } = useAuth();
     const pinnedThreadIdsRef = useRef(new Set<string>());
     const [unmountThreadViewNeeded, setUnmountThreadViewNeeded] = useState(false);
     const searchParams = useUrlSearchParams();
@@ -269,17 +272,20 @@ export const MailboxProvider = ({ children }: PropsWithChildren) => {
 
     const selectedMailbox = useMemo(() => {
         if (!mailboxQuery.data?.data.length) return null;
+        return MailboxHelper.resolveSelectedMailbox(mailboxQuery.data.data, {
+            routeMailboxId: routeParams.mailboxId,
+            lastActiveMailboxId: MailboxHelper.readLastActiveMailboxId(user?.id),
+            userEmail: user?.email,
+        });
+    }, [routeParams.mailboxId, mailboxQuery.data, user?.id, user?.email])
 
-        const mailboxId = routeParams.mailboxId;
-        const matched = mailboxQuery.data.data.find((mailbox) => mailbox.id === mailboxId);
-        if (matched) return matched;
-
-        return mailboxQuery.data.data.findLast(m => m.role === MailboxRoleChoices.admin)
-            ?? mailboxQuery.data.data.findLast(m => m.role === MailboxRoleChoices.editor)
-            ?? mailboxQuery.data.data.findLast(m => m.role === MailboxRoleChoices.sender)
-            ?? mailboxQuery.data.data.findLast(m => m.role === MailboxRoleChoices.viewer)
-            ?? mailboxQuery.data.data[mailboxQuery.data.data.length - 1]
-    }, [routeParams.mailboxId, mailboxQuery.data])
+    // Remember the mailbox on this device so the next visit without a mailbox
+    // in the URL (or with one the user no longer has access to) lands on it
+    // rather than on the most privileged one.
+    useEffect(() => {
+        if (!user?.id || !selectedMailbox) return;
+        MailboxHelper.persistLastActiveMailbox(user.id, selectedMailbox.id);
+    }, [user?.id, selectedMailbox?.id]);
 
     const previousUnreadThreadsCount = usePrevious(selectedMailbox?.count_unread_threads);
     const previousDeliveringCount = usePrevious(selectedMailbox?.count_delivering);

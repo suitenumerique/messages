@@ -22,6 +22,7 @@ import {
   isSessionExpired,
   markLoginAttempt,
   markLoginFailed,
+  markSessionExpired,
 } from "./login-state";
 import { useConfig } from "../providers/config";
 import {
@@ -29,6 +30,7 @@ import {
   refreshWebPushSubscription,
 } from "../layouts/components/mailbox-settings/devices-view/web-push";
 import { attemptSilentLogin, canAttemptSilentLogin } from "./silent-login";
+import MailboxHelper from "@/features/utils/mailbox-helper";
 
 /**
  * Log the user out.
@@ -41,8 +43,17 @@ import { attemptSilentLogin, canAttemptSilentLogin } from "./silent-login";
  * their next login (`refreshWebPushSubscription`). A session that merely
  * expires (401 funnel) reaches the logout view anonymous, so nothing is
  * unregistered and notifications keep flowing — by design.
+ *
+ * The last active mailbox remembered on this device follows the same split:
+ * a voluntary logout forgets it, an expired session keeps it so the user
+ * lands back on the mailbox they were working in once signed in again.
  */
-export const logout = () => {
+export const logout = ({ sessionExpired = false }: { sessionExpired?: boolean } = {}) => {
+  if (sessionExpired) {
+    markSessionExpired();
+  } else {
+    MailboxHelper.clearLastActiveMailbox();
+  }
   if (isNativePlatform()) {
     void nativeLogout();
     return;
