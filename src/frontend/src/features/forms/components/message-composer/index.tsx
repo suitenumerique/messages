@@ -74,7 +74,7 @@ const AiReplyButton = ({
 
     const tooltip = isLoading
         ? t("Generating AI draft")
-        : hasGenerated ? t("Regenerate AI draft with instructions") : t("Generate AI draft");
+        : hasGenerated ? t("Regenerate AI draft") : t("Generate AI draft");
 
     return (
         <Components.FormattingToolbar.Button
@@ -118,9 +118,8 @@ export const MessageComposer = React.forwardRef<MessageComposerHandle, MessageCo
     const form = useFormContext<MessageFormValues>();
     const { t, i18n } = useTranslation();
     const [isGeneratingAiDraft, setIsGeneratingAiDraft] = useState(false);
-    // After a first AI draft, the AI button asks for extra instructions before regenerating.
     const [hasGeneratedAiDraft, setHasGeneratedAiDraft] = useState(false);
-    const [isAiInstructionsOpen, setIsAiInstructionsOpen] = useState(false);
+    const [aiInstructions, setAiInstructions] = useState("");
     const { data: { data: activeSignatures = [] } = {}, isLoading: isLoadingSignatures } = useMailboxesMessageTemplatesAvailableList(
         mailboxId,
         {
@@ -376,8 +375,12 @@ export const MessageComposer = React.forwardRef<MessageComposerHandle, MessageCo
         }
     }
 
-    const generateAiReply = async (additionalInstructions?: string) => {
+    const generateAiReply = async () => {
         if (!generateAiDraft || isGeneratingAiDraft) return;
+
+        // Empty field → plain reply; otherwise the typed instructions steer the draft.
+        const additionalInstructions = aiInstructions.trim() || undefined;
+        setAiInstructions("");
 
         setIsGeneratingAiDraft(true);
         try {
@@ -401,19 +404,6 @@ export const MessageComposer = React.forwardRef<MessageComposerHandle, MessageCo
         } finally {
             setIsGeneratingAiDraft(false);
         }
-    };
-
-    const handleAiReplyClick = () => {
-        if (hasGeneratedAiDraft) {
-            setIsAiInstructionsOpen(isOpen => !isOpen);
-            return;
-        }
-        generateAiReply();
-    };
-
-    const handleAiInstructionsSubmit = (additionalInstructions: string) => {
-        setIsAiInstructionsOpen(false);
-        generateAiReply(additionalInstructions);
     };
 
     /**
@@ -552,14 +542,14 @@ export const MessageComposer = React.forwardRef<MessageComposerHandle, MessageCo
                         disabled={disabled}
                         isLoading={isGeneratingAiDraft}
                         hasGenerated={hasGeneratedAiDraft}
-                        onClick={handleAiReplyClick}
+                        onClick={generateAiReply}
                     />
-                    {isAiInstructionsOpen && !isGeneratingAiDraft && (
-                        <AiInstructionsInput
-                            onClose={() => setIsAiInstructionsOpen(false)}
-                            onSubmit={handleAiInstructionsSubmit}
-                        />
-                    )}
+                    <AiInstructionsInput
+                        value={aiInstructions}
+                        disabled={disabled || isGeneratingAiDraft}
+                        onChange={setAiInstructions}
+                        onSubmit={generateAiReply}
+                    />
                     <MessageTemplateSelector
                         mailboxId={mailboxId}
                         messageId={draft?.id}

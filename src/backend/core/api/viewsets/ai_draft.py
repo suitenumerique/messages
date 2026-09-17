@@ -25,6 +25,7 @@ from core.ai.attachment_reader import (
     format_attachments_context,
     read_messages_attachments,
 )
+from core.ai.thread_context import build_thread_context, get_thread_messages
 from core.mda.draft import create_draft
 from core.services.ai_service import AIService
 
@@ -32,8 +33,6 @@ from .. import permissions, serializers
 
 logger = logging.getLogger(__name__)
 
-THREAD_CONTEXT_MAX_MESSAGES = 8
-THREAD_CONTEXT_MAX_CHARS_PER_MESSAGE = 2000
 ADDITIONAL_INSTRUCTIONS_MAX_CHARS = 2000
 # Upper bound of the random seed sent to the model (fits a signed 32-bit int).
 AI_SEED_MAX = 2**31 - 1
@@ -55,13 +54,6 @@ def build_rag_context(results: list[dict]) -> str:
     )
 
 
-def _clip_text(text: str, max_chars: int) -> str:
-    """Keep prompt chunks bounded while preserving the beginning of each message."""
-    if len(text) <= max_chars:
-        return text
-    return f"{text[:max_chars].rstrip()}\n[truncated]"
-
-
 class ReplyContext(NamedTuple):
     """What the model reads about the case: the thread and its attachments."""
 
@@ -69,46 +61,12 @@ class ReplyContext(NamedTuple):
     attachments: str
 
 
-def _get_thread_messages(message: models.Message) -> list[models.Message]:
-    """Return the latest non-draft messages of the thread, chronologically."""
-    if not message.thread_id:
-        return [message]
-
-    thread_messages = list(
-        models.Message.objects.select_related("sender")
-        .prefetch_related("recipients__contact")
-        .filter(thread_id=message.thread_id, is_draft=False)
-        .order_by("-created_at", "-id")[:THREAD_CONTEXT_MAX_MESSAGES]
-    )
-    thread_messages.reverse()
-    return thread_messages or [message]
-
-
-def _build_thread_context(
-    message: models.Message, thread_messages: list[models.Message]
-) -> str:
-    """Return a compact chronological transcript for the source message thread."""
-    if not message.thread_id:
-        return message.get_as_text()
-
-    entries = []
-    for index, thread_message in enumerate(thread_messages, start=1):
-        marker = (
-            "source message" if thread_message.id == message.id else "thread message"
-        )
-        message_text = _clip_text(
-            thread_message.get_as_text(), THREAD_CONTEXT_MAX_CHARS_PER_MESSAGE
-        )
-        entries.append(f"[{marker} {index}]\n{message_text}")
-    return "\n\n".join(entries)
-
-
 def _build_reply_context(message: models.Message, ai_service) -> ReplyContext:
     """Load the thread once and read the attachments the citizen sent in it."""
-    thread_messages = _get_thread_messages(message)
+    thread_messages = get_thread_messages(message)
     attachment_texts = read_messages_attachments(thread_messages, ai_service)
     return ReplyContext(
-        thread=_build_thread_context(message, thread_messages),
+        thread=build_thread_context(message, thread_messages),
         attachments=format_attachments_context(attachment_texts),
     )
 
