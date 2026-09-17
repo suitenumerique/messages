@@ -227,14 +227,21 @@ LIST_ALLOWED_RULE = (
 LIST_FORBIDDEN_RULE = "- Do not use lists; write plain paragraphs.\n"
 
 SYSTEM_PROMPT_REVISION_RULES = (
-    "Revision of a previous draft:\n"
-    "- The agent asked for a new version of the previous draft and gave "
-    "additional instructions. These additional instructions are the agent's "
-    "latest instructions and take priority over the previous draft.\n"
-    "- Rewrite the whole reply: apply every additional instruction, and keep "
-    "from the previous draft the facts, decisions and commitments that the "
-    "additional instructions do not change.\n"
-    "- Return only the complete new reply, never a list of changes.\n\n"
+    "Adding to the agent's current draft:\n"
+    "- The agent already wrote a draft in the editor, then gave additional "
+    "instructions. The current draft is the base of the reply: Keep its text "
+    "word for word. Do not rephrase, reorder, shorten or remove its sentences.\n"
+    "- Apply the additional instructions on top of the current draft: add the "
+    "requested content where it fits best (for example a new sentence or "
+    "paragraph before the closing formula). Only change an existing sentence "
+    "when an additional instruction explicitly asks for that change.\n"
+    "- When the current draft is only notes or is incomplete (for example no "
+    "salutation or no closing formula), complete it around the agent's text "
+    "without rewriting that text.\n"
+    "- The length limit of the general writing rules does not apply to the "
+    "agent's text.\n"
+    "- Never rewrite the whole reply from scratch. Return only the complete "
+    "reply, including the kept text, never a list of changes.\n\n"
 )
 
 
@@ -263,8 +270,8 @@ def build_user_prompt(
     Order: today's date, thread, attachments, excerpts, then the agent's
     instructions last, right before the reply, so they are the freshest
     context when the model starts writing. With additional instructions, the
-    current draft is a previous version to revise and the additional
-    instructions come last.
+    current draft is the agent's text to keep, and the additional instructions
+    are applied on top of it.
     """
     sections = [f"Today's date: {today}"] if today else []
     sections.append(f"Email thread:\n{thread_context}")
@@ -279,10 +286,12 @@ def build_user_prompt(
     extra_text = (additional_instructions or "").strip()
     if extra_text:
         if draft_text:
-            sections.append(f"Previous draft to revise:\n{draft_text}")
+            sections.append(
+                f"Current draft written by the agent (keep its text):\n{draft_text}"
+            )
         sections.append(
-            "Agent's additional instructions for the new version "
-            f"(highest priority, address every point):\n{extra_text}"
+            "Agent's additional instructions to apply on top of the current "
+            f"draft (address every point):\n{extra_text}"
         )
     elif draft_text:
         sections.append(f"Agent's instructions (address every point):\n{draft_text}")

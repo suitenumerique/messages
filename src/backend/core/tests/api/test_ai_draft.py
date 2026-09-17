@@ -257,17 +257,19 @@ def test_generate_ai_seed_is_a_positive_32_bit_int():
     assert len(seeds) > 1
 
 
-def test_user_prompt_revises_previous_draft_with_additional_instructions():
-    """The previous draft is revised and the extra instructions come last."""
+def test_user_prompt_keeps_current_draft_with_additional_instructions():
+    """The agent's text is kept as the base and the extra instructions come last."""
     prompt = ai_draft_module.build_user_prompt(
         thread_context="THREAD",
         current_draft_text="Madame, Monsieur, votre dossier est complet.",
-        additional_instructions="être plus bref",
+        additional_instructions="ajouter le délai de 15 jours",
     )
 
     assert "Agent's instructions (address every point)" not in prompt
-    previous_at = prompt.index("Previous draft to revise:\nMadame, Monsieur")
-    extra_at = prompt.index("être plus bref")
+    previous_at = prompt.index(
+        "Current draft written by the agent (keep its text):\nMadame, Monsieur"
+    )
+    extra_at = prompt.index("ajouter le délai de 15 jours")
     assert previous_at < extra_at < prompt.index("Draft reply:")
 
 
@@ -279,17 +281,19 @@ def test_user_prompt_ignores_blank_additional_instructions():
         additional_instructions="   ",
     )
 
-    assert "Previous draft to revise" not in prompt
+    assert "Current draft written by the agent" not in prompt
     assert "Agent's instructions (address every point):\noui, mardi" in prompt
 
 
 def test_system_prompt_adds_revision_rules_only_when_revising():
-    """Revision rules give priority to the latest instructions."""
+    """Revision rules keep the agent's text and add the new instructions to it."""
     revising = ai_draft_module.build_system_prompt(allow_lists=False, is_revision=True)
     first = ai_draft_module.build_system_prompt(allow_lists=False)
 
-    assert "take priority over the previous draft" in revising
-    assert "Revision of a previous draft" not in first
+    assert "Keep its text word for word" in revising
+    assert "Never rewrite the whole reply" in revising
+    assert "Rewrite the whole reply" not in revising
+    assert "Adding to the agent's current draft" not in first
 
 
 def test_reply_with_additional_instructions_revises_the_draft(fake_ai):
