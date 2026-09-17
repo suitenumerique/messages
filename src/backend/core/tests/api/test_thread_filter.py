@@ -11,6 +11,16 @@ from core import enums, factories
 pytestmark = pytest.mark.django_db
 
 
+@pytest.fixture(autouse=True)
+def _deterministic_clock(monotonic_now):
+    """``update_stats()`` derives ``messaged_at`` from ``auto_now_add`` stamps.
+
+    The filter assertions here read that ordering back, so they assume time
+    only moves forwards. Applied to the module rather than per test, so a new
+    test cannot quietly opt out of it.
+    """
+
+
 @pytest.fixture
 def url():
     """Return the URL for the threads list endpoint."""

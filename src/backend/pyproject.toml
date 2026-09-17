@@ -58,11 +58,17 @@ dependencies = [
     "nested-multipart-parser==1.6.0",
     "openai==2.21.0",
     "psycopg[binary]==3.3.3",
+    # Version is the bundled PSL snapshot date. Pinned data ages, so bump it
+    # like any other dependency; a stale list only mis-groups suffixes added
+    # since. Chosen over tldextract because it ships the list and never
+    # fetches it — a mail path must not depend on an HTTP call or a cache dir.
+    "publicsuffixlist==1.0.2.20260904",
     "PyJWT==2.13.0",
     "PySocks==1.7.1",
     "python-keycloak==5.5.1",
     "python-magic==0.4.27",
     "pyzstd==0.19.1",
+    "recursive-resolver==0.2.0",
     "redis==6.4.0",
     "requests==2.34.2",
     "sentry-sdk[django]==2.53.0",
@@ -151,10 +157,18 @@ select = [
 [tool.ruff.lint.isort]
 section-order = ["future","standard-library","django","third-party","messages","first-party","local-folder"]
 sections = { messages=["core"], django=["django"] }
-known-third-party = ["dns"]
+known-third-party = ["dns", "recursive_resolver"]
 extra-standard-library = ["tomllib"]
 
 [tool.ruff.lint.flake8-tidy-imports.banned-api]
+# Every DNS lookup goes through the one recursive, DNSSEC-validating resolver.
+# A stub lookup added here would silently opt that name back out of validation
+# and back into trusting whatever /etc/resolv.conf points at.
+"dns.resolver".msg = "Use `core.services.dns.resolver` (recursive + DNSSEC-validating), not a stub resolver."
+# `core.services.dns.resolver` is the only place that names the resolver
+# implementation. It re-exports the answer types and the error classes, so
+# swapping the implementation stays one file rather than every call site.
+"recursive_resolver".msg = "Import from `core.services.dns.resolver`, which re-exports the answer and error types."
 # jmap-email's public API is the top-level `jmap_email` package; the
 # TypedDict shapes live in `jmap_email.types`. Everything else is private
 # implementation — reaching into it couples us to internal layout.
@@ -168,6 +182,8 @@ extra-standard-library = ["tomllib"]
 
 [tool.ruff.lint.per-file-ignores]
 "**/tests/*" = ["S", "SLF"]
+# The one module allowed to import the resolver implementation directly.
+"core/services/dns/resolver.py" = ["TID251"]
 
 [tool.pytest.ini_options]
 addopts = [

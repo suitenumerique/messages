@@ -690,6 +690,14 @@ wheels = [
     { url = "https://files.pythonhosted.org/packages/ba/5a/18ad964b0086c6e62e2e7500f7edc89e3faa45033c71c1893d34eed2b2de/dnspython-2.8.0-py3-none-any.whl", hash = "sha256:01d9bbc4a2d76bf0db7c1f729812ded6d912bd318d3b1cf81d30c0f845dbf3af", size = 331094, upload-time = "2025-09-07T18:57:58.071Z" },
 ]
 
+[package.optional-dependencies]
+dnssec = [
+    { name = "cryptography" },
+]
+idna = [
+    { name = "idna" },
+]
+
 [[package]]
 name = "drf-spectacular"
 version = "0.29.0"
@@ -1197,12 +1205,14 @@ dependencies = [
     { name = "opensearch-py" },
     { name = "prometheus-client" },
     { name = "psycopg", extra = ["binary"] },
+    { name = "publicsuffixlist" },
     { name = "py-vapid" },
     { name = "pyjwt" },
     { name = "pysocks" },
     { name = "python-keycloak" },
     { name = "python-magic" },
     { name = "pyzstd" },
+    { name = "recursive-resolver" },
     { name = "redis" },
     { name = "requests" },
     { name = "sentry-sdk", extra = ["django"] },
@@ -1276,6 +1286,7 @@ requires-dist = [
     { name = "pipdeptree", marker = "extra == 'dev'", specifier = "==2.31.0" },
     { name = "prometheus-client", specifier = "==0.24.1" },
     { name = "psycopg", extras = ["binary"], specifier = "==3.3.3" },
+    { name = "publicsuffixlist", specifier = "==1.0.2.20260904" },
     { name = "py-vapid", specifier = "==1.9.4" },
     { name = "pyjwt", specifier = "==2.13.0" },
     { name = "pylint", marker = "extra == 'dev'", specifier = "==4.0.4" },
@@ -1291,6 +1302,7 @@ requires-dist = [
     { name = "python-magic", specifier = "==0.4.27" },
     { name = "pyzstd", specifier = "==0.19.1" },
     { name = "radicale", marker = "extra == 'dev'", specifier = "==3.6.1" },
+    { name = "recursive-resolver", specifier = "==0.2.0" },
     { name = "redis", specifier = "==6.4.0" },
     { name = "requests", specifier = "==2.34.2" },
     { name = "responses", marker = "extra == 'dev'", specifier = "==0.26.0" },
@@ -1563,6 +1575,15 @@ wheels = [
     { url = "https://files.pythonhosted.org/packages/c7/2c/a4981bf42cf30ebba0424971d7ce70a222ae9b82594c42fc3f2105d7b525/psycopg_binary-3.3.3-cp314-cp314-musllinux_1_2_riscv64.whl", hash = "sha256:47f06fcbe8542b4d96d7392c476a74ada521c5aebdb41c3c0155f6595fc14c8d", size = 3944542, upload-time = "2026-02-18T16:52:04.266Z" },
     { url = "https://files.pythonhosted.org/packages/60/e9/b7c29b56aa0b85a4e0c4d89db691c1ceef08f46a356369144430c155a2f5/psycopg_binary-3.3.3-cp314-cp314-musllinux_1_2_x86_64.whl", hash = "sha256:e7800e6c6b5dc4b0ca7cc7370f770f53ac83886b76afda0848065a674231e856", size = 4254339, upload-time = "2026-02-18T16:52:10.444Z" },
     { url = "https://files.pythonhosted.org/packages/98/5a/291d89f44d3820fffb7a04ebc8f3ef5dda4f542f44a5daea0c55a84abf45/psycopg_binary-3.3.3-cp314-cp314-win_amd64.whl", hash = "sha256:165f22ab5a9513a3d7425ffb7fcc7955ed8ccaeef6d37e369d6cc1dff1582383", size = 3652796, upload-time = "2026-02-18T16:52:14.02Z" },
+]
+
+[[package]]
+name = "publicsuffixlist"
+version = "1.0.2.20260904"
+source = { registry = "https://pypi.org/simple" }
+sdist = { url = "https://files.pythonhosted.org/packages/3a/dd/2dec03dc9afb59c5970c760be1953596c87dc0e9794bebb904b267b51ec9/publicsuffixlist-1.0.2.20260904.tar.gz", hash = "sha256:20ba05378dc9a0206266ea93aacb6779d8e77b6ba1be227c494bad85ce539a1d", size = 109395, upload-time = "2026-09-04T07:54:59.754Z" }
+wheels = [
+    { url = "https://files.pythonhosted.org/packages/3c/e0/bf3f2e37858b95dbe2376b622ac38a002eefce07bbe23fd43bedae3b42fc/publicsuffixlist-1.0.2.20260904-py2.py3-none-any.whl", hash = "sha256:8dd405d398f207c2944b89a753f63bae4b0a5f80069ce6cd5e67df2a67be7fec", size = 108745, upload-time = "2026-09-04T07:54:58.402Z" },
 ]
 
 [[package]]
@@ -1939,6 +1960,18 @@ dependencies = [
 sdist = { url = "https://files.pythonhosted.org/packages/33/66/75606d83483271cdc3d422f4ccdbefffa9c2f959b3ab9965c2866ff18f8f/radicale-3.6.1.tar.gz", hash = "sha256:5b5529c093fc3a6e9eba6a3280d930ea6573b485a1bd8d25b7daa6ee70f5224b", size = 192417, upload-time = "2026-02-25T16:42:58.689Z" }
 wheels = [
     { url = "https://files.pythonhosted.org/packages/0f/6c/38ff9bad1e60d0311d0564d20d7b6d802e89bc5075289cec456d73feae8e/radicale-3.6.1-py3-none-any.whl", hash = "sha256:4942704540691a4ae5d187f181c73fbc6fc8accf2b20c398e454dd1a3705405b", size = 222254, upload-time = "2026-02-25T16:42:56.784Z" },
+]
+
+[[package]]
+name = "recursive-resolver"
+version = "0.2.0"
+source = { registry = "https://pypi.org/simple" }
+dependencies = [
+    { name = "dnspython", extra = ["dnssec", "idna"] },
+]
+sdist = { url = "https://files.pythonhosted.org/packages/4e/81/00be33403bd855deef6cd05cb67459809879de1ddb6dd72d9d92d24c4056/recursive_resolver-0.2.0.tar.gz", hash = "sha256:58e8f8f086915dfdc142b254163c739d5adac51ccf746d73f3fe318e084cfef8", size = 215144, upload-time = "2026-09-04T15:55:39.647Z" }
+wheels = [
+    { url = "https://files.pythonhosted.org/packages/f3/75/114ea562329a08f6ebfb82ba4576a8c2853038453be2d967800c19b4d6bc/recursive_resolver-0.2.0-py3-none-any.whl", hash = "sha256:8305c86a75eab5fd6ccae943993f800f9361ab54c604afcf8eee6843c9ca27b2", size = 73868, upload-time = "2026-09-04T15:55:38.241Z" },
 ]
 
 [[package]]

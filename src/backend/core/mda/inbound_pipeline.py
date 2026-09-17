@@ -210,10 +210,16 @@ def _make_arc_step(spam_config: Dict[str, Any]) -> Step:
     """Hold (RETRY) a message whose *trusted* ARC seal we couldn't verify.
 
     Only a populated ``trusted_arc_sealers`` allowlist is an enforcement
-    posture: there, a DNS lookup that didn't complete (timeout / SERVFAIL /
-    NXDOMAIN / empty) for a message *claiming* one of our trusted sealers is
-    indeterminate, not forged — so we hold it for retry rather than fail open
-    (deliver it unverified) or fail closed (drop it).
+    posture: there, a DNS lookup that didn't complete (a timeout or SERVFAIL)
+    for a message *claiming* one of our trusted sealers is indeterminate, not
+    forged — so we hold it for retry rather than fail open (deliver it
+    unverified) or fail closed (drop it).
+
+    A *settled* answer is not held: NXDOMAIN, NODATA, a name that cannot be
+    formed, and a selector publishing no key record all come back from
+    ``arc_dns_txt`` as "no key", so the chain fails into a definite
+    ``untrusted`` verdict straight away. Only the outstanding-lookup case
+    reaches the hold below.
 
     Once the hold exceeds ``DEFERRAL_MAX_AGE`` we stop giving the message the
     benefit of the doubt: a seal claiming one of our sealers whose key never

@@ -3,16 +3,47 @@
 import base64
 import logging
 
-import dns.resolver
 from cryptography.hazmat.primitives import serialization
 from cryptography.hazmat.primitives.asymmetric import rsa
-from dkim import DKIM
+from dkim import DKIM, DKIMException
 from dkim import sign as dkim_sign
+from sentry_sdk import capture_exception
 
 from core.enums import DKIMAlgorithmChoices
 from core.mda.addresses import ascii_lower
+from core.services.dns.records import parse_dkim_tags
+from core.services.dns.resolver import (
+    Answer,
+    DNSSECError,
+    NoAnswerError,
+    NXDOMAINError,
+    ResolutionTimeoutError,
+    ResolverError,
+    ServfailError,
+    resolve_answer,
+)
 
 logger = logging.getLogger(__name__)
+
+
+def dkim_dns_txt(fqdn: str) -> Answer:
+    """Look up a DKIM key record.
+
+    The single seam tests patch. It exists so they can intercept one named
+    function instead of reaching into the shared resolver, whose cache and
+    root-walking would otherwise fire real queries from the test suite.
+    """
+    return resolve_answer(fqdn, "TXT")
+
+
+class DKIMSigningError(Exception):
+    """Signing failed for a domain that has an active DKIM key.
+
+    Distinct from "this domain isn't set up for DKIM", which is a
+    configuration state that legitimately sends unsigned mail. This one means
+    the domain's DNS advertises a policy we then failed to honour, so the
+    send must not proceed.
+    """
 
 
 def generate_dkim_key(
@@ -88,16 +119,29 @@ def sign_message_dkim(raw_mime_message: bytes, maildomain) -> bytes | None:
             selector=dkim_key.selector.encode("ascii"),
             domain=domain.encode("ascii"),
             privkey=dkim_private_key,
+            # Sender and the Resent-* set are signed too. Without them a
+            # MITM can add or rewrite ``Sender:`` — which some clients
+            # display in place of From — and the signature still verifies.
+            # Signing a header that is absent also binds its absence (RFC
+            # 6376 §5.4: an over-listed header name prevents it being added
+            # later), which is the point here.
             include_headers=[
                 b"To",
                 b"Cc",
                 b"From",
+                b"Sender",
                 b"Subject",
                 b"Message-ID",
                 b"Reply-To",
                 b"In-Reply-To",
                 b"References",
                 b"Date",
+                b"Resent-Date",
+                b"Resent-From",
+                b"Resent-Sender",
+                b"Resent-To",
+                b"Resent-Cc",
+                b"Resent-Message-ID",
             ],
             canonicalize=(b"relaxed", b"simple"),
         )
@@ -113,11 +157,21 @@ def sign_message_dkim(raw_mime_message: bytes, maildomain) -> bytes | None:
         )
         return b"DKIM-Signature: " + signature_header
     except Exception as e:  # pylint: disable=broad-exception-caught
+        # Fail closed. The domain HAS an active key, so its DNS advertises a
+        # DKIM policy and receivers will treat unsigned mail from it as
+        # suspect — quarantined or dropped at a DMARC-enforcing receiver.
+        # Callers turn this into a 400 (the send is synchronous in the
+        # request, so there is nothing to retry) and the operator gets a log
+        # line naming the domain.
         logger.error("Error during DKIM signing for domain %s: %s", domain, e)
-        return None
+        raise DKIMSigningError(
+            f"DKIM signing failed for domain {domain} which has an active key"
+        ) from e
 
 
-def verify_message_dkim(raw_mime_message: bytes) -> str | None:
+def verify_message_dkim(
+    raw_mime_message: bytes, require_dnssec: bool = False
+) -> str | None:
     """Verify a DKIM signature on a raw MIME message using public DNS.
 
     This verifies that the DKIM signature will pass validation when the receiving
@@ -126,6 +180,15 @@ def verify_message_dkim(raw_mime_message: bytes) -> str | None:
 
     Args:
         raw_mime_message: The raw bytes of the MIME message with DKIM signature.
+        require_dnssec: Refuse a key whose lookup was not DNSSEC-secure. A
+            per-call argument rather than a straight read of
+            ``MESSAGES_DKIM_VERIFY_OUTGOING_REQUIRE_DNSSEC``, because the two
+            callers want opposite things. Checking our *own* domain before
+            sending, an unsigned answer is worth refusing: we control that
+            zone and can sign it. Checking an arbitrary sender inbound, most
+            zones are still unsigned, so requiring it would mark ordinary mail
+            from most of the internet as unverified. Only the outbound
+            self-check passes the setting through.
 
     Returns:
         The signing domain (the signature's ``d=`` tag, lowercased) if the DKIM
@@ -146,28 +209,77 @@ def verify_message_dkim(raw_mime_message: bytes) -> str | None:
                 fqdn_str = fqdn_str[:-1]
 
             try:
-                # Query DNS for TXT records
-                answers = dns.resolver.resolve(fqdn_str, "TXT", lifetime=10)
-                # Combine all TXT record strings (TXT records can be split across multiple strings)
-                txt_values = []
-                for answer in answers:
-                    # answer.strings is a list of bytes, join them
-                    txt_value = b"".join(answer.strings)
-                    txt_values.append(txt_value)
+                # The resolver validates DNSSEC itself, walking from the root,
+                # so ``secure`` is a property of the chain we verified rather
+                # than an AD bit asserted by an upstream resolver we reach
+                # over plain UDP/53. Without that, verification of a monitored
+                # domain trusts whatever a poisoned resolver returns — enough
+                # to mint signatures that pass this check.
+                answer = dkim_dns_txt(fqdn_str)
+                if require_dnssec and not answer.secure:
+                    logger.warning(
+                        "Refusing DKIM key lookup for %s: answer is not DNSSEC-secure",
+                        fqdn_str,
+                    )
+                    return None
 
-                # Return the first TXT record value (DKIM should only have one)
-                if txt_values:
-                    return txt_values[0]
-            except (
-                dns.resolver.NXDOMAIN,
-                dns.resolver.NoAnswer,
-                dns.resolver.NoNameservers,
-            ):
-                # Domain or record doesn't exist
-                logger.warning("DNS lookup error for %s", fqdn_str)
+                # One string per record, character-strings joined per RFC 6376
+                # §3.6.2.2 — an RSA-2048 key is always split in two.
+                txt_values = answer.text_values()
+
+                # Only actual key records count: a selector name commonly
+                # carries unrelated TXT, a domain-verification token say, and
+                # counting those against the ambiguity guard below would make
+                # a working key unusable.
+                #
+                # ``p`` is the discriminator, not ``v``: RFC 6376 3.6.1 makes
+                # v= optional (defaulting to DKIM1) but p= required, so
+                # ``parse_dkim_tags`` accepts any ``tag=value`` string —
+                # including ``google-site-verification=...`` — and only the
+                # presence of a public key separates a key record from a
+                # bystander.
+                key_records = [
+                    v
+                    for v in txt_values
+                    if (tags := parse_dkim_tags(v)) is not None and "p" in tags
+                ]
+
+                # A DKIM selector must publish exactly one key record.
+                # Returning key_records[0] out of several silently picked one
+                # at resolver-ordering's whim — including an attacker's, if
+                # they managed to add a record. Ambiguity is a failure.
+                if len(key_records) > 1:
+                    logger.warning(
+                        "DKIM selector %s publishes %d key records; refusing "
+                        "to guess which one is the key",
+                        fqdn_str,
+                        len(key_records),
+                    )
+                    return None
+                if key_records:
+                    return key_records[0].encode("utf-8", "surrogateescape")
+            except (NXDOMAINError, NoAnswerError):
+                # Settled: the name answered, and it publishes no key.
+                logger.warning("No DKIM key record published at %s", fqdn_str)
                 return None
-            except dns.resolver.Timeout:
-                logger.warning("DNS timeout while looking up DKIM record: %s", fqdn_str)
+            except (ServfailError, ResolutionTimeoutError):
+                # Not settled: the lookup did not complete, which is not the
+                # same as learning there is no key. SERVFAIL belongs here and
+                # not above — ``check_single_record`` draws the same line, and
+                # grouping it with NXDOMAIN said "no such record" about a
+                # server that never answered the question.
+                logger.warning(
+                    "DKIM key lookup for %s did not complete, key state unknown",
+                    fqdn_str,
+                )
+                return None
+            except DNSSECError:
+                # Bogus signatures on the selector's zone. Whatever key is in
+                # there, we did not get it from the domain owner.
+                logger.warning("DNSSEC validation failed for DKIM record %s", fqdn_str)
+                return None
+            except ResolverError as exc:
+                logger.warning("DNS lookup failed for %s: %s", fqdn_str, exc)
                 return None
 
             return None
@@ -184,6 +296,21 @@ def verify_message_dkim(raw_mime_message: bytes) -> str | None:
             return None
         return ascii_lower(signing_domain.decode("ascii", "replace").rstrip("."))
 
+    except DKIMException as e:
+        # ``DKIM.verify`` documents that it raises for a message, signature or
+        # key it cannot make sense of, and does not catch its own exceptions —
+        # only the module-level ``dkim.verify()`` helper does, and we drive the
+        # object directly to read back ``d=``. So a body-hash mismatch reaches
+        # here, and inbound that is routine: a mailing list appending a footer
+        # breaks the hash, and a malformed DKIM-Signature is what spam looks
+        # like. Not a bug, so logged and never reported.
+        logger.info("DKIM signature did not validate: %s", e)
+        return None
     except Exception as e:  # pylint: disable=broad-exception-caught
+        # Not a DNS failure (``get_dns_txt`` classifies those) and not dkimpy
+        # rejecting the message, so this is our own code misbehaving. Reported
+        # rather than only logged: on the outbound self-check it silently marks
+        # every recipient for retry.
         logger.error("Error during DKIM verification: %s", e, exc_info=True)
+        capture_exception(e)
         return None

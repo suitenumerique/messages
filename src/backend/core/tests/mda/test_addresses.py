@@ -10,6 +10,7 @@ from core.mda.addresses import (
     needs_smtputf8,
     normalize_address,
     normalize_domain,
+    organizational_domain,
     split_address,
 )
 
@@ -249,3 +250,42 @@ class TestNeedsSmtputf8:
     @pytest.mark.parametrize("value", ["", "nodomain", "user@"])
     def test_false_for_malformed(self, value):
         assert needs_smtputf8(value) is False
+
+
+class TestOrganizationalDomain:
+    """PSL lookups, which relaxed DKIM alignment compares."""
+
+    @pytest.mark.parametrize(
+        "domain,expected",
+        [
+            ("example.com", "example.com"),
+            ("mail.example.com", "example.com"),
+            ("a.b.c.example.com", "example.com"),
+            # Multi-label public suffix: the registrable domain is two labels.
+            ("example.co.uk", "example.co.uk"),
+            ("mail.example.co.uk", "example.co.uk"),
+            # PSL private section: github.io is a suffix, so each project is
+            # its own organization.
+            ("victim.github.io", "victim.github.io"),
+        ],
+    )
+    def test_registrable_domain(self, domain, expected):
+        assert organizational_domain(domain) == expected
+
+    @pytest.mark.parametrize("suffix", ["com", "co.uk", "github.io"])
+    def test_bare_public_suffix_falls_back_to_itself(self, suffix):
+        """No registrable domain exists, so the input is returned.
+
+        Returning the suffix's parent instead would let unrelated names
+        collapse onto a shared value and compare as aligned.
+        """
+        assert organizational_domain(suffix) == suffix
+
+    def test_unknown_suffix_falls_back_to_the_input(self):
+        """A name under a suffix the bundled list predates stays itself."""
+        assert organizational_domain("host.invalid-tld-xyz") == "host.invalid-tld-xyz"
+
+    def test_distinct_domains_never_share_an_organizational_domain(self):
+        """The property alignment depends on."""
+        assert organizational_domain("a.co.uk") != organizational_domain("b.co.uk")
+        assert organizational_domain("evil.com") != organizational_domain("example.com")

@@ -20,6 +20,7 @@ from core.mda.inbound_auth import (
 )
 from core.mda.inbound_pipeline import DEFERRAL_MAX_AGE, Decision, _make_arc_step
 from core.mda.inbound_tasks import process_inbound_message_task
+from core.services.dns.resolver import NXDOMAINError, ServfailError
 
 RAW_EMAIL = (
     b"From: sender@example.com\r\n"
@@ -61,11 +62,22 @@ class TestCheckInboundAuthenticationDisabled:
 
 
 class TestCheckInboundAuthenticationNative:
-    """Native mode verifies DKIM locally, requires From/DKIM alignment, and
-    ignores DMARC."""
+    """Native mode verifies DKIM locally and requires From/DKIM alignment.
+
+    Every test here is about the domain comparison, so the alignment mode is
+    pinned to DMARC's relaxed default — which also keeps them off the network,
+    since an unpinned strict/relaxed decision resolves ``_dmarc``.
+    """
 
     # parsed_email carrying a From: whose domain is ``example.com``.
     PARSED_FROM = {"from": [{"email": "sender@example.com"}]}
+
+    @pytest.fixture(autouse=True)
+    def _relaxed_alignment(self):
+        with patch(
+            "core.mda.inbound_auth.dkim_alignment_mode", return_value="r"
+        ) as mode:
+            yield mode
 
     @patch("core.mda.inbound_auth.verify_message_dkim")
     def test_dkim_pass_aligned(self, mock_verify):
@@ -90,12 +102,54 @@ class TestCheckInboundAuthenticationNative:
         )
 
     @patch("core.mda.inbound_auth.verify_message_dkim")
-    def test_dkim_subdomain_not_strictly_aligned(self, mock_verify):
-        """Strict alignment: d=mail.example.com does NOT match From example.com."""
+    def test_subdomain_signing_for_its_parent_is_aligned(self, mock_verify):
+        """Relaxed alignment (RFC 7489 3.1.1, DMARC's default ``adkim=r``).
+
+        ``mail.example.com`` signing for ``From: example.com`` shares an
+        organizational domain. This is ordinary practice, and strict-only
+        matching marks it unverified.
+        """
         mock_verify.return_value = "mail.example.com"
         config = {"inbound_auth": "native"}
+        assert check_inbound_authentication(RAW_EMAIL, self.PARSED_FROM, config) is None
+
+    @patch("core.mda.inbound_auth.verify_message_dkim")
+    def test_parent_signing_for_its_subdomain_is_aligned(self, mock_verify):
+        """Relaxed alignment holds in both directions."""
+        mock_verify.return_value = "example.com"
+        config = {"inbound_auth": "native"}
+        parsed = {"from": [{"email": "sender@mail.example.com"}]}
+        assert check_inbound_authentication(RAW_EMAIL, parsed, config) is None
+
+    @patch("core.mda.inbound_auth.verify_message_dkim")
+    def test_multi_label_public_suffix_does_not_align_strangers(self, mock_verify):
+        """Two registrable domains under one multi-label suffix are unrelated.
+
+        ``co.uk`` is a public suffix, so ``example.co.uk`` and
+        ``attacker.co.uk`` are different organizations. Stripping one label
+        instead of consulting the PSL would collapse both onto ``co.uk`` and
+        hand an attacker every domain under it.
+        """
+        mock_verify.return_value = "attacker.co.uk"
+        config = {"inbound_auth": "native"}
+        parsed = {"from": [{"email": "sender@example.co.uk"}]}
         assert (
-            check_inbound_authentication(RAW_EMAIL, self.PARSED_FROM, config)
+            check_inbound_authentication(RAW_EMAIL, parsed, config)
+            == VERDICT_UNVERIFIED
+        )
+
+    @patch("core.mda.inbound_auth.verify_message_dkim")
+    def test_private_suffix_does_not_align_strangers(self, mock_verify):
+        """The PSL's private section counts too.
+
+        ``github.io`` is a public suffix, so two projects hosted under it are
+        separate organizations however similar the names look.
+        """
+        mock_verify.return_value = "attacker.github.io"
+        config = {"inbound_auth": "native"}
+        parsed = {"from": [{"email": "sender@victim.github.io"}]}
+        assert (
+            check_inbound_authentication(RAW_EMAIL, parsed, config)
             == VERDICT_UNVERIFIED
         )
 
@@ -155,6 +209,125 @@ class TestCheckInboundAuthenticationNative:
             check_inbound_authentication(RAW_EMAIL, self.PARSED_FROM, config, rspamd)
             is None
         )
+
+
+class TestNativeHonoursAdkim:
+    """Native alignment follows the ``adkim`` mode the From domain publishes.
+
+    Driven from ``resolve_txt_values`` rather than from a patched
+    ``dkim_alignment_mode``, so these also pin down *when* the lookup happens —
+    a query the code should never make shows up here as an unexpected name.
+    """
+
+    CONFIG = {"inbound_auth": "native"}
+    PARENT_FROM = {"from": [{"email": "sender@example.com"}]}
+
+    @staticmethod
+    def _dns(records):
+        """Resolve ``_dmarc`` names from a map, recording what was asked."""
+        queried = []
+
+        def _resolve(qname):
+            queried.append(qname)
+            if qname in records:
+                return [records[qname]]
+            raise NXDOMAINError(qname, "TXT")
+
+        return _resolve, queried
+
+    @patch("core.mda.inbound_auth.verify_message_dkim")
+    def test_strict_rejects_a_subdomain_signing_for_its_parent(self, mock_verify):
+        """``adkim=s`` means d= must equal the From domain exactly."""
+        mock_verify.return_value = "mail.example.com"
+        resolve, _ = self._dns({"_dmarc.example.com": "v=DMARC1; p=reject; adkim=s"})
+        with patch("core.mda.dmarc.resolve_txt_values", resolve):
+            assert (
+                check_inbound_authentication(RAW_EMAIL, self.PARENT_FROM, self.CONFIG)
+                == VERDICT_UNVERIFIED
+            )
+
+    @patch("core.mda.inbound_auth.verify_message_dkim")
+    def test_relaxed_accepts_the_same_signature(self, mock_verify):
+        """The same message under ``adkim=r`` — so the test above is not vacuous."""
+        mock_verify.return_value = "mail.example.com"
+        resolve, _ = self._dns({"_dmarc.example.com": "v=DMARC1; p=reject; adkim=r"})
+        with patch("core.mda.dmarc.resolve_txt_values", resolve):
+            assert (
+                check_inbound_authentication(RAW_EMAIL, self.PARENT_FROM, self.CONFIG)
+                is None
+            )
+
+    @patch("core.mda.inbound_auth.verify_message_dkim")
+    def test_no_dmarc_record_stays_relaxed(self, mock_verify):
+        """Most of the internet publishes nothing; it must keep threading as before."""
+        mock_verify.return_value = "mail.example.com"
+        resolve, _ = self._dns({})
+        with patch("core.mda.dmarc.resolve_txt_values", resolve):
+            assert (
+                check_inbound_authentication(RAW_EMAIL, self.PARENT_FROM, self.CONFIG)
+                is None
+            )
+
+    @patch("core.mda.inbound_auth.verify_message_dkim")
+    def test_strict_still_accepts_an_exact_match(self, mock_verify):
+        """``adkim=s`` is what our own senders satisfy; it must not break them."""
+        mock_verify.return_value = "example.com"
+        resolve, queried = self._dns(
+            {"_dmarc.example.com": "v=DMARC1; p=reject; adkim=s"}
+        )
+        with patch("core.mda.dmarc.resolve_txt_values", resolve):
+            assert (
+                check_inbound_authentication(RAW_EMAIL, self.PARENT_FROM, self.CONFIG)
+                is None
+            )
+        assert queried == [], "an exact match is aligned under either mode"
+
+    @patch("core.mda.inbound_auth.verify_message_dkim")
+    def test_an_unrelated_signer_is_rejected_without_a_lookup(self, mock_verify):
+        """Different organizational domains are unaligned under either mode.
+
+        Asking would be a DNS query per spoofed message whose answer cannot
+        change the verdict — the shape a spammer would happily generate.
+        """
+        mock_verify.return_value = "attacker.test"
+        resolve, queried = self._dns(
+            {"_dmarc.example.com": "v=DMARC1; p=reject; adkim=r"}
+        )
+        with patch("core.mda.dmarc.resolve_txt_values", resolve):
+            assert (
+                check_inbound_authentication(RAW_EMAIL, self.PARENT_FROM, self.CONFIG)
+                == VERDICT_UNVERIFIED
+            )
+        assert queried == []
+
+    @patch("core.mda.inbound_auth.verify_message_dkim")
+    def test_a_failed_lookup_leaves_the_signature_verified(self, mock_verify):
+        """A resolver blip must not downgrade every subdomain-signed sender."""
+        mock_verify.return_value = "mail.example.com"
+
+        def _resolve(qname):
+            raise ServfailError(qname, "TXT")
+
+        with patch("core.mda.dmarc.resolve_txt_values", _resolve):
+            assert (
+                check_inbound_authentication(RAW_EMAIL, self.PARENT_FROM, self.CONFIG)
+                is None
+            )
+
+    @patch("core.mda.inbound_auth.verify_message_dkim")
+    def test_adkim_never_produces_a_forgery_verdict(self, mock_verify):
+        """Strict alignment can only move a message to "unverified".
+
+        Calling a DKIM non-match forgery would need SPF: a message can pass
+        DMARC through an aligned SPF with no DKIM signature at all.
+        """
+        mock_verify.return_value = "mail.example.com"
+        resolve, _ = self._dns({"_dmarc.example.com": "v=DMARC1; p=reject; adkim=s"})
+        with patch("core.mda.dmarc.resolve_txt_values", resolve):
+            verdict = check_inbound_authentication(
+                RAW_EMAIL, self.PARENT_FROM, self.CONFIG
+            )
+        assert verdict != VERDICT_FORGED
 
 
 class TestCheckInboundAuthenticationRspamd:

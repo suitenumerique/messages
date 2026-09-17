@@ -1,13 +1,21 @@
 """Tests for DKIM signing functionality."""
 
-from unittest.mock import Mock, patch
+from unittest.mock import patch
 
 import pytest
 from dkim import verify as dkim_verify
 
 from core.enums import DKIMAlgorithmChoices
+from core.mda import signing
 from core.mda.signing import generate_dkim_key, sign_message_dkim, verify_message_dkim
 from core.models import DKIMKey, Mailbox, MailDomain
+from core.services.dns.resolver import (
+    NoAnswerError,
+    NXDOMAINError,
+    ResolutionTimeoutError,
+    ServfailError,
+)
+from core.tests.dns_answers import txt_answer
 
 
 @pytest.mark.django_db
@@ -106,10 +114,158 @@ def test_verify_message_dkim_returns_signing_domain():
     signature_header_bytes = sign_message_dkim(raw_message, mail_domain)
     full_message_signed = signature_header_bytes + b"\r\n" + raw_message
 
-    answer = Mock()
-    answer.strings = [f"v=DKIM1; k=rsa; p={public_key_str}".encode()]
-    with patch("core.mda.signing.dns.resolver.resolve", return_value=[answer]):
+    # A real 2048-bit key does not fit in one 255-octet character-string, so
+    # this fixture is chunked exactly as an authoritative server must serve it
+    # — the reassembly is the part that has to be right.
+    answer = txt_answer(f"v=DKIM1; k=rsa; p={public_key_str}")
+    with patch("core.mda.signing.dkim_dns_txt", return_value=answer):
         assert verify_message_dkim(full_message_signed) == "example.com"
+
+
+@pytest.mark.django_db
+def test_verify_message_dkim_ignores_unrelated_txt_at_selector():
+    """An unrelated TXT beside the key must not block verification.
+
+    Selector names commonly carry a domain-verification token as well. The
+    ambiguity guard counts DKIM *key records*, not every TXT at the name, so
+    a good key alongside a token still verifies.
+    """
+    private_key_pem_str, public_key_str = generate_dkim_key(key_size=1024)
+    mail_domain = MailDomain.objects.create(name="example.com")
+    Mailbox.objects.create(local_part="test", domain=mail_domain)
+    DKIMKey.objects.create(
+        selector="testselector",
+        private_key=private_key_pem_str,
+        public_key=public_key_str,
+        key_size=1024,
+        is_active=True,
+        domain=mail_domain,
+    )
+
+    raw_message = (
+        b"From: test@example.com\r\nTo: recipient@other.com\r\n"
+        b"Subject: Test DKIM\r\n\r\nHello World!\r\n"
+    )
+    signature_header_bytes = sign_message_dkim(raw_message, mail_domain)
+    full_message_signed = signature_header_bytes + b"\r\n" + raw_message
+
+    answer = txt_answer(
+        "google-site-verification=abc123",
+        f"v=DKIM1; k=rsa; p={public_key_str}",
+    )
+    with patch("core.mda.signing.dkim_dns_txt", return_value=answer):
+        assert verify_message_dkim(full_message_signed) == "example.com"
+
+
+@pytest.mark.django_db
+def test_verify_message_dkim_require_dnssec_refuses_insecure_answer():
+    """With ``require_dnssec``, an unvalidated answer is not a usable key."""
+    private_key_pem_str, public_key_str = generate_dkim_key(key_size=1024)
+    mail_domain = MailDomain.objects.create(name="example.com")
+    Mailbox.objects.create(local_part="test", domain=mail_domain)
+    DKIMKey.objects.create(
+        selector="testselector",
+        private_key=private_key_pem_str,
+        public_key=public_key_str,
+        key_size=1024,
+        is_active=True,
+        domain=mail_domain,
+    )
+
+    raw_message = (
+        b"From: test@example.com\r\nTo: recipient@other.com\r\n"
+        b"Subject: Test DKIM\r\n\r\nHello World!\r\n"
+    )
+    signature_header_bytes = sign_message_dkim(raw_message, mail_domain)
+    full_message_signed = signature_header_bytes + b"\r\n" + raw_message
+
+    insecure = txt_answer(f"v=DKIM1; k=rsa; p={public_key_str}", secure=False)
+    with patch("core.mda.signing.dkim_dns_txt", return_value=insecure):
+        assert verify_message_dkim(full_message_signed, require_dnssec=True) is None
+        # The same answer without the flag is the default, and the default is
+        # what the inbound path uses: most sending zones are still unsigned.
+        assert verify_message_dkim(full_message_signed) == "example.com"
+
+    secure = txt_answer(f"v=DKIM1; k=rsa; p={public_key_str}", secure=True)
+    with patch("core.mda.signing.dkim_dns_txt", return_value=secure):
+        assert verify_message_dkim(full_message_signed, require_dnssec=True) == (
+            "example.com"
+        )
+
+
+@pytest.mark.django_db
+def test_verify_message_dkim_refuses_two_key_records():
+    """Two actual key records at one selector stay ambiguous, so verification fails."""
+    private_key_pem_str, public_key_str = generate_dkim_key(key_size=1024)
+    _other_private, other_public = generate_dkim_key(key_size=1024)
+    mail_domain = MailDomain.objects.create(name="example.com")
+    Mailbox.objects.create(local_part="test", domain=mail_domain)
+    DKIMKey.objects.create(
+        selector="testselector",
+        private_key=private_key_pem_str,
+        public_key=public_key_str,
+        key_size=1024,
+        is_active=True,
+        domain=mail_domain,
+    )
+
+    raw_message = (
+        b"From: test@example.com\r\nTo: recipient@other.com\r\n"
+        b"Subject: Test DKIM\r\n\r\nHello World!\r\n"
+    )
+    signature_header_bytes = sign_message_dkim(raw_message, mail_domain)
+    full_message_signed = signature_header_bytes + b"\r\n" + raw_message
+
+    answer = txt_answer(
+        f"v=DKIM1; k=rsa; p={public_key_str}",
+        f"v=DKIM1; k=rsa; p={other_public}",
+    )
+    with patch("core.mda.signing.dkim_dns_txt", return_value=answer):
+        assert verify_message_dkim(full_message_signed) is None
+
+
+@pytest.mark.django_db
+@pytest.mark.parametrize(
+    "error,expected_log",
+    [
+        (NXDOMAINError("s._domainkey.example.com", "TXT"), "No DKIM key record"),
+        (NoAnswerError("s._domainkey.example.com", "TXT"), "No DKIM key record"),
+        # SERVFAIL says the lookup did not complete, not that the record is
+        # absent — the line check_single_record draws. Grouping it with
+        # NXDOMAIN logged "no such record" about a question never answered.
+        (ServfailError("s._domainkey.example.com", "TXT"), "did not complete"),
+        (ResolutionTimeoutError("s._domainkey.example.com", "TXT"), "did not complete"),
+    ],
+)
+def test_verify_message_dkim_reports_settled_and_transient_apart(error, expected_log):
+    """Both fail the verification, but they are not the same failure."""
+    private_key_pem_str, public_key_str = generate_dkim_key(key_size=1024)
+    mail_domain = MailDomain.objects.create(name="example.com")
+    DKIMKey.objects.create(
+        selector="testselector",
+        private_key=private_key_pem_str,
+        public_key=public_key_str,
+        key_size=1024,
+        is_active=True,
+        domain=mail_domain,
+    )
+    raw_message = (
+        b"From: test@example.com\r\nTo: recipient@other.com\r\n"
+        b"Subject: Test DKIM\r\n\r\nHello World!\r\n"
+    )
+    signature_header_bytes = sign_message_dkim(raw_message, mail_domain)
+    full_message_signed = signature_header_bytes + b"\r\n" + raw_message
+
+    # Asserted on the logger rather than caplog: the "core" loggers do not
+    # propagate to root, so caplog never sees them.
+    with (
+        patch("core.mda.signing.dkim_dns_txt", side_effect=error),
+        patch.object(signing.logger, "warning") as mock_warning,
+    ):
+        assert verify_message_dkim(full_message_signed) is None
+
+    logged = " ".join(str(call.args[0]) for call in mock_warning.call_args_list)
+    assert expected_log in logged
 
 
 @pytest.mark.django_db
@@ -118,6 +274,44 @@ def test_verify_message_dkim_invalid_returns_none():
     # Unsigned message -> no DKIM-Signature header -> cannot verify.
     raw_message = b"From: test@example.com\r\nSubject: Test\r\n\r\nBody\r\n"
     assert verify_message_dkim(raw_message) is None
+
+
+@pytest.mark.django_db
+def test_verify_message_dkim_body_hash_mismatch_is_not_reported_to_sentry():
+    """A rewritten body is routine inbound, not something to page anyone about.
+
+    ``DKIM.verify`` does not catch its own exceptions, so dkimpy's
+    ValidationError("body hash mismatch") reaches our handler. Every mailing
+    list that appends a footer produces one, on every message it relays.
+    """
+    private_key_pem_str, public_key_str = generate_dkim_key(key_size=1024)
+    mail_domain = MailDomain.objects.create(name="example.com")
+    DKIMKey.objects.create(
+        selector="testselector",
+        private_key=private_key_pem_str,
+        public_key=public_key_str,
+        key_size=1024,
+        is_active=True,
+        domain=mail_domain,
+    )
+    raw_message = (
+        b"From: test@example.com\r\nTo: recipient@other.com\r\n"
+        b"Subject: Test DKIM\r\n\r\nHello World!\r\n"
+    )
+    signature_header_bytes = sign_message_dkim(raw_message, mail_domain)
+    # A list footer appended after signing: the body hash no longer matches.
+    tampered = (
+        signature_header_bytes + b"\r\n" + raw_message + b"-- \r\nSent via list\r\n"
+    )
+
+    answer = txt_answer(f"v=DKIM1; k=rsa; p={public_key_str}")
+    with (
+        patch("core.mda.signing.dkim_dns_txt", return_value=answer),
+        patch("core.mda.signing.capture_exception") as mock_capture,
+    ):
+        assert verify_message_dkim(tampered) is None
+
+    mock_capture.assert_not_called()
 
 
 @pytest.mark.django_db

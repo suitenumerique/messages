@@ -74,7 +74,14 @@ class Command(BaseCommand):
             elif status == "incorrect":
                 line += f" — Expected: {record['value']} | Found: {', '.join(record['_check'].get('found', []))}"
             elif status == "duplicate":
-                line += f" — Multiple records found: {', '.join(record['_check'].get('found', []))}"
+                # A duplicate met while walking the SPF chain names the domain
+                # it sits at; without that the message reads as if the records
+                # listed after it — the customer's own, and correct — were the
+                # duplicates.
+                if chain_error := record["_check"].get("error"):
+                    line += f" — {chain_error}"
+                else:
+                    line += f" — Multiple records found: {', '.join(record['_check'].get('found', []))}"
             elif status == "insecure":
                 line += f" — Insecure configuration: {', '.join(record['_check'].get('found', []))}"
             elif status == "conflicting":
