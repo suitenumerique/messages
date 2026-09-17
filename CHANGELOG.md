@@ -18,7 +18,7 @@ and this project adheres to
 
 ### Changed
 
-- Bump keycloak to 26.7.2
+- Bump keycloak to 26.7.4 and Alpine to 3.24 in the Keycloak image
 - Bump Caddy to 2.11.4 and lprobe to v0.2.0 in the frontend image
 - Keycloak image: Keycloak listens on 127.0.0.1:8081, Caddy serves port 8080
 - Keycloak image: proxy headers are fixed to xforwarded from Caddy, which sends X-Forwarded-Proto https

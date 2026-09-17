@@ -14,7 +14,7 @@ fi
 zip -r /custom-scripts.jar META-INF *.js
 EOR
 
-FROM alpine:3.21@sha256:48b0309ca019d89d40f670aa1bc06e426dc0931948452e8491e3d65087abc07d AS tools-download
+FROM alpine:3.24@sha256:28bd5fe8b56d1bd048e5babf5b10710ebe0bae67db86916198a6eec434943f8b AS tools-download
 ARG TARGETARCH
 
 ARG CADDY_VERSION=2.11.4
@@ -33,7 +33,7 @@ RUN wget -qO /tmp/caddy.tar.gz "https://github.com/caddyserver/caddy/releases/do
     && mv caddy /usr/bin/caddy \
     && rm /tmp/caddy.tar.gz
 
-FROM quay.io/keycloak/keycloak:26.7.2@sha256:831330513f55695572286e521f94fcd3c7e285250ed5b848090265a33192f669 AS builder
+FROM quay.io/keycloak/keycloak:26.7.4@sha256:82a77884f3af238beab1e7afd63b5f530e1b5c0590bd7aa60b40a40463e29b2c AS builder
 
 WORKDIR /opt/keycloak
 COPY --chown=keycloak:keycloak --chmod=644 themes/dsfr-2.3.4.jar /opt/keycloak/providers/dsfr.jar
@@ -51,7 +51,7 @@ ENV KC_DB=postgres
 
 RUN /opt/keycloak/bin/kc.sh build
 
-FROM quay.io/keycloak/keycloak:26.7.2@sha256:831330513f55695572286e521f94fcd3c7e285250ed5b848090265a33192f669
+FROM quay.io/keycloak/keycloak:26.7.4@sha256:82a77884f3af238beab1e7afd63b5f530e1b5c0590bd7aa60b40a40463e29b2c
 
 COPY --from=builder /opt/keycloak/ /opt/keycloak/
 COPY --from=tools-download /usr/bin/caddy /usr/bin/caddy
