@@ -21,6 +21,7 @@ const makeAssignEvent = (
     data: { assignees },
     has_unread_mention: false,
     is_editable: false,
+    mention_read_by: null,
     created_at: createdAt,
     updated_at: createdAt,
 });
@@ -35,6 +36,7 @@ const makeIMEvent = (id: string, authorId: string, createdAt = '2026-01-01T10:00
     data: { content: 'hello', mentions: [] },
     has_unread_mention: false,
     is_editable: false,
+    mention_read_by: null,
     created_at: createdAt,
     updated_at: createdAt,
 });

@@ -38,6 +38,7 @@ const makeEvent = (
   data: { assignees },
   has_unread_mention: false,
   is_editable: false,
+  mention_read_by: null,
   created_at: '2026-01-01T10:00:00Z',
   updated_at: '2026-01-01T10:00:00Z',
 });
