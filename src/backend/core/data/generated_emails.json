@@ -1,0 +1,418 @@
+[
+  {
+    "email": "sophie.martin@citoyen.example",
+    "name": "Sophie Martin",
+    "subject": "Renouvellement de ma carte d'identité après un déménagement",
+    "message": "Bonjour,\n\nMa carte nationale d’identité expire en novembre et je viens également de déménager récemment de Lille à Lyon.\n\nJe voudrais savoir si je dois obligatoirement refaire ma carte à cause du changement d’adresse, ou si je peux simplement attendre son expiration pour la renouveler.\n\nPar ailleurs, je travaille actuellement à l’étranger et je ne serai en France que pendant une dizaine de jours en octobre. Est-ce que je peux faire la démarche dans n’importe quelle mairie, ou dois-je obligatoirement la faire dans ma commune de résidence ?\n\nMerci d’avance pour votre aide.\n\nCordialement,\nSophie Martin"
+  },
+  {
+    "email": "leo.leo@citoyen.example",
+    "name": "Leo Leo",
+    "subject": "Question contribution projet",
+    "message": "bonjour, quelles sont les bonnes pratiques à savoir pour contribuer au projet, format des commits, des issues, merci."
+  },
+  {
+    "email": "thomas.bernard@citoyen.example",
+    "name": "Thomas Bernard",
+    "subject": "Démission et congés payés non pris",
+    "message": "Bonjour,\n\nJe souhaite démissionner de mon poste en CDI et j’aurais quelques questions avant d’envoyer ma lettre à mon employeur.\n\nIl me reste environ deux semaines de congés payés que je n’ai pas prises. Est-ce qu’elles doivent obligatoirement être prises avant mon départ ou peuvent-elles être payées avec mon solde de tout compte ?\n\nJ’ai également trouvé un nouvel emploi qui commencerait assez rapidement. Je voudrais donc savoir combien de temps je dois normalement respecter pour mon préavis et s’il est possible de négocier une date de départ plus tôt avec mon employeur.\n\nMerci pour vos éclaircissements.\n\nCordialement,\nThomas Bernard"
+  },
+  {
+    "email": "marc.durand@citoyen.example",
+    "name": "Marc Durand",
+    "subject": "Vol de mes papiers en Espagne",
+    "message": "Bonjour,\n\nJe suis actuellement en déplacement en Espagne et je viens de me faire voler mon portefeuille avec ma carte d’identité, mon permis de conduire et ma carte Vitale.\n\nJe rentre en France dans quatre jours et je dois prendre l’avion. Je voudrais savoir quelles démarches je dois effectuer immédiatement, notamment pour la carte d’identité, et quels documents je pourrai utiliser pour rentrer en France.\n\nEst-ce que je dois faire une déclaration auprès de la police espagnole et contacter le consulat français ? Si oui, est-ce que je dois prendre rendez-vous ?\n\nMerci beaucoup pour votre aide car je ne sais pas quelles démarches faire en priorité.\n\nCordialement,\nMarc Durand"
+  },
+  {
+    "email": "claire.petit@citoyen.example",
+    "name": "Claire Petit",
+    "subject": "Changement d'adresse après un déménagement",
+    "message": "Bonjour,\n\nJe viens de déménager et je voudrais savoir quelles administrations je dois prévenir pour signaler mon changement d’adresse.\n\nJ’ai notamment une carte grise, des documents auprès de la CAF et des démarches en cours auprès de France Travail. Est-ce que je dois contacter chaque organisme séparément ou existe-t-il une démarche permettant de déclarer mon changement d’adresse à plusieurs administrations en même temps ?\n\nMerci pour votre aide.\n\nBien cordialement,\nClaire Petit"
+  },
+  {
+    "email": "julie.robert@citoyen.example",
+    "name": "Julie Robert",
+    "subject": "Quelles aides puis-je demander ?",
+    "message": "Bonjour,\n\nJe suis actuellement sans emploi et je vais bientôt avoir 25 ans. Je vis encore chez mes parents mais je voudrais prendre mon propre appartement.\n\nJe travaille parfois avec des contrats très courts et mes revenus changent beaucoup d’un mois à l’autre. Je ne sais pas vraiment à quelles aides j’aurais droit ni quelles démarches je dois faire en premier.\n\nEst-ce que vous pourriez me dire ce que je peux demander et à qui je dois m’adresser ?\n\nMerci beaucoup.\n\nCordialement,\nJulie Robert"
+  },
+  {
+    "email": "antoine.leclerc@citoyen.example",
+    "name": "Antoine Leclerc",
+    "subject": "Retard de paiement de mes allocations chômage",
+    "message": "Bonjour,\n\nJe me suis inscrit comme demandeur d’emploi il y a environ trois semaines et j’ai effectué ma demande d’allocation. Je n’ai toujours rien reçu sur mon compte bancaire.\n\nJe voulais savoir si ce délai est normal et s’il y a quelque chose que je dois faire de mon côté pour débloquer la situation.\n\nMerci d’avance pour votre aide.\n\nCordialement,\nAntoine Leclerc"
+  },
+  {
+    "email": "camille.moreau@citoyen.example",
+    "name": "Camille Moreau",
+    "subject": "Documents nécessaires pour une première carte d'identité",
+    "message": "Bonjour,\n\nMa fille de 16 ans va avoir besoin de sa première carte nationale d’identité pour un voyage scolaire à l’étranger.\n\nPouvez-vous me dire quels documents nous devons préparer et si elle doit être présente lors du dépôt de la demande ? Faut-il également prendre rendez-vous à la mairie ?\n\nMerci beaucoup.\n\nCordialement,\nCamille Moreau"
+  },
+  {
+    "email": "nicolas.girard@citoyen.example",
+    "name": "Nicolas Girard",
+    "subject": "Carte d'identité perdue",
+    "message": "Bonjour,\n\nJe viens de me rendre compte que j’ai perdu ma carte nationale d’identité. Je ne sais pas exactement où je l’ai perdue.\n\nQuelles sont les démarches à effectuer pour faire une nouvelle carte ? Est-ce que je dois d’abord faire une déclaration de perte ? Et combien coûte le renouvellement dans ce cas ?\n\nMerci pour votre aide.\n\nCordialement,\nNicolas Girard"
+  },
+  {
+    "email": "amelie.rousseau@citoyen.example",
+    "name": "Amélie Rousseau",
+    "subject": "Je viens de commencer un nouvel emploi",
+    "message": "Bonjour,\n\nJe viens de retrouver un emploi après plusieurs mois de chômage. Je commence mon nouveau travail lundi prochain.\n\nQuelles démarches dois-je effectuer auprès de France Travail ? Est-ce que je dois simplement déclarer ma reprise d’activité lors de ma prochaine actualisation ou dois-je les prévenir immédiatement ?\n\nMerci pour votre aide.\n\nCordialement,\nAmélie Rousseau"
+  },
+  {
+    "email": "laurent.fournier@citoyen.example",
+    "name": "Laurent Fournier",
+    "subject": "Je n'arrive pas à faire ma demande en ligne",
+    "message": "Bonjour,\n\nJ’essaie depuis plusieurs jours de faire une démarche administrative en ligne mais je n’arrive pas à aller jusqu’au bout. Le site me demande plusieurs informations et je ne comprends pas exactement quels justificatifs je dois fournir.\n\nExiste-t-il un endroit où je peux être accompagné pour effectuer cette démarche ?\n\nMerci par avance.\n\nCordialement,\nLaurent Fournier"
+  },
+  {
+    "email": "marie.lambert@citoyen.example",
+    "name": "Marie Lambert",
+    "subject": "Retrait de ma nouvelle carte d'identité",
+    "message": "Bonjour,\n\nJ’ai reçu un message m’indiquant que ma nouvelle carte nationale d’identité est disponible, mais je suis actuellement en déplacement professionnel et je ne pourrai pas me rendre à la mairie avant plusieurs semaines.\n\nCombien de temps la carte est-elle conservée avant d’être détruite ? Est-ce qu’une autre personne peut la récupérer à ma place ?\n\nMerci pour votre réponse.\n\nCordialement,\nMarie Lambert"
+  },
+  {
+    "email": "karim.benali@citoyen.example",
+    "name": "Karim Benali",
+    "subject": "Question concernant mon préavis",
+    "message": "Bonjour,\n\nJe travaille actuellement en CDI depuis quatre ans et je souhaite quitter mon entreprise car j’ai trouvé un nouvel emploi.\n\nMon contrat de travail ne précise pas clairement la durée de mon préavis. Comment puis-je savoir combien de temps je dois rester dans l’entreprise ? Est-ce que mon employeur peut accepter que je parte plus tôt ?\n\nMerci pour votre aide.\n\nCordialement,\nKarim Benali"
+  },
+  {
+    "email": "isabelle.mercier@citoyen.example",
+    "name": "Isabelle Mercier",
+    "subject": "Mon dossier administratif est toujours en cours",
+    "message": "Bonjour,\n\nJ’ai effectué une démarche administrative il y a plusieurs semaines et mon dossier apparaît toujours comme étant en cours de traitement.\n\nJe voudrais savoir s’il existe un délai normal de traitement et comment je peux vérifier l’état d’avancement de mon dossier.\n\nMerci d’avance pour votre réponse.\n\nCordialement,\nIsabelle Mercier"
+  },
+  {
+    "email": "pierre.martel@citoyen.example",
+    "name": "Pierre Martel",
+    "subject": "Question sur mes droits après une rupture de contrat",
+    "message": "Bonjour,\n\nMon contrat de travail vient de se terminer et je voudrais savoir si je peux bénéficier de l’allocation chômage.\n\nJ’ai travaillé pendant un peu plus de deux ans, mais la fin de mon contrat n’est pas exactement une démission. Pouvez-vous m’indiquer dans quelles conditions je pourrais avoir droit à une allocation et quelles démarches je dois effectuer ?\n\nMerci beaucoup.\n\nCordialement,\nPierre Martel"
+  },
+  {
+    "email": "elodie.fontaine@citoyen.example",
+    "name": "Élodie Fontaine",
+    "subject": "Question sans rapport avec une démarche administrative",
+    "message": "Bonjour,\n\nJe joue actuellement à pierre-papier-ciseaux avec mes amis et je voudrais connaître la meilleure stratégie pour gagner le plus souvent possible.\n\nMerci !\n\nÉlodie"
+  },
+  {
+    "email": "jack.fontaine@citoyen.example",
+    "name": "Jack Fontaine",
+    "subject": "Prendre rendez-vous pour un renouvellement de passeport",
+    "message": "Bonjour,\n\nQuand serait-il possible d'avoir un rendez-vous pour refaire mon passeport?\n\nMerci !\n\nÉlodie"
+  },
+  {
+    "email": "marie.fontaine@citoyen.example",
+    "name": "Marie Fontaine",
+    "subject": "Prendre un rendez-vous avec le service SI.",
+    "message": "Bonjour,\n\nMon pc ne marche plus, serait-il possible de prendre un rendez-vous avec le SI pour voir ça?\n\nMerci !\n\nMarie"
+  },
+  {
+    "email": "xiao.xiaohong@citoyen.example",
+    "name": "Xiao Xiaohong",
+    "subject": "URGENT – Titre étudiant et ADP expirée – Voyage en Croatie le 01/10/2026.",
+    "message": "Madame, Monsieur,\n\nJe vous contacte concernant ma demande de renouvellement de titre de séjour déposée sur l’ANEF en 23/03/2026. J’ai également transmis les documents complémentaires demandés en 19/08/2026\nMon titre de séjour a expiré le 15 juin 2026 et mon attestation de prolongation d’instruction est arrivée à expiration le 15 septembre 2026 (déjà )\nJe dois impérativement voyager en Croatie le 1er octobre 2026 et j’ai besoin d’un document de séjour valide pour pouvoir voyager et revenir en France.\nJe vous serais donc très reconnaissante de bien vouloir, si possible, finaliser mon dossier et me délivrer mon nouveau titre de séjour ou, à défaut, une nouvelle attestation de prolongation d’instruction me permettant de voyager et de revenir en France.\nJ’avais déjà signalé ma situation via l’ANEF début septembre.\nMes informations :\nNom : Xiao\nPrénom : Xiaohong\nDate de naissance :  2000 Octobre 24\nIdentifiant (N° étranger) : 98764536\nANEF N° de la demande : 930865657489493\n\n\nJe vous remercie sincèrement pour votre aide compte tenu de l’urgence de ma situation.\nCordialement,\nXiaohong Xiao (she/her)\n+337452226557"
+  },
+  {
+    "email": "lucas.morel@citoyen.example",
+    "name": "Lucas Morel",
+    "subject": "Suivi de mon dossier de logement social",
+    "messages": [
+      {
+        "direction": "inbound",
+        "date": "Mon, 14 Sep 2026 09:12:00 +0200",
+        "message": "Bonjour,\n\nJ'ai depose une demande de logement social le 3 juin 2026 sous le numero LS-2026-18452. Ma situation a change depuis le depot : mon bail actuel se termine le 30 septembre et je vais devoir quitter mon logement.\n\nPouvez-vous m'indiquer si mon dossier est complet et s'il manque encore des justificatifs ?\n\nCordialement,\nLucas Morel"
+      },
+      {
+        "direction": "outbound",
+        "date": "Mon, 14 Sep 2026 15:40:00 +0200",
+        "message": "Bonjour Monsieur,\n\nNous avons bien retrouve votre demande de logement social LS-2026-18452. Le dossier est en cours d'instruction, mais il manque encore votre dernier avis d'imposition ainsi qu'une attestation de fin de bail ou tout document prouvant la date de depart du logement actuel.\n\nVous pouvez transmettre ces pieces en repondant a ce message.\n\nCordialement,\nLe service logement"
+      },
+      {
+        "direction": "inbound",
+        "date": "Wed, 16 Sep 2026 08:25:00 +0200",
+        "message": "Bonjour,\n\nMerci pour votre reponse. Je viens de joindre mon avis d'imposition et l'attestation de mon proprietaire indiquant que je dois quitter le logement le 30 septembre.\n\nPouvez-vous me confirmer que ces deux documents suffisent et que mon dossier peut maintenant etre traite en priorite compte tenu de l'urgence ?\n\nCordialement,\nLucas Morel"
+      }
+    ]
+  },
+  {
+    "email": "nadia.benamar@citoyen.example",
+    "name": "Nadia Benamar",
+    "subject": "Long suivi - renouvellement de titre de sejour et changement d'adresse",
+    "messages": [
+      {
+        "direction": "inbound",
+        "date": "Tue, 01 Sep 2026 08:45:00 +0200",
+        "message": "Bonjour,\n\nJ'ai depose une demande de renouvellement de titre de sejour le 12 juillet 2026 sur l'ANEF. Mon numero de dossier est ANEF-2026-774421. Depuis, j'ai demenage du 18 rue Voltaire a Saint-Denis vers le 42 avenue Jean Jaures a Montreuil.\n\nPouvez-vous me dire si je dois refaire toute ma demande ou seulement signaler le changement d'adresse ?\n\nCordialement,\nNadia Benamar"
+      },
+      {
+        "direction": "outbound",
+        "date": "Tue, 01 Sep 2026 14:10:00 +0200",
+        "message": "Bonjour Madame,\n\nVous n'avez pas a refaire toute votre demande. Vous devez signaler votre nouvelle adresse dans votre espace ANEF et joindre un justificatif de domicile recent.\n\nVotre dossier ANEF-2026-774421 reste en cours d'instruction.\n\nCordialement,\nLe bureau du sejour"
+      },
+      {
+        "direction": "inbound",
+        "date": "Wed, 02 Sep 2026 09:05:00 +0200",
+        "message": "Bonjour,\n\nMerci pour votre retour. J'ai ajoute une facture d'electricite a mon nom datant du 25 aout. Est-ce suffisant comme justificatif de domicile ?\n\nCordialement,\nNadia Benamar"
+      },
+      {
+        "direction": "outbound",
+        "date": "Wed, 02 Sep 2026 16:20:00 +0200",
+        "message": "Bonjour Madame,\n\nUne facture d'electricite recente a votre nom peut convenir comme justificatif de domicile. Nous vous invitons toutefois a verifier que l'adresse indiquee est bien le 42 avenue Jean Jaures a Montreuil.\n\nCordialement,\nLe bureau du sejour"
+      },
+      {
+        "direction": "inbound",
+        "date": "Fri, 04 Sep 2026 10:30:00 +0200",
+        "message": "Bonjour,\n\nL'adresse sur la facture est bien 42 avenue Jean Jaures a Montreuil. J'ai aussi recu une demande de piece complementaire pour mon contrat de travail. Je suis en CDI depuis le 1er juin 2026, mais mon employeur m'a donne une attestation employeur au lieu du contrat complet.\n\nEst-ce que cette attestation suffit ?\n\nCordialement,\nNadia Benamar"
+      },
+      {
+        "direction": "outbound",
+        "date": "Fri, 04 Sep 2026 15:05:00 +0200",
+        "message": "Bonjour Madame,\n\nPour l'instruction de votre dossier, l'attestation employeur peut etre utile, mais elle ne remplace pas toujours le contrat de travail si celui-ci est demande explicitement. Merci de transmettre le contrat signe si vous en disposez, ou d'indiquer clairement que vous ne l'avez pas encore recu.\n\nCordialement,\nLe bureau du sejour"
+      },
+      {
+        "direction": "inbound",
+        "date": "Mon, 07 Sep 2026 11:18:00 +0200",
+        "message": "Bonjour,\n\nJ'ai finalement obtenu mon contrat signe et je l'ai depose ce matin sur l'ANEF. Mon recepisse expire le 20 septembre 2026. Est-ce que je vais recevoir une nouvelle attestation avant cette date ?\n\nCordialement,\nNadia Benamar"
+      },
+      {
+        "direction": "outbound",
+        "date": "Mon, 07 Sep 2026 16:50:00 +0200",
+        "message": "Bonjour Madame,\n\nNous avons bien note que votre recepisse expire le 20 septembre 2026. Si votre dossier ne peut pas etre finalise avant cette date, une attestation de prolongation d'instruction pourra etre emise sous reserve que le dossier soit complet.\n\nCordialement,\nLe bureau du sejour"
+      },
+      {
+        "direction": "inbound",
+        "date": "Wed, 09 Sep 2026 08:52:00 +0200",
+        "message": "Bonjour,\n\nJe dois voyager en Belgique le 28 septembre pour mon travail. Mon employeur me demande de confirmer rapidement si je pourrai partir. Est-ce que l'attestation de prolongation permettra de revenir en France ?\n\nMerci,\nNadia Benamar"
+      },
+      {
+        "direction": "outbound",
+        "date": "Wed, 09 Sep 2026 13:25:00 +0200",
+        "message": "Bonjour Madame,\n\nNous ne pouvons pas vous garantir ici les conditions de franchissement de frontiere. Avant tout deplacement hors de France, vous devez verifier que vous disposez d'un document de sejour valide permettant le retour. Nous vous recommandons d'attendre la confirmation de validite de votre document avant de voyager.\n\nCordialement,\nLe bureau du sejour"
+      },
+      {
+        "direction": "inbound",
+        "date": "Fri, 11 Sep 2026 09:40:00 +0200",
+        "message": "Bonjour,\n\nJe comprends. J'ai annule le deplacement en Belgique. En revanche, mon employeur m'indique que mon autorisation de travail depend du renouvellement du titre. Pouvez-vous me fournir une attestation indiquant que le dossier est complet et en cours ?\n\nCordialement,\nNadia Benamar"
+      },
+      {
+        "direction": "outbound",
+        "date": "Fri, 11 Sep 2026 15:12:00 +0200",
+        "message": "Bonjour Madame,\n\nNous ne delivrons pas d'attestation libre redigee pour l'employeur. Lorsque votre dossier est complet et recevable, l'ANEF peut generer une attestation de prolongation d'instruction. Ce document fait foi pour le suivi administratif de votre demande.\n\nCordialement,\nLe bureau du sejour"
+      },
+      {
+        "direction": "inbound",
+        "date": "Mon, 14 Sep 2026 10:22:00 +0200",
+        "message": "Bonjour,\n\nSur mon espace ANEF, le statut est passe a \"instruction en cours\" mais je n'ai pas encore l'attestation. J'ai bien ajoute le contrat signe, la facture d'electricite et mon passeport. Pouvez-vous verifier s'il manque encore quelque chose ?\n\nCordialement,\nNadia Benamar"
+      },
+      {
+        "direction": "outbound",
+        "date": "Mon, 14 Sep 2026 16:18:00 +0200",
+        "message": "Bonjour Madame,\n\nA ce stade, les pieces que vous indiquez correspondent aux elements deja demandes : justificatif de domicile, contrat de travail signe et passeport. Si une autre piece est necessaire, elle apparaitra dans votre espace ANEF.\n\nCordialement,\nLe bureau du sejour"
+      },
+      {
+        "direction": "inbound",
+        "date": "Wed, 16 Sep 2026 09:15:00 +0200",
+        "message": "Bonjour,\n\nJe reviens vers vous car mon recepisse expire dans quatre jours et je n'ai toujours pas l'attestation de prolongation. Comme vous m'avez confirme que les pieces demandees ont ete ajoutees, pouvez-vous me dire si l'attestation peut etre emise avant le 20 septembre ?\n\nCordialement,\nNadia Benamar"
+      },
+      {
+        "direction": "outbound",
+        "date": "Wed, 16 Sep 2026 11:00:00 +0200",
+        "message": "Bonjour Madame,\n\nVotre demande est transmise au service instructeur pour verification prioritaire compte tenu de l'expiration proche du recepisse. Nous vous invitons a surveiller votre espace ANEF, ou l'attestation sera disponible si elle est emise.\n\nCordialement,\nLe bureau du sejour"
+      },
+      {
+        "direction": "inbound",
+        "date": "Wed, 16 Sep 2026 15:35:00 +0200",
+        "message": "Bonjour,\n\nMerci. Derniere question : si l'attestation apparait demain sur l'ANEF, dois-je imprimer le document ou la version numerique suffit-elle pour mon employeur ?\n\nCordialement,\nNadia Benamar"
+      }
+    ]
+  },
+  {
+    "email": "hugo.leroy@citoyen.example",
+    "name": "Hugo Leroy",
+    "subject": "Long suivi - regularisation CAF apres changement de situation",
+    "messages": [
+      {
+        "direction": "inbound",
+        "date": "Thu, 03 Sep 2026 08:20:00 +0200",
+        "message": "Bonjour,\n\nJ'ai signale a la CAF que j'ai commence un emploi a temps partiel le 10 aout 2026. Mon numero allocataire est 4582197. Je crains d'avoir encore recu une aide calculee sur mon ancienne situation.\n\nQue dois-je faire pour regulariser ?\n\nCordialement,\nHugo Leroy"
+      },
+      {
+        "direction": "outbound",
+        "date": "Thu, 03 Sep 2026 14:45:00 +0200",
+        "message": "Bonjour Monsieur,\n\nVous devez declarer votre reprise d'activite et vos revenus dans votre espace CAF. Si un paiement a ete effectue sur une base ancienne, la CAF recalculera vos droits et vous informera d'une eventuelle regularisation.\n\nCordialement,\nLe service accueil"
+      },
+      {
+        "direction": "inbound",
+        "date": "Fri, 04 Sep 2026 09:10:00 +0200",
+        "message": "Bonjour,\n\nJ'ai bien declare la reprise d'activite. On me demande maintenant mes bulletins de salaire d'aout, mais je ne recevrai le premier bulletin que fin septembre. Puis-je envoyer mon contrat de travail en attendant ?\n\nCordialement,\nHugo Leroy"
+      },
+      {
+        "direction": "outbound",
+        "date": "Fri, 04 Sep 2026 15:30:00 +0200",
+        "message": "Bonjour Monsieur,\n\nVous pouvez transmettre votre contrat de travail a titre provisoire, en precisant que le bulletin de salaire d'aout sera envoye des reception. La CAF pourra vous demander le bulletin pour finaliser le calcul.\n\nCordialement,\nLe service accueil"
+      },
+      {
+        "direction": "inbound",
+        "date": "Mon, 07 Sep 2026 10:05:00 +0200",
+        "message": "Bonjour,\n\nJ'ai transmis le contrat. Je vois aussi une notification disant que je dois rembourser 186 euros. Est-ce deja definitif ou est-ce que cela peut changer quand j'aurai envoye mon bulletin ?\n\nCordialement,\nHugo Leroy"
+      },
+      {
+        "direction": "outbound",
+        "date": "Mon, 07 Sep 2026 16:05:00 +0200",
+        "message": "Bonjour Monsieur,\n\nLe montant indique peut evoluer si de nouvelles pieces modifient le calcul de vos droits. Nous vous conseillons d'attendre la notification definitive dans votre espace CAF et de transmettre votre bulletin des qu'il sera disponible.\n\nCordialement,\nLe service accueil"
+      },
+      {
+        "direction": "inbound",
+        "date": "Wed, 09 Sep 2026 11:00:00 +0200",
+        "message": "Bonjour,\n\nMa situation familiale a aussi change : ma compagne a emmenage chez moi le 1er septembre. Elle ne travaille pas actuellement. Dois-je declarer ce changement tout de suite meme si mon dossier emploi est encore en cours ?\n\nCordialement,\nHugo Leroy"
+      },
+      {
+        "direction": "outbound",
+        "date": "Wed, 09 Sep 2026 15:35:00 +0200",
+        "message": "Bonjour Monsieur,\n\nOui, vous devez declarer tout changement de situation familiale des qu'il intervient, meme si une autre regularisation est deja en cours. La CAF recalculera vos droits en tenant compte de l'ensemble des informations.\n\nCordialement,\nLe service accueil"
+      },
+      {
+        "direction": "inbound",
+        "date": "Fri, 11 Sep 2026 08:55:00 +0200",
+        "message": "Bonjour,\n\nJ'ai declare la vie commune. On me demande maintenant les ressources de ma compagne pour juin, juillet et aout, mais elle n'avait aucun revenu. Faut-il fournir une attestation sur l'honneur ?\n\nCordialement,\nHugo Leroy"
+      },
+      {
+        "direction": "outbound",
+        "date": "Fri, 11 Sep 2026 14:20:00 +0200",
+        "message": "Bonjour Monsieur,\n\nSi votre compagne n'a percu aucun revenu, indiquez-le dans la declaration de ressources. Si la CAF demande un justificatif complementaire, une attestation sur l'honneur pourra etre jointe depuis votre espace.\n\nCordialement,\nLe service accueil"
+      },
+      {
+        "direction": "inbound",
+        "date": "Tue, 15 Sep 2026 09:35:00 +0200",
+        "message": "Bonjour,\n\nJ'ai complete les ressources a zero et ajoute une attestation sur l'honneur. Je voudrais eviter une suspension de mes droits pendant le recalcul car mon loyer est preleve le 5 octobre. Pouvez-vous confirmer que mon dossier est complet ?\n\nCordialement,\nHugo Leroy"
+      },
+      {
+        "direction": "outbound",
+        "date": "Tue, 15 Sep 2026 16:05:00 +0200",
+        "message": "Bonjour Monsieur,\n\nD'apres les elements que vous indiquez, vous avez transmis le contrat de travail, declare la vie commune et complete les ressources de votre compagne. Le bulletin de salaire reste attendu des que vous l'aurez recu. Le traitement depend ensuite de la CAF.\n\nCordialement,\nLe service accueil"
+      },
+      {
+        "direction": "inbound",
+        "date": "Wed, 16 Sep 2026 13:10:00 +0200",
+        "message": "Bonjour,\n\nMerci. Pour ma reponse actuelle, je souhaite surtout savoir quoi faire maintenant : attendre le bulletin de salaire ou envoyer un message a la CAF pour signaler que tout le reste a deja ete fourni ?\n\nCordialement,\nHugo Leroy"
+      }
+    ]
+  },
+  {
+    "email": "lea.fontaine@citoyen.example",
+    "name": "Léa Fontaine",
+    "subject": "Pièces pour mon rendez-vous passeport du 30 septembre",
+    "message": "Bonjour,\n\nJ'ai rendez-vous le 30 septembre à la mairie pour refaire mon passeport, l'ancien a expiré il y a plus de cinq ans.\n\nJe vous envoie en pièces jointes mon justificatif de domicile (ma dernière facture d'électricité) et un scan de mon extrait d'acte de naissance.\n\nPouvez-vous me confirmer que ces documents sont valables et que mon dossier sera complet ? J'apporterai la photo d'identité le jour du rendez-vous.\n\nMerci d'avance,\nLéa Fontaine",
+    "attachments": [
+      {
+        "path": "attachments/facture_energie_mars_2025.pdf"
+      },
+      {
+        "path": "attachments/acte_naissance_lea_fontaine.png"
+      }
+    ]
+  },
+  {
+    "email": "karim.benali@citoyen.example",
+    "name": "Karim Benali",
+    "subject": "Contestation d'un forfait post-stationnement",
+    "message": "Bonjour,\n\nJ'ai reçu un avis de forfait post-stationnements, alors que j'avais bien payé mon stationnement avec l'application.\n\nVous trouverez ci-joint l'avis reçu et le reçu de paiement de l'application. Je souhaite contester ce forfait : comment dois-je faire et avant quelle date ?\n\nCordialement,\nKarim Benali",
+    "attachments": [
+      {
+        "path": "attachments/avis_fps_2026-08-28.png"
+      },
+      {
+        "path": "attachments/recu_paiement_stationnement.txt"
+      }
+    ]
+  },
+   {
+    "email": "karim.benali@citoyen.example",
+    "name": "Karim Benali",
+    "subject": "",
+    "message": "\nKarim Benali",
+    "attachments": [
+      {
+        "path": "attachments/avis_fps_2026-08-28.png"
+      },
+      {
+        "path": "attachments/recu_paiement_stationnement.txt"
+      }
+    ]
+  },
+  {
+    "email": "nadia.roussel@citoyen.example",
+    "name": "Nadia Roussel",
+    "subject": "Mise à jour de ma demande de logement social",
+    "messages": [
+      {
+        "direction": "inbound",
+        "date": "Mon, 07 Sep 2026 09:12:00 +0200",
+        "message": "Bonjour,\n\nJe dois mettre à jour ma demande de logement social. Quels documents dois-je vous transmettre ?\n\nCordialement,\nNadia Roussel"
+      },
+      {
+        "direction": "outbound",
+        "date": "Tue, 08 Sep 2026 10:30:00 +0200",
+        "message": "Bonjour Madame,\n\nPour mettre à jour votre demande, merci de nous transmettre une pièce d'identité en cours de validité, votre dernier avis d'imposition et une attestation de votre employeur de moins de trois mois.\n\nCordialement,\nLe service logement"
+      },
+      {
+        "direction": "inbound",
+        "date": "Mon, 14 Sep 2026 18:45:00 +0200",
+        "message": "Bonjour,\n\nVoici l'attestation de mon employeur ainsi qu'une lettre qui explique ma situation actuelle.\n\nEst-ce que mon dossier est complet maintenant ?\n\nCordialement,\nNadia Roussel",
+        "attachments": [
+          {
+            "path": "attachments/attestation_employeur_nadia_roussel.pdf"
+          },
+          {
+            "path": "attachments/lettre_situation_nadia_roussel.docx"
+          }
+        ]
+      }
+    ]
+  },
+  {
+    "email": "henry.watiotienne@citoyen.example",
+    "name": "Henry Watiotienne",
+    "subject": "Justificatif de domicile pour ma carte d'identité",
+    "message": "Bonjour,\n\nJe dois refaire ma carte d'identité et j'habite chez mon père à Avesnes-les-Aubert. Je n'ai aucune facture à mon nom.\n\nJ'ai pris en photo l'attestation d'hébergement que mon père a remplie, vous la trouverez en pièce jointe. Est-ce que ce document suffit comme justificatif de domicile, ou faut-il autre chose ?\n\nMerci,\nHenry Watiotienne",
+    "attachments": [
+      {
+        "path": "attachments/attestation_hebergement_photo.png"
+      }
+    ]
+  },
+  {
+    "email": "philippe.watiotienne@citoyen.example",
+    "name": "Philippe Watiotienne",
+    "subject": "Inscription de mon fils sur les listes électorales",
+    "message": "Bonjour,\n\nMon fils Henry habite chez moi et souhaite s'inscrire sur les listes électorales de la commune avant les prochaines élections.\n\nJe vous transmets en pièce jointe le scan de l'attestation d'hébergement que nous avons signée. Pouvez-vous me dire si elle est recevable et quels autres documents il doit fournir ?\n\nBien cordialement,\nPhilippe Watiotienne",
+    "attachments": [
+      {
+        "path": "attachments/attestation_hebergement_scan.pdf"
+      }
+    ]
+  },
+  {
+    "email": "sandrine.girault@citoyen.example",
+    "name": "Sandrine Girault",
+    "subject": "Aide juridictionnelle suite à un arrêt de la cour d'appel d'Orléans (RG 21/02030)",
+    "message": "Bonjour,\n\nJe viens de recevoir l'arrêt de la cour d'appel d'Orléans du 26 septembre 2023 (RG n° 21/02030, chambre sociale) dans le litige prud'homal qui m'opposait à l'ancien employeur de mon époux décédé. La cour a infirmé le jugement du conseil de prud'hommes de Blois, m'a déboutée de l'ensemble de mes demandes et m'a condamnée aux dépens ainsi qu'à verser 500 € au titre de l'article 700 du code de procédure civile.\n\nJe vous joins une copie de l'arrêt. Je voudrais savoir si je peux encore demander l'aide juridictionnelle pour envisager un pourvoi en cassation, et dans quel délai je dois agir à compter de la notification. Je souhaiterais également savoir si un délai de paiement est possible pour les sommes mises à ma charge, ma situation financière étant très difficile depuis le décès de mon mari.\n\nMerci beaucoup pour votre aide.\n\nCordialement,\nSandrine Girault",
+    "attachments": [
+      {
+        "path": "attachments/arret_ca_orleans_21-02030.pdf"
+      }
+    ]
+  },
+  {
+    "email": "julien.masson@citoyen.example",
+    "name": "Julien Masson",
+    "subject": "Erreur dans ma pièce jointe précédente",
+    "message": "Bonjour,\n\nJe crois avoir fait une erreur de scan dans mon précédent message : le fichier joint semble être une page blanche au lieu de mon justificatif de domicile.\n\nJe vous renvoie le document en pièce jointe, mais si jamais il s'affiche encore vide de votre côté, dites-le-moi et je referai le scan.\n\nMerci pour votre compréhension,\nJulien Masson",
+    "attachments": [
+      {
+        "path": "attachments/page_blanche.pdf"
+      }
+    ]
+  }
+]

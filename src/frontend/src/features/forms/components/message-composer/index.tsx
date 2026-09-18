@@ -1,5 +1,5 @@
 "use client";
-import { useCreateBlockNote } from "@blocknote/react";
+import { useComponentsContext, useCreateBlockNote } from "@blocknote/react";
 import { useTranslation } from "react-i18next";
 import { BlockNoteEditor, BlockNoteEditorOptions, BlockNoteSchema, PartialBlock } from '@blocknote/core';
 import { MessageTemplateSelector } from '@/features/blocknote/message-template-block';
@@ -9,7 +9,7 @@ import { blocksToPlainText } from '@/features/blocknote/markdown-exporter';
 
 import { FieldProps } from '@gouvfr-lasuite/cunningham-react';
 import { useFormContext } from 'react-hook-form';
-import React, { useEffect, useImperativeHandle, useRef } from 'react';
+import React, { useEffect, useImperativeHandle, useRef, useState } from 'react';
 import { QuotedMessageBlock } from '@/features/blocknote/quoted-message-block';
 import { Message } from '@/features/api/gen/models/message';
 import { BlockNoteViewField } from '@/features/blocknote/blocknote-view-field';
@@ -19,12 +19,15 @@ import { MessageTemplateTypeChoices, useMailboxesMessageTemplatesAvailableList }
 import { Attachment } from '@/features/api/gen/models/attachment';
 import { MessageComposerHelper } from '@/features/utils/composer-helper';
 import { SmartTrailingBlock } from '@/features/blocknote/smart-trailing-block';
+import { KeywordAutocomplete } from '@/features/blocknote/keyword-autocomplete';
 import { createBlockNoteDictionary, dropUnsupportedBlocks, SUPPORTED_BLOCK_SPECS } from '@/features/blocknote/utils';
 import { PasteColorSanitizer } from '@/features/blocknote/paste-sanitizer';
 import { handle } from '@/features/utils/errors';
 import { findOrphanInlineImages } from './orphan-inline-images';
+import { AiInstructionsInput } from './ai-instructions-input';
 import { MessageFormValues } from '../message-form';
 import { DriveFile } from '../message-form/drive-attachment-picker';
+import { Icon, IconSize } from "@gouvfr-lasuite/ui-kit";
 
 
 // Re-export for consumers that import from message-composer
@@ -55,6 +58,35 @@ export type MessageComposerHandle = {
     exportContent: () => Promise<{ htmlBody: string; textBody: string }>;
 };
 
+const AiReplyButton = ({
+    disabled,
+    isLoading,
+    hasGenerated,
+    onClick,
+}: {
+    disabled?: boolean;
+    isLoading?: boolean;
+    hasGenerated?: boolean;
+    onClick: () => void;
+}) => {
+    const { t } = useTranslation();
+    const Components = useComponentsContext()!;
+
+    const tooltip = isLoading
+        ? t("Generating AI draft")
+        : hasGenerated ? t("Regenerate AI draft") : t("Generate AI draft");
+
+    return (
+        <Components.FormattingToolbar.Button
+            icon={<Icon name="auto_awesome" size={IconSize.SMALL} />}
+            label={t("AI")}
+            mainTooltip={tooltip}
+            isDisabled={disabled || isLoading}
+            onClick={onClick}
+        />
+    );
+};
+
 type MessageComposerProps = FieldProps & {
     mailboxId: string;
     blockNoteOptions?: Partial<BlockNoteEditorOptions<MessageComposerBlockSchema, MessageComposerInlineContentSchema, MessageComposerStyleSchema>>,
@@ -63,6 +95,7 @@ type MessageComposerProps = FieldProps & {
     draft?: Message;
     submitDraft?: () => void;
     ensureDraft?: () => Promise<string | undefined>;
+    generateAiDraft?: (currentDraftText?: string, additionalInstructions?: string) => Promise<Message | undefined>;
     quotedMessage?: Message;
     quoteType?: QuoteType;
     uploadInlineImage: (file: File) => Promise<{ url: string; blobId: string } | null>;
@@ -81,9 +114,12 @@ type MessageComposerProps = FieldProps & {
  * creating real DOM elements on every keystroke.
  */
 
-export const MessageComposer = React.forwardRef<MessageComposerHandle, MessageComposerProps>(({ mailboxId, blockNoteOptions, defaultValue, quotedMessage, quoteType, disabled = false, draft, submitDraft, ensureDraft, uploadInlineImage, uploadFiles, removeInlineImage, attachments, ...props }, ref) => {
+export const MessageComposer = React.forwardRef<MessageComposerHandle, MessageComposerProps>(({ mailboxId, blockNoteOptions, defaultValue, quotedMessage, quoteType, disabled = false, draft, submitDraft, ensureDraft, generateAiDraft, uploadInlineImage, uploadFiles, removeInlineImage, attachments, ...props }, ref) => {
     const form = useFormContext<MessageFormValues>();
     const { t, i18n } = useTranslation();
+    const [isGeneratingAiDraft, setIsGeneratingAiDraft] = useState(false);
+    const [hasGeneratedAiDraft, setHasGeneratedAiDraft] = useState(false);
+    const [aiInstructions, setAiInstructions] = useState("");
     const { data: { data: activeSignatures = [] } = {}, isLoading: isLoadingSignatures } = useMailboxesMessageTemplatesAvailableList(
         mailboxId,
         {
@@ -198,7 +234,7 @@ export const MessageComposer = React.forwardRef<MessageComposerHandle, MessageCo
         dictionary: createBlockNoteDictionary(locale, t),
         ...blockNoteOptions,
         _tiptapOptions: {
-            extensions: [SmartTrailingBlock, PasteColorSanitizer],
+            extensions: [SmartTrailingBlock, PasteColorSanitizer, KeywordAutocomplete],
             editorProps: {
                 handleDOMEvents: {
                     blur: (_view: unknown, event: FocusEvent) => {
@@ -339,6 +375,37 @@ export const MessageComposer = React.forwardRef<MessageComposerHandle, MessageCo
         }
     }
 
+    const generateAiReply = async () => {
+        if (!generateAiDraft || isGeneratingAiDraft) return;
+
+        // Empty field → plain reply; otherwise the typed instructions steer the draft.
+        const additionalInstructions = aiInstructions.trim() || undefined;
+        setAiInstructions("");
+
+        setIsGeneratingAiDraft(true);
+        try {
+            const currentDraftText = await blocksToPlainText(
+                editor,
+                editor.document.filter(block => block.type !== "quoted-message"),
+            );
+            const aiDraft = await generateAiDraft(currentDraftText, additionalInstructions);
+            if (!aiDraft?.draftBody) return;
+            setHasGeneratedAiDraft(true);
+
+            const blocks = dropUnsupportedBlocks(JSON.parse(aiDraft.draftBody), SUPPORTED_BLOCK_TYPES);
+            const quotedBlocks = editor.document.filter(block => block.type === "quoted-message");
+            editor.replaceBlocks(
+                editor.document,
+                (blocks.length > 0 ? blocks : [{ type: "paragraph", content: "" }]).concat(quotedBlocks),
+            );
+            await handleChange(editor, false);
+        } catch (error) {
+            handle(new Error("Error generating AI draft."), { extra: { error } });
+        } finally {
+            setIsGeneratingAiDraft(false);
+        }
+    };
+
     /**
      * Process the html and text content of the message when the editor is mounted.
      */
@@ -471,6 +538,18 @@ export const MessageComposer = React.forwardRef<MessageComposerHandle, MessageCo
                 }}
             >
                 <Toolbar>
+                    <AiReplyButton
+                        disabled={disabled}
+                        isLoading={isGeneratingAiDraft}
+                        hasGenerated={hasGeneratedAiDraft}
+                        onClick={generateAiReply}
+                    />
+                    <AiInstructionsInput
+                        value={aiInstructions}
+                        disabled={disabled || isGeneratingAiDraft}
+                        onChange={setAiInstructions}
+                        onSubmit={generateAiReply}
+                    />
                     <MessageTemplateSelector
                         mailboxId={mailboxId}
                         messageId={draft?.id}

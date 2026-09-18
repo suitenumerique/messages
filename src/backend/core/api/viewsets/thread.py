@@ -1,7 +1,10 @@
 """API ViewSet for Thread model."""
 # pylint: disable=too-many-lines
 
+import logging
+
 from django.conf import settings
+from django.core.exceptions import ImproperlyConfigured
 from django.db import transaction
 from django.db.models import Count, Exists, OuterRef, Prefetch, Q
 from django.db.models.functions import Coalesce
@@ -20,10 +23,29 @@ from rest_framework.generics import get_object_or_404
 from rest_framework.response import Response
 
 from core import enums, models
+from core.ai.thread_brief import get_thread_brief
 from core.ai.thread_summarizer import summarize_thread
 from core.services.search import search_threads
 
 from .. import permissions, serializers
+from .ai_draft import ServiceUnavailable
+
+logger = logging.getLogger(__name__)
+
+AI_BRIEF_ATTACHMENT_SCHEMA = {
+    "type": "object",
+    "properties": {
+        "name": {"type": "string"},
+        "content_type": {"type": "string"},
+        "sent_on": {"type": "string"},
+        "status": {
+            "type": "string",
+            "enum": ["ok", "warning", "unreadable", "unchecked"],
+        },
+        "description": {"type": "string"},
+        "note": {"type": "string"},
+    },
+}
 
 
 class ThreadViewSet(
@@ -849,6 +871,69 @@ class ThreadViewSet(
         return drf.response.Response(
             {"summary": thread.summary}, status=status.HTTP_200_OK
         )
+
+    @extend_schema(
+        parameters=[
+            OpenApiParameter(
+                name="language",
+                type=OpenApiTypes.STR,
+                location=OpenApiParameter.QUERY,
+                description="Language of the brief, e.g. 'fr-FR'. Defaults to French.",
+            ),
+            OpenApiParameter(
+                name="refresh",
+                type=OpenApiTypes.BOOL,
+                location=OpenApiParameter.QUERY,
+                description="Regenerate the brief instead of using the cached one.",
+            ),
+        ],
+        responses={
+            200: OpenApiResponse(
+                response={
+                    "type": "object",
+                    "properties": {
+                        "summary": {"type": "string"},
+                        "request": {"type": "string"},
+                        "key_points": {"type": "array", "items": {"type": "string"}},
+                        "attachments": {
+                            "type": "array",
+                            "items": AI_BRIEF_ATTACHMENT_SCHEMA,
+                        },
+                        "generated_at": {"type": "string", "format": "date-time"},
+                    },
+                },
+                description="AI brief of the thread and of the citizen's attachments.",
+            ),
+            204: OpenApiResponse(description="The thread has no message to summarize."),
+            503: OpenApiResponse(description="The AI service is unavailable."),
+        },
+        tags=["threads"],
+    )
+    @drf.decorators.action(
+        detail=True, methods=["get"], url_path="ai-brief", url_name="ai-brief"
+    )
+    def ai_brief(self, request, pk):
+        """Summarize the thread and its attachments so the agent understands it fast."""
+        queryset = self.filter_queryset(
+            self.get_queryset(exclude_spam=False, exclude_trashed=False)
+        )
+        thread = get_object_or_404(queryset, pk=pk)
+        self.check_object_permissions(request, thread)
+        refresh = request.query_params.get("refresh", "").lower() in ("1", "true")
+
+        try:
+            brief = get_thread_brief(
+                thread, request.query_params.get("language"), refresh=refresh
+            )
+        except ImproperlyConfigured as exc:
+            raise ServiceUnavailable("AI service is not configured.") from exc
+        except Exception as exc:
+            logger.exception("Failed to generate the AI brief of thread %s", pk)
+            raise ServiceUnavailable("Failed to generate the AI brief.") from exc
+
+        if brief is None:
+            return Response(status=status.HTTP_204_NO_CONTENT)
+        return Response(brief, status=status.HTTP_200_OK)
 
     @extend_schema(
         tags=["threads"],

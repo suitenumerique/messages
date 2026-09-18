@@ -1352,6 +1352,52 @@ class Base(Configuration):
     AI_API_KEY = values.Value(None, environ_name="AI_API_KEY", environ_prefix=None)
     AI_BASE_URL = values.Value(None, environ_name="AI_BASE_URL", environ_prefix=None)
     AI_MODEL = values.Value(None, environ_name="AI_MODEL", environ_prefix=None)
+    AI_DRAFT_PREVIEW_ONLY = values.BooleanValue(
+        default=False, environ_name="AI_DRAFT_PREVIEW_ONLY", environ_prefix=None
+    )
+    # Docs: source of the documents imported into the private AI collection
+    # (``manage.py private_collection --from-docs``).
+    DOCS_CONFIG = {
+        # URL of the Docs backend as seen by a browser: login redirects use it.
+        "base_url": values.Value(
+            "http://localhost:8071", environ_name="DOCS_BASE_URL", environ_prefix=None
+        ),
+        # From inside a container, "localhost" is the container itself: requests
+        # to localhost are sent to this host instead, keeping the Host header.
+        "network_host": values.Value(
+            None, environ_name="DOCS_NETWORK_HOST", environ_prefix=None
+        ),
+        "api_prefix": "/api/v1.0",
+        "session_cookie_name": "docs_sessionid",
+        "page_size": 100,
+        "max_documents": values.PositiveIntegerValue(
+            200, environ_name="DOCS_MAX_DOCUMENTS", environ_prefix=None
+        ),
+        "timeout_seconds": 30,
+    }
+    #int
+    AI_QUERY_MAX_CHARS = values.PositiveIntegerValue(
+        1000, environ_name="AI_QUERY_MAX_CHARS", environ_prefix=None
+    )
+    #string
+    AI_SEARCH_METHOD = values.Value(None, environ_name="AI_SEARCH_METHOD", environ_prefix=None)
+    #int
+    AI_SEARCH_LIMIT = values.PositiveIntegerValue(
+        10, environ_name="AI_SEARCH_LIMIT", environ_prefix=None
+    )
+    #list
+    AI_COLLECTION_IDS = values.ListValue(
+        default=[], environ_name="AI_COLLECTION_IDS", environ_prefix=None
+    )
+    AI_PRIVATE_COLLECTION_ID = values.Value(
+        None, environ_name="AI_PRIVATE_COLLECTION_ID", environ_prefix=None
+    )
+    # OCR model used to read citizens' attachments (PDF, images, Word).
+    # Empty disables OCR: only plain text attachments are then read.
+    AI_OCR_MODEL = values.Value(
+        "mistral-ocr-2512", environ_name="AI_OCR_MODEL", environ_prefix=None
+    )
+
 
     # Entitlements
     ENTITLEMENTS_BACKEND = values.Value(
