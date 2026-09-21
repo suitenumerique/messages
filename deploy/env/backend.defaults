@@ -142,3 +142,8 @@ FEATURE_THREAD_SNIPPET=True
 # Third-party services
 # Drive - https://github.com/suitenumerique/drive
 DRIVE_BASE_URL=
+# Docs - source of `manage.py private_collection --from-docs`.
+# DOCS_BASE_URL is the browser URL of the Docs backend; from a container,
+# requests to localhost go to DOCS_NETWORK_HOST (Docker host on Linux).
+DOCS_BASE_URL=http://localhost:8071
+DOCS_NETWORK_HOST=172.17.0.1

@@ -529,6 +529,7 @@ without redeploying the frontend (the flag is pulled from
 | `AI_BASE_URL` | None | Default URL to access AI API endpoint (Albert API) | Optional |
 | `AI_API_KEY` | None| API Key used for AI features | Optional |
 | `AI_MODEL` | None | Default model used for AI features | Optional |
+| `AI_OCR_MODEL` | `mistral-ocr-2512` | OCR model used to read citizens' attachments (PDF, images, Word) when drafting an AI reply. Empty disables OCR: only plain text attachments are read | Optional |
 | `FEATURE_AI_SUMMARY` | `False` | Default enabled mode for summary AI features | Required |
 | `FEATURE_AI_AUTOLABELS` | `False` | Default enabled mode for label AI features | Required |
 

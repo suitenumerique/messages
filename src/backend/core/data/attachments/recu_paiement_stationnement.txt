@@ -1,0 +1,9 @@
+Application de stationnement (service fictif) — Reçu de paiement
+DOCUMENT FICTIF — SPÉCIMEN
+
+Transaction : PAY-77120
+Véhicule : AB-123-CD
+Ville : Val-Exemple — zone rouge
+Début du stationnement : 28/08/2026 13:05
+Fin du stationnement : 28/08/2026 14:05
+Montant payé : 2,40 €

@@ -17,6 +17,7 @@ import { SKIP_LINK_TARGET_ID } from "@/features/ui/components/skip-link"
 import { useTranslation } from "react-i18next"
 import { ThreadViewLabelsList } from "./components/thread-view-labels-list"
 import { ThreadSummary } from "./components/thread-summary";
+import { ThreadBrief } from "./components/thread-brief";
 import { ThreadViewEmpty } from "./components/thread-view-empty";
 import clsx from "clsx";
 import ThreadViewProvider, { useThreadViewContext } from "./provider";
@@ -57,6 +58,7 @@ const ThreadViewComponent = ({ threadItems, mailboxId, thread, showTrashedMessag
 
     const rootRef = useRef<HTMLDivElement>(null);
     const isAISummaryEnabled = useFeatureFlag(FEATURE_KEYS.AI_SUMMARY);
+    const isAIEnabled = useFeatureFlag(FEATURE_KEYS.AI);
     const { isReady, reset, hasBeenInitialized, setHasBeenInitialized } = useThreadViewContext();
     // Refs for all unread messages
     const unreadRefs = useRef<Record<string, HTMLElement | null>>({});
@@ -70,6 +72,8 @@ const ThreadViewComponent = ({ threadItems, mailboxId, thread, showTrashedMessag
     const renderItems = useMemo(() => groupSystemEvents(threadItems), [threadItems]);
     // Find all unread message IDs
     const messages = useMemo(() => threadItems.filter(item => item.type === 'message').map(item => item.data as MessageWithDraftChild), [threadItems]);
+    // Drafts are left out: the AI brief only reads received and sent messages.
+    const latestMessageId = useMemo(() => messages.filter((m) => !m.is_draft).at(-1)?.id, [messages]);
     const unreadMessageIds = useMemo(() => messages.filter((m) => m.is_unread).map((m) => m.id), [messages]);
     const draftMessageIds = useMemo(() => messages.filter((m) => m.draft_message).map((m) => m.id), [messages]);
     const unreadMentionEventIds = useMemo(() =>
@@ -331,12 +335,15 @@ const ThreadViewComponent = ({ threadItems, mailboxId, thread, showTrashedMessag
                     </div>
                 </header>
             </div>
+            {isAIEnabled && (
+                <ThreadBrief threadId={thread.id} latestMessageId={latestMessageId} />
+            )}
             {
                 thread.labels.length > 0 && (
                     <ThreadViewLabelsList labels={thread.labels} />
                 )
             }
-            {isAISummaryEnabled && (
+            {isAISummaryEnabled && !isAIEnabled && (
                 <ThreadSummary
                     threadId={thread.id}
                     summary={thread.summary}

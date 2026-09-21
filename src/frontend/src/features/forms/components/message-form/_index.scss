@@ -8,6 +8,11 @@
     gap: var(--c--globals--spacings--base);
 }
 
+.keyword-autocomplete-suggestion {
+    color: var(--c--contextuals--content--semantic--neutral--tertiary);
+    pointer-events: none;
+}
+
 .form-field-row {
     display: flex;
     gap: 10px;

@@ -1,0 +1,23 @@
+.ai-instructions-input {
+    display: flex;
+    align-items: center;
+    gap: var(--c--globals--spacings--3xs);
+
+    &__field {
+        width: 14rem;
+        height: 1.75rem;
+        padding-inline: var(--c--globals--spacings--2xs);
+        font-size: var(--c--globals--font--sizes--sm);
+        font-family: var(--c--globals--font--families--base);
+        color: var(--c--globals--colors--gray-850);
+        background-color: var(--bn-colors-editor-background);
+        border: 1px solid var(--c--components--forms-input--border-color);
+        border-radius: var(--c--components--forms-input--border-radius);
+
+        &:focus {
+            outline: none;
+            border-color: var(--c--components--forms-select--border-color--focus);
+            box-shadow: var(--c--components--forms-select--border-color--focus) 0 0 0 1px;
+        }
+    }
+}

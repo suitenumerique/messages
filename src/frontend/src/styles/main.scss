@@ -44,6 +44,7 @@
 @use "./../features/layouts/components/thread-view/components/thread-action-bar";
 @use "./../features/layouts/components/thread-view/components/thread-message";
 @use "./../features/layouts/components/thread-view/components/thread-summary";
+@use "./../features/layouts/components/thread-view/components/thread-brief";
 @use "./../features/layouts/components/thread-view/components/message-reply-form";
 @use "./../features/layouts/components/thread-view/components/thread-attachment-list";
 @use "./../features/layouts/components/thread-view/components/attachment-preview-modal";
@@ -66,6 +67,7 @@
 @use "./../features/layouts/components/mailbox-settings/modal-compose-template";
 @use "./../features/ui/components/text-loader";
 @use "./../features/forms/components/combobox";
+@use "./../features/forms/components/message-composer";
 @use "./../features/layouts/components/mailbox-panel/components/mailbox-labels/components/label-form-modal/components/color-palette-field";
 @use "./../features/layouts/components/admin/signatures-view";
 @use "./../features/layouts/components/mailbox-settings/autoreplies-view";
