@@ -47,7 +47,7 @@ export const MailboxPanel = () => {
                         <Panel id="mailbox-panel-folders" defaultSize="40%" minSize="20%">
                             <MailboxList />
                         </Panel>
-                        <Separator className="panel__resize-handle" />
+                        <Separator className="c__resize-handle c__resize-handle--interactive" />
                         <Panel id="mailbox-panel-labels" defaultSize="60%" minSize="20%">
                             <MailboxLabels mailbox={selectedMailbox} />
                         </Panel>

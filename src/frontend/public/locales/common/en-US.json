@@ -731,7 +731,6 @@
   "Regenerating the credential invalidates the old one immediately. The receiver must be updated with the new value before it can verify webhooks again.": "Regenerating the credential invalidates the old one immediately. The receiver must be updated with the new value before it can verify webhooks again.",
   "Regenerating the credential invalidates the old one immediately. The receiver must be updated with the new value before it can verify webhooks again. Continue?": "Regenerating the credential invalidates the old one immediately. The receiver must be updated with the new value before it can verify webhooks again. Continue?",
   "Remove": "Remove",
-  "Remove {{displayName}}": "Remove {{displayName}}",
   "Remove access?": "Remove access?",
   "Remove from list (keep messages)": "Remove from list (keep messages)",
   "Remove link": "Remove link",

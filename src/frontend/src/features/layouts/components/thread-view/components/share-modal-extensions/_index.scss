@@ -31,7 +31,7 @@
     // The mailbox rows (rendered by upstream `c__share-member-item`) get
     // the same hover affordance as the sub-list rows so the whole list
     // reacts consistently to pointer movement.
-    &__member > .c__share-member-item {
+    @at-root .c__share-modal__members > .c__share-member-item {
         border-radius: 4px;
         transition: background 120ms ease-out;
 
@@ -98,8 +98,8 @@
 
     &__row:hover &__toggle,
     &__row:focus-within &__toggle,
-    &__member > .c__share-member-item:hover &__toggle,
-    &__member > .c__share-member-item:focus-within &__toggle,
+    .c__share-member-item:hover &__toggle,
+    .c__share-member-item:focus-within &__toggle,
     &__toggle:focus-visible {
         opacity: 1;
     }
@@ -108,13 +108,7 @@
     // ones by swapping the avatar initials for a `group` glyph. Both stay
     // round — the icon alone signals "team" vs "person" so the layout
     // reads consistently across the list.
-    //
-    // Two anchors trigger the treatment:
-    //   - `__share-member-item--shared` for mailbox rows in the members list,
-    //   - `__shared-avatar` for entries in the search-results dropdown
-    //     (wraps the upstream UserRow whose c__avatar we can't tag directly).
-    &__share-member-item--shared .c__avatar,
-    &__shared-avatar .c__avatar {
+    &__share-member-item--shared .c__avatar {
         position: relative;
 
         // Hide the upstream initials without removing them from the DOM —

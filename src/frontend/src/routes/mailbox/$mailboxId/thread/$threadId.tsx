@@ -42,7 +42,7 @@ const Mailbox = () => {
       <Panel id="panel-thread-list" className="thread-list-panel" defaultSize="30%" minSize="250px" maxSize="50%">
         <ThreadPanel />
       </Panel>
-      <Separator className="panel__resize-handle" />
+      <Separator className="c__resize-handle c__resize-handle--interactive" />
       <Panel id="panel-thread-view" className="thread-view-panel">
         {content}
       </Panel>

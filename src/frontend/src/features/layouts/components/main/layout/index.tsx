@@ -168,7 +168,11 @@ export const AppLayout = ({
                 <LeftPanel isOpen={showLeftPanel}>{leftPanelContent}</LeftPanel>
               </Panel>
               {isDesktop && (
-                <Separator className="panel__resize-handle" />
+                <Separator
+                  className={clsx("c__resize-handle", {
+                    "c__resize-handle--interactive": enableResize,
+                  })}
+                />
               )}
             </>
           )}

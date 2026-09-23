@@ -1,4 +1,4 @@
-import { Button, Tooltip, useModals, IconType, Spinner } from "@gouvfr-lasuite/ui-components";
+import { Button, Tooltip, useModals, IconType, Spinner, ShareModal } from "@gouvfr-lasuite/ui-components";
 import { Icon } from "@/features/ui/components/icon";
 import { useQueryClient } from "@tanstack/react-query";
 import { forwardRef, useImperativeHandle, useMemo, useState } from "react";
@@ -22,7 +22,7 @@ import useAbility, { Abilities } from "@/hooks/use-ability";
 import { useIsSharedContext } from "@/hooks/use-is-shared-context";
 import { useAssignedUsers } from "@/features/message/use-assigned-users";
 import { useThreadAssignment } from "@/features/message/use-thread-assignment";
-import { AssignedUsersSection, AccessUsersList, ShareModal } from "../share-modal-extensions";
+import { AssignedUsersSection, AccessUsersList } from "../share-modal-extensions";
 import useDeleteThreadAccess from "@/features/message/use-delete-thread-access";
 
 export type ThreadAccessesWidgetHandle = {
@@ -55,10 +55,11 @@ type EnrichedAccess = ThreadAccessDetail & {
  * Exposes an `open()` handle so the `AssigneesWidget` (rendered inside
  * `ThreadActionBar`) can reuse the exact same modal without duplicating state.
  *
- * The `ShareModal` from `@gouvfr-lasuite/ui-kit` is reused as-is for visual
- * consistency; assignment affordances are injected through its extension
- * points (`children` for the "assigned users" section, `accessRoleTopMessage`
- * returning a ReactNode for the per-mailbox user list).
+ * The `ShareModal` from `@gouvfr-lasuite/ui-components` is reused as-is for
+ * visual consistency; assignment affordances are injected through its
+ * extension points (`children` for the "assigned users" section,
+ * `renderAccessFooter` for the per-mailbox user list and
+ * `renderAccessRightExtras` for the inline "Assign" CTA).
  */
 export const ThreadAccessesWidget = forwardRef<ThreadAccessesWidgetHandle, ThreadAccessesWidgetProps>(
     function ThreadAccessesWidget({ accesses, hideTrigger = false }, ref) {
@@ -350,6 +351,8 @@ export const ThreadAccessesWidget = forwardRef<ThreadAccessesWidgetHandle, Threa
                 onUpdateAccess={handleUpdateAccess}
                 onDeleteAccess={enrichedAccesses.length > 1 ? handleDeleteAccess : undefined}
                 onSearchUsers={setSearchQuery}
+                // TODO: ui-components 1.2.0 declares this prop but does not wire it
+                // yet, the modal still shows its default "user to invite" placeholder.
                 searchPlaceholder={t('Search a mailbox to share this thread with')}
                 searchGroupName={t('Search results')}
                 searchUsersResult={searchResults}
@@ -360,9 +363,9 @@ export const ThreadAccessesWidget = forwardRef<ThreadAccessesWidgetHandle, Threa
                     // so we can't wrap the avatar ourselves — CSS hooks into
                     // these classes descendant-style.
                     //   --shared:   non-identity mailbox (alias / group)
-                    //               → square-rounded avatar to signal "team".
+                    //               → `group` glyph instead of initials.
                     //   --assigned: single-user identity mailbox whose user
-                    //               is assigned to the thread → brand ring.
+                    //               is assigned to the thread → person badge.
                     const classes: string[] = [];
                     if (access.mailbox.is_identity === false) {
                         classes.push("share-modal-extensions__share-member-item--shared");

@@ -67,7 +67,7 @@ const Mailbox = () => {
         </Panel>
         {showThreadView && (
           <>
-            <Separator className="panel__resize-handle" />
+            <Separator className="c__resize-handle c__resize-handle--interactive" />
             <Panel id="panel-thread-view" className="thread-view-panel">
               {selectedThreadIds.size > 0 ? (
                 <ThreadSelectionPlaceholder />
