@@ -1,5 +1,3 @@
-@use "../../../../styles/utils" as *;
-
 .search__filters {
     display: flex;
     flex-direction: column;
@@ -21,17 +19,19 @@
     z-index: 0;
 }
 
-// On mobile the form is rendered inside a fullscreen modal: drop the floating
-// dropdown styling and let it flow in the modal body at full width. The submit/
-// reset buttons live in the modal's own sticky footer (rendered outside this
-// scroll area), so the form here only holds the fields.
-@media screen and (max-width: breakpoint(tablet)) {
+// Inside the fullscreen modal (mobile viewports and the native trigger), drop
+// the floating dropdown styling and let the form flow in the modal body at full
+// width. Scoped to the modal rather than a breakpoint so it follows what the
+// component actually renders: between the mobile and tablet breakpoints the
+// field still opens the desktop dropdown, which must keep floating over the
+// content instead of stretching the header. The submit/reset buttons live in
+// the modal's own sticky footer (rendered outside this scroll area), so the
+// form here only holds the fields.
+.c__modal__content:has(.search__filters) {
     // The fullscreen modal already scrolls its body; the forced inner scroll on
     // the content wrapper otherwise nests a second scrollbar (the "slight
     // scroll" with the sticky close button pinned on top). Let it grow instead.
-    .c__modal__content:has(.search__filters) {
-        overflow: visible;
-    }
+    overflow: visible;
 
     .search__filters {
         position: static;
@@ -46,6 +46,14 @@
         animation: none;
         gap: var(--c--globals--spacings--xs);
     }
+}
+
+// The select menu is an overlay placed by react-aria with a hardcoded 160px
+// cap, which only shows a few folders at a time. Raise it so the whole folder
+// list fits; !important is required to beat the inline max-height react-aria
+// writes.
+.search__filters .c__select__menu {
+    max-height: 18rem !important;
 }
 
 @keyframes slide-in {
