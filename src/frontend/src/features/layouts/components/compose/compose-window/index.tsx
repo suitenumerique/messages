@@ -1,6 +1,6 @@
 import { useEffect, useRef, useState } from "react";
 import { Button, Tooltip } from "@gouvfr-lasuite/ui-components";
-import { DropdownMenu, IconType, UserAvatar, useResponsive } from "@gouvfr-lasuite/ui-components";
+import { DropdownMenu, IconType, UserAvatar } from "@gouvfr-lasuite/ui-components";
 import { ChevronUp, Maximize, Minimize, Minus, Send, Shortcut, XMark } from "@gouvfr-lasuite/ui-components/icons";
 import { Icon } from "@/features/ui/components/icon";
 import { useTranslation } from "react-i18next";
@@ -15,6 +15,7 @@ import { useDragGesture } from "@/hooks/use-drag-gesture";
 import { useFocusTrap } from "@/hooks/use-focus-trap";
 import { useLongPress } from "@/hooks/use-long-press";
 import { useRestoreFocus } from "@/hooks/use-restore-focus";
+import { useCompactCompose } from "../use-compact-compose";
 import { useComposeSender } from "../use-compose-sender";
 import { ComposeWindowForm } from "./compose-window-form";
 import { CloseConfirmModal } from "./close-confirm-modal";
@@ -40,16 +41,17 @@ export const ComposeWindow = ({ descriptor, isOverflowed = false }: ComposeWindo
     const [showCloseConfirm, setShowCloseConfirm] = useState(false);
     const [isClosing, setIsClosing] = useState(false);
     const { windowId, presentation, isMinimized } = descriptor;
-    // Mobile ignores the presentation: the expanded window is always a
-    // full-screen bottom sheet, minimized ones live behind the stack bar.
-    const { isMobile } = useResponsive();
-    const isSheet = isMobile && !isMinimized;
+    // The compact presentation ignores the presentation setting: the
+    // expanded window is always a full-screen bottom sheet, minimized ones
+    // live behind the stack bar.
+    const isCompact = useCompactCompose();
+    const isSheet = isCompact && !isMinimized;
     // Swipe-to-minimize is reserved for the native shells. In a browser — a
     // narrow desktop viewport included — the pointer is a mouse, and the
     // gesture would capture it on pointerdown and swallow the clicks meant
     // for the header controls (title, close).
     const isSheetDraggable = isSheet && isNativePlatform();
-    const isFloating = !isMobile && !isMinimized && presentation === "floating";
+    const isFloating = !isCompact && !isMinimized && presentation === "floating";
     // The floating window and the mobile sheet are announced as modal dialogs
     // (see the section below): back it with a real Tab cycle. Docked, the
     // window is a panel among the page and Tab must leave it.

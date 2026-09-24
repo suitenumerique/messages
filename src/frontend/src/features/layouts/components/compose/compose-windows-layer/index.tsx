@@ -1,4 +1,5 @@
 import { useState } from "react";
+import clsx from "clsx";
 import { useResponsive } from "@gouvfr-lasuite/ui-components";
 import { Portal } from "@/features/ui/components/portal";
 import { useComposeWindows } from "@/features/providers/compose-windows";
@@ -6,6 +7,7 @@ import { ComposeWindow } from "../compose-window";
 import { ComposeDockOverflow } from "../compose-dock-overflow";
 import { ComposeMobileStack } from "../compose-mobile-stack";
 import { ComposeOverview } from "../compose-overview";
+import { useCompactCompose } from "../use-compact-compose";
 
 /** How many minimized tabs the dock shows before folding into "+X". */
 const getVisibleTabCap = (isDesktop: boolean) => (isDesktop ? 3 : 1);
@@ -17,16 +19,18 @@ const getVisibleTabCap = (isDesktop: boolean) => (isDesktop ? 3 : 1);
  * on the right; older tabs beyond the responsive cap collapse into a "+X"
  * dropdown while staying mounted, so their unsaved content survives.
  *
- * On mobile the expanded window renders as a full-screen sheet and every
- * minimized window is folded (hidden, still mounted) behind a bottom bar:
- * one window reopens on tap, several open the exploded overview.
+ * In the compact presentation (mobile, native app — see
+ * useCompactCompose) the expanded window renders as a full-screen sheet and
+ * every minimized window is folded (hidden, still mounted) behind a bottom
+ * bar: one window reopens on tap, several open the exploded overview.
  */
 export const ComposeWindowsLayer = () => {
     const { windows, activeWindow, requestCloseWindow } = useComposeWindows();
-    const { isMobile, isDesktop } = useResponsive();
+    const { isDesktop } = useResponsive();
+    const isCompact = useCompactCompose();
     const [isOverviewOpen, setIsOverviewOpen] = useState(false);
 
-    // On mobile the stack bar appears when the expanded sheet goes away
+    // In the compact presentation the stack bar appears when the expanded sheet goes away
     // (minimized or closed with other windows left). The sheet held the
     // focus, so the bar takes it — but only on that transition, not when a
     // restored session mounts the bar on page load. State-from-previous-render
@@ -43,9 +47,9 @@ export const ComposeWindowsLayer = () => {
     const minimizedWindows = windows.filter((window) => window.isMinimized);
     // The cap counts every visible window, expanded included: a tab expands
     // in place and keeps its slot. Oldest windows fold into "+X" — never the
-    // expanded one, which must stay visible wherever it sits. Mobile folds
-    // every minimized window behind the stack bar instead.
-    const overflowCount = isMobile
+    // expanded one, which must stay visible wherever it sits. The compact
+    // presentation folds every minimized window behind the stack bar instead.
+    const overflowCount = isCompact
         ? minimizedWindows.length
         : Math.max(0, windows.length - getVisibleTabCap(isDesktop));
     const overflowIds = new Set<string>();
@@ -64,11 +68,11 @@ export const ComposeWindowsLayer = () => {
 
     return (
             <Portal container={container}>
-                <div className="compose-windows-layer">
-                    {!isMobile && overflowWindows.length > 0 && (
+                <div className={clsx("compose-windows-layer", { "compose-windows-layer--compact": isCompact })}>
+                    {!isCompact && overflowWindows.length > 0 && (
                         <ComposeDockOverflow windows={overflowWindows} />
                     )}
-                    {isMobile && !activeWindow && minimizedWindows.length > 0 && (
+                    {isCompact && !activeWindow && minimizedWindows.length > 0 && (
                         <ComposeMobileStack
                             windows={minimizedWindows}
                             autoFocus={stackTakesFocus}
@@ -82,7 +86,7 @@ export const ComposeWindowsLayer = () => {
                             isOverflowed={overflowIds.has(descriptor.windowId)}
                         />
                     ))}
-                    {isMobile && isOverviewOpen && !activeWindow && (
+                    {isCompact && isOverviewOpen && !activeWindow && (
                         <ComposeOverview
                             windows={windows}
                             onClose={() => setIsOverviewOpen(false)}

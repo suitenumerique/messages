@@ -1,5 +1,3 @@
-@use "../../../../../styles/utils" as *;
-
 // Floating layer docked at the bottom right of the viewport. Sits above the
 // app header (z-index 1000) but below Cunningham modals (999999) and toasts.
 .compose-windows-layer {
@@ -38,11 +36,10 @@
     }
 }
 
-@media screen and (max-width: breakpoint(mobile)) {
-    .compose-windows-layer {
-        // Full-width so the mobile stack bar spans the viewport.
-        left: 0;
-        right: 0;
-        max-width: 100vw;
-    }
+// Compact presentation (mobile, native app — see useCompactCompose):
+// full-width so the stack bar spans the viewport.
+.compose-windows-layer--compact {
+    left: 0;
+    right: 0;
+    max-width: 100vw;
 }
