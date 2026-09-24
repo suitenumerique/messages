@@ -1,4 +1,5 @@
 import type { CapacitorConfig } from "@capacitor/cli";
+import type { KeyboardResize } from "@capacitor/keyboard";
 
 // OTA signing public key, per-instance and injected at `cap sync` time from a
 // base64-encoded PEM (single line, so it survives docker env_file / CI secrets).
@@ -108,6 +109,19 @@ const config: CapacitorConfig & { appVersion: string } = {
     // resolves natively there.
     SystemBars: {
         insetsHandling: "disable",
+    },
+    // iOS only. The plugin's "native" resize snaps the web view to its new
+    // size ~200 ms after the keyboard has slid in (capacitor-keyboard#79):
+    // MainViewController.swift resizes it as soon as the keyboard starts
+    // moving instead. The plugin still hides the accessory bar, emits the
+    // keyboard events and paints the window uncovered behind the translucent
+    // keyboard (black by default) with the page's body background, re-read on
+    // every keyboard show so it follows the light / dark theme.
+    Keyboard: {
+      // Type-only import: the enum value would load the plugin runtime at
+      // `cap sync` time.
+      resize: "none" as KeyboardResize,
+      autoBackdropColor: "dom",
     },
     // While the app is open it surfaces the mail itself, so a foreground push
     // must not banner or sound (docs/push-notifications.md §6) — only the badge

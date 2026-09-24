@@ -1,9 +1,11 @@
 import { Extension } from '@tiptap/core';
-import { Plugin, PluginKey } from '@tiptap/pm/state';
-import { TextSelection } from '@tiptap/pm/state';
+import { Plugin, PluginKey, Selection, TextSelection } from '@tiptap/pm/state';
 import { EditorView } from '@tiptap/pm/view';
 
 const FOOTER_BLOCKS = ['signature', 'quoted-message'];
+const FOOTER_BLOCKS_SELECTOR = FOOTER_BLOCKS
+    .map((type) => `[data-content-type="${type}"]`)
+    .join(', ');
 
 /**
  * Returns the position where a trailing block should be inserted and whether
@@ -65,9 +67,44 @@ export const SmartTrailingBlock = Extension.create({
     name: 'smartTrailingBlock',
 
     addProseMirrorPlugins() {
+        // Pointer type of the ongoing click. Recorded outside ProseMirror: the
+        // footer blocks' node views swallow the events raised inside them.
+        let lastPointerType = 'mouse';
+
         return [
             new Plugin({
                 key: new PluginKey('smartTrailingBlock'),
+                view: (editorView) => {
+                    const container = editorView.dom.parentElement;
+                    const onPointerDown = (event: PointerEvent) => {
+                        lastPointerType = event.pointerType;
+                    };
+                    // Footer blocks are non-selectable, and for those BlockNote
+                    // blurs the editor 10 ms after any mousedown inside them
+                    // (applyNonSelectableBlockFix). With a mouse, the click
+                    // lands later and the handler below focuses back; after a
+                    // tap, mousedown, mouseup and click come in a burst, so the
+                    // blur lands last and drops the caret and the keyboard.
+                    // Keep a tap's mousedown away from ProseMirror (the browser
+                    // still focuses the editor on it).
+                    const onMouseDown = (event: MouseEvent) => {
+                        if (
+                            lastPointerType !== 'mouse' &&
+                            event.target instanceof Element &&
+                            event.target.closest(FOOTER_BLOCKS_SELECTOR)
+                        ) {
+                            event.stopPropagation();
+                        }
+                    };
+                    container?.addEventListener('pointerdown', onPointerDown, true);
+                    container?.addEventListener('mousedown', onMouseDown, true);
+                    return {
+                        destroy: () => {
+                            container?.removeEventListener('pointerdown', onPointerDown, true);
+                            container?.removeEventListener('mousedown', onMouseDown, true);
+                        },
+                    };
+                },
                 props: {
                     handleDOMEvents: {
                         click: (view, event) => {
@@ -81,8 +118,8 @@ export const SmartTrailingBlock = Extension.create({
                             // Only handle clicks in the footer blocks area or empty padding below
                             if (posResult && posResult.pos < info.lastBlockPosition) return false;
 
+                            const { schema, tr } = view.state;
                             if (info.needsCreateEmptyParagraph) {
-                                const { schema, tr } = view.state;
                                 const blockContainerType = schema.nodes['blockContainer'];
                                 const paragraphType = schema.nodes['paragraph'];
                                 if (!blockContainerType || !paragraphType) return false;
@@ -94,6 +131,13 @@ export const SmartTrailingBlock = Extension.create({
                                 // Place cursor inside the new empty paragraph
                                 // lastBlockPosition + 1 = inside blockContainer, + 1 = inside paragraph
                                 tr.setSelection(TextSelection.create(tr.doc, info.lastBlockPosition + 2));
+                            } else if (lastPointerType !== 'mouse') {
+                                // The tap itself cannot place the caret in the
+                                // non-editable footer: put it at the end of the
+                                // editable content, where typing is expected.
+                                tr.setSelection(Selection.near(tr.doc.resolve(info.lastBlockPosition), -1));
+                            }
+                            if (tr.docChanged || tr.selectionSet) {
                                 view.dispatch(tr);
                             }
 

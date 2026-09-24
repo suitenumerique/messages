@@ -660,7 +660,10 @@ Treat this list as the "definition of ready for production".
   hide behind the keyboard — the listener applies the `ime()` inset as padding,
   and only above API 34 (below it the system resize still runs, and adding
   padding is exactly what #8181 was). iOS resolves `env(safe-area-inset-*)`
-  natively and resizes through `@capacitor/keyboard`. The app
+  natively; its keyboard resize is applied as soon as the keyboard starts
+  moving by `MainViewController.swift` (`@capacitor/keyboard` runs with
+  `resize: "none"`: its native mode snaps the web view to the new size
+  ~200 ms after the keyboard animation, capacitor-keyboard#79). The app
   shell folds the top inset into `--header-height` (`globals.scss`), so
   anything laid out from it clears the status bar / notch automatically.
 - **Iframe subresources.** Inline images proxied through the API use the WebView

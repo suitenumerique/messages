@@ -67,6 +67,16 @@ body {
   color: var(--c--contextuals--content--semantic--neutral--primary);
 }
 
+// iOS app: WebKit positions viewport-fixed elements from the UI process, and
+// while the keyboard resizes the WKWebView it places them against the old
+// viewport for a frame or two (the compose sheet or the search overlay drops
+// to the bottom of the screen, then snaps back). Layout containment makes the
+// body their containing block, so they are laid out with the rest of the
+// page instead; the body spans the whole viewport, their geometry is the same.
+:root.native--ios body {
+  contain: layout;
+}
+
 * {
   box-sizing: border-box;
 }

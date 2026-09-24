@@ -1,7 +1,7 @@
 // The composer's formatting toolbar on the native app, shown as a bar pinned
 // above the on-screen keyboard while the composer is focused (see
 // mobile-toolbar/index.tsx). The keyboard resizes the webview itself (iOS:
-// @capacitor/keyboard native resize; Android: adjustResize, and the ime inset
+// MainViewController.swift; Android: adjustResize, and the ime inset
 // applied by MainActivity.java on 15+ where adjustResize no longer fires), so
 // a fixed bottom: 0 lands right on top of it.
 

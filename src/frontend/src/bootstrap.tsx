@@ -1,4 +1,5 @@
 import { createRoot } from "react-dom/client";
+import { Capacitor } from "@capacitor/core";
 import { createRouter, parseSearchWith, RouterProvider, stringifySearchWith } from "@tanstack/react-router";
 
 import { routeTree } from "./routes.gen";
@@ -22,9 +23,10 @@ import { listenForNativePushTaps } from "./features/native/push";
 
 // Tag the document on the Capacitor native app so the stylesheet can opt into
 // mobile-only chrome (compact header, floating bottom bars) without each
-// component re-deriving the platform.
+// component re-deriving the platform (`.native--ios` / `.native--android`
+// for per-platform WebView workarounds).
 if (isNativePlatform()) {
-  document.documentElement.classList.add("native");
+  document.documentElement.classList.add("native", `native--${Capacitor.getPlatform()}`);
 
   // The composer pins its own formatting toolbar above the keyboard; iOS's
   // form accessory bar would stack under it, so hide it once and for all.

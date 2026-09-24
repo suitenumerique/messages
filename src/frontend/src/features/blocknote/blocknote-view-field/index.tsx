@@ -38,7 +38,12 @@ export const BlockNoteViewField = <BSchema extends BlockSchema, ISchema extends 
                     default: document.body,
                 }}
             >
-                <CustomSideMenuController />
+                {/* The side menu (block drag handle) shows up on hover. On
+                    iOS a tap is first dispatched as a hover, and WebKit drops
+                    the click when that hover reveals content: the first tap
+                    only showed the handle, focusing took a second one. Block
+                    dragging is a mouse gesture anyway. */}
+                {!isNativePlatform() && <CustomSideMenuController />}
                 <CustomSlashMenu />
                 {children}
             </BlockNoteView>
