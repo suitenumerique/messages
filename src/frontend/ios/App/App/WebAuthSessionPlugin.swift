@@ -24,7 +24,6 @@ public class WebAuthSessionPlugin: CAPPlugin, CAPBridgedPlugin {
     ]
 
     private var session: ASWebAuthenticationSession?
-    private let presentationContextProvider = PresentationAnchorProvider()
 
     @objc func start(_ call: CAPPluginCall) {
         guard
@@ -57,7 +56,7 @@ public class WebAuthSessionPlugin: CAPPlugin, CAPBridgedPlugin {
                 }
                 self?.session = nil
             }
-            session.presentationContextProvider = self.presentationContextProvider
+            session.presentationContextProvider = self
             // Sharing persistent cookies with Safari is what provides the
             // cross-app SSO: never switch this session to ephemeral mode.
             session.prefersEphemeralWebBrowserSession = false
@@ -73,8 +72,10 @@ public class WebAuthSessionPlugin: CAPPlugin, CAPBridgedPlugin {
     }
 }
 
-private class PresentationAnchorProvider: NSObject, ASWebAuthenticationPresentationContextProviding {
-    func presentationAnchor(for session: ASWebAuthenticationSession) -> ASPresentationAnchor {
-        ASPresentationAnchor()
+extension WebAuthSessionPlugin: ASWebAuthenticationPresentationContextProviding {
+    public func presentationAnchor(for session: ASWebAuthenticationSession) -> ASPresentationAnchor {
+        // Under the UIScene lifecycle a bare UIWindow() is attached to no
+        // scene, so the session would have nowhere to present from.
+        bridge?.webView?.window ?? ASPresentationAnchor()
     }
 }

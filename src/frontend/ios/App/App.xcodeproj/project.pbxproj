@@ -18,6 +18,7 @@
 		7A11AA0100000000000000A2 /* WebAuthSessionPlugin.swift in Sources */ = {isa = PBXBuildFile; fileRef = 7A11AA0100000000000000A1 /* WebAuthSessionPlugin.swift */; };
 		7A11AA0100000000000000B2 /* MainViewController.swift in Sources */ = {isa = PBXBuildFile; fileRef = 7A11AA0100000000000000B1 /* MainViewController.swift */; };
 		7A11AA0100000000000000E3 /* Localizable.strings in Resources */ = {isa = PBXBuildFile; fileRef = 7A11AA0100000000000000E0 /* Localizable.strings */; };
+		7AC1EEE5306524B300CBCC18 /* SceneDelegate.swift in Sources */ = {isa = PBXBuildFile; fileRef = 7AC1EEE4306524B300CBCC18 /* SceneDelegate.swift */; };
 /* End PBXBuildFile section */
 
 /* Begin PBXFileReference section */
@@ -35,8 +36,9 @@
 		7A11AA0100000000000000D1 /* App.entitlements */ = {isa = PBXFileReference; lastKnownFileType = text.plist.entitlements; path = App.entitlements; sourceTree = "<group>"; };
 		7A11AA0100000000000000E1 /* en */ = {isa = PBXFileReference; lastKnownFileType = text.plist.strings; name = en; path = en.lproj/Localizable.strings; sourceTree = "<group>"; };
 		7A11AA0100000000000000E2 /* fr */ = {isa = PBXFileReference; lastKnownFileType = text.plist.strings; name = fr; path = fr.lproj/Localizable.strings; sourceTree = "<group>"; };
-		958DCC722DB07C7200EA8C5F /* debug.xcconfig */ = {isa = PBXFileReference; lastKnownFileType = text.xcconfig; name = debug.xcconfig; path = ../debug.xcconfig; sourceTree = SOURCE_ROOT; };
 		7A11AA0100000000000000F1 /* generated.xcconfig */ = {isa = PBXFileReference; lastKnownFileType = text.xcconfig; path = generated.xcconfig; sourceTree = SOURCE_ROOT; };
+		7AC1EEE4306524B300CBCC18 /* SceneDelegate.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SceneDelegate.swift; sourceTree = "<group>"; };
+		958DCC722DB07C7200EA8C5F /* debug.xcconfig */ = {isa = PBXFileReference; lastKnownFileType = text.xcconfig; name = debug.xcconfig; path = ../debug.xcconfig; sourceTree = SOURCE_ROOT; };
 /* End PBXFileReference section */
 
 /* Begin PBXFrameworksBuildPhase section */
@@ -72,6 +74,7 @@
 		504EC3061FED79650016851F /* App */ = {
 			isa = PBXGroup;
 			children = (
+				7AC1EEE4306524B300CBCC18 /* SceneDelegate.swift */,
 				7A11AA0100000000000000D1 /* App.entitlements */,
 				50379B222058CBB4000EE86E /* capacitor.config.json */,
 				504EC3071FED79650016851F /* AppDelegate.swift */,
@@ -222,21 +225,13 @@
 				504EC3081FED79650016851F /* AppDelegate.swift in Sources */,
 				7A11AA0100000000000000B2 /* MainViewController.swift in Sources */,
 				7A11AA0100000000000000A2 /* WebAuthSessionPlugin.swift in Sources */,
+				7AC1EEE5306524B300CBCC18 /* SceneDelegate.swift in Sources */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
 /* End PBXSourcesBuildPhase section */
 
 /* Begin PBXVariantGroup section */
-		7A11AA0100000000000000E0 /* Localizable.strings */ = {
-			isa = PBXVariantGroup;
-			children = (
-				7A11AA0100000000000000E1 /* en */,
-				7A11AA0100000000000000E2 /* fr */,
-			);
-			name = Localizable.strings;
-			sourceTree = "<group>";
-		};
 		504EC30B1FED79650016851F /* Main.storyboard */ = {
 			isa = PBXVariantGroup;
 			children = (
@@ -251,6 +246,15 @@
 				504EC3111FED79650016851F /* Base */,
 			);
 			name = LaunchScreen.storyboard;
+			sourceTree = "<group>";
+		};
+		7A11AA0100000000000000E0 /* Localizable.strings */ = {
+			isa = PBXVariantGroup;
+			children = (
+				7A11AA0100000000000000E1 /* en */,
+				7A11AA0100000000000000E2 /* fr */,
+			);
+			name = Localizable.strings;
 			sourceTree = "<group>";
 		};
 /* End PBXVariantGroup section */

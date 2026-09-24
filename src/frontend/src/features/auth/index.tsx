@@ -197,7 +197,7 @@ export const Auth = ({
   // once on mount (visible load) and on every hidden→visible transition.
   // Best-effort no-op where the Badging API is unavailable (Firefox/Safari).
   // The native shells dismiss their delivered OS notifications on the same
-  // signal (the iOS badge itself is reset in the AppDelegate).
+  // signal (the iOS badge itself is reset in the SceneDelegate).
   useEffect(() => {
     if (!isAuthenticated) return;
     const clearBadge = () => {

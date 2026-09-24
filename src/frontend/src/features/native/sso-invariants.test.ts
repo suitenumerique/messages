@@ -74,6 +74,15 @@ describe("cross-app SSO invariants", () => {
       );
     });
 
+    it("roots the scene on the registering bridge controller", () => {
+      // Under the UIScene lifecycle the window is built in code, bypassing
+      // Main.storyboard: `cap migrate-uiscene` writes a bare
+      // CAPBridgeViewController there, which never registers the plugin above.
+      expect(read("ios/App/App/SceneDelegate.swift")).toContain(
+        "rootViewController = MainViewController()",
+      );
+    });
+
     it("registers the callback scheme in Info.plist", () => {
       // With a non-ephemeral session iOS only delivers the callback for an
       // app-registered scheme (CFBundleURLTypes). The value is substituted by

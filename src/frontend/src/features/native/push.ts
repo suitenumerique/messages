@@ -300,7 +300,7 @@ export const listenForNativePushTaps = (
 
 /** Dismiss delivered notifications once the user is actually looking at the
  * app; the foreground counterpart of the web `clearAppBadge` in features/auth
- * (the iOS badge itself is reset natively — see AppDelegate). */
+ * (the iOS badge itself is reset natively — see SceneDelegate). */
 export const clearDeliveredNativeNotifications = (): void => {
   if (!isNativePlatform()) return;
   PushNotifications.removeAllDeliveredNotifications().catch(() => {});
