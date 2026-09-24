@@ -349,12 +349,17 @@ const ThreadMessageBody = ({ bodyParts, attachments = [], isHidden = false, mess
       `;
     }, [sanitizedHtmlBody, cunninghamTheme, variant, areLinksDisabled]);
 
+    const resizeObserverRef = useRef<ResizeObserver | null>(null);
+
     const resizeIframe = useCallback(() => {
         if (iframeRef.current?.contentWindow?.document.documentElement) {
             const height = iframeRef.current.contentWindow.document.documentElement.getBoundingClientRect().height;
-            iframeRef.current.style.height = `${height}px`;
+            // Round up: Safari shows a scrollbar for a sub-pixel overflow.
+            iframeRef.current.style.height = `${Math.ceil(height)}px`;
         }
-    }, [iframeRef]);
+    }, []);
+
+    useEffect(() => () => resizeObserverRef.current?.disconnect(), []);
 
     // Delegated handler for link activations inside the iframe (mouse click,
     // keyboard activation and middle click through the auxclick event).
@@ -402,14 +407,19 @@ const ThreadMessageBody = ({ bodyParts, attachments = [], isHidden = false, mess
     }, [confirmLinkOpening, trustedLinkDomains]);
 
     const handleIframeLoad = useCallback(() => {
+        // Sized synchronously so the height is right when onLoad fires.
         resizeIframe();
+        resizeObserverRef.current?.disconnect();
         if (iframeRef.current?.contentWindow?.document) {
             const doc = iframeRef.current.contentWindow.document;
 
-            // When details element is toggled, resize the iframe to fit the content
-            doc.querySelectorAll('details.email-quoted-content').forEach(node => {
-                node.addEventListener('toggle', resizeIframe);
-            });
+            // Follow every later change of the content height: quote toggles,
+            // lazy images loading after the load event, reflows when the
+            // iframe width changes... A srcdoc document always renders in
+            // standards mode, so the root element is exactly the content
+            // height and never stretches to the iframe viewport.
+            resizeObserverRef.current = new ResizeObserver(resizeIframe);
+            resizeObserverRef.current.observe(doc.documentElement);
 
             // Intercept link activations to reveal the real target before opening it
             doc.addEventListener('click', handleLinkActivation);
@@ -417,31 +427,6 @@ const ThreadMessageBody = ({ bodyParts, attachments = [], isHidden = false, mess
         }
         onLoad?.();
     }, [onLoad, resizeIframe, handleLinkActivation]);
-
-    useEffect(() => {
-        const handleMessage = (event: MessageEvent) => {
-            if (event.data === 'iframe-loaded') {
-                // Send a message to the iframe to add event listeners
-                iframeRef.current?.contentWindow?.postMessage('add-toggle-listeners', '*');
-            } else if (event.data === 'resize') {
-                resizeIframe();
-            }
-        };
-
-        window.addEventListener('message', handleMessage);
-        window.addEventListener('resize', resizeIframe);
-
-        return () => {
-            window.removeEventListener('message', handleMessage);
-            window.removeEventListener('resize', resizeIframe);
-        };
-    }, [resizeIframe]);
-
-    useEffect(() => {
-        if (!isHidden) {
-            resizeIframe();
-        }
-    }, [isHidden, resizeIframe, showExternalImages]);
 
     return (
         <>
