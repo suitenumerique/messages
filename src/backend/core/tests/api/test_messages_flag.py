@@ -1028,3 +1028,80 @@ def test_api_flag_cascade_does_not_affect_non_draft_children(api_client):
     non_draft_child.refresh_from_db()
     assert parent_msg.is_trashed is True
     assert non_draft_child.is_trashed is False
+
+
+@pytest.mark.parametrize(
+    "flag,field,date_field",
+    [
+        ("trashed", "is_trashed", "trashed_at"),
+        ("archived", "is_archived", "archived_at"),
+        ("spam", "is_spam", None),
+    ],
+)
+@pytest.mark.parametrize("value", [True, False])
+@pytest.mark.parametrize("forbidden_access", ["viewer", "none"])
+def test_api_flag_cascade_ignores_drafts_of_unauthorized_parents(
+    api_client, flag, field, date_field, value, forbidden_access
+):
+    """Smuggling a non-editable message into a batch alongside an editable one
+    must not cascade the flag to the non-editable message's draft children."""
+    user = UserFactory()
+    api_client.force_authenticate(user=user)
+    mailbox = MailboxFactory(users_admin=[user])
+
+    allowed_thread = ThreadFactory()
+    ThreadAccessFactory(
+        mailbox=mailbox,
+        thread=allowed_thread,
+        role=enums.ThreadAccessRoleChoices.EDITOR,
+    )
+    # Start every record from the opposite state so both the allowed update
+    # and the forbidden no-op are observable whatever ``value`` is.
+    initial_state = {field: not value}
+    if date_field:
+        initial_state[date_field] = None if value else timezone.now()
+
+    allowed_msg = MessageFactory(thread=allowed_thread, **initial_state)
+    allowed_draft = MessageFactory(
+        thread=allowed_thread, parent=allowed_msg, is_draft=True, **initial_state
+    )
+
+    forbidden_thread = ThreadFactory()
+    if forbidden_access == "viewer":
+        ThreadAccessFactory(
+            mailbox=mailbox,
+            thread=forbidden_thread,
+            role=enums.ThreadAccessRoleChoices.VIEWER,
+        )
+    else:
+        ThreadAccessFactory(
+            mailbox=MailboxFactory(),
+            thread=forbidden_thread,
+            role=enums.ThreadAccessRoleChoices.EDITOR,
+        )
+    forbidden_msg = MessageFactory(thread=forbidden_thread, **initial_state)
+    forbidden_draft = MessageFactory(
+        thread=forbidden_thread, parent=forbidden_msg, is_draft=True, **initial_state
+    )
+
+    data = {
+        "flag": flag,
+        "value": value,
+        "message_ids": [str(allowed_msg.id), str(forbidden_msg.id)],
+    }
+    response = api_client.post(API_URL, data=data, format="json")
+    assert response.status_code == status.HTTP_200_OK
+
+    allowed_msg.refresh_from_db()
+    allowed_draft.refresh_from_db()
+    assert getattr(allowed_msg, field) is value
+    assert getattr(allowed_draft, field) is value
+    if date_field:
+        assert (getattr(allowed_draft, date_field) is None) is (not value)
+
+    forbidden_msg.refresh_from_db()
+    forbidden_draft.refresh_from_db()
+    assert getattr(forbidden_msg, field) is (not value)
+    assert getattr(forbidden_draft, field) is (not value)
+    if date_field:
+        assert (getattr(forbidden_draft, date_field) is None) is value

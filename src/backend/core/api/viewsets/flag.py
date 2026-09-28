@@ -276,10 +276,13 @@ class ChangeFlagView(APIView):
                     messages_to_update.update(**batch_update_data)
 
                     # Cascade to draft children so restoring a message
-                    # also restores its draft reply.
+                    # also restores its draft reply. Only children of the
+                    # authorized parents are touched: the raw client-supplied
+                    # message_ids may include messages the user cannot edit.
                     if flag in ("trashed", "archived", "spam"):
                         models.Message.objects.filter(
-                            parent_id__in=message_ids,
+                            parent_id__in=messages_to_update.values("id"),
+                            thread_id__in=accessible_thread_ids_qs,
                             is_draft=True,
                         ).update(**batch_update_data)
 
