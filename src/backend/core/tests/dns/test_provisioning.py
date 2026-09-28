@@ -7,7 +7,6 @@ from unittest.mock import MagicMock, patch
 from django.test.utils import override_settings
 
 import pytest
-from dns.resolver import NXDOMAIN, NoNameservers, Timeout
 
 from core.models import MailDomain
 from core.services.dns.provisioning import (
@@ -15,6 +14,13 @@ from core.services.dns.provisioning import (
     get_dns_provider,
     provision_domain_dns,
 )
+from core.services.dns.resolver import (
+    NoAnswerError,
+    NXDOMAINError,
+    ResolutionTimeoutError,
+    ServfailError,
+)
+from core.tests.dns_answers import ns_answer
 
 
 @pytest.mark.django_db
@@ -23,41 +29,27 @@ class TestDNSProvisioning:
 
     def test_detect_dns_provider_scaleway(self):
         """Test detection of Scaleway DNS provider."""
-        with patch(
-            "core.services.dns.provisioning.dns.resolver.resolve"
-        ) as mock_resolve:
-            # Mock nameservers for Scaleway
-            mock_ns1 = MagicMock()
-            mock_ns1.target.to_text.return_value = "ns0.dom.scw.cloud."
-            mock_ns2 = MagicMock()
-            mock_ns2.target.to_text.return_value = "ns1.dom.scw.cloud."
-
-            mock_resolve.return_value = [mock_ns1, mock_ns2]
+        with patch("core.services.dns.provisioning.resolve_answer") as mock_resolve:
+            mock_resolve.return_value = ns_answer(
+                "ns0.dom.scw.cloud.", "ns1.dom.scw.cloud."
+            )
 
             provider = detect_dns_provider("example.com")
             assert provider == "scaleway"
 
     def test_detect_dns_provider_unknown(self):
         """Test detection of unknown DNS provider."""
-        with patch(
-            "core.services.dns.provisioning.dns.resolver.resolve"
-        ) as mock_resolve:
-            # Mock unknown nameservers
-            mock_ns1 = MagicMock()
-            mock_ns1.target.to_text.return_value = "ns1.unknown.com."
-            mock_ns2 = MagicMock()
-            mock_ns2.target.to_text.return_value = "ns2.unknown.com."
-
-            mock_resolve.return_value = [mock_ns1, mock_ns2]
+        with patch("core.services.dns.provisioning.resolve_answer") as mock_resolve:
+            mock_resolve.return_value = ns_answer(
+                "ns1.unknown.com.", "ns2.unknown.com."
+            )
 
             provider = detect_dns_provider("example.com")
             assert provider is None
 
     def test_detect_dns_provider_exception(self):
         """Test DNS provider detection with exception."""
-        with patch(
-            "core.services.dns.provisioning.dns.resolver.resolve"
-        ) as mock_resolve:
+        with patch("core.services.dns.provisioning.resolve_answer") as mock_resolve:
             mock_resolve.side_effect = Exception("DNS error")
 
             provider = detect_dns_provider("example.com")
@@ -65,30 +57,32 @@ class TestDNSProvisioning:
 
     def test_detect_dns_provider_nxdomain(self):
         """Test DNS provider detection when domain doesn't exist."""
-        with patch(
-            "core.services.dns.provisioning.dns.resolver.resolve"
-        ) as mock_resolve:
-            mock_resolve.side_effect = NXDOMAIN()
+        with patch("core.services.dns.provisioning.resolve_answer") as mock_resolve:
+            mock_resolve.side_effect = NXDOMAINError("example.com", "NS")
 
             provider = detect_dns_provider("example.com")
             assert provider is None
 
     def test_detect_dns_provider_no_nameservers(self):
         """Test DNS provider detection when no nameservers are found."""
-        with patch(
-            "core.services.dns.provisioning.dns.resolver.resolve"
-        ) as mock_resolve:
-            mock_resolve.side_effect = NoNameservers()
+        with patch("core.services.dns.provisioning.resolve_answer") as mock_resolve:
+            mock_resolve.side_effect = ServfailError("example.com", "NS")
+
+            provider = detect_dns_provider("example.com")
+            assert provider is None
+
+    def test_detect_dns_provider_no_answer(self):
+        """Test DNS provider detection when the domain has no NS records."""
+        with patch("core.services.dns.provisioning.resolve_answer") as mock_resolve:
+            mock_resolve.side_effect = NoAnswerError("example.com", "NS")
 
             provider = detect_dns_provider("example.com")
             assert provider is None
 
     def test_detect_dns_provider_timeout(self):
         """Test DNS provider detection when query times out."""
-        with patch(
-            "core.services.dns.provisioning.dns.resolver.resolve"
-        ) as mock_resolve:
-            mock_resolve.side_effect = Timeout()
+        with patch("core.services.dns.provisioning.resolve_answer") as mock_resolve:
+            mock_resolve.side_effect = ResolutionTimeoutError("example.com", "NS")
 
             provider = detect_dns_provider("example.com")
             assert provider is None

@@ -113,6 +113,11 @@ KEYCLOAK_GROUP_PATH_PREFIX=/maildomain-
 # Messages
 MTA_OUT_MODE=relay
 MTA_OUT_RELAY_HOST=mailcatcher:1025
+# Same as the shipped default, pinned because the dev relay is mailcatcher,
+# which speaks no STARTTLS at all: raising this to `secure` here would defer
+# every outbound message. A production relay with a valid certificate should
+# be set to `secure`.
+MTA_OUT_RELAY_TLS_SECURITY_LEVEL=may
 MDA_API_SECRET=my-shared-secret-mda
 SALT_KEY=ThisIsAnExampleSaltForDevPurposeOnly
 

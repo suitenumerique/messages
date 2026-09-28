@@ -30,6 +30,7 @@ from core.ai.utils import (
     is_auto_labels_enabled,
 )
 from core.mda.addresses import address_local_part, normalize_address
+from core.mda.inbound_auth import VERDICT_FORGED, VERDICT_UNVERIFIED
 from core.services.importer.labels import (
     compute_labels_and_flags,
 )
@@ -76,17 +77,73 @@ def inbound_mailbox_lock(mailbox_id: uuid.UUID):
         yield
 
 
+# Leading noise a client adds to a subject without changing the topic: a
+# reply/forward prefix, or a mailing list's ``[tag]``. RFC 8621 §3 asks for
+# both to be stripped before comparing, "ignoring white space".
+#
+# Prefixes are matched by *shape*, not from a list of words. Every locale has
+# its own — AW, SV, VS, RIF, RES, Odp, YNT, TR, WG, ENC, … — and an
+# enumeration is a permanent bug source as clients and locales are added.
+# Outlook groups conversations by ignoring any prefix of three letters or
+# fewer ending in a colon; that rule covers almost all of them, and the few
+# longer ones in use are listed. Numbered forms ("Re[2]:") come from Lotus
+# and older Outlook.
+#
+# Over-stripping is close to free here: threading also requires a shared
+# message id, so an ordinary subject that happens to start with "Bug:" can at
+# worst be grouped with a message that already claims to be part of its
+# conversation. Under-stripping is not free — it splits a real thread.
+_SUBJECT_NOISE_RE = re.compile(
+    r"^\s*(?:"
+    r"\[[^\]]{1,40}\]"  # [List-Tag]
+    r"|(?:antwort|doorst|antw|[^\W\d_]{1,3})"  # prefix word, longest first
+    r"\s*(?:\[\d+\])?\s*:"  # optional "[2]" counter, then the colon
+    r")\s*",
+    re.IGNORECASE,
+)
+
+
 def _canonicalize_subject(subject: str | None) -> str:
-    """Strip leading ``Re:`` / ``Fwd:`` (and i18n variants) for thread match."""
+    """Reduce a subject to the topic two messages must share to be threaded.
+
+    Case is folded with ``str.lower()``, not the ASCII-only fold used for
+    identities elsewhere: a subject is prose, so "RÉUNION" and "réunion" are
+    the same topic and must compare equal. The Unicode-folding hazard that
+    rules out ``lower()`` for addresses does not apply — nothing here is an
+    identity, and a collision can only group messages that already share a
+    message id.
+
+    Internal whitespace is collapsed, since RFC 8621 §3 compares subjects
+    "ignoring white space" and clients differ on how they wrap and re-space a
+    subject they are quoting.
+
+    **Never strips to nothing.** RFC 5256 §2.1, which defines this extraction
+    for IMAP threading, removes a prefix only "if removing that prefix leaves
+    a non-empty subj-base", and keeps the "last subj-blob ... if subj-base
+    would otherwise be empty". Without that guard a subject that is *only*
+    noise — ``"Re:"``, ``"[dev]"`` — collapses to the empty string, and every
+    such subject then compares equal to every other, including to a message
+    that genuinely has no subject. Since the empty string would match, an
+    attacker naming a subjectless message could thread into it with any
+    all-prefix subject. Keeping the last non-empty form leaves ``"[dev]"``
+    and ``"Re:"`` distinct, and a truly absent subject still canonicalizes to
+    ``""`` and matches only another absent one.
+    """
+    # Repeated because prefixes and list tags interleave: "Re: [dev] Fwd: x".
     # ``\s*`` after the colon, not ``\s+``: mobile clients regularly send
-    # "Re:subject" with no space, and a prefix left in place makes two
-    # messages of the same conversation compare as different subjects.
-    return re.sub(
-        r"^((re|fwd|fw|rep|tr|rép)\s*:\s*)+",
-        "",
-        (subject or "").lower(),
-        flags=re.IGNORECASE,
-    ).strip()
+    # "Re:subject" with no space at all.
+    stripped = " ".join((subject or "").lower().split())
+    while True:
+        shorter = " ".join(_SUBJECT_NOISE_RE.sub("", stripped).split())
+        if not shorter or shorter == stripped:
+            return stripped
+        stripped = shorter
+
+
+# The ``postmark["auth"]`` verdicts that mean we could not confirm who sent
+# this. Threading places a message using headers the sender chose, so it is
+# only defensible once the From is known — see ``find_thread_for_message``.
+_UNTRUSTED_SENDER_AUTH = frozenset({VERDICT_UNVERIFIED, VERDICT_FORGED})
 
 
 def _parent_messages(mime_ids: list[str], mailbox: models.Mailbox):
@@ -102,38 +159,65 @@ def _parent_messages(mime_ids: list[str], mailbox: models.Mailbox):
 
 
 def find_thread_for_message(
-    parsed_email: JmapEmail, mailbox: models.Mailbox
+    parsed_email: JmapEmail,
+    mailbox: models.Mailbox,
+    sender_auth: str | None = None,
 ) -> models.Thread | None:
     """Attempt to find the existing thread an incoming message belongs to.
 
-    Two levels of evidence, strongest first:
-
-    1. ``In-Reply-To`` — an explicit, unambiguous pointer to a single
-       parent. When that parent is already in the mailbox the message
-       belongs to its thread whatever the subject says: participants
-       rewrite subjects mid-conversation, and RFC 8621 §3 only *allows*
-       splitting a thread on subject, it never requires it.
-    2. ``References`` — a chain some MUAs recycle across unrelated
-       conversations (replying to an old mail to start a new topic), so a
-       matching canonical subject is required before trusting it.
+    A message joins a thread when it names one of its messages — in
+    ``In-Reply-To`` or in ``References`` — *and* carries the same canonical
+    subject. That is the algorithm RFC 8621 §3 suggests, which asks for "both
+    of the following conditions": a shared message id and a matching subject.
+    ``In-Reply-To`` is still preferred over ``References``, which some MUAs
+    recycle across unrelated conversations when replying to an old mail to
+    start a new topic.
 
     Shared by the SMTP delivery path and the importers: a mailbox that is
     imported and then kept in sync over SMTP must be threaded by one rule,
     otherwise the same conversation splits differently on each path.
+
+    **Every input here is chosen by the sender.** A Message-ID is not a
+    secret — it travels in every reply and sits in list archives — so anyone
+    who has seen one message of a thread can name it and have their own
+    message render inside that conversation, borrowing its context. This is
+    thread hijacking, and three things bound it:
+
+    - The lookup is scoped to ``mailbox``, so the target must be a thread this
+      recipient already holds. Knowing any Message-ID is not enough; it has to
+      be one from a conversation they are in.
+    - The subject must match, so a forged ``In-Reply-To`` carrying the
+      attacker's own subject lands nowhere. The cost is that a participant who
+      genuinely rewrites the subject mid-thread starts a new one — the same
+      trade Gmail makes, and what the RFC's algorithm asks for.
+    - ``sender_auth`` — the ``postmark["auth"]`` verdict — refuses to thread at
+      all on headers from a From we could not verify. Placing a message by
+      data the sender controls is only defensible when we know who the sender
+      is.
+
+    An absent ``sender_auth`` covers both "verified" and "no ``inbound_auth``
+    configured", so a deployment that has not turned authentication on keeps
+    threading exactly as before rather than losing it silently.
     """
+    if sender_auth in _UNTRUSTED_SENDER_AUTH:
+        logger.info(
+            "Not threading a message whose sender is %s: starting a new thread",
+            sender_auth,
+        )
+        return None
+
     in_reply_to = first_msgid(parsed_email.get("inReplyTo"))
     references = [
         ref for ref in (parsed_email.get("references") or []) if ref != in_reply_to
     ]
+    if not in_reply_to and not references:
+        return None
 
-    if in_reply_to:
-        parent = _parent_messages([in_reply_to], mailbox).first()
-        if parent:
-            return parent.thread
-
-    if references:
-        incoming_subject_canonical = _canonicalize_subject(parsed_email.get("subject"))
-        for parent in _parent_messages(references, mailbox):
+    incoming_subject_canonical = _canonicalize_subject(parsed_email.get("subject"))
+    for candidate_ids in ([in_reply_to] if in_reply_to else [], references):
+        if not candidate_ids:
+            continue
+        for parent in _parent_messages(candidate_ids, mailbox):
             if _canonicalize_subject(parent.subject) == incoming_subject_canonical:
                 return parent.thread
 
@@ -273,7 +357,9 @@ def _create_message_from_inbound(  # pylint: disable=too-many-arguments
 
         # --- 3. Find or Create Thread --- #
         try:
-            thread = find_thread_for_message(parsed_email, mailbox)
+            thread = find_thread_for_message(
+                parsed_email, mailbox, sender_auth=(postmark or {}).get("auth")
+            )
             if not thread:
                 thread = _create_thread(parsed_email, mailbox)
 

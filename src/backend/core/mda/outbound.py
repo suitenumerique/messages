@@ -1,5 +1,5 @@
 """Handles outbound email delivery logic: composing and sending messages."""
-# pylint: disable=broad-exception-caught
+# pylint: disable=broad-exception-caught,too-many-lines
 
 import json
 import logging
@@ -22,7 +22,7 @@ from jmap_email import (
 
 from core import models
 from core.enums import InboundOrigin, MessageDeliveryStatusChoices
-from core.mda.addresses import address_domain, envelope_address
+from core.mda.addresses import address_domain, envelope_address, normalize_domain
 from core.mda.inbound import check_local_recipient, deliver_inbound_message
 from core.mda.inline_images import (
     extract_inline_images_html,
@@ -30,7 +30,11 @@ from core.mda.inline_images import (
 )
 from core.mda.outbound_direct import send_message_via_mx
 from core.mda.replies import make_forward, make_reply
-from core.mda.signing import sign_message_dkim, verify_message_dkim
+from core.mda.signing import (
+    DKIMSigningError,
+    sign_message_dkim,
+    verify_message_dkim,
+)
 from core.mda.smtp import send_smtp_mail
 from core.mda.utils import compose_options_for, current_sent_at
 from core.services.blob_gc import schedule_for_gc
@@ -131,6 +135,128 @@ def build_xmailer_value() -> str:
     return settings.MDA_HEADER_XMAILER
 
 
+def sender_domain_is_aligned(message, mailbox) -> bool:
+    """Whether the From domain matches the domain DKIM will sign with.
+
+    DMARC checks the From domain against the signature's ``d=``, which comes
+    from ``mailbox.domain.name`` — so a From on another domain goes out
+    misaligned and fails DMARC at every enforcing receiver.
+
+    Compare DOMAINS, not owning mailboxes: ``Contact.mailbox`` is the address
+    book a contact lives in, not the identity it represents. Inbound filing
+    puts every correspondent under the receiving mailbox, and two mailboxes on
+    one MailDomain align perfectly while owning different contacts — so
+    ``sender.mailbox_id == mailbox.id`` answers a different question.
+
+    A message with no sender, or no address on either side, has nothing to
+    misalign and is reported aligned; the callers below have their own checks
+    for those.
+    """
+    if message.sender_id is None:
+        return True
+    sender = message.sender
+    signing_domain = mailbox.domain.name
+    if not sender.email or not signing_domain:
+        return True
+    return normalize_domain(address_domain(sender.email)) == normalize_domain(
+        signing_domain
+    )
+
+
+def enforce_sender_domain_alignment(message, mailbox) -> None:
+    """Refuse to send a message whose From cannot align with its signature.
+
+    A misaligned message is a guaranteed DMARC failure at the receiver, and a
+    silent one — the loss happens at the far end, so nothing here would ever
+    show it.
+
+    Gated on ``MESSAGES_DKIM_VERIFY_OUTGOING``, which already means "our
+    outgoing mail must actually authenticate": that setting re-checks the
+    signature against public DNS, and alignment is the same question asked
+    earlier and for free. Verifying the signature while letting it go out
+    unaligned would confirm the wrong half. Without the setting this only
+    logs, matching the rest of that switch being opt-in.
+
+    Refusing is a 400: the send is synchronous in the request, so there is
+    nothing to retry and the caller can fix the From. The composed path never
+    reaches this, because ``_realign_sender_with_sending_mailbox`` has already
+    made From *be* the sending mailbox; what this stops is a raw MIME
+    submission carrying a From on a domain we hold no key for.
+    """
+    if sender_domain_is_aligned(message, mailbox):
+        return
+    sender_domain = normalize_domain(address_domain(message.sender.email))
+    signing_domain = normalize_domain(mailbox.domain.name)
+    logger.error(
+        "Refusing to send message %s: From domain %s but DKIM d=%s (mailbox %s)",
+        message.id,
+        sender_domain,
+        signing_domain,
+        mailbox.id,
+    )
+    if not settings.MESSAGES_DKIM_VERIFY_OUTGOING:
+        return
+    raise drf.exceptions.ValidationError(
+        {
+            "message": (
+                f"This message says it is from {sender_domain} but would be "
+                f"signed for {signing_domain}, so it would fail DMARC at the "
+                "recipient. Send it from a mailbox on the From domain."
+            )
+        }
+    )
+
+
+def _realign_sender_with_sending_mailbox(message, mailbox_sender) -> None:
+    """Make the From the mailbox actually sending, so the signature aligns.
+
+    A draft carries the contact of the mailbox it was composed in, while the
+    mailbox that sends it is chosen at send time (``senderId``) and may be
+    another one the user owns with access to the same thread. Replying from a
+    second mailbox is a feature; what would be wrong is keeping the first
+    mailbox's From and signing with the second one's key, which is misaligned
+    by construction.
+
+    So the sending mailbox wins: the message *is* from it. Only the composed
+    path may do this — a raw MIME submission carries a From we were not asked
+    to write, and rewriting the contact under it would leave the stored sender
+    disagreeing with the bytes on the wire.
+    """
+    if message.sender_id is not None and sender_domain_is_aligned(
+        message, mailbox_sender
+    ):
+        return
+    sender_contact, _created = models.Contact.objects.get_or_create(
+        email=str(mailbox_sender),
+        mailbox=mailbox_sender,
+        defaults={
+            "name": mailbox_sender.contact.name if mailbox_sender.contact else ""
+        },
+    )
+    logger.info(
+        "Message %s sent from mailbox %s: From set to %s",
+        message.id,
+        mailbox_sender.id,
+        sender_contact.email,
+    )
+    message.sender = sender_contact
+    message.save(update_fields=["sender"])
+
+
+def _dkim_signing_validation_error(message) -> drf.exceptions.ValidationError:
+    """The 400 both send paths raise when an active DKIM key could not sign."""
+    logger.exception("DKIM signing failed for message %s", message.id)
+    return drf.exceptions.ValidationError(
+        {
+            "message": (
+                "This domain has a DKIM key that could not be used to sign "
+                "the message. Sending unsigned would fail DMARC at the "
+                "recipient, so the message was not sent."
+            )
+        }
+    )
+
+
 def compose_and_sign_mime(
     message: models.Message,
     mailbox: models.Mailbox,
@@ -151,6 +277,13 @@ def compose_and_sign_mime(
     The signature is inserted between the new content and the quoted
     original so recipients see it in the expected position.
     """
+    # 0. The From header comes from ``message.sender`` while the DKIM
+    #    signature below is minted with ``mailbox.domain``. Nothing tied the
+    #    two together, so a mismatched pair produces mail whose ``d=`` does
+    #    not align with its From — DMARC-failing at the receiver, for no
+    #    benefit, and visible only as unexplained delivery loss.
+    enforce_sender_domain_alignment(message, mailbox)
+
     # 1. Append signature (before quoting so it sits between reply and quote)
     text_body, html_body, inline_attachments = (
         append_signature_and_extract_inline_images(
@@ -369,7 +502,16 @@ def prepare_outbound_message(
                 raw_mime = (
                     f"X-Mailer: {build_xmailer_value()}".encode() + b"\r\n" + raw_mime
                 )
-        signed_mime = _sign_mime(mailbox_sender, raw_mime)
+        # Here rather than at the top of the function so it fires once per
+        # send, and only on this path: the composed path realigns the sender
+        # below instead of refusing, because there we write the From.
+        enforce_sender_domain_alignment(message, mailbox_sender)
+
+        # Unhandled, DKIMSigningError would escape the view as a 500.
+        try:
+            signed_mime = _sign_mime(mailbox_sender, raw_mime)
+        except DKIMSigningError as exc:
+            raise _dkim_signing_validation_error(message) from exc
         validate_mime_size(len(signed_mime), message.id)
         message.sender_user = user
         with transaction.atomic():
@@ -380,6 +522,11 @@ def prepare_outbound_message(
         return True
 
     # --- Web/API path: compose MIME from text/html body --- #
+
+    # Before anything reads ``message.sender``: the mailbox chosen at send
+    # time is the one whose key will sign, so it is the one the From must
+    # name. This is what lets a user reply from another mailbox they own.
+    _realign_sender_with_sending_mailbox(message, mailbox_sender)
 
     # TODO: Fetch MIME IDs of "references" from the thread
     # references = message.thread.messages.exclude(id=message.id).order_by("-created_at").all()
@@ -461,6 +608,10 @@ def prepare_outbound_message(
             message.attachments.all().delete()
     except drf.exceptions.ValidationError:
         raise
+    except DKIMSigningError as exc:
+        # Without this it falls into the broad handler below and surfaces as a
+        # generic compose error, hiding the one thing the operator can act on.
+        raise _dkim_signing_validation_error(message) from exc
     except ComposeError:
         # A draft the composer refuses (unrepresentable address,
         # undecodable attachment) is the caller's to turn into a 4xx —
@@ -612,8 +763,13 @@ def send_message(message: models.Message, force_mta_out: bool = False):
             if first_address_email(parsed_email.get("from")) != message.sender.email:
                 raise ValueError("Mailbox email does not match the raw message sender")
 
-            message.sent_at = timezone.now()
-            message.save(update_fields=["sent_at"])
+            # First attempt only. This is the user-visible "sent" time and it
+            # drives thread ordering; rewriting it on every retry made a
+            # message that took three attempts appear to have been sent hours
+            # after the user pressed send, and jump the thread.
+            if message.sent_at is None:
+                message.sent_at = timezone.now()
+                message.save(update_fields=["sent_at"])
 
             # Include all recipients in the envelope that have not been delivered yet, including BCC
             envelope_to = {
@@ -785,7 +941,10 @@ def send_message(message: models.Message, force_mta_out: bool = False):
                 if settings.MESSAGES_DKIM_VERIFY_OUTGOING:
                     sender_domain = message.sender.mailbox.domain
 
-                    if not verify_message_dkim(blob_content):
+                    if not verify_message_dkim(
+                        blob_content,
+                        require_dnssec=settings.MESSAGES_DKIM_VERIFY_OUTGOING_REQUIRE_DNSSEC,
+                    ):
                         error_msg = (
                             f"DKIM verification failed for domain {sender_domain.name}"
                         )
@@ -974,7 +1133,11 @@ def send_outbound_email(
                 message_content=mime_data,
                 smtp_username=mta_out_smtp_username,
                 smtp_password=mta_out_smtp_password,
-                smtp_tls_security_level=settings.MTA_OUT_SMTP_TLS_SECURITY_LEVEL,
+                # The relay-specific level, not the direct-MX one: the relay is
+                # a host the operator chose, so it can be raised to "secure"
+                # independently of public MXes, which still need opportunistic
+                # TLS. Both ship as "may" (see the settings for why).
+                smtp_tls_security_level=settings.MTA_OUT_RELAY_TLS_SECURITY_LEVEL,
             )
         )
 

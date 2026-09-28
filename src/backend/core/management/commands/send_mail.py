@@ -29,7 +29,7 @@ from core.mda.addresses import (
     split_address,
 )
 from core.mda.outbound import send_outbound_email
-from core.mda.signing import sign_message_dkim
+from core.mda.signing import DKIMSigningError, sign_message_dkim
 from core.mda.utils import compose_options_for, current_sent_at, generate_mime_id
 
 logger = logging.getLogger(__name__)
@@ -155,12 +155,18 @@ class Command(BaseCommand):
         except ComposeError as e:
             raise CommandError(f"Cannot compose message: {e}") from e
 
-        # Sign the message with DKIM (only if mailbox exists)
+        # Sign the message with DKIM (only if mailbox exists). A domain with
+        # an active key that fails to sign is an error, not a reason to send
+        # unsigned — same rule as the API paths, reported the same way as the
+        # compose failure above.
         dkim_signature_header = None
         if sender_mailbox:
-            dkim_signature_header = sign_message_dkim(
-                raw_mime_message=raw_mime, maildomain=sender_mailbox.domain
-            )
+            try:
+                dkim_signature_header = sign_message_dkim(
+                    raw_mime_message=raw_mime, maildomain=sender_mailbox.domain
+                )
+            except DKIMSigningError as e:
+                raise CommandError(f"Cannot sign message: {e}") from e
 
         if dkim_signature_header:
             raw_mime_signed = dkim_signature_header + b"\r\n" + raw_mime

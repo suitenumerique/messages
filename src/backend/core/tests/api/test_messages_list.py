@@ -12,6 +12,18 @@ from rest_framework.test import APIClient
 from core import enums, factories
 
 
+@pytest.fixture(autouse=True)
+def _deterministic_clock(monotonic_now):
+    """Order and read/unread assertions here compare wall-clock stamps.
+
+    ``messaged_at`` is derived from each message's ``auto_now_add``
+    ``created_at``, and ``read_at`` is compared against it. Both assume time
+    only moves forwards; a host stepping its clock back makes a later row take
+    an earlier stamp and the assertions rotate. Applied to the module rather
+    than per test, so a new test cannot quietly opt out of it.
+    """
+
+
 @pytest.mark.django_db
 @pytest.mark.parametrize(
     "mailbox_role, thread_role",

@@ -7,10 +7,15 @@ from typing import Any, Dict, Optional
 
 from django.conf import settings
 
-import dns.resolver
-
 from core.models import MailDomain
 from core.services.dns.providers.scaleway import ScalewayDNSProvider
+from core.services.dns.resolver import (
+    NoAnswerError,
+    NXDOMAINError,
+    ResolutionTimeoutError,
+    ServfailError,
+    resolve_answer,
+)
 
 logger = logging.getLogger(__name__)
 
@@ -27,8 +32,8 @@ def detect_dns_provider(domain: str) -> Optional[str]:
     """
     try:
         # Get nameservers for the domain
-        nameservers = dns.resolver.resolve(domain, "NS")
-        ns_names = [ns.target.to_text().rstrip(".") for ns in nameservers]
+        nameservers = resolve_answer(domain, "NS")
+        ns_names = [ns.target.to_text().rstrip(".") for ns in nameservers.rrset]
 
         # Check for Scaleway nameservers
         scaleway_ns = ["ns0.dom.scw.cloud", "ns1.dom.scw.cloud"]
@@ -38,10 +43,10 @@ def detect_dns_provider(domain: str) -> Optional[str]:
         return None
 
     except (
-        dns.resolver.NXDOMAIN,
-        dns.resolver.Timeout,
-        dns.resolver.NoNameservers,
-        dns.resolver.NoAnswer,
+        NXDOMAINError,
+        ResolutionTimeoutError,
+        ServfailError,
+        NoAnswerError,
     ) as e:
         # Log unexpected errors but don't fail
         logger.warning("Unexpected error detecting DNS provider for %s: %s", domain, e)

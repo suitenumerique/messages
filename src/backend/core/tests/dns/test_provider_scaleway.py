@@ -451,3 +451,83 @@ class TestScalewayDNSProvider:
 
             # Verify results
             assert len(results) > 0
+
+    @override_settings(
+        DNS_SCALEWAY_API_TOKEN="test-token",
+        DNS_SCALEWAY_PROJECT_ID="test-project",
+        DNS_SCALEWAY_TTL=600,
+    )
+    @pytest.mark.parametrize(
+        "existing",
+        [
+            "v=spf1 include:_spf.other.example ~all",
+            # RFC 7208 12: the version section is case-insensitive, so these
+            # are the customer's existing SPF record just as much. Matching on
+            # a "v=spf1 " prefix missed them, and the sync then ADDED ours
+            # beside it — two records at one name is a permerror (4.5), which
+            # breaks SPF for the domain outright.
+            "V=SPF1 include:_spf.other.example ~all",
+            "v=SPF1 include:_spf.other.example ~all",
+            # A value carrying its zone-file quotes, as check_spf_status also
+            # has to normalize before matching.
+            '"v=spf1 include:_spf.other.example ~all"',
+        ],
+    )
+    def test_provision_updates_an_existing_spf_record_whatever_its_spelling(
+        self, existing
+    ):
+        """The existing SPF record must be found so it is updated, not doubled."""
+        provider = ScalewayDNSProvider()
+        expected_record = {
+            "type": "TXT",
+            "target": "",
+            "value": "v=spf1 include:_spf.example.com -all",
+        }
+
+        with (
+            patch.object(provider, "create_zone"),
+            patch.object(provider, "get_records") as mock_get_records,
+            patch.object(provider, "_sync_records") as mock_sync_records,
+        ):
+            mock_get_records.return_value = [
+                {"type": "TXT", "name": "", "value": existing}
+            ]
+            mock_sync_records.return_value = []
+
+            provider.provision_domain_records("example.com", [expected_record])
+
+            mock_sync_records.assert_called_once()
+            current_records = mock_sync_records.call_args[0][1]
+            assert [r["value"] for r in current_records] == [existing]
+
+    @override_settings(
+        DNS_SCALEWAY_API_TOKEN="test-token",
+        DNS_SCALEWAY_PROJECT_ID="test-project",
+        DNS_SCALEWAY_TTL=600,
+    )
+    def test_provision_leaves_unrelated_apex_txt_alone(self):
+        """An apex TXT that is not an SPF record is not fed to the SPF sync."""
+        provider = ScalewayDNSProvider()
+        expected_record = {
+            "type": "TXT",
+            "target": "",
+            "value": "v=spf1 include:_spf.example.com -all",
+        }
+
+        with (
+            patch.object(provider, "create_zone"),
+            patch.object(provider, "get_records") as mock_get_records,
+            patch.object(provider, "_sync_records") as mock_sync_records,
+        ):
+            mock_get_records.return_value = [
+                {"type": "TXT", "name": "", "value": "google-site-verification=Ab1Cd2"},
+                # Not an SPF record either: RFC 7208 4.5 needs the version
+                # section terminated by a space or the end of the record.
+                {"type": "TXT", "name": "", "value": "v=spf10 whatever"},
+            ]
+            mock_sync_records.return_value = []
+
+            provider.provision_domain_records("example.com", [expected_record])
+
+            mock_sync_records.assert_called_once()
+            assert mock_sync_records.call_args[0][1] == []

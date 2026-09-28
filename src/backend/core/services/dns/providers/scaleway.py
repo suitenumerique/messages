@@ -10,6 +10,8 @@ from django.conf import settings
 
 import requests
 
+from core.services.dns.records import is_spf_record, normalize_txt_value
+
 logger = logging.getLogger(__name__)
 
 
@@ -88,14 +90,21 @@ class ScalewayDNSProvider:
                 )
             else:
                 for expected_record in expected_records_of_type:
-                    if record_type == ("TXT", "") and expected_record[
-                        "value"
-                    ].startswith("v=spf1 "):
+                    # Both sides go through the RFC 7208 4.5 selection rules,
+                    # not a "v=spf1 " prefix. That prefix is case-sensitive,
+                    # while the version section is not, so an apex already
+                    # carrying "V=SPF1 ..." matched nothing here and the sync
+                    # below *added* our record beside it. Two SPF records at
+                    # one name is a permerror (4.5): the customer's SPF would
+                    # stop working entirely, from a run meant to fix it.
+                    if record_type == ("TXT", "") and is_spf_record(
+                        normalize_txt_value(expected_record["value"])
+                    ):
                         # This is the SPF record, we need to update it if there is an existing one.
                         existing_spf_records = [
                             record
                             for record in records_by_type[record_type]
-                            if record["value"].startswith("v=spf1 ")
+                            if is_spf_record(normalize_txt_value(record["value"]))
                         ]
                         results.extend(
                             self._sync_records(

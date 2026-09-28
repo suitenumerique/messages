@@ -27,7 +27,7 @@ Messages supports multiple deployment strategies depending on your infrastructur
 
 **Process**:
 1. Start from the `compose.yaml` in the repository
-2. Create production environment files (`deploy/env/production/*.defaults`)
+2. Put your production values in `deploy/env/*.local` (see [Environment Configuration](#2-environment-configuration))
 3. Deploy to any environment where Docker Compose runs
 4. Configure DNS and SSL certificates
 
@@ -114,23 +114,34 @@ The DNS records for each customer domains are available either via API at http:/
 Messages uses environment variables as the primary configuration method:
 
 **Environment File Structure:**
-- `deploy/env/production/backend.defaults` - Main Django application settings
-- `deploy/env/production/frontend.defaults` - Frontend configuration
-- `deploy/env/production/mta-in.defaults` - Inbound mail server settings
-- `deploy/env/production/postgresql.defaults` - Database configuration
-- `deploy/env/production/keycloak.defaults` - Identity provider settings
+
+Each service reads two files from `deploy/env/`, in this order:
+
+- `<service>.defaults` - committed defaults, tracked in git
+- `<service>.local` - your own values, gitignored; later files win, so anything set here overrides the defaults
+
+Services:
+
+- `backend.{defaults,local}` - Main Django application settings
+- `frontend.{defaults,local}` - Frontend configuration
+- `mta-in.{defaults,local}` and `mta-in-py.{defaults,local}` - Inbound mail server settings
+- `postgresql.{defaults,local}` - Database configuration
+- `keycloak.{defaults,local}` - Identity provider settings
+
+Edit `.local` rather than `.defaults`: the defaults are shipped with the repo and
+will be overwritten on update, and secrets in a tracked file end up in git.
 
 **For detailed environment variable documentation, see [Environment Variables](./env.md).**
 
 ### 3. MTA Configuration
 
 #### MTA-in (Inbound Email)
-- Configured via `deploy/env/production/mta-in.defaults`
+- Configured via `deploy/env/mta-in.local`
 - Uses custom milter for synchronous delivery during SMTP sessions
 - Validates recipients via REST API before accepting messages
 
 #### Outbound Email
-- Configured via `MTA_OUT_*` in `deploy/env/production/backend.defaults`
+- Configured via `MTA_OUT_*` in `deploy/env/backend.local`
 - `MTA_OUT_MODE=direct` delivers straight to each recipient's MX (the default)
 - `MTA_OUT_MODE=relay` sends everything through `MTA_OUT_RELAY_HOST` instead
 
@@ -179,13 +190,13 @@ Messages uses OpenID Connect (OIDC) for user authentication. This is the only au
    - Keycloak is included in the default Docker Compose setup
    - Pre-configured with Messages realm and users
    - Suitable for organizations wanting a self-hosted identity provider
-   - Configure via `deploy/env/production/keycloak.defaults`
+   - Configure via `deploy/env/keycloak.local`
    - See the [identity provider guide](./identity-provider.md) to create the realm and the clients
 
 2. **External OIDC Provider**
    - Use any OIDC-compliant identity provider
    - Examples: Auth0, Okta, Azure AD, Google Workspace
-   - Configure via `deploy/env/production/backend.defaults`
+   - Configure via `deploy/env/backend.local`
    - Requires proper OIDC endpoint configuration
 
 **User Management:**
@@ -199,7 +210,7 @@ Messages uses OpenID Connect (OIDC) for user authentication. This is the only au
 For production deployment, create your own Docker Compose configuration based on `compose.yaml`:
 
 **Key Considerations:**
-- Use production environment files (`deploy/env/production/*.defaults`)
+- Keep production values in `deploy/env/*.local`, which git ignores
 - Configure SSL/TLS certificates
 - Set up persistent volumes for databases
 - Implement proper restart policies

@@ -35,6 +35,18 @@ pytestmark = pytest.mark.django_db
 API_URL = reverse("threads-list")
 
 
+@pytest.fixture(autouse=True)
+def _deterministic_clock(monotonic_now):
+    """This module orders threads and compares read/unread timestamps.
+
+    ``messaged_at`` comes from each message's ``auto_now_add`` ``created_at``,
+    and ``read_at`` is compared against it. Both assume time only moves
+    forwards; a host stepping its clock back hands a later row an earlier
+    stamp, which rotates orderings and flips unread. Applied to the module
+    rather than per test, so a new test cannot quietly opt out of it.
+    """
+
+
 # --- Tests for thread ordering ---
 
 

@@ -18,6 +18,7 @@ Unicode-lowercased lookup lets ``nicK@example.com`` resolve to
 class of bug, and here it would reach mailbox lookup and OIDC autojoin.
 """
 
+import functools
 import string
 
 from django.core.exceptions import ValidationError
@@ -25,6 +26,7 @@ from django.utils.deconstruct import deconstructible
 
 import idna
 from jmap_email import is_valid_addr_spec
+from publicsuffixlist import PublicSuffixList
 
 __all__ = [
     "AddrSpecValidator",
@@ -35,6 +37,7 @@ __all__ = [
     "needs_smtputf8",
     "normalize_address",
     "normalize_domain",
+    "organizational_domain",
     "split_address",
 ]
 
@@ -174,3 +177,39 @@ def envelope_address(address: str) -> str | None:
     if not domain.isascii():
         return None
     return f"{local_part}@{domain}"
+
+
+@functools.cache
+def _public_suffix_list() -> PublicSuffixList:
+    """The bundled PSL, parsed once per process.
+
+    Built lazily: parsing the list costs memory a process that never
+    evaluates alignment has no reason to pay.
+    """
+    return PublicSuffixList()
+
+
+def organizational_domain(domain: str) -> str:
+    """The registrable domain of *domain*, per the Public Suffix List.
+
+    ``mail.example.co.uk`` -> ``example.co.uk``. This is the organizational
+    domain relaxed DMARC alignment compares, so a subdomain signing for its
+    parent counts as aligned.
+
+    An approximation on purpose. RFC 9989 (May 2026, obsoleting RFC 7489)
+    replaced the PSL with a DNS Tree Walk (4.10): the receiver queries up the
+    hierarchy for a ``psd=`` tag rather than consulting a static list, so two
+    receivers holding different PSL snapshots stop disagreeing about where an
+    organization ends. The walk costs up to eight DNS lookups per message,
+    which is why this stays on the list for now — it is the same basis rspamd
+    uses, and native mode is a hint, not a policy engine.
+
+    Falls back to the input when the PSL has no registrable domain for it — a
+    bare public suffix, or a name under a suffix the bundled list predates.
+    Falling back to the input rather than to the suffix is what keeps two
+    unrelated names from collapsing onto a shared parent and comparing equal.
+
+    Expects an already-normalized domain (lowercase A-label): the PSL is
+    matched literally, so an uppercase or U-label form would miss.
+    """
+    return _public_suffix_list().privatesuffix(domain) or domain

@@ -608,8 +608,32 @@ class Base(Configuration):
     #               failure. Use this when running against a controlled relay
     #               with a valid cert (SMTP AUTH credentials are sent inside
     #               the TLS tunnel, so an unverified peer is a MITM risk).
+    #
+    # NOTE: neither DANE (RFC 7672) nor MTA-STS (RFC 8461) is implemented, so
+    # on the direct-MX path there is no way to learn that a given destination
+    # promised TLS. "may" is therefore the only workable default there, and a
+    # STARTTLS-stripping MITM on that path remains possible.
     MTA_OUT_SMTP_TLS_SECURITY_LEVEL = values.Value(
         "may", environ_name="MTA_OUT_SMTP_TLS_SECURITY_LEVEL", environ_prefix=None
+    )
+    # Split from the direct-MX level so the relay leg can be hardened
+    # independently: the relay is a host the operator chose and controls, so
+    # the excuse for opportunistic TLS ("public MXes serve bad certs") does
+    # not apply and "secure" (verified, mandatory) is the right target.
+    #
+    # It still ships as "may". Existing installs relay through an internal MTA
+    # that often speaks plaintext on port 25, and defaulting to "secure" would
+    # not degrade them — ``_starttls_upgrade`` defers every recipient, so all
+    # outbound mail silently enters the retry ladder for days after an
+    # upgrade. Set it to "secure" once you know your relay presents a valid
+    # certificate. An install that had set MTA_OUT_SMTP_TLS_SECURITY_LEVEL to
+    # something else gets a startup warning rather than an inherited value:
+    # the two legs are configured apart on purpose, so the split is announced
+    # rather than papered over.
+    MTA_OUT_RELAY_TLS_SECURITY_LEVEL = values.Value(
+        "may",
+        environ_name="MTA_OUT_RELAY_TLS_SECURITY_LEVEL",
+        environ_prefix=None,
     )
 
     MESSAGES_ACCEPT_ALL_EMAILS = values.BooleanValue(
@@ -790,15 +814,66 @@ class Base(Configuration):
     # Can be a list for key rotation: ['new_key', 'old_key']
     SALT_KEY = values.ListValue([], environ_name="SALT_KEY", environ_prefix=None)
 
+    # DNS resolution. Every record lookup walks the delegation chain from the
+    # root and validates DNSSEC locally (see core.services.dns.resolver), so
+    # the deployment needs outbound UDP/TCP 53 to arbitrary authoritative
+    # nameservers — a policy that only permits DNS to a local resolver will
+    # not work.
+    #
+    # TIMEOUT is per query to one nameserver, not per resolution: how long a
+    # slow authoritative server on one hop of the chain gets before the
+    # resolver sweeps on to a sibling. Every server is tried once per sweep,
+    # and there are up to 2 further sweeps.
+    #
+    # MAX_RESOLUTION_TIME is the budget that actually binds. It covers the
+    # entire walk from the root, and each query's timeout is clamped to what
+    # is left of it, so raising TIMEOUT cannot make one resolution take
+    # longer — it only shifts time from retrying towards waiting. The stub
+    # lookups this replaced used lifetime=10 for a single hop to a resolver
+    # that did the recursion for us, so 10 is not the equivalent figure.
+    #
+    # Worst case to be aware of: the SPF include check walks up to 10 domains
+    # sequentially (RFC 7208's lookup limit) and can spend this budget on each,
+    # inside a single request to the DNS-check endpoint.
+    DNS_RESOLVER_TIMEOUT = values.FloatValue(
+        5.0, environ_name="DNS_RESOLVER_TIMEOUT", environ_prefix=None
+    )
+    DNS_RESOLVER_MAX_RESOLUTION_TIME = values.FloatValue(
+        15.0,
+        environ_name="DNS_RESOLVER_MAX_RESOLUTION_TIME",
+        environ_prefix=None,
+    )
+
     # DKIM settings
     MESSAGES_DKIM_DEFAULT_SELECTOR = values.Value(
         "stmessages", environ_name="MESSAGES_DKIM_DEFAULT_SELECTOR", environ_prefix=None
     )
 
-    # DKIM verification settings
+    # DKIM verification settings. Re-check our own signature against public
+    # DNS before sending, and — the same question asked earlier and cheaper —
+    # refuse to send a message whose From domain is not the domain the
+    # signature is minted with. A valid signature that does not align with
+    # From fails DMARC at every enforcing receiver, so verifying the signature
+    # while sending it misaligned would confirm the wrong half.
     MESSAGES_DKIM_VERIFY_OUTGOING = values.BooleanValue(
         default=False,
         environ_name="MESSAGES_DKIM_VERIFY_OUTGOING",
+        environ_prefix=None,
+    )
+    # Sub-option of the setting above, and inert without it: refuse a DKIM key
+    # lookup whose answer is not DNSSEC-secure while re-checking our own
+    # signature before sending. Validation is done locally by the recursive
+    # resolver, so this does not depend on an upstream resolver's AD bit being
+    # honest.
+    #
+    # Named for the outgoing path on purpose. Inbound DKIM verification shares
+    # the same function but never requires DNSSEC: most sending domains are
+    # still unsigned, so an INSECURE answer for one of them is a correct
+    # result rather than an attack, and requiring it there would mark ordinary
+    # mail as unverified.
+    MESSAGES_DKIM_VERIFY_OUTGOING_REQUIRE_DNSSEC = values.BooleanValue(
+        default=False,
+        environ_name="MESSAGES_DKIM_VERIFY_OUTGOING_REQUIRE_DNSSEC",
         environ_prefix=None,
     )
 
@@ -1117,6 +1192,13 @@ class Base(Configuration):
         "redis://redis:6379", environ_name="CELERY_BROKER_URL", environ_prefix=None
     )
     CELERY_RESULT_BACKEND = "django-db"
+    # Eager tasks must persist their result too. Celery skips storing it under
+    # ``task_always_eager`` unless this is set, so a fresh ``AsyncResult`` in
+    # the task-status endpoint finds no row and reports PENDING forever — the
+    # client polls that field to decide when to stop. Only eager profiles are
+    # affected (a real worker stores results on the normal ``mark_as_done``
+    # path), but it belongs here so every eager profile inherits it.
+    CELERY_TASK_STORE_EAGER_RESULT = True
     CELERY_CACHE_BACKEND = "django-cache"
     CELERY_BROKER_TRANSPORT_OPTIONS = values.DictValue({})
     CELERY_RESULT_EXTENDED = True
@@ -1557,10 +1639,42 @@ class Base(Configuration):
                     removed_var,
                 )
 
-        if self.MTA_OUT_SMTP_TLS_SECURITY_LEVEL not in {"none", "may", "secure"}:
-            raise ValueError(
-                f"Invalid MTA_OUT_SMTP_TLS_SECURITY_LEVEL: {self.MTA_OUT_SMTP_TLS_SECURITY_LEVEL}"
+        # Both levels, not just the direct-MX one: anything that is not
+        # exactly "secure" makes ``_build_tls_context`` fall back to
+        # CERT_NONE, so a typo ("required", "Secure") silently downgrades the
+        # relay leg to unverified TLS — with SMTP AUTH credentials on it —
+        # and nothing says so.
+        # The relay level was split out of MTA_OUT_SMTP_TLS_SECURITY_LEVEL,
+        # which in relay mode governed the relay leg and nothing else. The old
+        # value is deliberately NOT carried over: the two legs face different
+        # peers and are meant to be set apart, and inheriting across a rename
+        # would leave an operator with a level they never wrote for a leg they
+        # never configured. Say so instead, so an install that hardened the old
+        # setting learns its relay is now on the new default rather than
+        # discovering it from a packet capture. Compared against the effective
+        # value, so the common case of both being "may" stays quiet.
+        smtp_level_env = os.environ.get("MTA_OUT_SMTP_TLS_SECURITY_LEVEL")
+        if (
+            os.environ.get("MTA_OUT_RELAY_TLS_SECURITY_LEVEL") is None
+            and smtp_level_env
+            and smtp_level_env != self.MTA_OUT_RELAY_TLS_SECURITY_LEVEL
+        ):
+            logger.warning(
+                "MTA_OUT_SMTP_TLS_SECURITY_LEVEL is %r but "
+                "MTA_OUT_RELAY_TLS_SECURITY_LEVEL is unset, so the relay leg "
+                "now uses %r. It no longer follows the direct-MX setting: set "
+                "it explicitly to keep the relay at %r.",
+                smtp_level_env,
+                self.MTA_OUT_RELAY_TLS_SECURITY_LEVEL,
+                smtp_level_env,
             )
+
+        for setting_name, level in (
+            ("MTA_OUT_SMTP_TLS_SECURITY_LEVEL", self.MTA_OUT_SMTP_TLS_SECURITY_LEVEL),
+            ("MTA_OUT_RELAY_TLS_SECURITY_LEVEL", self.MTA_OUT_RELAY_TLS_SECURITY_LEVEL),
+        ):
+            if level not in {"none", "may", "secure"}:
+                raise ValueError(f"Invalid {setting_name}: {level}")
 
         # Deprecated fields mapping
         deprecated_settings_mapping = (
