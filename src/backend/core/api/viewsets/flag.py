@@ -31,6 +31,9 @@ class ChangeFlagView(APIView):
 
     permission_classes = [permissions.IsAllowedToAccess]
     action = "change_flag"
+    # There is no object for DRF to check on this collection-level APIView:
+    # every id in the request body is filtered through ThreadAccess below.
+    checks_access_in_view = True
 
     @extend_schema(
         tags=["flags"],

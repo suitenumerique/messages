@@ -707,19 +707,37 @@ class TestImportCreate:
             assert response.status_code == status.HTTP_400_BAD_REQUEST
             assert "imap_port" in response.data
 
-    def test_create_accepts_nonstandard_imap_port(self, api_client, mailbox):
-        """Ports stay flexible — any valid TCP port, not just 143/993."""
+    def test_create_refuses_a_nonstandard_imap_port(self, api_client, mailbox):
+        """Ports are allowlisted, not merely range-checked.
+
+        The host is SSRF-validated but the port was not, which made this
+        endpoint a port-scan oracle against any public host: connect, refuse
+        and timeout are distinguishable outcomes. Widening the allowlist is a
+        deployment decision (MESSAGES_IMPORT_IMAP_ALLOWED_PORTS), not a
+        request parameter.
+        """
         with patch("core.services.importer.service.run_import_task"):
             response = api_client.post(
                 reverse("mailbox-imports-list", kwargs={"mailbox_id": mailbox.id}),
                 self._imap_payload(mode="oneshot", imap_port=1143),
                 format="json",
             )
+        assert response.status_code == status.HTTP_400_BAD_REQUEST
+        assert "imap_port" in response.data
+
+    def test_create_accepts_an_allowlisted_imap_port(self, api_client, mailbox):
+        """The standard ports still work end to end."""
+        with patch("core.services.importer.service.run_import_task"):
+            response = api_client.post(
+                reverse("mailbox-imports-list", kwargs={"mailbox_id": mailbox.id}),
+                self._imap_payload(mode="oneshot", imap_port=143),
+                format="json",
+            )
         assert response.status_code == status.HTTP_202_ACCEPTED
         # The port is persisted in the (encrypted) credentials, not just
         # accepted — EncryptedJSONField round-trips scalars as strings.
         channel = models.Channel.objects.get(id=response.data["id"])
-        assert int(channel.encrypted_settings["imap"]["imap_port"]) == 1143
+        assert int(channel.encrypted_settings["imap"]["imap_port"]) == 143
 
 
 @pytest.mark.django_db

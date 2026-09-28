@@ -754,16 +754,20 @@ class ThreadViewSet(
                 # can access via ThreadAccess. We don't use get_queryset()
                 # because it applies extra filters (trashed, spam, labels,
                 # booleans) that OpenSearch already handles.
+                #
+                # With a mailbox_id, also require access through that mailbox,
+                # like the non-search path: a stale index document must not
+                # surface a thread the user only reaches via another mailbox.
+                access_filter = models.ThreadAccess.objects.filter(
+                    mailbox__accesses__user=request.user,
+                    thread=OuterRef("pk"),
+                )
+                if mailbox_id:
+                    access_filter = access_filter.filter(mailbox_id=mailbox_id)
+
                 threads = models.Thread.objects.filter(
                     id__in=thread_ids,
-                ).filter(
-                    Exists(
-                        models.ThreadAccess.objects.filter(
-                            mailbox__accesses__user=request.user,
-                            thread=OuterRef("pk"),
-                        )
-                    ),
-                )
+                ).filter(Exists(access_filter))
                 threads = self._annotate_thread_permissions(
                     threads, request.user, mailbox_id
                 )

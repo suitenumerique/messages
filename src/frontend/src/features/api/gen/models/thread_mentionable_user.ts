@@ -8,7 +8,7 @@
 import type { ThreadMentionableUserCustomAttributes } from "./thread_mentionable_user_custom_attributes";
 
 /**
- * User listed in a thread's mention suggestions, with comment capability flag.
+ * User listed in a thread's roster, with what they may do on it.
  */
 export type ThreadMentionableUser = {
   /** primary key for the record as UUID */
@@ -20,4 +20,5 @@ export type ThreadMentionableUser = {
   /** Get custom attributes for the instance. */
   readonly custom_attributes: ThreadMentionableUserCustomAttributes;
   readonly can_post_comments: boolean;
+  readonly can_be_assigned: boolean;
 };

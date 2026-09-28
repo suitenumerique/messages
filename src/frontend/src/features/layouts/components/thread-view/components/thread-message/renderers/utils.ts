@@ -17,3 +17,11 @@ export const parseDimension = (dimension: string = ''): number => {
             return Infinity;
     }
 };
+
+// Extract the first candidate URL of a srcset attribute. A URL may contain commas,
+// so as in the HTML spec, the URL ends at the first whitespace and only its
+// trailing commas are candidate separators.
+export const getFirstSrcsetUrl = (srcset: string): string | null => {
+    const url = srcset.replace(/^[\s,]+/, "").match(/^\S+/)?.[0].replace(/,+$/, "");
+    return url || null;
+};

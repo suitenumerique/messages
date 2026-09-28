@@ -94,6 +94,15 @@ class MessageViewSet(
                 uuid.UUID(mailbox_id)
             except ValueError as exc:
                 raise drf.exceptions.ValidationError("Invalid UUID format") from exc
+            # ``with_read_state`` subqueries ThreadAccess.read_at for this
+            # mailbox. Validating the UUID says nothing about who owns it, so
+            # we must check access to it.
+            if not models.Mailbox.objects.filter(
+                id=mailbox_id, accesses__user=user
+            ).exists():
+                raise drf.exceptions.PermissionDenied(
+                    "You do not have access to this mailbox."
+                )
             queryset = queryset.with_read_state(mailbox_id)
 
         if self.action == "list":

@@ -81,7 +81,9 @@ const ThreadMessageBody = ({ bodyParts, attachments = [], isHidden = false, mess
     const areLinksDisabled = Boolean(selectedThread?.is_spam);
     const areLinksDisabledRef = useRef(areLinksDisabled);
     areLinksDisabledRef.current = areLinksDisabled;
-    const { IMAGE_PROXY_ENABLED: canDisplayExternalImages, MESSAGE_TRUSTED_LINK_DOMAINS: trustedLinkDomains } = useConfig();
+    const { IMAGE_PROXY_ENABLED: isImageProxyEnabled, MESSAGE_TRUSTED_LINK_DOMAINS: trustedLinkDomains } = useConfig();
+    // The image proxy is scoped to a mailbox, without one external images cannot be displayed.
+    const canDisplayExternalImages = isImageProxyEnabled && Boolean(selectedMailbox);
     const [displayExternalImages, setDisplayExternalImages] = useState(() => {
         const consentMessageIds = sessionStorage.getItem(EXTERNAL_IMAGES_CONSENT_KEY);
         if (consentMessageIds) {
@@ -115,11 +117,10 @@ const ThreadMessageBody = ({ bodyParts, attachments = [], isHidden = false, mess
     const externalImageOptions = useMemo(() => ({
         canDisplayExternalImages,
         displayExternalImages,
-        selectedMailboxId: selectedMailbox?.id,
         onExternalImageDetected: () => { hasExternalImagesRef.current = true; },
         getProxiedUrl: (url: string) => selectedMailbox
             ? toNativeMediaUrl(getRequestUrl(getMailboxesImageProxyListUrl(selectedMailbox.id, { url })))
-            : url,
+            : null,
     }), [canDisplayExternalImages, displayExternalImages, selectedMailbox]);
 
     const sanitizedHtmlBody = useMemo(() => {

@@ -135,9 +135,13 @@ class IsAllowedToAccess(IsAuthenticated):
                     .filter(thread_id=thread_id_from_url)
                     .exists()
                 )
-            # Allow non-list actions (like detail views or specific APIViews like SendMessageView)
-            # to proceed to object-level checks or handle permissions within the view.
-            return True
+            # Detail actions are checked by ``has_object_permission``. Other
+            # actions (collection-level @action, plain APIView) have no object
+            # to check, so they are denied unless the view declares
+            # ``checks_access_in_view = True`` and does the check itself.
+            if getattr(view, "detail", False):
+                return True
+            return bool(getattr(view, "checks_access_in_view", False))
 
         # --- The following logic only applies if is_list_action is True --- #
         # Check access for nested thread routes (e.g., /threads/{id}/events/)

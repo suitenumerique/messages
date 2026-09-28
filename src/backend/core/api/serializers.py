@@ -350,12 +350,18 @@ class UserWithoutAbilitiesSerializer(UserSerializer):
 
 
 class ThreadMentionableUserSerializer(UserWithoutAbilitiesSerializer):
-    """User listed in a thread's mention suggestions, with comment capability flag."""
+    """User listed in a thread's roster, with what they may do on it."""
 
     can_post_comments = serializers.BooleanField(read_only=True)
+    # Same rule as ``assign_users``: False means the API will refuse to
+    # assign this user.
+    can_be_assigned = serializers.BooleanField(read_only=True)
 
     class Meta(UserWithoutAbilitiesSerializer.Meta):
-        fields = UserWithoutAbilitiesSerializer.Meta.fields + ["can_post_comments"]
+        fields = UserWithoutAbilitiesSerializer.Meta.fields + [
+            "can_post_comments",
+            "can_be_assigned",
+        ]
         read_only_fields = fields
 
 
@@ -2109,8 +2115,8 @@ class ImportCreateSerializer(serializers.Serializer):  # pylint: disable=abstrac
     )
     # imap source
     imap_server = serializers.CharField(required=False)
-    # Kept deliberately flexible (any valid TCP port, not just 143/993) so
-    # non-standard IMAP deployments work — but bounded to a real port range.
+    # Also checked against MESSAGES_IMPORT_IMAP_ALLOWED_PORTS in validate():
+    # an arbitrary port would make this endpoint a port scanner.
     imap_port = serializers.IntegerField(required=False, min_value=1, max_value=65535)
     # CharField, not EmailField: an IMAP username is a login (often but not
     # always an email). (Also sidesteps a platform EmailValidator regression on
@@ -2152,6 +2158,11 @@ class ImportCreateSerializer(serializers.Serializer):  # pylint: disable=abstrac
             if missing:
                 raise serializers.ValidationError(
                     dict.fromkeys(missing, "Required for an IMAP import.")
+                )
+            allowed = settings.MESSAGES_IMPORT_IMAP_ALLOWED_PORTS
+            if allowed and attrs["imap_port"] not in allowed:
+                raise serializers.ValidationError(
+                    {"imap_port": "Port not in the server allowlist."}
                 )
         return attrs
 

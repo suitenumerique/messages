@@ -176,6 +176,13 @@ class IMAPConnectionManager:
         self.connection = None
 
     def __enter__(self):
+        # Re-checked here: a stored continuous import may predate an allowlist change.
+        allowed = settings.MESSAGES_IMPORT_IMAP_ALLOWED_PORTS
+        if allowed and self.port not in allowed:
+            error_msg = f"Port {self.port} is not in the IMAP import allowlist."
+            logger.error(error_msg)
+            raise IMAPSecurityError(error_msg)
+
         # Validate the server hostname AND pin the vetted IP to prevent SSRF
         # (including DNS-rebinding TOCTOU): we connect to exactly the address
         # that passed validation, never a freshly re-resolved one.

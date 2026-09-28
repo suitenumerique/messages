@@ -582,6 +582,7 @@ Outbound message throttling limits the number of **external recipients** (recipi
 | `API_USERS_LIST_THROTTLE_RATE_SUSTAINED` | `180/hour` | Sustained rate limit on the users-list API (per user). | Optional |
 | `API_USERS_LIST_THROTTLE_RATE_BURST` | `30/minute` | Burst rate limit on the users-list API (per user). | Optional |
 | `API_CALDAV_CONFLICTS_THROTTLE_RATE` | `30/minute` | Rate limit on the CalDAV conflict-check API. | Optional |
+| `API_IMAGE_PROXY_THROTTLE_RATE` | `200/minute` | Per-user rate limit on the image proxy (one request per external image displayed). | Optional |
 | `API_WIDGET_INBOUND_CHANNEL_THROTTLE_RATE` | `30/minute` | Rate limit on inbound widget submissions, per widget channel. | Optional |
 | `API_WIDGET_INBOUND_IP_THROTTLE_RATE` | `10/minute` | Per-IP burst limit on inbound widget submissions. | Optional |
 | `API_DEVICE_REGISTRATION_THROTTLE_RATE` | `30/hour` | Per-user rate limit on push device (re)registration. Clients re-register on every cold launch and on token rotation, so this is deliberately loose; the hard ceiling on distinct devices is `PUSH_MAX_DEVICES_PER_USER`. | Optional |
@@ -590,6 +591,9 @@ Outbound message throttling limits the number of **external recipients** (recipi
 
 **Note**: By default `IMAGE_PROXY_MAX_SIZE` is set to 5MB. We do not encourage to increase this value as
 it can lead to memory exhaustion, increase at your own risk.
+
+Only ports 80 and 443 are proxied, redirects included: images served on other ports are not displayed.
+The proxy is rate-limited per user by `API_IMAGE_PROXY_THROTTLE_RATE`.
 
 | Variable | Default | Description | Required |
 |----------|---------|-------------|----------|
@@ -682,6 +686,7 @@ channels and resumed from a Redis watermark by `run_import_task`. See
 
 | Variable | Default | Description | Required |
 |----------|---------|-------------|----------|
+| `MESSAGES_IMPORT_IMAP_ALLOWED_PORTS` | `143,993` | Comma-separated ports an IMAP import may connect to. Set to an empty value to allow any port (not recommended: users could then probe arbitrary ports of public hosts). | Optional |
 | `MESSAGES_IMPORT_IMAP_TIMEOUT` | `60` | Socket timeout (seconds) for IMAP import connections — applied to the connect and to each subsequent command (login, SEARCH, FETCH). Tripping it surfaces as a transient error the run resumes from. Replaces `IMAP_TIMEOUT`. | Optional |
 | `MESSAGES_IMPORT_STALL_TIMEOUT` | `900` | Seconds of heartbeat silence after which the scheduler treats a running import as crashed and re-dispatches it (which resumes from its watermark). Also the run-lock TTL. Must comfortably exceed the worst-case time between progress flushes. Continuous IMAP channels use `MESSAGES_IMPORT_IMAP_POLL_INTERVAL` as their clock instead. | Optional |
 | `MESSAGES_IMPORT_IMAP_POLL_INTERVAL` | `900` | Poll cadence (seconds) for continuous IMAP imports: the scheduler re-dispatches each active continuous channel this often to pull new mail. Global (not settable per import); must be a positive integer. | Optional |

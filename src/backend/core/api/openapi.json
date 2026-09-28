@@ -3107,7 +3107,7 @@
         "/api/v1.0/mailboxes/{mailbox_id}/image-proxy/": {
             "get": {
                 "operationId": "mailboxes_image_proxy_list",
-                "description": "Proxy an external image through the server.\n\n        This endpoint fetches images from external sources and serves them\n        through the application to protect user privacy. Requires the\n        IMAGE_PROXY_ENABLED environment variable to be set to true.\n        ",
+                "description": "Proxy an external image through the server.\n\n        This endpoint fetches images from external sources and serves them\n        through the application to protect user privacy. Requires the\n        IMAGE_PROXY_ENABLED environment variable to be set to true.\n        Only ports 80 and 443 are allowed, and requests are rate-limited\n        per user.\n        ",
                 "parameters": [
                     {
                         "in": "path",
@@ -3148,6 +3148,9 @@
                     },
                     "413": {
                         "description": "Image too large"
+                    },
+                    "429": {
+                        "description": "Too many requests"
                     },
                     "502": {
                         "description": "Failed to fetch external image"
@@ -11349,7 +11352,7 @@
             },
             "ThreadMentionableUser": {
                 "type": "object",
-                "description": "User listed in a thread's mention suggestions, with comment capability flag.",
+                "description": "User listed in a thread's roster, with what they may do on it.",
                 "properties": {
                     "id": {
                         "type": "string",
@@ -11378,9 +11381,14 @@
                     "can_post_comments": {
                         "type": "boolean",
                         "readOnly": true
+                    },
+                    "can_be_assigned": {
+                        "type": "boolean",
+                        "readOnly": true
                     }
                 },
                 "required": [
+                    "can_be_assigned",
                     "can_post_comments",
                     "custom_attributes",
                     "email",

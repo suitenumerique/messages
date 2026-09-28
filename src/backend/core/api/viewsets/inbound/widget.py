@@ -1,6 +1,7 @@
 """Widget channel implementation for receiving messages from web widgets."""
 
 import logging
+import re
 from html import escape as html_escape
 from urllib.parse import urlparse
 
@@ -22,6 +23,15 @@ from core.mda.inbound import deliver_inbound_message
 from core.mda.utils import compose_options_for, current_sent_at
 
 logger = logging.getLogger(__name__)
+
+
+# Referer hosts we accept to put in the subject line: DNS names and IPv4.
+_HOSTNAME_RE = re.compile(r"^[a-z0-9](?:[a-z0-9._-]{0,251}[a-z0-9])?$", re.IGNORECASE)
+
+
+def _is_plausible_hostname(hostname: str) -> bool:
+    """True when a Referer host is safe to render as the ticket source."""
+    return bool(_HOSTNAME_RE.match(hostname))
 
 
 class WidgetChannelThrottle(SimpleRateThrottle):
@@ -204,11 +214,16 @@ class InboundWidgetViewSet(viewsets.GenericViewSet):
             referer = sanitize_header(request.META.get("HTTP_REFERER"))
             prepend_headers.append(("X-StMsg-Widget-Referer", referer))
             try:
-                parsed_referer = urlparse(referer)
-                if parsed_referer.netloc:
-                    source_name = parsed_referer.netloc
+                # The Referer is client-controlled: only use it for display,
+                # and only if it looks like a bare host (``netloc`` would also
+                # carry userinfo and port).
+                hostname = urlparse(referer).hostname
+                if hostname and _is_plausible_hostname(hostname):
+                    source_name = hostname
             except ValueError as e:
-                logger.warning("Cannot retrieve netloc from referer %s: %s", referer, e)
+                logger.warning(
+                    "Cannot retrieve hostname from referer %s: %s", referer, e
+                )
 
         prepend_headers.append(
             (

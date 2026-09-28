@@ -8,9 +8,18 @@
  * remote loads (which survive sanitisation by design).
  */
 import { describe, it, expect } from "vitest";
-import { renderTextHtml } from "./text_html";
+import { renderTextHtml, ExternalImageOptions } from "./text_html";
 
 const render = (html: string) => renderTextHtml(html, new Map());
+
+const renderWithImages = (html: string, overrides: Partial<ExternalImageOptions> = {}) =>
+  renderTextHtml(html, new Map(), {
+    canDisplayExternalImages: true,
+    displayExternalImages: true,
+    onExternalImageDetected: () => {},
+    getProxiedUrl: (url) => `/proxy?url=${encodeURIComponent(url)}`,
+    ...overrides,
+  });
 
 describe("layer 1 — sanitiser blocks script execution", () => {
   it.each([
@@ -50,6 +59,46 @@ describe("layer 1 — sanitiser blocks script execution", () => {
   });
 });
 
+describe("layer 1 — remote images only load through the proxy", () => {
+  it("drops srcset so the browser cannot pick a non-proxied candidate", () => {
+    const out = renderWithImages(
+      `<img src="https://e.example/a.png" srcset="https://evil.example/t.png 2x" sizes="50vw" width="99" height="99">`
+    );
+    expect(out).not.toMatch(/srcset|sizes|evil\.example/i);
+    expect(out).toContain(`src="/proxy?url=${encodeURIComponent("https://e.example/a.png")}"`);
+  });
+
+  it("falls back on the first srcset candidate when there is no src", () => {
+    const out = renderWithImages(
+      `<img srcset="https://e.example/a,b.png 1x, https://e.example/c.png 2x" width="99" height="99">`
+    );
+    expect(out).not.toMatch(/srcset/i);
+    expect(out).toContain(`src="/proxy?url=${encodeURIComponent("https://e.example/a,b.png")}"`);
+  });
+
+  it("drops a srcset-only image when external images are not displayed", () => {
+    expect(renderWithImages(
+      `<img srcset="https://evil.example/t.png 1x" width="99" height="99">`,
+      { displayExternalImages: false },
+    )).not.toMatch(/<img|evil\.example/i);
+  });
+
+  it("renders the <img> fallback of a <picture> instead of its sources", () => {
+    const out = renderWithImages(
+      `<picture><source srcset="https://evil.example/t.webp" type="image/webp"><img src="https://e.example/a.png" width="99" height="99"></picture>`
+    );
+    expect(out).not.toMatch(/<source|evil\.example/i);
+    expect(out).toContain(`src="/proxy?url=${encodeURIComponent("https://e.example/a.png")}"`);
+  });
+
+  it("drops the image when it cannot be proxied", () => {
+    expect(renderWithImages(
+      `<img src="https://e.example/a.png" width="99" height="99">`,
+      { getProxiedUrl: () => null },
+    )).not.toMatch(/<img/i);
+  });
+});
+
 describe("layer 2 — the frame contains what the sanitiser lets through", () => {
   /**
    * These payloads survive DOMPurify on purpose: a message may legitimately
@@ -65,8 +114,8 @@ describe("layer 2 — the frame contains what the sanitiser lets through", () =>
   it("documents that layout and form markup do survive sanitisation", () => {
     expect(render(`<div style="position:fixed;top:0">x</div>`)).toMatch(/position/i);
     expect(render(`<form action="//evil.example"><input name="pw"></form>`)).toMatch(/<input/i);
-    expect(render(`<img srcset="//evil.example/t.png 1x" width="99" height="99">`))
-      .toMatch(/srcset/i);
+    expect(render(`<table background="//evil.example/t.png"><tr><td>x</td></tr></table>`))
+      .toMatch(/background/i);
   });
 
   it("the mount is a sandboxed iframe that cannot run scripts or submit forms", async () => {
@@ -93,7 +142,7 @@ describe("layer 2 — the frame contains what the sanitiser lets through", () =>
     expect(src).toMatch(/"default-src 'none'"/);
     expect(src).toMatch(/"connect-src 'none'"/);
     // Remote images only via our own origin/API — this is what stops a
-    // srcset or background attribute leaking a read receipt.
+    // background attribute or a CSS url() leaking a read receipt.
     expect(src).toMatch(/img-src 'self' data: \$\{getApiOrigin\(\)\}/);
   });
 });

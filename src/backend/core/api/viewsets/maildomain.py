@@ -168,7 +168,10 @@ class AdminMailDomainViewSet(
         Check DNS records for a specific mail domain.
         Returns the expected DNS records with their current status.
         """
-        maildomain = get_object_or_404(models.MailDomain, pk=maildomain_pk)
+        # Scoped through get_queryset(), not a bare model lookup: authZ here
+        # then rests on the queryset as well as the permission class, so a
+        # future change to either one alone can't open the endpoint up.
+        maildomain = get_object_or_404(self.get_queryset(), pk=maildomain_pk)
 
         # Perform DNS check (always fresh, never cached)
         check_results = check_dns_records(maildomain)

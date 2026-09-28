@@ -17,6 +17,7 @@ import requests
 from core.services.ssrf import (
     MAX_REDIRECTS,
     SSRFProtectedAdapter,
+    SSRFResolutionError,
     SSRFSafeSession,
     SSRFValidationError,
     assert_public_ip,
@@ -66,6 +67,32 @@ class TestValidateHostnameAllowlist:
         mock_dns.side_effect = socket.gaierror("no such host")
         with pytest.raises(SSRFValidationError, match="Unable to resolve"):
             validate_hostname("trusted.internal.test")
+
+
+class TestValidateHostnameErrorKinds:
+    """Callers that retry must tell a DNS failure from a blocked address."""
+
+    @patch("core.services.ssrf.socket.getaddrinfo")
+    def test_resolution_failure_raises_resolution_error(self, mock_dns):
+        """A DNS failure is an ``SSRFResolutionError``, still caught as SSRF."""
+        mock_dns.side_effect = socket.gaierror("temporary failure")
+        with pytest.raises(SSRFResolutionError) as excinfo:
+            validate_hostname("relay.example.test")
+        assert isinstance(excinfo.value, SSRFValidationError)
+
+    @patch("core.services.ssrf.socket.getaddrinfo")
+    def test_blocked_address_is_not_a_resolution_error(self, mock_dns):
+        """A host resolving to a blocked range is a plain validation error."""
+        mock_dns.return_value = _addrinfo(PRIVATE_IP)
+        with pytest.raises(SSRFValidationError) as excinfo:
+            validate_hostname("relay.example.test")
+        assert not isinstance(excinfo.value, SSRFResolutionError)
+
+    def test_blocked_ip_literal_is_not_a_resolution_error(self):
+        """IP literals are never resolved, so they can only be blocked."""
+        with pytest.raises(SSRFValidationError) as excinfo:
+            validate_hostname("10.0.0.5", allow_ip_literal=True)
+        assert not isinstance(excinfo.value, SSRFResolutionError)
 
 
 class TestAssertPublicIP:

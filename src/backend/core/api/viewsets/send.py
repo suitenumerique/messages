@@ -83,6 +83,10 @@ class SendMessageView(APIView):
     # We still need senderId for the sending context.
 
     action = "send"
+    # No object for DRF to check on this APIView: the draft is fetched scoped
+    # to the sender mailbox's ThreadAccess, and send rights are re-checked
+    # against that mailbox below.
+    checks_access_in_view = True
 
     def post(self, request):
         """Send a draft message identified by messageId."""

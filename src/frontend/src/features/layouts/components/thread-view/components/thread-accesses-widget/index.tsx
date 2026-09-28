@@ -9,6 +9,7 @@ import {
     MailboxLight,
     UserWithoutAbilities,
     getThreadsAccessesListQueryKey,
+    getThreadsUsersListQueryKey,
     threadsAccessesListResponse,
     useMailboxesSearchList,
     useThreadsAccessesCreate,
@@ -109,6 +110,15 @@ export const ThreadAccessesWidget = forwardRef<ThreadAccessesWidgetHandle, Threa
         );
     };
 
+    // The thread roster carries `can_be_assigned`, derived from accesses:
+    // any access change must refresh it or the quick-assign picker goes stale.
+    const invalidateThreadUsers = () => {
+        if (!selectedThread?.id) return;
+        queryClient.invalidateQueries({
+            queryKey: getThreadsUsersListQueryKey(selectedThread.id),
+        });
+    };
+
     const {
         deleteThreadAccess,
         isPending: isDeletePending,
@@ -118,6 +128,7 @@ export const ThreadAccessesWidget = forwardRef<ThreadAccessesWidgetHandle, Threa
         mutation: {
             onSuccess: () => {
                 invalidateMailbox();
+                invalidateThreadUsers();
                 if (selectedThread?.id) {
                     queryClient.invalidateQueries({
                         queryKey: getThreadsAccessesListQueryKey(selectedThread.id),
@@ -130,6 +141,7 @@ export const ThreadAccessesWidget = forwardRef<ThreadAccessesWidgetHandle, Threa
         mutation: {
             onSuccess: (data) => {
                 invalidateMailbox();
+                invalidateThreadUsers();
                 patchAccessesCache((prev) =>
                     prev.map((a) =>
                         a.id === data.data.id ? { ...a, role: data.data.role } : a,

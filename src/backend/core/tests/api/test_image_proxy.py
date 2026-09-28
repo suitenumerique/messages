@@ -430,7 +430,7 @@ class TestImageProxyViewSet:
 
         assert response.status_code == status.HTTP_200_OK
         assert response["Content-Type"] == "image/jpeg"
-        assert response["Cache-Control"] == "public, max-age=3600"
+        assert response["Cache-Control"] == "private, max-age=3600"
 
     @override_settings(IMAGE_PROXY_ENABLED=True)
     @patch("core.services.ssrf.socket.getaddrinfo")
@@ -581,7 +581,7 @@ class TestImageProxyViewSet:
 
         assert response.status_code == status.HTTP_200_OK
         assert response["Content-Type"] == "image/jpeg"
-        assert response["Cache-Control"] == "public, max-age=3600"
+        assert response["Cache-Control"] == "private, max-age=3600"
         assert response["X-Frame-Options"] == "DENY"
         assert response["X-Content-Type-Options"] == "nosniff"
         assert response["Referrer-Policy"] == "same-origin"

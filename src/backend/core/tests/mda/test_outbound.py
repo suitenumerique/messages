@@ -2,6 +2,7 @@
 # pylint: disable=unused-argument,too-many-lines
 
 import re
+import socket
 import threading
 import time
 from unittest.mock import MagicMock, call, patch
@@ -201,6 +202,7 @@ class TestSendOutboundMessage:
         # Check SMTP calls
         mock_smtp_send.assert_called_once_with(
             smtp_host="smtp.test",
+            smtp_ip=None,
             smtp_port=1025,
             envelope_from=draft_message.sender.email,
             recipient_emails={
@@ -1595,6 +1597,70 @@ class TestSendMessageSPFCheck:
             assert not mock_resolve.called
 
         assert mock_send_outbound.called
+
+
+@pytest.mark.django_db
+class TestSendMessagePerDomainRelaySSRF:
+    """A per-domain relay failing the SSRF check: fail for good or retry.
+
+    A blocked address is a configuration error that no retry will fix, while
+    a DNS failure may be transient.
+    """
+
+    @pytest.fixture(autouse=True)
+    def _isolate(self, settings):
+        """Only the relay check under test may stop the send."""
+        settings.MESSAGES_SPF_CHECK_OUTGOING = False
+        settings.MESSAGES_DKIM_VERIFY_OUTGOING = False
+        cache.clear()
+
+    @staticmethod
+    def _send_with_relay(mailbox_sender, **getaddrinfo_mock):
+        mailbox_sender.domain.custom_settings = {
+            "MTA_OUT_MODE": "relay",
+            "MTA_OUT_RELAY_HOST": "relay.example.test:25",
+        }
+        mailbox_sender.domain.save()
+        message, _, _, recipient, _ = _create_spf_test_message(mailbox_sender)
+
+        with (
+            patch("core.services.ssrf.socket.getaddrinfo", **getaddrinfo_mock),
+            patch("core.mda.outbound.send_smtp_mail") as mock_smtp_send,
+        ):
+            outbound.send_message(message)
+
+        mock_smtp_send.assert_not_called()
+        recipient.refresh_from_db()
+        return recipient
+
+    def test_blocked_relay_fails_without_retry(self, mailbox_sender):
+        """A relay resolving to a private IP fails the recipient right away."""
+        recipient = self._send_with_relay(
+            mailbox_sender,
+            return_value=[(socket.AF_INET, socket.SOCK_STREAM, 6, "", ("10.0.0.5", 0))],
+        )
+
+        assert recipient.delivery_status == enums.MessageDeliveryStatusChoices.FAILED
+        assert (
+            recipient.delivery_message
+            == "The outbound relay of this domain is not allowed"
+        )
+        assert recipient.retry_count == 0
+        assert recipient.retry_at is None
+
+    def test_unresolvable_relay_is_scheduled_for_retry(self, mailbox_sender):
+        """A DNS failure on the relay keeps the recipient in the retry schedule."""
+        recipient = self._send_with_relay(
+            mailbox_sender, side_effect=socket.gaierror("temporary failure")
+        )
+
+        assert recipient.delivery_status == enums.MessageDeliveryStatusChoices.RETRY
+        assert (
+            recipient.delivery_message
+            == "Unable to resolve the outbound relay of this domain"
+        )
+        assert recipient.retry_count == 1
+        assert recipient.retry_at is not None
 
 
 # 1x1 red pixel PNG, small enough to be used in tests

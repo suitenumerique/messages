@@ -656,6 +656,19 @@ class TestMTAJWTHardening:
         )
         assert response.status_code == status.HTTP_401_UNAUTHORIZED
 
+    @pytest.mark.parametrize("secret", ["", None])
+    def test_unconfigured_secret_is_refused(self, api_client, secret, settings):
+        """No configured secret means 401, not a 500 from PyJWT."""
+        token = self._token(b"")
+        settings.MDA_API_SECRET = secret
+        response = api_client.post(
+            "/api/v1.0/inbound/mta/check/",
+            data=b"",
+            content_type="application/json",
+            HTTP_AUTHORIZATION=f"Bearer {token}",
+        )
+        assert response.status_code == status.HTTP_401_UNAUTHORIZED
+
 
 @pytest.fixture(name="mta_logs")
 def fixture_mta_logs(caplog):

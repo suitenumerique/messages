@@ -1,5 +1,5 @@
 """Handles outbound email delivery logic: composing and sending messages."""
-# pylint: disable=broad-exception-caught
+# pylint: disable=broad-exception-caught, too-many-lines
 
 import json
 import logging
@@ -35,6 +35,11 @@ from core.mda.smtp import send_smtp_mail
 from core.mda.utils import compose_options_for, current_sent_at
 from core.services.blob_gc import schedule_for_gc
 from core.services.dns.check import check_spf_status
+from core.services.ssrf import (
+    SSRFResolutionError,
+    SSRFValidationError,
+    validate_hostname,
+)
 from core.services.throttle import check_and_increment_throttle
 from core.utils import ThreadStatsUpdateDeferrer
 
@@ -940,6 +945,14 @@ def send_outbound_email(
                 statuses[original] = status
         return statuses
 
+    def _fail_all(error: str, retry: bool) -> dict[str, Any]:
+        return _to_original(
+            {
+                wire: {"delivered": False, "error": error, "retry": retry}
+                for wire in wire_addresses
+            }
+        )
+
     # Use direct MX delivery
     if mta_out_mode == "direct":
         return _to_original(
@@ -947,9 +960,8 @@ def send_outbound_email(
         )
 
     if mta_out_mode == "relay":
-        mta_out_smtp_host = (
-            custom_settings.get("MTA_OUT_RELAY_HOST") or settings.MTA_OUT_RELAY_HOST
-        )
+        domain_relay_host = custom_settings.get("MTA_OUT_RELAY_HOST")
+        mta_out_smtp_host = domain_relay_host or settings.MTA_OUT_RELAY_HOST
         mta_out_smtp_username = (
             custom_settings.get("MTA_OUT_RELAY_USERNAME")
             or settings.MTA_OUT_RELAY_USERNAME
@@ -961,9 +973,37 @@ def send_outbound_email(
         if not mta_out_smtp_host:
             raise ValueError("MTA_OUT_RELAY_HOST is not configured")
 
+        relay_hostname = mta_out_smtp_host.split(":")[0]
+        relay_ip = None
+        if domain_relay_host:
+            # The deployment relay is trusted (often internal, e.g. mta-out).
+            # A per-domain relay gets the SSRF check of direct MX delivery and
+            # is dialed on the checked IP (no DNS rebinding), IPv4 first.
+            try:
+                relay_ips = validate_hostname(relay_hostname, allow_ip_literal=True)
+            except SSRFResolutionError:
+                # DNS may recover: leave it to the retry schedule.
+                logger.warning("Unable to resolve per-domain relay %r", relay_hostname)
+                return _fail_all(
+                    "Unable to resolve the outbound relay of this domain", True
+                )
+            except SSRFValidationError as exc:
+                # A configuration error no retry will fix: fail right away.
+                logger.error(
+                    "Refusing per-domain relay %r: %s. Add it to "
+                    "SSRF_ALLOWED_HOSTS if it is intentionally internal.",
+                    relay_hostname,
+                    exc,
+                )
+                return _fail_all(
+                    "The outbound relay of this domain is not allowed", False
+                )
+            relay_ip = next((ip for ip in relay_ips if ":" not in ip), relay_ips[0])
+
         return _to_original(
             send_smtp_mail(
-                smtp_host=(mta_out_smtp_host or "").split(":")[0],
+                smtp_host=relay_hostname,
+                smtp_ip=relay_ip,
                 smtp_port=int(
                     (mta_out_smtp_host or "").split(":")[1]
                     if ":" in mta_out_smtp_host

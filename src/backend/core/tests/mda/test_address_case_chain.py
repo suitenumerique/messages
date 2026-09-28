@@ -176,9 +176,12 @@ class TestInboundRecipientResolution:
 class TestOutboundEnvelope:
     """The SMTP envelope carries an ASCII wire form, or fails that recipient."""
 
-    RELAY_SETTINGS = {"MTA_OUT_MODE": "relay", "MTA_OUT_RELAY_HOST": "relay.test:25"}
+    # The relay comes from the deployment settings (``relay_settings``), not from
+    # a domain's custom_settings: a custom relay host is SSRF-validated, which
+    # these tests are not about.
+    RELAY_SETTINGS: dict = {}
 
-    def test_idn_domain_is_a_labelled_on_the_wire(self, monkeypatch):
+    def test_idn_domain_is_a_labelled_on_the_wire(self, relay_settings, monkeypatch):
         captured = {}
 
         def fake_send_smtp_mail(**kwargs):
@@ -200,7 +203,9 @@ class TestOutboundEnvelope:
         # MessageRecipient rows are keyed on.
         assert statuses == {"Someone@Exemplé.example": {"delivered": True}}
 
-    def test_non_ascii_local_part_reaches_the_smtp_layer(self, monkeypatch):
+    def test_non_ascii_local_part_reaches_the_smtp_layer(
+        self, relay_settings, monkeypatch
+    ):
         """We attempt delivery now; the hop decides, not us.
 
         Whether it can actually be sent is a per-hop SMTPUTF8 question,
@@ -224,7 +229,9 @@ class TestOutboundEnvelope:
         assert captured["recipient_emails"] == {"josé@example.com", "ok@example.com"}
         assert statuses["josé@example.com"]["delivered"] is True
 
-    def test_two_casings_of_one_address_both_get_the_status(self, monkeypatch):
+    def test_two_casings_of_one_address_both_get_the_status(
+        self, relay_settings, monkeypatch
+    ):
         """Distinct recipients can share one wire form; neither may lose its status.
 
         A recipient with no status reads as "outcome unknown" to
@@ -251,7 +258,9 @@ class TestOutboundEnvelope:
         assert statuses["user@Example.com"]["delivered"] is True
         assert statuses["user@example.com"]["delivered"] is True
 
-    def test_domain_with_no_a_label_fails_before_smtp(self, monkeypatch):
+    def test_domain_with_no_a_label_fails_before_smtp(
+        self, relay_settings, monkeypatch
+    ):
         """Still no wire form at all, so it never reaches a connection."""
 
         def explode(**_kwargs):

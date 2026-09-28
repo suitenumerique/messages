@@ -66,6 +66,10 @@ class MTAJWTAuthentication(BaseAuthentication):
       token can't be repurposed for a *different* body within that window.
       Enforced even for an empty body (the bodyless ``/check`` path).
 
+    There is a single secret with no overlap window: during a rotation, the
+    MDA and the MTA-in refuse each other's tokens until both run with the new
+    value.
+
     Returns None or (user, auth).
     """
 
@@ -73,6 +77,12 @@ class MTAJWTAuthentication(BaseAuthentication):
         auth_header = request.headers.get("Authorization")
         if not auth_header:
             return None
+
+        if not settings.MDA_API_SECRET:
+            # PyJWT raises TypeError / InvalidKeyError on an empty key, which
+            # would surface as a 500.
+            logger.error("MDA_API_SECRET is not configured, refusing MTA request")
+            raise AuthenticationFailed("Invalid token")
 
         try:
             jwt_token = auth_header.split(" ")[1]

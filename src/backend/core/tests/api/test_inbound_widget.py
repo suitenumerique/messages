@@ -396,6 +396,30 @@ class TestInboundWidgetDeliver:
             in parsed_email["htmlBody"][0]["content"]
         )
 
+    @pytest.mark.parametrize(
+        "referer, expected_subject",
+        [
+            ("https://example.com:8443/contact", "Message from example.com"),
+            # netloc would be "victim.example@evil.test"
+            ("http://victim.example@evil.test/", "Message from evil.test"),
+            ("https://bad<host>.test/", "Message from widget"),
+            ("not a url", "Message from widget"),
+        ],
+    )
+    def test_inbound_widget_subject_uses_referer_hostname(
+        self, api_client, channel, referer, expected_subject
+    ):
+        """Only a plausible Referer hostname ends up in the subject."""
+        response = api_client.post(
+            "/api/v1.0/inbound/widget/deliver/",
+            data={"email": "sender@example.com", "textBody": "Hello"},
+            HTTP_X_CHANNEL_ID=str(channel.id),
+            HTTP_REFERER=referer,
+        )
+
+        assert response.status_code == status.HTTP_200_OK
+        assert models.Message.objects.get().subject == expected_subject
+
     def test_inbound_widget_deliver_message_e2e(self, api_client):
         """Test that message is properly formatted with HTML, metadata, and tags."""
 

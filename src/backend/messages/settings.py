@@ -748,6 +748,13 @@ class Base(Configuration):
         environ_name="MESSAGES_IMPORT_IMAP_TIMEOUT",
         environ_prefix=None,
     )
+    # Ports an IMAP import may dial.
+    MESSAGES_IMPORT_IMAP_ALLOWED_PORTS = values.ListValue(
+        default=[143, 993],
+        converter=int,
+        environ_name="MESSAGES_IMPORT_IMAP_ALLOWED_PORTS",
+        environ_prefix=None,
+    )
 
     # Largest archive (bytes) an import will accept — checked before a worker is
     # spent on it. 0 disables the cap.
@@ -1011,6 +1018,13 @@ class Base(Configuration):
             "caldav_conflicts": values.Value(
                 default="30/minute",
                 environ_name="API_CALDAV_CONFLICTS_THROTTLE_RATE",
+                environ_prefix=None,
+            ),
+            # Per-user cap on the image proxy. One message view fetches one
+            # URL per external image, so this must fit large newsletters.
+            "image_proxy": values.Value(
+                default="200/minute",
+                environ_name="API_IMAGE_PROXY_THROTTLE_RATE",
                 environ_prefix=None,
             ),
             # Public widget deliver endpoint. The channel id is a public embed

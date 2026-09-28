@@ -310,6 +310,30 @@ class User(AbstractBaseUser, BaseModel, auth_models.PermissionsMixin):
         }
 
 
+# Per-domain overrides an operator may set on ``MailDomain.custom_settings``.
+#
+# Known keys are validated, but unknown keys are accepted: ``save()`` always
+# calls full_clean(), so a closed schema would make existing rows with other
+# keys fail on any unrelated save.
+SCHEMA_MAILDOMAIN_CUSTOM_SETTINGS = {
+    "type": "object",
+    "properties": {
+        "MTA_OUT_MODE": {"type": "string", "enum": ["direct", "relay"]},
+        # "host" or "host:port". Also SSRF-checked at send time, see
+        # ``send_outbound_email``.
+        "MTA_OUT_RELAY_HOST": {
+            "type": "string",
+            "pattern": r"^[A-Za-z0-9]([A-Za-z0-9.\-]*[A-Za-z0-9])?(:\d{1,5})?$",
+            "maxLength": 259,
+        },
+        "MTA_OUT_RELAY_USERNAME": {"type": "string", "maxLength": 255},
+        "MTA_OUT_RELAY_PASSWORD": {"type": "string", "maxLength": 255},
+        # Per-domain override of settings.SPAM_CONFIG, see core/mda/spam.py.
+        "SPAM_CONFIG": {"type": "object"},
+    },
+}
+
+
 class MailDomain(BaseModel):
     """Mail domain model to store mail domain information."""
 
@@ -387,11 +411,16 @@ class MailDomain(BaseModel):
         super().clean_fields(exclude=exclude)
 
     def clean(self):
-        """Validate custom attributes."""
+        """Validate custom attributes and settings."""
         validate_json_schema(
             self.custom_attributes,
             settings.SCHEMA_CUSTOM_ATTRIBUTES_MAILDOMAIN,
             field="custom_attributes",
+        )
+        validate_json_schema(
+            self.custom_settings,
+            SCHEMA_MAILDOMAIN_CUSTOM_SETTINGS,
+            field="custom_settings",
         )
         super().clean()
 
@@ -1787,7 +1816,8 @@ class ThreadAccessQuerySet(models.QuerySet):
 
         When `mailbox_id` is provided, the result is also scoped to that
         mailbox. Used by the flag, label, thread and thread-event
-        endpoints to replace ad-hoc permission checks.
+        endpoints to replace ad-hoc permission checks. `user` may also be
+        an ``OuterRef`` to use it as a subquery (e.g. thread users roster).
         """
         qs = self.filter(
             **self._EDITOR_CONDITIONS,

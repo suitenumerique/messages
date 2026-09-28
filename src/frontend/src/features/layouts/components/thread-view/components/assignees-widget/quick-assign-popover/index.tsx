@@ -13,11 +13,7 @@ import {
 } from "react-aria-components";
 import { RefObject, useEffect, useMemo, useRef, useState } from "react";
 import { useTranslation } from "react-i18next";
-import {
-    ThreadAccessRoleChoices,
-    UserWithoutAbilities,
-    useThreadsAccessesList,
-} from "@/features/api/gen";
+import { useThreadsUsersList } from "@/features/api/gen";
 import { useAuth } from "@/features/auth";
 import { useThreadAssignment } from "@/features/message/use-thread-assignment";
 import { StringHelper } from "@/features/utils/string-helper";
@@ -46,9 +42,11 @@ type QuickAssignPopoverProps = {
  *   - The check icon and the avatar are decorative — meaning is conveyed
  *     by aria-checked and the visible name.
  *
- * Filtering: only users coming from editor mailboxes are listed. Viewer
- * mailboxes are excluded because assigning them would require a
- * privilege escalation we don't surface here (the share modal handles it).
+ * Filtering: only users the API accepts to assign (`can_be_assigned`) are
+ * listed. Users without edit rights on the thread are hidden because
+ * assigning them would require a privilege escalation we don't surface
+ * here (the share modal handles it). Assignees who lost their edit rights
+ * are kept, so they can still be unassigned from here.
  */
 export const QuickAssignPopover = ({
     isOpen,
@@ -66,37 +64,26 @@ export const QuickAssignPopover = ({
         unassignUser,
     } = useThreadAssignment();
 
-    const accessesQuery = useThreadsAccessesList(
+    const usersQuery = useThreadsUsersList(
         threadId,
-        undefined,
         { query: { enabled: isOpen && !!threadId } },
     );
 
-    // Distinct users across editor mailboxes only. Sorted with the current
-    // user first (one-click self-assign), then alphabetically by display
-    // name with email as a fallback for users whose `full_name` is null.
+    // Assignable users and current assignees, sorted with the current user
+    // first (one-click self-assign), then alphabetically by display name with
+    // email as a fallback for users whose `full_name` is null.
     const users = useMemo(() => {
-        const editorAccesses = (accessesQuery.data?.data ?? []).filter(
-            (a) => a.role === ThreadAccessRoleChoices.editor,
+        const list = (usersQuery.data?.data ?? []).filter(
+            (user) => user.can_be_assigned || assignedUserIds.has(user.id),
         );
-        const seen = new Set<string>();
-        const list: UserWithoutAbilities[] = [];
-        for (const access of editorAccesses) {
-            for (const user of access.users) {
-                if (seen.has(user.id)) continue;
-                seen.add(user.id);
-                list.push(user);
-            }
-        }
-        list.sort((a, b) => {
+        return list.sort((a, b) => {
             if (currentUser && a.id === currentUser.id) return -1;
             if (currentUser && b.id === currentUser.id) return 1;
             const labelA = a.full_name ?? a.email ?? "";
             const labelB = b.full_name ?? b.email ?? "";
             return labelA.localeCompare(labelB);
         });
-        return list;
-    }, [accessesQuery.data?.data, currentUser]);
+    }, [usersQuery.data?.data, currentUser, assignedUserIds]);
 
     // react-aria-components ships its own `useFilter` hook backed by the
     // user's locale (handles diacritics correctly via Intl.Collator). We
@@ -221,13 +208,13 @@ export const QuickAssignPopover = ({
                         />
                     </SearchField>
                     <Menu
-                        items={accessesQuery.isLoading ? [] : users}
+                        items={usersQuery.isLoading ? [] : users}
                         selectionMode="multiple"
                         selectedKeys={assignedUserIds as Set<string>}
                         disabledKeys={disabledKeys}
                         onSelectionChange={handleSelectionChange}
                         renderEmptyState={() => (
-                            accessesQuery.isLoading ? (
+                            usersQuery.isLoading ? (
                                 <div
                                     role="status"
                                     aria-live="polite"

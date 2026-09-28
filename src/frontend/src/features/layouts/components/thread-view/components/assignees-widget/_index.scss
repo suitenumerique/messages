@@ -7,6 +7,10 @@
     border-radius: var(--c--globals--border-radius--sm);
     cursor: pointer;
     transition: background-color 0.15s ease, border-color 0.15s ease;
+
+    &.c__button--icon-only {
+        padding: 0;
+    }
 }
 
 // Wraps Tooltip + Button so react-aria-components Popover has a stable

@@ -24,6 +24,14 @@ class SSRFValidationError(Exception):
     """Raised when a URL or hostname fails SSRF validation."""
 
 
+class SSRFResolutionError(SSRFValidationError):
+    """Raised when a hostname cannot be resolved.
+
+    Unlike a blocked address, this may be transient (DNS outage): callers
+    that retry can tell the two apart.
+    """
+
+
 def is_allowlisted_host(hostname: str) -> bool:
     """Return True if ``hostname`` is on the operator SSRF allowlist.
 
@@ -124,7 +132,7 @@ def validate_hostname(hostname: str, *, allow_ip_literal: bool = False) -> list[
             hostname, None, socket.AF_UNSPEC, socket.SOCK_STREAM
         )
     except socket.gaierror as exc:
-        raise SSRFValidationError("Unable to resolve hostname") from exc
+        raise SSRFResolutionError("Unable to resolve hostname") from exc
 
     valid_ips: list[str] = []
     for _, _, _, _, sockaddr in addr_info:
@@ -222,7 +230,13 @@ class SSRFSafeSession:
         except SSRFValidationError:
             # URL was blocked for security reasons
             pass
+
+    ``allowed_ports``, when given, restricts the destination port of every
+    hop, redirects included.
     """
+
+    def __init__(self, allowed_ports: frozenset[int] | None = None):
+        self.allowed_ports = allowed_ports
 
     def _validate_and_unpack(self, url: str) -> tuple[str, str, str, int]:
         """Validate a URL and return (validated_ip, hostname, scheme, port).
@@ -236,14 +250,20 @@ class SSRFSafeSession:
         if not parsed.hostname:
             raise SSRFValidationError("Invalid URL (missing hostname)")
 
-        valid_ips = validate_hostname(parsed.hostname, allow_ip_literal=False)
-
-        if parsed.port:
-            port = parsed.port
+        try:
+            explicit_port = parsed.port
+        except ValueError as exc:
+            raise SSRFValidationError("Invalid URL port") from exc
+        if explicit_port:
+            port = explicit_port
         elif parsed.scheme == "http":
             port = 80
         else:
             port = 443
+        if self.allowed_ports is not None and port not in self.allowed_ports:
+            raise SSRFValidationError(f"Port {port} is not allowed")
+
+        valid_ips = validate_hostname(parsed.hostname, allow_ip_literal=False)
 
         return valid_ips[0], parsed.hostname, parsed.scheme, port
 

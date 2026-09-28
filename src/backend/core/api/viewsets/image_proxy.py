@@ -1,7 +1,6 @@
 """API ViewSet for proxying external images."""
 
 import logging
-from urllib.parse import unquote
 
 from django.conf import settings
 from django.http import HttpResponse
@@ -11,6 +10,7 @@ import requests
 from drf_spectacular.utils import OpenApiParameter, OpenApiResponse, extend_schema
 from rest_framework import status as http_status
 from rest_framework.response import Response
+from rest_framework.throttling import ScopedRateThrottle
 from rest_framework.viewsets import ViewSet
 
 from core import enums, models
@@ -18,6 +18,10 @@ from core.api import permissions
 from core.services.ssrf import SSRFSafeSession, SSRFValidationError
 
 logger = logging.getLogger(__name__)
+
+# Default web ports only, so the proxy can't be used to probe other services
+# of public hosts. Checked on every redirect hop.
+IMAGE_PROXY_ALLOWED_PORTS = frozenset({80, 443})
 
 
 class ImageProxySuspiciousResponse(HttpResponse):
@@ -43,6 +47,8 @@ class ImageProxyViewSet(ViewSet):
     """
 
     permission_classes = [permissions.IsAuthenticated]
+    throttle_classes = [ScopedRateThrottle]
+    throttle_scope = "image_proxy"
 
     @extend_schema(
         description="""Proxy an external image through the server.
@@ -50,6 +56,8 @@ class ImageProxyViewSet(ViewSet):
         This endpoint fetches images from external sources and serves them
         through the application to protect user privacy. Requires the
         IMAGE_PROXY_ENABLED environment variable to be set to true.
+        Only ports 80 and 443 are allowed, and requests are rate-limited
+        per user.
         """,
         parameters=[
             OpenApiParameter(
@@ -72,6 +80,7 @@ class ImageProxyViewSet(ViewSet):
             400: OpenApiResponse(description="Invalid request"),
             403: OpenApiResponse(description="Forbidden"),
             413: OpenApiResponse(description="Image too large"),
+            429: OpenApiResponse(description="Too many requests"),
             502: OpenApiResponse(description="Failed to fetch external image"),
         },
     )
@@ -95,6 +104,8 @@ class ImageProxyViewSet(ViewSet):
                 status=http_status.HTTP_403_FORBIDDEN,
             )
 
+        # Django already decoded the query string once. Do not unquote again,
+        # or URLs containing a literal ``%XX`` would be fetched mangled.
         url = request.query_params.get("url")
         if not url:
             return Response(
@@ -102,10 +113,8 @@ class ImageProxyViewSet(ViewSet):
                 status=http_status.HTTP_400_BAD_REQUEST,
             )
 
-        url = unquote(url)
-
         try:
-            response = SSRFSafeSession().get(
+            response = SSRFSafeSession(allowed_ports=IMAGE_PROXY_ALLOWED_PORTS).get(
                 url,
                 timeout=10,
                 stream=True,
@@ -202,7 +211,11 @@ class ImageProxyViewSet(ViewSet):
                 image_content,
                 content_type=mime_type,
                 headers={
-                    "Cache-Control": f"public, max-age={settings.IMAGE_PROXY_CACHE_TTL}",
+                    # private: the endpoint requires authentication, shared
+                    # caches must not serve the response to others.
+                    "Cache-Control": (
+                        f"private, max-age={settings.IMAGE_PROXY_CACHE_TTL}"
+                    ),
                     "Content-Security-Policy": "default-src 'none'",
                     "Permissions-Policy": "()",
                 },

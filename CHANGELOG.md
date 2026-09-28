@@ -31,10 +31,18 @@ and this project adheres to
 
 - Grant view-realm to the Keycloak service account, needed by the 2FA toggle
 - Run make test-keycloak against a freshly imported Keycloak realm
+- List only assignable users and current assignees in the quick assign picker
 
 ### Security
 
 - Turn the direct access grant off on the Keycloak rest-api client
+- Deny API actions that don't declare an access check by default
+- Check mailbox access for mailbox_id on message list and thread search
+- Rate-limit the image proxy and restrict it to ports 80 and 443
+- SSRF-check per-domain relays (internal ones need SSRF_ALLOWED_HOSTS)
+- Validate the MailDomain custom_settings schema
+- Restrict IMAP import ports (MESSAGES_IMPORT_IMAP_ALLOWED_PORTS)
+- Use only the Referer hostname in widget message subjects
 
 ## [0.9.0] - 2026-07-22
 

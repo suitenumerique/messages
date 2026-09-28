@@ -342,6 +342,27 @@ class TestIMAPConnectionManagerSSLDirect:
         assert "SSL handshake failed" in str(exc_info.value)
         assert "Try port 143 with STARTTLS" in str(exc_info.value)
 
+    @patch("core.services.importer.imap._validate_imap_host")
+    @patch("core.services.importer.imap._IPPinnedIMAP4SSL")
+    def test_port_outside_allowlist_is_refused(
+        self, mock_imap4_ssl, mock_validate_host, settings
+    ):
+        """A stored import is re-checked against the current allowlist."""
+        settings.MESSAGES_IMPORT_IMAP_ALLOWED_PORTS = [143]
+
+        with pytest.raises(IMAPSecurityError, match="allowlist"):
+            with IMAPConnectionManager(
+                server="imap.example.com",
+                port=993,
+                username="user@example.com",
+                password="password",
+                use_ssl=True,
+            ):
+                pass
+
+        mock_validate_host.assert_not_called()
+        mock_imap4_ssl.assert_not_called()
+
 
 class TestIMAPConnectionManagerSTARTTLS:
     """Tests for STARTTLS connections (typically port 143 with use_ssl=True)."""

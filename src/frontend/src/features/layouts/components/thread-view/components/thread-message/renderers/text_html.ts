@@ -6,16 +6,16 @@
  */
 
 import DomPurify from "dompurify";
-import { parseDimension } from "./utils";
+import { getFirstSrcsetUrl, parseDimension } from "./utils";
 
 /** Options for handling external images. */
-export interface ExternalImageOptions {
+export type ExternalImageOptions = {
     canDisplayExternalImages: boolean;
     displayExternalImages: boolean;
-    selectedMailboxId?: string;
     onExternalImageDetected: () => void;
-    getProxiedUrl: (url: string) => string;
-}
+    /** Returns null when the image cannot be proxied, the image is then dropped. */
+    getProxiedUrl: (url: string) => string | null;
+};
 
 export const MIN_IMAGE_SIZE = 4;
 
@@ -75,6 +75,18 @@ export function renderTextHtml(
             // Add lazy loading to all images
             imageNode.setAttribute("loading", "lazy");
 
+            // A srcset candidate would be picked by the browser over the src, bypassing
+            // both the CID resolution and the image proxy: keep a single src instead.
+            const srcset = imageNode.getAttribute("srcset");
+            if (srcset !== null) {
+                const srcsetUrl = getFirstSrcsetUrl(srcset);
+                if (!imageNode.getAttribute("src") && srcsetUrl) {
+                    imageNode.setAttribute("src", srcsetUrl);
+                }
+                imageNode.removeAttribute("srcset");
+                imageNode.removeAttribute("sizes");
+            }
+
             const src = imageNode.getAttribute("src");
 
             // Transform CID references to blob URLs
@@ -96,14 +108,20 @@ export function renderTextHtml(
                     return;
                 }
 
-                // Proxy external images
-                imageNode.setAttribute("src", externalImageOptions.getProxiedUrl(src));
+                const proxiedUrl = externalImageOptions.getProxiedUrl(src);
+                if (!proxiedUrl) {
+                    imageNode.remove();
+                    return;
+                }
+                imageNode.setAttribute("src", proxiedUrl);
             }
         }
     });
 
     return domPurify.sanitize(content, {
-        FORBID_TAGS: ["script", "object", "iframe", "embed", "audio", "video"],
+        // <source> is forbidden so a <picture> always renders its <img> fallback,
+        // whose src goes through the CID resolution and the image proxy.
+        FORBID_TAGS: ["script", "object", "iframe", "embed", "audio", "video", "source"],
         ADD_ATTR: ["target", "rel"],
     });
 }

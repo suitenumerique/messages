@@ -1,4 +1,5 @@
-import { useThreadsAccessesDestroy } from "@/features/api/gen";
+import { useQueryClient } from "@tanstack/react-query";
+import { getThreadsUsersListQueryKey, useThreadsAccessesDestroy } from "@/features/api/gen";
 import { useMailboxContext } from "@/features/providers/mailbox";
 
 type DeleteThreadAccessOptions = {
@@ -18,6 +19,7 @@ type DeleteThreadAccessOptions = {
  */
 const useDeleteThreadAccess = () => {
     const { selectedMailbox, invalidateMailbox, invalidateThreadsStats, unpinThreads, unselectThread } = useMailboxContext();
+    const queryClient = useQueryClient();
     const { mutate, status, isPending, variables } = useThreadsAccessesDestroy();
 
     const deleteThreadAccess = ({ accessId, accessMailboxId, threadId, onSuccess }: DeleteThreadAccessOptions) => {
@@ -28,6 +30,7 @@ const useDeleteThreadAccess = () => {
                     unpinThreads([threadId]);
                 }
                 invalidateMailbox();
+                queryClient.invalidateQueries({ queryKey: getThreadsUsersListQueryKey(threadId) });
                 if (isSelfRemoval) {
                     invalidateThreadsStats();
                     unselectThread();

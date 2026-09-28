@@ -40,11 +40,21 @@ class ThreadUserViewSet(
             mailbox__thread_accesses__thread_id=thread_id,
         )
 
+        # The roster also lists read-only users (they can be mentioned), so
+        # flag the ones ``assign_users`` accepts: full edit rights on the
+        # thread, the same rule as ``ThreadAccess.objects.editor_user_ids``.
+        can_be_assigned_subquery = models.ThreadAccess.objects.editable_by(
+            OuterRef("pk")
+        ).filter(thread_id=thread_id)
+
         return (
             models.User.objects.filter(
                 mailbox_accesses__mailbox__thread_accesses__thread_id=thread_id,
             )
-            .annotate(can_post_comments=Exists(can_comment_subquery))
+            .annotate(
+                can_post_comments=Exists(can_comment_subquery),
+                can_be_assigned=Exists(can_be_assigned_subquery),
+            )
             .distinct()
             .order_by("full_name", "email")
         )

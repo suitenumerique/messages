@@ -193,6 +193,8 @@ export function useMailboxesList<
         This endpoint fetches images from external sources and serves them
         through the application to protect user privacy. Requires the
         IMAGE_PROXY_ENABLED environment variable to be set to true.
+        Only ports 80 and 443 are allowed, and requests are rate-limited
+        per user.
         
  */
 export type mailboxesImageProxyListResponse200 = {
@@ -215,6 +217,11 @@ export type mailboxesImageProxyListResponse413 = {
   status: 413;
 };
 
+export type mailboxesImageProxyListResponse429 = {
+  data: void;
+  status: 429;
+};
+
 export type mailboxesImageProxyListResponse502 = {
   data: void;
   status: 502;
@@ -228,6 +235,7 @@ export type mailboxesImageProxyListResponseError = (
   | mailboxesImageProxyListResponse400
   | mailboxesImageProxyListResponse403
   | mailboxesImageProxyListResponse413
+  | mailboxesImageProxyListResponse429
   | mailboxesImageProxyListResponse502
 ) & {
   headers: Headers;
