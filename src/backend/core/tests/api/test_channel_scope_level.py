@@ -889,6 +889,31 @@ class TestUserChannelViewSet:
             is False
         )
 
+    def test_personal_key_of_inactive_user_covers_nothing(self, db):  # pylint: disable=unused-argument
+        """A deactivated user's personal key must not cover any mailbox,
+        even when the MailboxAccess rows are still in place."""
+        from core.enums import MAILBOX_ROLES_CAN_SEND, MailboxRoleChoices
+
+        user = UserFactory(is_active=False)
+        mailbox = MailboxFactory()
+        MailboxAccessFactory(mailbox=mailbox, user=user, role=MailboxRoleChoices.ADMIN)
+
+        channel = models.Channel.objects.create(
+            name="inactive-personal",
+            type="api_key",
+            scope_level=ChannelScopeLevel.USER,
+            user=user,
+            settings={"scopes": ["messages:send"]},
+        )
+
+        assert channel.api_key_covers(mailbox=mailbox) is False
+        assert (
+            channel.api_key_covers(
+                mailbox=mailbox, mailbox_roles=MAILBOX_ROLES_CAN_SEND
+            )
+            is False
+        )
+
     # ----------- cross-user isolation: retrieve / update / destroy -------- #
 
     def _make_personal(self, user, name="key"):

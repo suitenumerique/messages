@@ -14,6 +14,7 @@ from secrets import compare_digest
 
 from django.contrib.auth.models import AnonymousUser
 from django.core.exceptions import ValidationError as DjangoValidationError
+from django.db.models import Q
 from django.utils import timezone
 from django.utils.dateparse import parse_datetime
 
@@ -21,7 +22,7 @@ from rest_framework.authentication import BaseAuthentication
 from rest_framework.exceptions import AuthenticationFailed
 
 from core import models
-from core.enums import ChannelTypes
+from core.enums import ChannelScopeLevel, ChannelTypes
 
 
 class ChannelApiKeyAuthentication(BaseAuthentication):
@@ -52,10 +53,17 @@ class ChannelApiKeyAuthentication(BaseAuthentication):
             # is_active=True is part of the lookup on purpose: a paused
             # channel must be indistinguishable from a non-existent one, so
             # it fails with the same generic error rather than leaking that
-            # the channel exists but is disabled.
-            channel = models.Channel.objects.select_related(
-                "mailbox", "maildomain", "user"
-            ).get(pk=channel_id, type=ChannelTypes.API_KEY, is_active=True)
+            # the channel exists but is disabled. The same goes for a
+            # personal channel whose owner has been deactivated: suspending
+            # a user must also suspend their api_keys. Other scope levels
+            # only reference their creator for audit and stay usable.
+            channel = (
+                models.Channel.objects.select_related("mailbox", "maildomain", "user")
+                .filter(
+                    ~Q(scope_level=ChannelScopeLevel.USER) | Q(user__is_active=True)
+                )
+                .get(pk=channel_id, type=ChannelTypes.API_KEY, is_active=True)
+            )
         except (models.Channel.DoesNotExist, ValueError, DjangoValidationError) as exc:
             # ValueError / ValidationError handle malformed UUIDs.
             raise AuthenticationFailed("Invalid channel or API key.") from exc

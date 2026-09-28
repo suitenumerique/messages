@@ -252,6 +252,81 @@ class TestSubmitAuth:
             )
         assert response.status_code == 202, response.content
 
+    def _submit_with_mocked_pipeline(self, client, channel, plaintext, mailbox):
+        """POST a minimal MIME with the delivery pipeline mocked; return the
+        response and the message-creation mock."""
+        fake_message = MagicMock()
+        fake_message.id = uuid.uuid4()
+        fake_message.recipients.values_list.return_value = []
+
+        with (
+            patch(CREATE_MSG_MOCK, return_value=fake_message) as create_mock,
+            patch(PREPARE_MOCK, return_value=True),
+            patch(TASK_MOCK),
+        ):
+            response = client.post(
+                SUBMIT_URL,
+                data=MINIMAL_MIME,
+                content_type="message/rfc822",
+                HTTP_X_CHANNEL_ID=str(channel.id),
+                HTTP_X_API_KEY=plaintext,
+                HTTP_X_MAIL_FROM=str(mailbox.id),
+                HTTP_X_RCPT_TO="attendee@example.com",
+            )
+        return response, create_mock
+
+    def test_user_scope_deactivated_owner_cannot_submit(self, client, mailbox):
+        """Regression: deactivating a user must suspend their personal
+        api_keys too, even though the channel and the SENDER MailboxAccess
+        are left untouched. Reactivating the user restores the key."""
+        from core.enums import MailboxRoleChoices
+        from core.factories import MailboxAccessFactory, UserFactory
+
+        owner = UserFactory()
+        MailboxAccessFactory(
+            mailbox=mailbox, user=owner, role=MailboxRoleChoices.SENDER
+        )
+        channel, plaintext = _make_api_key_channel(
+            scope_level=ChannelScopeLevel.USER, user=owner
+        )
+
+        owner.is_active = False
+        owner.save()
+
+        response, create_mock = self._submit_with_mocked_pipeline(
+            client, channel, plaintext, mailbox
+        )
+        assert response.status_code == 401, response.content
+        # Same generic error as an unknown channel: do not leak that the
+        # channel exists but its owner is suspended.
+        assert response.json() == {"detail": "Invalid channel or API key."}
+        create_mock.assert_not_called()
+
+        owner.is_active = True
+        owner.save()
+
+        response, create_mock = self._submit_with_mocked_pipeline(
+            client, channel, plaintext, mailbox
+        )
+        assert response.status_code == 202, response.content
+        create_mock.assert_called_once()
+
+    def test_mailbox_scope_key_survives_creator_deactivation(self, client, mailbox):
+        """Non-personal keys only reference their creator for audit: a
+        service integration must keep working when its creator leaves."""
+        from core.factories import UserFactory
+
+        creator = UserFactory(is_active=False)
+        channel, plaintext = _make_api_key_channel(
+            scope_level=ChannelScopeLevel.MAILBOX, mailbox=mailbox, user=creator
+        )
+
+        response, create_mock = self._submit_with_mocked_pipeline(
+            client, channel, plaintext, mailbox
+        )
+        assert response.status_code == 202, response.content
+        create_mock.assert_called_once()
+
 
 # =============================================================================
 # Validation

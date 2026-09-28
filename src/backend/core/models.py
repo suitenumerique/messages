@@ -839,7 +839,7 @@ class Channel(BaseModel):
           role in ``mailbox_roles`` when the kwarg is supplied. This is what
           stops a viewer-only user from submitting via a personal api_key:
           /submit/ passes ``MAILBOX_ROLES_CAN_SEND``, so a VIEWER access is
-          rejected here.
+          rejected here. A deactivated target user covers nothing.
 
         For mailbox / maildomain / global scopes the channel was bound by an
         admin who already had authority over the resource, so the role check
@@ -867,7 +867,9 @@ class Channel(BaseModel):
         if self.scope_level == ChannelScopeLevel.USER:
             if mailbox is None:
                 return False
-            qs = MailboxAccess.objects.filter(user_id=self.user_id, mailbox=mailbox)
+            qs = MailboxAccess.objects.filter(
+                user_id=self.user_id, user__is_active=True, mailbox=mailbox
+            )
             if mailbox_roles is not None:
                 qs = qs.filter(role__in=mailbox_roles)
             return qs.exists()
