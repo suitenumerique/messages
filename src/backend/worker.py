@@ -14,7 +14,7 @@ Queue priority order (highest to lowest):
     2. inbound    - Inbound email processing (time-sensitive)
     3. outbound   - Outbound email sending
     4. default    - General tasks
-    5. imports    - File import processing (can be delayed)
+    5. imports    - File imports and mailbox exports (can be delayed)
     6. reindex    - Search indexing (lowest priority)
 """
 

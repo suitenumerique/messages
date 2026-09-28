@@ -57,8 +57,19 @@ class TestWorkerQueueConfiguration:
             == "default"
         )
 
+        assert routes["core.services.exporter.tasks.*"]["queue"] == "imports"
+
         assert "core.services.search.tasks.*" in routes
         assert routes["core.services.search.tasks.*"]["queue"] == "reindex"
+
+    def test_export_task_routed_to_imports_queue(self):
+        """Mailbox exports must never land on the worker serving mail traffic."""
+        from core.services.exporter.tasks import export_mailbox_task
+
+        from messages.celery_app import app
+
+        route = app.amqp.router.route({}, export_mailbox_task.name)
+        assert route["queue"].name == "imports"
 
 
 class TestWorkerCLIParsing:

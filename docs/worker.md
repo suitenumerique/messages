@@ -28,7 +28,7 @@ Tasks are routed to specific queues based on their type. Queues are listed in pr
 | 2 | `inbound` | Inbound email processing (time-sensitive) |
 | 3 | `outbound` | Outbound email sending and retries |
 | 4 | `default` | General tasks (fallback for unrouted tasks) |
-| 5 | `imports` | File import processing (MBOX, EML, PST, IMAP) |
+| 5 | `imports` | File import processing (MBOX, EML, PST, IMAP) and mailbox exports |
 | 6 (lowest) | `reindex` | Search indexing |
 
 ### Queue Routing
@@ -42,6 +42,7 @@ Tasks are automatically routed to queues based on their module:
 | `core.services.importer.tasks.run_import_task` | `imports` |
 | `core.services.importer.tasks.schedule_imports_task` | `default` |
 | `core.services.importer.tasks.cancel_import_task` | `default` |
+| `core.services.exporter.tasks.*` | `imports` |
 | `core.services.search.tasks.*` | `reindex` |
 | Everything else | `default` |
 
