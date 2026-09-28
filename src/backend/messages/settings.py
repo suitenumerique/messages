@@ -1143,6 +1143,10 @@ class Base(Configuration):
         # imports worker so it isn't stuck behind a long-running import.
         "core.services.importer.tasks.cancel_import_task": {"queue": "default"},
         "core.services.importer.tasks.*": {"queue": "imports"},
+        # Mailbox exports hold hundreds of MB for tens of minutes: keep them on
+        # the isolated imports worker so they can't starve or OOM the worker
+        # serving inbound/outbound mail.
+        "core.services.exporter.tasks.*": {"queue": "imports"},
         # Search indexing - lowest priority, can be delayed
         "core.services.search.tasks.*": {"queue": "reindex"},
     }
