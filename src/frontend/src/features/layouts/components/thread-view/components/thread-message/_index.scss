@@ -232,6 +232,13 @@
     min-width: 0;
 }
 
+.thread-message__reply-to {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: baseline;
+    min-width: 0;
+}
+
 // Collapsed single-line view: items never shrink nor wrap so their measured
 // widths stay exact; anything past the computed visible count is not rendered.
 .thread-message__recipients-line {

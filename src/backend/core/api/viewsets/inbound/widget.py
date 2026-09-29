@@ -20,10 +20,17 @@ from core import enums, models
 from core.api.permissions import IsAuthenticated
 from core.mda.addresses import address_domain
 from core.mda.inbound import deliver_inbound_message
-from core.mda.utils import compose_options_for, current_sent_at
+from core.mda.signing import sign_message_dkim
+from core.mda.utils import compose_options_for, current_sent_at, generate_mime_id
 
 logger = logging.getLogger(__name__)
 
+
+# Local part of the service address widget messages are sent from, on the
+# target mailbox's own domain. The visitor's address is unverifiable, so
+# using it as ``From`` fails SPF/DMARC and gets the message flagged as spam;
+# it is carried in ``Reply-To`` instead.
+WIDGET_SENDER_LOCAL_PART = "noreply"
 
 # Referer hosts we accept to put in the subject line: DNS names and IPv4.
 _HOSTNAME_RE = re.compile(r"^[a-z0-9](?:[a-z0-9._-]{0,251}[a-z0-9])?$", re.IGNORECASE)
@@ -199,6 +206,7 @@ class InboundWidgetViewSet(viewsets.GenericViewSet):
         else:
             target_email = str(mailbox)
             target_name = str(mailbox)
+        service_email = f"{WIDGET_SENDER_LOCAL_PART}@{mailbox.domain.name}"
 
         def sanitize_header(header: str) -> str:
             return header.replace("\r", "").replace("\n", "")[0:1000]
@@ -208,7 +216,7 @@ class InboundWidgetViewSet(viewsets.GenericViewSet):
         # sender-auth "none" baseline for widget mail is set structurally in the
         # pipeline (``postmark["auth"]``), not baked here. ``X-StMsg-Widget-
         # Referer`` stays a header (immutable ingest provenance).
-        prepend_headers = [("Return-Path", f"<{sender_email}>")]
+        prepend_headers = [("Return-Path", f"<{service_email}>")]
         source_name = "widget"
         if request.META.get("HTTP_REFERER"):
             referer = sanitize_header(request.META.get("HTTP_REFERER"))
@@ -249,8 +257,12 @@ class InboundWidgetViewSet(viewsets.GenericViewSet):
 
         parsed_email = {
             "subject": subject,
-            "from": [{"email": sender_email}],
+            # The service address is one Contact per mailbox whose name is set
+            # once, so it takes the stable channel name, not the Referer host.
+            "from": [{"name": channel.name, "email": service_email}],
+            "replyTo": [{"email": sender_email}],
             "to": [{"name": target_name, "email": target_email}],
+            "messageId": [generate_mime_id(mailbox.domain.name)],
             "sentAt": current_sent_at(),
             "htmlBody": [{"content": html_escape(message_text).replace("\n", "<br/>")}],
             "textBody": [{"content": message_text}],
@@ -266,7 +278,9 @@ class InboundWidgetViewSet(viewsets.GenericViewSet):
             raw_mime = compose_email(
                 parsed_email,
                 prepend_headers=prepend_headers,
-                options=compose_options_for([sender_email, target_email]),
+                options=compose_options_for(
+                    [service_email, sender_email, target_email]
+                ),
             )
         except ComposeError:
             logger.info(
@@ -278,6 +292,12 @@ class InboundWidgetViewSet(viewsets.GenericViewSet):
                 {"detail": "Invalid email format"}, status=status.HTTP_400_BAD_REQUEST
             )
 
+        # Signing with the mailbox domain's key aligns DKIM with the service
+        # ``From``, which is what lets the message pass DMARC.
+        dkim_header = sign_message_dkim(raw_mime, mailbox.domain)
+        if dkim_header:
+            raw_mime = dkim_header + b"\r\n" + raw_mime
+
         delivered = deliver_inbound_message(
             target_email,
             parsed_email,
@@ -285,7 +305,7 @@ class InboundWidgetViewSet(viewsets.GenericViewSet):
             channel=channel,
             envelope={
                 "origin": enums.InboundOrigin.WIDGET,
-                "mail_from": sender_email,
+                "mail_from": service_email,
                 "rcpt_to": target_email,
                 "ip": request.META.get("REMOTE_ADDR", ""),
             },

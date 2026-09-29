@@ -490,6 +490,30 @@ class TestShouldSendAutoreply:
         }
         assert should_send_autoreply(mailbox, parsed) is None
 
+    def test_replies_to_reply_to(self, mailbox, autoreply_template):
+        """The reply target is the Reply-To: a message sent from a service
+        noreply address on behalf of someone (e.g. a widget submission) still
+        gets an autoreply."""
+        parsed = {
+            "from": [{"email": f"noreply@{mailbox.domain.name}"}],
+            "replyTo": [{"email": "visitor@example.com"}],
+            "to": [{"email": str(mailbox)}],
+            "headers": [],
+        }
+        result = should_send_autoreply(mailbox, parsed)
+        assert result is not None
+        assert result.id == autoreply_template.id
+
+    def test_skip_noreply_reply_to(self, mailbox, autoreply_template):
+        """A noreply Reply-To is skipped even when the From is a person."""
+        parsed = {
+            "from": [{"email": "sender@example.com"}],
+            "replyTo": [{"email": "noreply@example.com"}],
+            "to": [{"email": str(mailbox)}],
+            "headers": [],
+        }
+        assert should_send_autoreply(mailbox, parsed) is None
+
     def test_no_autoreply_template(self, mailbox):
         """No autoreply template means no autoreply."""
         parsed = {
@@ -729,6 +753,36 @@ class TestSendAutoreplyForMessage:
         recipient = models.MessageRecipient.objects.get(message=autoreply_msg)
         assert recipient.contact == inbound_message.sender
         assert recipient.type == MessageRecipientTypeChoices.TO
+
+    @patch("core.mda.outbound_tasks.send_message_task", new_callable=MagicMock)
+    @patch("core.mda.outbound.sign_message_dkim", return_value=None)
+    def test_recipient_is_reply_to(
+        self, mock_dkim, mock_send_task, mailbox, autoreply_template
+    ):
+        """Autoreply goes to the Reply-To address, not the From."""
+        thread = factories.ThreadFactory()
+        factories.ThreadAccessFactory(mailbox=mailbox, thread=thread)
+        inbound = factories.MessageFactory(
+            thread=thread,
+            sender=factories.ContactFactory(
+                email="noreply@example.com", mailbox=mailbox
+            ),
+            is_sender=False,
+            raw_mime=(
+                b"From: noreply@example.com\r\n"
+                b"Reply-To: Visitor <visitor@example.com>\r\n"
+                b"To: " + str(mailbox).encode() + b"\r\n"
+                b"Subject: Hello\r\n\r\nHi\r\n"
+            ),
+        )
+
+        send_autoreply_for_message(autoreply_template, mailbox, inbound)
+
+        autoreply_msg = models.Message.objects.get(parent=inbound, is_sender=True)
+        recipient = models.MessageRecipient.objects.get(message=autoreply_msg)
+        assert recipient.contact.email == "visitor@example.com"
+        assert recipient.contact.name == "Visitor"
+        assert recipient.contact.mailbox == mailbox
 
     @patch("core.mda.outbound_tasks.send_message_task", new_callable=MagicMock)
     @patch("core.mda.outbound.sign_message_dkim", return_value=None)

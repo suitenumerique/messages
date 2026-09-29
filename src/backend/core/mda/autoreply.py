@@ -19,6 +19,7 @@ from core.enums import (
 from core.mda.addresses import normalize_address
 from core.mda.outbound import compose_and_sign_mime
 from core.mda.replies import reply_subject
+from core.mda.utils import reply_addresses
 from core.services.throttle import ThrottleLimitExceeded, ThrottleManager
 
 logger = logging.getLogger(__name__)
@@ -135,17 +136,19 @@ def should_send_autoreply(
     if _is_auto_reply_message(parsed_email, envelope):
         return None
 
-    # 3. Self-reply prevention: skip if sender == mailbox email
-    sender_email = normalize_address(first_address_email(parsed_email.get("from")))
-    if not sender_email:
+    # 3. Self-reply prevention: skip if the reply target == mailbox email.
+    #    The target is the Reply-To when set (e.g. a widget submission sent
+    #    from a service noreply address on behalf of a visitor).
+    reply_email = normalize_address(first_address_email(reply_addresses(parsed_email)))
+    if not reply_email:
         return None
 
     mailbox_email = normalize_address(str(mailbox))
-    if sender_email == mailbox_email:
+    if reply_email == mailbox_email:
         return None
 
     # 3b. Skip well-known system/noreply addresses
-    if _is_noreply_address(sender_email):
+    if _is_noreply_address(reply_email):
         return None
 
     # 3c. RFC 5230 §4.5: only reply if mailbox address appears in To/Cc.
@@ -176,13 +179,32 @@ def should_send_autoreply(
             throttle.check_limit(
                 settings.THROTTLE_AUTOREPLY_PER_SENDER,
                 "autoreply",
-                f"{mailbox.id}:{sender_email}",
+                f"{mailbox.id}:{reply_email}",
                 counter_type="sends",
             )
     except ThrottleLimitExceeded:
         return None
 
     return template
+
+
+def _reply_contacts(
+    mailbox: models.Mailbox, inbound_message: models.Message
+) -> list[models.Contact]:
+    """Return the contacts a reply to ``inbound_message`` is addressed to.
+
+    Its ``Reply-To`` addresses when it has some, its sender otherwise (also
+    the fallback when the stored MIME cannot be read).
+    """
+    contacts = []
+    for address in inbound_message.get_parsed_field("replyTo") or []:
+        contact, _ = models.Contact.objects.get_or_create(
+            email=address["email"],
+            mailbox=mailbox,
+            defaults={"name": address.get("name")},
+        )
+        contacts.append(contact)
+    return contacts or [inbound_message.sender]
 
 
 def _create_reply_record_from_template(
@@ -238,12 +260,13 @@ def _create_reply_record_from_template(
         channel=channel,
     )
 
-    # 5. Create MessageRecipient (must exist before compose_and_sign_mime)
-    models.MessageRecipient.objects.create(
-        message=message,
-        contact=inbound_message.sender,
-        type=MessageRecipientTypeChoices.TO,
-    )
+    # 5. Create MessageRecipients (must exist before compose_and_sign_mime)
+    for contact in _reply_contacts(mailbox, inbound_message):
+        models.MessageRecipient.objects.create(
+            message=message,
+            contact=contact,
+            type=MessageRecipientTypeChoices.TO,
+        )
 
     return message, validated_signature
 
@@ -257,11 +280,7 @@ def send_autoreply_for_message(
     # pylint: disable-next=import-outside-toplevel
     from core.mda.outbound_tasks import send_message_task
 
-    sender_email = ""
-    if inbound_message.sender:
-        sender_email = inbound_message.sender.email
-
-    if not sender_email:
+    if not inbound_message.sender or not inbound_message.sender.email:
         logger.warning(
             "Cannot send autoreply: inbound message %s has no sender email",
             inbound_message.id,
@@ -306,10 +325,9 @@ def send_autoreply_for_message(
     inbound_message.thread.update_stats()
 
     logger.info(
-        "Autoreply message %s created and queued for sending (mailbox=%s, to=%s)",
+        "Autoreply message %s created and queued for sending (mailbox=%s)",
         message.id,
         mailbox.id,
-        sender_email,
     )
 
 

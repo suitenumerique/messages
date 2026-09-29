@@ -234,12 +234,9 @@ export const MessageForm = forwardRef<MessageFormHandle, MessageFormProps>(({
 
         if (mode === "reply_all") {
             return [...new Set([
-                { contact: { email: parentMessage.sender.email } },
-                ...parentMessage.to
-            ]
-                .filter(({ contact }) => contact.email !== replySenderEmail)
-                .map(({ contact }) => contact.email)
-            )]
+                ...MailHelper.getReplyAddresses(parentMessage),
+                ...parentMessage.to.map(({ contact }) => contact.email)
+            ].filter((email) => email !== replySenderEmail))]
         }
         // If the sender is replying to himself, we can consider that it prefers
         // to reply to the message recipient.
@@ -254,8 +251,20 @@ export const MessageForm = forwardRef<MessageFormHandle, MessageFormProps>(({
                 return parentMessage.bcc.map(({ contact }) => contact.email);
             }
         }
-        return [parentMessage.sender.email];
+        return MailHelper.getReplyAddresses(parentMessage);
     }, [parentMessage, mode, replySenderEmail]);
+
+    // The reply is prefilled with the Reply-To rather than the sender: say so,
+    // otherwise the user may not notice the answer goes somewhere else.
+    const replyToNotice = mode.startsWith("reply")
+        && parentMessage
+        && parentMessage.sender.email !== replySenderEmail
+        && MailHelper.hasDistinctReplyTo(parentMessage)
+        ? t("{{sender}} asked for replies to be sent to {{addresses}}.", {
+            sender: parentMessage.sender.email,
+            addresses: parentMessage.replyTo.map(({ email }) => email).join(', '),
+        })
+        : undefined;
 
     const ccRecipients = useMemo(() => {
         if (draft) return draft.cc.map(({ contact }) => contact.email);
@@ -1064,7 +1073,11 @@ export const MessageForm = forwardRef<MessageFormHandle, MessageFormProps>(({
                         variant="inline"
                         autoFocus={mode === "forward"}
                         text={form.formState.errors.to && !Array.isArray(form.formState.errors.to) ? form.formState.errors.to.message : undefined}
-                        textItems={[...getRecipientLimitItems(currentToRecipients), ...getRecipientTextItems("to", currentToRecipients)]}
+                        textItems={[
+                            ...(replyToNotice ? [replyToNotice] : []),
+                            ...getRecipientLimitItems(currentToRecipients),
+                            ...getRecipientTextItems("to", currentToRecipients),
+                        ]}
                         state={getRecipientLimitState(currentToRecipients)}
                         warning={getRecipientWarnings(currentToRecipients).length > 0}
                         getItemWarning={getRecipientWarning}

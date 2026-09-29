@@ -37,6 +37,35 @@ describe('MailHelper', () => {
     });
   });
 
+  describe('getReplyAddresses', () => {
+    const sender = { id: 'contact-1', name: 'Widget', email: 'noreply@example.com' };
+
+    it('should reply to the Reply-To addresses when present', () => {
+      const replyTo = [{ email: 'visitor@example.org' }, { name: 'Team', email: 'team@example.org' }];
+      expect(MailHelper.getReplyAddresses({ sender, replyTo })).toEqual(['visitor@example.org', 'team@example.org']);
+    });
+
+    it('should reply to the sender when there is no Reply-To', () => {
+      expect(MailHelper.getReplyAddresses({ sender, replyTo: [] })).toEqual(['noreply@example.com']);
+    });
+  });
+
+  describe('hasDistinctReplyTo', () => {
+    const sender = { id: 'contact-1', name: 'Visitor', email: 'Visitor@example.org' };
+
+    it('should be false without Reply-To', () => {
+      expect(MailHelper.hasDistinctReplyTo({ sender, replyTo: [] })).toBe(false);
+    });
+
+    it('should be false when the Reply-To is the sender', () => {
+      expect(MailHelper.hasDistinctReplyTo({ sender, replyTo: [{ email: 'visitor@example.org' }] })).toBe(false);
+    });
+
+    it('should be true when the Reply-To differs from the sender', () => {
+      expect(MailHelper.hasDistinctReplyTo({ sender, replyTo: [{ email: 'other@example.org' }] })).toBe(true);
+    });
+  });
+
   describe('parseRecipients', () => {
     it('should parse single recipient', () => {
       const recipients = 'test@example.com';

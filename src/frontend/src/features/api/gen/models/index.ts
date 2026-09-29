@@ -52,6 +52,7 @@ export * from "./draft_update400";
 export * from "./draft_update403";
 export * from "./draft_update404";
 export * from "./drive_upload_attachment_request";
+export * from "./email_address";
 export * from "./flag_create200";
 export * from "./flag_create400";
 export * from "./flag_create403";

@@ -6,6 +6,7 @@ import { DriveFile } from "../forms/components/message-form/drive-attachment-pic
 import { handle } from "./errors";
 import { getBlobDownloadRetrieveUrl } from "@/features/api/gen/blob/blob";
 import { getApiOrigin } from "@/features/api/utils";
+import { Message } from "@/features/api/gen/models";
 
 /**
  * Decode HTML entities produced by renderToStaticMarkup in attribute values.
@@ -155,6 +156,29 @@ class MailHelper {
      */
     static prefixSubjectIfNeeded(subject: string, prefix: string = 'Re:') {
         return subject.startsWith(prefix) ? subject : `${prefix} ${subject}`;
+    }
+
+    /**
+     * Get the addresses a reply to a message must be sent to: its Reply-To
+     * addresses when it has some (e.g. widget submissions, mailing lists),
+     * its sender otherwise.
+     * @param message The message being replied to.
+     * @returns The email addresses to reply to.
+     */
+    static getReplyAddresses(message: Pick<Message, 'sender' | 'replyTo'>): string[] {
+        if (message.replyTo.length > 0) return message.replyTo.map(({ email }) => email);
+        return [message.sender.email];
+    }
+
+    /**
+     * Tell whether a message asks to be replied to somewhere else than its
+     * sender, i.e. its Reply-To is worth showing.
+     * @param message The message to check.
+     * @returns True when the Reply-To differs from the sender.
+     */
+    static hasDistinctReplyTo(message: Pick<Message, 'sender' | 'replyTo'>): boolean {
+        const senderEmail = MailHelper.asciiLower(message.sender.email);
+        return message.replyTo.some(({ email }) => MailHelper.asciiLower(email) !== senderEmail);
     }
 
     /**

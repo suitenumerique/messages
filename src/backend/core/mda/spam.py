@@ -132,10 +132,10 @@ def check_hardcoded_rules(
 
         # ``Return-Path`` is baked into block 0 by the MDA from the *envelope*
         # MAIL FROM, which is unauthenticated (a spammer sets it freely at SMTP
-        # time; the widget uses a raw form field) and unverified at this layer
-        # (no SPF/DMARC). Matching it as a trusted header would let a spoofed
-        # sender satisfy an ``action: ham`` allowlist and bypass the spam
-        # steps, so it is never eligible for a hardcoded-rule match.
+        # time) and unverified at this layer (no SPF/DMARC). Matching it as a
+        # trusted header would let a spoofed sender satisfy an ``action: ham``
+        # allowlist and bypass the spam steps, so it is never eligible for a
+        # hardcoded-rule match.
         if key == "return-path":
             logger.warning(
                 "Ignoring spam rule #%d: 'return-path' is a spoofable envelope "

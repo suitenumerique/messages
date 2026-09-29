@@ -17,6 +17,7 @@ Three groups of helpers live here:
   they hand to :func:`jmap_email.compose_email`.
 - :data:`COMPOSE_OPTIONS` — the compose policy every path that
   produces MIME for us shares.
+- :func:`reply_addresses` — where a reply to a message goes.
 """
 
 import re
@@ -32,7 +33,7 @@ from jmap_email import (
     decode_rfc2047_header,
     preview_text,
 )
-from jmap_email.types import JmapEmail
+from jmap_email.types import EmailAddress, JmapEmail
 
 from core.mda.addresses import needs_smtputf8
 
@@ -84,6 +85,7 @@ __all__ = [
     "header_value",
     "headers_blocks",
     "message_snippet",
+    "reply_addresses",
 ]
 
 
@@ -114,6 +116,20 @@ def generate_mime_id(domain: str, namespace: str = "lstmsgs") -> str:
     the stored shape stays uniform.
     """
     return make_msgid(idstring=namespace, domain=domain).strip("<>")
+
+
+# ────────────────────────────────────────────────────────────────────
+# Reply target
+# ────────────────────────────────────────────────────────────────────
+
+
+def reply_addresses(parsed_email: JmapEmail) -> list[EmailAddress]:
+    """Return the addresses a reply to ``parsed_email`` must be sent to.
+
+    RFC 5322 §3.6.2: ``Reply-To`` wins over ``From`` when present. The
+    sender of record stays the ``From``; only the reply target moves.
+    """
+    return parsed_email.get("replyTo") or parsed_email.get("from") or []
 
 
 # ────────────────────────────────────────────────────────────────────

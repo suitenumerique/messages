@@ -7,6 +7,7 @@ import { Banner } from "@/features/ui/components/banner";
 import { Badge } from "@/features/ui/components/badge";
 import { ContactChip, ContactChipDeliveryStatus, ContactChipDeliveryAction } from "@/features/ui/components/contact-chip";
 import { DateHelper } from "@/features/utils/date-helper";
+import MailHelper from "@/features/utils/mail-helper";
 import useTrash from "@/features/message/use-trash";
 import useAbility, { Abilities } from "@/hooks/use-ability";
 import { useMailboxContext } from "@/features/providers/mailbox";
@@ -60,6 +61,8 @@ const ThreadMessageHeader = ({
     const suspectedSpam = message.stmsg_headers?.['spam'];
     const isPossibleSpam = suspectedSpam === 'possible';
     const isLikelySpam = suspectedSpam === 'likely';
+
+    const hasDistinctReplyTo = MailHelper.hasDistinctReplyTo(message);
 
     const isUserSender = useMemo(() => {
         if (!message.is_sender) return false;
@@ -274,6 +277,18 @@ const ThreadMessageHeader = ({
                         {!isFolded && (
                             <div className="thread-message__header-rows">
                                 <div className="thread-message__header-column thread-message__header-column--left">
+                                    {hasDistinctReplyTo && (
+                                        <div className="thread-message__reply-to">
+                                            <span className="thread-message__recipients-label">{t('Reply to: ')}</span>
+                                            {message.replyTo.map((address) => (
+                                                <ContactChip
+                                                    key={address.email}
+                                                    contact={{ id: address.email, name: address.name, email: address.email }}
+                                                    displayOnlyEmail
+                                                />
+                                            ))}
+                                        </div>
+                                    )}
                                     <ThreadMessageRecipients
                                         to={sortedTo}
                                         cc={sortedCc}

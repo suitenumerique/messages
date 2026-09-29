@@ -10,6 +10,7 @@ import type { Attachment } from "./attachment";
 import type { Contact } from "./contact";
 import type { MessageSenderUserProperty } from "./message_sender_user_property";
 import type { MessageRecipient } from "./message_recipient";
+import type { EmailAddress } from "./email_address";
 import type { MessageSignature } from "./message_signature";
 import type { MessageStmsgHeaders } from "./message_stmsg_headers";
 
@@ -41,6 +42,7 @@ export type Message = {
   readonly to: readonly MessageRecipient[];
   readonly cc: readonly MessageRecipient[];
   readonly bcc: readonly MessageRecipient[];
+  readonly replyTo: readonly EmailAddress[];
   /** @nullable */
   readonly sent_at: string | null;
   readonly is_sender: boolean;

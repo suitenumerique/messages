@@ -1098,6 +1098,21 @@ class MessageRecipientSerializer(serializers.ModelSerializer):
         ]
 
 
+class EmailAddressSerializer(serializers.Serializer):
+    """JMAP ``EmailAddress`` serializer (RFC 8621 §4.1.2.3)."""
+
+    name = serializers.CharField(allow_null=True, required=False)
+    email = serializers.CharField()
+
+    def create(self, validated_data):
+        """Do not allow creating instances from this serializer."""
+        raise RuntimeError(f"{self.__class__.__name__} does not support create method")
+
+    def update(self, instance, validated_data):
+        """Do not allow updating instances from this serializer."""
+        raise RuntimeError(f"{self.__class__.__name__} does not support update method")
+
+
 class MessageBodyItemSerializer(serializers.Serializer):
     """Message body item serializer."""
 
@@ -1139,6 +1154,7 @@ class MessageSerializer(serializers.ModelSerializer):
     to = serializers.SerializerMethodField(read_only=True)
     cc = serializers.SerializerMethodField(read_only=True)
     bcc = serializers.SerializerMethodField(read_only=True)
+    replyTo = serializers.SerializerMethodField(read_only=True)
 
     sender = ContactSerializer(read_only=True)  # Sender contact info
     sender_user = MessageSenderUserSerializer(read_only=True, allow_null=True)
@@ -1248,6 +1264,13 @@ class MessageSerializer(serializers.ModelSerializer):
 
         return []
 
+    @extend_schema_field(EmailAddressSerializer(many=True))
+    def get_replyTo(self, instance):  # pylint: disable=invalid-name
+        """Return the 'Reply-To' addresses (JMAP style) from the MIME headers."""
+        return EmailAddressSerializer(
+            instance.get_parsed_field("replyTo") or [], many=True
+        ).data
+
     @extend_schema_field(MessageRecipientSerializer(many=True))
     def get_to(self, instance):
         """Return the 'To' recipients."""
@@ -1308,6 +1331,7 @@ class MessageSerializer(serializers.ModelSerializer):
             "to",
             "cc",
             "bcc",
+            "replyTo",
             "sent_at",
             "is_sender",
             "is_draft",

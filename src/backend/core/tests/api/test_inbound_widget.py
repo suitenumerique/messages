@@ -7,6 +7,8 @@ from django.core.exceptions import ValidationError
 from django.test import override_settings
 
 import pytest
+from dkim import verify as dkim_verify
+from jmap_email import parse_email
 from rest_framework import status
 from rest_framework.exceptions import AuthenticationFailed
 from rest_framework.test import APIClient
@@ -287,7 +289,10 @@ class TestInboundWidgetDeliver:
         )
 
         assert response.status_code == status.HTTP_200_OK
-        assert models.Contact.objects.filter(email="josé@example.com").exists()
+        message = models.Message.objects.get()
+        assert [a["email"] for a in message.get_parsed_field("replyTo")] == [
+            "josé@example.com"
+        ]
 
     def test_compose_rejection_log_carries_only_the_domain(self, api_client, channel):
         """The rejection is logged so operators can see widgets failing,
@@ -390,11 +395,73 @@ class TestInboundWidgetDeliver:
         call_args = mock_deliver.call_args[0]
         parsed_email = call_args[1]
 
-        assert parsed_email["from"][0]["email"] == "sender@example.com"
+        assert parsed_email["replyTo"] == [{"email": "sender@example.com"}]
         assert (
             "Test message with custom settings"
             in parsed_email["htmlBody"][0]["content"]
         )
+
+    @patch("core.api.viewsets.inbound.widget.deliver_inbound_message")
+    def test_inbound_widget_deliver_uses_service_sender(
+        self, mock_deliver, api_client, channel
+    ):
+        """The visitor's unverifiable address must not be the ``From``.
+
+        It fails SPF/DMARC and gets widget mail flagged as spam, so the
+        message is sent from a service address on the mailbox's own domain,
+        with the visitor in ``Reply-To`` and a Message-ID of its own.
+        """
+        mock_deliver.return_value = True
+        domain = channel.mailbox.domain.name
+        service_email = f"noreply@{domain}"
+
+        response = api_client.post(
+            "/api/v1.0/inbound/widget/deliver/",
+            data={"email": "sender@example.com", "textBody": "Hello"},
+            HTTP_X_CHANNEL_ID=str(channel.id),
+            HTTP_REFERER="https://example.com/contact",
+        )
+
+        assert response.status_code == status.HTTP_200_OK
+        _, parsed_email, raw_mime = mock_deliver.call_args[0]
+        envelope = mock_deliver.call_args[1]["envelope"]
+
+        assert parsed_email["from"] == [{"name": channel.name, "email": service_email}]
+        assert parsed_email["replyTo"] == [{"email": "sender@example.com"}]
+        assert parsed_email["messageId"][0].endswith(f"@{domain}")
+        assert envelope["mail_from"] == service_email
+
+        wire = parse_email(raw_mime)
+        assert wire["from"] == [{"name": channel.name, "email": service_email}]
+        assert [a["email"] for a in wire["replyTo"]] == ["sender@example.com"]
+        assert wire["messageId"] == parsed_email["messageId"]
+        assert f"Return-Path: <{service_email}>".encode() in raw_mime
+
+    @patch("core.api.viewsets.inbound.widget.deliver_inbound_message")
+    def test_inbound_widget_deliver_dkim_signs_with_mailbox_domain(
+        self, mock_deliver, api_client, channel
+    ):
+        """A DKIM signature aligned with the service ``From`` passes DMARC."""
+        mock_deliver.return_value = True
+        domain = channel.mailbox.domain
+        dkim_key = domain.get_active_dkim_key()
+
+        response = api_client.post(
+            "/api/v1.0/inbound/widget/deliver/",
+            data={"email": "sender@example.com", "textBody": "Hello"},
+            HTTP_X_CHANNEL_ID=str(channel.id),
+        )
+
+        assert response.status_code == status.HTTP_200_OK
+        raw_mime = mock_deliver.call_args[0][2]
+        assert raw_mime.startswith(b"DKIM-Signature:")
+
+        def get_dns_txt(fqdn, **kwargs):
+            if fqdn == f"{dkim_key.selector}._domainkey.{domain.name}.".encode():
+                return f"v=DKIM1; k=rsa; p={dkim_key.public_key}".encode()
+            return None
+
+        assert dkim_verify(raw_mime, dnsfunc=get_dns_txt)
 
     @pytest.mark.parametrize(
         "referer, expected_subject",
@@ -457,7 +524,11 @@ class TestInboundWidgetDeliver:
         message = models.Message.objects.first()
         # Check we have a threadaccess on the right mailbox
         assert message.thread.accesses.first().mailbox == mailbox
-        assert message.sender.email == "sender@example.com"
+        # Sent from the service address; the visitor is the Reply-To.
+        assert message.sender.email == f"noreply@{mailbox.domain.name}"
+        assert [a["email"] for a in message.get_parsed_field("replyTo")] == [
+            "sender@example.com"
+        ]
         assert message.subject == "Contact from example.com"
 
         # Check that channel tags were applied to the thread
@@ -480,6 +551,8 @@ class TestInboundWidgetDeliver:
             "sender-auth": "none",
             "widget-referer": "https://example.com/contact",
         }
+        # The visitor is exposed as the address to reply to.
+        assert [a["email"] for a in apimsg.json()["replyTo"]] == ["sender@example.com"]
         # Strip trailing CRLF added by stdlib's set_content body normalization.
         assert (
             apimsg.json()["htmlBody"][0]["content"].rstrip("\r\n")
@@ -513,7 +586,11 @@ class TestInboundWidgetDeliver:
         message = models.Message.objects.first()
         # Check we have a threadaccess on the right mailbox
         assert message.thread.accesses.first().mailbox == mailbox
-        assert message.sender.email == "sender@example.com"
+        # Sent from the service address; the visitor is the Reply-To.
+        assert message.sender.email == f"noreply@{mailbox.domain.name}"
+        assert [a["email"] for a in message.get_parsed_field("replyTo")] == [
+            "sender@example.com"
+        ]
         assert message.subject == "Message from widget"
 
         authenticated_user = factories.UserFactory()
@@ -555,7 +632,11 @@ class TestInboundWidgetDeliver:
         message = models.Message.objects.first()
         # Check we have a threadaccess on the right mailbox
         assert message.thread.accesses.first().mailbox == mailbox
-        assert message.sender.email == "sender@example.com"
+        # Sent from the service address; the visitor is the Reply-To.
+        assert message.sender.email == f"noreply@{mailbox.domain.name}"
+        assert [a["email"] for a in message.get_parsed_field("replyTo")] == [
+            "sender@example.com"
+        ]
         assert message.subject == "Message from widget"
 
         authenticated_user = factories.UserFactory()

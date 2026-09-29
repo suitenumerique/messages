@@ -8240,6 +8240,22 @@
                     "blob_id"
                 ]
             },
+            "EmailAddress": {
+                "type": "object",
+                "description": "JMAP ``EmailAddress`` serializer (RFC 8621 §4.1.2.3).",
+                "properties": {
+                    "name": {
+                        "type": "string",
+                        "nullable": true
+                    },
+                    "email": {
+                        "type": "string"
+                    }
+                },
+                "required": [
+                    "email"
+                ]
+            },
             "FlagEnum": {
                 "enum": [
                     "unread",
@@ -9650,6 +9666,13 @@
                         },
                         "readOnly": true
                     },
+                    "replyTo": {
+                        "type": "array",
+                        "items": {
+                            "$ref": "#/components/schemas/EmailAddress"
+                        },
+                        "readOnly": true
+                    },
                     "sent_at": {
                         "type": "string",
                         "format": "date-time",
@@ -9721,6 +9744,7 @@
                     "is_unread",
                     "mime_id",
                     "parent_id",
+                    "replyTo",
                     "sender",
                     "sender_user",
                     "sent_at",
