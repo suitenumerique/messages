@@ -1,0 +1,13 @@
+// Overrides for @gouvfr-lasuite/ui-components bugs awaiting an upstream release.
+
+// @TODO: Remove once ui-components ships an avatar that does not rely on color-mix().
+// Without color-mix() support (Chromium < 111, Safari < 16.2), `--overlay-color`
+// makes the whole `background` shorthand invalid at computed-value time, so the
+// avatar loses its background color, and the build minifier drops the `color`
+// fallback declared before the color-mix() one, so the initials inherit their color.
+@supports not (color: color-mix(in srgb, red, blue)) {
+    .c__avatar {
+        --overlay-color: transparent;
+        color: var(--c--contextuals--background--surface--tertiary);
+    }
+}
