@@ -21,13 +21,12 @@ set -o pipefail   # don't ignore exit codes when piping output
 #
 # Gated on MOBILE_OTA_S3_BUCKET (the first variable otaConfig() requires, with
 # no default): unset means "this app has no OTA bucket" and the script is a
-# no-op. Set, every other required variable must be present — a half-done
-# configuration must fail the build loudly, not publish something broken.
+# no-op, even if other MOBILE_OTA_* variables are set (e.g. an OTA setup still
+# in progress): the bucket alone is the switch. Set, every other required
+# variable must be present — a half-done configuration must fail the build
+# loudly, not publish something broken.
 if [ -z "${MOBILE_OTA_S3_BUCKET:-}" ]; then
-  if [ -n "${MOBILE_OTA_CHANNEL:-}${MOBILE_OTA_PUBLIC_BASE_URL:-}${MOBILE_OTA_SIGNING_PRIVATE_KEY_B64:-}" ]; then
-    echo "Partial OTA config: MOBILE_OTA_* vars set without MOBILE_OTA_S3_BUCKET" >&2
-    exit 1
-  fi
+  echo "-----> MOBILE_OTA_S3_BUCKET unset, skipping OTA bundle staging"
   exit 0
 fi
 
