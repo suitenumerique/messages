@@ -8,27 +8,79 @@ and this project adheres to
 
 ## [Unreleased]
 
+## [0.10.0] - 2026-09-29
+
 ### Added
 
+- Compose messages in floating windows: several drafts side by side,
+  minimized or full-screen, restored after a reload and synced across tabs
+- Mobile UI for the native apps: bottom navigation bar, swipe actions on
+  threads, pull-to-refresh, drawer, formatting toolbar above the keyboard,
+  haptics
+- Publish mobile OTA bundles from Scalingo deploys
+- Persist the last active mailbox and select it on the next visit
+- Clean snippet of the latest message in the thread list
+  (`FEATURE_THREAD_SNIPPET`, after `backfill_thread_snippets`) and on folded
+  messages
+- Allow domain admins to export mailboxes #789
+- Provisioning endpoint listing the DNS records of all domains #780
+- ARC relay trust: `arc` inbound_auth mode and `arc_verdict` spam rule #763
+- Support internationalized email addresses (IDNA domains, ASCII-folded
+  local parts) #785
+- Keep Gmail labels, Thunderbird read/starred flags and
+  sent/archived/spam/trashed states through MBOX export and import
 - Setup guides for the authentication provider and the identity provider
 - IP allowlist for the Django admin URL in the frontend Caddy proxy
 - Smoke test for the frontend production image (make test-front-distroless)
-- IP allowlist for the Keycloak admin console and master realm in the Keycloak image (Caddy)
-- Smoke test for the Keycloak production image (make test-keycloak-image)
+- IP allowlist for the Keycloak admin console and master realm in the Keycloak image (Caddy) #793
+- Smoke test for the Keycloak production image (make test-keycloak-image) #793
 
 ### Changed
 
-- Bump keycloak to 26.7.4 and Alpine to 3.24 in the Keycloak image
+- Migrate the frontend from Cunningham to the `@gouvfr-lasuite/ui-components`
+  and `@gouvfr-lasuite/ui-tokens` packages
+- Upgrade Capacitor to 8.5 and adopt the iOS UIScene life cycle
+- Upgrade jmap-email to 0.3.0: an unparseable inbound message is abandoned
+  instead of retried, a compose error on send returns a 400, a stored message
+  the parser now refuses is flagged unreadable
+- Force-lowercase mailbox addresses #785
+- Route mailbox export tasks to the imports queue #805
+- Redirect to the inbox when switching mailbox
+- Thread a reply by its In-Reply-To even when its subject was rewritten #765
+- Exclude spam and trashed messages from folder stats by default
+- Stop fetching stats for the Sent folder
+- Page titles follow "Mailbox - Folder - App name"
+- Harden pymta with new settings and limits, and improve its env vars,
+  documentation and logging #777 #783
+- Bump keycloak to 26.7.4 and Alpine to 3.24 in the Keycloak image #776 #784 #798
 - Bump Caddy to 2.11.4 and lprobe to v0.2.0 in the frontend image
 - Keycloak image: Keycloak listens on 127.0.0.1:8081, Caddy serves port 8080
 - Keycloak image: proxy headers are fixed to xforwarded from Caddy, which sends X-Forwarded-Proto https
 
 ### Removed
 
+- The mta-out service: relay mode now needs an external `MTA_OUT_RELAY_HOST` #785
 - Scalingo buildpack for Keycloak (src/keycloak/buildpack, Procfile, system.properties)
 
 ### Fixed
 
+- Fix a draft update / send race that could re-send an already delivered
+  email, and keep the autosave out of the send window
+- Add the channel to messages sent through the submit API #794
+- Accept more valid SPF records by implementing the full RFC #782
+- Ignore whitespace in DKIM keys in the DNS check #778
+- Select IMAP folders whose unquoted name carried extra spaces, and stop
+  retrying unselectable folders
+- Give nameless attachments the same name in the UI, downloads and drafts
+- Keep only BlockNote-supported colors in pasted content, drop unsupported
+  blocks and embed external images again
+- Resize the mail iframe with a resize observer (Safari, width changes,
+  lazy-loaded images)
+- Stretch the thread sender on a narrow thread panel
+- Fix file uploads outside a secure context (`crypto.randomUUID` fallback)
+- Fallback for avatar colors on browsers without `color-mix()` support
+- Mobile: send mutations through CapacitorHttp with an explicit Origin so
+  an HTTPS backend's CSRF check accepts them
 - Grant view-realm to the Keycloak service account, needed by the 2FA toggle
 - Run make test-keycloak against a freshly imported Keycloak realm
 - List only assignable users and current assignees in the quick assign picker
@@ -38,11 +90,20 @@ and this project adheres to
 - Turn the direct access grant off on the Keycloak rest-api client
 - Deny API actions that don't declare an access check by default
 - Check mailbox access for mailbox_id on message list and thread search
-- Rate-limit the image proxy and restrict it to ports 80 and 443
+- Rate-limit the image proxy, restrict it to ports 80 and 443 and mark its
+  responses private
 - SSRF-check per-domain relays (internal ones need SSRF_ALLOWED_HOSTS)
 - Validate the MailDomain custom_settings schema
 - Restrict IMAP import ports (MESSAGES_IMPORT_IMAP_ALLOWED_PORTS)
 - Use only the Referer hostname in widget message subjects
+- Scope the DNS check endpoint through the admin queryset
+- Refuse MTA requests with a 401 instead of a 500 when `MDA_API_SECRET` is
+  unset
+- Scope the flag endpoint draft cascade to editable messages and suspend
+  personal API keys of deactivated users #804
+- Harden email parsing against hostile mail (forged sender, smuggled
+  recipients, quadratic regexes) through jmap-email 0.3.0, and bound the
+  reply-unquoting regexes
 
 ## [0.9.0] - 2026-07-22
 
@@ -378,7 +439,8 @@ and this project adheres to
 - Exclude `is_trashed` and `is_spam` threads from search results by default
 - `to` search modifier now looks for messages where recipient fields (to, cc, bcc) contain the given email address.
 
-[unreleased]: https://github.com/suitenumerique/messages/compare/v0.9.0...main
+[unreleased]: https://github.com/suitenumerique/messages/compare/v0.10.0...main
+[0.10.0]: https://github.com/suitenumerique/messages/compare/v0.9.0...v0.10.0
 [0.9.0]: https://github.com/suitenumerique/messages/compare/v0.8.0...v0.9.0
 [0.8.0]: https://github.com/suitenumerique/messages/compare/v0.7.0...v0.8.0
 [0.7.0]: https://github.com/suitenumerique/messages/compare/v0.6.0...v0.7.0
