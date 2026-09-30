@@ -1,3 +1,5 @@
+import { handle } from "@/features/utils/errors";
+
 const SVG_NS = "http://www.w3.org/2000/svg";
 const BADGE_COLOR = "#D7010E"; // --c--globals--colors--error-550
 const BADGE_MASK_ID = "favicon-unread-badge-cutout";
@@ -14,15 +16,29 @@ type ViewBox = { minX: number; minY: number; width: number; height: number };
  * below what a 16px favicon can resolve. */
 const round = (value: number) => String(Math.round(value * 100) / 100);
 
-const readViewBox = (svg: Element): ViewBox => {
-  const values = (svg.getAttribute("viewBox") ?? "")
+const parseNumbers = (value: string | null): number[] =>
+  (value ?? "")
+    .trim()
     .split(/[\s,]+/)
     .map(Number)
-    .filter((value) => Number.isFinite(value));
-  if (values.length !== 4 || values[2] <= 0 || values[3] <= 0) {
-    throw new Error("Favicon SVG has no usable viewBox");
+    .filter((number) => Number.isFinite(number));
+
+/**
+ * Read the SVG user space. Minifiers (svgo's `removeViewBox`) drop the viewBox
+ * when it merely mirrors `width`/`height`, in which case the user space is
+ * `0 0 width height` — so fall back to those.
+ */
+const readViewBox = (svg: Element): ViewBox => {
+  const values = parseNumbers(svg.getAttribute("viewBox"));
+  if (values.length === 4 && values[2] > 0 && values[3] > 0) {
+    return { minX: values[0], minY: values[1], width: values[2], height: values[3] };
   }
-  return { minX: values[0], minY: values[1], width: values[2], height: values[3] };
+  const [width] = parseNumbers(svg.getAttribute("width"));
+  const [height] = parseNumbers(svg.getAttribute("height"));
+  if (width > 0 && height > 0) {
+    return { minX: 0, minY: 0, width, height };
+  }
+  throw new Error("Favicon SVG has no usable viewBox");
 };
 
 /**
@@ -38,6 +54,9 @@ const buildBadgedSvg = (source: string): string => {
   }
 
   const { minX, minY, width, height } = readViewBox(svg);
+  // Pin the user space the badge is drawn in, so it scales with the glyph
+  // wherever the favicon is rendered below its intrinsic size.
+  svg.setAttribute("viewBox", [minX, minY, width, height].map(round).join(" "));
   const radius = 9;
   const cx = minX + width - radius * 1.4;
   const cy = minY + height - radius * 1.4;
@@ -93,7 +112,7 @@ const getBadgedHref = (baseHref: string): Promise<string> => {
         // Keep the plain favicon rather than blanking the tab icon, and drop
         // the entry so the next toggle retries instead of caching the failure.
         badgedHrefs.delete(baseHref);
-        console.error("[favicon] Failed to build the unread badge.", error);
+        handle(new Error("Failed to build the favicon unread badge."), { extra: { error, baseHref } });
         return baseHref;
       });
     badgedHrefs.set(baseHref, pending);

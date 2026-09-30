@@ -1,5 +1,9 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
+// Hoisted so the same spy survives the `vi.resetModules()` of every test.
+const { handle } = vi.hoisted(() => ({ handle: vi.fn() }));
+vi.mock("@/features/utils/errors", () => ({ handle }));
+
 const FAVICON_SVG = `<svg width="48" height="48" viewBox="0 0 48 48" fill="none" xmlns="http://www.w3.org/2000/svg">
 <path d="M5 40L16 30Z" fill="#2845C1"/>
 </svg>`;
@@ -30,6 +34,7 @@ describe("theme-favicons", () => {
 
     afterEach(() => {
         cleanup();
+        handle.mockClear();
         vi.unstubAllGlobals();
     });
 
@@ -55,6 +60,51 @@ describe("theme-favicons", () => {
         }
     });
 
+    it("badges a favicon whose viewBox was stripped by the minifier", async () => {
+        vi.stubGlobal(
+            "fetch",
+            vi.fn(() =>
+                Promise.resolve(
+                    new Response(
+                        '<svg xmlns="http://www.w3.org/2000/svg" width="48" height="48" fill="none"><path fill="#2845c1" d="M5 40L16 30Z"/></svg>',
+                        { status: 200 },
+                    ),
+                ),
+            ),
+        );
+
+        favicons.setFaviconBadge(true);
+        await flush();
+
+        for (const link of getFaviconLinks()) {
+            const svg = decodeHref(link.href);
+            expect(svg).toContain('viewBox="0 0 48 48"');
+            expect(svg).toContain('cx="35.4" cy="35.4" r="9"');
+        }
+    });
+
+    it("keeps the plain favicon when the source SVG has no usable dimensions", async () => {
+        vi.stubGlobal(
+            "fetch",
+            vi.fn(() =>
+                Promise.resolve(
+                    new Response('<svg xmlns="http://www.w3.org/2000/svg"><path d="M5 40L16 30Z"/></svg>', {
+                        status: 200,
+                    }),
+                ),
+            ),
+        );
+
+        expect(() => favicons.setFaviconBadge(true)).not.toThrow();
+        await flush();
+
+        expect(getFaviconLinks().map((link) => new URL(link.href).pathname)).toEqual([
+            "/images/anct/favicon-light.svg",
+            "/images/anct/favicon-dark.svg",
+        ]);
+        expect(handle).toHaveBeenCalledTimes(2);
+    });
+
     it("fetches each variant once across badge toggles", async () => {
         favicons.setFaviconBadge(true);
         await flush();
@@ -78,12 +128,11 @@ describe("theme-favicons", () => {
 
     it("keeps the plain favicon when the source SVG cannot be fetched", async () => {
         vi.stubGlobal("fetch", vi.fn(() => Promise.reject(new Error("offline"))));
-        const consoleError = vi.spyOn(console, "error").mockImplementation(() => {});
 
         favicons.setFaviconBadge(true);
         await flush();
 
         expect(getFaviconLinks().every((link) => link.href.endsWith(".svg"))).toBe(true);
-        consoleError.mockRestore();
+        expect(handle).toHaveBeenCalledTimes(2);
     });
 });
