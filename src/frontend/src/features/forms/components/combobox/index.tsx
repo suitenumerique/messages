@@ -6,6 +6,10 @@ import { Chip } from "./chip";
 import { Button, Option } from "@gouvfr-lasuite/ui-components";
 import { Icon } from "@/features/ui/components/icon";
 import { useTranslation } from "react-i18next";
+import { Popover } from "react-aria-components";
+
+// react-aria lowers it to the room left on the side the menu opens to.
+const MENU_MAX_HEIGHT = 320;
 
 export type ComboBoxProps =  {
     onInputChange?: (value: string) => void;
@@ -44,6 +48,7 @@ export const ComboBox = (props: ComboBoxProps) => {
     const [inputValue, setInputValue] = useState('');
     const [inputFocused, setInputFocused] = useState(false);
     const inputRef = useRef<HTMLInputElement>(null);
+    const wrapperRef = useRef<HTMLDivElement>(null);
     // `className` is merged into the root classes below instead of being
     // spread, otherwise a caller-provided value would replace `c__combobox`.
     const { valueTransformer, getItemWarning, className, variant = "floating", actions, ...fieldProps } = props;
@@ -134,6 +139,7 @@ export const ComboBox = (props: ComboBoxProps) => {
         isOpen,
         highlightedIndex,
         selectedItem,
+        closeMenu,
     } = useCombobox(
         {
             items: filteredOptions,
@@ -285,7 +291,7 @@ export const ComboBox = (props: ComboBoxProps) => {
                     {props.label}
                 </label>
             )}
-            <div className="c__combobox__wrapper" onClick={() => {
+            <div className="c__combobox__wrapper" ref={wrapperRef} onClick={() => {
                 inputRef.current?.focus();
             }}>
                 {inline ? (
@@ -306,24 +312,35 @@ export const ComboBox = (props: ComboBoxProps) => {
                         {actionsRow}
                     </LabelledBox>
                 )}
-                <ul className={
-                    clsx("c__combobox__menu", {
-                        "c__combobox__menu--opened": isOpen,
-                    })} {...getMenuProps()}>
-                {isOpen && inputFocused && filteredOptions.length > 0 &&
-                    filteredOptions.map((item, index) => (
-                    <li
-                        className={clsx("c__combobox__menu__item", {
-                            "c__combobox__menu__item--highlight": highlightedIndex === index,
-                            "c__combobox__menu__item--selected": selectedItem === item,
-                        })}
-                        key={item.value}
-                        {...getItemProps({item, index})}
-                    >
-                        {item.render?.() || <span>{item.label}</span>}
-                    </li>
-                    ))}
-                </ul>
+                {/* Portaled so the menu is not clipped by a scrolling ancestor
+                    (e.g. a compose window) and can flip above the field.
+                    Non-modal: the focus stays in the input, downshift drives
+                    the menu. react-aria closes it when an ancestor of the
+                    field scrolls, as it does not follow the field. */}
+                <Popover
+                    className="c__combobox__popover"
+                    triggerRef={wrapperRef}
+                    isOpen={isOpen && inputFocused && filteredOptions.length > 0}
+                    onOpenChange={(open) => { if (!open) closeMenu(); }}
+                    isNonModal
+                    placement="bottom start"
+                    maxHeight={MENU_MAX_HEIGHT}
+                >
+                    <ul className="c__combobox__menu" {...getMenuProps({}, { suppressRefError: true })}>
+                        {filteredOptions.map((item, index) => (
+                            <li
+                                className={clsx("c__combobox__menu__item", {
+                                    "c__combobox__menu__item--highlight": highlightedIndex === index,
+                                    "c__combobox__menu__item--selected": selectedItem === item,
+                                })}
+                                key={item.value}
+                                {...getItemProps({item, index})}
+                            >
+                                {item.render?.() || <span>{item.label}</span>}
+                            </li>
+                        ))}
+                    </ul>
+                </Popover>
             </div>
         </Field>
     )

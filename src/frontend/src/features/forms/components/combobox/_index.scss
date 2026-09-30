@@ -147,24 +147,23 @@
   cursor: default;
 }
 
-.c__combobox__menu {
-  position: absolute;
-  overflow: auto;
-  min-width: calc(100% - 4px);
-  top: 100%;
-  left: 2px;
-  max-height: 20rem;
+// Positioned by react-aria, which sets its max-height: the list inside
+// scrolls within it.
+.c__combobox__popover {
+  display: flex;
+  flex-direction: column;
+  min-width: var(--trigger-width);
   background-color: var(--c--components--forms-select--menu-background-color);
-  display: none;
   box-shadow: 0 1px 4px rgba(0, 0, 0, 0.3);
+}
+
+.c__combobox__menu {
+  flex: 1;
+  min-height: 0;
+  overflow: auto;
   list-style-type: none;
   padding: 0;
   margin: 0;
-  z-index: 1;
-
-  &--opened {
-    display: block;
-  }
 
   &__item {
     padding: var(--c--globals--spacings--sm);
