@@ -11,3 +11,23 @@
         color: var(--c--contextuals--background--surface--tertiary);
     }
 }
+
+// @TODO: Remove once ui-components ships a fix for the dropdown menu overflow.
+// Since the menu list is wrapped with top/bottom messages, `overflow: auto` moved
+// onto `.c__dropdown-menu__list` while `max-height` stayed on its wrapper. The list
+// is never constrained, so when the popover lacks room the white wrapper is capped
+// but the items overflow it instead of scrolling.
+.c__dropdown-menu {
+    display: flex;
+    flex-direction: column;
+}
+
+.c__dropdown-menu__list {
+    flex: 1 1 auto;
+    min-height: 0;
+}
+
+// Submenus render the menu itself as `.c__dropdown-menu`, without any list wrapper.
+.c__dropdown-menu[role="menu"] {
+    overflow-y: auto;
+}
