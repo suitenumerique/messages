@@ -117,7 +117,7 @@ public class BulkRoleMembershipResource {
             throw new NotAuthorizedException("Bearer token required");
         }
         AdminAuth admin = new AdminAuth(
-                realm, result.getToken(), result.getUser(), result.getClient());
+                realm, result.token(), result.user(), result.client());
         AdminPermissionEvaluator eval = AdminPermissions.evaluator(session, realm, admin);
         eval.users().requireQuery();
     }

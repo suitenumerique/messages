@@ -8,6 +8,10 @@ and this project adheres to
 
 ## [Unreleased]
 
+### Changed
+
+- Bump keycloak to 26.8.0 and refresh the Alpine 3.24 digest in the Keycloak image
+
 ## [0.10.0] - 2026-09-29
 
 ### Added
