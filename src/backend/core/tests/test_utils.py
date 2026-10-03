@@ -5,6 +5,11 @@ from datetime import datetime
 from jmap_email import compose_email
 
 from core.mda.utils import SNIPPET_MAX_CHARS, current_sent_at, message_snippet
+from core.utils import (
+    SecretFileDictValue,
+    SecretFileJSONValue,
+    SecretFileListValue,
+)
 
 
 class TestCurrentSentAt:
@@ -124,3 +129,58 @@ class TestMessageSnippet:
         — a single shared truncation, applied after cleaning."""
         out = message_snippet({"preview": "x" * 1024})
         assert len(out) == SNIPPET_MAX_CHARS
+
+
+class TestSecretFileValues:
+    """List/JSON settings holding secrets accept a ``{NAME}_FILE`` path, so they
+    can be mounted from a secret store like the plain ``SecretFileValue`` ones."""
+
+    def test_list_value_is_read_from_file(self, monkeypatch, tmp_path):
+        """The file wins over the plain variable and is parsed as a list."""
+        secret = tmp_path / "salt"
+        secret.write_text("new_key,old_key\n")
+        monkeypatch.setenv("TEST_SECRET_LIST", "ignored")
+        monkeypatch.setenv("TEST_SECRET_LIST_FILE", str(secret))
+
+        value = SecretFileListValue(
+            [], environ_name="TEST_SECRET_LIST", environ_prefix=None
+        )
+
+        assert value == ["new_key", "old_key"]
+
+    def test_list_value_falls_back_to_env_then_default(self, monkeypatch):
+        """Without a file, the plain variable then the default are used."""
+        monkeypatch.delenv("TEST_SECRET_LIST_FILE", raising=False)
+        monkeypatch.setenv("TEST_SECRET_LIST", "a,b")
+        assert SecretFileListValue(
+            [], environ_name="TEST_SECRET_LIST", environ_prefix=None
+        ) == ["a", "b"]
+
+        monkeypatch.delenv("TEST_SECRET_LIST")
+        assert SecretFileListValue(
+            ["default"], environ_name="TEST_SECRET_LIST", environ_prefix=None
+        ) == ["default"]
+
+    def test_json_value_is_read_from_file(self, monkeypatch, tmp_path):
+        """The file content is parsed as JSON."""
+        secret = tmp_path / "keys.json"
+        secret.write_text('{"1": {"algo": "aes-gcm", "secret": "s", "active": true}}')
+        monkeypatch.setenv("TEST_SECRET_JSON_FILE", str(secret))
+
+        value = SecretFileJSONValue(
+            {}, environ_name="TEST_SECRET_JSON", environ_prefix=None
+        )
+
+        assert value == {"1": {"algo": "aes-gcm", "secret": "s", "active": True}}
+
+    def test_dict_value_is_read_from_file(self, monkeypatch, tmp_path):
+        """The file content is parsed as a dict."""
+        secret = tmp_path / "spam"
+        secret.write_text('{"rspamd_url": "http://mpa", "rspamd_auth": "token"}\n')
+        monkeypatch.setenv("TEST_SECRET_DICT_FILE", str(secret))
+
+        value = SecretFileDictValue(
+            {}, environ_name="TEST_SECRET_DICT", environ_prefix=None
+        )
+
+        assert value == {"rspamd_url": "http://mpa", "rspamd_auth": "token"}

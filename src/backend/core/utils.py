@@ -10,6 +10,7 @@ from django.core.exceptions import ImproperlyConfigured, ValidationError
 
 import jsonschema
 from configurations import values
+from lasuite.configuration.values import SecretFileValue
 
 logger = logging.getLogger(__name__)
 
@@ -233,6 +234,18 @@ class JSONValue(values.Value):
         except (json.JSONDecodeError, TypeError):
             name = getattr(self, "environ_name", None) or "<JSONValue>"
             raise ImproperlyConfigured(f"{name} is not valid JSON") from None
+
+
+class SecretFileListValue(SecretFileValue, values.ListValue):
+    """A ListValue that can also be read from the file named by ``{NAME}_FILE``."""
+
+
+class SecretFileJSONValue(SecretFileValue, JSONValue):
+    """A JSONValue that can also be read from the file named by ``{NAME}_FILE``."""
+
+
+class SecretFileDictValue(SecretFileValue, values.DictValue):
+    """A DictValue that can also be read from the file named by ``{NAME}_FILE``."""
 
 
 class OptionalBooleanValue(values.BooleanValue):

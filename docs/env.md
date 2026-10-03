@@ -21,6 +21,36 @@ The application uses a new environment file structure with `.defaults` and `.loc
 - `mta-in.defaults` - Inbound mail server settings
 - `crowdin.defaults` - Translation service configuration
 
+## Secrets from Files
+
+Variables holding a secret can also be read from a file, which suits Docker/Kubernetes secrets mounted as files. For a variable `NAME`, set `NAME_FILE` to the path of the file instead of setting `NAME` itself.
+
+- `NAME_FILE` takes precedence over `NAME`; the default applies when neither is set.
+- The file content is parsed exactly like the variable would be (comma-separated list, JSON, …). Only a single trailing newline is stripped.
+- A missing or unreadable file makes the service fail at startup.
+- If `DATABASE_URL` is set, it overrides the `DB_*` variables and `DB_PASSWORD_FILE` is ignored.
+- Celery reads `CELERY_BROKER_URL` from the environment before the Django settings: when using `CELERY_BROKER_URL_FILE`, leave `CELERY_BROKER_URL` unset or the workers will ignore the file.
+
+| Area | Variables accepting a `_FILE` suffix |
+|------|--------------------------------------|
+| Django | `DJANGO_SECRET_KEY`, `DJANGO_SERVER_TO_SERVER_API_TOKENS` |
+| Database, cache, broker & search | `DB_PASSWORD`, `REDIS_URL`, `CELERY_BROKER_URL`, `OPENSEARCH_URL` |
+| Object storage | `AWS_S3_ACCESS_KEY_ID`, `AWS_S3_SECRET_ACCESS_KEY`, `STORAGE_MESSAGE_IMPORTS_ACCESS_KEY`, `STORAGE_MESSAGE_IMPORTS_SECRET_KEY`, `STORAGE_MESSAGE_BLOBS_ACCESS_KEY`, `STORAGE_MESSAGE_BLOBS_SECRET_KEY` |
+| Encryption keys | `SALT_KEY`, `MESSAGES_BLOBS_ENCRYPT_KEYS`, `OIDC_STORE_REFRESH_TOKEN_KEY` |
+| Authentication | `OIDC_RP_CLIENT_SECRET`, `KEYCLOAK_CLIENT_SECRET` |
+| Mail | `MTA_OUT_RELAY_PASSWORD`, `MTA_OUT_DIRECT_PROXIES`, `SPAM_CONFIG`, `MESSAGES_SELFCHECK_SECRET`, `MESSAGES_SELFCHECK_WEBHOOK_URL` |
+| Third-party services | `AI_API_KEY`, `CALDAV_DEFAULT_PASSWORD`, `DNS_SCALEWAY_API_TOKEN` |
+| Monitoring & API keys | `PROMETHEUS_API_KEY`, `METRICS_API_KEY` *(deprecated)*, `PROVISIONING_API_KEY` *(deprecated)* |
+| Push notifications | `PUSH_APNS_KEY`, `PUSH_FCM_CREDENTIALS`, `PUSH_VAPID_PRIVATE_KEY`, `PUSH_VAPID_PUBLIC_KEY` |
+
+Example:
+
+```yaml
+environment:
+  DB_PASSWORD_FILE: /run/secrets/db_password
+  SALT_KEY_FILE: /run/secrets/salt_key  # e.g. "new_key,old_key"
+```
+
 ## Core Application Configuration
 
 ### Django Settings
@@ -43,7 +73,7 @@ The application uses a new environment file structure with `.defaults` and `.loc
 #### PostgreSQL (Main Database)
 | Variable | Default | Description | Required |
 |----------|---------|-------------|----------|
-| `DATABASE_URL` | None | Complete database URL (overrides individual DB_* vars) | Optional |
+| `DATABASE_URL` | None | Complete database URL (overrides individual DB_* vars, including `DB_PASSWORD_FILE`) | Optional |
 | `DB_ENGINE` | `django.db.backends.postgresql_psycopg2` | Database engine | Optional |
 | `DB_HOST` | `postgresql` | Database hostname (container name) | Optional |
 | `DB_NAME` | `messages` | Database name | Optional |
@@ -115,11 +145,7 @@ of each implementation (Postfix + milter, and the pure-Python pymta).
 
 | Variable | Default | Description | Required |
 |----------|---------|-------------|----------|
-| `MESSAGES_DKIM_SELECTOR` | `default` | DKIM selector | Optional |
 | `MESSAGES_DKIM_DEFAULT_SELECTOR` | `stmessages` | Default DKIM selector applied to managed domains that don't override it. | Optional |
-| `MESSAGES_DKIM_DOMAINS` | `[]` | List of domains for DKIM signing | Optional |
-| `MESSAGES_DKIM_PRIVATE_KEY_B64` | None | Base64 encoded DKIM private key | Optional |
-| `MESSAGES_DKIM_PRIVATE_KEY_FILE` | None | Path to DKIM private key file | Optional |
 | `MESSAGES_DKIM_VERIFY_OUTGOING` | `False` | Verify the DKIM signature on outgoing messages before sending. | Optional |
 | `MESSAGES_SPF_CHECK_OUTGOING` | `False` | Block outgoing messages when the sending domain's SPF includes are not correctly set up. | Optional |
 
@@ -321,9 +347,9 @@ gitignored `src/frontend/android/keystore.properties`, never in
 | `CORS_ALLOWED_ORIGIN_REGEXES` | `[]` | Regex patterns for allowed origins | Optional |
 | `CSRF_TRUSTED_ORIGINS` | `["http://localhost:8900", "http://localhost:8901"]` | Trusted origins for CSRF | Optional |
 | `ALLOWED_HOSTS` | `[]` | Django host/domain allow-list setting (`settings.ALLOWED_HOSTS`). In the Base/Production configurations it is populated from the `DJANGO_ALLOWED_HOSTS` env var (see above); the Development configuration hardcodes `["*"]`. The `bucket_cors` management command also reads it to build S3 CORS origins. | Optional |
-| `SERVER_TO_SERVER_API_TOKENS` | `[]` | API tokens for server-to-server auth | Optional |
+| `DJANGO_SERVER_TO_SERVER_API_TOKENS` | `[]` | Comma-separated API tokens for server-to-server auth | Optional |
 | `SSRF_ALLOWED_HOSTS` | `[]` | Comma-separated list of exact, case-insensitive hostnames that bypass the SSRF private/internal-IP checks (webhook URLs, image proxy, IMAP, CalDAV). Use only for trusted destinations that resolve to a private address from inside the platform network (e.g. app-to-app traffic on an internal overlay). Each entry is a deliberate hole in the SSRF protection — keep the list as narrow as possible. | Optional |
-| `SALT_KEY` | `[]` | Key(s) for Django Fernet-encrypted model fields. Accepts a list for rotation (`["new_key", "old_key"]`); the first is used to encrypt, all are tried to decrypt. | Optional |
+| `SALT_KEY` | `[]` | Key(s) for Django Fernet-encrypted model fields. Accepts a comma-separated list for rotation (`new_key,old_key`); the first is used to encrypt, all are tried to decrypt. | Optional |
 
 ## Monitoring & Observability
 
@@ -779,7 +805,7 @@ These files are gitignored and allow for local development customizations withou
 For production deployments, ensure:
 
 1. All **Required** variables are properly configured
-2. Secrets are managed through secure secret management systems
+2. Secrets are managed through secure secret management systems — mount them as files with the `_FILE` variants (see [Secrets from Files](#secrets-from-files))
 3. HTTPS is enforced for all external communications
 4. Database connections use SSL/TLS
 5. File storage uses appropriate access controls
