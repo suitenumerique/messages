@@ -58,7 +58,7 @@ dependencies = [
     "nested-multipart-parser==1.6.0",
     "openai==2.21.0",
     "psycopg[binary]==3.3.3",
-    "PyJWT==2.13.0",
+    "PyJWT==2.15.0",
     "PySocks==1.7.1",
     "python-keycloak==5.5.1",
     "python-magic==0.4.27",

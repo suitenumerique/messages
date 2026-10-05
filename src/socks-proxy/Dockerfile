@@ -24,7 +24,7 @@ EOR
 FROM debian:trixie-slim@sha256:a99cfc517144bc59b1978475ec53b46ecabec7e43635402ee5b77cc54cd1b20a AS runtime
 
 # Bump to force an apt refresh + security upgrade of the base OS.
-ENV MIN_UPDATE_DATE="2026-09-21"
+ENV MIN_UPDATE_DATE="2026-10-05"
 
 RUN <<EOR
 apt-get update
