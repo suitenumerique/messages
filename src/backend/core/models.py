@@ -253,6 +253,12 @@ class User(AbstractBaseUser, BaseModel, auth_models.PermissionsMixin):
         help_text="Metadata to sync to the user in the identity provider.",
     )
 
+    claims = models.JSONField(
+        blank=True,
+        default=dict,
+        help_text="Claims from the OIDC token.",
+    )
+
     objects = UserManager()
 
     USERNAME_FIELD = "admin_email"

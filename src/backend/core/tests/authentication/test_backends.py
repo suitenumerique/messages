@@ -406,3 +406,82 @@ def test_authentication_session_tokens(monkeypatch, rf, settings):
     assert user is not None
     assert request.session["oidc_access_token"] == "test-access-token"
     assert get_oidc_refresh_token(request.session) == "test-refresh-token"
+
+
+def test_authentication_get_extra_claims_stores_configured_claims(settings):
+    """Only the claims listed in OIDC_STORE_CLAIMS are exposed for storage."""
+    settings.OIDC_STORE_CLAIMS = ["picture", "locale"]
+
+    extra_claims = OIDCAuthenticationBackend().get_extra_claims(
+        {"sub": "123", "picture": "https://example.com/a.png", "locale": "nl", "x": 1}
+    )
+
+    assert extra_claims["claims"] == {
+        "picture": "https://example.com/a.png",
+        "locale": "nl",
+    }
+
+
+def test_authentication_get_extra_claims_missing_claim_is_none(settings):
+    """A configured claim absent from user_info is stored as None."""
+    settings.OIDC_STORE_CLAIMS = ["picture"]
+
+    extra_claims = OIDCAuthenticationBackend().get_extra_claims({"sub": "123"})
+
+    assert extra_claims["claims"] == {"picture": None}
+
+
+def test_authentication_get_extra_claims_nothing_stored_by_default():
+    """Without OIDC_STORE_CLAIMS configured, no claims are stored."""
+    extra_claims = OIDCAuthenticationBackend().get_extra_claims(
+        {"sub": "123", "picture": "https://example.com/a.png"}
+    )
+
+    assert extra_claims["claims"] == {}
+
+
+def test_authentication_getter_new_user_stores_claims(monkeypatch, settings):
+    """Configured claims are persisted on the user created at login."""
+    settings.OIDC_STORE_CLAIMS = ["picture"]
+    klass = OIDCAuthenticationBackend()
+
+    monkeypatch.setattr(
+        OIDCAuthenticationBackend,
+        "get_userinfo",
+        lambda *args: {
+            "sub": "123",
+            "email": "john@example.com",
+            "picture": "https://example.com/a.png",
+        },
+    )
+
+    user = klass.get_or_create_user(
+        access_token="test-token", id_token=None, payload=None
+    )
+
+    user.refresh_from_db()
+    assert user.claims == {"picture": "https://example.com/a.png"}
+
+
+def test_authentication_getter_existing_user_updates_claims(monkeypatch, settings):
+    """Stored claims are refreshed when the identity provider sends new values."""
+    settings.OIDC_STORE_CLAIMS = ["picture"]
+    klass = OIDCAuthenticationBackend()
+    db_user = UserFactory(claims={"picture": "https://example.com/old.png"})
+
+    monkeypatch.setattr(
+        OIDCAuthenticationBackend,
+        "get_userinfo",
+        lambda *args: {
+            "sub": db_user.sub,
+            "email": db_user.email,
+            "picture": "https://example.com/new.png",
+        },
+    )
+
+    user = klass.get_or_create_user(
+        access_token="test-token", id_token=None, payload=None
+    )
+
+    user.refresh_from_db()
+    assert user.claims == {"picture": "https://example.com/new.png"}

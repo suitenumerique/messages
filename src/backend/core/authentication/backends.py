@@ -2,6 +2,7 @@
 
 import logging
 
+from django.conf import settings
 from django.core.exceptions import SuspiciousOperation
 from django.core.exceptions import ValidationError as DjangoValidationError
 
@@ -169,8 +170,12 @@ class OIDCAuthenticationBackend(LaSuiteOIDCAuthenticationBackend):
 
     def get_extra_claims(self, user_info):
         """Get extra claims."""
+        claims_to_store = {
+            claim: user_info.get(claim) for claim in settings.OIDC_STORE_CLAIMS
+        }
         return {
             "full_name": self.compute_full_name(user_info),
+            "claims": claims_to_store,
         }
 
     def get_existing_user(self, sub, email):
