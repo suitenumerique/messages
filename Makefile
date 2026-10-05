@@ -604,7 +604,7 @@ deps-audit-back: ## audit back-end dependencies for vulnerabilities
 	@$(COMPOSE) run --rm --no-deps -e HOME=/tmp --build backend-dev pip-audit
 .PHONY: deps-audit-back
 
-deps-audit: deps-audit-back ## alias for deps-audit-back
+deps-audit: deps-audit-back deps-audit-mta-in ## audit all Python dependencies for vulnerabilities
 .PHONY: deps-audit
 
 collectstatic: build-python-base ## collect static files
@@ -884,5 +884,10 @@ test-keycloak: ## run all Keycloak provider tests (builds JARs, brings up Keyclo
 
 deps-lock-mta-in: build-python-base ## lock the dependencies for mta-in (shared between both implementations)
 	@$(COMPOSE) run --rm --build mta-in-uv uv lock
+	@$(MAKE) deps-audit-mta-in
 .PHONY: deps-lock-mta-in
+
+deps-audit-mta-in: build-python-base ## audit mta-in dependencies (all extras) for vulnerabilities
+	@$(COMPOSE) run --rm --no-deps -e HOME=/tmp -e EXEC_CMD_ONLY=true --build mta-in-test pip-audit
+.PHONY: deps-audit-mta-in
 
