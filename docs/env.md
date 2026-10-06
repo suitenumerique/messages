@@ -238,7 +238,7 @@ in the frontend env files; in CI they come from secrets.
 | `OIDC_OP_LOGOUT_ENDPOINT` | None | OIDC logout endpoint | Optional |
 | `OIDC_USERINFO_ESSENTIAL_CLAIMS` | `[]` | Essential OIDC claims | Optional |
 | `OIDC_USERINFO_FULLNAME_FIELDS` | `["first_name", "last_name"]` | Fields to use for full name | Optional |
-| `OIDC_STORE_CLAIMS` | `[]` | OIDC userinfo claims to store on the user, in `User.oidc_claims` (e.g. `["picture", "locale"]`) | Optional |
+| `OIDC_STORE_CLAIMS` | `[]` | OIDC userinfo claims to store on the user, in `User.oidc_claims` (e.g. `OIDC_STORE_CLAIMS=picture,locale`) | Optional |
 | `OIDC_STORE_ACCESS_TOKEN` | `False` | Store access token | Optional |
 | `OIDC_STORE_REFRESH_TOKEN` | `False` | Store refresh token | Optional |
 | `OIDC_STORE_REFRESH_TOKEN_KEY` | `None` | Refresh token encryption key (Must be a valid Fernet key) | Optional |
