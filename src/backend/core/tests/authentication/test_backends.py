@@ -416,7 +416,7 @@ def test_authentication_get_extra_claims_stores_configured_claims(settings):
         {"sub": "123", "picture": "https://example.com/a.png", "locale": "nl", "x": 1}
     )
 
-    assert extra_claims["claims"] == {
+    assert extra_claims["oidc_claims"] == {
         "picture": "https://example.com/a.png",
         "locale": "nl",
     }
@@ -428,7 +428,7 @@ def test_authentication_get_extra_claims_missing_claim_is_none(settings):
 
     extra_claims = OIDCAuthenticationBackend().get_extra_claims({"sub": "123"})
 
-    assert extra_claims["claims"] == {"picture": None}
+    assert extra_claims["oidc_claims"] == {"picture": None}
 
 
 def test_authentication_get_extra_claims_nothing_stored_by_default():
@@ -437,12 +437,13 @@ def test_authentication_get_extra_claims_nothing_stored_by_default():
         {"sub": "123", "picture": "https://example.com/a.png"}
     )
 
-    assert extra_claims["claims"] == {}
+    assert extra_claims["oidc_claims"] == {}
 
 
 def test_authentication_getter_new_user_stores_claims(monkeypatch, settings):
     """Configured claims are persisted on the user created at login."""
     settings.OIDC_STORE_CLAIMS = ["picture"]
+    settings.OIDC_CREATE_USER = True
     klass = OIDCAuthenticationBackend()
 
     monkeypatch.setattr(
@@ -460,14 +461,14 @@ def test_authentication_getter_new_user_stores_claims(monkeypatch, settings):
     )
 
     user.refresh_from_db()
-    assert user.claims == {"picture": "https://example.com/a.png"}
+    assert user.oidc_claims == {"picture": "https://example.com/a.png"}
 
 
 def test_authentication_getter_existing_user_updates_claims(monkeypatch, settings):
     """Stored claims are refreshed when the identity provider sends new values."""
     settings.OIDC_STORE_CLAIMS = ["picture"]
     klass = OIDCAuthenticationBackend()
-    db_user = UserFactory(claims={"picture": "https://example.com/old.png"})
+    db_user = UserFactory(oidc_claims={"picture": "https://example.com/old.png"})
 
     monkeypatch.setattr(
         OIDCAuthenticationBackend,
@@ -484,4 +485,4 @@ def test_authentication_getter_existing_user_updates_claims(monkeypatch, setting
     )
 
     user.refresh_from_db()
-    assert user.claims == {"picture": "https://example.com/new.png"}
+    assert user.oidc_claims == {"picture": "https://example.com/new.png"}

@@ -175,7 +175,7 @@ class OIDCAuthenticationBackend(LaSuiteOIDCAuthenticationBackend):
         }
         return {
             "full_name": self.compute_full_name(user_info),
-            "claims": claims_to_store,
+            "oidc_claims": claims_to_store,
         }
 
     def get_existing_user(self, sub, email):
