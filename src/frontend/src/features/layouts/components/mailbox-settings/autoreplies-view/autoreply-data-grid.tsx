@@ -102,7 +102,7 @@ export const AutoreplyDataGrid = ({ mailbox }: AutoreplyDataGridProps) => {
 
     const handleDeleteRow = async (autoreply: ReadMessageTemplate) => {
         const decision = await modals.deleteConfirmationModal({
-            title: <span className="c__modal__text--centered">{t('Delete auto-reply "{{autoreply}}"', { autoreply: autoreply.name })}</span>,
+            title: t('Delete auto-reply "{{autoreply}}"', { autoreply: autoreply.name }),
             children: t('Are you sure you want to delete this auto-reply? This action is irreversible!'),
         });
         if (decision === 'delete') {

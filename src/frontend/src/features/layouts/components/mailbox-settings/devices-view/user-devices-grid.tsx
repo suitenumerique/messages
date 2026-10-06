@@ -220,11 +220,7 @@ export const UserDevicesGrid = () => {
 
     const handleSignOut = async (channel: Channel) => {
         const decision = await modals.deleteConfirmationModal({
-            title: (
-                <span className="c__modal__text--centered">
-                    {t('Sign out "{{name}}"', { name: channel.name })}
-                </span>
-            ),
+            title: t('Sign out "{{name}}"', { name: channel.name }),
             children: t(
                 "This device will stop receiving notifications until you enable them again on it.",
             ),

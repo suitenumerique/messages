@@ -11,7 +11,7 @@ export type ThreadRowActions = {
     toggleRead: (thread: Thread, isUnread: boolean) => void;
     setArchived: (thread: Thread, archived: boolean) => void;
     setTrashed: (thread: Thread, trashed: boolean) => void;
-    /** Drafts have no trash stage: this permanently deletes the thread's drafts. */
+    /** Drafts have no trash stage: this permanently deletes the thread's drafts, after confirmation. */
     deleteDrafts: (thread: Thread) => void;
 };
 

@@ -86,7 +86,7 @@ const ThreadMessageActions = ({
         if (!selectedThread) return;
         const decision = await modals.confirmationModal({
             titleIcon: <Icon type={IconType.FILLED} name="call_split" />,
-            title: <span className="c__modal__text--centered">{t('Split thread')}</span>,
+            title: t('Split thread'),
             children: t('This will move this message and all following messages to a new thread. Continue?'),
         });
         if (decision !== 'yes') return;

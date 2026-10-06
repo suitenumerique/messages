@@ -113,7 +113,7 @@ export const IntegrationsDataGrid = ({ mailbox }: IntegrationsDataGridProps) => 
 
     const handleDeleteRow = async (channel: Channel) => {
         const decision = await modals.deleteConfirmationModal({
-            title: <span className="c__modal__text--centered">{t('Delete integration "{{name}}"', { name: channel.name })}</span>,
+            title: t('Delete integration "{{name}}"', { name: channel.name }),
             children: t('Are you sure you want to delete this integration? This action is irreversible!'),
         });
         if (decision === 'delete') {

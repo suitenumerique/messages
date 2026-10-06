@@ -244,7 +244,7 @@ export const ImportsDataGrid = ({ mailbox }: ImportsDataGridProps) => {
 
     const handleCancel = async (row: ImportRun) => {
         const decision = await modals.deleteConfirmationModal({
-            title: <span className="c__modal__text--centered">{t('Delete the messages of "{{name}}"', { name: row.name })}</span>,
+            title: t('Delete the messages of "{{name}}"', { name: row.name }),
             children: t("This deletes every message this import created, except those in conversations with replies or other activity. This action is irreversible!"),
         });
         if (decision !== "delete") return;

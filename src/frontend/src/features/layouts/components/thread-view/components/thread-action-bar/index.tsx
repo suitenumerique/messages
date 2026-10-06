@@ -106,7 +106,7 @@ export const ThreadActionBar = ({ canUndelete, canUnarchive }: ThreadActionBarPr
                             variant="tertiary"
                             aria-label={t('Delete draft')}
                             size="nano"
-                            icon={<Icon name="edit_off" type={IconType.OUTLINED} />}
+                            icon={<Icon icon={Trash} />}
                             onClick={() => deleteDrafts({ threadIds: [selectedThread!.id], onSuccess: unselectThread })}
                         />
                     </Tooltip>

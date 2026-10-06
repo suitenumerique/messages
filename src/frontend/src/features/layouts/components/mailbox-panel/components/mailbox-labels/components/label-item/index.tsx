@@ -310,7 +310,7 @@ export const LabelItem = ({ level = 0, onEdit, canManage, defaultFoldState, ...l
 
   const handleDelete = async () => {
     const decision = await modals.deleteConfirmationModal({
-      title: <span className="c__modal__text--centered">{t('Delete label "{{label}}"', { label: label.display_name })}</span>,
+      title: t('Delete label "{{label}}"', { label: label.display_name }),
       children: t('Are you sure you want to delete this label? This action is irreversible!'),
     });
 

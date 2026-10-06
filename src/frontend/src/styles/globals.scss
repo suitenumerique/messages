@@ -188,13 +188,6 @@ a.c__button.c__button--brand--primary[aria-disabled="true"] {
   font-size: var(--c--globals--font--sizes--sm);
 }
 
-// Cunningham modal class utilities
-.c__modal__text--centered {
-  display: inline-block;
-  width: 100%;
-  text-align: center;
-}
-
 // Fullscreen modals (Cunningham ModalSize.FULL, used on mobile) fill the screen
 // edge-to-edge with no padding of their own, so on devices with a notch / home
 // indicator the header and footer land under the system UI. Inset them by the

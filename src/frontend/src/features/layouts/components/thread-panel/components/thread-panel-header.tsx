@@ -332,10 +332,10 @@ const ThreadPanelTitle = ({ selectedThreadIds, isAllSelected, isSomeSelected, is
                                     });
                                 }}
                                 disabled={selectedThreadIds.size === 0}
-                                icon={<Icon name="edit_off" type={IconType.OUTLINED} />}
+                                icon={<Icon icon={Trash} />}
                                 variant="tertiary"
                                 size={actionButtonSize}
-                                aria-label={t('Delete draft')}
+                                aria-label={t('Delete drafts')}
                             />
                         </Tooltip>
                     )}

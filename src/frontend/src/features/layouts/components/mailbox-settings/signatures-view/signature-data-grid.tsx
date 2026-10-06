@@ -54,7 +54,7 @@ export const SignatureDataGrid = ({ mailbox }: SignatureDataGridProps) => {
 
     const handleDeleteRow = async (signature: ReadMessageTemplate) => {
         const decision = await modals.deleteConfirmationModal({
-            title: <span className="c__modal__text--centered">{t('Delete signature "{{signature}}"', { signature: signature.name })}</span>,
+            title: t('Delete signature "{{signature}}"', { signature: signature.name }),
             children: t('Are you sure you want to delete this signature? This action is irreversible!'),
         });
         if (decision === 'delete') {

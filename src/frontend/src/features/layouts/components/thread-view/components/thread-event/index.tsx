@@ -191,7 +191,7 @@ export const ThreadEvent = ({ event, isCondensed = false, onEdit, onDelete, ment
 
     const handleDelete = async () => {
         const decision = await modals.deleteConfirmationModal({
-            title: <span className="c__modal__text--centered">{t('Delete internal comment')}</span>,
+            title: t('Delete internal comment'),
             children: t('Are you sure you want to delete this internal comment? It will be deleted for all users. This action cannot be undone.'),
         });
         if (decision !== 'delete') return;

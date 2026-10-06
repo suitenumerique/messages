@@ -27,21 +27,13 @@ export const useUploadImageAsBase64 = (maxImageSize: number) => {
 
             if (file.size > maxImageSize) {
                 modals.messageModal({
-                    title: (
-                        <span className="c__modal__text--centered">
-                            {t('Image size limit exceeded')}
-                        </span>
-                    ),
-                    children: (
-                        <span className="c__modal__text--centered">
-                            {t('Cannot add image. File size exceeds the {{maxSize}} limit.', {
-                                maxSize: AttachmentHelper.getFormattedSize(
-                                    maxImageSize,
-                                    i18n.resolvedLanguage,
-                                ),
-                            })}
-                        </span>
-                    ),
+                    title: t('Image size limit exceeded'),
+                    children: t('Cannot add image. File size exceeds the {{maxSize}} limit.', {
+                        maxSize: AttachmentHelper.getFormattedSize(
+                            maxImageSize,
+                            i18n.resolvedLanguage,
+                        ),
+                    }),
                     messageType: VariantType.INFO,
                 });
                 return Promise.resolve(null);

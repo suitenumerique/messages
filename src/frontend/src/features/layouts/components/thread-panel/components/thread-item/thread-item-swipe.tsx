@@ -117,11 +117,7 @@ export const ThreadItemSwipe = ({
     const archiveLabel = isArchivedView ? t("Unarchive") : t("Archive");
     const trashLabel = isTrashContext ? t("Restore") : t("Delete");
     const trashTitle = isDraftDelete ? t("Delete draft") : trashLabel;
-    const trashIconProps: IconProps = isDraftDelete
-        ? { name: "edit_off" }
-        : isTrashContext
-            ? { icon: Restore }
-            : { icon: Trash };
+    const trashIconProps: IconProps = { icon: isTrashContext ? Restore : Trash };
     const trashAction = isDraftDelete
         ? () => actions.deleteDrafts(thread)
         : () => actions.setTrashed(thread, !isTrashContext);

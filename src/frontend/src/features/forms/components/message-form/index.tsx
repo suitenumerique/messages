@@ -18,7 +18,6 @@ import { useLocation, useNavigate } from "@tanstack/react-router";
 import { useDropzone } from "react-dropzone";
 import { AttachmentBucket, AttachmentUploader } from "./attachment-uploader";
 import { DropZone } from "./dropzone";
-import { Banner } from "@/features/ui/components/banner";
 import { RhfContactComboBox } from "../react-hook-form/rhf-contact-combobox";
 import useAbility, { Abilities } from "@/hooks/use-ability";
 import i18n from "@/features/i18n/initI18n";
@@ -32,7 +31,7 @@ import { DriveAttachmentPicker, DriveFile } from "./drive-attachment-picker";
 import { useAttachments } from "@/features/forms/hooks/use-attachments";
 import { MessageComposerHelper } from "@/features/utils/composer-helper";
 import { Icon } from "@/features/ui/components/icon";
-import { AttachFile, Send, Trash } from "@gouvfr-lasuite/ui-components/icons";
+import { AttachFile, Send, Trash, Warning } from "@gouvfr-lasuite/ui-components/icons";
 
 export type MessageFormMode = "new" | "reply" | "reply_all" | "forward";
 
@@ -587,7 +586,7 @@ export const MessageForm = forwardRef<MessageFormHandle, MessageFormProps>(({
 
     const handleDeleteMessage = async (messageId: string) => {
         const decision = await modals.deleteConfirmationModal({
-            title: <span className="c__modal__text--centered">{t("Delete draft")}</span>,
+            title: t("Delete draft"),
             children: t("Are you sure you want to delete this draft? This action cannot be undone."),
         });
         if (decision !== 'delete') return;
@@ -848,13 +847,14 @@ export const MessageForm = forwardRef<MessageFormHandle, MessageFormProps>(({
         const sendWarnings = getSendWarnings(data);
         if (sendWarnings.length > 0) {
             const decision = await modals.confirmationModal({
-                title: <span className="c__modal__text--centered">{t("Send anyway?")}</span>,
+                titleIcon: <Icon icon={Warning} />,
+                title: t("Send anyway?"),
                 children: (
-                    <div className="message-form__send-warnings">
+                    <ul className="message-form__send-warnings">
                         {sendWarnings.map((warning) => (
-                            <Banner key={warning} type="warning">{warning}</Banner>
+                            <li key={warning}>{warning}</li>
                         ))}
-                    </div>
+                    </ul>
                 ),
             });
             if (decision !== "yes") return;

@@ -261,7 +261,9 @@
 .message-form__send-warnings {
     display: flex;
     flex-direction: column;
-    gap: var(--c--globals--spacings--2xs);
+    gap: var(--c--globals--spacings--sm);
+    padding-left: var(--c--globals--spacings--sm);
+    margin-top: var(--c--globals--spacings--sm);
 }
 
 .dropdown-button {
