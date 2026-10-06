@@ -5,6 +5,13 @@ export type ThemeConfig = {
   theme: "white-label" | "anct" | "dsfr";
   terms_of_service_url?: string;
   footer?: FooterProps;
+  /**
+   * Render the ProConnect sign-in button instead of the neutral one. Off
+   * unless the instance is federated with ProConnect — the button carries
+   * the French State identity provider's mark, so it has no business on an
+   * instance authenticating against another provider.
+   */
+  proconnect_button?: boolean;
 };
 
 export type FeedbackWidgetConfig = {
