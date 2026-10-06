@@ -1,11 +1,10 @@
-import { StorageGauge } from "@gouvfr-lasuite/ui-kit";
+import { StorageGaugeInformation } from "@gouvfr-lasuite/ui-components";
 import { useTranslation } from "react-i18next";
 import { StorageEntitlement } from "@/features/api/gen/models";
 import { useMailboxContext } from "@/features/providers/mailbox";
 import { useModalStore } from "@/features/providers/modal-store";
 import { MODAL_MAILBOX_SETTINGS_ID } from "@/features/layouts/components/mailbox-settings/modal-mailbox-settings";
-import { useMailboxEntitlements } from "../api/use-mailbox-entitlements";
-import "./quota-widget.scss";
+import { useMailboxEntitlements } from "../../api/use-mailbox-entitlements";
 
 const BYTES_PER_GB = 1000 ** 3;
 
@@ -82,7 +81,7 @@ const renderGauge = (
     return null;
   }
   return (
-    <StorageGauge
+    <StorageGaugeInformation
       used={level.storage_used / BYTES_PER_GB}
       total={level.max_storage / BYTES_PER_GB}
       unit={unit}

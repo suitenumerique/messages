@@ -1,4 +1,4 @@
-// FORK: copied from @gouvfr-lasuite/ui-kit v0.20.0 ShareModal to add a
+// FORK: copied from @gouvfr-lasuite/ui-components v0.20.0 ShareModal to add a
 // `renderAccessFooter` slot rendered below each access row (to display
 // per-mailbox assignable users + "Assign" CTA). All other behavior is
 // preserved. Target for upstream contribution.

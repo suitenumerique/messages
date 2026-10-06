@@ -1,5 +1,4 @@
-import { Button } from "@gouvfr-lasuite/cunningham-react";
-import { Icon, IconType, Spinner, StorageGauge } from "@gouvfr-lasuite/ui-kit";
+import { Button, Icon, IconType, Spinner, StorageGaugeBar } from "@gouvfr-lasuite/ui-components";
 import { Link } from "@tanstack/react-router";
 import clsx from "clsx";
 import { MouseEvent, useState } from "react";
@@ -250,7 +249,7 @@ const renderGauge = (
   return (
     <div key={caption} className="mailbox-settings__storage-gauge">
       <span className="mailbox-settings__storage-gauge-caption">{caption}</span>
-      <StorageGauge
+      <StorageGaugeBar
         used={level.storage_used / BYTES_PER_GB}
         total={level.max_storage / BYTES_PER_GB}
         unit={unit}

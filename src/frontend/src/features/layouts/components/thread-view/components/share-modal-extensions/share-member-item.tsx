@@ -1,4 +1,4 @@
-// FORK: reproduced from @gouvfr-lasuite/ui-kit ShareMemberItem so we can
+// FORK: reproduced from @gouvfr-lasuite/ui-components ShareMemberItem so we can
 // inject a `rightExtras` slot (e.g. an inline "Assign" CTA) next to the
 // role dropdown. CSS classes (`c__share-member-item`, `c__share-member-item__right`)
 // are preserved so ui-kit's bundled styles apply as-is.

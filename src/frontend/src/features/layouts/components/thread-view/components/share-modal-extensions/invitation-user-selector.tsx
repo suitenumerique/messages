@@ -1,4 +1,4 @@
-// FORK: reproduced from @gouvfr-lasuite/ui-kit InvitationUserSelectorList
+// FORK: reproduced from @gouvfr-lasuite/ui-components InvitationUserSelectorList
 // since the upstream component is not publicly exported. Preserves the
 // upstream CSS classes (c__add-share-user-list, c__add-share-user-item)
 // so the visual styling bundled in ui-kit's style.css applies as-is.

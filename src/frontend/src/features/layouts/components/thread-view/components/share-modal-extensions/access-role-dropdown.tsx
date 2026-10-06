@@ -1,4 +1,4 @@
-// FORK: reproduced from @gouvfr-lasuite/ui-kit AccessRoleDropdown since the
+// FORK: reproduced from @gouvfr-lasuite/ui-components AccessRoleDropdown since the
 // original component is not publicly exported. Used by the invitation bar
 // and member rows to pick a role via DropdownMenu.
 import { useMemo } from "react";
