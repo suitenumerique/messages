@@ -94,21 +94,13 @@ export const useAttachments = ({
         (additionalSize: number): boolean => {
             if (totalSize + additionalSize <= maxAttachmentSize) return false;
             modals.messageModal({
-                title: (
-                    <span className="c__modal__text--centered">
-                        {t('Attachment size limit exceeded')}
-                    </span>
-                ),
-                children: (
-                    <span className="c__modal__text--centered">
-                        {t('Cannot add attachment(s). Total size would be more than {{maxSize}}.', {
-                            maxSize: AttachmentHelper.getFormattedSize(
-                                maxAttachmentSize,
-                                i18n.resolvedLanguage,
-                            ),
-                        })}
-                    </span>
-                ),
+                title: t('Attachment size limit exceeded'),
+                children: t('Cannot add attachment(s). Total size would be more than {{maxSize}}.', {
+                    maxSize: AttachmentHelper.getFormattedSize(
+                        maxAttachmentSize,
+                        i18n.resolvedLanguage,
+                    ),
+                }),
                 messageType: VariantType.INFO,
             });
             return true;

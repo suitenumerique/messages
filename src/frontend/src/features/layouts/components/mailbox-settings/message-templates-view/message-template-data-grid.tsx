@@ -45,7 +45,7 @@ export const MessageTemplateDataGrid = ({ mailbox }: MessageTemplateDataGridProp
 
     const handleDeleteRow = async (template: ReadMessageTemplate) => {
         const decision = await modals.deleteConfirmationModal({
-            title: <span className="c__modal__text--centered">{t('Delete template "{{template}}"', { template: template.name })}</span>,
+            title: t('Delete template "{{template}}"', { template: template.name }),
             children: t('Are you sure you want to delete this template? This action is irreversible!'),
         });
         if (decision === 'delete') {

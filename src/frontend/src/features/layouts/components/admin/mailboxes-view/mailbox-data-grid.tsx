@@ -106,7 +106,7 @@ export const AdminMailboxDataGrid = ({ domain, pagination, searchQuery }: AdminU
     const handleResetTotp = async (mailbox: MailboxAdmin) => {
         const email = MailboxHelper.toString(mailbox);
         const decision = await modals.confirmationModal({
-            title: <span className="c__modal__text--centered">{t('Reset 2FA for {{mailbox}}', { mailbox: email })}</span>,
+            title: t('Reset 2FA for {{mailbox}}', { mailbox: email }),
             children: t('Existing 2FA credentials will be removed. The user will be asked to re-enroll on next login.'),
         });
         if (decision !== 'yes') return;
@@ -134,7 +134,7 @@ export const AdminMailboxDataGrid = ({ domain, pagination, searchQuery }: AdminU
     const handleDelete = async (mailbox: MailboxAdmin) => {
         const email = MailboxHelper.toString(mailbox);
         const decision = await modals.deleteConfirmationModal({
-            title: <span className="c__modal__text--centered">{t('Delete mailbox {{mailbox}}', { mailbox: email })}</span>,
+            title: t('Delete mailbox {{mailbox}}', { mailbox: email }),
             children: t('Are you sure you want to delete this mailbox? This action is irreversible!'),
         });
 

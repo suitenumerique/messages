@@ -172,11 +172,7 @@ export const WebhookIntegrationForm = ({
         // gate it behind a confirmation to avoid breaking a live receiver
         // on an accidental click.
         const decision = await modals.confirmationModal({
-            title: (
-                <span className="c__modal__text--centered">
-                    {t("Regenerate credential")}
-                </span>
-            ),
+            title: t("Regenerate credential"),
             children: t(
                 "Regenerating the credential invalidates the old one immediately. The receiver must be updated with the new value before it can verify webhooks again. Continue?",
             ),

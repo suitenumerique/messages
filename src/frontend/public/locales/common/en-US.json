@@ -220,6 +220,8 @@
   "Apply": "Apply",
   "Archive": "Archive",
   "Archives": "Archives",
+  "Are you sure you want to delete these {{count}} drafts? This action cannot be undone._one": "Are you sure you want to delete this draft? This action cannot be undone.",
+  "Are you sure you want to delete these {{count}} drafts? This action cannot be undone._other": "Are you sure you want to delete these {{count}} drafts? This action cannot be undone.",
   "Are you sure you want to delete this auto-reply? This action is irreversible!": "Are you sure you want to delete this auto-reply? This action is irreversible!",
   "Are you sure you want to delete this draft? This action cannot be undone.": "Are you sure you want to delete this draft? This action cannot be undone.",
   "Are you sure you want to delete this integration? This action is irreversible!": "Are you sure you want to delete this integration? This action is irreversible!",

@@ -98,7 +98,7 @@ export const MobileThreadToolbar = ({ thread, isArchived, isTrashed, quickReplyM
   const removeAction = !canEditThread ? null : isDraftsView
     ? {
         label: t("Delete draft"),
-        icon: { name: "edit_off", type: IconType.OUTLINED},
+        icon: { icon: Trash },
         onSelect: () => deleteDrafts({ threadIds: [thread.id], onSuccess: unselectThread }),
       }
     : isTrashed

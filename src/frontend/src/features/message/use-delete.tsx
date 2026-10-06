@@ -5,7 +5,7 @@ import { useMailboxContext } from "../providers/mailbox";
 
 type DeleteOnSuccess = (deletedCount?: number) => void;
 
-type DeleteOptions = {
+export type DeleteOptions = {
     threadIds?: Thread["id"][];
     messageIds?: Message["id"][];
     onSuccess?: DeleteOnSuccess;

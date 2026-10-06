@@ -302,14 +302,10 @@ export const ThreadAccessesWidget = forwardRef<ThreadAccessesWidgetHandle, Threa
     const handleAssignUser = async (user: UserWithoutAbilities, access: EnrichedAccess) => {
         if (access.role === ThreadAccessRoleChoices.viewer) {
             const decision = await modals.confirmationModal({
-                title: <span className="c__modal__text--centered">{t('Grant editor access to the thread?')}</span>,
-                children: (
-                    <span className="c__modal__text--centered">
-                        {t(
-                            'The mailbox "{{mailbox}}" currently has read-only access on this thread. To assign {{user}} to it, edit permissions must be granted to this mailbox.',
-                            { mailbox: access.mailbox.email, user: user.full_name || user.email || "" },
-                        )}
-                    </span>
+                title: t('Grant editor access to the thread?'),
+                children: t(
+                    'The mailbox "{{mailbox}}" currently has read-only access on this thread. To assign {{user}} to it, edit permissions must be granted to this mailbox.',
+                    { mailbox: access.mailbox.email, user: user.full_name || user.email || "" },
                 ),
             });
             if (decision !== 'yes') return;
