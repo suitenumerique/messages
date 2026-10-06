@@ -6,13 +6,12 @@ import { Modal, ModalSize } from "@gouvfr-lasuite/ui-components";
 import { MobileToolbarButton } from "@/features/blocknote/mobile-toolbar/buttons";
 import { useMobileToolbarChildDrawer } from "@/features/blocknote/mobile-toolbar/drawer-context";
 import { Drawer } from "@/features/ui/components/drawer";
-import { MessageTemplateTypeChoices, ReadMessageTemplate, useMailboxesMessageTemplatesAvailableList, draftPlaceholdersRetrieve, DraftPlaceholdersRetrieve200 } from "@/features/api/gen";
-import { MessageComposerBlockSchema, MessageComposerInlineContentSchema, MessageComposerStyleSchema, PartialMessageComposerBlockSchema } from "@/features/forms/components/message-composer";
+import { MessageTemplateTypeChoices, useMailboxesMessageTemplatesAvailableList } from "@/features/api/gen";
+import { MessageComposerBlockSchema, MessageComposerInlineContentSchema, MessageComposerStyleSchema } from "@/features/forms/components/message-composer";
 import { useModal } from "@gouvfr-lasuite/ui-components";
-import { handle } from "@/features/utils/errors";
-import MailHelper from "@/features/utils/mail-helper";
-import { resolveTemplateVariables } from "@/features/blocknote/utils";
 import { Icon } from "@/features/ui/components/icon";
+import { MessageTemplatePicker } from "./message-template-picker";
+import { useInsertMessageTemplate } from "./use-insert-message-template";
 
 const TEMPLATES_DRAWER_ID = "message-templates";
 
@@ -24,8 +23,8 @@ type MessageTemplateSelectorProps = {
 }
 
 /**
- * A BlockNote toolbar selector which allows the user to select a message template
- * from all active templates for a given mailbox.
+ * A BlockNote toolbar selector which allows the user to search and insert a
+ * message template among all active templates for a given mailbox.
  */
 export const MessageTemplateSelector = ({ mailboxId, messageId, ensureDraft, uploadInlineImage }: MessageTemplateSelectorProps) => {
     const { t } = useTranslation();
@@ -35,6 +34,7 @@ export const MessageTemplateSelector = ({ mailboxId, messageId, ensureDraft, upl
     // Non-null when rendered inside the mobile toolbar: templates are then
     // picked from a bottom drawer instead of the desktop modal.
     const mobileDrawer = useMobileToolbarChildDrawer(TEMPLATES_DRAWER_ID);
+    const insertTemplate = useInsertMessageTemplate({ mailboxId, messageId, ensureDraft, uploadInlineImage });
 
     const hasInlineContent = useEditorState({
         editor,
@@ -46,107 +46,13 @@ export const MessageTemplateSelector = ({ mailboxId, messageId, ensureDraft, upl
         },
     });
 
+    // No body here: the list only needs the names, the body of a template is
+    // fetched once it is picked.
     const { data: { data: templates = [] } = {}, isLoading } = useMailboxesMessageTemplatesAvailableList(
         mailboxId,
-        {
-            type: MessageTemplateTypeChoices.message,
-            bodies: "raw",
-        },
-        {
-            query: { enabled: hasInlineContent }
-        }
+        { type: MessageTemplateTypeChoices.message },
+        { query: { enabled: hasInlineContent } }
     );
-
-    const handleSelect = async (template: ReadMessageTemplate) => {
-        if (!template.raw_body || !template.id) return;
-
-        const resolvedMessageId = messageId ?? (await ensureDraft?.());
-        if (!resolvedMessageId) return;
-
-        try {
-            // Resolve placeholder values from the draft context
-            const { data: resolvedPlaceholders } = await draftPlaceholdersRetrieve(
-                resolvedMessageId,
-            ) as { data: DraftPlaceholdersRetrieve200 };
-
-            // Parse raw blocks and resolve template variables client-side
-            const blocks = JSON.parse(template.raw_body);
-            const templateSignature = blocks.find((block: { type: string }) => block.type === "signature");
-            const templateBlocks = blocks.filter((block: { type: string }) => block.type !== "signature");
-            const contentBlocks = resolveTemplateVariables(templateBlocks, resolvedPlaceholders) as PartialMessageComposerBlockSchema[];
-
-            // Convert base64 images to blobs via upload
-            if (uploadInlineImage) {
-                const blocksToRemove = new Set<number>();
-                await Promise.all(
-                    contentBlocks.map(async (block, index) => {
-                        if (block.type !== 'image' || !block.props?.url?.startsWith('data:')) return;
-
-                        const file = MailHelper.dataUrlToFile(block.props.url, `template-image-${index}.png`);
-                        if (!file) {
-                            blocksToRemove.add(index);
-                            return;
-                        }
-                        try {
-                            const result = await uploadInlineImage(file);
-                            if (result) {
-                                contentBlocks[index] = {
-                                    ...block,
-                                    props: { ...block.props, url: result.url },
-                                } as PartialMessageComposerBlockSchema;
-                            } else {
-                                blocksToRemove.add(index);
-                            }
-                        } catch (error) {
-                            handle(
-                                new Error("Failed to upload inline image."),
-                                { extra: { error, block, index } }
-                            );
-                            blocksToRemove.add(index);
-                            return;
-                        }
-                    })
-                );
-                // Remove failed blocks (reverse order to preserve indices)
-                for (const index of Array.from(blocksToRemove).sort((a, b) => b - a)) {
-                    contentBlocks.splice(index, 1);
-                }
-            }
-
-            // Check if there's already a signature in the editor
-            const editorSignature = editor.getBlock("signature");
-
-            // Add signature if needed
-            if (templateSignature && !editorSignature) {
-                contentBlocks.push({
-                    ...templateSignature,
-                    props: {
-                        ...templateSignature.props,
-                        mailboxId,
-                        messageId: resolvedMessageId,
-                    }
-                } as PartialMessageComposerBlockSchema);
-            }
-
-            // Insert blocks at cursor position
-            const currentBlock = editor.getTextCursorPosition().block;
-
-            // if the current block is empty, replace it with the template blocks
-            const currentBlockContent = editor.getBlock(currentBlock)?.content;
-            if (currentBlock && (!currentBlockContent || (Array.isArray(currentBlockContent) && currentBlockContent.length === 0))) {
-                editor.replaceBlocks([currentBlock], contentBlocks);
-            } else {
-                // Otherwise we insert after
-                editor.insertBlocks(contentBlocks, currentBlock, "after");
-            }
-            modal.close();
-        } catch (error) {
-            handle(
-                new Error("Failed to insert template."),
-                { extra: { error, templateId: template.id, mailboxId: mailboxId } }
-            );
-        }
-    };
 
     if (!hasInlineContent) return null;
 
@@ -191,27 +97,21 @@ export const MessageTemplateSelector = ({ mailboxId, messageId, ensureDraft, upl
                             title={t("Insert template")}
                             onClose={mobileDrawer.close}
                         >
-                            <div className="drawer-list">
-                                {templates.map((template) => (
-                                    <button
-                                        type="button"
-                                        key={template.id}
-                                        className="drawer-list__item"
-                                        onClick={() => {
-                                            // Close first: the keyboard comes
-                                            // back while the async insertion
-                                            // (placeholders, images) settles.
-                                            mobileDrawer.close();
-                                            void handleSelect(template);
-                                        }}
-                                    >
-                                        <Icon name="description" type={IconType.OUTLINED} size={IconSize.MEDIUM} />
-                                        <span className="drawer-list__item-label">
-                                            {template.name}
-                                        </span>
-                                    </button>
-                                ))}
-                            </div>
+                            <MessageTemplatePicker
+                                mailboxId={mailboxId}
+                                messageId={messageId}
+                                templates={templates}
+                                // Focusing the search would pop the virtual
+                                // keyboard over the list users came to browse.
+                                autoFocus={false}
+                                onSelect={(templateId) => {
+                                    // Close first: the keyboard comes
+                                    // back while the async insertion
+                                    // (placeholders, images) settles.
+                                    mobileDrawer.close();
+                                    void insertTemplate(templateId);
+                                }}
+                            />
                         </Drawer>,
                         mobileDrawer.slot,
                     )}
@@ -231,27 +131,20 @@ export const MessageTemplateSelector = ({ mailboxId, messageId, ensureDraft, upl
                 isOpen={modal.isOpen}
                 onClose={modal.close}
                 title={t("Insert template")}
-                size={ModalSize.SMALL}
+                size={ModalSize.LARGE}
             >
-                <div className="template-list">
-                    {templates.map((template) => (
-                        <button
-                            type="button"
-                            key={template.id}
-                            className="template-item"
-                            onClick={() => handleSelect(template)}
-                        >
-                            <div className="template-icon">
-                                <Icon name="description" type={IconType.OUTLINED} size={IconSize.MEDIUM} />
-                            </div>
-                            <div className="template-content">
-                                <div className="template-name">
-                                    {template.name}
-                                </div>
-                            </div>
-                        </button>
-                    ))}
-                </div>
+                {modal.isOpen && (
+                    <MessageTemplatePicker
+                        mailboxId={mailboxId}
+                        messageId={messageId}
+                        templates={templates}
+                        showPreview
+                        onSelect={(templateId) => {
+                            modal.close();
+                            void insertTemplate(templateId);
+                        }}
+                    />
+                )}
             </Modal>
         </>
     );
