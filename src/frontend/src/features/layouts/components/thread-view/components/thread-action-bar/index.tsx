@@ -4,7 +4,8 @@ import useRead from "@/features/message/use-read";
 import useTrash from "@/features/message/use-trash";
 import useAbility, { Abilities } from "@/hooks/use-ability";
 import { DropdownMenu, IconType, VerticalSeparator, useResponsive } from "@gouvfr-lasuite/ui-components"
-import { Button, Spinner, Tooltip } from "@gouvfr-lasuite/ui-components"
+import { Button, Spinner } from "@gouvfr-lasuite/ui-components"
+import { Tooltip } from "@/features/ui/components/tooltip"
 import { useRef, useState } from "react";
 import { useTranslation } from "react-i18next";
 import { ThreadAccessesWidget, type ThreadAccessesWidgetHandle } from "../thread-accesses-widget";

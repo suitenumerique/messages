@@ -1,6 +1,7 @@
 import { useEffect, useMemo, useRef } from "react";
 import { useTranslation } from "react-i18next";
-import { Button, Tooltip } from "@gouvfr-lasuite/ui-components";
+import { Button } from "@gouvfr-lasuite/ui-components";
+import { Tooltip } from "@/features/ui/components/tooltip";
 import { ContextMenu, useContextMenuContext } from "@gouvfr-lasuite/ui-components";
 import type { MenuItem, MenuItemAction } from "@gouvfr-lasuite/ui-components";
 import { useMailboxContext } from "@/features/providers/mailbox";
@@ -131,7 +132,7 @@ export const ThreadPanelFilter = () => {
 
   const trigger = (
     <Tooltip
-      placement="left"
+      placement="right"
       content={getTooltipContent()}
       className={isDisabled ? "hidden" : ""}
     >

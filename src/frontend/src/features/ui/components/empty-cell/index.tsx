@@ -1,4 +1,4 @@
-import { Tooltip } from "@gouvfr-lasuite/ui-components";
+import { Tooltip } from "@/features/ui/components/tooltip";
 import { ReactNode } from "react";
 
 type EmptyCellProps = {

@@ -1,6 +1,7 @@
 import { DropdownMenu, HeaderProps, useResponsive, UserMenu, VerticalSeparator } from "@gouvfr-lasuite/ui-components";
 import { Controls, GearRounded, LeftPanel, Upload, XMark } from "@gouvfr-lasuite/ui-components/icons";
-import { Button, Tooltip } from "@gouvfr-lasuite/ui-components";
+import { Button } from "@gouvfr-lasuite/ui-components";
+import { Tooltip } from "@/features/ui/components/tooltip";
 import { useMemo, useState } from "react";
 import { useTranslation } from "react-i18next";
 import { useNavigate } from "@tanstack/react-router";

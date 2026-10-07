@@ -1,5 +1,6 @@
 import { useEffect, useRef, useState } from "react";
-import { Button, Tooltip } from "@gouvfr-lasuite/ui-components";
+import { Button } from "@gouvfr-lasuite/ui-components";
+import { Tooltip } from "@/features/ui/components/tooltip";
 import { DropdownMenu, IconType, UserAvatar } from "@gouvfr-lasuite/ui-components";
 import { ChevronUp, Maximize, Minimize, Minus, Send, Shortcut, XMark } from "@gouvfr-lasuite/ui-components/icons";
 import { Icon } from "@/features/ui/components/icon";

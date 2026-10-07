@@ -1,7 +1,8 @@
 import { Label, ThreadLabel, TreeLabel, useLabelsList } from "@/features/api/gen";
 import { Thread } from "@/features/api/gen/models";
 import { Spinner, useResponsive } from "@gouvfr-lasuite/ui-components";
-import { Button, Checkbox, Input, Tooltip } from "@gouvfr-lasuite/ui-components";
+import { Button, Checkbox, Input } from "@gouvfr-lasuite/ui-components";
+import { Tooltip } from "@/features/ui/components/tooltip";
 import { forwardRef, RefObject, useEffect, useImperativeHandle, useMemo, useRef, useState } from "react";
 import { createPortal } from "react-dom";
 import { useTranslation } from "react-i18next";
