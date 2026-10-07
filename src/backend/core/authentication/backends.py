@@ -2,6 +2,7 @@
 
 import logging
 
+from django.conf import settings
 from django.core.exceptions import SuspiciousOperation
 from django.core.exceptions import ValidationError as DjangoValidationError
 
@@ -169,9 +170,32 @@ class OIDCAuthenticationBackend(LaSuiteOIDCAuthenticationBackend):
 
     def get_extra_claims(self, user_info):
         """Get extra claims."""
+        # The stored claims mirror the latest userinfo response: a configured
+        # claim that is absent from it is stored as None, and a claim that is no
+        # longer configured disappears on the user's next login. They are kept
+        # verbatim and never used to identify the user, so a claim that also has
+        # a dedicated field (email, full name, ...) is simply stored twice.
+        claims_to_store = {
+            claim: user_info.get(claim) for claim in settings.OIDC_STORE_CLAIMS
+        }
         return {
             "full_name": self.compute_full_name(user_info),
+            "oidc_claims": claims_to_store,
         }
+
+    def update_user_if_needed(self, user, claims):
+        """
+        Update the user from the claims, also when the stored claims were emptied.
+
+        The base implementation skips falsy values, so an empty mapping (nothing
+        configured in OIDC_STORE_CLAIMS anymore) would leave the
+        previously stored claims behind.
+        """
+        super().update_user_if_needed(user, claims)
+
+        if claims.get("oidc_claims") == {} and user.oidc_claims:
+            user.oidc_claims = {}
+            user.save(update_fields=["oidc_claims"])
 
     def get_existing_user(self, sub, email):
         """Get an existing user by sub or email."""
