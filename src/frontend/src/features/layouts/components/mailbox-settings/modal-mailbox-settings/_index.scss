@@ -95,34 +95,11 @@
 
   // --- Storage tab ---------------------------------------------------------
 
-  // Quota gauge(s) at the top of the tab: one per level (mailbox, organization).
+  // Quota block at the top of the tab: the domain-full warning, then the mailbox gauge.
   &__storage-gauges {
     display: flex;
     flex-direction: column;
     gap: var(--c--globals--spacings--s);
-  }
-
-  &__storage-gauge {
-    display: flex;
-    flex-direction: column;
-    gap: var(--c--globals--spacings--3xs);
-
-    // Informational here (not a control), so drop the button affordance and the
-    // hover background the shared gauge applies by default.
-    .c__storage-gauge {
-      width: 100%;
-      cursor: default;
-      text-align: start;
-
-      &:hover {
-        background: transparent;
-      }
-    }
-  }
-
-  &__storage-gauge-caption {
-    font-size: var(--c--globals--font--sizes--sm);
-    color: var(--c--contextuals--content--semantic--neutral--secondary);
   }
 
   // Prominent total-used headline, above the metric cards. Stays visible when

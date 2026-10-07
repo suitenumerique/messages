@@ -31,7 +31,7 @@ type EmptyTrashOptions = {
 const useEmptyTrash = () => {
     const { t } = useTranslation();
     const modals = useModals();
-    const { invalidateMailbox, invalidateThreadsStats } = useMailboxContext();
+    const { threads, unpinThreads, invalidateMailbox, invalidateThreadsStats } = useMailboxContext();
     const { mutate, status } = useMailboxesEmptyTrashCreate();
 
     const emptyTrashbin = async ({
@@ -51,7 +51,7 @@ const useEmptyTrash = () => {
             : isSpam
               ? t("Empty spam")
               : t("Empty trash");
-        const warning = isTargeted
+        const message = isTargeted
             ? t("You are about to permanently delete the selected messages. This cannot be undone.")
             : isSpam
               ? t("You are about to permanently delete every message in the spam folder. This cannot be undone.")
@@ -59,11 +59,7 @@ const useEmptyTrash = () => {
 
         const decision = await modals.deleteConfirmationModal({
             title: <span className="c__modal__text--centered">{title}</span>,
-            children: (
-                <Banner type="warning">
-                    {warning}
-                </Banner>
-            ),
+            children: message,
         });
 
         if (decision !== "delete") return;
@@ -81,6 +77,9 @@ const useEmptyTrash = () => {
                 onSuccess: (response) => {
                     const data = response.data as { deleted_count?: number };
                     const deletedCount = data?.deleted_count ?? 0;
+                    // Drop the pins (e.g. set when a thread is read) before refetching,
+                    // otherwise the deleted threads would be merged back into the list.
+                    unpinThreads(isTargeted ? threadIds ?? [] : threads?.results.map((thread) => thread.id) ?? []);
                     invalidateMailbox();
                     invalidateThreadsStats();
                     addToast(

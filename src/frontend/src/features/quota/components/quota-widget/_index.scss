@@ -1,22 +1,8 @@
 .quota-widget {
-  flex-shrink: 0;
-  display: flex;
-  flex-direction: column;
-  gap: var(--c--globals--spacings--xs);
-  padding: var(--c--globals--spacings--xs) var(--c--globals--spacings--sm);
-  border-top: 1px solid var(--c--contextuals--border--default);
-  background: var(--c--contextuals--background--surface--secondary);
-
-  &__level {
-    display: flex;
-    flex-direction: column;
-    gap: var(--c--globals--spacings--3xs);
-  }
-
-  &__caption {
-    font-size: var(--c--globals--font--sizes--xs);
-    color: var(--c--contextuals--text--muted);
-  }
+  min-width: 0;
+  flex: 1;
+  box-sizing: border-box;
+  white-space: nowrap;
 
   // The gauge is a button; by default it is informational here, so drop the
   // affordance. Admins get a clickable variant that opens the Storage tab.
@@ -24,9 +10,40 @@
     width: 100%;
     cursor: default;
     text-align: start;
+
+    // Let the texts shrink with the gauge and end with an ellipsis instead of
+    // overflowing: every flex level down to the text needs `min-width: 0`.
+    .c__storage-gauge__locked {
+      min-width: 0;
+    }
+
+    .c__storage-gauge__label {
+      flex-shrink: 1;
+      min-width: 0;
+      overflow: hidden;
+      text-overflow: ellipsis;
+    }
   }
 
   .quota-widget__gauge--clickable {
     cursor: pointer;
+  }
+
+  &__locked-content {
+    display: flex;
+    align-items: center;
+    gap: var(--c--globals--spacings--3xs);
+    min-width: 0;
+
+    svg {
+      flex-shrink: 0;
+    }
+  }
+
+  &__locked-label {
+    min-width: 0;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
   }
 }

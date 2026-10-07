@@ -186,11 +186,16 @@ describe("AttachmentHelper", () => {
         });
 
         it("should format size in megabytes", () => {
-            expect(AttachmentHelper.getFormattedSize(1500*1024)).toBe("1.5MB");
+            expect(AttachmentHelper.getFormattedSize(1500*1000)).toBe("1.5MB");
         });
 
         it("should format size in gigabytes", () => {
-            expect(AttachmentHelper.getFormattedSize(1500*1024*1024)).toBe("1.5GB");
+            expect(AttachmentHelper.getFormattedSize(1500*1000**2)).toBe("1.5GB");
+        });
+
+        it("should use decimal (SI) multiples", () => {
+            expect(AttachmentHelper.getFormattedSize(1000)).toBe("1kB");
+            expect(AttachmentHelper.getFormattedSize(5*1000**3)).toBe("5GB");
         });
 
         it("should use specified language for formatting", () => {
@@ -202,9 +207,9 @@ describe("AttachmentHelper", () => {
     describe("getFormattedTotalSize", () => {
         it("should calculate total size of multiple attachments", () => {
             const attachments = [
-                { size: 1024 } as Attachment,
-                { size: 2*1024 } as Attachment,
-                { size: 3*1024 } as Attachment
+                { size: 1000 } as Attachment,
+                { size: 2*1000 } as Attachment,
+                { size: 3*1000 } as Attachment
             ];
             expect(AttachmentHelper.getFormattedTotalSize(attachments)).toBe("6kB");
         });
@@ -215,8 +220,8 @@ describe("AttachmentHelper", () => {
 
         it("should use specified language for formatting", () => {
             const attachments = [
-                { size: 1*1024 } as Attachment,
-                { size: 3*1024 } as Attachment
+                { size: 1*1000 } as Attachment,
+                { size: 3*1000 } as Attachment
             ];
             expect(AttachmentHelper.getFormattedTotalSize(attachments, 'fr')).toBe("4ko");
         });

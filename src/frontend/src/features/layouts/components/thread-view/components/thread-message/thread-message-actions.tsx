@@ -159,7 +159,7 @@ const ThreadMessageActions = ({
             callback: handleDownloadRawEmail
         },
         ...(canEditThread && !message.is_trashed ? [{
-            label: t('Delete'),
+            label: t('Move to trash'),
             icon: <Icon icon={Trash} />,
             callback: handleMarkAsTrashed
         }] : []),

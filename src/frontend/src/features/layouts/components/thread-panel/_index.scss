@@ -233,11 +233,6 @@
         @include control-surface;
     }
 
-    .thread-panel__trashbin-notice {
-        padding: var(--c--globals--spacings--3xs) var(--c--globals--spacings--sm) var(--c--globals--spacings--2xs);
-        flex-shrink: 0;
-    }
-
     .thread-panel__threads_list {
         // Fill the remaining height even when the threads don't, so the
         // pull-to-refresh touch surface spans the whole panel and the gesture

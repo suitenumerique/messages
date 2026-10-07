@@ -128,7 +128,7 @@ const ThreadPanelTitle = ({ selectedThreadIds, isAllSelected, isSomeSelected, is
     const archiveIconProps: IconProps = isArchivedView ? { name: 'inbox' } : { icon: Archive };
     const archiveMutation = isArchivedView ? markAsUnarchived : markAsArchived;
 
-    const trashLabel = isTrashedView ? t('Undelete') : t('Delete');
+    const trashLabel = isTrashedView ? t('Restore') : t('Move to trash');
     const trashIconProps: IconProps = { icon: isTrashedView ? Restore : Trash };
     const trashMutation = isTrashedView ? markAsUntrashed : markAsTrashed;
 
@@ -140,13 +140,8 @@ const ThreadPanelTitle = ({ selectedThreadIds, isAllSelected, isSomeSelected, is
     const canReportSpam = canEditSelection && !isTrashedView && !isSentView && !isDraftsView;
     const canTrash = canEditSelection && !isDraftsView;
     const canDeleteDrafts = canEditSelection && isDraftsView;
-    // "Empty trashbin" is a folder-level action (deletes the whole Trash or Spam
-    // folder), independent of any thread selection. The backend `empty_trash`
-    // ability encodes the TRASHBIN_ALLOW_EMPTY policy. (Hook called
-    // unconditionally; the view check gates the button, not the hook.)
-    const canEmptyTrashbin = useAbility(Abilities.CAN_EMPTY_TRASH, selectedMailbox);
-    const canEmptyTrash = (isTrashedView || isSpamView) && canEmptyTrashbin;
-    const emptyTrashLabel = isSpamView ? t('Empty spam') : t('Empty trash');
+    const canEmptyTrash = useAbility(Abilities.CAN_EMPTY_TRASH, selectedMailbox);
+    const canDeletePermanently = canTrash && isTrashedView && canEmptyTrash;
     const canManageLabels = useAbility(Abilities.CAN_MANAGE_MAILBOX_LABELS, selectedMailbox);
     const canAssignLabel = canManageLabels && !isSpamView && !isTrashedView && !isDraftsView;
     const hasSelectionActions = canArchive || canReportSpam || canTrash || canDeleteDrafts || canAssignLabel;
@@ -266,33 +261,6 @@ const ThreadPanelTitle = ({ selectedThreadIds, isAllSelected, isSomeSelected, is
                     aria-label={mainReadTooltip}
                 />
             </Tooltip>
-            {canEmptyTrash && (
-                <Tooltip content={emptyTrashLabel}>
-                    <Button
-                        onClick={() => {
-                            if (!selectedMailbox) return;
-                            emptyTrashbin({
-                                mailboxId: selectedMailbox.id,
-                                scope: isSpamView ? 'spam' : 'trashed',
-                                // Clear only once the delete went through. Unlike the
-                                // other actions here, emptyTrashbin opens a confirmation
-                                // modal first, so clearing up-front would discard the
-                                // open thread and the checkbox selection even when the
-                                // user backs out.
-                                onSuccess: () => {
-                                    unselectThread();
-                                    onClearSelection();
-                                },
-                            });
-                        }}
-                        icon={<Icon name="delete_forever" type={IconType.OUTLINED} />}
-                        variant="tertiary"
-                        size="nano"
-                        color="error"
-                        aria-label={emptyTrashLabel}
-                    />
-                </Tooltip>
-            )}
             {isSelectionMode && (
                 <>
                     {hasSelectionActions && <VerticalSeparator withPadding={false} />}
@@ -353,6 +321,29 @@ const ThreadPanelTitle = ({ selectedThreadIds, isAllSelected, isSomeSelected, is
                                 variant="tertiary"
                                 size={actionButtonSize}
                                 aria-label={trashLabel}
+                            />
+                        </Tooltip>
+                    )}
+                    {canDeletePermanently && (
+                        <Tooltip content={t('Delete permanently')} className={selectedThreadIds.size === 0 ? 'hidden' : ''}>
+                            <Button
+                                onClick={() => {
+                                    if (!selectedMailbox) return;
+                                    emptyTrashbin({
+                                        mailboxId: selectedMailbox.id,
+                                        scope: 'trashed',
+                                        threadIds: threadIdsToMark,
+                                        onSuccess: () => {
+                                            unselectThread();
+                                            onClearSelection();
+                                        }
+                                    });
+                                }}
+                                disabled={selectedThreadIds.size === 0}
+                                icon={<Icon icon={Trash} />}
+                                variant="tertiary"
+                                size={actionButtonSize}
+                                aria-label={t('Delete permanently')}
                             />
                         </Tooltip>
                     )}
