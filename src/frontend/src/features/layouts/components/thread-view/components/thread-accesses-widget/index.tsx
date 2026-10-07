@@ -1,4 +1,5 @@
-import { Button, Tooltip, useModals, IconType, Spinner } from "@gouvfr-lasuite/ui-components";
+import { Button, useModals, IconType, Spinner } from "@gouvfr-lasuite/ui-components";
+import { Tooltip } from "@/features/ui/components/tooltip";
 import { Icon } from "@/features/ui/components/icon";
 import { useQueryClient } from "@tanstack/react-query";
 import { forwardRef, useImperativeHandle, useMemo, useState } from "react";

@@ -1,9 +1,9 @@
-import { ReactNode, useEffect, useLayoutEffect, useRef, useState } from "react";
-import { Portal } from "@/features/ui/components/portal";
+import { ReactNode, useEffect, useRef, useState } from "react";
+import { Tooltip, TooltipProps } from "@/features/ui/components/tooltip";
 
 const DEFAULT_DURATION_MS = 2000;
 
-export type TransientTooltipPlacement = "top" | "bottom" | "left" | "right";
+export type TransientTooltipPlacement = NonNullable<TooltipProps["placement"]>;
 
 export type TransientTooltipProps = {
     message: string | null;
@@ -13,12 +13,10 @@ export type TransientTooltipProps = {
     children: ReactNode;
 };
 
-type Position = { top: number; left: number };
-
 /**
  * Transient tooltip
- * Rendered through a portal so it can escape ancestor
- * `overflow: hidden|auto` (e.g. app-level layout clipping).
+ * Shows `message` on its trigger for `duration` ms, then calls `onHide`.
+ * Unlike `Tooltip`, it is driven by the caller, not by hover or focus.
  */
 export const TransientTooltip = ({
     message,
@@ -27,54 +25,17 @@ export const TransientTooltip = ({
     placement = "bottom",
     children,
 }: TransientTooltipProps) => {
-    const wrapperRef = useRef<HTMLSpanElement | null>(null);
-    const [position, setPosition] = useState<Position | null>(null);
-    const [internalMessage, setInternalMessage] = useState<string | null>(null);
-    const [isExiting, setIsExiting] = useState(false);
+    // Keeps the last message displayed while the bubble plays its exit
+    // animation, after the parent has already cleared `message`.
+    const [displayedMessage, setDisplayedMessage] = useState(message);
+    if (message && message !== displayedMessage) setDisplayedMessage(message);
     // Latest-ref so the auto-hide timer below doesn't reset on every parent
     // re-render when `onHide` is passed as an inline arrow function.
     const onHideRef = useRef(onHide);
+
     useEffect(() => {
         onHideRef.current = onHide;
     });
-
-    // Delayed-unmount pattern: when the parent clears `message`, we keep the
-    // bubble mounted under `c__tooltip--exiting` so its exit animation can
-    // play. The real unmount happens in the animated node's `onAnimationEnd`
-    // below — that fires exactly when Cunningham's `slide` keyframe completes,
-    // so we don't have to mirror its duration in JS.
-    /* eslint-disable react-hooks/set-state-in-effect */
-    useEffect(() => {
-        if (message) {
-            setInternalMessage(message);
-            setIsExiting(false);
-            return;
-        }
-        if (!internalMessage || isExiting) return;
-        setIsExiting(true);
-    }, [message, internalMessage, isExiting]);
-    /* eslint-enable react-hooks/set-state-in-effect */
-
-    useLayoutEffect(() => {
-        if (!internalMessage) return;
-        const updatePosition = () => {
-            const rect = wrapperRef.current?.getBoundingClientRect();
-            if (!rect) return;
-
-            let top: number, left: number;
-            if (["left", "right"].includes(placement)) {
-                top = rect.top + rect.height / 2;
-                left = placement === "left" ? rect.left : rect.right;
-            } else {
-                top = placement === "bottom" ? rect.bottom : rect.top;
-                left = rect.left + rect.width / 2;
-            }
-            setPosition({ top, left });
-        };
-        updatePosition();
-        window.addEventListener("resize", updatePosition);
-        return () => window.removeEventListener("resize", updatePosition);
-    }, [internalMessage, placement]);
 
     useEffect(() => {
         if (!message) return;
@@ -83,30 +44,12 @@ export const TransientTooltip = ({
     }, [message, duration]);
 
     return (
-        <span ref={wrapperRef} className="transient-tooltip__wrapper">
+        <Tooltip
+            isOpen={!!message}
+            placement={placement}
+            content={<span role="status" aria-live="polite">{displayedMessage}</span>}
+        >
             {children}
-            {internalMessage && position && (
-                <Portal>
-                    <span
-                        className={`transient-tooltip transient-tooltip--${placement}`}
-                        style={{ top: position.top, left: position.left }}
-                    >
-                        <span
-                            key={isExiting ? "exit" : "enter"}
-                            className={`c__tooltip c__tooltip--${isExiting ? "exiting" : "entering"}`}
-                            data-placement={placement}
-                            role="status"
-                            aria-live="polite"
-                            onAnimationEnd={isExiting ? () => {
-                                setInternalMessage(null);
-                                setIsExiting(false);
-                            } : undefined}
-                        >
-                            <span className="c__tooltip__content">{internalMessage}</span>
-                        </span>
-                    </span>
-                </Portal>
-            )}
-        </span>
+        </Tooltip>
     );
 };

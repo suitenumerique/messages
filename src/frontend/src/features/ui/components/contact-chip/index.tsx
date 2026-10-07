@@ -1,6 +1,7 @@
 import { useRef, useState } from "react";
 import { useTranslation } from "react-i18next";
-import { Tooltip, IconSize, IconType } from "@gouvfr-lasuite/ui-components";
+import { IconSize, IconType } from "@gouvfr-lasuite/ui-components";
+import { Tooltip } from "@/features/ui/components/tooltip";
 import { Contact } from "@/features/api/gen/models";
 import { Icon } from "@/features/ui/components/icon";
 import { ContactPopover } from "./contact-popover";

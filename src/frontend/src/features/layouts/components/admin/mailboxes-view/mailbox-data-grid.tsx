@@ -3,7 +3,8 @@ import { ModalMailboxManageAccesses } from "@/features/layouts/components/admin/
 import { Banner } from "@/features/ui/components/banner";
 import useAbility, { Abilities } from "@/hooks/use-ability";
 import { IconType, DropdownMenu, IconSize, Spinner, DropdownMenuItem } from "@gouvfr-lasuite/ui-components";
-import { Button, DataGrid, Switch, Tooltip, useModals, usePagination } from "@gouvfr-lasuite/ui-components";
+import { Button, DataGrid, Switch, useModals, usePagination } from "@gouvfr-lasuite/ui-components";
+import { Tooltip } from "@/features/ui/components/tooltip";
 import { keepPreviousData } from "@tanstack/react-query";
 import { useEffect, useState } from "react";
 import { useTranslation } from "react-i18next";
