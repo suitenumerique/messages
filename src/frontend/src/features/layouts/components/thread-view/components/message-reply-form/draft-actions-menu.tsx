@@ -1,6 +1,7 @@
 import { useState } from "react";
 import { useTranslation } from "react-i18next";
-import { Button, Tooltip } from "@gouvfr-lasuite/ui-components";
+import { Button } from "@gouvfr-lasuite/ui-components";
+import { Tooltip } from "@/features/ui/components/tooltip";
 import { DropdownMenu } from "@gouvfr-lasuite/ui-components";
 import { Message } from "@/features/api/gen";
 import useCopyDeepLink from "@/features/message/use-copy-deep-link";

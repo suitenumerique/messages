@@ -99,7 +99,7 @@ export const groupSystemEvents = (items: readonly TimelineItem[]): RenderItem[] 
 
 /**
  * Computes the avatar palette color for a given name.
- * Mirrors the hash logic used by UserAvatar from @gouvfr-lasuite/ui-kit.
+ * Mirrors the hash logic used by UserAvatar from @gouvfr-lasuite/ui-components.
  */
 const getAvatarColor = (name: string): string => {
     let hash = 0;

@@ -12,10 +12,6 @@
     text-overflow: ellipsis;
     white-space: nowrap;
 
-    .c__tooltip {
-        line-height: initial;
-    }
-
     &--compact {
         padding: var(--c--globals--spacings--4xs);
     }

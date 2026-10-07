@@ -31,3 +31,9 @@
         padding-inline-end: 1.1rem;
     }
 }
+
+.mailbox-panel__footer {
+    display: flex;
+    align-items: center;
+    padding: var(--c--globals--spacings--xs);
+}

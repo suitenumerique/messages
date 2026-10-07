@@ -1,4 +1,6 @@
-import { DropdownMenu, DropdownMenuItem, Button, ButtonProps, Tooltip, IconType } from "@gouvfr-lasuite/ui-components"
+import { DropdownMenu, DropdownMenuItem, Button, ButtonProps } from "@gouvfr-lasuite/ui-components"
+import { Tooltip } from "@/features/ui/components/tooltip"
+import { BubbleEdit, Info, QuestionMark } from "@gouvfr-lasuite/ui-components/icons";
 import { Icon } from "@/features/ui/components/icon"
 import { useTranslation } from "react-i18next"
 import { useAuth } from "@/features/auth";
@@ -89,20 +91,20 @@ export const SurveyButton = ({ iconOnly = false, ...props }: SurveyButtonProps) 
   }
 
   const getButtonIcon = () => {
-    if (hasWidget && !hasHelpCenter) return "feedback";
-    return "help";
+    if (hasWidget && !hasHelpCenter) return BubbleEdit;
+    return QuestionMark;
   }
 
   const supportOptions: DropdownMenuItem[] = [
     ...(hasHelpCenter ? [{
       label: t("Visit the Help center"),
-      icon: <Icon name="help" type={IconType.FILLED} />,
+      icon: <Icon icon={QuestionMark} />,
       callback: openHelpCenter,
       subText: t("Tutorials and training"),
     }] : []),
     ...(hasWidget ? [{
       label: t("Contact the Support team"),
-      icon: <Icon name="feedback" type={IconType.FILLED} />,
+      icon: <Icon icon={BubbleEdit} />,
       callback: showWidget,
       subText: t("I have an issue or a feature request"),
     }] : []),
@@ -121,7 +123,7 @@ export const SurveyButton = ({ iconOnly = false, ...props }: SurveyButtonProps) 
       subText: version.native
         ? t("Web interface {{version}}", { version: version.web })
         : undefined,
-      icon: <Icon name="info" type={IconType.FILLED} />,
+      icon: <Icon icon={Info} />,
       callback: copyVersionReport,
     },
   ];
@@ -138,7 +140,7 @@ export const SurveyButton = ({ iconOnly = false, ...props }: SurveyButtonProps) 
       <Tooltip placement="bottom" content={getButtonLabel()}>
         <Button
           {...props}
-          icon={<Icon name={getButtonIcon()} type={IconType.FILLED} />}
+          icon={<Icon icon={getButtonIcon()} />}
           color={props.color ?? "brand"}
           variant={props.variant ?? "secondary"}
           className="feedback-button"

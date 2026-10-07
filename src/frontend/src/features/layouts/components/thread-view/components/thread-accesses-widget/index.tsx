@@ -1,4 +1,5 @@
-import { Button, Tooltip, useModals, IconType, Spinner } from "@gouvfr-lasuite/ui-components";
+import { Button, useModals, IconType, Spinner } from "@gouvfr-lasuite/ui-components";
+import { Tooltip } from "@/features/ui/components/tooltip";
 import { Icon } from "@/features/ui/components/icon";
 import { useQueryClient } from "@tanstack/react-query";
 import { forwardRef, useImperativeHandle, useMemo, useState } from "react";
@@ -56,7 +57,7 @@ type EnrichedAccess = ThreadAccessDetail & {
  * Exposes an `open()` handle so the `AssigneesWidget` (rendered inside
  * `ThreadActionBar`) can reuse the exact same modal without duplicating state.
  *
- * The `ShareModal` from `@gouvfr-lasuite/ui-kit` is reused as-is for visual
+ * The `ShareModal` from `@gouvfr-lasuite/ui-components` is reused as-is for visual
  * consistency; assignment affordances are injected through its extension
  * points (`children` for the "assigned users" section, `accessRoleTopMessage`
  * returning a ReactNode for the per-mailbox user list).

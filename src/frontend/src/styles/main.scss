@@ -24,13 +24,13 @@
 @use "./../features/ui/components/label-badge";
 @use "./../features/ui/components/contact-chip";
 @use "./../features/ui/components/banner";
+@use "./../features/ui/components/header-banner";
 @use "./../features/ui/components/feedback-button";
 @use "./../features/ui/components/copyable-input";
 @use "./../features/ui/components/dropdown-button";
 @use "./../features/ui/components/progress-bar";
 @use "./../features/ui/components/circular-progress";
 @use "./../features/ui/components/suggestion-input";
-@use "./../features/ui/components/transient-tooltip";
 @use "./../features/ui/components/assignees-avatar-group";
 @use "./../features/ui/components/drawer";
 @use "./../features/ui/components/icon";
@@ -84,6 +84,7 @@
 @use "./../features/layouts/components/mailbox-panel/components/mailbox-labels/components/label-form-modal/components/color-palette-field";
 @use "./../features/layouts/components/admin/signatures-view";
 @use "./../features/layouts/components/mailbox-settings/autoreplies-view";
+@use "./../features/quota/components/quota-widget";
 
 // Blocknote custom blocks and components
 @use "./../features/blocknote/blocknote-view-field";

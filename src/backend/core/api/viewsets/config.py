@@ -146,6 +146,16 @@ CONFIG_ENTRIES = (
         getter=is_mandatory_totp_enabled,
     ),
     ConfigEntry(
+        "TRASHBIN_CUTOFF_DAYS",
+        {
+            "type": "integer",
+            "description": (
+                "Number of days after which trashed and spam messages are "
+                "permanently and automatically deleted."
+            ),
+        },
+    ),
+    ConfigEntry(
         "MESSAGES_MANUAL_RETRY_MAX_AGE",
         {
             "type": "integer",

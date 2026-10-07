@@ -103,7 +103,7 @@ export const MobileThreadToolbar = ({ thread, isArchived, isTrashed, quickReplyM
       }
     : isTrashed
       ? {
-          label: t("Undelete"),
+          label: t("Restore"),
           icon: { icon:Restore },
           onSelect: () => markAsUntrashed({ threadIds: [thread.id], onSuccess: unselectThread }),
         }

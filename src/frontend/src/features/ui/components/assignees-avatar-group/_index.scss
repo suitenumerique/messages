@@ -22,7 +22,7 @@
     padding: 0 var(--c--globals--spacings--4xs);
 }
 
-// Keep each size in lock-step with the matching @gouvfr-lasuite/ui-kit
+// Keep each size in lock-step with the matching @gouvfr-lasuite/ui-components
 // .c__avatar.<size> rule so the overflow chip has the same footprint
 // (and font metrics) as the UserAvatars it sits next to.
 .assignees-avatar-group[data-size="xsmall"] .assignees-avatar-group__overflow {

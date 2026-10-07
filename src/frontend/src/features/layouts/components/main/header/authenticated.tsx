@@ -1,6 +1,7 @@
 import { DropdownMenu, HeaderProps, useResponsive, UserMenu, VerticalSeparator } from "@gouvfr-lasuite/ui-components";
 import { Controls, GearRounded, LeftPanel, Upload, XMark } from "@gouvfr-lasuite/ui-components/icons";
-import { Button, Tooltip } from "@gouvfr-lasuite/ui-components";
+import { Button } from "@gouvfr-lasuite/ui-components";
+import { Tooltip } from "@/features/ui/components/tooltip";
 import { useMemo, useState } from "react";
 import { useTranslation } from "react-i18next";
 import { useNavigate } from "@tanstack/react-router";
@@ -10,7 +11,6 @@ import { useFeatureFlag, FEATURE_KEYS } from "@/hooks/use-feature";
 import { useAuth, logout } from "@/features/auth";
 import { LanguagePicker } from "@/features/layouts/components/main/language-picker";
 import { LagaufreButton } from "@/features/ui/components/lagaufre";
-import { SurveyButton } from "@/features/ui/components/feedback-button";
 import { useMailboxContext } from "@/features/providers/mailbox";
 import { ImportRun, MessageTemplateTypeChoices, useMailboxesImportsList, useMailboxesMessageTemplatesList } from "@/features/api/gen";
 import { isTerminal } from "@/hooks/import-status";
@@ -76,7 +76,7 @@ export const AuthenticatedHeader = ({
   );
 };
 
-const AutoreplyIndicator = () => {
+export const AutoreplyIndicator = () => {
   const { selectedMailbox } = useMailboxContext();
   const { openModal } = useModalStore();
   const { t } = useTranslation();
@@ -125,7 +125,7 @@ const AutoreplyIndicator = () => {
  * run at once, so the badge shows their combined (total-weighted) progress and
  * the tab lists them individually.
  */
-const ImportIndicator = () => {
+export const ImportIndicator = () => {
   const { selectedMailbox } = useMailboxContext();
   const { openModal } = useModalStore();
   const { t } = useTranslation();
@@ -197,39 +197,45 @@ const ImportIndicator = () => {
 };
 
 export const HeaderRight = () => {
-  const { user } = useAuth();
   const { isDesktop } = useResponsive();
-  const { themeConfig } = useTheme();
 
   return (
     <>
       <div className="flex-row flex-align-center">
         <ImportIndicator />
         <AutoreplyIndicator />
-        <SurveyButton iconOnly color="brand" variant="tertiary" />
         <ApplicationMenu />
         {isDesktop && <VerticalSeparator size="24px" withPadding={false} />}
         {!isNativePlatform() && <LagaufreButton />}
       </div>
-      <UserMenu
-        user={user ? {
-          full_name: user.full_name ?? undefined,
-          email: user.email || ""
-        } : null}
-        logout={logout}
-        termOfServiceUrl={themeConfig.terms_of_service_url}
-        withMobileView={false}
-        actions={
-          <div className="user-menu__footer-action">
-            <LanguagePicker size="small" compact />
-          </div>
-        }
-      />
+      <HeaderUserMenu />
     </>
   );
 };
 
-const ApplicationMenu = () => {
+export const HeaderUserMenu = () => {
+  const { user } = useAuth();
+  const { themeConfig } = useTheme();
+
+  return (
+    <UserMenu
+      user={user ? {
+        full_name: user.full_name ?? undefined,
+        email: user.email || ""
+      } : null}
+      logout={logout}
+      termOfServiceUrl={themeConfig.terms_of_service_url}
+      withMobileView={false}
+      actions={
+        <div className="user-menu__footer-action">
+          <LanguagePicker size="small" compact />
+        </div>
+      }
+    />
+  );
+};
+
+export const ApplicationMenu = () => {
   const [isDropdownOpen, setIsDropdownOpen] = useState(false);
   const { openModal } = useModalStore();
   const openImporter = useOpenImporter();

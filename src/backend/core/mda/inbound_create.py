@@ -450,8 +450,12 @@ def _create_message_from_inbound(  # pylint: disable=too-many-arguments
                     is_sender=is_sender,
                     is_trashed=is_trashed,
                     # Keep timestamps in lockstep with the booleans, as the
-                    # flag endpoint does.
-                    trashed_at=(timezone.now() if is_trashed else None),
+                    # flag endpoint does — a NULL trashed_at/archived_at on a
+                    # trashed/archived row breaks restore, ordering and any
+                    # auto-purge that keys off the timestamp. ``trashed_at`` is
+                    # the "entered the trashbin" time, so spam sets it too (the
+                    # trashbin is is_trashed OR is_spam; see services/trashbin).
+                    trashed_at=(timezone.now() if (is_trashed or is_spam) else None),
                     is_archived=is_archived,
                     archived_at=(timezone.now() if is_archived else None),
                     is_spam=is_spam,
@@ -472,7 +476,7 @@ def _create_message_from_inbound(  # pylint: disable=too-many-arguments
                 flag_update_fields = ["created_at", *message_flags.keys()]
                 # Keep the timestamps in lockstep with the booleans, as the
                 # create above does.
-                if message.is_trashed and message.trashed_at is None:
+                if (message.is_trashed or message.is_spam) and message.trashed_at is None:
                     message.trashed_at = timezone.now()
                     flag_update_fields.append("trashed_at")
                 if message.is_archived and message.archived_at is None:
