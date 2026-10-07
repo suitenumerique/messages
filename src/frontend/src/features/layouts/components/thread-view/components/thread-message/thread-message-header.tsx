@@ -1,6 +1,6 @@
 import { useCallback, useMemo } from "react";
 import { useTranslation } from "react-i18next";
-import { Tooltip } from "@gouvfr-lasuite/ui-components";
+import { Tooltip } from "@/features/ui/components/tooltip";
 import { IconType, IconSize, UserAvatar } from "@gouvfr-lasuite/ui-components";
 import { MessageDeliveryStatusChoices, MessageRecipient } from "@/features/api/gen/models";
 import { Banner } from "@/features/ui/components/banner";

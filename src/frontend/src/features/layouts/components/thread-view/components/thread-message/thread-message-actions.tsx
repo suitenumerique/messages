@@ -1,6 +1,7 @@
 import { useState, useMemo, useCallback } from "react";
 import { useTranslation } from "react-i18next";
-import { Button, Tooltip, useModals } from "@gouvfr-lasuite/ui-components";
+import { Button, useModals } from "@gouvfr-lasuite/ui-components";
+import { Tooltip } from "@/features/ui/components/tooltip";
 import { DropdownMenu, IconSize, IconType } from "@gouvfr-lasuite/ui-components";
 import { getMessagesEmlRetrieveUrl } from "@/features/api/gen/messages/messages";
 import { getRequestUrl } from "@/features/api/utils";

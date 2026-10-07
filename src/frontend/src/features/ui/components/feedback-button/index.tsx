@@ -1,5 +1,6 @@
-import { DropdownMenu, DropdownMenuItem, Button, ButtonProps, Tooltip } from "@gouvfr-lasuite/ui-components"
+import { DropdownMenu, DropdownMenuItem, Button, ButtonProps } from "@gouvfr-lasuite/ui-components"
 import { BubbleEdit, Info, QuestionMark } from "@gouvfr-lasuite/ui-components/icons";
+import { Tooltip } from "@/features/ui/components/tooltip"
 import { Icon } from "@/features/ui/components/icon"
 import { useTranslation } from "react-i18next"
 import { useAuth } from "@/features/auth";
