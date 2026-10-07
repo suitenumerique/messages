@@ -28,7 +28,8 @@ import { MobileThreadToolbar, QuickReplyMode } from "@/features/layouts/componen
 import { ThreadAccessesWidget, type ThreadAccessesWidgetHandle } from "./components/thread-accesses-widget";
 import { Star, StarFilled, Trash, Error as ErrorIcon } from "@gouvfr-lasuite/ui-components/icons";
 import useStarred from "@/features/message/use-starred";
-import { Button, Tooltip } from "@gouvfr-lasuite/ui-components";
+import { Button } from "@gouvfr-lasuite/ui-components";
+import { Tooltip } from "@/features/ui/components/tooltip";
 import { Icon } from "@/features/ui/components/icon";
 
 /**

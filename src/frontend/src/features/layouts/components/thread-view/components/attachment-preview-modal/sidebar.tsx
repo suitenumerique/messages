@@ -1,5 +1,6 @@
 import { useTranslation } from "react-i18next";
-import { type FilePreviewType, Button, Tooltip, IconSize, IconType, UserAvatar } from "@gouvfr-lasuite/ui-components";
+import { type FilePreviewType, Button, IconSize, IconType, UserAvatar } from "@gouvfr-lasuite/ui-components";
+import { Tooltip } from "@/features/ui/components/tooltip";
 import { Icon } from "@/features/ui/components/icon";
 import { useNavigate } from "@tanstack/react-router";
 import type { AttachmentOrigin } from "./index";

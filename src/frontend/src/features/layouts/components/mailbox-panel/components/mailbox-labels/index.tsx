@@ -1,6 +1,7 @@
 import { Mailbox, TreeLabel, useLabelsList, useLabelsPartialUpdate } from "@/features/api/gen";
 import { IconType, Spinner } from "@gouvfr-lasuite/ui-components";
-import { Button, useModal, Tooltip } from "@gouvfr-lasuite/ui-components";
+import { Button, useModal } from "@gouvfr-lasuite/ui-components";
+import { Tooltip } from "@/features/ui/components/tooltip";
 import { useTranslation } from "react-i18next";
 import { LabelModal, SubLabelCreation } from "./components/label-form-modal";
 import { LabelItem, LabelTransferData } from "./components/label-item";

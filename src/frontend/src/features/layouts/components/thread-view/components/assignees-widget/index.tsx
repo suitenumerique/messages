@@ -1,4 +1,5 @@
-import { Button, Tooltip } from "@gouvfr-lasuite/ui-components";
+import { Button, ButtonElement } from "@gouvfr-lasuite/ui-components";
+import { Tooltip } from "@/features/ui/components/tooltip";
 import { useRef, useState } from "react";
 import { useTranslation } from "react-i18next";
 import { useAssignedUsers } from "@/features/message/use-assigned-users";
@@ -40,7 +41,7 @@ export const AssigneesWidget = ({ onClick }: AssigneesWidgetProps) => {
         [selectedMailbox!, selectedThread!],
     );
     const isNative = isNativePlatform();
-    const triggerRef = useRef<HTMLSpanElement>(null);
+    const triggerRef = useRef<ButtonElement>(null);
     const [isPopoverOpen, setIsPopoverOpen] = useState(false);
 
     if (!isSharedContext) return null;
@@ -75,30 +76,29 @@ export const AssigneesWidget = ({ onClick }: AssigneesWidgetProps) => {
 
     return (
         <>
-            <span ref={triggerRef} className="assignees-widget__trigger-wrapper">
-                <Tooltip content={tooltipContent}>
-                    <Button
-                        type="button"
-                        color={isNative ? "neutral" : "brand"}
-                        variant="tertiary"
-                        className="assignees-widget"
-                        onClick={() => setIsPopoverOpen((open) => !open)}
-                        aria-label={tooltipContent}
-                        aria-haspopup="dialog"
-                        aria-expanded={isPopoverOpen}
-                        size="nano"
-                        icon={
-                            assignedUsers.length === 0
-                                ? <Icon icon={UserAdd} />
-                                : undefined
-                        }
-                    >
-                        {assignedUsers.length > 0 && (
-                            <AssigneesAvatarGroup users={assignedUsers} maxAvatars={3} />
-                        )}
-                    </Button>
-                </Tooltip>
-            </span>
+            <Tooltip content={tooltipContent}>
+                <Button
+                    ref={triggerRef}
+                    type="button"
+                    color={isNative ? "neutral" : "brand"}
+                    variant="tertiary"
+                    className="assignees-widget"
+                    onClick={() => setIsPopoverOpen((open) => !open)}
+                    aria-label={tooltipContent}
+                    aria-haspopup="dialog"
+                    aria-expanded={isPopoverOpen}
+                    size="nano"
+                    icon={
+                        assignedUsers.length === 0
+                            ? <Icon icon={UserAdd} />
+                            : undefined
+                    }
+                >
+                    {assignedUsers.length > 0 && (
+                        <AssigneesAvatarGroup users={assignedUsers} maxAvatars={3} />
+                    )}
+                </Button>
+            </Tooltip>
             {selectedThread?.id && (
                 <QuickAssignPopover
                     isOpen={isPopoverOpen}

@@ -11,9 +11,9 @@ import {
     Input,
     Modal,
     ModalSize,
-    Tooltip,
     useModals,
 } from "@gouvfr-lasuite/ui-components";
+import { Tooltip } from "@/features/ui/components/tooltip";
 import { useTranslation } from "react-i18next";
 import { ReactNode, useEffect, useMemo, useState } from "react";
 import { useQueryClient } from "@tanstack/react-query";

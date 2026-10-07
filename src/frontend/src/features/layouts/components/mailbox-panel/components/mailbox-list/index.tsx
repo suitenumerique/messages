@@ -16,7 +16,7 @@ import { handle } from "@/features/utils/errors";
 import ViewHelper from "@/features/utils/view-helper";
 import EventHelper from "@/features/utils/event-helper";
 import { addToast, ToasterItem } from "@/features/ui/components/toaster";
-import { Tooltip } from "@gouvfr-lasuite/ui-components"
+import { Tooltip } from "@/features/ui/components/tooltip"
 import { EXPANDED_FOLDERS_KEY } from "@/features/config/constants"
 import { Archive, ChevronDown, Edit, Restore, Star, Trash, Error as ErrorIcon } from "@gouvfr-lasuite/ui-components/icons"
 import { Icon, IconProps } from "@/features/ui/components/icon"

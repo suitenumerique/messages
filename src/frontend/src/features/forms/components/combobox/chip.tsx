@@ -1,4 +1,5 @@
-import { Button, IconType, Tooltip } from "@gouvfr-lasuite/ui-components";
+import { Button, IconType } from "@gouvfr-lasuite/ui-components";
+import { Tooltip } from "@/features/ui/components/tooltip";
 import { Icon } from "@/features/ui/components/icon";
 import clsx from "clsx";
 import { HTMLAttributes } from "react";

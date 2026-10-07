@@ -12,10 +12,3 @@
         padding: 0;
     }
 }
-
-// Wraps Tooltip + Button so react-aria-components Popover has a stable
-// DOM node to anchor against (Cunningham's Button ref doesn't always
-// reach the underlying element through the Tooltip clone).
-.assignees-widget__trigger-wrapper {
-    display: inline-flex;
-}
