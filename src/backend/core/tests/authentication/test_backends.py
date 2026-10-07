@@ -486,3 +486,123 @@ def test_authentication_getter_existing_user_updates_claims(monkeypatch, setting
 
     user.refresh_from_db()
     assert user.oidc_claims == {"picture": "https://example.com/new.png"}
+
+
+def test_authentication_getter_stored_claims_overlapping_dedicated_fields(
+    monkeypatch, settings
+):
+    """
+    A stored claim that also feeds a dedicated field is stored twice, verbatim,
+    without changing how the dedicated fields or the identification are computed.
+    """
+    settings.OIDC_CREATE_USER = True
+    settings.OIDC_STORE_CLAIMS = ["first_name", "email", "sub"]
+    settings.OIDC_USERINFO_FULLNAME_FIELDS = ["first_name", "last_name"]
+    klass = OIDCAuthenticationBackend()
+
+    monkeypatch.setattr(
+        OIDCAuthenticationBackend,
+        "get_userinfo",
+        lambda *args: {
+            "sub": "123",
+            "email": "john@example.com",
+            "first_name": "John",
+            "last_name": "Doe",
+        },
+    )
+
+    user = klass.get_or_create_user(
+        access_token="test-token", id_token=None, payload=None
+    )
+
+    user.refresh_from_db()
+    assert user.sub == "123"
+    assert user.email == "john@example.com"
+    assert user.full_name == "John Doe"
+    assert user.oidc_claims == {
+        "first_name": "John",
+        "email": "john@example.com",
+        "sub": "123",
+    }
+
+
+def test_authentication_getter_existing_user_missing_claim_is_cleared(
+    monkeypatch, settings
+):
+    """
+    Stored claims mirror the latest userinfo response: a claim the provider
+    stops sending is stored as None, replacing the value kept so far.
+    """
+    settings.OIDC_STORE_CLAIMS = ["picture", "locale"]
+    klass = OIDCAuthenticationBackend()
+    db_user = UserFactory(
+        oidc_claims={"picture": "https://example.com/a.png", "locale": "nl"}
+    )
+
+    monkeypatch.setattr(
+        OIDCAuthenticationBackend,
+        "get_userinfo",
+        lambda *args: {"sub": db_user.sub, "email": db_user.email, "locale": "nl"},
+    )
+
+    user = klass.get_or_create_user(
+        access_token="test-token", id_token=None, payload=None
+    )
+
+    user.refresh_from_db()
+    assert user.oidc_claims == {"picture": None, "locale": "nl"}
+
+
+def test_authentication_getter_existing_user_removed_claim_is_dropped(
+    monkeypatch, settings
+):
+    """A claim removed from the setting is dropped on the user's next login."""
+    settings.OIDC_STORE_CLAIMS = ["locale"]
+    klass = OIDCAuthenticationBackend()
+    db_user = UserFactory(
+        oidc_claims={"picture": "https://example.com/a.png", "locale": "nl"}
+    )
+
+    monkeypatch.setattr(
+        OIDCAuthenticationBackend,
+        "get_userinfo",
+        lambda *args: {
+            "sub": db_user.sub,
+            "email": db_user.email,
+            "picture": "https://example.com/a.png",
+            "locale": "nl",
+        },
+    )
+
+    user = klass.get_or_create_user(
+        access_token="test-token", id_token=None, payload=None
+    )
+
+    user.refresh_from_db()
+    assert user.oidc_claims == {"locale": "nl"}
+
+
+def test_authentication_getter_existing_user_emptied_setting_clears_claims(
+    monkeypatch, settings
+):
+    """Emptying the setting clears the stored claims on the user's next login."""
+    settings.OIDC_STORE_CLAIMS = []
+    klass = OIDCAuthenticationBackend()
+    db_user = UserFactory(oidc_claims={"picture": "https://example.com/a.png"})
+
+    monkeypatch.setattr(
+        OIDCAuthenticationBackend,
+        "get_userinfo",
+        lambda *args: {
+            "sub": db_user.sub,
+            "email": db_user.email,
+            "picture": "https://example.com/a.png",
+        },
+    )
+
+    user = klass.get_or_create_user(
+        access_token="test-token", id_token=None, payload=None
+    )
+
+    user.refresh_from_db()
+    assert user.oidc_claims == {}
