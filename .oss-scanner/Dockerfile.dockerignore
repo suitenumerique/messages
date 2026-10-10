@@ -1,0 +1,26 @@
+# Replaces the repository .dockerignore for this Dockerfile. The repository
+# one hides *.md, docs/, compose.yaml and deploy/env/ that the scanning agent
+# should read. The scanner copies .git itself, so a tracked file must not be
+# left out: it would show as deleted in `git status`.
+.git
+**/__pycache__
+**/*.py[co]
+**/.pytest_cache
+**/.ruff_cache
+**/.mypy_cache
+**/.hypothesis
+**/.pylint.d
+**/node_modules
+**/dist
+**/.venv
+venv
+data
+db.sqlite3
+*.log
+**/.DS_Store
+**/.env
+**/.env.*
+deploy/env/*.local
+.idea
+.vscode
+.opencode
