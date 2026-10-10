@@ -98,6 +98,8 @@ jobs:
           platforms: linux/amd64
           push: true
           provenance: false
+          # Podman drops HEALTHCHECK from OCI-typed images. Needs provenance: false.
+          outputs: type=image,oci-mediatypes=false
           tags: ${{ steps.platform-tags.outputs.amd64 }}
           labels: ${{ steps.meta.outputs.labels }}
           build-args: ${{ inputs.build_args }}
@@ -110,6 +112,8 @@ jobs:
           platforms: linux/arm64
           push: true
           provenance: false
+          # Podman drops HEALTHCHECK from OCI-typed images. Needs provenance: false.
+          outputs: type=image,oci-mediatypes=false
           tags: ${{ steps.platform-tags.outputs.arm64 }}
           labels: ${{ steps.meta.outputs.labels }}
           build-args: |
