@@ -23,7 +23,7 @@ description = "A stateless MTA."
 keywords = ["Python", "MTA"]
 license = "MIT"
 readme = "README.md"
-requires-python = ">=3.14.7,<4.0"
+requires-python = ">=3.14.8,<4.0"
 
 # Note: after changing this list you must re-run `make deps-lock-mta-in`
 dependencies = [
