@@ -703,7 +703,7 @@ class ThreadViewSet(
                 )
 
         # If search is provided and OpenSearch is available, use it
-        if search_query and len(settings.OPENSEARCH_HOSTS[0]) > 0:
+        if search_query and any(settings.OPENSEARCH_HOSTS):
             # Get the mailbox_id for filtering
 
             # Build filters from query parameters

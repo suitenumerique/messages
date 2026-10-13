@@ -1878,6 +1878,7 @@ class TestThreadListAPI:
             MailboxAccess.objects.get(user=user2, mailbox=mailbox).accessed_at is None
         )
 
+    @override_settings(OPENSEARCH_HOSTS=["http://opensearch:9200"])
     def test_list_threads_without_mailbox_id_should_not_return_inaccessible_threads(
         self, api_client, url
     ):
@@ -2002,6 +2003,23 @@ class TestThreadListAPI:
 
         assert response.status_code == status.HTTP_200_OK
         assert mock_search.call_args.kwargs["mailbox_ids"] == []
+
+    @pytest.mark.parametrize("hosts", [[], [""]])
+    def test_search_without_opensearch_hosts_skips_opensearch(
+        self, api_client, url, hosts
+    ):
+        """An empty OPENSEARCH_URL must not break the search endpoint."""
+        user = UserFactory()
+        api_client.force_authenticate(user=user)
+
+        with (
+            override_settings(OPENSEARCH_HOSTS=hosts),
+            mock.patch("core.api.viewsets.thread.search_threads") as mock_search,
+        ):
+            response = api_client.get(url, {"search": "test query"})
+
+        assert response.status_code == status.HTTP_200_OK
+        mock_search.assert_not_called()
 
 
 class TestThreadListEventsCount:
