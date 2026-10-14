@@ -8,6 +8,10 @@ and this project adheres to
 
 ## [Unreleased]
 
+### Fixed
+
+- Use the container IP as Host in the backend healthcheck
+
 ### Changed
 
 - Bump keycloak to 26.8.0 and refresh the Alpine 3.24 digest in the Keycloak image
