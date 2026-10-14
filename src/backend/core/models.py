@@ -256,7 +256,7 @@ class User(AbstractBaseUser, BaseModel, auth_models.PermissionsMixin):
     oidc_claims = models.JSONField(
         blank=True,
         default=dict,
-        help_text="Claims from the OIDC token.",
+        help_text="OIDC userinfo claims selected by OIDC_STORE_CLAIMS.",
     )
 
     objects = UserManager()

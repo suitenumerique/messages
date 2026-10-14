@@ -4,15 +4,18 @@ from django.db import migrations, models
 
 
 class Migration(migrations.Migration):
-
     dependencies = [
-        ('core', '0035_address_normalization'),
+        ("core", "0035_address_normalization"),
     ]
 
     operations = [
         migrations.AddField(
-            model_name='user',
-            name='oidc_claims',
-            field=models.JSONField(blank=True, default=dict, help_text='Claims from the OIDC token.'),
+            model_name="user",
+            name="oidc_claims",
+            field=models.JSONField(
+                blank=True,
+                default=dict,
+                help_text="OIDC userinfo claims selected by OIDC_STORE_CLAIMS.",
+            ),
         ),
     ]
