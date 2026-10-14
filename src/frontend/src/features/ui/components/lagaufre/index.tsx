@@ -4,6 +4,55 @@ import { LaGaufreV2 } from "@gouvfr-lasuite/ui-components";
 import { useConfig } from "@/features/providers/config";
 
 const LAGAUFRE_SHADOW_HOST_ID = "lasuite-widget-lagaufre-shadow";
+/**
+ * Dispatched on document by the widget script when it processes an init
+ * command, i.e. each time LaGaufreV2 mounts and pushes its config to
+ * `window._lasuite_widget` (or, for inits pushed before the script loaded,
+ * once it has loaded). The event detail is the widget config.
+ */
+const LAGAUFRE_INIT_EVENT = "lasuite-widget-lagaufre-init";
+/**
+ * Dispatched on document by the widget script at the very end of its init
+ * handler: services fetched (or fetch failed), listeners bound and the
+ * instance flagged as live, so the next init will properly destroy it.
+ * Like every widget event, it is a non-bubbling CustomEvent.
+ */
+const LAGAUFRE_INITIALIZED_EVENT = "lasuite-widget-lagaufre-initialized";
+
+// TODO: temporary workaround — remove once fixed upstream in the lagaufre
+// widget (an init should cancel or destroy any in-flight init).
+// LaGaufreV2 pushes an init each time it mounts. The widget only destroys the
+// previous instance once that one has finished fetching its services, so a
+// remount during that fetch (e.g. the header remounted by a redirect from "/"
+// or "/domain") ends up with two live instances and one click opens two
+// gaufres. We hold back any init received while another is in flight and
+// replay only the latest one, as earlier ones target an unmounted button.
+// Widget events are dispatched on document without bubbling, so window only
+// sees them in the capture phase, which also runs before the widget's own
+// listener on document.
+let isWidgetInitializing = false;
+let pendingInit: { detail: unknown } | null = null;
+
+if (typeof window !== "undefined") {
+  window.addEventListener(LAGAUFRE_INIT_EVENT, (event) => {
+    if (!isWidgetInitializing) {
+      isWidgetInitializing = true;
+      return;
+    }
+    event.stopImmediatePropagation();
+    pendingInit = { detail: (event as CustomEvent).detail };
+  }, true);
+
+  window.addEventListener(LAGAUFRE_INITIALIZED_EVENT, () => {
+    isWidgetInitializing = false;
+    if (!pendingInit) return;
+    const { detail } = pendingInit;
+    pendingInit = null;
+    queueMicrotask(() => {
+      document.dispatchEvent(new CustomEvent(LAGAUFRE_INIT_EVENT, { detail }));
+    });
+  }, true);
+}
 
 /**
  * A button that opens the lagaufre widget, backed by the ui-kit LaGaufreV2 component.
