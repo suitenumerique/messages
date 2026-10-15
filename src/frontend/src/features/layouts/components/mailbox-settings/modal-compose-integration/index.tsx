@@ -36,26 +36,26 @@ type ChannelTypeMetadata = {
     disabled?: boolean;
 };
 
-const CHANNEL_TYPE_METADATA: Record<ChannelType, ChannelTypeMetadata> = {
+const CHANNEL_TYPE_METADATA: Partial<Record<ChannelType, ChannelTypeMetadata>> = {
     widget: {
         type: "widget",
         title: i18n.t("Website Widget"),
         description: i18n.t("Add a contact form widget to your website to receive messages directly in your mailbox."),
         icon: "widgets",
     },
-    api_key: {
-        type: "api_key",
-        title: i18n.t("API Key"),
-        description: i18n.t("Generate an API key to send messages programmatically from your applications."),
-        icon: "key",
-        disabled: true
-    },
+    // api_key: {
+    //     type: "api_key",
+    //     title: i18n.t("API Key"),
+    //     description: i18n.t("Generate an API key to send messages programmatically from your applications."),
+    //     icon: "key",
+    //     disabled: true
+    // },
     webhook: {
         type: "webhook",
         title: i18n.t("Outbound Webhook"),
         description: i18n.t("Forward every incoming message to a URL of your choice."),
         icon: "webhook",
-    },
+    }
 };
 
 const ChannelTypeCard = ({ title, description, icon, disabled, onClick }: ChannelTypeCardProps) => {
