@@ -1,4 +1,4 @@
-import { format, isToday, isSameWeek, isYesterday, isSameYear } from 'date-fns';
+import { format, isToday, isSameWeek, isYesterday, isSameYear, isValid } from 'date-fns';
 // @WARN: This import is surely importing to much locales, later we should
 // import only the needed locales
 import * as locales from 'date-fns/locale';
@@ -41,6 +41,22 @@ export class DateHelper {
     }
 
     return format(date, 'dd/MM/yyyy', { locale: dateLocale });
+  }
+
+  /**
+   * Format a date with its time in a locale-aware long form
+   * (e.g. "Oct 20, 2026, 6:00 PM" or "20 oct. 2026, 18:00").
+   *
+   * @param dateString - The date string to format
+   * @param lng - The locale code (e.g., 'fr', 'en')
+   * @returns Formatted date and time, or undefined if the date is invalid
+   */
+  public static formatDateTime(dateString: string, lng: string = 'en'): string | undefined {
+    const date = new Date(dateString);
+    if (!isValid(date)) return undefined;
+    const locale = lng.length > 2 ? lng.split('-')[0] : lng;
+    const dateLocale = locales[locale as keyof typeof locales];
+    return format(date, 'PPp', { locale: dateLocale });
   }
 
   /**
