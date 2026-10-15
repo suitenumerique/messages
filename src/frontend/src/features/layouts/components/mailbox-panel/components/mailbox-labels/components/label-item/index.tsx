@@ -1,5 +1,6 @@
-import { TreeLabel, ThreadsStatsRetrieveStatsFields, useLabelsDestroy, useLabelsList, useThreadsStatsRetrieve, ThreadsStatsRetrieve200, useLabelsPartialUpdate } from "@/features/api/gen";
-import { getThreadsStatsQueryKey, useMailboxContext } from "@/features/providers/mailbox";
+import { TreeLabel, ThreadsStatsRetrieveStatsFields, useLabelsDestroy, useLabelsList, useLabelsPartialUpdate } from "@/features/api/gen";
+import { useMailboxContext } from "@/features/providers/mailbox";
+import { useThreadsStats } from "@/hooks/use-threads-stats";
 import useArchive from "@/features/message/use-archive";
 import useDeleteLabel from "@/features/message/use-delete-label";
 import useAddLabel from "@/features/message/use-add-label";
@@ -18,7 +19,7 @@ import { toast } from "react-toastify";
 import { useFold } from "@/features/providers/fold";
 import { SubLabelCreation } from "../label-form-modal";
 import { handle } from "@/features/utils/errors";
-import ViewHelper from "@/features/utils/view-helper";
+import { useCurrentView } from "@/hooks/use-current-view";
 import { Edit, More, Plus, Trash } from "@gouvfr-lasuite/ui-components/icons";
 import { Icon } from "@/features/ui/components/icon";
 
@@ -39,20 +40,12 @@ export const LabelItem = ({ level = 0, onEdit, canManage, defaultFoldState, ...l
   const modals = useModals();
   const [isDropdownOpen, setIsDropdownOpen] = useState(false);
   const [isDragOver, setIsDragOver] = useState(false);
-  const queryParams = useMemo(() => {
-    const params = new URLSearchParams({ label_slug: label.slug });
-    return params.toString();
-  }, [label.slug]);
-  const { data: stats } = useThreadsStatsRetrieve({
-    mailbox_id: selectedMailbox?.id,
-    stats_fields: ThreadsStatsRetrieveStatsFields.all_unread,
-    label_slug: label.slug
-  }, {
-    query: {
-      queryKey: getThreadsStatsQueryKey(selectedMailbox!.id, queryParams),
-    }
+  const stats = useThreadsStats({
+    mailboxId: selectedMailbox?.id,
+    filter: { label_slug: label.slug },
+    fields: [ThreadsStatsRetrieveStatsFields.all_unread],
   });
-  const unreadCount = (stats?.data as ThreadsStatsRetrieve200)?.all_unread ?? 0;
+  const unreadCount = stats?.all_unread ?? 0;
   const { closeLeftPanel, setDragAction, getIsShiftHeld } = useLayoutDragContext();
   const navigate = useNavigate();
   const pathname = useLocation({ select: (l) => l.pathname });
@@ -64,7 +57,8 @@ export const LabelItem = ({ level = 0, onEdit, canManage, defaultFoldState, ...l
   const foldKey = useMemo(() => `label-item-${label.display_name}${label.children.length > 0 ? `-with-children` : ''}`, [label.display_name, label.children.length]);
   const { isFolded, toggle, setFoldState } = useFold(foldKey, isFoldedByDefault);
   const foldTimeoutRef = useRef<NodeJS.Timeout | null>(null);
-  const shouldAutoArchive = !ViewHelper.isArchivedView() && !ViewHelper.isSpamView() && !ViewHelper.isTrashedView() && !ViewHelper.isDraftsView();
+  const { isArchivedView, isSpamView, isTrashedView, isDraftsView } = useCurrentView();
+  const shouldAutoArchive = !isArchivedView && !isSpamView && !isTrashedView && !isDraftsView;
 
   // Suppress the default archive toast: we render our own combined
   // "Label assigned + N archived" toast below.

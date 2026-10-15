@@ -92,6 +92,299 @@
     flex-direction: column;
     gap: var(--c--globals--spacings--2xs);
   }
+
+  // --- Storage tab ---------------------------------------------------------
+
+  // Quota block at the top of the tab: the domain-full warning, then the mailbox gauge.
+  &__storage-gauges {
+    display: flex;
+    flex-direction: column;
+    gap: var(--c--globals--spacings--s);
+  }
+
+  // Prominent total-used headline, above the metric cards. Stays visible when
+  // storage is unlimited (no gauge), so usage is always shown here.
+  &__storage-total {
+    display: flex;
+    flex-direction: column;
+    gap: var(--c--globals--spacings--3xs);
+    margin-bottom: var(--c--globals--spacings--md);
+  }
+
+  &__storage-total-value {
+    font-size: var(--c--globals--font--sizes--h3);
+    font-weight: 700;
+    line-height: 1.1;
+  }
+
+  &__storage-total-label {
+    font-size: var(--c--globals--font--sizes--sm);
+    color: var(--c--contextuals--content--semantic--neutral--secondary);
+  }
+
+  &__storage-summary {
+    display: grid;
+    grid-template-columns: repeat(4, minmax(0, 1fr));
+    gap: var(--c--globals--spacings--xs);
+
+    @media screen and (max-width: breakpoint(tablet)) {
+      grid-template-columns: repeat(2, minmax(0, 1fr));
+    }
+
+    @media screen and (max-width: breakpoint(xxs)) {
+      grid-template-columns: minmax(0, 1fr);
+    }
+  }
+
+  // Tighten the gaps directly above (gauge → cards) and below (cards → list)
+  // the summary row so the cards sit closer to the gauge — 5px off each.
+  &__storage &__section {
+    margin-bottom: calc(var(--c--globals--spacings--lg) - 5px);
+  }
+
+  &__storage-metric {
+    display: flex;
+    flex-direction: column;
+    gap: var(--c--globals--spacings--4xs);
+    min-width: 0;
+    padding: var(--c--globals--spacings--xs);
+    border: 1px solid var(--c--contextuals--border--semantic--neutral--tertiary);
+    border-radius: var(--c--globals--radius--sm);
+  }
+
+  // The Trash and Spam metrics double as links to their folder.
+  &__storage-metric--link {
+    text-decoration: none;
+    color: inherit;
+    transition: border-color 0.15s ease, background-color 0.15s ease;
+
+    &:hover {
+      border-color: var(--c--contextuals--border--semantic--neutral--secondary);
+      background-color: var(--c--contextuals--surface--semantic--neutral--secondary);
+    }
+  }
+
+  &__storage-metric-value {
+    font-size: var(--c--globals--font--sizes--ml);
+    font-weight: 700;
+  }
+
+  &__storage-metric-label {
+    font-size: var(--c--globals--font--sizes--xs);
+    color: var(--c--contextuals--content--semantic--neutral--secondary);
+  }
+
+  // Largest-conversations list: one borderless row per thread, subject on the
+  // left with a muted message-count/date line, size right-aligned.
+  &__storage-list {
+    list-style: none;
+    margin: 0;
+    padding: 0;
+    display: flex;
+    flex-direction: column;
+    gap: var(--c--globals--spacings--4xs);
+  }
+
+  // Between the title and the list, only takes room while rows are selected:
+  // the count on one side, the bulk action facing it.
+  &__storage-selection-bar {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    justify-content: space-between;
+    gap: var(--c--globals--spacings--xs);
+
+    // No surface of its own: the list rows already are boxes. Lined up with
+    // their content instead.
+    &--active {
+      margin-bottom: var(--c--globals--spacings--2xs);
+      padding-inline: calc(var(--c--globals--spacings--xs) + 1px);
+    }
+  }
+
+  &__storage-selection {
+    display: flex;
+    align-items: center;
+    gap: var(--c--globals--spacings--xs);
+    min-width: 0;
+  }
+
+  &__storage-selection-count {
+    margin: 0;
+    font-weight: 600;
+  }
+
+  // Same small checkbox as the thread list.
+  &__storage-selection .c__checkbox,
+  &__storage-item-select {
+    --c--components--forms-checkbox--size: 1.25rem;
+
+    & svg {
+      width: var(--c--components--forms-checkbox--size);
+      height: var(--c--components--forms-checkbox--size);
+    }
+  }
+
+  // Row wrapper (a real <li>): a transparent 1px border that fills in on
+  // hover/focus. Holds the selectable summary and the row actions.
+  &__storage-item {
+    display: flex;
+    align-items: center;
+    gap: var(--c--globals--spacings--2xs);
+    padding: var(--c--globals--spacings--xs);
+    border: 1px solid transparent;
+    border-radius: 4px;
+
+    &:hover,
+    &:focus-within {
+      background-color: var(
+        --c--contextuals--background--semantic--neutral--tertiary
+      );
+      border-color: var(--c--contextuals--border--semantic--neutral--tertiary);
+    }
+
+    // Same selected look as the thread list, hover included.
+    &--selected,
+    &--selected:hover,
+    &--selected:focus-within {
+      background-color: var(
+        --c--contextuals--background--semantic--brand--secondary
+      );
+      border-color: var(--c--contextuals--border--semantic--brand--secondary);
+    }
+  }
+
+  // The checkbox label spanning the row: checkbox, status, subject/meta on the
+  // left, size on the right. A click anywhere on it toggles the selection.
+  &__storage-item-select {
+    flex: 1;
+    min-width: 0;
+    margin: 0;
+    cursor: pointer;
+
+    // Cunningham rings the whole label on `:focus-within`, a mouse click
+    // included: the row already highlights, so only keep a keyboard ring.
+    &:focus-within {
+      border-color: transparent;
+      box-shadow: none;
+    }
+
+    &:has(input:focus-visible) {
+      box-shadow: 0 0 0 1px var(--c--contextuals--border--semantic--brand--primary);
+    }
+
+    .c__field,
+    .c__checkbox__container {
+      width: 100%;
+      min-width: 0;
+    }
+
+    .c__checkbox__container {
+      align-items: center;
+      gap: var(--c--globals--spacings--2xs);
+    }
+
+    .c__checkbox__label,
+    &--readonly {
+      display: flex;
+      flex: 1;
+      min-width: 0;
+      align-items: center;
+      gap: var(--c--globals--spacings--2xs);
+      font-size: inherit;
+      font-weight: inherit;
+      color: inherit;
+    }
+
+    &--readonly {
+      cursor: default;
+    }
+  }
+
+  // Stands in for the checkbox of a row that cannot be selected.
+  &__storage-item-checkbox-slot {
+    flex-shrink: 0;
+    width: var(--c--components--forms-checkbox--size);
+  }
+
+  &__storage-item-action {
+    flex-shrink: 0;
+
+    &--hidden {
+      visibility: hidden;
+    }
+  }
+
+  // Read/unread bullet on the left of each row: a filled brand dot when unread,
+  // an empty slot when read so rows stay aligned.
+  &__storage-item-status {
+    flex-shrink: 0;
+    width: 0.5rem;
+    height: 0.5rem;
+    border-radius: 50%;
+    background-color: transparent;
+    align-self: flex-start;
+    margin-top: 0.375rem;
+  }
+
+  &__storage-item--unread {
+    .mailbox-settings__storage-item-status {
+      background-color: var(
+        --c--contextuals--background--semantic--brand--primary
+      );
+    }
+
+    .mailbox-settings__storage-item-subject {
+      font-weight: 700;
+    }
+  }
+
+  &__storage-item-main {
+    display: flex;
+    flex: 1;
+    flex-direction: column;
+    gap: var(--c--globals--spacings--3xs);
+    min-width: 0;
+  }
+
+  &__storage-item-subject {
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+    line-height: 1.25rem;
+  }
+
+  &__storage-item-meta {
+    font-size: var(--c--globals--font--sizes--sm);
+    color: var(--c--contextuals--content--semantic--neutral--secondary);
+  }
+
+  &__storage-item-size {
+    font-variant-numeric: tabular-nums;
+    white-space: nowrap;
+    color: var(--c--contextuals--content--semantic--neutral--secondary);
+  }
+
+  // Shown when the mailbox has never stored anything.
+  &__storage-empty {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    gap: var(--c--globals--spacings--2xs);
+    padding: var(--c--globals--spacings--2xl) var(--c--globals--spacings--md);
+    text-align: center;
+  }
+
+  &__storage-empty-title {
+    margin: 0;
+    font-weight: 700;
+  }
+
+  &__storage-empty-description {
+    margin: 0;
+    font-size: var(--c--globals--font--sizes--sm);
+    color: var(--c--contextuals--content--semantic--neutral--secondary);
+  }
 }
 
 // --- Imports tab -------------------------------------------------------------

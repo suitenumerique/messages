@@ -54,6 +54,25 @@ The entitlements system provides a pluggable backend architecture for checking u
 | `ENTITLEMENTS_BACKEND_PARAMETERS` | `{}` | JSON object of parameters passed to the backend constructor |
 | `ENTITLEMENTS_CACHE_TIMEOUT` | `300` | Cache TTL in seconds |
 
+### Local Backend Parameters
+
+The local backend (the default) is used when no DeployCenter is connected. It always grants access, skips the domain admin sync, and computes storage usage from the database. Its quota limits are static, provided in `ENTITLEMENTS_BACKEND_PARAMETERS`:
+
+```json
+{
+  "mailbox_storage_limit": 5000000000,
+  "organization_storage_limit": 50000000000
+}
+```
+
+| Parameter | Required | Description |
+|---|---|---|
+| `mailbox_storage_limit` | No | Storage limit per mailbox, in bytes (default: none) |
+| `organization_storage_limit` | No | Storage limit per organization, in bytes (default: none) |
+| `organization_claim` | No | Maildomain custom attribute identifying the organization (default: `siret`) |
+
+Without a limit, the corresponding quota gauges are hidden (sidebar and Storage settings tab). Limits are informative only: nothing blocks sending or receiving once they are reached. The dev stack sets a 5 GB mailbox limit in `deploy/env/backend.defaults` so the gauges are visible.
+
 ### DeployCenter Backend Parameters
 
 When using `core.entitlements.backends.deploycenter.DeployCenterEntitlementsBackend`, provide these in `ENTITLEMENTS_BACKEND_PARAMETERS`:
@@ -134,6 +153,8 @@ During OIDC login (`post_get_or_create_user`), the system:
 - On login, `force_refresh=True` bypasses the cache to fetch fresh data.
 - If the API fails during a forced refresh, stale cached data is returned as fallback.
 - Logging out and back in triggers a fresh fetch, effectively resetting the cache for that user.
+- Mailbox storage entitlements (quota gauge) are cached differently: the last result is kept for 24 hours with the time it was fetched. It is served while fresh (`ENTITLEMENTS_CACHE_TIMEOUT`), refetched once stale, and still served if that refetch fails, so a DeployCenter outage keeps the gauge instead of hiding it.
+- Emptying a trashbin folder marks the mailbox's entitlements stale, so the gauge reports the freed space on the next read.
 
 ### Deployment Consideration
 

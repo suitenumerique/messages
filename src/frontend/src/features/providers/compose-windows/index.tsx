@@ -3,7 +3,7 @@ import { useTranslation } from "react-i18next";
 import { useQueryClient } from "@tanstack/react-query";
 import { addToast, ToasterItem } from "@/features/ui/components/toaster";
 import { getMailboxThreadsListQueryKeyPrefix } from "@/features/providers/mailbox-cache";
-import { getThreadsStatsQueryKey } from "@/features/providers/mailbox";
+import { getThreadsStatsQueryKey } from "@/hooks/use-threads-stats";
 import { randomUUID } from "@/features/utils/uuid";
 import { subscribeToComposeBroadcast } from "./broadcast";
 import { focusWindowReducer, minimizeWindowReducer, openWindowReducer, restoreWindowReducer, setPresentationReducer } from "./core";

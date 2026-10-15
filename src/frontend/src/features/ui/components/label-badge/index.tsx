@@ -4,7 +4,8 @@ import { ThreadLabel } from "@/features/api/gen"
 import { useMailboxContext } from "@/features/providers/mailbox";
 import { useTranslation } from "react-i18next";
 import { Icon } from "@/features/ui/components/icon";
-import { Tooltip, IconSize, IconType, Spinner } from "@gouvfr-lasuite/ui-components";
+import { IconSize, IconType, Spinner } from "@gouvfr-lasuite/ui-components";
+import { Tooltip } from "@/features/ui/components/tooltip";
 import { Link, useLocation } from "@tanstack/react-router";
 import { useUrlSearchParams } from "@/hooks/use-url-search-params";
 import { useMemo } from "react";

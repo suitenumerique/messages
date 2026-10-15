@@ -21,6 +21,19 @@ const eslintConfig = defineConfig([
       // non-blocking for now; default `jsx-text-only` mode flags visible JSX
       // text while leaving technical attributes (className, type…) alone.
       "i18next/no-literal-string": "warn",
+      "no-restricted-imports": [
+        "error",
+        {
+          paths: [
+            {
+              name: "@gouvfr-lasuite/ui-components",
+              importNames: ["Tooltip"],
+              message:
+                "Upstream Tooltip renders inline and gets clipped by overflowing ancestors. Use @/features/ui/components/tooltip.",
+            },
+          ],
+        },
+      ],
     },
   },
   {

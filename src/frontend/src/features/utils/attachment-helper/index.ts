@@ -158,12 +158,12 @@ export class AttachmentHelper {
     }
 
     static getFormattedSize(size: number, language: string = 'en') {
-        // Determine the appropriate unit using binary (1024) calculation
+        // Decimal (SI) multiples: Intl labels these units kB/MB/GB, i.e. powers of 1000.
         const units: Array<{ divisor: number; unit: Intl.NumberFormatOptions['unit'] }> = [
-            { divisor: 1024 ** 4, unit: 'terabyte' },
-            { divisor: 1024 ** 3, unit: 'gigabyte' },
-            { divisor: 1024 ** 2, unit: 'megabyte' },
-            { divisor: 1024, unit: 'kilobyte' },
+            { divisor: 1000 ** 4, unit: 'terabyte' },
+            { divisor: 1000 ** 3, unit: 'gigabyte' },
+            { divisor: 1000 ** 2, unit: 'megabyte' },
+            { divisor: 1000, unit: 'kilobyte' },
             { divisor: 1, unit: 'byte' },
         ];
 

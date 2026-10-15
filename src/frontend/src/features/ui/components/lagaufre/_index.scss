@@ -6,6 +6,6 @@
   // a ui-kit release ships that fix, we reach the same result by remapping the
   // token this icon consumes to `currentColor`, so it inherits the button text
   // color (tertiary) and switches with the theme variant.
-  // TODO: remove once @gouvfr-lasuite/ui-kit ships the fix from PR #247.
+  // TODO: remove once @gouvfr-lasuite/ui-components ships the fix from PR #247.
     --c--contextuals--background--semantic--brand--primary: currentColor;
 }

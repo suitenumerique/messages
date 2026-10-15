@@ -1,5 +1,6 @@
 import { IconType, Spinner } from "@gouvfr-lasuite/ui-components";
-import { Button, Tooltip, useModals } from "@gouvfr-lasuite/ui-components";
+import { Button, useModals } from "@gouvfr-lasuite/ui-components";
+import { Tooltip } from "@/features/ui/components/tooltip";
 import { clsx } from "clsx";
 import { useEffect, useMemo, useState, useRef, forwardRef, useImperativeHandle } from "react";
 import { FormProvider, useForm, useWatch } from "react-hook-form";
