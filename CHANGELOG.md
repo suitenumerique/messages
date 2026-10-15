@@ -22,6 +22,7 @@ and this project adheres to
 - Bump keycloak to 26.8.1 and refresh the Alpine 3.24 digest in the Keycloak image
 - Bump Caddy to 2.11.7 in the Keycloak image, the frontend image and the
   Scalingo post-frontend deploy script
+- Bump @gouvfr-lasuite/ui-components to 1.3.0
 
 ### Removed
 
@@ -33,6 +34,7 @@ and this project adheres to
 - The Keycloak image removes `emSign ECC Root CA - G3` from the Java trust
   store after the eMudhra intermediate CA compromise of October 2026. The
   Comodo `AAA Certificate Services` root is already absent from the base image
+
 
 ## [0.10.0] - 2026-09-29
 
