@@ -19,8 +19,8 @@ import { toast } from "react-toastify";
 import { useFold } from "@/features/providers/fold";
 import { SubLabelCreation } from "../label-form-modal";
 import { handle } from "@/features/utils/errors";
-import ViewHelper from "@/features/utils/view-helper";
 import EventHelper from "@/features/utils/event-helper";
+import { useCurrentView } from "@/hooks/use-current-view";
 import { Edit, More, Plus, Trash } from "@gouvfr-lasuite/ui-components/icons";
 import { Icon } from "@/features/ui/components/icon";
 
@@ -58,7 +58,8 @@ export const LabelItem = ({ level = 0, onEdit, canManage, defaultFoldState, ...l
   const foldKey = useMemo(() => `label-item-${label.display_name}${label.children.length > 0 ? `-with-children` : ''}`, [label.display_name, label.children.length]);
   const { isFolded, toggle, setFoldState } = useFold(foldKey, isFoldedByDefault);
   const foldTimeoutRef = useRef<NodeJS.Timeout | null>(null);
-  const shouldAutoArchive = !ViewHelper.isArchivedView() && !ViewHelper.isSpamView() && !ViewHelper.isTrashedView() && !ViewHelper.isDraftsView();
+  const { isArchivedView, isSpamView, isTrashedView, isDraftsView } = useCurrentView();
+  const shouldAutoArchive = !isArchivedView && !isSpamView && !isTrashedView && !isDraftsView;
 
   // Suppress the default archive toast: we render our own combined
   // "Label assigned + N archived" toast below.

@@ -16,7 +16,7 @@ import useSpam from "@/features/message/use-spam";
 import useDeleteDrafts from "@/features/message/use-delete-drafts";
 import useEmptyTrash from "@/features/message/use-empty-trash";
 import useLeaveThread from "@/features/message/use-leave-thread";
-import ViewHelper from "@/features/utils/view-helper";
+import { useCurrentView } from "@/hooks/use-current-view";
 import useCopyDeepLink from "@/features/message/use-copy-deep-link";
 import { Icon } from "@/features/ui/components/icon";
 import { Archive, Link, MoreVertical, Trash, Error as ErrorIcon, XMark, Restore } from "@gouvfr-lasuite/ui-components/icons";
@@ -37,7 +37,7 @@ export const ThreadActionBar = ({ canUndelete, canUnarchive }: ThreadActionBarPr
     const { deleteDrafts } = useDeleteDrafts();
     const { emptyTrashbin, isPending: isDeletingPermanently } = useEmptyTrash();
     const { canLeaveThread, leaveThread } = useLeaveThread();
-    const isDraftsView = ViewHelper.isDraftsView();
+    const { isDraftsView, isTrashedView } = useCurrentView();
     const accessesWidgetRef = useRef<ThreadAccessesWidgetHandle>(null);
     // Full edit rights on the thread — gates archive, spam, delete.
     // Star and read/unread toggle remain visible because they are personal
@@ -49,7 +49,7 @@ export const ThreadActionBar = ({ canUndelete, canUnarchive }: ThreadActionBarPr
     // Archiving, reporting as spam or labelling makes no sense from the
     // trash view (or on a fully trashed thread opened elsewhere): the only
     // relevant transition from the trash is restoring it.
-    const isTrashContext = ViewHelper.isTrashedView() || canUndelete;
+    const isTrashContext = isTrashedView || canUndelete;
     // Trashed and spam threads both sit in the trashbin, so neither offers
     // "Move to trash": they are permanently deleted from their own folder.
     const trashbinScope: MailboxEmptyTrashRequestScopeEnum | null = canUndelete
