@@ -54,6 +54,17 @@ describe('DateHelper', () => {
     });
   });
 
+  describe('formatDateTime', () => {
+    it('formats the date and time according to the locale', () => {
+      expect(DateHelper.formatDateTime('2026-10-20T18:00', 'en-US')).toBe('Oct 20, 2026, 6:00 PM');
+      expect(DateHelper.formatDateTime('2026-10-20T18:00', 'fr-FR')).toBe('20 oct. 2026, 18:00');
+    });
+
+    it('returns undefined for an invalid date', () => {
+      expect(DateHelper.formatDateTime('20261020T1800', 'en-US')).toBeUndefined();
+    });
+  });
+
   describe('formatRelativeTime', () => {
     beforeEach(() => {
       // Mock Date.now() to return a fixed timestamp

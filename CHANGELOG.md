@@ -8,9 +8,17 @@ and this project adheres to
 
 ## [Unreleased]
 
+### Added
+
+- Display a service message in a banner on top of the app, configured
+  from the site configuration in the Django admin
+- Warn that an auto-reply is active for the selected mailbox with a banner
+  instead of a header icon
+
 ### Changed
 
 - Bump keycloak to 26.8.0 and refresh the Alpine 3.24 digest in the Keycloak image
+- Bump @gouvfr-lasuite/ui-components to 1.3.0
 
 ## [0.10.0] - 2026-09-29
 

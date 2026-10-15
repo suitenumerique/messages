@@ -2,6 +2,8 @@
 Test config API endpoints in the messages core app.
 """
 
+from django.conf import settings
+from django.contrib.sites.models import Site
 from django.test import override_settings
 
 import pytest
@@ -10,7 +12,7 @@ from rest_framework.status import (
 )
 from rest_framework.test import APIClient
 
-from core import factories
+from core import factories, models
 
 pytestmark = pytest.mark.django_db
 
@@ -95,6 +97,7 @@ def test_api_config(is_authenticated):
     assert "MOBILE_OTA_MANIFEST_URL" not in response.json()
     assert "PUSH_VAPID_PUBLIC_KEY" not in response.json()
     assert "PUSH_VAPID_PRIVATE_KEY" not in response.json()
+    assert "SERVICE_MESSAGE" not in response.json()
 
 
 @override_settings(
@@ -190,3 +193,43 @@ def test_api_config_totp_flag_is_effective_not_raw():
     response = APIClient().get("/api/v1.0/config/")
     assert response.status_code == HTTP_200_OK
     assert response.json()["FEATURE_MAILDOMAIN_MANAGE_TOTP"] is False
+
+
+def test_api_config_service_message_disabled():
+    """A disabled service message should be omitted."""
+    models.SiteConfiguration.objects.create(
+        site=Site.objects.get(pk=settings.SITE_ID),
+        service_message={"en-us": "Maintenance tonight"},
+    )
+
+    response = APIClient().get("/api/v1.0/config/")
+    assert response.status_code == HTTP_200_OK
+    assert "SERVICE_MESSAGE" not in response.json()
+
+
+@pytest.mark.parametrize("is_authenticated", [False, True])
+def test_api_config_service_message(is_authenticated):
+    """An enabled service message should be exposed to every user."""
+    client = APIClient()
+    if is_authenticated:
+        client.force_login(factories.UserFactory())
+
+    models.SiteConfiguration.objects.create(
+        site=Site.objects.get(pk=settings.SITE_ID),
+        service_message_enabled=True,
+        service_message_variant="error",
+        service_message={"en-us": "Incoming emails are delayed", "fr-fr": ""},
+        service_message_link_url="https://status.example.com",
+        service_message_link_label={"en-us": "Status page"},
+    )
+
+    response = client.get("/api/v1.0/config/")
+    assert response.status_code == HTTP_200_OK
+    assert response.json()["SERVICE_MESSAGE"] == {
+        "variant": "error",
+        "message": {"en-us": "Incoming emails are delayed"},
+        "link": {
+            "url": "https://status.example.com",
+            "label": {"en-us": "Status page"},
+        },
+    }

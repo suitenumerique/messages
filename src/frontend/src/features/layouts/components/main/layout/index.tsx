@@ -11,9 +11,15 @@ import { useControllableState } from "../hooks/useControllableState";
 import { useOtaUpdateToast } from "@/features/native/use-ota-update-toast";
 import { Toaster } from "@/features/ui/components/toaster";
 import { SkipLink } from "@/features/ui/components/skip-link";
+import { ServiceMessageBanner } from "../top-banners/service-message-banner";
 import clsx from "clsx";
 export type MainLayoutProps = {
   icon?: React.ReactNode;
+  /**
+   * Banner rendered above the header, below the service message.
+   * Typically a `HeaderBanner`.
+   */
+  topBanner?: React.ReactNode;
   leftPanelContent?: React.ReactNode;
   rightHeaderContent?: React.ReactNode;
   languages?: DropdownMenuOption[];
@@ -35,6 +41,7 @@ export type MainLayoutProps = {
  */
 export const AppLayout = ({
   icon,
+  topBanner,
   children,
   hideLeftPanelOnDesktop = false,
   leftPanelContent,
@@ -147,6 +154,10 @@ export const AppLayout = ({
           setIsLeftPanelOpen(false);
         }
       }} />
+      <div className="c__main-layout__banner">
+        <ServiceMessageBanner />
+        {topBanner}
+      </div>
       <div className="c__main-layout__header">
         <Header
           onTogglePanel={onTogglePanel}
