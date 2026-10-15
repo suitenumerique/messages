@@ -12,6 +12,8 @@ and this project adheres to
 
 - Display a service message in a banner on top of the app, configured
   from the site configuration in the Django admin
+- Warn that an auto-reply is active for the selected mailbox with a banner
+  instead of a header icon
 
 ### Changed
 
