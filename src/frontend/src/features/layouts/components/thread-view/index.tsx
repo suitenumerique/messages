@@ -21,7 +21,7 @@ import { ThreadViewEmpty } from "./components/thread-view-empty";
 import clsx from "clsx";
 import ThreadViewProvider, { useThreadViewContext } from "./provider";
 import useSpam from "@/features/message/use-spam";
-import ViewHelper from "@/features/utils/view-helper";
+import { useCurrentView } from "@/hooks/use-current-view";
 import { isNativePlatform } from "@/features/native/platform";
 import { MobileThreadHeader } from "@/features/layouts/components/mobile/thread-header";
 import { MobileThreadToolbar, QuickReplyMode } from "@/features/layouts/components/mobile/thread-toolbar";
@@ -190,7 +190,8 @@ const ThreadViewComponent = ({ threadItems, mailboxId, thread, showTrashedMessag
     // Anywhere in the trash view — even on a partially trashed thread —
     // star/archive/spam actions are irrelevant, as they are on a fully
     // trashed thread opened from any other view.
-    const isTrashContext = ViewHelper.isTrashedView() || isThreadTrashed;
+    const { isTrashedView } = useCurrentView();
+    const isTrashContext = isTrashedView || isThreadTrashed;
     // Starring a trashed or spam thread makes no sense, hide the toggle there.
     const canStar = !isTrashContext && !thread.is_spam;
     // Talk mode (left/right alternating layout) only makes sense for an actual
@@ -553,7 +554,7 @@ const ThreadViewComponent = ({ threadItems, mailboxId, thread, showTrashedMessag
 }
 
 export const ThreadView = () => {
-    const isTrashView = ViewHelper.isTrashedView();
+    const { isTrashedView: isTrashView } = useCurrentView();
     const { selectedMailbox, selectedThread, unmountThreadViewNeeded, messages, threadItems, queryStates } = useMailboxContext();
     const [showTrashedMessages, setShowTrashedMessages] = useState(isTrashView);
     // Nest draft messages under their parent messages

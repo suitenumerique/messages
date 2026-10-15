@@ -6,9 +6,9 @@ import { useMailboxContext } from "@/features/providers/mailbox";
 import { useThreadSelection } from "@/features/providers/thread-selection";
 import { HeaderBanner } from "@/features/ui/components/header-banner";
 import { Icon } from "@/features/ui/components/icon";
-import ViewHelper from "@/features/utils/view-helper";
-import useAbility, { Abilities } from "@/hooks/use-ability";
+import { useCurrentView } from "@/hooks/use-current-view";
 import { useUrlSearchParams } from "@/hooks/use-url-search-params";
+import useAbility, { Abilities } from "@/hooks/use-ability";
 import { Trash } from "@gouvfr-lasuite/ui-components/icons";
 
 /**
@@ -27,9 +27,9 @@ export const TrashbinBanner = () => {
     const { clearSelection } = useThreadSelection();
     const { emptyTrashbin, isPending } = useEmptyTrash();
     const canEmptyTrash = useAbility(Abilities.CAN_EMPTY_TRASH, selectedMailbox);
-    const isSearch = useUrlSearchParams().has('search');
-    const isSpamView = ViewHelper.isSpamView();
-    const isTrashbinView = !isSearch && (isSpamView || ViewHelper.isTrashedView());
+    const isSearch = useUrlSearchParams().has('search');    
+    const { isSpamView, isTrashedView } = useCurrentView();
+    const isTrashbinView = !isSearch && (isSpamView || isTrashedView);
     const scope = isSpamView ? 'spam' : 'trashed';
     const { isRunning: isEmptying } = useEmptyTrashTask(
         isTrashbinView ? selectedMailbox?.id : undefined,

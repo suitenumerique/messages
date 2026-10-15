@@ -11,11 +11,10 @@ import { ThreadSelectionPlaceholder } from "@/features/layouts/components/thread
 import { TrashbinBanner } from "@/features/layouts/components/trashbin-banner";
 import { useThreadSelection } from "@/features/providers/thread-selection";
 import { useMailboxContext } from "@/features/providers/mailbox";
-import { useUrlSearchParams } from "@/hooks/use-url-search-params";
 import useAbility, { Abilities } from "@/hooks/use-ability";
 import { useCurrentFolderName } from "@/hooks/use-current-folder-name";
 import { useDocumentTitle } from "@/hooks/use-document-title";
-import ViewHelper from "@/features/utils/view-helper";
+import { useCurrentView } from "@/hooks/use-current-view";
 import { useOpenImporter } from "@/features/layouts/components/mailbox-settings/imports-view/use-open-importer";
 
 const Mailbox = () => {
@@ -25,7 +24,7 @@ const Mailbox = () => {
   const folderName = useCurrentFolderName();
   const canImportMessages = useAbility(Abilities.CAN_IMPORT_MESSAGES, selectedMailbox);
   const { selectedThreadIds } = useThreadSelection();
-  const searchParams = useUrlSearchParams();
+  const { isInboxView, isAllMessagesView } = useCurrentView();
   const { isMobile } = useResponsive();
   const showThreadView = !isMobile;
   const emptyMailbox = (selectedMailbox?.count_threads || 0) === 0
@@ -39,9 +38,8 @@ const Mailbox = () => {
 
   const showImportButton = useMemo(() => {
     if (!canImportMessages || !emptyMailbox) return false;
-    if (ViewHelper.isInboxView() || ViewHelper.isAllMessagesView()) return true;
-    return false;
-  }, [canImportMessages, emptyMailbox, searchParams]);
+    return isInboxView || isAllMessagesView;
+  }, [canImportMessages, emptyMailbox, isInboxView, isAllMessagesView]);
 
   if (emptyMailbox) {
     return (

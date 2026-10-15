@@ -13,7 +13,7 @@ import useArchive from "@/features/message/use-archive";
 import useTrash from "@/features/message/use-trash";
 import useSpam from "@/features/message/use-spam";
 import { handle } from "@/features/utils/errors";
-import ViewHelper from "@/features/utils/view-helper";
+import { useCurrentView } from "@/hooks/use-current-view";
 import { addToast, ToasterItem } from "@/features/ui/components/toaster";
 import { Tooltip } from "@/features/ui/components/tooltip"
 import { EXPANDED_FOLDERS_KEY } from "@/features/config/constants"
@@ -342,11 +342,7 @@ const FolderItem = ({ folder, isChild, hasChildren, isExpanded, onToggleExpand, 
     const { stats: folderStats, count } = useFolderStats(selectedMailbox?.id, folder, { enabled: folder.showStats });
 
     // View checks for determining allowed actions (same logic as thread-panel-header.tsx)
-    const isTrashedView = ViewHelper.isTrashedView();
-    const isSpamView = ViewHelper.isSpamView();
-    const isArchivedView = ViewHelper.isArchivedView();
-    const isDraftsView = ViewHelper.isDraftsView();
-    const isSentView = ViewHelper.isSentView();
+    const { isTrashedView, isSpamView, isArchivedView, isDraftsView, isSentView } = useCurrentView();
 
     // Determine if this folder can accept drops based on current view
     const isDroppable = useMemo(() => {

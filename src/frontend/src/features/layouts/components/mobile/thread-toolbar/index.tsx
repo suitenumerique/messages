@@ -17,7 +17,7 @@ import useRead from "@/features/message/use-read";
 import useCopyDeepLink from "@/features/message/use-copy-deep-link";
 import useLeaveThread from "@/features/message/use-leave-thread";
 import useAbility, { Abilities } from "@/hooks/use-ability";
-import ViewHelper from "@/features/utils/view-helper";
+import { useCurrentView } from "@/hooks/use-current-view";
 import { isNativePlatform } from "@/features/native/platform";
 import { MobileBottomBar } from "../bottom-bar";
 import { Archive, Link, Restore, Star, StarFilled, TagAdd, Trash, Error as ErrorIcon } from "@gouvfr-lasuite/ui-components/icons";
@@ -74,7 +74,7 @@ export const MobileThreadToolbar = ({ thread, isArchived, isTrashed, quickReplyM
   const canEmptyTrash = useAbility(Abilities.CAN_EMPTY_TRASH, selectedMailbox);
   const labelsWidgetRef = useRef<LabelsWidgetHandle>(null);
   const [isDrawerOpen, setIsDrawerOpen] = useState(false);
-  const isDraftsView = ViewHelper.isDraftsView();
+  const { isDraftsView } = useCurrentView();
 
   // While the composer is focused the BlockNote formatting toolbar takes the
   // spot above the keyboard, so step aside to avoid stacking two bars there.
