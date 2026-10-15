@@ -17,6 +17,7 @@ import { ComposeWindowsLayer } from "@/features/layouts/components/compose/compo
 import { Link } from "@tanstack/react-router";
 import { useTranslation } from "react-i18next";
 import { useResponsive } from "@gouvfr-lasuite/ui-components";
+import { AutoreplyBanner } from "./top-banners/autoreply-banner";
 
 export const MainLayout = ({ children }: PropsWithChildren) => {
     return (
@@ -65,6 +66,7 @@ const MainLayoutContent = ({ children }: PropsWithChildren<{ simple?: boolean }>
             icon={<Link to="/"><img src={`/images/${theme}/${headerIconName}.svg`} alt={t("logo")} height={40} /></Link>}
             hideLeftPanelOnDesktop={hasNoMailbox}
             isDragging={isDragging}
+            topBanner={!hasNoMailbox && <AutoreplyBanner />}
         >
             {hasNoMailbox ? (
                 <NoMailbox />

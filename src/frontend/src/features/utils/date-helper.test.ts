@@ -54,6 +54,34 @@ describe('DateHelper', () => {
     });
   });
 
+  describe('formatDateTime', () => {
+    it('formats the date and time according to the locale', () => {
+      expect(DateHelper.formatDateTime('2026-10-20T18:00', 'en-US')).toBe('Oct 20, 2026, 6:00 PM');
+      expect(DateHelper.formatDateTime('2026-10-20T18:00', 'fr-FR')).toBe('20 oct. 2026, 18:00');
+    });
+
+    it('returns undefined for an invalid date', () => {
+      expect(DateHelper.formatDateTime('20261020T1800', 'en-US')).toBeUndefined();
+    });
+  });
+
+  describe('toWallClock', () => {
+    it('keeps a date-time without offset as is', () => {
+      expect(DateHelper.toWallClock('2026-10-20T18:00', 'Europe/Paris')).toBe('2026-10-20T18:00');
+    });
+
+    it('converts a date-time with offset into the time zone', () => {
+      expect(DateHelper.toWallClock('2026-10-20T18:00:00+00:00', 'Europe/Paris')).toBe('2026-10-20T20:00:00');
+      expect(DateHelper.toWallClock('2026-10-20T22:30:00Z', 'Europe/Paris')).toBe('2026-10-21T00:30:00');
+      expect(DateHelper.toWallClock('2026-10-20T20:00:00+02:00', 'UTC')).toBe('2026-10-20T18:00:00');
+    });
+
+    it('returns undefined for an invalid date or time zone', () => {
+      expect(DateHelper.toWallClock('not a dateZ', 'UTC')).toBeUndefined();
+      expect(DateHelper.toWallClock('2026-10-20T18:00:00Z', 'Mars/Olympus')).toBeUndefined();
+    });
+  });
+
   describe('formatRelativeTime', () => {
     beforeEach(() => {
       // Mock Date.now() to return a fixed timestamp

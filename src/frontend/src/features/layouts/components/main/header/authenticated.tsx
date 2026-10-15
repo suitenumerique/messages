@@ -12,7 +12,7 @@ import { LanguagePicker } from "@/features/layouts/components/main/language-pick
 import { LagaufreButton } from "@/features/ui/components/lagaufre";
 import { SurveyButton } from "@/features/ui/components/feedback-button";
 import { useMailboxContext } from "@/features/providers/mailbox";
-import { ImportRun, MessageTemplateTypeChoices, useMailboxesImportsList, useMailboxesMessageTemplatesList } from "@/features/api/gen";
+import { ImportRun, useMailboxesImportsList } from "@/features/api/gen";
 import { isTerminal } from "@/hooks/import-status";
 import { CircularProgress } from "@/features/ui/components/circular-progress";
 import { useTheme } from "@/features/providers/theme";
@@ -76,52 +76,10 @@ export const AuthenticatedHeader = ({
   );
 };
 
-const AutoreplyIndicator = () => {
-  const { selectedMailbox } = useMailboxContext();
-  const { openModal } = useModalStore();
-  const { t } = useTranslation();
-
-  const { data } = useMailboxesMessageTemplatesList(
-    selectedMailbox?.id ?? "",
-    { type: [MessageTemplateTypeChoices.autoreply] },
-    {
-      query: {
-        enabled: !!selectedMailbox?.id,
-        staleTime: Infinity,
-      },
-    },
-  );
-
-  const hasActiveAutoreply = useMemo(
-    () => data?.data?.some((tpl) => tpl.is_active_autoreply) ?? false,
-    [data],
-  );
-
-  if (!hasActiveAutoreply) return null;
-
-  return (
-    <Tooltip content={t("Auto-reply is active")}>
-      <Button
-        className="autoreply-indicator-button"
-        color="brand"
-        variant="tertiary"
-        size="medium"
-        icon={<Icon name="forward_to_inbox" />}
-        aria-label={t("Auto-reply is active")}
-        onClick={() => {
-          if (selectedMailbox) {
-            openModal(MODAL_MAILBOX_SETTINGS_ID, { initialTab: "autoreplies" });
-          }
-        }}
-      />
-    </Tooltip>
-  );
-};
-
 /**
- * Same strategy as the auto-reply indicator: while at least one import run is in
- * progress for the selected mailbox, show a live progress button in the header
- * that opens the mailbox settings modal on the Imports tab. Several imports can
+ * While at least one import run is in progress for the selected mailbox, show a
+ * live progress button in the header that opens the mailbox settings modal on
+ * the Imports tab. Several imports can
  * run at once, so the badge shows their combined (total-weighted) progress and
  * the tab lists them individually.
  */
@@ -205,7 +163,6 @@ export const HeaderRight = () => {
     <>
       <div className="flex-row flex-align-center">
         <ImportIndicator />
-        <AutoreplyIndicator />
         <SurveyButton iconOnly color="brand" variant="tertiary" />
         <ApplicationMenu />
         {isDesktop && <VerticalSeparator size="24px" withPadding={false} />}

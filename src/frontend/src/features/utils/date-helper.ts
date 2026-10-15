@@ -1,4 +1,4 @@
-import { format, isToday, isSameWeek, isYesterday, isSameYear } from 'date-fns';
+import { format, isToday, isSameWeek, isYesterday, isSameYear, isValid } from 'date-fns';
 // @WARN: This import is surely importing to much locales, later we should
 // import only the needed locales
 import * as locales from 'date-fns/locale';
@@ -41,6 +41,57 @@ export class DateHelper {
     }
 
     return format(date, 'dd/MM/yyyy', { locale: dateLocale });
+  }
+
+  /**
+   * Format a date with its time in a locale-aware long form
+   * (e.g. "Oct 20, 2026, 6:00 PM" or "20 oct. 2026, 18:00").
+   *
+   * @param dateString - The date string to format
+   * @param lng - The locale code (e.g., 'fr', 'en')
+   * @returns Formatted date and time, or undefined if the date is invalid
+   */
+  public static formatDateTime(dateString: string, lng: string = 'en'): string | undefined {
+    const date = new Date(dateString);
+    if (!isValid(date)) return undefined;
+    const locale = lng.length > 2 ? lng.split('-')[0] : lng;
+    const dateLocale = locales[locale as keyof typeof locales];
+    return format(date, 'PPp', { locale: dateLocale });
+  }
+
+  /**
+   * Express an ISO date-time as a wall-clock time (`YYYY-MM-DDTHH:mm:ss`) in
+   * the given time zone. A date-time without offset already is a wall-clock
+   * time and is returned unchanged; one with an offset is an instant, which
+   * is converted.
+   *
+   * @param dateString - The ISO date-time to express
+   * @param timeZone - The IANA time zone (e.g., 'Europe/Paris')
+   * @returns The wall-clock time, or undefined if the date or the time zone
+   * is invalid
+   */
+  public static toWallClock(dateString: string, timeZone: string): string | undefined {
+    if (!/(?:Z|[+-]\d{2}:?\d{2})$/i.test(dateString)) return dateString;
+    const date = new Date(dateString);
+    if (!isValid(date)) return undefined;
+    try {
+      const parts = Object.fromEntries(
+        new Intl.DateTimeFormat('en-US', {
+          timeZone,
+          hourCycle: 'h23',
+          year: 'numeric',
+          month: '2-digit',
+          day: '2-digit',
+          hour: '2-digit',
+          minute: '2-digit',
+          second: '2-digit',
+        }).formatToParts(date).map(({ type, value }) => [type, value]),
+      );
+      return `${parts.year}-${parts.month}-${parts.day}T${parts.hour}:${parts.minute}:${parts.second}`;
+    } catch {
+      // Unknown time zone for this browser's ICU data.
+      return undefined;
+    }
   }
 
   /**
