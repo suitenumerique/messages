@@ -408,6 +408,52 @@
                                             "type": "string",
                                             "description": "VAPID public key (base64url) the web client passes as applicationServerKey to subscribe; null when Web Push is not configured.",
                                             "readOnly": true
+                                        },
+                                        "SERVICE_MESSAGE": {
+                                            "type": "object",
+                                            "description": "Service message displayed in a banner on top of the app, configured from the site configuration in the Django admin",
+                                            "properties": {
+                                                "variant": {
+                                                    "type": "string",
+                                                    "enum": [
+                                                        "brand",
+                                                        "warning",
+                                                        "error"
+                                                    ]
+                                                },
+                                                "message": {
+                                                    "type": "object",
+                                                    "description": "Text per language code (e.g. en-us, fr-fr)",
+                                                    "additionalProperties": {
+                                                        "type": "string"
+                                                    }
+                                                },
+                                                "link": {
+                                                    "type": "object",
+                                                    "properties": {
+                                                        "url": {
+                                                            "type": "string",
+                                                            "format": "uri"
+                                                        },
+                                                        "label": {
+                                                            "type": "object",
+                                                            "description": "Text per language code (e.g. en-us, fr-fr)",
+                                                            "additionalProperties": {
+                                                                "type": "string"
+                                                            }
+                                                        }
+                                                    },
+                                                    "required": [
+                                                        "url",
+                                                        "label"
+                                                    ]
+                                                }
+                                            },
+                                            "required": [
+                                                "variant",
+                                                "message"
+                                            ],
+                                            "readOnly": true
                                         }
                                     },
                                     "required": [

@@ -8,6 +8,11 @@ and this project adheres to
 
 ## [Unreleased]
 
+### Added
+
+- Display a service message in a banner on top of the app, configured
+  from the site configuration in the Django admin
+
 ### Changed
 
 - Bump keycloak to 26.8.0 and refresh the Alpine 3.24 digest in the Keycloak image
