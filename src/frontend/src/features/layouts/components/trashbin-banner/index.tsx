@@ -4,7 +4,7 @@ import { useEmptyCurrentFolder } from "@/features/message/use-empty-trash";
 import { useConfig } from "@/features/providers/config";
 import { HeaderBanner } from "@/features/ui/components/header-banner";
 import { Icon } from "@/features/ui/components/icon";
-import ViewHelper from "@/features/utils/view-helper";
+import { useCurrentView } from "@/hooks/use-current-view";
 import { Trash } from "@gouvfr-lasuite/ui-components/icons";
 
 /**
@@ -19,7 +19,7 @@ import { Trash } from "@gouvfr-lasuite/ui-components/icons";
 export const TrashbinBanner = () => {
     const { t } = useTranslation();
     const { TRASHBIN_CUTOFF_DAYS } = useConfig();
-    const isSpamView = ViewHelper.isSpamView();
+    const { isSpamView } = useCurrentView();
     const { isTrashbinView, isEmptying, canEmptyFolder, emptyFolder, emptyFolderLabel, isPending } = useEmptyCurrentFolder();
 
     if (!isTrashbinView) return null;

@@ -36,6 +36,21 @@ describe('ViewHelper', () => {
         });
     });
 
+    describe('getView', () => {
+        it('should read the given search params, not a window.location not updated yet', () => {
+            setLocationSearch('?has_trashed=1');
+            const view = ViewHelper.getView(new URLSearchParams('is_spam=1'));
+            expect(view.isSpamView).toBe(true);
+            expect(view.isTrashedView).toBe(false);
+        });
+
+        it('should return the same view for the same url', () => {
+            const view = ViewHelper.getView(new URLSearchParams('has_archived=1'));
+            expect(ViewHelper.getView(new URLSearchParams('has_archived=1'))).toBe(view);
+            expect(ViewHelper.getView(new URLSearchParams('has_draft=1'))).not.toBe(view);
+        });
+    });
+
     describe('isSpamView', () => {
         it('should return true when is_spam=1 is in search params', () => {
             setLocationSearch('?is_spam=1');

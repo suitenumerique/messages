@@ -50,14 +50,8 @@ vi.mock("@/hooks/use-url-search-params", () => ({
     useUrlSearchParams: () => new URLSearchParams(),
 }));
 vi.mock("@/hooks/use-current-folder-name", () => ({ useCurrentFolderName: () => "Trash" }));
-vi.mock("@/features/utils/view-helper", () => ({
-    default: {
-        isTrashedView: () => true,
-        isSpamView: () => false,
-        isArchivedView: () => false,
-        isSentView: () => false,
-        isDraftsView: () => false,
-    },
+vi.mock("@/hooks/use-current-view", () => ({
+    useCurrentView: () => ({ isTrashedView: true, isSpamView: false, isArchivedView: false, isSentView: false, isDraftsView: false }),
 }));
 vi.mock("@/hooks/use-ability", () => ({
     default: () => true,

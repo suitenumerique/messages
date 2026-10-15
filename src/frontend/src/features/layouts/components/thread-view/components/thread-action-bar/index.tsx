@@ -14,7 +14,7 @@ import useArchive from "@/features/message/use-archive";
 import useSpam from "@/features/message/use-spam";
 import useThreadRemoveActions from "@/features/message/use-thread-remove-actions";
 import useLeaveThread from "@/features/message/use-leave-thread";
-import ViewHelper from "@/features/utils/view-helper";
+import { useCurrentView } from "@/hooks/use-current-view";
 import useCopyDeepLink from "@/features/message/use-copy-deep-link";
 import { Icon } from "@/features/ui/components/icon";
 import { Archive, Link, MoreVertical, Trash, Error as ErrorIcon, XMark } from "@gouvfr-lasuite/ui-components/icons";
@@ -34,7 +34,7 @@ export const ThreadActionBar = ({ isTrashContext, canUnarchive }: ThreadActionBa
     const { markAsArchived, markAsUnarchived } = useArchive();
     const { markAsSpam, markAsNotSpam } = useSpam();
     const { canLeaveThread, leaveThread } = useLeaveThread();
-    const isDraftsView = ViewHelper.isDraftsView();
+    const { isDraftsView } = useCurrentView();
     const removeActions = useThreadRemoveActions(selectedThread, isTrashContext);
     const accessesWidgetRef = useRef<ThreadAccessesWidgetHandle>(null);
     // Full edit rights on the thread — gates archive, spam, delete.

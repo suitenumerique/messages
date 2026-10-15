@@ -19,8 +19,8 @@ vi.mock("@/features/providers/config", () => ({
     useConfig: () => ({ TRASHBIN_CUTOFF_DAYS: cutoffDays }),
 }));
 
-vi.mock("@/features/utils/view-helper", () => ({
-    default: { isSpamView: () => false },
+vi.mock("@/hooks/use-current-view", () => ({
+    useCurrentView: () => ({ isSpamView: false }),
 }));
 
 vi.mock("@/features/message/use-empty-trash", () => ({

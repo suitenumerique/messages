@@ -15,7 +15,7 @@ const invalidateMailbox = vi.fn();
 const invalidateThreadsStats = vi.fn();
 let taskState: string | undefined;
 let isTrashedView = false;
-let isSpamView = false;
+let currentView = { isSpamView: false, isTrashedView: true };
 let searchStr = "";
 let canEmptyTrash = true;
 let folderCount: number | undefined = 3;
@@ -59,6 +59,10 @@ vi.mock("@/features/providers/thread-selection", () => ({
     useThreadSelection: () => ({ clearSelection }),
 }));
 
+vi.mock("@/hooks/use-current-view", () => ({
+    useCurrentView: () => currentView,
+}));
+
 vi.mock("@/hooks/use-url-search-params", () => ({
     useUrlSearchParams: () => new URLSearchParams(searchStr),
 }));
@@ -76,7 +80,7 @@ vi.mock("@/hooks/use-threads-stats", async (importOriginal) => ({
 vi.mock("@/features/utils/view-helper", () => ({
     default: {
         isTrashedView: () => isTrashedView,
-        isSpamView: () => isSpamView,
+        isSpamView: () => false,
     },
 }));
 
@@ -129,7 +133,7 @@ const storeTask = (startedAt = Date.now()) => {
 beforeEach(() => {
     taskState = undefined;
     isTrashedView = false;
-    isSpamView = false;
+    currentView = { isSpamView: false, isTrashedView: true };
     searchStr = "";
     canEmptyTrash = true;
     folderCount = 3;
@@ -361,10 +365,6 @@ describe("useEmptyTrash", () => {
 describe("useEmptyCurrentFolder", () => {
     type EmptyCurrentFolder = ReturnType<typeof useEmptyCurrentFolder>;
 
-    beforeEach(() => {
-        isTrashedView = true;
-    });
-
     const mount = async () => {
         const mounted: { current?: EmptyCurrentFolder } = {};
         const Caller = ({ onRender }: { onRender: (folder: EmptyCurrentFolder) => void }) => {
@@ -385,7 +385,7 @@ describe("useEmptyCurrentFolder", () => {
         ["trash", { isSpamView: false, isTrashedView: true }, "Empty trash"],
         ["spam", { isSpamView: true, isTrashedView: false }, "Empty spam"],
     ])("offers to empty the %s folder", async (_, view, expectedLabel) => {
-        ({ isSpamView, isTrashedView } = view);
+        currentView = view;
 
         const { canEmptyFolder, isTrashbinView, emptyFolderLabel } = await mount();
 
@@ -395,7 +395,7 @@ describe("useEmptyCurrentFolder", () => {
     });
 
     it("does not offer it outside the trashbin folders", async () => {
-        isTrashedView = false;
+        currentView = { isSpamView: false, isTrashedView: false };
 
         const { canEmptyFolder, isTrashbinView } = await mount();
 

@@ -14,6 +14,7 @@ import { MailboxEmptyTrashRequestScopeEnum, StatusEnum } from "@/features/api/ge
 import { MAILBOX_FOLDERS } from "@/features/layouts/components/mailbox-panel/components/mailbox-list";
 import ViewHelper, { ViewName } from "@/features/utils/view-helper";
 import useAbility, { Abilities } from "@/hooks/use-ability";
+import { useCurrentView } from "@/hooks/use-current-view";
 import { useTaskStatus } from "@/hooks/use-task-status";
 import { getFolderStatsQueryKey, useFolderStats } from "@/hooks/use-threads-stats";
 import { useUrlSearchParams } from "@/hooks/use-url-search-params";
@@ -348,8 +349,8 @@ export const useEmptyCurrentFolder = () => {
     const { emptyTrashbin, isPending } = useEmptyTrash();
     const canEmptyTrash = useAbility(Abilities.CAN_EMPTY_TRASH, selectedMailbox);
     const isSearch = useUrlSearchParams().has("search");
-    const isSpamView = ViewHelper.isSpamView();
-    const isTrashbinView = !isSearch && (isSpamView || ViewHelper.isTrashedView());
+    const { isSpamView, isTrashedView } = useCurrentView();
+    const isTrashbinView = !isSearch && (isSpamView || isTrashedView);
     const scope = isSpamView ? "spam" : "trashed";
     const { isRunning: isEmptying } = useEmptyTrashTask(
         isTrashbinView ? selectedMailbox?.id : undefined,
