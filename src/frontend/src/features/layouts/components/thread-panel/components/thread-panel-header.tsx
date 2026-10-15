@@ -8,7 +8,7 @@ import { Button, Checkbox, Spinner } from "@gouvfr-lasuite/ui-components";
 import { Tooltip } from "@/features/ui/components/tooltip";
 import useRead from "@/features/message/use-read";
 import { DropdownMenu, IconType, VerticalSeparator, useResponsive } from "@gouvfr-lasuite/ui-components";
-import ViewHelper from "@/features/utils/view-helper";
+import { useCurrentView } from "@/hooks/use-current-view";
 import useArchive from "@/features/message/use-archive";
 import useSpam from "@/features/message/use-spam";
 import useTrash from "@/features/message/use-trash";
@@ -59,11 +59,7 @@ const ThreadPanelTitle = ({ selectedThreadIds, isAllSelected, isSomeSelected, is
     const searchParams = useUrlSearchParams();
     const isSearch = searchParams.has('search');
     const { mailboxes, threads, selectedMailbox, unselectThread } = useMailboxContext();
-    const isTrashedView = ViewHelper.isTrashedView();
-    const isSpamView = ViewHelper.isSpamView();
-    const isArchivedView = ViewHelper.isArchivedView();
-    const isSentView = ViewHelper.isSentView();
-    const isDraftsView = ViewHelper.isDraftsView();
+    const { isTrashedView, isSpamView, isArchivedView, isSentView, isDraftsView } = useCurrentView();
 
     const { activeFilters } = useThreadPanelFilters();
 
