@@ -8,6 +8,8 @@ from django import forms
 from django.contrib import admin, messages
 from django.contrib.admin.widgets import AutocompleteSelect
 from django.contrib.auth import admin as auth_admin
+from django.contrib.sites.admin import SiteAdmin as BaseSiteAdmin
+from django.contrib.sites.models import Site
 from django.core.exceptions import PermissionDenied
 from django.core.exceptions import ValidationError as DjangoValidationError
 from django.db import transaction
@@ -1688,3 +1690,58 @@ class MessageTemplateAdmin(admin.ModelAdmin):
         return obj.html_body
 
     get_html_body.short_description = "HTML Body"
+
+
+class SiteConfigurationForm(forms.ModelForm):
+    """Site configuration form whose labels drop the prefix already carried by
+    the fieldset title."""
+
+    class Meta:
+        model = models.SiteConfiguration
+        fields = (
+            "service_message_enabled",
+            "service_message_variant",
+            "service_message",
+            "service_message_link_url",
+            "service_message_link_label",
+        )
+        labels = {
+            "service_message_enabled": "Enabled",
+            "service_message_variant": "Variant",
+            "service_message": "Message",
+            "service_message_link_url": "Link URL",
+            "service_message_link_label": "Link label",
+        }
+
+
+class SiteConfigurationInline(admin.StackedInline):
+    """Inline editing the configuration attached to a site."""
+
+    model = models.SiteConfiguration
+    form = SiteConfigurationForm
+    can_delete = False
+    formfield_overrides = {JSONField: {"widget": PrettyJSONWidget(attrs={"rows": 5})}}
+    fieldsets = (
+        (
+            "Service message",
+            {
+                "fields": (
+                    "service_message_enabled",
+                    "service_message_variant",
+                    "service_message",
+                    "service_message_link_url",
+                    "service_message_link_label",
+                )
+            },
+        ),
+    )
+
+
+admin.site.unregister(Site)
+
+
+@admin.register(Site)
+class SiteAdmin(BaseSiteAdmin):
+    """Site admin extended with the site configuration."""
+
+    inlines = (SiteConfigurationInline,)

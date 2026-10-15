@@ -19,6 +19,7 @@ from zoneinfo import ZoneInfo
 from django.conf import settings
 from django.contrib.auth import models as auth_models
 from django.contrib.auth.base_user import AbstractBaseUser
+from django.contrib.sites.models import Site
 from django.core import validators
 from django.core.exceptions import ValidationError
 from django.db import connection, models, transaction
@@ -49,6 +50,7 @@ from core.enums import (
     MessageDeliveryStatusChoices,
     MessageRecipientTypeChoices,
     MessageTemplateTypeChoices,
+    ServiceMessageVariantChoices,
     ThreadAbilities,
     ThreadAccessRoleChoices,
     ThreadEventTypeChoices,
@@ -3862,3 +3864,110 @@ class MessageTemplate(BaseModel):
             "html_body": rendered_html_body,
             "text_body": rendered_text_body,
         }
+
+
+class SiteConfiguration(BaseModel):
+    """Site-wide settings editable from the Django admin, extending the
+    ``django.contrib.sites`` Site served by this deployment (``SITE_ID``)."""
+
+    site = models.OneToOneField(
+        Site,
+        on_delete=models.CASCADE,
+        related_name="configuration",
+        verbose_name="site",
+    )
+    service_message_enabled = models.BooleanField(
+        "service message enabled",
+        default=False,
+        help_text="Display the service message in a banner on top of the app.",
+    )
+    service_message_variant = models.CharField(
+        "service message variant",
+        max_length=16,
+        choices=ServiceMessageVariantChoices.choices,
+        default=ServiceMessageVariantChoices.BRAND,
+    )
+    service_message = models.JSONField(
+        "service message",
+        default=dict,
+        blank=True,
+        help_text=(
+            "Message per language code, e.g. "
+            '{"en-us": "Maintenance tonight", "fr-fr": "Maintenance ce soir"}.'
+        ),
+    )
+    service_message_link_url = models.URLField(
+        "service message link URL",
+        blank=True,
+        help_text="Optional link displayed as a call to action in the banner.",
+    )
+    service_message_link_label = models.JSONField(
+        "service message link label",
+        default=dict,
+        blank=True,
+        help_text='Link label per language code, e.g. {"en-us": "Learn more"}.',
+    )
+
+    class Meta:
+        db_table = "messages_site_configuration"
+        verbose_name = "site configuration"
+        verbose_name_plural = "site configurations"
+
+    def __str__(self):
+        return f"Configuration of {self.site}"
+
+    def clean(self):
+        """Validate translations and the consistency of the service message."""
+        super().clean()
+        self._validate_translations("service_message")
+        self._validate_translations("service_message_link_label")
+
+        if self.service_message_enabled and not self._translations(
+            self.service_message
+        ):
+            raise ValidationError(
+                {"service_message": "A message is required to enable it."}
+            )
+        if self.service_message_link_url and not self._translations(
+            self.service_message_link_label
+        ):
+            raise ValidationError(
+                {"service_message_link_label": "A label is required for the link."}
+            )
+
+    def _validate_translations(self, field):
+        """Ensure ``field`` maps languages from ``settings.LANGUAGES`` to text."""
+        validate_json_schema(
+            getattr(self, field),
+            {
+                "type": "object",
+                "propertyNames": {"enum": [code for code, _ in settings.LANGUAGES]},
+                "additionalProperties": {"type": "string"},
+            },
+            field=field,
+        )
+
+    @staticmethod
+    def _translations(value):
+        """Drop blank translations so the frontend can fall back on another
+        language."""
+        return {
+            language: text.strip() for language, text in value.items() if text.strip()
+        }
+
+    def get_service_message(self):
+        """Return the service message exposed to the frontend, or None when it
+        is disabled."""
+        if not self.service_message_enabled:
+            return None
+
+        service_message = {
+            "variant": self.service_message_variant,
+            "message": self._translations(self.service_message),
+        }
+        if self.service_message_link_url:
+            service_message["link"] = {
+                "url": self.service_message_link_url,
+                "label": self._translations(self.service_message_link_label),
+            }
+        return service_message

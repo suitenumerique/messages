@@ -258,6 +258,7 @@ export const resolveConfig = (api?: ConfigRetrieve200): AppConfig => {
     MESSAGES_MANUAL_RETRY_MAX_AGE: api?.MESSAGES_MANUAL_RETRY_MAX_AGE ?? 7 * 24 * 60 ** 2,
     FRONTEND_SILENT_LOGIN_ENABLED: api?.FRONTEND_SILENT_LOGIN_ENABLED ?? false,
     DRIVE: api?.DRIVE ?? DEFAULT_DRIVE_CONFIG,
+    SERVICE_MESSAGE: api?.SERVICE_MESSAGE,
     LANGUAGES: languages,
     BASE_LANGUAGE: baseLanguage,
     IS_LANGUAGE_FORCED:
