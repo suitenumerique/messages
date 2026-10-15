@@ -1,4 +1,4 @@
-import { Button, Tooltip, useModals, IconType, Spinner } from "@gouvfr-lasuite/ui-components";
+import { Button, Tooltip, useModals, IconType, Spinner, ShareModal } from "@gouvfr-lasuite/ui-components";
 import { Icon } from "@/features/ui/components/icon";
 import { useQueryClient } from "@tanstack/react-query";
 import { forwardRef, useImperativeHandle, useMemo, useState } from "react";
@@ -23,7 +23,7 @@ import useAbility, { Abilities } from "@/hooks/use-ability";
 import { useIsSharedContext } from "@/hooks/use-is-shared-context";
 import { useAssignedUsers } from "@/features/message/use-assigned-users";
 import { useThreadAssignment } from "@/features/message/use-thread-assignment";
-import { AssignedUsersSection, AccessUsersList, ShareModal } from "../share-modal-extensions";
+import { AssignedUsersSection, AccessUsersList } from "../share-modal-extensions";
 import useDeleteThreadAccess from "@/features/message/use-delete-thread-access";
 
 export type ThreadAccessesWidgetHandle = {
@@ -58,8 +58,9 @@ type EnrichedAccess = ThreadAccessDetail & {
  *
  * The `ShareModal` from `@gouvfr-lasuite/ui-kit` is reused as-is for visual
  * consistency; assignment affordances are injected through its extension
- * points (`children` for the "assigned users" section, `accessRoleTopMessage`
- * returning a ReactNode for the per-mailbox user list).
+ * points (`children` for the "assigned users" section, `renderAccessFooter`
+ * for the per-mailbox user list, `renderAccessRightExtras` for the inline
+ * assign toggle).
  */
 export const ThreadAccessesWidget = forwardRef<ThreadAccessesWidgetHandle, ThreadAccessesWidgetProps>(
     function ThreadAccessesWidget({ accesses, hideTrigger = false }, ref) {
@@ -367,11 +368,12 @@ export const ThreadAccessesWidget = forwardRef<ThreadAccessesWidgetHandle, Threa
                     // The mailbox row is rendered by upstream ShareMemberItem
                     // so we can't wrap the avatar ourselves — CSS hooks into
                     // these classes descendant-style.
+                    //   base:       hover affordance + assign toggle reveal.
                     //   --shared:   non-identity mailbox (alias / group)
-                    //               → square-rounded avatar to signal "team".
+                    //               → `group` glyph instead of initials.
                     //   --assigned: single-user identity mailbox whose user
-                    //               is assigned to the thread → brand ring.
-                    const classes: string[] = [];
+                    //               is assigned to the thread → badge.
+                    const classes = ["share-modal-extensions__share-member-item"];
                     if (access.mailbox.is_identity === false) {
                         classes.push("share-modal-extensions__share-member-item--shared");
                     }
@@ -383,7 +385,7 @@ export const ThreadAccessesWidget = forwardRef<ThreadAccessesWidgetHandle, Threa
                     ) {
                         classes.push("share-modal-extensions__share-member-item--assigned");
                     }
-                    return classes.length ? classes.join(" ") : undefined;
+                    return classes.join(" ");
                 }}
                 membersTitle={(members) => {
                     const sharedCount = members.filter(
