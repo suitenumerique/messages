@@ -16,6 +16,8 @@ and this project adheres to
 - `make test-keycloak-theme` runs the Playwright specs of the `lst-dsfr` theme
   against Keycloak alone
 - Enable passkeys in the dev realm
+- Display a service message in a banner on top of the app, configured
+  from the site configuration in the Django admin
 
 ### Changed
 

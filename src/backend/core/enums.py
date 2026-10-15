@@ -477,6 +477,15 @@ class MessageTemplateTypeChoices(models.IntegerChoices):
     AUTOREPLY = 3, "autoreply"
 
 
+class ServiceMessageVariantChoices(models.TextChoices):
+    """Visual variants of the service message banner, matching the ui-kit
+    HeaderBanner colors."""
+
+    BRAND = "brand", "Information"
+    WARNING = "warning", "Warning"
+    ERROR = "error", "Error"
+
+
 class PushPlatformChoices(models.TextChoices):
     """Push delivery transports a push channel can target.
 
