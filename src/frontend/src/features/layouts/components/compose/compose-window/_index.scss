@@ -1,4 +1,5 @@
 @use "../../../../../styles/utils" as *;
+@use "../sender-pending" as *;
 
 .compose-window {
     display: flex;
@@ -106,6 +107,7 @@
 .compose-window__title-avatar {
     display: flex;
     flex: 0 0 auto;
+    @include sender-pending;
 
     // Same shape convention as the mailbox switcher: squared corners mark a
     // shared mailbox, a full circle an own identity.

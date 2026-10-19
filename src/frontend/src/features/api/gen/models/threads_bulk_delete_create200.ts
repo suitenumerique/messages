@@ -9,4 +9,5 @@
 export type ThreadsBulkDeleteCreate200 = {
   success: boolean;
   deleted_count: number;
+  deleted_message_ids: string[];
 };

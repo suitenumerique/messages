@@ -1,6 +1,6 @@
 import { useEffect, useRef, useState } from "react";
 import { Button, Tooltip } from "@gouvfr-lasuite/ui-components";
-import { DropdownMenu, IconType, UserAvatar } from "@gouvfr-lasuite/ui-components";
+import { DropdownMenu, IconType, Spinner, UserAvatar } from "@gouvfr-lasuite/ui-components";
 import { ChevronUp, Maximize, Minimize, Minus, Send, Shortcut, XMark } from "@gouvfr-lasuite/ui-components/icons";
 import { Icon } from "@/features/ui/components/icon";
 import { useTranslation } from "react-i18next";
@@ -40,6 +40,9 @@ export const ComposeWindow = ({ descriptor, isOverflowed = false }: ComposeWindo
     const titleRef = useRef<HTMLButtonElement>(null);
     const [showCloseConfirm, setShowCloseConfirm] = useState(false);
     const [isClosing, setIsClosing] = useState(false);
+    // Mirrors the form's send state: the sheet header CTA lives outside the
+    // form and would otherwise stay clickable during the send.
+    const [isSending, setIsSending] = useState(false);
     const { windowId, presentation, isMinimized } = descriptor;
     // The compact presentation ignores the presentation setting: the
     // expanded window is always a full-screen bottom sheet, minimized ones
@@ -61,7 +64,7 @@ export const ComposeWindow = ({ descriptor, isOverflowed = false }: ComposeWindo
     const toggleMinimize = () => (isMinimized ? restoreWindow(windowId) : minimizeWindow(windowId));
 
     const getSender = useComposeSender();
-    const senderMailbox = getSender(descriptor.mailboxId);
+    const senderMailbox = getSender(descriptor);
     // The docked tab is too narrow to spell the address out, and the avatar
     // that stands in for it is decorative, so the sender only reaches both the
     // tooltip and assistive tech through this name. Keeping `title` as a
@@ -288,12 +291,14 @@ export const ComposeWindow = ({ descriptor, isOverflowed = false }: ComposeWindo
                         className="compose-window__title"
                         title={titleWithSender}
                         aria-label={titleWithSender}
+                        aria-busy={descriptor.isSenderPending || undefined}
                         onClick={toggleMinimize}
                     >
                         {senderMailbox && (
                             <span
                                 className="compose-window__title-avatar"
                                 data-shared={!senderMailbox.is_identity}
+                                data-pending={!!descriptor.isSenderPending}
                                 aria-hidden="true"
                             >
                                 <UserAvatar
@@ -339,10 +344,14 @@ export const ComposeWindow = ({ descriptor, isOverflowed = false }: ComposeWindo
                                     size="small"
                                     aria-label={sheetSendMode === PreferSendMode.SEND_AND_ARCHIVE ? t("Send and archive") : t("Send")}
                                     icon={
-                                        sheetSendMode === PreferSendMode.SEND_AND_ARCHIVE
-                                            ? <Icon name="send_and_archive" type={IconType.OUTLINED} />
-                                            : <Icon icon={Send} />
+                                        isSending
+                                            ? <Spinner size="sm" />
+                                            : sheetSendMode === PreferSendMode.SEND_AND_ARCHIVE
+                                                ? <Icon name="send_and_archive" type={IconType.OUTLINED} />
+                                                : <Icon icon={Send} />
                                     }
+                                    disabled={isSending || descriptor.isSenderPending}
+                                    aria-busy={isSending || undefined}
                                     aria-haspopup={canArchiveOnSend ? "menu" : undefined}
                                     aria-expanded={canArchiveOnSend ? isSendMenuOpen : undefined}
                                     onClick={handleSendClick}
@@ -407,7 +416,7 @@ export const ComposeWindow = ({ descriptor, isOverflowed = false }: ComposeWindo
                     )}
                 </header>
                 <div className="compose-window__body" hidden={isMinimized}>
-                    <ComposeWindowForm descriptor={descriptor} formRef={formRef} />
+                    <ComposeWindowForm descriptor={descriptor} formRef={formRef} onSubmittingChange={setIsSending} />
                 </div>
             </section>
             <CloseConfirmModal

@@ -1,4 +1,4 @@
-import { RefObject, useEffect } from "react";
+import { RefObject, useCallback, useEffect } from "react";
 import { useTranslation } from "react-i18next";
 import { Button, Spinner } from "@gouvfr-lasuite/ui-components";
 import { MessageForm, MessageFormHandle } from "@/features/forms/components/message-form";
@@ -10,6 +10,7 @@ import { useComposeDraftData } from "../use-compose-draft-data";
 type ComposeWindowFormProps = {
     descriptor: ComposeWindowDescriptor;
     formRef: RefObject<MessageFormHandle | null>;
+    onSubmittingChange?: (isSubmitting: boolean) => void;
 };
 
 /**
@@ -17,7 +18,7 @@ type ComposeWindowFormProps = {
  * thread, mailbox) then renders the compact message form pinned to that
  * context.
  */
-export const ComposeWindowForm = ({ descriptor, formRef }: ComposeWindowFormProps) => {
+export const ComposeWindowForm = ({ descriptor, formRef, onSubmittingChange }: ComposeWindowFormProps) => {
     const { t } = useTranslation();
     const { closeWindow, updateWindow } = useComposeWindows();
     const { mailbox, draft, parentMessage, thread, isLoading, isDraftNotFound, loadError, retry } = useComposeDraftData({
@@ -26,6 +27,16 @@ export const ComposeWindowForm = ({ descriptor, formRef }: ComposeWindowFormProp
         parentMessageId: descriptor.parentMessageId,
         threadId: descriptor.threadId,
     });
+    // Stable on purpose: MessageForm reports both from effects keyed on these
+    // callbacks, and this component re-renders on every windows change.
+    const handleSubjectChange = useCallback(
+        (subject: string) => updateWindow(descriptor.windowId, { title: subject }),
+        [updateWindow, descriptor.windowId],
+    );
+    const handleSenderChange = useCallback(
+        (senderId: string, isPending: boolean) => updateWindow(descriptor.windowId, { senderId, isSenderPending: isPending }),
+        [updateWindow, descriptor.windowId],
+    );
 
     // The draft was sent, deleted or made inaccessible elsewhere (other tab,
     // other client): drop the window silently.
@@ -78,11 +89,17 @@ export const ComposeWindowForm = ({ descriptor, formRef }: ComposeWindowFormProp
             threadOverride={thread}
             draftMessage={draft}
             parentMessage={parentMessage}
+            onSubmittingChange={onSubmittingChange}
             onDraftChange={(nextDraft) => {
-                if (!nextDraft && descriptor.draftId) broadcastDraftGone("draft-deleted", descriptor.draftId);
+                // A sender transfer swaps the draft for a new one and deletes
+                // the old one, which the other tabs must drop as well.
+                if (descriptor.draftId && nextDraft?.id !== descriptor.draftId) {
+                    broadcastDraftGone("draft-deleted", descriptor.draftId);
+                }
                 updateWindow(descriptor.windowId, { draftId: nextDraft?.id });
             }}
-            onSubjectChange={(subject) => updateWindow(descriptor.windowId, { title: subject })}
+            onSubjectChange={handleSubjectChange}
+            onSenderChange={handleSenderChange}
             onSuccess={() => {
                 if (descriptor.draftId) broadcastDraftGone("draft-sent", descriptor.draftId);
                 closeWindow(descriptor.windowId);

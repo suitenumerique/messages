@@ -1,0 +1,18 @@
+// Sender avatar of a compose window whose draft is being transferred to that
+// sender: it pulses until the transfer settles (or reverts on failure).
+@keyframes compose-sender-pending {
+    50% {
+        opacity: 0.4;
+    }
+}
+
+@mixin sender-pending {
+    &[data-pending="true"] {
+        animation: compose-sender-pending 1.2s ease-in-out infinite;
+
+        @media (prefers-reduced-motion: reduce) {
+            animation: none;
+            opacity: 0.5;
+        }
+    }
+}

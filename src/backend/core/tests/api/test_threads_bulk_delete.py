@@ -1,5 +1,7 @@
 """Tests for the threads bulk-delete endpoint (permanent message deletion)."""
 
+from django.db import connection
+from django.test.utils import CaptureQueriesContext
 from django.urls import reverse
 
 import pytest
@@ -122,6 +124,7 @@ def test_api_bulk_delete_drafts_requires_edit_rights():
 
     assert response.status_code == status.HTTP_200_OK
     assert response.json()["deleted_count"] == 0
+    assert response.json()["deleted_message_ids"] == []
     assert models.Message.objects.filter(id=draft.id).exists()
 
 
@@ -140,7 +143,11 @@ def test_api_bulk_delete_drafts_only_thread_is_removed():
     )
 
     assert response.status_code == status.HTTP_200_OK
-    assert response.json() == {"success": True, "deleted_count": 1}
+    assert response.json() == {
+        "success": True,
+        "deleted_count": 1,
+        "deleted_message_ids": [str(draft.id)],
+    }
     assert not models.Message.objects.filter(id=draft.id).exists()
     assert not models.Thread.objects.filter(id=thread.id).exists()
 
@@ -189,8 +196,41 @@ def test_api_bulk_delete_drafts_scoped_by_message_ids():
 
     assert response.status_code == status.HTTP_200_OK
     assert response.json()["deleted_count"] == 1
+    assert response.json()["deleted_message_ids"] == [str(draft_a.id)]
     assert not models.Message.objects.filter(id=draft_a.id).exists()
     assert models.Message.objects.filter(id=draft_b.id).exists()
+
+
+def test_api_bulk_delete_drafts_partial_reports_deleted_ids():
+    """When edit rights cover only some targeted threads, the response lists
+    the drafts actually deleted, so clients can tell them from the kept ones."""
+    user = factories.UserFactory()
+    editable_thread, mailbox = _editable_thread(user)
+    readonly_thread = factories.ThreadFactory()
+    factories.ThreadAccessFactory(
+        mailbox=mailbox,
+        thread=readonly_thread,
+        role=enums.ThreadAccessRoleChoices.VIEWER,
+    )
+    deleted_draft = factories.MessageFactory(thread=editable_thread, is_draft=True)
+    kept_draft = factories.MessageFactory(thread=readonly_thread, is_draft=True)
+
+    client = APIClient()
+    client.force_authenticate(user=user)
+    response = client.post(
+        BULK_DELETE_URL,
+        {
+            "scope": "draft",
+            "thread_ids": [str(editable_thread.id), str(readonly_thread.id)],
+        },
+        format="json",
+    )
+
+    assert response.status_code == status.HTTP_200_OK
+    assert response.json()["deleted_count"] == 1
+    assert response.json()["deleted_message_ids"] == [str(deleted_draft.id)]
+    assert not models.Message.objects.filter(id=deleted_draft.id).exists()
+    assert models.Message.objects.filter(id=kept_draft.id).exists()
 
 
 def test_api_bulk_delete_drafts_ignores_non_draft_messages():
@@ -214,3 +254,35 @@ def test_api_bulk_delete_drafts_ignores_non_draft_messages():
     assert not models.Message.objects.filter(id=draft.id).exists()
     assert models.Message.objects.filter(id=trashed.id).exists()
     assert models.Message.objects.filter(id=active.id).exists()
+
+
+def test_api_bulk_delete_drafts_takes_row_lock():
+    """The drafts must be selected FOR UPDATE, scoped to ``is_draft``.
+
+    Without the lock, a send finalizing a draft between the selection and the
+    id-based delete would have its sent message deleted. Only the captured
+    SQL proves the lock is still taken.
+    """
+    user = factories.UserFactory()
+    thread, _ = _editable_thread(user)
+    factories.MessageFactory(thread=thread, is_draft=True)
+
+    client = APIClient()
+    client.force_authenticate(user=user)
+    with CaptureQueriesContext(connection) as queries:
+        response = client.post(
+            BULK_DELETE_URL,
+            {"scope": "draft", "thread_ids": [str(thread.id)]},
+            format="json",
+        )
+
+    assert response.status_code == status.HTTP_200_OK
+    locking_fetches = [
+        q["sql"]
+        for q in queries.captured_queries
+        if "FOR UPDATE" in q["sql"] and '"messages_message"' in q["sql"]
+    ]
+    assert locking_fetches, "bulk delete no longer locks the message rows"
+    assert any('"is_draft"' in sql for sql in locking_fetches), (
+        "the locked bulk delete fetch no longer checks the draft state"
+    )

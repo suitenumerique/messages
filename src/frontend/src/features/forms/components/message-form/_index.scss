@@ -138,6 +138,12 @@
     align-items: flex-start;
 }
 
+.form-field-row__spinner {
+    display: flex;
+    flex: 0 0 auto;
+    align-self: center;
+}
+
 // Compact variant, designed for small surfaces (floating compose window):
 // dense fields, no permanent helper texts, the composer fills the remaining
 // height and attachments are driven from the footer toolbar.
