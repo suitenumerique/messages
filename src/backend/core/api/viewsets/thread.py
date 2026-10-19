@@ -1044,8 +1044,12 @@ class ThreadViewSet(
                     "properties": {
                         "success": {"type": "boolean"},
                         "deleted_count": {"type": "integer"},
+                        "deleted_message_ids": {
+                            "type": "array",
+                            "items": {"type": "string", "format": "uuid"},
+                        },
                     },
-                    "required": ["success", "deleted_count"],
+                    "required": ["success", "deleted_count", "deleted_message_ids"],
                 },
                 description="Messages permanently deleted.",
             ),
@@ -1119,13 +1123,12 @@ class ThreadViewSet(
             if message_ids:
                 messages_to_delete = messages_to_delete.filter(id__in=message_ids)
 
-            affected_thread_ids = set(
-                messages_to_delete.values_list("thread_id", flat=True)
-            )
-            # Count before deletion: the cascade total returned by delete() also
-            # includes related rows (recipients, attachments), not just messages.
-            deleted_count = messages_to_delete.count()
-            messages_to_delete.delete()
+            deleted_rows = list(messages_to_delete.values_list("id", "thread_id"))
+            deleted_message_ids = [message_id for message_id, _ in deleted_rows]
+            affected_thread_ids = {thread_id for _, thread_id in deleted_rows}
+            # Deleted by id so that the response matches what was removed, even
+            # if a matching draft is created concurrently.
+            models.Message.objects.filter(id__in=deleted_message_ids).delete()
 
             # An emptied thread is removed; a thread that still has messages has
             # its denormalized stats (has_draft, has_trashed, ...) recomputed so
@@ -1136,4 +1139,10 @@ class ThreadViewSet(
                 else:
                     thread.delete()
 
-        return drf.response.Response({"success": True, "deleted_count": deleted_count})
+        return drf.response.Response(
+            {
+                "success": True,
+                "deleted_count": len(deleted_message_ids),
+                "deleted_message_ids": deleted_message_ids,
+            }
+        )

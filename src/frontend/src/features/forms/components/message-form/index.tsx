@@ -40,14 +40,8 @@ interface MessageFormProps {
     draftMessage?: Message;
     parentMessage?: Message;
     mode?: MessageFormMode;
-    onClose?: () => void;
     // For new message mode
     showSubject?: boolean;
-    onSuccess?: () => void;
-    // Notifies the parent whether the current user may delete this draft, so a
-    // surrounding surface (e.g. the draft header menu) can mirror the same
-    // mailbox + thread permission check used to gate the in-form delete button.
-    onDeletableChange?: (deletable: boolean) => void;
     // Pins the form to a mailbox/thread independent of the current selection,
     // so a floating or popped-out compose surface keeps its original context
     // while the user navigates elsewhere. `threadOverride: null` means
@@ -58,12 +52,21 @@ interface MessageFormProps {
     // sender change) that only make sense when the form lives in the main
     // mailbox view.
     standalone?: boolean;
-    onDraftChange?: (draft: Message | undefined) => void;
-    onSubjectChange?: (subject: string) => void;
     // "compact" is designed for small surfaces (floating compose window): the
     // composer becomes the main flexible element, permanent helper texts are
     // dropped and attachments are managed from the footer toolbar.
     variant?: "default" | "compact";
+    onClose?: () => void;
+    onSuccess?: () => void;
+    // Allow to notify parent when the draft is deleting
+    onDeletableChange?: (deletable: boolean) => void;
+    // Allow to notify parent when the form is submitting
+    onSubmittingChange?: (isSubmitting: boolean) => void;
+    onDraftChange?: (draft: Message | undefined) => void;
+    onSubjectChange?: (subject: string) => void;
+    // `isPending` is true while the draft is being transferred to `senderId`,
+    // which reverts to the previous sender if the transfer fails.
+    onSenderChange?: (senderId: string, isPending: boolean) => void;
 }
 
 // Zod schema for form validation. Shares MailHelper's pattern so the combobox
@@ -132,16 +135,18 @@ const DRAFT_TOAST_ID = "MESSAGE_FORM_DRAFT_TOAST";
 export const MessageForm = forwardRef<MessageFormHandle, MessageFormProps>(({
     parentMessage,
     mode = "new",
-    onClose,
     draftMessage,
-    onSuccess,
-    onDeletableChange,
     mailboxOverride,
     threadOverride,
     standalone = false,
+    variant = "default",
+    onClose,
+    onSuccess,
+    onDeletableChange,
+    onSubmittingChange,
     onDraftChange,
     onSubjectChange,
-    variant = "default"
+    onSenderChange,
 }, ref) => {
     const { t } = useTranslation();
     const navigate = useNavigate();
@@ -186,13 +191,23 @@ export const MessageForm = forwardRef<MessageFormHandle, MessageFormProps>(({
     // fires (a failed save still means user content diverged from the server),
     // it survives the form.reset that clears dirtyFields — see wasUserEdited.
     const hasSavedSinceMountRef = useRef(false);
-    // Blocks any non-forced draft save while a send is in flight: a draft PUT
-    // racing the send rewrites the recipients of a message already being
-    // delivered server-side. A ref (not state) so the guard is visible
+    // Blocks any non-forced draft save, and any second send, from the moment a
+    // send starts until it fails (a successful send leaves it set: the
+    // message is no longer a draft). A draft PUT racing the send rewrites the
+    // recipients of a message already being delivered server-side. A ref (not
+    // state) so the guard is visible
     // synchronously from the autosave timer and saveDraftInner, and survives
     // the re-arms done by saveDraftInner's finally and the [draft] effect.
     const isSendingRef = useRef(false);
+    // Second send guard, for the "Send anyway?" confirmation which runs before
+    // isSendingRef is set: that one also locks autosave, which must keep
+    // running while the user hesitates.
+    const isConfirmingSendRef = useRef(false);
     const [isSubmitting, setIsSubmitting] = useState(false);
+    const [isTransferringSender, setIsTransferringSender] = useState(false);
+    // Screen reader counterpart of the sender transfer feedback: the spinner
+    // and the "From" field reverting on failure are visual only.
+    const [senderTransferAnnouncement, setSenderTransferAnnouncement] = useState("");
     const [currentTime, setCurrentTime] = useState(new Date());
     const autoSaveTimerRef = useRef<NodeJS.Timeout | null>(null);
     const saveDraftRef = useRef<() => void>(() => {});
@@ -629,26 +644,65 @@ export const MessageForm = forwardRef<MessageFormHandle, MessageFormProps>(({
     }, [canDeleteDraft, onDeletableChange]);
 
     useEffect(() => {
+        onSubmittingChange?.(isSubmittingMessage);
+    }, [isSubmittingMessage, onSubmittingChange]);
+
+    useEffect(() => {
         onSubjectChange?.(currentSubject ?? "");
     }, [currentSubject, onSubjectChange]);
 
+    useEffect(() => {
+        if (currentSenderId) onSenderChange?.(currentSenderId, isTransferringSender);
+    }, [currentSenderId, isTransferringSender, onSenderChange]);
+
     /**
-     * If the user changes the message sender, we need to delete the draft,
-     * then recreate a new one. Once the new draft is created, we need to
-     * redirect the user to the new draft view. Returns the new draft id.
+     * If the user changes the message sender, the draft is recreated in the
+     * new mailbox, then the old one is deleted. Once the new draft is
+     * created, we need to redirect the user to the new draft view. Returns
+     * the new draft id.
+     *
+     * The "From" field shows the new sender upfront. Creating first keeps
+     * that optimistic display revertible: if the creation fails, the old
+     * draft is untouched and the field goes back to its mailbox.
      */
-    const handleChangeSender = async (currentDraft: Message, data: DraftMessageRequestRequest): Promise<string> => {
-        await deleteMessageMutation.mutateAsync({ id: currentDraft.id });
-        const response = await draftCreateMutation.mutateAsync({ data }, {
-            onSuccess: () => {
-                addToast(
-                    <ToasterItem type="info">
-                        <span>{t("Draft transferred to another mailbox")}</span>
-                    </ToasterItem>,
-                );
+    const handleChangeSender = async (
+        currentDraft: Message,
+        data: DraftMessageRequestRequest,
+        previousSenderId: string | undefined,
+    ): Promise<string> => {
+        setIsTransferringSender(true);
+        setSenderTransferAnnouncement(t("Transferring the draft…"));
+        let newDraft: Message;
+        try {
+            const response = await draftCreateMutation.mutateAsync({ data });
+            newDraft = response.data as Message;
+            // The success toast takes over the announcement.
+            setSenderTransferAnnouncement("");
+        } catch (error) {
+            // The global mutation handler already toasts the reason.
+            if (previousSenderId) {
+                form.resetField("from", { defaultValue: previousSenderId });
+                const previousSender = mailboxes?.find((mailbox) => mailbox.id === previousSenderId);
+                setSenderTransferAnnouncement(t("The draft could not be transferred. Sender restored to {{email}}.", {
+                    email: previousSender?.email,
+                }));
             }
-        });
-        const newDraft = response.data as Message;
+            throw error;
+        } finally {
+            setIsTransferringSender(false);
+        }
+        try {
+            await deleteMessageMutation.mutateAsync({ id: currentDraft.id });
+        } catch (error) {
+            // The draft now lives in the new mailbox: the old copy is left
+            // behind in the drafts list, from where the user can delete it.
+            console.warn("Error while deleting the transferred draft:", error);
+        }
+        addToast(
+            <ToasterItem type="info">
+                <span>{t("Draft transferred to another mailbox")}</span>
+            </ToasterItem>,
+        );
 
         // Standalone surfaces (floating window, pop-out) keep their own
         // context: swap the draft in place instead of navigating.
@@ -768,6 +822,9 @@ export const MessageForm = forwardRef<MessageFormHandle, MessageFormProps>(({
             try {
                 stopAutoSave();
                 const isDirtyFrom = !!form.formState.dirtyFields.from;
+                // Read before the reset below moves the defaults to the new
+                // sender: the transfer reverts to it on failure.
+                const previousSenderId = form.formState.defaultValues?.from;
                 form.reset(form.getValues(), { keepSubmitCount: true, keepDirty: false, keepValues: true, keepDefaultValues: false });
                 // Read the latest draft from the ref rather than the state:
                 // a previous saveDraftInner call may have just created the
@@ -778,7 +835,7 @@ export const MessageForm = forwardRef<MessageFormHandle, MessageFormProps>(({
                         data: payload,
                     });
                 } else if (isDirtyFrom) {
-                    return await handleChangeSender(currentDraft, payload);
+                    return await handleChangeSender(currentDraft, payload, previousSenderId);
                 } else {
                     response = await draftUpdateMutation.mutateAsync({
                         messageId: currentDraft.id,
@@ -828,6 +885,11 @@ export const MessageForm = forwardRef<MessageFormHandle, MessageFormProps>(({
      * Send the draft message
      */
     const handleSubmit = async ({ archive }: { archive: boolean }) => {
+        // One send per draft: the send CTAs living outside the form (mobile
+        // sheet header) stay enabled while a send is in flight, so a second
+        // tap would POST /send/ for a message the first one already
+        // un-drafted, which the backend rejects with a 404.
+        if (isSendingRef.current || isConfirmingSendRef.current) return;
         const data = form.getValues();
 
         // recipients are optional to save the draft but required to send the message
@@ -846,18 +908,23 @@ export const MessageForm = forwardRef<MessageFormHandle, MessageFormProps>(({
         // lock), so declining has nothing to undo.
         const sendWarnings = getSendWarnings(data);
         if (sendWarnings.length > 0) {
-            const decision = await modals.confirmationModal({
-                titleIcon: <Icon icon={Warning} />,
-                title: t("Send anyway?"),
-                children: (
-                    <ul className="message-form__send-warnings">
-                        {sendWarnings.map((warning) => (
-                            <li key={warning}>{warning}</li>
-                        ))}
-                    </ul>
-                ),
-            });
-            if (decision !== "yes") return;
+            isConfirmingSendRef.current = true;
+            try {
+                const decision = await modals.confirmationModal({
+                    titleIcon: <Icon icon={Warning} />,
+                    title: t("Send anyway?"),
+                    children: (
+                        <ul className="message-form__send-warnings">
+                            {sendWarnings.map((warning) => (
+                                <li key={warning}>{warning}</li>
+                            ))}
+                        </ul>
+                    ),
+                });
+                if (decision !== "yes") return;
+            } finally {
+                isConfirmingSendRef.current = false;
+            }
         }
 
         setIsSubmitting(true);
@@ -913,9 +980,9 @@ export const MessageForm = forwardRef<MessageFormHandle, MessageFormProps>(({
                     archive,
                 }
             }, {
-                onSuccess: () => {
-                    isSendingRef.current = false;
-                },
+                // No onSuccess release of isSendingRef: the message is no
+                // longer a draft, so any later save or send of this form
+                // would 404 until the surface unmounts it.
                 // The draft stays open when the send fails server-side;
                 // resume the autosave loop blocked for the send.
                 onError: abortSend,
@@ -1008,7 +1075,7 @@ export const MessageForm = forwardRef<MessageFormHandle, MessageFormProps>(({
         <span className="form-footer__send">
             <DropdownButton
                 variant="primary"
-                disabled={!canSendMessages || isSubmittingMessage || showRecipientLimitWarning || isDeletingDraft}
+                disabled={!canSendMessages || isSubmittingMessage || showRecipientLimitWarning || isDeletingDraft || isTransferringSender}
                 icon={isSubmittingMessage ? <Spinner size="sm" /> : undefined}
                 type="submit"
                 dropdownOptions={[
@@ -1051,12 +1118,21 @@ export const MessageForm = forwardRef<MessageFormHandle, MessageFormProps>(({
                         label={t("From")}
                         variant="inline"
                         clearable={false}
-                        disabled={!canChangeSender}
+                        disabled={!canChangeSender || isTransferringSender}
                         compact
                         fullWidth
                         text={form.formState.errors.from && t(form.formState.errors.from.message as string)}
                     />
+                    {isTransferringSender && (
+                        <div className="form-field-row__spinner" aria-hidden="true">
+                            <Spinner size="sm" />
+                        </div>
+                    )}
                 </div>
+                {/* Always rendered: a live region only announces changes to its content. */}
+                <span role="status" aria-live="polite" className="c__offscreen">
+                    {senderTransferAnnouncement}
+                </span>
                 <div className="form-field-row">
                     <RhfContactComboBox
                         name="to"

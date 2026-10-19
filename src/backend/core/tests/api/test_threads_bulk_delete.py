@@ -122,6 +122,7 @@ def test_api_bulk_delete_drafts_requires_edit_rights():
 
     assert response.status_code == status.HTTP_200_OK
     assert response.json()["deleted_count"] == 0
+    assert response.json()["deleted_message_ids"] == []
     assert models.Message.objects.filter(id=draft.id).exists()
 
 
@@ -140,7 +141,11 @@ def test_api_bulk_delete_drafts_only_thread_is_removed():
     )
 
     assert response.status_code == status.HTTP_200_OK
-    assert response.json() == {"success": True, "deleted_count": 1}
+    assert response.json() == {
+        "success": True,
+        "deleted_count": 1,
+        "deleted_message_ids": [str(draft.id)],
+    }
     assert not models.Message.objects.filter(id=draft.id).exists()
     assert not models.Thread.objects.filter(id=thread.id).exists()
 
@@ -189,8 +194,41 @@ def test_api_bulk_delete_drafts_scoped_by_message_ids():
 
     assert response.status_code == status.HTTP_200_OK
     assert response.json()["deleted_count"] == 1
+    assert response.json()["deleted_message_ids"] == [str(draft_a.id)]
     assert not models.Message.objects.filter(id=draft_a.id).exists()
     assert models.Message.objects.filter(id=draft_b.id).exists()
+
+
+def test_api_bulk_delete_drafts_partial_reports_deleted_ids():
+    """When edit rights cover only some targeted threads, the response lists
+    the drafts actually deleted, so clients can tell them from the kept ones."""
+    user = factories.UserFactory()
+    editable_thread, mailbox = _editable_thread(user)
+    readonly_thread = factories.ThreadFactory()
+    factories.ThreadAccessFactory(
+        mailbox=mailbox,
+        thread=readonly_thread,
+        role=enums.ThreadAccessRoleChoices.VIEWER,
+    )
+    deleted_draft = factories.MessageFactory(thread=editable_thread, is_draft=True)
+    kept_draft = factories.MessageFactory(thread=readonly_thread, is_draft=True)
+
+    client = APIClient()
+    client.force_authenticate(user=user)
+    response = client.post(
+        BULK_DELETE_URL,
+        {
+            "scope": "draft",
+            "thread_ids": [str(editable_thread.id), str(readonly_thread.id)],
+        },
+        format="json",
+    )
+
+    assert response.status_code == status.HTTP_200_OK
+    assert response.json()["deleted_count"] == 1
+    assert response.json()["deleted_message_ids"] == [str(deleted_draft.id)]
+    assert not models.Message.objects.filter(id=deleted_draft.id).exists()
+    assert models.Message.objects.filter(id=kept_draft.id).exists()
 
 
 def test_api_bulk_delete_drafts_ignores_non_draft_messages():

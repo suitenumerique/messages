@@ -7025,11 +7025,19 @@
                                         },
                                         "deleted_count": {
                                             "type": "integer"
+                                        },
+                                        "deleted_message_ids": {
+                                            "type": "array",
+                                            "items": {
+                                                "type": "string",
+                                                "format": "uuid"
+                                            }
                                         }
                                     },
                                     "required": [
                                         "success",
-                                        "deleted_count"
+                                        "deleted_count",
+                                        "deleted_message_ids"
                                     ]
                                 }
                             }

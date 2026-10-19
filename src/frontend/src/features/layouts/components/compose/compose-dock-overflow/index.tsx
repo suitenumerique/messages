@@ -6,7 +6,7 @@ import { useComposeWindows } from "@/features/providers/compose-windows";
 import { ComposeWindowDescriptor } from "@/features/providers/compose-windows/types";
 import { Icon } from "@/features/ui/components/icon";
 import { getIconProps } from "../compose-overview";
-import { useComposeSender } from "../use-compose-sender";
+import { useComposeSenderText } from "../use-compose-sender";
 
 type ComposeDockOverflowProps = {
     /** Windows hidden from the dock, oldest first (array order). */
@@ -20,7 +20,7 @@ type ComposeDockOverflowProps = {
 export const ComposeDockOverflow = ({ windows }: ComposeDockOverflowProps) => {
     const { t } = useTranslation();
     const { focusWindow } = useComposeWindows();
-    const getSender = useComposeSender();
+    const getSenderText = useComposeSenderText();
     const [isOpen, setIsOpen] = useState(false);
 
     const options = windows
@@ -29,7 +29,7 @@ export const ComposeDockOverflow = ({ windows }: ComposeDockOverflowProps) => {
             // The folded tabs are off screen entirely, so unlike a docked
             // tab — where an avatar is enough of a reminder — this list spells
             // the sender out. The icon slot already carries the mode.
-            subText: getSender(window.mailboxId)?.email,
+            subText: getSenderText(window),
             callback: () => focusWindow(window.windowId, { moveToEnd: true }),
             icon: <Icon {...getIconProps(window.mode)} />,
         }))

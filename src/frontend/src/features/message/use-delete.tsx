@@ -1,4 +1,4 @@
-import { useThreadsBulkDeleteCreate } from "@/features/api/gen";
+import { threadsBulkDeleteCreateResponse, useThreadsBulkDeleteCreate } from "@/features/api/gen";
 import { Message, ScopeEnum, Thread } from "@/features/api/gen/models";
 import { addToast, ToasterItem } from "../ui/components/toaster";
 import { useMailboxContext } from "../providers/mailbox";
@@ -13,16 +13,23 @@ export type DeleteOptions = {
 
 type ToastMessage = (deletedCount: number, submittedCount: number) => string;
 
+type DeletedTargets = {
+    /** Messages actually deleted: the backend silently skips the ones the
+     * user cannot edit, so this may be a subset of the submitted targets. */
+    messageIds: Message["id"][];
+    /** Threads submitted for deletion. */
+    threadIds: Thread["id"][];
+};
+
 type UseDeleteOptions = {
     toastMessage?: ToastMessage;
-    onSuccess?: DeleteOnSuccess;
+    onSuccess?: (deletedCount: number | undefined, deleted: DeletedTargets) => void;
     showToast?: boolean;
 };
 
-const extractDeletedCount = (response: { data: unknown }): number | undefined => {
-    const data = response.data as Record<string, unknown>;
-    return typeof data.deleted_count === "number" ? data.deleted_count : undefined;
-};
+// fetchAPI throws on non-2xx responses: the narrowing is only for typing.
+const extractResult = (response: threadsBulkDeleteCreateResponse) =>
+    response.status === 200 ? response.data : undefined;
 
 /**
  * Generic hook to permanently (hard) delete draft or trashed messages in bulk.
@@ -35,9 +42,13 @@ const useDelete = (scope: ScopeEnum, options?: UseDeleteOptions) => {
     const { mutate, status } = useThreadsBulkDeleteCreate({
         mutation: {
             onSuccess: (response, { data }) => {
-                const deletedCount = extractDeletedCount(response);
+                const result = extractResult(response);
+                const deletedCount = result?.deleted_count;
                 unpinThreads(data.thread_ids ?? []);
-                options?.onSuccess?.(deletedCount);
+                options?.onSuccess?.(deletedCount, {
+                    messageIds: result?.deleted_message_ids ?? [],
+                    threadIds: data.thread_ids ?? [],
+                });
                 if (options?.showToast !== false && options?.toastMessage) {
                     const submittedCount =
                         data.thread_ids?.length || data.message_ids?.length || 0;
@@ -61,7 +72,7 @@ const useDelete = (scope: ScopeEnum, options?: UseDeleteOptions) => {
                 },
             },
             {
-                onSuccess: (response) => onSuccess?.(extractDeletedCount(response)),
+                onSuccess: (response) => onSuccess?.(extractResult(response)?.deleted_count),
             }
         );
 

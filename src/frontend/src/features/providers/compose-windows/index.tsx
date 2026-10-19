@@ -5,10 +5,10 @@ import { addToast, ToasterItem } from "@/features/ui/components/toaster";
 import { getMailboxThreadsListQueryKeyPrefix } from "@/features/providers/mailbox-cache";
 import { getThreadsStatsQueryKey } from "@/features/providers/mailbox";
 import { randomUUID } from "@/features/utils/uuid";
-import { subscribeToComposeBroadcast } from "./broadcast";
-import { focusWindowReducer, minimizeWindowReducer, openWindowReducer, restoreWindowReducer, setPresentationReducer } from "./core";
+import { postComposeBroadcast, subscribeToComposeBroadcast } from "./broadcast";
+import { closeDeletedDraftWindowsReducer, focusWindowReducer, minimizeWindowReducer, openWindowReducer, restoreWindowReducer, setPresentationReducer } from "./core";
 import { loadPersistedWindows, persistWindows } from "./persistence";
-import { ComposeWindowDescriptor, ComposeWindowPresentation, OpenComposeWindowInput } from "./types";
+import { ComposeWindowDescriptor, ComposeWindowPresentation, DeletedDrafts, OpenComposeWindowInput } from "./types";
 
 type ComposeWindowsContextType = {
     windows: readonly ComposeWindowDescriptor[];
@@ -28,7 +28,13 @@ type ComposeWindowsContextType = {
     restoreWindow: (windowId: string) => void;
     /** Changes how the expanded window renders; expands it first if needed. */
     setPresentation: (windowId: string, presentation: ComposeWindowPresentation) => void;
-    updateWindow: (windowId: string, patch: Partial<Pick<ComposeWindowDescriptor, "draftId" | "title">>) => void;
+    updateWindow: (windowId: string, patch: Partial<Pick<ComposeWindowDescriptor, "draftId" | "threadId" | "senderId" | "isSenderPending" | "title">>) => void;
+    /**
+     * Drops the windows whose draft was deleted from outside them (drafts
+     * list, thread toolbar), here and in the other tabs. No flush: the draft
+     * is gone server-side.
+     */
+    closeDeletedDraftWindows: (deleted: DeletedDrafts) => void;
     getWindowByDraftId: (draftId: string) => ComposeWindowDescriptor | undefined;
     /** Restores the window if minimized and asks it to grab focus.
      * `moveToEnd` relocates it to the right end of the dock (used when it
@@ -81,13 +87,19 @@ export const ComposeWindowsProvider = ({ children }: PropsWithChildren) => {
     // refetch on focus): refresh the affected caches on their broadcasts, and
     // drop any local window whose draft was sent or deleted there.
     useEffect(() => subscribeToComposeBroadcast((message) => {
-        if (message.threadId) {
-            queryClient.invalidateQueries({ queryKey: ["messages", message.threadId] });
+        const isBulkDeletion = message.type === "drafts-deleted";
+        const threadIds: readonly (string | undefined)[] = isBulkDeletion ? message.threadIds : [message.threadId];
+        threadIds.forEach((threadId) => {
+            if (threadId) queryClient.invalidateQueries({ queryKey: ["messages", threadId] });
+        });
+        if (message.mailboxId) {
+            queryClient.invalidateQueries({ queryKey: getMailboxThreadsListQueryKeyPrefix(message.mailboxId) });
+            queryClient.invalidateQueries({ queryKey: getThreadsStatsQueryKey(message.mailboxId) });
         }
-        queryClient.invalidateQueries({ queryKey: getMailboxThreadsListQueryKeyPrefix(message.mailboxId) });
-        queryClient.invalidateQueries({ queryKey: getThreadsStatsQueryKey(message.mailboxId) });
-        if (message.type === "draft-sent" || message.type === "draft-deleted") {
-            setWindows((prev) => prev.filter((window) => window.draftId !== message.draftId));
+        if (isBulkDeletion) {
+            setWindows((prev) => closeDeletedDraftWindowsReducer(prev, message.draftIds));
+        } else if (message.type === "draft-sent" || message.type === "draft-deleted") {
+            setWindows((prev) => closeDeletedDraftWindowsReducer(prev, [message.draftId]));
         }
     }), [queryClient]);
 
@@ -167,7 +179,7 @@ export const ComposeWindowsProvider = ({ children }: PropsWithChildren) => {
         setWindows((prev) => setPresentationReducer(prev, windowId, presentation));
     }, []);
 
-    const updateWindow = useCallback((windowId: string, patch: Partial<Pick<ComposeWindowDescriptor, "draftId" | "title">>) => {
+    const updateWindow = useCallback((windowId: string, patch: Partial<Pick<ComposeWindowDescriptor, "draftId" | "threadId" | "senderId" | "isSenderPending" | "title">>) => {
         setWindows((prev) => {
             const target = prev.find((window) => window.windowId === windowId);
             if (!target) return prev;
@@ -179,6 +191,13 @@ export const ComposeWindowsProvider = ({ children }: PropsWithChildren) => {
                 window.windowId === windowId ? { ...window, ...patch } : window
             );
         });
+    }, []);
+
+    const closeDeletedDraftWindows = useCallback((deleted: DeletedDrafts) => {
+        // Matched against the latest list: the deletion settles after a
+        // confirmation and a request, while windows may have changed.
+        setWindows((prev) => closeDeletedDraftWindowsReducer(prev, deleted.draftIds));
+        postComposeBroadcast({ type: "drafts-deleted", ...deleted });
     }, []);
 
     const getWindowByDraftId = useCallback(
@@ -197,11 +216,12 @@ export const ComposeWindowsProvider = ({ children }: PropsWithChildren) => {
         restoreWindow,
         setPresentation,
         updateWindow,
+        closeDeletedDraftWindows,
         getWindowByDraftId,
         focusWindow,
         registerWindowHandle,
         requestCloseWindow,
-    }), [windows, activeWindow, openComposeWindow, closeWindow, minimizeWindow, restoreWindow, setPresentation, updateWindow, getWindowByDraftId, focusWindow, registerWindowHandle, requestCloseWindow]);
+    }), [windows, activeWindow, openComposeWindow, closeWindow, minimizeWindow, restoreWindow, setPresentation, updateWindow, closeDeletedDraftWindows, getWindowByDraftId, focusWindow, registerWindowHandle, requestCloseWindow]);
 
     return (
         <ComposeWindowsContext.Provider value={value}>
