@@ -378,10 +378,7 @@ export const UserDevicesGrid = () => {
     ];
 
     const enableToolbar = canEnableThisDevice ? (
-        <div
-            className="flex-row flex-justify-end"
-            style={{ marginBlock: "var(--c--globals--spacings--sm)" }}
-        >
+        <div className="user-devices-grid__toolbar">
             <Button
                 variant="secondary"
                 size="small"

@@ -253,6 +253,11 @@
         position: static;
     }
 
+    // Hide form footer actions when the mobile formatting toolbar is present
+    :root.native:has(.bn-mobile-formatting-toolbar) & .form-footer {
+        visibility: hidden;
+    }
+
     // On the small viewport the attachment list must not stack full height
     // under the composer: collapse it to a single horizontal rail scrolling
     // with a snap per item, the next card peeking to hint at the scroll.
