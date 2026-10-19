@@ -104,7 +104,13 @@ const DownloadButton = ({
     const { t } = useTranslation();
     const downloadNatively = useNativeDownload();
     const filename = name.startsWith("unnamed") ? "invitation.ics" : name;
-    const label = t("Download invitation");
+    // Wrapped so narrow cards can collapse the button to its icon while
+    // keeping the accessible name.
+    const label = (
+        <span className="calendar-invite__download-label">
+            {t("Download invitation")}
+        </span>
+    );
     const commonProps = {
         size: "small",
         variant: variant === "link" ? "tertiary" : variant,
@@ -429,9 +435,9 @@ const EventCard = ({
     // still show the pill when the STATUS alone signals cancellation.
     const statusPill =
         event.status === "TENTATIVE"
-            ? { label: t("Tentative"), title: t("The organizer marked this event as tentative."), cls: "tentative" }
+            ? { label: t("Tentative"), title: t("The organizer marked this event as tentative."), color: "warning" as const }
             : event.status === "CANCELLED"
-              ? { label: t("Cancelled"), title: t("This event has been cancelled by the organizer."), cls: "cancelled" }
+              ? { label: t("Cancelled"), title: t("This event has been cancelled by the organizer."), color: "error" as const }
               : null;
 
     return (
@@ -444,7 +450,9 @@ const EventCard = ({
                     <h3 className="calendar-invite__title">{event.summary}</h3>
                     {statusPill && (
                         <Badge
-                            className={`calendar-invite__event-status calendar-invite__event-status--${statusPill.cls}`}
+                            className="calendar-invite__event-status"
+                            color={statusPill.color}
+                            variant="secondary"
                             title={statusPill.title}
                         >
                             {statusPill.label}
@@ -609,7 +617,9 @@ const EventCard = ({
                                                     type={IconType.OUTLINED}
                                                     size={14}
                                                 />
-                                                {statusInfo.label}
+                                                <span className="calendar-invite__attendee-pill-label">
+                                                    {statusInfo.label}
+                                                </span>
                                             </span>
                                         )}
                                     </li>
