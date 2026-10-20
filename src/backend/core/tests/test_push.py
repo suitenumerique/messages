@@ -1434,7 +1434,7 @@ class TestWebpushSender:
             push.send_webpush(_items(ch), "t-1")
 
         assert session.post.call_args.kwargs["headers"]["ttl"] == str(
-            push.WEBPUSH_TTL_SECONDS
+            push.PUSH_TTL_SECONDS
         )
 
     def test_unreadable_settings_are_skipped_not_transient(self, settings):

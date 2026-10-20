@@ -342,6 +342,18 @@ class Base(Configuration):
         20, environ_name="PUSH_MAX_DEVICES_PER_USER", environ_prefix=None
     )
 
+    # Notification previews (sender + subject), readable only by the device:
+    # end-to-end encrypted for it, never in clear on the push transport. A
+    # browser gets them while its registering session is alive; a native app
+    # while it was opened within PUSH_PREVIEW_MAX_IDLE_DAYS (0 disables native
+    # previews). Devices outside those windows get the generic banner.
+    PUSH_PREVIEWS_ENABLED = values.BooleanValue(
+        True, environ_name="PUSH_PREVIEWS_ENABLED", environ_prefix=None
+    )
+    PUSH_PREVIEW_MAX_IDLE_DAYS = values.IntegerValue(
+        14, environ_name="PUSH_PREVIEW_MAX_IDLE_DAYS", environ_prefix=None
+    )
+
     # Security
     ALLOWED_HOSTS = values.ListValue([])
     SECRET_KEY = values.Value(None)

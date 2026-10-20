@@ -11,6 +11,7 @@ clients, and stale-device deactivation. The per-transport senders live in
 from __future__ import annotations
 
 import hashlib
+from datetime import datetime
 from functools import lru_cache
 from logging import getLogger
 from typing import NamedTuple
@@ -33,6 +34,13 @@ logger = getLogger(__name__)
 # Notification type marker carried in every payload so the client can route
 # without inspecting content it does not (and must not) receive here.
 PUSH_TYPE_NEW_MESSAGE = "new_message"
+
+# How long a gateway holds an undelivered push for an offline device (APNs
+# ``apns-expiration``, FCM ``ttl``, Web Push ``TTL``). A notification surfacing
+# days later only shows a misleading "new message"; one day covers a phone
+# offline overnight. It also bounds how long a device must keep a rotated-out
+# preview key: no push sealed for it can arrive later than this.
+PUSH_TTL_SECONDS = 24 * 3600
 
 
 @lru_cache(maxsize=None)
@@ -81,9 +89,9 @@ def build_thin_payload(
     """Build the privacy-preserving payload for ``message``.
 
     Deliberately content-free: only routing ids, the notification type and
-    the unread badge count. The receiving app uses these to refetch the
-    message over its own authenticated session — the push channel never
-    carries subject/body/sender.
+    the unread badge count. It is what the orchestrator dispatches (and the
+    broker / result backend see); the per-device task adds the preview the
+    device may receive, encrypted for it, at send time (see :mod:`preview`).
 
     ``mailbox_id`` is the recipient's mailbox the thread is read in, so the
     client can deep-link straight to ``/mailbox/{mailbox_id}/.../thread/{thread_id}``
@@ -114,7 +122,8 @@ def collapse_key_for_message(message: models.Message) -> str:
 # Push channels (one user-scoped Channel of type ``push`` per device)
 #
 # The opaque device token lives encrypted in ``encrypted_settings.token`` (and,
-# for Web Push, ``encrypted_settings.keys``). ``settings`` carries the queryable
+# when the device registered one, the preview key pair in
+# ``encrypted_settings.keys``). ``settings`` carries the queryable
 # ``platform``; the dedup/reclaim key is ``Channel.lookup_hash`` (sha256 of the
 # ``push:``-prefixed token, see ``_token_hash``) — an indexed, globally-unique
 # column, so we never put the token itself in a queryable column.
@@ -207,6 +216,7 @@ def register_push_device(
     keys: dict | None = None,
     name: str | None = None,
     session_key: str | None = None,
+    session_expires_at: datetime | None = None,
 ):
     """Register (or refresh) a user's device as a ``push`` Channel.
 
@@ -222,6 +232,11 @@ def register_push_device(
     see ``session_hash``) so a *voluntary logout* of that session unregisters
     this device and only this device. Clients re-register on every app load, so
     the stamp tracks the current session across key rotations.
+
+    ``session_expires_at`` (browsers only) bounds how long the device may get
+    message previews — see :func:`preview.preview_allowed`. ``keys`` is the
+    public key pair previews are encrypted for: a Web Push subscription's, or
+    one a native app generated (and rotates) itself.
     """
     token_hash = _token_hash(token)
 
@@ -230,6 +245,8 @@ def register_push_device(
         settings_data["app_version"] = app_version
     if session_key:
         settings_data["session_hash"] = session_hash(session_key)
+    if session_expires_at:
+        settings_data["session_expires_at"] = session_expires_at.isoformat()
     encrypted: dict = {"token": token}
     if keys:
         encrypted["keys"] = keys

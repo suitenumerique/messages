@@ -20,6 +20,7 @@ from core import models
 from core.enums import ChannelTypes, PushPlatformChoices
 from core.services.push.common import (
     PushTransientError,
+    _channel_keys,
     _mailbox_by_user_for_thread,
     _push_channels_for_users,
     _recipient_users,
@@ -27,6 +28,7 @@ from core.services.push.common import (
     build_thin_payload,
     collapse_key_for_message,
 )
+from core.services.push.preview import with_preview
 
 from messages.celery_app import app as celery_app
 
@@ -181,6 +183,10 @@ def send_push_notification(self, channel_id: str, payload: dict, collapse_key: s
     notification. Dead-token devices are deleted inside the sender; permanent
     rejections (bad payload, auth) end the task. ``acks_late`` means a worker
     crash re-runs this one push (again collapse-deduped), not the whole fan-out.
+
+    ``payload`` is the thin payload: the preview the device may receive is added
+    here, right before sending, so message content never sits in the broker or
+    in the persisted task arguments.
     """
     if not settings.PUSH_ENABLED:
         return {"success": True, "skipped": "push_disabled"}
@@ -199,6 +205,9 @@ def send_push_notification(self, channel_id: str, payload: dict, collapse_key: s
         logger.warning("No push sender for platform %r", platform)
         return {"success": False, "error": "no_sender"}
 
+    # No access re-check needed: a device changing hands deletes its channel
+    # (cross-user reclaim), so ``channel_id`` still names the recipient's device.
+    payload = with_preview(channel, _channel_keys(channel), payload)
     try:
         result = sender([(channel, payload)], collapse_key)
     except Exception as exc:

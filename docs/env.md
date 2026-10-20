@@ -579,6 +579,8 @@ Each gateway is all-or-nothing, and validated at boot: with `PUSH_ENABLED=True`,
 | `PUSH_VAPID_PUBLIC_KEY` | None | Matching VAPID public key (base64url, the uncompressed P-256 point). Served verbatim via `/config` as the browser's `applicationServerKey`; public by definition. Derive it from the private key with `python manage.py derive_vapid_public_key` (add `--verify` to check the pair matches). | Optional |
 | `PUSH_VAPID_SUBJECT` | None | VAPID `sub` claim; must be a `mailto:` or `https:` URI, e.g. `mailto:ops@example.com`. | Optional |
 | `PUSH_MAX_DEVICES_PER_USER` | `20` | Hard ceiling on push devices one user may keep. Registering beyond it prunes the least-recently-used device(s). | Optional |
+| `PUSH_PREVIEWS_ENABLED` | `True` | Show the sender and subject in notifications. The preview is encrypted for the device (never readable by Apple, Google or the browser push service) and only sent within the windows below; `False` keeps every notification generic. See [push-notifications.md](./push-notifications.md) §5.1. | Optional |
+| `PUSH_PREVIEW_MAX_IDLE_DAYS` | `14` | A native app gets previews only if it was opened with a valid session within this many days (a lost phone stops showing them). `0` disables native previews. Browsers get them only while their registering session is alive. | Optional |
 
 ### Throttling
 
