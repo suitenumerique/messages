@@ -2,5 +2,6 @@
    (core/services/push/apns.py, APNS_ALERT_LOC_KEY) — never sender or subject —
    and the OS renders the string from here even when the app is killed. Keep in
    sync with the Android strings.xml new_message_* entries and the Web Push
-   service worker fallback banner. */
+   service worker fallback banner. Also the placeholder iOS shows when the
+   "Show Previews" setting hides a preview (AppDelegate). */
 "NEW_MESSAGE" = "New message";

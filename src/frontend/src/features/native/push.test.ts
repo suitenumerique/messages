@@ -6,12 +6,25 @@
  */
 import { hashEndpoint, hasPushOptIn, setPushOptIn } from "@/features/push/shared";
 
-// Partial mock: the api client pulled in through @/features/api/gen reaches
-// auth-session.ts, which needs the real registerPlugin.
-vi.mock("@capacitor/core", async (importOriginal) => ({
-  ...(await importOriginal<typeof import("@capacitor/core")>()),
-  Capacitor: { getPlatform: vi.fn(), isNativePlatform: vi.fn() },
+// The app-local PushPreviewKeys plugin, handed out by registerPlugin below.
+const previewKeysPlugin = vi.hoisted(() => ({
+  getKeys: vi.fn(),
+  clear: vi.fn(),
 }));
+
+// Partial mock: the api client pulled in through @/features/api/gen reaches
+// auth-session.ts, which needs the real registerPlugin for its own plugin.
+vi.mock("@capacitor/core", async (importOriginal) => {
+  const actual = await importOriginal<typeof import("@capacitor/core")>();
+  return {
+    ...actual,
+    Capacitor: { getPlatform: vi.fn(), isNativePlatform: vi.fn() },
+    registerPlugin: (...args: Parameters<typeof actual.registerPlugin>) =>
+      args[0] === "PushPreviewKeys"
+        ? previewKeysPlugin
+        : actual.registerPlugin(...args),
+  };
+});
 vi.mock("@capacitor/device", () => ({
   Device: { getInfo: vi.fn() },
 }));
@@ -50,6 +63,7 @@ import { usersMeChannelsCreate } from "@/features/api/gen";
 
 import {
   ANDROID_NOTIFICATION_CHANNEL_ID,
+  clearPushPreviewKeys,
   currentNativeTokenHash,
   enableNativePush,
   pushTargetUrl,
@@ -61,6 +75,7 @@ import { isNativePlatform } from "./platform";
 
 const USER_ID = "11111111-2222-3333-4444-555555555555";
 const TOKEN = "apns-device-token-1";
+const PREVIEW_KEYS = { p256dh: "BPublicPoint", auth: "AuthSecret" };
 
 const push = vi.mocked(PushNotifications);
 const isNative = vi.mocked(isNativePlatform);
@@ -100,6 +115,8 @@ beforeEach(() => {
     version: "1.2.0",
   } as Awaited<ReturnType<typeof App.getInfo>>);
   createChannel.mockResolvedValue({} as Awaited<ReturnType<typeof usersMeChannelsCreate>>);
+  previewKeysPlugin.getKeys.mockResolvedValue(PREVIEW_KEYS);
+  previewKeysPlugin.clear.mockResolvedValue(undefined);
 });
 
 describe("enableNativePush", () => {
@@ -110,10 +127,31 @@ describe("enableNativePush", () => {
       type: "push",
       platform: "apns",
       token: TOKEN,
+      keys: PREVIEW_KEYS,
       name: "Mon iPhone",
       app_version: "1.2.0",
     });
     expect(hasPushOptIn(USER_ID)).toBe(true);
+  });
+
+  it("registers the preview keys of the signed-in user", async () => {
+    // The keyring is bound to one account: another account starts afresh.
+    await enableNativePush(USER_ID);
+    expect(previewKeysPlugin.getKeys).toHaveBeenCalledWith({ userId: USER_ID });
+  });
+
+  it("still registers, without preview keys, on a shell lacking the plugin", async () => {
+    // An OTA-updated bundle on an older binary: no plugin, generic banners.
+    previewKeysPlugin.getKeys.mockRejectedValue(new Error("not implemented"));
+    await expect(enableNativePush(USER_ID)).resolves.toBe("registered");
+    expect(createChannel).toHaveBeenCalledWith(
+      expect.objectContaining({ token: TOKEN, keys: undefined }),
+    );
+  });
+
+  it("asks for no preview keys without a user to bind them to", async () => {
+    await enableNativePush();
+    expect(previewKeysPlugin.getKeys).not.toHaveBeenCalled();
   });
 
   it("maps the Android shell to the fcm transport", async () => {
@@ -193,6 +231,16 @@ describe("refreshNativePushRegistration", () => {
     );
   });
 
+  it("re-sends the (possibly rotated) preview keys on every launch", async () => {
+    setPushOptIn(USER_ID);
+    push.checkPermissions.mockResolvedValue({ receive: "granted" });
+    await refreshNativePushRegistration(USER_ID);
+    expect(previewKeysPlugin.getKeys).toHaveBeenCalledWith({ userId: USER_ID });
+    expect(createChannel).toHaveBeenCalledWith(
+      expect.objectContaining({ keys: PREVIEW_KEYS }),
+    );
+  });
+
   it("re-ensures the Android channel on refresh", async () => {
     // The channel must exist before the first killed-app push; re-creating is
     // idempotent and follows a language change with a localized rename.
@@ -211,6 +259,7 @@ describe("unregisterIfCurrentDevice", () => {
     await enableNativePush(USER_ID);
     await unregisterIfCurrentDevice(await hashEndpoint(TOKEN), USER_ID);
     expect(push.unregister).toHaveBeenCalled();
+    expect(previewKeysPlugin.clear).toHaveBeenCalled();
     expect(hasPushOptIn(USER_ID)).toBe(false);
   });
 
@@ -218,7 +267,26 @@ describe("unregisterIfCurrentDevice", () => {
     await enableNativePush(USER_ID);
     await unregisterIfCurrentDevice(await hashEndpoint("other-token"), USER_ID);
     expect(push.unregister).not.toHaveBeenCalled();
+    expect(previewKeysPlugin.clear).not.toHaveBeenCalled();
     expect(hasPushOptIn(USER_ID)).toBe(true);
+  });
+});
+
+describe("clearPushPreviewKeys", () => {
+  it("wipes the device keyring", async () => {
+    await clearPushPreviewKeys();
+    expect(previewKeysPlugin.clear).toHaveBeenCalled();
+  });
+
+  it("tolerates a shell lacking the plugin", async () => {
+    previewKeysPlugin.clear.mockRejectedValue(new Error("not implemented"));
+    await expect(clearPushPreviewKeys()).resolves.toBeUndefined();
+  });
+
+  it("is a no-op outside the native shell", async () => {
+    isNative.mockReturnValue(false);
+    await clearPushPreviewKeys();
+    expect(previewKeysPlugin.clear).not.toHaveBeenCalled();
   });
 });
 

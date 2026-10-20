@@ -249,16 +249,24 @@ you install.
    **`PUSH_APNS_USE_SANDBOX=True`** — dev-signed builds hold sandbox tokens;
    the production gateway rejects them as `BadDeviceToken`.
    Restart the backend + celery worker.
+4. The app embeds a **Notification Service Extension** (`NotificationService`
+   target, bundle id `<MOBILE_APP_ID>.NotificationService`) that decrypts the
+   notification preview. With automatic signing Xcode registers its App ID;
+   both targets must be signed by the same team, since they share the
+   `<team>.<MOBILE_APP_ID>.push-preview` Keychain group holding the keys.
 
 **Smoke test (both platforms)**
 
 1. In the app: account menu → Notifications → *Enable notifications on this
    device* → accept the OS prompt. The device must appear in the list.
-2. Kill the app, send the mailbox a message from another account: a
-   content-free "New message / Nouveau message" banner must show (rendered by
-   the OS from the loc-key strings — a blank banner means those strings are
-   missing from the build).
-3. Tap it: the app must open on the thread (deep-link path).
+2. Kill the app, send the mailbox a message from another account: a banner
+   with the **sender and subject** must show — decrypted on the device
+   (push-notifications.md §5.1) by the iOS Notification Service Extension /
+   Android `PushPreviewMessagingService`.
+3. With `PUSH_PREVIEW_MAX_IDLE_DAYS=0` (backend), the same banner must be the
+   generic "New message / Nouveau message" — rendered from the loc-key strings,
+   a blank banner means those strings are missing from the build.
+4. Tap it: the app must open on the thread (deep-link path).
 
 ---
 

@@ -4,4 +4,5 @@
 <resources>
     <string name="new_message_title">Messages</string>
     <string name="new_message_body">Nouveau message</string>
+    <string name="new_messages_channel_name">Nouveaux messages</string>
 </resources>

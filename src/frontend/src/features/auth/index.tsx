@@ -13,6 +13,7 @@ import { clearPersistedWindows } from "../providers/compose-windows/persistence"
 import { isNativePlatform } from "../native/platform";
 import {
   clearDeliveredNativeNotifications,
+  clearPushPreviewKeys,
   refreshNativePushRegistration,
 } from "../native/push";
 import {
@@ -53,6 +54,10 @@ import MailboxHelper from "@/features/utils/mailbox-helper";
  * The last active mailbox remembered on this device follows the same split:
  * a voluntary logout forgets it, an expired session keeps it so the user
  * lands back on the mailbox they were working in once signed in again.
+ *
+ * So do a native device's notification preview keys: a voluntary logout
+ * wipes them, while an expired session keeps them, so previews outlive the
+ * session like notifications do (docs/push-notifications.md §5.1).
  */
 export const logout = ({ sessionExpired = false }: { sessionExpired?: boolean } = {}) => {
   if (sessionExpired) markSessionExpired();
@@ -61,6 +66,7 @@ export const logout = ({ sessionExpired = false }: { sessionExpired?: boolean } 
   clearPersistedWindows();
 
   if (isNativePlatform()) {
+    if (!sessionExpired) void clearPushPreviewKeys();
     void nativeLogout();
     return;
   }

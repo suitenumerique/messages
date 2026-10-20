@@ -10,9 +10,15 @@
  * idempotent on-launch re-registration (`refreshNativePushRegistration`), the
  * pattern docs/push-notifications.md §4 recommends over a long-lived
  * `registration` listener.
+ *
+ * Each registration also carries the public key notification previews are
+ * encrypted for (docs/push-notifications.md §5.1): the app-local
+ * `PushPreviewKeys` plugin generates and rotates the key pair in the device
+ * keystore, where the iOS Notification Service Extension / Android messaging
+ * service read it back to decrypt.
  */
 import { App } from "@capacitor/app";
-import { Capacitor } from "@capacitor/core";
+import { Capacitor, registerPlugin } from "@capacitor/core";
 import { Device } from "@capacitor/device";
 import {
   ActionPerformed,
@@ -25,6 +31,7 @@ import {
   PlatformEnum,
   PushChannelCreateTypeEnum,
   usersMeChannelsCreate,
+  WebPushKeysRequest,
 } from "@/features/api/gen";
 import { APP_STORAGE_PREFIX } from "@/features/config/constants";
 import i18n from "@/features/i18n/initI18n";
@@ -46,6 +53,41 @@ const NATIVE_TOKEN_KEY = `${APP_STORAGE_PREFIX}push-native-token`;
 /** APNs/FCM answer registration over the network; leave room for a slow radio
  * before reporting the enable attempt as failed. */
 const REGISTRATION_TIMEOUT_MS = 15_000;
+
+/** App-local plugin (ios/App/App/PushPreviewKeysPlugin.swift,
+ * android/.../PushPreviewKeysPlugin.java). The private keys never leave it. */
+type PushPreviewKeysPlugin = {
+  /** Current public key pair for `userId`, rotated when due. */
+  getKeys(options: { userId: string }): Promise<WebPushKeysRequest>;
+  /** Forget every key (voluntary logout, device sign-out). */
+  clear(): Promise<void>;
+};
+
+const PushPreviewKeys = registerPlugin<PushPreviewKeysPlugin>("PushPreviewKeys");
+
+/** The preview keys to register, or undefined: no user to bind them to, or a
+ * native shell predating the plugin (an OTA-updated bundle on an older binary)
+ * — the device then simply gets generic banners. */
+const previewKeys = async (
+  userId?: string,
+): Promise<WebPushKeysRequest | undefined> => {
+  if (!userId) return undefined;
+  try {
+    return await PushPreviewKeys.getKeys({ userId });
+  } catch {
+    return undefined;
+  }
+};
+
+/** Forget this device's preview keys. Best-effort: a missing plugin has none. */
+export const clearPushPreviewKeys = async (): Promise<void> => {
+  if (!isNativePlatform()) return;
+  try {
+    await PushPreviewKeys.clear();
+  } catch {
+    // Nothing to clear.
+  }
+};
 
 /** Android notification channel our pushes render on. Mirror of
  * FCM_ANDROID_CHANNEL_ID (core/services/push/fcm.py) and of the manifest's
@@ -142,11 +184,15 @@ const obtainToken = async (): Promise<string> => {
 
 /** Upsert this device's token as the user's native `push` channel. The backend
  * keys on the token hash, so re-running is idempotent. */
-const registerNativeDevice = async (token: string): Promise<void> => {
+const registerNativeDevice = async (
+  token: string,
+  userId?: string,
+): Promise<void> => {
   await usersMeChannelsCreate({
     type: PushChannelCreateTypeEnum.push,
     platform: nativePlatform(),
     token,
+    keys: await previewKeys(userId),
     name: await deviceLabel(),
     app_version: await appVersion(),
   });
@@ -185,7 +231,7 @@ export const enableNativePush = async (
   await ensureAndroidNotificationChannel();
 
   try {
-    await registerNativeDevice(await obtainToken());
+    await registerNativeDevice(await obtainToken(), userId);
   } catch {
     return "registration_failed";
   }
@@ -214,7 +260,7 @@ export const refreshNativePushRegistration = async (
     const permission = await PushNotifications.checkPermissions();
     if (permission.receive !== "granted") return;
     await ensureAndroidNotificationChannel();
-    await registerNativeDevice(await obtainToken());
+    await registerNativeDevice(await obtainToken(), userId);
   } catch {
     // Best-effort refresh — never disrupt app load.
   }
@@ -249,6 +295,7 @@ export const unregisterIfCurrentDevice = async (
     if (!token || (await hashEndpoint(token)) !== tokenHash) return;
     clearPushOptIn(userId);
     localStorage.removeItem(NATIVE_TOKEN_KEY);
+    await clearPushPreviewKeys();
     await PushNotifications.unregister();
   } catch {
     // Best-effort; sign-out proceeds regardless.
@@ -259,9 +306,10 @@ export const unregisterIfCurrentDevice = async (
  * (public/sw.js): thread view + `has_active` + optional message anchor. The
  * message goes in the hash because that is what the thread view scrolls to and
  * highlights ("#thread-message-{id}"); a query param would be dropped by the
- * threads-list allow-list. The payload carries content-free routing ids only
- * ({type, thread_id, message_id, mailbox_id, unread_count}); FCM stringifies
- * every value, so ids are always strings here. */
+ * threads-list allow-list. Only the routing ids of the payload are read
+ * ({type, thread_id, message_id, mailbox_id, unread_count}; the sealed preview
+ * is for the notification layer); FCM stringifies every value, so ids are
+ * always strings here. */
 export const pushTargetUrl = (data: unknown): string => {
   const payload = (data ?? {}) as Record<string, unknown>;
   const mailboxId = payload.mailbox_id;
