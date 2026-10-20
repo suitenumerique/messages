@@ -11630,7 +11630,7 @@
             },
             "WebPushKeysRequest": {
                 "type": "object",
-                "description": "The Web Push subscription key pair (``p256dh`` and ``auth``).",
+                "description": "The key pair (``p256dh`` and ``auth``) message previews are encrypted for:\na Web Push subscription's, or the one a native app generated.",
                 "properties": {
                     "p256dh": {
                         "type": "string",

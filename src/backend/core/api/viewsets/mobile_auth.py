@@ -6,7 +6,6 @@ from its native HTTP layer to obtain the session cookie used by all subsequent
 API calls. The logout endpoint ends that session without touching the IdP one.
 """
 
-import base64
 import hashlib
 import secrets
 from importlib import import_module
@@ -25,12 +24,13 @@ from rest_framework.throttling import ScopedRateThrottle
 from rest_framework.views import APIView
 
 from core.authentication.views import MOBILE_AUTH_TOKEN_CACHE_PREFIX
+from core.utils import b64url_encode
 
 
 def _s256(code_verifier):
     """Compute the RFC 7636 S256 transform of a PKCE code verifier."""
     digest = hashlib.sha256(code_verifier.encode("utf-8")).digest()
-    return base64.urlsafe_b64encode(digest).rstrip(b"=").decode("ascii")
+    return b64url_encode(digest)
 
 
 class MobileSessionExchangeView(APIView):

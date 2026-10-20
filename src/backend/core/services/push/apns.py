@@ -20,6 +20,7 @@ import jwt
 
 from core import models
 from core.services.push.common import (
+    PUSH_TTL_SECONDS,
     PushResult,
     _apns_client,
     _channel_token,
@@ -67,6 +68,11 @@ _APNS_STALE_REASONS = frozenset({"Unregistered"})
 # only this KEY — never message content — and the app maps it to a localized
 # string in its Localizable.strings.
 APNS_ALERT_LOC_KEY = "NEW_MESSAGE"
+
+# Notification category the app registers (AppDelegate) with a placeholder text
+# shown when the user's "Show Previews" setting hides the content (e.g. on the
+# lock screen) — otherwise iOS would show a bare "Notification".
+APNS_CATEGORY = "NEW_MESSAGE"
 
 
 # APNs validates one provider token for 1h and *rejects* regenerating it too
@@ -158,6 +164,7 @@ def send_apns(
         "apns-topic": settings.PUSH_APNS_BUNDLE_ID,
         "apns-push-type": "alert",
         "apns-priority": "10",
+        "apns-expiration": str(int(time.time()) + PUSH_TTL_SECONDS),
     }
     if collapse_key:
         headers["apns-collapse-id"] = collapse_key
@@ -183,11 +190,13 @@ def send_apns(
                 continue
             # Visible, high-priority alert that survives app termination.
             # Content-free: only a localization KEY (the app renders the
-            # string) plus the unread badge — never the sender or subject.
-            # mutable-content lets a Notification Service Extension enrich
-            # it after refetching.
+            # string) plus the unread badge. mutable-content routes it through
+            # the Notification Service Extension, which replaces the text with
+            # the sealed preview (``enc``) when it can decrypt it — the generic
+            # alert stays as the fallback.
             aps = {
                 "alert": {"loc-key": APNS_ALERT_LOC_KEY},
+                "category": APNS_CATEGORY,
                 "sound": "default",
                 "mutable-content": 1,
                 "badge": int(payload.get("unread_count", 0)),

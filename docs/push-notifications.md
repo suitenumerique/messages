@@ -18,8 +18,9 @@ operators supply the per-instance credentials (§3, §12).
 ## 1. Storage & registration
 
 - A device is a **user-scoped** `Channel(type="push")`. The opaque token lives
-  encrypted in `encrypted_settings.token` (+ `keys` for Web Push); `settings`
-  holds `platform` and `app_version`; the dedup/reclaim key is the indexed,
+  encrypted in `encrypted_settings.token` (+ the preview `keys`, required for Web
+  Push, optional for native apps — §5.1); `settings` holds `platform`,
+  `app_version` and, for browsers, `session_expires_at`; the dedup/reclaim key is the indexed,
   globally-unique `Channel.lookup_hash` column (sha256 of the `push:`-prefixed token).
 - **Register / refresh:** `POST /api/v1.0/users/me/channels/` with `{type:
   "push", platform, token, keys?, name?, app_version?}`. The collection POST
@@ -30,12 +31,12 @@ operators supply the per-instance credentials (§3, §12).
   Push channels are blocked from create/PATCH through the generic endpoint.
 - **`platform` is a transport, not an OS:** `apns` / `fcm` / `web`. The OS label
   is a frontend concern carried in the channel `name`, never inferred from `platform`.
-- **Payloads carry no message content:** only `{type, thread_id, message_id,
-  mailbox_id, unread_count}` (routing ids + badge). The device wakes and
-  refetches over its authenticated session — the push never carries
-  subject/body/sender. Note only Web Push is end-to-end encrypted (RFC 8291); for
-  APNs/FCM those routing ids and the count are visible to Apple/Google in
-  transit, the content never is.
+- **Payloads carry no readable message content:** the routing part is
+  `{type, thread_id, message_id, mailbox_id, unread_count}` (routing ids +
+  badge). A preview (sender + subject) is added only **encrypted for the device
+  itself**, and only while the device may show it (§5.1). For APNs/FCM the
+  routing ids, the count and the padded preview size are visible to
+  Apple/Google in transit; the content never is.
 - Push is the **app-closed** half of notifications; the realtime SSE relay is
   the **app-open** half. They must cooperate (see §6).
 
@@ -111,7 +112,24 @@ native apps ship the matching strings so the OS can render the banner:
 
 No server toggle is involved — visible alerts are the built-in behavior; if the
 loc-key strings are missing the banner renders blank. (The Web Push client needs
-no such strings: the service worker renders the banner text itself.)
+no such strings: the service worker renders the banner text itself.) They are
+also the fallback whenever a device-encrypted preview (§5.1) is absent or can't
+be decrypted.
+
+### Preview decryption (native client)
+- iOS: the `NotificationService` app-extension target
+  (`ios/App/NotificationService/`) rewrites the alert; the keyring and the
+  aes128gcm decryption (`ios/App/PushPreview/`) are compiled into both the app
+  and the extension, which share the `PUSH_PREVIEW_KEYCHAIN_GROUP` Keychain
+  group (`keychain-access-groups` in both entitlements). The app-local
+  `PushPreviewKeys` plugin (`ios/App/App/PushPreviewKeysPlugin.swift`) hands the
+  public key to `features/native/push.ts`.
+- Android: `PushPreviewMessagingService` replaces (and extends) the push
+  plugin's FCM service in the manifest and renders data-only pushes;
+  `PushPreviewKeysPlugin` / `PushPreviewKeyring` / `PushPreviewCrypto` live next
+  to `MainActivity`. `PushPreviewCryptoTest` (JVM) decrypts a vector sealed by
+  the backend.
+- `src/features/native/push-preview-invariants.test.ts` pins this wiring.
 
 ### Native app project config (native client)
 - iOS — in the repo: the Push Notifications capability
@@ -157,6 +175,7 @@ redirect back. This is a prerequisite for the native client, independent of push
      `reg.pushManager.subscribe({ userVisibleOnly: true, applicationServerKey })`
      where the key is `PUSH_VAPID_PUBLIC_KEY` from `/config`. Send the
      subscription `endpoint` as `token` and `{p256dh, auth}` as `keys`.
+   - native, for previews: the current preview key pair as `keys` (§5.1).
 3. **Register:** `POST /users/me/channels/` with `{type: "push", platform,
    token, keys?, name, app_version}`. Use a human device name
    (`@capacitor/device` → model). **Store the registered *token* locally** —
@@ -174,7 +193,7 @@ redirect back. This is a prerequisite for the native client, independent of push
    So a **voluntary logout** silences exactly that device — even if no client
    code runs — while a session that merely **expires** never reaches the logout
    view authenticated, so its channels survive and notifications keep flowing
-   (content-free banner until the next login re-authenticates enrichment).
+   (previews per the §5.1 rules: none for a browser, a phone keeps them).
    Clients therefore do NOT need to `DELETE` or `unsubscribe()` at logout; the
    re-registration on next login (step 4) transparently resumes delivery. The
    full decision tree (incl. shared-computer takeover) is diagrammed in §12 →
@@ -189,14 +208,81 @@ redirect back. This is a prerequisite for the native client, independent of push
   (`pushNotificationActionPerformed` / SW `notificationclick`).
 - **Badge:** from `unread_count` (set as `aps.badge` on the iOS alert path; app
   sets it on Android/Web where supported).
-- **Richer content without weakening privacy (fetch-to-enrich):** the thin push +
-  `mutable-content: 1` supports a **fetch-to-enrich** flow — the client fetches
-  the message over the authenticated session and *rewrites* the banner with
-  sender/subject, keeping content off the push transport. The **Web Push service
-  worker does this today** (it fetches `/api/v1.0/messages/{id}` and falls back to
-  a generic banner if the fetch fails). The native equivalent — an iOS
-  Notification Service Extension / Android data handler — is the same pattern for
-  the native client.
+- **Sender + subject:** from the device-encrypted preview (§5.1); the generic
+  banner is the fallback whenever there is none or it can't be opened.
+
+### 5.1 Device-encrypted previews
+
+The banner shows the sender and subject without that content being readable by
+the push transport (Apple, Google, browser push services) — the approach of
+Proton Mail rather than Signal's fetch-on-wake: no network round-trip nor
+session is needed on reception, which a Notification Service Extension (separate
+process, no WebView cookies, ~30 s budget) could not rely on anyway.
+
+**Encryption.** Every device holds a P-256 key pair + a 16-byte auth secret and
+registers the public half as `keys: {p256dh, auth}` (base64url, uncompressed
+point). The preview is encrypted with RFC 8291 *aes128gcm* (the Web Push message
+encryption; a fresh ephemeral server key per message, so there is no server key
+to manage). Browsers already do this for the whole payload with keys they own;
+native apps generate their own pair.
+
+**Wire format.**
+
+| Transport | Preview field(s) | Generic fallback |
+|---|---|---|
+| Web Push | `preview: {sender, subject}` in clear *inside* the payload the browser decrypts | SW default banner |
+| APNs | `enc` (base64url aes128gcm record) + `kid` next to the routing ids; `mutable-content: 1` routes it through the Notification Service Extension | the `loc-key` alert, shown as is if the extension can't decrypt |
+| FCM | `enc` + `kid` in `data`, **data-only** message (no `notification` block, else Android shows it without running app code) | the app's messaging service posts the generic banner itself |
+
+Decrypted, `enc` is the JSON `{"sender": …, "subject": …}` padded with trailing
+spaces to 512 / 1024 / 2048 bytes (valid JSON; the padding hides the length).
+Sender ≤ 100 chars (name, else address), subject ≤ 200 chars. Devices without
+`keys`, or outside the rules below, get exactly the previous thin payload. A
+native app sending a malformed key pair is still registered, without `keys`:
+the pair only unlocks previews, it must not cost the device its push.
+
+**Who gets a preview** (`preview.preview_allowed`):
+- **Browser:** while the session that registered it is alive — the channel is
+  stamped with that session's real expiry (`session_expires_at`, read from the
+  session cache TTL) and the browser re-registers on every app load. On a shared
+  computer, an expired session never leaves the previous user's subjects
+  popping up.
+- **Native app:** while it was opened with a valid session (which re-registers
+  it) within `PUSH_PREVIEW_MAX_IDLE_DAYS` (default 14). Previews outlive the
+  12 h session by design; a lost phone stops showing them after that window, and
+  the device can be revoked at once from device management (§7).
+- Never for a deactivated user, on any platform.
+- `PUSH_PREVIEWS_ENABLED=False` turns every preview off.
+
+**Built at send time.** The orchestrator dispatches the thin payload; the
+per-user task adds the preview right before calling the gateway. Task
+arguments go through the broker and are persisted by the result backend
+(`CELERY_RESULT_EXTENDED`), so they must never hold content.
+
+**Native key rotation (client contract).**
+- Key id: `kid` = base64url of the first 8 bytes of `sha256(p256dh raw bytes)`;
+  the device keeps a small keyring and picks the private key by `kid` (an
+  unknown `kid` → generic banner).
+- Rotate on launch when the current pair is older than 30 days: generate a new
+  pair, register it (the server only keeps the latest), keep the previous
+  private key for a 2-day grace period, then delete it. Every gateway drops a
+  push after `PUSH_TTL_SECONDS` (1 day), so nothing sealed for a retired key can
+  arrive after the grace period.
+- Wipe the keyring on voluntary logout and when another account registers on
+  the device; on iOS also on first launch after (re)install (the Keychain
+  survives app deletion).
+- Store keys non-exportable and out of backups (`…ThisDeviceOnly` Keychain items
+  in an access group shared with the extension; Android Keystore).
+
+**OS notification privacy settings** are honored, not re-implemented: the OS
+decides what a lock screen shows. The apps only provide the generic text to
+show instead of the sender and subject:
+- iOS ("Show Previews": when unlocked / never): every alert carries
+  `aps.category = "NEW_MESSAGE"` (`APNS_CATEGORY`), registered by `AppDelegate`
+  with the localized `NEW_MESSAGE` string as `hiddenPreviewsBodyPlaceholder`.
+- Android ("Hide sensitive content"): previews are `VISIBILITY_PRIVATE` with a
+  generic `publicVersion` (the `new_message_*` strings).
+- Web / desktop: entirely up to the OS and browser.
 
 ---
 
@@ -307,7 +393,9 @@ alternatives):
   receiving pushes until their real device re-registers (every launch — step §4.4
   re-registers idempotently), which recreates their channel and wins back the token.
 - **No content disclosure.** The attacker does not hold the device, so they
-  receive nothing; payloads are content-free regardless (§1).
+  receive nothing; and previews are only ever encrypted for the keys the
+  device's current owner registered (§5.1) — the reclaimed channel carries the
+  attacker's keys, which the victim's device cannot use either.
 - Raw push tokens are device-held routing identifiers, not credentials issued to
   other users — obtaining a victim's raw token already implies a meaningful
   compromise (device access, malicious SDK, client log exfiltration).
@@ -366,9 +454,10 @@ maps to transport priority here.
 
 ## 11. Not yet built / future work
 
-- **Native fetch-to-enrich.** The Web Push service worker already enriches
-  banners (§5); the iOS Notification Service Extension / Android data handler
-  equivalent is not built — native banners stay at the generic loc-key text.
+- **User-facing preview toggle** ("show sender and subject"), per device: the
+  server-side seam is `preview_allowed` (§5.1).
+- **Server-forced native key rotation** (after a suspected compromise): e.g. a
+  registration response flag asking the app to rotate now.
 - **Differentiated priority / importance by label** (§10) — the seam exists;
   wiring it to a label/importance signal is future work.
 - **Per-device granularity** (mentions only / per-mailbox / quiet hours) and
@@ -378,39 +467,43 @@ maps to transport priority here.
 
 ## 12. Delivery & operations (as implemented)
 
-### Task model — one Celery task per notification
+### Task model — one Celery task per recipient user
 `enqueue_push_notifications` (on commit) schedules `send_push_for_message`, the
 **orchestrator**: it resolves recipients and does the per-recipient DB work once
 (devices, badge counts, deep-link mailbox — a handful of batched queries),
 builds each user's thin payload, then dispatches **one `send_push_notification`
-task per device**. The orchestrator never touches a gateway, so a flaky provider
-can't stall resolution.
+task per user** who has devices (`user_id`, the thin payload, the collapse key).
+The orchestrator never touches a gateway, so a flaky provider can't stall
+resolution.
 
-Each `send_push_notification` is the **independently-retryable atomic unit**: it
-re-fetches its one channel (skips if the device was un-associated since
-dispatch), sends one push, and on a *transient* failure (429 / 5xx / network)
-retries **just that notification** (`autoretry_for=PushTransientError`,
-exponential backoff, `max_retries=5`). Retries are idempotent on-device — the
-per-thread collapse key / Web Push `Topic` coalesces a re-send onto the same
-notification. `acks_late=True` means a worker crash re-runs that one push, not
-the whole fan-out. Dead-token devices are deleted; permanent rejections end the
-task.
+Each `send_push_notification` resolves the user's devices when it runs
+(skipping one un-associated since dispatch), loads the preview **once** for all
+the devices allowed one (§5.1), then sends one push per device. Devices that hit
+a *transient* failure (429 / 5xx / network) are retried, **and only them**
+(`self.retry` with their `channel_ids`, exponential backoff up to 600 s,
+`max_retries=5`): the others already got the push, and a browser would re-alert
+for it (`renotify`). Retries are idempotent on-device — the per-thread collapse
+key / Web Push `Topic` coalesces a re-send onto the same notification.
+`acks_late=True` means a worker crash re-runs that user's push, not the whole
+fan-out. Dead-token devices are deleted; permanent rejections end that device's
+delivery.
 
-**Why per-notification, not batched:** the gateways have **no multi-device batch
-API** — APNs is one HTTP/2 request per token, FCM v1 is one request per token
-(legacy multicast is removed), Web Push is one request per subscription. So
-parallelism, not batching, is the lever, and the Celery worker pool provides it.
+**Why one task per user:** the preview's `Message` query is the same for all of
+a user's devices, so it runs once instead of once per device. The gateways have **no multi-device batch API** anyway — APNs
+is one HTTP/2 request per token, FCM v1 is one request per token (legacy
+multicast is removed), Web Push is one request per subscription — so
+parallelism across users, provided by the Celery worker pool, is the lever.
 
 ### Scale
 Mailboxes are bounded (~50–100 members; not distribution lists), so the common
 case is "internal email to ~100 recipients × ~2 devices" ≈ **200 pushes/message**
-(upper bound ~500). That's well within the per-notification-task model.
+(upper bound ~500), i.e. ~100 tasks. That's well within the per-user-task model.
 
 ### Gateway efficiency
 - **Cached auth tokens** (shared via the redis cache, refreshed inside their
   validity): the APNs ES256 provider token (Apple throttles re-minting —
   `TooManyProviderTokenUpdates`) and the FCM OAuth access token. So the many
-  per-notification tasks don't each re-authenticate.
+  per-user tasks don't each re-authenticate.
 - **Process-global HTTP clients** for APNs (HTTP/2, multiplexed) and FCM
   (HTTP/1.1, keep-alive), reused across a worker's tasks and closed on worker
   shutdown — avoids a TLS handshake per push and Apple's rapid-connect/disconnect
@@ -424,8 +517,8 @@ FCM `UNREGISTERED` / `NOT_FOUND` (NOT `INVALID_ARGUMENT` — also a bad-request
 signal), Web Push `404` / `410`. On top of the narrow codes:
 - a **per-batch ratio breaker** (refuse if ≥50% of a ≥4-device batch is "stale"), and
 - a **rolling per-platform window** (cap of 500 deletions/60s) that covers the
-  per-notification path, where there's no batch to ratio-check — so a systemic
-  fault can't wipe a fleet one task at a time.
+  one-device-per-send path, where there's no batch to ratio-check — so a
+  systemic fault can't wipe a fleet one send at a time.
 
 Genuinely-bad tokens that never 410 are still reclaimed by re-registration
 (same-user upsert replaces the row), the per-user device cap (LRU eviction), or
@@ -442,8 +535,9 @@ manual removal in device management.
   path). Rotating the private key orphans every existing web subscription.
 - `PUSH_VAPID_SUBJECT` must be a `mailto:` / `https:` URI (else 401); a malformed
   subject disables web push with a logged warning.
-- TTL is 1 day (the payload is just a refetch trigger; a week-old trigger is
-  noise), `Urgency: high`, `Topic` = a 32-char hash of the collapse key.
+- TTL is 1 day (`PUSH_TTL_SECONDS`, shared with APNs `apns-expiration` and FCM
+  `ttl`: a week-old "new message" is noise), `Urgency: high`, `Topic` = a
+  32-char hash of the collapse key. The payload is padded (§5.1).
 - The service worker re-alerts per new message in a thread (`renotify`).
 - **Self-healing subscriptions:** the SW's `pushsubscriptionchange` re-subscribes
   and re-registers (CSRF via `cookieStore` on Chromium); the app also

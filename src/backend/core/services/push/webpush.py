@@ -11,16 +11,13 @@ endpoint in ``encrypted_settings.token`` and the ``keys`` (p256dh/auth) in
 
 from __future__ import annotations
 
-import base64
 import hashlib
-import json
 import time
 from logging import getLogger
 from urllib.parse import urlparse
 
 from django.conf import settings
 
-import http_ece
 from cryptography.hazmat.primitives import serialization
 from cryptography.hazmat.primitives.asymmetric import ec
 from py_vapid import Vapid02
@@ -28,6 +25,7 @@ from py_vapid import Vapid02
 from core import models
 from core.services.push.common import (
     PUSH_HTTP_TIMEOUT,
+    PUSH_TTL_SECONDS,
     PushResult,
     _channel_keys,
     _channel_token,
@@ -35,16 +33,11 @@ from core.services.push.common import (
     _is_transient_status,
     warn_gateway_unconfigured,
 )
+from core.services.push.preview import encrypt_for_device, pad_json
 from core.services.ssrf import SSRFSafeSession, SSRFValidationError
+from core.utils import b64url_encode
 
 logger = getLogger(__name__)
-
-# Web Push TTL: how long the push service holds an undelivered message for an
-# offline device. The payload is only a refetch *trigger* (and a badge count),
-# so a long retention isn't useful — a trigger surfacing days later just shows a
-# misleading "new message". One day covers a phone offline overnight without
-# resurrecting stale triggers.
-WEBPUSH_TTL_SECONDS = 24 * 3600
 
 
 def _web_push_topic(collapse_key: str) -> str:
@@ -57,7 +50,7 @@ def _web_push_topic(collapse_key: str) -> str:
     so only Web Push needs this.
     """
     digest = hashlib.sha256(collapse_key.encode("utf-8")).digest()
-    return base64.urlsafe_b64encode(digest).decode("ascii").rstrip("=")[:32]
+    return b64url_encode(digest)[:32]
 
 
 def _valid_vapid_subject(subject) -> bool:
@@ -131,7 +124,7 @@ def derive_vapid_public_key(private_key: str) -> str | None:
             serialization.Encoding.X962,
             serialization.PublicFormat.UncompressedPoint,
         )
-        return base64.urlsafe_b64encode(raw).rstrip(b"=").decode("ascii")
+        return b64url_encode(raw)
     except Exception as exc:
         logger.warning("Failed to derive VAPID public key: %s", exc)
         return None
@@ -152,14 +145,7 @@ def generate_vapid_keypair() -> tuple[str, str]:
         serialization.Encoding.X962,
         serialization.PublicFormat.UncompressedPoint,
     )
-    private_b64 = base64.urlsafe_b64encode(private_raw).rstrip(b"=").decode("ascii")
-    public_b64 = base64.urlsafe_b64encode(public_raw).rstrip(b"=").decode("ascii")
-    return private_b64, public_b64
-
-
-def _b64url_decode(value: str) -> bytes:
-    """Decode a base64url value tolerating missing padding."""
-    return base64.urlsafe_b64decode(value + "=" * (-len(value) % 4))
+    return b64url_encode(private_raw), b64url_encode(public_raw)
 
 
 def send_webpush(
@@ -200,6 +186,22 @@ def send_webpush(
                 "Web Push channel %s missing endpoint/keys; skipping", channel.id
             )
             continue
+        # The payload may carry a preview: padding keeps its length from
+        # showing through the ciphertext the push service relays. A preview
+        # that fails to serialize says nothing about the subscription, so it is
+        # dropped (generic banner) rather than the channel.
+        try:
+            plaintext = pad_json(payload)
+        except Exception as exc:  # pylint: disable=broad-exception-caught
+            logger.warning(
+                "Web Push payload for channel %s not serializable (%s); "
+                "sending it without preview",
+                channel.id,
+                type(exc).__name__,
+            )
+            plaintext = pad_json(
+                {key: value for key, value in payload.items() if key != "preview"}
+            )
         # Deterministic prep: decode the subscription keys and encrypt the
         # payload for this device. A failure here — malformed base64, or bytes
         # that aren't a valid P-256 point — is PERMANENT: it fails identically
@@ -208,13 +210,7 @@ def send_webpush(
         # them stale instead of counting a transient (which would retry the
         # poison channel forever, 6 attempts per inbound message).
         try:
-            encrypted = http_ece.encrypt(
-                json.dumps(payload).encode("utf-8"),
-                private_key=ec.generate_private_key(ec.SECP256R1()),
-                dh=_b64url_decode(keys["p256dh"]),
-                auth_secret=_b64url_decode(keys["auth"]),
-                version="aes128gcm",
-            )
+            encrypted = encrypt_for_device(plaintext, keys)
         except Exception as exc:  # pylint: disable=broad-exception-caught
             logger.warning(
                 "Web Push channel %s has undeliverable keys (%s); marking stale",
@@ -228,7 +224,7 @@ def send_webpush(
             origin = "{u.scheme}://{u.netloc}".format(u=urlparse(endpoint))
             headers = {
                 "content-encoding": "aes128gcm",
-                "ttl": str(WEBPUSH_TTL_SECONDS),
+                "ttl": str(PUSH_TTL_SECONDS),
                 "urgency": "high",
                 **vapid.sign(
                     {

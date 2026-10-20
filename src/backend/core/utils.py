@@ -1,5 +1,6 @@
 """Root utils for the core application."""
 
+import base64
 import json
 import logging
 from contextlib import contextmanager
@@ -54,6 +55,16 @@ def validate_json_schema(value, schema, *, field):
         jsonschema.validate(value, schema, format_checker=jsonschema.FormatChecker())
     except jsonschema.ValidationError as exception:
         raise ValidationError({field: exception.message}) from exception
+
+
+def b64url_encode(raw: bytes) -> str:
+    """Encode ``raw`` as unpadded base64url."""
+    return base64.urlsafe_b64encode(raw).decode("ascii").rstrip("=")
+
+
+def b64url_decode(value: str) -> bytes:
+    """Decode a base64url value tolerating missing padding."""
+    return base64.urlsafe_b64decode(value + "=" * (-len(value) % 4))
 
 
 class AbstractBatchingDeferrer:

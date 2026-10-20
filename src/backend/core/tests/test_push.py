@@ -42,6 +42,7 @@ from core.enums import ChannelScopeLevel, ChannelTypes, PushPlatformChoices
 from core.services import push
 from core.services.push import common as push_common
 from core.services.push.common import session_hash
+from core.utils import b64url_encode
 
 pytestmark = pytest.mark.django_db
 
@@ -74,14 +75,10 @@ def _push_channel(user, platform=PushPlatformChoices.APNS, token="tok", keys=Non
     return channel
 
 
-def _b64url(raw: bytes) -> str:
-    return base64.urlsafe_b64encode(raw).decode().rstrip("=")
-
-
 # Realistic base64url subscription keys: a 65-byte uncompressed P-256 point and
 # a 16-byte auth secret. The sender base64url-decodes them before encrypting
 # (http_ece is mocked, so the exact bytes are inert on the send path).
-_WEB_KEYS = {"p256dh": _b64url(b"x" * 65), "auth": _b64url(b"y" * 16)}
+_WEB_KEYS = {"p256dh": b64url_encode(b"x" * 65), "auth": b64url_encode(b"y" * 16)}
 
 
 # ---------------------------------------------------------------------------
@@ -666,7 +663,7 @@ class TestEnqueue:
 
 
 class TestSendPushTask:
-    """The ``send_push_for_message`` fan-out task (one sub-task per device)."""
+    """The ``send_push_for_message`` fan-out task (one sub-task per user)."""
 
     def test_skips_when_disabled(self, settings):
         """The task short-circuits when the feature is off."""
@@ -675,8 +672,8 @@ class TestSendPushTask:
         result = push.send_push_for_message(str(message.id))
         assert result["skipped"] == "push_disabled"
 
-    def test_dispatches_one_task_per_device(self, settings):
-        """Each of the recipient's devices gets its own per-device sub-task."""
+    def test_dispatches_one_task_per_user(self, settings):
+        """A recipient's devices share one sub-task, which sends to each."""
         settings.PUSH_ENABLED = True
         user, message = _user_with_message()
         _push_channel(user, platform=PushPlatformChoices.APNS, token="a")
@@ -690,30 +687,36 @@ class TestSendPushTask:
                 push, "send_fcm", return_value=push.PushResult(1, 0)
             ) as fcm,
         ):
-            # Celery is eager in tests, so the dispatched per-device tasks run
-            # inline and each call the (mocked) sender for its platform.
+            # Celery is eager in tests, so the dispatched per-user task runs
+            # inline and calls the (mocked) sender of each device's platform.
             result = push.send_push_for_message(str(message.id))
 
-        assert result["dispatched"] == 2  # one task per device
+        assert result["dispatched"] == 1  # one task for the user
         apns.assert_called_once()
         fcm.assert_called_once()
-        # Each task hands its sender a single (channel, payload) pair.
+        # Each device is handed to its sender as a single (channel, payload).
         items, _collapse = apns.call_args.args
         assert len(items) == 1
         channel, payload = items[0]
         assert channel.type == ChannelTypes.PUSH
         assert payload["type"] == push.PUSH_TYPE_NEW_MESSAGE
 
-    def test_dispatch_failure_on_one_device_spares_the_others(self, settings):
-        """A broker failure on one device must not strand the rest of the devices.
+    def test_dispatch_failure_on_one_user_spares_the_others(self, settings):
+        """A broker failure on one user must not strand the other recipients.
 
-        This task holds the only resolved recipient list, so a device skipped
+        This task holds the only resolved recipient list, so a user skipped
         here is a push lost with no way to recover it.
         """
         settings.PUSH_ENABLED = True
         user, message = _user_with_message()
+        other = factories.UserFactory()
+        factories.MailboxAccessFactory(
+            mailbox=message.thread.accesses.get().mailbox,
+            user=other,
+            role=enums.MailboxRoleChoices.EDITOR,
+        )
         _push_channel(user, platform=PushPlatformChoices.APNS, token="a")
-        _push_channel(user, platform=PushPlatformChoices.FCM, token="b")
+        _push_channel(other, platform=PushPlatformChoices.FCM, token="b")
 
         with mock.patch.object(
             push.send_push_notification,
@@ -723,8 +726,8 @@ class TestSendPushTask:
             result = push.send_push_for_message(str(message.id))
 
         assert result["success"] is True
-        assert delay.call_count == 2  # the second device is still attempted
-        assert result["dispatched"] == 1  # only the device that got through counts
+        assert delay.call_count == 2  # the second user is still attempted
+        assert result["dispatched"] == 1  # only the user that got through counts
 
     def test_sender_exception_is_swallowed(self, settings):
         """A sender crash never propagates out of the fan-out task."""
@@ -737,61 +740,137 @@ class TestSendPushTask:
 
 
 # ---------------------------------------------------------------------------
-# send_push_notification task (one per device, retryable on transient failures)
+# send_push_notification task (one per user, retryable on transient failures)
 # ---------------------------------------------------------------------------
 
 
 class TestSendPushNotification:
-    """The per-device ``send_push_notification`` task and its retry semantics."""
+    """The per-user ``send_push_notification`` task and its retry semantics."""
 
     def test_skips_when_disabled(self, settings):
-        """The per-device task short-circuits when the feature is off."""
+        """The per-user task short-circuits when the feature is off."""
         settings.PUSH_ENABLED = False
         out = push.send_push_notification("any-id", {"type": "new_message"}, "k")
         assert out["skipped"] == "push_disabled"
 
-    def test_missing_channel_is_skipped(self, settings):
-        """A channel deleted between dispatch and run is a no-op, not an error."""
+    def test_user_without_devices_is_skipped(self, settings):
+        """Devices deleted between dispatch and run make a no-op, not an error."""
         settings.PUSH_ENABLED = True
+        user, message = _user_with_message()
         out = push.send_push_notification(
-            "00000000-0000-0000-0000-000000000000", {"type": "new_message"}, "k"
+            str(user.id), push.build_thin_payload(message, 0), "k"
         )
         assert out["skipped"] == "channel_gone"
+
+    def test_sends_to_every_device_of_the_user(self, settings):
+        """Without ``channel_ids``, the user is notified on all their devices as
+        registered when the task runs, other users' devices aside."""
+        settings.PUSH_ENABLED = True
+        user, message = _user_with_message()
+        _push_channel(user, platform=PushPlatformChoices.APNS, token="a")
+        _push_channel(factories.UserFactory(), token="other")
+        payload = push.build_thin_payload(message, 0)
+        _push_channel(user, platform=PushPlatformChoices.FCM, token="b")
+
+        with (
+            mock.patch.object(
+                push, "send_apns", return_value=push.PushResult(1, 0)
+            ) as apns,
+            mock.patch.object(
+                push, "send_fcm", return_value=push.PushResult(1, 0)
+            ) as fcm,
+        ):
+            out = push.send_push_notification(str(user.id), payload, "k")
+
+        assert out == {"success": True, "delivered": 2}
+        ((apns_channel, _payload),) = apns.call_args.args[0]
+        assert apns_channel.user_id == user.id
+        fcm.assert_called_once()
+
+    def test_channel_ids_restrict_the_devices(self, settings):
+        """``channel_ids`` narrows the push to some of the user's devices, never
+        to another user's."""
+        settings.PUSH_ENABLED = True
+        user, message = _user_with_message()
+        _push_channel(user, platform=PushPlatformChoices.APNS, token="a")
+        fcm_ch = _push_channel(user, platform=PushPlatformChoices.FCM, token="b")
+        foreign = _push_channel(factories.UserFactory(), token="other")
+
+        with (
+            mock.patch.object(push, "send_apns") as apns,
+            mock.patch.object(
+                push, "send_fcm", return_value=push.PushResult(1, 0)
+            ) as fcm,
+        ):
+            out = push.send_push_notification(
+                str(user.id),
+                push.build_thin_payload(message, 0),
+                "k",
+                channel_ids=[str(fcm_ch.id), str(foreign.id)],
+            )
+
+        assert out == {"success": True, "delivered": 1}
+        apns.assert_not_called()
+        fcm.assert_called_once()
 
     def test_transient_failure_triggers_retry(self, settings):
         """A transient sender result makes the task retry just this device; the
         collapse key makes the re-send idempotent. Succeeds on the 2nd attempt."""
         settings.PUSH_ENABLED = True
-        ch = _push_channel(
-            factories.UserFactory(), platform=PushPlatformChoices.FCM, token="b"
-        )
+        user, message = _user_with_message()
+        _push_channel(user, platform=PushPlatformChoices.FCM, token="b")
         calls = []
 
         def sender(_items, _collapse):
             calls.append(1)
             return push.PushResult(0, 1) if len(calls) == 1 else push.PushResult(1, 0)
 
-        with (
-            mock.patch.object(push, "send_fcm", side_effect=sender),
-            mock.patch("time.sleep"),  # neutralize any eager retry backoff
-        ):
+        with mock.patch.object(push, "send_fcm", side_effect=sender):
             result = push.send_push_notification.apply(
-                args=(str(ch.id), {"type": "new_message"}, "k")
+                args=(str(user.id), push.build_thin_payload(message, 0), "k")
             )
 
         assert len(calls) == 2  # retried once after the transient failure
         assert result.result["success"] is True
 
-    def test_sender_bug_does_not_loop_forever(self, settings):
-        """A sender that raises (a bug, not a transient signal) ends the task
-        rather than retrying — autoretry only fires on PushTransientError."""
+    def test_retries_only_the_failed_devices(self, settings):
+        """A retry re-sends to the devices that failed only: the others already
+        got the push, and a browser would re-alert for it."""
         settings.PUSH_ENABLED = True
-        ch = _push_channel(
-            factories.UserFactory(), platform=PushPlatformChoices.FCM, token="b"
-        )
+        user, message = _user_with_message()
+        _push_channel(user, platform=PushPlatformChoices.APNS, token="a")
+        _push_channel(user, platform=PushPlatformChoices.FCM, token="b")
+        fcm_calls = []
+
+        def fcm(items, _collapse):
+            fcm_calls.append(items)
+            return push.PushResult(0, 1) if len(fcm_calls) == 1 else push.PushResult(1)
+
+        with (
+            mock.patch.object(
+                push, "send_apns", return_value=push.PushResult(1, 0)
+            ) as apns,
+            mock.patch.object(push, "send_fcm", side_effect=fcm),
+        ):
+            result = push.send_push_notification.apply(
+                args=(str(user.id), push.build_thin_payload(message, 0), "k")
+            )
+
+        apns.assert_called_once()
+        assert len(fcm_calls) == 2
+        assert result.result == {"success": True, "delivered": 1}
+
+    def test_sender_bug_does_not_loop_forever(self, settings):
+        """A sender that raises (a bug, not a transient signal) skips the device
+        rather than retrying — only a transient result is retried."""
+        settings.PUSH_ENABLED = True
+        user, message = _user_with_message()
+        _push_channel(user, platform=PushPlatformChoices.FCM, token="b")
         with mock.patch.object(push, "send_fcm", side_effect=RuntimeError("boom")):
-            out = push.send_push_notification(str(ch.id), {"type": "new_message"}, "k")
-        assert out["error"] == "sender_raised"
+            out = push.send_push_notification(
+                str(user.id), push.build_thin_payload(message, 0), "k"
+            )
+        assert out == {"success": True, "delivered": 0}
 
 
 # ---------------------------------------------------------------------------
@@ -1424,7 +1503,7 @@ class TestWebpushSender:
             push.send_webpush(_items(ch), "t-1")
 
         assert session.post.call_args.kwargs["headers"]["ttl"] == str(
-            push.WEBPUSH_TTL_SECONDS
+            push.PUSH_TTL_SECONDS
         )
 
     def test_unreadable_settings_are_skipped_not_transient(self, settings):
