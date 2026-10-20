@@ -860,6 +860,21 @@ class TestSendPushNotification:
         assert len(fcm_calls) == 2
         assert result.result == {"success": True, "delivered": 1}
 
+    def test_access_is_checked_once_per_user(self, settings, django_assert_num_queries):
+        """All of a user's devices share the channels and thread-access
+        queries, however many they are."""
+        settings.PUSH_ENABLED = True
+        user, message = _user_with_message()
+        for i in range(3):
+            _push_channel(user, token=f"t{i}")
+        payload = push.build_thin_payload(message, 0)
+        with (
+            mock.patch.object(push, "send_apns", return_value=push.PushResult(1, 0)),
+            django_assert_num_queries(2),
+        ):
+            out = push.send_push_notification(str(user.id), payload, "k")
+        assert out == {"success": True, "delivered": 3}
+
     def test_sender_bug_does_not_loop_forever(self, settings):
         """A sender that raises (a bug, not a transient signal) skips the device
         rather than retrying — only a transient result is retried."""
@@ -871,6 +886,47 @@ class TestSendPushNotification:
                 str(user.id), push.build_thin_payload(message, 0), "k"
             )
         assert out == {"success": True, "delivered": 0}
+
+    def test_revoked_thread_access_sends_nothing(self, settings):
+        """A user who lost the thread since dispatch (e.g. before a retry) gets
+        no push at all, not even the generic banner."""
+        settings.PUSH_ENABLED = True
+        user, message = _user_with_message()
+        _push_channel(user, platform=PushPlatformChoices.FCM, token="b")
+        payload = push.build_thin_payload(message, 0)
+        models.ThreadAccess.objects.filter(thread=message.thread).delete()
+
+        with mock.patch.object(push, "send_fcm") as send_fcm:
+            out = push.send_push_notification(str(user.id), payload, "k")
+
+        assert out["skipped"] == "access_revoked"
+        send_fcm.assert_not_called()
+
+    def test_revoked_mailbox_access_sends_nothing(self, settings):
+        """Losing the mailbox the thread is reached through counts as well."""
+        settings.PUSH_ENABLED = True
+        user, message = _user_with_message()
+        _push_channel(user, platform=PushPlatformChoices.FCM, token="b")
+        payload = push.build_thin_payload(message, 0)
+        models.MailboxAccess.objects.filter(user=user).delete()
+
+        with mock.patch.object(push, "send_fcm") as send_fcm:
+            out = push.send_push_notification(str(user.id), payload, "k")
+
+        assert out["skipped"] == "access_revoked"
+        send_fcm.assert_not_called()
+
+    def test_payload_without_thread_sends_nothing(self, settings):
+        """No thread to check access against: nothing is sent."""
+        settings.PUSH_ENABLED = True
+        user = factories.UserFactory()
+        _push_channel(user, platform=PushPlatformChoices.FCM, token="b")
+        with mock.patch.object(push, "send_fcm") as send_fcm:
+            out = push.send_push_notification(
+                str(user.id), {"type": "new_message"}, "k"
+            )
+        assert out["skipped"] == "access_revoked"
+        send_fcm.assert_not_called()
 
 
 # ---------------------------------------------------------------------------

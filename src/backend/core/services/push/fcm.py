@@ -3,7 +3,7 @@
 One POST per device (the v1 API is single-recipient) over the process-global
 HTTP/1.1 client; the OAuth token is cached. A sealed preview goes data-only to
 the app's messaging service; otherwise a content-free, OS-localized notification
-block lets Android render a banner even when the app is force-quit.
+block is rendered by the Firebase SDK without running the app's code.
 """
 
 # pylint: disable=broad-exception-caught
@@ -94,7 +94,7 @@ def send_fcm(items: list[tuple[models.Channel, dict]], collapse_key: str) -> Pus
     (all string values, as v1 requires) carries no readable message content: a
     preview only travels sealed for the device (``enc``), in a data-only message
     the app decrypts; without one, a content-free, OS-localized ``notification``
-    block lets Android render a generic banner even when the app is killed.
+    block lets the Firebase SDK render a generic banner on its own.
     An ``UNREGISTERED`` error removes the device's push channel (via the
     circuit-breaker); transient failures (429 / 5xx / network) are counted for
     retry. Returns a :class:`PushResult`.
@@ -146,12 +146,13 @@ def send_fcm(items: list[tuple[models.Channel, dict]], collapse_key: str) -> Pus
                 "priority": "high",
                 "ttl": f"{PUSH_TTL_SECONDS}s",
             }
-            # A sealed preview stays data-only: Android hands a background
-            # message to the app's messaging service (which decrypts it and
-            # always posts a banner, generic on failure) only when it has no
-            # notification block. Otherwise attach a content-free, OS-localized
-            # notification so Android renders a banner even when the app is
-            # force-quit (data-only messages are dropped then). The keys map to
+            # A sealed preview stays data-only: the Firebase SDK hands a
+            # background message to the app's messaging service (which decrypts
+            # it and always posts a banner, generic on failure) only when it has
+            # no notification block. Otherwise attach a content-free,
+            # OS-localized notification the SDK renders by itself. Either way
+            # nothing reaches a force-stopped app: Android withholds the
+            # delivery broadcast until it is launched again. The keys map to
             # the app's strings.xml — only loc-keys + the unread badge.
             # Symmetric with the APNs alert path.
             if "enc" not in payload:

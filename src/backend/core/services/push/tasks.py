@@ -94,8 +94,9 @@ def send_push_for_message(self, message_id: str):
     stall recipient resolution. Never raises: a push problem can't disrupt
     anything upstream.
 
-    One task per user loads the preview once for all their devices, while the
-    Celery worker pool still delivers to different users in parallel. The shared, cached gateway tokens (APNs JWT /
+    One task per user checks their thread access and loads the preview once
+    for all their devices, while the Celery worker pool still delivers to
+    different users in parallel. The shared, cached gateway tokens (APNs JWT /
     FCM OAuth) mean the many tasks don't each re-authenticate.
     """
     if not settings.PUSH_ENABLED:
@@ -173,15 +174,16 @@ def send_push_notification(
     """Deliver one push to ``user_id``'s devices, retrying the transient failures.
 
     The unit of delivery: it resolves the user's devices when it runs (so
-    skipping one un-associated since dispatch), then hands each device to its
-    platform's sender. Devices that hit a *transient* failure (429 / 5xx /
-    network) are retried with exponential backoff, and only them
-    (``channel_ids``): the others already got the push, and a browser would
-    re-alert for it (``renotify``). Retrying is idempotent on-device as the
-    collapse key / Topic coalesces it onto the same notification. Dead-token
-    devices are deleted inside the sender; permanent rejections (bad payload,
-    auth) end that device's delivery. ``acks_late`` means a worker crash re-runs
-    this push (again collapse-deduped), not the whole fan-out.
+    skipping one un-associated since dispatch), checks once that the user can
+    still read the thread, then hands each device to its platform's sender.
+    Devices that hit a *transient* failure (429 / 5xx / network) are retried
+    with exponential backoff, and only them (``channel_ids``): the others
+    already got the push, and a browser would re-alert for it (``renotify``).
+    Retrying is idempotent on-device as the collapse key / Topic coalesces it
+    onto the same notification. Dead-token devices are deleted inside the
+    sender; permanent rejections (bad payload, auth) end that device's
+    delivery. ``acks_late`` means a worker crash re-runs this push (again
+    collapse-deduped), not the whole fan-out.
 
     ``payload`` is the thin payload: the preview each device may receive is
     added here, right before sending, so message content never sits in the
@@ -199,6 +201,14 @@ def send_push_notification(
     if not channels:
         # Devices un-associated (or reclaimed) between dispatch and delivery.
         return {"success": True, "skipped": "channel_gone"}
+
+    # Someone who lost the thread since dispatch (a retry can run minutes later)
+    # gets no push at all, not even the generic banner: it would still tell
+    # them the thread is active.
+    if not models.ThreadAccess.objects.viewer_user_ids(
+        payload.get("thread_id"), user_ids=[user_id]
+    ).exists():
+        return {"success": True, "skipped": "access_revoked"}
 
     load_preview = preview_loader(payload.get("message_id"))
     delivered = 0

@@ -1,4 +1,5 @@
 import UIKit
+import UserNotifications
 import Capacitor
 
 @UIApplicationMain
@@ -6,9 +7,35 @@ class AppDelegate: UIResponder, UIApplicationDelegate {
 
     var window: UIWindow?
 
+    /// Category every APNs alert carries (APNS_CATEGORY in
+    /// core/services/push/apns.py).
+    static let newMessageCategory = "NEW_MESSAGE"
+
     func application(_ application: UIApplication, didFinishLaunchingWithOptions launchOptions: [UIApplication.LaunchOptionsKey: Any]?) -> Bool {
         AppDelegate.excludeWebViewDataFromBackup()
+        AppDelegate.registerNotificationCategories()
         return true
+    }
+
+    /// When the user's "Show Previews" setting hides notification content
+    /// (lock screen, or always), iOS shows this placeholder instead of the
+    /// sender and subject the Notification Service Extension filled in — the
+    /// generic text rather than a bare "Notification". Merged into the
+    /// existing categories: setNotificationCategories replaces the whole set.
+    static func registerNotificationCategories() {
+        let center = UNUserNotificationCenter.current()
+        center.getNotificationCategories { categories in
+            let newMessage = UNNotificationCategory(
+                identifier: AppDelegate.newMessageCategory,
+                actions: [],
+                intentIdentifiers: [],
+                hiddenPreviewsBodyPlaceholder: NSLocalizedString("NEW_MESSAGE", comment: ""),
+                options: []
+            )
+            center.setNotificationCategories(
+                categories.filter { $0.identifier != AppDelegate.newMessageCategory }.union([newMessage])
+            )
+        }
     }
 
     /// iOS counterpart of android:allowBackup="false": the WKWebView keeps the
