@@ -12,7 +12,6 @@ import {
   usersMeChannelsCreate,
   usersMeChannelsList,
 } from "@/features/api/gen";
-import { getApiOrigin } from "@/features/api/utils";
 import i18n from "@/features/i18n/initI18n";
 import {
   clearPushOptIn,
@@ -22,32 +21,26 @@ import {
 } from "@/features/push/shared";
 
 /**
- * The service worker's push handler enriches notifications by fetching the
- * message over the authenticated session, but `sw.js` is a static file that
- * can't read `import.meta.env`. When the API lives on a different origin than
- * the app (dev: front `:8900` / API `:8901`), a same-origin fetch never reaches
- * the backend and enrichment silently falls back to a generic banner. So we
- * carry the API origin in the registration URL's query string: it becomes part
- * of the stored `scriptURL`, so `self.location.search` reads it back even when
- * the worker cold-starts for a headless push (no page open). Scope stays `/`
- * (query params don't affect scope), so the push subscription survives this
+ * `sw.js` is a static file that can't read `import.meta.env` nor load i18next,
+ * so what it needs travels in the registration URL's query string: it becomes
+ * part of the stored `scriptURL`, so `self.location.search` reads it back even
+ * when the worker cold-starts for a headless push (no page open). Scope stays
+ * `/` (query params don't affect scope), so the push subscription survives a
  * script-url change.
  *
- * We also carry the current VAPID public key (`?vapid=`): the worker's
- * `pushsubscriptionchange` handler must re-subscribe with the *current* key, not
- * the one on the (possibly rotated-away) old subscription, or it would recreate a
- * dead subscription. A key rotation changes this URL, so the next re-register
- * pulls the new `?vapid=`.
- *
- * And the UI language (`?lang=`): the worker's generic fallback banner (shown
- * when enrichment fails) must speak the user's language, and it can't load
- * i18next. A language switch reaches the worker through the same on-load
- * re-registration as the other params.
+ * - The current VAPID public key (`?vapid=`): the worker's
+ *   `pushsubscriptionchange` handler must re-subscribe with the *current* key,
+ *   not the one on the (possibly rotated-away) old subscription, or it would
+ *   recreate a dead subscription. A key rotation changes this URL, so the next
+ *   re-register pulls the new `?vapid=`.
+ * - The UI language (`?lang=`): the worker's generic banner (shown when the push
+ *   carries no preview) must speak the user's language. A language switch
+ *   reaches the worker through the same on-load re-registration.
  */
 const swUrl = (vapidPublicKey: string): string =>
-  `/sw.js?api=${encodeURIComponent(getApiOrigin())}&vapid=${encodeURIComponent(
-    vapidPublicKey,
-  )}&lang=${encodeURIComponent(i18n.resolvedLanguage ?? i18n.language ?? "en")}`;
+  `/sw.js?vapid=${encodeURIComponent(vapidPublicKey)}&lang=${encodeURIComponent(
+    i18n.resolvedLanguage ?? i18n.language ?? "en",
+  )}`;
 
 export type EnableWebPushResult =
   | "subscribed"
@@ -338,7 +331,7 @@ export const enableWebPush = async (
  * with no marker — is left untouched, so they never inherit the subscription.
  *
  * When a live subscription exists it *does* re-`register(swUrl(...))`, so a
- * changed `sw.js` body and the `?api=`/`?vapid=` params self-heal on every app
+ * changed `sw.js` body and the `?vapid=`/`?lang=` params self-heal on every app
  * load rather than only when the user re-toggles push in settings. This is safe:
  * permission is already granted (no prompt) and the scope stays `/`, so the
  * existing push subscription survives the script-url refresh. It also
@@ -355,7 +348,7 @@ export const refreshWebPushSubscription = async (
 
     // Gate on an existing registration so we stay passive for never-opted-in
     // users, then re-register to pull the latest sw.js and the current
-    // `?api=`/`?vapid=`.
+    // `?vapid=`/`?lang=`.
     const existing = await navigator.serviceWorker.getRegistration("/sw.js");
     if (!existing) return; // user never enabled push in this browser
     const registration = await navigator.serviceWorker.register(

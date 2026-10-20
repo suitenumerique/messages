@@ -3,50 +3,40 @@
  * Registered by the app (see features/.../devices-view/web-push.ts) when the
  * user enables notifications in a browser.
  *
- * The push payload is deliberately thin and content-free — only routing ids +
- * the unread count. To show a Gmail-style banner (sender + subject) WITHOUT
- * ever putting content on the push transport, we fetch the message over the
- * user's own authenticated session here and rewrite the notification
- * ("fetch-to-enrich"). If that fetch fails (offline, cross-origin API, signed
- * out) we fall back to a generic content-free banner.
+ * The push payload carries routing ids + the unread count, and — while the
+ * session that registered this browser is alive — a `preview` (sender +
+ * subject) for a Gmail-style banner. Web Push encrypts the whole payload for
+ * this browser (RFC 8291), so the push service never reads that preview; the
+ * browser hands it to us already decrypted. Without one we show a generic
+ * content-free banner.
  *
  * `userVisibleOnly: true` subscriptions must surface a notification for every
  * push — with one exception the browsers grant precisely because the user
  * already sees the news: a focused app window (see handlePush).
  */
-/* global self, clients, fetch */
+/* global self, clients */
 
 // Take over as soon as a new version installs instead of sitting in the
 // "waiting" state until every controlled tab closes. This SW does no offline
 // fetch caching, so there is no stale-cache hazard in activating early — it just
-// means a pushed sw.js change (e.g. a new `?api=` origin or enrichment fix)
-// starts serving on the next load rather than days later.
+// means a pushed sw.js change (e.g. a new `?vapid=` key or a banner fix) starts
+// serving on the next load rather than days later.
 self.addEventListener("install", () => self.skipWaiting());
 self.addEventListener("activate", (event) =>
   event.waitUntil(self.clients.claim()),
 );
 
-// API origin, carried in the registration URL's query by the app (web-push.ts)
-// because this static file can't read the build env. It lets enrichment reach
-// the backend even when the API is on a different origin than the app (dev:
-// front :8900 / API :8901). Empty string ⇒ same-origin, matching the previous
-// behaviour and covering an older registration that predates the `?api=` param.
-const API_ORIGIN =
-  new URLSearchParams(self.location.search).get("api") || "";
-const MESSAGE_URL = (id) =>
-  `${API_ORIGIN}/api/v1.0/messages/${encodeURIComponent(id)}/`;
-
 // Current server VAPID public key, carried in the registration URL's query by
-// the app (web-push.ts) for the same reason as `?api=` — a static file can't
-// read the build env. Used by `pushsubscriptionchange` to re-subscribe with the
+// the app (web-push.ts) — a static file can't read the build env. Used by
+// `pushsubscriptionchange` to re-subscribe with the
 // *current* key rather than the one on the (possibly rotated-away) old
 // subscription. Empty for a registration that predates the `?vapid=` param.
 const VAPID_PUBLIC_KEY =
   new URLSearchParams(self.location.search).get("vapid") || "";
 
-// UI language, carried in the registration URL's query like `?api=` — a static
+// UI language, carried in the registration URL's query like `?vapid=` — a static
 // file can't reach i18next, and only the generic-banner fallback below needs
-// translating (an enriched banner shows the real sender/subject). The pair
+// translating (a preview banner shows the real sender/subject). The pair
 // mirrors the "New message" key in public/locales (FR + EN, the two supported
 // languages); the on-load re-registration keeps the param in step with the
 // user's language. Empty (a registration predating `?lang=`) ⇒ English.
@@ -66,21 +56,15 @@ function urlBase64ToUint8Array(base64String) {
   return output;
 }
 
-const senderLabel = (message) => {
-  const s = message && message.sender;
-  return (s && (s.name || s.email)) || GENERIC_TITLE;
-};
-
-async function buildNotification(payload) {
-  // Default: content-free banner (what the thin payload alone can show).
-  let title = GENERIC_TITLE;
+function buildNotification(payload) {
+  const preview = payload.preview || {};
+  const title = preview.sender || GENERIC_TITLE;
   const tag = payload.thread_id ? "thread-" + payload.thread_id : undefined;
   const options = {
-    body: "",
-    // App icon shown on the banner. Served from the app origin (this SW's
-    // scope), not API_ORIGIN, so it resolves same-origin. Without it the
-    // platform falls back to the favicon/PWA icon, which is inconsistent
-    // across browsers.
+    body: preview.subject || "",
+    // App icon shown on the banner, served from this SW's own origin. Without
+    // it the platform falls back to the favicon/PWA icon, which is
+    // inconsistent across browsers.
     icon: "/assets/icons/icon-192.webp",
     // Monochrome silhouette Android paints into the status bar when the full
     // icon doesn't fit. Only the alpha channel is used (Android tints the
@@ -94,27 +78,6 @@ async function buildNotification(payload) {
     renotify: Boolean(tag),
     data: payload,
   };
-
-  // Fetch-to-enrich: pull sender + subject over the authenticated session.
-  if (payload.message_id) {
-    try {
-      const resp = await fetch(MESSAGE_URL(payload.message_id), {
-        credentials: "include",
-        headers: { Accept: "application/json" },
-        // A hung network (captive portal) must not stall showNotification past
-        // the OS's patience — Chrome would show its own generic "site updated
-        // in the background" instead. The catch keeps the generic banner.
-        signal: AbortSignal.timeout ? AbortSignal.timeout(5000) : undefined,
-      });
-      if (resp.ok) {
-        const message = await resp.json();
-        title = senderLabel(message);
-        options.body = message.subject || "";
-      }
-    } catch {
-      // Offline / cross-origin / signed out — keep the generic banner.
-    }
-  }
 
   // Drive the installed-PWA app badge from the unread count the payload carries.
   // Guarded: Firefox/Safari (and non-installed contexts) lack the Badging API.
