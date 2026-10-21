@@ -10,7 +10,9 @@ and this project adheres to
 
 ### Changed
 
-- Bump keycloak to 26.8.0 and refresh the Alpine 3.24 digest in the Keycloak image
+- Bump keycloak to 26.8.1 and refresh the Alpine 3.24 digest in the Keycloak image
+- Bump Caddy to 2.11.7 in the Keycloak image, the frontend image and the
+  Scalingo post-frontend deploy script
 
 ## [0.10.0] - 2026-09-29
 
