@@ -139,6 +139,21 @@ jobs:
       - name: Run E2E tests only for Chromium browser to speed up the tests
         run: make test-e2e-ci args="--project chromium"
 
+  test-keycloak-theme:
+    runs-on: ubuntu-latest
+    env:
+      DOCKER_USER: 1001
+      PW_TEST_HTML_REPORT_OPEN: 'never'
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - name: Create env files
+        run: make create-env-files
+      - name: Run Keycloak theme tests
+        run: make test-keycloak-theme-ci
+
   test-mta-in:
     runs-on: ubuntu-latest
     steps:

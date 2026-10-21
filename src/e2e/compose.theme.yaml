@@ -1,0 +1,6 @@
+# Override for `make test-keycloak-theme`: Keycloak serves the lst-dsfr theme
+# for the realms that select no theme.
+services:
+  keycloak:
+    environment:
+      - KC_SPI_THEME__DEFAULT=lst-dsfr

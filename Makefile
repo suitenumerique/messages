@@ -32,6 +32,7 @@ COMPOSE             = DOCKER_USER=$(DOCKER_USER) DOCKER_UID=$(DOCKER_UID) docker
 # would only retag the local build, leaving the compose `FROM` unchanged.)
 PYTHON_UV_IMAGE     ?= messages-python-uv:local
 COMPOSE_E2E         = DOCKER_USER=$(DOCKER_USER) docker compose -f src/e2e/compose.yaml
+COMPOSE_E2E_THEME   = $(COMPOSE_E2E) -f src/e2e/compose.theme.yaml
 COMPOSE_EXEC        = $(COMPOSE) exec
 COMPOSE_EXEC_APP    = $(COMPOSE_EXEC) backend-dev
 COMPOSE_RUN         = $(COMPOSE) run --rm --build
@@ -483,6 +484,29 @@ test-e2e-ci: build-python-base ## Setup and run e2e tests in CI mode
 	@$(MAKE) start-e2e
 	@$(MAKE) test-e2e-bare args="$(args)"
 .PHONY: test-e2e-ci
+
+test-keycloak-theme: $(KEYCLOAK_THEME_JAR) ## Setup, run and teardown the Keycloak theme tests in headless mode
+	@$(MAKE) start-keycloak-theme
+	@args="$(filter-out $@,$(MAKECMDGOALS))" && \
+	$(MAKE) test-keycloak-theme-bare args="$${args:-${1}}" || echo "$(BOLD)Tests failed$(RESET)"
+	@$(MAKE) stop-e2e
+.PHONY: test-keycloak-theme
+
+test-keycloak-theme-ci: $(KEYCLOAK_THEME_JAR) ## Setup and run the Keycloak theme tests in CI mode
+	@$(MAKE) start-keycloak-theme
+	@$(MAKE) test-keycloak-theme-bare args="$(args)"
+.PHONY: test-keycloak-theme-ci
+
+start-keycloak-theme: ## Start Keycloak with the lst-dsfr theme for the theme tests
+	@echo "$(BLUE)\n\n| 🔧 Starting Keycloak with the lst-dsfr theme... \n$(RESET)"
+	@$(COMPOSE_E2E_THEME) up -d --wait keycloak
+.PHONY: start-keycloak-theme
+
+test-keycloak-theme-bare: ## Run the Keycloak theme tests in headless mode
+	@echo "$(BLUE)\n\n| 🎭 Running Keycloak theme tests... \n$(RESET)"
+	$(COMPOSE_E2E_THEME) run --rm --no-deps --service-ports runner npm run test:theme -- $(args)
+	@echo "$(GREEN)> 🎭 Keycloak theme tests completed!$(RESET)\n"
+.PHONY: test-keycloak-theme-bare
 
 build-e2e: ## Build the e2e services
 	@args="$(filter-out $@,$(MAKECMDGOALS))" && \

@@ -126,7 +126,8 @@ Account to `lst-dsfr`. The dev realm in `src/keycloak/realm.json` keeps the
 built-in themes. In the dev stack, set `KC_SPI_THEME__DEFAULT=lst-dsfr` in
 `deploy/env/keycloak.local` and run `make restart` to select the theme. The
 option also applies to the email theme, which `lst-dsfr` does not have, so
-Keycloak logs a fallback warning when it sends a mail. A deployment that used
+Keycloak logs a fallback warning when it sends a mail. Run
+`make test-keycloak-theme` to test the theme. A deployment that used
 the old `DSFR` theme must set Login and Account to `lst-dsfr` once after the
 upgrade. Until then, Keycloak logs a missing-theme warning and serves its
 default theme.

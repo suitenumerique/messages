@@ -13,6 +13,8 @@ and this project adheres to
 - Support passkey sign-in in the `lst-dsfr` Keycloak theme (off by default)
 - Add the `lst-dsfr` login and account theme (Keycloakify, react-dsfr) with
   the ProConnect look. The dev realm keeps the built-in themes.
+- `make test-keycloak-theme` runs the Playwright specs of the `lst-dsfr` theme
+  against Keycloak alone
 - Enable passkeys in the dev realm
 
 ### Changed

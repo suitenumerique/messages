@@ -9,6 +9,7 @@
   },
   "scripts": {
     "test": "playwright test",
+    "test:theme": "playwright test -c playwright.theme.config.ts",
     "test:ui": "playwright test --ui --ui-host=0.0.0.0 --ui-port=8932",
     "test:headed": "playwright test --headed",
     "test:debug": "playwright test --debug",

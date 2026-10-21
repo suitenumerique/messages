@@ -51,6 +51,8 @@ The production image builds the jar in the `theme-build` stage of `src/keycloak/
   authorization request, the `Accept-Language` header, then the realm default
   locale. A login sets the cookie from the `locale` attribute of the user. The
   account page writes that attribute.
+- Run `make test-keycloak-theme` to run the Playwright specs of the theme
+  against Keycloak alone.
 - Rebuild the jar, then restart the `keycloak` service to see your changes.
 - `start-dev` picks up the jar at boot.
 - "Informations personnelles" is the landing page. A Keycloak action returns
