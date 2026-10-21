@@ -1,7 +1,7 @@
-FROM debian:trixie-slim@sha256:a99cfc517144bc59b1978475ec53b46ecabec7e43635402ee5b77cc54cd1b20a
+FROM debian:trixie-slim@sha256:62bd423aeee912639ca8ee681c2b762cb3e25137e0a92b20be455898a9f034ad
 
 # Bump to force an apt refresh + security upgrade of the base OS.
-ENV MIN_UPDATE_DATE="2026-10-05"
+ENV MIN_UPDATE_DATE="2026-10-21"
 
 RUN apt-get update && \
     DEBIAN_FRONTEND=noninteractive apt-get upgrade -y && \

@@ -33,7 +33,7 @@ RUN wget -qO /tmp/caddy.tar.gz "https://github.com/caddyserver/caddy/releases/do
     && mv caddy /usr/bin/caddy \
     && rm /tmp/caddy.tar.gz
 
-FROM quay.io/keycloak/keycloak:26.8.0@sha256:b0f60d489d51c5d113390bdf5461d4c06e6051be026c05549f2e1e10ec352bcc AS builder
+FROM quay.io/keycloak/keycloak:26.8.1@sha256:79c623a22abacf3fe6c00a5fb30f5b7843d717b234033b80995891c06116d244 AS builder
 
 WORKDIR /opt/keycloak
 COPY --chown=keycloak:keycloak --chmod=644 themes/dsfr-2.3.4.jar /opt/keycloak/providers/dsfr.jar
@@ -51,12 +51,18 @@ ENV KC_DB=postgres
 
 RUN /opt/keycloak/bin/kc.sh build
 
-FROM quay.io/keycloak/keycloak:26.8.0@sha256:b0f60d489d51c5d113390bdf5461d4c06e6051be026c05549f2e1e10ec352bcc
+FROM quay.io/keycloak/keycloak:26.8.1@sha256:79c623a22abacf3fe6c00a5fb30f5b7843d717b234033b80995891c06116d244
 
 COPY --from=builder /opt/keycloak/ /opt/keycloak/
 COPY --from=tools-download /usr/bin/caddy /usr/bin/caddy
 COPY caddy/Caddyfile /etc/caddy/Caddyfile
 COPY --chmod=755 entrypoint.sh /usr/local/bin/entrypoint.sh
+
+# @TODO: drop once the UBI base ships a ca-certificates without this root,
+# already removed from the Debian and Mozilla trust stores.
+USER root
+RUN keytool -delete -cacerts -storepass changeit -alias emsigneccrootca-g3
+USER 1000
 
 # Same build options as the builder stage, so that a `start` without
 # --optimized keeps them after a re-augmentation.

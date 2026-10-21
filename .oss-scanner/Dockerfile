@@ -7,7 +7,7 @@
 #
 # The same digest as deploy/python-uv/Dockerfile, the base of the project's own
 # images.
-FROM debian:trixie-slim@sha256:a99cfc517144bc59b1978475ec53b46ecabec7e43635402ee5b77cc54cd1b20a
+FROM debian:trixie-slim@sha256:62bd423aeee912639ca8ee681c2b762cb3e25137e0a92b20be455898a9f034ad
 
 # initdb reads the locale when the postgresql package creates its cluster.
 # Without a UTF-8 locale the cluster gets the SQL_ASCII encoding.
@@ -261,8 +261,8 @@ EOF
 
 # The same Node image as src/frontend/Dockerfile. A bookworm binary runs on
 # trixie. engines.node of package.json names the same version.
-COPY --from=node:24.18.0-slim@sha256:cb4e8f7c443347358b7875e717c29e27bf9befc8f5a26cf18af3c3dec80e58c5 /usr/local/bin/node /usr/local/bin/node
-COPY --from=node:24.18.0-slim@sha256:cb4e8f7c443347358b7875e717c29e27bf9befc8f5a26cf18af3c3dec80e58c5 /usr/local/lib/node_modules /usr/local/lib/node_modules
+COPY --from=node:24.22.1-slim@sha256:1681862882da07ee5476fee047bcf34138833f1df42633bb25bcb0f438d5bf3d /usr/local/bin/node /usr/local/bin/node
+COPY --from=node:24.22.1-slim@sha256:1681862882da07ee5476fee047bcf34138833f1df42633bb25bcb0f438d5bf3d /usr/local/lib/node_modules /usr/local/lib/node_modules
 RUN <<EOR
 set -eux
 ln -s ../lib/node_modules/npm/bin/npm-cli.js /usr/local/bin/npm
@@ -275,7 +275,7 @@ maildev --help >/dev/null
 EOR
 
 # uv and the managed CPython, as in deploy/python-uv/Dockerfile.
-COPY --from=ghcr.io/astral-sh/uv@sha256:3af4716e991d6956a41e573eab705d0ee08500cd829ed30293eb8472f372c65a /uv /uvx /bin/
+COPY --from=ghcr.io/astral-sh/uv@sha256:9f130421e930bfbdc563c00740466603f8723158e90297d07957c2294640262b /uv /uvx /bin/
 
 ENV UV_COMPILE_BYTECODE=1 \
     UV_LINK_MODE=copy \

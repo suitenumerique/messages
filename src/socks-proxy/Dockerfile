@@ -1,10 +1,11 @@
-FROM debian:trixie-slim@sha256:a99cfc517144bc59b1978475ec53b46ecabec7e43635402ee5b77cc54cd1b20a AS base
+FROM debian:trixie-slim@sha256:62bd423aeee912639ca8ee681c2b762cb3e25137e0a92b20be455898a9f034ad AS base
 
 ARG DANTE_VER=1.4.4
 ARG DANTE_URL=https://fossies.org/linux/misc/dante-$DANTE_VER.tar.gz
 ARG DANTE_SHA256=1973c7732f1f9f0a4c0ccf2c1ce462c7c25060b25643ea90f9b98f53a813faec
 
 RUN <<EOR
+set -e
 apt-get update
 DEBIAN_FRONTEND="noninteractive" apt-get install -y build-essential curl
 rm -rf /var/lib/apt/lists/*
@@ -21,12 +22,13 @@ make
 make install
 EOR
 
-FROM debian:trixie-slim@sha256:a99cfc517144bc59b1978475ec53b46ecabec7e43635402ee5b77cc54cd1b20a AS runtime
+FROM debian:trixie-slim@sha256:62bd423aeee912639ca8ee681c2b762cb3e25137e0a92b20be455898a9f034ad AS runtime
 
 # Bump to force an apt refresh + security upgrade of the base OS.
-ENV MIN_UPDATE_DATE="2026-10-05"
+ENV MIN_UPDATE_DATE="2026-10-21"
 
 RUN <<EOR
+set -e
 apt-get update
 DEBIAN_FRONTEND="noninteractive" apt-get upgrade -y
 rm -rf /var/lib/apt/lists/*

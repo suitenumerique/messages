@@ -1,6 +1,6 @@
 ARG FRONTEND_IMAGE=frontend-build-output
 
-FROM node:24.18.0-slim@sha256:cb4e8f7c443347358b7875e717c29e27bf9befc8f5a26cf18af3c3dec80e58c5 AS frontend-dev-base
+FROM node:24.22.1-slim@sha256:1681862882da07ee5476fee047bcf34138833f1df42633bb25bcb0f438d5bf3d AS frontend-dev-base
 
 ENV npm_config_cache=/tmp/npm-cache
 
@@ -91,7 +91,7 @@ RUN wget -qO /usr/bin/lprobe "https://github.com/fivexl/lprobe/releases/download
        esac \
     && chmod +x /usr/bin/lprobe
 
-FROM gcr.io/distroless/static-debian13:nonroot@sha256:e2e927ec666bae08560abb3c55d0659eceabb657f56b6782ab500a9fc7f555e3 AS runtime-prod
+FROM gcr.io/distroless/static-debian13:nonroot@sha256:516757106de35205efb70b91ba03f6f1298424a0678c603255cf2852a7000087 AS runtime-prod
 
 COPY --from=tools-download /usr/bin/caddy /usr/bin/caddy
 COPY --from=tools-download /usr/bin/lprobe /usr/bin/lprobe
