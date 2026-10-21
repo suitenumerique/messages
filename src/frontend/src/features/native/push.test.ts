@@ -74,6 +74,7 @@ import {
 import { isNativePlatform } from "./platform";
 
 const USER_ID = "11111111-2222-3333-4444-555555555555";
+const OTHER_USER_ID = "66666666-7777-8888-9999-000000000000";
 const TOKEN = "apns-device-token-1";
 const PREVIEW_KEYS = { p256dh: "BPublicPoint", auth: "AuthSecret" };
 
@@ -251,6 +252,71 @@ describe("refreshNativePushRegistration", () => {
     expect(push.createChannel).toHaveBeenCalledWith(
       expect.objectContaining({ id: ANDROID_NOTIFICATION_CHANNEL_ID }),
     );
+  });
+
+  describe("when another account signs in on the device", () => {
+    // A's session expired: its server channel and preview keys survived, and
+    // would keep showing A's senders and subjects to B.
+    beforeEach(async () => {
+      await enableNativePush(USER_ID);
+      vi.clearAllMocks();
+      push.checkPermissions.mockResolvedValue({ receive: "granted" });
+    });
+
+    it("tears down the previous account's registration", async () => {
+      await refreshNativePushRegistration(OTHER_USER_ID);
+      expect(previewKeysPlugin.clear).toHaveBeenCalled();
+      expect(push.unregister).toHaveBeenCalled();
+      expect(await currentNativeTokenHash()).toBeNull();
+      expect(createChannel).not.toHaveBeenCalled();
+    });
+
+    it("keeps the previous account's opt-in for its own return", async () => {
+      await refreshNativePushRegistration(OTHER_USER_ID);
+      expect(hasPushOptIn(USER_ID)).toBe(true);
+    });
+
+    it("takes the device over for an account that opted in too", async () => {
+      // No unregister: Android deletes the FCM token asynchronously, so
+      // register() could be handed the dying token. Rebinding the keyring
+      // drops the previous account's keys and the server reclaim its channel.
+      setPushOptIn(OTHER_USER_ID);
+      await refreshNativePushRegistration(OTHER_USER_ID);
+      expect(push.unregister).not.toHaveBeenCalled();
+      expect(previewKeysPlugin.getKeys).toHaveBeenCalledWith({
+        userId: OTHER_USER_ID,
+      });
+      expect(createChannel).toHaveBeenCalledWith(
+        expect.objectContaining({ token: TOKEN }),
+      );
+    });
+
+    it("rebinds the keyring before the token round-trip", async () => {
+      // A failed registration must not leave the previous account's keys.
+      setPushOptIn(OTHER_USER_ID);
+      push.register.mockRejectedValue(new Error("offline"));
+      await refreshNativePushRegistration(OTHER_USER_ID);
+      expect(previewKeysPlugin.getKeys).toHaveBeenCalledWith({
+        userId: OTHER_USER_ID,
+      });
+      expect(createChannel).not.toHaveBeenCalled();
+    });
+
+    it("tears down for an account that opted in but revoked the permission", async () => {
+      // Nothing re-registers, so nothing would rebind the keyring either.
+      setPushOptIn(OTHER_USER_ID);
+      push.checkPermissions.mockResolvedValue({ receive: "denied" });
+      await refreshNativePushRegistration(OTHER_USER_ID);
+      expect(previewKeysPlugin.clear).toHaveBeenCalled();
+      expect(push.unregister).toHaveBeenCalled();
+      expect(hasPushOptIn(OTHER_USER_ID)).toBe(true);
+    });
+
+    it("leaves the device alone for the same account", async () => {
+      await refreshNativePushRegistration(USER_ID);
+      expect(previewKeysPlugin.clear).not.toHaveBeenCalled();
+      expect(push.unregister).not.toHaveBeenCalled();
+    });
   });
 });
 

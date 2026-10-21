@@ -36,7 +36,7 @@ public class PushPreviewCryptoTest {
     private static final String ENC =
         "W6AAvfyO_cpEA01PYCSUzQAAEABBBBjsqSAvvPY_OPGQcKyyr_bF3Aj7KkjU1VVj2ckm1uLNyG6mj8DpKHsRy3JSkrAKFOMHc_5YMmFdDXaKTm5kmZgZiNUTWoXdlxo92mdakBajuOAgUzJ7fBSAwHAk16EcqhEQAe_n75lzCb2yh9zUeolkeF6iPLNrCnBs-xGZmiBBLB19ypjwHhwUKahsWuG9x6CNSgGrUuVF-a5cRz0mhGIacr28DUoE6NNJHFiqUu8VCQpop2PuCMCYNAR-YvtKVgfTcQ8ySFCyMBXTIg-MkakhYJlkuyBKKEKmfkyWrzu5r2hG94Zr-dJzvPGjpwiMwPBAHlCBcFGGEi0bsTyZ7B2ESOmbW243Eu7rTVIcNhWCE-cRYA5NiELBaMEy_cAzhSPGCwT1ibgS8XiUX6gQ8jPgky-9cwfuRjWZZJFLgeJc_RWIshXLAUont1joVkyJKeahHFWK92ar-LiuBlyLwluQfVgnta93hcIoKejlkdMjl9DfLdDDPfxBA-Eiv8NEtw2XLDnnfx2i29MFT-db5p9MlmSNenO2s6X2TQX9kcZWh7notqJnbTdAS8rbbWVY9E3UNO6nYl779VIefc3H0yr7QD6J3PTSWLEuYIG7IGjAXENQsBAgawYBSrx7QmqWJGiYMvTApjvmQp3OfUg3cYHwltfineVVoFlJiyso3Rni2j77UCqk36VTVqiYzYlnbcU4I_7W4rZnnCxDUBcN3eA0E_0eOkykQqAjpwZc2NIEPAQ5DkXDc9LWmWYfw2xX2s10qAg_kdsMMXDqJYDLah3K";
     private static final String PREVIEW = "{\"sender\":\"Alice Été\",\"subject\":\"Réunion 😀\"}";
-    /** pad_json's smallest bucket. */
+    /** What the vector was padded to when sealed; the derivation under test does not depend on it. */
     private static final int PADDED_LENGTH = 512;
 
     private static final Base64.Decoder URL = Base64.getUrlDecoder();

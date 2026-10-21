@@ -24,8 +24,8 @@ import java.util.Map;
  * Renders the pushes that carry a sealed notification preview.
  *
  * Those arrive data-only (core/services/push/fcm.py): with a notification
- * block Android would display it itself, without ever running app code that
- * could decrypt the preview. So this service posts the banner — sender and
+ * block the Firebase SDK would display it itself in the background, without
+ * ever calling this service that can decrypt the preview. So this service posts the banner — sender and
  * subject when the preview opens with a key of the device keyring
  * (PushPreviewKeyring), the generic strings otherwise — exactly once per push,
  * which Android requires of high-priority data messages.
@@ -61,7 +61,8 @@ public class PushPreviewMessagingService extends MessagingService {
         if (preview != null) {
             String sender = preview.optString("sender");
             title = sender.isEmpty() ? title : sender;
-            body = preview.optString("subject");
+            String subject = preview.optString("subject");
+            body = subject.isEmpty() ? getString(R.string.new_message_no_subject) : subject;
         }
 
         String threadTag = "thread-" + data.get("thread_id");
@@ -107,7 +108,7 @@ public class PushPreviewMessagingService extends MessagingService {
         if (enc == null || kid == null) {
             return null;
         }
-        PushPreviewKeyring.Key key = new PushPreviewKeyring(this).key(kid);
+        PushPreviewKeyring.Key key = new PushPreviewKeyring(this).key(kid, System.currentTimeMillis());
         if (key == null) {
             return null;
         }

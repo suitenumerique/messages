@@ -5,3 +5,7 @@
    service worker fallback banner. Also the placeholder iOS shows when the
    "Show Previews" setting hides a preview (AppDelegate). */
 "NEW_MESSAGE" = "New message";
+/* Body of a preview banner for a mail without subject, read by the
+   Notification Service Extension. Mirror of the web app's "No subject" key and
+   of the Android new_message_no_subject entry. */
+"NO_SUBJECT" = "No subject";

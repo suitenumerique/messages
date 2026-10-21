@@ -175,7 +175,8 @@ def send_push_notification(self, channel_id: str, payload: dict, collapse_key: s
     """Deliver one push to one device, retrying on a transient failure.
 
     The atomic unit of delivery: it re-fetches the one channel (skips if the
-    device was un-associated since dispatch), resolves its platform, and hands a
+    device was un-associated since dispatch, or if its user lost access to the
+    thread), resolves its platform, and hands a
     single-item batch to that platform's sender. On a *transient* failure
     (429 / 5xx / network) it raises :class:`PushTransientError` so Celery retries
     just this notification with exponential backoff; retrying is idempotent
@@ -197,6 +198,14 @@ def send_push_notification(self, channel_id: str, payload: dict, collapse_key: s
         # Device un-associated (or reclaimed) between dispatch and delivery.
         return {"success": True, "skipped": "channel_gone"}
 
+    # Someone who lost the thread since dispatch (a retry can run minutes later)
+    # gets no push at all, not even the generic banner: it would still tell
+    # them the thread is active.
+    if not models.ThreadAccess.objects.viewer_user_ids(
+        payload.get("thread_id"), user_ids=[channel.user_id]
+    ).exists():
+        return {"success": True, "skipped": "access_revoked"}
+
     platform = (channel.settings or {}).get("platform")
     sender_name = _PLATFORM_SENDER_NAMES.get(platform)
     # Resolve against the package namespace so tests can monkeypatch the senders.
@@ -205,8 +214,8 @@ def send_push_notification(self, channel_id: str, payload: dict, collapse_key: s
         logger.warning("No push sender for platform %r", platform)
         return {"success": False, "error": "no_sender"}
 
-    # No access re-check needed: a device changing hands deletes its channel
-    # (cross-user reclaim), so ``channel_id`` still names the recipient's device.
+    # A device changing hands deletes its channel (cross-user reclaim), so
+    # ``channel_id`` still names the recipient's device.
     payload = with_preview(channel, _channel_keys(channel), payload)
     try:
         result = sender([(channel, payload)], collapse_key)

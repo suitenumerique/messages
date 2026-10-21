@@ -52,6 +52,29 @@ describe("notification preview invariants", () => {
     expect(days(java, "GRACE_PERIOD_MS")).toBe(2);
   });
 
+  it("words the missing-subject placeholder like the web app everywhere", () => {
+    // A preview with an empty subject must not render an empty banner body.
+    const noSubject = (locale: string): string =>
+      (JSON.parse(read(`public/locales/common/${locale}.json`)) as Record<string, string>)[
+        "No subject"
+      ];
+    const en = noSubject("en-US");
+    const fr = noSubject("fr-FR");
+    expect(read("ios/App/App/en.lproj/Localizable.strings")).toContain(
+      `"NO_SUBJECT" = "${en}";`,
+    );
+    expect(read("ios/App/App/fr.lproj/Localizable.strings")).toContain(
+      `"NO_SUBJECT" = "${fr}";`,
+    );
+    expect(read("android/app/src/main/res/values/strings.xml")).toContain(
+      `<string name="new_message_no_subject">${en}</string>`,
+    );
+    expect(read("android/app/src/main/res/values-fr/strings.xml")).toContain(
+      `<string name="new_message_no_subject">${fr}</string>`,
+    );
+    expect(read("public/sw.js")).toContain(`IS_FRENCH ? "${fr}" : "${en}"`);
+  });
+
   describe("iOS", () => {
     const project = read("ios/App/App.xcodeproj/project.pbxproj");
 

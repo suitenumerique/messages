@@ -47,13 +47,13 @@ logger = getLogger(__name__)
 PREVIEW_SENDER_MAX_CHARS = 100
 PREVIEW_SUBJECT_MAX_CHARS = 200
 
-# Serialized payloads are padded with trailing whitespace (valid JSON) up to the
-# first bucket that fits, so the ciphertext length the gateway sees does not
-# leak the length of the sender or the subject. The largest bucket holds a
-# worst-case preview (every truncated character 4 bytes in UTF-8: ~1.2 KB) plus
-# the routing ids, and stays within the 4 KB APNs / FCM / Web Push limits once
-# sealed (+103 bytes) and base64url-encoded (+33%).
-PAD_BUCKETS = (512, 1024, 2048)
+# Serialized payloads are padded with trailing whitespace (valid JSON) to one
+# fixed size, so the ciphertext length the gateway sees says nothing about the
+# sender or the subject. It holds the worst-case Web Push payload — the routing
+# ids plus a preview whose every truncated character is a 6-byte JSON escape
+# (\u00XX): ~2 KB, pinned by a test — and stays within the 4 KB APNs / FCM /
+# Web Push limits once sealed (+103 bytes) and base64url-encoded (+33%).
+PAD_SIZE = 2048
 
 P256_UNCOMPRESSED_POINT_LENGTH = 65
 AUTH_SECRET_LENGTH = 16
@@ -97,12 +97,14 @@ def key_id(p256dh: str) -> str:
 
 
 def pad_json(data: dict) -> bytes:
-    """Serialize ``data`` and pad it to the next :data:`PAD_BUCKETS` size."""
+    """Serialize ``data`` and pad it to :data:`PAD_SIZE` bytes.
+
+    Never truncates nor raises: a payload past the size (none today, see the
+    tests) goes out unpadded rather than undelivered, as a Web Push send takes
+    a failure here for a dead subscription.
+    """
     raw = json.dumps(data, ensure_ascii=False, separators=(",", ":")).encode("utf-8")
-    for bucket in PAD_BUCKETS:
-        if len(raw) <= bucket:
-            return raw + b" " * (bucket - len(raw))
-    return raw
+    return raw.ljust(PAD_SIZE)
 
 
 def build_preview(message: models.Message) -> dict:
@@ -195,6 +197,12 @@ def with_preview(channel: models.Channel, keys: dict | None, payload: dict) -> d
         )
         preview = build_preview(message)
         if (channel.settings or {}).get("platform") == PushPlatformChoices.WEB:
+            # The service worker re-checks the session deadline on display: Web
+            # Push holds a push up to a day, and a browser started after the
+            # session expired (a shared computer the next morning) must show
+            # the generic banner instead.
+            expires_at = parse_datetime(channel.settings["session_expires_at"])
+            preview["expires_at"] = int(expires_at.timestamp())
             return {**payload, "preview": preview}
         return {
             **payload,

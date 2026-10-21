@@ -4,5 +4,6 @@
 <resources>
     <string name="new_message_title">Messages</string>
     <string name="new_message_body">Nouveau message</string>
+    <string name="new_message_no_subject">Aucun objet</string>
     <string name="new_messages_channel_name">Nouveaux messages</string>
 </resources>

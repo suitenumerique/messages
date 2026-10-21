@@ -762,9 +762,8 @@ class TestSendPushNotification:
         """A transient sender result makes the task retry just this device; the
         collapse key makes the re-send idempotent. Succeeds on the 2nd attempt."""
         settings.PUSH_ENABLED = True
-        ch = _push_channel(
-            factories.UserFactory(), platform=PushPlatformChoices.FCM, token="b"
-        )
+        user, message = _user_with_message()
+        ch = _push_channel(user, platform=PushPlatformChoices.FCM, token="b")
         calls = []
 
         def sender(_items, _collapse):
@@ -776,7 +775,7 @@ class TestSendPushNotification:
             mock.patch("time.sleep"),  # neutralize any eager retry backoff
         ):
             result = push.send_push_notification.apply(
-                args=(str(ch.id), {"type": "new_message"}, "k")
+                args=(str(ch.id), push.build_thin_payload(message), "k")
             )
 
         assert len(calls) == 2  # retried once after the transient failure
@@ -786,12 +785,53 @@ class TestSendPushNotification:
         """A sender that raises (a bug, not a transient signal) ends the task
         rather than retrying — autoretry only fires on PushTransientError."""
         settings.PUSH_ENABLED = True
+        user, message = _user_with_message()
+        ch = _push_channel(user, platform=PushPlatformChoices.FCM, token="b")
+        with mock.patch.object(push, "send_fcm", side_effect=RuntimeError("boom")):
+            out = push.send_push_notification(
+                str(ch.id), push.build_thin_payload(message), "k"
+            )
+        assert out["error"] == "sender_raised"
+
+    def test_revoked_thread_access_sends_nothing(self, settings):
+        """A user who lost the thread since dispatch (e.g. before a retry) gets
+        no push at all, not even the generic banner."""
+        settings.PUSH_ENABLED = True
+        user, message = _user_with_message()
+        ch = _push_channel(user, platform=PushPlatformChoices.FCM, token="b")
+        payload = push.build_thin_payload(message)
+        models.ThreadAccess.objects.filter(thread=message.thread).delete()
+
+        with mock.patch.object(push, "send_fcm") as send_fcm:
+            out = push.send_push_notification(str(ch.id), payload, "k")
+
+        assert out["skipped"] == "access_revoked"
+        send_fcm.assert_not_called()
+
+    def test_revoked_mailbox_access_sends_nothing(self, settings):
+        """Losing the mailbox the thread is reached through counts as well."""
+        settings.PUSH_ENABLED = True
+        user, message = _user_with_message()
+        ch = _push_channel(user, platform=PushPlatformChoices.FCM, token="b")
+        payload = push.build_thin_payload(message)
+        models.MailboxAccess.objects.filter(user=user).delete()
+
+        with mock.patch.object(push, "send_fcm") as send_fcm:
+            out = push.send_push_notification(str(ch.id), payload, "k")
+
+        assert out["skipped"] == "access_revoked"
+        send_fcm.assert_not_called()
+
+    def test_payload_without_thread_sends_nothing(self, settings):
+        """No thread to check access against: nothing is sent."""
+        settings.PUSH_ENABLED = True
         ch = _push_channel(
             factories.UserFactory(), platform=PushPlatformChoices.FCM, token="b"
         )
-        with mock.patch.object(push, "send_fcm", side_effect=RuntimeError("boom")):
+        with mock.patch.object(push, "send_fcm") as send_fcm:
             out = push.send_push_notification(str(ch.id), {"type": "new_message"}, "k")
-        assert out["error"] == "sender_raised"
+        assert out["skipped"] == "access_revoked"
+        send_fcm.assert_not_called()
 
 
 # ---------------------------------------------------------------------------

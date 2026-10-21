@@ -13,6 +13,9 @@
          Localizable.strings NEW_MESSAGE entry. -->
     <string name="new_message_title">Messages</string>
     <string name="new_message_body">New message</string>
+    <!-- Body of a preview banner for a mail without subject; mirror of the
+         web app's "No subject" key (public/locales). -->
+    <string name="new_message_no_subject">No subject</string>
     <!-- Mirror of the channel name the web app gives (features/native/push.ts),
          used when the service has to recreate the channel. -->
     <string name="new_messages_channel_name">New messages</string>

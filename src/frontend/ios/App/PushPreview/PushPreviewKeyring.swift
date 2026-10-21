@@ -28,6 +28,12 @@ final class PushPreviewKeyring {
             (try? P256.KeyAgreement.PrivateKey(rawRepresentation: privateKey))
                 .map { PushPreviewCrypto.keyId(publicKey: $0.publicKey) } ?? ""
         }
+
+        /// Current, or retired less than `gracePeriod` ago.
+        func isHeld(at now: Date) -> Bool {
+            guard let retiredAt else { return true }
+            return now.timeIntervalSince(retiredAt) < PushPreviewKeyring.gracePeriod
+        }
     }
 
     struct Ring: Codable {
@@ -59,9 +65,8 @@ final class PushPreviewKeyring {
     func currentPublicKeys(userId: String, now: Date = Date()) throws -> PublicKeys {
         let stored = load()
         // Another account's keys are dropped outright, grace period included.
-        var keys = (stored?.userId == userId ? stored?.keys ?? [] : []).filter { key in
-            guard let retiredAt = key.retiredAt else { return true }
-            return now.timeIntervalSince(retiredAt) < Self.gracePeriod
+        var keys = (stored?.userId == userId ? stored?.keys ?? [] : []).filter {
+            $0.isHeld(at: now)
         }
         let currentIsFresh = keys.first.map {
             $0.retiredAt == nil && now.timeIntervalSince($0.createdAt) < Self.rotationInterval
@@ -97,8 +102,10 @@ final class PushPreviewKeyring {
     }
 
     /// The key a preview was sealed for, if still held (current or in grace).
-    func key(kid: String) -> Key? {
-        load()?.keys.first { $0.kid == kid }
+    /// A key past its grace period no longer opens anything, even before the
+    /// app's next launch deletes it.
+    func key(kid: String, now: Date = Date()) -> Key? {
+        load()?.keys.first { $0.isHeld(at: now) && $0.kid == kid }
     }
 
     func clear() {

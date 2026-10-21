@@ -90,7 +90,7 @@ final class PushPreviewKeyring {
             JSONArray keys = new JSONArray();
             for (int i = 0; i < storedKeys.length(); i++) {
                 JSONObject key = storedKeys.getJSONObject(i);
-                if (!key.has("retiredAt") || now - key.getLong("retiredAt") < GRACE_PERIOD_MS) {
+                if (isHeld(key, now)) {
                     keys.put(key);
                 }
             }
@@ -124,8 +124,12 @@ final class PushPreviewKeyring {
         }
     }
 
-    /** The key a preview was sealed for, if still held (current or in grace), else null. */
-    Key key(String kid) {
+    /**
+     * The key a preview was sealed for, if still held (current or in grace), else
+     * null. A key past its grace period no longer opens anything, even before the
+     * app's next launch deletes it.
+     */
+    Key key(String kid, long now) {
         synchronized (LOCK) {
             try {
                 JSONObject stored = load();
@@ -135,7 +139,7 @@ final class PushPreviewKeyring {
                 JSONArray keys = stored.getJSONArray("keys");
                 for (int i = 0; i < keys.length(); i++) {
                     JSONObject entry = keys.getJSONObject(i);
-                    if (kid.equals(entry.optString("kid"))) {
+                    if (kid.equals(entry.optString("kid")) && isHeld(entry, now)) {
                         return decode(entry);
                     }
                 }
@@ -144,6 +148,11 @@ final class PushPreviewKeyring {
             }
             return null;
         }
+    }
+
+    /** Current, or retired less than GRACE_PERIOD_MS ago. */
+    static boolean isHeld(JSONObject key, long now) throws JSONException {
+        return !key.has("retiredAt") || now - key.getLong("retiredAt") < GRACE_PERIOD_MS;
     }
 
     void clear() {

@@ -321,8 +321,8 @@ class TestWithPreview:
         assert "preview" not in payload
         assert payload["kid"] == preview.key_id(device.keys["p256dh"])
         plaintext = device.open(payload["enc"])
-        # Padded to a fixed bucket so the length leaks nothing.
-        assert len(plaintext) in preview.PAD_BUCKETS
+        # Padded to a fixed size so the length leaks nothing.
+        assert len(plaintext) == preview.PAD_SIZE
         assert json.loads(plaintext) == {
             "sender": "Alice",
             "subject": "Quarterly report",
@@ -346,14 +346,21 @@ class TestWithPreview:
         reach the browser's private key to open a second layer."""
         user, message = _message(subject="Lunch?", sender_name="Bob")
         device = Device()
+        expires_at = timezone.now() + timedelta(hours=1)
         channel = _channel(
             user,
             platform=PushPlatformChoices.WEB,
             keys=device.keys,
-            session_expires_at=timezone.now() + timedelta(hours=1),
+            session_expires_at=expires_at,
         )
         payload = preview.with_preview(channel, device.keys, _thin(message))
-        assert payload["preview"] == {"sender": "Bob", "subject": "Lunch?"}
+        # The session deadline travels along: the service worker re-checks it
+        # on display, as Web Push may hold the push up to a day.
+        assert payload["preview"] == {
+            "sender": "Bob",
+            "subject": "Lunch?",
+            "expires_at": int(expires_at.timestamp()),
+        }
         assert "enc" not in payload
 
     def test_sender_falls_back_to_email_and_fields_are_truncated(self):
@@ -371,14 +378,35 @@ class TestWithPreview:
             preview.PREVIEW_SENDER_MAX_CHARS
         )
 
-    def test_worst_case_preview_fits_apns_limit(self):
-        """Every truncated char 4 bytes long still fits the largest bucket and
-        the 4 KB APNs payload once sealed and encoded."""
-        _user, message = _message(subject="😀" * 255, sender_name="😀" * 255)
-        device = Device()
+    def test_worst_case_payloads_fit_the_padded_size(self):
+        """Every truncated char a 6-byte JSON escape (\\u00XX, the costliest)
+        still fits the padded size, so no payload ever goes out unpadded: the
+        native preview, and the Web Push payload, which carries the routing ids
+        too. Adding a payload field or raising a length limit must keep it so."""
+        _user, message = _message()
+        message.subject = "\x01" * 255
+        message.sender.name = "\x01" * 255
+        worst = preview.build_preview(message)
+
+        native = preview.pad_json(worst)
+        web = preview.pad_json(
+            {
+                **push.build_thin_payload(message, mailbox_id=message.id),
+                # Epoch seconds stay 10 digits long until the year 2286.
+                "preview": {**worst, "expires_at": 9_999_999_999},
+            }
+        )
+
+        assert len(native) == preview.PAD_SIZE
+        assert len(web) == preview.PAD_SIZE
+
+    def test_padded_preview_fits_apns_limit(self):
+        """The padded preview fits the 4 KB APNs payload once sealed and encoded."""
+        _user, message = _message()
         plaintext = preview.pad_json(preview.build_preview(message))
-        assert len(plaintext) == preview.PAD_BUCKETS[-1]
-        enc = preview.b64url_encode(preview.encrypt_for_device(plaintext, device.keys))
+        enc = preview.b64url_encode(
+            preview.encrypt_for_device(plaintext, Device().keys)
+        )
         assert len(enc) < 3500  # leaves room for aps + routing ids under 4096
 
     def test_not_allowed_keeps_the_thin_payload(self, settings):
@@ -420,12 +448,18 @@ class TestWithPreview:
         assert len(preview.key_id(keys["p256dh"])) == 11
         assert preview.key_id(keys["p256dh"]) != preview.key_id(Device().keys["p256dh"])
 
-    def test_padding_buckets(self):
-        """Payloads are padded up to the first bucket that fits, as valid JSON."""
+    def test_padding(self):
+        """Payloads are padded to one fixed size, as valid JSON."""
         small = preview.pad_json({"a": "b"})
-        assert len(small) == 512
+        assert len(small) == preview.PAD_SIZE
         assert json.loads(small) == {"a": "b"}
-        assert len(preview.pad_json({"a": "b" * 600})) == 1024
+        assert len(preview.pad_json({"a": "b" * 600})) == preview.PAD_SIZE
+
+    def test_oversized_payload_goes_out_whole(self):
+        """Past the padded size a payload is neither truncated nor rejected: a
+        Web Push send would take a failure for a dead subscription."""
+        big = {"a": "b" * preview.PAD_SIZE}
+        assert json.loads(preview.pad_json(big)) == big
 
 
 # ---------------------------------------------------------------------------
@@ -550,5 +584,5 @@ class TestDelivery:
             push.send_webpush([(channel, payload)], "thread-x")
 
         plaintext = encrypt.call_args.args[0]
-        assert len(plaintext) in preview.PAD_BUCKETS
+        assert len(plaintext) == preview.PAD_SIZE
         assert json.loads(plaintext) == payload

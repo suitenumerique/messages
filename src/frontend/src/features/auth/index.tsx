@@ -57,7 +57,8 @@ import MailboxHelper from "@/features/utils/mailbox-helper";
  *
  * So do a native device's notification preview keys: a voluntary logout
  * wipes them, while an expired session keeps them, so previews outlive the
- * session like notifications do (docs/push-notifications.md §5.1).
+ * session like notifications do (docs/push-notifications.md §5.1) — until
+ * another account signs in on the device (`refreshNativePushRegistration`).
  */
 export const logout = ({ sessionExpired = false }: { sessionExpired?: boolean } = {}) => {
   if (sessionExpired) markSessionExpired();

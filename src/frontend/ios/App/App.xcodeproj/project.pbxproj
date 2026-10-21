@@ -18,7 +18,6 @@
 		7A11AA0100000000000000A2 /* WebAuthSessionPlugin.swift in Sources */ = {isa = PBXBuildFile; fileRef = 7A11AA0100000000000000A1 /* WebAuthSessionPlugin.swift */; };
 		7A11AA0100000000000000B2 /* MainViewController.swift in Sources */ = {isa = PBXBuildFile; fileRef = 7A11AA0100000000000000B1 /* MainViewController.swift */; };
 		7A11AA0100000000000000E3 /* Localizable.strings in Resources */ = {isa = PBXBuildFile; fileRef = 7A11AA0100000000000000E0 /* Localizable.strings */; };
-		7AC1EEE5306524B300CBCC18 /* SceneDelegate.swift in Sources */ = {isa = PBXBuildFile; fileRef = 7AC1EEE4306524B300CBCC18 /* SceneDelegate.swift */; };
 		7A11AA020000000000000010 /* PushPreviewCrypto.swift in Sources */ = {isa = PBXBuildFile; fileRef = 7A11AA020000000000000001 /* PushPreviewCrypto.swift */; };
 		7A11AA020000000000000011 /* PushPreviewKeyring.swift in Sources */ = {isa = PBXBuildFile; fileRef = 7A11AA020000000000000002 /* PushPreviewKeyring.swift */; };
 		7A11AA020000000000000012 /* PushPreviewKeysPlugin.swift in Sources */ = {isa = PBXBuildFile; fileRef = 7A11AA020000000000000003 /* PushPreviewKeysPlugin.swift */; };
@@ -26,6 +25,7 @@
 		7A11AA020000000000000014 /* PushPreviewKeyring.swift in Sources */ = {isa = PBXBuildFile; fileRef = 7A11AA020000000000000002 /* PushPreviewKeyring.swift */; };
 		7A11AA020000000000000015 /* NotificationService.swift in Sources */ = {isa = PBXBuildFile; fileRef = 7A11AA020000000000000004 /* NotificationService.swift */; };
 		7A11AA020000000000000016 /* NotificationService.appex in Embed Foundation Extensions */ = {isa = PBXBuildFile; fileRef = 7A11AA020000000000000007 /* NotificationService.appex */; settings = {ATTRIBUTES = (RemoveHeadersOnCopy, ); }; };
+		7AC1EEE5306524B300CBCC18 /* SceneDelegate.swift in Sources */ = {isa = PBXBuildFile; fileRef = 7AC1EEE4306524B300CBCC18 /* SceneDelegate.swift */; };
 /* End PBXBuildFile section */
 
 /* Begin PBXContainerItemProxy section */
@@ -68,8 +68,6 @@
 		7A11AA0100000000000000E1 /* en */ = {isa = PBXFileReference; lastKnownFileType = text.plist.strings; name = en; path = en.lproj/Localizable.strings; sourceTree = "<group>"; };
 		7A11AA0100000000000000E2 /* fr */ = {isa = PBXFileReference; lastKnownFileType = text.plist.strings; name = fr; path = fr.lproj/Localizable.strings; sourceTree = "<group>"; };
 		7A11AA0100000000000000F1 /* generated.xcconfig */ = {isa = PBXFileReference; lastKnownFileType = text.xcconfig; path = generated.xcconfig; sourceTree = SOURCE_ROOT; };
-		7AC1EEE4306524B300CBCC18 /* SceneDelegate.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SceneDelegate.swift; sourceTree = "<group>"; };
-		958DCC722DB07C7200EA8C5F /* debug.xcconfig */ = {isa = PBXFileReference; lastKnownFileType = text.xcconfig; name = debug.xcconfig; path = ../debug.xcconfig; sourceTree = SOURCE_ROOT; };
 		7A11AA020000000000000001 /* PushPreviewCrypto.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PushPreviewCrypto.swift; sourceTree = "<group>"; };
 		7A11AA020000000000000002 /* PushPreviewKeyring.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PushPreviewKeyring.swift; sourceTree = "<group>"; };
 		7A11AA020000000000000003 /* PushPreviewKeysPlugin.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PushPreviewKeysPlugin.swift; sourceTree = "<group>"; };
@@ -77,6 +75,8 @@
 		7A11AA020000000000000005 /* Info.plist */ = {isa = PBXFileReference; lastKnownFileType = text.plist.xml; path = Info.plist; sourceTree = "<group>"; };
 		7A11AA020000000000000006 /* NotificationService.entitlements */ = {isa = PBXFileReference; lastKnownFileType = text.plist.entitlements; path = NotificationService.entitlements; sourceTree = "<group>"; };
 		7A11AA020000000000000007 /* NotificationService.appex */ = {isa = PBXFileReference; explicitFileType = "wrapper.app-extension"; includeInIndex = 0; path = NotificationService.appex; sourceTree = BUILT_PRODUCTS_DIR; };
+		7AC1EEE4306524B300CBCC18 /* SceneDelegate.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SceneDelegate.swift; sourceTree = "<group>"; };
+		958DCC722DB07C7200EA8C5F /* debug.xcconfig */ = {isa = PBXFileReference; lastKnownFileType = text.xcconfig; name = debug.xcconfig; path = ../debug.xcconfig; sourceTree = SOURCE_ROOT; };
 /* End PBXFileReference section */
 
 /* Begin PBXFrameworksBuildPhase section */
@@ -119,25 +119,6 @@
 			name = Products;
 			sourceTree = "<group>";
 		};
-		7A11AA020000000000000020 /* PushPreview */ = {
-			isa = PBXGroup;
-			children = (
-				7A11AA020000000000000001 /* PushPreviewCrypto.swift */,
-				7A11AA020000000000000002 /* PushPreviewKeyring.swift */,
-			);
-			path = PushPreview;
-			sourceTree = "<group>";
-		};
-		7A11AA020000000000000021 /* NotificationService */ = {
-			isa = PBXGroup;
-			children = (
-				7A11AA020000000000000004 /* NotificationService.swift */,
-				7A11AA020000000000000005 /* Info.plist */,
-				7A11AA020000000000000006 /* NotificationService.entitlements */,
-			);
-			path = NotificationService;
-			sourceTree = "<group>";
-		};
 		504EC3061FED79650016851F /* App */ = {
 			isa = PBXGroup;
 			children = (
@@ -159,6 +140,25 @@
 			path = App;
 			sourceTree = "<group>";
 		};
+		7A11AA020000000000000020 /* PushPreview */ = {
+			isa = PBXGroup;
+			children = (
+				7A11AA020000000000000001 /* PushPreviewCrypto.swift */,
+				7A11AA020000000000000002 /* PushPreviewKeyring.swift */,
+			);
+			path = PushPreview;
+			sourceTree = "<group>";
+		};
+		7A11AA020000000000000021 /* NotificationService */ = {
+			isa = PBXGroup;
+			children = (
+				7A11AA020000000000000004 /* NotificationService.swift */,
+				7A11AA020000000000000005 /* Info.plist */,
+				7A11AA020000000000000006 /* NotificationService.entitlements */,
+			);
+			path = NotificationService;
+			sourceTree = "<group>";
+		};
 /* End PBXGroup section */
 
 /* Begin PBXNativeTarget section */
@@ -169,9 +169,9 @@
 				504EC3001FED79650016851F /* Sources */,
 				504EC3011FED79650016851F /* Frameworks */,
 				504EC3021FED79650016851F /* Resources */,
+				7A11AA020000000000000034 /* Embed Foundation Extensions */,
 				7A11AA0100000000000000C1 /* Strip dev ATS exception */,
 				7A11AA0100000000000000C2 /* Check synced Capacitor identity */,
-				7A11AA020000000000000034 /* Embed Foundation Extensions */,
 			);
 			buildRules = (
 			);

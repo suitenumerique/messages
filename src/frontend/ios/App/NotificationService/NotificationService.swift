@@ -16,6 +16,16 @@ final class NotificationService: UNNotificationServiceExtension {
         let subject: String
     }
 
+    /// The containing app's bundle (the extension lives in App.app/PlugIns/):
+    /// its Localizable.strings already back the generic APNs alert, so the
+    /// extension reads its strings there rather than shipping a copy.
+    private static let appBundle: Bundle = {
+        let appURL = Bundle.main.bundleURL
+            .deletingLastPathComponent()
+            .deletingLastPathComponent()
+        return Bundle(url: appURL) ?? .main
+    }()
+
     private var contentHandler: ((UNNotificationContent) -> Void)?
     private var bestAttemptContent: UNMutableNotificationContent?
 
@@ -40,7 +50,11 @@ final class NotificationService: UNNotificationServiceExtension {
             if !preview.sender.isEmpty {
                 content.title = preview.sender
             }
-            content.body = preview.subject
+            content.body = preview.subject.isEmpty
+                ? NSLocalizedString(
+                    "NO_SUBJECT", bundle: Self.appBundle, value: "No subject", comment: ""
+                )
+                : preview.subject
         }
         contentHandler(content)
     }

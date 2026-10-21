@@ -3,9 +3,10 @@
  * Registered by the app (see features/.../devices-view/web-push.ts) when the
  * user enables notifications in a browser.
  *
- * The push payload carries routing ids + the unread count, and — while the
- * session that registered this browser is alive — a `preview` (sender +
- * subject) for a Gmail-style banner. Web Push encrypts the whole payload for
+ * The push payload carries routing ids and — while the session that registered
+ * this browser is alive — a `preview` (sender + subject, and that session's
+ * deadline, re-checked on display) for a Gmail-style banner. Web Push encrypts
+ * the whole payload for
  * this browser (RFC 8291), so the push service never reads that preview; the
  * browser hands it to us already decrypted. Without one we show a generic
  * content-free banner.
@@ -35,13 +36,16 @@ const VAPID_PUBLIC_KEY =
   new URLSearchParams(self.location.search).get("vapid") || "";
 
 // UI language, carried in the registration URL's query like `?vapid=` — a static
-// file can't reach i18next, and only the generic-banner fallback below needs
-// translating (a preview banner shows the real sender/subject). The pair
-// mirrors the "New message" key in public/locales (FR + EN, the two supported
-// languages); the on-load re-registration keeps the param in step with the
-// user's language. Empty (a registration predating `?lang=`) ⇒ English.
+// file can't reach i18next, and only the generic-banner fallback and the
+// missing-subject placeholder below need translating (a preview banner shows
+// the real sender/subject). The pairs mirror the "New message" and "No subject"
+// keys in public/locales (FR + EN, the two supported languages); the on-load
+// re-registration keeps the param in step with the user's language. Empty (a
+// registration predating `?lang=`) ⇒ English.
 const LANG = new URLSearchParams(self.location.search).get("lang") || "en";
-const GENERIC_TITLE = /^fr\b/i.test(LANG) ? "Nouveau message" : "New message";
+const IS_FRENCH = /^fr\b/i.test(LANG);
+const GENERIC_TITLE = IS_FRENCH ? "Nouveau message" : "New message";
+const NO_SUBJECT = IS_FRENCH ? "Aucun objet" : "No subject";
 
 // Decode a base64url VAPID key into the Uint8Array subscribe() expects. Mirrors
 // urlBase64ToUint8Array in web-push.ts.
@@ -56,12 +60,25 @@ function urlBase64ToUint8Array(base64String) {
   return output;
 }
 
+// A preview is only shown while the session that registered this browser lives
+// (`expires_at`, epoch seconds, set by the backend). Web Push holds a push up to
+// a day: a browser started after the session expired (a shared computer the
+// next morning) must show the generic banner, not the former user's mail. No
+// deadline (a backend predating it) counts as expired.
+function livePreview(payload) {
+  const preview = payload.preview;
+  if (!preview || !(Date.now() < preview.expires_at * 1000)) return null;
+  return preview;
+}
+
 function buildNotification(payload) {
-  const preview = payload.preview || {};
-  const title = preview.sender || GENERIC_TITLE;
+  const preview = livePreview(payload);
+  const title = (preview && preview.sender) || GENERIC_TITLE;
   const tag = payload.thread_id ? "thread-" + payload.thread_id : undefined;
   const options = {
-    body: preview.subject || "",
+    // Only a preview banner has a subject to stand in for; the generic one
+    // keeps an empty body.
+    body: preview ? preview.subject || NO_SUBJECT : "",
     // App icon shown on the banner. Served from the app origin (this SW's
     // scope), not API_ORIGIN, so it resolves same-origin. Without it the
     // platform falls back to the favicon/PWA icon, which is inconsistent

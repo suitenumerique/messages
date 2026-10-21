@@ -182,17 +182,20 @@ const obtainToken = async (): Promise<string> => {
   }
 };
 
-/** Upsert this device's token as the user's native `push` channel. The backend
- * keys on the token hash, so re-running is idempotent. */
-const registerNativeDevice = async (
-  token: string,
-  userId?: string,
-): Promise<void> => {
+/** Drive the OS registration and upsert this device's token as the user's
+ * native `push` channel. The backend keys on the token hash, so re-running is
+ * idempotent, and a token still owned by another account is reclaimed (§9 of
+ * docs/push-notifications.md), which deletes that account's channel. */
+const registerNativeDevice = async (userId?: string): Promise<void> => {
+  // Keys first: binding the keyring to `userId` drops another account's keys,
+  // even when the token round-trip below fails.
+  const keys = await previewKeys(userId);
+  const token = await obtainToken();
   await usersMeChannelsCreate({
     type: PushChannelCreateTypeEnum.push,
     platform: nativePlatform(),
     token,
-    keys: await previewKeys(userId),
+    keys,
     name: await deviceLabel(),
     app_version: await appVersion(),
   });
@@ -201,6 +204,17 @@ const registerNativeDevice = async (
   } catch {
     // Storage unavailable: only device sign-out matching degrades.
   }
+};
+
+/** Forget this device's registration: the stored token, the preview keys and
+ * the OS registration. Unregistering kills the token at the gateway, so a
+ * server channel left behind stops delivering and self-prunes on its next
+ * send. Never followed by an immediate re-registration: Android deletes the
+ * FCM token asynchronously, so `register()` could be handed the dying token. */
+const releaseNativeRegistration = async (): Promise<void> => {
+  localStorage.removeItem(NATIVE_TOKEN_KEY);
+  await clearPushPreviewKeys();
+  await PushNotifications.unregister();
 };
 
 /**
@@ -231,7 +245,7 @@ export const enableNativePush = async (
   await ensureAndroidNotificationChannel();
 
   try {
-    await registerNativeDevice(await obtainToken(), userId);
+    await registerNativeDevice(userId);
   } catch {
     return "registration_failed";
   }
@@ -248,19 +262,32 @@ export const enableNativePush = async (
  * user who explicitly enabled push on this device (opt-in marker) and only when
  * the OS permission is already granted; never prompts. This is also what
  * recreates the server channel after a voluntary logout (deleted server-side)
- * on the same user's next login. Unlike the web flow there is no shared-device
- * teardown here: without the marker we simply stay passive, and a different
- * user who enables push triggers the server-side token reclaim instead.
+ * on the same user's next login.
+ *
+ * A stored registration that cannot be refreshed is torn down. On a shared
+ * device it may be another account's, left by an expired session: its preview
+ * keys would keep decrypting that account's senders and subjects for the user
+ * now signed in. The previous user's opt-in marker survives, so their own next
+ * login here re-registers them. When the signed-in user can register, the
+ * re-registration takes the device over instead (keyring rebound, token
+ * reclaimed).
  */
 export const refreshNativePushRegistration = async (
   userId?: string,
 ): Promise<void> => {
   try {
-    if (!isNativePlatform() || !hasPushOptIn(userId)) return;
-    const permission = await PushNotifications.checkPermissions();
-    if (permission.receive !== "granted") return;
+    if (!isNativePlatform()) return;
+    const canRegister =
+      hasPushOptIn(userId) &&
+      (await PushNotifications.checkPermissions()).receive === "granted";
+    if (!canRegister) {
+      if (localStorage.getItem(NATIVE_TOKEN_KEY)) {
+        await releaseNativeRegistration();
+      }
+      return;
+    }
     await ensureAndroidNotificationChannel();
-    await registerNativeDevice(await obtainToken(), userId);
+    await registerNativeDevice(userId);
   } catch {
     // Best-effort refresh — never disrupt app load.
   }
@@ -294,9 +321,7 @@ export const unregisterIfCurrentDevice = async (
     const token = localStorage.getItem(NATIVE_TOKEN_KEY);
     if (!token || (await hashEndpoint(token)) !== tokenHash) return;
     clearPushOptIn(userId);
-    localStorage.removeItem(NATIVE_TOKEN_KEY);
-    await clearPushPreviewKeys();
-    await PushNotifications.unregister();
+    await releaseNativeRegistration();
   } catch {
     // Best-effort; sign-out proceeds regardless.
   }
