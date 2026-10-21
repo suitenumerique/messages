@@ -1,0 +1,8 @@
+theme/node_modules
+theme/dist
+theme/dist_keycloak
+theme/.keycloakify
+tests
+bulk-role-membership/target
+theme/*.tsbuildinfo
+theme/public/keycloakify-dev-resources

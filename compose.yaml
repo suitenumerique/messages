@@ -115,8 +115,23 @@ services:
     image: quay.io/keycloak/keycloak:26.8.1@sha256:79c623a22abacf3fe6c00a5fb30f5b7843d717b234033b80995891c06116d244
     volumes:
       - ./src/keycloak/realm.json:/opt/keycloak/data/import/realm.json:ro
-      - ./src/keycloak/themes/dsfr-2.3.4.jar:/opt/keycloak/providers/keycloak-theme.jar:ro
       - ./src/keycloak/bulk-role-membership/bulk-role-membership.jar:/opt/keycloak/providers/bulk-role-membership.jar:ro
+      # The theme jar is a build output (make build-keycloak-theme). The
+      # entrypoint copies it when it exists, so a missing jar does not block
+      # the services that depend on Keycloak, such as the backend tests.
+      - ./src/keycloak/theme:/opt/keycloak-theme:ro
+    entrypoint:
+      - bash
+      - -c
+      - |
+        jar=/opt/keycloak-theme/dist_keycloak/keycloak-theme-for-kc-all-other-versions.jar
+        if [ -f "$$jar" ]; then
+          cp "$$jar" /opt/keycloak/providers/lst-dsfr.jar
+        else
+          echo "lst-dsfr theme jar not found, run 'make build-keycloak-theme'"
+        fi
+        exec /opt/keycloak/bin/kc.sh "$$@"
+      - kc.sh
     environment:
       - HOST=http://localhost:8902
       - ADMIN_HOST=http://localhost:8902

@@ -1,0 +1,86 @@
+.dashboard-container nav {
+  grid-area: nav;
+}
+
+.dashboard-container .dashboard-content {
+  grid-area: content;
+}
+
+.dashboard-container {
+  max-width: 78rem;
+  padding: 1.5rem;
+  margin: 0 auto;
+  display: grid;
+  grid-template-columns: 300px auto;
+  grid-template-areas: "nav content";
+}
+
+@media (max-width: 62em) {
+  .dashboard-container {
+    padding: 1rem;
+  }
+}
+
+@media all and (max-width: 768px) {
+  .dashboard-container {
+    padding-top: 0;
+    grid-template-columns: 100%;
+    grid-template-areas:
+      "nav"
+      "content";
+  }
+
+  .dashboard-container .dashboard-content {
+    margin-top: 1rem;
+  }
+}
+
+.lst-option {
+  width: 100%;
+  border: 1px solid var(--border-default-grey);
+  padding: 1rem;
+  margin-bottom: 1rem;
+}
+
+.lst-credential-list {
+  margin-bottom: 1.5rem;
+  border-top: 1px solid var(--border-default-grey);
+}
+
+.lst-credential {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 0.5rem 1rem;
+  padding: 1rem 0;
+  border-bottom: 1px solid var(--border-default-grey);
+}
+
+.lst-credential__body {
+  flex: 1 1 12rem;
+  min-width: 0;
+}
+
+.lst-credential__tags {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 0.5rem;
+  margin-bottom: 0.25rem;
+}
+
+/* DSFR paints the accent tags only on a, button and input elements. */
+.lst-credential .fr-tag--purple-glycine {
+  color: var(--text-action-high-purple-glycine);
+  background-color: var(--background-action-low-purple-glycine);
+}
+
+.lst-credential .fr-tag--green-emeraude {
+  color: var(--text-action-high-green-emeraude);
+  background-color: var(--background-action-low-green-emeraude);
+}
+
+.lst-credential .fr-tag--blue-cumulus {
+  color: var(--text-action-high-blue-cumulus);
+  background-color: var(--background-action-low-blue-cumulus);
+}

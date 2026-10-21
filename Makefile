@@ -39,6 +39,7 @@ COMPOSE_RUN_APP     = $(COMPOSE_RUN) backend-dev
 COMPOSE_RUN_APP_DB  = $(COMPOSE_RUN) backend-db
 COMPOSE_RUN_APP_TOOLS = $(COMPOSE_RUN) --no-deps backend-dev
 COMPOSE_RUN_CROWDIN = $(COMPOSE_RUN) crowdin crowdin
+KEYCLOAK_THEME_JAR := src/keycloak/theme/dist_keycloak/keycloak-theme-for-kc-all-other-versions.jar
 
 # -- Backend
 MANAGE              = $(COMPOSE_RUN_APP) python manage.py
@@ -192,7 +193,7 @@ build-python-base: ## build the shared python+uv base image (deploy/python-uv) t
 	@docker build -t $(PYTHON_UV_IMAGE) deploy/python-uv
 .PHONY: build-python-base
 
-start-deps: ## start the slow infra deps (postgres, redis, keycloak) in the background so they warm up while the rest of bootstrap runs
+start-deps: $(KEYCLOAK_THEME_JAR) ## start the slow infra deps (postgres, redis, keycloak) in the background so they warm up while the rest of bootstrap runs
 	@$(COMPOSE) up -d --no-recreate postgresql redis keycloak
 .PHONY: start-deps
 
@@ -206,7 +207,7 @@ check-bootstrapped:
 		printf "\n$(BOLD)✗ Not bootstrapped$(RESET): frontend dependencies are not installed.\n  Run $(BOLD)make bootstrap$(RESET) first.\n\n" >&2; exit 1; }
 .PHONY: check-bootstrapped
 
-start: check-bootstrapped build-python-base ## start the light dev stack (backend, worker, frontend, keycloak, postgresql, redis)
+start: check-bootstrapped build-python-base $(KEYCLOAK_THEME_JAR) ## start the light dev stack (backend, worker, frontend, keycloak, postgresql, redis)
 	@$(COMPOSE) stop backend-dev worker-dev worker-ui opensearch objectstorage mailcatcher mta-in-py mpa >/dev/null 2>&1 || true
 	@$(COMPOSE) up --build -d --wait \
 		postgresql \
@@ -217,7 +218,7 @@ start: check-bootstrapped build-python-base ## start the light dev stack (backen
 		worker-dev-light
 .PHONY: start
 
-start-full: check-bootstrapped build-python-base ## start the full dev stack (adds OpenSearch, object storage, mailcatcher and the MTAs)
+start-full: check-bootstrapped build-python-base $(KEYCLOAK_THEME_JAR) ## start the full dev stack (adds OpenSearch, object storage, mailcatcher and the MTAs)
 	@$(COMPOSE) stop backend-dev-light worker-dev-light >/dev/null 2>&1 || true
 	@$(COMPOSE) up --build -d --wait \
 		postgresql \
@@ -314,7 +315,8 @@ lint-check:  ## run all linters in check mode (no auto-fix)
 lint-check: \
   lint-check-back \
   typecheck-front \
-  lint-front
+  lint-front \
+  lint-keycloak-theme
 .PHONY: lint-check
 
 lint-back: build-python-base ## run back-end linters (with auto-fix)
@@ -525,7 +527,7 @@ demo-e2e: ## Populate the e2e database with demo data
 	@$(COMPOSE_E2E) run --rm backend python manage.py e2e_demo
 .PHONY: demo-e2e
 
-start-e2e: ## Start e2e services (migrate, seed, etc.)
+start-e2e: $(KEYCLOAK_THEME_JAR) ## Start e2e services (migrate, seed, etc.)
 	@echo "$(BLUE)\n\n| 🔧 Setting up E2E services... \n$(RESET)"
 	@$(COMPOSE_E2E) run --rm backend python manage.py create_bucket --storage message-imports --expire-days 1
 	@$(COMPOSE_E2E) run --rm backend python manage.py create_bucket --storage message-blobs --expire-days 1
@@ -877,6 +879,37 @@ build-keycloak: ## Build the custom Keycloak provider JARs (writes JAR alongside
 	@cp src/keycloak/bulk-role-membership/target/bulk-role-membership.jar \
 		src/keycloak/bulk-role-membership/bulk-role-membership.jar
 .PHONY: build-keycloak
+
+build-keycloak-theme: ## Build the Keycloakify theme jar (lst-dsfr)
+	@docker build --target theme-tools -t messages-keycloak-theme-tools src/keycloak/
+	@docker volume create st-messages-keycloak-theme-cache >/dev/null
+	@docker run --rm -u $(DOCKER_UID) -e HOME=/cache/home \
+		-e MAVEN_OPTS=-Dmaven.repo.local=/cache/m2 \
+		-v "$(PWD)/src/keycloak/theme":/theme \
+		-v st-messages-keycloak-theme-cache:/cache \
+		messages-keycloak-theme-tools \
+		sh -c "mkdir -p /cache/home && npm ci && npm run build-keycloak-theme"
+.PHONY: build-keycloak-theme
+
+# Every input of `npm run build-keycloak-theme`, plus the Dockerfile stage that
+# sets the Node version and the Keycloak major version of the jar.
+KEYCLOAK_THEME_SOURCES := $(shell find src/keycloak/theme/src -type f) \
+	$(addprefix src/keycloak/theme/,index.html package.json package-lock.json .npmrc tsconfig.json vite.config.ts) \
+	src/keycloak/Dockerfile
+
+$(KEYCLOAK_THEME_JAR): $(KEYCLOAK_THEME_SOURCES)
+	@$(MAKE) build-keycloak-theme
+
+lint-keycloak-theme: ## Lint and type-check the Keycloakify theme
+	@docker build --target theme-tools -t messages-keycloak-theme-tools src/keycloak/
+	@docker volume create st-messages-keycloak-theme-cache >/dev/null
+	@docker run --rm -u $(DOCKER_UID) -e HOME=/cache/home \
+		-e MAVEN_OPTS=-Dmaven.repo.local=/cache/m2 \
+		-v "$(PWD)/src/keycloak/theme":/theme \
+		-v st-messages-keycloak-theme-cache:/cache \
+		messages-keycloak-theme-tools \
+		sh -c "mkdir -p /cache/home && npm ci && npm run lint && npm run ts:check"
+.PHONY: lint-keycloak-theme
 
 test-keycloak: ## run all Keycloak provider tests (builds JARs, brings up Keycloak)
 	@bin/test-keycloak

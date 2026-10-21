@@ -475,6 +475,17 @@ Keycloak logs "Keycloak is running inside a container, but is not PID 1"
 at each start. This is expected: a small entrypoint runs Caddy and
 Keycloak together and forwards signals.
 
+### Keycloak Theme (`lst-dsfr`)
+
+The theme reads the three variables in the Keycloak container.
+See [identity-provider.md](identity-provider.md) for the theme setup.
+
+| Variable | Default | Description | Required |
+|----------|---------|-------------|----------|
+| `DSFR_THEME_HOME_URL` | `/` | Absolute URL of the service. When unset or `/`, the login pages and the account console link to the account console of the realm. | Optional |
+| `DSFR_THEME_SERVICE_TITLE` | `Messages` | Page title of the account console. | Optional |
+| `DSFR_THEME_BRAND_TOP` | `République<br/>Française` | HTML of the brand block. | Optional |
+
 ## Development Tools
 
 ### Crowdin (Translations)

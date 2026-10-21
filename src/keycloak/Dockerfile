@@ -33,10 +33,32 @@ RUN wget -qO /tmp/caddy.tar.gz "https://github.com/caddyserver/caddy/releases/do
     && mv caddy /usr/bin/caddy \
     && rm /tmp/caddy.tar.gz
 
+# The theme jar is architecture independent, so the build runs on the native
+# platform of the builder, also in the arm64 CI build.
+FROM --platform=$BUILDPLATFORM node:24.18.0-slim@sha256:cb4e8f7c443347358b7875e717c29e27bf9befc8f5a26cf18af3c3dec80e58c5 AS theme-tools
+RUN apt-get update \
+    && apt-get install -y --no-install-recommends maven ca-certificates \
+    && rm -rf /var/lib/apt/lists/*
+# Keycloakify renames the jar from its cache dir into the project, so that cache
+# must stay on the same filesystem: leave XDG_CACHE_HOME unset (node_modules/.cache).
+# Only the npm cache and the Maven repository live on a separate cache mount.
+RUN mkdir -p /cache && chmod 1777 /cache
+ENV npm_config_cache=/cache/npm
+ENV KEYCLOAKIFY_USE_DEFAULT_MAVEN_REPO=true
+ENV MAVEN_OPTS=-Dmaven.repo.local=/cache/m2
+ENV KEYCLOAKIFY_BUILD_FOR_KEYCLOAK_MAJOR_VERSION=26
+WORKDIR /theme
+
+FROM theme-tools AS theme-build
+COPY theme/package.json theme/package-lock.json theme/.npmrc ./
+RUN --mount=type=cache,target=/cache npm ci
+COPY theme/ ./
+RUN --mount=type=cache,target=/cache npm run build-keycloak-theme
+
 FROM quay.io/keycloak/keycloak:26.8.1@sha256:79c623a22abacf3fe6c00a5fb30f5b7843d717b234033b80995891c06116d244 AS builder
 
 WORKDIR /opt/keycloak
-COPY --chown=keycloak:keycloak --chmod=644 themes/dsfr-2.3.4.jar /opt/keycloak/providers/dsfr.jar
+COPY --from=theme-build --chown=keycloak:keycloak --chmod=644 /theme/dist_keycloak/keycloak-theme-for-kc-all-other-versions.jar /opt/keycloak/providers/lst-dsfr.jar
 COPY --from=scripts --chown=keycloak:keycloak --chmod=644 /custom-scripts.jar /opt/keycloak/providers/custom-scripts.jar
 # Committed JAR. Rebuild via `make build-keycloak` if you edit the Java
 # source under bulk-role-membership/.

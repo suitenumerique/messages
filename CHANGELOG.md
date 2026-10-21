@@ -8,11 +8,23 @@ and this project adheres to
 
 ## [Unreleased]
 
+### Added
+
+- Support passkey sign-in in the `lst-dsfr` Keycloak theme (off by default)
+- Add the `lst-dsfr` login and account theme (Keycloakify, react-dsfr) with
+  the ProConnect look. The dev realm keeps the built-in themes.
+- Enable passkeys in the dev realm
+
 ### Changed
 
 - Bump keycloak to 26.8.1 and refresh the Alpine 3.24 digest in the Keycloak image
 - Bump Caddy to 2.11.7 in the Keycloak image, the frontend image and the
   Scalingo post-frontend deploy script
+
+### Removed
+
+- The DSFR theme jar `dsfr-2.3.4.jar`. A realm that selected the `DSFR` theme
+  must select `lst-dsfr` once after the upgrade
 
 ## [0.10.0] - 2026-09-29
 

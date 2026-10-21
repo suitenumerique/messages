@@ -1,0 +1,14 @@
+#root {
+  display: flex;
+  flex-direction: column;
+  min-height: 100vh;
+  min-height: 100dvh;
+}
+
+#root > main {
+  flex-grow: 1;
+}
+
+.lst-footer {
+  padding-bottom: 1.5rem;
+}
