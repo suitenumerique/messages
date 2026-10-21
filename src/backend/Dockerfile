@@ -10,6 +10,7 @@ FROM ${PYTHON_UV_IMAGE} AS uv
 # Backend-specific build/collectstatic deps (libmagic1 is needed at build time
 # because collectstatic imports the app, which imports python-magic).
 RUN <<EOR
+set -e
 apt-get update
 DEBIAN_FRONTEND="noninteractive" apt-get install -y --no-install-recommends \
     curl \
@@ -46,6 +47,7 @@ WORKDIR /app
 
 # collectstatic
 RUN <<EOR
+set -e
 DJANGO_CONFIGURATION=Build python manage.py collectstatic --noinput
 # Replace duplicated file by a symlink to decrease the overall size of the final image
 rdfind -makesymlinks true -followsymlinks true -makeresultsfile false ${MESSAGES_STATIC_ROOT}
@@ -62,6 +64,7 @@ RUN chmod g=u /etc/passwd
 
 # Install required packages
 RUN <<EOR
+set -e
 apt-get update
 DEBIAN_FRONTEND="noninteractive" apt-get install -y --no-install-recommends \
   libmagic1
@@ -158,7 +161,7 @@ RUN strip-python
 # ---- Distroless production runtime ----
 # Uses cc-debian13 (C runtime only) + python-build-standalone from uv.
 # Debug with: docker run --entrypoint='' gcr.io/distroless/cc-debian13:debug-nonroot sh
-FROM gcr.io/distroless/cc-debian13:nonroot@sha256:e792ab3d241a468a4fd7519ddbbebe66b49b5f365771716ea688ad40b6c6f1c2 AS runtime-distroless-prod
+FROM gcr.io/distroless/cc-debian13:nonroot@sha256:b7e81cb1af38d9345680e68bcf564d388f96304e25222030fc8c051faf8565b3 AS runtime-distroless-prod
 ARG MESSAGES_STATIC_ROOT=/data/static
 
 WORKDIR /app

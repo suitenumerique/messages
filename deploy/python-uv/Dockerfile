@@ -12,12 +12,13 @@
 # this image directly and we don't want compilers in production images. Each
 # service adds its own build deps in a build-only stage.
 
-FROM debian:trixie-slim@sha256:a99cfc517144bc59b1978475ec53b46ecabec7e43635402ee5b77cc54cd1b20a AS base
+FROM debian:trixie-slim@sha256:62bd423aeee912639ca8ee681c2b762cb3e25137e0a92b20be455898a9f034ad AS base
 
 # Bump to force an apt refresh + security upgrade of the base OS.
-ENV MIN_UPDATE_DATE="2026-10-05"
+ENV MIN_UPDATE_DATE="2026-10-21"
 
 RUN <<EOR
+set -e
 apt-get update
 DEBIAN_FRONTEND="noninteractive" apt-get upgrade -y
 DEBIAN_FRONTEND="noninteractive" apt-get install -y --no-install-recommends \
@@ -33,8 +34,8 @@ WORKDIR /app
 FROM base AS uv
 
 # Pin uv by SHA256 digest for supply chain security.
-# Verify with: gh attestation verify --owner astral-sh oci://ghcr.io/astral-sh/uv:0.12.24
-COPY --from=ghcr.io/astral-sh/uv@sha256:3af4716e991d6956a41e573eab705d0ee08500cd829ed30293eb8472f372c65a /uv /uvx /bin/
+# Verify with: gh attestation verify --owner astral-sh oci://ghcr.io/astral-sh/uv:0.13.4
+COPY --from=ghcr.io/astral-sh/uv@sha256:9f130421e930bfbdc563c00740466603f8723158e90297d07957c2294640262b /uv /uvx /bin/
 
 ENV UV_COMPILE_BYTECODE=1
 ENV UV_LINK_MODE=copy
