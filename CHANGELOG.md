@@ -28,6 +28,12 @@ and this project adheres to
 - The DSFR theme jar `dsfr-2.3.4.jar`. A realm that selected the `DSFR` theme
   must select `lst-dsfr` once after the upgrade
 
+### Security
+
+- The Keycloak image removes `emSign ECC Root CA - G3` from the Java trust
+  store after the eMudhra intermediate CA compromise of October 2026. The
+  Comodo `AAA Certificate Services` root is already absent from the base image
+
 ## [0.10.0] - 2026-09-29
 
 ### Added
