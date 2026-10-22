@@ -1,5 +1,5 @@
 import { Button, Checkbox, Icon, IconType, Spinner, StorageGaugeInformation } from "@gouvfr-lasuite/ui-components";
-import { Link, useRouter } from "@tanstack/react-router";
+import { createLink, useRouter } from "@tanstack/react-router";
 import ViewHelper from "@/features/utils/view-helper";
 import clsx from "clsx";
 import { MouseEvent, useEffect, useRef, useState } from "react";
@@ -24,11 +24,16 @@ import { QuotaHelper } from "@/features/utils/quota-helper";
 import { Abilities } from "@/hooks/use-ability";
 import { useMailboxEntitlements } from "@/features/quota/api/use-mailbox-entitlements";
 
+// A Cunningham button rendered as a router link: client-side navigation, while
+// a modifier/middle click still opens a new tab.
+const ButtonLink = createLink(Button);
+
 type MailboxSettingsStorageTabProps = {
   mailbox: Mailbox;
-  /** Closes the settings modal — called when the user follows a conversation
-   * deep-link so they land on the thread instead of behind the modal. */
-  onClose: () => void;
+  /** Called when the user follows a folder or conversation link in place, so
+   * they land on it instead of behind the modal (and, on mobile, behind the
+   * left panel the modal was opened from). */
+  onNavigate: () => void;
 };
 
 /**
@@ -41,7 +46,7 @@ type MailboxSettingsStorageTabProps = {
  */
 export const MailboxSettingsStorageTab = ({
   mailbox,
-  onClose,
+  onNavigate,
 }: MailboxSettingsStorageTabProps) => {
   const { t } = useTranslation();
   const language = i18n.resolvedLanguage;
@@ -136,7 +141,7 @@ export const MailboxSettingsStorageTab = ({
       ? {
           onClick: () => {
             router.navigate(getThreadLocation(thread));
-            onClose();
+            onNavigate();
           },
         }
       : {
@@ -157,7 +162,7 @@ export const MailboxSettingsStorageTab = ({
     ) {
       return;
     }
-    onClose();
+    onNavigate();
   };
 
   const entitlements = entitlementsData?.data;
@@ -242,14 +247,6 @@ export const MailboxSettingsStorageTab = ({
         <div className="mailbox-settings__storage-summary">
           <div className="mailbox-settings__storage-metric">
             <span className="mailbox-settings__storage-metric-value">
-              {stats.thread_count.toLocaleString(language)}
-            </span>
-            <span className="mailbox-settings__storage-metric-label">
-              {t("Threads")}
-            </span>
-          </div>
-          <div className="mailbox-settings__storage-metric">
-            <span className="mailbox-settings__storage-metric-value">
               {stats.message_count.toLocaleString(language)}
             </span>
             <span className="mailbox-settings__storage-metric-label">
@@ -260,16 +257,22 @@ export const MailboxSettingsStorageTab = ({
               and in a spam conversation. Each links to its folder, whose
               banner offers to empty it. */}
           {[
-            { label: t("Trash"), size: stats.trashed_storage, search: { has_trashed: "1" } },
-            { label: t("Spam"), size: stats.spam_storage, search: { is_spam: "1" } },
-          ].map(({ label, size, search }) => (
-            <Link
+            {
+              label: t("Trash"),
+              linkLabel: t("View trash"),
+              size: stats.trashed_storage,
+              search: { has_trashed: "1" },
+            },
+            {
+              label: t("Spam"),
+              linkLabel: t("View spam"),
+              size: stats.spam_storage,
+              search: { is_spam: "1" },
+            },
+          ].map(({ label, linkLabel, size, search }) => (
+            <div
               key={label}
-              to="/mailbox/$mailboxId"
-              params={{ mailboxId: mailbox.id }}
-              search={search}
-              className="mailbox-settings__storage-metric mailbox-settings__storage-metric--link"
-              onClick={handleFollowLink}
+              className="mailbox-settings__storage-metric mailbox-settings__storage-metric--with-action"
             >
               <span className="mailbox-settings__storage-metric-value">
                 {formatSize(size)}
@@ -277,7 +280,20 @@ export const MailboxSettingsStorageTab = ({
               <span className="mailbox-settings__storage-metric-label">
                 {label}
               </span>
-            </Link>
+              <Tooltip content={linkLabel}>
+                <ButtonLink
+                  to="/mailbox/$mailboxId"
+                  params={{ mailboxId: mailbox.id }}
+                  search={search}
+                  className="mailbox-settings__storage-metric-action"
+                  size="small"
+                  variant="tertiary"
+                  icon={<Icon name="open_in_new" type={IconType.OUTLINED} />}
+                  aria-label={linkLabel}
+                  onClick={handleFollowLink}
+                />
+              </Tooltip>
+            </div>
           ))}
         </div>
       </section>

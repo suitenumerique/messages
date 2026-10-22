@@ -1,4 +1,4 @@
-import { act, ReactNode } from "react";
+import { act, MouseEvent, ReactNode } from "react";
 import { createRoot, type Root } from "react-dom/client";
 import { CunninghamProvider } from "@gouvfr-lasuite/ui-components";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
@@ -6,7 +6,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 const THREAD_HREF = "/mailbox/mailbox-1/thread/thread-1?has_active=1";
 
 const navigate = vi.fn();
-const onClose = vi.fn();
+const onNavigate = vi.fn();
 let isNative = false;
 
 vi.mock("react-i18next", () => ({
@@ -17,9 +17,16 @@ vi.mock("@/features/i18n/initI18n", () => ({
     default: { resolvedLanguage: "en-US" },
 }));
 
+type MockLinkProps = {
+    children: ReactNode;
+    className?: string;
+    "aria-label"?: string;
+    onClick?: (event: MouseEvent<HTMLAnchorElement>) => void;
+};
+
 vi.mock("@tanstack/react-router", () => ({
-    Link: ({ children, className }: { children: ReactNode; className?: string }) => (
-        <a className={className}>{children}</a>
+    createLink: () => ({ children, className, "aria-label": ariaLabel, onClick }: MockLinkProps) => (
+        <a className={className} aria-label={ariaLabel} onClick={onClick}>{children}</a>
     ),
     useRouter: () => ({
         navigate,
@@ -40,7 +47,6 @@ vi.mock("@/features/api/gen", () => ({
             status: 200,
             data: {
                 total_storage: 2048,
-                thread_count: 1,
                 message_count: 1,
                 trashed_storage: 0,
                 spam_storage: 0,
@@ -98,7 +104,7 @@ const render = () => {
     act(() => {
         root.render(
             <CunninghamProvider>
-                <MailboxSettingsStorageTab mailbox={{ id: "mailbox-1" } as Mailbox} onClose={onClose} />
+                <MailboxSettingsStorageTab mailbox={{ id: "mailbox-1" } as Mailbox} onNavigate={onNavigate} />
             </CunninghamProvider>,
         );
     });
@@ -109,14 +115,14 @@ const openAction = () =>
         '.mailbox-settings__storage-item-action[aria-label="Open in new tab"], .mailbox-settings__storage-item-action[aria-label="Open"]',
     );
 
-describe("MailboxSettingsStorageTab — opening a conversation", () => {
+describe("MailboxSettingsStorageTab — navigation", () => {
     beforeEach(() => {
         container = document.createElement("div");
         document.body.appendChild(container);
         root = createRoot(container);
         isNative = false;
         navigate.mockReset();
-        onClose.mockReset();
+        onNavigate.mockReset();
     });
 
     afterEach(() => {
@@ -153,6 +159,29 @@ describe("MailboxSettingsStorageTab — opening a conversation", () => {
             params: { mailboxId: "mailbox-1", threadId: "thread-1" },
             search: { has_active: "1" },
         });
-        expect(onClose).toHaveBeenCalledTimes(1);
+        expect(onNavigate).toHaveBeenCalledTimes(1);
+    });
+
+    it.each(["View trash", "View spam"])("leaves the settings when following %s", (label) => {
+        render();
+
+        // Icon only: the accessible name carries the folder.
+        const link = container.querySelector<HTMLElement>(`a[aria-label="${label}"]`);
+        expect(link).not.toBeNull();
+
+        act(() => link?.click());
+
+        expect(onNavigate).toHaveBeenCalledTimes(1);
+    });
+
+    it("keeps the settings open on a modifier click, which opens a new tab", () => {
+        render();
+
+        const link = container.querySelector<HTMLElement>('a[aria-label="View trash"]');
+        act(() => {
+            link?.dispatchEvent(new window.MouseEvent("click", { bubbles: true, metaKey: true }));
+        });
+
+        expect(onNavigate).not.toHaveBeenCalled();
     });
 });

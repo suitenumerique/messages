@@ -7,6 +7,7 @@ import { HorizontalSeparator, useResponsive } from "@gouvfr-lasuite/ui-component
 import { useEffect, useMemo, useState } from "react";
 import { useTranslation } from "react-i18next";
 import { useMailboxContext } from "@/features/providers/mailbox";
+import { useLayoutContext } from "@/features/layouts/components/layout-context";
 import { FEATURE_KEYS, useFeatureFlag } from "@/hooks/use-feature";
 import { MailboxSelector } from "@/features/layouts/components/mailbox-selector";
 import {
@@ -73,6 +74,9 @@ export const ModalMailboxSettings = ({
   const { isMobile } = useResponsive();
   const { t } = useTranslation();
   const { mailboxes, selectedMailbox } = useMailboxContext();
+  // On mobile the modal is opened from the left panel, which would otherwise
+  // still cover the folder or conversation a tab navigates to.
+  const { closeLeftPanel } = useLayoutContext();
   const isIntegrationsEnabled = useFeatureFlag(FEATURE_KEYS.MAILBOX_ADMIN_CHANNELS);
 
   // Every mailbox the user can configure: admins (rename + accesses) plus any
@@ -372,7 +376,10 @@ export const ModalMailboxSettings = ({
               <MailboxSettingsStorageTab
                 key={settingsMailbox.id}
                 mailbox={settingsMailbox}
-                onClose={onClose}
+                onNavigate={() => {
+                  closeLeftPanel();
+                  onClose();
+                }}
               />
             ),
           },

@@ -333,7 +333,7 @@ const ThreadPanelTitle = ({ selectedThreadIds, isAllSelected, isSomeSelected, is
                                         scope: isSpamView ? 'spam' : 'trashed',
                                         threadIds: threadIdsToMark,
                                         onSuccess: () => {
-                                            unselectThread();
+                                            unselectThreadIfAmong(threadIdsToMark);
                                             onClearSelection();
                                         }
                                     });
