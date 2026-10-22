@@ -32,3 +32,7 @@ EMAIL_BACKEND=django.core.mail.backends.console.EmailBackend
 
 # Debug
 DJANGO_DEBUG=True
+
+# Trashbin: automatic deletion is off by default; the e2e suite enables it to
+# exercise the retention notice of the Trash and Spam folders.
+TRASHBIN_CUTOFF_DAYS=30

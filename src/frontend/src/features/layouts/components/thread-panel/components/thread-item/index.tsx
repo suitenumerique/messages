@@ -9,12 +9,13 @@ import { ThreadItemSenders } from "./thread-item-senders"
 import { Badge } from "@/features/ui/components/badge"
 import { ThreadDragPreview } from "./thread-drag-preview"
 import { PORTALS } from "@/features/config/constants"
-import { Button, Checkbox, Tooltip } from "@gouvfr-lasuite/ui-components"
+import { Button, Checkbox } from "@gouvfr-lasuite/ui-components"
+import { Tooltip } from "@/features/ui/components/tooltip"
 import { IconSize, IconType, UserAvatar } from "@gouvfr-lasuite/ui-components"
 import { AssigneesAvatarGroup } from "@/features/ui/components/assignees-avatar-group"
 import { LabelBadge } from "@/features/ui/components/label-badge"
 import { useLayoutDragContext } from "@/features/layouts/components/layout-context"
-import ViewHelper from "@/features/utils/view-helper"
+import { useCurrentView } from "@/hooks/use-current-view";
 import useCanEditThreads from "@/features/message/use-can-edit-threads"
 import { FEATURE_KEYS, useFeatureFlag } from "@/hooks/use-feature"
 import { ThreadListboxItemProps } from "../../hooks/use-thread-listbox"
@@ -52,26 +53,27 @@ export const ThreadItem = ({ thread, isSelected, onToggle, onSelectRange, select
     const isTouchGestureRef = useRef(false)
     const { setIsDragging: setGlobalDragging, setDragAction } = useLayoutDragContext();
     const dragPreviewContainer = useRef(document.getElementById(PORTALS.DRAG_PREVIEW));
+    const view = useCurrentView();
     const threadDate = useMemo(() => {
-        if (ViewHelper.isInboxView() && thread.active_messaged_at) {
+        if (view.isInboxView && thread.active_messaged_at) {
             return thread.active_messaged_at;
         }
-        if (ViewHelper.isArchivedView() && thread.archived_messaged_at) {
+        if (view.isArchivedView && thread.archived_messaged_at) {
             return thread.archived_messaged_at;
         }
-        if (ViewHelper.isDraftsView() && thread.draft_messaged_at) {
+        if (view.isDraftsView && thread.draft_messaged_at) {
             return thread.draft_messaged_at
         }
-        if ((ViewHelper.isOutboxView() || ViewHelper.isSentView()) && thread.sender_messaged_at) {
+        if ((view.isOutboxView || view.isSentView) && thread.sender_messaged_at) {
             return thread.sender_messaged_at;
         }
-        if (ViewHelper.isTrashedView() && thread.trashed_messaged_at) {
+        if (view.isTrashedView && thread.trashed_messaged_at) {
             return thread.trashed_messaged_at;
         }
 
         // Draft-only threads have messaged_at=null, fall back to draft_messaged_at
         return thread.messaged_at || thread.draft_messaged_at;
-    }, [thread])
+    }, [thread, view])
 
     const hasUnread = useThreadUnread(thread);
 
@@ -250,7 +252,7 @@ export const ThreadItem = ({ thread, isSelected, onToggle, onSelectRange, select
     const { markAsStarred, markAsUnstarred } = useStarred();
     // Starring a trashed or spam thread makes no sense: keep the starred
     // state visible (read-only badge) but drop the toggle in those views.
-    const canToggleStar = !ViewHelper.isTrashedView() && !ViewHelper.isSpamView();
+    const canToggleStar = !view.isTrashedView && !view.isSpamView;
 
     const dragCount = selectedThreadIds.size > 0 ? selectedThreadIds.size : 1;
 

@@ -17,6 +17,7 @@ from rest_framework.views import APIView
 
 from core import models
 from core.services.search.tasks import update_threads_mailbox_flags_task
+from core.services.trashbin import trashbin_timestamp
 
 from .. import permissions
 
@@ -265,8 +266,8 @@ class ChangeFlagView(APIView):
                     batch_update_data = {"updated_at": current_time}
                     if flag == "trashed":
                         batch_update_data["is_trashed"] = value
-                        batch_update_data["trashed_at"] = (
-                            current_time if value else None
+                        batch_update_data["trashed_at"] = trashbin_timestamp(
+                            flag, value, current_time
                         )
                     elif flag == "archived":
                         batch_update_data["is_archived"] = value
@@ -275,6 +276,12 @@ class ChangeFlagView(APIView):
                         )
                     elif flag == "spam":
                         batch_update_data["is_spam"] = value
+                        # trashed_at is the "entered the trashbin" time; spam is
+                        # half the trashbin (is_trashed OR is_spam), so it keys
+                        # the cutoff sweep off this too. See services/trashbin.
+                        batch_update_data["trashed_at"] = trashbin_timestamp(
+                            flag, value, current_time
+                        )
 
                     messages_to_update.update(**batch_update_data)
 
@@ -313,8 +320,8 @@ class ChangeFlagView(APIView):
                     batch_update_data = {"updated_at": current_time}
                     if flag == "trashed":
                         batch_update_data["is_trashed"] = value
-                        batch_update_data["trashed_at"] = (
-                            current_time if value else None
+                        batch_update_data["trashed_at"] = trashbin_timestamp(
+                            flag, value, current_time
                         )
                     elif flag == "archived":
                         batch_update_data["is_archived"] = value
@@ -323,6 +330,12 @@ class ChangeFlagView(APIView):
                         )
                     elif flag == "spam":
                         batch_update_data["is_spam"] = value
+                        # trashed_at is the "entered the trashbin" time; spam is
+                        # half the trashbin (is_trashed OR is_spam), so it keys
+                        # the cutoff sweep off this too. See services/trashbin.
+                        batch_update_data["trashed_at"] = trashbin_timestamp(
+                            flag, value, current_time
+                        )
                     # Note: Trashing or Archiving a thread might have other side effects (e.g., updating thread state)
                     # This current logic only updates the is_trashed or is_archived flag on messages within.
                     # If Thread model itself has state, update threads_to_process separately.

@@ -109,7 +109,7 @@
     pointer-events: none;
 
     // Enable pointer events for all interactive elements
-    button, a, input, textarea, select, .c__tooltip, [role="button"], [tabindex]:not([tabindex="-1"]) {
+    button, a, input, textarea, select, [role="button"], [tabindex]:not([tabindex="-1"]) {
         pointer-events: auto;
     }
 }

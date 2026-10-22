@@ -5,6 +5,7 @@ import type { threadsListResponse } from "../api/gen/threads/threads";
 import { useLocation, useNavigate, useParams } from "@tanstack/react-router";
 import usePrevious from "@/hooks/use-previous";
 import { useUrlSearchParams } from "@/hooks/use-url-search-params";
+import { getThreadsStatsQueryKey } from "@/hooks/use-threads-stats";
 import { MAILBOX_FOLDERS } from "../layouts/components/mailbox-panel/components/mailbox-list";
 import {
     getMailboxThreadsListQueryKeyPrefix,
@@ -88,26 +89,6 @@ type MailboxContextType = {
 }
 
 export const isThreadEvent = (item: TimelineItem | null): item is Extract<TimelineItem, { type: 'event' }> => item?.type === 'event';
-
-/**
- * Canonical query key for the threads stats query.
- *
- * Single source of truth shared by:
- *   - query definition sites (`useThreadsStatsRetrieve` call sites that
- *     pass `queryParams` to scope the cache per filter/label)
- *   - invalidation / optimistic-update sites that target the whole
- *     per-mailbox stats subtree (omit `queryParams` for prefix matching)
- *
- * Keep in sync with the `invalidateThreadsStats` predicate, which relies
- * on `queryParams` being the last entry to filter out `label_slug=*` keys.
- */
-export const getThreadsStatsQueryKey = (
-    mailboxId: string | undefined,
-    queryParams?: string,
-) => {
-    const base = ['threads', 'stats', mailboxId];
-    return queryParams !== undefined ? [...base, queryParams] : base;
-};
 
 /** Minimal subset of URLSearchParams we read from. Accepts both
  *  `URLSearchParams` and Next's `ReadonlyURLSearchParams`. */
@@ -378,6 +359,7 @@ export const MailboxProvider = ({ children }: PropsWithChildren) => {
     }, [threadsQuery.data?.pages]);
 
     const threadIdFromRoute = typeof routeParams.threadId === 'string' ? routeParams.threadId : undefined;
+    const previousThreadIdFromRoute = usePrevious(threadIdFromRoute);
 
     const threadInList = useMemo(() => {
         if (!threadIdFromRoute) return null;
@@ -757,7 +739,12 @@ export const MailboxProvider = ({ children }: PropsWithChildren) => {
             });
         }
 
-        unselectThread();
+        // Changing folder closes the open thread. A navigation that opens a
+        // thread in another folder changes both at once (e.g. a link to a spam
+        // thread from the inbox): that thread must stay open.
+        if (threadIdFromRoute === previousThreadIdFromRoute) {
+            unselectThread();
+        }
     }, [hasSearchParamsChanged])
 
     return <MailboxContext.Provider value={context}>{children}</MailboxContext.Provider>
