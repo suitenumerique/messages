@@ -20,7 +20,6 @@ from django.conf import settings
 from django.core.cache import cache
 from django.core.exceptions import ValidationError as DjangoValidationError
 from django.db import IntegrityError, transaction
-from django.db.models import Count
 from django.utils import timezone
 
 import httpx
@@ -83,15 +82,13 @@ class PushTransientError(Exception):
     """
 
 
-def build_thin_payload(
-    message: models.Message, unread_count: int, mailbox_id=None
-) -> dict:
+def build_thin_payload(message: models.Message, mailbox_id=None) -> dict:
     """Build the privacy-preserving payload for ``message``.
 
-    Deliberately content-free: only routing ids, the notification type and
-    the unread badge count. It is what the orchestrator dispatches (and the
-    broker / result backend see); the per-device task adds the preview the
-    device may receive, encrypted for it, at send time (see :mod:`preview`).
+    Deliberately content-free: only routing ids and the notification type. It
+    is what the orchestrator dispatches (and the broker / result backend see);
+    the per-device task adds the preview the device may receive, encrypted for
+    it, at send time (see :mod:`preview`).
 
     ``mailbox_id`` is the recipient's mailbox the thread is read in, so the
     client can deep-link straight to ``/mailbox/{mailbox_id}/.../thread/{thread_id}``
@@ -103,7 +100,6 @@ def build_thin_payload(
         "thread_id": str(message.thread_id),
         "message_id": str(message.id),
         "mailbox_id": str(mailbox_id) if mailbox_id else None,
-        "unread_count": int(unread_count),
     }
 
 
@@ -390,32 +386,6 @@ def _mailbox_by_user_for_thread(message: models.Message, user_ids) -> dict:
     for user_id, mailbox_id in rows:
         mapping.setdefault(user_id, mailbox_id)
     return mapping
-
-
-def _unread_counts_for_users(user_ids) -> dict:
-    """Badge counts (distinct unread threads) for many users in ONE query.
-
-    A thread is unread when it has never been read, or has a message newer than
-    the last read. Returns ``{user_id: count}``; best-effort (empty on error).
-    """
-    user_ids = list(user_ids)
-    if not user_ids:
-        return {}
-    try:
-        # Reuse the canonical unread predicate so the push badge can't drift
-        # from the in-app unread count (see ThreadAccess.unread_filter).
-        rows = (
-            models.ThreadAccess.objects.filter(
-                mailbox__accesses__user_id__in=user_ids,
-            )
-            .filter(models.ThreadAccess.unread_filter())
-            .values("mailbox__accesses__user_id")
-            .annotate(n=Count("thread_id", distinct=True))
-        )
-        return {r["mailbox__accesses__user_id"]: r["n"] for r in rows}
-    except Exception as exc:
-        logger.warning("Failed to compute unread counts: %s", exc)
-        return {}
 
 
 # ---------------------------------------------------------------------------

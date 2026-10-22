@@ -22,14 +22,13 @@ Design constraints baked in here:
   additionally no-ops — with a deduplicated warning — should credentials
   disappear after devices enrolled.
 - **No readable message content on the wire.** The dispatched payload only
-  carries routing identifiers (``thread_id`` / ``message_id`` / ``mailbox_id``),
-  a ``type`` and an unread *count* for the badge (:func:`build_thin_payload`).
-  A preview (sender + subject) is added at send time only when encrypted for
-  the device itself — RFC 8291 for Web Push, the same scheme with an
-  app-generated key for APNs/FCM — and only while the device may show it (see
-  :mod:`preview`). Note this is not full privacy: for APNs and FCM the routing
-  UUIDs, the unread count and the (padded) preview size are visible to
-  Apple/Google in transit. The content itself never is.
+  carries routing identifiers (``thread_id`` / ``message_id`` / ``mailbox_id``)
+  and a ``type`` (:func:`build_thin_payload`). A preview (sender + subject) is
+  added at send time only when encrypted for the device itself — RFC 8291 for
+  Web Push, the same scheme with an app-generated key for APNs/FCM — and only
+  while the device may show it (see :mod:`preview`). Note this is not full
+  privacy: for APNs and FCM the routing UUIDs and the (padded) preview size are
+  visible to Apple/Google in transit. The content itself never is.
 - **Non-fatal.** Push is best-effort. Senders never raise into the caller —
   failures are logged and swallowed so a flaky gateway can never break delivery.
 - **One task per notification.** Each device's push is an independently-retryable

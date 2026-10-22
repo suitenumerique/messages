@@ -580,18 +580,16 @@ class TestThinPayload:
     """The thin, content-free payload and its per-thread collapse/topic keys."""
 
     def test_payload_is_thin_and_content_free(self):
-        """The payload carries only routing ids + unread count — never subject
-        or body."""
+        """The payload carries only routing ids — never subject or body."""
         _, message = _user_with_message()
         message.subject = "Secret subject that must not leak"
 
-        payload = push.build_thin_payload(message, unread_count=7, mailbox_id="mb-123")
+        payload = push.build_thin_payload(message, mailbox_id="mb-123")
         assert payload == {
             "type": push.PUSH_TYPE_NEW_MESSAGE,
             "thread_id": str(message.thread_id),
             "message_id": str(message.id),
             "mailbox_id": "mb-123",
-            "unread_count": 7,
         }
         # Routing ids only — no message content of any kind.
         assert "Secret subject" not in str(payload)
@@ -1065,8 +1063,9 @@ class TestApnsSender:
 
     def test_alert_is_visible_high_priority_and_content_free(self, settings):
         """The APNs push is a visible, high-priority alert that survives app
-        termination — but still carries only a localization key + badge, never
-        the message content."""
+        termination — but still carries only a localization key and a flag
+        badge (the extension refines it on device), never the message content
+        nor an unread count."""
         _configure_apns(settings)
         ch = _push_channel(
             factories.UserFactory(), platform=PushPlatformChoices.APNS, token="alert"
@@ -1077,7 +1076,7 @@ class TestApnsSender:
             mock.patch.object(push.apns, "_apns_client", return_value=cm),
         ):
             push.send_apns(
-                _items(ch, payload={"type": "new_message", "unread_count": 5}),
+                _items(ch, payload={"type": "new_message"}),
                 "thread-x",
             )
 
@@ -1087,7 +1086,7 @@ class TestApnsSender:
         assert headers["apns-priority"] == "10"
         aps = post.call_args.kwargs["json"]["aps"]
         assert aps["alert"] == {"loc-key": push.APNS_ALERT_LOC_KEY}
-        assert aps["badge"] == 5
+        assert aps["badge"] == 1
         assert "content-available" not in aps
 
     def test_unreadable_settings_are_skipped_not_transient(self, settings):
@@ -1158,21 +1157,22 @@ class TestFcmSender:
             mock.patch.object(push.fcm, "_fcm_client", return_value=cm),
         ):
             result = push.send_fcm(
-                _items(ch, payload={"type": "new_message", "unread_count": 3}), "t-1"
+                _items(ch, payload={"type": "new_message", "thread_id": "t"}), "t-1"
             )
 
         assert result.delivered == 1
         assert models.Channel.objects.filter(id=ch.id).exists()
         body = cm.post.call_args.kwargs["json"]["message"]
         assert body["token"] == "fcm-ok"
-        assert body["data"]["unread_count"] == "3"
+        assert body["data"] == {"type": "new_message", "thread_id": "t"}
         # Sent high-priority so a dozing device still wakes.
         assert body["android"]["priority"] == "high"
 
     def test_attaches_content_free_notification(self, settings):
         """The FCM message carries an OS-localized notification block so Android
-        shows a banner when the app is killed — loc-keys + badge only, never
-        the message content."""
+        shows a banner when the app is killed — loc-keys only, never the message
+        content. No notification_count: the launcher shows a dot, not a
+        number."""
         _configure_fcm(settings)
         ch = _push_channel(
             factories.UserFactory(), platform=PushPlatformChoices.FCM, token="fcm-a"
@@ -1187,7 +1187,6 @@ class TestFcmSender:
                     ch,
                     payload={
                         "type": "new_message",
-                        "unread_count": 5,
                         "subject": "leak?",
                     },
                 ),
@@ -1196,7 +1195,7 @@ class TestFcmSender:
         notif = cm.post.call_args.kwargs["json"]["message"]["android"]["notification"]
         assert notif["title_loc_key"] == push.FCM_TITLE_LOC_KEY
         assert notif["body_loc_key"] == push.FCM_BODY_LOC_KEY
-        assert notif["notification_count"] == 5
+        assert "notification_count" not in notif
         # Contract with the Capacitor app (ANDROID_NOTIFICATION_CHANNEL_ID in
         # features/native/push.ts) and the manifest meta-data: without this
         # channel Android renders on the DEFAULT-importance fallback (no

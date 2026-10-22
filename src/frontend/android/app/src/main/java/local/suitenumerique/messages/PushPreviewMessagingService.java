@@ -85,14 +85,6 @@ public class PushPreviewMessagingService extends MessagingService {
                     .setContentText(genericBody)
                     .build()
             );
-        String unreadCount = data.get("unread_count");
-        if (unreadCount != null) {
-            try {
-                notification.setNumber(Integer.parseInt(unreadCount));
-            } catch (NumberFormatException e) {
-                // No badge count.
-            }
-        }
         try {
             // One banner per thread, superseded by the next message (the
             // collapse key's on-device counterpart).

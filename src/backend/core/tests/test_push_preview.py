@@ -88,7 +88,7 @@ def _channel(user, platform=PushPlatformChoices.APNS, keys=None, **kwargs):
 
 
 def _thin(message):
-    return push.build_thin_payload(message, unread_count=1)
+    return push.build_thin_payload(message)
 
 
 @pytest.fixture(autouse=True)

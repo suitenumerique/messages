@@ -115,10 +115,10 @@ def send_apns(
 ) -> PushResult:
     """Send to iOS devices via APNs (token auth, HTTP/2).
 
-    ``items`` pairs each device channel with its own thin payload (the badge
-    count is per-user). A visible, high-priority alert that survives app
-    termination. The provider token is cached and the HTTP/2 connection is reused
-    across tasks. Devices APNs reports as ``Unregistered`` (410) are removed (via
+    ``items`` pairs each device channel with its own thin payload (the
+    deep-link mailbox is per-user). A visible, high-priority alert that survives
+    app termination. The provider token is cached and the HTTP/2 connection is
+    reused across tasks. Devices APNs reports as ``Unregistered`` (410) are removed (via
     the circuit-breaker); transient failures (429 / 5xx / network) are counted
     for retry; other rejections are logged only. Returns a :class:`PushResult`.
     """
@@ -190,16 +190,18 @@ def send_apns(
                 continue
             # Visible, high-priority alert that survives app termination.
             # Content-free: only a localization KEY (the app renders the
-            # string) plus the unread badge. mutable-content routes it through
-            # the Notification Service Extension, which replaces the text with
-            # the sealed preview (``enc``) when it can decrypt it — the generic
-            # alert stays as the fallback.
+            # string). mutable-content routes it through the Notification
+            # Service Extension, which replaces the text with the sealed
+            # preview (``enc``) when it can decrypt it and sets the badge to
+            # the banners waiting on the device — the generic alert and this
+            # bare "new mail" badge stay as the fallback. Never an unread
+            # count: summed over every mailbox of the user it means little.
             aps = {
                 "alert": {"loc-key": APNS_ALERT_LOC_KEY},
                 "category": APNS_CATEGORY,
                 "sound": "default",
                 "mutable-content": 1,
-                "badge": int(payload.get("unread_count", 0)),
+                "badge": 1,
             }
             body = {"aps": aps, **payload}
             try:

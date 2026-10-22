@@ -97,10 +97,11 @@ function buildNotification(payload) {
     data: payload,
   };
 
-  // Drive the installed-PWA app badge from the unread count the payload carries.
-  // Guarded: Firefox/Safari (and non-installed contexts) lack the Badging API.
-  if ("setAppBadge" in self.navigator && typeof payload.unread_count === "number") {
-    self.navigator.setAppBadge(payload.unread_count).catch(() => {});
+  // Flag the installed-PWA app icon: no argument means a dot, not a number —
+  // an unread count summed over every mailbox would mean little. Guarded:
+  // Firefox/Safari (and non-installed contexts) lack the Badging API.
+  if ("setAppBadge" in self.navigator) {
+    self.navigator.setAppBadge().catch(() => {});
   }
 
   return self.registration.showNotification(title, options);

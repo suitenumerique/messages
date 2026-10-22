@@ -56,7 +56,16 @@ final class NotificationService: UNNotificationServiceExtension {
                 )
                 : preview.subject
         }
-        contentHandler(content)
+        // iOS badges are always numbers: count the banners still waiting
+        // rather than the unread mail of every mailbox (meaningless summed
+        // up). This one replaces the banner of its thread, if any (same
+        // apns-collapse-id, hence same request identifier). The badge drops
+        // to 0 once the app is opened (SceneDelegate).
+        UNUserNotificationCenter.current().getDeliveredNotifications { delivered in
+            let others = delivered.filter { $0.request.identifier != request.identifier }
+            content.badge = NSNumber(value: others.count + 1)
+            contentHandler(content)
+        }
     }
 
     override func serviceExtensionTimeWillExpire() {
