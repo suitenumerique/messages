@@ -124,11 +124,16 @@
 
   &__storage-summary {
     display: grid;
-    grid-template-columns: repeat(4, minmax(0, 1fr));
+    grid-template-columns: repeat(3, minmax(0, 1fr));
     gap: var(--c--globals--spacings--xs);
 
+    // Messages takes its own row, Trash and Spam share the next one.
     @media screen and (max-width: breakpoint(tablet)) {
       grid-template-columns: repeat(2, minmax(0, 1fr));
+
+      > :first-child {
+        grid-column: 1 / -1;
+      }
     }
 
     @media screen and (max-width: breakpoint(xxs)) {
@@ -152,16 +157,19 @@
     border-radius: var(--c--globals--radius--sm);
   }
 
-  // The Trash and Spam metrics double as links to their folder.
-  &__storage-metric--link {
-    text-decoration: none;
-    color: inherit;
-    transition: border-color 0.15s ease, background-color 0.15s ease;
+  // Trash and Spam cards: value and label on the left, the link to their
+  // folder on the right.
+  &__storage-metric--with-action {
+    display: grid;
+    grid-template-columns: minmax(0, 1fr) auto;
+    column-gap: var(--c--globals--spacings--xs);
+    row-gap: var(--c--globals--spacings--4xs);
+    align-items: center;
+  }
 
-    &:hover {
-      border-color: var(--c--contextuals--border--semantic--neutral--secondary);
-      background-color: var(--c--contextuals--surface--semantic--neutral--secondary);
-    }
+  &__storage-metric-action {
+    grid-column: 2;
+    grid-row: 1 / span 2;
   }
 
   &__storage-metric-value {

@@ -27,15 +27,17 @@ export const MainLayout = ({ children }: PropsWithChildren) => {
                 <MailboxProvider>
                     <SentBoxProvider>
                         <ComposeWindowsProvider>
-                            <ModalStoreProvider>
-                                <AttachmentPreviewProvider>
-                                    <LayoutProvider draggable>
+                            {/* Above the modal store: the modals it renders can
+                                close the mobile left panel they were opened from. */}
+                            <LayoutProvider draggable>
+                                <ModalStoreProvider>
+                                    <AttachmentPreviewProvider>
                                         <MainLayoutContent>{children}</MainLayoutContent>
                                         <AttachmentPreviewModal />
                                         <ComposeWindowsLayer />
-                                    </LayoutProvider>
-                                </AttachmentPreviewProvider>
-                            </ModalStoreProvider>
+                                    </AttachmentPreviewProvider>
+                                </ModalStoreProvider>
+                            </LayoutProvider>
                         </ComposeWindowsProvider>
                     </SentBoxProvider>
                 </MailboxProvider>
