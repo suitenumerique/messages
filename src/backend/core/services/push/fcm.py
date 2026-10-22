@@ -153,14 +153,14 @@ def send_fcm(items: list[tuple[models.Channel, dict]], collapse_key: str) -> Pus
             # OS-localized notification the SDK renders by itself. Either way
             # nothing reaches a force-stopped app: Android withholds the
             # delivery broadcast until it is launched again. The keys map to
-            # the app's strings.xml — only loc-keys + the unread badge.
+            # the app's strings.xml — only loc-keys. No notification_count: the
+            # launcher flags the app with a dot while the banner is pending.
             # Symmetric with the APNs alert path.
             if "enc" not in payload:
                 android["notification"] = {
                     "channel_id": FCM_ANDROID_CHANNEL_ID,
                     "title_loc_key": FCM_TITLE_LOC_KEY,
                     "body_loc_key": FCM_BODY_LOC_KEY,
-                    "notification_count": int(payload.get("unread_count", 0)),
                 }
             body = {
                 "message": {

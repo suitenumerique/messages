@@ -27,7 +27,6 @@ from core.services.push.common import (
     _mailbox_by_user_for_thread,
     _push_channels_for_users,
     _recipient_users,
-    _unread_counts_for_users,
     build_thin_payload,
     collapse_key_for_message,
 )
@@ -86,13 +85,13 @@ def send_push_for_message(self, message_id: str):
     """Resolve recipients for ``message_id`` and dispatch one task per user.
 
     Loads the message, resolves the recipient users and their devices, builds
-    each user's thin payload (the badge count is per-user), then dispatches one
-    :func:`send_push_notification` task **per user** who has devices. This task
-    is the *orchestrator*: it does the per-recipient DB work once (channels,
-    badge counts, deep-link mailboxes — a handful of batched queries) and
-    dispatches; it never contacts a gateway itself, so a flaky provider can't
-    stall recipient resolution. Never raises: a push problem can't disrupt
-    anything upstream.
+    each user's thin payload (the deep-link mailbox is per-user), then
+    dispatches one :func:`send_push_notification` task **per user** who has
+    devices. This task is the *orchestrator*: it does the
+    per-recipient DB work once (channels, deep-link mailboxes — a handful of
+    batched queries) and dispatches; it never contacts a gateway itself, so a
+    flaky provider can't stall recipient resolution. Never raises: a push
+    problem can't disrupt anything upstream.
 
     One task per user checks their thread access and loads the preview once
     for all their devices, while the Celery worker pool still delivers to
@@ -117,10 +116,9 @@ def send_push_for_message(self, message_id: str):
     for channel in _push_channels_for_users(u.id for u in users):
         channels_by_user[channel.user_id].append(channel)
 
-    # One query each for the recipients' badge counts and deep-link mailboxes
-    # (only those with devices).
+    # One query for the recipients' deep-link mailboxes (only those with
+    # devices).
     users_with_devices = [u.id for u in users if channels_by_user.get(u.id)]
-    unread_by_user = _unread_counts_for_users(users_with_devices)
     mailbox_by_user = _mailbox_by_user_for_thread(message, users_with_devices)
 
     collapse_key = collapse_key_for_message(message)
@@ -131,13 +129,8 @@ def send_push_for_message(self, message_id: str):
         if not user_channels:
             continue
         notified_users += 1
-        # One thin payload per user: the badge count and the deep-link mailbox
-        # are per-user.
-        payload = build_thin_payload(
-            message,
-            unread_by_user.get(user.id, 0),
-            mailbox_id=mailbox_by_user.get(user.id),
-        )
+        # One thin payload per user: the deep-link mailbox is per-user.
+        payload = build_thin_payload(message, mailbox_id=mailbox_by_user.get(user.id))
         # Guarded per user: this task holds the only resolved recipient list,
         # so letting one broker hiccup escape would strand every user still to
         # come with no way to recover them.

@@ -26,6 +26,10 @@ final class NotificationService: UNNotificationServiceExtension {
         return Bundle(url: appURL) ?? .main
     }()
 
+    /// Guards `contentHandler`: the delivered-notifications callback and
+    /// `serviceExtensionTimeWillExpire` run on different threads, and the
+    /// handler must be called exactly once.
+    private let handlerLock = NSLock()
     private var contentHandler: ((UNNotificationContent) -> Void)?
     private var bestAttemptContent: UNMutableNotificationContent?
 
@@ -35,7 +39,7 @@ final class NotificationService: UNNotificationServiceExtension {
     ) {
         self.contentHandler = contentHandler
         guard let content = request.content.mutableCopy() as? UNMutableNotificationContent else {
-            contentHandler(request.content)
+            deliver(request.content)
             return
         }
         bestAttemptContent = content
@@ -56,13 +60,31 @@ final class NotificationService: UNNotificationServiceExtension {
                 )
                 : preview.subject
         }
-        contentHandler(content)
+        // iOS badges are always numbers: count the banners still waiting
+        // rather than the unread mail of every mailbox (meaningless summed
+        // up). This one replaces the banner of its thread, if any (same
+        // apns-collapse-id, hence same request identifier). The badge drops
+        // to 0 once the app is opened (SceneDelegate).
+        UNUserNotificationCenter.current().getDeliveredNotifications { delivered in
+            let others = delivered.filter { $0.request.identifier != request.identifier }
+            content.badge = NSNumber(value: others.count + 1)
+            self.deliver(content)
+        }
     }
 
     override func serviceExtensionTimeWillExpire() {
-        if let contentHandler, let bestAttemptContent {
-            contentHandler(bestAttemptContent)
+        if let bestAttemptContent {
+            deliver(bestAttemptContent)
         }
+    }
+
+    /// Hands `content` to the system, unless it was already handed some.
+    private func deliver(_ content: UNNotificationContent) {
+        handlerLock.lock()
+        let handler = contentHandler
+        contentHandler = nil
+        handlerLock.unlock()
+        handler?(content)
     }
 
     private static func openPreview(_ userInfo: [AnyHashable: Any]) -> Preview? {

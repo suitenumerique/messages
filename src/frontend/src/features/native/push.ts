@@ -332,7 +332,7 @@ export const unregisterIfCurrentDevice = async (
  * message goes in the hash because that is what the thread view scrolls to and
  * highlights ("#thread-message-{id}"); a query param would be dropped by the
  * threads-list allow-list. Only the routing ids of the payload are read
- * ({type, thread_id, message_id, mailbox_id, unread_count}; the sealed preview
+ * ({type, thread_id, message_id, mailbox_id}; the sealed preview
  * is for the notification layer); FCM stringifies every value, so ids are
  * always strings here. */
 export const pushTargetUrl = (data: unknown): string => {

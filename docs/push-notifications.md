@@ -32,11 +32,10 @@ operators supply the per-instance credentials (§3, §12).
 - **`platform` is a transport, not an OS:** `apns` / `fcm` / `web`. The OS label
   is a frontend concern carried in the channel `name`, never inferred from `platform`.
 - **Payloads carry no readable message content:** the routing part is
-  `{type, thread_id, message_id, mailbox_id, unread_count}` (routing ids +
-  badge). A preview (sender + subject) is added only **encrypted for the device
-  itself**, and only while the device may show it (§5.1). For APNs/FCM the
-  routing ids, the count and the padded preview size are visible to
-  Apple/Google in transit; the content never is.
+  `{type, thread_id, message_id, mailbox_id}`. A preview (sender + subject) is
+  added only **encrypted for the device itself**, and only while the device may
+  show it (§5.1). For APNs/FCM the routing ids and the padded preview size are
+  visible to Apple/Google in transit; the content never is.
 - Push is the **app-closed** half of notifications; the realtime SSE relay is
   the **app-open** half. They must cooperate (see §6).
 
@@ -96,7 +95,7 @@ The senders emit a **visible, high-priority, content-free** alert (it survives
 force-quit, where a silent background push would be throttled and dropped).
 Because the push carries only localization *keys* — never message content — the
 native apps ship the matching strings so the OS can render the banner:
-- **iOS:** the alert carries `alert.loc-key = "NEW_MESSAGE"` + the unread badge;
+- **iOS:** the alert carries `alert.loc-key = "NEW_MESSAGE"` + `badge: 1`;
   the matching `Localizable.strings` entries ship in
   `ios/App/App/{en,fr}.lproj/`.
 - **Android:** the FCM message carries an OS-localized `notification` block
@@ -218,8 +217,16 @@ redirect back. This is a prerequisite for the native client, independent of push
 - **Tap → deep link:** the payload carries `thread_id` / `message_id`; route to
   the thread on notification open. Register the tap handler
   (`pushNotificationActionPerformed` / SW `notificationclick`).
-- **Badge:** from `unread_count` (set as `aps.badge` on the iOS alert path; app
-  sets it on Android/Web where supported).
+- **Badge:** flags mail that arrived while the app was away, never an unread
+  count (summed over every mailbox of the user, it would mean little). Cleared
+  as soon as the app is in the foreground (`SceneDelegate` on iOS,
+  `features/auth` on Android/Web).
+  - *iOS* badges are always numbers: the Notification Service Extension sets
+    the number of banners waiting in Notification Center (one per thread);
+    `aps.badge = 1` is the fallback when the extension can't run.
+  - *Android*: no count either; the launcher shows its dot while a banner is
+    pending (some launchers, e.g. Samsung's, show the number of banners).
+  - *Web*: `setAppBadge()` without argument, i.e. a dot.
 - **Sender + subject:** from the device-encrypted preview (§5.1); the generic
   banner is the fallback whenever there is none or it can't be opened.
 
@@ -308,11 +315,11 @@ show instead of the sender and subject:
 
 When the app is **open** and in front of the user, it surfaces the mail on its
 own (today the 30s mailbox poll; the SSE relay when it lands) — a banner for it
-is noise. So no transport alerts while the app holds the foreground; only the
-badge tracks.
-- **Native (iOS):** the foreground-presentation handler is limited to the badge
-  (`presentationOptions: ["badge"]` in `capacitor.config.ts`) — no banner, no
-  sound.
+is noise. So no transport alerts while the app holds the foreground, badge
+included.
+- **Native (iOS):** the foreground-presentation handler presents nothing
+  (`presentationOptions: []` in `capacitor.config.ts`) — no banner, no sound,
+  no badge.
 - **Native (Android):** nothing to configure. FCM only auto-displays the
   `notification` block when the app is backgrounded; in foreground it routes to
   the app instead, which does not display it.
@@ -488,7 +495,7 @@ maps to transport priority here.
 ### Task model — one Celery task per recipient user
 `enqueue_push_notifications` (on commit) schedules `send_push_for_message`, the
 **orchestrator**: it resolves recipients and does the per-recipient DB work once
-(devices, badge counts, deep-link mailbox — a handful of batched queries),
+(devices, deep-link mailbox — a handful of batched queries),
 builds each user's thin payload, then dispatches **one `send_push_notification`
 task per user** who has devices (`user_id`, the thin payload, the collapse key).
 The orchestrator never touches a gateway, so a flaky provider can't stall

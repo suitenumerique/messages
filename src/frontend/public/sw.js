@@ -96,10 +96,11 @@ function buildNotification(payload) {
     data: payload,
   };
 
-  // Drive the installed-PWA app badge from the unread count the payload carries.
-  // Guarded: Firefox/Safari (and non-installed contexts) lack the Badging API.
-  if ("setAppBadge" in self.navigator && typeof payload.unread_count === "number") {
-    self.navigator.setAppBadge(payload.unread_count).catch(() => {});
+  // Flag the installed-PWA app icon: no argument means a dot, not a number —
+  // an unread count summed over every mailbox would mean little. Guarded:
+  // Firefox/Safari (and non-installed contexts) lack the Badging API.
+  if ("setAppBadge" in self.navigator) {
+    self.navigator.setAppBadge().catch(() => {});
   }
 
   return self.registration.showNotification(title, options);
@@ -151,9 +152,9 @@ async function handlePush(payload) {
   // the rest of the app follows. This is the one case `userVisibleOnly`
   // tolerates a silent push: browsers only substitute their own "site updated
   // in the background" notice when no window of the origin is visible, and a
-  // focused window is visible. Mirrors the native side, where iOS foreground
-  // presentation is limited to the badge (capacitor.config.ts) and Android in
-  // foreground never auto-displays. A focused window on *another* mailbox (or
+  // focused window is visible. Mirrors the native side, where iOS presents
+  // nothing in foreground (capacitor.config.ts) and Android in foreground
+  // never auto-displays. A focused window on *another* mailbox (or
   // any page outside /mailbox/) still gets the banner: nothing on screen
   // would surface the message otherwise. A payload without mailbox_id (older
   // backend) can't be compared, so it keeps the previous suppress-on-focus
