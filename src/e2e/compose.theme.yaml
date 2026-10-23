@@ -1,6 +1,9 @@
 # Override for `make test-keycloak-theme`: Keycloak serves the lst-dsfr theme
-# for the realms that select no theme.
+# for the realms that select no theme. It also sets the help URL and the
+# forgot-password URL that the specs expect.
 services:
   keycloak:
     environment:
       - KC_SPI_THEME__DEFAULT=lst-dsfr
+      - DSFR_THEME_TWO_FACTOR_HELP_URL=https://support.example.local/2fa
+      - DSFR_THEME_FORGOT_PASSWORD_URL=https://support.example.local/password
