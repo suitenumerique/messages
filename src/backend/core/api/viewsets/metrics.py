@@ -37,6 +37,15 @@ ACTIVE_USER_METRICS = {
 }
 
 
+def _is_int(value):
+    """Return whether ``int(value)`` succeeds, as Django does for JSON keys."""
+    try:
+        int(value)
+    except ValueError:
+        return False
+    return True
+
+
 class MetricsPagination(LimitOffsetPagination):
     """Limit/offset pagination over metric groups."""
 
@@ -67,8 +76,13 @@ class MailDomainUsersMetricsApiView(IsGlobalChannelMixin, APIView):
         )
 
         # The key is interpolated into an ORM lookup: "__" would let the
-        # caller traverse relations or chain lookups/transforms.
-        if group_by_custom_attribute_key and "__" in group_by_custom_attribute_key:
+        # caller traverse relations or chain lookups/transforms, and a key
+        # Django parses as an int is used as an array index there, while the
+        # Python grouping below would treat it as an object key.
+        if group_by_custom_attribute_key and (
+            "__" in group_by_custom_attribute_key
+            or _is_int(group_by_custom_attribute_key)
+        ):
             return Response(
                 {"error": "Invalid group_by_maildomain_custom_attribute."},
                 status=400,
@@ -100,6 +114,9 @@ class MailDomainUsersMetricsApiView(IsGlobalChannelMixin, APIView):
                 )
             else:
                 group_value = domain.name
+            # Objects and arrays cannot be group keys
+            if isinstance(group_value, (dict, list)):
+                continue
             group_domain_ids[group_value].append(domain.id)
             group_created_at[group_value] = min(
                 group_created_at.get(group_value, domain.created_at), domain.created_at

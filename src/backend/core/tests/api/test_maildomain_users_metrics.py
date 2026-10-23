@@ -353,6 +353,48 @@ class TestMailDomainUsersMetrics:
         assert response.status_code == 400
 
     @pytest.mark.django_db
+    @pytest.mark.parametrize("key", ["0", "-1", "+1", " 1", "1_0"])
+    def test_group_key_parsed_as_int_rejected(
+        self, api_client, url, correctly_configured_header, key
+    ):
+        """An int-like group key is an array index for Django's JSON lookups,
+        so it is rejected instead of raising a KeyError while grouping."""
+        MailboxAccessFactory(
+            mailbox__domain=MailDomainFactory(custom_attributes={key.strip(): "x"})
+        )
+
+        response = api_client.get(
+            url,
+            {"group_by_maildomain_custom_attribute": key},
+            **correctly_configured_header,
+        )
+
+        assert response.status_code == 400
+
+    @pytest.mark.django_db
+    def test_group_value_object_or_array_skipped(
+        self, api_client, url_with_siret_query_param, correctly_configured_header
+    ):
+        """Domains whose attribute is an object or array are not grouped."""
+        for name, siret in (
+            ("obj.com", {"a": 1}),
+            ("arr.com", ["1"]),
+            ("ok.com", "123"),
+        ):
+            MailboxAccessFactory(
+                mailbox__domain=MailDomainFactory(
+                    name=name, custom_attributes={"siret": siret}
+                )
+            )
+
+        response = api_client.get(
+            url_with_siret_query_param, **correctly_configured_header
+        )
+
+        assert response.status_code == 200
+        assert [r["siret"] for r in response.json()["results"]] == ["123"]
+
+    @pytest.mark.django_db
     def test_group_no_data(
         self, api_client, url_with_siret_query_param, correctly_configured_header
     ):
