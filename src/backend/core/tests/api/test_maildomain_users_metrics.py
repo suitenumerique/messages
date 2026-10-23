@@ -182,7 +182,12 @@ class TestMailDomainUsersMetrics:
         response = api_client.get(url, **correctly_configured_header)
         assert response.status_code == 200
 
-        assert response.json() == {"count": 0, "results": []}
+        assert response.json() == {
+            "count": 0,
+            "next": None,
+            "previous": None,
+            "results": [],
+        }
 
     @pytest.mark.django_db
     def test_no_group_users_no_access(
@@ -327,6 +332,67 @@ class TestMailDomainUsersMetrics:
             group_key="domain",
             group_value="example.com",
         )
+
+    @pytest.mark.django_db
+    @pytest.mark.parametrize(
+        "key", ["siret__contains", "name__regex", "a__b", "__", "siret__"]
+    )
+    def test_group_key_with_double_underscore_rejected(
+        self, api_client, url, correctly_configured_header, key
+    ):
+        """A group key containing "__" is rejected instead of reaching the ORM."""
+        MailboxAccessFactory(
+            mailbox__domain=MailDomainFactory(custom_attributes={"siret": "123"})
+        )
+
+        response = api_client.get(
+            f"{url}?group_by_maildomain_custom_attribute={key}",
+            **correctly_configured_header,
+        )
+
+        assert response.status_code == 400
+
+    @pytest.mark.django_db
+    @pytest.mark.parametrize("key", ["0", "-1", "+1", " 1", "1_0"])
+    def test_group_key_parsed_as_int_rejected(
+        self, api_client, url, correctly_configured_header, key
+    ):
+        """An int-like group key is an array index for Django's JSON lookups,
+        so it is rejected instead of raising a KeyError while grouping."""
+        MailboxAccessFactory(
+            mailbox__domain=MailDomainFactory(custom_attributes={key.strip(): "x"})
+        )
+
+        response = api_client.get(
+            url,
+            {"group_by_maildomain_custom_attribute": key},
+            **correctly_configured_header,
+        )
+
+        assert response.status_code == 400
+
+    @pytest.mark.django_db
+    def test_group_value_object_or_array_skipped(
+        self, api_client, url_with_siret_query_param, correctly_configured_header
+    ):
+        """Domains whose attribute is an object or array are not grouped."""
+        for name, siret in (
+            ("obj.com", {"a": 1}),
+            ("arr.com", ["1"]),
+            ("ok.com", "123"),
+        ):
+            MailboxAccessFactory(
+                mailbox__domain=MailDomainFactory(
+                    name=name, custom_attributes={"siret": siret}
+                )
+            )
+
+        response = api_client.get(
+            url_with_siret_query_param, **correctly_configured_header
+        )
+
+        assert response.status_code == 200
+        assert [r["siret"] for r in response.json()["results"]] == ["123"]
 
     @pytest.mark.django_db
     def test_group_no_data(
@@ -1205,3 +1271,127 @@ class TestMailDomainStorageUsedMetrics:
         assert len(results) == 1
         assert results[0]["siret"] == siret
         assert results[0]["metrics"]["storage_used"] == 0
+
+
+class TestMailDomainUsersMetricsPagination:
+    """Tests for the limit/offset pagination over metric groups."""
+
+    @staticmethod
+    def _domain_with_message(name, siret=None):
+        """Create a domain with one user and one message, return the message."""
+        domain = MailDomainFactory(
+            name=name, custom_attributes={"siret": siret} if siret else {}
+        )
+        mailbox = MailboxFactory(domain=domain)
+        MailboxAccessFactory(mailbox=mailbox)
+        thread = ThreadFactory()
+        ThreadAccessFactory(mailbox=mailbox, thread=thread)
+        contact = ContactFactory(mailbox=mailbox)
+        return MessageFactory(thread=thread, sender=contact, raw_mime=b"mime" * 100)
+
+    @pytest.mark.django_db
+    def test_pages_cover_all_groups_once(
+        self, api_client, url, correctly_configured_header, settings
+    ):
+        """Following the pages yields each domain once, with its own metrics."""
+        overhead = settings.METRICS_STORAGE_USED_OVERHEAD_BY_MESSAGE
+        messages = {
+            name: self._domain_with_message(name)
+            for name in ("a.com", "b.com", "c.com")
+        }
+
+        seen = {}
+        next_url = f"{url}?limit=2"
+        pages = 0
+        while next_url:
+            response = api_client.get(next_url, **correctly_configured_header)
+            assert response.status_code == 200
+            data = response.json()
+            assert data["count"] == 3
+            assert len(data["results"]) <= 2
+            for result in data["results"]:
+                assert result["domain"] not in seen
+                seen[result["domain"]] = result
+            next_url = data["next"]
+            pages += 1
+
+        assert pages == 2
+        assert set(seen) == set(messages)
+        for name, message in messages.items():
+            assert seen[name]["metrics"] == {
+                "tu": 1,
+                "storage_used": overhead + message.blob.size_compressed,
+            }
+
+    @pytest.mark.django_db
+    def test_offset_past_end(self, api_client, url, correctly_configured_header):
+        """An offset beyond the last group returns an empty page."""
+        self._domain_with_message("a.com")
+
+        response = api_client.get(
+            f"{url}?limit=10&offset=5", **correctly_configured_header
+        )
+        assert response.status_code == 200
+        assert response.json()["count"] == 1
+        assert response.json()["results"] == []
+
+    @pytest.mark.django_db
+    def test_group_spanning_domains_not_split(
+        self, api_client, url_with_siret_query_param, correctly_configured_header
+    ):
+        """All domains of a group land on the same page and are summed."""
+        siret = "12345678901234"
+        user = UserFactory()
+        for name in ("a.com", "b.com"):
+            domain = MailDomainFactory(name=name, custom_attributes={"siret": siret})
+            MailboxAccessFactory(mailbox__domain=domain, user=user)
+        other = MailDomainFactory(name="c.com", custom_attributes={"siret": "999"})
+        MailboxAccessFactory(mailbox__domain=other)
+
+        response = api_client.get(
+            f"{url_with_siret_query_param}&limit=1", **correctly_configured_header
+        )
+        data = response.json()
+        assert data["count"] == 2
+        assert [r["siret"] for r in data["results"]] == [siret]
+        # The shared user is counted once across the group's two domains
+        assert data["results"][0]["metrics"]["tu"] == 1
+
+        response = api_client.get(data["next"], **correctly_configured_header)
+        assert [r["siret"] for r in response.json()["results"]] == ["999"]
+
+    @pytest.mark.django_db
+    def test_other_pages_do_not_leak(
+        self, api_client, url, correctly_configured_header
+    ):
+        """Users of domains outside the page are not counted in it."""
+        for name in ("a.com", "b.com"):
+            domain = MailDomainFactory(name=name)
+            MailboxAccessFactory.create_batch(2, mailbox__domain=domain)
+
+        response = api_client.get(f"{url}?limit=1", **correctly_configured_header)
+        results = response.json()["results"]
+        assert len(results) == 1
+        assert results[0]["domain"] == "a.com"
+        assert results[0]["metrics"]["tu"] == 2
+
+    @pytest.mark.django_db
+    def test_new_domain_does_not_shift_pages(
+        self, api_client, url, correctly_configured_header
+    ):
+        """A domain created between two page fetches is appended at the end,
+        even if it sorts first by name."""
+        for name in ("m.com", "n.com"):
+            MailboxAccessFactory(mailbox__domain=MailDomainFactory(name=name))
+
+        first = api_client.get(f"{url}?limit=1", **correctly_configured_header)
+        assert [r["domain"] for r in first.json()["results"]] == ["m.com"]
+
+        MailboxAccessFactory(mailbox__domain=MailDomainFactory(name="a.com"))
+
+        second = api_client.get(
+            f"{url}?limit=1&offset=1", **correctly_configured_header
+        )
+        assert [r["domain"] for r in second.json()["results"]] == ["n.com"]
+        third = api_client.get(f"{url}?limit=1&offset=2", **correctly_configured_header)
+        assert [r["domain"] for r in third.json()["results"]] == ["a.com"]
