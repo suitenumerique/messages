@@ -20,6 +20,7 @@ import jwt
 
 from core import models
 from core.services.push.common import (
+    PUSH_TTL_SECONDS,
     PushResult,
     _apns_client,
     _channel_token,
@@ -68,6 +69,11 @@ _APNS_STALE_REASONS = frozenset({"Unregistered"})
 # string in its Localizable.strings.
 APNS_ALERT_LOC_KEY = "NEW_MESSAGE"
 
+# Notification category the app registers (AppDelegate) with a placeholder text
+# shown when the user's "Show Previews" setting hides the content (e.g. on the
+# lock screen) — otherwise iOS would show a bare "Notification".
+APNS_CATEGORY = "NEW_MESSAGE"
+
 
 # APNs validates one provider token for 1h and *rejects* regenerating it too
 # often (``TooManyProviderTokenUpdates`` — Apple recommends no more than once per
@@ -109,10 +115,10 @@ def send_apns(
 ) -> PushResult:
     """Send to iOS devices via APNs (token auth, HTTP/2).
 
-    ``items`` pairs each device channel with its own thin payload (the badge
-    count is per-user). A visible, high-priority alert that survives app
-    termination. The provider token is cached and the HTTP/2 connection is reused
-    across tasks. Devices APNs reports as ``Unregistered`` (410) are removed (via
+    ``items`` pairs each device channel with its own thin payload (the
+    deep-link mailbox is per-user). A visible, high-priority alert that survives
+    app termination. The provider token is cached and the HTTP/2 connection is
+    reused across tasks. Devices APNs reports as ``Unregistered`` (410) are removed (via
     the circuit-breaker); transient failures (429 / 5xx / network) are counted
     for retry; other rejections are logged only. Returns a :class:`PushResult`.
     """
@@ -158,6 +164,7 @@ def send_apns(
         "apns-topic": settings.PUSH_APNS_BUNDLE_ID,
         "apns-push-type": "alert",
         "apns-priority": "10",
+        "apns-expiration": str(int(time.time()) + PUSH_TTL_SECONDS),
     }
     if collapse_key:
         headers["apns-collapse-id"] = collapse_key
@@ -183,14 +190,18 @@ def send_apns(
                 continue
             # Visible, high-priority alert that survives app termination.
             # Content-free: only a localization KEY (the app renders the
-            # string) plus the unread badge — never the sender or subject.
-            # mutable-content lets a Notification Service Extension enrich
-            # it after refetching.
+            # string). mutable-content routes it through the Notification
+            # Service Extension, which replaces the text with the sealed
+            # preview (``enc``) when it can decrypt it and sets the badge to
+            # the banners waiting on the device — the generic alert and this
+            # bare "new mail" badge stay as the fallback. Never an unread
+            # count: summed over every mailbox of the user it means little.
             aps = {
                 "alert": {"loc-key": APNS_ALERT_LOC_KEY},
+                "category": APNS_CATEGORY,
                 "sound": "default",
                 "mutable-content": 1,
-                "badge": int(payload.get("unread_count", 0)),
+                "badge": 1,
             }
             body = {"aps": aps, **payload}
             try:

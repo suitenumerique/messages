@@ -20,13 +20,14 @@ from core import models
 from core.enums import ChannelTypes, PushPlatformChoices
 from core.services.push.common import (
     PushTransientError,
+    _channel_keys,
     _mailbox_by_user_for_thread,
     _push_channels_for_users,
     _recipient_users,
-    _unread_counts_for_users,
     build_thin_payload,
     collapse_key_for_message,
 )
+from core.services.push.preview import with_preview
 
 from messages.celery_app import app as celery_app
 
@@ -78,13 +79,13 @@ def send_push_for_message(self, message_id: str):
     """Resolve recipients for ``message_id`` and dispatch one task per device.
 
     Loads the message, resolves the recipient users and their devices, builds
-    each user's thin payload (the badge count is per-user), then dispatches one
-    :func:`send_push_notification` task **per device**. This task is the
-    *orchestrator*: it does the per-recipient DB work once (channels, badge
-    counts, deep-link mailboxes — a handful of batched queries) and dispatches;
-    it never contacts a gateway itself, so a flaky provider can't stall
-    recipient resolution. Never raises: a push problem can't disrupt anything
-    upstream.
+    each user's thin payload (the deep-link mailbox is per-user), then
+    dispatches one :func:`send_push_notification` task **per device**. This
+    task is the *orchestrator*: it does the per-recipient DB work once
+    (channels, deep-link mailboxes — a handful of batched queries) and
+    dispatches; it never contacts a gateway itself, so a flaky provider can't
+    stall recipient resolution. Never raises: a push problem can't disrupt
+    anything upstream.
 
     One task per notification makes each push an independently-retryable atomic
     unit: a single flaky device retries on its own without re-sending to anyone
@@ -111,10 +112,9 @@ def send_push_for_message(self, message_id: str):
     for channel in _push_channels_for_users(u.id for u in users):
         channels_by_user[channel.user_id].append(channel)
 
-    # One query each for the recipients' badge counts and deep-link mailboxes
-    # (only those with devices).
+    # One query for the recipients' deep-link mailboxes (only those with
+    # devices).
     users_with_devices = [u.id for u in users if channels_by_user.get(u.id)]
-    unread_by_user = _unread_counts_for_users(users_with_devices)
     mailbox_by_user = _mailbox_by_user_for_thread(message, users_with_devices)
 
     collapse_key = collapse_key_for_message(message)
@@ -125,13 +125,9 @@ def send_push_for_message(self, message_id: str):
         if not user_channels:
             continue
         notified_users += 1
-        # One thin payload per user (the badge count is per-user); each of the
-        # user's devices gets its own task carrying that payload.
-        payload = build_thin_payload(
-            message,
-            unread_by_user.get(user.id, 0),
-            mailbox_id=mailbox_by_user.get(user.id),
-        )
+        # One thin payload per user (the deep-link mailbox is per-user); each
+        # of the user's devices gets its own task carrying that payload.
+        payload = build_thin_payload(message, mailbox_id=mailbox_by_user.get(user.id))
         for channel in user_channels:
             # Guarded per device: this task holds the only resolved recipient
             # list, so letting one broker hiccup escape would strand every
@@ -173,7 +169,8 @@ def send_push_notification(self, channel_id: str, payload: dict, collapse_key: s
     """Deliver one push to one device, retrying on a transient failure.
 
     The atomic unit of delivery: it re-fetches the one channel (skips if the
-    device was un-associated since dispatch), resolves its platform, and hands a
+    device was un-associated since dispatch, or if its user lost access to the
+    thread), resolves its platform, and hands a
     single-item batch to that platform's sender. On a *transient* failure
     (429 / 5xx / network) it raises :class:`PushTransientError` so Celery retries
     just this notification with exponential backoff; retrying is idempotent
@@ -181,6 +178,10 @@ def send_push_notification(self, channel_id: str, payload: dict, collapse_key: s
     notification. Dead-token devices are deleted inside the sender; permanent
     rejections (bad payload, auth) end the task. ``acks_late`` means a worker
     crash re-runs this one push (again collapse-deduped), not the whole fan-out.
+
+    ``payload`` is the thin payload: the preview the device may receive is added
+    here, right before sending, so message content never sits in the broker or
+    in the persisted task arguments.
     """
     if not settings.PUSH_ENABLED:
         return {"success": True, "skipped": "push_disabled"}
@@ -191,6 +192,14 @@ def send_push_notification(self, channel_id: str, payload: dict, collapse_key: s
         # Device un-associated (or reclaimed) between dispatch and delivery.
         return {"success": True, "skipped": "channel_gone"}
 
+    # Someone who lost the thread since dispatch (a retry can run minutes later)
+    # gets no push at all, not even the generic banner: it would still tell
+    # them the thread is active.
+    if not models.ThreadAccess.objects.viewer_user_ids(
+        payload.get("thread_id"), user_ids=[channel.user_id]
+    ).exists():
+        return {"success": True, "skipped": "access_revoked"}
+
     platform = (channel.settings or {}).get("platform")
     sender_name = _PLATFORM_SENDER_NAMES.get(platform)
     # Resolve against the package namespace so tests can monkeypatch the senders.
@@ -199,6 +208,9 @@ def send_push_notification(self, channel_id: str, payload: dict, collapse_key: s
         logger.warning("No push sender for platform %r", platform)
         return {"success": False, "error": "no_sender"}
 
+    # A device changing hands deletes its channel (cross-user reclaim), so
+    # ``channel_id`` still names the recipient's device.
+    payload = with_preview(channel, _channel_keys(channel), payload)
     try:
         result = sender([(channel, payload)], collapse_key)
     except Exception as exc:

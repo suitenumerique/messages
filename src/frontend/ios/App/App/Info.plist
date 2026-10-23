@@ -52,10 +52,15 @@
 		<key>NSAllowsLocalNetworking</key>
 		<true/>
 	</dict>
+	<!-- Keychain group holding the notification preview keys, shared with the
+	     Notification Service Extension (PUSH_PREVIEW_KEYCHAIN_GROUP build
+	     setting, see PushPreviewKeyring). -->
+	<key>PushPreviewKeychainGroup</key>
+	<string>$(PUSH_PREVIEW_KEYCHAIN_GROUP)</string>
 	<!--
-	  Wakes the app for remote notifications so the (future) fetch-to-enrich /
-	  background refresh path can run; the visible loc-key alert itself is
-	  rendered by the OS and does not need it.
+	  Wakes the app for remote notifications (background refresh). Neither the
+	  visible loc-key alert nor its preview needs it: the OS renders the former
+	  and the Notification Service Extension decrypts the latter.
 	-->
 	<key>UIBackgroundModes</key>
 	<array>

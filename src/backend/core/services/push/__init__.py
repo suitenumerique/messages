@@ -9,6 +9,7 @@ Layout:
 
 - :mod:`common` — result types, the thin payload, device storage/registration,
   recipient resolution, the process-global HTTP clients, stale-device deletion.
+- :mod:`preview` — the device-encrypted message preview and when it is allowed.
 - :mod:`apns` / :mod:`fcm` / :mod:`webpush` — the per-transport senders.
 - :mod:`tasks` — the Celery orchestrator + the per-device delivery task.
 
@@ -20,14 +21,14 @@ Design constraints baked in here:
   the unconfigured platforms (:func:`gateway_configured`), and each sender
   additionally no-ops — with a deduplicated warning — should credentials
   disappear after devices enrolled.
-- **No message content on the wire.** We never put the subject, body, sender
-  name or any other message *content* into the payload — only routing
-  identifiers (``thread_id`` / ``message_id`` / ``mailbox_id``), a ``type`` and
-  an unread *count* for the badge, then the device refetches over its
-  authenticated session. See :func:`build_thin_payload`. Note this is not full
-  privacy: only Web Push is end-to-end encrypted (RFC 8291) — for APNs and FCM
-  those routing UUIDs and the unread count are visible to Apple/Google in
-  transit. The content itself never is.
+- **No readable message content on the wire.** The dispatched payload only
+  carries routing identifiers (``thread_id`` / ``message_id`` / ``mailbox_id``)
+  and a ``type`` (:func:`build_thin_payload`). A preview (sender + subject) is
+  added at send time only when encrypted for the device itself — RFC 8291 for
+  Web Push, the same scheme with an app-generated key for APNs/FCM — and only
+  while the device may show it (see :mod:`preview`). Note this is not full
+  privacy: for APNs and FCM the routing UUIDs and the (padded) preview size are
+  visible to Apple/Google in transit. The content itself never is.
 - **Non-fatal.** Push is best-effort. Senders never raise into the caller —
   failures are logged and swallowed so a flaky gateway can never break delivery.
 - **One task per notification.** Each device's push is an independently-retryable
@@ -42,9 +43,10 @@ Design constraints baked in here:
 from core.enums import PushPlatformChoices
 from core.services.ssrf import SSRFSafeSession, SSRFValidationError
 
-from . import apns, common, fcm, tasks, webpush
-from .apns import APNS_ALERT_LOC_KEY, send_apns
+from . import apns, common, fcm, preview, tasks, webpush
+from .apns import APNS_ALERT_LOC_KEY, APNS_CATEGORY, send_apns
 from .common import (
+    PUSH_TTL_SECONDS,
     PUSH_TYPE_NEW_MESSAGE,
     PushResult,
     PushTransientError,
@@ -64,7 +66,6 @@ from .tasks import (
     send_push_notification,
 )
 from .webpush import (
-    WEBPUSH_TTL_SECONDS,
     derive_vapid_public_key,
     generate_vapid_keypair,
     send_webpush,
@@ -90,15 +91,16 @@ def gateway_configured(platform: str) -> bool:
 
 __all__ = [
     "APNS_ALERT_LOC_KEY",
+    "APNS_CATEGORY",
     "FCM_ANDROID_CHANNEL_ID",
     "FCM_BODY_LOC_KEY",
     "FCM_TITLE_LOC_KEY",
+    "PUSH_TTL_SECONDS",
     "PUSH_TYPE_NEW_MESSAGE",
     "PushResult",
     "PushTransientError",
     "SSRFSafeSession",
     "SSRFValidationError",
-    "WEBPUSH_TTL_SECONDS",
     "apns",
     "build_thin_payload",
     "collapse_key_for_message",
@@ -108,6 +110,7 @@ __all__ = [
     "fcm",
     "gateway_configured",
     "generate_vapid_keypair",
+    "preview",
     "register_push_device",
     "send_apns",
     "send_fcm",

@@ -107,6 +107,20 @@ describe("cross-app SSO invariants", () => {
       expect(fallback).toBe(schemeDefault);
     });
 
+    it("keeps the signing team out of the project file", () => {
+      // Per developer / organisation like the bundle id, it reaches Xcode
+      // through generated.xcconfig (MOBILE_IOS_TEAM_ID). Picking a team in
+      // Xcode's Signing UI writes DEVELOPMENT_TEAM into every target of
+      // project.pbxproj, where it would override the xcconfig — and get
+      // committed.
+      expect(read("ios/App/App.xcodeproj/project.pbxproj")).not.toContain(
+        "DEVELOPMENT_TEAM",
+      );
+      expect(read("scripts/generate-ios-xcconfig.mjs")).toContain(
+        "settings.DEVELOPMENT_TEAM = teamId",
+      );
+    });
+
     it("keeps the bundle identifier driven by MOBILE_APP_ID", () => {
       // Regenerating the project would hardcode the id back, silently detaching
       // it from the env (and from the synced capacitor.config.json the release

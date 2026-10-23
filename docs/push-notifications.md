@@ -18,8 +18,9 @@ operators supply the per-instance credentials (§3, §12).
 ## 1. Storage & registration
 
 - A device is a **user-scoped** `Channel(type="push")`. The opaque token lives
-  encrypted in `encrypted_settings.token` (+ `keys` for Web Push); `settings`
-  holds `platform` and `app_version`; the dedup/reclaim key is the indexed,
+  encrypted in `encrypted_settings.token` (+ the preview `keys`, required for Web
+  Push, optional for native apps — §5.1); `settings` holds `platform`,
+  `app_version` and, for browsers, `session_expires_at`; the dedup/reclaim key is the indexed,
   globally-unique `Channel.lookup_hash` column (sha256 of the `push:`-prefixed token).
 - **Register / refresh:** `POST /api/v1.0/users/me/channels/` with `{type:
   "push", platform, token, keys?, name?, app_version?}`. The collection POST
@@ -30,12 +31,11 @@ operators supply the per-instance credentials (§3, §12).
   Push channels are blocked from create/PATCH through the generic endpoint.
 - **`platform` is a transport, not an OS:** `apns` / `fcm` / `web`. The OS label
   is a frontend concern carried in the channel `name`, never inferred from `platform`.
-- **Payloads carry no message content:** only `{type, thread_id, message_id,
-  mailbox_id, unread_count}` (routing ids + badge). The device wakes and
-  refetches over its authenticated session — the push never carries
-  subject/body/sender. Note only Web Push is end-to-end encrypted (RFC 8291); for
-  APNs/FCM those routing ids and the count are visible to Apple/Google in
-  transit, the content never is.
+- **Payloads carry no readable message content:** the routing part is
+  `{type, thread_id, message_id, mailbox_id}`. A preview (sender + subject) is
+  added only **encrypted for the device itself**, and only while the device may
+  show it (§5.1). For APNs/FCM the routing ids and the padded preview size are
+  visible to Apple/Google in transit; the content never is.
 - Push is the **app-closed** half of notifications; the realtime SSE relay is
   the **app-open** half. They must cooperate (see §6).
 
@@ -95,13 +95,15 @@ The senders emit a **visible, high-priority, content-free** alert (it survives
 force-quit, where a silent background push would be throttled and dropped).
 Because the push carries only localization *keys* — never message content — the
 native apps ship the matching strings so the OS can render the banner:
-- **iOS:** the alert carries `alert.loc-key = "NEW_MESSAGE"` + the unread badge;
+- **iOS:** the alert carries `alert.loc-key = "NEW_MESSAGE"` + `badge: 1`;
   the matching `Localizable.strings` entries ship in
   `ios/App/App/{en,fr}.lproj/`.
 - **Android:** the FCM message carries an OS-localized `notification` block
   (`title_loc_key` / `body_loc_key`); the matching `new_message_*` entries ship
-  in `android/app/src/main/res/values{,-fr}/strings.xml`. The OS displays it
-  automatically even when the app is killed. It renders on the `new_messages`
+  in `android/app/src/main/res/values{,-fr}/strings.xml`. The Firebase SDK
+  displays it in the background without running app code (a killed process is
+  restarted for it, but a force-stopped app receives no FCM message at all
+  until relaunched, data-only or not). It renders on the `new_messages`
   notification channel — created at HIGH importance by the app
   (`ensureAndroidNotificationChannel`, features/native/push.ts), targeted by
   `channel_id` in the message (`FCM_ANDROID_CHANNEL_ID`, fcm.py) and declared
@@ -111,7 +113,24 @@ native apps ship the matching strings so the OS can render the banner:
 
 No server toggle is involved — visible alerts are the built-in behavior; if the
 loc-key strings are missing the banner renders blank. (The Web Push client needs
-no such strings: the service worker renders the banner text itself.)
+no such strings: the service worker renders the banner text itself.) They are
+also the fallback whenever a device-encrypted preview (§5.1) is absent or can't
+be decrypted.
+
+### Preview decryption (native client)
+- iOS: the `NotificationService` app-extension target
+  (`ios/App/NotificationService/`) rewrites the alert; the keyring and the
+  aes128gcm decryption (`ios/App/PushPreview/`) are compiled into both the app
+  and the extension, which share the `PUSH_PREVIEW_KEYCHAIN_GROUP` Keychain
+  group (`keychain-access-groups` in both entitlements). The app-local
+  `PushPreviewKeys` plugin (`ios/App/App/PushPreviewKeysPlugin.swift`) hands the
+  public key to `features/native/push.ts`.
+- Android: `PushPreviewMessagingService` replaces (and extends) the push
+  plugin's FCM service in the manifest and renders data-only pushes;
+  `PushPreviewKeysPlugin` / `PushPreviewKeyring` / `PushPreviewCrypto` live next
+  to `MainActivity`. `PushPreviewCryptoTest` (JVM) decrypts a vector sealed by
+  the backend.
+- `src/features/native/push-preview-invariants.test.ts` pins this wiring.
 
 ### Native app project config (native client)
 - iOS — in the repo: the Push Notifications capability
@@ -157,6 +176,7 @@ redirect back. This is a prerequisite for the native client, independent of push
      `reg.pushManager.subscribe({ userVisibleOnly: true, applicationServerKey })`
      where the key is `PUSH_VAPID_PUBLIC_KEY` from `/config`. Send the
      subscription `endpoint` as `token` and `{p256dh, auth}` as `keys`.
+   - native, for previews: the current preview key pair as `keys` (§5.1).
 3. **Register:** `POST /users/me/channels/` with `{type: "push", platform,
    token, keys?, name, app_version}`. Use a human device name
    (`@capacitor/device` → model). **Store the registered *token* locally** —
@@ -174,11 +194,21 @@ redirect back. This is a prerequisite for the native client, independent of push
    So a **voluntary logout** silences exactly that device — even if no client
    code runs — while a session that merely **expires** never reaches the logout
    view authenticated, so its channels survive and notifications keep flowing
-   (content-free banner until the next login re-authenticates enrichment).
+   (previews per the §5.1 rules: none for a browser, a phone keeps them).
    Clients therefore do NOT need to `DELETE` or `unsubscribe()` at logout; the
    re-registration on next login (step 4) transparently resumes delivery. The
    full decision tree (incl. shared-computer takeover) is diagrammed in §12 →
    *Web Push specifics* → *Web session lifecycle — flow*.
+6. **Another account signs in on the device (native):** a stored token the
+   signed-in user cannot refresh (no opt-in marker, or the OS permission is
+   gone) may belong to the previous account. The on-launch refresh drops it,
+   wipes the preview keys and `unregister()`s: the previous channel dies at
+   the gateway and self-prunes. When the new user can register, the
+   re-registration takes the device over instead: the
+   keyring, rebound to the new user before the token round-trip, drops the
+   previous keys, and the reclaim of §9 deletes the previous channel
+   (unregistering first would race the asynchronous FCM token deletion). The
+   previous user's opt-in marker survives for their own return.
 
 ---
 
@@ -187,16 +217,94 @@ redirect back. This is a prerequisite for the native client, independent of push
 - **Tap → deep link:** the payload carries `thread_id` / `message_id`; route to
   the thread on notification open. Register the tap handler
   (`pushNotificationActionPerformed` / SW `notificationclick`).
-- **Badge:** from `unread_count` (set as `aps.badge` on the iOS alert path; app
-  sets it on Android/Web where supported).
-- **Richer content without weakening privacy (fetch-to-enrich):** the thin push +
-  `mutable-content: 1` supports a **fetch-to-enrich** flow — the client fetches
-  the message over the authenticated session and *rewrites* the banner with
-  sender/subject, keeping content off the push transport. The **Web Push service
-  worker does this today** (it fetches `/api/v1.0/messages/{id}` and falls back to
-  a generic banner if the fetch fails). The native equivalent — an iOS
-  Notification Service Extension / Android data handler — is the same pattern for
-  the native client.
+- **Badge:** flags mail that arrived while the app was away, never an unread
+  count (summed over every mailbox of the user, it would mean little). Cleared
+  as soon as the app is in the foreground (`SceneDelegate` on iOS,
+  `features/auth` on Android/Web).
+  - *iOS* badges are always numbers: the Notification Service Extension sets
+    the number of banners waiting in Notification Center (one per thread);
+    `aps.badge = 1` is the fallback when the extension can't run.
+  - *Android*: no count either; the launcher shows its dot while a banner is
+    pending (some launchers, e.g. Samsung's, show the number of banners).
+  - *Web*: `setAppBadge()` without argument, i.e. a dot.
+- **Sender + subject:** from the device-encrypted preview (§5.1); the generic
+  banner is the fallback whenever there is none or it can't be opened.
+
+### 5.1 Device-encrypted previews
+
+The banner shows the sender and subject without that content being readable by
+the push transport (Apple, Google, browser push services) — no network round-trip
+nor session is needed on reception, which a Notification Service Extension (separate
+process, no WebView cookies, ~30 s budget) could not rely on anyway.
+
+**Encryption.** Every device holds a P-256 key pair + a 16-byte auth secret and
+registers the public half as `keys: {p256dh, auth}` (base64url, uncompressed
+point). The preview is encrypted with RFC 8291 *aes128gcm* (the Web Push message
+encryption; a fresh ephemeral server key per message, so there is no server key
+to manage). Browsers already do this for the whole payload with keys they own;
+native apps generate their own pair.
+
+**Wire format.**
+
+| Transport | Preview field(s) | Generic fallback |
+|---|---|---|
+| Web Push | `preview: {sender, subject, expires_at}` in clear *inside* the payload the browser decrypts | SW default banner, also past `expires_at` |
+| APNs | `enc` (base64url aes128gcm record) + `kid` next to the routing ids; `mutable-content: 1` routes it through the Notification Service Extension | the `loc-key` alert, shown as is if the extension can't decrypt |
+| FCM | `enc` + `kid` in `data`, **data-only** message (no `notification` block, else the Firebase SDK shows it without calling the app's messaging service) | the app's messaging service posts the generic banner itself |
+
+Decrypted, `enc` is the JSON `{"sender": …, "subject": …}` padded with trailing
+spaces to a fixed 2048 bytes (valid JSON; the padding hides the length). The
+Web Push payload as a whole is padded the same way.
+Sender ≤ 100 chars (name, else address), subject ≤ 200 chars. Devices without
+`keys`, or outside the rules below, get exactly the previous thin payload.
+
+**Who gets a preview** (`preview.preview_allowed`):
+- **Browser:** while the session that registered it is alive — the channel is
+  stamped with that session's real expiry (`session_expires_at`, read from the
+  session cache TTL) and the browser re-registers on every app load. Checked
+  twice: at send time, and on display, since the push service may hold a push
+  for a day (a browser closed overnight on a shared computer). The preview
+  carries that expiry (`expires_at`, epoch seconds) and the service worker shows
+  the generic banner past it. So an expired session never leaves the previous
+  user's subjects popping up.
+- **Native app:** while it was opened with a valid session (which re-registers
+  it) within `PUSH_PREVIEW_MAX_IDLE_DAYS` (default 14). Previews outlive the
+  12 h session by design; a lost phone stops showing them after that window, and
+  the device can be revoked at once from device management (§7).
+- `PUSH_PREVIEWS_ENABLED=False` turns every preview off.
+
+**Built at send time.** The orchestrator dispatches the thin payload; the
+per-device task adds the preview right before calling the gateway. Task
+arguments go through the broker and are persisted by the result backend
+(`CELERY_RESULT_EXTENDED`), so they must never hold content.
+
+**Native key rotation (client contract).**
+- Key id: `kid` = base64url of the first 8 bytes of `sha256(p256dh raw bytes)`;
+  the device keeps a small keyring and picks the private key by `kid` (an
+  unknown `kid` → generic banner).
+- Rotate on launch when the current pair is older than 30 days: generate a new
+  pair, register it (the server only keeps the latest), keep the previous
+  private key for a 2-day grace period, then delete it. Every gateway drops a
+  push after `PUSH_TTL_SECONDS` (1 day), so nothing sealed for a retired key can
+  arrive after the grace period. Deletion happens on the next launch, but a key
+  past its grace period already opens nothing: the decryption lookup checks it
+  too.
+- Wipe the keyring on voluntary logout and as soon as another account signs in
+  on the device, opted in or not (the previous user's expired session kept its
+  channel and keys alive); on iOS also on first launch after (re)install (the
+  Keychain survives app deletion).
+- Store keys non-exportable and out of backups (`…ThisDeviceOnly` Keychain items
+  in an access group shared with the extension; Android Keystore).
+
+**OS notification privacy settings** are honored, not re-implemented: the OS
+decides what a lock screen shows. The apps only provide the generic text to
+show instead of the sender and subject:
+- iOS ("Show Previews": when unlocked / never): every alert carries
+  `aps.category = "NEW_MESSAGE"` (`APNS_CATEGORY`), registered by `AppDelegate`
+  with the localized `NEW_MESSAGE` string as `hiddenPreviewsBodyPlaceholder`.
+- Android ("Hide sensitive content"): previews are `VISIBILITY_PRIVATE` with a
+  generic `publicVersion` (the `new_message_*` strings).
+- Web / desktop: entirely up to the OS and browser.
 
 ---
 
@@ -204,11 +312,11 @@ redirect back. This is a prerequisite for the native client, independent of push
 
 When the app is **open** and in front of the user, it surfaces the mail on its
 own (today the 30s mailbox poll; the SSE relay when it lands) — a banner for it
-is noise. So no transport alerts while the app holds the foreground; only the
-badge tracks.
-- **Native (iOS):** the foreground-presentation handler is limited to the badge
-  (`presentationOptions: ["badge"]` in `capacitor.config.ts`) — no banner, no
-  sound.
+is noise. So no transport alerts while the app holds the foreground, badge
+included.
+- **Native (iOS):** the foreground-presentation handler presents nothing
+  (`presentationOptions: []` in `capacitor.config.ts`) — no banner, no sound,
+  no badge.
 - **Native (Android):** nothing to configure. FCM only auto-displays the
   `notification` block when the app is backgrounded; in foreground it routes to
   the app instead, which does not display it.
@@ -307,7 +415,9 @@ alternatives):
   receiving pushes until their real device re-registers (every launch — step §4.4
   re-registers idempotently), which recreates their channel and wins back the token.
 - **No content disclosure.** The attacker does not hold the device, so they
-  receive nothing; payloads are content-free regardless (§1).
+  receive nothing; and previews are only ever encrypted for the keys the
+  device's current owner registered (§5.1) — the reclaimed channel carries the
+  attacker's keys, which the victim's device cannot use either.
 - Raw push tokens are device-held routing identifiers, not credentials issued to
   other users — obtaining a victim's raw token already implies a meaningful
   compromise (device access, malicious SDK, client log exfiltration).
@@ -366,9 +476,10 @@ maps to transport priority here.
 
 ## 11. Not yet built / future work
 
-- **Native fetch-to-enrich.** The Web Push service worker already enriches
-  banners (§5); the iOS Notification Service Extension / Android data handler
-  equivalent is not built — native banners stay at the generic loc-key text.
+- **User-facing preview toggle** ("show sender and subject"), per device: the
+  server-side seam is `preview_allowed` (§5.1).
+- **Server-forced native key rotation** (after a suspected compromise): e.g. a
+  registration response flag asking the app to rotate now.
 - **Differentiated priority / importance by label** (§10) — the seam exists;
   wiring it to a label/importance signal is future work.
 - **Per-device granularity** (mentions only / per-mailbox / quiet hours) and
@@ -381,14 +492,17 @@ maps to transport priority here.
 ### Task model — one Celery task per notification
 `enqueue_push_notifications` (on commit) schedules `send_push_for_message`, the
 **orchestrator**: it resolves recipients and does the per-recipient DB work once
-(devices, badge counts, deep-link mailbox — a handful of batched queries),
+(devices, deep-link mailbox — a handful of batched queries),
 builds each user's thin payload, then dispatches **one `send_push_notification`
 task per device**. The orchestrator never touches a gateway, so a flaky provider
 can't stall resolution.
 
 Each `send_push_notification` is the **independently-retryable atomic unit**: it
 re-fetches its one channel (skips if the device was un-associated since
-dispatch), sends one push, and on a *transient* failure (429 / 5xx / network)
+dispatch), re-checks that the device's user still reaches the thread through
+one of their mailboxes (if not, nothing is sent, not even the generic banner:
+a retry can run minutes after access was revoked), sends one push, and on a
+*transient* failure (429 / 5xx / network)
 retries **just that notification** (`autoretry_for=PushTransientError`,
 exponential backoff, `max_retries=5`). Retries are idempotent on-device — the
 per-thread collapse key / Web Push `Topic` coalesces a re-send onto the same
@@ -442,8 +556,9 @@ manual removal in device management.
   path). Rotating the private key orphans every existing web subscription.
 - `PUSH_VAPID_SUBJECT` must be a `mailto:` / `https:` URI (else 401); a malformed
   subject disables web push with a logged warning.
-- TTL is 1 day (the payload is just a refetch trigger; a week-old trigger is
-  noise), `Urgency: high`, `Topic` = a 32-char hash of the collapse key.
+- TTL is 1 day (`PUSH_TTL_SECONDS`, shared with APNs `apns-expiration` and FCM
+  `ttl`: a week-old "new message" is noise), `Urgency: high`, `Topic` = a
+  32-char hash of the collapse key. The payload is padded (§5.1).
 - The service worker re-alerts per new message in a thread (`renotify`).
 - **Self-healing subscriptions:** the SW's `pushsubscriptionchange` re-subscribes
   and re-registers (CSRF via `cookieStore` on Chromium); the app also
@@ -533,7 +648,7 @@ flowchart TD
     SUP -- no --> S1(["stop — never prompt"])
     SUP -- yes --> REG{"SW registration<br/>exists?"}
     REG -- no --> S2(["stop — push never<br/>enabled in this browser"])
-    REG -- yes --> RR["re-register SW<br/>(refresh ?api= and ?vapid=)"]
+    REG -- yes --> RR["re-register SW<br/>(refresh ?vapid= and ?lang=)"]
     RR --> SUB{"Live<br/>subscription?"}
 
     SUB -- no --> MK1{"Opt-in marker for<br/>current user?"}

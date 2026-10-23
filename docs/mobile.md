@@ -53,7 +53,11 @@ first, then:
   (deployment target iOS 15). Dependencies come through Swift Package Manager
   (`ios/App/CapApp-SPM/Package.swift`), resolved on first open — **no
   CocoaPods**.
-- For a physical iPhone: an Apple developer account and a signing team in Xcode.
+- A signing team for a physical iPhone, or for push notifications: an Apple
+  developer account, then `MOBILE_IOS_TEAM_ID=<Team ID>` in
+  `deploy/env/frontend.local` and `make mobile-build`. **Don't** pick the team
+  in Xcode's *Signing & Capabilities*: Xcode would write it into
+  `project.pbxproj`, which must stay team-free (a test rejects it).
 
 ## First run
 
@@ -249,16 +253,25 @@ you install.
    **`PUSH_APNS_USE_SANDBOX=True`** — dev-signed builds hold sandbox tokens;
    the production gateway rejects them as `BadDeviceToken`.
    Restart the backend + celery worker.
+4. The app embeds a **Notification Service Extension** (`NotificationService`
+   target, bundle id `<MOBILE_APP_ID>.NotificationService`) that decrypts the
+   notification preview. With automatic signing Xcode registers its App ID;
+   both targets must be signed by the same team, since they share the
+   `<team>.<MOBILE_APP_ID>.push-preview` Keychain group holding the keys —
+   `MOBILE_IOS_TEAM_ID` signs both.
 
 **Smoke test (both platforms)**
 
 1. In the app: account menu → Notifications → *Enable notifications on this
    device* → accept the OS prompt. The device must appear in the list.
-2. Kill the app, send the mailbox a message from another account: a
-   content-free "New message / Nouveau message" banner must show (rendered by
-   the OS from the loc-key strings — a blank banner means those strings are
-   missing from the build).
-3. Tap it: the app must open on the thread (deep-link path).
+2. Kill the app, send the mailbox a message from another account: a banner
+   with the **sender and subject** must show — decrypted on the device
+   (push-notifications.md §5.1) by the iOS Notification Service Extension /
+   Android `PushPreviewMessagingService`.
+3. With `PUSH_PREVIEW_MAX_IDLE_DAYS=0` (backend), the same banner must be the
+   generic "New message / Nouveau message" — rendered from the loc-key strings,
+   a blank banner means those strings are missing from the build.
+4. Tap it: the app must open on the thread (deep-link path).
 
 ---
 
@@ -614,6 +627,7 @@ Mobile-specific environment variables (full reference in [env.md](./env.md)):
 | Variable | Purpose |
 | --- | --- |
 | `MOBILE_APP_ID` | Store/OS bundle identifier (default `local.suitenumerique.messages`). Read by `cap sync` (container) **and** the native builds — gradle reads the host env (the `mobile-android-*` targets export it), Xcode reads the gitignored `ios/App/generated.xcconfig` written by `make mobile-build`. Release builds fail on a divergence from the synced config on both platforms (gradle guard / "Check synced Capacitor identity" build phase). Independent of the auth scheme (`MOBILE_AUTH_SCHEME`) |
+| `MOBILE_IOS_TEAM_ID` | Apple Team ID signing both iOS targets, written as `DEVELOPMENT_TEAM` into the gitignored `generated.xcconfig` by `make mobile-build` so it never lands in `project.pbxproj` |
 | `MOBILE_APP_NAME` | Displayed application name (default `ST Messages`, a neutral placeholder an organisation overrides with its own). Reaches the native builds through the same two channels as `MOBILE_APP_ID` (gradle `resValue app_name` / iOS `PRODUCT_DISPLAY_NAME` in the generated xcconfig), with the same release-time divergence guards |
 | `MOBILE_AUTH_SCHEME` | OIDC deep-link scheme (default `stmessages`). Read by Vite **and** the native builds (Android `manifestPlaceholders` from the host env, iOS `AUTH_CALLBACK_SCHEME` from the generated xcconfig). Give each environment its own so two builds can coexist on a device |
 | `MOBILE_AUTH_CALLBACK_SCHEMES` | Backend allowlist: JSON list of accepted deep-link schemes (e.g. `["stmessages"]`); empty disables mobile login. Must contain every `MOBILE_AUTH_SCHEME` in use |

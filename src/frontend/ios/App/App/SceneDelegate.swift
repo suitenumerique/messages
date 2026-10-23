@@ -31,10 +31,10 @@ class SceneDelegate: UIResponder, UIWindowSceneDelegate {
     // receives these transitions instead.
 
     func sceneDidBecomeActive(_ scene: UIScene) {
-        // The push badge carries the unread count as of send time; once the
-        // user is in the app it is stale, so drop it (web counterpart:
-        // clearAppBadge in features/auth). Delivered banners are dismissed by
-        // the JS side (clearDeliveredNativeNotifications).
+        // The push badge flags mail that arrived while the app was away; once
+        // the user is in the app it has done its job, so drop it (web
+        // counterpart: clearAppBadge in features/auth). Delivered banners are
+        // dismissed by the JS side (clearDeliveredNativeNotifications).
         if #available(iOS 16.0, *) {
             UNUserNotificationCenter.current().setBadgeCount(0)
         } else {

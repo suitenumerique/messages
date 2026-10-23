@@ -20,6 +20,7 @@ class MainViewController: CAPBridgeViewController {
 
     override open func capacitorDidLoad() {
         bridge?.registerPluginInstance(WebAuthSessionPlugin())
+        bridge?.registerPluginInstance(PushPreviewKeysPlugin())
         NotificationCenter.default.addObserver(
             self,
             selector: #selector(keyboardWillChangeFrame(_:)),
