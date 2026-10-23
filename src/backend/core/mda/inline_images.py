@@ -88,8 +88,7 @@ def _make_replacer(
 
         try:
             content = base64.b64decode(b64_data)
-        # pylint: disable=broad-exception-caught
-        except Exception:
+        except Exception:  # pylint: disable=broad-exception-caught
             logger.warning("Failed to decode base64 image, leaving as-is")
             return match.group(0)
 

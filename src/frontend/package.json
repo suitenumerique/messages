@@ -61,7 +61,7 @@
     "@viselect/react": "3.9.0",
     "clsx": "2.1.1",
     "date-fns": "4.1.0",
-    "dompurify": "3.4.11",
+    "dompurify": "3.4.17",
     "downshift": "9.2.0",
     "i18next": "25.7.4",
     "i18next-http-backend": "3.0.2",

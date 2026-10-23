@@ -347,8 +347,7 @@ def index_message(message: models.Message, mailbox_ids=None) -> bool:
         # Bare-raise so Celery autoretry fires; the broad catch below would
         # otherwise swallow the transient and silently desync the index.
         raise
-    # pylint: disable=broad-exception-caught
-    except Exception as e:
+    except Exception as e:  # pylint: disable=broad-exception-caught
         logger.error("Error indexing message %s: %s", message.id, e)
         return False
 
@@ -372,8 +371,7 @@ def update_thread_mailbox_flags(thread: models.Thread) -> bool:
         return True
     except RETRYABLE_EXCEPTIONS:
         raise
-    # pylint: disable=broad-exception-caught
-    except Exception as e:
+    except Exception as e:  # pylint: disable=broad-exception-caught
         logger.error("Error updating mailbox flags for thread %s: %s", thread.id, e)
         return False
 
@@ -404,8 +402,7 @@ def index_thread(thread: models.Thread) -> bool:
         return success
     except RETRYABLE_EXCEPTIONS:
         raise
-    # pylint: disable=broad-exception-caught
-    except Exception as e:
+    except Exception as e:  # pylint: disable=broad-exception-caught
         logger.error("Error indexing thread %s: %s", thread.id, e)
         return False
 
@@ -574,6 +571,5 @@ def reindex_thread(thread_id: str):
         }
     except models.Thread.DoesNotExist:
         return {"status": "error", "thread": thread_id, "error": "Thread not found"}
-    # pylint: disable=broad-exception-caught
-    except Exception as e:
+    except Exception as e:  # pylint: disable=broad-exception-caught
         return {"status": "error", "thread": thread_id, "error": str(e)}

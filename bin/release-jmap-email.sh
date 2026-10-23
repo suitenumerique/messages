@@ -21,7 +21,7 @@ set -eo pipefail
 
 REPO_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 PKG_DIR="${REPO_DIR}/src/jmap-email"
-PYTHON_IMAGE="python:3.14.8-slim"
+PYTHON_IMAGE="python:3.14.9-slim"
 
 BOLD=$'\033[1m'
 GREEN=$'\033[1;32m'
