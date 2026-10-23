@@ -4,12 +4,13 @@ from collections import defaultdict
 from datetime import timedelta
 
 from django.conf import settings
-from django.db.models import Count, OuterRef, Subquery, Sum, Value
-from django.db.models.expressions import RawSQL
+from django.db import connection
+from django.db.models import Count, Exists, OuterRef, Subquery, Sum, Value
 from django.db.models.functions import Coalesce
 from django.utils import timezone
 
 from drf_spectacular.utils import extend_schema
+from rest_framework.pagination import LimitOffsetPagination
 from rest_framework.response import Response
 from rest_framework.views import APIView
 
@@ -36,6 +37,13 @@ ACTIVE_USER_METRICS = {
 }
 
 
+class MetricsPagination(LimitOffsetPagination):
+    """Limit/offset pagination over metric groups."""
+
+    default_limit = 10
+    max_limit = 100
+
+
 class MailDomainUsersMetricsApiView(IsGlobalChannelMixin, APIView):
     """
     API view to expose MailDomain Users custom metrics. Global-only.
@@ -57,14 +65,53 @@ class MailDomainUsersMetricsApiView(IsGlobalChannelMixin, APIView):
         group_by_custom_attribute_key = request.query_params.get(
             "group_by_maildomain_custom_attribute"
         )
+        group_key = group_by_custom_attribute_key or "domain"
+
+        # Groups are listed from the domain table only (cheap), so that the
+        # expensive user and storage aggregations can be restricted to the
+        # domains of the requested page. Domains with no users and no
+        # storage are left out.
+        group_domain_ids = defaultdict(list)
+        group_created_at = {}
+        for domain in MailDomain.objects.filter(
+            Exists(MailboxAccess.objects.filter(mailbox__domain=OuterRef("pk")))
+            | Exists(
+                Message.objects.filter(thread__accesses__mailbox__domain=OuterRef("pk"))
+            )
+            | Exists(Attachment.objects.filter(mailbox__domain=OuterRef("pk")))
+            | Exists(
+                MessageTemplate.objects.filter(
+                    maildomain=OuterRef("pk"), blob__isnull=False
+                )
+            )
+        ).only("id", "name", "custom_attributes", "created_at"):
+            if group_by_custom_attribute_key:
+                group_value = domain.custom_attributes.get(
+                    group_by_custom_attribute_key
+                )
+            else:
+                group_value = domain.name
+            group_domain_ids[group_value].append(domain.id)
+            group_created_at[group_value] = min(
+                group_created_at.get(group_value, domain.created_at), domain.created_at
+            )
+
+        # Oldest group first, so that new domains are appended at the end and
+        # do not shift the pages already fetched. The value breaks ties.
+        ordered_groups = sorted(
+            group_domain_ids, key=lambda value: (group_created_at[value], str(value))
+        )
+        paginator = MetricsPagination()
+        page_groups = paginator.paginate_queryset(ordered_groups, request, view=self)
+        domain_ids = [
+            domain_id for group in page_groups for domain_id in group_domain_ids[group]
+        ]
 
         # group key => metrics dict
-        metrics = defaultdict(lambda: {"metrics": {}})
+        metrics = {group: {group_key: group, "metrics": {}} for group in page_groups}
 
         for metric, threshold in ACTIVE_USER_METRICS.items():
-            queryset = MailboxAccess.objects.select_related(
-                "mailbox", "mailbox__domain"
-            )
+            queryset = MailboxAccess.objects.filter(mailbox__domain_id__in=domain_ids)
 
             # Apply time filter if threshold is specified
             if threshold is not None:
@@ -88,118 +135,86 @@ class MailDomainUsersMetricsApiView(IsGlobalChannelMixin, APIView):
                     group_value = result[
                         f"mailbox__domain__custom_attributes__{group_by_custom_attribute_key}"
                     ]
-                    group_key = group_by_custom_attribute_key
                 else:
                     group_value = result["mailbox__domain__name"]
-                    group_key = "domain"
 
-                # Set the group key and value only once per group
-                if group_key not in metrics[group_value]:
-                    metrics[group_value][group_key] = group_value
                 metrics[group_value]["metrics"][metric] = result["count"]
 
-        # Compute storage_used per domain in a single query.
+        # Compute storage_used for the domains of the page. Each component is
+        # aggregated for all of them at once instead of through per-domain
+        # correlated subqueries, which scale as domains x messages.
         # When multiple mailboxes in the same domain share a thread,
         # messages and blobs are counted once per domain.
         overhead = settings.METRICS_STORAGE_USED_OVERHEAD_BY_MESSAGE
 
-        # Count(distinct=True) deduplicates by PK — correct for message counts.
-        msg_count_subquery = Subquery(
-            Message.objects.filter(thread__accesses__mailbox__domain=OuterRef("pk"))
-            .order_by()
-            .values("thread__accesses__mailbox__domain")
-            .annotate(cnt=Count("id", distinct=True))
-            .values("cnt")[:1]
-        )
+        # Messages and blobs are deduplicated by PK per domain before
+        # summing: Sum(distinct=True) would deduplicate by *value* (wrong).
+        with connection.cursor() as cursor:
+            cursor.execute(
+                """
+                WITH domain_messages AS (
+                    SELECT DISTINCT mb.domain_id, m.id AS message_id,
+                        m.blob_id, m.draft_blob_id
+                    FROM messages_threadaccess ta
+                    JOIN messages_mailbox mb ON mb.id = ta.mailbox_id
+                    JOIN messages_message m ON m.thread_id = ta.thread_id
+                    WHERE mb.domain_id = ANY(%s)
+                )
+                SELECT domain_id, 'msg', COUNT(*) FROM domain_messages
+                GROUP BY domain_id
+                UNION ALL
+                SELECT dm.domain_id, 'mime', SUM(b.size_compressed)
+                FROM (
+                    SELECT DISTINCT domain_id, blob_id FROM domain_messages
+                    WHERE blob_id IS NOT NULL
+                ) dm
+                JOIN messages_blob b ON b.id = dm.blob_id
+                GROUP BY dm.domain_id
+                UNION ALL
+                SELECT dm.domain_id, 'draft', SUM(b.size_compressed)
+                FROM (
+                    SELECT DISTINCT domain_id, draft_blob_id FROM domain_messages
+                    WHERE draft_blob_id IS NOT NULL
+                ) dm
+                JOIN messages_blob b ON b.id = dm.draft_blob_id
+                GROUP BY dm.domain_id
+                """,
+                [domain_ids],
+            )
+            msg_counts, mime_sizes, draft_sizes = {}, {}, {}
+            targets = {"msg": msg_counts, "mime": mime_sizes, "draft": draft_sizes}
+            for domain_id, kind, value in cursor.fetchall():
+                targets[kind][domain_id] = value or 0
 
-        # For blob sizes, Sum(distinct=True) deduplicates by *value* (wrong),
-        # and .distinct() before .values().annotate() puts DISTINCT on the
-        # aggregated output (also wrong).  Use a raw subselect that first
-        # deduplicates blob rows by PK, then sums.
-        mime_size_subquery = RawSQL(
-            """
-            SELECT COALESCE(SUM(sub.size_compressed), 0)
-            FROM (
-                SELECT DISTINCT b.id, b.size_compressed
-                FROM messages_blob b
-                JOIN messages_message m ON m.blob_id = b.id
-                JOIN messages_thread t ON m.thread_id = t.id
-                JOIN messages_threadaccess ta ON ta.thread_id = t.id
-                JOIN messages_mailbox mb ON ta.mailbox_id = mb.id
-                WHERE mb.domain_id = messages_maildomain.id
-            ) sub
-            """,
-            (),
-        )
-
-        draft_size_subquery = RawSQL(
-            """
-            SELECT COALESCE(SUM(sub.size_compressed), 0)
-            FROM (
-                SELECT DISTINCT b.id, b.size_compressed
-                FROM messages_blob b
-                JOIN messages_message m ON m.draft_blob_id = b.id
-                JOIN messages_thread t ON m.thread_id = t.id
-                JOIN messages_threadaccess ta ON ta.thread_id = t.id
-                JOIN messages_mailbox mb ON ta.mailbox_id = mb.id
-                WHERE mb.domain_id = messages_maildomain.id
-            ) sub
-            """,
-            (),
-        )
-
-        att_size_subquery = Subquery(
-            Attachment.objects.filter(mailbox__domain=OuterRef("pk"))
+        att_sizes = {
+            row["mailbox__domain"]: row["total"] or 0
+            for row in Attachment.objects.filter(mailbox__domain__in=domain_ids)
             .order_by()
             .values("mailbox__domain")
             .annotate(total=Sum("blob__size_compressed"))
-            .values("total")[:1]
-        )
+        }
 
-        template_size_subquery = Subquery(
-            MessageTemplate.objects.filter(
-                maildomain=OuterRef("pk"), blob__isnull=False
+        template_sizes = {
+            row["maildomain"]: row["total"] or 0
+            for row in MessageTemplate.objects.filter(
+                maildomain__in=domain_ids, blob__isnull=False
             )
             .order_by()
             .values("maildomain")
             .annotate(total=Sum("blob__size_compressed"))
-            .values("total")[:1]
-        )
+        }
 
-        for domain in MailDomain.objects.annotate(
-            msg_count=Coalesce(msg_count_subquery, Value(0)),
-            mime_size=mime_size_subquery,
-            draft_size=draft_size_subquery,
-            att_size=Coalesce(att_size_subquery, Value(0)),
-            template_size=Coalesce(template_size_subquery, Value(0)),
-        ):
-            storage = (
-                domain.msg_count * overhead
-                + domain.mime_size
-                + domain.draft_size
-                + domain.att_size
-                + domain.template_size
+        for group in page_groups:
+            metrics[group]["metrics"]["storage_used"] = sum(
+                msg_counts.get(domain_id, 0) * overhead
+                + mime_sizes.get(domain_id, 0)
+                + draft_sizes.get(domain_id, 0)
+                + att_sizes.get(domain_id, 0)
+                + template_sizes.get(domain_id, 0)
+                for domain_id in group_domain_ids[group]
             )
 
-            if group_by_custom_attribute_key:
-                group_value = domain.custom_attributes.get(
-                    group_by_custom_attribute_key
-                )
-                group_key = group_by_custom_attribute_key
-            else:
-                group_value = domain.name
-                group_key = "domain"
-
-            if storage == 0 and group_value not in metrics:
-                continue
-
-            if group_key not in metrics[group_value]:
-                metrics[group_value][group_key] = group_value
-            metrics[group_value]["metrics"]["storage_used"] = (
-                metrics[group_value]["metrics"].get("storage_used", 0) + storage
-            )
-
-        return Response({"count": len(metrics), "results": list(metrics.values())})
+        return paginator.get_paginated_response(list(metrics.values()))
 
 
 class MailboxUsageMetricsApiView(IsGlobalChannelMixin, APIView):
