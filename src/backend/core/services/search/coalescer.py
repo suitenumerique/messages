@@ -86,8 +86,7 @@ def _enqueue(key: str, value) -> None:
             type(exc).__name__,
             exc,
         )
-    # pylint: disable=broad-exception-caught
-    except Exception:
+    except Exception:  # pylint: disable=broad-exception-caught
         logger.exception("Failed to enqueue %s into %s", value, key)
 
 
@@ -138,8 +137,7 @@ def _drain_batch(key: str, batch_size: int) -> list | None:
             exc,
         )
         return None
-    # pylint: disable=broad-exception-caught
-    except Exception:
+    except Exception:  # pylint: disable=broad-exception-caught
         logger.exception("Failed to drain pending set %s", key)
         return None
 
@@ -157,8 +155,7 @@ def _restore_batch(key: str, thread_ids: list) -> None:
             type(exc).__name__,
             exc,
         )
-    # pylint: disable=broad-exception-caught
-    except Exception:
+    except Exception:  # pylint: disable=broad-exception-caught
         logger.exception(
             "Failed to restore %d drained IDs to %s; "
             "these entries will stay out of sync until another signal fires",
@@ -196,8 +193,7 @@ def _drain_and_dispatch(
 
         try:
             task.delay(ids)
-        # pylint: disable=broad-exception-caught
-        except Exception:
+        except Exception:  # pylint: disable=broad-exception-caught
             logger.exception(
                 "Failed to enqueue %s for %d drained IDs; "
                 "returning IDs to the pending set for retry",
@@ -316,8 +312,7 @@ def process_pending_reindex(
 
         try:
             bulk_reindex_threads_task.delay(filtered)
-        # pylint: disable=broad-exception-caught
-        except Exception:
+        except Exception:  # pylint: disable=broad-exception-caught
             logger.exception(
                 "Failed to enqueue bulk_reindex_threads_task for %d drained threads; "
                 "returning IDs to the pending set for retry",

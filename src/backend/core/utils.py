@@ -158,8 +158,7 @@ class ThreadStatsUpdateDeferrer(AbstractBatchingDeferrer):
             for thread in Thread.objects.filter(id__in=chunk_ids):
                 try:
                     thread.update_stats()
-                # pylint: disable=broad-exception-caught
-                except Exception:
+                except Exception:  # pylint: disable=broad-exception-caught
                     logger.exception("Failed to update stats for thread %s", thread.id)
 
 
@@ -204,8 +203,7 @@ class ThreadReindexDeferrer(AbstractBatchingDeferrer):
             chunk = thread_ids[start : start + batch_size]
             try:
                 bulk_reindex_threads_task.delay(chunk)
-            # pylint: disable=broad-exception-caught
-            except Exception:
+            except Exception:  # pylint: disable=broad-exception-caught
                 logger.exception(
                     "Failed to enqueue bulk_reindex_threads_task for %d threads; "
                     "returning them to the pending reindex set for retry",

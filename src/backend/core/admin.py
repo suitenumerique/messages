@@ -119,8 +119,7 @@ def reset_keycloak_password_action(_, request, queryset):
             )
             success_count += 1
 
-        # pylint: disable=broad-except
-        except Exception as e:
+        except Exception as e:  # pylint: disable=broad-except
             messages.error(request, f"Failed to reset password for {mailbox}: {str(e)}")
             error_count += 1
 

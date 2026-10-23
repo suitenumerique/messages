@@ -801,19 +801,9 @@ class TestSendPushNotification:
 
 @pytest.fixture(name="push_caplog")
 def fixture_push_caplog(caplog):
-    """caplog wired straight onto the push ``common`` logger.
-
-    Its records don't reach the root handler pytest's ``caplog`` listens on
-    (same workaround as the coalescer tests in ``test_signals.py``), so the
-    handler is attached to the logger directly.
-    """
-    push_logger = logging.getLogger("core.services.push.common")
+    """caplog capturing warnings from the push ``common`` logger."""
     caplog.set_level(logging.WARNING, logger="core.services.push.common")
-    push_logger.addHandler(caplog.handler)
-    try:
-        yield caplog
-    finally:
-        push_logger.removeHandler(caplog.handler)
+    return caplog
 
 
 def _configure_apns(settings):
