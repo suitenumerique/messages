@@ -334,6 +334,25 @@ class TestMailDomainUsersMetrics:
         )
 
     @pytest.mark.django_db
+    @pytest.mark.parametrize(
+        "key", ["siret__contains", "name__regex", "a__b", "__", "siret__"]
+    )
+    def test_group_key_with_double_underscore_rejected(
+        self, api_client, url, correctly_configured_header, key
+    ):
+        """A group key containing "__" is rejected instead of reaching the ORM."""
+        MailboxAccessFactory(
+            mailbox__domain=MailDomainFactory(custom_attributes={"siret": "123"})
+        )
+
+        response = api_client.get(
+            f"{url}?group_by_maildomain_custom_attribute={key}",
+            **correctly_configured_header,
+        )
+
+        assert response.status_code == 400
+
+    @pytest.mark.django_db
     def test_group_no_data(
         self, api_client, url_with_siret_query_param, correctly_configured_header
     ):

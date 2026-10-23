@@ -65,6 +65,15 @@ class MailDomainUsersMetricsApiView(IsGlobalChannelMixin, APIView):
         group_by_custom_attribute_key = request.query_params.get(
             "group_by_maildomain_custom_attribute"
         )
+
+        # The key is interpolated into an ORM lookup: "__" would let the
+        # caller traverse relations or chain lookups/transforms.
+        if group_by_custom_attribute_key and "__" in group_by_custom_attribute_key:
+            return Response(
+                {"error": "Invalid group_by_maildomain_custom_attribute."},
+                status=400,
+            )
+
         group_key = group_by_custom_attribute_key or "domain"
 
         # Groups are listed from the domain table only (cheap), so that the
