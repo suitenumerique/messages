@@ -275,18 +275,18 @@ maildev --help >/dev/null
 EOR
 
 # uv and the managed CPython, as in deploy/python-uv/Dockerfile.
-COPY --from=ghcr.io/astral-sh/uv@sha256:9f130421e930bfbdc563c00740466603f8723158e90297d07957c2294640262b /uv /uvx /bin/
+COPY --from=ghcr.io/astral-sh/uv@sha256:32a7bb39b496babbd997b0a39a4d66c126bdaf5661b302bf6f06abda8deca6ff /uv /uvx /bin/
 
 ENV UV_COMPILE_BYTECODE=1 \
     UV_LINK_MODE=copy \
     UV_PYTHON_INSTALL_DIR=/opt/python \
     UV_PYTHON_PREFERENCE=only-managed
 
-RUN uv python install 3.14.8
+RUN uv python install 3.14.9
 
 # Without a pin, uv downloads any CPython that satisfies requires-python when
 # the installed one does not, including a release candidate that lacks wheels.
-ENV UV_PYTHON=3.14.8 \
+ENV UV_PYTHON=3.14.9 \
     UV_PYTHON_DOWNLOADS=never
 
 # Each component keeps its own virtual environment, because the three
