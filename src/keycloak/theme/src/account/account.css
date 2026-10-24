@@ -84,3 +84,18 @@
   color: var(--text-action-high-blue-cumulus);
   background-color: var(--background-action-low-blue-cumulus);
 }
+
+.lst-section-title {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: baseline;
+  gap: 0.5rem 1rem;
+}
+
+.lst-section-title h2 {
+  margin-bottom: 0;
+}
+
+.lst-section-title + * {
+  margin-top: 1.5rem;
+}

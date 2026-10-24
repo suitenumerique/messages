@@ -140,15 +140,33 @@ The account console has two pages. "Informations personnelles" is the first
 page and the landing page. "Compte et connexion" is the second page, at
 `connection-and-account` below the account console URL. The second page lists
 the credentials of the user and starts the Keycloak actions: change the
-password, add or delete a method. The choice page offers a TOTP application, a
-passkey, and a physical security key as second factor only. The last option
-shows only when the browser flow has the "WebAuthn Authenticator" step enabled,
-because Keycloak then exposes that credential type. The logout button returns
-to the sign-in page, because the `account-console` client accepts only its own
-URL after a logout.
+password, add or delete a method.
 
-The theme reads three variables in the Keycloak container:
-`DSFR_THEME_HOME_URL`, `DSFR_THEME_SERVICE_TITLE` and `DSFR_THEME_BRAND_TOP`.
+The choice page offers a TOTP application, a passkey, and a physical security
+key as second factor only. The last option shows only when the browser flow has
+the "WebAuthn Authenticator" step enabled, because Keycloak then exposes that
+credential type. The logout button returns to the sign-in page, because the
+`account-console` client accepts only its own URL after a logout.
+`DSFR_THEME_HIDE_LOGOUT_BUTTON=true` hides the sign-out button and the email in
+the header, because the console holds no ProConnect `id_token` and the
+applications handle the logout. The flag also accepts `yes`, `y` and `1`.
+
+The theme reads these variables in the Keycloak container:
+`DSFR_THEME_HOME_URL`, `DSFR_THEME_SERVICE_TITLE`, `DSFR_THEME_BRAND_TOP`,
+`DSFR_THEME_HIDE_LOGOUT_BUTTON`, `DSFR_THEME_TWO_FACTOR_HELP_URL`,
+`DSFR_THEME_FORGOT_PASSWORD_URL` and `DSFR_THEME_LAGAUFRE_WIDGET_CONFIG`.
+`DSFR_THEME_TWO_FACTOR_HELP_URL` adds a "Help" link to the "Double
+authentification" section of the account console. The link opens a new window.
+`DSFR_THEME_FORGOT_PASSWORD_URL` shows the "Forgot password" link on the login
+page, even when the realm does not allow the password reset.
+
+`DSFR_THEME_LAGAUFRE_WIDGET_CONFIG` shows the "Other services" button of La
+Suite numérique in the header of the account console. It takes the same JSON
+value as `FRONTEND_LAGAUFRE_WIDGET_CONFIG` of the backend, with the keys
+`api_url` and `path`. The La Suite API must allow the Keycloak origin in its
+CORS policy. The widget script runs in the Keycloak origin, so both URLs must
+point to an origin that you trust.
+
 `DSFR_THEME_BRAND_TOP` is the HTML of the brand block. The Marianne typeface
 and the State brand block are reserved for French State services. A deployment
 that is not a French State service must change `DSFR_THEME_BRAND_TOP` and must

@@ -46,6 +46,7 @@ The production image builds the jar in the `theme-build` stage of `src/keycloak/
   because a plain restart does not read the env files again. The option also
   applies to the email theme, which `lst-dsfr` does not have, so Keycloak logs
   a fallback warning when it sends a mail.
+- Set the `DSFR_THEME_*` variables in the same file, then run `make restart`.
 - The theme has no language picker. Keycloak selects the language of the login
   pages from the `KEYCLOAK_LOCALE` cookie, the `ui_locales` parameter of the
   authorization request, the `Accept-Language` header, then the realm default
@@ -61,6 +62,8 @@ The production image builds the jar in the `theme-build` stage of `src/keycloak/
   enables the "WebAuthn Authenticator" step. The stock flow has it disabled.
 - The logout returns to the account URL, which shows the sign-in page. The
   `account-console` client accepts no other URL after a logout.
+  `DSFR_THEME_HIDE_LOGOUT_BUTTON=true` hides the sign-out button and the email
+  in the header.
 
 ## Environment variables
 
@@ -71,6 +74,10 @@ The theme reads these variables at runtime through `theme.properties`.
 | `DSFR_THEME_HOME_URL` | `/` | Absolute URL of the service. When unset or `/`, the login pages and the account console both link to the account console of the realm. |
 | `DSFR_THEME_SERVICE_TITLE` | `Messages` | Service title. |
 | `DSFR_THEME_BRAND_TOP` | `République<br/>Française` | HTML of the Marianne brand block. |
+| `DSFR_THEME_HIDE_LOGOUT_BUTTON` | `false` | When `true`, `yes`, `y` or `1`, the account console shows no sign-out button and no email in the header. The applications handle the logout. |
+| `DSFR_THEME_TWO_FACTOR_HELP_URL` | empty | Absolute URL of a help page. When set, the "Double authentification" section of the account console shows a "Help" link that opens a new window. |
+| `DSFR_THEME_FORGOT_PASSWORD_URL` | empty | Absolute URL of a support page. When set, the login page shows the "Forgot password" link to this URL, even when the realm does not allow the password reset. |
+| `DSFR_THEME_LAGAUFRE_WIDGET_CONFIG` | empty | JSON object with the keys `api_url` (La Suite API that lists the services) and `path` (URL of the `lagaufre.js` widget script), like `FRONTEND_LAGAUFRE_WIDGET_CONFIG` of the backend. When set, the account console shows the "Other services" button of La Suite numérique in the header. The script runs in the Keycloak origin, so the origin must be trusted. |
 
 ## Upgrade checklist for each Keycloak bump
 

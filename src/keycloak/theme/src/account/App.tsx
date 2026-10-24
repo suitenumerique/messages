@@ -1,4 +1,10 @@
-import { useCallback, useEffect, useRef, useState } from "react";
+import {
+  useCallback,
+  useEffect,
+  useRef,
+  useState,
+  type ComponentProps,
+} from "react";
 import Alert from "@codegouvfr/react-dsfr/Alert";
 import type { KcContext } from "./KcContext";
 import {
@@ -15,8 +21,10 @@ import { DoubleAuthChoice } from "./pages/DoubleAuthChoice";
 import { PersonalInfo } from "./pages/PersonalInfo";
 import { getBasename, useRoute } from "./router";
 import { getBrand } from "../shared/brand";
+import { getSettings } from "../shared/settings";
 import { startDsfrOnce } from "../shared/dsfr";
 import { Footer } from "../shared/Footer";
+import { Gaufre } from "../shared/Gaufre";
 import { Header } from "../shared/Header";
 import "./account.css";
 
@@ -33,6 +41,7 @@ export function App({ kcContext, auth }: { kcContext: KcContext; auth: Auth }) {
     kcContext.properties,
     new URL(getBasename(), location.href).href,
   );
+  const settings = getSettings(kcContext.properties);
   const [pending, setPending] = useState<PendingAction | undefined>(
     pendingAction,
   );
@@ -72,22 +81,33 @@ export function App({ kcContext, auth }: { kcContext: KcContext; auth: Auth }) {
   }
 
   const { user, credentials } = data;
+  const quickAccessItems: NonNullable<
+    ComponentProps<typeof Header>["quickAccessItems"]
+  > = [];
+  if (settings.lagaufre) {
+    quickAccessItems.push(
+      <Gaufre
+        key="gaufre"
+        {...settings.lagaufre}
+        label={t("header.gaufre")}
+        closeLabel={t("header.gaufreClose")}
+      />,
+    );
+  }
+  if (!settings.hideLogoutButton) {
+    quickAccessItems.push({
+      iconId: "fr-icon-logout-box-r-line",
+      buttonProps: {
+        onClick: () => void auth.logout(),
+        "aria-label": `${t("header.logout")} - ${user.email}`,
+      },
+      text: user.email,
+    });
+  }
 
   return (
     <>
-      <Header
-        {...brand}
-        quickAccessItems={[
-          {
-            iconId: "fr-icon-logout-box-r-line",
-            buttonProps: {
-              onClick: () => void auth.logout(),
-              "aria-label": `${t("header.logout")} - ${user.email}`,
-            },
-            text: user.email,
-          },
-        ]}
-      />
+      <Header {...brand} quickAccessItems={quickAccessItems} />
       <main role="main" id="main">
         <div className="dashboard-container">
           <Sidemenu route={route} />
@@ -110,6 +130,7 @@ export function App({ kcContext, auth }: { kcContext: KcContext; auth: Auth }) {
                 user={user}
                 credentials={credentials}
                 runAction={auth.runAction}
+                helpUrl={settings.twoFactorHelpUrl}
               />
             )}
           </div>

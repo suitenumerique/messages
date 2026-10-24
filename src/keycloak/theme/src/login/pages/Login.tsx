@@ -3,9 +3,11 @@ import { Input } from "@codegouvfr/react-dsfr/Input";
 import { PasswordInput } from "@codegouvfr/react-dsfr/blocks/PasswordInput";
 import { Checkbox } from "@codegouvfr/react-dsfr/Checkbox";
 import { Button } from "@codegouvfr/react-dsfr/Button";
+import { Accordion } from "@codegouvfr/react-dsfr/Accordion";
 import { kcSanitize } from "keycloakify/lib/kcSanitize";
 import type { PageProps } from "keycloakify/login/pages/PageProps";
 import { useScript } from "keycloakify/login/pages/Login.useScript";
+import { getSettings } from "../../shared/settings";
 import type { KcContext } from "../KcContext";
 import type { I18n } from "../i18n";
 import "../login.css";
@@ -34,6 +36,10 @@ export default function Login(
   useScript({ webAuthnButtonId, kcContext, i18n });
 
   const showRememberMe = realm.rememberMe && !usernameHidden;
+  const { forgotPasswordUrl } = getSettings(kcContext.properties);
+  const resetHref =
+    forgotPasswordUrl ||
+    (realm.resetPasswordAllowed ? url.loginResetCredentialsUrl : undefined);
   const hasError = messagesPerField.existsError("username", "password");
   const errorHtml = hasError ? (
     <span
@@ -114,7 +120,7 @@ export default function Login(
               autoComplete: "current-password",
             }}
           />
-          {(showRememberMe || realm.resetPasswordAllowed) && (
+          {(showRememberMe || resetHref) && (
             <div className="lst-login-options">
               {showRememberMe && (
                 <Checkbox
@@ -131,12 +137,8 @@ export default function Login(
                   ]}
                 />
               )}
-              {realm.resetPasswordAllowed && (
-                <a
-                  className="fr-link"
-                  href={url.loginResetCredentialsUrl}
-                  id="kc-forgot-password"
-                >
+              {resetHref && (
+                <a className="fr-link" href={resetHref} id="kc-forgot-password">
                   {msg("doForgotPassword")}
                 </a>
               )}
@@ -163,7 +165,6 @@ export default function Login(
       )}
       {enableWebAuthnConditionalUI && (
         <>
-          <p className="fr-hr-or">{msg("lstOr")}</p>
           <form id="webauth" action={url.loginAction} method="post">
             <input type="hidden" id="clientDataJSON" name="clientDataJSON" />
             <input
@@ -190,13 +191,21 @@ export default function Login(
                 ))}
               </form>
             )}
-          <button
-            type="button"
-            id={webAuthnButtonId}
-            className="fr-btn fr-btn--secondary fr-btn--icon-left fr-icon-lock-unlock-line lst-btn-full"
+          <Accordion
+            label={msg("lstOtherMethods")}
+            defaultExpanded={false}
+            titleAs="h2"
+            id="kc-other-methods"
+            className="fr-mt-3w"
           >
-            {msg("lstPasskeyButton")}
-          </button>
+            <button
+              type="button"
+              id={webAuthnButtonId}
+              className="fr-btn fr-btn--secondary fr-btn--icon-left fr-icon-lock-unlock-line lst-btn-full"
+            >
+              {msg("lstPasskeyButton")}
+            </button>
+          </Accordion>
         </>
       )}
     </Template>

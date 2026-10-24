@@ -19,6 +19,7 @@ test.describe('Keycloak lst-dsfr account console', () => {
     await expect(page.locator('input[name="lastName"]')).toBeVisible();
     await expect(page.locator('input[type="email"]')).toHaveValue('user2@example.local');
     await expect(page.locator('select[name="locale"]')).toBeVisible();
+    await expect(page.getByRole('button', { name: 'Other services' }).first()).toBeVisible();
   });
 
   test('shows the password block and the second-factor section', async ({ page }) => {
@@ -30,6 +31,9 @@ test.describe('Keycloak lst-dsfr account console', () => {
     await expect(
       page.getByRole('heading', { name: 'Two-factor authentication' }),
     ).toBeVisible();
+    const help = page.getByRole('link', { name: /Help about two-factor/ });
+    await expect(help).toHaveAttribute('href', 'https://support.example.local/2fa');
+    await expect(help).toHaveAttribute('target', '_blank');
     await expect(
       page.locator('#credential-list').or(
         page.getByText('You have not set up two-factor'),
