@@ -16,6 +16,7 @@ export default defineConfig({
         { name: "DSFR_THEME_HIDE_LOGOUT_BUTTON", default: "false" },
         { name: "DSFR_THEME_TWO_FACTOR_HELP_URL", default: "" },
         { name: "DSFR_THEME_FORGOT_PASSWORD_URL", default: "" },
+        { name: "DSFR_THEME_LAGAUFRE_WIDGET_CONFIG", default: "" },
       ],
     }),
   ],

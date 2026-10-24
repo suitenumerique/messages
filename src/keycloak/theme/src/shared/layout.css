@@ -12,3 +12,21 @@
 .lst-footer {
   padding-bottom: 1.5rem;
 }
+
+.lst-gaufre-btn svg {
+  flex: none;
+}
+
+/* The desktop bar shows the icon only. The mobile menu lists text rows. */
+.fr-header__tools-links .lst-gaufre-btn__label {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  overflow: hidden;
+  clip: rect(0, 0, 0, 0);
+  white-space: nowrap;
+}
+
+.fr-header__menu-links .lst-gaufre-btn svg {
+  margin-right: 0.5rem;
+}

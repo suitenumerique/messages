@@ -153,12 +153,19 @@ applications handle the logout. The flag also accepts `yes`, `y` and `1`.
 
 The theme reads these variables in the Keycloak container:
 `DSFR_THEME_HOME_URL`, `DSFR_THEME_SERVICE_TITLE`, `DSFR_THEME_BRAND_TOP`,
-`DSFR_THEME_HIDE_LOGOUT_BUTTON`, `DSFR_THEME_TWO_FACTOR_HELP_URL` and
-`DSFR_THEME_FORGOT_PASSWORD_URL`.
+`DSFR_THEME_HIDE_LOGOUT_BUTTON`, `DSFR_THEME_TWO_FACTOR_HELP_URL`,
+`DSFR_THEME_FORGOT_PASSWORD_URL` and `DSFR_THEME_LAGAUFRE_WIDGET_CONFIG`.
 `DSFR_THEME_TWO_FACTOR_HELP_URL` adds a "Help" link to the "Double
 authentification" section of the account console. The link opens a new window.
 `DSFR_THEME_FORGOT_PASSWORD_URL` shows the "Forgot password" link on the login
 page, even when the realm does not allow the password reset.
+
+`DSFR_THEME_LAGAUFRE_WIDGET_CONFIG` shows the "Other services" button of La
+Suite numérique in the header of the account console. It takes the same JSON
+value as `FRONTEND_LAGAUFRE_WIDGET_CONFIG` of the backend, with the keys
+`api_url` and `path`. The La Suite API must allow the Keycloak origin in its
+CORS policy. The widget script runs in the Keycloak origin, so both URLs must
+point to an origin that you trust.
 
 `DSFR_THEME_BRAND_TOP` is the HTML of the brand block. The Marianne typeface
 and the State brand block are reserved for French State services. A deployment

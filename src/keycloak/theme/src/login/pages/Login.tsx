@@ -3,6 +3,7 @@ import { Input } from "@codegouvfr/react-dsfr/Input";
 import { PasswordInput } from "@codegouvfr/react-dsfr/blocks/PasswordInput";
 import { Checkbox } from "@codegouvfr/react-dsfr/Checkbox";
 import { Button } from "@codegouvfr/react-dsfr/Button";
+import { Accordion } from "@codegouvfr/react-dsfr/Accordion";
 import { kcSanitize } from "keycloakify/lib/kcSanitize";
 import type { PageProps } from "keycloakify/login/pages/PageProps";
 import { useScript } from "keycloakify/login/pages/Login.useScript";
@@ -164,7 +165,6 @@ export default function Login(
       )}
       {enableWebAuthnConditionalUI && (
         <>
-          <p className="fr-hr-or">{msg("lstOr")}</p>
           <form id="webauth" action={url.loginAction} method="post">
             <input type="hidden" id="clientDataJSON" name="clientDataJSON" />
             <input
@@ -191,13 +191,21 @@ export default function Login(
                 ))}
               </form>
             )}
-          <button
-            type="button"
-            id={webAuthnButtonId}
-            className="fr-btn fr-btn--secondary fr-btn--icon-left fr-icon-lock-unlock-line lst-btn-full"
+          <Accordion
+            label={msg("lstOtherMethods")}
+            defaultExpanded={false}
+            titleAs="h2"
+            id="kc-other-methods"
+            className="fr-mt-3w"
           >
-            {msg("lstPasskeyButton")}
-          </button>
+            <button
+              type="button"
+              id={webAuthnButtonId}
+              className="fr-btn fr-btn--secondary fr-btn--icon-left fr-icon-lock-unlock-line lst-btn-full"
+            >
+              {msg("lstPasskeyButton")}
+            </button>
+          </Accordion>
         </>
       )}
     </Template>
