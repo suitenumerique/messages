@@ -646,7 +646,7 @@ These settings are unset by default: an unset setting is omitted from the `/conf
 | Variable | Default | Description | Required |
 |----------|---------|-------------|----------|
 | `FRONTEND_SILENT_LOGIN_ENABLED` | `False` | Whether silent login is enabled | Optional |
-| `FRONTEND_THEME_CONFIG` | None (frontend defaults to `{"theme": "white-label"}`) | Theme configuration served to the frontend (`theme`, `terms_of_service_url`, `footer`), as JSON | Optional |
+| `FRONTEND_THEME_CONFIG` | None (frontend defaults to `{"theme": "white-label"}`) | Theme configuration served to the frontend (`theme`, `terms_of_service_url`, `footer`, `with_proconnect`), as JSON | Optional |
 | `FRONTEND_FORCED_DEFAULT_LANGUAGE` | None (frontend defaults to `False`) | When `True`, the frontend default language fallback is `LANGUAGE_CODE` instead of the browser language | Optional |
 | `FRONTEND_MULTIPART_UPLOAD_CHUNK_SIZE_MB` | None (frontend defaults to `100`) | Chunk size in MB for frontend multipart uploads | Optional |
 | `FRONTEND_HELP_CENTER_URL` | None | Help center URL | Optional |

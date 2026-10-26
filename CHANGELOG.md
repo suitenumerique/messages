@@ -20,6 +20,8 @@ and this project adheres to
   from the site configuration in the Django admin
 - Warn that an auto-reply is active for the selected mailbox with a banner
   instead of a header icon
+- `with_proconnect` in `FRONTEND_THEME_CONFIG` replaces the ProConnect button
+  of the home page with a generic "Sign in" button
 
 ### Changed
 

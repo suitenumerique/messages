@@ -344,7 +344,7 @@
                                         },
                                         "FRONTEND_THEME_CONFIG": {
                                             "type": "object",
-                                            "description": "Theme configuration for the frontend (theme, terms_of_service_url, footer)",
+                                            "description": "Theme configuration for the frontend (theme, terms_of_service_url, footer, with_proconnect)",
                                             "readOnly": true
                                         },
                                         "FRONTEND_FORCED_DEFAULT_LANGUAGE": {

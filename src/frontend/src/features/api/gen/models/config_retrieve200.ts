@@ -49,7 +49,7 @@ export type ConfigRetrieve200 = {
   readonly FRONTEND_SILENT_LOGIN_ENABLED: boolean;
   /** Sentry DSN shared with the frontend */
   readonly SENTRY_DSN?: string;
-  /** Theme configuration for the frontend (theme, terms_of_service_url, footer) */
+  /** Theme configuration for the frontend (theme, terms_of_service_url, footer, with_proconnect) */
   readonly FRONTEND_THEME_CONFIG?: ConfigRetrieve200FRONTENDTHEMECONFIG;
   /** Whether the frontend should fall back to LANGUAGE_CODE instead of the browser language */
   readonly FRONTEND_FORCED_DEFAULT_LANGUAGE?: boolean;

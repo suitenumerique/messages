@@ -5,6 +5,8 @@ export type ThemeConfig = {
   theme: "white-label" | "anct" | "dsfr";
   terms_of_service_url?: string;
   footer?: FooterProps;
+  /** Show the ProConnect button on the home page. Defaults to `true`. */
+  with_proconnect?: boolean;
 };
 
 export type FeedbackWidgetConfig = {

@@ -1,6 +1,6 @@
 import { createFileRoute, useSearch } from "@tanstack/react-router";
 import { useTranslation } from "react-i18next";
-import { Hero, HomeGutter, Footer, ProConnectButton, useResponsive } from "@gouvfr-lasuite/ui-components";
+import { Button, Hero, HomeGutter, Footer, ProConnectButton, useResponsive } from "@gouvfr-lasuite/ui-components";
 
 import { login, useAuth } from "@/features/auth";
 import { MainLayout } from "@/features/layouts/components/main";
@@ -48,7 +48,15 @@ const HomePage = () => {
             title={t("Simple and intuitive messaging")}
             banner={`/images/banner-${variant}.webp`}
             subtitle={t("Send and receive your messages in an instant.")}
-            mainButton={<ProConnectButton onClick={handleLogin} />}
+            mainButton={
+              themeConfig.with_proconnect === false ? (
+                <Button onClick={handleLogin} className="login-button">
+                  {t("Sign in")}
+                </Button>
+              ) : (
+                <ProConnectButton onClick={handleLogin} />
+              )
+            }
           />
         </HomeGutter>
         {themeConfig.footer && (
