@@ -1051,7 +1051,9 @@ export const MessageForm = forwardRef<MessageFormHandle, MessageFormProps>(({
         const update = () => form.style.setProperty("--form-footer-height", `${footer.offsetHeight}px`);
         update();
         const observer = new ResizeObserver(update);
-        observer.observe(footer);
+        // border-box: the safe-area inset is padding, which leaves the
+        // content box untouched when it changes (device rotation).
+        observer.observe(footer, { box: "border-box" });
         return () => {
             observer.disconnect();
             form.style.removeProperty("--form-footer-height");
