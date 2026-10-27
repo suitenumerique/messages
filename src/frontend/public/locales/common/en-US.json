@@ -947,6 +947,7 @@
   "Unable to check task status.": "Unable to check task status.",
   "Unable to copy credentials.": "Unable to copy credentials.",
   "Unable to copy to clipboard.": "Unable to copy to clipboard.",
+  "Unable to reach the server. Please check your internet connection.": "Unable to reach the server. Please check your internet connection.",
   "Unarchive": "Unarchive",
   "Unassign": "Unassign",
   "Unassigned": "Unassigned",

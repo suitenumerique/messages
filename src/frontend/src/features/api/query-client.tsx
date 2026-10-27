@@ -6,7 +6,7 @@ import {
 } from "@tanstack/react-query";
 
 import { addToast, ToasterItem } from "@/features/ui/components/toaster";
-import { errorToString } from "@/features/api/api-error";
+import { errorToString, NetworkError } from "@/features/api/api-error";
 
 const onError = (error: Error, query: unknown) => {
   if ((query as Query).meta?.noGlobalError) {
@@ -31,7 +31,11 @@ export const queryClient = new QueryClient({
   }),
   defaultOptions: {
     queries: {
-      retry: false,
+      // A network failure is mostly transient: the device just woke up and the
+      // network is not back yet. React Query holds each retry until the tab is
+      // visible again, so the toast only shows once the network stays down.
+      retry: (failureCount, error) =>
+        error instanceof NetworkError && failureCount < 3,
       refetchOnWindowFocus: false,
     },
   },

@@ -13,6 +13,17 @@ export class APIError extends Error {
   }
 }
 
+/**
+ * The request never got an HTTP response (offline, DNS failure, connection
+ * dropped while the device was asleep...).
+ */
+export class NetworkError extends Error {
+  constructor(options?: ErrorOptions) {
+    super("Network request failed", options);
+    this.name = "NetworkError";
+  }
+}
+
 export const errorToString = (error: unknown): string => {
   if (typeof error === "string") {
     return error;
@@ -33,6 +44,9 @@ export const errorToString = (error: unknown): string => {
     }
     // If there is no data, it means that the error is a string, probably a complicated html error.
     return i18n.t("An unexpected error occurred.");
+  }
+  if (error instanceof NetworkError) {
+    return i18n.t("Unable to reach the server. Please check your internet connection.");
   }
   // We want to show the error message from the AppError only. Not message from the Error class as they
   // can be really technical and not helpful for the user. For those we show the generic error message.

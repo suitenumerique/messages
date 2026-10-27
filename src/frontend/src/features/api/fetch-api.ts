@@ -3,7 +3,7 @@
 import { logout } from "../auth";
 import { nativeFetch } from "../native/fetch";
 import { isNativePlatform } from "../native/platform";
-import { APIError } from "./api-error";
+import { APIError, NetworkError } from "./api-error";
 import { getHeaders, getRequestUrl, isJson } from "./utils";
 
 // https://github.com/orval-labs/orval/issues/258
@@ -32,9 +32,16 @@ export const fetchAPI= async <T>(
   // the patched fetch — no CSRF there, and they keep React Query cancellation.
   const method = (requestInit.method ?? "GET").toUpperCase();
   const useNativeFetch = isNativePlatform() && !["GET", "HEAD"].includes(method);
-  const response = useNativeFetch
-    ? await nativeFetch(requestUrl, options)
-    : await fetch(requestUrl, options);
+  let response: Response;
+  try {
+    response = useNativeFetch
+      ? await nativeFetch(requestUrl, options)
+      : await fetch(requestUrl, options);
+  } catch (error) {
+    // A cancellation is not a network failure: let React Query recognize it.
+    if (error instanceof DOMException && error.name === "AbortError") throw error;
+    throw new NetworkError({ cause: error });
+  }
 
   if (response.status === 401 && logoutOn401) {
     logout({ sessionExpired: true });

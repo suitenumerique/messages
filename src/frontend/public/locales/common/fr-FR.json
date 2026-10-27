@@ -947,6 +947,7 @@
   "Unable to check task status.": "Impossible de vérifier le statut de la tâche.",
   "Unable to copy credentials.": "Impossible de copier les identifiants.",
   "Unable to copy to clipboard.": "Impossible de copier dans le presse-papiers.",
+  "Unable to reach the server. Please check your internet connection.": "Impossible de joindre le serveur. Vérifiez votre connexion internet.",
   "Unarchive": "Désarchiver",
   "Unassign": "Désassigner",
   "Unassigned": "Non assigné",
