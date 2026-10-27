@@ -7,6 +7,6 @@
  */
 
 /**
- * Theme configuration for the frontend (theme, terms_of_service_url, footer)
+ * Theme configuration for the frontend (theme, terms_of_service_url, footer, with_proconnect)
  */
 export type ConfigRetrieve200FRONTENDTHEMECONFIG = { [key: string]: unknown };

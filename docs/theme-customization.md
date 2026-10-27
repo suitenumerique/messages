@@ -8,6 +8,15 @@ The theme configuration is a JSON object that contains the following properties:
 Each theme are available in two variants: `light` and `dark`.
 - `terms_of_service_url`: The terms of service URL that will be displayed in the user menu.
 - `footer`: Customize logo and links in the footer.
+- `with_proconnect`: Show the ProConnect button on the home page (default: `true`).
+Set it to `false` to display a generic "Sign in" button instead, e.g. when your
+OIDC provider is not ProConnect.
+
+Example:
+
+```json
+{"theme": "white-label", "with_proconnect": false}
+```
 
 ## About the footer
 

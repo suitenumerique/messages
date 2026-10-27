@@ -192,7 +192,7 @@ CONFIG_ENTRIES = (
             "type": "object",
             "description": (
                 "Theme configuration for the frontend "
-                "(theme, terms_of_service_url, footer)"
+                "(theme, terms_of_service_url, footer, with_proconnect)"
             ),
         },
         required=False,
