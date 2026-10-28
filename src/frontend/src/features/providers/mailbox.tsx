@@ -18,6 +18,7 @@ import {
 } from "./mailbox-cache";
 import { threadsList } from "../api/gen/threads/threads";
 import { APIError } from "../api/api-error";
+import { toastError } from "../api/query-client";
 import { useAuth } from "../auth";
 import MailboxHelper from "@/features/utils/mailbox-helper";
 
@@ -268,8 +269,19 @@ export const MailboxProvider = ({ children }: PropsWithChildren) => {
             // who opted in, so the poll has to keep running for everyone else.
             refetchIntervalInBackground: true,
             refetchOnWindowFocus: true,
+            // The focus refetch often fires before the network is back after
+            // the device wakes up. A failed poll keeps the mailboxes on screen
+            // and the next tick retries it, so its error is only worth a toast
+            // when there is nothing to show yet (see below).
+            meta: { noGlobalError: true },
         },
     });
+
+    useEffect(() => {
+        if (mailboxQuery.isError && mailboxQuery.data === undefined) {
+            toastError(mailboxQuery.error);
+        }
+    }, [mailboxQuery.isError, mailboxQuery.data, mailboxQuery.error]);
 
     const selectedMailbox = useMemo(() => {
         if (!mailboxQuery.data?.data.length) return null;
