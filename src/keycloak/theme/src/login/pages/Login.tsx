@@ -6,6 +6,7 @@ import { Button } from "@codegouvfr/react-dsfr/Button";
 import { kcSanitize } from "keycloakify/lib/kcSanitize";
 import type { PageProps } from "keycloakify/login/pages/PageProps";
 import { useScript } from "keycloakify/login/pages/Login.useScript";
+import { getSettings } from "../../shared/settings";
 import type { KcContext } from "../KcContext";
 import type { I18n } from "../i18n";
 import "../login.css";
@@ -34,6 +35,10 @@ export default function Login(
   useScript({ webAuthnButtonId, kcContext, i18n });
 
   const showRememberMe = realm.rememberMe && !usernameHidden;
+  const { forgotPasswordUrl } = getSettings(kcContext.properties);
+  const resetHref =
+    forgotPasswordUrl ||
+    (realm.resetPasswordAllowed ? url.loginResetCredentialsUrl : undefined);
   const hasError = messagesPerField.existsError("username", "password");
   const errorHtml = hasError ? (
     <span
@@ -114,7 +119,7 @@ export default function Login(
               autoComplete: "current-password",
             }}
           />
-          {(showRememberMe || realm.resetPasswordAllowed) && (
+          {(showRememberMe || resetHref) && (
             <div className="lst-login-options">
               {showRememberMe && (
                 <Checkbox
@@ -131,12 +136,8 @@ export default function Login(
                   ]}
                 />
               )}
-              {realm.resetPasswordAllowed && (
-                <a
-                  className="fr-link"
-                  href={url.loginResetCredentialsUrl}
-                  id="kc-forgot-password"
-                >
+              {resetHref && (
+                <a className="fr-link" href={resetHref} id="kc-forgot-password">
                   {msg("doForgotPassword")}
                 </a>
               )}

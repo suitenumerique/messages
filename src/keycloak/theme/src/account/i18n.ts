@@ -18,6 +18,9 @@ const fr = {
     "Vous n'avez pas encore configuré la double authentification (2FA).",
   "account.setupTwoFactor": "Configurer la double authentification",
   "account.addMethod": "Ajouter une méthode de validation supplémentaire",
+  "account.twoFactorHelp": "Aide",
+  "account.twoFactorHelpLabel":
+    "Aide sur la double authentification - nouvelle fenêtre",
   "credential.otp": "Code à usage unique",
   "credential.passkey": "Clé d'accès",
   "credential.addedOn": "Date d'ajout :",
@@ -87,6 +90,9 @@ const en: Record<MessageKey, string> = {
     "You have not set up two-factor authentication (2FA) yet.",
   "account.setupTwoFactor": "Set up two-factor authentication",
   "account.addMethod": "Add another verification method",
+  "account.twoFactorHelp": "Help",
+  "account.twoFactorHelpLabel":
+    "Help about two-factor authentication - new window",
   "credential.otp": "One-time code",
   "credential.passkey": "Passkey",
   "credential.addedOn": "Date added:",

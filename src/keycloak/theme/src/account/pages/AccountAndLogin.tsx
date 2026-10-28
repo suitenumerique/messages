@@ -11,9 +11,15 @@ type Props = {
   user: UserRepresentation;
   credentials: CredentialContainer[];
   runAction: (action: string) => Promise<void>;
+  helpUrl?: string;
 };
 
-export function AccountAndLogin({ user, credentials, runAction }: Props) {
+export function AccountAndLogin({
+  user,
+  credentials,
+  runAction,
+  helpUrl,
+}: Props) {
   const containers = credentials.filter((c) => MFA_TYPES.includes(c.type));
   const rows = containers.flatMap((container) =>
     container.userCredentialMetadatas.map((metadata) => ({
@@ -44,7 +50,26 @@ export function AccountAndLogin({ user, credentials, runAction }: Props) {
         {t("account.changePassword")}
       </Button>
 
-      <h2 className="fr-h5">{t("account.twoFactor")}</h2>
+      <div className="lst-section-title">
+        <h2 className="fr-h5">{t("account.twoFactor")}</h2>
+        {helpUrl && (
+          <Button
+            priority="tertiary no outline"
+            size="small"
+            iconId="fr-icon-question-line"
+            iconPosition="left"
+            linkProps={{
+              href: helpUrl,
+              target: "_blank",
+              rel: "noopener",
+              "aria-label": t("account.twoFactorHelpLabel"),
+              title: t("account.twoFactorHelpLabel"),
+            }}
+          >
+            {t("account.twoFactorHelp")}
+          </Button>
+        )}
+      </div>
       {rows.length === 0 ? (
         <>
           <p>{t("account.noTwoFactor")}</p>

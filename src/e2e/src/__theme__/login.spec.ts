@@ -23,11 +23,15 @@ test.describe('Keycloak lst-dsfr login page', () => {
   });
 
   // The dev realm sets rememberMe to true, resetPasswordAllowed and registrationAllowed to false.
-  test('shows remember me but no forgot-password or registration', async ({ page }) => {
+  // compose.theme.yaml sets DSFR_THEME_FORGOT_PASSWORD_URL, so the support link shows.
+  test('shows remember me and the support forgot-password link, no registration', async ({ page }) => {
     await openLoginPage(page, 'en');
     await expect(page.locator('input#rememberMe[name="rememberMe"]')).toBeAttached();
     await expect(page.getByText('Remember me')).toBeVisible();
-    await expect(page.locator('#kc-forgot-password')).toHaveCount(0);
+    await expect(page.locator('#kc-forgot-password')).toHaveAttribute(
+      'href',
+      'https://support.example.local/password',
+    );
     await expect(page.locator('#kc-registration')).toHaveCount(0);
   });
 

@@ -1,4 +1,10 @@
-import { useCallback, useEffect, useRef, useState } from "react";
+import {
+  useCallback,
+  useEffect,
+  useRef,
+  useState,
+  type ComponentProps,
+} from "react";
 import Alert from "@codegouvfr/react-dsfr/Alert";
 import type { KcContext } from "./KcContext";
 import {
@@ -15,6 +21,7 @@ import { DoubleAuthChoice } from "./pages/DoubleAuthChoice";
 import { PersonalInfo } from "./pages/PersonalInfo";
 import { getBasename, useRoute } from "./router";
 import { getBrand } from "../shared/brand";
+import { getSettings } from "../shared/settings";
 import { startDsfrOnce } from "../shared/dsfr";
 import { Footer } from "../shared/Footer";
 import { Header } from "../shared/Header";
@@ -33,6 +40,7 @@ export function App({ kcContext, auth }: { kcContext: KcContext; auth: Auth }) {
     kcContext.properties,
     new URL(getBasename(), location.href).href,
   );
+  const settings = getSettings(kcContext.properties);
   const [pending, setPending] = useState<PendingAction | undefined>(
     pendingAction,
   );
@@ -72,12 +80,10 @@ export function App({ kcContext, auth }: { kcContext: KcContext; auth: Auth }) {
   }
 
   const { user, credentials } = data;
-
-  return (
-    <>
-      <Header
-        {...brand}
-        quickAccessItems={[
+  const quickAccessItems: ComponentProps<typeof Header>["quickAccessItems"] =
+    settings.hideLogoutButton
+      ? []
+      : [
           {
             iconId: "fr-icon-logout-box-r-line",
             buttonProps: {
@@ -86,8 +92,11 @@ export function App({ kcContext, auth }: { kcContext: KcContext; auth: Auth }) {
             },
             text: user.email,
           },
-        ]}
-      />
+        ];
+
+  return (
+    <>
+      <Header {...brand} quickAccessItems={quickAccessItems} />
       <main role="main" id="main">
         <div className="dashboard-container">
           <Sidemenu route={route} />
@@ -110,6 +119,7 @@ export function App({ kcContext, auth }: { kcContext: KcContext; auth: Auth }) {
                 user={user}
                 credentials={credentials}
                 runAction={auth.runAction}
+                helpUrl={settings.twoFactorHelpUrl}
               />
             )}
           </div>

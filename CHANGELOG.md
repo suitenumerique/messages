@@ -20,6 +20,8 @@ and this project adheres to
   from the site configuration in the Django admin
 - Warn that an auto-reply is active for the selected mailbox with a banner
   instead of a header icon
+- Add `DSFR_THEME_HIDE_LOGOUT_BUTTON`, `DSFR_THEME_TWO_FACTOR_HELP_URL` and
+  `DSFR_THEME_FORGOT_PASSWORD_URL` to the `lst-dsfr` theme
 
 ### Changed
 
