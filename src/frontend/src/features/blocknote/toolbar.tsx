@@ -12,12 +12,13 @@ import {
     TextAlignButton,
     useBlockNoteEditor,
 } from "@blocknote/react";
-import { useMemo } from "react";
+import { useMemo, useState } from "react";
 
 import { DriveFile } from "@/features/forms/components/message-form/drive-attachment-picker";
 import { isNativePlatform } from "@/features/native/platform";
 import { ColumnLayoutInsertButton } from "./column-layout-block/column-layout-insert-button";
 import { ImageUploadButton } from "./image-upload-button";
+import { useKeepCaretAboveToolbar } from "./keep-caret-above-toolbar";
 import { MobileToolbar } from "./mobile-toolbar";
 import { ToolbarMenusPortal } from "./toolbar-menus";
 import { ToolbarSeparator } from "./toolbar-separator";
@@ -43,10 +44,15 @@ const DesktopToolbar = ({ children }: ToolbarProps) => {
         ),
         [editor.dictionary],
     );
+    const [toolbar, setToolbar] = useState<HTMLElement | null>(null);
+    useKeepCaretAboveToolbar(toolbar);
 
     return (
         <ToolbarMenusPortal>
             <FormattingToolbar>
+                {/* FormattingToolbar renders its root itself and forwards no
+                    ref: this hidden marker hands that root over. */}
+                <span hidden ref={(marker) => setToolbar(marker?.parentElement ?? null)} />
                 <BlockTypeSelect key={"blockTypeSelect"} items={filteredItems} />
                 <ImageUploadButton />
                 <CreateLinkButton key={"createLinkButton"} />

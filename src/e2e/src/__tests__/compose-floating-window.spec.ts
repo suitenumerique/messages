@@ -59,6 +59,45 @@ test.describe("Floating compose window", () => {
     await expect(composeWindow).toBeHidden();
   });
 
+  test("should keep the caret above the sticky toolbar in a long message", async ({ page }) => {
+    const composeWindow = await openNewMessageWindow(page);
+    const body = composeWindow.locator(".compose-window__body");
+    const editor = composeWindow.locator(".ProseMirror");
+    const toolbar = composeWindow.locator(".bn-formatting-toolbar");
+
+    // Bottom edge of the line holding the caret, in viewport coordinates.
+    const caretLineBottom = () => page.evaluate(() => {
+      const node = window.getSelection()?.focusNode;
+      const element = node instanceof Element ? node : node?.parentElement;
+      return element?.closest(".bn-block-content")?.getBoundingClientRect().bottom ?? Number.NaN;
+    });
+    const toolbarTop = async () => (await toolbar.boundingBox())!.y;
+
+    // Enough lines for the window body to scroll under the pinned toolbar.
+    await editor.click();
+    for (let line = 1; line <= 40; line += 1) {
+      await editor.pressSequentially(`Line ${line}`);
+      await editor.press("Enter");
+    }
+    expect(await body.evaluate((el) => el.scrollTop)).toBeGreaterThan(0);
+    await expect.poll(caretLineBottom).toBeLessThanOrEqual(await toolbarTop());
+
+    // A taller footer lifts the toolbar's sticky offset (--form-footer-height
+    // follows the footer, see message-form): the reserved room follows too.
+    const toolbarTopBefore = await toolbarTop();
+    await page.addStyleTag({ content: ".message-form--compact .form-footer { padding-block: 80px; }" });
+    await expect.poll(toolbarTop).toBeLessThan(toolbarTopBefore);
+    await editor.pressSequentially("Last line");
+    await editor.press("Enter");
+    await expect.poll(caretLineBottom).toBeLessThanOrEqual(await toolbarTop());
+
+    // Clean up: discard the draft through the close confirmation.
+    await composeWindow.getByRole("button", { name: "Close" }).click();
+    await page.getByRole("dialog", { name: "Do you want to keep this draft?" })
+      .getByRole("button", { name: "Delete draft" }).click();
+    await expect(composeWindow).toBeHidden();
+  });
+
   test("should close silently when the draft is empty", async ({ page }) => {
     const composeWindow = await openNewMessageWindow(page);
     await composeWindow.getByRole("button", { name: "Close" }).click();
