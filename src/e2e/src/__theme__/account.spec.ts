@@ -19,6 +19,7 @@ test.describe('Keycloak lst-dsfr account console', () => {
     await expect(page.locator('input[name="lastName"]')).toBeVisible();
     await expect(page.locator('input[type="email"]')).toHaveValue('user2@example.local');
     await expect(page.locator('select[name="locale"]')).toBeVisible();
+    await expect(page.getByRole('button', { name: 'Other services' }).first()).toBeVisible();
   });
 
   test('shows the password block and the second-factor section', async ({ page }) => {

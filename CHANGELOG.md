@@ -22,6 +22,8 @@ and this project adheres to
   instead of a header icon
 - Add `DSFR_THEME_HIDE_LOGOUT_BUTTON`, `DSFR_THEME_TWO_FACTOR_HELP_URL` and
   `DSFR_THEME_FORGOT_PASSWORD_URL` to the `lst-dsfr` theme
+- Add `DSFR_THEME_LAGAUFRE_WIDGET_CONFIG` to show the La Suite services button
+  in the account console header of the `lst-dsfr` theme
 
 ### Changed
 

@@ -10,7 +10,7 @@ const { useI18n, ofTypeI18n } = i18nBuilder
       lstLoginTitle: "Accéder au compte",
       lstPasswordLabel: "Renseignez votre mot de passe",
       lstPasskeyButton: "Se connecter avec une clé d'accès",
-      lstOr: "ou",
+      lstOtherMethods: "Autres méthodes de connexion",
       lstPasskeyLabelField: "Nom de la clé",
       lstPasskeyLabelDefault: "Clé d'accès",
       lstPasskeyLabelHint:
@@ -29,7 +29,7 @@ const { useI18n, ofTypeI18n } = i18nBuilder
       lstLoginTitle: "Access your account",
       lstPasswordLabel: "Enter your password",
       lstPasskeyButton: "Sign in with a passkey",
-      lstOr: "or",
+      lstOtherMethods: "Other sign-in methods",
       lstPasskeyLabelField: "Key name",
       lstPasskeyLabelDefault: "Passkey",
       lstPasskeyLabelHint:

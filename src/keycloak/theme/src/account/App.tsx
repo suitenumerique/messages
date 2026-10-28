@@ -24,6 +24,7 @@ import { getBrand } from "../shared/brand";
 import { getSettings } from "../shared/settings";
 import { startDsfrOnce } from "../shared/dsfr";
 import { Footer } from "../shared/Footer";
+import { Gaufre } from "../shared/Gaufre";
 import { Header } from "../shared/Header";
 import "./account.css";
 
@@ -80,19 +81,29 @@ export function App({ kcContext, auth }: { kcContext: KcContext; auth: Auth }) {
   }
 
   const { user, credentials } = data;
-  const quickAccessItems: ComponentProps<typeof Header>["quickAccessItems"] =
-    settings.hideLogoutButton
-      ? []
-      : [
-          {
-            iconId: "fr-icon-logout-box-r-line",
-            buttonProps: {
-              onClick: () => void auth.logout(),
-              "aria-label": `${t("header.logout")} - ${user.email}`,
-            },
-            text: user.email,
-          },
-        ];
+  const quickAccessItems: NonNullable<
+    ComponentProps<typeof Header>["quickAccessItems"]
+  > = [];
+  if (settings.lagaufre) {
+    quickAccessItems.push(
+      <Gaufre
+        key="gaufre"
+        {...settings.lagaufre}
+        label={t("header.gaufre")}
+        closeLabel={t("header.gaufreClose")}
+      />,
+    );
+  }
+  if (!settings.hideLogoutButton) {
+    quickAccessItems.push({
+      iconId: "fr-icon-logout-box-r-line",
+      buttonProps: {
+        onClick: () => void auth.logout(),
+        "aria-label": `${t("header.logout")} - ${user.email}`,
+      },
+      text: user.email,
+    });
+  }
 
   return (
     <>
