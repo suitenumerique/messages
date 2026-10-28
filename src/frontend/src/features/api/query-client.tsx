@@ -8,10 +8,7 @@ import {
 import { addToast, ToasterItem } from "@/features/ui/components/toaster";
 import { errorToString } from "@/features/api/api-error";
 
-const onError = (error: Error, query: unknown) => {
-  if ((query as Query).meta?.noGlobalError) {
-    return;
-  }
+export const toastError = (error: unknown) =>
   addToast(
     <ToasterItem type="error">
       <span>{errorToString(error)}</span>
@@ -20,6 +17,12 @@ const onError = (error: Error, query: unknown) => {
       toastId: "APPLICATION_ERROR_TOAST",
     },
   );
+
+const onError = (error: Error, query: unknown) => {
+  if ((query as Query).meta?.noGlobalError) {
+    return;
+  }
+  toastError(error);
 };
 
 export const queryClient = new QueryClient({
