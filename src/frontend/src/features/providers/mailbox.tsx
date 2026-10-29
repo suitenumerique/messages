@@ -48,6 +48,7 @@ type MailboxContextType = {
     // Lets the thread view unmount synchronously instead of waiting for the async navigation.
     unmountThreadViewNeeded: boolean;
     unselectThread: () => void;
+    unselectThreadIfAmong: (threadIds: readonly Thread['id'][]) => void;
     loadNextThreads: () => Promise<unknown>;
     /** Patch threads in every cached list variant of the current mailbox AND
      *  pin them so they survive the next refetch even when filtered out. */
@@ -183,6 +184,24 @@ export const THREADS_LIST_STRING_FILTERS = [
     "search",
 ] as const satisfies ReadonlyArray<keyof ThreadsListParams>;
 
+/**
+ * Whether the thread an action was fired from must be left once it applies.
+ * @param firedThreadId - the thread open when the action was fired.
+ * @param openThreadId - the thread open now: the user may have opened another
+ * one while the action was settling.
+ * @param threadIds - the threads acted upon; when omitted, the open thread is
+ * considered one of them.
+ * @returns true if that thread is still open and was acted upon.
+ */
+export const isOpenThreadActedUpon = (
+    firedThreadId: Thread['id'] | undefined,
+    openThreadId: Thread['id'] | undefined,
+    threadIds?: readonly Thread['id'][],
+): boolean =>
+    !!firedThreadId
+    && firedThreadId === openThreadId
+    && (!threadIds || threadIds.includes(firedThreadId));
+
 const MailboxContext = createContext<MailboxContextType>({
     mailboxes: null,
     threads: null,
@@ -194,6 +213,7 @@ const MailboxContext = createContext<MailboxContextType>({
     unmountThreadViewNeeded: false,
     loadNextThreads: async () => {},
     unselectThread: () => {},
+    unselectThreadIfAmong: () => {},
     pinThreads: () => {},
     unpinThreads: () => {},
     patchMessages: () => {},
@@ -573,16 +593,12 @@ export const MailboxProvider = ({ children }: PropsWithChildren) => {
         await queryClient.invalidateQueries({ queryKey: labelsQuery.queryKey });
     }
 
-    /**
-     * Unselect the current thread and navigate to the mailbox page if needed
-     */
-    const unselectThread = () => {
-        const threadId = routeParams.threadId;
+    const leaveOpenThread = (threadIds?: readonly Thread['id'][]) => {
         // Often called once a mutation settles, from a closure of the render
-        // that fired it: the thread id is the one acted upon, but the current
-        // URL must be read live or the user gets kicked out of the thread they
-        // have opened since.
-        if (selectedMailbox && threadId && router.latestLocation.pathname.includes(threadId)) {
+        // that fired it: the current route must be read live or the user gets
+        // kicked out of the thread they have opened since.
+        const openThreadId = router.getMatchedRoutes(router.latestLocation.pathname).routeParams.threadId;
+        if (selectedMailbox && isOpenThreadActedUpon(routeParams.threadId, openThreadId, threadIds)) {
             // Unmount the thread view now (tearing down its auto-mark-as-read
             // observer before the mutation's cache patch lands), then clear the
             // flag once navigation has settled and `selectedThread` is null on
@@ -592,6 +608,19 @@ export const MailboxProvider = ({ children }: PropsWithChildren) => {
                 .finally(() => setUnmountThreadViewNeeded(false));
         }
     }
+
+    /**
+     * Unselect the current thread and navigate to the mailbox page if needed.
+     * Takes no argument so it can be passed as-is to `onClick`/`onSuccess`.
+     */
+    const unselectThread = () => leaveOpenThread();
+
+    /**
+     * Same as `unselectThread`, but only if the open thread is among the
+     * threads acted upon.
+     * @param threadIds - the threads acted upon.
+     */
+    const unselectThreadIfAmong = (threadIds: readonly Thread['id'][]) => leaveOpenThread(threadIds);
 
     const context = {
         mailboxes: mailboxQuery.data?.data ?? null,
@@ -603,6 +632,7 @@ export const MailboxProvider = ({ children }: PropsWithChildren) => {
         selectedThread,
         unmountThreadViewNeeded,
         unselectThread,
+        unselectThreadIfAmong,
         loadNextThreads: threadsQuery.fetchNextPage,
         pinThreads,
         unpinThreads,

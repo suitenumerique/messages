@@ -322,7 +322,7 @@ type DroppableFolderId = typeof DROPPABLE_FOLDER_IDS[number];
 
 const FolderItem = ({ folder, isChild, hasChildren, isExpanded, onToggleExpand, childrenContainerId }: FolderItemProps) => {
     const { t } = useTranslation();
-    const { selectedMailbox, selectedThread, unselectThread } = useMailboxContext();
+    const { selectedMailbox, unselectThreadIfAmong } = useMailboxContext();
     const { closeLeftPanel } = useLayoutContext();
     const searchParams = useUrlSearchParams()
     const [isDragOver, setIsDragOver] = useState(false);
@@ -447,9 +447,7 @@ const FolderItem = ({ folder, isChild, hasChildren, isExpanded, onToggleExpand, 
             if (!data.hasEditable) return;
 
             const threadIds = data.threadIds as string[];
-            if (selectedThread && threadIds.includes(selectedThread.id)) {
-                unselectThread();
-            }
+            unselectThreadIfAmong(threadIds);
 
             // Call the appropriate action based on folder
             switch (folder.id) {

@@ -55,7 +55,7 @@ const ThreadPanelTitle = ({ selectedThreadIds, isAllSelected, isSomeSelected, is
     const [isDropdownOpen, setIsDropdownOpen] = useState(false);
     const searchParams = useUrlSearchParams();
     const isSearch = searchParams.has('search');
-    const { mailboxes, threads, selectedMailbox, unselectThread } = useMailboxContext();
+    const { mailboxes, threads, selectedMailbox, unselectThreadIfAmong } = useMailboxContext();
     const isTrashedView = ViewHelper.isTrashedView();
     const isSpamView = ViewHelper.isSpamView();
     const isArchivedView = ViewHelper.isArchivedView();
@@ -243,7 +243,7 @@ const ThreadPanelTitle = ({ selectedThreadIds, isAllSelected, isSomeSelected, is
                         // onSuccess would let the visibility observer re-observe the
                         // newly-unread messages and debounce a mark-as-read that silently
                         // reverts the action.
-                        unselectThread();
+                        unselectThreadIfAmong(threadIdsToMark);
                         onClearSelection();
                         markAsReadAt({
                             threadIds: threadIdsToMark,
@@ -266,7 +266,7 @@ const ThreadPanelTitle = ({ selectedThreadIds, isAllSelected, isSomeSelected, is
                                     archiveMutation({
                                         threadIds: threadIdsToMark,
                                         onSuccess: () => {
-                                            unselectThread();
+                                            unselectThreadIfAmong(threadIdsToMark);
                                             onClearSelection();
                                         }
                                     });
@@ -286,7 +286,7 @@ const ThreadPanelTitle = ({ selectedThreadIds, isAllSelected, isSomeSelected, is
                                     spamMutation({
                                         threadIds: threadIdsToMark,
                                         onSuccess: () => {
-                                            unselectThread();
+                                            unselectThreadIfAmong(threadIdsToMark);
                                             onClearSelection();
                                         }
                                     });
@@ -306,7 +306,7 @@ const ThreadPanelTitle = ({ selectedThreadIds, isAllSelected, isSomeSelected, is
                                     trashMutation({
                                         threadIds: threadIdsToMark,
                                         onSuccess: () => {
-                                            unselectThread();
+                                            unselectThreadIfAmong(threadIdsToMark);
                                             onClearSelection();
                                         }
                                     });
@@ -326,7 +326,7 @@ const ThreadPanelTitle = ({ selectedThreadIds, isAllSelected, isSomeSelected, is
                                     deleteDrafts({
                                         threadIds: threadIdsToMark,
                                         onSuccess: () => {
-                                            unselectThread();
+                                            unselectThreadIfAmong(threadIdsToMark);
                                             onClearSelection();
                                         }
                                     });
@@ -371,7 +371,7 @@ const ThreadPanelTitle = ({ selectedThreadIds, isAllSelected, isSomeSelected, is
                                 threadIds: threadIdsToMark,
                                 readAt: new Date().toISOString(),
                                 onSuccess: () => {
-                                    unselectThread();
+                                    unselectThreadIfAmong(threadIdsToMark);
                                     onClearSelection();
                                 }
                             });
@@ -383,7 +383,7 @@ const ThreadPanelTitle = ({ selectedThreadIds, isAllSelected, isSomeSelected, is
                         callback: () => {
                             // Close the open thread before the mutation so the visibility
                             // observer cannot re-mark the newly-unread messages as read.
-                            unselectThread();
+                            unselectThreadIfAmong(threadIdsToMark);
                             onClearSelection();
                             markAsReadAt({
                                 threadIds: threadIdsToMark,
@@ -397,10 +397,7 @@ const ThreadPanelTitle = ({ selectedThreadIds, isAllSelected, isSomeSelected, is
                         callback: () => {
                             markAsStarred({
                                 threadIds: threadIdsToMark,
-                                onSuccess: () => {
-                                    unselectThread();
-                                    onClearSelection();
-                                }
+                                onSuccess: onClearSelection,
                             });
                         },
                     }] : []),
@@ -410,10 +407,7 @@ const ThreadPanelTitle = ({ selectedThreadIds, isAllSelected, isSomeSelected, is
                         callback: () => {
                             markAsUnstarred({
                                 threadIds: threadIdsToMark,
-                                onSuccess: () => {
-                                    unselectThread();
-                                    onClearSelection();
-                                }
+                                onSuccess: onClearSelection,
                             });
                         },
                     }] : []),
