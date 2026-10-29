@@ -1,3 +1,5 @@
+@use "../../../../../../styles/utils" as *;
+
 .mailbox-list {
     display: flex;
     flex-direction: column;
@@ -47,6 +49,7 @@
     min-height: 2rem;
     border-radius: 4px;
     text-decoration: none;
+    @include no-touch-link-menu;
 }
 
 // When the folder has a disclosure chevron, the button sits flush to the

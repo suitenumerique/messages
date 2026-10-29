@@ -19,6 +19,7 @@ import { useFold } from "@/features/providers/fold";
 import { SubLabelCreation } from "../label-form-modal";
 import { handle } from "@/features/utils/errors";
 import ViewHelper from "@/features/utils/view-helper";
+import EventHelper from "@/features/utils/event-helper";
 import { Edit, More, Plus, Trash } from "@gouvfr-lasuite/ui-components/icons";
 import { Icon } from "@/features/ui/components/icon";
 
@@ -349,6 +350,7 @@ export const LabelItem = ({ level = 0, onEdit, canManage, defaultFoldState, ...l
         onDragOver={canManage ? handleDragOver : undefined}
         onDragLeave={canManage ? handleDragLeave : undefined}
         onDrop={canManage ? handleDrop : undefined}
+        onContextMenu={EventHelper.preventTouchContextMenu}
       >
         <div className="label-item__column">
           {hasChildren && (

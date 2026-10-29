@@ -13,6 +13,7 @@ import useTrash from "@/features/message/use-trash";
 import useSpam from "@/features/message/use-spam";
 import { handle } from "@/features/utils/errors";
 import ViewHelper from "@/features/utils/view-helper";
+import EventHelper from "@/features/utils/event-helper";
 import { addToast, ToasterItem } from "@/features/ui/components/toaster";
 import { Tooltip } from "@gouvfr-lasuite/ui-components"
 import { EXPANDED_FOLDERS_KEY } from "@/features/config/constants"
@@ -547,6 +548,7 @@ const FolderItem = ({ folder, isChild, hasChildren, isExpanded, onToggleExpand, 
             onDragOver={isDroppable ? handleDragOver : undefined}
             onDragLeave={isDroppable ? handleDragLeave : undefined}
             onDrop={isDroppable ? handleDrop : undefined}
+            onContextMenu={EventHelper.preventTouchContextMenu}
         >
             <p className="mailbox__item-label">
                 <Icon {...folder.icon} size={IconSize.SMALL} />
