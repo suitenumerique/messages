@@ -79,8 +79,8 @@ const ThreadMessageActions = ({
     }, [message.id, message.created_at, unselectThread, selectedThread, markAsReadAt]);
 
     const handleMarkAsTrashed = useCallback(() => {
-        markAsTrashed({ messageIds: [message.id] });
-    }, [markAsTrashed, message.id]);
+        markAsTrashed({ messageIds: [message.id], messageThreadId: message.thread_id });
+    }, [markAsTrashed, message.id, message.thread_id]);
 
     const handleSplitThread = useCallback(async () => {
         if (!selectedThread) return;

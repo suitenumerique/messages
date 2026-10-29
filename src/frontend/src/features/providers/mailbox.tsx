@@ -2,7 +2,7 @@ import { createContext, PropsWithChildren, useContext, useEffect, useMemo, useRe
 import { Mailbox, Message, PaginatedThreadList, Thread, ThreadEvent, ThreadsListParams, useLabelsList, useMailboxesList, useMessagesList, useThreadsEventsList, useThreadsListInfinite, useThreadsRetrieve, getThreadsEventsListQueryKey, getThreadsRetrieveQueryKey } from "../api/gen";
 import { FetchStatus, InfiniteData, QueryStatus, RefetchOptions, useQueryClient } from "@tanstack/react-query";
 import type { threadsListResponse } from "../api/gen/threads/threads";
-import { useLocation, useNavigate, useParams } from "@tanstack/react-router";
+import { useLocation, useNavigate, useParams, useRouter } from "@tanstack/react-router";
 import usePrevious from "@/hooks/use-previous";
 import { useUrlSearchParams } from "@/hooks/use-url-search-params";
 import { MAILBOX_FOLDERS } from "../layouts/components/mailbox-panel/components/mailbox-list";
@@ -250,6 +250,7 @@ const MailboxContext = createContext<MailboxContextType>({
 export const MailboxProvider = ({ children }: PropsWithChildren) => {
     const queryClient = useQueryClient();
     const navigate = useNavigate();
+    const router = useRouter();
     const location = useLocation();
     const routeParams = useParams({ strict: false }) as { mailboxId?: string; threadId?: string };
     const { user } = useAuth();
@@ -577,7 +578,11 @@ export const MailboxProvider = ({ children }: PropsWithChildren) => {
      */
     const unselectThread = () => {
         const threadId = routeParams.threadId;
-        if (selectedMailbox && threadId && location.pathname.includes(threadId)) {
+        // Often called once a mutation settles, from a closure of the render
+        // that fired it: the thread id is the one acted upon, but the current
+        // URL must be read live or the user gets kicked out of the thread they
+        // have opened since.
+        if (selectedMailbox && threadId && router.latestLocation.pathname.includes(threadId)) {
             // Unmount the thread view now (tearing down its auto-mark-as-read
             // observer before the mutation's cache patch lands), then clear the
             // flag once navigation has settled and `selectedThread` is null on
