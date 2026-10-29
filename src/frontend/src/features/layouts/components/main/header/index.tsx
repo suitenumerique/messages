@@ -5,6 +5,7 @@ import { AnonymousHeader } from "./anonymous";
 
 type ProxyHeaderProps = HeaderProps & {
   hideSearch?: boolean;
+  hideLeftPanelOnDesktop?: boolean;
 }
 
 export const Header = (props: ProxyHeaderProps) => {

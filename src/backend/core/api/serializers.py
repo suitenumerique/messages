@@ -30,6 +30,7 @@ from core.services.blob_gc import schedule_for_gc
 from core.services.identity import keycloak as keycloak_service
 from core.services.importer.channel import merged_state
 from core.services.ssrf import SSRFValidationError, validate_hostname
+from core.services.trashbin import TRASHBIN_SCOPES
 
 logger = getLogger(__name__)
 
@@ -607,6 +608,194 @@ class MailboxLightSerializer(serializers.ModelSerializer):
         if instance.contact:
             return instance.contact.name
         return None
+
+
+# pylint: disable=abstract-method
+class StorageEntitlementSerializer(serializers.Serializer):
+    """Storage usage and limit for a single level (mailbox or organization).
+
+    ``max_storage`` is nullable: null means "no known limit" and the
+    frontend hides the corresponding gauge.
+    """
+
+    storage_used = serializers.IntegerField(
+        read_only=True, help_text="Bytes currently used."
+    )
+    max_storage = serializers.IntegerField(
+        read_only=True,
+        allow_null=True,
+        help_text="Storage limit in bytes, or null when there is no limit.",
+    )
+
+
+# pylint: disable=abstract-method
+class MailboxEntitlementsSerializer(serializers.Serializer):
+    """Storage entitlements for a mailbox, at the account and organization levels."""
+
+    account = StorageEntitlementSerializer(read_only=True)
+    organization = StorageEntitlementSerializer(read_only=True, allow_null=True)
+
+
+# pylint: disable=abstract-method
+class LargestThreadSerializer(serializers.ModelSerializer):
+    """Serialize a thread entry of the mailbox storage stats.
+
+    Expects threads annotated with ``size``, ``message_count``, ``read_at``
+    (the stats mailbox's own read cursor) and ``_can_edit``, as
+    ``MailboxViewSet.storage`` does.
+    The folder flags let the frontend open the thread in a folder listing it.
+    """
+
+    size = serializers.IntegerField(
+        read_only=True,
+        help_text=(
+            "Message overhead plus MIME and draft blobs of the thread outside "
+            "the trashbin, in bytes"
+        ),
+    )
+    message_count = serializers.IntegerField(
+        read_only=True,
+        help_text="Number of messages of the thread outside the trashbin",
+    )
+    is_unread = serializers.SerializerMethodField(
+        help_text="Whether the thread is unread for this mailbox"
+    )
+    abilities = serializers.SerializerMethodField(
+        help_text="The current user's abilities on the thread"
+    )
+
+    class Meta:
+        model = models.Thread
+        fields = [
+            "id",
+            "subject",
+            "size",
+            "message_count",
+            "messaged_at",
+            "is_unread",
+            "abilities",
+            "has_active",
+            "has_draft",
+            "has_sender",
+            "has_delivery_pending",
+            "has_archived",
+            "has_trashed",
+            "is_trashed",
+            "is_spam",
+        ]
+        read_only_fields = fields
+
+    def get_is_unread(self, thread) -> bool:
+        """Same rule as the thread list: no read cursor, or a newer message."""
+        return bool(
+            thread.messaged_at
+            and (thread.read_at is None or thread.messaged_at > thread.read_at)
+        )
+
+    @extend_schema_field(serializers.DictField(child=serializers.BooleanField()))
+    def get_abilities(self, thread):
+        """Same shape as ``ThreadSerializer.abilities``, from ``_can_edit``."""
+        return {enums.ThreadAbilities.CAN_EDIT: getattr(thread, "_can_edit", False)}
+
+
+# pylint: disable=abstract-method
+class MailboxStorageStatsSerializer(serializers.Serializer):
+    """Serializer for mailbox storage statistics response."""
+
+    total_storage = serializers.IntegerField(
+        help_text="Total storage used by the mailbox in bytes"
+    )
+    trashed_storage = serializers.IntegerField(
+        help_text="Storage used by trashed conversations in bytes"
+    )
+    spam_storage = serializers.IntegerField(
+        help_text="Storage used by spam conversations in bytes"
+    )
+    message_count = serializers.IntegerField(
+        help_text="Total number of messages in the mailbox"
+    )
+    thread_count = serializers.IntegerField(
+        help_text="Total number of threads in the mailbox"
+    )
+    largest_threads = LargestThreadSerializer(
+        many=True,
+        help_text=(
+            "Top 100 threads by storage size outside the trashbin, ordered descending."
+        ),
+    )
+
+
+class MailboxEmptyTrashRequestSerializer(serializers.Serializer):
+    """Payload for the "empty trashbin" endpoint.
+
+    The trashbin is the union of trashed and spam messages; ``scope`` picks the
+    folder to act on ("trashed" or "spam") so the two are handled independently.
+
+    ``thread_ids`` / ``message_ids`` narrow the deletion to specific items.
+    Both omitted (the default) means the whole folder — note this is the
+    opposite of ``ThreadBulkDeleteRequestSerializer``, where omitting every
+    target is an error: there, "no targets" is a malformed request; here it is
+    the primary use case ("Empty trash").
+
+    Permanently deleting one selected message and emptying the entire folder
+    are the same privilege, so they deliberately share this one endpoint rather
+    than being split across two that could drift apart — see the note on
+    ``ThreadBulkDeleteRequestSerializer.BULK_DELETE_SCOPE_FILTERS``.
+    """
+
+    scope = serializers.ChoiceField(
+        choices=TRASHBIN_SCOPES,
+        help_text=(
+            "Which half of the trashbin to permanently delete: 'trashed' or 'spam'."
+        ),
+    )
+    thread_ids = serializers.ListField(
+        child=serializers.UUIDField(),
+        required=False,
+        allow_empty=True,
+        default=list,
+        help_text=(
+            "Restrict the deletion to these threads. Omit to empty the whole folder."
+        ),
+    )
+    message_ids = serializers.ListField(
+        child=serializers.UUIDField(),
+        required=False,
+        allow_empty=True,
+        default=list,
+        help_text=(
+            "Restrict the deletion to these messages (still scope-filtered). "
+            "Omit to empty the whole folder."
+        ),
+    )
+
+    def create(self, validated_data):
+        """Validation-only serializer."""
+
+    def update(self, instance, validated_data):
+        """Validation-only serializer."""
+
+
+class MailboxEmptyTrashResponseSerializer(serializers.Serializer):
+    """Response for the "empty trashbin" endpoint."""
+
+    success = serializers.BooleanField()
+    deleted_count = serializers.IntegerField(
+        help_text="Number of messages permanently deleted."
+    )
+
+
+class MailboxEmptyTrashTaskResponseSerializer(serializers.Serializer):
+    """Response for the "empty trashbin" endpoint when it runs in the background.
+
+    Returned with 202 once the folder holds more than
+    ``EMPTY_TRASHBIN_SYNC_LIMIT`` messages. On success the task result carries
+    ``deleted_count``.
+    """
+
+    task_id = serializers.CharField(
+        help_text="Celery task id, to poll on the task status endpoint."
+    )
 
 
 class ReadMessageTemplateSerializer(serializers.ModelSerializer):
@@ -3213,9 +3402,19 @@ class ThreadBulkDeleteRequestSerializer(serializers.Serializer):
     to permanently delete."""
 
     # Scopes accepted by the bulk-delete endpoint, mapping each to the queryset
-    # filter selecting the messages whose rows get permanently removed. Only
-    # "draft" is exposed for now: trashed deletion is intentionally not offered
-    # until the product behavior for trashed messages is decided.
+    # filter selecting the messages whose rows get permanently removed.
+    #
+    # DRAFTS ONLY, deliberately. Do not add "trashed"/"spam" here: this action
+    # authorizes purely on per-thread edit rights, with no mailbox context and
+    # no ability check, so trashbin scopes added here would sit outside the
+    # TRASHBIN_ALLOW_EMPTY policy — a deployment set to "never" could be emptied
+    # one selection at a time. Deleting a single trashbin message is the same
+    # privilege as emptying the folder, so both live on the policy-gated mailbox
+    # "empty-trash" action (which takes thread_ids/message_ids for exactly this)
+    # — see MailboxEmptyTrashRequestSerializer and ``core.services.trashbin``.
+    #
+    # Drafts are unlike the trashbin: they have no trash stage and no retention
+    # policy to enforce, so edit rights are the whole authorization story.
     BULK_DELETE_SCOPE_FILTERS = {"draft": {"is_draft": True}}
     BULK_DELETE_SCOPES = list(BULK_DELETE_SCOPE_FILTERS)
 

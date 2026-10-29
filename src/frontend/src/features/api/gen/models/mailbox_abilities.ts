@@ -32,4 +32,6 @@ export type MailboxAbilities = {
   readonly manage_message_templates: boolean;
   /** Can import messages */
   readonly import_messages: boolean;
+  /** Can empty the trashbin (trashed + spam) */
+  readonly empty_trash: boolean;
 };

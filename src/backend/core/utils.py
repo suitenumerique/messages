@@ -278,6 +278,27 @@ class OptionalBooleanValue(values.BooleanValue):
             super().__init__(*args, **kwargs)
 
 
+class StrEnumValue(values.Value):
+    """
+    A value restricted to the members of a ``StrEnum``, validated at startup.
+
+    Stores the enum member: an unknown value fails while the settings load,
+    instead of on first use.
+    """
+
+    def __init__(self, enum_class, *args, **kwargs):
+        self.enum_class = enum_class
+        super().__init__(*args, **kwargs)
+
+    def to_python(self, value):
+        try:
+            return self.enum_class(value)
+        except ValueError as e:
+            raise ValueError(
+                f"Invalid value {value!r}: expected one of {', '.join(self.enum_class)}"
+            ) from e
+
+
 class ThrottleRateValue(values.Value):
     """
     A custom value class that parses and validates throttle rate strings

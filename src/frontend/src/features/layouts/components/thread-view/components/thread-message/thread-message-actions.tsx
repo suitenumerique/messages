@@ -1,6 +1,7 @@
 import { useState, useMemo, useCallback } from "react";
 import { useTranslation } from "react-i18next";
-import { Button, Tooltip, useModals } from "@gouvfr-lasuite/ui-components";
+import { Button, useModals } from "@gouvfr-lasuite/ui-components";
+import { Tooltip } from "@/features/ui/components/tooltip";
 import { DropdownMenu, IconSize, IconType } from "@gouvfr-lasuite/ui-components";
 import { getMessagesEmlRetrieveUrl } from "@/features/api/gen/messages/messages";
 import { getRequestUrl } from "@/features/api/utils";
@@ -9,6 +10,7 @@ import { useNativeDownload } from "@/features/native/use-native-download";
 import { useMailboxContext } from "@/features/providers/mailbox";
 import usePrint from "@/features/message/use-print";
 import useRead from "@/features/message/use-read";
+import useSpam from "@/features/message/use-spam";
 import useSplitThread from "@/features/message/use-split-thread";
 import useTrash from "@/features/message/use-trash";
 import { FEATURE_KEYS, useFeatureFlag } from "@/hooks/use-feature";
@@ -16,7 +18,7 @@ import useAbility, { Abilities } from "@/hooks/use-ability";
 import useCopyDeepLink from "@/features/message/use-copy-deep-link";
 import { ThreadMessageActionsProps } from "./types";
 import { Icon } from "@/features/ui/components/icon";
-import { Divergence, Download, Link, Print, Trash } from "@gouvfr-lasuite/ui-components/icons";
+import { Divergence, Download, Error as ErrorIcon, Link, Print, Trash } from "@gouvfr-lasuite/ui-components/icons";
 
 const ThreadMessageActions = ({
     message,
@@ -35,6 +37,7 @@ const ThreadMessageActions = ({
     const copyDeepLink = useCopyDeepLink();
     const { markAsReadAt } = useRead();
     const { markAsTrashed } = useTrash();
+    const { markAsSpam } = useSpam();
     const { splitThread } = useSplitThread();
     const { print } = usePrint();
     const modals = useModals();
@@ -81,6 +84,12 @@ const ThreadMessageActions = ({
     const handleMarkAsTrashed = useCallback(() => {
         markAsTrashed({ messageIds: [message.id], messageThreadId: message.thread_id });
     }, [markAsTrashed, message.id, message.thread_id]);
+
+    // Flags this message alone, which sends its whole thread to Spam. The
+    // report is only removed for the whole thread (banner or action bar).
+    const handleMarkAsSpam = useCallback(() => {
+        markAsSpam({ messageIds: [message.id], onSuccess: unselectThread });
+    }, [markAsSpam, message.id, unselectThread]);
 
     const handleSplitThread = useCallback(async () => {
         if (!selectedThread) return;
@@ -157,8 +166,16 @@ const ThreadMessageActions = ({
             icon: <Icon icon={Download} />,
             callback: handleDownloadRawEmail
         },
-        ...(canEditThread && !message.is_trashed ? [{
-            label: t('Delete'),
+        // The user's own messages are never spam.
+        ...(canEditThread && !message.is_sender && !message.is_draft && !selectedThread?.is_spam ? [{
+            label: t('Report as spam'),
+            icon: <Icon icon={ErrorIcon} />,
+            callback: handleMarkAsSpam
+        }] : []),
+        // A spam thread is already in the trashbin: it is only deleted
+        // permanently, as a whole, from the thread action bar.
+        ...(canEditThread && !message.is_trashed && !selectedThread?.is_spam ? [{
+            label: t('Move to trash'),
             icon: <Icon icon={Trash} />,
             callback: handleMarkAsTrashed
         }] : []),

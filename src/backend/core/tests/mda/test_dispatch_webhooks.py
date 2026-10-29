@@ -3719,6 +3719,53 @@ class TestPipelineIdempotency:
         assert models.Message.objects.filter(mime_id=mime).count() == 1
 
 
+@pytest.mark.django_db
+class TestSpamConversationSideEffects:
+    """A message landing in a spam conversation is treated as spam.
+
+    The spam filter judged the follow-up clean, but its thread sits in the
+    Spam folder: answering it or waking a device for it would leak the
+    mailbox's presence to the spammer and nag the user about junk.
+    """
+
+    @override_settings(PUSH_ENABLED=True)
+    @patch("core.mda.inbound_tasks.enqueue_push_notifications")
+    @patch("core.mda.autoreply.try_send_autoreply")
+    @patch("core.mda.spam.call_rspamd")
+    def test_clean_follow_up_in_spam_thread(
+        self, mock_rspamd, mock_autoreply, mock_enqueue_push
+    ):
+        mailbox = factories.MailboxFactory()
+        mock_rspamd.return_value = ("no action", None, None)
+        thread = factories.ThreadFactory(subject="win")
+        factories.ThreadAccessFactory(
+            mailbox=mailbox,
+            thread=thread,
+            role=enums.ThreadAccessRoleChoices.EDITOR,
+        )
+        factories.MessageFactory(
+            thread=thread, mime_id="spam.original@example.com", is_spam=True
+        )
+        thread.update_stats()
+
+        raw_data = (
+            b"From: spammer@example.com\r\n"
+            b"To: " + str(mailbox).encode() + b"\r\n"
+            b"Subject: Re: win\r\n"
+            b"Message-ID: <spam.follow-up@example.com>\r\n"
+            b"In-Reply-To: <spam.original@example.com>\r\n\r\nbody"
+        )
+        inbound = _queue_inbound(mailbox, raw_data)
+        with patch.object(process_inbound_message_task, "update_state", Mock()):
+            process_inbound_message_task.run(str(inbound.id))
+
+        follow_up = models.Message.objects.get(mime_id="spam.follow-up@example.com")
+        assert follow_up.thread_id == thread.id
+        assert follow_up.is_spam is False
+        assert mock_autoreply.call_args.kwargs["is_spam"] is True
+        mock_enqueue_push.assert_not_called()
+
+
 # --- cross-retry blocking-webhook result cache --- #
 
 

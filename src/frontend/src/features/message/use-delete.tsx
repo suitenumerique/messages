@@ -1,5 +1,9 @@
-import { threadsBulkDeleteCreateResponse, useThreadsBulkDeleteCreate } from "@/features/api/gen";
-import { Message, ScopeEnum, Thread } from "@/features/api/gen/models";
+import { useThreadsBulkDeleteCreate, threadsBulkDeleteCreateResponse } from "@/features/api/gen";
+import {
+    Message,
+    ThreadBulkDeleteRequestScopeEnum,
+    Thread,
+} from "@/features/api/gen/models";
 import { addToast, ToasterItem } from "../ui/components/toaster";
 import { useMailboxContext } from "../providers/mailbox";
 
@@ -37,7 +41,10 @@ const extractResult = (response: threadsBulkDeleteCreateResponse) =>
  * never offers an "Undo" action.
  * !!! Do not use this hook directly, use the specialized hooks instead !!!
  */
-const useDelete = (scope: ScopeEnum, options?: UseDeleteOptions) => {
+const useDelete = (
+    scope: ThreadBulkDeleteRequestScopeEnum,
+    options?: UseDeleteOptions,
+) => {
     const { unpinThreads } = useMailboxContext();
     const { mutate, status } = useThreadsBulkDeleteCreate({
         mutation: {

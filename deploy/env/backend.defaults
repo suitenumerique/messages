@@ -142,3 +142,7 @@ FEATURE_THREAD_SNIPPET=True
 # Third-party services
 # Drive - https://github.com/suitenumerique/drive
 DRIVE_BASE_URL=
+
+# Entitlements — no DeployCenter in dev: the local backend shows a 5 GB
+# mailbox quota so the storage gauges are exercised (it defaults to no limit).
+ENTITLEMENTS_BACKEND_PARAMETERS={"mailbox_storage_limit": 5000000000}
