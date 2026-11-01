@@ -3037,7 +3037,8 @@ The total is the cached figure the sidebar gauge reads (see
 Per-thread sizes and the trash/spam subtotals cover message overhead
 plus MIME and draft blobs — attachments and templates are not
 thread-scoped. Per-thread sizes leave out the trashbin, which the
-subtotals account for.
+subtotals account for. Like the total, every figure only covers the
+threads the mailbox holds as an editor.
 
 Backs the Storage settings tab; mailbox admins only.
  */

@@ -11,7 +11,7 @@ import pytest
 import requests
 import responses
 
-from core import factories
+from core import enums, factories
 from core.entitlements import EntitlementsUnavailableError
 from core.entitlements.backends.deploycenter import DeployCenterEntitlementsBackend
 from core.entitlements.backends.local import LocalEntitlementsBackend
@@ -106,7 +106,9 @@ class TestLocalMailboxEntitlements:
         mailbox = factories.MailboxFactory()
         contact = factories.ContactFactory(mailbox=mailbox)
         thread = factories.ThreadFactory()
-        factories.ThreadAccessFactory(mailbox=mailbox, thread=thread)
+        factories.ThreadAccessFactory(
+            mailbox=mailbox, thread=thread, role=enums.ThreadAccessRoleChoices.EDITOR
+        )
         factories.MessageFactory(thread=thread, sender=contact)
 
         backend = LocalEntitlementsBackend(mailbox_storage_limit=10_000)

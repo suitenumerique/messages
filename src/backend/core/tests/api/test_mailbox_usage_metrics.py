@@ -8,6 +8,7 @@ import pytest
 from core.enums import (
     ChannelApiKeyScope,
     MessageTemplateTypeChoices,
+    ThreadAccessRoleChoices,
 )
 from core.factories import (
     AttachmentFactory,
@@ -135,7 +136,9 @@ class TestMailboxUsageMetrics:
 
         mailbox = MailboxFactory(local_part="bob", domain__name="test.org")
         thread = ThreadFactory()
-        ThreadAccessFactory(mailbox=mailbox, thread=thread)
+        ThreadAccessFactory(
+            mailbox=mailbox, thread=thread, role=ThreadAccessRoleChoices.EDITOR
+        )
         contact = ContactFactory(mailbox=mailbox)
         MessageFactory(thread=thread, sender=contact)
         MessageFactory(thread=thread, sender=contact)
@@ -155,7 +158,9 @@ class TestMailboxUsageMetrics:
 
         mailbox = MailboxFactory(local_part="bob", domain__name="test.org")
         thread = ThreadFactory()
-        ThreadAccessFactory(mailbox=mailbox, thread=thread)
+        ThreadAccessFactory(
+            mailbox=mailbox, thread=thread, role=ThreadAccessRoleChoices.EDITOR
+        )
         contact = ContactFactory(mailbox=mailbox)
 
         # 2 messages with raw MIME blobs
@@ -190,14 +195,18 @@ class TestMailboxUsageMetrics:
 
         # mailbox_a: 2 messages with MIME blobs
         thread_a = ThreadFactory()
-        ThreadAccessFactory(mailbox=mailbox_a, thread=thread_a)
+        ThreadAccessFactory(
+            mailbox=mailbox_a, thread=thread_a, role=ThreadAccessRoleChoices.EDITOR
+        )
         contact_a = ContactFactory(mailbox=mailbox_a)
         msg_a1 = MessageFactory(thread=thread_a, sender=contact_a, raw_mime=b"a1" * 100)
         msg_a2 = MessageFactory(thread=thread_a, sender=contact_a, raw_mime=b"a2" * 100)
 
         # mailbox_b: 1 message + 1 attachment
         thread_b = ThreadFactory()
-        ThreadAccessFactory(mailbox=mailbox_b, thread=thread_b)
+        ThreadAccessFactory(
+            mailbox=mailbox_b, thread=thread_b, role=ThreadAccessRoleChoices.EDITOR
+        )
         contact_b = ContactFactory(mailbox=mailbox_b)
         msg_b = MessageFactory(thread=thread_b, sender=contact_b, raw_mime=b"b1" * 50)
         att_b = AttachmentFactory(mailbox=mailbox_b, blob_size=300, message=msg_b)
@@ -227,11 +236,15 @@ class TestMailboxUsageMetrics:
         contact = ContactFactory(mailbox=mailbox)
 
         thread1 = ThreadFactory()
-        ThreadAccessFactory(mailbox=mailbox, thread=thread1)
+        ThreadAccessFactory(
+            mailbox=mailbox, thread=thread1, role=ThreadAccessRoleChoices.EDITOR
+        )
         MessageFactory(thread=thread1, sender=contact)
 
         thread2 = ThreadFactory()
-        ThreadAccessFactory(mailbox=mailbox, thread=thread2)
+        ThreadAccessFactory(
+            mailbox=mailbox, thread=thread2, role=ThreadAccessRoleChoices.EDITOR
+        )
         MessageFactory(thread=thread2, sender=contact)
         MessageFactory(thread=thread2, sender=contact)
 
@@ -253,8 +266,12 @@ class TestMailboxUsageMetrics:
 
         # Shared thread: both mailboxes have access, messages have MIME blobs
         shared_thread = ThreadFactory()
-        ThreadAccessFactory(mailbox=mailbox_a, thread=shared_thread)
-        ThreadAccessFactory(mailbox=mailbox_b, thread=shared_thread)
+        ThreadAccessFactory(
+            mailbox=mailbox_a, thread=shared_thread, role=ThreadAccessRoleChoices.EDITOR
+        )
+        ThreadAccessFactory(
+            mailbox=mailbox_b, thread=shared_thread, role=ThreadAccessRoleChoices.EDITOR
+        )
         contact = ContactFactory(mailbox=mailbox_a)
         msg1 = MessageFactory(
             thread=shared_thread, sender=contact, raw_mime=b"shared1" * 100
@@ -265,7 +282,11 @@ class TestMailboxUsageMetrics:
 
         # Private thread: only mailbox_a
         private_thread = ThreadFactory()
-        ThreadAccessFactory(mailbox=mailbox_a, thread=private_thread)
+        ThreadAccessFactory(
+            mailbox=mailbox_a,
+            thread=private_thread,
+            role=ThreadAccessRoleChoices.EDITOR,
+        )
         msg3 = MessageFactory(
             thread=private_thread, sender=contact, raw_mime=b"private" * 50
         )
@@ -287,6 +308,46 @@ class TestMailboxUsageMetrics:
         )
 
     @pytest.mark.django_db
+    def test_thread_shared_as_viewer_counts_for_its_editors_only(
+        self, api_client, url, correctly_configured_header, settings
+    ):
+        """A thread shared as a viewer is billed to its editors, never twice."""
+        overhead = settings.METRICS_STORAGE_USED_OVERHEAD_BY_MESSAGE
+
+        mailbox_a = MailboxFactory(local_part="alice", domain__name="a.com")
+        mailbox_b = MailboxFactory(local_part="bob", domain__name="b.com")
+
+        shared_thread = ThreadFactory()
+        ThreadAccessFactory(
+            mailbox=mailbox_a,
+            thread=shared_thread,
+            role=ThreadAccessRoleChoices.EDITOR,
+        )
+        ThreadAccessFactory(
+            mailbox=mailbox_b,
+            thread=shared_thread,
+            role=ThreadAccessRoleChoices.VIEWER,
+        )
+        contact = ContactFactory(mailbox=mailbox_a)
+        message = MessageFactory(
+            thread=shared_thread, sender=contact, raw_mime=b"shared" * 100
+        )
+        draft_blob = BlobFactory(mailbox=mailbox_a, content=b"draft body" * 50)
+        MessageFactory(
+            thread=shared_thread, sender=contact, is_draft=True, draft_blob=draft_blob
+        )
+
+        response = api_client.get(url, **correctly_configured_header)
+        results_by_email = {
+            r["account"]["email"]: r for r in response.json()["results"]
+        }
+
+        assert results_by_email["alice@a.com"]["metrics"]["storage_used"] == (
+            2 * overhead + message.blob.size_compressed + draft_blob.size_compressed
+        )
+        assert results_by_email["bob@b.com"]["metrics"]["storage_used"] == 0
+
+    @pytest.mark.django_db
     def test_draft_with_attachments(
         self, api_client, url, correctly_configured_header, settings
     ):
@@ -295,7 +356,9 @@ class TestMailboxUsageMetrics:
 
         mailbox = MailboxFactory(local_part="carol", domain__name="test.com")
         thread = ThreadFactory()
-        ThreadAccessFactory(mailbox=mailbox, thread=thread)
+        ThreadAccessFactory(
+            mailbox=mailbox, thread=thread, role=ThreadAccessRoleChoices.EDITOR
+        )
         contact = ContactFactory(mailbox=mailbox)
 
         # Draft message with a draft_blob body
@@ -331,7 +394,9 @@ class TestMailboxUsageMetrics:
 
         mailbox = MailboxFactory(local_part="alice", domain__name="test.com")
         thread = ThreadFactory()
-        ThreadAccessFactory(mailbox=mailbox, thread=thread)
+        ThreadAccessFactory(
+            mailbox=mailbox, thread=thread, role=ThreadAccessRoleChoices.EDITOR
+        )
         contact = ContactFactory(mailbox=mailbox)
 
         same_content = b"x" * 500
@@ -364,7 +429,9 @@ class TestMailboxUsageMetrics:
 
         mailbox = MailboxFactory(local_part="alice", domain__name="test.com")
         thread = ThreadFactory()
-        ThreadAccessFactory(mailbox=mailbox, thread=thread)
+        ThreadAccessFactory(
+            mailbox=mailbox, thread=thread, role=ThreadAccessRoleChoices.EDITOR
+        )
         contact = ContactFactory(mailbox=mailbox)
         msg = MessageFactory(thread=thread, sender=contact, raw_mime=b"mime" * 100)
 
@@ -394,7 +461,9 @@ class TestMailboxUsageMetrics:
         MailboxFactory(local_part="bob", domain__name="b.com")
 
         thread = ThreadFactory()
-        ThreadAccessFactory(mailbox=mailbox_a, thread=thread)
+        ThreadAccessFactory(
+            mailbox=mailbox_a, thread=thread, role=ThreadAccessRoleChoices.EDITOR
+        )
         contact = ContactFactory(mailbox=mailbox_a)
         MessageFactory(thread=thread, sender=contact)
 
@@ -435,7 +504,9 @@ class TestMailboxUsageMetrics:
 
         for mailbox in [mailbox_a, mailbox_b]:
             thread = ThreadFactory()
-            ThreadAccessFactory(mailbox=mailbox, thread=thread)
+            ThreadAccessFactory(
+                mailbox=mailbox, thread=thread, role=ThreadAccessRoleChoices.EDITOR
+            )
             contact = ContactFactory(mailbox=mailbox)
             MessageFactory(thread=thread, sender=contact)
 
@@ -476,7 +547,9 @@ class TestMailboxUsageMetrics:
         MailboxFactory(local_part="carol", domain__name="b.com")
 
         thread = ThreadFactory()
-        ThreadAccessFactory(mailbox=mailbox, thread=thread)
+        ThreadAccessFactory(
+            mailbox=mailbox, thread=thread, role=ThreadAccessRoleChoices.EDITOR
+        )
         contact = ContactFactory(mailbox=mailbox)
         MessageFactory(thread=thread, sender=contact)
 
@@ -507,7 +580,9 @@ class TestMailboxUsageMetrics:
 
         for mailbox in [mailbox_a, mailbox_b]:
             thread = ThreadFactory()
-            ThreadAccessFactory(mailbox=mailbox, thread=thread)
+            ThreadAccessFactory(
+                mailbox=mailbox, thread=thread, role=ThreadAccessRoleChoices.EDITOR
+            )
             contact = ContactFactory(mailbox=mailbox)
             MessageFactory(thread=thread, sender=contact)
 
@@ -543,7 +618,9 @@ class TestMailboxUsageMetrics:
 
         for mailbox in [mailbox_a, mailbox_b, mailbox_c]:
             thread = ThreadFactory()
-            ThreadAccessFactory(mailbox=mailbox, thread=thread)
+            ThreadAccessFactory(
+                mailbox=mailbox, thread=thread, role=ThreadAccessRoleChoices.EDITOR
+            )
             contact = ContactFactory(mailbox=mailbox)
             MessageFactory(thread=thread, sender=contact)
 
@@ -614,7 +691,9 @@ class TestMailboxUsageMetrics:
 
         for mailbox in [mailbox_a, mailbox_b]:
             thread = ThreadFactory()
-            ThreadAccessFactory(mailbox=mailbox, thread=thread)
+            ThreadAccessFactory(
+                mailbox=mailbox, thread=thread, role=ThreadAccessRoleChoices.EDITOR
+            )
             contact = ContactFactory(mailbox=mailbox)
             MessageFactory(thread=thread, sender=contact)
 
@@ -651,7 +730,9 @@ class TestMailboxUsageMetrics:
 
         for mailbox in [mailbox_a, mailbox_b]:
             thread = ThreadFactory()
-            ThreadAccessFactory(mailbox=mailbox, thread=thread)
+            ThreadAccessFactory(
+                mailbox=mailbox, thread=thread, role=ThreadAccessRoleChoices.EDITOR
+            )
             contact = ContactFactory(mailbox=mailbox)
             MessageFactory(thread=thread, sender=contact)
 
@@ -744,7 +825,9 @@ class TestMailboxUsageMetrics:
 
         for mailbox in [mb_a1, mb_a2, mb_b]:
             thread = ThreadFactory()
-            ThreadAccessFactory(mailbox=mailbox, thread=thread)
+            ThreadAccessFactory(
+                mailbox=mailbox, thread=thread, role=ThreadAccessRoleChoices.EDITOR
+            )
             contact = ContactFactory(mailbox=mailbox)
             MessageFactory(thread=thread, sender=contact)
 
@@ -784,7 +867,9 @@ class TestMailboxUsageMetrics:
         for dom in [domain_a, domain_b]:
             mb = MailboxFactory(domain=dom)
             thread = ThreadFactory()
-            ThreadAccessFactory(mailbox=mb, thread=thread)
+            ThreadAccessFactory(
+                mailbox=mb, thread=thread, role=ThreadAccessRoleChoices.EDITOR
+            )
             contact = ContactFactory(mailbox=mb)
             MessageFactory(thread=thread, sender=contact)
 
@@ -820,7 +905,9 @@ class TestMailboxUsageMetrics:
 
         # alice: 2 messages with MIME blobs + 1 attachment
         thread_a = ThreadFactory()
-        ThreadAccessFactory(mailbox=mb_a, thread=thread_a)
+        ThreadAccessFactory(
+            mailbox=mb_a, thread=thread_a, role=ThreadAccessRoleChoices.EDITOR
+        )
         contact_a = ContactFactory(mailbox=mb_a)
         msg_a1 = MessageFactory(thread=thread_a, sender=contact_a, raw_mime=b"a1" * 200)
         msg_a2 = MessageFactory(thread=thread_a, sender=contact_a, raw_mime=b"a2" * 300)
@@ -834,7 +921,9 @@ class TestMailboxUsageMetrics:
 
         # bob: 1 draft with draft_blob + 1 attachment
         thread_b = ThreadFactory()
-        ThreadAccessFactory(mailbox=mb_b, thread=thread_b)
+        ThreadAccessFactory(
+            mailbox=mb_b, thread=thread_b, role=ThreadAccessRoleChoices.EDITOR
+        )
         contact_b = ContactFactory(mailbox=mb_b)
         draft_blob = BlobFactory(mailbox=mb_b, content=b"draft" * 150)
         msg_b = MessageFactory(
@@ -884,13 +973,17 @@ class TestMailboxUsageMetrics:
 
         # alice: 1 message with MIME + 1 attachment
         thread1 = ThreadFactory()
-        ThreadAccessFactory(mailbox=mb1, thread=thread1)
+        ThreadAccessFactory(
+            mailbox=mb1, thread=thread1, role=ThreadAccessRoleChoices.EDITOR
+        )
         contact1 = ContactFactory(mailbox=mb1)
         msg1 = MessageFactory(thread=thread1, sender=contact1, raw_mime=b"m1" * 200)
         att1 = AttachmentFactory(mailbox=mb1, blob_size=500, message=msg1)
         # bob: 2 messages with MIME
         thread2 = ThreadFactory()
-        ThreadAccessFactory(mailbox=mb2, thread=thread2)
+        ThreadAccessFactory(
+            mailbox=mb2, thread=thread2, role=ThreadAccessRoleChoices.EDITOR
+        )
         contact2 = ContactFactory(mailbox=mb2)
         msg2 = MessageFactory(thread=thread2, sender=contact2, raw_mime=b"m2" * 100)
         msg3 = MessageFactory(thread=thread2, sender=contact2, raw_mime=b"m3" * 150)
@@ -933,14 +1026,20 @@ class TestMailboxUsageMetrics:
 
         # Shared thread
         shared = ThreadFactory()
-        ThreadAccessFactory(mailbox=mb_a, thread=shared)
-        ThreadAccessFactory(mailbox=mb_b, thread=shared)
+        ThreadAccessFactory(
+            mailbox=mb_a, thread=shared, role=ThreadAccessRoleChoices.EDITOR
+        )
+        ThreadAccessFactory(
+            mailbox=mb_b, thread=shared, role=ThreadAccessRoleChoices.EDITOR
+        )
         contact = ContactFactory(mailbox=mb_a)
         msg = MessageFactory(thread=shared, sender=contact, raw_mime=b"shared" * 100)
 
         # Private thread for alice only
         priv = ThreadFactory()
-        ThreadAccessFactory(mailbox=mb_a, thread=priv)
+        ThreadAccessFactory(
+            mailbox=mb_a, thread=priv, role=ThreadAccessRoleChoices.EDITOR
+        )
         msg_priv = MessageFactory(thread=priv, sender=contact, raw_mime=b"private" * 50)
 
         # alice sees 2 messages (shared + private), bob sees 1 (shared)
@@ -982,8 +1081,12 @@ class TestMailboxUsageMetrics:
 
         # Shared thread with 2 messages
         shared = ThreadFactory()
-        ThreadAccessFactory(mailbox=mb_a, thread=shared)
-        ThreadAccessFactory(mailbox=mb_b, thread=shared)
+        ThreadAccessFactory(
+            mailbox=mb_a, thread=shared, role=ThreadAccessRoleChoices.EDITOR
+        )
+        ThreadAccessFactory(
+            mailbox=mb_b, thread=shared, role=ThreadAccessRoleChoices.EDITOR
+        )
         contact = ContactFactory(mailbox=mb_a)
         msg1 = MessageFactory(thread=shared, sender=contact, raw_mime=b"s1" * 100)
         msg2 = MessageFactory(thread=shared, sender=contact, raw_mime=b"s2" * 200)

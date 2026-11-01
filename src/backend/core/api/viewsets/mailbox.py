@@ -2,9 +2,7 @@
 
 import uuid
 
-from django.conf import settings
-from django.db.models import Count, Exists, F, OuterRef, Q, Subquery, Sum, Value
-from django.db.models.functions import Coalesce
+from django.db.models import Count, Exists, F, OuterRef, Q, Subquery
 
 from drf_spectacular.utils import (
     OpenApiParameter,
@@ -22,7 +20,7 @@ from core.entitlements import (
     EntitlementsUnavailableError,
     get_mailbox_entitlements,
 )
-from core.services.storage import get_mailbox_storage_used
+from core.services.storage import get_mailbox_storage_used, messages_size_expr
 from core.services.trashbin import (
     EMPTY_TRASHBIN_SYNC_LIMIT,
     empty_trashbin,
@@ -171,35 +169,19 @@ class MailboxViewSet(
         Per-thread sizes and the trash/spam subtotals cover message overhead
         plus MIME and draft blobs — attachments and templates are not
         thread-scoped. Per-thread sizes leave out the trashbin, which the
-        subtotals account for.
+        subtotals account for. Like the total, every figure only covers the
+        threads the mailbox holds as an editor.
 
         Backs the Storage settings tab; mailbox admins only.
         """
         mailbox = self.get_object()
-        overhead = settings.METRICS_STORAGE_USED_OVERHEAD_BY_MESSAGE
 
-        thread_ids = models.ThreadAccess.objects.filter(mailbox=mailbox).values_list(
-            "thread_id", flat=True
-        )
+        thread_ids = models.ThreadAccess.objects.filter(
+            mailbox=mailbox, role=enums.ThreadAccessRoleChoices.EDITOR
+        ).values_list("thread_id", flat=True)
         mailbox_messages = models.Message.objects.filter(
             thread_id__in=thread_ids
         ).order_by()
-
-        def _size(condition=None):
-            """Overhead plus MIME and draft blobs of the matching messages.
-
-            ``blob`` and ``draft_blob`` are both forward FKs, so joining them
-            adds no row fan-out and Count() stays one-per-message. Blobs are
-            summed per referencing message rather than deduplicated, the same
-            "storage felt" basis as the total (see core.services.storage).
-            """
-            return (
-                Coalesce(Sum("blob__size_compressed", filter=condition), Value(0))
-                + Coalesce(
-                    Sum("draft_blob__size_compressed", filter=condition), Value(0)
-                )
-                + Count("id", filter=condition) * overhead
-            )
 
         # One pass over the mailbox's messages. The trash/spam subtotals use the
         # very filters ``empty_trashbin`` deletes with, so each is exactly the
@@ -207,8 +189,8 @@ class MailboxViewSet(
         # kept, so they do not count.
         totals = mailbox_messages.aggregate(
             message_count=Count("id"),
-            trashed_storage=_size(trashbin_scope_filter("trashed")),
-            spam_storage=_size(trashbin_scope_filter("spam")),
+            trashed_storage=messages_size_expr(trashbin_scope_filter("trashed")),
+            spam_storage=messages_size_expr(trashbin_scope_filter("spam")),
         )
 
         # The largest conversations only weigh what is outside the trashbin:
@@ -220,13 +202,14 @@ class MailboxViewSet(
         largest = list(
             mailbox_messages.filter(is_trashed=False, thread__is_spam=False)
             .values("thread_id")
-            .annotate(size=_size(), message_count=Count("id"))
+            .annotate(size=messages_size_expr(), message_count=Count("id"))
             .order_by("-size", "thread_id")[:100]
         )
         # Those 100 threads as model instances for the serializer, carrying
         # their size, message count, this mailbox's own read cursor and whether
-        # the user may edit them: mailbox admin rights do not reach a thread
-        # shared with the mailbox as a viewer, which cannot be trashed.
+        # the user may edit them, which also takes the user's own mailbox role
+        # into account: the list must not offer to trash what the flag
+        # endpoint would refuse, should it ever open to other members.
         threads = (
             models.Thread.objects.filter(accesses__mailbox=mailbox)
             .annotate(

@@ -2222,3 +2222,138 @@ class TestThreadListQueryCount:
             f"(N+1 regression on prefetch chain?), "
             f"got 1→{queries_1} vs 5→{queries_5}"
         )
+
+
+class TestTrashbinFoldersLeaveOutViewerThreads:
+    """Trash and Spam only list the threads the mailbox holds as an editor.
+
+    Trash and spam are message flags shared by every mailbox of a thread: a
+    thread shared as a viewer lands in the trashbin as soon as an editor bins
+    it, yet the mailbox can neither empty nor restore it.
+    """
+
+    FOLDERS = [
+        pytest.param(
+            {"has_trashed": "1"}, {"has_trashed": True, "is_trashed": True}, id="trash"
+        ),
+        pytest.param({"is_spam": "1"}, {"is_spam": True}, id="spam"),
+    ]
+
+    @staticmethod
+    def _setup(thread_flags, user=None):
+        """A mailbox holding one binned thread as an editor and one as a viewer.
+
+        The user only reads the mailbox: the folders go by the mailbox's thread
+        access role, not by the user's own mailbox role.
+        """
+        user = user or UserFactory()
+        mailbox = MailboxFactory(users_read=[user])
+        threads = {}
+        for name, role in [
+            ("editor", enums.ThreadAccessRoleChoices.EDITOR),
+            ("viewer", enums.ThreadAccessRoleChoices.VIEWER),
+        ]:
+            threads[name] = ThreadFactory(
+                subject=name, has_messages=True, **thread_flags
+            )
+            ThreadAccessFactory(mailbox=mailbox, thread=threads[name], role=role)
+        return user, mailbox, threads
+
+    @pytest.mark.parametrize("folder_params,thread_flags", FOLDERS)
+    def test_list_leaves_out_viewer_threads(
+        self, api_client, folder_params, thread_flags
+    ):
+        """The folder lists the editor thread only."""
+        user, mailbox, threads = self._setup(thread_flags)
+        api_client.force_authenticate(user=user)
+
+        response = api_client.get(
+            API_URL, {"mailbox_id": str(mailbox.id), **folder_params}
+        )
+
+        assert response.status_code == status.HTTP_200_OK
+        assert [t["id"] for t in response.data["results"]] == [
+            str(threads["editor"].id)
+        ]
+
+    @pytest.mark.parametrize("folder_params,thread_flags", FOLDERS)
+    def test_stats_leave_out_viewer_threads(
+        self, api_client, folder_params, thread_flags
+    ):
+        """The folder count matches what the folder lists."""
+        user, mailbox, _ = self._setup(thread_flags)
+        api_client.force_authenticate(user=user)
+
+        response = api_client.get(
+            reverse("threads-stats"),
+            {"mailbox_id": str(mailbox.id), "stats_fields": "all", **folder_params},
+        )
+
+        assert response.status_code == status.HTTP_200_OK
+        assert response.data == {"all": 1}
+
+    @pytest.mark.parametrize("folder_params,thread_flags", FOLDERS)
+    def test_editor_access_through_another_mailbox_does_not_count(
+        self, api_client, folder_params, thread_flags
+    ):
+        """The editor role must be held by the listed mailbox itself."""
+        user, mailbox, threads = self._setup(thread_flags)
+        other_mailbox = MailboxFactory(users_read=[user])
+        ThreadAccessFactory(
+            mailbox=other_mailbox,
+            thread=threads["viewer"],
+            role=enums.ThreadAccessRoleChoices.EDITOR,
+        )
+        api_client.force_authenticate(user=user)
+
+        response = api_client.get(
+            API_URL, {"mailbox_id": str(mailbox.id), **folder_params}
+        )
+
+        assert [t["id"] for t in response.data["results"]] == [
+            str(threads["editor"].id)
+        ]
+
+    def test_other_folders_keep_viewer_threads(self, api_client):
+        """Outside the trashbin, a thread shared as a viewer is still listed."""
+        user, mailbox, threads = self._setup({})
+        api_client.force_authenticate(user=user)
+
+        response = api_client.get(API_URL, {"mailbox_id": str(mailbox.id)})
+
+        assert {t["id"] for t in response.data["results"]} == {
+            str(threads["editor"].id),
+            str(threads["viewer"].id),
+        }
+
+    @override_settings(OPENSEARCH_HOSTS=["http://opensearch:9200"])
+    @pytest.mark.parametrize(
+        "params,expected",
+        [
+            pytest.param({"search": "test"}, {"editor", "viewer"}, id="inbox"),
+            pytest.param(
+                {"search": "test", "has_trashed": "1"}, {"editor"}, id="trash-folder"
+            ),
+            pytest.param(
+                {"search": "test", "is_spam": "1"}, {"editor"}, id="spam-folder"
+            ),
+            pytest.param({"search": "test in:trash"}, {"editor"}, id="in-trash"),
+            pytest.param({"search": "test in:spam"}, {"editor"}, id="in-spam"),
+        ],
+    )
+    def test_search_leaves_out_viewer_threads(self, api_client, params, expected):
+        """The index does not know the roles, the database check drops them."""
+        user, mailbox, threads = self._setup({})
+        api_client.force_authenticate(user=user)
+
+        with mock.patch("core.api.viewsets.thread.search_threads") as mock_search:
+            mock_search.return_value = {
+                "threads": [{"id": str(thread.id)} for thread in threads.values()],
+                "total": 2,
+            }
+            response = api_client.get(
+                API_URL, {"mailbox_id": str(mailbox.id), **params}
+            )
+
+        assert response.status_code == status.HTTP_200_OK
+        assert {t["subject"] for t in response.data["results"]} == expected

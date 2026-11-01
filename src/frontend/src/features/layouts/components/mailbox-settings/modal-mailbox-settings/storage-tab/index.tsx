@@ -192,7 +192,7 @@ export const MailboxSettingsStorageTab = ({
 
   const stats = data.data;
 
-  // Only threads the mailbox can edit can be trashed, hence selected.
+  // Only threads the user can edit can be trashed, hence selected.
   const trashableThreadIds = stats.largest_threads
     .filter((thread) => thread.abilities[Abilities.CAN_EDIT_THREAD])
     .map((thread) => thread.id);
@@ -405,10 +405,9 @@ export const MailboxSettingsStorageTab = ({
                   })}
                 >
                   {/* The whole row is the checkbox label, so a click anywhere
-                      on it selects the conversation. A thread shared with the
-                      mailbox as a viewer cannot be trashed, hence selected:
-                      its checkbox and trash slots are kept empty so rows stay
-                      aligned. */}
+                      on it selects the conversation. A thread the user cannot
+                      edit cannot be trashed, hence selected: its checkbox and
+                      trash slots are kept empty so rows stay aligned. */}
                   {canTrash ? (
                     <Checkbox
                       className="mailbox-settings__storage-item-select"

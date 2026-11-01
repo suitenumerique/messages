@@ -4332,7 +4332,7 @@
         "/api/v1.0/mailboxes/{id}/storage/": {
             "get": {
                 "operationId": "mailboxes_storage_retrieve",
-                "description": "Return total storage and the top-100 largest threads for the mailbox.\n\nThe total is the cached figure the sidebar gauge reads (see\n``core.services.storage``), so \"Total storage used\" always matches it.\nPer-thread sizes and the trash/spam subtotals cover message overhead\nplus MIME and draft blobs — attachments and templates are not\nthread-scoped. Per-thread sizes leave out the trashbin, which the\nsubtotals account for.\n\nBacks the Storage settings tab; mailbox admins only.",
+                "description": "Return total storage and the top-100 largest threads for the mailbox.\n\nThe total is the cached figure the sidebar gauge reads (see\n``core.services.storage``), so \"Total storage used\" always matches it.\nPer-thread sizes and the trash/spam subtotals cover message overhead\nplus MIME and draft blobs — attachments and templates are not\nthread-scoped. Per-thread sizes leave out the trashbin, which the\nsubtotals account for. Like the total, every figure only covers the\nthreads the mailbox holds as an editor.\n\nBacks the Storage settings tab; mailbox admins only.",
                 "parameters": [
                     {
                         "in": "path",

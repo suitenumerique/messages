@@ -10,6 +10,11 @@ Storage for a mailbox is the sum of:
   its threads (raw MIME bodies and draft bodies) and its own attachments
   and message templates.
 
+Only the threads the mailbox holds as an editor count: a thread shared with it
+as a viewer is billed to its editors (every thread keeps at least one), and the
+mailbox could not free that space anyway — it can neither trash nor empty it.
+The Trash and Spam folders leave those threads out on the same grounds.
+
 All blob sizes are counted through the message/attachment relationships
 (via ``ThreadAccess``), never through ``blob.mailbox``. This is the exact
 computation the global metrics endpoint exposes; keeping it in one place
@@ -26,10 +31,10 @@ intended basis:
 - It is pinned by ``test_blobs_with_identical_sizes_counted_separately`` and is
   the same number reported to the entitlements API (``deploycenter`` POSTs it in
   ``_build_usage_metrics``), so it is the quota basis on both sides.
-- The plain ``Sum`` below is therefore correct on purpose. The *per-domain*
-  metrics endpoint answers a different question (physical bytes across a whole
-  domain) and deliberately deduplicates with ``SELECT DISTINCT b.id`` — that
-  asymmetry is intentional, not a bug. Measured impact of the difference on real
+- Summing the blob of every message below is therefore correct on purpose.
+  The *per-domain* metrics endpoint answers a different question (physical
+  bytes across a whole domain) and deliberately deduplicates with
+  ``SELECT DISTINCT b.id`` — that asymmetry is intentional, not a bug. Measured impact of the difference on real
   data is nil (normal received mail never shares a blob within one mailbox).
 """
 
@@ -38,7 +43,31 @@ from django.core.cache import cache
 from django.db.models import Count, OuterRef, Subquery, Sum, Value
 from django.db.models.functions import Coalesce
 
-from core.models import Attachment, Blob, Mailbox, Message, MessageTemplate
+from core.enums import ThreadAccessRoleChoices
+from core.models import Attachment, Mailbox, Message, MessageTemplate, ThreadAccess
+
+
+def messages_size_expr(condition=None, overhead=None):
+    """Return an aggregate of the storage weighed by messages.
+
+    The per-message overhead plus the MIME and draft blobs of the aggregated
+    messages, restricted to ``condition`` when given. ``blob`` and
+    ``draft_blob`` are forward FKs, so their joins add no row fan-out and the
+    count stays one per message. Blobs are summed per referencing message, the
+    "storage felt" basis described above.
+
+    Args:
+        condition: Optional ``Q`` restricting the aggregated messages.
+        overhead: Per-message overhead in bytes. Defaults to
+            ``settings.METRICS_STORAGE_USED_OVERHEAD_BY_MESSAGE``.
+    """
+    if overhead is None:
+        overhead = settings.METRICS_STORAGE_USED_OVERHEAD_BY_MESSAGE
+    return (
+        Count("id", filter=condition) * overhead
+        + Coalesce(Sum("blob__size_compressed", filter=condition), Value(0))
+        + Coalesce(Sum("draft_blob__size_compressed", filter=condition), Value(0))
+    )
 
 
 def mailbox_storage_used_expr(overhead=None):
@@ -52,33 +81,20 @@ def mailbox_storage_used_expr(overhead=None):
         overhead: Per-message overhead in bytes. Defaults to
             ``settings.METRICS_STORAGE_USED_OVERHEAD_BY_MESSAGE``.
     """
-    if overhead is None:
-        overhead = settings.METRICS_STORAGE_USED_OVERHEAD_BY_MESSAGE
-
-    messages_count_subquery = Subquery(
-        Message.objects.filter(thread__accesses__mailbox=OuterRef("pk"))
+    # Messages of the threads the mailbox holds as an editor, filtered on their
+    # thread id so the plan never joins (and scans) the thread table. Grouped
+    # on a constant, Django aggregates them all in a single pass, without a
+    # GROUP BY.
+    editor_thread_ids = ThreadAccess.objects.filter(
+        mailbox=OuterRef(OuterRef("pk")), role=ThreadAccessRoleChoices.EDITOR
+    ).values("thread_id")
+    messages_subquery = Subquery(
+        Message.objects.filter(thread_id__in=editor_thread_ids)
         .order_by()
-        .values("thread__accesses__mailbox")
-        .annotate(cnt=Count("id", distinct=True))
-        .values("cnt")[:1]
-    )
-
-    # Raw MIME blobs linked via Message.blob
-    mime_blobs_subquery = Subquery(
-        Blob.objects.filter(messages__thread__accesses__mailbox=OuterRef("pk"))
-        .order_by()
-        .values("messages__thread__accesses__mailbox")
-        .annotate(total=Sum("size_compressed"))
-        .values("total")[:1]
-    )
-
-    # Draft body blobs linked via Message.draft_blob
-    draft_blobs_subquery = Subquery(
-        Blob.objects.filter(drafts__thread__accesses__mailbox=OuterRef("pk"))
-        .order_by()
-        .values("drafts__thread__accesses__mailbox")
-        .annotate(total=Sum("size_compressed"))
-        .values("total")[:1]
+        .annotate(_all=Value(1))
+        .values("_all")
+        .annotate(total=messages_size_expr(overhead=overhead))
+        .values("total")
     )
 
     # Attachment blobs linked via Attachment.mailbox
@@ -100,9 +116,7 @@ def mailbox_storage_used_expr(overhead=None):
     )
 
     return (
-        Coalesce(messages_count_subquery, Value(0)) * overhead
-        + Coalesce(mime_blobs_subquery, Value(0))
-        + Coalesce(draft_blobs_subquery, Value(0))
+        Coalesce(messages_subquery, Value(0))
         + Coalesce(attachment_blobs_subquery, Value(0))
         + Coalesce(template_blobs_subquery, Value(0))
     )

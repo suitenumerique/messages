@@ -14,6 +14,7 @@ import pytest
 from rest_framework.test import APIClient
 
 from core import factories, models
+from core.api.serializers import LargestThreadSerializer
 
 pytestmark = pytest.mark.django_db
 
@@ -87,13 +88,17 @@ def test_storage_formula_and_largest_threads(settings):
     contact = factories.ContactFactory(mailbox=mailbox)
 
     thread_small = factories.ThreadFactory(subject="small")
-    factories.ThreadAccessFactory(mailbox=mailbox, thread=thread_small)
+    factories.ThreadAccessFactory(
+        mailbox=mailbox, thread=thread_small, role=models.ThreadAccessRoleChoices.EDITOR
+    )
     msg_small = factories.MessageFactory(
         thread=thread_small, sender=contact, raw_mime=b"s" * 100
     )
 
     thread_big = factories.ThreadFactory(subject="big", messaged_at=timezone.now())
-    factories.ThreadAccessFactory(mailbox=mailbox, thread=thread_big)
+    factories.ThreadAccessFactory(
+        mailbox=mailbox, thread=thread_big, role=models.ThreadAccessRoleChoices.EDITOR
+    )
     # Distinct content so the blobs are not deduplicated by sha256.
     msg_big1 = factories.MessageFactory(
         thread=thread_big, sender=contact, raw_mime=b"b" * 5000
@@ -144,17 +149,25 @@ def test_trashed_and_spam_storage(settings):
     contact = factories.ContactFactory(mailbox=mailbox)
 
     live_thread = factories.ThreadFactory(subject="live")
-    factories.ThreadAccessFactory(mailbox=mailbox, thread=live_thread)
+    factories.ThreadAccessFactory(
+        mailbox=mailbox, thread=live_thread, role=models.ThreadAccessRoleChoices.EDITOR
+    )
     factories.MessageFactory(thread=live_thread, sender=contact, raw_mime=b"live" * 100)
 
     trashed_thread = factories.ThreadFactory(subject="trashed", is_trashed=True)
-    factories.ThreadAccessFactory(mailbox=mailbox, thread=trashed_thread)
+    factories.ThreadAccessFactory(
+        mailbox=mailbox,
+        thread=trashed_thread,
+        role=models.ThreadAccessRoleChoices.EDITOR,
+    )
     trashed_msg = factories.MessageFactory(
         thread=trashed_thread, sender=contact, raw_mime=b"trash" * 100, is_trashed=True
     )
 
     spam_thread = factories.ThreadFactory(subject="spam", is_spam=True)
-    factories.ThreadAccessFactory(mailbox=mailbox, thread=spam_thread)
+    factories.ThreadAccessFactory(
+        mailbox=mailbox, thread=spam_thread, role=models.ThreadAccessRoleChoices.EDITOR
+    )
     spam_msg = factories.MessageFactory(
         thread=spam_thread, sender=contact, raw_mime=b"spam" * 100, is_spam=True
     )
@@ -190,7 +203,9 @@ def test_trashed_storage_is_scoped_per_message_not_per_thread(settings):
     # One thread, one trashed message and one live one: the thread's own
     # is_trashed stays False because not all of its messages are trashed.
     thread = factories.ThreadFactory(subject="mixed")
-    factories.ThreadAccessFactory(mailbox=mailbox, thread=thread)
+    factories.ThreadAccessFactory(
+        mailbox=mailbox, thread=thread, role=models.ThreadAccessRoleChoices.EDITOR
+    )
     trashed_msg = factories.MessageFactory(
         thread=thread, sender=contact, raw_mime=b"trash" * 100, is_trashed=True
     )
@@ -228,7 +243,9 @@ def test_spam_storage_only_counts_spam_messages(settings):
     contact = factories.ContactFactory(mailbox=mailbox)
 
     thread = factories.ThreadFactory(subject="spam")
-    factories.ThreadAccessFactory(mailbox=mailbox, thread=thread)
+    factories.ThreadAccessFactory(
+        mailbox=mailbox, thread=thread, role=models.ThreadAccessRoleChoices.EDITOR
+    )
     spam_msg = factories.MessageFactory(
         thread=thread, sender=contact, raw_mime=b"spam" * 100, is_spam=True
     )
@@ -291,13 +308,24 @@ def test_largest_threads_report_this_mailbox_read_state(settings):
     now = timezone.now()
 
     read_thread = factories.ThreadFactory(subject="read", messaged_at=now)
-    factories.ThreadAccessFactory(mailbox=mailbox, thread=read_thread, read_at=now)
+    factories.ThreadAccessFactory(
+        mailbox=mailbox,
+        thread=read_thread,
+        read_at=now,
+        role=models.ThreadAccessRoleChoices.EDITOR,
+    )
     factories.MessageFactory(thread=read_thread, sender=contact, raw_mime=b"r" * 100)
 
     unread_thread = factories.ThreadFactory(subject="unread", messaged_at=now)
-    factories.ThreadAccessFactory(mailbox=mailbox, thread=unread_thread)
+    factories.ThreadAccessFactory(
+        mailbox=mailbox,
+        thread=unread_thread,
+        role=models.ThreadAccessRoleChoices.EDITOR,
+    )
     # Another mailbox having read it must not count for this one.
-    factories.ThreadAccessFactory(thread=unread_thread, read_at=now)
+    factories.ThreadAccessFactory(
+        thread=unread_thread, read_at=now, role=models.ThreadAccessRoleChoices.EDITOR
+    )
     factories.MessageFactory(thread=unread_thread, sender=contact, raw_mime=b"u" * 100)
 
     client = APIClient()
@@ -351,7 +379,9 @@ def test_largest_threads_are_capped_at_100(settings):
     contact = factories.ContactFactory(mailbox=mailbox)
     for index in range(101):
         thread = factories.ThreadFactory(subject=f"t{index}")
-        factories.ThreadAccessFactory(mailbox=mailbox, thread=thread)
+        factories.ThreadAccessFactory(
+            mailbox=mailbox, thread=thread, role=models.ThreadAccessRoleChoices.EDITOR
+        )
         # Random bytes do not compress, so sizes really grow with the index.
         factories.MessageFactory(
             thread=thread, sender=contact, raw_mime=os.urandom(200 + index * 20)
@@ -391,7 +421,11 @@ def test_query_count_does_not_grow_with_threads(settings):
     def _add_threads(count):
         for _ in range(count):
             thread = factories.ThreadFactory()
-            factories.ThreadAccessFactory(mailbox=mailbox, thread=thread)
+            factories.ThreadAccessFactory(
+                mailbox=mailbox,
+                thread=thread,
+                role=models.ThreadAccessRoleChoices.EDITOR,
+            )
             factories.MessageFactory(thread=thread, sender=contact)
 
     def _queries():
@@ -425,7 +459,9 @@ def test_largest_threads_leave_out_the_trashbin(settings):
 
     def _thread(subject, *messages_flags):
         thread = factories.ThreadFactory(subject=subject)
-        factories.ThreadAccessFactory(mailbox=mailbox, thread=thread)
+        factories.ThreadAccessFactory(
+            mailbox=mailbox, thread=thread, role=models.ThreadAccessRoleChoices.EDITOR
+        )
         messages = [
             factories.MessageFactory(
                 thread=thread, sender=contact, raw_mime=os.urandom(200), **flags
@@ -457,32 +493,90 @@ def test_largest_threads_leave_out_the_trashbin(settings):
     assert threads["inbox"]["has_active"] is True
 
 
-def test_largest_threads_report_whether_they_can_be_edited():
-    """A thread shared with the mailbox as a viewer cannot be trashed.
+def test_threads_shared_as_viewer_are_left_out(settings):
+    """A thread shared with the mailbox as a viewer weighs nothing here.
 
-    Mailbox admin rights do not reach it: the flag endpoint only edits threads
-    the mailbox holds as an editor, so the list must not offer to trash it.
+    It is billed to its editors and the mailbox could not free it anyway, so
+    neither the total, the subtotals nor the largest threads count it.
     """
+    overhead = settings.METRICS_STORAGE_USED_OVERHEAD_BY_MESSAGE
     user = factories.UserFactory()
     mailbox = factories.MailboxFactory()
     factories.MailboxAccessFactory(
         mailbox=mailbox, user=user, role=models.MailboxRoleChoices.ADMIN
     )
     contact = factories.ContactFactory(mailbox=mailbox)
+    messages = {}
     for subject, role in [
         ("editor", models.ThreadAccessRoleChoices.EDITOR),
         ("viewer", models.ThreadAccessRoleChoices.VIEWER),
     ]:
-        thread = factories.ThreadFactory(subject=subject)
-        factories.ThreadAccessFactory(mailbox=mailbox, thread=thread, role=role)
-        factories.MessageFactory(thread=thread, sender=contact)
+        for message_flags in [{}, {"is_trashed": True}, {"is_spam": True}]:
+            thread = factories.ThreadFactory(subject=subject)
+            factories.ThreadAccessFactory(mailbox=mailbox, thread=thread, role=role)
+            messages[(subject, *message_flags)] = factories.MessageFactory(
+                thread=thread,
+                sender=contact,
+                raw_mime=os.urandom(200),
+                **message_flags,
+            )
+            thread.update_stats()
 
     client = APIClient()
     client.force_login(user)
     response = client.get(_url(mailbox))
 
     assert response.status_code == 200
-    abilities = {
-        t["subject"]: t["abilities"] for t in response.json()["largest_threads"]
+    data = response.json()
+    sizes = {
+        key: overhead + message.blob.size_compressed
+        for key, message in messages.items()
     }
-    assert abilities == {"editor": {"edit": True}, "viewer": {"edit": False}}
+    assert data["total_storage"] == sum(
+        size for key, size in sizes.items() if key[0] == "editor"
+    )
+    assert data["trashed_storage"] == sizes[("editor", "is_trashed")]
+    assert data["spam_storage"] == sizes[("editor", "is_spam")]
+    assert data["message_count"] == 3
+    assert data["thread_count"] == 3
+    assert [t["subject"] for t in data["largest_threads"]] == ["editor"]
+
+
+def test_largest_threads_report_whether_they_can_be_edited():
+    """The abilities come from the user's edit rights on the thread.
+
+    Only admins reach the endpoint today, and they can edit every thread the
+    mailbox holds as an editor; the abilities keep the list from offering to
+    trash a thread should the endpoint open to other members.
+    """
+    user = factories.UserFactory()
+    mailbox = factories.MailboxFactory()
+    factories.MailboxAccessFactory(
+        mailbox=mailbox, user=user, role=models.MailboxRoleChoices.ADMIN
+    )
+    thread = factories.ThreadFactory()
+    factories.ThreadAccessFactory(
+        mailbox=mailbox, thread=thread, role=models.ThreadAccessRoleChoices.EDITOR
+    )
+    factories.MessageFactory(thread=thread)
+
+    client = APIClient()
+    client.force_login(user)
+    response = client.get(_url(mailbox))
+
+    assert response.status_code == 200
+    assert [t["abilities"] for t in response.json()["largest_threads"]] == [
+        {"edit": True}
+    ]
+
+
+@pytest.mark.parametrize("can_edit", [True, False])
+def test_largest_thread_serializer_abilities(can_edit):
+    """The abilities mirror the ``_can_edit`` annotation."""
+    thread = factories.ThreadFactory()
+    thread.size = 0
+    thread.message_count = 0
+    thread.read_at = None
+    thread._can_edit = can_edit
+
+    assert LargestThreadSerializer(thread).data["abilities"] == {"edit": can_edit}

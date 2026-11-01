@@ -5,7 +5,7 @@ from datetime import timedelta
 
 from django.conf import settings
 from django.db import connection
-from django.db.models import Count, Exists, OuterRef, Subquery, Sum, Value
+from django.db.models import Count, Exists, OuterRef, Sum, Value
 from django.db.models.functions import Coalesce
 from django.utils import timezone
 
@@ -16,7 +16,7 @@ from rest_framework.views import APIView
 
 from core.api.authentication import ChannelApiKeyAuthentication
 from core.api.permissions import IsGlobalChannelMixin, channel_scope
-from core.enums import ChannelApiKeyScope
+from core.enums import ChannelApiKeyScope, ThreadAccessRoleChoices
 from core.mda.addresses import ascii_lower, normalize_domain, split_address
 from core.models import (
     Attachment,
@@ -170,7 +170,9 @@ class MailDomainUsersMetricsApiView(IsGlobalChannelMixin, APIView):
         # aggregated for all of them at once instead of through per-domain
         # correlated subqueries, which scale as domains x messages.
         # When multiple mailboxes in the same domain share a thread,
-        # messages and blobs are counted once per domain.
+        # messages and blobs are counted once per domain. Like the per-mailbox
+        # usage, only threads held as an editor count (see
+        # ``core.services.storage``).
         overhead = settings.METRICS_STORAGE_USED_OVERHEAD_BY_MESSAGE
 
         # Messages and blobs are deduplicated by PK per domain before
@@ -184,7 +186,7 @@ class MailDomainUsersMetricsApiView(IsGlobalChannelMixin, APIView):
                     FROM messages_threadaccess ta
                     JOIN messages_mailbox mb ON mb.id = ta.mailbox_id
                     JOIN messages_message m ON m.thread_id = ta.thread_id
-                    WHERE mb.domain_id = ANY(%s)
+                    WHERE mb.domain_id = ANY(%s) AND ta.role = %s
                 )
                 SELECT domain_id, 'msg', COUNT(*) FROM domain_messages
                 GROUP BY domain_id
@@ -205,7 +207,7 @@ class MailDomainUsersMetricsApiView(IsGlobalChannelMixin, APIView):
                 JOIN messages_blob b ON b.id = dm.draft_blob_id
                 GROUP BY dm.domain_id
                 """,
-                [domain_ids],
+                [domain_ids, ThreadAccessRoleChoices.EDITOR],
             )
             msg_counts, mime_sizes, draft_sizes = {}, {}, {}
             targets = {"msg": msg_counts, "mime": mime_sizes, "draft": draft_sizes}
@@ -259,6 +261,8 @@ class MailboxUsageMetricsApiView(IsGlobalChannelMixin, APIView):
 
         Returns per-mailbox storage usage computed as:
         storage_used = messages_count * OVERHEAD + sum(blobs.size_compressed)
+        over the threads the mailbox holds as an editor; the in-app quota uses
+        the same basis (see ``core.services.storage``).
         """
         queryset = Mailbox.objects.select_related("domain")
 

@@ -51,7 +51,9 @@ def test_get_caches_until_invalidated(settings):
 
     # A newly added message changes the true value, but the cache still holds.
     thread = factories.ThreadFactory()
-    factories.ThreadAccessFactory(mailbox=mailbox, thread=thread)
+    factories.ThreadAccessFactory(
+        mailbox=mailbox, thread=thread, role=models.ThreadAccessRoleChoices.EDITOR
+    )
     factories.MessageFactory(thread=thread, sender=contact, raw_mime=b"y" * 5000)
     live = compute_mailbox_storage_used(mailbox)
     assert live > first
@@ -68,7 +70,9 @@ def test_ttl_zero_disables_cache(settings):
 
     first = get_mailbox_storage_used(mailbox)
     thread = factories.ThreadFactory()
-    factories.ThreadAccessFactory(mailbox=mailbox, thread=thread)
+    factories.ThreadAccessFactory(
+        mailbox=mailbox, thread=thread, role=models.ThreadAccessRoleChoices.EDITOR
+    )
     factories.MessageFactory(thread=thread, sender=contact, raw_mime=b"z" * 5000)
 
     assert get_mailbox_storage_used(mailbox) > first  # no caching

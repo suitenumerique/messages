@@ -94,7 +94,9 @@ def test_storage_used_counts_messages(user, mailbox):
     )
     contact = factories.ContactFactory(mailbox=mailbox)
     thread = factories.ThreadFactory()
-    factories.ThreadAccessFactory(mailbox=mailbox, thread=thread)
+    factories.ThreadAccessFactory(
+        mailbox=mailbox, thread=thread, role=models.ThreadAccessRoleChoices.EDITOR
+    )
     factories.MessageFactory(thread=thread, sender=contact)
     factories.MessageFactory(thread=thread, sender=contact)
 
