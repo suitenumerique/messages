@@ -5622,7 +5622,7 @@
             },
             "delete": {
                 "operationId": "messages_destroy",
-                "description": "Delete a message. Object permission checked by IsAllowedToAccess.",
+                "description": "Discard a draft. Object permission checked by IsAllowedToAccess.\n\nOnly drafts can be deleted here: any other message must go through the\ntrash, so its permanent deletion stays under the trashbin policy\n(``settings.TRASHBIN_ALLOW_EMPTY`` and the cutoff sweep).",
                 "parameters": [
                     {
                         "in": "path",
@@ -6248,33 +6248,6 @@
                             }
                         },
                         "description": ""
-                    }
-                }
-            },
-            "delete": {
-                "operationId": "threads_destroy",
-                "description": "Delete a thread, requiring EDITOR role on the thread.",
-                "parameters": [
-                    {
-                        "in": "path",
-                        "name": "id",
-                        "schema": {
-                            "type": "string"
-                        },
-                        "required": true
-                    }
-                ],
-                "tags": [
-                    "threads"
-                ],
-                "security": [
-                    {
-                        "cookieAuth": []
-                    }
-                ],
-                "responses": {
-                    "204": {
-                        "description": "No response body"
                     }
                 }
             }

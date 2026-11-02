@@ -31,7 +31,6 @@ class ThreadViewSet(
     viewsets.GenericViewSet,
     mixins.ListModelMixin,
     mixins.RetrieveModelMixin,
-    mixins.DestroyModelMixin,
 ):
     """ViewSet for Thread model."""
 
@@ -46,7 +45,7 @@ class ThreadViewSet(
         `refresh_summary` mutates thread state (writes `thread.summary`)
         so it must also gate on full edit rights, not just authentication.
         """
-        if self.action in ("destroy", "split", "refresh_summary", "bulk_delete"):
+        if self.action in ("split", "refresh_summary", "bulk_delete"):
             return [permissions.HasThreadEditAccess()]
         return super().get_permissions()
 
@@ -325,12 +324,6 @@ class ThreadViewSet(
 
         # Draft-only threads have messaged_at=NULL, fall back to draft_messaged_at
         return Coalesce("messaged_at", "draft_messaged_at").desc()
-
-    def destroy(self, request, *args, **kwargs):
-        """Delete a thread, requiring EDITOR role on the thread."""
-        thread = self.get_object()
-        thread.delete()
-        return drf.response.Response(status=status.HTTP_204_NO_CONTENT)
 
     @extend_schema(
         tags=["threads"],

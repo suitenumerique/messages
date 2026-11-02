@@ -115,20 +115,25 @@ class MessageViewSet(
         return queryset
 
     def destroy(self, request, *args, **kwargs):
-        """Delete a message. Object permission checked by IsAllowedToAccess."""
-        # if message is the last of the thread, delete the thread
+        """Discard a draft. Object permission checked by IsAllowedToAccess.
+
+        Only drafts can be deleted here: any other message must go through the
+        trash, so its permanent deletion stays under the trashbin policy
+        (``settings.TRASHBIN_ALLOW_EMPTY`` and the cutoff sweep).
+        """
         message = self.get_object()
+        if not message.is_draft:
+            raise drf.exceptions.PermissionDenied(
+                "Only draft messages can be deleted. Move it to the trash instead."
+            )
+        # if message is the last of the thread, delete the thread
         thread = message.thread
         if thread.messages.count() == 1:
             # Deleting the thread will cascade delete the message
             thread.delete()
         else:
-            # Deleting a visible message can leave a same-``created_at``
-            # sibling as the new latest, which the ``messaged_at`` guard in
-            # ``update_stats`` cannot see — force the snippet re-derivation.
-            was_visible = not message.is_draft and not message.is_trashed
             message.delete()
-            thread.update_stats(force_snippet=was_visible)
+            thread.update_stats()
         return drf.response.Response(status=status.HTTP_204_NO_CONTENT)
 
     @action(detail=True, methods=["get"], url_path="eml")

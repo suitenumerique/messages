@@ -1,7 +1,6 @@
 """Test messages delete."""
 
 from django.urls import reverse
-from django.utils import timezone
 
 import pytest
 from rest_framework import status
@@ -18,7 +17,7 @@ class TestMessagesDelete:
 
     def test_delete_message_anonymous(self):
         """Test delete message with anonymous user."""
-        message = factories.MessageFactory(subject="Test message")
+        message = factories.MessageFactory(subject="Test message", is_draft=True)
         client = APIClient()
         response = client.delete(reverse("messages-detail", kwargs={"id": message.id}))
         assert response.status_code == status.HTTP_401_UNAUTHORIZED
@@ -26,7 +25,7 @@ class TestMessagesDelete:
     def test_delete_message_without_permissions(self):
         """Test delete message without permissions."""
         authenticated_user = factories.UserFactory()
-        message = factories.MessageFactory(subject="Test message")
+        message = factories.MessageFactory(subject="Test message", is_draft=True)
         client = APIClient()
         client.force_authenticate(user=authenticated_user)
         response = client.delete(reverse("messages-detail", kwargs={"id": message.id}))
@@ -56,7 +55,7 @@ class TestMessagesDelete:
         )
         client = APIClient()
         client.force_authenticate(user=authenticated_user)
-        message = factories.MessageFactory(subject="Test message")
+        message = factories.MessageFactory(subject="Test message", is_draft=True)
         factories.ThreadAccessFactory(
             mailbox=mailbox,
             thread=message.thread,
@@ -80,7 +79,9 @@ class TestMessagesDelete:
     def test_delete_message_with_delegated_permission(self, mailbox_role):
         """Test delete message with delegated permission."""
         mailbox = factories.MailboxFactory()
-        message_to_delete = factories.MessageFactory(subject="Test message")
+        message_to_delete = factories.MessageFactory(
+            subject="Test message", is_draft=True
+        )
         delegated_mailbox = factories.MailboxFactory()
         authenticated_user = factories.UserFactory()
         factories.MailboxAccessFactory(
@@ -120,7 +121,9 @@ class TestMessagesDelete:
     def test_delete_message_with_bad_delegated_permission(self, mailbox_role):
         """Test delete message with bad delegated permission."""
         mailbox = factories.MailboxFactory()
-        message_to_delete = factories.MessageFactory(subject="Test message")
+        message_to_delete = factories.MessageFactory(
+            subject="Test message", is_draft=True
+        )
         factories.ThreadAccessFactory(
             mailbox=mailbox,
             thread=message_to_delete.thread,
@@ -191,10 +194,16 @@ class TestMessagesDelete:
             role=enums.ThreadAccessRoleChoices.EDITOR,
         )
         message = factories.MessageFactory(
-            subject="Test message", thread=thread, raw_mime=b"raw email content"
+            subject="Test message",
+            thread=thread,
+            raw_mime=b"raw email content",
+            is_draft=True,
         )
         message2 = factories.MessageFactory(
-            subject="Test message 2", thread=thread, raw_mime=b"raw email content 2"
+            subject="Test message 2",
+            thread=thread,
+            raw_mime=b"raw email content 2",
+            is_draft=True,
         )
         factories.MailboxAccessFactory(
             mailbox=mailbox,
@@ -253,39 +262,30 @@ class TestMessagesDelete:
 
             assert models.ThreadAccess.objects.count() == 0
 
-    def test_delete_message_with_equal_created_at_refreshes_snippet(self):
-        """Deleting the newest message re-derives the thread snippet even when
-        the survivor shares its ``created_at`` (bulk imports): ``messaged_at``
-        does not move, so the endpoint must force the re-derivation."""
+    @pytest.mark.parametrize(
+        "flags",
+        [{}, {"is_trashed": True}, {"is_spam": True}],
+    )
+    def test_delete_non_draft_message_forbidden(self, flags):
+        """Only drafts can be hard-deleted: any other message, even trashed,
+        is left to the trashbin policy (``TRASHBIN_ALLOW_EMPTY``)."""
         authenticated_user = factories.UserFactory()
         mailbox = factories.MailboxFactory()
+        factories.MailboxAccessFactory(
+            mailbox=mailbox,
+            user=authenticated_user,
+            role=enums.MailboxRoleChoices.ADMIN,
+        )
         thread = factories.ThreadFactory()
         factories.ThreadAccessFactory(
             mailbox=mailbox, thread=thread, role=enums.ThreadAccessRoleChoices.EDITOR
         )
-        factories.MailboxAccessFactory(
-            mailbox=mailbox,
-            user=authenticated_user,
-            role=enums.MailboxRoleChoices.EDITOR,
-        )
-        first = factories.MessageFactory(
-            thread=thread, raw_mime=b"From: a@example.com\r\n\r\nFirst body"
-        )
-        second = factories.MessageFactory(
-            thread=thread, raw_mime=b"From: a@example.com\r\n\r\nSecond body"
-        )
-        models.Message.objects.filter(id__in=[first.id, second.id]).update(
-            created_at=timezone.now()
-        )
-        thread.update_stats()
-        newest, survivor_snippet = (
-            (second, "First body") if second.id > first.id else (first, "Second body")
-        )
+        message = factories.MessageFactory(thread=thread, is_draft=False, **flags)
 
         client = APIClient()
         client.force_authenticate(user=authenticated_user)
-        response = client.delete(reverse("messages-detail", kwargs={"id": newest.id}))
+        response = client.delete(reverse("messages-detail", kwargs={"id": message.id}))
 
-        assert response.status_code == status.HTTP_204_NO_CONTENT
-        thread.refresh_from_db()
-        assert thread.snippet == survivor_snippet
+        assert response.status_code == status.HTTP_403_FORBIDDEN
+        assert models.Message.objects.filter(id=message.id).exists()
+        assert models.Thread.objects.filter(id=thread.id).exists()

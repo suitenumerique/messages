@@ -240,67 +240,32 @@ def test_list_threads_view_specific_ordering(api_client):
     assert result_ids == [str(thread_a.id), str(thread_b.id)]
 
 
-def test_delete_thread_viewer_should_be_forbidden(api_client):
-    """Test that a user with only VIEWER access cannot delete a thread, but EDITOR can."""
-    user = UserFactory()
-    api_client.force_authenticate(user=user)
-    mailbox = MailboxFactory(users_read=[user])  # VIEWER role
-    thread = ThreadFactory()
-    thread_access = ThreadAccessFactory(
-        mailbox=mailbox,
-        thread=thread,
-        role=enums.ThreadAccessRoleChoices.VIEWER,
-    )
-    MessageFactory(thread=thread)
+def test_delete_thread_route_is_not_exposed(api_client):
+    """A thread editor cannot hard-delete a thread through ``DELETE /threads/<id>/``.
 
-    url = reverse("threads-detail", kwargs={"pk": str(thread.id)})
-    response = api_client.delete(url)
-    assert response.status_code == status.HTTP_403_FORBIDDEN
-    assert Thread.objects.filter(pk=thread.pk).exists()
-
-    # Elevate BOTH ThreadAccess and MailboxAccess to EDITOR — full edit
-    # rights on a thread require both roles.
-    thread_access.role = enums.ThreadAccessRoleChoices.EDITOR
-    thread_access.save()
-    MailboxAccess.objects.filter(user=user, mailbox=mailbox).update(
-        role=enums.MailboxRoleChoices.EDITOR
-    )
-    response = api_client.delete(url)
-    assert response.status_code == status.HTTP_204_NO_CONTENT
-    assert not Thread.objects.filter(pk=thread.pk).exists()
-
-
-def test_delete_thread_viewer_mailbox_with_editor_thread_access_forbidden(api_client):
-    """Previously-missed scenario: VIEWER MailboxAccess + EDITOR ThreadAccess.
-
-    A shared inbox grants EDITOR ThreadAccess to every incoming thread,
-    but a user with only VIEWER MailboxAccess on that inbox must not be
-    able to delete those threads. `HasThreadEditAccess` previously
-    checked only the ThreadAccess role and missed this case.
+    Permanent deletion only goes through ``core.services.trashbin`` (cutoff
+    sweep, ``TRASHBIN_ALLOW_EMPTY``-gated empty action, draft bulk delete), so
+    the route must not exist, even for a trashed thread.
     """
     user = UserFactory()
     api_client.force_authenticate(user=user)
-    mailbox = MailboxFactory(users_read=[user])  # VIEWER mailbox role
+    mailbox = MailboxFactory()
+    MailboxAccessFactory(
+        mailbox=mailbox, user=user, role=enums.MailboxRoleChoices.ADMIN
+    )
     thread = ThreadFactory()
     ThreadAccessFactory(
         mailbox=mailbox,
         thread=thread,
-        role=enums.ThreadAccessRoleChoices.EDITOR,  # Mailbox has edit on thread
+        role=enums.ThreadAccessRoleChoices.EDITOR,
     )
-    MessageFactory(thread=thread)
+    MessageFactory(thread=thread, is_trashed=True)
+    thread.update_stats()
 
     url = reverse("threads-detail", kwargs={"pk": str(thread.id)})
-    response = api_client.delete(url)
-    assert response.status_code == status.HTTP_403_FORBIDDEN
+    response = api_client.delete(f"{url}?mailbox_id={mailbox.id}&has_trashed=1")
+    assert response.status_code == status.HTTP_405_METHOD_NOT_ALLOWED
     assert Thread.objects.filter(pk=thread.pk).exists()
-
-    # Elevating MailboxAccess to EDITOR unblocks the destroy action.
-    MailboxAccess.objects.filter(user=user, mailbox=mailbox).update(
-        role=enums.MailboxRoleChoices.EDITOR
-    )
-    response = api_client.delete(url)
-    assert response.status_code == status.HTTP_204_NO_CONTENT
-    assert not Thread.objects.filter(pk=thread.pk).exists()
 
 
 def test_refresh_summary_viewer_forbidden(api_client):
