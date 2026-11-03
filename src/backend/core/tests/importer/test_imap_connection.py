@@ -27,6 +27,7 @@ from core.services.importer.imap import (
     uid_fetch_message,
     uid_search_all,
 )
+from core.services.importer.labels import compute_labels_and_flags
 from core.services.ssrf import SSRFValidationError
 
 
@@ -200,12 +201,20 @@ class TestImapFolderHelpers:
         conn.select.return_value = ("NO", [b"nope"])
         assert select_imap_folder(conn, "Ghost") is False
 
-    def test_create_folder_mapping_strips_inbox_prefix_for_orange(self):
-        mapping = create_folder_mapping(
-            ["INBOX/Envoy&AOk-s"], "user@orange.fr", "imap.orange.fr"
-        )
-        # Display name drops the INBOX/ prefix and decodes IMAP-UTF7.
-        assert mapping["INBOX/Envoy&AOk-s"] == "Envoyés"
+    def test_create_folder_mapping_decodes_imap_utf7(self):
+        mapping = create_folder_mapping(["INBOX/Envoy&AOk-s"])
+        assert mapping["INBOX/Envoy&AOk-s"] == "INBOX/Envoyés"
+
+    def test_create_folder_mapping_keeps_homonym_subfolders_apart(self):
+        """Subfolders sharing a name under different parents must not be
+        merged into one label once the INBOX/ prefix is stripped."""
+        folders = ["INBOX/Projet 1/Lu", "INBOX/Projet 2/Lu"]
+        mapping = create_folder_mapping(folders)
+        labels = set()
+        for folder in folders:
+            folder_labels, _ = compute_labels_and_flags({}, [mapping[folder]], [])
+            labels |= folder_labels
+        assert labels == {"Projet 1/Lu", "Projet 2/Lu"}
 
     def test_extract_flags_from_bytes_response_part(self):
         """Some servers send FLAGS as a bare bytes part, not tuple metadata."""

@@ -362,9 +362,7 @@ def _parse_imap_folder_info(folder_info: str) -> str | None:
     return None
 
 
-def get_selectable_folders(
-    imap_connection, _username: str, _imap_server: str
-) -> list[str]:
+def get_selectable_folders(imap_connection) -> list[str]:
     """Get list of selectable folders from IMAP server."""
     status, folder_list = imap_connection.list()
     if status != "OK":
@@ -386,30 +384,15 @@ def get_selectable_folders(
     return selectable_folders
 
 
-def create_folder_mapping(
-    folders: list[str], username: str, imap_server: str
-) -> dict[str, str]:
+def create_folder_mapping(folders: list[str]) -> dict[str, str]:
     """Create mapping between technical folder names and display names
-    for our internal labels and flags."""
-    folder_mapping = {}
+    for our internal labels and flags.
 
-    for folder in folders:
-        display_name = folder
-        technical_name = folder
-
-        # Clean folder names for Orange (remove INBOX/ prefix for display only)
-        if "orange.fr" in username.lower() or "orange.fr" in imap_server.lower():
-            display_name = folder.strip()
-            if display_name.startswith("INBOX/"):
-                # Remove "INBOX/" for display
-                display_name = display_name.split("/")[-1].strip()
-
-        # Decode the folder name
-        display_name = decode_imap_utf7(display_name)
-
-        folder_mapping[technical_name] = display_name
-
-    return folder_mapping
+    The display name keeps the full folder path: the ``INBOX/`` prefix is
+    stripped later by ``_clean_label``, and keeping parents is what tells
+    ``Projet 1/Lu`` and ``Projet 2/Lu`` apart.
+    """
+    return {folder: decode_imap_utf7(folder) for folder in folders}
 
 
 def select_imap_folder(imap_connection, folder: str) -> bool:
@@ -792,8 +775,8 @@ def _run_imap(channel, state) -> tuple[int, int, int]:
             creds["use_ssl"],
         ) as conn,
     ):
-        folders = sorted(get_selectable_folders(conn, username, creds["imap_server"]))
-        mapping = create_folder_mapping(folders, username, creds["imap_server"])
+        folders = sorted(get_selectable_folders(conn))
+        mapping = create_folder_mapping(folders)
         # Plan every folder up front (UIDVALIDITY check + UID SEARCH above the
         # watermark) so the run knows its TOTAL before delivering the first
         # message — a total that merely trails success+failure would pin the
