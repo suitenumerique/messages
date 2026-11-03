@@ -12,7 +12,7 @@ Two independent release tracks:
 | Track | Ships | Cadence | Tool |
 | --- | --- | --- | --- |
 | **OTA** | the web bundle (`dist/`) only | every web deploy (Scalingo) or on demand | `make mobile-ota-publish` / Scalingo hooks |
-| **Store** | the native shell + a builtin bundle | manual, rare | `make mobile-android-release`, Xcode |
+| **Store** | the native shell + a builtin bundle | manual, rare | `make mobile-android-release` (Play), `make mobile-ios` + Xcode (App Store) |
 
 Anything native (a new Capacitor plugin, a permission, the Swift/Gradle side)
 needs a store release; everything else reaches devices over the air.
@@ -485,6 +485,198 @@ transmits, matching what the backend actually stores.
 Because the app is SSO-only, reviewers and testers cannot sign in without an
 account on an instance — provide credentials in *App access* when the track ever
 moves beyond internal testing.
+
+## Publishing to the App Store
+
+Same split as for Play: the identity (bundle id, team, APNs key) belongs to
+the publishing organisation and stays out of the repo. The web bundle is built
+in the container (`make mobile-build`); archiving, signing and uploading
+happen in Xcode on a macOS **host**.
+
+### 1. Apple-side setup (once)
+
+- **Apple Developer Program** membership for the organisation (enrolling an
+  organisation needs a D-U-N-S number). Its 10-character **Team ID** becomes
+  `MOBILE_IOS_TEAM_ID`.
+- **App IDs.** Two, both signed by that team: `<MOBILE_APP_ID>` with the
+  **Push Notifications** capability, and `<MOBILE_APP_ID>.NotificationService`
+  for the Notification Service Extension. With automatic signing (the project's
+  `CODE_SIGN_STYLE`), Xcode registers both on the first archive. Create the
+  main one by hand under *Certificates, Identifiers & Profiles* only if you
+  need it in App Store Connect before that.
+- **APNs auth key** (`.p8`, *Keys → +*, Apple Push Notifications service). One
+  key per team serves both the sandbox and production gateways; it feeds the
+  backend `PUSH_APNS_KEY` / `PUSH_APNS_KEY_ID` / `PUSH_APNS_TEAM_ID`. Apple lets
+  you download it **once**, so put it in the secret manager straight away.
+- **App Store Connect record** — [App Store Connect](https://appstoreconnect.apple.com)
+  → *Apps → + → New App*: platform iOS, the store **name** (30 characters max,
+  unique across the store, independent of the `MOBILE_APP_NAME` shown under the
+  icon), primary language, the bundle id (picked from the registered App IDs),
+  and an internal SKU. As on Play, the **bundle id is frozen** once the first
+  build is uploaded.
+
+### 2. Release configuration
+
+The same `deploy/env/frontend.local` as the Android release (see *Release
+configuration* above), plus the signing team:
+
+```bash
+MOBILE_APP_ID=fr.gouv.example.messages   # frozen after the first upload
+MOBILE_APP_NAME=Messages
+MOBILE_AUTH_SCHEME=stmessages            # lowercase, see Keeping environments apart
+MOBILE_IOS_TEAM_ID=ABCDE12345
+NEXT_PUBLIC_API_ORIGIN=https://<publicly reachable backend>
+MOBILE_DEV_SERVER_URL=                   # empty: no hot reload in a store build
+MOBILE_ALLOW_CLEARTEXT_FOR_DEV=
+MOBILE_OTA_SIGNING_PUBLIC_KEY_B64=…      # the key of the channel this build follows
+```
+
+Then:
+
+```bash
+make mobile-ios
+```
+
+It runs `make mobile-build` (web bundle, `cap sync`, `generated.xcconfig`) and
+opens the project in Xcode. Before archiving, read
+`src/frontend/ios/App/generated.xcconfig`: `MOBILE_APP_ID`,
+`PRODUCT_DISPLAY_NAME`, `AUTH_CALLBACK_SCHEME`, `MOBILE_VERSION_NAME` (the
+`appVersion`, see *App versioning*), `MOBILE_VERSION_CODE` and
+`DEVELOPMENT_TEAM` must be the release values. Do **not** fix a value in
+Xcode's UI: rerun `make mobile-build` (see *What you need* in
+[`mobile.md`](./mobile.md)).
+
+On the backend serving these users: `MOBILE_AUTH_CALLBACK_SCHEMES` lists the
+scheme, `PUSH_APNS_BUNDLE_ID` equals `MOBILE_APP_ID`, and
+**`PUSH_APNS_USE_SANDBOX=False`**. This includes **TestFlight**: a TestFlight
+build is distribution-signed, so it holds *production* APNs tokens, and a
+staging backend serving TestFlight testers needs the production gateway too.
+
+### 3. Archive and upload
+
+1. In Xcode, select the `App` scheme and the **Any iOS Device (arm64)**
+   destination, then *Product → Archive*. The archive always builds `Release`,
+   which runs the two release-only build phases: *Strip dev ATS exception*
+   removes `NSAllowsLocalNetworking` from the product, and *Check synced
+   Capacitor identity* fails the archive when the compiled bundle id or name
+   differs from the synced `capacitor.config.json`.
+2. Nothing on iOS refuses a leftover dev server: check that
+   `ios/App/App/capacitor.config.json` has **no `server.url`** (release
+   checklist, item 7).
+3. In the Organizer (*Window → Organizer*), check the version and build number
+   of the archive, then right-click it → **Generate Privacy Report** and compare
+   it with the *App Privacy* answers (step 5).
+4. **Validate App**, then **Distribute App → App Store Connect → Upload**, with
+   automatic signing. Xcode re-signs both targets with the distribution
+   profile and rewrites `aps-environment` to `production`.
+
+App Store Connect then processes the build, usually in 5 to 30 minutes. A
+problem with the binary comes back by e-mail as an `ITMS-xxxxx` code, for
+example ITMS-91053 for a required-reason API missing from
+`PrivacyInfo.xcprivacy` (pinned by `store-privacy-invariants.test.ts`). App
+Store Connect also refuses a `CFBundleVersion` it has already received for the
+same `MARKETING_VERSION`: to upload again, rebuild from a new commit or pass
+`make mobile-ios MOBILE_VERSION_CODE=<n>`.
+
+Export compliance is already answered in the `Info.plist`
+(`ITSAppUsesNonExemptEncryption = false`: the app only uses the encryption
+built into iOS), so the build does not stay on *Missing Compliance*. That
+answer stops being true the day the app ships its own cryptographic algorithm.
+
+### 4. TestFlight
+
+The processed build shows up under **TestFlight**.
+
+- **Internal testing**: up to 100 members of the App Store Connect team, no
+  review. Create a group, add the build, and testers install it with the
+  TestFlight app.
+- **External testing**: up to 10,000 testers invited by e-mail or public link.
+  The first build of each version goes through **Beta App Review**, which needs
+  the *Test Information* (description, feedback e-mail) and the same sign-in
+  details as App Review (see step 5).
+
+TestFlight builds expire after 90 days. Run the **release checklist** below on
+the TestFlight build itself: it is the first build signed the way the store
+build will be, which matters for push (item 8) and for the production IdP
+(item 1).
+
+### 5. Store listing and App Review submission
+
+App Store Connect only enables *Add for Review* once all of the following are
+filled in.
+
+**App Information and Pricing**
+
+- Category (e.g. *Productivity* or *Business*), content rights, and the **age
+  rating** questionnaire.
+- **Privacy Policy URL**, required for every app.
+- *Pricing and Availability*: price (free) and the countries where the app is
+  available.
+
+**App Privacy**: copy the answers from the `NSPrivacyCollectedDataTypes` of
+`src/frontend/ios/App/App/PrivacyInfo.xcprivacy`, the only list of them in the
+repo. Each entry is one App Store Connect data type, named after its constant
+(`NSPrivacyCollectedDataTypePhotosorVideos` → *Photos or Videos*), with the
+same *linked*, tracking and purpose answers, and a comment saying what the app
+sends. Apple checks the manifest's required-reason APIs at upload but never
+compares its data types with App Store Connect. So a change to what the app
+sends updates the manifest in the same change, and the answers at the next
+release.
+
+Sentry is switched on at **runtime**, not at build time: the app initialises
+it as soon as the backend `/config` serves a `SENTRY_DSN` and an
+`ENVIRONMENT`. So a store build sends diagnostics to every backend that has
+Sentry configured, whatever env the bundle was built with, and the manifest
+declares them: uncaught exceptions as *Crash Data*, and the errors reported
+through `handle()` plus the session pings Sentry sends by default as *Other
+Diagnostic Data*. An instance whose backend has no Sentry can leave both out
+of its answers.
+
+**Version page**
+
+- **Screenshots.** The project targets iPhone only (`TARGETED_DEVICE_FAMILY = 1`),
+  so only the iPhone 6.9" set is required (1320 × 2868 or 1290 × 2796), up to
+  10, taken from a simulator of that size (*⌘S*). The app is still offered on
+  iPad, in iPhone compatibility mode, and App Review may test it there: check
+  that it stays usable at that size. To keep it off Apple silicon Macs, untick
+  *iPhone and iPad Apps on Apple Silicon Macs* in *Pricing and Availability*.
+  Targeting iPad later (`1,2`) will require iPad 13" screenshots too.
+- Description (4,000 characters), keywords (100 characters), support URL,
+  copyright. *What's New* only appears from the second version on.
+- **Build**: pick the processed build.
+- **Release**: manual, automatic, or phased over 7 days. Choose manual for the
+  first release, so the date stays yours.
+
+**App Review Information**
+
+- **Sign-in required → a demo account** on the production instance that the
+  reviewer can use through the real IdP: login, password, and any extra step
+  (IdP choice in ProConnect, …). A missing or failing account is the most
+  common rejection (guideline 2.1). Keep the account active for the whole
+  review.
+- A contact (name, phone, e-mail) reachable during the review.
+- **Notes for the reviewer.** Address what they will check:
+  - **Who the app is for**: a mail client for the users of an organisation,
+    with accounts provisioned by that organisation. That is also why the app
+    has neither account creation nor account deletion (guideline 5.1.1(v)) nor
+    *Sign in with Apple* (guideline 4.8 does not apply to an organisation's own
+    account system).
+  - **What is native** (guideline 4.2, minimum functionality, see
+    [`mobile.md`](./mobile.md#production-hardening--known-gaps)): push
+    notifications with the preview decrypted on the device, attachment
+    download and sharing through the system, single sign-on shared with the
+    organisation's other apps.
+  - **OTA updates**: the app downloads updates of its web code, run by WebKit
+    and verified against a signature. The Apple Developer Program License
+    Agreement allows code run by WebKit as long as it does not change the
+    purpose of the app, and guideline 2.5.2 rejects apps that use downloaded
+    code to change their features. Ship anything that changes what the app
+    does through a store release.
+
+Then **Add for Review → Submit to App Review**. Review usually takes 24 to 48
+hours. A rejection arrives in the *App Review* section, where you can answer
+in *Resolution Center* without uploading a new build when the issue concerns
+the metadata or the demo account.
 
 ## Release checklist (manual)
 

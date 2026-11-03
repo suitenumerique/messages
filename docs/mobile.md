@@ -140,7 +140,7 @@ as Capacitor's `server.url`. Two consequences worth knowing:
 | `make mobile-android-run` | `mobile-build` + `gradlew assembleDebug` + `adb install` + `adb reverse` (host) |
 | `make mobile-android` | `mobile-build`, then open the Android project in Android Studio (host) |
 | `make mobile-android-reverse` | (re)apply the `adb reverse` port mapping |
-| `make mobile-ios` | `mobile-build`, then open the Xcode project (host, macOS) |
+| `make mobile-ios` | `mobile-build`, then open the Xcode project (host, macOS); store archive — see [`mobile-release.md`](./mobile-release.md#publishing-to-the-app-store) |
 | `make mobile-assets` | regenerate native icons & splashscreens from the vector mark — see [`mobile-assets.md`](./mobile-assets.md) |
 | `make mobile-android-release` | signed `.aab` for Play — see [`mobile-release.md`](./mobile-release.md#publishing-to-google-play) |
 | `make mobile-ota-keygen` / `-bucket` / `-publish` / `-rollback` | OTA operations — see [`mobile-release.md`](./mobile-release.md#ota-releases) |
@@ -543,7 +543,8 @@ native print plugin would be a store release.
 ## OTA (over-the-air) updates
 
 The JS bundle can be replaced without a store release, driven entirely from JS
-against a **public S3 bucket — no Capgo server** (`autoUpdate: false`; the
+against a **public S3 bucket — no Capgo server** (`autoUpdate: false` for the
+update checks, `statsUrl: ""` for the usage statistics; the
 `@capgo/capacitor-updater` plugin is used only for its native download/set/reload
 primitives). OTA replaces the *web* bundle only: anything native (a new
 Capacitor plugin, a permission, the Swift/Gradle side) still requires a store
@@ -689,7 +690,8 @@ Treat this list as the "definition of ready for production".
 ## See also
 
 - [`mobile-release.md`](./mobile-release.md) — OTA publishing, channels,
-  signing keys, rollback, Scalingo integration, Google Play, release checklist.
+  signing keys, rollback, Scalingo integration, Google Play, App Store,
+  release checklist.
 - [`mobile-assets.md`](./mobile-assets.md) — app icons and splash screens: the
   vector mark everything is derived from, the platform safe zones, and what each
   OS actually reads at launch.

@@ -135,10 +135,14 @@ const config: CapacitorConfig & { appVersion: string } = {
       presentationOptions: [],
     },
     // OTA live updates driven entirely from JS against an S3-hosted manifest
-    // (see src/features/native/ota.ts). autoUpdate is off so the plugin never
-    // talks to a Capgo server: we only use its native download/set/reload.
+    // (see src/features/native/ota.ts). We only use its native
+    // download/set/reload, so the plugin must never talk to a Capgo server:
+    // autoUpdate off stops the update checks.
     CapacitorUpdater: {
       autoUpdate: false,
+      // The plugin reports every download, install and launch, with a device
+      // id, to plugin.capgo.app unless this is empty.
+      statsUrl: "",
       resetWhenUpdate: true,
       // Verify each OTA bundle against the per-instance signing key (v2, RSA+AES).
       ...(otaPublicKey ? { publicKey: otaPublicKey } : {}),
