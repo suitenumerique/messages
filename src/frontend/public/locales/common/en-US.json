@@ -873,6 +873,7 @@
   "Temporary password": "Temporary password",
   "Tentative": "Tentative",
   "Thank you for your feedback!": "Thank you for your feedback!",
+  "The {{driveAppName}} file picker is not available.": "The {{driveAppName}} file picker is not available.",
   "The address has been updated!": "The address has been updated!",
   "The default signature will be automatically loaded when composing a new message.": "The default signature will be automatically loaded when composing a new message.",
   "The domain <strong>{{domain}}</strong> has been created successfully.": "The domain <strong>{{domain}}</strong> has been created successfully.",

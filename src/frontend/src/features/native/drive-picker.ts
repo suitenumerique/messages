@@ -23,6 +23,19 @@ import {
 
 const POLL_INTERVAL_MS = 500;
 
+/**
+ * The relay answers 200 (with a null event) for as long as no selection was
+ * posted, so a 404 means it does not exist on this Drive: its SDK is off
+ * (`SDK_ENABLED`, disabled by default since Drive 0.25). Polling would then
+ * never end, hence a dedicated error the caller can tell the user about.
+ */
+export class DriveSdkDisabledError extends Error {
+  constructor() {
+    super("The Drive SDK relay is not available on this Drive instance.");
+    this.name = "DriveSdkDisabledError";
+  }
+}
+
 const randomToken = (length = 32): string => {
   const alphabet =
     "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789";
@@ -48,22 +61,25 @@ export const openNativeDrivePicker = (config: {
 
   const fetchRelayEvent = async (): Promise<SDKRelayEvent | null> => {
     const response = await fetch(`${config.apiUrl}/sdk-relay/events/${token}/`);
+    if (response.status === 404) throw new DriveSdkDisabledError();
+    if (!response.ok) throw new Error(`Drive SDK relay answered ${response.status}`);
     const event = (await response.json()) as SDKRelayEvent | null;
     return event?.type ? event : null;
   };
 
-  return new Promise<PickerResult>((resolve) => {
+  return new Promise<PickerResult>((resolve, reject) => {
     let settled = false;
     let pollTimer: ReturnType<typeof setTimeout> | undefined;
     const handles: PluginListenerHandle[] = [];
 
-    const settle = (result: PickerResult, closeBrowser: boolean) => {
+    const settle = (outcome: PickerResult | Error, closeBrowser: boolean) => {
       if (settled) return;
       settled = true;
       clearTimeout(pollTimer);
       handles.forEach((handle) => void handle.remove());
       if (closeBrowser) void Browser.close().catch(() => undefined);
-      resolve(result);
+      if (outcome instanceof Error) reject(outcome);
+      else resolve(outcome);
     };
 
     const poll = async () => {
@@ -73,7 +89,11 @@ export const openNativeDrivePicker = (config: {
           settle(toPickerResult(event), true);
           return;
         }
-      } catch {
+      } catch (error) {
+        if (error instanceof DriveSdkDisabledError) {
+          settle(error, true);
+          return;
+        }
         // Transient relay error: keep polling, the browser is still open.
       }
       if (!settled) pollTimer = setTimeout(() => void poll(), POLL_INTERVAL_MS);
@@ -87,7 +107,12 @@ export const openNativeDrivePicker = (config: {
         .then((event) =>
           settle(event ? toPickerResult(event) : { type: "cancelled" }, false),
         )
-        .catch(() => settle({ type: "cancelled" }, false));
+        .catch((error: unknown) =>
+          settle(
+            error instanceof DriveSdkDisabledError ? error : { type: "cancelled" },
+            false,
+          ),
+        );
     }).then((handle) => {
       // The flow may already have settled (e.g. Browser.open rejected) while
       // this registration was in flight: the handle would never be released.

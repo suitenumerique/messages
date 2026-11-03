@@ -873,6 +873,7 @@
   "Temporary password": "Mot de passe temporaire",
   "Tentative": "Provisoire",
   "Thank you for your feedback!": "Merci pour votre message !",
+  "The {{driveAppName}} file picker is not available.": "Le sélecteur de fichiers {{driveAppName}} n'est pas disponible.",
   "The address has been updated!": "L'adresse a été mise à jour !",
   "The default signature will be automatically loaded when composing a new message.": "La signature par défaut sera automatiquement chargée lors de la composition d'un nouveau message.",
   "The domain <strong>{{domain}}</strong> has been created successfully.": "Le domaine <strong>{{domain}}</strong> a été créé avec succès.",
