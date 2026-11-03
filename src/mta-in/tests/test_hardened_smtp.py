@@ -9,8 +9,12 @@ from __future__ import annotations
 
 import asyncio
 import contextlib
+import logging
+import os
+import ssl
 
 import pytest
+from prometheus_client import REGISTRY
 
 from pymta import settings
 from pymta.controller import build_smtp_kwargs
@@ -423,3 +427,282 @@ async def test_empty_blocklist_blocks_nothing(monkeypatch):
     finally:
         server.close()
         await server.wait_closed()
+
+
+# ---------------------------------------------------------------------------
+# Per-connection summary (``session_closed``).
+#
+# The only record of a sender that never reached a refusal or a message
+# outcome of ours: TLS refused, answered by aiosmtpd on its own, timed out, or
+# gone mid-DATA. Driven over a real socket because the interesting replies are
+# the ones aiosmtpd sends without calling any hook.
+# ---------------------------------------------------------------------------
+
+
+async def _session_summaries(caplog, *, count=1, timeout=5.0):
+    """The ``session_closed`` records, once ``count`` of them have arrived.
+
+    connection_lost runs a loop iteration or two after the client hangs up, so
+    the line is waited for rather than expected synchronously.
+    """
+    deadline = asyncio.get_running_loop().time() + timeout
+    while True:
+        found = [r for r in caplog.records if r.getMessage() == "session_closed"]
+        if len(found) >= count or asyncio.get_running_loop().time() > deadline:
+            return found
+        await asyncio.sleep(0.02)
+
+
+async def _dialogue(port, lines, *, quit_=True):
+    """Send each line, read one reply per line (multi-line replies in full)."""
+    reader, writer = await asyncio.open_connection("127.0.0.1", port)
+    replies = [await asyncio.wait_for(reader.readline(), timeout=5)]
+    for line in lines:
+        writer.write(line)
+        await writer.drain()
+        while True:
+            reply = await asyncio.wait_for(reader.readline(), timeout=5)
+            replies.append(reply)
+            if reply[3:4] != b"-":
+                break
+    if quit_:
+        writer.write(b"QUIT\r\n")
+        await writer.drain()
+        replies.append(await asyncio.wait_for(reader.readline(), timeout=5))
+    writer.close()
+    with contextlib.suppress(ConnectionError):
+        await writer.wait_closed()
+    return replies
+
+
+_ENVELOPE = [
+    b"EHLO mx.sender.example\r\n",
+    b"MAIL FROM:<alice@sender.example>\r\n",
+    b"RCPT TO:<bob@example.com>\r\n",
+]
+
+
+@pytest.mark.asyncio
+async def test_a_delivered_session_is_summarised_at_info(caplog):
+    loop = asyncio.get_running_loop()
+    server, port, _ = await _listener(loop)
+    try:
+        with caplog.at_level(logging.DEBUG, logger="pymta.smtp_protocol"):
+            await _dialogue(port, [*_ENVELOPE, b"DATA\r\n", b"Subject: x\r\n\r\nbody\r\n.\r\n"])
+            (record,) = await _session_summaries(caplog)
+    finally:
+        server.close()
+        await server.wait_closed()
+
+    assert record.levelno == logging.INFO
+    assert record.commands == "ehlo=1 mail=1 rcpt=1 data=1 quit=1"
+    assert record.closed_by == "quit"
+    assert record.sender == "alice@sender.example"
+    assert record.helo == "mx.sender.example"
+    assert record.client_ip == "127.0.0.1"
+    assert record.errors == 0
+    assert record.tls is False
+    assert not hasattr(record, "last_error_reply")
+
+
+@pytest.mark.asyncio
+async def test_a_refusal_aiosmtpd_makes_on_its_own_is_recorded(caplog):
+    """555 for an unknown RCPT parameter never reaches a hook of ours.
+
+    It is exactly the kind of refusal that left no trace before: aiosmtpd
+    answers it inside ``smtp_RCPT`` and the handler is never called.
+    """
+    loop = asyncio.get_running_loop()
+    server, port, _ = await _listener(loop)
+    try:
+        with caplog.at_level(logging.INFO, logger="pymta.smtp_protocol"):
+            replies = await _dialogue(
+                port,
+                [
+                    b"EHLO mx.sender.example\r\n",
+                    b"MAIL FROM:<alice@sender.example>\r\n",
+                    b"RCPT TO:<bob@example.com> NOTIFY=FAILURE\r\n",
+                ],
+            )
+            (record,) = await _session_summaries(caplog)
+    finally:
+        server.close()
+        await server.wait_closed()
+
+    assert replies[-2].startswith(b"555"), replies
+    assert record.commands == "ehlo=1 mail=1 rcpt=0/1 quit=1"
+    assert record.errors == 1
+    assert record.last_error_verb == "rcpt"
+    assert record.last_error_reply.startswith("555")
+    assert "NOTIFY=FAILURE" in record.last_error_arg
+
+
+@pytest.mark.asyncio
+async def test_an_oversize_body_refused_by_aiosmtpd_is_recorded(caplog):
+    loop = asyncio.get_running_loop()
+    server, port, _ = await _listener(loop, data_size_limit=64)
+    try:
+        with caplog.at_level(logging.INFO, logger="pymta.smtp_protocol"):
+            replies = await _dialogue(
+                port, [*_ENVELOPE, b"DATA\r\n", b"Subject: x\r\n\r\n" + b"y" * 200 + b"\r\n.\r\n"]
+            )
+            (record,) = await _session_summaries(caplog)
+    finally:
+        server.close()
+        await server.wait_closed()
+
+    assert replies[-2].startswith(b"552"), replies
+    assert record.commands == "ehlo=1 mail=1 rcpt=1 data=0/1 quit=1"
+    assert record.last_error_verb == "data"
+    assert record.last_error_reply.startswith("552")
+
+
+@pytest.mark.asyncio
+async def test_a_hang_up_mid_data_is_counted_as_a_failed_data(caplog):
+    """The summary runs before the cut-off DATA would have counted itself."""
+    loop = asyncio.get_running_loop()
+    server, port, _ = await _listener(loop)
+    try:
+        with caplog.at_level(logging.INFO, logger="pymta.smtp_protocol"):
+            reader, writer = await asyncio.open_connection("127.0.0.1", port)
+            await reader.readline()
+            for line in [*_ENVELOPE, b"DATA\r\n"]:
+                writer.write(line)
+                await writer.drain()
+                while (await reader.readline())[3:4] == b"-":
+                    pass
+            writer.write(b"Subject: half a message\r\n")
+            await writer.drain()
+            writer.close()
+            with contextlib.suppress(ConnectionError):
+                await writer.wait_closed()
+            (record,) = await _session_summaries(caplog)
+    finally:
+        server.close()
+        await server.wait_closed()
+
+    assert record.commands == "ehlo=1 mail=1 rcpt=1 data=0/1"
+    assert record.closed_by in ("peer_closed", "peer_reset")
+
+
+@pytest.mark.asyncio
+async def test_a_failed_starttls_handshake_is_summarised_not_reported_as_a_bug(caplog):
+    """A sender that refuses our TLS shows up here and nowhere else.
+
+    It used to land in ``handler_error`` with a traceback and in the
+    internal_error counters, as if pymta had crashed, with no session id or
+    client to tell whose mail it was.
+    """
+    cert, key = "/certs/pymta-test.crt", "/certs/pymta-test.key"
+    if not (os.path.exists(cert) and os.path.exists(key)):
+        pytest.skip("the dev image's self-signed certificate is not available")
+    ctx = ssl.create_default_context(ssl.Purpose.CLIENT_AUTH)
+    ctx.load_cert_chain(cert, key)
+    loop = asyncio.get_running_loop()
+    server, port, _ = await _listener(loop, tls_context=ctx)
+    try:
+        with caplog.at_level(logging.INFO, logger="pymta.smtp_protocol"):
+            reader, writer = await asyncio.open_connection("127.0.0.1", port)
+            await reader.readline()
+            for line in (b"EHLO mx.sender.example\r\n", b"STARTTLS\r\n"):
+                writer.write(line)
+                await writer.drain()
+                while (await reader.readline())[3:4] == b"-":
+                    pass
+            # Not a ClientHello: the server-side handshake fails on it.
+            writer.write(b"this is not TLS\r\n" * 4)
+            await writer.drain()
+            with contextlib.suppress(ConnectionError, asyncio.TimeoutError):
+                await asyncio.wait_for(reader.read(), timeout=5)
+            writer.close()
+            with contextlib.suppress(ConnectionError):
+                await writer.wait_closed()
+            (record,) = await _session_summaries(caplog)
+    finally:
+        server.close()
+        await server.wait_closed()
+
+    assert record.closed_by == "tls_failed"
+    assert record.tls is False
+    assert record.tls_error
+    assert record.commands == "ehlo=1 starttls=0/1"
+    assert not [r for r in caplog.records if r.getMessage() == "handler_error"]
+
+
+@pytest.mark.asyncio
+async def test_a_silent_connection_stays_at_debug(caplog):
+    """Connect and close without a command: a TCP health check, not a sender."""
+    loop = asyncio.get_running_loop()
+    server, port, _ = await _listener(loop)
+    try:
+        with caplog.at_level(logging.DEBUG, logger="pymta.smtp_protocol"):
+            await _dialogue(port, [], quit_=False)
+            (record,) = await _session_summaries(caplog)
+    finally:
+        server.close()
+        await server.wait_closed()
+
+    assert record.levelno == logging.DEBUG
+    assert record.commands == ""
+
+
+@pytest.mark.asyncio
+async def test_log_sessions_off_drops_the_summary_to_debug(monkeypatch, caplog):
+    monkeypatch.setattr(settings, "PYMTA_LOG_SESSIONS", False)
+    loop = asyncio.get_running_loop()
+    server, port, _ = await _listener(loop)
+    try:
+        with caplog.at_level(logging.DEBUG, logger="pymta.smtp_protocol"):
+            await _dialogue(port, [b"EHLO mx.sender.example\r\n"])
+            (record,) = await _session_summaries(caplog)
+    finally:
+        server.close()
+        await server.wait_closed()
+
+    assert record.levelno == logging.DEBUG
+
+
+@pytest.mark.asyncio
+async def test_a_connection_refused_at_the_gate_is_not_summarised(monkeypatch, caplog):
+    """Gate refusals are what a flood is made of; the metric counts them."""
+    loop = asyncio.get_running_loop()
+    server, port = await _blocklist_listener(loop, "127.0.0.0/8", monkeypatch)
+    try:
+        with caplog.at_level(logging.DEBUG, logger="pymta.smtp_protocol"):
+            reader, writer = await asyncio.open_connection("127.0.0.1", port)
+            await asyncio.wait_for(reader.read(), timeout=5)
+            writer.close()
+            with contextlib.suppress(ConnectionError):
+                await writer.wait_closed()
+            assert await _session_summaries(caplog, timeout=0.5) == []
+    finally:
+        server.close()
+        await server.wait_closed()
+
+
+@pytest.mark.asyncio
+async def test_commands_are_counted_by_verb_and_reply_class():
+    """``pymta_commands_total`` was declared and never incremented."""
+
+    def sample(verb, cls):
+        value = REGISTRY.get_sample_value("pymta_commands_total", {"verb": verb, "class": cls})
+        return value or 0.0
+
+    before_ok, before_refused = sample("MAIL", "2xx"), sample("RCPT", "5xx")
+    loop = asyncio.get_running_loop()
+    server, port, _ = await _listener(loop)
+    try:
+        await _dialogue(
+            port,
+            [
+                b"EHLO mx.sender.example\r\n",
+                b"MAIL FROM:<alice@sender.example>\r\n",
+                b"RCPT TO:<bob@example.com> NOTIFY=FAILURE\r\n",
+            ],
+        )
+    finally:
+        server.close()
+        await server.wait_closed()
+
+    assert sample("MAIL", "2xx") == before_ok + 1
+    assert sample("RCPT", "5xx") == before_refused + 1

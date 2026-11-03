@@ -212,6 +212,17 @@ AUDIT = {"message_delivered", "message_deferred", "message_rejected"}
 # per TCP connection, unbounded).
 REFUSALS = {"reject"}
 
+# The third, and the only one a peer can produce once per TCP connection: the
+# per-connection summary, Postfix's ``disconnect from`` line. It is the one
+# record of a sender that never reached a refusal or a message outcome (TLS
+# refused, answered by aiosmtpd itself, timed out, hung up mid-DATA), which is
+# precisely the "mail from X never arrived and the log says nothing" case. Its
+# cost is bounded by admission rather than per connection: only sessions the
+# gate let in and that issued at least one command reach INFO, the gate caps
+# how many are live at once, and PYMTA_LOG_SESSIONS (reloadable) drops it to
+# DEBUG under a flood.
+SESSIONS = {"session_closed"}
+
 # Event names the scanner sees as a literal prefix because the suffix is a
 # variable. Maps what appears in the source to what is actually emitted.
 _DYNAMIC_PREFIXES = {"message_": AUDIT}
@@ -254,7 +265,7 @@ def test_every_event_is_classified():
     Classification is a judgement no test can make, so the test does not try. It
     only refuses to let the judgement go unmade.
     """
-    known = PEER_TRIGGERABLE | OPERATOR_TRIGGERABLE | AUDIT | REFUSALS
+    known = PEER_TRIGGERABLE | OPERATOR_TRIGGERABLE | AUDIT | REFUSALS | SESSIONS
     unclassified = sorted({event for _, event, _ in _log_sites() if event not in known})
     assert not unclassified, (
         f"unclassified log events: {unclassified}. Add each to PEER_TRIGGERABLE "
@@ -285,6 +296,18 @@ def test_the_classification_lists_do_not_overlap():
     assert not (PEER_TRIGGERABLE & REFUSALS)
     assert not (OPERATOR_TRIGGERABLE & REFUSALS)
     assert not (AUDIT & REFUSALS)
+    others = PEER_TRIGGERABLE | OPERATOR_TRIGGERABLE | AUDIT | REFUSALS
+    assert not (SESSIONS & others)
+
+
+def test_the_session_summary_has_a_debug_fallback():
+    """``session_closed`` must be able to drop to DEBUG.
+
+    The INFO site alone would leave PYMTA_LOG_SESSIONS=false with nothing to
+    fall back to, so the flood escape hatch would silently do nothing.
+    """
+    levels = {level for _, event, level in _log_sites() if event in SESSIONS}
+    assert levels == {"info", "debug"}, levels
 
 
 @pytest.mark.parametrize(
