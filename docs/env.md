@@ -671,6 +671,20 @@ Note: every language listed in `LANGUAGES` must have its translation files in th
 | `DRIVE_BASE_URL` | None | Base URL to access Drive endpoints | Optional |
 | `DRIVE_APP_NAME` | `Drive` | Name of the Drive application used in the frontend | Optional |
 
+The integration needs the following settings on the Drive instance itself:
+
+| Drive variable | Value | Why |
+|----------------|-------|-----|
+| `OIDC_RS_ALLOWED_AUDIENCES` | Must include the OIDC client id of Messages | Messages calls Drive's external API with the user's access token; Drive rejects tokens issued to other audiences. Saving an attachment to Drive fails otherwise. |
+| `SDK_ENABLED` | `True` | Turns on the SDK pages and relay behind the file picker. **Off by default since Drive 0.25: the "Add attachment from Drive" picker does not work otherwise.** |
+| `SDK_CORS_ALLOWED_ORIGINS` | Must include the Messages frontend origin | Lets the web picker read the relay events. |
+
+Files saved to Drive go through Drive's upload screening
+(`RESTRICT_UPLOAD_FILE_TYPE`, `FILE_EXTENSIONS_ALLOWED`,
+`FILE_MIMETYPE_ALLOWED`…) and storage quota: an attachment Drive refuses
+(e.g. `.html` or extension-less files with the default allowlist) cannot
+be saved there.
+
 ### Identity Provider (Keycloak)
 
 Used for provisioning-side operations against Keycloak (e.g. toggling
