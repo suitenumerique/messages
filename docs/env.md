@@ -35,7 +35,7 @@ Variables holding a secret can also be read from a file, which suits Docker/Kube
 |------|--------------------------------------|
 | Django | `DJANGO_SECRET_KEY`, `DJANGO_SERVER_TO_SERVER_API_TOKENS` |
 | Database, cache, broker & search | `DB_PASSWORD`, `REDIS_URL`, `CELERY_BROKER_URL`, `OPENSEARCH_URL` |
-| Object storage | `AWS_S3_ACCESS_KEY_ID`, `AWS_S3_SECRET_ACCESS_KEY`, `STORAGE_MESSAGE_IMPORTS_ACCESS_KEY`, `STORAGE_MESSAGE_IMPORTS_SECRET_KEY`, `STORAGE_MESSAGE_BLOBS_ACCESS_KEY`, `STORAGE_MESSAGE_BLOBS_SECRET_KEY` |
+| Object storage | `AWS_S3_ACCESS_KEY_ID`, `AWS_S3_SECRET_ACCESS_KEY`, `STORAGE_MESSAGE_IMPORTS_ACCESS_KEY`, `STORAGE_MESSAGE_IMPORTS_SECRET_KEY`, `STORAGE_MESSAGE_BLOBS_ACCESS_KEY`, `STORAGE_MESSAGE_BLOBS_SECRET_KEY`, `STORAGE_MESSAGE_EXPORTS_ACCESS_KEY`, `STORAGE_MESSAGE_EXPORTS_SECRET_KEY` |
 | Encryption keys | `SALT_KEY`, `MESSAGES_BLOBS_ENCRYPT_KEYS`, `OIDC_STORE_REFRESH_TOKEN_KEY` |
 | Authentication | `OIDC_RP_CLIENT_SECRET`, `KEYCLOAK_CLIENT_SECRET` |
 | Mail | `MTA_OUT_RELAY_PASSWORD`, `MTA_OUT_DIRECT_PROXIES`, `SPAM_CONFIG`, `MESSAGES_SELFCHECK_SECRET`, `MESSAGES_SELFCHECK_WEBHOOK_URL` |
@@ -203,6 +203,20 @@ blob stays in PG.
 | `MESSAGES_BLOBS_COMPRESS` | `zstd:7` | Default compression: `none`, `zstd`, or `zstd:<level>` | Optional |
 | `MESSAGES_BLOBS_ENCRYPT_KEYS` | `{}` | JSON dict mapping `key_id` → entry. Each entry must be `{"algo": "aes-gcm", "secret": "<32+ chars>", "active": <bool>}`. Add `"active": true` to exactly one entry to make it the key new blobs are encrypted with; entries without `active` (or with `active=false`) stay readable for legacy ciphertext. The secret is SHA-256'd to a 32-byte AEAD key, so its strength is whatever entropy the operator supplied — use `openssl rand -base64 32` (or equivalent). Startup emits a warning when a secret is shorter than 32 characters; that floor is a length check only, not an entropy measurement. | Optional |
 | `MESSAGES_BLOBS_VERIFY_HASH` | `False` | When True, `Blob.get_content()` re-hashes plaintext and rejects mismatches. One SHA-256 over the plaintext per read; main value is for `key_id=0` blobs (encrypted blobs are already AAD-bound). | Optional |
+
+### Message Exports Storage
+
+Private bucket receiving offline exports made by management commands, such as
+the spam corpus.
+
+| Variable | Default | Description | Required |
+|----------|---------|-------------|----------|
+| `STORAGE_MESSAGE_EXPORTS_ENDPOINT_URL` | unset | S3 endpoint URL | Optional |
+| `STORAGE_MESSAGE_EXPORTS_BUCKET_NAME` | unset | S3 bucket name; exports refuse to run without it | Optional |
+| `STORAGE_MESSAGE_EXPORTS_ACCESS_KEY` | unset | S3 access key | Optional |
+| `STORAGE_MESSAGE_EXPORTS_SECRET_KEY` | unset | S3 secret key | Optional |
+| `STORAGE_MESSAGE_EXPORTS_REGION_NAME` | unset | S3 region | Optional |
+| `STORAGE_MESSAGE_EXPORTS_AGE_RECIPIENTS` | unset | Comma-separated [age](https://age-encryption.org) public keys (`age1...`) exports are encrypted to; only the matching private keys can read them | Optional |
 
 ### Mobile OTA Bundles
 

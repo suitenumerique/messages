@@ -504,7 +504,37 @@ class Base(Configuration):
                 ),
             },
         },
+        "message-exports": {
+            "BACKEND": "storages.backends.s3.S3Storage",
+            "OPTIONS": {
+                "endpoint_url": values.Value(
+                    environ_name="STORAGE_MESSAGE_EXPORTS_ENDPOINT_URL",
+                    environ_prefix=None,
+                ),
+                "bucket_name": values.Value(
+                    environ_name="STORAGE_MESSAGE_EXPORTS_BUCKET_NAME",
+                    environ_prefix=None,
+                ),
+                "access_key": SecretFileValue(
+                    environ_name="STORAGE_MESSAGE_EXPORTS_ACCESS_KEY",
+                    environ_prefix=None,
+                ),
+                "secret_key": SecretFileValue(
+                    environ_name="STORAGE_MESSAGE_EXPORTS_SECRET_KEY",
+                    environ_prefix=None,
+                ),
+                "region_name": values.Value(
+                    environ_name="STORAGE_MESSAGE_EXPORTS_REGION_NAME",
+                    environ_prefix=None,
+                ),
+            },
+        },
     }
+    # age public keys (age1...) exports are encrypted to: only the holders of
+    # the private keys can read them back, not the app nor the bucket.
+    STORAGE_MESSAGE_EXPORTS_AGE_RECIPIENTS = values.ListValue(
+        [], environ_name="STORAGE_MESSAGE_EXPORTS_AGE_RECIPIENTS", environ_prefix=None
+    )
     # MDA settings
     # No default on purpose: the MTA-to-MDA channel is authenticated solely by
     # an HS256 JWT signed with this shared secret, so a hardcoded fallback would

@@ -256,10 +256,11 @@ restart-full: \
 	start-full
 .PHONY: restart-full
 
-create-buckets: ## create the message imports & blobs buckets in objectstorage
+create-buckets: ## create the message imports, blobs & exports buckets in objectstorage
 	@$(COMPOSE) up -d objectstorage --wait
 	@$(MANAGE_DB) create_bucket --storage message-imports --expire-days 7
 	@$(MANAGE_DB) create_bucket --storage message-blobs
+	@$(MANAGE_DB) create_bucket --storage message-exports
 .PHONY: create-buckets
 
 shell-objectstorage: ## open a shell in the objectstorage container
