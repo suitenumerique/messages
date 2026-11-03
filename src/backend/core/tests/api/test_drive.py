@@ -477,6 +477,8 @@ Test file content for Drive upload without access.
         file_creation_body = json.loads(responses.calls[1].request.body)
         assert file_creation_body["type"] == "file"
         assert file_creation_body["filename"] == "test_file.txt"
+        # Drive signs the declared size as the Content-Length of the PUT
+        assert file_creation_body["size"] == len(responses.calls[2].request.body)
 
         # Verify presigned URL upload
         assert responses.calls[2].request.url == presigned_url
@@ -778,3 +780,40 @@ Test file content for Drive upload without access.
 
         assert response.status_code == status.HTTP_502_BAD_GATEWAY
         assert response.json()["error"] == "Failed to create file in Drive"
+
+    @responses.activate
+    @patch(
+        "lasuite.oidc_login.middleware.RefreshOIDCAccessToken.is_expired",
+        return_value=False,
+    )
+    def test_api_third_party_drive_post_creation_refused_logs_drive_reason(
+        self, _mock, api_client_with_user, mailbox_with_message, caplog
+    ):
+        """A file creation refused by Drive should log the reason Drive gave."""
+        client, _ = api_client_with_user
+        _, message = mailbox_with_message
+
+        responses.add(
+            responses.GET,
+            "http://drive.test/external_api/v1.0/items/",
+            json={"count": 0, "next": None, "previous": None, "results": []},
+            status=status.HTTP_200_OK,
+        )
+        responses.add(
+            responses.POST,
+            "http://drive.test/external_api/v1.0/items/",
+            json={"filename": ["This file extension is not allowed."]},
+            status=status.HTTP_400_BAD_REQUEST,
+        )
+
+        with caplog.at_level("ERROR", logger="core.api.viewsets.drive"):
+            response = client.post(
+                reverse("drive"),
+                {"blob_id": f"msg_{message.id}_0"},
+                format="json",
+            )
+
+        assert response.status_code == status.HTTP_502_BAD_GATEWAY
+        assert response.json()["error"] == "Failed to create file in Drive"
+        assert "400" in caplog.text
+        assert "This file extension is not allowed." in caplog.text
