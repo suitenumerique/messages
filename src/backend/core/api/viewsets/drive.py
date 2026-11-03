@@ -229,8 +229,11 @@ class DriveAPIView(APIView):
         )
         search_response.raise_for_status()
 
+        # Drive's ``title`` filter is an accent-insensitive substring match:
+        # "report.pdf" would also match "old report.pdf". Drive stores the
+        # filename we post as the item's title, so compare it exactly.
         for item in search_response.json().get("results", []):
-            if item.get("size") == attachment["size"]:
+            if item.get("title") == filename and item.get("size") == attachment["size"]:
                 return item
 
         return None

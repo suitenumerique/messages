@@ -586,6 +586,7 @@ Test file content for Drive upload without access.
                 "results": [
                     {
                         "id": existing_file_id,
+                        "title": "test_file.txt",
                         "filename": "test_file.txt",
                         "mimetype": "text/plain",
                         "size": attachment_size,
@@ -636,6 +637,7 @@ Test file content for Drive upload without access.
                 "results": [
                     {
                         "id": str(uuid.uuid4()),
+                        "title": "test_file.txt",
                         "filename": "test_file.txt",
                         "mimetype": "text/plain",
                         "size": 999999,
@@ -672,6 +674,75 @@ Test file content for Drive upload without access.
         )
 
         assert response.status_code == status.HTTP_201_CREATED
+        # search + create + S3 upload + upload-ended
+        assert len(responses.calls) == 4
+
+    @responses.activate
+    @patch(
+        "lasuite.oidc_login.middleware.RefreshOIDCAccessToken.is_expired",
+        return_value=False,
+    )
+    def test_api_third_party_drive_post_title_only_contains_filename(
+        self, _mock, api_client_with_user, mailbox_with_message
+    ):
+        """A file whose title merely contains the attachment name is not a duplicate.
+
+        Drive's ``title`` filter matches substrings, so the search can return
+        "old test_file.txt" for "test_file.txt"; even with the same size it is
+        another file and must not be handed back as the saved attachment.
+        """
+        client, _ = api_client_with_user
+        _, message = mailbox_with_message
+
+        file_id = str(uuid.uuid4())
+        presigned_url = "http://s3.test/presigned-upload-url"
+
+        responses.add(
+            responses.GET,
+            "http://drive.test/external_api/v1.0/items/",
+            json={
+                "count": 1,
+                "next": None,
+                "previous": None,
+                "results": [
+                    {
+                        "id": str(uuid.uuid4()),
+                        "title": "old test_file.txt",
+                        "filename": "old test_file.txt",
+                        "mimetype": "text/plain",
+                        "size": len(b"Test file content for Drive upload."),
+                    }
+                ],
+            },
+            status=status.HTTP_200_OK,
+        )
+        responses.add(
+            responses.POST,
+            "http://drive.test/external_api/v1.0/items/",
+            json={
+                "id": file_id,
+                "title": "test_file.txt",
+                "type": "file",
+                "policy": presigned_url,
+            },
+            status=status.HTTP_200_OK,
+        )
+        responses.add(responses.PUT, presigned_url, status=status.HTTP_200_OK)
+        responses.add(
+            responses.POST,
+            f"http://drive.test/external_api/v1.0/items/{file_id}/upload-ended/",
+            json={"id": file_id, "title": "test_file.txt", "type": "file"},
+            status=status.HTTP_200_OK,
+        )
+
+        response = client.post(
+            reverse("drive"),
+            {"blob_id": f"msg_{message.id}_0"},
+            format="json",
+        )
+
+        assert response.status_code == status.HTTP_201_CREATED
+        assert response.json()["id"] == file_id
         # search + create + S3 upload + upload-ended
         assert len(responses.calls) == 4
 
