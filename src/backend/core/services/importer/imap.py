@@ -45,6 +45,14 @@ logger = get_task_logger(__name__)
 # parked resumable, then re-dispatched), so this only smooths a momentary blip.
 UID_FETCH_MAX_RETRIES = 3
 
+# LIST name attributes (lower-cased) marking an entry that cannot be SELECTed.
+UNSELECTABLE_FOLDER_ATTRIBUTES = frozenset({"\\noselect", "\\nonexistent"})
+
+# Response codes RFC 5530 defines as temporary: a NO carrying one says nothing
+# about whether the folder exists, so it must park the run, never let the
+# folder be skipped as "not a mailbox".
+TRANSIENT_RESPONSE_CODES = frozenset({b"INUSE", b"UNAVAILABLE"})
+
 
 class IMAPSecurityError(RuntimeError):
     """
@@ -73,6 +81,27 @@ class IMAPFolderSelectError(RuntimeError):
     answered, so this is not a connectivity blip: retrying the same folder name
     can only fail the same way, and treating it as transient would keep the run
     paused for the whole stall budget before surfacing the real error."""
+
+
+# Errors that must escape the broad ``except`` of the folder helpers: a dropped
+# connection (mapped to transient by `run_imap`) or a temporary refusal.
+_PROPAGATED_ERRORS = (OSError, imaplib.IMAP4.abort, TransientImportError)
+
+# The response code, when present, opens the refusal text (RFC 3501
+# ``resp-text``); what follows is free text that may echo a remote folder name.
+_RESPONSE_CODE = re.compile(rb"\s*\[([A-Za-z-]+)[\] ]")
+
+
+def _raise_if_transient_refusal(response, command: str, folder: str) -> None:
+    """Raise `TransientImportError` when a refused ``command`` carries one of
+    the `TRANSIENT_RESPONSE_CODES`."""
+    text = response[0] if response and isinstance(response[0], bytes) else b""
+    code = _RESPONSE_CODE.match(text)
+    if code and code.group(1).upper() in TRANSIENT_RESPONSE_CODES:
+        raise TransientImportError(
+            f"IMAP {command} of folder {folder} temporarily refused: "
+            f"{text.decode(errors='replace')}"
+        )
 
 
 def decode_imap_utf7(s):
@@ -303,9 +332,13 @@ class IMAPConnectionManager:
 def _parse_imap_folder_info(folder_info: str) -> str | None:
     """Parse IMAP folder info and return the folder name."""
     try:
-        # Skip non-selectable folders
-        if "\\Noselect" in folder_info:
-            return None
+        # Name attributes are case-insensitive (RFC 3501 §5.1): some servers
+        # send ``\NoSelect``, and ``\NonExistent`` (RFC 5258) implies it.
+        attributes_match = re.match(r"\s*\(([^)]*)\)", folder_info)
+        if attributes_match:
+            attributes = {a.lower() for a in attributes_match.group(1).split()}
+            if attributes & UNSELECTABLE_FOLDER_ATTRIBUTES:
+                return None
 
         # Parse IMAP folder info format: (flags) "delimiter" "folder_name"
         parts = folder_info.split('"')
@@ -385,7 +418,8 @@ def select_imap_folder(imap_connection, folder: str) -> bool:
     Returns `False` only when the server *answered* and refused every name
     variation. A dropped connection (`OSError`/`imaplib.IMAP4.abort`)
     propagates instead: the caller's `run_imap` maps it to a transient error,
-    whereas a refused SELECT is permanent (see `IMAPFolderSelectError`).
+    whereas a refused SELECT is permanent (see `IMAPFolderSelectError`) unless
+    the server flags the refusal as temporary (`TransientImportError`).
     """
     try:
         # Try different folder name variations for compatibility
@@ -406,29 +440,31 @@ def select_imap_folder(imap_connection, folder: str) -> bool:
 
         for folder_variant in folder_variations:
             try:
-                status, _ = imap_connection.select(folder_variant)
+                status, response = imap_connection.select(folder_variant)
                 if status == "OK":
                     logger.debug("Successfully selected folder: %s", folder_variant)
                     return True
+                _raise_if_transient_refusal(response, "SELECT", folder)
             except UnicodeEncodeError:
                 # If UTF-8 fails, try with UTF-7 encoding (IMAP standard)
                 try:
                     utf7_folder = codecs.encode(
                         folder_variant.encode("utf-8"), "utf-7"
                     ).decode("ascii")
-                    status, _ = imap_connection.select(utf7_folder)
+                    status, response = imap_connection.select(utf7_folder)
                     if status == "OK":
                         logger.debug(
                             "Successfully selected folder with UTF-7: %s",
                             folder_variant,
                         )
                         return True
-                except (OSError, imaplib.IMAP4.abort):
+                    _raise_if_transient_refusal(response, "SELECT", folder)
+                except _PROPAGATED_ERRORS:
                     raise
                 except Exception as e:
                     logger.debug("Failed to select folder with UTF-7 encoding: %s", e)
                     continue
-            except (OSError, imaplib.IMAP4.abort):
+            except _PROPAGATED_ERRORS:
                 raise
             except Exception as e:
                 logger.debug(
@@ -439,7 +475,7 @@ def select_imap_folder(imap_connection, folder: str) -> bool:
         logger.error("Failed to select folder %s with any variation", folder)
         return False
 
-    except (OSError, imaplib.IMAP4.abort):
+    except _PROPAGATED_ERRORS:
         raise
     except Exception as e:
         logger.exception("Error selecting folder %s: %s", folder, e)
@@ -494,6 +530,35 @@ def _extract_imap_flags_and_content(msg_data) -> tuple[list[str], bytes | None]:
     return flags, raw_email
 
 
+def _folder_status_item(imap_connection, folder: str, item: str) -> int | None:
+    """Read one numeric STATUS item of ``folder`` without changing the selected
+    folder, or ``None`` when the server refuses or the answer is unparsable.
+
+    A dropped connection or a temporary refusal propagates: read as a plain
+    refusal, it would let `folder_may_hold_mail` skip a folder holding mail.
+    """
+    try:
+        status, data = imap_connection.status(f'"{folder}"', f"({item})")
+        if status != "OK":
+            _raise_if_transient_refusal(data, "STATUS", folder)
+            return None
+        if not data or not data[0]:
+            return None
+        raw = data[0] if isinstance(data[0], bytes) else str(data[0]).encode()
+        # The echoed mailbox name precedes the attribute list and may itself
+        # read like an item (a folder named "MESSAGES 0").
+        attributes = re.search(rb"\(([^()]*)\)\s*$", raw)
+        if not attributes:
+            return None
+        match = re.search(rf"{item}\s+(\d+)".encode(), attributes.group(1))
+        return int(match.group(1)) if match else None
+    except _PROPAGATED_ERRORS:
+        raise
+    except Exception as e:  # pylint: disable=broad-exception-caught
+        logger.debug("Failed to read %s for folder %s: %s", item, folder, e)
+        return None
+
+
 def get_folder_uidvalidity(imap_connection, folder: str) -> int | None:
     """Read a folder's UIDVALIDITY without changing the selected folder.
 
@@ -502,31 +567,25 @@ def get_folder_uidvalidity(imap_connection, folder: str) -> int | None:
     resumable import stores it alongside the last-seen UID so a resume can tell
     whether its watermark is still valid. Returns ``None`` when unreadable.
     """
-    try:
-        status, data = imap_connection.status(f'"{folder}"', "(UIDVALIDITY)")
-        if status != "OK" or not data or not data[0]:
-            return None
-        raw = data[0] if isinstance(data[0], bytes) else str(data[0]).encode()
-        match = re.search(rb"UIDVALIDITY\s+(\d+)", raw)
-        return int(match.group(1)) if match else None
-    except Exception as e:  # pylint: disable=broad-exception-caught
-        logger.debug("Failed to read UIDVALIDITY for folder %s: %s", folder, e)
-        return None
+    return _folder_status_item(imap_connection, folder, "UIDVALIDITY")
 
 
 def _folder_uidnext(imap_connection, folder: str) -> int | None:
     """Read a folder's UIDNEXT (the next UID the server would assign) via
     STATUS, or ``None`` when denied/unparsable."""
-    try:
-        status, data = imap_connection.status(f'"{folder}"', "(UIDNEXT)")
-        if status != "OK" or not data or not data[0]:
-            return None
-        raw = data[0] if isinstance(data[0], bytes) else str(data[0]).encode()
-        match = re.search(rb"UIDNEXT\s+(\d+)", raw)
-        return int(match.group(1)) if match else None
-    except Exception as e:  # pylint: disable=broad-exception-caught
-        logger.debug("Failed to read UIDNEXT for folder %s: %s", folder, e)
-        return None
+    return _folder_status_item(imap_connection, folder, "UIDNEXT")
+
+
+def folder_may_hold_mail(imap_connection, folder: str) -> bool:
+    """Whether a folder the server refused to SELECT could still hold mail.
+
+    Some servers LIST entries that are not mailboxes without flagging them
+    ``\\Noselect``: Dovecot with an mbox ``mail_location`` rooted in the home
+    directory lists every file there — Sieve scripts like ``dovecot.sieve``
+    included — then refuses to open them. Only a STATUS reporting messages is
+    evidence that skipping such a folder would lose mail.
+    """
+    return bool(_folder_status_item(imap_connection, folder, "MESSAGES"))
 
 
 def _uid_search_fallback(imap_connection, folder: str) -> list[int]:
@@ -717,6 +776,9 @@ def _run_imap(channel, state) -> tuple[int, int, int]:
     # merges, so the record_progress calls that omit it leave it untouched).
     reasons: dict[str, int] = dict(state.get("failure_reasons") or {})
     mark_started(channel.id)
+    # Skipped folders describe one pass: drop the previous pass's list before
+    # planning, or a pass failing before it re-plans would end up reporting it.
+    record_progress(channel.id, success=success, failure=failure, skipped_folders=[])
     processed_since_flush = 0
 
     with (
@@ -737,6 +799,7 @@ def _run_imap(channel, state) -> tuple[int, int, int]:
         # message — a total that merely trails success+failure would pin the
         # UI's progress at 100% for the whole run.
         plan: list[tuple[str, Any, list[int]]] = []
+        skipped_folders: list[str] = []
         for folder in folders:
             beat(channel)
             uidvalidity = get_folder_uidvalidity(conn, folder)
@@ -761,11 +824,19 @@ def _run_imap(channel, state) -> tuple[int, int, int]:
             # Ask the server for only UIDs above the watermark (cheap for a
             # continuous poll of a large mailbox); keep the client-side ``>``
             # guard because ``UID SEARCH n:*`` is inclusive of the boundary.
-            uids = [
-                u
-                for u in uid_search_all(conn, folder, since_uid=last_uid)
-                if u > last_uid
-            ]
+            try:
+                found = uid_search_all(conn, folder, since_uid=last_uid)
+            except IMAPFolderSelectError:
+                if folder_may_hold_mail(conn, folder):
+                    raise
+                logger.warning(
+                    "import: skipping IMAP folder %s: not selectable and no "
+                    "message reported by STATUS",
+                    folder,
+                )
+                skipped_folders.append(mapping[folder])
+                continue
+            uids = [u for u in found if u > last_uid]
             plan.append((folder, uidvalidity, uids))
 
         # Already-processed counts carry across resumes/polls; this run adds
@@ -777,6 +848,7 @@ def _run_imap(channel, state) -> tuple[int, int, int]:
             failure=failure,
             folders=folders_wm,
             total=total,
+            skipped_folders=skipped_folders,
         )
 
         for folder, uidvalidity, uids in plan:

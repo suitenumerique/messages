@@ -2187,6 +2187,8 @@ class ImportRunSerializer(serializers.ModelSerializer):
     success_count = serializers.SerializerMethodField()
     failure_count = serializers.SerializerMethodField()
     failure_reasons = serializers.SerializerMethodField()
+    skipped_folders = serializers.SerializerMethodField()
+    skipped_folders_count = serializers.SerializerMethodField()
     progress = serializers.SerializerMethodField()
     error = serializers.SerializerMethodField()
     started_at = serializers.SerializerMethodField()
@@ -2208,6 +2210,8 @@ class ImportRunSerializer(serializers.ModelSerializer):
             "success_count",
             "failure_count",
             "failure_reasons",
+            "skipped_folders",
+            "skipped_folders_count",
             "progress",
             "error",
             "started_at",
@@ -2291,6 +2295,23 @@ class ImportRunSerializer(serializers.ModelSerializer):
         unreadable, …). ``None``/empty when nothing failed.
         """
         return self._run(obj).get("failure_reasons") or None
+
+    @extend_schema_field(
+        serializers.ListField(child=serializers.CharField(), allow_null=True)
+    )
+    def get_skipped_folders(self, obj):
+        """IMAP folders left out of the last pass: listed by the server but
+        refused at SELECT, with no STATUS evidence that they hold mail (e.g. a
+        Sieve script that Dovecot lists as a folder). Any mail they hold was not
+        imported. Only the first names are kept, see `skipped_folders_count`
+        for the total. ``None`` when no folder was skipped."""
+        return self._run(obj).get("skipped_folders") or None
+
+    @extend_schema_field(serializers.IntegerField())
+    def get_skipped_folders_count(self, obj):
+        """How many IMAP folders the last pass skipped, including those beyond
+        the names listed in `skipped_folders`."""
+        return self._run(obj).get("skipped_folders_count") or 0
 
     @extend_schema_field(serializers.FloatField())
     def get_progress(self, obj):

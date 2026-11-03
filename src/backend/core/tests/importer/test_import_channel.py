@@ -12,6 +12,7 @@ import pytest
 from jmap_email import parse_email
 
 from core import enums, factories, models
+from core.api.serializers import ImportRunSerializer
 from core.mda.inbound import deliver_inbound_message
 from core.services.importer import channel as channel_module
 from core.services.importer.channel import (
@@ -560,6 +561,55 @@ class TestHardening:
         )
         channel.refresh_from_db()
         assert channel.settings["import"]["error"] == "authentication failed"
+
+    def test_mark_finished_persists_skipped_folders_durably(self, mailbox, user):
+        """The skipped IMAP folders must outlive the Redis state, so the
+        imports list can still explain a finished run's missing folders."""
+        channel = create_import_channel(
+            recipient=mailbox, user=user, source_type=enums.ImportSource.IMAP.value
+        )
+        record_progress(
+            channel.id, success=1, failure=0, skipped_folders=["dovecot.sieve"]
+        )
+        mark_finished(
+            channel,
+            status=enums.ImportStatus.COMPLETED.value,
+            success=1,
+            failure=0,
+            total=1,
+        )
+        channel_module.clear_state(channel.id)
+        channel.refresh_from_db()
+
+        assert channel.settings["import"]["skipped_folders"] == ["dovecot.sieve"]
+        assert ImportRunSerializer(channel).data["skipped_folders"] == ["dovecot.sieve"]
+
+    def test_skipped_folders_keep_total_beyond_reported_names(self, mailbox, user):
+        """Only the first names are kept, but the count the list shows must be
+        the real total, also once the run has finished."""
+        channel = create_import_channel(
+            recipient=mailbox, user=user, source_type=enums.ImportSource.IMAP.value
+        )
+        skipped = [f"folder-{index}" for index in range(25)]
+        record_progress(channel.id, success=0, failure=0, skipped_folders=skipped)
+        mark_finished(
+            channel, status=enums.ImportStatus.COMPLETED.value, success=0, failure=0
+        )
+        channel_module.clear_state(channel.id)
+        channel.refresh_from_db()
+
+        data = ImportRunSerializer(channel).data
+        assert data["skipped_folders"] == skipped[:20]
+        assert data["skipped_folders_count"] == 25
+
+    def test_serializer_skipped_folders_is_null_when_none(self, mailbox, user):
+        channel = create_import_channel(
+            recipient=mailbox, user=user, source_type=enums.ImportSource.IMAP.value
+        )
+        record_progress(channel.id, success=0, failure=0, skipped_folders=[])
+        data = ImportRunSerializer(channel).data
+        assert data["skipped_folders"] is None
+        assert data["skipped_folders_count"] == 0
 
     @pytest.mark.parametrize(
         "late_status",

@@ -8435,6 +8435,18 @@
                         "nullable": true,
                         "readOnly": true
                     },
+                    "skipped_folders": {
+                        "type": "array",
+                        "items": {
+                            "type": "string"
+                        },
+                        "nullable": true,
+                        "readOnly": true
+                    },
+                    "skipped_folders_count": {
+                        "type": "integer",
+                        "readOnly": true
+                    },
                     "progress": {
                         "type": "number",
                         "format": "double",
@@ -8492,6 +8504,8 @@
                     "name",
                     "poll_interval",
                     "progress",
+                    "skipped_folders",
+                    "skipped_folders_count",
                     "source_type",
                     "started_at",
                     "status",

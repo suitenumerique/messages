@@ -110,7 +110,8 @@
   &--muted {
     color: var(--c--globals--colors--greyscale-500, #666);
   }
-  // Signals the "N failed" count carries a hoverable breakdown tooltip.
+  // Signals the part carries a hoverable details tooltip (failure breakdown,
+  // skipped folders).
   &--has-tooltip {
     text-decoration: underline dotted;
     text-underline-offset: 2px;

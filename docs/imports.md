@@ -107,9 +107,25 @@ The two resume paths are deliberately asymmetric:
   ends as `TransientImportError` — left `is_active`, so the scheduler
   re-dispatches and resumes at that UID rather than silently skipping it. Single
   `FETCH` timeouts are absorbed in-line by a bounded exponential-backoff retry
-  (a fixed few attempts on the same connection). Connect-time network failures and unselectable folders
-  map to the same `TransientImportError` (never a silent skip — an unselectable
-  folder would otherwise let a oneshot complete with its mail missing).
+  (a fixed few attempts on the same connection). Connect-time network failures
+  map to the same `TransientImportError`.
+
+  A folder the server lists but refuses to `SELECT` fails the run permanently
+  (`IMAPFolderSelectError`, never a silent skip — a oneshot would otherwise
+  complete with its mail missing), **unless** `STATUS` also refuses it or
+  reports no message. The folder is then skipped without its content being
+  checked: it is typically not a mailbox — e.g. Dovecot with an mbox
+  `mail_location` rooted in the home directory lists files such as the
+  `dovecot.sieve` script and refuses them with `[CANNOT]` — but a folder the
+  account may list without reading it (no ACL `r` right) is skipped too, along
+  with any mail it holds: it could not be imported anyway. Skipped folders are
+  reported in the run state, reset each pass — their total in
+  `skipped_folders_count`, their names in `skipped_folders` (only the first 20:
+  they are remote-controlled) — and shown in the imports list as not imported.
+  A `SELECT` or `STATUS` refusal carrying an RFC 5530 temporary code
+  (`[INUSE]`, `[UNAVAILABLE]`) is a `TransientImportError` instead: it says
+  nothing about the folder's content. LIST entries flagged `\Noselect` or
+  `\NonExistent` (case-insensitive) are never selected.
 
   Transient is not forever: `run_import_task` keeps a **cross-run stuck
   budget** (`STUCK_RETRY_LIMITS`) — too many consecutive runs dying at the

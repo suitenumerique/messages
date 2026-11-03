@@ -1,4 +1,6 @@
 {
+  "…and {{count}} more_one": "…and {{count}} more",
+  "…and {{count}} more_other": "…and {{count}} more",
   "{{addresses}} contains accented characters before the @ sign. We will try to send it, but mail servers that do not support internationalized addresses will reject it. Check the spelling with your recipient.": "{{addresses}} contains accented characters before the @ sign. We will try to send it, but mail servers that do not support internationalized addresses will reject it. Check the spelling with your recipient.",
   "{{assignees}} was unassigned_one": "{{assignees}} was unassigned",
   "{{assignees}} was unassigned_other": "{{assignees}} were unassigned",
@@ -40,6 +42,8 @@
   "{{count}} drafts have been deleted._other": "{{count}} drafts have been deleted.",
   "{{count}} failed_one": "{{count}} failed",
   "{{count}} failed_other": "{{count}} failed",
+  "{{count}} folders skipped_one": "{{count}} folder skipped",
+  "{{count}} folders skipped_other": "{{count}} folders skipped",
   "{{count}} hours ago_one": "{{count}} hour ago",
   "{{count}} hours ago_other": "{{count}} hours ago",
   "{{count}} import_one": "{{count}} import",
@@ -472,6 +476,7 @@
   "First name is required.": "First name is required.",
   "Fold message": "Fold message",
   "folder.search": "Search",
+  "Folders that could not be opened and were not imported:": "Folders that could not be opened and were not imported:",
   "For your security and privacy, external images are not displayed.": "For your security and privacy, external images are not displayed.",
   "Forced": "Forced",
   "Forced signature": "Forced signature",

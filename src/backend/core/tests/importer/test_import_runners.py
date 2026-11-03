@@ -17,7 +17,12 @@ import pytest
 from jmap_email import parse_email
 
 from core import enums, factories, models
-from core.services.importer.channel import create_import_channel, read_state
+from core.services.importer.channel import (
+    create_import_channel,
+    mark_finished,
+    read_state,
+    record_progress,
+)
 from core.services.importer.eml import run_eml
 from core.services.importer.imap import IMAPFolderSelectError, run_imap
 from core.services.importer.labels import compute_labels_and_flags
@@ -917,6 +922,90 @@ class TestRunImap:
         _run_with_patches(_patch_imap(uid_map), run)
         # Nothing delivered, watermark untouched: the retry loses nothing.
         assert not models.Message.objects.filter(channel=channel).exists()
+
+    def _run_with_unselectable(self, channel, uid_map, *, may_hold_mail):
+        """Run with ``dovecot.sieve`` listed but refused at SELECT, as Dovecot
+        does when its mbox root is the home directory."""
+        folders = ("INBOX", "dovecot.sieve")
+        patchers = [
+            p
+            for p in _patch_imap(uid_map, folders=folders)
+            if p.attribute != "uid_search_all"
+        ]
+        search = {f: sorted(uid_map.get(f, {})) for f in folders}
+
+        def _uid_search_all(_conn, folder, since_uid=0):
+            if folder == "dovecot.sieve":
+                raise IMAPFolderSelectError(f"Cannot select IMAP folder {folder}")
+            return [u for u in search[folder] if u > since_uid]
+
+        patchers += [
+            patch(
+                "core.services.importer.imap.uid_search_all",
+                side_effect=_uid_search_all,
+            ),
+            patch(
+                "core.services.importer.imap.folder_may_hold_mail",
+                return_value=may_hold_mail,
+            ),
+        ]
+        return _run_with_patches(patchers, lambda: run_imap(channel, {}))
+
+    def test_unselectable_folder_without_mail_is_skipped(self, mailbox, user):
+        """A listed entry the server refuses to SELECT and reports no message
+        for (e.g. a Sieve script) must not fail the whole import."""
+        raw = _eml_bytes(frm="sender@example.com", subject="X", message_id="<ds@x>")
+        uid_map = {"INBOX": {1: ([], raw)}}
+        channel = _imap_channel(mailbox, user)
+
+        result = self._run_with_unselectable(channel, uid_map, may_hold_mail=False)
+        assert result == (1, 0, 1)
+        assert models.Message.objects.filter(channel=channel).count() == 1
+        state = read_state(channel.id)
+        assert "dovecot.sieve" not in state["folders"]
+        assert state["skipped_folders"] == ["dovecot.sieve"]
+        assert state["skipped_folders_count"] == 1
+
+    def test_skipped_folders_are_reset_each_pass(self, mailbox, user):
+        """Each pass re-plans every folder: a folder skipped by a previous
+        pass must not stay reported once it no longer is."""
+        raw = _eml_bytes(frm="sender@example.com", subject="X", message_id="<rp@x>")
+        uid_map = {"INBOX": {1: ([], raw)}}
+        channel = _imap_channel(mailbox, user)
+        record_progress(
+            channel.id, success=0, failure=0, skipped_folders=["dovecot.sieve"]
+        )
+
+        _run_with_patches(_patch_imap(uid_map), lambda: run_imap(channel, {}))
+        assert read_state(channel.id)["skipped_folders"] == []
+
+    def test_unselectable_folder_with_mail_stays_permanent(self, mailbox, user):
+        """When STATUS reports messages, skipping would silently lose them:
+        the refused SELECT still fails the run."""
+        raw = _eml_bytes(frm="sender@example.com", subject="X", message_id="<dm@x>")
+        uid_map = {"INBOX": {1: ([], raw)}}
+        channel = _imap_channel(mailbox, user)
+
+        with pytest.raises(IMAPFolderSelectError, match="dovecot.sieve"):
+            self._run_with_unselectable(channel, uid_map, may_hold_mail=True)
+        assert not models.Message.objects.filter(channel=channel).exists()
+
+    def test_pass_failing_before_planning_ends_reports_no_stale_folders(
+        self, mailbox, user
+    ):
+        """A pass that fails while planning must not leave the previous pass's
+        skipped folders in the failed run's durable snapshot."""
+        uid_map = {"INBOX": {}}
+        channel = _imap_channel(mailbox, user)
+        record_progress(channel.id, success=0, failure=0, skipped_folders=["Old"])
+
+        with pytest.raises(IMAPFolderSelectError):
+            self._run_with_unselectable(channel, uid_map, may_hold_mail=True)
+        mark_finished(
+            channel, status=enums.ImportStatus.FAILED.value, success=0, failure=0
+        )
+        channel.refresh_from_db()
+        assert not channel.settings["import"]["skipped_folders"]
 
     def test_connection_error_is_transient(self, mailbox, user):
         """A connect-time network failure (DNS, socket timeout) is exactly as

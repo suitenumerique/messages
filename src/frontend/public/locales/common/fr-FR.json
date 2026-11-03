@@ -1,4 +1,6 @@
 {
+  "…and {{count}} more_one": "…et {{count}} autre",
+  "…and {{count}} more_other": "…et {{count}} autres",
   "{{addresses}} contains accented characters before the @ sign. We will try to send it, but mail servers that do not support internationalized addresses will reject it. Check the spelling with your recipient.": "{{addresses}} contient des caractères accentués avant le signe @. Nous tenterons l'envoi, mais les serveurs de messagerie qui ne prennent pas en charge les adresses internationalisées le refuseront. Vérifiez l'orthographe avec votre destinataire.",
   "{{assignees}} was unassigned_one": "{{assignees}} a été désassigné",
   "{{assignees}} was unassigned_other": "{{assignees}} ont été désassignés",
@@ -40,6 +42,8 @@
   "{{count}} drafts have been deleted._other": "{{count}} brouillons ont été supprimés.",
   "{{count}} failed_one": "{{count}} en échec",
   "{{count}} failed_other": "{{count}} en échec",
+  "{{count}} folders skipped_one": "{{count}} dossier ignoré",
+  "{{count}} folders skipped_other": "{{count}} dossiers ignorés",
   "{{count}} hours ago_one": "il y a {{count}} heure",
   "{{count}} hours ago_other": "il y a {{count}} heures",
   "{{count}} import_one": "{{count}} import",
@@ -472,6 +476,7 @@
   "First name is required.": "Le prénom est requis.",
   "Fold message": "Réduire le message",
   "folder.search": "Recherche",
+  "Folders that could not be opened and were not imported:": "Dossiers impossibles à ouvrir, non importés :",
   "For your security and privacy, external images are not displayed.": "Pour votre sécurité et votre vie privée, les images externes ne sont pas affichées.",
   "Forced": "Forcée",
   "Forced signature": "Signature forcée",
