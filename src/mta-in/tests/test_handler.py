@@ -648,6 +648,33 @@ async def test_unknown_recipient_logs_one_info_line(caplog):
 
 
 @pytest.mark.asyncio
+async def test_a_recipient_refusal_names_the_sender(caplog):
+    """Searching the log for the sending domain has to find its refusals."""
+    server = _FakeServer()
+    handler, session, envelope = _handler(), _session(), _envelope()
+    envelope.mail_from = "alice@sender.example"
+
+    with caplog.at_level(logging.INFO, logger="pymta.handler"):
+        await handler.handle_RCPT(server, session, envelope, "<miss@example.com>", [])
+
+    (reject,) = [r for r in caplog.records if r.getMessage() == "reject"]
+    assert reject.sender == "alice@sender.example"
+
+
+@pytest.mark.asyncio
+async def test_a_bounce_refusal_names_the_null_sender(caplog):
+    server = _FakeServer()
+    handler, session, envelope = _handler(), _session(), _envelope()
+    envelope.mail_from = NULL_SENDER_SENTINEL
+
+    with caplog.at_level(logging.INFO, logger="pymta.handler"):
+        await handler.handle_RCPT(server, session, envelope, "<miss@example.com>", [])
+
+    (reject,) = [r for r in caplog.records if r.getMessage() == "reject"]
+    assert reject.sender == "<>"
+
+
+@pytest.mark.asyncio
 async def test_malformed_recipient_logs_the_address_it_refused(caplog):
     server = _FakeServer()
     handler, session, envelope = _handler(), _session(), _envelope()

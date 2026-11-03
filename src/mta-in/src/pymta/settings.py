@@ -487,6 +487,7 @@ _RELOADABLE = (
     "PYMTA_DATA_TIMEOUT",
     "PYMTA_SESSION_TIMEOUT",
     "PYMTA_SHUTDOWN_TIMEOUT",
+    "PYMTA_LOG_SESSIONS",
 )
 
 
@@ -513,6 +514,7 @@ def reload_runtime_settings() -> dict[str, object]:
         ),
         "PYMTA_SESSION_TIMEOUT": _env_int("PYMTA_SESSION_TIMEOUT", 1800, minimum=0),
         "PYMTA_SHUTDOWN_TIMEOUT": _env_int("PYMTA_SHUTDOWN_TIMEOUT", 25, minimum=0),
+        "PYMTA_LOG_SESSIONS": _env_bool("PYMTA_LOG_SESSIONS", True),
     }
     # Derived, so recomputed rather than read: reloading the message cap without
     # it would leave the session cap describing the old one.
@@ -635,6 +637,13 @@ PYMTA_METRICS_API_KEY = _env_str("PYMTA_METRICS_API_KEY", "")
 # one: with this on, aiosmtpd writes every envelope address and the full body of
 # every message into the log. Do not leave it set.
 PYMTA_LOG_VERBOSE_LIBRARIES = _env_bool("PYMTA_LOG_VERBOSE_LIBRARIES", False)
+
+# One ``session_closed`` line per admitted connection, at INFO: who connected,
+# what they said, how it ended. The only record of a sender that never reached
+# a message outcome (TLS refused, a reply aiosmtpd gave on its own, a timeout,
+# a hang-up). A peer drives its rate, so it is reloadable: under a connection
+# flood, set it to false and SIGHUP, and the line drops to DEBUG.
+PYMTA_LOG_SESSIONS = _env_bool("PYMTA_LOG_SESSIONS", True)
 
 # Checked against the level names rather than passed to a ``getattr`` default:
 # an unrecognised level would otherwise silently resolve to INFO, which is the

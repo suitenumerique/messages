@@ -178,6 +178,7 @@ Grouped as `src/pymta/settings.py` groups them.
 | `PYMTA_METRICS_API_KEY` | empty | Bearer token required to scrape `/metrics`. Empty = unauthenticated, with a `SECURITY:` warning at startup. Same opt-in semantics as the backend's `PROMETHEUS_API_KEY` |
 | `PYMTA_LOG_LEVEL` | `INFO` | Root log level: `CRITICAL`, `ERROR`, `WARNING`, `INFO` or `DEBUG` |
 | `PYMTA_LOG_VERBOSE_LIBRARIES` | `false` | Let aiosmtpd/httpx/httpcore log too. Debugging only: aiosmtpd writes every envelope address and every message body |
+| `PYMTA_LOG_SESSIONS` | `true` | One `session_closed` line per connection at INFO (see [Tracing a message](#tracing-a-message-that-never-arrived)). `false` drops it to DEBUG; reloadable on SIGHUP, for a connection flood |
 | `EXEC_CMD` | `false` | Start pymta in the background, then run the container command (used by `make test-mta-in-py`) |
 | `EXEC_CMD_ONLY` | `false` | Skip startup entirely and exec the container command (used by `make lint-mta-in-py`) |
 
@@ -198,6 +199,7 @@ Six settings exist to be changed while something is going wrong. All six are re-
 | `PYMTA_BLOCKED_NETWORKS` | `554` at connect for these client IPs/CIDRs |
 | `PYMTA_BLOCKED_SENDER_DOMAINS` | `554` at MAIL FROM, matched case-insensitively on the domain |
 | `PYMTA_BLOCKED_RECIPIENTS` | `550` at RCPT TO, full addresses, case-insensitive |
+| `PYMTA_LOG_SESSIONS` | `false` moves the per-connection `session_closed` line from INFO to DEBUG, when a flood of connections is writing the log bill |
 
 Plus the ceilings, which are consulted per connection or per command and so can move safely under a running process: `PYMTA_MAX_CONCURRENT_DATA` (and `PYMTA_MAX_SESSIONS_TOTAL`, which follows it), `PYMTA_MAX_ERRORS_PER_SESSION`, `PYMTA_MAX_RCPT_MISSES_PER_SESSION`, `PYMTA_DATA_TIMEOUT`, `PYMTA_SESSION_TIMEOUT`, `PYMTA_SHUTDOWN_TIMEOUT`. Shedding memory pressure is therefore a SIGHUP rather than a restart. Lowering a session cap mid-incident refuses new connections until the live count falls back under it, which is usually what you want.
 
@@ -302,6 +304,39 @@ Every configurable limit publishes its value as `pymta_config_limit{name="<setti
 | `MDA_BREAKER_THRESHOLD` / `_COOLDOWN` | — | `pymta_mda_breaker_open` is 1 while open; `pymta_mda_request_duration_seconds{result="breaker_open"}` counts the calls it shed |
 
 `pymta_sessions_abandoned_total` counts sessions cut by the `PYMTA_SHUTDOWN_TIMEOUT` drain deadline — non-zero on every rollout means the deadline is too short for your traffic.
+
+### Tracing a message that never arrived
+
+The log is logfmt, one line per event, and every line about a connection carries the same `session_id`. Three kinds of line name addresses, at INFO:
+
+| Event | One per | Says |
+|---|---|---|
+| `message_delivered` / `message_deferred` / `message_rejected` | message that reached the end of DATA | what the MDA made of it |
+| `reject` | command *we* refused (`verb=`, `reason=`, and `sender=` on every RCPT refusal) | why |
+| `session_closed` | connection the gate admitted and that issued at least one command | everything else |
+
+`session_closed` is Postfix's `disconnect from` line, and the one to search when a sender reports mail that never arrived and nothing else mentions it. Those are the sessions that ended before any refusal of ours: a STARTTLS the sender's side gave up on, a reply aiosmtpd gave without calling a hook (`552` too much data, `555` an unknown MAIL/RCPT parameter, `500` line too long, `503` bad sequence), a timeout, a hang-up mid-DATA.
+
+```text
+event=session_closed session_id=9bf92de8 client_ip=192.0.2.10 helo=mx.sender.example tls=true
+  tls_cipher=TLS_AES_256_GCM_SHA384 tls_version=TLSv1.3 sender=alice@sender.example
+  commands="ehlo=2 starttls=1 mail=1 rcpt=1 data=0/1" errors=1 closed_by=peer_closed duration_ms=30412
+  last_error_verb=data last_error_reply="552 Error: Too much mail data" last_error_arg=null
+```
+
+| Field | Meaning |
+|---|---|
+| `commands` | Per verb, `n` when all succeeded, `succeeded/attempted` otherwise. A `data=0/1` is a message that did not get through |
+| `last_error_*` | The last 4xx/5xx sent, whoever sent it, with the verb and the argument that drew it |
+| `tls`, `tls_version`, `tls_cipher`, `tls_error` | `tls_error` is set when the STARTTLS handshake failed, with the cause (`SSLError: ... certificate unknown`, `no shared cipher`, ...). A sender enforcing TLS that rejects our certificate looks exactly like this |
+| `closed_by` | `quit`, `peer_closed`, `peer_reset` (with `error_type`), `server_closed` (we answered 421 or aiosmtpd hung up), `command_timeout`, `session_timeout`, `tls_failed`, `internal_error` |
+| `wire_peer` | The balancer, when PROXY protocol is on; `client_ip` is then the PROXY source |
+
+So, for "mail from `@sender.example` never arrives": search `sender.example` (it appears in `sender=` and `helo=`), or the sender's IP in `client_ip`, then pull every line of that `session_id`.
+
+Two cases leave no `session_closed` at INFO, on purpose. A connection refused at the gate (drain, `PYMTA_BLOCKED_NETWORKS`, a session cap) is what a flood is made of: it is counted in `pymta_connections_total{result=...}` and logged at DEBUG (`connection_blocked`, `connection_capped`). And a connection that closes without one command is a TCP health check. If neither the log nor that counter moves, the sender is not reaching this host: check their side, our MX records and anything in front of port 25.
+
+`pymta_commands_total{verb, class}` counts the same thing as `commands=`, as a metric: a rising `class="5xx"` on one verb, or `class="error"` on `STARTTLS`, is the aggregate view of these lines.
 
 ### Naming
 

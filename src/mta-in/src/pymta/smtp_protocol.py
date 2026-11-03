@@ -19,17 +19,24 @@ real client address rather than the load-balancer's IP.
 from __future__ import annotations
 
 import contextlib
+import functools
 import logging
 import secrets
 import time
 
 from aiosmtpd.smtp import SMTP as BaseSMTP
-from aiosmtpd.smtp import syntax
+from aiosmtpd.smtp import TLSSetupException, syntax
 
-from . import metrics, runtime, settings
+from . import logfmt, metrics, runtime, settings
 from .limits import IPGate, TooManyConnections
 
 logger = logging.getLogger(__name__)
+
+# Bounds on what the session summary quotes back from the peer. A reply is ours
+# and short; an argument is the peer's, capped by aiosmtpd at 512 octets per
+# command line, which is still more than a log line should carry.
+_MAX_LOGGED_REPLY = 200
+_MAX_LOGGED_ARG = 256
 
 
 def _ip_of(peer) -> str | None:
@@ -99,6 +106,36 @@ class HardenedSMTP(BaseSMTP):
         # never re-armed. See _arm_session_deadline.
         self._session_deadline_handle = None
 
+        # Session accounting, reported once by _log_session when the connection
+        # ends. Kept on the protocol instance for the same reason as the
+        # session id: aiosmtpd rebuilds ``session`` on STARTTLS.
+        self._accepted_at = time.monotonic()
+        # The client as the gate keyed it: PROXY source or TCP peer.
+        self._client_ip: str | None = None
+        # verb -> [succeeded, attempted], in order of first use.
+        self._commands: dict[str, list[int]] = {}
+        self._current_verb: str | None = None
+        self._current_arg: str | None = None
+        self._last_code: int | None = None
+        self._error_replies = 0
+        # (verb, reply, argument) of the last 4xx/5xx sent, whoever produced
+        # it. aiosmtpd answers a whole class of mistakes itself (552 too much
+        # data, 555 unknown MAIL/RCPT parameter, 500 line too long, 503 bad
+        # sequence) without calling a single hook, so this is the only place
+        # those refusals can be seen.
+        self._last_error: tuple[str | None, str, str | None] | None = None
+        self._sender: str | None = None
+        self._helo: str | None = None
+        self._tls_error: str | None = None
+        self._close_reason: str | None = None
+        self._session_logged = False
+        # Set once the gate lets the connection in, never cleared: unlike the
+        # gate's own bookkeeping, it must still be true when the summary runs.
+        self._admitted = False
+        self._smtp_methods = {
+            verb: self._accounted(verb, method) for verb, method in self._smtp_methods.items()
+        }
+
     # ----------------------------------------------------------- verb lockdown
     async def smtp_VRFY(self, arg: str) -> None:
         await self.push("252 2.1.5 Cannot VRFY user; try RCPT to verify")
@@ -125,6 +162,7 @@ class HardenedSMTP(BaseSMTP):
         if self._session_deadline_handle is not None:
             self._session_deadline_handle.cancel()
             self._session_deadline_handle = None
+        self._log_session(error)
         super().connection_lost(error)
 
     def _arm_session_deadline(self) -> None:
@@ -149,12 +187,12 @@ class HardenedSMTP(BaseSMTP):
 
     def _session_expired(self) -> None:
         self._session_deadline_handle = None
-        peer = getattr(self.session, "peer", None) if self.session else None
+        self._close_reason = "session_timeout"
         logger.debug(
             "session_timeout",
             extra={
                 "session_id": self.session_id,
-                "client_ip": _ip_of(peer),
+                "client_ip": self._client_address(),
                 "limit_seconds": settings.PYMTA_SESSION_TIMEOUT,
             },
         )
@@ -180,12 +218,12 @@ class HardenedSMTP(BaseSMTP):
         deadline above, so this is the odd one out. Saying it also gives the
         timeout a metric, which it otherwise had no way to record.
         """
-        peer = getattr(self.session, "peer", None) if self.session else None
+        self._close_reason = "command_timeout"
         logger.debug(
             "command_timeout",
             extra={
                 "session_id": self.session_id,
-                "client_ip": _ip_of(peer),
+                "client_ip": self._client_address(),
                 "limit_seconds": settings.PYMTA_COMMAND_TIMEOUT,
             },
         )
@@ -215,19 +253,220 @@ class HardenedSMTP(BaseSMTP):
         self._disconnect_after_reply = True
 
     async def push(self, status) -> None:
+        self._note_reply(status)
         await super().push(status)
         if self._disconnect_after_reply:
             self._disconnect_after_reply = False
+            self._close_reason = self._close_reason or "server_closed"
             if self.transport is not None:
                 self.transport.close()
 
     async def handle_exception(self, error: Exception) -> str:
+        if isinstance(error, TLSSetupException):
+            # The peer's handshake failed: no certificate it would accept, no
+            # common protocol or cipher, or plaintext where TLS was due. Not a
+            # fault of ours, so neither handler_error nor the internal_error
+            # counters, which is where it used to land. aiosmtpd closes the
+            # transport itself on this path and never sends the reply.
+            #
+            # The cause is the one useful fact: a sender that enforces TLS and
+            # rejects our certificate shows up here and nowhere else, as a
+            # session that said STARTTLS and was never heard from again.
+            cause = error.__cause__ or error
+            self._tls_error = logfmt.clip(f"{type(cause).__name__}: {cause}", _MAX_LOGGED_REPLY)
+            self._close_reason = "tls_failed"
+            return "454 4.7.0 TLS not available due to temporary reason"
+        self._close_reason = "internal_error"
+        logger.error(
+            "handler_error",
+            exc_info=error,
+            extra={"session_id": self.session_id, "client_ip": self._client_address()},
+        )
         # The handler answers 421 ("closing transmission channel"); make that
         # true. aiosmtpd would otherwise push it and carry on with a session
         # whose state we no longer trust.
         status = await super().handle_exception(error)
         self.request_disconnect()
         return status
+
+    # ------------------------------------------------------ session summary
+    def _accounted(self, verb: str, method):
+        """Wrap one ``smtp_<VERB>`` so its outcome is counted.
+
+        aiosmtpd dispatches every recognised command through ``_smtp_methods``,
+        and a good share of them answer without reaching any handler hook. This
+        is the one place every verb passes, whoever ends up replying.
+
+        ``functools.wraps`` carries over the ``@syntax`` attributes aiosmtpd
+        reads back off the method.
+        """
+
+        @functools.wraps(method)
+        async def run(arg):
+            self._current_verb, self._current_arg, self._last_code = verb, arg, None
+            if verb == "MAIL":
+                self._sender = self._sender_of(arg)
+            elif verb in ("EHLO", "HELO"):
+                self._helo = logfmt.clip(arg, _MAX_LOGGED_ARG)
+            failed = True
+            try:
+                await method(arg)
+                failed = False
+            finally:
+                # None when _log_session already settled it: the connection
+                # went while this command was still running.
+                if self._current_verb is not None:
+                    self._count_command(verb, failed)
+                self._current_verb = self._current_arg = None
+
+        return run
+
+    def _sender_of(self, arg: str | None) -> str | None:
+        """The address a MAIL command names, as the handler's lines spell it.
+
+        Parsed with aiosmtpd's own helpers so it reads the same way the command
+        will, and falls back to the raw argument when it does not parse: that
+        is the case worth seeing, and aiosmtpd is about to refuse it.
+        """
+        path = self._strip_command_keyword("FROM:", arg) if arg else None
+        address = self._getaddr(path)[0] if path else None
+        if address is None:
+            return logfmt.clip(arg, _MAX_LOGGED_ARG)
+        return logfmt.clip(address or "<>", _MAX_LOGGED_ARG)
+
+    def _count_command(self, verb: str, failed: bool) -> None:
+        code = self._last_code
+        if failed:
+            outcome = "error"
+        elif code is None:
+            outcome = "none"
+        else:
+            outcome = f"{code // 100}xx"
+        metrics.COMMANDS_TOTAL.labels(verb=verb, **{"class": outcome}).inc()
+        counts = self._commands.setdefault(verb, [0, 0])
+        counts[1] += 1
+        # 3xx is not success: a 354 with nothing after it is a DATA phase the
+        # connection did not survive.
+        if outcome == "2xx":
+            counts[0] += 1
+
+    def _note_reply(self, status) -> None:
+        text = status.decode("utf-8", "replace") if isinstance(status, bytes) else str(status)
+        try:
+            code = int(text[:3])
+        except ValueError:
+            return
+        self._last_code = code
+        if code >= 400:
+            self._error_replies += 1
+            self._last_error = (
+                self._current_verb,
+                logfmt.clip(text, _MAX_LOGGED_REPLY),
+                logfmt.clip(self._current_arg, _MAX_LOGGED_ARG),
+            )
+
+    def _client_address(self) -> str | None:
+        """The client: what the gate keyed on, else the TCP peer.
+
+        The TCP peer is the balancer when PROXY protocol is on, and naming it
+        would attribute the session to our own infrastructure.
+        """
+        if self._client_ip is not None:
+            return self._client_ip
+        if settings.PYMTA_ENABLE_PROXY_PROTOCOL:
+            return None
+        return _ip_of(getattr(self.session, "peer", None) if self.session else None)
+
+    def _commands_field(self) -> str:
+        """Postfix's ``disconnect from`` tally: ``ehlo=1 mail=1 rcpt=0/1``.
+
+        A bare count when every attempt succeeded, ``succeeded/attempted``
+        otherwise, so the failing verb stands out at a glance.
+        """
+        parts = []
+        for verb, (ok, total) in self._commands.items():
+            parts.append(
+                f"{verb.lower()}={total}" if ok == total else f"{verb.lower()}={ok}/{total}"
+            )
+        return " ".join(parts)
+
+    def _closed_by(self, error) -> str:
+        if self._close_reason:
+            return self._close_reason
+        if "QUIT" in self._commands:
+            return "quit"
+        # aiosmtpd closes on its own after these two, without a hook: the
+        # per-verb call limit (421) and too many unknown commands (502 ...
+        # goodbye).
+        if self._last_code == 421 or (self._last_error and "goodbye" in self._last_error[1]):
+            return "server_closed"
+        if error is not None:
+            return "peer_reset"
+        return "peer_closed"
+
+    def _tls_fields(self) -> dict:
+        if self._tls_error is not None:
+            return {"tls": False, "tls_error": self._tls_error}
+        info = getattr(self.session, "ssl", None) if self.session else None
+        if not info:
+            return {"tls": False}
+        cipher = info.get("cipher") if isinstance(info, dict) else None
+        fields: dict = {"tls": True}
+        if cipher:
+            fields["tls_cipher"], fields["tls_version"] = cipher[0], cipher[1]
+        return fields
+
+    def _log_session(self, error) -> None:
+        """One line per connection, whatever became of it.
+
+        The message lines (``message_*``) and refusals (``reject``) only exist
+        for a sender that got far enough to be refused by *us*. A sender whose
+        handshake failed, who was answered by aiosmtpd itself, who timed out or
+        simply hung up mid-DATA left nothing at all, which is the "no trace of
+        the mail in the log" case. This is the Postfix ``disconnect from`` line.
+
+        INFO only for a session that was admitted and said something.
+        Connections refused at the gate are counted by
+        ``pymta_connections_total`` and are what a flood is made of; a
+        connection that closes without a single command is a TCP health check.
+        """
+        if self._session_logged:
+            return
+        self._session_logged = True
+        if self._current_verb is not None:
+            # Cut off mid-command, typically mid-DATA: the reply never went out.
+            self._count_command(self._current_verb, failed=True)
+            self._current_verb = None
+        if self._ip_gate is not None and not self._admitted:
+            return
+        closed_by = self._closed_by(error)
+        fields = {
+            "session_id": self.session_id,
+            "client_ip": self._client_address(),
+            "helo": self._helo,
+            **self._tls_fields(),
+            "sender": self._sender,
+            "commands": self._commands_field(),
+            "errors": self._error_replies,
+            "closed_by": closed_by,
+            "duration_ms": int((time.monotonic() - self._accepted_at) * 1000),
+        }
+        if settings.PYMTA_ENABLE_PROXY_PROTOCOL:
+            fields["wire_peer"] = _ip_of(getattr(self.session, "peer", None))
+        if self._last_error is not None:
+            verb, reply, arg = self._last_error
+            fields["last_error_verb"] = verb.lower() if verb else None
+            fields["last_error_reply"] = reply
+            fields["last_error_arg"] = arg
+        # Only where it is the explanation. After a QUIT or our own hang-up a
+        # TLS peer routinely resets instead of closing, which is noise.
+        if closed_by == "peer_reset":
+            fields["error_type"] = type(error).__name__
+        talked = bool(self._commands) or self._last_error is not None
+        if settings.PYMTA_LOG_SESSIONS and talked:
+            logger.info("session_closed", extra=fields)
+        else:
+            logger.debug("session_closed", extra=fields)
 
     # ------------------------------------------------------------ DATA budget
     @syntax("DATA")
@@ -258,7 +497,7 @@ class HardenedSMTP(BaseSMTP):
                 "data_slots_exhausted",
                 extra={
                     "session_id": self.session_id,
-                    "client_ip": _ip_of(getattr(self.session, "peer", None)),
+                    "client_ip": self._client_address(),
                     "limit": self._ip_gate.max_data,
                 },
             )
@@ -332,6 +571,7 @@ class HardenedSMTP(BaseSMTP):
         # one reply and a close. Sits here rather than in _handle_client so both
         # topologies get it from one place, with the address already resolved
         # (the PROXY source when that is enabled, the TCP peer when it is not).
+        self._client_ip = ip if ip != "unknown" else None
         if runtime.is_draining():
             # Out of rotation, either because PYMTA_DRAIN says so or because a
             # SIGTERM started the shutdown. RFC 5321 §3.1 allows answering
@@ -382,6 +622,7 @@ class HardenedSMTP(BaseSMTP):
             return False
         self._gate_held_ip = ip
         self._gate_started = time.monotonic()
+        self._admitted = True
         metrics.CONNECTIONS_TOTAL.labels(result="accepted").inc()
         return True
 

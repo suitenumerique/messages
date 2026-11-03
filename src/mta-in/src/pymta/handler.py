@@ -23,7 +23,7 @@ import logging
 import re
 import time
 
-from . import metrics, settings
+from . import logfmt, metrics, settings
 from .address import AddressError, validate_envelope_address
 from .mda_async import MDAClient, MDAResult
 
@@ -318,15 +318,22 @@ def _recipients_field(rcpts: list[str]) -> str:
 
 
 def _address_field(address) -> str:
-    """A peer-supplied address, bounded, for a log field.
+    """A peer-supplied address, bounded, for a log field."""
+    return logfmt.clip(address or "", _MAX_LOGGED_ADDRESS)
 
-    ``logfmt.quote`` escapes CR/LF and every unprintable code point, so the
-    value cannot forge a line; only its length is left to bound here.
+
+def _sender_field(envelope) -> str | None:
+    """The envelope sender as logged: ``<>`` for bounces, None before MAIL FROM.
+
+    Carried on every RCPT refusal so that searching the log for the sending
+    domain finds them. Without it a refusal names only our own mailbox, and
+    "why did mail from X never arrive?" has to be answered by joining lines.
     """
-    text = address if isinstance(address, str) else str(address or "")
-    if len(text) <= _MAX_LOGGED_ADDRESS:
-        return text
-    return f"{text[:_MAX_LOGGED_ADDRESS]}...+{len(text) - _MAX_LOGGED_ADDRESS}"
+    if not envelope.mail_from:
+        return None
+    if envelope.mail_from == NULL_SENDER_SENTINEL:
+        return "<>"
+    return _address_field(envelope.mail_from)
 
 
 def _log_reject(server, session, verb, reason, **extra) -> None:
@@ -525,6 +532,7 @@ class InboundHandler:
     async def handle_RCPT(self, server, session, envelope, address, rcpt_options):  # noqa: PLR0911
         counters = _counters(server, session)
         reject_ctx = (server, session, counters)
+        sender = _sender_field(envelope)
 
         # First gate: hard-error budget, shared with handle_MAIL.
         if _hard_error_limit_reached(server, session, counters, "rcpt"):
@@ -546,6 +554,7 @@ class InboundHandler:
                 "rcpt",
                 "defer_all",
                 "451 4.3.2 Service temporarily unavailable, please retry",
+                sender=sender,
             )
 
         # Per-envelope recipient cap.
@@ -557,6 +566,7 @@ class InboundHandler:
                 "rcpt",
                 "max_recipients_per_envelope",
                 "452 4.5.3 Too many recipients",
+                sender=sender,
                 recipient_count=len(envelope.rcpt_tos),
             )
 
@@ -575,6 +585,7 @@ class InboundHandler:
                 "rcpt",
                 err.reason,
                 f"{err.smtp_code} {err.smtp_text}",
+                sender=sender,
                 recipient=_address_field(address),
             )
 
@@ -591,6 +602,7 @@ class InboundHandler:
                 "rcpt",
                 "blocked_recipient",
                 "550 5.1.1 Recipient not accepted",
+                sender=sender,
                 recipient=_address_field(clean),
             )
 
@@ -602,6 +614,7 @@ class InboundHandler:
                 "rcpt",
                 "mda_temp_fail",
                 "451 4.3.0 Recipient verification temporarily unavailable",
+                sender=sender,
                 recipient=_address_field(clean),
                 status=result.status_code,
             )
@@ -615,6 +628,7 @@ class InboundHandler:
                 "rcpt",
                 "mda_verification_failed",
                 "550 5.1.1 Recipient verification failed",
+                sender=sender,
                 recipient=_address_field(clean),
                 status=result.status_code,
             )
@@ -639,6 +653,7 @@ class InboundHandler:
                 extra=_trace(
                     server,
                     session,
+                    sender=sender,
                     recipient=_address_field(clean),
                     status=result.status_code,
                     verdict_type=type(verdict).__name__,
@@ -668,6 +683,7 @@ class InboundHandler:
                 "rcpt",
                 reason,
                 reply,
+                sender=sender,
                 recipient=_address_field(clean),
                 misses=misses,
             )
@@ -900,8 +916,8 @@ class InboundHandler:
 
     # ------------------------------------------------------------------ misc
     async def handle_exception(self, error: BaseException) -> str:
-        # Never leak stack traces or internal hostnames in SMTP replies.
+        # Never leak stack traces or internal hostnames in SMTP replies. Logged
+        # by HardenedSMTP.handle_exception, which knows whose session it was.
         metrics.SECURITY_REJECTIONS.labels(reason="internal_error").inc()
         metrics.DISCONNECTS_421.labels(reason="internal_error").inc()
-        logger.exception("handler_error")
         return "421 4.3.0 Internal error, please try again later"
