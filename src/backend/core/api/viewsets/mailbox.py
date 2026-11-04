@@ -165,7 +165,7 @@ class MailboxViewSet(
         """Return total storage and the top-100 largest threads for the mailbox.
 
         The total is the cached figure the sidebar gauge reads (see
-        ``core.services.storage``), so "Total storage used" always matches it.
+        ``core.services.storage``), so the mailbox usage always matches it.
         Per-thread sizes and the trash/spam subtotals cover message overhead
         plus MIME and draft blobs — attachments and templates are not
         thread-scoped. Per-thread sizes leave out the trashbin, which the

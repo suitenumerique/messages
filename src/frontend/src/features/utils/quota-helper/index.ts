@@ -1,3 +1,4 @@
+import type { MailboxEntitlements } from "@/features/api/gen/models/mailbox_entitlements";
 import type { StorageEntitlement } from "@/features/api/gen/models/storage_entitlement";
 
 type LimitedStorageEntitlement = StorageEntitlement & { max_storage: number };
@@ -16,6 +17,19 @@ export class QuotaHelper {
      */
     static hasLimit(level: StorageEntitlement | null): level is LimitedStorageEntitlement {
         return !!level && level.max_storage != null && level.max_storage > 0;
+    }
+
+    /**
+     * The storage level a quota gauge measures: a mailbox without a limit of its
+     * own is still bound by the one of its organization.
+     * @param entitlements - The mailbox entitlements, undefined while they load.
+     * @returns The limited level to gauge, null when no level has a limit.
+     */
+    static getGaugedLevel(entitlements: MailboxEntitlements | undefined): LimitedStorageEntitlement | null {
+        if (!entitlements) return null;
+        if (QuotaHelper.hasLimit(entitlements.account)) return entitlements.account;
+        if (QuotaHelper.hasLimit(entitlements.organization)) return entitlements.organization;
+        return null;
     }
 
     /**

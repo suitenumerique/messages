@@ -71,7 +71,7 @@ The local backend (the default) is used when no DeployCenter is connected. It al
 | `organization_storage_limit` | No | Storage limit per organization, in bytes (default: none) |
 | `organization_claim` | No | Maildomain custom attribute identifying the organization (default: `siret`) |
 
-Without a limit, the corresponding quota gauges are hidden (sidebar and Storage settings tab). Limits are informative only: nothing blocks sending or receiving once they are reached. The dev stack sets a 5 GB mailbox limit in `deploy/env/backend.defaults` so the gauges are visible.
+A mailbox without a limit of its own is gauged against its organization's limit. Without any limit at either level, the quota gauges are hidden (sidebar and Storage settings tab). Limits are informative only: nothing blocks sending or receiving once they are reached. The dev stack sets a 5 GB mailbox limit in `deploy/env/backend.defaults` so the gauges are visible.
 
 ### DeployCenter Backend Parameters
 

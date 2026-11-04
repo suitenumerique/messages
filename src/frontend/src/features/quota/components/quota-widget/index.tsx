@@ -19,9 +19,9 @@ type QuotaWidgetProps = {
 };
 
 /**
- * Storage gauge shown at the bottom of the sidebar, a single gauge for the mailbox quota.
- * The organization never gets a gauge of its own, it only surfaces once its quota is
- * full by locking the gauge.
+ * Storage gauge shown at the bottom of the sidebar, a single gauge for the mailbox quota,
+ * or for the organization quota when the mailbox has none of its own. Once the organization
+ * quota is full, it locks the gauge whichever level it measures.
  * Nothing is rendered when there is no limit to gauge against.
  *
  * Mailbox admins can click the gauge to open the Storage settings tab; for
@@ -34,23 +34,20 @@ export const QuotaWidget = ({ mailboxId }: QuotaWidgetProps) => {
   const { data } = useMailboxEntitlements(mailboxId);
 
   const entitlements = data?.data;
-  if (!entitlements) return null;
-
-  const isOrganizationFull = QuotaHelper.isQuotaReached(entitlements.organization);
-  const { storage_used, max_storage } = entitlements.account;
-  if (!isOrganizationFull && !QuotaHelper.hasLimit(entitlements.account)) return null;
+  const level = QuotaHelper.getGaugedLevel(entitlements);
+  if (!level) return null;
 
   const canOpenStorageTab = selectedMailbox?.abilities.manage_accesses ?? false;
   const gaugeProps: StaticStorageGaugeProps = {
-    used: QuotaHelper.toGigabytes(storage_used),
-    total: QuotaHelper.toGigabytes(max_storage ?? 0),
+    used: QuotaHelper.toGigabytes(level.storage_used),
+    total: QuotaHelper.toGigabytes(level.max_storage),
     unit: t("GB"),
-    locked: isOrganizationFull,
+    locked: QuotaHelper.isQuotaReached(entitlements?.organization ?? null),
     lockedContent: (
       <span className="quota-widget__locked-content">
         <Warning size={IconSize.SMALL} aria-hidden />
-        <span className="quota-widget__locked-label" title={t("Domain's storage exceeded")}>
-          {t("Domain's storage exceeded")}
+        <span className="quota-widget__locked-label" title={t("Domain's quota exceeded")}>
+          {t("Domain's quota exceeded")}
         </span>
       </span>
     ),

@@ -100,23 +100,38 @@ describe("QuotaWidget", () => {
             expect(widget()).toBeNull();
         });
 
-        it("renders nothing while the organization still has room", () => {
+        it("renders nothing when the organization has no limit either", () => {
             entitlements = {
-                account: { storage_used: 2 * GB, max_storage: null },
-                organization: { storage_used: 10 * GB, max_storage: 100 * GB },
+                account: { storage_used: 0, max_storage: 0 },
+                organization: { storage_used: 10 * GB, max_storage: 0 },
             };
             render();
             expect(widget()).toBeNull();
         });
 
-        it("shows only the organization warning, never a zero-total gauge, once the organization is full", () => {
+        it.each([
+            ["unknown (null)", null],
+            ["unlimited (0)", 0],
+        ])("gauges the organization usage when the account limit is %s", (_, max_storage) => {
+            entitlements = {
+                account: { storage_used: 0, max_storage },
+                organization: { storage_used: 10 * GB, max_storage: 100 * GB },
+            };
+            render();
+            expect(gauge()?.classList.contains("c__storage-gauge--locked")).toBe(false);
+            expect(meter()?.getAttribute("aria-valuenow")).toBe("10");
+            expect(meter()?.getAttribute("aria-valuemax")).toBe("100");
+            expect(label()?.textContent).toBe("10.00 / 100 GB");
+        });
+
+        it("locks the gauge once the organization is full", () => {
             entitlements = {
                 account: { storage_used: 2 * GB, max_storage: null },
                 organization: { storage_used: 100 * GB, max_storage: 100 * GB },
             };
             render();
             expect(gauge()?.classList.contains("c__storage-gauge--locked")).toBe(true);
-            expect(lockedLabel()?.textContent).toBe("Domain's storage exceeded");
+            expect(lockedLabel()?.textContent).toBe("Domain's quota exceeded");
             expect(meter()).toBeNull();
             expect(label()).toBeNull();
         });
@@ -135,6 +150,15 @@ describe("QuotaWidget", () => {
             // The library separates the parts with non-breaking spaces.
             expect(label()?.textContent).toBe("2.50\u00a0/\u00a05\u00a0GB");
             expect(lockedLabel()).toBeNull();
+        });
+
+        it("gauges the account rather than the organization when both have room", () => {
+            entitlements = {
+                account: { storage_used: 1 * GB, max_storage: 5 * GB },
+                organization: { storage_used: 10 * GB, max_storage: 100 * GB },
+            };
+            render();
+            expect(meter()?.getAttribute("aria-valuemax")).toBe("5");
         });
 
         it("locks the gauge once the organization is full, even if the account has room", () => {
@@ -193,7 +217,7 @@ describe("QuotaWidget", () => {
             render();
             expect(container.querySelector("button")).toBeNull();
             expect(gauge()?.classList.contains("c__storage-gauge--locked")).toBe(true);
-            expect(lockedLabel()?.textContent).toBe("Domain's storage exceeded");
+            expect(lockedLabel()?.textContent).toBe("Domain's quota exceeded");
         });
     });
 });

@@ -153,7 +153,7 @@ describe("MailboxSettingsStorageTab — quota", () => {
 
         const banners = [...container.querySelectorAll('[data-testid="banner"]')].map((item) => item.textContent);
         expect(banners).toHaveLength(2);
-        expect(banners[0]).toContain("Domain's storage exceeded");
+        expect(banners[0]).toContain("Domain's quota exceeded");
         expect(banners[1]).toContain(EXCEEDED);
     });
 
@@ -205,6 +205,69 @@ describe("MailboxSettingsStorageTab — quota", () => {
         render();
 
         expect(banner()).toBeNull();
+    });
+
+    describe("gauge", () => {
+        const GB = 1000 ** 3;
+        const gaugeText = () => container.querySelector(".mailbox-settings__storage-gauges")?.textContent ?? null;
+        const mailboxTotal = () => container.querySelector(".mailbox-settings__storage-total");
+        const sharedHint = () => container.querySelector(".mailbox-settings__storage-shared-hint")?.textContent ?? null;
+        const SHARED_HINT = "This mailbox has no quota of its own: it shares the domain's quota with the other mailboxes.";
+        const SHARED_ONLY = {
+            account: { storage_used: 0, max_storage: 0 },
+            organization: { storage_used: 10 * GB, max_storage: 100 * GB },
+        };
+
+        it("gauges the mailbox, without any mention of sharing, when the mailbox has a limit", () => {
+            entitlements = {
+                account: { storage_used: 1 * GB, max_storage: 5 * GB },
+                organization: { storage_used: 10 * GB, max_storage: 100 * GB },
+            };
+
+            render();
+
+            expect(gaugeText()).toContain("This mailbox's quota");
+            expect(gaugeText()).not.toContain("Your domain's shared quota");
+            expect(sharedHint()).toBeNull();
+            expect(mailboxTotal()?.textContent).toContain("Used by this mailbox");
+        });
+
+        it.each([
+            ["unknown (null)", null],
+            ["unlimited (0)", 0],
+        ])("gauges the shared storage, explains it and keeps the mailbox total when the mailbox limit is %s", (_, max_storage) => {
+            entitlements = { ...SHARED_ONLY, account: { storage_used: 0, max_storage } };
+
+            render();
+
+            expect(gaugeText()).toContain("Your domain's shared quota");
+            expect(sharedHint()).toBe(SHARED_HINT);
+            expect(banner()).toBeNull();
+            expect(mailboxTotal()?.textContent).toContain("Used by this mailbox");
+        });
+
+        it("keeps the shared gauge under the warning once the domain is full", () => {
+            entitlements = {
+                ...SHARED_ONLY,
+                organization: { storage_used: 100 * GB, max_storage: 100 * GB },
+            };
+
+            render();
+
+            expect(banner()).toContain("Domain's quota exceeded");
+            expect(gaugeText()).toContain("Your domain's shared quota");
+            expect(sharedHint()).toBe(SHARED_HINT);
+        });
+
+        it("shows only the mailbox total without any limit", () => {
+            entitlements = { account: { storage_used: 0, max_storage: 0 }, organization: null };
+
+            render();
+
+            expect(gaugeText()).toBeNull();
+            expect(sharedHint()).toBeNull();
+            expect(mailboxTotal()?.textContent).toContain("Used by this mailbox");
+        });
     });
 });
 

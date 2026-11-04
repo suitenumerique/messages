@@ -58,9 +58,10 @@ class LocalEntitlementsBackend(EntitlementsBackend):
         org_value = (mailbox.domain.custom_attributes or {}).get(
             self.organization_claim
         ) or None
-        # The organization level only ever locks the gauge once its limit is
-        # reached: without a limit, summing the storage of every mailbox of the
-        # organization would serve nothing.
+        # The organization level only matters through its limit, which gauges a
+        # mailbox without one of its own and locks the gauge once reached: without
+        # it, summing the storage of every mailbox of the organization would serve
+        # nothing.
         if org_value is not None and self.organization_storage_limit:
             organization = {
                 "storage_used": get_organization_storage_used(

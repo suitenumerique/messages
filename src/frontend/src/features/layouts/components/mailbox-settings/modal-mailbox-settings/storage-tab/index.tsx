@@ -11,7 +11,6 @@ import {
   LargestThread,
   Mailbox,
   mailboxesStorageRetrieveResponse,
-  StorageEntitlement,
   useMailboxesStorageRetrieve,
 } from "@/features/api/gen";
 import useTrash from "@/features/message/use-trash";
@@ -38,8 +37,9 @@ type MailboxSettingsStorageTabProps = {
 
 /**
  * Storage overview for a mailbox: the quota gauge (how much of the mailbox
- * allowance is used, with a warning once it or the domain is full), the total
- * space used with its trash/spam split, and the top-100 largest conversations
+ * allowance is used, or of the domain's when the mailbox has none of its own,
+ * with a warning once it or the domain is full), the total space used with its
+ * trash/spam split, and the top-100 largest conversations
  * so an admin can see what is taking up room, open a conversation (in a new tab
  * on the web), or move one or a selection of them to the trash. Reachable only
  * by mailbox admins (the settings modal gates this tab on `manage_accesses`).
@@ -210,13 +210,8 @@ export const MailboxSettingsStorageTab = ({
     setSelectedThreadIds(new Set(trashableThreadIds));
   };
 
-  const unit = t("GB");
-  // The account gauge already shows total-used-over-limit, so its caption *is*
-  // the "total storage used" label — no separate headline needed.
-  const accountGauge = entitlements
-    ? renderGauge(t("Total storage used"), entitlements.account, unit)
-    : null;
-  // The organization gets no gauge of its own, it only matters once it is full.
+  const gaugedLevel = QuotaHelper.getGaugedLevel(entitlements);
+  const isAccountGauged = !!gaugedLevel && gaugedLevel === entitlements?.account;
   const isOrganizationFull = QuotaHelper.isQuotaReached(entitlements?.organization ?? null);
   const isAccountFull = QuotaHelper.isQuotaReached(entitlements?.account ?? null);
   // Only advised when it can help: something to delete, and the right to do so.
@@ -224,12 +219,12 @@ export const MailboxSettingsStorageTab = ({
 
   return (
     <div className="mailbox-settings__tab mailbox-settings__storage">
-      {(isOrganizationFull || accountGauge) && (
+      {gaugedLevel && (
         <section className="mailbox-settings__section">
           <div className="mailbox-settings__storage-gauges">
             {isOrganizationFull && (
               <Banner type="warning" compact>
-                {t("Domain's storage exceeded")}
+                {t("Domain's quota exceeded")}
               </Banner>
             )}
             {isAccountFull && (
@@ -239,24 +234,30 @@ export const MailboxSettingsStorageTab = ({
                   : t("This mailbox has exceeded its storage quota.")}
               </Banner>
             )}
-            {accountGauge}
+            <StorageGaugeInformation
+              title={isAccountGauged ? t("This mailbox's quota") : t("Your domain's shared quota")}
+              used={QuotaHelper.toGigabytes(gaugedLevel.storage_used)}
+              total={QuotaHelper.toGigabytes(gaugedLevel.max_storage)}
+              unit={t("GB")}
+            />
+            {!isAccountGauged && (
+              <p className="mailbox-settings__storage-shared-hint">
+                {t("This mailbox has no quota of its own: it shares the domain's quota with the other mailboxes.")}
+              </p>
+            )}
           </div>
         </section>
       )}
 
       <section className="mailbox-settings__section">
-        {/* Fallback when storage is unlimited (no account gauge): the gauge
-            would otherwise be the only place the total appears. */}
-        {!accountGauge && (
-          <div className="mailbox-settings__storage-total">
-            <span className="mailbox-settings__storage-total-value">
-              {formatSize(stats.total_storage)}
-            </span>
-            <span className="mailbox-settings__storage-total-label">
-              {t("Total storage used")}
-            </span>
-          </div>
-        )}
+        <div className="mailbox-settings__storage-total">
+          <span className="mailbox-settings__storage-total-value">
+            {formatSize(stats.total_storage)}
+          </span>
+          <span className="mailbox-settings__storage-total-label">
+            {t("Used by this mailbox")}
+          </span>
+        </div>
         <div className="mailbox-settings__storage-summary">
           <div className="mailbox-settings__storage-metric">
             <span className="mailbox-settings__storage-metric-value">
@@ -458,24 +459,5 @@ export const MailboxSettingsStorageTab = ({
         </section>
       )}
     </div>
-  );
-};
-
-const renderGauge = (
-  caption: string,
-  level: StorageEntitlement,
-  unit: string,
-) => {
-  // The usage summary below still conveys how much is stored.
-  if (!QuotaHelper.hasLimit(level)) {
-    return null;
-  }
-  return (
-    <StorageGaugeInformation
-      title={caption}
-      used={QuotaHelper.toGigabytes(level.storage_used)}
-      total={QuotaHelper.toGigabytes(level.max_storage)}
-      unit={unit}
-    />
   );
 };

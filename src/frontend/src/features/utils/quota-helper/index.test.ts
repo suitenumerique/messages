@@ -17,6 +17,33 @@ describe('QuotaHelper', () => {
     });
   });
 
+  describe('getGaugedLevel', () => {
+    const limited = { storage_used: 1, max_storage: 5 };
+    const organization = { storage_used: 10, max_storage: 100 };
+
+    it('should be null while the entitlements are not loaded', () => {
+      expect(QuotaHelper.getGaugedLevel(undefined)).toBeNull();
+    });
+
+    it('should prefer the account limit over the organization one', () => {
+      expect(QuotaHelper.getGaugedLevel({ account: limited, organization })).toBe(limited);
+    });
+
+    it.each([
+      ['unknown', null],
+      ['unlimited', 0],
+    ])('should fall back on the organization when the account limit is %s', (_, max_storage) => {
+      const account = { storage_used: 0, max_storage };
+      expect(QuotaHelper.getGaugedLevel({ account, organization })).toBe(organization);
+    });
+
+    it('should be null when no level has a limit', () => {
+      const account = { storage_used: 0, max_storage: 0 };
+      expect(QuotaHelper.getGaugedLevel({ account, organization: null })).toBeNull();
+      expect(QuotaHelper.getGaugedLevel({ account, organization: account })).toBeNull();
+    });
+  });
+
   describe('toGigabytes', () => {
     it('should convert bytes to decimal gigabytes', () => {
       expect(QuotaHelper.toGigabytes(0)).toBe(0);
