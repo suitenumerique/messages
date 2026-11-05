@@ -1,12 +1,169 @@
-.template-list {
+// react-aria-components exposes the item states as data attributes
+// ([data-focused] follows both the virtual keyboard focus and the hover):
+// the selectors below target them so the keyboard user sees the same
+// highlight as the mouse user.
+
+.message-template-picker {
     display: flex;
     flex-direction: column;
-    gap: var(--c--globals--spacings--t);
+    min-height: 0;
 
-    .template-item {
-        border: 0;
-        width: 100%;
-        cursor: pointer;
-        padding: var(--c--globals--spacings--base);
+    &--with-preview {
+        display: grid;
+        grid-template-columns: minmax(0, 2fr) minmax(0, 3fr);
+        gap: var(--c--globals--spacings--base);
+        height: min(60vh, 520px);
+
+        @media (max-width: 768px) {
+            grid-template-columns: minmax(0, 1fr);
+
+            .message-template-picker__preview {
+                display: none;
+            }
+        }
+    }
+}
+
+.message-template-picker__browser {
+    display: flex;
+    flex-direction: column;
+    min-height: 0;
+    border: 1px solid var(--c--contextuals--border--surface--primary);
+    border-radius: var(--c--globals--spacings--3xs);
+    overflow: hidden;
+}
+
+.message-template-picker__search {
+    display: flex;
+    align-items: center;
+    gap: var(--c--globals--spacings--xs);
+    padding: var(--c--globals--spacings--xs) var(--c--globals--spacings--sm);
+    border-bottom: 1px solid var(--c--contextuals--border--surface--primary);
+
+    &:focus-within {
+        box-shadow: inset 0 0 0 2px var(--c--contextuals--border--semantic--brand--primary);
+    }
+}
+
+.message-template-picker__search-icon {
+    flex-shrink: 0;
+    color: var(--c--contextuals--text--surface--tertiary);
+}
+
+.message-template-picker__search-input {
+    flex: 1;
+    min-width: 0;
+    border: none;
+    background: none;
+    outline: none;
+    font: inherit;
+    font-size: var(--c--globals--font--sizes--sm);
+    color: var(--c--contextuals--text--surface--primary);
+
+    &::placeholder {
+        color: var(--c--contextuals--text--surface--tertiary);
+    }
+
+    // The field has its own search icon, the native clear button is noise.
+    &::-webkit-search-cancel-button {
+        appearance: none;
+    }
+}
+
+.message-template-picker__list {
+    flex: 1;
+    min-height: 0;
+    margin: 0;
+    padding: var(--c--globals--spacings--3xs) 0;
+    overflow-y: auto;
+    outline: none;
+}
+
+.message-template-picker__section-header {
+    padding: var(--c--globals--spacings--xs) var(--c--globals--spacings--sm) var(--c--globals--spacings--3xs);
+    font-size: var(--c--globals--font--sizes--xs);
+    font-weight: 600;
+    color: var(--c--contextuals--text--surface--tertiary);
+    text-transform: uppercase;
+}
+
+.message-template-picker__item {
+    display: flex;
+    align-items: center;
+    gap: var(--c--globals--spacings--xs);
+    min-height: 40px;
+    padding: var(--c--globals--spacings--3xs) var(--c--globals--spacings--sm);
+    cursor: pointer;
+    color: var(--c--contextuals--text--surface--primary);
+    font-size: var(--c--globals--font--sizes--sm);
+    outline: none;
+
+    &[data-focused] {
+        background-color: var(--c--contextuals--background--semantic--contextual--primary-hover);
+    }
+}
+
+.message-template-picker__item-icon {
+    flex-shrink: 0;
+    color: var(--c--contextuals--text--surface--tertiary);
+}
+
+.message-template-picker__item-label {
+    flex: 1;
+    min-width: 0;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+}
+
+.message-template-picker__status {
+    padding: var(--c--globals--spacings--sm);
+    text-align: center;
+    color: var(--c--contextuals--text--surface--tertiary);
+    font-size: var(--c--globals--font--sizes--sm);
+}
+
+.message-template-picker__preview {
+    display: flex;
+    flex-direction: column;
+    min-height: 0;
+    border: 1px solid var(--c--contextuals--border--surface--primary);
+    border-radius: var(--c--globals--spacings--3xs);
+    overflow: hidden;
+}
+
+.message-template-picker__preview-title {
+    margin: 0;
+    padding: var(--c--globals--spacings--xs) var(--c--globals--spacings--sm);
+    border-bottom: 1px solid var(--c--contextuals--border--surface--primary);
+    font-weight: 600;
+    font-size: var(--c--globals--font--sizes--sm);
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+}
+
+.message-template-preview {
+    flex: 1;
+    min-height: 0;
+    padding: var(--c--globals--spacings--sm);
+    overflow: auto;
+    font-size: var(--c--globals--font--sizes--sm);
+
+    // The preview is not interactive: links must not navigate away.
+    a {
+        pointer-events: none;
+    }
+
+    img {
+        max-width: 100%;
+        height: auto;
+    }
+
+    &--status {
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        color: var(--c--contextuals--text--surface--tertiary);
     }
 }
