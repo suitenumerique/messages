@@ -58,6 +58,9 @@ SESSION_DURATION = Histogram(
 COMMANDS_TOTAL = Counter(
     f"{_METRICS_NAMESPACE}_commands_total",
     "SMTP commands processed, by verb and outcome class (2xx/4xx/5xx).",
+    # class: the last reply's class (2xx | 3xx | 4xx | 5xx), or "error" when
+    # the command raised (a failed STARTTLS handshake, a connection lost
+    # mid-DATA), or "none" when it ended without a reply.
     labelnames=("verb", "class"),
 )
 
