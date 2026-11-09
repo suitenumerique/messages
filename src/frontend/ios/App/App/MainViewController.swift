@@ -50,6 +50,13 @@ class MainViewController: CAPBridgeViewController {
         }
     }
 
+    override func viewDidAppear(_ animated: Bool) {
+        super.viewDidAppear(animated)
+        // Same reset at the end of a full-screen modal's dismissal (in-app
+        // browser of the Drive picker…), once the keyboard is already back.
+        applyKeyboardOverlap()
+    }
+
     @objc private func keyboardWillChangeFrame(_ notification: Notification) {
         guard
             let window = view.window,
