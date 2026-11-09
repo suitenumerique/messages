@@ -13,7 +13,7 @@ import re
 import struct
 import uuid
 from collections.abc import Callable, Generator
-from datetime import timezone
+from datetime import datetime, timezone
 from email import message_from_string
 
 from django.conf import settings
@@ -563,24 +563,34 @@ def _detect_folder_type_by_name(folder_name: str) -> str:
     return _KNOWN_FOLDER_NAMES.get(folder_name.lower().strip(), FOLDER_TYPE_NORMAL)
 
 
-def _get_message_timestamp(message):
-    """Get a sortable, tz-aware timestamp from a message for chronological order."""
-    dt = None
-    try:
-        dt = message.delivery_time or None
-    except Exception:
-        logger.debug("Failed to read delivery_time")
-    if dt is None:
+# When the message was sent or received: the import plan is ordered on these.
+_SENT_TIME_ATTRS = ("delivery_time", "client_submit_time")
+# The record's own times, a last resort for a ``Date``: they may only date the
+# copy into the archive, but still beat having no date at all. Kept out of the
+# plan ordering — a resumed import restarts at a positional cursor, so the
+# order must not change between versions — and a message lacking a sent time
+# (mostly a draft) is best imported last anyway: its parents already exist.
+_RECORD_TIME_ATTRS = ("creation_time", "modification_time")
+
+
+def _get_message_timestamp(
+    message, attrs: tuple[str, ...] = _SENT_TIME_ATTRS
+) -> datetime | None:
+    """First tz-aware timestamp found among ``attrs``, or ``None``."""
+    for attr in attrs:
         try:
-            dt = message.client_submit_time or None
+            dt = getattr(message, attr)
         except Exception:
-            logger.debug("Failed to read client_submit_time")
-    # pypff can return naive datetimes; assume UTC so a mix of naive and
-    # tz-aware values from one PST stays mutually comparable when we sort
-    # chronologically (a bare compare would raise TypeError).
-    if dt is not None and dt.tzinfo is None:
-        dt = dt.replace(tzinfo=timezone.utc)
-    return dt
+            logger.debug("Failed to read %s", attr)
+            continue
+        if isinstance(dt, datetime):
+            # pypff can return naive datetimes; assume UTC so a mix of naive
+            # and tz-aware values from one PST stays mutually comparable when
+            # we sort chronologically (a bare compare would raise TypeError).
+            if dt.tzinfo is None:
+                dt = dt.replace(tzinfo=timezone.utc)
+            return dt
+    return None
 
 
 def _get_message_flags(message) -> int:
@@ -1130,15 +1140,6 @@ def reconstruct_eml(
         if sender_dict:
             jmap_data["from"] = [sender_dict]
 
-        # sentAt
-        try:
-            if message.delivery_time:
-                jmap_data["sentAt"] = message.delivery_time.isoformat()
-            elif message.client_submit_time:
-                jmap_data["sentAt"] = message.client_submit_time.isoformat()
-        except Exception:
-            logger.debug("Failed to read message date")
-
     # Recipients fallback chain (MAPI recipient table → PR_DISPLAY_*).
     # Exchange Online sometimes emits transport headers without To/Cc/Bcc
     # lines, and PST exports often leave the recipient table empty even on
@@ -1164,14 +1165,19 @@ def reconstruct_eml(
         else:
             jmap_data["messageId"] = [_synthesize_message_id(message, recipient_email)]
 
-    # ``sentAt`` fallback: the composer is strict-by-design and rejects
-    # a missing Date header. For archive imports we'd rather log a
-    # warning and surface a sentinel epoch than fail the whole message.
-    # The synthesized date is the Unix epoch so a downstream UI can flag
-    # the "no original date" state explicitly.
+    # ``sentAt`` fallback (no transport headers, or headers without a Date):
+    # the composer is strict-by-design and rejects a missing Date header.
+    # Take the record's own timestamps, and only when it has none log a
+    # warning and use the Unix epoch rather than fail the whole message.
     if "sentAt" not in jmap_data:
-        logger.warning("PST message has no resolvable Date; falling back to epoch")
-        jmap_data["sentAt"] = "1970-01-01T00:00:00+00:00"
+        timestamp = _get_message_timestamp(
+            message, _SENT_TIME_ATTRS + _RECORD_TIME_ATTRS
+        )
+        if timestamp is not None:
+            jmap_data["sentAt"] = timestamp.isoformat()
+        else:
+            logger.warning("PST message has no resolvable Date; falling back to epoch")
+            jmap_data["sentAt"] = "1970-01-01T00:00:00+00:00"
 
     # No sender resolvable: synthesize one using the recipient's domain so
     # compose_email accepts the message. inbound_create.py keeps this value

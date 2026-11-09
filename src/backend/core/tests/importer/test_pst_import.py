@@ -13,6 +13,8 @@ import pytest
 from jmap_email import InvalidAddressError, parse_email
 
 from core.services.importer.pst import (
+    _RECORD_TIME_ATTRS,
+    _SENT_TIME_ATTRS,
     FLAG_STATUS_FOLLOWUP,
     FOLDER_TYPE_DELETED,
     FOLDER_TYPE_OUTBOX,
@@ -82,6 +84,24 @@ def test_get_message_timestamp_normalizes_naive_to_utc():
     assert t_naive < t_aware
 
 
+def test_get_message_timestamp_record_times_only_when_asked():
+    """By default only the sent times count (they order the plan); the record's
+    creation then modification time are used only when explicitly requested.
+    Anything that isn't a datetime is skipped."""
+    created = datetime(2019, 3, 1, tzinfo=timezone.utc)
+    modified = datetime(2019, 4, 1, tzinfo=timezone.utc)
+    all_attrs = _SENT_TIME_ATTRS + _RECORD_TIME_ATTRS
+    record_only = _make_message(creation_time=created, modification_time=modified)
+
+    assert _get_message_timestamp(record_only) is None
+    assert _get_message_timestamp(record_only, all_attrs) == created
+    assert (
+        _get_message_timestamp(_make_message(modification_time=modified), all_attrs)
+        == modified
+    )
+    assert _get_message_timestamp(_make_message(), all_attrs) is None
+
+
 def _make_mapi_entry(entry_type, data=None, data_as_string=None, data_as_integer=None):
     """Helper to create a mock MAPI property entry."""
     entry = Mock()
@@ -144,6 +164,8 @@ def _make_message(
     html_body=None,
     delivery_time=None,
     client_submit_time=None,
+    creation_time=None,
+    modification_time=None,
     num_attachments=0,
     attachments=None,
     message_flags=0,
@@ -160,6 +182,8 @@ def _make_message(
     msg.html_body = html_body
     msg.delivery_time = delivery_time
     msg.client_submit_time = client_submit_time
+    msg.creation_time = creation_time
+    msg.modification_time = modification_time
     msg.number_of_attachments = num_attachments
 
     if attachments:
@@ -339,6 +363,41 @@ class TestReconstructEml:
 
         # The date should contain 2025, not the current year
         assert "2025" in parsed["Date"]
+
+    def test_reconstruct_headers_without_date_use_delivery_time(self):
+        """Transport headers lacking a Date fall back to the MAPI delivery time
+        instead of the epoch."""
+        msg = _make_message(
+            transport_headers="From: sender@example.com\r\nSubject: No date\r\n",
+            delivery_time=datetime(2024, 2, 3, 4, 5, 6, tzinfo=timezone.utc),
+        )
+        parsed = email.message_from_bytes(reconstruct_eml(msg))
+
+        assert email.utils.parsedate_to_datetime(parsed["Date"]) == datetime(
+            2024, 2, 3, 4, 5, 6, tzinfo=timezone.utc
+        )
+
+    def test_reconstruct_without_sent_time_uses_creation_time(self):
+        """A message with no delivery/submit time (e.g. a draft) is dated by the
+        record's creation time instead of the epoch."""
+        msg = _make_message(
+            transport_headers=None,
+            creation_time=datetime(2023, 7, 8, 9, 10, tzinfo=timezone.utc),
+        )
+        parsed = email.message_from_bytes(reconstruct_eml(msg))
+
+        assert email.utils.parsedate_to_datetime(parsed["Date"]) == datetime(
+            2023, 7, 8, 9, 10, tzinfo=timezone.utc
+        )
+
+    def test_reconstruct_without_any_time_falls_back_to_epoch(self):
+        """With no timestamp at all, the epoch keeps the message importable."""
+        msg = _make_message(transport_headers=None)
+        parsed = email.message_from_bytes(reconstruct_eml(msg))
+
+        assert email.utils.parsedate_to_datetime(parsed["Date"]) == datetime(
+            1970, 1, 1, tzinfo=timezone.utc
+        )
 
     def test_reconstruct_without_transport_headers(self):
         """Test EML reconstruction from MAPI properties (no transport_headers)."""
@@ -1805,6 +1864,35 @@ class TestIsSenderMarking:
 
 class TestChronologicalOrdering:
     """Tests for chronological message ordering."""
+
+    def test_message_without_sent_time_stays_last(self):
+        """The record's creation time dates a message but never moves it in the
+        plan: a resumed import restarts at a positional cursor, so the order
+        must stay stable across versions."""
+        dated = _make_message(
+            subject="Dated",
+            transport_headers="From: a@example.com\r\nSubject: Dated\r\n",
+            delivery_time=datetime(2025, 6, 1, tzinfo=timezone.utc),
+        )
+        draft = _make_message(
+            subject="Draft",
+            transport_headers="From: b@example.com\r\nSubject: Draft\r\n",
+            creation_time=datetime(2020, 1, 1, tzinfo=timezone.utc),
+        )
+        folder = _make_folder(name="Inbox", messages=[draft, dated])
+        root = _make_folder(name="Root", subfolders=[folder])
+        pst = Mock()
+        pst.get_root_folder.return_value = root
+        pst.get_message_store.return_value = Mock(number_of_record_sets=0)
+
+        results = list(walk_pst_messages(pst, {}))
+        parsed = [email.message_from_bytes(r[4]) for r in results]
+
+        assert [m["Subject"] for m in parsed] == ["Dated", "Draft"]
+        # ...while still dated from its creation time rather than the epoch.
+        assert email.utils.parsedate_to_datetime(parsed[1]["Date"]) == datetime(
+            2020, 1, 1, tzinfo=timezone.utc
+        )
 
     def test_messages_sorted_oldest_first(self):
         """Test that messages are yielded in chronological order (oldest first)."""
