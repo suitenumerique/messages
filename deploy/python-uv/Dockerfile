@@ -12,10 +12,10 @@
 # this image directly and we don't want compilers in production images. Each
 # service adds its own build deps in a build-only stage.
 
-FROM debian:trixie-slim@sha256:62bd423aeee912639ca8ee681c2b762cb3e25137e0a92b20be455898a9f034ad AS base
+FROM debian:trixie-slim@sha256:a72b4433de1cf7d6bae0c4cee74d0547f58601a643b3375f070c51600d63b6b2 AS base
 
 # Bump to force an apt refresh + security upgrade of the base OS.
-ENV MIN_UPDATE_DATE="2026-10-23"
+ENV MIN_UPDATE_DATE="2026-11-09"
 
 RUN <<EOR
 set -e
@@ -34,8 +34,8 @@ WORKDIR /app
 FROM base AS uv
 
 # Pin uv by SHA256 digest for supply chain security.
-# Verify with: gh attestation verify --owner astral-sh oci://ghcr.io/astral-sh/uv:0.13.5
-COPY --from=ghcr.io/astral-sh/uv@sha256:32a7bb39b496babbd997b0a39a4d66c126bdaf5661b302bf6f06abda8deca6ff /uv /uvx /bin/
+# Verify with: gh attestation verify --owner astral-sh oci://ghcr.io/astral-sh/uv:0.13.7
+COPY --from=ghcr.io/astral-sh/uv@sha256:96f40d3904aad8d0bd010539001d36c8e2188b981e1334471a90c4a1d93bb490 /uv /uvx /bin/
 
 ENV UV_COMPILE_BYTECODE=1
 ENV UV_LINK_MODE=copy
@@ -46,7 +46,7 @@ ENV UV_PROJECT_ENVIRONMENT=/venv
 # Install Python via uv — integrity verified against SHA256 checksums embedded in
 # the uv binary. python-build-standalone statically links most C deps (ssl, ffi,
 # sqlite, zlib, lzma, bz2).
-RUN uv python install 3.14.9
+RUN uv python install 3.14.10
 
 # Prune list for the distroless images, shared by the backend and pymta builds
 # (they run `strip-python` in a stage off this image). Single source of truth.

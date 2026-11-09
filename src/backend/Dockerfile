@@ -161,7 +161,7 @@ RUN strip-python
 # ---- Distroless production runtime ----
 # Uses cc-debian13 (C runtime only) + python-build-standalone from uv.
 # Debug with: docker run --entrypoint='' gcr.io/distroless/cc-debian13:debug-nonroot sh
-FROM gcr.io/distroless/cc-debian13:nonroot@sha256:b7e81cb1af38d9345680e68bcf564d388f96304e25222030fc8c051faf8565b3 AS runtime-distroless-prod
+FROM gcr.io/distroless/cc-debian13:nonroot@sha256:cc66d222f0a7ec996b78a99fe76a969bc80b539a5016ad866c14d1949bc6d0ab AS runtime-distroless-prod
 ARG MESSAGES_STATIC_ROOT=/data/static
 
 WORKDIR /app

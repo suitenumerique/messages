@@ -7,7 +7,7 @@
 #
 # The same digest as deploy/python-uv/Dockerfile, the base of the project's own
 # images.
-FROM debian:trixie-slim@sha256:62bd423aeee912639ca8ee681c2b762cb3e25137e0a92b20be455898a9f034ad
+FROM debian:trixie-slim@sha256:a72b4433de1cf7d6bae0c4cee74d0547f58601a643b3375f070c51600d63b6b2
 
 # initdb reads the locale when the postgresql package creates its cluster.
 # Without a UTF-8 locale the cluster gets the SQL_ASCII encoding.
@@ -275,18 +275,18 @@ maildev --help >/dev/null
 EOR
 
 # uv and the managed CPython, as in deploy/python-uv/Dockerfile.
-COPY --from=ghcr.io/astral-sh/uv@sha256:32a7bb39b496babbd997b0a39a4d66c126bdaf5661b302bf6f06abda8deca6ff /uv /uvx /bin/
+COPY --from=ghcr.io/astral-sh/uv@sha256:96f40d3904aad8d0bd010539001d36c8e2188b981e1334471a90c4a1d93bb490 /uv /uvx /bin/
 
 ENV UV_COMPILE_BYTECODE=1 \
     UV_LINK_MODE=copy \
     UV_PYTHON_INSTALL_DIR=/opt/python \
     UV_PYTHON_PREFERENCE=only-managed
 
-RUN uv python install 3.14.9
+RUN uv python install 3.14.10
 
 # Without a pin, uv downloads any CPython that satisfies requires-python when
 # the installed one does not, including a release candidate that lacks wheels.
-ENV UV_PYTHON=3.14.9 \
+ENV UV_PYTHON=3.14.10 \
     UV_PYTHON_DOWNLOADS=never
 
 # Each component keeps its own virtual environment, because the three

@@ -1,4 +1,4 @@
-FROM debian:trixie-slim@sha256:62bd423aeee912639ca8ee681c2b762cb3e25137e0a92b20be455898a9f034ad AS base
+FROM debian:trixie-slim@sha256:a72b4433de1cf7d6bae0c4cee74d0547f58601a643b3375f070c51600d63b6b2 AS base
 
 ARG DANTE_VER=1.4.4
 ARG DANTE_URL=https://fossies.org/linux/misc/dante-$DANTE_VER.tar.gz
@@ -22,10 +22,10 @@ make
 make install
 EOR
 
-FROM debian:trixie-slim@sha256:62bd423aeee912639ca8ee681c2b762cb3e25137e0a92b20be455898a9f034ad AS runtime
+FROM debian:trixie-slim@sha256:a72b4433de1cf7d6bae0c4cee74d0547f58601a643b3375f070c51600d63b6b2 AS runtime
 
 # Bump to force an apt refresh + security upgrade of the base OS.
-ENV MIN_UPDATE_DATE="2026-10-23"
+ENV MIN_UPDATE_DATE="2026-11-09"
 
 RUN <<EOR
 set -e
