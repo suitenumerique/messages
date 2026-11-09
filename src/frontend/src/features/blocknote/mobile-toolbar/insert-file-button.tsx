@@ -9,6 +9,7 @@ import {
     useDrivePicker,
 } from "@/features/forms/components/message-form/drive-attachment-picker";
 import { DriveIcon } from "@/features/forms/components/message-form/drive-icon";
+import { restoreKeyboardOnReturn } from "@/features/native/keyboard";
 import { cursorHasInlineContent, insertImageBlock } from "../image-upload-button";
 import { MobileToolbarButton } from "./buttons";
 import { useKeepEditorFocusOnTap } from "./hooks";
@@ -174,6 +175,7 @@ export const InsertFileButton = ({
                                     className="mobile-toolbar__popover-item"
                                     onClick={() => {
                                         closeMenu();
+                                        restoreKeyboardOnReturn();
                                         fileInputRef.current?.click();
                                     }}
                                 >
@@ -190,6 +192,7 @@ export const InsertFileButton = ({
                                     className="mobile-toolbar__popover-item"
                                     onClick={() => {
                                         closeMenu();
+                                        restoreKeyboardOnReturn();
                                         void drivePicker.pick().then((files) => {
                                             if (files.length > 0) {
                                                 onDriveAttachmentPick!(files);
