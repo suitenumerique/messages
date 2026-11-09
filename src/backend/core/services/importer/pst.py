@@ -9,7 +9,6 @@ Each field extraction must be individually guarded to maximise data recovery.
 
 import base64
 import hashlib
-import logging
 import re
 import struct
 import uuid
@@ -20,7 +19,15 @@ from email import message_from_string
 from django.conf import settings
 
 import pypff
-from jmap_email import compose_email, is_valid_msg_id, parse_address, parse_addresses
+from celery.utils.log import get_task_logger
+from jmap_email import (
+    ComposeError,
+    compose_email,
+    is_valid_addr_spec,
+    is_valid_msg_id,
+    parse_address,
+    parse_addresses,
+)
 from jmap_email.types import EmailAddress
 
 from core.mda.addresses import address_domain
@@ -29,6 +36,7 @@ from core.services.s3_seekable import BUFFER_NONE, S3SeekableReader
 
 from .channel import ImportCancelled
 from .utils import (
+    FAILURE_OVERSIZED,
     FAILURE_UNPARSEABLE,
     beat,
     bump_reason,
@@ -37,7 +45,10 @@ from .utils import (
     run_plan,
 )
 
-logger = logging.getLogger(__name__)
+# A task logger (like the other importer modules) so each per-message line
+# carries the ``run_import_task`` id, which ``run_import_task`` maps to its
+# import channel when it starts.
+logger = get_task_logger(__name__)
 
 # MAPI property tags — message store
 PR_CONTAINER_CLASS = 0x3613
@@ -583,10 +594,31 @@ def _get_flag_status(message) -> int | None:
     return get_mapi_property_integer(message, PR_FLAG_STATUS)
 
 
+# Outlook renders a one-off SMTP recipient as ``Display Name (addr@domain)``,
+# sometimes wrapped in single quotes. RFC 5322 reads a parenthesised part as a
+# comment, so ``parse_address`` hands the whole string back as the address,
+# which the composer then rejects — losing the message.
+_OUTLOOK_DISPLAY_ADDRESS_RE = re.compile(
+    r"^(?P<quote>['\"]?)(?P<name>.*?)\s*\((?P<email>[^()\s]+)\)(?P=quote)$"
+)
+
+
 def _addr_tuple_to_dict(name: str, addr: str) -> EmailAddress:
     """Bridge the ``(name, email)`` shape returned by
     :func:`jmap_email.parse_address` to a JMAP ``EmailAddress`` dict.
+
+    An ``addr`` in Outlook's ``Name (addr@domain)`` form is split into its
+    parts, the extracted name filling in when ``name`` is empty or is that
+    same raw string. Anything else is passed through untouched: an address
+    that is still invalid fails the whole message at compose time rather
+    than being dropped or rewritten.
     """
+    if not is_valid_addr_spec(addr):
+        match = _OUTLOOK_DISPLAY_ADDRESS_RE.match(addr.strip())
+        if match and is_valid_addr_spec(match["email"]):
+            if not name or name == addr:
+                name = match["name"].strip()
+            addr = match["email"]
     return {"name": name, "email": addr}
 
 
@@ -1463,17 +1495,23 @@ def _collect_pst_plan(
 
 
 def _reconstruct_plan_item(
-    item, store_email: str | None = None, recipient_email: str | None = None
+    item,
+    store_email: str | None = None,
+    recipient_email: str | None = None,
+    *,
+    reasons: dict[str, int] | None = None,
 ) -> tuple[str, str, int, int | None, bytes | None]:
     """Reconstruct one plan item into ``(folder_type, folder_path, flags,
     flag_status, eml_bytes)``. ``eml_bytes`` is ``None`` when the message cannot
     be read from libpff or reconstruction raised — the caller counts those as
-    failures rather than silently dropping them."""
+    failures rather than silently dropping them. When ``reasons`` is passed,
+    each failure bumps its category (same out-param contract as ``deliver``)."""
     folder_ref, msg_idx, folder_type, folder_path, flags, flag_status = item
     try:
         message = folder_ref.get_sub_message(msg_idx)
     except Exception:
         logger.warning("Failed to read message %d in folder %s", msg_idx, folder_path)
+        bump_reason(reasons, FAILURE_UNPARSEABLE)
         return folder_type, folder_path, flags, flag_status, None
     try:
         eml_bytes = reconstruct_eml(
@@ -1486,6 +1524,19 @@ def _reconstruct_plan_item(
         logger.warning(
             "Skipping message %d in folder %s: %s", msg_idx, folder_path, exc
         )
+        bump_reason(reasons, FAILURE_OVERSIZED)
+        return folder_type, folder_path, flags, flag_status, None
+    except ComposeError as exc:
+        # Also an expected outcome: the composer refuses a malformed value from
+        # the archive (recipient address, Content-ID…). Only the error type is
+        # logged — its message echoes that value, i.e. names and addresses.
+        logger.warning(
+            "Skipping message %d in folder %s: rejected by the composer (%s)",
+            msg_idx,
+            folder_path,
+            type(exc).__name__,
+        )
+        bump_reason(reasons, FAILURE_UNPARSEABLE)
         return folder_type, folder_path, flags, flag_status, None
     except Exception:
         logger.exception(
@@ -1493,6 +1544,7 @@ def _reconstruct_plan_item(
             msg_idx,
             folder_path,
         )
+        bump_reason(reasons, FAILURE_UNPARSEABLE)
         return folder_type, folder_path, flags, flag_status, None
     return folder_type, folder_path, flags, flag_status, eml_bytes
 
@@ -1577,13 +1629,15 @@ def run_pst(channel, state) -> tuple[int, int, int]:
             def deliver_item(item, reasons):
                 folder_type, folder_path, message_flags, flag_status, eml_bytes = (
                     _reconstruct_plan_item(
-                        item, store_email=store_email, recipient_email=str(recipient)
+                        item,
+                        store_email=store_email,
+                        recipient_email=str(recipient),
+                        reasons=reasons,
                     )
                 )
                 if eml_bytes is None:
-                    # Couldn't rebuild a valid .eml from the PST record (corrupt
-                    # or unreadable) — same bucket as a message that won't parse.
-                    bump_reason(reasons, FAILURE_UNPARSEABLE)
+                    # Couldn't rebuild a .eml from the PST record; the failure
+                    # category was already tallied by _reconstruct_plan_item.
                     return False
                 labels, flags, is_sender = _pst_labels_flags(
                     folder_type, folder_path, message_flags, flag_status
