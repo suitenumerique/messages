@@ -552,6 +552,21 @@ class TestReconstructEml:
             ("Marie", "marie@example.org")
         ]
 
+    def test_reconstruct_unquotes_addresses_from_transport_headers(self):
+        """A quoted address in the transport headers is composed bare."""
+        msg = _make_message(
+            transport_headers=(
+                "From: sender@example.com\r\n"
+                "To: 'jean.dupont@example.org'\r\n"
+                "Date: Mon, 26 May 2025 10:00:00 +0000\r\n"
+            ),
+        )
+        parsed = email.message_from_bytes(reconstruct_eml(msg))
+
+        assert email.utils.getaddresses([parsed["To"]]) == [
+            ("", "jean.dupont@example.org")
+        ]
+
     def test_reconstruct_with_ex_recipients(self):
         """Test recipient extraction with Exchange EX address type."""
         # Create a recipient with EX address and SMTP fallback
@@ -1171,6 +1186,43 @@ class TestRecipientExtraction:
         result = _extract_recipients_from_mapi(msg)
         assert result["to"] == [{"name": "Jean D.", "email": "jean.dupont@example.org"}]
 
+    def test_display_name_artefacts_are_cleaned_when_address_resolves(self):
+        """With a valid address property, Outlook's ``Name (addr)`` form and
+        surrounding quotes are still stripped from the display name."""
+        recipients = [
+            _make_recipient(
+                "Jean DUPONT (jean.dupont@example.org)", "jean.dupont@example.org"
+            ),
+            _make_recipient("'Marie'", "marie@example.org"),
+        ]
+        msg = Mock()
+        msg.number_of_recipients = 2
+        msg.get_recipient = lambda i: recipients[i]
+
+        result = _extract_recipients_from_mapi(msg)
+        assert result["to"] == [
+            {"name": "Jean DUPONT", "email": "jean.dupont@example.org"},
+            {"name": "Marie", "email": "marie@example.org"},
+        ]
+
+    def test_quoted_address_is_unquoted(self):
+        """``'addr'`` passes as a valid addr-spec, its domain ending with a
+        quote; the quotes are dropped from the address and from the display
+        name that was the same raw string."""
+        recipients = [
+            _make_recipient("'jean.dupont@example.org'", None),
+            _make_recipient("Marie", "'marie@example.org'"),
+        ]
+        msg = Mock()
+        msg.number_of_recipients = 2
+        msg.get_recipient = lambda i: recipients[i]
+
+        result = _extract_recipients_from_mapi(msg)
+        assert result["to"] == [
+            {"name": "", "email": "jean.dupont@example.org"},
+            {"name": "Marie", "email": "marie@example.org"},
+        ]
+
 
 # --- Display recipient (PR_DISPLAY_TO/CC/BCC) tests ---
 
@@ -1206,6 +1258,14 @@ class TestDisplayRecipients:
             {"name": "Marie", "email": "marie@example.org"},
         ]
 
+    def test_parse_outlook_name_with_long_blank_run_before_email(self):
+        """Blanks between the name and ``(addr)`` stay out of the name, however
+        many there are: a long run used to make the split quadratic."""
+        result = _parse_display_recipients(
+            "Jean DUPONT" + " \t" * 5_000 + "(jean.dupont@example.org)"
+        )
+        assert result == [{"name": "Jean DUPONT", "email": "jean.dupont@example.org"}]
+
     def test_parse_rfc_comment_form_is_unchanged(self):
         """The RFC ``addr (comment)`` form keeps being parsed by the library."""
         result = _parse_display_recipients("jean.dupont@example.org (Jean DUPONT)")
@@ -1217,6 +1277,32 @@ class TestDisplayRecipients:
         was silently dropped or rewritten."""
         result = _parse_display_recipients("Jean (jean@)")
         assert result == [{"name": "", "email": "Jean (jean@)"}]
+
+    def test_parse_quoted_address_is_unquoted(self):
+        """Outlook's ``'addr'`` (or ``"addr"``) display token yields the bare
+        address."""
+        result = _parse_display_recipients(
+            "'jean.dupont@example.org'; \"marie@example.org\""
+        )
+        assert result == [
+            {"name": "", "email": "jean.dupont@example.org"},
+            {"name": "", "email": "marie@example.org"},
+        ]
+
+    def test_parse_unevenly_quoted_address_is_unquoted(self):
+        """Outlook may quote an address twice and unevenly; a quote ending the
+        domain proves every surrounding quote is an artefact."""
+        result = _parse_display_recipients("''jean.dupont@example.org'")
+        assert result == [{"name": "", "email": "jean.dupont@example.org"}]
+
+    def test_parse_keeps_apostrophes_not_closing_the_address(self):
+        """Without a quote ending the domain, apostrophes are left alone: they
+        may belong to the local part."""
+        result = _parse_display_recipients("o'neil@example.org; 'jean@example.org")
+        assert result == [
+            {"name": "", "email": "o'neil@example.org"},
+            {"name": "", "email": "'jean@example.org"},
+        ]
 
     def test_parse_drops_name_only_entries(self):
         """Name-only tokens (no '@') are intentionally dropped — creating a

@@ -608,28 +608,76 @@ def _get_flag_status(message) -> int | None:
 # sometimes wrapped in single quotes. RFC 5322 reads a parenthesised part as a
 # comment, so ``parse_address`` hands the whole string back as the address,
 # which the composer then rejects — losing the message.
+# The name ends on a non-space so that only ``\s*`` takes the spaces before
+# ``(``: with a bare ``.*?`` both could, and a long run of spaces would be
+# rescanned from every position (quadratic on a crafted display name).
 _OUTLOOK_DISPLAY_ADDRESS_RE = re.compile(
-    r"^(?P<quote>['\"]?)(?P<name>.*?)\s*\((?P<email>[^()\s]+)\)(?P=quote)$"
+    r"^(?P<quote>['\"]?)(?P<name>(?:.*?\S)?)\s*\((?P<email>[^()\s]+)\)(?P=quote)$"
 )
+
+
+def _unquote(value: str) -> str:
+    """Drop one pair of matching quotes Outlook wraps around a display name."""
+    value = value.strip()
+    if len(value) >= 2 and value[0] == value[-1] and value[0] in "'\"":
+        return value[1:-1].strip()
+    return value
+
+
+def _unquote_address(addr: str) -> str | None:
+    """Bare address Outlook wrapped in quotes, or ``None`` if it wasn't.
+
+    Outlook quotes some addresses, sometimes twice and unevenly
+    (``''a@b.fr'``). Such a value still passes as an addr-spec, as quotes are
+    legal characters. A quote *ending* the address proves the wrapping is an
+    artefact — no domain ends with one — so every surrounding quote is then
+    dropped. Without it nothing is touched: a local part may legitimately
+    start with a quote.
+    """
+    addr = addr.strip()
+    if not addr.endswith(("'", '"')):
+        return None
+    bare = addr.strip("'\"")
+    return bare if is_valid_addr_spec(bare) else None
+
+
+def _split_outlook_display(value: str) -> tuple[str, str] | None:
+    """Split Outlook's ``Name (addr)`` form into ``(name, addr)``, or ``None``
+    when ``value`` isn't exactly that shape around a valid address."""
+    match = _OUTLOOK_DISPLAY_ADDRESS_RE.match(value.strip())
+    if match and is_valid_addr_spec(match["email"]):
+        return match["name"].strip(), match["email"]
+    return None
 
 
 def _addr_tuple_to_dict(name: str, addr: str) -> EmailAddress:
     """Bridge the ``(name, email)`` shape returned by
-    :func:`jmap_email.parse_address` to a JMAP ``EmailAddress`` dict.
+    :func:`jmap_email.parse_address` to a JMAP ``EmailAddress`` dict, undoing
+    Outlook's display artefacts.
 
-    An ``addr`` in Outlook's ``Name (addr@domain)`` form is split into its
-    parts, the extracted name filling in when ``name`` is empty or is that
-    same raw string. Anything else is passed through untouched: an address
-    that is still invalid fails the whole message at compose time rather
-    than being dropped or rewritten.
+    ``addr`` is repaired when Outlook wrapped it in quotes (see
+    :func:`_unquote_address`) or wrote it as ``Name (addr)``; ``name`` drops
+    surrounding quotes and the ``(addr)`` suffix.
+    When ``name`` is empty or is the raw string the address was repaired from,
+    it takes the name salvaged from it instead. Anything else is passed through
+    untouched: an address that is still invalid fails the whole message at
+    compose time rather than being dropped or rewritten.
     """
-    if not is_valid_addr_spec(addr):
-        match = _OUTLOOK_DISPLAY_ADDRESS_RE.match(addr.strip())
-        if match and is_valid_addr_spec(match["email"]):
-            if not name or name == addr:
-                name = match["name"].strip()
-            addr = match["email"]
-    return {"name": name, "email": addr}
+    raw_addr = addr
+    salvaged_name = ""
+    unquoted = _unquote_address(addr)
+    if unquoted:
+        addr = unquoted
+    elif not is_valid_addr_spec(addr):
+        split = _split_outlook_display(addr)
+        if split:
+            salvaged_name, addr = split
+    if (not name or name == raw_addr) and addr != raw_addr:
+        name = salvaged_name
+    split = _split_outlook_display(name)
+    if split:
+        name = split[0]
+    return {"name": _unquote(name), "email": addr}
 
 
 def _resolve_smtp_address(item) -> str | None:
