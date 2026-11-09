@@ -739,6 +739,15 @@ or the Capacitor version.
    `MOBILE_APP_ID`; `PUSH_APNS_BUNDLE_ID` must equal that same id. Then run the
    smoke test of [*Push notifications in dev*](./mobile.md#push-notifications-in-dev-optional)
    against the release build.
+9. **System permissions** — a resource without its purpose string kills the app
+   only when it is reached, and neither the simulator (no camera) nor the login
+   shows it. On a **physical iPhone**, from the composer's attachment input:
+   take a photo, then a video, then pick from the library. Then download an
+   image attachment and save it from the share sheet. Each one must ask for
+   permission where iOS requires it, in the device's language, and never crash.
+   Reaching a new resource (a plugin, a new `capture` input) adds its
+   `NS…UsageDescription` to `Info.plist` and `fr.lproj/InfoPlist.strings`
+   (pinned by `store-privacy-invariants.test.ts`).
 
 ## See also
 

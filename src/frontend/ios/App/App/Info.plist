@@ -60,6 +60,19 @@
 		<key>NSAllowsLocalNetworking</key>
 		<true/>
 	</dict>
+	<!--
+	  iOS kills the app, with no error to catch, when it reaches one of these
+	  resources without its purpose string, and the frameworks reach them on
+	  their own: the file inputs of the WebView offer the camera (and the
+	  microphone for a video), the share sheet offers to save an image. French
+	  versions: fr.lproj/InfoPlist.strings.
+	-->
+	<key>NSCameraUsageDescription</key>
+	<string>The camera lets you take a photo or video and attach it to the message you are writing.</string>
+	<key>NSMicrophoneUsageDescription</key>
+	<string>The microphone records sound when you film a video to attach to a message.</string>
+	<key>NSPhotoLibraryAddUsageDescription</key>
+	<string>Attachments you choose to save from a message are added to your photo library.</string>
 	<!-- Keychain group holding the notification preview keys, shared with the
 	     Notification Service Extension (PUSH_PREVIEW_KEYCHAIN_GROUP build
 	     setting, see PushPreviewKeyring). -->

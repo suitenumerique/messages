@@ -3,7 +3,8 @@
  *
  * None of it shows while developing: App Store Connect rejects an upload whose
  * privacy manifest misses a required-reason API (ITMS-91053), a missing export
- * compliance answer only adds a question at every upload, and the OTA
+ * compliance answer only adds a question at every upload, a missing purpose
+ * string only kills the app once a user reaches that resource, and the OTA
  * updater's statistics silently reach a third-party server. These tests pin
  * the files themselves. Whether the declarations still match what the app
  * really does is checked on the archive (Xcode's privacy report) before a
@@ -47,6 +48,34 @@ describe("store privacy invariants", () => {
     it("declares no tracking", () => {
       expect(manifest).toMatch(/<key>NSPrivacyTracking<\/key>\s*<false\/>/);
       expect(manifest).not.toMatch(/<key>NSPrivacyCollectedDataTypeTracking<\/key>\s*<true\/>/);
+    });
+
+    describe.each([
+      // The file inputs of the WebView offer to take a photo or a video.
+      ["NSCameraUsageDescription"],
+      // Taking a video from those same inputs records sound.
+      ["NSMicrophoneUsageDescription"],
+      // The share sheet of a downloaded attachment offers to save an image.
+      ["NSPhotoLibraryAddUsageDescription"],
+    ])("%s", (key) => {
+      it("has a purpose string", () => {
+        expect(read("ios/App/App/Info.plist")).toMatch(
+          new RegExp(`<key>${key}</key>\\s*<string>[^<]+</string>`),
+        );
+      });
+
+      it("has a French purpose string", () => {
+        expect(read("ios/App/App/fr.lproj/InfoPlist.strings")).toMatch(
+          new RegExp(`"${key}" = "[^"]+";`),
+        );
+      });
+    });
+
+    it("bundles the French purpose strings in the app", () => {
+      const appResources = /504EC3021FED79650016851F \/\* Resources \*\/ = \{[\s\S]*?\n\t\t\};/.exec(
+        project,
+      )?.[0];
+      expect(appResources).toContain("/* InfoPlist.strings in Resources */");
     });
 
     it("answers the export compliance question", () => {
