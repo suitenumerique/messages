@@ -235,12 +235,13 @@ a.c__button.c__button--brand--primary[aria-disabled="true"] {
   padding: 0;
 }
 
-// @TODO: Remove once fixed in the ui-kit.
-// The icon wrapper of the ShareModal role dropdown is a shrinkable flex item
-// and the global `svg { max-width: 100% }` reset clamps the chevron to it:
-// squeezed by the role label, the chevron ends up barely visible.
-.c__access-role-dropdown .c__button__icon {
-  flex-shrink: 0;
+// Our reset gives every svg a `max-width: 100%`, and a percentage max-width
+// drops a replaced element's min-content width to 0. Button icons are svg since
+// ui-kit 1.3.0, so a button no longer counts its icon in its minimum size and
+// a flex parent (role dropdown of the ShareModal and of the access lists…)
+// squeezes it below its content, which then overflows.
+.c__button__icon svg {
+  max-width: none;
 }
 
 
