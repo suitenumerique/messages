@@ -12,6 +12,9 @@ export const LanguagePicker = (props: Pick<LanguagePickerProps, "size" | "color"
   const languages = LANGUAGES.map((language) => ({
     value: language[0],
     label: language[1],
+    // The compact picker (user menu) has a fixed width sized for a language
+    // code: the full label would overflow it.
+    shortLabel: props.compact ? language[0].split("-")[0].toUpperCase() : undefined,
     isChecked: i18n.language === language[0]
   }));
 
