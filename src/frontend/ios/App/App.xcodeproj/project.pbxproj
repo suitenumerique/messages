@@ -22,6 +22,7 @@
 		7A11AA020000000000000010 /* PushPreviewCrypto.swift in Sources */ = {isa = PBXBuildFile; fileRef = 7A11AA020000000000000001 /* PushPreviewCrypto.swift */; };
 		7A11AA020000000000000011 /* PushPreviewKeyring.swift in Sources */ = {isa = PBXBuildFile; fileRef = 7A11AA020000000000000002 /* PushPreviewKeyring.swift */; };
 		7A11AA020000000000000012 /* PushPreviewKeysPlugin.swift in Sources */ = {isa = PBXBuildFile; fileRef = 7A11AA020000000000000003 /* PushPreviewKeysPlugin.swift */; };
+		7A11AA050000000000000002 /* KeyboardAccessoryPlugin.swift in Sources */ = {isa = PBXBuildFile; fileRef = 7A11AA050000000000000001 /* KeyboardAccessoryPlugin.swift */; };
 		7A11AA020000000000000013 /* PushPreviewCrypto.swift in Sources */ = {isa = PBXBuildFile; fileRef = 7A11AA020000000000000001 /* PushPreviewCrypto.swift */; };
 		7A11AA020000000000000014 /* PushPreviewKeyring.swift in Sources */ = {isa = PBXBuildFile; fileRef = 7A11AA020000000000000002 /* PushPreviewKeyring.swift */; };
 		7A11AA020000000000000015 /* NotificationService.swift in Sources */ = {isa = PBXBuildFile; fileRef = 7A11AA020000000000000004 /* NotificationService.swift */; };
@@ -73,6 +74,7 @@
 		7A11AA020000000000000001 /* PushPreviewCrypto.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PushPreviewCrypto.swift; sourceTree = "<group>"; };
 		7A11AA020000000000000002 /* PushPreviewKeyring.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PushPreviewKeyring.swift; sourceTree = "<group>"; };
 		7A11AA020000000000000003 /* PushPreviewKeysPlugin.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PushPreviewKeysPlugin.swift; sourceTree = "<group>"; };
+		7A11AA050000000000000001 /* KeyboardAccessoryPlugin.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = KeyboardAccessoryPlugin.swift; sourceTree = "<group>"; };
 		7A11AA020000000000000004 /* NotificationService.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = NotificationService.swift; sourceTree = "<group>"; };
 		7A11AA020000000000000005 /* Info.plist */ = {isa = PBXFileReference; lastKnownFileType = text.plist.xml; path = Info.plist; sourceTree = "<group>"; };
 		7A11AA020000000000000006 /* NotificationService.entitlements */ = {isa = PBXFileReference; lastKnownFileType = text.plist.entitlements; path = NotificationService.entitlements; sourceTree = "<group>"; };
@@ -131,6 +133,7 @@
 				7A11AA0100000000000000B1 /* MainViewController.swift */,
 				7A11AA0100000000000000A1 /* WebAuthSessionPlugin.swift */,
 				7A11AA020000000000000003 /* PushPreviewKeysPlugin.swift */,
+				7A11AA050000000000000001 /* KeyboardAccessoryPlugin.swift */,
 				504EC30B1FED79650016851F /* Main.storyboard */,
 				504EC30E1FED79650016851F /* Assets.xcassets */,
 				504EC3101FED79650016851F /* LaunchScreen.storyboard */,
@@ -332,6 +335,7 @@
 				7A11AA020000000000000010 /* PushPreviewCrypto.swift in Sources */,
 				7A11AA020000000000000011 /* PushPreviewKeyring.swift in Sources */,
 				7A11AA020000000000000012 /* PushPreviewKeysPlugin.swift in Sources */,
+				7A11AA050000000000000002 /* KeyboardAccessoryPlugin.swift in Sources */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};

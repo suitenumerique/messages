@@ -170,6 +170,7 @@ app?" is `isNativePlatform()` (`platform.ts`). `main.tsx` also tags
 | Versions shown to users | `src/frontend/src/features/hooks/use-app-version.ts` |
 | SSO invariants tripwire (CI) | `src/frontend/src/features/native/sso-invariants.test.ts` |
 | iOS project, `ASWebAuthenticationSession` plugin + registration | `src/frontend/ios/`, `App/App/WebAuthSessionPlugin.swift`, `MainViewController.swift` |
+| iOS keyboard accessory bar, hidden on BlockNote fields only | `src/frontend/src/features/native/keyboard.ts`, `ios/App/App/KeyboardAccessoryPlugin.swift` |
 | iOS push entitlement, APNs bridge, banner strings | `src/frontend/ios/App/App/App.entitlements`, `AppDelegate.swift`, `{en,fr}.lproj/Localizable.strings` |
 | Android project (safe-area / keyboard insets in `MainActivity.java`) | `src/frontend/android/` |
 | Android push banner strings | `src/frontend/android/app/src/main/res/values{,-fr}/strings.xml` |
