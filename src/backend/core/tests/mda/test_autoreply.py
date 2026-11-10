@@ -777,6 +777,24 @@ class TestSendAutoreplyForMessage:
 
     @patch("core.mda.outbound_tasks.send_message_task", new_callable=MagicMock)
     @patch("core.mda.outbound.sign_message_dkim", return_value=None)
+    def test_truncates_a_subject_at_the_limit(
+        self, mock_dkim, mock_send_task, mailbox, autoreply_template, inbound_message
+    ):
+        """Prefixing a subject at the limit cuts it with an ellipsis instead of failing."""
+        max_length = models.Message._meta.get_field("subject").max_length
+        inbound_message.subject = "a" * max_length
+        inbound_message.save()
+        send_autoreply_for_message(autoreply_template, mailbox, inbound_message)
+
+        autoreply_msg = models.Message.objects.filter(
+            parent=inbound_message, is_sender=True
+        ).last()
+        assert len(autoreply_msg.subject) == max_length
+        assert autoreply_msg.subject.startswith("Re: a")
+        assert autoreply_msg.subject.endswith("a...")
+
+    @patch("core.mda.outbound_tasks.send_message_task", new_callable=MagicMock)
+    @patch("core.mda.outbound.sign_message_dkim", return_value=None)
     def test_stores_blob(
         self, mock_dkim, mock_send_task, mailbox, autoreply_template, inbound_message
     ):

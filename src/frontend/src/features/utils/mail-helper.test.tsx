@@ -1,5 +1,5 @@
 import { vi } from 'vitest';
-import MailHelper, { SUPPORTED_IMAP_DOMAINS, ATTACHMENT_SEPARATORS } from './mail-helper';
+import MailHelper, { SUPPORTED_IMAP_DOMAINS, ATTACHMENT_SEPARATORS, SUBJECT_ELLIPSIS, SUBJECT_MAX_LENGTH } from './mail-helper';
 import DetectionMap from '@/features/i18n/attachments-detection-map.json';
 import i18n from '@/features/i18n/initI18n';
 import { getApiOrigin } from '@/features/api/utils';
@@ -34,6 +34,57 @@ describe('MailHelper', () => {
       const subject = 'Re: Test Subject';
       const result = MailHelper.prefixSubjectIfNeeded(subject, 'Fwd:');
       expect(result).toBe('Fwd: Re: Test Subject');
+    });
+
+    it.each(['RE: shouting', 're: lowercase', 'RE : Outlook FR', 'Re:mobile', 'Rép: fr'])(
+      'should recognise %s as already a reply',
+      (subject) => {
+        expect(MailHelper.prefixSubjectIfNeeded(subject, 'Re:')).toBe(subject);
+      },
+    );
+
+    it.each(['FWD: shouting', 'FW: Outlook', 'TR : Outlook FR', 'fwd:x'])(
+      'should recognise %s as already a forward',
+      (subject) => {
+        expect(MailHelper.prefixSubjectIfNeeded(subject, 'Fwd:')).toBe(subject);
+      },
+    );
+
+    it('should keep the forward marker when replying to a forward', () => {
+      expect(MailHelper.prefixSubjectIfNeeded('Fwd: Original', 'Re:')).toBe('Re: Fwd: Original');
+    });
+
+    it('should not mistake a word starting like a prefix for one', () => {
+      expect(MailHelper.prefixSubjectIfNeeded('Report: Q3', 'Re:')).toBe('Re: Report: Q3');
+      expect(MailHelper.prefixSubjectIfNeeded('Tracking: x', 'Fwd:')).toBe('Fwd: Tracking: x');
+    });
+
+    it('should cap the prefixed subject to SUBJECT_MAX_LENGTH with an ellipsis', () => {
+      const subject = 'a'.repeat(SUBJECT_MAX_LENGTH);
+      const result = MailHelper.prefixSubjectIfNeeded(subject, 'Fwd:');
+      expect(result).toHaveLength(SUBJECT_MAX_LENGTH);
+      expect(result.startsWith('Fwd: ')).toBe(true);
+      expect(result.endsWith(`a${SUBJECT_ELLIPSIS}`)).toBe(true);
+    });
+
+    it('should not add an ellipsis when the prefixed subject fits', () => {
+      const subject = 'a'.repeat(SUBJECT_MAX_LENGTH - 'Re: '.length);
+      expect(MailHelper.prefixSubjectIfNeeded(subject)).toBe(`Re: ${subject}`);
+    });
+
+    it('should not leave a space before the ellipsis', () => {
+      const kept = 'a'.repeat(SUBJECT_MAX_LENGTH - SUBJECT_ELLIPSIS.length - 'Re: '.length - 1);
+      const result = MailHelper.prefixSubjectIfNeeded(`${kept} ${'b'.repeat(20)}`);
+      expect(result).toBe(`Re: ${kept}${SUBJECT_ELLIPSIS}`);
+    });
+
+    it('should not split a surrogate pair when capping', () => {
+      // The last kept code point is an emoji astride the cut in UTF-16 units.
+      const kept = 'a'.repeat(SUBJECT_MAX_LENGTH - SUBJECT_ELLIPSIS.length - 'Re: '.length - 1);
+      const result = MailHelper.prefixSubjectIfNeeded(`${kept}${'😀'.repeat(10)}`);
+      expect(result).toBe(`Re: ${kept}😀${SUBJECT_ELLIPSIS}`);
+      expect(Array.from(result)).toHaveLength(SUBJECT_MAX_LENGTH);
+      expect(result).not.toMatch(/[\uD800-\uDBFF](?![\uDC00-\uDFFF])/);
     });
   });
 

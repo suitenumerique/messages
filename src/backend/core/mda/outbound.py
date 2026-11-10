@@ -29,7 +29,7 @@ from core.mda.inline_images import (
     extract_inline_images_text,
 )
 from core.mda.outbound_direct import send_message_via_mx
-from core.mda.replies import make_forward, make_reply
+from core.mda.replies import is_forward_subject, make_forward, make_reply
 from core.mda.signing import sign_message_dkim, verify_message_dkim
 from core.mda.smtp import send_smtp_mail
 from core.mda.utils import compose_options_for, current_sent_at
@@ -172,8 +172,7 @@ def compose_and_sign_mime(
     if message.parent:
         parent_parsed = message.parent.get_parsed_data()
         if parent_parsed:
-            is_forward = (message.subject or "").lower().startswith("fwd:")
-            if is_forward:
+            if is_forward_subject(message.subject):
                 nested_data = make_forward(
                     original_message=parent_parsed,
                     body_text=text_body,

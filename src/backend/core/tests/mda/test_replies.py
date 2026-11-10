@@ -12,6 +12,7 @@ import pytest
 from core.mda.replies import (
     compute_reply_threading,
     forward_subject,
+    is_forward_subject,
     make_forward,
     make_reply,
     reply_subject,
@@ -38,6 +39,15 @@ class TestReplySubject:
         """Empty input still gets the prefix."""
         assert reply_subject("") == "Re: "
 
+    @pytest.mark.parametrize("subject", ["RE : Outlook FR", "Re:mobile", "Rép: fr"])
+    def test_recognises_spacing_and_localised_variants(self, subject):
+        """A space before the colon or a localised prefix still counts as a reply."""
+        assert reply_subject(subject) == subject
+
+    def test_prefixes_a_forward(self):
+        """Replying to a forward keeps the forward marker after ``Re:``."""
+        assert reply_subject("Fwd: Original") == "Re: Fwd: Original"
+
 
 class TestForwardSubject:
     """``forward_subject`` mirror of ``reply_subject``."""
@@ -53,6 +63,29 @@ class TestForwardSubject:
     def test_handles_case_insensitive_existing_prefix(self):
         """Prefix detection is case-insensitive."""
         assert forward_subject("FWD: shouting") == "FWD: shouting"
+
+    @pytest.mark.parametrize("subject", ["FW: Outlook", "TR : Outlook FR", "fwd:x"])
+    def test_recognises_spacing_and_localised_variants(self, subject):
+        """A space before the colon or a localised prefix still counts as a forward."""
+        assert forward_subject(subject) == subject
+
+    def test_prefixes_a_reply(self):
+        """Forwarding a reply keeps the reply marker after ``Fwd:``."""
+        assert forward_subject("Re: Original") == "Fwd: Re: Original"
+
+
+class TestIsForwardSubject:
+    """``is_forward_subject`` tells a forward from a reply when composing."""
+
+    @pytest.mark.parametrize("subject", ["Fwd: x", "FW: Outlook", "TR : Outlook FR"])
+    def test_detects_forward_prefixes(self, subject):
+        """Every forward prefix the composer leaves in place is detected."""
+        assert is_forward_subject(subject)
+
+    @pytest.mark.parametrize("subject", ["Re: Fwd: x", "Tracking: x", "", None])
+    def test_rejects_other_subjects(self, subject):
+        """Only a forward prefix at the very start counts."""
+        assert not is_forward_subject(subject)
 
 
 class TestComputeReplyThreading:
