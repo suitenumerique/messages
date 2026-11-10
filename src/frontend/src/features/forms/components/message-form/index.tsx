@@ -385,6 +385,9 @@ export const MessageForm = forwardRef<MessageFormHandle, MessageFormProps>(({
         onChange: () => saveDraftRef.current(),
         maxAttachmentSize: config.MAX_OUTGOING_ATTACHMENT_SIZE,
     });
+    // The send reads the attachments from the saved draft: a file still
+    // uploading would silently be left out of the message.
+    const isUploadingAttachments = attachmentHook.uploadingQueue.length > 0;
 
     // Form-level drop target for the compact variant: the permanent uploader
     // block is gone, so the whole form surface accepts dropped files and the
@@ -927,7 +930,7 @@ export const MessageForm = forwardRef<MessageFormHandle, MessageFormProps>(({
         }
         // Same gate as the disabled send button, for the send CTAs living
         // outside the form (mobile sheet header) which cannot see it.
-        if (showRecipientLimitWarning) return;
+        if (showRecipientLimitWarning || isUploadingAttachments) return;
         if (!canSendMessages || !composerRef.current) return;
 
         // Asked before the send flow starts (draft materialization, autosave
@@ -1107,7 +1110,7 @@ export const MessageForm = forwardRef<MessageFormHandle, MessageFormProps>(({
         <span className="form-footer__send">
             <DropdownButton
                 variant="primary"
-                disabled={!canSendMessages || isSubmittingMessage || showRecipientLimitWarning || isDeletingDraft || isTransferringSender}
+                disabled={!canSendMessages || isSubmittingMessage || showRecipientLimitWarning || isUploadingAttachments || isDeletingDraft || isTransferringSender}
                 icon={isSubmittingMessage ? <Spinner size="sm" /> : undefined}
                 type="submit"
                 dropdownOptions={[

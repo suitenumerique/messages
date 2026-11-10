@@ -34,9 +34,10 @@ test.describe("Send Message", () => {
     // The number of drafts should be incremented by 1
     await draftBoxLink.locator("span.mailbox__item-counter", { hasText: (parseInt(initialDraftCount!) + 1).toString() }).waitFor({ state: "visible" });
 
+    // Send stays disabled until the attachment is uploaded: the click waits
+    // for it. The "Sending message..." toast is not awaited, a quick delivery
+    // replaces it before it can be seen.
     await composeWindow.getByRole("button", { name: "Send" }).click();
-    await page.getByText("Sending message...").waitFor({ state: "visible" });
-
     await page.getByText("Message sent successfully").waitFor({ state: "visible" });
 
     // Once message is sent, the number of drafts should be decremented by 1
