@@ -4,7 +4,6 @@
 
 import hashlib
 import logging
-import re
 import uuid
 from contextlib import contextmanager, nullcontext
 
@@ -30,6 +29,7 @@ from core.ai.utils import (
     is_auto_labels_enabled,
 )
 from core.mda.addresses import address_local_part, normalize_address
+from core.mda.replies import strip_subject_prefixes
 from core.services.importer.labels import (
     compute_labels_and_flags,
 )
@@ -78,15 +78,7 @@ def inbound_mailbox_lock(mailbox_id: uuid.UUID):
 
 def _canonicalize_subject(subject: str | None) -> str:
     """Strip leading ``Re:`` / ``Fwd:`` (and i18n variants) for thread match."""
-    # ``\s*`` after the colon, not ``\s+``: mobile clients regularly send
-    # "Re:subject" with no space, and a prefix left in place makes two
-    # messages of the same conversation compare as different subjects.
-    return re.sub(
-        r"^((re|fwd|fw|rep|tr|rép)\s*:\s*)+",
-        "",
-        (subject or "").lower(),
-        flags=re.IGNORECASE,
-    ).strip()
+    return strip_subject_prefixes(subject or "").lower().strip()
 
 
 def _parent_messages(mime_ids: list[str], mailbox: models.Mailbox):

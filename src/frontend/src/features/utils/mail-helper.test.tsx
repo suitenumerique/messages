@@ -1,5 +1,5 @@
 import { vi } from 'vitest';
-import MailHelper, { SUPPORTED_IMAP_DOMAINS, ATTACHMENT_SEPARATORS } from './mail-helper';
+import MailHelper, { SUPPORTED_IMAP_DOMAINS, ATTACHMENT_SEPARATORS, SUBJECT_MAX_LENGTH } from './mail-helper';
 import DetectionMap from '@/features/i18n/attachments-detection-map.json';
 import i18n from '@/features/i18n/initI18n';
 import { getApiOrigin } from '@/features/api/utils';
@@ -34,6 +34,45 @@ describe('MailHelper', () => {
       const subject = 'Re: Test Subject';
       const result = MailHelper.prefixSubjectIfNeeded(subject, 'Fwd:');
       expect(result).toBe('Fwd: Re: Test Subject');
+    });
+
+    it.each(['RE: shouting', 're: lowercase', 'RE : Outlook FR', 'Re:mobile', 'Rép: fr'])(
+      'should recognise %s as already a reply',
+      (subject) => {
+        expect(MailHelper.prefixSubjectIfNeeded(subject, 'Re:')).toBe(subject);
+      },
+    );
+
+    it.each(['FWD: shouting', 'FW: Outlook', 'TR : Outlook FR', 'fwd:x'])(
+      'should recognise %s as already a forward',
+      (subject) => {
+        expect(MailHelper.prefixSubjectIfNeeded(subject, 'Fwd:')).toBe(subject);
+      },
+    );
+
+    it('should keep the forward marker when replying to a forward', () => {
+      expect(MailHelper.prefixSubjectIfNeeded('Fwd: Original', 'Re:')).toBe('Re: Fwd: Original');
+    });
+
+    it('should not mistake a word starting like a prefix for one', () => {
+      expect(MailHelper.prefixSubjectIfNeeded('Report: Q3', 'Re:')).toBe('Re: Report: Q3');
+      expect(MailHelper.prefixSubjectIfNeeded('Tracking: x', 'Fwd:')).toBe('Fwd: Tracking: x');
+    });
+
+    it('should cap the prefixed subject to SUBJECT_MAX_LENGTH', () => {
+      const subject = 'a'.repeat(SUBJECT_MAX_LENGTH);
+      const result = MailHelper.prefixSubjectIfNeeded(subject, 'Fwd:');
+      expect(result).toHaveLength(SUBJECT_MAX_LENGTH);
+      expect(result.startsWith('Fwd: ')).toBe(true);
+    });
+
+    it('should not split a surrogate pair when capping', () => {
+      // "Re: " + 250 chars leaves the emoji astride the limit in UTF-16 units.
+      const subject = `${'a'.repeat(250)}😀😀`;
+      const result = MailHelper.prefixSubjectIfNeeded(subject);
+      expect(Array.from(result)).toHaveLength(SUBJECT_MAX_LENGTH);
+      expect(result.endsWith('😀')).toBe(true);
+      expect(result).not.toMatch(/[\uD800-\uDBFF](?![\uDC00-\uDFFF])/);
     });
   });
 
