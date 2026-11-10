@@ -22,6 +22,7 @@ export type DraftMessageRequestRequest = {
   senderId: string;
   /**
    * Subject of the message (optional; empty or null allowed)
+   * @maxLength 998
    * @nullable
    */
   subject?: string | null;

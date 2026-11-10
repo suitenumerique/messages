@@ -18,8 +18,8 @@ const decodeHtmlEntities = (str: string): string =>
        .replace(/&#x27;/g, "'")
        .replace(/&amp;/g, '&');
 
-/** Mirrors the `max_length` of `Message.subject` and `Thread.subject` in the backend. */
-export const SUBJECT_MAX_LENGTH = 255;
+/** Mirrors `MESSAGE_SUBJECT_MAX_LENGTH` in the backend `core/models.py`. */
+export const SUBJECT_MAX_LENGTH = 998;
 
 /**
  * Prefixes recognised as already marking a reply or a forward, matched

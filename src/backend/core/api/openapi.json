@@ -8347,7 +8347,8 @@
                     "subject": {
                         "type": "string",
                         "nullable": true,
-                        "description": "Subject of the message (optional; empty or null allowed)"
+                        "description": "Subject of the message (optional; empty or null allowed)",
+                        "maxLength": 998
                     },
                     "draftBody": {
                         "type": "string",

@@ -67,8 +67,8 @@ describe('MailHelper', () => {
     });
 
     it('should not split a surrogate pair when capping', () => {
-      // "Re: " + 250 chars leaves the emoji astride the limit in UTF-16 units.
-      const subject = `${'a'.repeat(250)}😀😀`;
+      // "Re: " + (limit - 5) chars leaves the emoji astride the limit in UTF-16 units.
+      const subject = `${'a'.repeat(SUBJECT_MAX_LENGTH - 5)}😀😀`;
       const result = MailHelper.prefixSubjectIfNeeded(subject);
       expect(Array.from(result)).toHaveLength(SUBJECT_MAX_LENGTH);
       expect(result.endsWith('😀')).toBe(true);

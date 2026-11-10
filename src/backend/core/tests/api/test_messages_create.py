@@ -880,8 +880,7 @@ class TestApiDraftAndSendMessage:
         client = APIClient()
         client.force_authenticate(user=authenticated_user)
 
-        # Create a subject that exceeds max_length (255)
-        long_subject = "A" * 256
+        long_subject = "A" * (models.MESSAGE_SUBJECT_MAX_LENGTH + 1)
 
         draft_response = client.post(
             reverse("draft-message"),
@@ -896,6 +895,35 @@ class TestApiDraftAndSendMessage:
 
         # Should fail due to max_length constraint
         assert draft_response.status_code == status.HTTP_400_BAD_REQUEST
+
+    def test_draft_message_subject_longer_than_thread_subject(
+        self, mailbox, authenticated_user
+    ):
+        """A draft keeps a subject longer than the thread column, the thread a cut copy."""
+        factories.MailboxAccessFactory(
+            mailbox=mailbox,
+            user=authenticated_user,
+            role=enums.MailboxRoleChoices.EDITOR,
+        )
+        client = APIClient()
+        client.force_authenticate(user=authenticated_user)
+        subject = "A" * (models.THREAD_SUBJECT_MAX_LENGTH + 100)
+
+        response = client.post(
+            reverse("draft-message"),
+            {
+                "senderId": mailbox.id,
+                "subject": subject,
+                "draftBody": "Test content",
+                "to": ["pierre@external.com"],
+            },
+            format="json",
+        )
+
+        assert response.status_code == status.HTTP_201_CREATED
+        draft = models.Message.objects.get(id=response.data["id"])
+        assert draft.subject == subject
+        assert draft.thread.subject == subject[: models.THREAD_SUBJECT_MAX_LENGTH]
 
     @override_settings(MAX_RECIPIENTS_PER_MESSAGE=3)
     @patch("core.mda.outbound.send_outbound_message")

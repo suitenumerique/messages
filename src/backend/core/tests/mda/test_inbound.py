@@ -226,6 +226,29 @@ class TestFindThread:
         found_thread = find_thread_for_message(parsed_reply, self.mailbox)
         assert found_thread == initial_thread
 
+    def test_find_by_references_with_subject_longer_than_thread_subject(self):
+        """Subject matching reads the message subject, not the cut thread copy."""
+        initial_subject = "L" * (models.THREAD_SUBJECT_MAX_LENGTH + 100)
+        initial_mime_id = "long.001@example.com"
+        initial_thread = factories.ThreadFactory(subject=initial_subject)
+        factories.ThreadAccessFactory(
+            mailbox=self.mailbox,
+            thread=initial_thread,
+            role=enums.ThreadAccessRoleChoices.EDITOR,
+        )
+        factories.MessageFactory(
+            thread=initial_thread, mime_id=initial_mime_id, subject=initial_subject
+        )
+
+        parsed_reply = {
+            "subject": f"Re: {initial_subject}",
+            "references": [initial_mime_id],
+            "from": [{"email": "replier@a.com"}],
+        }
+
+        assert len(initial_thread.subject) == models.THREAD_SUBJECT_MAX_LENGTH
+        assert find_thread_for_message(parsed_reply, self.mailbox) == initial_thread
+
     @pytest.mark.parametrize(
         "role",
         [
@@ -907,14 +930,20 @@ class TestDeliverInboundMessage:
         assert str(message) == "(no subject)"
         assert str(thread) == "(no subject)"
 
+    @pytest.mark.parametrize(
+        "subject_length",
+        [
+            models.THREAD_SUBJECT_MAX_LENGTH + 1,
+            models.MESSAGE_SUBJECT_MAX_LENGTH + 1,
+        ],
+    )
     def test_deliver_message_with_very_long_subject(
-        self, target_mailbox, raw_email_data
+        self, target_mailbox, raw_email_data, subject_length
     ):
-        """Test delivery of message with subject exceeding max_length gets truncated."""
+        """A long subject is kept up to the message limit, the thread gets a cut copy."""
         recipient_addr = f"{target_mailbox.local_part}@{target_mailbox.domain.name}"
 
-        # Create parsed email with very long subject
-        long_subject = "A" * 256  # Exceeds max_length of 255
+        long_subject = "A" * subject_length
         parsed_email_long_subject = {
             "subject": long_subject,
             "from": [{"name": "Test Sender", "email": "sender@test.com"}],
@@ -926,7 +955,6 @@ class TestDeliverInboundMessage:
             "sentAt": timezone.now().isoformat(),
         }
 
-        # This should now succeed with truncated subject
         success = deliver_inbound_message(
             recipient_addr,
             parsed_email_long_subject,
@@ -937,17 +965,10 @@ class TestDeliverInboundMessage:
         assert models.Message.objects.count() == 1
         assert models.Thread.objects.count() == 1
 
-        # Verify the subject was truncated to 255 characters
         message = models.Message.objects.first()
         thread = models.Thread.objects.first()
-
-        assert len(message.subject) == 255
-        assert len(thread.subject) == 255
-        assert message.subject == "A" * 255  # Truncated version
-        assert thread.subject == "A" * 255  # Truncated version
-        assert (
-            message.subject == thread.subject
-        )  # Both should be the same truncated value
+        assert message.subject == long_subject[: models.MESSAGE_SUBJECT_MAX_LENGTH]
+        assert thread.subject == long_subject[: models.THREAD_SUBJECT_MAX_LENGTH]
 
     def test_thread_subject_consistency_with_empty_subject(
         self, target_mailbox, raw_email_data
