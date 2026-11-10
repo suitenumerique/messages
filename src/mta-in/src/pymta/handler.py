@@ -470,7 +470,7 @@ class InboundHandler:
             clean = validate_envelope_address(
                 address,
                 allow_empty=True,
-                max_local=settings.PYMTA_MAX_LOCAL_PART,
+                max_local=None,
                 max_domain=settings.PYMTA_MAX_DOMAIN,
             )
         except AddressError as err:

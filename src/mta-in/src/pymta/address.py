@@ -59,13 +59,18 @@ def validate_envelope_address(  # noqa: PLR0912
     raw: str,
     *,
     allow_empty: bool,
-    max_local: int,
+    max_local: int | None,
     max_domain: int,
 ) -> str:
     """Validate ``raw`` as an RFC 5321 envelope address.
 
     ``allow_empty`` controls whether the null sender ``<>`` is accepted. It
     must be true for MAIL FROM and false for RCPT TO (RFC 5321 §4.5.5).
+
+    ``max_local=None`` skips the local-part cap. That is for MAIL FROM:
+    §4.5.3.1 asks to avoid these limits where possible, and forwarders' SRS
+    or VERP return paths routinely carry a local-part longer than 64 octets.
+    The address stays bounded by aiosmtpd's MAIL command-line limit.
 
     Returns the cleaned address (lower-cased domain, original local-part) on
     success, raises :class:`AddressError` on failure.
@@ -178,7 +183,7 @@ def validate_envelope_address(  # noqa: PLR0912
         )
 
     # ----- 4. length limits (RFC 5321 §4.5.3.1) -----------------------------
-    if len(local.encode("utf-8")) > max_local:
+    if max_local is not None and len(local.encode("utf-8")) > max_local:
         raise AddressError(
             reason="oversize_local",
             smtp_code=553,

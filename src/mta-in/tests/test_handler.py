@@ -397,6 +397,43 @@ async def test_hard_error_limit_on_mail_requests_disconnect(monkeypatch):
 
 
 # ---------------------------------------------------------------------------
+# The 64-octet local-part cap gates RCPT only: forwarded mail carries an
+# SRS-wrapped return path whose local-part routinely exceeds it.
+# ---------------------------------------------------------------------------
+
+_SRS_SENDER = "SRS0=Ab3d=TT=bounces.mailer.example=" + "b" * 60 + "@forwarder.example"
+
+
+@pytest.mark.asyncio
+async def test_mail_accepts_local_part_over_64_octets():
+    session, envelope = _session(), _envelope()
+    reply = await _handler().handle_MAIL(None, session, envelope, f"<{_SRS_SENDER}>", [])
+    assert reply.startswith("250")
+    assert envelope.mail_from == _SRS_SENDER
+
+
+@pytest.mark.asyncio
+async def test_mail_accepts_sender_over_256_octets():
+    session, envelope = _session(), _envelope()
+    sender = "a" * 300 + "@example.com"
+    reply = await _handler().handle_MAIL(None, session, envelope, f"<{sender}>", [])
+    assert reply.startswith("250")
+    assert envelope.mail_from == sender
+
+
+@pytest.mark.asyncio
+async def test_rcpt_still_rejects_local_part_over_64_octets():
+    session, envelope = _session(), _envelope()
+    envelope.mail_from = "sender@example.com"
+    mda = _FakeMDA(check_exists=True)
+    reply = await _handler(mda).handle_RCPT(
+        None, session, envelope, "<" + "a" * 65 + "@example.com>", []
+    )
+    assert reply.startswith("553")
+    assert envelope.rcpt_tos == []
+
+
+# ---------------------------------------------------------------------------
 # Null sender survives the round-trip via the sentinel.
 # ---------------------------------------------------------------------------
 

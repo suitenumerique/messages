@@ -236,3 +236,45 @@ def test_non_utf8_byte_in_rcpt_is_cleanly_rejected(mta_impl):
         "sender retry a message that can never be accepted."
     )
     assert reply[:1] == b"5", reply
+
+
+# ---------------------------------------------------------------------------
+# 4. A return path past both RFC 5321 §4.5.3.1 caps (64 local, 256 path).
+# ---------------------------------------------------------------------------
+
+
+def test_long_srs_return_path_is_delivered_intact(mock_api_server, mta_impl):
+    """A forwarder's SRS return path, 400 octets long.
+
+    Past the 64-octet local-part and the 256-octet path the RFC suggests,
+    which Postfix never enforced either. The command line carries every MAIL
+    parameter we advertise, so this also proves it stays inside aiosmtpd's
+    MAIL command limit and that the MDA receives the sender unaltered.
+    """
+    mock_api_server.add_mailbox("wire@example.com")
+    domain = b"forwarder.example"
+    prefix = b"SRS0=Ab3d=TT=bounces.mailer.example="
+    local = prefix + b"b" * (400 - 1 - len(domain) - len(prefix))
+    sender = local + b"@" + domain
+    assert len(sender) == 400
+    s = _session()
+    try:
+        assert _cmd(s, b"EHLO probe.example.com\r\n").startswith(b"250")
+        reply = _cmd(s, b"MAIL FROM:<" + sender + b"> SIZE=1024 BODY=8BITMIME SMTPUTF8\r\n")
+        assert reply.startswith(b"250"), reply
+        assert _cmd(s, b"RCPT TO:<wire@example.com>\r\n").startswith(b"250")
+        assert _cmd(s, b"DATA\r\n").startswith(b"354")
+        body = (
+            b"Subject: forwarded\r\n"
+            b"From: sender@example.com\r\n"
+            b"To: wire@example.com\r\n"
+            b"\r\nbody\r\n"
+        )
+        reply = _cmd(s, body + b"\r\n.\r\n")
+    finally:
+        s.close()
+
+    logger.info("400-octet return path on %s -> %r", mta_impl, reply[:80])
+    assert reply.startswith(b"250"), reply
+    mock_api_server.wait_for_email()
+    assert mock_api_server.received_emails[-1]["metadata"]["sender"] == sender.decode()

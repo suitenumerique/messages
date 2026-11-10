@@ -203,9 +203,15 @@ PYMTA_MAX_CONCURRENT_DATA = _env_int("PYMTA_MAX_CONCURRENT_DATA", 40, minimum=0)
 
 # RFC 5321 §4.5.3.1.1/.1.2: local-part ≤ 64 octets, domain ≤ 255 octets.
 # Constants, not env vars: these are the protocol's numbers, not a deployment
-# choice, and raising them would only widen the gap between what pymta accepts
-# at RCPT and what the MDA can store. ``validate_envelope_address`` still takes
-# them as arguments so the tests can probe the boundaries directly.
+# choice. ``validate_envelope_address`` still takes them as arguments so the
+# tests can probe the boundaries directly.
+#
+# The local-part cap applies to RCPT only: raising it there would only widen
+# the gap between what pymta accepts and what the MDA can store. MAIL FROM
+# gets no local-part cap, since a forwarder's SRS-wrapped return path exceeds
+# 64 octets as a matter of course, and no path cap either (§4.5.3.1 asks to
+# avoid these limits; Postfix enforced neither). aiosmtpd's MAIL command-line
+# limit is what bounds it.
 PYMTA_MAX_LOCAL_PART = 64
 PYMTA_MAX_DOMAIN = 255
 

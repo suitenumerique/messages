@@ -11,9 +11,12 @@ import pytest
 from pymta.address import AddressError, strip_brackets, validate_envelope_address
 
 
-def _validate(address: str, *, allow_empty: bool = False) -> str:
+def _validate(address: str, *, allow_empty: bool = False, max_local: int | None = 64) -> str:
     return validate_envelope_address(
-        address, allow_empty=allow_empty, max_local=64, max_domain=255
+        address,
+        allow_empty=allow_empty,
+        max_local=max_local,
+        max_domain=255,
     )
 
 
@@ -231,6 +234,13 @@ def test_overlong_local_part_rejected():
     with pytest.raises(AddressError) as exc:
         _validate(f"{long_local}@example.com")
     assert exc.value.reason == "oversize_local"
+
+
+def test_overlong_local_part_accepted_without_local_cap():
+    # A forwarder's SRS-wrapped bounce address, longer than the RFC's
+    # 256-octet path too: neither limit applies to MAIL FROM.
+    srs = "SRS0=Ab3d=TT=bounces.mailer.example=" + "b" * 300 + "@forwarder.example"
+    assert _validate(srs, max_local=None) == srs
 
 
 def test_overlong_domain_rejected():
