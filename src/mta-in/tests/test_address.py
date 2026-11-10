@@ -258,6 +258,41 @@ def test_overlong_label_rejected():
     assert exc.value.reason == "bad_address"
 
 
+# DNS limits apply to the A-label, not to the UTF-8 an SMTPUTF8 peer sends:
+# each of these labels is over 63 UTF-8 octets but a valid A-label.
+@pytest.mark.parametrize(
+    "label",
+    [
+        "министерство-экономики-и-финансов-россии",  # 76 octets, A-label 52
+        "وزارةالاقتصادوالماليةالعامةللدولة",  # 66 octets, A-label 46
+        "é" * 55,  # 110 octets, A-label 61
+    ],
+)
+def test_idn_label_measured_as_a_label(label):
+    address = f"user@{label}.example"
+    assert _validate(address) == address
+
+
+def test_idn_domain_total_measured_as_a_label():
+    # 443 UTF-8 octets, 247 as A-labels.
+    domain = ".".join(["é" * 55] * 4)
+    assert _validate(f"user@{domain}") == f"user@{domain}"
+
+
+def test_idn_label_over_63_octets_as_a_label_rejected():
+    label = "中华人民共和国国家发展和改革委员会办公厅秘书"  # 66 octets, A-label 65
+    with pytest.raises(AddressError) as exc:
+        _validate(f"user@{label}.example")
+    assert exc.value.reason == "bad_address"
+
+
+@pytest.mark.parametrize("domain", ["faß.de", "mail_relay.example.com"])
+def test_domain_length_check_does_not_apply_idna_validity(domain):
+    # ``ß`` must survive (IDNA2003 would fold it to ``ss``) and ``_``, refused
+    # by IDNA, has always been accepted: only lengths are checked.
+    assert _validate(f"user@{domain}") == f"user@{domain}"
+
+
 # ---------------------------------------------------------------------------
 # Domain shape
 # ---------------------------------------------------------------------------
