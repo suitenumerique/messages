@@ -8,7 +8,7 @@ type LimitedStorageEntitlement = StorageEntitlement & { max_storage: number };
  */
 export class QuotaHelper {
     // Decimal (SI) gigabyte, as the backend sizes the quotas (e.g. 5 * 1000**3).
-    private static readonly BYTES_PER_GB = 1000 ** 3;
+    static readonly #BYTES_PER_GB = 1000 ** 3;
 
     /**
      * Whether a storage level has a limit to gauge against.
@@ -47,7 +47,7 @@ export class QuotaHelper {
      * @returns The size in decimal gigabytes (1 GB = 1000³ bytes).
      */
     static toGigabytes(bytes: number) {
-        return bytes / QuotaHelper.BYTES_PER_GB;
+        return bytes / QuotaHelper.#BYTES_PER_GB;
     }
 }
 

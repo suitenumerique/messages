@@ -19,18 +19,18 @@ export type MessagePatcher = (message: Message) => Message;
 export class ThreadPins {
     /** Read by `mergePinnedThreads`. */
     readonly pinnedIds = new Set<string>();
-    private readonly evictedIds = new Set<string>();
+    readonly #evictedIds = new Set<string>();
 
     pin(threadIds: string[]) {
         threadIds.forEach((id) => {
-            if (!this.evictedIds.has(id)) this.pinnedIds.add(id);
+            if (!this.#evictedIds.has(id)) this.pinnedIds.add(id);
         });
     }
 
     unpin(threadIds: string[]) {
         threadIds.forEach((id) => {
             this.pinnedIds.delete(id);
-            this.evictedIds.add(id);
+            this.#evictedIds.add(id);
         });
     }
 
@@ -39,13 +39,13 @@ export class ThreadPins {
      * fed with fetched pages: a cache patch still holds the leaving threads.
      */
     release(threads: Pick<Thread, "id">[]) {
-        if (this.evictedIds.size === 0) return;
-        threads.forEach(({ id }) => this.evictedIds.delete(id));
+        if (this.#evictedIds.size === 0) return;
+        threads.forEach(({ id }) => this.#evictedIds.delete(id));
     }
 
     clear() {
         this.pinnedIds.clear();
-        this.evictedIds.clear();
+        this.#evictedIds.clear();
     }
 }
 

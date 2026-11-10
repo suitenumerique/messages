@@ -148,10 +148,10 @@ class MailboxHelper {
         userEmail: string | null | undefined,
     ): Mailbox | undefined {
         if (!userEmail) return undefined;
-        const userLocalPart = this.getLocalPart(userEmail);
+        const userLocalPart = this.#getLocalPart(userEmail);
         if (userLocalPart === undefined) return undefined;
         const candidates = mailboxes.filter(
-            (mailbox) => mailbox.is_identity && this.getLocalPart(mailbox.email) === userLocalPart,
+            (mailbox) => mailbox.is_identity && this.#getLocalPart(mailbox.email) === userLocalPart,
         );
         const normalizedUserEmail = MailHelper.asciiLower(userEmail);
         return candidates.find((mailbox) => MailHelper.asciiLower(mailbox.email) === normalizedUserEmail)
@@ -193,7 +193,7 @@ class MailboxHelper {
             ?? null;
     }
 
-    private static getLocalPart(email: string): string | undefined {
+    static #getLocalPart(email: string): string | undefined {
         const localPart = MailHelper.splitEmail(email)?.[0];
         return localPart === undefined ? undefined : MailHelper.asciiLower(localPart);
     }

@@ -47,7 +47,7 @@ class ToastBatchHelper {
         data: ChangeFlagRequestRequest,
         updatedCount: number | undefined,
     ): ToastBatch {
-        const skippedCount = ToastBatchHelper.countSkipped(data, updatedCount);
+        const skippedCount = ToastBatchHelper.#countSkipped(data, updatedCount);
         return {
             toastId,
             threadIds: [...new Set([...(previous?.threadIds ?? []), ...(data.thread_ids ?? [])])],
@@ -83,7 +83,7 @@ class ToastBatchHelper {
 
     // Counting the items left untouched rather than the updated ones keeps a
     // thread flagged twice from being counted twice and hiding a failure.
-    private static countSkipped(data: ChangeFlagRequestRequest, updatedCount: number | undefined): number | undefined {
+    static #countSkipped(data: ChangeFlagRequestRequest, updatedCount: number | undefined): number | undefined {
         if (updatedCount === undefined) return undefined;
         const threadCount = data.thread_ids?.length ?? 0;
         if (threadCount > 0) return Math.max(0, threadCount - updatedCount);
