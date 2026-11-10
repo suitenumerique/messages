@@ -13,6 +13,7 @@ import {
     patchMessagesInCache,
     patchThreadsInCache,
     removeMessagesFromCache,
+    ThreadPins,
     trimTrailingEmptyPages,
     type MessagePatcher,
     type ThreadPatcher,
@@ -255,7 +256,7 @@ export const MailboxProvider = ({ children }: PropsWithChildren) => {
     const location = useLocation();
     const routeParams = useParams({ strict: false }) as { mailboxId?: string; threadId?: string };
     const { user } = useAuth();
-    const pinnedThreadIdsRef = useRef(new Set<string>());
+    const threadPinsRef = useRef(new ThreadPins());
     const [unmountThreadViewNeeded, setUnmountThreadViewNeeded] = useState(false);
     const searchParams = useUrlSearchParams();
     const previousSearchParams = usePrevious(searchParams);
@@ -337,7 +338,9 @@ export const MailboxProvider = ({ children }: PropsWithChildren) => {
                     if (value !== null) params[key] = value;
                 }
                 try {
-                    return await threadsList(params, { signal });
+                    const response = await threadsList(params, { signal });
+                    threadPinsRef.current.release(response.data.results);
+                    return response;
                 } catch (error) {
                     // Intercept the 404 DRF raises for out-of-range pages. The list
                     // may legitimately shrink between two refetches (e.g. user bulk
@@ -368,7 +371,7 @@ export const MailboxProvider = ({ children }: PropsWithChildren) => {
                 const merged = mergePinnedThreads(
                     oldData as InfiniteData<threadsListResponse> | undefined,
                     newData as InfiniteData<threadsListResponse>,
-                    pinnedThreadIdsRef.current,
+                    threadPinsRef.current.pinnedIds,
                 );
                 return trimTrailingEmptyPages(merged);
             },
@@ -500,7 +503,7 @@ export const MailboxProvider = ({ children }: PropsWithChildren) => {
     const pinThreads = (threadIds: Thread['id'][], patcher: ThreadPatcher) => {
         if (threadIds.length === 0) return;
         patchThreadsInCache(queryClient, selectedMailbox?.id, threadIds, patcher);
-        threadIds.forEach((id) => pinnedThreadIdsRef.current.add(id));
+        threadPinsRef.current.pin(threadIds);
     };
 
     /**
@@ -508,10 +511,11 @@ export const MailboxProvider = ({ children }: PropsWithChildren) => {
      * authoritative again. Mutations that move a thread out of the current
      * view (archive, spam, trash, draft delete/send) call this BEFORE
      * invalidating, otherwise `mergePinnedThreads` would re-insert the thread
-     * the server just filtered out.
+     * the server just filtered out. Pins requested by mutations settling
+     * afterwards are ignored until the server lists the thread again.
      */
     const unpinThreads = (threadIds: Thread['id'][]) => {
-        threadIds.forEach((id) => pinnedThreadIdsRef.current.delete(id));
+        threadPinsRef.current.unpin(threadIds);
     };
 
     const patchMessages = (threadId: Thread['id'], patcher: MessagePatcher) => {
@@ -760,7 +764,7 @@ export const MailboxProvider = ({ children }: PropsWithChildren) => {
     // Clear pinned thread IDs when filters or mailbox change so the next
     // refetch shows the pure server-side list.
     useEffect(() => {
-        pinnedThreadIdsRef.current.clear();
+        threadPinsRef.current.clear();
     }, [selectedMailbox?.id, searchParams.toString()]);
 
     useEffect(() => {

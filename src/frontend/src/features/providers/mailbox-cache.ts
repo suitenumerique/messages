@@ -7,6 +7,49 @@ export type ThreadPatcher = (thread: Thread) => Thread;
 export type MessagePatcher = (message: Message) => Message;
 
 /**
+ * The pinned threads of the list (see `mergePinnedThreads`), guarded against
+ * the mutations that settle late.
+ *
+ * A thread unpinned because it left the view stays evicted until the server
+ * lists it again. Otherwise a mutation fired before it left and settling
+ * after, such as the mark-as-read of a thread deleted right after being
+ * opened, would pin it back, and `mergePinnedThreads` would keep re-inserting
+ * a thread the server no longer returns.
+ */
+export class ThreadPins {
+    /** Read by `mergePinnedThreads`. */
+    readonly pinnedIds = new Set<string>();
+    private readonly evictedIds = new Set<string>();
+
+    pin(threadIds: string[]) {
+        threadIds.forEach((id) => {
+            if (!this.evictedIds.has(id)) this.pinnedIds.add(id);
+        });
+    }
+
+    unpin(threadIds: string[]) {
+        threadIds.forEach((id) => {
+            this.pinnedIds.delete(id);
+            this.evictedIds.add(id);
+        });
+    }
+
+    /**
+     * Lift the eviction of the threads a server response lists again. Only
+     * fed with fetched pages: a cache patch still holds the leaving threads.
+     */
+    release(threads: Pick<Thread, "id">[]) {
+        if (this.evictedIds.size === 0) return;
+        threads.forEach(({ id }) => this.evictedIds.delete(id));
+    }
+
+    clear() {
+        this.pinnedIds.clear();
+        this.evictedIds.clear();
+    }
+}
+
+/**
  * Merge-back pinned threads that the server filtered out of a fresh response.
  *
  * Why this exists: a mutation may push a thread out of the active filter
@@ -14,8 +57,9 @@ export type MessagePatcher = (message: Message) => Message;
  * pin the thread so the next server refetch — which no longer returns it —
  * does not make it disappear under the user's cursor.
  *
- * Pin lifecycle: a pin is added by `pinThreads`, dropped explicitly by
- * `unpinThreads` (called by mutations that move the thread out of the view),
+ * Pin lifecycle (`ThreadPins`): a pin is added by `pinThreads`, dropped
+ * explicitly by `unpinThreads` (called by mutations that move the thread out
+ * of the view, which also ignores late pins until the server lists it again),
  * and the whole set is cleared when the user changes filter or mailbox.
  * When the server returns the thread on its own, the pin becomes inert —
  * `mergePinnedThreads` only re-injects missing threads — so we deliberately

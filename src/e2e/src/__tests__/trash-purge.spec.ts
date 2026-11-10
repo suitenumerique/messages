@@ -188,9 +188,6 @@ test.describe("Spam conversation triage", () => {
   test("should let a single message move to the trash from the spam folder", async ({ page }) => {
     await openFolder(page, "Spam", PARTIALLY_SPAM);
     await openThread(page, PARTIALLY_SPAM);
-    // Let the thread be marked as read: settling after the trashing, that call
-    // would pin the thread back in the list.
-    await page.waitForLoadState("networkidle");
 
     // The spam message, seeded last, is told apart from the other one.
     const spamMessage = page.locator(".thread-message").last();
