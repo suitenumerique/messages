@@ -22,6 +22,7 @@ from .controller import HardenedController
 from .handler import InboundHandler
 from .limits import IPGate
 from .mda_async import MDAClient
+from .smtp_protocol import log_abandoned_sessions
 
 # Named explicitly rather than __name__: this module is the entrypoint, run as
 # `python -m pymta.server`, so __name__ is "__main__" and every line it emits
@@ -209,6 +210,7 @@ async def _drain_and_close(server: asyncio.AbstractServer) -> None:
                     "deadline_seconds": settings.PYMTA_SHUTDOWN_TIMEOUT,
                 },
             )
+            log_abandoned_sessions()
             break
         await asyncio.sleep(_DRAIN_POLL_SECONDS)
 
@@ -314,7 +316,7 @@ async def _serve() -> None:
         loop = asyncio.get_running_loop()
         try:
             loop.add_signal_handler(signal.SIGHUP, _reload_settings)
-        except (NotImplementedError, AttributeError):
+        except NotImplementedError, AttributeError:
             pass
         for sig in (signal.SIGINT, signal.SIGTERM):
             try:

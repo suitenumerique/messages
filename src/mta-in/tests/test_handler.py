@@ -648,6 +648,191 @@ async def test_unknown_recipient_logs_one_info_line(caplog):
 
 
 @pytest.mark.asyncio
+async def test_a_recipient_refusal_names_the_sender(caplog):
+    """Searching the log for the sending domain has to find its refusals."""
+    server = _FakeServer()
+    handler, session, envelope = _handler(), _session(), _envelope()
+    envelope.mail_from = "alice@sender.example"
+
+    with caplog.at_level(logging.INFO, logger="pymta.handler"):
+        await handler.handle_RCPT(server, session, envelope, "<miss@example.com>", [])
+
+    (reject,) = [r for r in caplog.records if r.getMessage() == "reject"]
+    assert reject.sender == "alice@sender.example"
+
+
+@pytest.mark.asyncio
+async def test_a_bounce_refusal_names_the_null_sender(caplog):
+    server = _FakeServer()
+    handler, session, envelope = _handler(), _session(), _envelope()
+    envelope.mail_from = NULL_SENDER_SENTINEL
+
+    with caplog.at_level(logging.INFO, logger="pymta.handler"):
+        await handler.handle_RCPT(server, session, envelope, "<miss@example.com>", [])
+
+    (reject,) = [r for r in caplog.records if r.getMessage() == "reject"]
+    assert reject.sender == "<>"
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize(
+    "reason", ["max_errors_per_session", "defer_all", "blocked_recipient", "mda_temp_fail"]
+)
+async def test_every_recipient_refusal_names_the_sender(monkeypatch, caplog, reason):
+    server = _FakeServer()
+    mda = _FakeMDA()
+    if reason == "max_errors_per_session":
+        monkeypatch.setattr(settings, "PYMTA_MAX_ERRORS_PER_SESSION", 2)
+        setattr(server, _SOFT_ERRORS_ATTR, 2)
+    elif reason == "defer_all":
+        monkeypatch.setattr(settings, "PYMTA_DEFER_ALL", True)
+    elif reason == "blocked_recipient":
+        monkeypatch.setattr(settings, "PYMTA_BLOCKED_RECIPIENTS", frozenset({"miss@example.com"}))
+    else:
+        mda = _FakeMDA(
+            check_result=MDAResult(ok=False, temp_fail=True, payload={}, status_code=503)
+        )
+    handler, session, envelope = _handler(mda), _session(), _envelope()
+    envelope.mail_from = "alice@sender.example"
+
+    with caplog.at_level(logging.INFO, logger="pymta.handler"):
+        await handler.handle_RCPT(server, session, envelope, "<miss@example.com>", [])
+
+    (reject,) = [r for r in caplog.records if r.getMessage() == "reject"]
+    assert reject.reason == reason
+    assert reject.sender == "alice@sender.example"
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize(
+    ("reason", "options"),
+    [
+        ("bad_size_parameter", ["SIZE=not-a-number"]),
+        ("oversize_announced", [f"SIZE={10**12}"]),
+        ("max_errors_per_session", []),
+    ],
+)
+async def test_every_sender_refusal_names_the_sender(monkeypatch, caplog, reason, options):
+    """An announced size over the cap is the usual way a large mail is lost."""
+    server = _FakeServer()
+    if reason == "max_errors_per_session":
+        monkeypatch.setattr(settings, "PYMTA_MAX_ERRORS_PER_SESSION", 2)
+        setattr(server, _SOFT_ERRORS_ATTR, 2)
+    handler, session, envelope = _handler(), _session(), _envelope()
+
+    with caplog.at_level(logging.INFO, logger="pymta.handler"):
+        reply = await handler.handle_MAIL(
+            server, session, envelope, "<alice@sender.example>", options
+        )
+
+    assert reply[:1] in "45"
+    (reject,) = [r for r in caplog.records if r.getMessage() == "reject"]
+    assert reject.reason == reason
+    assert "alice@sender.example" in reject.sender
+    assert server.refusal_logged is True
+
+
+@pytest.mark.asyncio
+async def test_an_oversize_bounce_is_logged_as_a_null_sender(caplog):
+    server = _FakeServer()
+    handler, session, envelope = _handler(), _session(), _envelope()
+
+    with caplog.at_level(logging.INFO, logger="pymta.handler"):
+        await handler.handle_MAIL(server, session, envelope, "<>", [f"SIZE={10**12}"])
+
+    (reject,) = [r for r in caplog.records if r.getMessage() == "reject"]
+    assert reject.sender == "<>"
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("reason", ["max_errors_per_session", "defer_all", "max_recipients"])
+async def test_recipient_refusals_before_validation_name_the_recipient(
+    monkeypatch, caplog, reason
+):
+    server = _FakeServer()
+    handler, session, envelope = _handler(), _session(), _envelope()
+    envelope.mail_from = "alice@sender.example"
+    if reason == "max_errors_per_session":
+        monkeypatch.setattr(settings, "PYMTA_MAX_ERRORS_PER_SESSION", 2)
+        setattr(server, _SOFT_ERRORS_ATTR, 2)
+    elif reason == "defer_all":
+        monkeypatch.setattr(settings, "PYMTA_DEFER_ALL", True)
+    else:
+        monkeypatch.setattr(settings, "PYMTA_MAX_RECIPIENTS_PER_ENVELOPE", 1)
+        envelope.rcpt_tos.append("first@example.com")
+
+    with caplog.at_level(logging.INFO, logger="pymta.handler"):
+        await handler.handle_RCPT(server, session, envelope, "<bob@example.com>", [])
+
+    (reject,) = [r for r in caplog.records if r.getMessage() == "reject"]
+    assert reject.recipient == "<bob@example.com>"
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("reason", ["max_envelopes_per_session", "nul_byte", "oversize_message"])
+async def test_every_data_refusal_names_sender_and_recipients(monkeypatch, caplog, reason):
+    server = _FakeServer()
+    handler, session, envelope = _handler(), _session(), _envelope()
+    envelope.mail_from = "alice@sender.example"
+    envelope.rcpt_tos.append("bob@example.com")
+    envelope.content = b"Subject: x\r\n\r\nbody\r\n"
+    if reason == "max_envelopes_per_session":
+        setattr(server, _ENVELOPES_ATTR, settings.PYMTA_MAX_ENVELOPES_PER_SESSION)
+    elif reason == "nul_byte":
+        envelope.content += b"\x00"
+    else:
+        monkeypatch.setattr(settings, "PYMTA_MAX_INCOMING_EMAIL_SIZE", 4)
+
+    with caplog.at_level(logging.INFO, logger="pymta.handler"):
+        await handler.handle_DATA(server, session, envelope)
+
+    (reject,) = [r for r in caplog.records if r.getMessage() == "reject"]
+    assert reject.reason == reason
+    assert reject.sender == "alice@sender.example"
+    assert reject.recipients == "bob@example.com"
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize(
+    ("deliver_result", "event"),
+    [
+        (MDAResult(ok=False, temp_fail=True, payload={}, status_code=503), "message_deferred"),
+        (MDAResult(ok=False, temp_fail=False, payload={}, status_code=400), "message_rejected"),
+    ],
+)
+async def test_a_message_outcome_claims_its_refusal(caplog, deliver_result, event):
+    """Or the protocol would add a ``reject`` line next to the outcome line."""
+    server = _FakeServer()
+    handler = _handler(_FakeMDA(deliver_result=deliver_result))
+    session, envelope = _session(), _envelope()
+    envelope.mail_from = "alice@sender.example"
+    envelope.rcpt_tos.append("bob@example.com")
+    envelope.content = b"Subject: x\r\n\r\nbody\r\n"
+
+    with caplog.at_level(logging.INFO, logger="pymta.handler"):
+        await handler.handle_DATA(server, session, envelope)
+
+    assert [r.getMessage() for r in caplog.records if r.name == "pymta.handler"] == [event]
+    assert server.refusal_logged is True
+
+
+@pytest.mark.asyncio
+async def test_a_refusal_keeps_the_domain_of_a_long_sender(caplog):
+    """MAIL FROM has no length cap, and the domain is what gets searched."""
+    server = _FakeServer()
+    handler, session, envelope = _handler(), _session(), _envelope()
+    envelope.mail_from = "SRS0=Ab3d=TT=bounces.mailer.example=" + "b" * 400 + "@forwarder.example"
+
+    with caplog.at_level(logging.INFO, logger="pymta.handler"):
+        await handler.handle_RCPT(server, session, envelope, "<miss@example.com>", [])
+
+    (reject,) = [r for r in caplog.records if r.getMessage() == "reject"]
+    assert reject.sender.startswith("SRS0=Ab3d=")
+    assert reject.sender.endswith("@forwarder.example")
+    assert len(reject.sender) < len(envelope.mail_from)
+
+
+@pytest.mark.asyncio
 async def test_malformed_recipient_logs_the_address_it_refused(caplog):
     server = _FakeServer()
     handler, session, envelope = _handler(), _session(), _envelope()

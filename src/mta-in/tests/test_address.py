@@ -286,6 +286,17 @@ def test_idn_label_over_63_octets_as_a_label_rejected():
     assert exc.value.reason == "bad_address"
 
 
+def test_label_left_empty_by_uts46_mapping_rejected():
+    # U+3002 maps to ".", so this is "a..example" once mapped.
+    with pytest.raises(AddressError) as exc:
+        _validate("user@a。.example")
+    assert exc.value.reason == "bad_address"
+
+
+def test_ideographic_full_stop_between_labels_accepted():
+    assert _validate("user@a。example.com") == "user@a。example.com"
+
+
 @pytest.mark.parametrize("domain", ["faß.de", "mail_relay.example.com"])
 def test_domain_length_check_does_not_apply_idna_validity(domain):
     # ``ß`` must survive (IDNA2003 would fold it to ``ss``) and ``_``, refused

@@ -96,7 +96,8 @@ def validate_envelope_address(  # noqa: PLR0912
     ``max_local=None`` skips the local-part cap. That is for MAIL FROM:
     §4.5.3.1 asks to avoid these limits where possible, and forwarders' SRS
     or VERP return paths routinely carry a local-part longer than 64 octets.
-    The address stays bounded by aiosmtpd's MAIL command-line limit.
+    The address stays bounded by the 548-octet MAIL command line (see
+    ``HardenedSMTP.smtp_EHLO``).
 
     Returns the cleaned address (lower-cased domain, original local-part) on
     success, raises :class:`AddressError` on failure.
@@ -239,7 +240,13 @@ def validate_envelope_address(  # noqa: PLR0912
             smtp_code=501,
             smtp_text="5.1.3 Malformed domain",
         )
-    if not all(domain.split(".")) or any(len(label) > 63 for label in dns_labels):
+    # ``dns_labels`` too: UTS 46 maps the ideographic full stops to ".", so a
+    # label can be empty only after mapping.
+    if (
+        not all(domain.split("."))
+        or not all(dns_labels)
+        or any(len(label) > 63 for label in dns_labels)
+    ):
         raise AddressError(
             reason="bad_address",
             smtp_code=501,

@@ -203,6 +203,14 @@ def test_reload_picks_up_a_changed_toggle(monkeypatch, restore_settings):
     assert settings.PYMTA_DEFER_ALL is True
 
 
+def test_reload_picks_up_the_session_log_toggle(monkeypatch, restore_settings):
+    monkeypatch.setattr(settings, "PYMTA_LOG_SESSIONS", True)
+    monkeypatch.setenv("PYMTA_LOG_SESSIONS", "false")
+    changed = settings.reload_runtime_settings()
+    assert changed["PYMTA_LOG_SESSIONS"] is False
+    assert settings.PYMTA_LOG_SESSIONS is False
+
+
 def test_reload_reports_only_what_moved(monkeypatch, restore_settings):
     monkeypatch.delenv("PYMTA_DEFER_ALL", raising=False)
     monkeypatch.setattr(settings, "PYMTA_DEFER_ALL", False)

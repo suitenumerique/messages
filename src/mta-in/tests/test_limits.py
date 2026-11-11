@@ -9,7 +9,40 @@ from __future__ import annotations
 
 import pytest
 
-from pymta.limits import IPGate, TooManyConnections
+from pymta.limits import IPGate, LogThrottle, TooManyConnections
+
+# ---------------------------------------------------------------------------
+# LogThrottle: one line per key per interval, over a bounded set of keys.
+# ---------------------------------------------------------------------------
+
+
+def test_throttle_passes_one_event_per_key_per_interval():
+    throttle = LogThrottle(interval=60, max_keys=10)
+    assert throttle.allow("192.0.2.1", now=0) == 0
+    assert throttle.allow("192.0.2.1", now=1) is None
+    assert throttle.allow("192.0.2.1", now=59) is None
+    # Another address has its own interval.
+    assert throttle.allow("192.0.2.2", now=2) == 0
+    # The next pass reports what was held back.
+    assert throttle.allow("192.0.2.1", now=60) == 2
+    assert throttle.allow("192.0.2.1", now=61) is None
+
+
+def test_throttle_holds_new_keys_once_full():
+    throttle = LogThrottle(interval=60, max_keys=2)
+    assert throttle.allow("192.0.2.1", now=0) == 0
+    assert throttle.allow("192.0.2.2", now=0) == 0
+    assert throttle.allow("192.0.2.3", now=1) is None
+    assert len(throttle._seen) == 2
+
+
+def test_throttle_makes_room_by_dropping_expired_keys():
+    throttle = LogThrottle(interval=60, max_keys=2)
+    assert throttle.allow("192.0.2.1", now=0) == 0
+    assert throttle.allow("192.0.2.2", now=30) == 0
+    assert throttle.allow("192.0.2.3", now=70) == 0
+    assert set(throttle._seen) == {"192.0.2.2", "192.0.2.3"}
+
 
 # ---------------------------------------------------------------------------
 # Concurrent-cap behaviour (existing semantics).

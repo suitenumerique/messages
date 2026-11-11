@@ -23,7 +23,7 @@ import logging
 import re
 import time
 
-from . import metrics, settings
+from . import logfmt, metrics, settings
 from .address import AddressError, validate_envelope_address
 from .mda_async import MDAClient, MDAResult
 
@@ -99,7 +99,7 @@ def _bump(holder, attr: str) -> int:
     return n
 
 
-def _hard_error_limit_reached(server, session, counters, verb) -> bool:
+def _hard_error_limit_reached(server, session, counters, verb, **extra) -> bool:
     """True when this connection has spent its ``PYMTA_MAX_ERRORS_PER_SESSION``.
 
     Records the rejection, logs it and asks for the disconnect, so a caller
@@ -110,7 +110,7 @@ def _hard_error_limit_reached(server, session, counters, verb) -> bool:
         return False
     metrics.SECURITY_REJECTIONS.labels(reason="max_errors_per_session").inc()
     metrics.DISCONNECTS_421.labels(reason="max_errors_per_session").inc()
-    _log_reject(server, session, verb, "max_errors_per_session", code=421)
+    _log_reject(server, session, verb, "max_errors_per_session", code=421, **extra)
     _request_disconnect(server)
     return True
 
@@ -305,28 +305,34 @@ def _safe_hostname(raw: str | None, session=None, server=None) -> str | None:
 _MAX_LOGGED_RECIPIENTS = 10
 
 # RFC 5321 §4.5.3.1.3 caps a forward/reverse path at 256 octets. A refusal can
-# name an address that never passed validation, so bound what reaches the log
-# rather than trusting the peer to have stayed inside the limit.
+# name an address that never passed validation, and MAIL FROM is not held to
+# that cap, so bound what reaches the log. The tail is kept so the domain of a
+# long SRS return path stays searchable.
 _MAX_LOGGED_ADDRESS = 256
+_LOGGED_ADDRESS_TAIL = 128
 
 
 def _recipients_field(rcpts: list[str]) -> str:
-    if len(rcpts) <= _MAX_LOGGED_RECIPIENTS:
-        return ",".join(rcpts)
-    shown = ",".join(rcpts[:_MAX_LOGGED_RECIPIENTS])
-    return f"{shown},+{len(rcpts) - _MAX_LOGGED_RECIPIENTS} more"
+    return logfmt.clip_list(rcpts, _MAX_LOGGED_RECIPIENTS)
 
 
 def _address_field(address) -> str:
-    """A peer-supplied address, bounded, for a log field.
+    """A peer-supplied address, bounded, for a log field."""
+    return logfmt.clip(address or "", _MAX_LOGGED_ADDRESS, tail=_LOGGED_ADDRESS_TAIL)
 
-    ``logfmt.quote`` escapes CR/LF and every unprintable code point, so the
-    value cannot forge a line; only its length is left to bound here.
+
+def _sender_field(envelope) -> str | None:
+    """The envelope sender as logged: ``<>`` for bounces, None before MAIL FROM.
+
+    Carried on every RCPT refusal so that searching the log for the sending
+    domain finds them. Without it a refusal names only our own mailbox, and
+    "why did mail from X never arrive?" has to be answered by joining lines.
     """
-    text = address if isinstance(address, str) else str(address or "")
-    if len(text) <= _MAX_LOGGED_ADDRESS:
-        return text
-    return f"{text[:_MAX_LOGGED_ADDRESS]}...+{len(text) - _MAX_LOGGED_ADDRESS}"
+    if not envelope.mail_from:
+        return None
+    if envelope.mail_from == NULL_SENDER_SENTINEL:
+        return "<>"
+    return _address_field(envelope.mail_from)
 
 
 def _log_reject(server, session, verb, reason, **extra) -> None:
@@ -354,6 +360,17 @@ def _log_reject(server, session, verb, reason, **extra) -> None:
     log does; the same retention consequence applies.
     """
     logger.info("reject", extra=_trace(server, session, verb=verb, reason=reason, **extra))
+    _refusal_logged(server)
+
+
+def _refusal_logged(server) -> None:
+    """Tell the protocol the reply we are returning already has its log line.
+
+    It writes a ``reject`` line of its own for every 4xx/5xx that has none,
+    which is how the refusals aiosmtpd makes without a hook get recorded.
+    """
+    if server is not None:
+        server.refusal_logged = True
 
 
 def _refuse(reject_ctx, verb, reason, reply, **extra) -> str:
@@ -387,6 +404,7 @@ def _log_outcome(ctx, envelope, outcome, size, **extra) -> None:
     so it inherits whatever retention policy the mail itself has.
     """
     server, session, started = ctx
+    _refusal_logged(server)
     logger.info(
         "message_" + outcome,
         extra=_trace(
@@ -463,7 +481,9 @@ class InboundHandler:
         # Same hard-error budget as handle_RCPT: a peer can burn errors on
         # MAIL alone (malformed senders, bad SIZE), so the guard has to sit on
         # this verb too or the budget is trivially sidestepped.
-        if _hard_error_limit_reached(server, session, counters, "mail"):
+        if _hard_error_limit_reached(
+            server, session, counters, "mail", sender=_address_field(address)
+        ):
             return "421 4.7.0 Too many errors, goodbye"
 
         try:
@@ -494,6 +514,7 @@ class InboundHandler:
                         "mail",
                         "bad_size_parameter",
                         "501 5.5.4 Bad SIZE parameter",
+                        sender=_address_field(clean) or "<>",
                     )
                 if announced > settings.PYMTA_MAX_INCOMING_EMAIL_SIZE:
                     metrics.SECURITY_REJECTIONS.labels(reason="oversize_announced").inc()
@@ -502,6 +523,7 @@ class InboundHandler:
                         "mail",
                         "oversize_announced",
                         "552 5.3.4 Message size exceeds fixed maximum",
+                        sender=_address_field(clean) or "<>",
                         announced_bytes=announced,
                     )
 
@@ -525,9 +547,12 @@ class InboundHandler:
     async def handle_RCPT(self, server, session, envelope, address, rcpt_options):  # noqa: PLR0911
         counters = _counters(server, session)
         reject_ctx = (server, session, counters)
+        sender = _sender_field(envelope)
 
         # First gate: hard-error budget, shared with handle_MAIL.
-        if _hard_error_limit_reached(server, session, counters, "rcpt"):
+        if _hard_error_limit_reached(
+            server, session, counters, "rcpt", sender=sender, recipient=_address_field(address)
+        ):
             metrics.RCPT_TOTAL.labels(result="rejected_temp").inc()
             return "421 4.7.0 Too many errors, goodbye"
 
@@ -546,6 +571,8 @@ class InboundHandler:
                 "rcpt",
                 "defer_all",
                 "451 4.3.2 Service temporarily unavailable, please retry",
+                sender=sender,
+                recipient=_address_field(address),
             )
 
         # Per-envelope recipient cap.
@@ -557,6 +584,8 @@ class InboundHandler:
                 "rcpt",
                 "max_recipients_per_envelope",
                 "452 4.5.3 Too many recipients",
+                sender=sender,
+                recipient=_address_field(address),
                 recipient_count=len(envelope.rcpt_tos),
             )
 
@@ -575,6 +604,7 @@ class InboundHandler:
                 "rcpt",
                 err.reason,
                 f"{err.smtp_code} {err.smtp_text}",
+                sender=sender,
                 recipient=_address_field(address),
             )
 
@@ -591,6 +621,7 @@ class InboundHandler:
                 "rcpt",
                 "blocked_recipient",
                 "550 5.1.1 Recipient not accepted",
+                sender=sender,
                 recipient=_address_field(clean),
             )
 
@@ -602,6 +633,7 @@ class InboundHandler:
                 "rcpt",
                 "mda_temp_fail",
                 "451 4.3.0 Recipient verification temporarily unavailable",
+                sender=sender,
                 recipient=_address_field(clean),
                 status=result.status_code,
             )
@@ -615,6 +647,7 @@ class InboundHandler:
                 "rcpt",
                 "mda_verification_failed",
                 "550 5.1.1 Recipient verification failed",
+                sender=sender,
                 recipient=_address_field(clean),
                 status=result.status_code,
             )
@@ -634,11 +667,13 @@ class InboundHandler:
             # reports the MDA breaking its contract, not the peer doing
             # anything wrong, and that deserves the higher level. It is still
             # this refusal's one line, so it carries the recipient too.
+            _refusal_logged(server)
             logger.warning(
                 "mda_check_no_verdict",
                 extra=_trace(
                     server,
                     session,
+                    sender=sender,
                     recipient=_address_field(clean),
                     status=result.status_code,
                     verdict_type=type(verdict).__name__,
@@ -668,6 +703,7 @@ class InboundHandler:
                 "rcpt",
                 reason,
                 reply,
+                sender=sender,
                 recipient=_address_field(clean),
                 misses=misses,
             )
@@ -696,6 +732,8 @@ class InboundHandler:
                 "data",
                 "max_envelopes_per_session",
                 "421 4.7.0 Too many messages this session, closing connection",
+                sender=_address_field(envelope.mail_from),
+                recipients=_recipients_field(envelope.rcpt_tos),
                 envelopes=envelopes,
             )
 
@@ -728,6 +766,7 @@ class InboundHandler:
                 "nul_byte",
                 "554 5.6.0 NUL byte in message body",
                 sender=_address_field(envelope.mail_from),
+                recipients=_recipients_field(envelope.rcpt_tos),
                 recipient_count=len(envelope.rcpt_tos),
                 size_bytes=len(content),
             )
@@ -745,6 +784,7 @@ class InboundHandler:
                 "oversize_message",
                 "552 5.3.4 Message size exceeds fixed maximum",
                 sender=_address_field(envelope.mail_from),
+                recipients=_recipients_field(envelope.rcpt_tos),
                 recipient_count=len(envelope.rcpt_tos),
                 size_bytes=len(content),
             )
@@ -900,8 +940,8 @@ class InboundHandler:
 
     # ------------------------------------------------------------------ misc
     async def handle_exception(self, error: BaseException) -> str:
-        # Never leak stack traces or internal hostnames in SMTP replies.
+        # Never leak stack traces or internal hostnames in SMTP replies. Logged
+        # by HardenedSMTP.handle_exception, which knows whose session it was.
         metrics.SECURITY_REJECTIONS.labels(reason="internal_error").inc()
         metrics.DISCONNECTS_421.labels(reason="internal_error").inc()
-        logger.exception("handler_error")
         return "421 4.3.0 Internal error, please try again later"

@@ -15,7 +15,7 @@ import logging
 
 import pytest
 
-from pymta.logfmt import LogfmtFormatter, configure, quote
+from pymta.logfmt import LogfmtFormatter, clip, configure, quote
 
 
 def _render(msg: str, level: int = logging.INFO, exc_info=None, **fields) -> str:
@@ -89,6 +89,20 @@ def test_quoting(value, expected):
     assert quote(value) == expected
 
 
+@pytest.mark.parametrize(
+    ("value", "kwargs", "expected"),
+    [
+        (None, {}, None),
+        ("abcdef", {}, "abcdef"),
+        ("abcdefghij", {}, "abcdef...+4"),
+        ("abcdefghij", {"tail": 2}, "abcd...+4...ij"),
+        (1234567890, {}, "123456...+4"),
+    ],
+)
+def test_clip(value, kwargs, expected):
+    assert clip(value, 6, **kwargs) == expected
+
+
 def test_values_with_spaces_survive_a_round_trip():
     line = _render("mda_secret_weak", hint="short HS256 secrets are brute-forceable")
     assert _parse(line)["hint"] == "short HS256 secrets are brute-forceable"
@@ -151,8 +165,8 @@ PEER_TRIGGERABLE = {
     "session_timeout",
     "command_timeout",
     "connection_blocked",
-    "connection_capped",
-    "data_slots_exhausted",
+    "connection_draining",
+    "proxy_header_invalid",
     "session_without_peer",
     "helo_control_chars",
     "bare_newline_normalised",
@@ -207,10 +221,28 @@ AUDIT = {"message_delivered", "message_deferred", "message_rejected"}
 # cannot run it away — every one of these either spends a unit of
 # PYMTA_MAX_ERRORS_PER_SESSION (50) or asks for the disconnect, and unknown
 # recipients stop at PYMTA_MAX_RCPT_MISSES_PER_SESSION (10), so a connection
-# buys at most ~50 lines before it is closed. That is the same shape as AUDIT
-# (bounded per connection), not the shape of proxy_header_untrusted (one line
-# per TCP connection, unbounded).
+# buys at most ~50 lines before it is closed. The protocol writes the same
+# event for the refusals aiosmtpd makes without a hook, which spend no error
+# budget, so it stops at PYMTA_MAX_ERRORS_PER_SESSION lines per connection on
+# its own count. That is the same shape as AUDIT (bounded per connection), not
+# the shape of proxy_header_untrusted (one line per TCP connection, unbounded).
 REFUSALS = {"reject"}
+
+# The third, and the only one a peer can produce once per TCP connection: the
+# per-connection summary, Postfix's ``disconnect from`` line. It is the one
+# record of a sender that never reached a refusal or a message outcome (TLS
+# refused, answered by aiosmtpd itself, timed out, hung up mid-DATA), which is
+# precisely the "mail from X never arrived and the log says nothing" case.
+# Only sessions the gate let in and that sent at least one line reach INFO,
+# but nothing caps the connection rate, so its volume is the peer's to choose:
+# PYMTA_LOG_SESSIONS (reloadable) drops it to DEBUG under a flood.
+SESSIONS = {"session_closed"}
+
+# A session cap refusing a connection. Peer-triggerable once per connection, so
+# DEBUG by default, but a legitimate sender held off by a cap is deferred mail
+# with no other trace. INFO through a throttle: one line per address per minute
+# over a bounded number of addresses (``smtp_protocol._cap_log_throttle``).
+THROTTLED = {"connection_capped"}
 
 # Event names the scanner sees as a literal prefix because the suffix is a
 # variable. Maps what appears in the source to what is actually emitted.
@@ -254,7 +286,7 @@ def test_every_event_is_classified():
     Classification is a judgement no test can make, so the test does not try. It
     only refuses to let the judgement go unmade.
     """
-    known = PEER_TRIGGERABLE | OPERATOR_TRIGGERABLE | AUDIT | REFUSALS
+    known = PEER_TRIGGERABLE | OPERATOR_TRIGGERABLE | AUDIT | REFUSALS | SESSIONS | THROTTLED
     unclassified = sorted({event for _, event, _ in _log_sites() if event not in known})
     assert not unclassified, (
         f"unclassified log events: {unclassified}. Add each to PEER_TRIGGERABLE "
@@ -285,6 +317,20 @@ def test_the_classification_lists_do_not_overlap():
     assert not (PEER_TRIGGERABLE & REFUSALS)
     assert not (OPERATOR_TRIGGERABLE & REFUSALS)
     assert not (AUDIT & REFUSALS)
+    others = PEER_TRIGGERABLE | OPERATOR_TRIGGERABLE | AUDIT | REFUSALS
+    assert not (SESSIONS & others)
+    assert not (THROTTLED & (others | SESSIONS))
+
+
+@pytest.mark.parametrize("event", sorted(SESSIONS | THROTTLED))
+def test_the_switchable_events_have_a_debug_fallback(event):
+    """These must be able to drop to DEBUG.
+
+    The INFO site alone would leave PYMTA_LOG_SESSIONS=false, or a throttle
+    that says no, with nothing to fall back to.
+    """
+    levels = {level for _, name, level in _log_sites() if name == event}
+    assert levels == {"info", "debug"}, levels
 
 
 @pytest.mark.parametrize(

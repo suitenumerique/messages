@@ -178,14 +178,15 @@ Grouped as `src/pymta/settings.py` groups them.
 | `PYMTA_METRICS_API_KEY` | empty | Bearer token required to scrape `/metrics`. Empty = unauthenticated, with a `SECURITY:` warning at startup. Same opt-in semantics as the backend's `PROMETHEUS_API_KEY` |
 | `PYMTA_LOG_LEVEL` | `INFO` | Root log level: `CRITICAL`, `ERROR`, `WARNING`, `INFO` or `DEBUG` |
 | `PYMTA_LOG_VERBOSE_LIBRARIES` | `false` | Let aiosmtpd/httpx/httpcore log too. Debugging only: aiosmtpd writes every envelope address and every message body |
+| `PYMTA_LOG_SESSIONS` | `true` | One `session_closed` line per connection at INFO (see [Tracing a message](#tracing-a-message-that-never-arrived)). `false` drops it to DEBUG; reloadable on SIGHUP, for a connection flood |
 | `EXEC_CMD` | `false` | Start pymta in the background, then run the container command (used by `make test-mta-in-py`) |
 | `EXEC_CMD_ONLY` | `false` | Skip startup entirely and exec the container command (used by `make lint-mta-in-py`) |
 
 Every value is checked at startup and a bad one stops the process rather than being quietly ignored: booleans take `1/true/yes/on` or `0/false/no/off` and nothing else, integers must parse and clear their minimum (those marked `0 = off` accept zero, the rest reject it), `PYMTA_LOG_LEVEL` must name a real level, and `PYMTA_TRUSTED_PROXIES` must parse as IPs/CIDRs. Reading a typo as its opposite is how a security toggle ends up off in production, so nothing here has a silent fallback.
 
-The address length caps are **not** configurable. They are the RFC 5321 §4.5.3.1 constants: 64 octets for the local-part and 255 for the domain (63 per label). Domain lengths are measured on the A-label (punycode) form DNS stores, not on the UTF-8 an SMTPUTF8 peer sends, and no IDNA validity rule is enforced on top. The local-part cap applies to RCPT only, where raising it would only widen the gap between what pymta accepts and what the MDA can store. MAIL FROM gets no local-part cap and no 256-octet path cap either: §4.5.3.1 asks to avoid these limits where possible, Postfix enforced neither, and a forwarder's SRS-wrapped return path (`SRS0=hash=tt=domain=user@forwarder`) routinely carries a local-part longer than 64 octets. Refusing it would bounce legitimately forwarded mail. aiosmtpd's MAIL command-line limit (below) is what bounds it.
+The address length caps are **not** configurable. They are the RFC 5321 §4.5.3.1 constants: 64 octets for the local-part and 255 for the domain (63 per label). Domain lengths are measured on the A-label (punycode) form DNS stores, not on the UTF-8 an SMTPUTF8 peer sends, and no IDNA validity rule is enforced on top. The local-part cap applies to RCPT only, where raising it would only widen the gap between what pymta accepts and what the MDA can store. MAIL FROM gets no local-part cap and no 256-octet path cap either: §4.5.3.1 asks to avoid these limits where possible, Postfix enforced neither, and a forwarder's SRS-wrapped return path (`SRS0=hash=tt=domain=user@forwarder`) routinely carries a local-part longer than 64 octets. Refusing it would bounce legitimately forwarded mail. The MAIL command-line limit (below) is what bounds it.
 
-Two more limits come from aiosmtpd itself and are inherited at their defaults: a 512-octet command line (§4.5.3.1.4) and 5 unrecognised commands per session before it hangs up. A third, aiosmtpd's 1001-octet line length (§4.5.3.1.6), is the one pymta overrides — `PYMTA_MAX_LINE_LENGTH` replaces it. That value is the `StreamReader` limit, so an endless line is still refused at the transport rather than buffered, and it bounds DATA lines only: commands stay under the separate 512-octet cap however high it is set. Two aiosmtpd options are deliberately left unset: `require_starttls`, because refusing a sender that does not offer STARTTLS loses mail rather than protecting it on a public MX, and the authenticator hooks, because AUTH is answered `502` outright.
+Two more limits come from aiosmtpd itself: a 512-octet command line (§4.5.3.1.4) and 5 unrecognised commands per session before it hangs up. After EHLO the MAIL line gets 548 octets, 26 more for `SIZE=` and 10 for `SMTPUTF8`. aiosmtpd keeps that allowance in a counter shared by every connection, which each EHLO raises and each new connection resets; pymta keeps it per connection and resets it on EHLO, so it is always 548. A third, aiosmtpd's 1001-octet line length (§4.5.3.1.6), is the one pymta overrides — `PYMTA_MAX_LINE_LENGTH` replaces it. That value is the `StreamReader` limit, so an endless line is still refused at the transport rather than buffered, and it bounds DATA lines only: commands stay under the separate command-line cap however high it is set. Two aiosmtpd options are deliberately left unset: `require_starttls`, because refusing a sender that does not offer STARTTLS loses mail rather than protecting it on a public MX, and the authenticator hooks, because AUTH is answered `502` outright.
 
 ### Crisis toggles
 
@@ -198,6 +199,7 @@ Six settings exist to be changed while something is going wrong. All six are re-
 | `PYMTA_BLOCKED_NETWORKS` | `554` at connect for these client IPs/CIDRs |
 | `PYMTA_BLOCKED_SENDER_DOMAINS` | `554` at MAIL FROM, matched case-insensitively on the domain |
 | `PYMTA_BLOCKED_RECIPIENTS` | `550` at RCPT TO, full addresses, case-insensitive |
+| `PYMTA_LOG_SESSIONS` | `false` moves the per-connection `session_closed` line from INFO to DEBUG, when a flood of connections is writing the log bill |
 
 Plus the ceilings, which are consulted per connection or per command and so can move safely under a running process: `PYMTA_MAX_CONCURRENT_DATA` (and `PYMTA_MAX_SESSIONS_TOTAL`, which follows it), `PYMTA_MAX_ERRORS_PER_SESSION`, `PYMTA_MAX_RCPT_MISSES_PER_SESSION`, `PYMTA_DATA_TIMEOUT`, `PYMTA_SESSION_TIMEOUT`, `PYMTA_SHUTDOWN_TIMEOUT`. Shedding memory pressure is therefore a SIGHUP rather than a restart. Lowering a session cap mid-incident refuses new connections until the live count falls back under it, which is usually what you want.
 
@@ -302,6 +304,43 @@ Every configurable limit publishes its value as `pymta_config_limit{name="<setti
 | `MDA_BREAKER_THRESHOLD` / `_COOLDOWN` | — | `pymta_mda_breaker_open` is 1 while open; `pymta_mda_request_duration_seconds{result="breaker_open"}` counts the calls it shed |
 
 `pymta_sessions_abandoned_total` counts sessions cut by the `PYMTA_SHUTDOWN_TIMEOUT` drain deadline — non-zero on every rollout means the deadline is too short for your traffic.
+
+### Tracing a message that never arrived
+
+The log is logfmt, one line per event, and every line about a connection carries the same `session_id`. Three kinds of line name addresses, at INFO:
+
+| Event | One per | Says |
+|---|---|---|
+| `message_delivered` / `message_deferred` / `message_rejected` | message that reached the end of DATA | what the MDA made of it |
+| `reject` | 4xx/5xx reply to a command (`verb=`, `reason=`, `code=`, `sender=`, and `recipient=` or `recipients=` where there is one) | why |
+| `session_closed` | connection the gate admitted and that sent at least one line | everything else |
+
+`reject` covers the refusals aiosmtpd makes without calling a hook too (`552` too much data, `555` an unknown MAIL/RCPT parameter, `553` malformed address, `503` bad sequence, `500` line too long): those carry `reason=protocol`, the reply text in `reply=` and the command argument in `arg=`. A line refused before any verb ran (too long, unknown verb) has `verb=null` and the line itself in `arg=`. Each names the sender of the transaction it belongs to, which matters on a connection that carries several messages. A session gets at most `PYMTA_MAX_ERRORS_PER_SESSION` of these; `errors=` on `session_closed` still counts them all.
+
+`session_closed` is Postfix's `disconnect from` line, and the one to search when a sender reports mail that never arrived and nothing else mentions it. Those are the sessions that ended without any refusal: a STARTTLS the sender's side gave up on, a timeout, a hang-up mid-DATA, a shutdown that cut the session.
+
+```text
+event=session_closed session_id=9bf92de8 client_ip=192.0.2.10 helo=mx.sender.example tls=true
+  tls_cipher=TLS_AES_256_GCM_SHA384 tls_version=TLSv1.3 sender=alice@sender.example
+  commands="ehlo=2 starttls=1 mail=1 rcpt=1 data=0/1" errors=1 closed_by=peer_closed duration_ms=30412
+  last_error_verb=data last_error_reply="552 Error: Too much mail data" last_error_arg=null
+```
+
+| Field | Meaning |
+|---|---|
+| `commands` | Per verb, `n` when all succeeded, `succeeded/attempted` otherwise. A `data=0/1` is a message that did not get through |
+| `last_error_*` | The last 4xx/5xx sent, whoever sent it, with the verb and the argument that drew it. An `AUTH` argument is logged as `[redacted]`: it can carry credentials |
+| `sender` | The MAIL FROM of the last transaction opened, accepted or not. Clipped in the middle past 256 characters, so the domain stays searchable |
+| `recipients`, `recipient_count` | Only when a transaction was still open at the end: the recipients accepted for a message that was never completed |
+| `tls`, `tls_version`, `tls_cipher`, `tls_error` | `tls_error` is set when the STARTTLS handshake failed, with the cause (`SSLError: ... certificate unknown`, `no shared cipher`, ...). A sender enforcing TLS that rejects our certificate looks exactly like this |
+| `closed_by` | `quit` (answered `221`), `peer_closed`, `peer_reset` (with `error_type`), `server_closed` (we answered 421 or aiosmtpd hung up), `command_timeout`, `session_timeout`, `tls_failed`, `internal_error`, `shutdown` (still open at the `PYMTA_SHUTDOWN_TIMEOUT` deadline) |
+| `wire_peer` | The balancer, when PROXY protocol is on; `client_ip` is then the PROXY source |
+
+So, for "mail from `@sender.example` never arrives": search `sender.example` (it appears in `sender=` and `helo=`), or the sender's IP in `client_ip`, then pull every line of that `session_id`.
+
+Two cases leave nothing at INFO, on purpose. A connection refused before the greeting is what a flood is made of: it is counted in `pymta_connections_total{result=...}` and logged at DEBUG with the client IP (`connection_draining`, `connection_blocked`, `connection_capped`, and `proxy_header_untrusted` / `proxy_header_invalid` with PROXY protocol on). The one exception is `connection_capped`: a sender held off by a session cap is deferred mail, so its first refusal reaches INFO with `client_ip=` and `scope=`, then at most one line a minute per address, with `suppressed=` counting the refusals in between. At most 1024 addresses are followed at a time and `PYMTA_LOG_SESSIONS=false` turns it off. And a connection that never sends a line, whether it closes at once (a TCP health check) or idles until the timeout, is logged at DEBUG. If neither the log nor that counter moves, the sender is not reaching this host: check their side, our MX records and anything in front of port 25.
+
+`pymta_commands_total{verb, class}` counts the same thing as `commands=`, as a metric: a rising `class="5xx"` on one verb, or `class="error"` on `STARTTLS`, is the aggregate view of these lines.
 
 ### Naming
 

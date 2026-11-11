@@ -68,7 +68,14 @@ Levels are assigned by *who can cause the line*, not by how alarming it reads:
     the configuration is unsafe, a deadline was missed. Caused by our
     infrastructure, not by a peer.
 ``info``
-    Lifecycle. Startup, shutdown, drain, reload. Low, bounded volume.
+    Lifecycle. Startup, shutdown, drain, reload. Low, bounded volume. Plus the
+    mail audit trail, three deliberate exceptions to the rule below:
+    ``message_*`` (one per message), ``reject`` (capped by the per-session
+    error budget) and ``session_closed`` (one per admitted connection that
+    issued a command). The last one is peer-driven: nothing caps the
+    connection rate, so ``PYMTA_LOG_SESSIONS`` is there to drop it to
+    ``debug`` under a flood. Without them "the mail from X never arrived" has
+    no answer in the log.
 ``debug``
     Anything an unauthenticated peer can trigger at will: bad addresses,
     refused connections, blocked senders, timeouts on their side.
@@ -144,6 +151,35 @@ def quote(value: object) -> str:
     if text == "" or any(c in _NEEDS_QUOTING or not c.isprintable() for c in text):
         return '"' + "".join(_escape(c) for c in text) + '"'
     return text
+
+
+def clip(value: object, limit: int, *, tail: int = 0) -> str | None:
+    """Bound a peer-supplied value before it becomes a log field.
+
+    :func:`quote` already makes any value safe to emit; length is the one thing
+    it leaves to the caller, and a peer chooses the length of everything it
+    sends. The ``...+N`` marker keeps the number of dropped characters visible.
+
+    ``tail`` keeps that many characters from the end, out of ``limit``. For an
+    address, so the domain stays searchable when the local-part is the long
+    half (an SRS return path).
+    """
+    if value is None:
+        return None
+    text = value if isinstance(value, str) else str(value)
+    if len(text) <= limit:
+        return text
+    dropped = len(text) - limit
+    if tail <= 0:
+        return f"{text[:limit]}...+{dropped}"
+    return f"{text[: limit - tail]}...+{dropped}...{text[-tail:]}"
+
+
+def clip_list(items: list[str], limit: int) -> str:
+    """Comma-join ``items``, naming at most ``limit`` of them."""
+    if len(items) <= limit:
+        return ",".join(items)
+    return f"{','.join(items[:limit])},+{len(items) - limit} more"
 
 
 class LogfmtFormatter(logging.Formatter):
