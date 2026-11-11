@@ -4,7 +4,6 @@
 
 import hashlib
 import logging
-import re
 import uuid
 from contextlib import contextmanager, nullcontext
 
@@ -30,6 +29,7 @@ from core.ai.utils import (
     is_auto_labels_enabled,
 )
 from core.mda.addresses import address_local_part, normalize_address
+from core.mda.replies import strip_subject_prefixes
 from core.services.importer.labels import (
     compute_labels_and_flags,
 )
@@ -78,15 +78,7 @@ def inbound_mailbox_lock(mailbox_id: uuid.UUID):
 
 def _canonicalize_subject(subject: str | None) -> str:
     """Strip leading ``Re:`` / ``Fwd:`` (and i18n variants) for thread match."""
-    # ``\s*`` after the colon, not ``\s+``: mobile clients regularly send
-    # "Re:subject" with no space, and a prefix left in place makes two
-    # messages of the same conversation compare as different subjects.
-    return re.sub(
-        r"^((re|fwd|fw|rep|tr|rép)\s*:\s*)+",
-        "",
-        (subject or "").lower(),
-        flags=re.IGNORECASE,
-    ).strip()
+    return strip_subject_prefixes(subject or "").lower().strip()
 
 
 def _parent_messages(mime_ids: list[str], mailbox: models.Mailbox):
@@ -143,12 +135,7 @@ def find_thread_for_message(
 def _create_thread(parsed_email: JmapEmail, mailbox: models.Mailbox) -> models.Thread:
     """Create a new thread."""
 
-    # Truncate subject to 255 characters if it exceeds max_length
-    thread_subject = parsed_email.get("subject")
-    if thread_subject and len(thread_subject) > 255:
-        thread_subject = thread_subject[:255]
-
-    thread = models.Thread.objects.create(subject=thread_subject)
+    thread = models.Thread.objects.create(subject=parsed_email.get("subject"))
     # Create a thread access for the sender mailbox
     models.ThreadAccess.objects.create(
         thread=thread,
@@ -407,10 +394,9 @@ def _create_message_from_inbound(  # pylint: disable=too-many-arguments
                     mime_id=parent_msg_id, thread=thread
                 ).first()
 
-            # Truncate subject to 255 characters if it exceeds max_length
             subject = parsed_email.get("subject")
-            if subject and len(subject) > 255:
-                subject = subject[:255]
+            if subject:
+                subject = subject[: models.MESSAGE_SUBJECT_MAX_LENGTH]
 
             is_sender = is_outbound or (is_import and is_import_sender)
             sent_at = sent_at_to_datetime(parsed_email.get("sentAt"))

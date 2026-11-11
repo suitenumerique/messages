@@ -215,7 +215,9 @@ def _create_reply_record_from_template(
     )
 
     # 2. Build subject with Re: prefix
-    subject = reply_subject(inbound_message.subject or "")[:255]
+    subject = reply_subject(inbound_message.subject or "")[
+        : models.MESSAGE_SUBJECT_MAX_LENGTH
+    ]
 
     # 3. Resolve signature: forced domain/mailbox signature takes priority
     #    over the one attached to the template

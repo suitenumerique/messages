@@ -18,6 +18,22 @@ const decodeHtmlEntities = (str: string): string =>
        .replace(/&#x27;/g, "'")
        .replace(/&amp;/g, '&');
 
+/** Mirrors `MESSAGE_SUBJECT_MAX_LENGTH` in the backend `core/models.py`. */
+export const SUBJECT_MAX_LENGTH = 998;
+
+/**
+ * Prefixes recognised as already marking a reply or a forward, matched
+ * case-insensitively with optional whitespace before the colon (Outlook in
+ * French writes "RE :" and "TR :"). Mirrors `REPLY_PREFIXES` and
+ * `FORWARD_PREFIXES` in the backend `core/mda/replies.py`: keep them in sync.
+ */
+const SUBJECT_PREFIX_PATTERNS = {
+    'Re:': /^(?:re|rep|rép)\s*:/iu,
+    'Fwd:': /^(?:fwd|fw|tr)\s*:/iu,
+} as const;
+
+export type SubjectPrefix = keyof typeof SUBJECT_PREFIX_PATTERNS;
+
 type ImapConfig = {
     host: string;
     port: number;
@@ -151,10 +167,18 @@ class MailHelper {
     }
 
     /**
-     * Prefix the subject of a message if it doesn't already start with the prefix.
+     * Prefix the subject of a message unless it already starts with a prefix of
+     * the same kind (RFC 5322 §3.6.5: a single "Re:", never "Re: RE:").
+     * The result is capped to `SUBJECT_MAX_LENGTH` so prefixing a subject already
+     * at the limit does not produce a draft the backend refuses to save.
      */
-    static prefixSubjectIfNeeded(subject: string, prefix: string = 'Re:') {
-        return subject.startsWith(prefix) ? subject : `${prefix} ${subject}`;
+    static prefixSubjectIfNeeded(subject: string, prefix: SubjectPrefix = 'Re:') {
+        const prefixedSubject = SUBJECT_PREFIX_PATTERNS[prefix].test(subject)
+            ? subject
+            : `${prefix} ${subject}`;
+        // Count code points, as the backend does, rather than UTF-16 units:
+        // slicing units could split a surrogate pair and send an unencodable string.
+        return Array.from(prefixedSubject).slice(0, SUBJECT_MAX_LENGTH).join('');
     }
 
     /**

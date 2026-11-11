@@ -49,6 +49,7 @@ logger = logging.getLogger(__name__)
                 required=False,
                 allow_blank=True,
                 allow_null=True,
+                max_length=models.MESSAGE_SUBJECT_MAX_LENGTH,
                 help_text="Subject of the message (optional; empty or null allowed)",
             ),
             "draftBody": drf_serializers.CharField(

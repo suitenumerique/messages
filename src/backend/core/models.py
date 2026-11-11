@@ -1213,10 +1213,19 @@ class MailboxAccess(BaseModel):
             self.save(update_fields=["accessed_at"])
 
 
+# A message subject is matched for threading and copied into replies, so it
+# keeps the whole original up to an RFC 5322 line (§2.1.1); longer subjects
+# are rare enough to be truncated. A thread subject is only displayed.
+MESSAGE_SUBJECT_MAX_LENGTH = 998
+THREAD_SUBJECT_MAX_LENGTH = 255
+
+
 class Thread(BaseModel):
     """Thread model to group messages."""
 
-    subject = models.CharField("subject", max_length=255, null=True, blank=True)
+    subject = models.CharField(
+        "subject", max_length=THREAD_SUBJECT_MAX_LENGTH, null=True, blank=True
+    )
     # Denormalized plain-text preview of the latest visible message,
     # maintained exclusively by ``update_stats``. Kept as-is while the
     # thread sits in the trash (no visible message to derive from), so the
@@ -1296,6 +1305,16 @@ class Thread(BaseModel):
 
     def __str__(self):
         return str(self.subject) if self.subject else "(no subject)"
+
+    def save(self, *args, **kwargs):
+        """Cap the subject to its column before ``full_clean`` validates it.
+
+        The thread subject is copied from a message subject, which may be
+        longer: truncating the copy loses nothing, the message keeps it whole.
+        """
+        if self.subject:
+            self.subject = self.subject[:THREAD_SUBJECT_MAX_LENGTH]
+        super().save(*args, **kwargs)
 
     def _derive_snippet(
         self, message_id, source_message=None, source_parsed_email=None
@@ -2303,7 +2322,9 @@ class Message(BaseModel):
     thread = models.ForeignKey(
         Thread, on_delete=models.CASCADE, related_name="messages"
     )
-    subject = models.CharField("subject", max_length=255, null=True, blank=True)
+    subject = models.CharField(
+        "subject", max_length=MESSAGE_SUBJECT_MAX_LENGTH, null=True, blank=True
+    )
     sender = models.ForeignKey("Contact", on_delete=models.CASCADE)
     sender_user = models.ForeignKey(
         "User",
