@@ -371,7 +371,6 @@ class HardenedSMTP(BaseSMTP):
         @functools.wraps(method)
         async def run(arg):
             self._current_verb, self._current_arg, self._last_code = verb, arg, None
-            self.refusal_logged = False
             self._refusal_reason = None
             if verb == "AUTH" and arg:
                 # The argument can carry credentials (AUTH PLAIN <base64>), and
@@ -394,6 +393,9 @@ class HardenedSMTP(BaseSMTP):
                 if self._current_verb is not None:
                     self._count_command(verb, failed)
                 self._current_verb = self._current_arg = None
+                # The handler's claim covers this command's reply only. It
+                # makes one on a 250 too (message_delivered).
+                self.refusal_logged = False
 
         return run
 
@@ -512,7 +514,6 @@ class HardenedSMTP(BaseSMTP):
                 arg = None
             self._last_error = (self._current_verb, reply, arg)
             self._log_refusal(code, reply, arg)
-            self.refusal_logged = False
 
     def _client_address(self) -> str | None:
         """The client: what the gate keyed on, else the TCP peer.

@@ -1036,6 +1036,38 @@ async def test_a_refusal_the_handler_logged_gets_no_second_line(caplog):
 
 
 @pytest.mark.asyncio
+async def test_a_delivered_message_does_not_silence_the_next_refusal(caplog):
+    """The handler claims its line on a 250 too, and that claim must not outlive the command."""
+
+    class Handler:
+        async def handle_DATA(self, server, session, envelope):
+            server.refusal_logged = True
+            return "250 2.0.0 Message accepted for delivery"
+
+    loop = asyncio.get_running_loop()
+    kwargs = build_smtp_kwargs(tls_context=None)
+    server = await loop.create_server(
+        lambda: HardenedSMTP(Handler(), **kwargs), host="127.0.0.1", port=0
+    )
+    port = server.sockets[0].getsockname()[1]
+    try:
+        with caplog.at_level(logging.INFO):
+            replies = await _dialogue(
+                port,
+                [*_ENVELOPE, b"DATA\r\n", b"Subject: x\r\n\r\nbody\r\n.\r\n", b"FROBNICATE\r\n"],
+            )
+            await _session_summaries(caplog)
+    finally:
+        server.close()
+        await server.wait_closed()
+
+    assert replies[-3].startswith(b"250"), replies
+    (reject,) = _rejects(caplog)
+    assert reject.code == 500
+    assert reject.arg == "FROBNICATE"
+
+
+@pytest.mark.asyncio
 async def test_protocol_refusal_lines_stop_at_the_error_budget(monkeypatch, caplog):
     monkeypatch.setattr(settings, "PYMTA_MAX_ERRORS_PER_SESSION", 2)
     loop = asyncio.get_running_loop()
