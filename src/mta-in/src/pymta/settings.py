@@ -177,7 +177,7 @@ PYMTA_MAX_ENVELOPES_PER_SESSION = _env_int("PYMTA_MAX_ENVELOPES_PER_SESSION", 10
 # read buffer (this is the ``StreamReader`` limit, so the ceiling is this value
 # times PYMTA_MAX_SESSIONS_TOTAL). It does not weaken command validation:
 # aiosmtpd checks commands against its own 512-octet ``command_size_limit``
-# after the line is read.
+# (548 for MAIL) after the line is read.
 PYMTA_MAX_LINE_LENGTH = _env_int("PYMTA_MAX_LINE_LENGTH", 65536, minimum=1001)
 
 # Messages that may be in memory at once.
@@ -210,8 +210,8 @@ PYMTA_MAX_CONCURRENT_DATA = _env_int("PYMTA_MAX_CONCURRENT_DATA", 40, minimum=0)
 # the gap between what pymta accepts and what the MDA can store. MAIL FROM
 # gets no local-part cap, since a forwarder's SRS-wrapped return path exceeds
 # 64 octets as a matter of course, and no path cap either (§4.5.3.1 asks to
-# avoid these limits; Postfix enforced neither). aiosmtpd's MAIL command-line
-# limit is what bounds it.
+# avoid these limits; Postfix enforced neither). The 548-octet MAIL command
+# line is what bounds it (see ``HardenedSMTP.smtp_EHLO``).
 PYMTA_MAX_LOCAL_PART = 64
 PYMTA_MAX_DOMAIN = 255
 

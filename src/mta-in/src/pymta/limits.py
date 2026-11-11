@@ -28,6 +28,7 @@ from __future__ import annotations
 
 import asyncio
 import logging
+import time
 
 from . import metrics, settings
 
@@ -40,6 +41,38 @@ class TooManyConnections(Exception):
     def __init__(self, scope: str):
         super().__init__(scope)
         self.scope = scope
+
+
+class LogThrottle:
+    """Lets one event through per key per ``interval`` seconds.
+
+    For a log line a peer can provoke once per connection: the first one from
+    an address is written, the rest of the interval is only counted, and the
+    next line carries that count.
+
+    ``max_keys`` bounds both the memory and what a spray of sources can write:
+    once that many addresses are inside their interval, a new one gets nothing.
+    """
+
+    def __init__(self, interval: float, max_keys: int):
+        self.interval = interval
+        self.max_keys = max_keys
+        # key -> [time of the last pass, events held back since]
+        self._seen: dict[str, list[float]] = {}
+
+    def allow(self, key: str, now: float | None = None) -> int | None:
+        """How many events were held back since the last pass, or None to hold this one."""
+        now = time.monotonic() if now is None else now
+        entry = self._seen.get(key)
+        if entry is not None and now - entry[0] < self.interval:
+            entry[1] += 1
+            return None
+        if entry is None and len(self._seen) >= self.max_keys:
+            self._seen = {k: v for k, v in self._seen.items() if now - v[0] < self.interval}
+            if len(self._seen) >= self.max_keys:
+                return None
+        self._seen[key] = [now, 0]
+        return int(entry[1]) if entry else 0
 
 
 class IPGate:

@@ -24,7 +24,8 @@ CONNECTIONS_TOTAL = Counter(
     f"{_METRICS_NAMESPACE}_connections_total",
     "Total inbound TCP connections, by post-accept outcome.",
     # accepted | rejected_blocked | rejected_drain | rejected_global |
-    # rejected_per_ip | rejected_untrusted_proxy | no_wire_peer
+    # rejected_per_ip | rejected_untrusted_proxy | rejected_invalid_proxy |
+    # no_wire_peer
     labelnames=("result",),
 )
 
@@ -191,7 +192,7 @@ def active_sessions() -> int:
     """Live session count, read back off the gauge the gate maintains."""
     try:
         return int(SESSIONS_ACTIVE._value.get())  # noqa: SLF001
-    except (AttributeError, TypeError):  # pragma: no cover - prometheus internals
+    except AttributeError, TypeError:  # pragma: no cover - prometheus internals
         return -1
 
 
@@ -215,7 +216,7 @@ class _QuietHandler(WSGIRequestHandler):
         # the connection go quietly instead of dumping a traceback per probe.
         try:
             super().handle()
-        except (TimeoutError, socket.timeout, ConnectionError):
+        except TimeoutError, socket.timeout, ConnectionError:
             self.close_connection = True
 
 
