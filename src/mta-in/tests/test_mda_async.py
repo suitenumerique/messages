@@ -7,14 +7,17 @@ expected. No real HTTP traffic, no Docker stack.
 
 from __future__ import annotations
 
+import asyncio
 import datetime
+import hashlib
+import json
 
 import httpx
 import jwt
 import pytest
 
 from pymta import settings
-from pymta.mda_async import _MIN_SECRET_LENGTH, MDAClient
+from pymta.mda_async import _MIN_SECRET_LENGTH, ENVELOPED_CONTENT_TYPE, MDAClient
 
 
 class _FakeClock:
@@ -35,10 +38,14 @@ class _StubAsyncClient:
         self.script = list(script)
         self.calls = 0
         self.headers = []
+        self.bodies = []
 
     async def post(self, url, content=None, headers=None):
         self.calls += 1
         self.headers.append(headers or {})
+        if hasattr(content, "__aiter__"):
+            content = b"".join([part async for part in content])
+        self.bodies.append(content)
         action = self.script.pop(0) if self.script else None
         if isinstance(action, Exception):
             raise action
@@ -110,17 +117,79 @@ async def _deliver(client):
     )
 
 
-@pytest.mark.parametrize("status", [400, 413, 415])
+@pytest.mark.parametrize("status", [400, 413])
 @pytest.mark.asyncio
 async def test_message_rejecting_statuses_are_permanent_on_deliver(status):
     # The only statuses that mean "this message is unacceptable, retrying
-    # cannot help": unparseable, oversize, wrong content type.
+    # cannot help": unparseable, oversize.
     client, _ = _new_client()
     client._client = _StubAsyncClient([_resp(status, b'{"detail":"no"}')])
     result = await _deliver(client)
     assert result.ok is False
     assert result.temp_fail is False
     assert result.status_code == status
+
+
+@pytest.mark.asyncio
+async def test_an_mda_that_does_not_know_the_enveloped_form_defers():
+    """415 is an MDA older than this client, mid-rollout. Bouncing would lose mail."""
+    client, _ = _new_client()
+    client._client = _StubAsyncClient([_resp(415, b'{"detail":"no"}')])
+    result = await _deliver(client)
+    assert result.ok is False
+    assert result.temp_fail is True
+
+
+@pytest.mark.asyncio
+async def test_deliver_sends_the_envelope_in_the_body():
+    """Not in the JWT: 100 recipients do not fit in an HTTP header."""
+    client, _ = _new_client()
+    stub = _StubAsyncClient([_resp(200, b'{"status": "ok"}')])
+    client._client = stub
+    message = b"From: a@example.com\r\n\r\nline one\nline two\r\n"
+    recipients = [f"{'r' * 60}{i:03d}@{'d' * 200}.example" for i in range(100)]
+
+    await client.deliver(
+        message=message,
+        sender="sénder@example.com",
+        original_recipients=recipients,
+        client_address="192.0.2.1",
+        client_port="2525",
+        client_hostname=None,
+        client_helo="relay.example.com",
+        session="cafe1234",
+        transport={
+            "protocol": "ESMTPS",
+            "tls_version": "TLSv1.3",
+            "tls_cipher": "TLS_AES_256_GCM_SHA384",
+            "server_name": "mx1.ours.example",
+        },
+    )
+
+    headers, body = stub.headers[0], stub.bodies[0]
+    assert headers["Content-Type"] == ENVELOPED_CONTENT_TYPE
+    # The whole header stays far under gunicorn's 8190-byte limit.
+    assert len(headers["Authorization"]) < 500
+    assert headers["Content-Length"] == str(len(body))
+
+    head, _, sent_message = body.partition(b"\n")
+    assert sent_message == message
+    assert json.loads(head) == {
+        "sender": "sénder@example.com",
+        "original_recipients": recipients,
+        "client_address": "192.0.2.1",
+        "client_port": "2525",
+        "client_hostname": None,
+        "client_helo": "relay.example.com",
+        "size": str(len(message)),
+        "protocol": "ESMTPS",
+        "tls_version": "TLSv1.3",
+        "tls_cipher": "TLS_AES_256_GCM_SHA384",
+        "server_name": "mx1.ours.example",
+    }
+    claims = _claims_of(stub, client)
+    assert claims["body_hash"] == hashlib.sha256(body).hexdigest()
+    assert set(claims) == {"exp", "body_hash", "mta_session"}
 
 
 @pytest.mark.parametrize("status", [400, 413, 415])
@@ -329,17 +398,16 @@ def test_local_http_url_is_silent(caplog):
     assert not any(rec.message == "mda_url_plaintext" for rec in caplog.records)
 
 
-def test_empty_secret_logs_warning(caplog, monkeypatch):
-    # Without this the misconfiguration only surfaces on the first MDA call,
-    # as a signing RuntimeError that defers every message.
+def test_empty_secret_refuses_to_start(caplog, monkeypatch):
+    # Started anyway, every MDA call would raise while signing and every
+    # command would be answered 421 with a traceback.
     # An empty `secret` argument falls back to the setting, which the docker
     # test runner populates from the env, so blank it to exercise the
     # unconfigured case rather than the dev secret.
     monkeypatch.setattr(settings, "MDA_API_SECRET", "")
     caplog.set_level("WARNING")
-    MDAClient(base_url="https://mda.example.com/api/", secret="")
-    # ERROR, not WARNING: an unset secret is a deployment fault that defers
-    # every message, and no peer can cause it.
+    with pytest.raises(ValueError, match="MDA_API_SECRET"):
+        MDAClient(base_url="https://mda.example.com/api/", secret="")
     record = next(r for r in caplog.records if r.message == "mda_secret_missing")
     assert record.levelname == "ERROR"
 
@@ -396,8 +464,8 @@ async def test_the_session_id_travels_as_a_signed_claim():
     )
     claims = _claims_of(stub, client)
     assert claims["mta_session"] == "cafe1234"
-    # Alongside the delivery metadata, not instead of it.
-    assert claims["sender"] == "s@example.com"
+    # A claim, not a field of the body envelope.
+    assert "mta_session" not in json.loads(stub.bodies[-1].partition(b"\n")[0])
 
 
 @pytest.mark.asyncio
@@ -485,3 +553,135 @@ async def test_breaker_reads_closed_once_the_cooldown_lapses_without_traffic():
     # No further requests: only time passes.
     clock.now += 31
     assert client.breaker_is_open() is False
+
+
+@pytest.mark.asyncio
+async def test_an_error_page_that_is_not_utf8_is_an_ordinary_failure():
+    """A proxy's latin-1 502 page used to raise out of the call: the session
+    got 421 and a traceback, and the breaker never saw the failure."""
+    page = "<h1>Passerelle incorrecte: délai dépassé</h1>".encode("latin-1")
+    client, _ = _new_client(threshold=1)
+    client._client = _StubAsyncClient([_resp(502, page)])
+
+    result = await client.check_recipient("a@example.com")
+
+    assert (result.ok, result.temp_fail, result.status_code) == (False, True, 502)
+    assert result.payload == {}
+    assert client.breaker_is_open() is True
+
+
+@pytest.mark.asyncio
+async def test_a_200_that_is_not_utf8_carries_no_payload():
+    client, _ = _new_client()
+    client._client = _StubAsyncClient([_resp(200, b"caf\xe9")])
+    result = await client.check_recipient("a@example.com")
+    assert (result.ok, result.payload) == (True, {})
+
+
+# ---------------------------------------------------------------------------
+# After the cooldown, one call probes; the others wait for its answer.
+# ---------------------------------------------------------------------------
+
+
+class _GatedClient:
+    """An HTTP client whose answers the test releases one at a time."""
+
+    def __init__(self):
+        self.calls = 0
+        self.release = asyncio.Event()
+        self.outcome = None
+
+    async def post(self, url, content=None, headers=None):
+        self.calls += 1
+        await self.release.wait()
+        if isinstance(self.outcome, Exception):
+            raise self.outcome
+        return self.outcome
+
+    async def aclose(self):
+        pass
+
+
+async def _tripped(threshold=2):
+    client, clock = _new_client(threshold=threshold, cooldown=30)
+    client._client = _StubAsyncClient([httpx.TimeoutException("down")] * threshold)
+    for _ in range(threshold):
+        await client.check_recipient("a@example.com")
+    assert client.breaker_is_open() is True
+    return client, clock
+
+
+@pytest.mark.asyncio
+async def test_after_the_cooldown_a_single_call_probes_a_dead_mda():
+    client, clock = await _tripped()
+    gated = client._client = _GatedClient()
+    clock.advance(31)
+
+    # Ten sessions arrive together once the cooldown is over.
+    calls = [asyncio.ensure_future(client.check_recipient("a@example.com")) for _ in range(10)]
+    await asyncio.sleep(0.01)
+    assert gated.calls == 1, "every waiting session went to an MDA not known to be back"
+    assert client.breaker_is_open() is True
+
+    gated.outcome = httpx.TimeoutException("still down")
+    gated.release.set()
+    results = await asyncio.gather(*calls)
+
+    assert all(result.temp_fail for result in results)
+    assert gated.calls == 1
+    # Open again for a full cooldown, on that one failure.
+    assert client.breaker_is_open() is True
+    clock.advance(29)
+    assert client.breaker_is_open() is True
+
+
+@pytest.mark.asyncio
+async def test_a_probe_that_succeeds_closes_the_breaker():
+    client, clock = await _tripped()
+    gated = client._client = _GatedClient()
+    clock.advance(31)
+
+    probe = asyncio.ensure_future(client.check_recipient("a@example.com"))
+    await asyncio.sleep(0.01)
+    shed = await client.check_recipient("a@example.com")
+    assert shed.temp_fail and gated.calls == 1
+
+    gated.outcome = _resp(200, b'{"a@example.com": true}')
+    gated.release.set()
+    assert (await probe).ok is True
+    assert client.breaker_is_open() is False
+    # Everyone goes through again.
+    assert (await client.check_recipient("a@example.com")).ok is True
+    assert gated.calls == 2
+
+
+@pytest.mark.asyncio
+async def test_a_probe_cancelled_midway_does_not_hold_the_breaker_shut():
+    """The DATA deadline cancels a delivery in flight. If that call was the
+    probe, the next one has to be able to take its place."""
+    client, clock = await _tripped()
+    gated = client._client = _GatedClient()
+    clock.advance(31)
+
+    probe = asyncio.ensure_future(client.check_recipient("a@example.com"))
+    await asyncio.sleep(0.01)
+    probe.cancel()
+    with pytest.raises(asyncio.CancelledError):
+        await probe
+
+    gated.outcome = _resp(200, b'{"a@example.com": true}')
+    gated.release.set()
+    assert (await client.check_recipient("a@example.com")).ok is True
+    assert client.breaker_is_open() is False
+
+
+@pytest.mark.asyncio
+async def test_our_own_pool_running_out_is_not_an_mda_failure():
+    client, _ = _new_client(threshold=2)
+    client._client = _StubAsyncClient([httpx.PoolTimeout("no connection free")] * 5)
+
+    results = [await client.check_recipient("a@example.com") for _ in range(5)]
+
+    assert all(result.temp_fail and not result.ok for result in results)
+    assert client.breaker_is_open() is False
+    assert client._consecutive_failures == 0

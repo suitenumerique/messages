@@ -2,6 +2,8 @@
 
 # pylint: disable=too-many-lines
 
+import threading
+from http.server import BaseHTTPRequestHandler, HTTPServer
 from unittest.mock import Mock, patch
 
 from django.test import override_settings
@@ -176,13 +178,92 @@ class TestRspamdSpamCheck:
         call_rspamd(b"content", spam_config, envelope=envelope)
 
         headers = mock_post.call_args[1]["headers"]
-        assert headers["From"] == "sender@example.com"
-        assert headers["Rcpt"] == "rcpt@example.com"
-        assert headers["IP"] == "203.0.113.7"
-        assert headers["Hostname"] == "mail.example.com"
+        assert headers["From"] == b"sender@example.com"
+        assert headers["Rcpt"] == b"rcpt@example.com"
+        assert headers["IP"] == b"203.0.113.7"
+        assert headers["Hostname"] == b"mail.example.com"
         # CR/LF stripped: no header injection into the rspamd request.
-        assert headers["Helo"] == "evilX-Injected: 1"
-        assert "\r" not in headers["Helo"] and "\n" not in headers["Helo"]
+        assert headers["Helo"] == b"evilX-Injected: 1"
+        # A session in clear carries no TLS header at all.
+        assert "TLS-Version" not in headers and "TLS-Cipher" not in headers
+
+    @patch("core.mda.spam.requests.post")
+    def test_call_rspamd_forwards_how_the_session_was_encrypted(self, mock_post):
+        """rspamd's ``TLS-Version`` / ``TLS-Cipher`` scan headers."""
+        mock_response = Mock()
+        mock_response.json.return_value = {"action": "no action", "score": 0.0}
+        mock_post.return_value = mock_response
+
+        envelope = {
+            "origin": "mta",
+            "mail_from": "sender@example.com",
+            "ip": "203.0.113.7",
+            "tls_version": "TLSv1",
+            "tls_cipher": "ECDHE-RSA-AES256-SHA",
+        }
+        call_rspamd(
+            b"content", {"rspamd_url": "http://rspamd:8010/_api"}, envelope=envelope
+        )
+
+        headers = mock_post.call_args[1]["headers"]
+        assert headers["TLS-Version"] == b"TLSv1"
+        assert headers["TLS-Cipher"] == b"ECDHE-RSA-AES256-SHA"
+
+    def test_call_rspamd_sends_envelope_addresses_outside_latin1(self):
+        """Over a real socket: http.client is what refused these.
+
+        A str header value is encoded as latin-1 there, so an SMTPUTF8 sender
+        raised UnicodeEncodeError, which read as an rspamd outage and held the
+        message for the whole deferral window.
+        """
+        seen = {}
+
+        class Rspamd(BaseHTTPRequestHandler):
+            """Answers one scan and keeps the envelope headers as sent."""
+
+            def do_POST(self):  # pylint: disable=invalid-name
+                """Record the raw header bytes, answer "no action"."""
+                self.rfile.read(int(self.headers["Content-Length"]))
+                for name in ("From", "Rcpt", "Helo"):
+                    # http.server decodes headers as latin-1: undo it.
+                    seen[name] = self.headers[name].encode("latin-1")
+                body = b'{"action": "no action", "score": 0.0}'
+                self.send_response(200)
+                self.send_header("Content-Type", "application/json")
+                self.send_header("Content-Length", str(len(body)))
+                self.end_headers()
+                self.wfile.write(body)
+
+            def log_message(self, format, *args):  # pylint: disable=redefined-builtin
+                """Keep the test output quiet."""
+
+        server = HTTPServer(("127.0.0.1", 0), Rspamd)
+        # Bounded and daemonised: if the call never reaches the socket, the
+        # test must fail on its assertions, not hang waiting for a request.
+        server.timeout = 5
+        thread = threading.Thread(target=server.handle_request, daemon=True)
+        thread.start()
+        try:
+            action, error, _ = call_rspamd(
+                b"content",
+                {"rspamd_url": f"http://127.0.0.1:{server.server_port}"},
+                envelope={
+                    "origin": "mta",
+                    "mail_from": "иван@почта.example",
+                    "rcpt_to": "sœur@example.com",
+                    # A HELO that was not UTF-8 on the wire arrives as a lone
+                    # surrogate; it must not break the call either.
+                    "helo": "mx\udce9.example",
+                },
+            )
+        finally:
+            thread.join(timeout=10)
+            server.server_close()
+
+        assert (action, error) == ("no action", None)
+        assert seen["From"] == "иван@почта.example".encode()
+        assert seen["Rcpt"] == "sœur@example.com".encode()
+        assert seen["Helo"] == b"mx?.example"
 
     @override_settings(SPAM_CONFIG={"rspamd_url": "http://rspamd:8010/_api"})
     @patch("core.mda.spam.requests.post")
@@ -202,7 +283,7 @@ class TestRspamdSpamCheck:
         )
 
         headers = mock_post.call_args[1]["headers"]
-        assert headers["From"] == "u@example.com"
+        assert headers["From"] == b"u@example.com"
         assert "Helo" not in headers
         assert "Hostname" not in headers
         assert "IP" not in headers

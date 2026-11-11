@@ -17,6 +17,167 @@ from rest_framework import status
 from rest_framework.test import APIClient
 
 from core import enums, factories, models
+from core.api.viewsets.inbound import mta as mta_views
+from core.api.viewsets.inbound.mta import (
+    ENVELOPED_CONTENT_TYPE,
+    _received_header,
+    _split_enveloped_body,
+)
+
+# The view's trace header carries the time of ingest, so the tests that compare
+# stored bytes exactly run with it replaced by this line. ``TestReceivedHeader``
+# covers the real one.
+TRACE = b"Received: from test-trace;\r\n\tThu, 01 Jan 2026 00:00:00 +0000\r\n"
+
+
+@pytest.fixture(autouse=True)
+def fixture_fixed_trace():
+    """Make the view prepend ``TRACE`` instead of a header with today's date."""
+    with patch(
+        "core.api.viewsets.inbound.mta._received_header",
+        return_value=TRACE.decode(),
+    ):
+        yield
+
+
+class TestReceivedHeader:
+    """The ``Received`` header written for the hop into our MTA."""
+
+    NOW = datetime.datetime(2026, 11, 11, 15, 4, 5, tzinfo=datetime.timezone.utc)
+    DATE = "Wed, 11 Nov 2026 15:04:05 +0000"
+
+    def test_a_session_in_clear(self):
+        """ESMTP, no ``tls`` clause: how a reader knows it was not encrypted."""
+        header = _received_header(
+            {
+                "client_helo": "mx.sender.example",
+                "client_address": "203.0.113.9",
+                "client_hostname": None,
+                "protocol": "ESMTP",
+                "tls_version": None,
+                "tls_cipher": None,
+                "server_name": "mx1.ours.example",
+                "mta_session": "9bf92de8",
+            },
+            self.NOW,
+        )
+        assert header == (
+            "Received: from mx.sender.example ([203.0.113.9])\r\n"
+            "\tby mx1.ours.example with ESMTP id 9bf92de8;\r\n"
+            f"\t{self.DATE}\r\n"
+        )
+
+    def test_an_encrypted_session_names_its_cipher_and_version(self):
+        """ESMTPS, the ``tls`` clause, and the version in a comment."""
+        header = _received_header(
+            {
+                "client_helo": "mx.sender.example",
+                "client_address": "2001:db8::9",
+                "protocol": "ESMTPS",
+                "tls_version": "TLSv1.3",
+                "tls_cipher": "TLS_AES_256_GCM_SHA384",
+                "server_name": "mx1.ours.example",
+                "mta_session": "9bf92de8",
+            },
+            self.NOW,
+        )
+        assert header == (
+            "Received: from mx.sender.example ([IPv6:2001:db8::9])\r\n"
+            "\tby mx1.ours.example with ESMTPS id 9bf92de8"
+            " tls TLS_AES_256_GCM_SHA384 (TLSv1.3);\r\n"
+            f"\t{self.DATE}\r\n"
+        )
+
+    def test_an_old_tls_version_is_visible_as_such(self):
+        """Encrypted, with a version a reader can judge."""
+        header = _received_header(
+            {
+                "client_helo": "old.sender.example",
+                "client_address": "203.0.113.9",
+                "protocol": "ESMTPS",
+                "tls_version": "TLSv1",
+                "tls_cipher": "ECDHE-RSA-AES256-SHA",
+            },
+            self.NOW,
+        )
+        assert "with ESMTPS tls ECDHE-RSA-AES256-SHA (TLSv1);" in header
+
+    def test_the_reverse_name_is_shown_when_the_mta_has_one(self):
+        """The Postfix milter resolves it; pymta does not."""
+        header = _received_header(
+            {
+                "client_helo": "client.helo",
+                "client_hostname": "client.hostname",
+                "client_address": "127.1.2.3",
+            },
+            self.NOW,
+        )
+        assert header.startswith(
+            "Received: from client.helo (client.hostname [127.1.2.3]);\r\n"
+        )
+
+    @pytest.mark.parametrize(
+        "metadata",
+        [
+            {},
+            {"client_helo": "mail.example.com"},
+            {"client_address": "not-an-address", "client_helo": None},
+            {"client_helo": 5, "protocol": ["ESMTP"], "tls_cipher": {"a": 1}},
+        ],
+    )
+    def test_missing_or_malformed_fields_are_left_out(self, metadata):
+        """Never a KeyError, and never a field that was not checked."""
+        header = _received_header(metadata, self.NOW)
+        helo = metadata.get("client_helo")
+        expected = helo if isinstance(helo, str) else "unknown"
+        assert header == f"Received: from {expected};\r\n\t{self.DATE}\r\n"
+
+    @pytest.mark.parametrize(
+        "field",
+        [
+            "client_helo",
+            "client_hostname",
+            "client_address",
+            "protocol",
+            "tls_version",
+            "tls_cipher",
+            "server_name",
+            "mta_session",
+        ],
+    )
+    @pytest.mark.parametrize(
+        "value",
+        [
+            "x\r\nX-Injected: 1",
+            "x\nFrom: ceo@ours.example",
+            "x; Mon, 1 Jan 1990 00:00:00 +0000",
+            "x) by forged (y",
+            "x\x00y",
+            "x\ty",
+            "a" * 5000,
+        ],
+    )
+    def test_no_field_can_add_a_line_or_restructure_the_header(self, field, value):
+        """Every field is checked here, whatever the calling MTA validated."""
+        metadata = {
+            "client_helo": "mx.sender.example",
+            "client_address": "203.0.113.9",
+            "protocol": "ESMTP",
+            "server_name": "mx1.ours.example",
+            "mta_session": "9bf92de8",
+        }
+        metadata[field] = value
+        header = _received_header(metadata, self.NOW)
+
+        # Three physical lines at most, each a folded continuation, and one
+        # header once parsed.
+        lines = header.split("\r\n")
+        assert lines[-1] == "" and len(lines) <= 4
+        assert all(line.startswith("\t") for line in lines[1:-1])
+        assert "\n" not in header.replace("\r\n", "") and "\x00" not in header
+        assert header.count(";") == 1 and header.endswith(f";\r\n\t{self.DATE}\r\n")
+        assert "forged (" not in header
+        assert len(header) < 1000
 
 
 @pytest.fixture(name="api_client")
@@ -155,7 +316,9 @@ class TestMTAInboundEmail:
 
         # The MTA path bakes an authoritative Return-Path (envelope MAIL FROM;
         # "<>" for the null sender here) onto the bytes before parsing.
-        mock_parse.assert_called_once_with(b"Return-Path: <>\r\n" + sample_email)
+        mock_parse.assert_called_once_with(
+            b"Return-Path: <>\r\n" + TRACE + sample_email
+        )
 
         assert mock_deliver.call_count == len(recipients)
         # Each recipient gets the SMTP envelope (origin=mta + per-recipient
@@ -164,7 +327,7 @@ class TestMTAInboundEmail:
             mock_deliver.assert_any_call(
                 rcpt,
                 ANY,
-                b"Return-Path: <>\r\n" + sample_email,
+                b"Return-Path: <>\r\n" + TRACE + sample_email,
                 envelope={
                     "origin": "mta",
                     "mail_from": "",
@@ -248,12 +411,12 @@ class TestMTAInboundEmail:
 
     @patch("core.api.viewsets.inbound.mta.deliver_inbound_message")
     @patch("core.api.viewsets.inbound.mta.parse_email")
-    def test_partial_client_metadata_skips_received_no_error(
+    def test_partial_client_metadata_is_no_error(
         self, mock_parse, mock_deliver, api_client, valid_jwt_token
     ):
         """Regression: ``client_helo`` present but ``client_hostname`` /
-        ``client_address`` absent must not raise a KeyError. The partial trace
-        is skipped (no ``Received`` baked), delivery still succeeds."""
+        ``client_address`` absent must not raise a KeyError. The trace is
+        written from what there is (see ``TestReceivedHeader``)."""
         mock_parse.return_value = {"subject": "t"}
         mock_deliver.return_value = True
         raw = b"From: s@example.com\r\nSubject: t\r\n\r\nbody"
@@ -276,9 +439,7 @@ class TestMTAInboundEmail:
 
         assert response.status_code == status.HTTP_200_OK
         baked = mock_parse.call_args[0][0]
-        # Return-Path is still baked; no malformed Received line was added.
-        assert baked.startswith(b"Return-Path: <real@example.com>\r\n")
-        assert b"Received:" not in baked
+        assert baked.startswith(b"Return-Path: <real@example.com>\r\n" + TRACE)
 
     @patch("core.api.viewsets.inbound.mta.deliver_inbound_message")
     @patch("core.api.viewsets.inbound.mta.parse_email")
@@ -307,7 +468,9 @@ class TestMTAInboundEmail:
         assert response.json() == {"status": "error", "detail": "Failed to parse email"}
         # The MTA path bakes an authoritative Return-Path (envelope MAIL FROM;
         # "<>" for the null sender here) onto the bytes before parsing.
-        mock_parse.assert_called_once_with(b"Return-Path: <>\r\n" + sample_email)
+        mock_parse.assert_called_once_with(
+            b"Return-Path: <>\r\n" + TRACE + sample_email
+        )
         mock_deliver.assert_not_called()  # Delivery should not be attempted
 
     @patch("core.api.viewsets.inbound.mta.deliver_inbound_message")
@@ -351,7 +514,9 @@ class TestMTAInboundEmail:
         }
         # The MTA path bakes an authoritative Return-Path (envelope MAIL FROM;
         # "<>" for the null sender here) onto the bytes before parsing.
-        mock_parse.assert_called_once_with(b"Return-Path: <>\r\n" + sample_email)
+        mock_parse.assert_called_once_with(
+            b"Return-Path: <>\r\n" + TRACE + sample_email
+        )
         assert mock_deliver.call_count == 2  # Called for both recipients
 
     @patch("core.api.viewsets.inbound.mta.deliver_inbound_message")
@@ -391,7 +556,9 @@ class TestMTAInboundEmail:
         }
         # The MTA path bakes an authoritative Return-Path (envelope MAIL FROM;
         # "<>" for the null sender here) onto the bytes before parsing.
-        mock_parse.assert_called_once_with(b"Return-Path: <>\r\n" + sample_email)
+        mock_parse.assert_called_once_with(
+            b"Return-Path: <>\r\n" + TRACE + sample_email
+        )
         assert mock_deliver.call_count == 2  # Called for both
 
     def test_invalid_content_type(
@@ -515,6 +682,182 @@ class TestMTAInboundEmail:
         # Should succeed
         assert response.status_code == status.HTTP_200_OK
         assert response.json() == {"status": "ok", "delivered": 1}
+
+
+def _enveloped(envelope, message: bytes) -> bytes:
+    """An enveloped deliver body: the envelope as one JSON line, then the message."""
+    return json.dumps(envelope).encode() + b"\n" + message
+
+
+class TestMTAEnvelopedDelivery:
+    """The deliver form that carries the SMTP envelope in the body.
+
+    The legacy form (envelope in the JWT claims) is what every other test in
+    this file uses, so both stay covered.
+    """
+
+    URL = "/api/v1.0/inbound/mta/deliver/"
+
+    def _post(self, api_client, valid_jwt_token, body, claims=None):
+        return api_client.post(
+            self.URL,
+            data=body,
+            content_type=ENVELOPED_CONTENT_TYPE,
+            HTTP_AUTHORIZATION=f"Bearer {valid_jwt_token(body, claims or {})}",
+        )
+
+    @patch("core.api.viewsets.inbound.mta.deliver_inbound_message")
+    @patch("core.api.viewsets.inbound.mta.parse_email")
+    @pytest.mark.django_db
+    def test_envelope_is_read_from_the_body(
+        self, mock_parse, mock_deliver, api_client, sample_email, valid_jwt_token
+    ):
+        """Same outcome as the legacy form, with no envelope claim in the token."""
+        mock_parse.return_value = {"subject": "Test Email", "from": [], "to": []}
+        mock_deliver.return_value = True
+        recipients = ["first@example.com", "second@example.com"]
+        envelope = {
+            "sender": "sender@example.org",
+            "original_recipients": recipients,
+            "client_address": "192.0.2.10",
+            "client_port": "54321",
+            "client_hostname": None,
+            "client_helo": "mx.example.org",
+            "size": str(len(sample_email)),
+        }
+
+        response = self._post(
+            api_client, valid_jwt_token, _enveloped(envelope, sample_email)
+        )
+
+        assert response.status_code == status.HTTP_200_OK
+        assert response.json() == {"status": "ok", "delivered": 2}
+        # The message is what follows the envelope line, and nothing else.
+        stored = b"Return-Path: <sender@example.org>\r\n" + TRACE + sample_email
+        mock_parse.assert_called_once_with(stored)
+        for rcpt in recipients:
+            mock_deliver.assert_any_call(
+                rcpt,
+                ANY,
+                stored,
+                envelope={
+                    "origin": "mta",
+                    "mail_from": "sender@example.org",
+                    "ip": "192.0.2.10",
+                    "helo": "mx.example.org",
+                    "hostname": "",
+                    "rcpt_to": rcpt,
+                },
+            )
+
+    @patch("core.api.viewsets.inbound.mta.deliver_inbound_message")
+    @patch("core.api.viewsets.inbound.mta.parse_email")
+    @pytest.mark.django_db
+    def test_a_large_envelope_stays_out_of_the_header(
+        self, mock_parse, mock_deliver, api_client, sample_email, valid_jwt_token
+    ):
+        """100 long recipients do not fit in a header; here the token stays small."""
+        mock_parse.return_value = {"subject": "x", "from": [], "to": []}
+        mock_deliver.return_value = True
+        recipients = [f"{'r' * 60}{i:03d}@{'d' * 240}.example" for i in range(100)]
+        body = _enveloped(
+            {"sender": "s@example.org", "original_recipients": recipients},
+            sample_email,
+        )
+        token = valid_jwt_token(body, {"mta_session": "abcdef12"})
+        assert len(json.dumps(recipients)) > 8190
+        assert len(token) < 500
+
+        response = api_client.post(
+            self.URL,
+            data=body,
+            content_type=ENVELOPED_CONTENT_TYPE,
+            HTTP_AUTHORIZATION=f"Bearer {token}",
+        )
+
+        assert response.status_code == status.HTTP_200_OK
+        assert mock_deliver.call_count == 100
+
+    @patch("core.api.viewsets.inbound.mta.deliver_inbound_message")
+    @patch("core.api.viewsets.inbound.mta.parse_email")
+    @pytest.mark.django_db
+    def test_claims_do_not_override_the_body_envelope(
+        self, mock_parse, mock_deliver, api_client, sample_email, valid_jwt_token
+    ):
+        """In this form the claims carry no envelope; a stray one is ignored."""
+        mock_parse.return_value = {"subject": "x", "from": [], "to": []}
+        mock_deliver.return_value = True
+        body = _enveloped({"original_recipients": ["body@example.com"]}, sample_email)
+
+        response = self._post(
+            api_client,
+            valid_jwt_token,
+            body,
+            claims={"original_recipients": ["claim@example.com"]},
+        )
+
+        assert response.status_code == status.HTTP_200_OK
+        assert [call.args[0] for call in mock_deliver.call_args_list] == [
+            "body@example.com"
+        ]
+
+    @pytest.mark.parametrize(
+        "body",
+        [
+            b"no newline at all",
+            b"not json\nSubject: x\r\n\r\nbody\r\n",
+            b'["a@example.com"]\nSubject: x\r\n\r\nbody\r\n',
+            b'{"sender": "s@example.org"}\nSubject: x\r\n\r\nbody\r\n',
+            b'{"original_recipients": "a@example.com"}\nSubject: x\r\n\r\nbody\r\n',
+            b'{"original_recipients": [1, 2]}\nSubject: x\r\n\r\nbody\r\n',
+        ],
+    )
+    @patch("core.api.viewsets.inbound.mta.deliver_inbound_message")
+    def test_a_malformed_envelope_defers_instead_of_bouncing(
+        self, mock_deliver, api_client, valid_jwt_token, body
+    ):
+        """A 5xx makes the MTA answer 451; a 400 would bounce the mail for our bug."""
+        response = self._post(api_client, valid_jwt_token, body)
+
+        assert response.status_code == status.HTTP_500_INTERNAL_SERVER_ERROR
+        mock_deliver.assert_not_called()
+
+    def test_the_token_is_bound_to_the_envelope(
+        self, api_client, sample_email, valid_jwt_token
+    ):
+        """``body_hash`` covers the envelope line, so it cannot be swapped."""
+        signed = _enveloped({"original_recipients": ["a@example.com"]}, sample_email)
+        sent = _enveloped({"original_recipients": ["b@example.com"]}, sample_email)
+
+        response = api_client.post(
+            self.URL,
+            data=sent,
+            content_type=ENVELOPED_CONTENT_TYPE,
+            HTTP_AUTHORIZATION=f"Bearer {valid_jwt_token(signed, {})}",
+        )
+
+        assert response.status_code == status.HTTP_401_UNAUTHORIZED
+
+    @patch("core.api.viewsets.inbound.mta.deliver_inbound_message")
+    @patch("core.api.viewsets.inbound.mta.parse_email")
+    @pytest.mark.django_db
+    def test_the_size_limit_counts_the_message_only(
+        self, mock_parse, mock_deliver, api_client, valid_jwt_token
+    ):
+        """A big envelope must not push a message that fits over the limit."""
+        mock_parse.return_value = {"subject": "x", "from": [], "to": []}
+        mock_deliver.return_value = True
+        message = b"Subject: x\r\n\r\n" + b"a" * 100 + b"\r\n"
+        recipients = [f"user{i}@example.com" for i in range(50)]
+
+        with override_settings(MAX_INCOMING_EMAIL_SIZE=len(message)):
+            response = self._post(
+                api_client,
+                valid_jwt_token,
+                _enveloped({"original_recipients": recipients}, message),
+            )
+
+        assert response.status_code == status.HTTP_200_OK
 
 
 @pytest.mark.django_db
@@ -1294,3 +1637,31 @@ class TestMTAInboundEmailThreading:
         # Verify they are different message instances in different threads
         assert msg1.id != msg2.id
         assert msg1.thread.id != msg2.thread.id
+
+
+class TestSplitEnvelopedBody:
+    """The reader of ``<envelope JSON>\\n<message>``."""
+
+    def test_the_message_is_everything_after_the_first_newline(self):
+        """Later newlines, and JSON further down, belong to the message."""
+        body = b'{"sender": "a@example.org"}\nSubject: x\r\n\r\n{"not": "envelope"}\n'
+        assert _split_enveloped_body(body) == (
+            {"sender": "a@example.org"},
+            b'Subject: x\r\n\r\n{"not": "envelope"}\n',
+        )
+
+    @pytest.mark.parametrize(
+        "body",
+        [b"", b"no newline", b"not json\nmessage", b"[1]\nmessage", b"\nmessage"],
+    )
+    def test_a_body_without_an_envelope_line_is_refused(self, body):
+        """No newline, or a first line that is not a JSON object."""
+        assert _split_enveloped_body(body) is None
+
+    def test_the_envelope_line_is_not_looked_for_past_its_limit(self, monkeypatch):
+        """Or a body with no newline near its start is parsed as JSON whole."""
+        monkeypatch.setattr(mta_views, "_MAX_ENVELOPE_LINE", 32)
+        within = b'{"sender": "a@example.org"}\nmessage'
+        beyond = b'{"sender": "aaaaaaaaaa@example.org"}\nmessage'
+        assert _split_enveloped_body(within) is not None
+        assert _split_enveloped_body(beyond) is None

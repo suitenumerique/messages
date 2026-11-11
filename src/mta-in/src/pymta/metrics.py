@@ -65,6 +65,19 @@ COMMANDS_TOTAL = Counter(
     labelnames=("verb", "class"),
 )
 
+REFUSALS_TOTAL = Counter(
+    f"{_METRICS_NAMESPACE}_refusals_total",
+    "4xx/5xx replies sent, by the verb they answered and the reply code. "
+    "verb is 'none' for a line refused before any command ran.",
+    labelnames=("verb", "code"),
+)
+
+IGNORED_PARAMETERS = Counter(
+    f"{_METRICS_NAMESPACE}_ignored_parameters_total",
+    "MAIL/RCPT parameters accepted and ignored (DSN and AUTH=), by name.",
+    labelnames=("parameter",),
+)
+
 RCPT_TOTAL = Counter(
     f"{_METRICS_NAMESPACE}_rcpt_total",
     "RCPT TO outcomes.",
@@ -92,14 +105,15 @@ MDA_REQUEST_DURATION = Histogram(
     ),  # endpoint: check|deliver
     # result: ok | http_5xx | http_defer (non-5xx status we retry on) |
     #         http_perm (status that permanently rejects the message) |
-    #         timeout | error | breaker_open
+    #         timeout | error | breaker_open |
+    #         pool_timeout (no free connection in our own pool)
     buckets=(0.005, 0.01, 0.05, 0.1, 0.5, 1, 2, 5, 10, 30),
 )
 
 DISCONNECTS_421 = Counter(
     f"{_METRICS_NAMESPACE}_disconnects_421_total",
     "Sessions where pymta replied 421 and closed the TCP connection.",
-    labelnames=("reason",),  # gate_global | gate_per_ip | command_timeout |
+    labelnames=("reason",),  # gate_global | gate_per_ip | reclaimed | command_timeout |
     # session_timeout | max_errors_per_session | max_rcpt_misses_per_session |
     # max_envelopes_per_session | internal_error
 )
@@ -120,11 +134,15 @@ SECURITY_REJECTIONS = Counter(
     # The rest are fixed checks, the first five from pymta.address:
     #   source_route, control_char, invalid_encoding, oversize_local,
     #   oversize_domain, bad_address, address_literal, nul_byte, bad_helo,
-    #   untrusted_proxy, defer_all, blocked_network,
+    #   non_fqdn_sender, untrusted_proxy, defer_all, blocked_network,
     #   blocked_sender_domain, blocked_recipient, internal_error
-    # Plus one per EHLO extension handle_EHLO refuses to advertise:
-    #   ehlo_auth_stripped, ehlo_chunking_stripped, ehlo_bdat_stripped,
-    #   ehlo_pipelining_stripped
+)
+
+TLS_CERTIFICATE_NOT_AFTER = Gauge(
+    f"{_METRICS_NAMESPACE}_tls_certificate_not_after_seconds",
+    "Expiry of each STARTTLS certificate as a Unix timestamp, by file. "
+    "Alert on this minus time() falling under the renewal margin.",
+    labelnames=("file",),
 )
 
 BARE_NEWLINE_MESSAGES = Counter(
@@ -137,6 +155,12 @@ BARE_NEWLINE_MESSAGES = Counter(
 MDA_BREAKER_OPEN = Gauge(
     f"{_METRICS_NAMESPACE}_mda_breaker_open",
     "1 while the MDA circuit breaker is open and calls short-circuit to 451.",
+)
+
+UNDER_STRESS = Gauge(
+    f"{_METRICS_NAMESPACE}_under_stress",
+    "1 while four fifths of the session slots are taken: sessions outside a "
+    "transaction then get the short idle timeout.",
 )
 
 SESSIONS_ABANDONED = Counter(

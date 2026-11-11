@@ -175,8 +175,36 @@ jobs:
           persist-credentials: false
       - name: Create env files
         run: make create-env-files
-      - name: Run mta-in pymta (aiosmtpd) tests
+      - name: Run mta-in pymta tests
         run: make test-mta-in-py
+
+  test-mta-in-py-e2e:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - name: Create env files
+        run: make create-env-files
+      - name: Run pymta and the backend end to end
+        run: make test-mta-in-py-e2e
+
+  fuzz-mta-in-py:
+    runs-on: ubuntu-latest
+    env:
+      # `-m fuzz` is excluded from the default selection, so it only ever
+      # runs here. A smoke run on pull requests, the full sweep on main.
+      FUZZ_EXAMPLES: ${{ github.event_name == 'pull_request' && '500' || '2000' }}
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - name: Create env files
+        run: make create-env-files
+      - name: Run the pymta Hypothesis fuzz suite
+        run: make fuzz-mta-in-py
 
   lint-front:
     runs-on: ubuntu-latest

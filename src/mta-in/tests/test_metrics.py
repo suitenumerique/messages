@@ -14,7 +14,7 @@ from email.mime.text import MIMEText
 
 import pytest
 
-from pymta.metrics import start_metrics_server
+from pymta.metrics import _MAX_SCRAPE_THREADS, start_metrics_server
 
 logger = logging.getLogger(__name__)
 
@@ -256,8 +256,6 @@ def test_slow_clients_cannot_spawn_unbounded_threads(open_port):
     is also serving SMTP. Driven over real sockets that connect and say nothing,
     which is the whole attack.
     """
-    from pymta.metrics import _MAX_SCRAPE_THREADS
-
     before = threading.active_count()
     hangers = []
     try:
@@ -284,8 +282,6 @@ def test_slow_clients_cannot_spawn_unbounded_threads(open_port):
 
 def test_a_real_scrape_still_works_after_the_cap_is_hit(open_port):
     """The cap must shed load, not wedge the endpoint."""
-    from pymta.metrics import _MAX_SCRAPE_THREADS
-
     hangers = []
     try:
         for _ in range(_MAX_SCRAPE_THREADS * 4):

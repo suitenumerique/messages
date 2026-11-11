@@ -1,11 +1,15 @@
 """MTA channel implementation for handling email delivery."""
 
+import email.utils
 import hashlib
+import ipaddress
+import json
 import logging
 import re
 import secrets
 
 from django.conf import settings
+from django.utils import timezone
 
 import jwt
 from drf_spectacular.utils import extend_schema
@@ -31,6 +35,120 @@ logger = logging.getLogger(__name__)
 # newline, so an anchored ``match`` would accept ``"deadbeef\n"`` — the exact
 # shape the check exists to keep out of a log record.
 _MTA_SESSION_RE = re.compile(r"[A-Za-z0-9_-]{1,64}")
+
+
+# Content-Type of a deliver request that carries the SMTP envelope in its body
+# rather than in the JWT claims. See ``InboundMTAViewSet.deliver``.
+ENVELOPED_CONTENT_TYPE = "application/vnd.stmsg.mta-delivery"
+
+
+# Longest envelope line read from an enveloped deliver body. An envelope of
+# 100 recipients is about 35 kB; this leaves room for a few thousand.
+_MAX_ENVELOPE_LINE = 1024 * 1024
+
+
+def _split_enveloped_body(body: bytes) -> tuple[dict, bytes] | None:
+    """Split an enveloped deliver body into (envelope, message).
+
+    The envelope is everything up to the first newline, as a JSON object. JSON
+    on one line holds no raw newline, so the first one in the body is the
+    separator whatever the message contains.
+
+    Returns None when the body does not start with such a line: no newline
+    within ``_MAX_ENVELOPE_LINE`` bytes, or a line that is not a JSON object.
+    """
+    end = body.find(b"\n", 0, _MAX_ENVELOPE_LINE)
+    if end < 0:
+        return None
+    try:
+        envelope = json.loads(body[:end])
+    except ValueError:
+        return None
+    if not isinstance(envelope, dict):
+        return None
+    return envelope, body[end + 1 :]
+
+
+# A protocol keyword, a TLS version, a cipher suite or a host name of ours, as
+# they may appear in a trace header: nothing that could end or restructure it.
+_TRACE_TOKEN_RE = re.compile(r"[A-Za-z0-9._-]{1,64}")
+# What a client may call itself in HELO, kept to characters of a host name or
+# an address literal. Anything else is shown as "?".
+_HELO_UNSAFE_RE = re.compile(r"[^\w.\-:\[\]]")
+
+
+def _trace_token(metadata: dict, key: str) -> str:
+    value = metadata.get(key)
+    if isinstance(value, str) and _TRACE_TOKEN_RE.fullmatch(value):
+        return value
+    return ""
+
+
+def _received_header(metadata: dict, now) -> str:
+    """The ``Received`` header for the hop from the sending host into our MTA.
+
+    Always written, by us, on top of what the sender sent. It is the only
+    lasting record of the client address (the envelope goes with the queue
+    row), and it is what bounds the headers the spam rules and
+    ``Authentication-Results`` reader may trust: ``headers_blocks`` trusts
+    what is above the first ``Received``, which without this line was whatever
+    the sender put there.
+
+    Format, RFC 5321 section 4.4::
+
+        Received: from <helo> ([<ip>])
+            by <our MTA> with <protocol> id <session> tls <cipher> (<version>);
+            <date>
+
+    - ``with`` is ESMTP or ESMTPS (RFC 3848), UTF8SMTP or UTF8SMTPS
+      (RFC 6531): the S says the session was encrypted.
+    - ``tls`` names the cipher suite (RFC 8314 section 4.3). The protocol
+      version has no clause of its own and goes in a comment, as Postfix
+      writes it.
+    - No ``for`` clause: it would differ per recipient, split the shared
+      blob, and disclose Bcc recipients to each other.
+
+    Each field is checked here: the calling MTA validates them too, but this
+    line ends up in every stored message.
+    """
+    helo = metadata.get("client_helo")
+    helo = (
+        _HELO_UNSAFE_RE.sub("?", helo)[:255]
+        if isinstance(helo, str) and helo
+        else "unknown"
+    )
+
+    tcp_info = []
+    hostname = metadata.get("client_hostname")
+    if isinstance(hostname, str) and hostname:
+        tcp_info.append(_HELO_UNSAFE_RE.sub("?", hostname)[:255])
+    try:
+        address = ipaddress.ip_address(str(metadata.get("client_address")))
+    except ValueError:
+        address = None
+    if address is not None:
+        tcp_info.append(f"[IPv6:{address}]" if address.version == 6 else f"[{address}]")
+    sent_from = f"from {helo}" + (f" ({' '.join(tcp_info)})" if tcp_info else "")
+
+    received_by = []
+    if server_name := _trace_token(metadata, "server_name"):
+        received_by.append(f"by {server_name}")
+    if protocol := _trace_token(metadata, "protocol"):
+        received_by.append(f"with {protocol}")
+    if (session := _mta_session(metadata)) != "-":
+        received_by.append(f"id {session}")
+    if cipher := _trace_token(metadata, "tls_cipher"):
+        received_by.append(f"tls {cipher}")
+    if version := _trace_token(metadata, "tls_version"):
+        received_by.append(f"({version})")
+
+    lines = [sent_from] + ([" ".join(received_by)] if received_by else [])
+    date = email.utils.format_datetime(now)
+    return "Received: " + "\r\n\t".join(lines) + f";\r\n\t{date}\r\n"
+
+
+def _is_recipient_list(value) -> bool:
+    return isinstance(value, list) and all(isinstance(item, str) for item in value)
 
 
 def _mta_session(mta_metadata) -> str:
@@ -160,33 +278,56 @@ class InboundMTAViewSet(viewsets.GenericViewSet):
         url_name="inbound-mta-deliver",
     )
     def deliver(self, request):
-        """Handle incoming raw email (message/rfc822) from MTA."""
+        """Handle an incoming raw email from the MTA.
+
+        Two request forms, told apart by Content-Type:
+
+        - ``message/rfc822``: the body is the message, and the SMTP envelope
+          (sender, recipients, client address…) rides in the JWT claims. An
+          HTTP header caps what an envelope can hold (8190 bytes on gunicorn),
+          which about 100 recipients exceed. Kept for the Postfix milter and
+          for an mta-in older than this endpoint.
+        - ``ENVELOPED_CONTENT_TYPE``: the body is the envelope as one line of
+          JSON, a newline, then the message. The token's ``body_hash`` covers
+          the whole body, so the envelope is authenticated exactly as the
+          claims were.
+        """
 
         # request.user will be the service account, request.auth the JWT payload
-        mta_metadata = request.auth
-        if not mta_metadata or "original_recipients" not in mta_metadata:
-            # This case should ideally be caught by the authentication class
+        if request.content_type == "message/rfc822":
+            mta_metadata = request.auth
+            raw_data = request.body
+        elif request.content_type == ENVELOPED_CONTENT_TYPE:
+            # A body that does not split is answered below, with the 500 that
+            # missing metadata gets.
+            mta_metadata, raw_data = _split_enveloped_body(request.body) or (None, b"")
+            if mta_metadata is not None:
+                # The correlation id stays a claim in both forms.
+                mta_metadata["mta_session"] = (request.auth or {}).get("mta_session")
+        else:
+            logger.warning(
+                "Received inbound POST with incorrect Content-Type: %s",
+                request.content_type,
+            )
+            return Response(
+                {
+                    "detail": "Content-Type must be message/rfc822 or "
+                    + ENVELOPED_CONTENT_TYPE
+                },
+                status=status.HTTP_415_UNSUPPORTED_MEDIA_TYPE,
+            )
+
+        if not mta_metadata or not _is_recipient_list(
+            mta_metadata.get("original_recipients")
+        ):
+            # Ours to fix, not a verdict on the message: a 5xx makes the MTA
+            # defer instead of bouncing the mail.
             logger.error("MTA metadata missing or malformed in authenticated request.")
             return Response(
                 {"detail": "Internal authentication error"},
                 status=status.HTTP_500_INTERNAL_SERVER_ERROR,
             )
 
-        # Validate content type (optional but good practice)
-        # Note: If parser_classes included FormParser or MultiPartParser, request.body might be consumed.
-        # Ensure parser_classes=[parsers.BaseParser] or similar if relying on request.body.
-        if request.content_type != "message/rfc822":
-            logger.warning(
-                "Received inbound POST with incorrect Content-Type: %s",
-                request.content_type,
-            )
-            # Decide whether to reject or attempt parsing anyway
-            return Response(
-                {"detail": "Content-Type must be message/rfc822"},
-                status=status.HTTP_415_UNSUPPORTED_MEDIA_TYPE,
-            )
-
-        raw_data = request.body
         if not raw_data:
             logger.error("Received empty body for inbound email.")
             return Response(
@@ -241,27 +382,20 @@ class InboundMTAViewSet(viewsets.GenericViewSet):
         # in the single stored blob:
         #  - ``Return-Path``: the envelope MAIL FROM (``<>`` for a null sender /
         #    bounce). Durable home for what the autoreply/bounce logic reads.
-        #  - ``Received``: the SMTP trace (HELO / rDNS / IP), when the MTA
-        #    forwarded it. Shared across recipients (one prepend), so identical
-        #    bytes still dedup to one blob.
+        #  - ``Received``: the trace line for the hop into our MTA, always
+        #    written (see ``_received_header``). Shared across recipients (one
+        #    prepend, no ``for`` clause), so one delivery is still one blob.
         sender = mta_metadata.get("sender") or ""
-        prepend_headers = [("Return-Path", f"<{sender}>" if sender else "<>")]
         client_helo = mta_metadata.get("client_helo")
         client_hostname = mta_metadata.get("client_hostname")
         client_address = mta_metadata.get("client_address")
 
-        # Only emit the Received trace when the MTA forwarded all three parts
-        if client_helo and client_hostname and client_address:
-            prepend_headers.append(
-                (
-                    "Received",
-                    f"from {client_helo} ({client_hostname} [{client_address}]);",
-                )
-            )
-
+        # Return-Path first, then Received: everything the sender supplied
+        # stays below our own trace line.
+        return_path = sanitize_header(f"<{sender}>" if sender else "<>")
         raw_data = (
-            "\r\n".join([f"{k}: {sanitize_header(v)}" for k, v in prepend_headers])
-            + "\r\n"
+            f"Return-Path: {return_path}\r\n"
+            + _received_header(mta_metadata, timezone.now())
         ).encode("utf-8") + raw_data
 
         # Parse the email message once
@@ -275,11 +409,12 @@ class InboundMTAViewSet(viewsets.GenericViewSet):
                 status=status.HTTP_400_BAD_REQUEST,  # Bad request as email is malformed
             )
 
-        # Structured SMTP envelope carried alongside the bytes (never injected
-        # into them, so the blob stays byte-identical across recipients and
-        # dedups to one row). ``sender`` is the MAIL FROM; the client_* fields
-        # are the connecting SMTP peer (forwarded by the MTA). ``rcpt_to`` is
-        # the actual RCPT TO and is set per recipient inside the loop.
+        # Structured SMTP envelope carried alongside the bytes while the
+        # message is queued, for the pipeline (rspamd, autoreply). ``sender``
+        # is the MAIL FROM; the client_* fields are the connecting SMTP peer
+        # and the TLS ones how it connected (forwarded by the MTA, empty for a
+        # session in clear). ``rcpt_to`` is the actual RCPT TO: per recipient,
+        # so set inside the loop and kept out of the shared blob.
         base_envelope = {
             "origin": enums.InboundOrigin.MTA,
             "mail_from": sender,
@@ -287,6 +422,12 @@ class InboundMTAViewSet(viewsets.GenericViewSet):
             "helo": client_helo or "",
             "hostname": client_hostname or "",
         }
+        # Only from an MTA that reports how the session went (it sends
+        # ``protocol``): an absent key means "not known", which is not the
+        # same as an empty one, "in clear".
+        if "protocol" in mta_metadata:
+            base_envelope["tls_version"] = _trace_token(mta_metadata, "tls_version")
+            base_envelope["tls_cipher"] = _trace_token(mta_metadata, "tls_cipher")
 
         # Deliver the parsed email to each original recipient
         success_count = 0

@@ -1,5 +1,5 @@
 """
-Pure-Python inbound MTA built on aiosmtpd.
+Pure-Python inbound MTA, on asyncio and the standard library.
 
 Reception-side counterpart to the Postfix+milter implementation that lives in
 ``src/mta-in/src/delivery_milter.py``. Both share the same MDA REST contract

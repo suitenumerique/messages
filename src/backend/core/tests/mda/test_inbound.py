@@ -15,6 +15,7 @@ from core.mda.inbound import deliver_inbound_message
 from core.mda.inbound_create import (
     _create_message_from_inbound,
     _record_divergent_rcpt,
+    _record_transport_security,
     find_thread_for_message,
 )
 
@@ -61,6 +62,40 @@ class TestRecordDivergentRcpt:
         postmark = {}
         _record_divergent_rcpt(postmark, "", self._parsed())
         assert not postmark
+
+
+class TestRecordTransportSecurity:
+    """``postmark["tls"]`` is written only when a message did not arrive over
+    modern TLS."""
+
+    @pytest.mark.parametrize(
+        ("envelope", "expected"),
+        [
+            # In clear: the MTA reports an empty version.
+            ({"tls_version": "", "tls_cipher": ""}, {"tls": "none"}),
+            # Encrypted with a deprecated protocol version.
+            ({"tls_version": "TLSv1", "tls_cipher": "AES256-SHA"}, {"tls": "old"}),
+            ({"tls_version": "TLSv1.0"}, {"tls": "old"}),
+            ({"tls_version": "TLSv1.1"}, {"tls": "old"}),
+            ({"tls_version": "SSLv3"}, {"tls": "old"}),
+            # The normal case stores nothing.
+            ({"tls_version": "TLSv1.2"}, {}),
+            ({"tls_version": "TLSv1.3", "tls_cipher": "TLS_AES_256_GCM_SHA384"}, {}),
+            ({"origin": "mta", "tls_version": "TLSv1.3"}, {}),
+            # Through an MTA that did not say: neither a claim nor silence.
+            ({"origin": "mta", "ip": "203.0.113.9"}, {"tls": "unknown"}),
+            # Not SMTP at all: no session to qualify.
+            ({"origin": "widget", "ip": "203.0.113.9"}, {}),
+            ({"origin": "internal"}, {}),
+            ({"origin": "import"}, {}),
+            ({}, {}),
+        ],
+    )
+    def test_marker(self, envelope, expected):
+        """One marker for clear, one for old TLS, nothing otherwise."""
+        postmark = {}
+        _record_transport_security(postmark, envelope)
+        assert postmark == expected
 
 
 @pytest.mark.django_db
@@ -444,8 +479,9 @@ class TestDeliverInboundMessage:
         assert message.postmark["rcpt_to"] == alias
 
     def test_matching_envelope_rcpt_leaves_postmark_null(self, target_mailbox):
-        """When the envelope RCPT is one of the visible To addresses (the happy
-        path), nothing is recorded and ``postmark`` stays NULL."""
+        """When the envelope RCPT is one of the visible To addresses and the
+        session used modern TLS (the happy path), nothing is recorded and
+        ``postmark`` stays NULL."""
         recipient_addr = f"{target_mailbox.local_part}@{target_mailbox.domain.name}"
         raw = (
             b"From: sender@test.com\r\n"
@@ -465,6 +501,7 @@ class TestDeliverInboundMessage:
                 "origin": "mta",
                 "mail_from": "sender@test.com",
                 "rcpt_to": recipient_addr,
+                "tls_version": "TLSv1.3",
             },
             blob=blob,
         )
@@ -1235,6 +1272,32 @@ class TestInboundDedupIdempotency:
         )
         # And no second (parallel) thread was created.
         assert models.Thread.objects.filter(accesses__mailbox=mailbox).count() == 1
+
+    def test_without_a_message_id_a_redelivery_is_a_second_message(self):
+        """Known gap, pinned so that closing it is a visible change.
+
+        Dedup is keyed on the Message-ID. A message that has none is stored
+        again each time the MTA redelivers it, which it does after any 4xx
+        (partial delivery, a timeout, a shutdown mid-delivery). Only the
+        import path falls back to the content hash.
+        """
+        mailbox = factories.MailboxFactory()
+        parsed = self._parsed("unused")
+        parsed["messageId"] = []
+        raw = b"raw mime bytes, no Message-ID"
+
+        for _ in range(2):
+            assert _create_message_from_inbound(
+                recipient_email=str(mailbox),
+                parsed_email=parsed,
+                raw_data=raw,
+                mailbox=mailbox,
+            )
+
+        assert (
+            models.Message.objects.filter(thread__accesses__mailbox=mailbox).count()
+            == 2
+        )
 
 
 @pytest.mark.django_db

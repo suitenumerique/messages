@@ -18,11 +18,11 @@ import signal
 import time
 
 from . import logfmt, metrics, runtime, settings
-from .controller import HardenedController
+from .controller import Listener, publish_certificate_expiry
 from .handler import InboundHandler
 from .limits import IPGate
 from .mda_async import MDAClient
-from .smtp_protocol import log_abandoned_sessions
+from .smtp_protocol import close_idle_sessions, log_abandoned_sessions
 
 # Named explicitly rather than __name__: this module is the entrypoint, run as
 # `python -m pymta.server`, so __name__ is "__main__" and every line it emits
@@ -33,9 +33,8 @@ logger = logging.getLogger("pymta.server")
 # enough that a quiet node exits promptly, long enough not to spin.
 _DRAIN_POLL_SECONDS = 0.25
 
-# Peak resident bytes per byte of message in flight. Measured: aiosmtpd needs a
-# second copy of the body while it joins the received lines, and freed arenas
-# are not returned promptly.
+# Peak resident bytes per byte of message in flight: a second copy of the body
+# while the received blocks are joined, and freed arenas not returned promptly.
 _MEMORY_FACTOR = 2.2
 
 
@@ -103,9 +102,6 @@ def _export_config_limits() -> None:
     against the limit and an alert fires on approach without the deployment's
     numbers being duplicated into the alert rule.
 
-    Called at startup and again after an accepted SIGHUP, because four of these
-    are reloadable and a gauge that still reported the startup value would
-    describe a configuration no longer in force.
     """
     metrics.export_config_limits(
         {
@@ -124,29 +120,42 @@ def _export_config_limits() -> None:
     )
 
 
-def _reload_settings() -> None:
-    """Re-read the runtime-reloadable settings on SIGHUP.
+def _log_unhandled(loop: asyncio.AbstractEventLoop, context: dict) -> None:
+    """Log what asyncio would otherwise report on its own logger.
 
-    Only the per-connection and per-command ones; see settings._RELOADABLE for
-    why the rest cannot follow. A bad value leaves the running configuration
-    alone rather than taking the process down: the point of this path is to be
-    usable while something is already going wrong.
+    That logger is filtered out of our output (logfmt.OwnRecordsOnly), so an
+    exception in a timer callback, a signal handler or a task nobody awaits
+    would leave no trace. The process keeps running, as it does by default.
     """
+    error = context.get("exception")
+    logger.error(
+        "unhandled_error",
+        exc_info=(type(error), error, error.__traceback__) if error else None,
+        extra={"detail": str(context.get("message", ""))},
+    )
+
+
+def _log_certificates() -> None:
+    """One line per STARTTLS certificate with its expiry, and the gauge."""
+    for cert, not_after in publish_certificate_expiry().items():
+        fields: dict = {"file": cert}
+        if not_after is not None:
+            fields["not_after"] = time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime(not_after))
+            fields["days_left"] = int((not_after - time.time()) // 86400)
+        logger.info("tls_certificate", extra=fields)
+
+
+def _reload_tls(listener: Listener) -> None:
+    """Read the certificate files again on SIGHUP, so a renewal needs no restart."""
     try:
-        changed = settings.reload_runtime_settings()
-    except ValueError:
-        logger.error("reload_rejected", exc_info=True, extra={"applied": False})
+        if not listener.reload_tls():
+            return
+    except OSError, ValueError:
+        # ssl.SSLError is an OSError. The previous context stays in use.
+        logger.error("tls_reload_rejected", exc_info=True, extra={"applied": False})
         return
-    if changed:
-        # Names only. The reloadable set includes PYMTA_BLOCKED_RECIPIENTS,
-        # whose value is a list of real addresses; serialising it would put
-        # recipient mail addresses in the log every time an operator adjusts a
-        # blocklist. The values that are not sensitive are on the metrics
-        # endpoint, republished just below.
-        logger.info("reload_applied", extra={"changed": ",".join(sorted(changed))})
-        _export_config_limits()
-    else:
-        logger.info("reload_noop")
+    logger.info("tls_reloaded")
+    _log_certificates()
 
 
 def _on_terminate(sig: signal.Signals, stop: asyncio.Event) -> None:
@@ -174,6 +183,7 @@ def _on_terminate(sig: signal.Signals, stop: asyncio.Event) -> None:
             "deadline_seconds": settings.PYMTA_SHUTDOWN_TIMEOUT,
         },
     )
+    close_idle_sessions()
     stop.set()
 
 
@@ -252,23 +262,14 @@ async def _serve() -> None:
         metrics.MDA_BREAKER_OPEN.set_function(lambda: 1.0 if mda_client.breaker_is_open() else 0.0)
         handler = InboundHandler(mda_client)
         ip_gate = IPGate(
-            # All None: the gate reads each cap from settings on every acquire,
-            # so SIGHUP moves them without a restart.
+            # None: the gate reads each cap from settings on every acquire.
             max_total=None,
         )
+        # Computed at scrape time, like the breaker gauge.
+        metrics.UNDER_STRESS.set_function(lambda: 1.0 if ip_gate.under_stress() else 0.0)
 
-        controller = HardenedController(
-            handler,
-            ip_gate=ip_gate,
-            hostname=settings.PYMTA_SMTP_BIND_HOST,
-            port=settings.PYMTA_SMTP_BIND_PORT,
-            loop=asyncio.get_running_loop(),
-        )
-
-        # ``begin()`` is sync but only schedules; for a running loop we want to
-        # await ``_create_server`` directly so the loop drives it cleanly.
-        server = await controller._create_server()  # noqa: SLF001
-        controller.server = server
+        listener = Listener(handler, ip_gate=ip_gate)
+        server = await listener.start(settings.PYMTA_SMTP_BIND_HOST, settings.PYMTA_SMTP_BIND_PORT)
 
         logger.info(
             "smtp_listening",
@@ -278,11 +279,13 @@ async def _serve() -> None:
                 "proxy_protocol": settings.PYMTA_ENABLE_PROXY_PROTOCOL,
                 "size_limit": settings.PYMTA_MAX_INCOMING_EMAIL_SIZE,
                 "starttls": bool(settings.PYMTA_TLS_CERT_FILE),
+                "tls_min_version": settings.PYMTA_TLS_MIN_VERSION,
             },
         )
+        _log_certificates()
 
-        # Memory is the ceiling nothing else enforces: aiosmtpd buffers each
-        # DATA phase in RAM, so concurrency times message size is the heap this
+        # Memory is the ceiling nothing else enforces: each DATA phase is
+        # buffered in RAM, so concurrency times message size is the heap this
         # process can be driven to. Budget about 2.2x the bytes in flight: the
         # join at end-of-DATA needs a second copy of the body, and freed arenas
         # are not returned promptly, so under concurrency that transient does
@@ -314,16 +317,10 @@ async def _serve() -> None:
 
         stop = asyncio.Event()
         loop = asyncio.get_running_loop()
-        try:
-            loop.add_signal_handler(signal.SIGHUP, _reload_settings)
-        except NotImplementedError, AttributeError:
-            pass
+        loop.set_exception_handler(_log_unhandled)
+        loop.add_signal_handler(signal.SIGHUP, _reload_tls, listener)
         for sig in (signal.SIGINT, signal.SIGTERM):
-            try:
-                loop.add_signal_handler(sig, _on_terminate, sig, stop)
-            except NotImplementedError:
-                # Windows / restricted environments: no signal handler support.
-                pass
+            loop.add_signal_handler(sig, _on_terminate, sig, stop)
 
         try:
             await stop.wait()
@@ -345,6 +342,10 @@ def main() -> None:
         asyncio.run(_serve())
     except KeyboardInterrupt:
         pass
+    except Exception:
+        # In the log's own format before the process dies with the traceback.
+        logger.error("fatal_error", exc_info=True)
+        raise
 
 
 if __name__ == "__main__":

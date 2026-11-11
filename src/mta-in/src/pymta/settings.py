@@ -3,6 +3,8 @@
 import ipaddress
 import os
 
+from .address import AddressError, validate_envelope_address
+
 
 def _env_bool(name: str, default: bool) -> bool:
     """Read a boolean setting, refusing spellings the code cannot honour.
@@ -32,10 +34,9 @@ def _env_int(name: str, default: int, *, minimum: int) -> int:
     ``minimum=1`` the ones where zero is nonsense. Without the check those two
     groups look identical from the env, and the nonsense values fail in ways
     that are silent and wrong rather than loud. ``PYMTA_MAX_RECIPIENTS_PER_ENVELOPE=0``
-    would 452 every recipient, ``PYMTA_MAX_INCOMING_EMAIL_SIZE=0`` would disable
-    aiosmtpd's size cap while the handler rejected every message, and
-    ``PYMTA_DATA_TIMEOUT=0`` would quietly inherit the command timeout because
-    aiosmtpd reads a falsy duration as "unset".
+    would 452 every recipient, ``PYMTA_MAX_INCOMING_EMAIL_SIZE=0`` would lift
+    the protocol's size cap while the handler rejected every message, and
+    ``PYMTA_DATA_TIMEOUT=0`` would cut every DATA phase the moment it starts.
     """
     raw = os.environ.get(name, "").strip()
     if not raw:
@@ -55,6 +56,21 @@ def _env_int(name: str, default: int, *, minimum: int) -> int:
 LEGACY_IN_USE: set[tuple[str, str]] = set()
 
 
+def _env_fraction(name: str, default: float) -> float:
+    """Read a share of something: a number above 0, up to 1."""
+    raw = os.environ.get(name, "").strip()
+    if not raw:
+        return default
+    try:
+        value = float(raw)
+    except ValueError as exc:
+        raise ValueError(f"Environment variable {name} must be a number, got {raw!r}") from exc
+    # Written this way round so that NaN is refused too.
+    if not 0 < value <= 1:
+        raise ValueError(f"Environment variable {name} must be above 0 and at most 1, got {raw!r}")
+    return value
+
+
 def _env_name(name: str, legacy: str) -> str:
     """Which variable to read: the prefixed one, or the Postfix image's.
 
@@ -63,9 +79,6 @@ def _env_name(name: str, legacy: str) -> str:
     consulted in its absence, and using it is recorded so startup can say so.
     """
     if not os.environ.get(name, "").strip() and os.environ.get(legacy, "").strip():
-        # A set, not a list: reload_runtime_settings re-reads these on every
-        # SIGHUP, so appending would grow without bound and report the same
-        # variable once per reload.
         LEGACY_IN_USE.add((legacy, name))
         return legacy
     return name
@@ -133,7 +146,7 @@ PYMTA_SMTP_BIND_PORT = _env_int("PYMTA_SMTP_BIND_PORT", 25, minimum=1)
 PYMTA_SMTP_HOSTNAME = _env_token(_env_name("PYMTA_SMTP_HOSTNAME", "MYHOSTNAME"), "mta-in")
 
 # ESMTP banner ident (after the hostname). Kept short and version-less so we
-# don't broadcast "aiosmtpd X.Y.Z" to internet scanners.
+# don't tell internet scanners what software answers.
 PYMTA_SMTP_IDENT = _env_token("PYMTA_SMTP_IDENT", "ESMTP")
 
 
@@ -156,7 +169,7 @@ PYMTA_MAX_INCOMING_EMAIL_SIZE = _env_int(
 #
 # Note the multiplication downstream: controller.py derives the per-verb
 # ``command_call_limit`` for RCPT as (this x PYMTA_MAX_ENVELOPES_PER_SESSION) + 10,
-# which on the defaults is 1010 commands before aiosmtpd force-closes. Raising
+# which on the defaults is 1010 commands before the session is closed. Raising
 # either of these raises that ceiling as their product, and it is the ceiling
 # on how many commands one connection can spend re-arming the idle timer.
 PYMTA_MAX_RECIPIENTS_PER_ENVELOPE = _env_int("PYMTA_MAX_RECIPIENTS_PER_ENVELOPE", 100, minimum=1)
@@ -166,18 +179,18 @@ PYMTA_MAX_ENVELOPES_PER_SESSION = _env_int("PYMTA_MAX_ENVELOPES_PER_SESSION", 10
 
 # Longest single line accepted in DATA or a command, in octets.
 #
-# aiosmtpd defaults to 1001 (RFC 5321 §4.5.3.1.6) and answers a longer line with
-# ``500 Line too long``, a permanent rejection. Postfix accepts the same
-# message: its ``line_length_limit`` is 2048 and applies to how the cleanup
-# daemon wraps output, not to what smtpd will receive. Long unwrapped HTML and
-# URLs break 998 constantly, so the strict value bounces mail that lands today,
-# and 5xx means the sender gives up rather than retrying.
+# RFC 5321 §4.5.3.1.6 says 1001, and a longer line is answered ``500 Line too
+# long``, a permanent rejection. Postfix accepts the same message: its
+# ``line_length_limit`` is 2048 and applies to how the cleanup daemon wraps
+# output, not to what smtpd will receive. Long unwrapped HTML and URLs break
+# 998 constantly, so the strict value bounces mail that lands today, and 5xx
+# means the sender gives up rather than retrying.
 #
 # 64 KiB accepts effectively all real mail while still bounding the per-session
-# read buffer (this is the ``StreamReader`` limit, so the ceiling is this value
-# times PYMTA_MAX_SESSIONS_TOTAL). It does not weaken command validation:
-# aiosmtpd checks commands against its own 512-octet ``command_size_limit``
-# (548 for MAIL) after the line is read.
+# read buffer (``wire.LineReader`` holds about twice this before it pauses the
+# peer, so the ceiling is that times PYMTA_MAX_SESSIONS_TOTAL). It does not
+# weaken command validation: a command line is held to 512 octets (548 for
+# MAIL) once it has been read.
 PYMTA_MAX_LINE_LENGTH = _env_int("PYMTA_MAX_LINE_LENGTH", 65536, minimum=1001)
 
 # Messages that may be in memory at once.
@@ -187,13 +200,13 @@ PYMTA_MAX_LINE_LENGTH = _env_int("PYMTA_MAX_LINE_LENGTH", 65536, minimum=1001)
 # also removes the global session cap and the per-source share. To let more
 # mail through, raise the number; 0 is for dev and test.
 #
-# aiosmtpd holds each message in RAM, so this is what stands between a burst of
+# Each message is held in RAM, so this is what stands between a burst of
 # large mail and the OOM killer. The session caps do not: a connection costs a
 # few kB until it says DATA.
 #
 # Size it against the memory the container has. A message peaks at roughly 2.2x
-# its size, because aiosmtpd needs a second copy while it joins the received
-# lines and freed arenas are not returned promptly, so 40 x 10 MiB is about
+# its size, because joining the received blocks needs a second copy for a
+# moment and freed arenas are not returned promptly, so 40 x 10 MiB is about
 # 880 MiB and wants a container of 1 GiB or more. Drop it to 20 for 512 MiB.
 #
 # It is also the number of distinct hosts it takes to saturate delivery, because
@@ -211,7 +224,7 @@ PYMTA_MAX_CONCURRENT_DATA = _env_int("PYMTA_MAX_CONCURRENT_DATA", 40, minimum=0)
 # gets no local-part cap, since a forwarder's SRS-wrapped return path exceeds
 # 64 octets as a matter of course, and no path cap either (§4.5.3.1 asks to
 # avoid these limits; Postfix enforced neither). The 548-octet MAIL command
-# line is what bounds it (see ``HardenedSMTP.smtp_EHLO``).
+# line is what bounds it (see ``SMTPConnection._line_limit``).
 PYMTA_MAX_LOCAL_PART = 64
 PYMTA_MAX_DOMAIN = 255
 
@@ -220,19 +233,20 @@ PYMTA_MAX_DOMAIN = 255
 # Timeouts & connection caps
 # ---------------------------------------------------------------------------
 
-# Per-command idle timeout (seconds). Postfix default is 300 s; we tighten.
+# Per-command idle timeout (seconds). 300 is Postfix's ``smtpd_timeout`` and
+# the minimum RFC 5321 §4.5.3.2.7 asks a server to wait for the next command.
 #
-# aiosmtpd arms this deadline once per accepted command and only re-arms it
-# when the *next* complete command line arrives. It is not re-armed while a
-# command handler runs. So this is the ceiling on "peer connected / last
-# command finished, nothing since".
-PYMTA_COMMAND_TIMEOUT = _env_int("PYMTA_COMMAND_TIMEOUT", 120, minimum=1)
+# Armed when a command is dispatched and again when its reply has gone out,
+# not while it runs. So this is the ceiling on "peer connected / last command
+# finished, nothing since", and on how long one command other than DATA may
+# take.
+PYMTA_COMMAND_TIMEOUT = _env_int("PYMTA_COMMAND_TIMEOUT", 300, minimum=1)
 
 # Hard deadline for the DATA phase (seconds): 354 reply → last body byte →
-# MDA deliver call → SMTP reply, as one budget. ``HardenedSMTP.smtp_DATA``
+# MDA deliver call → SMTP reply, as one budget. ``SMTPConnection._data``
 # swaps the command deadline for this one while DATA runs, so a peer that
 # dribbles the body cannot outlive it. Defends against slowloris on the body.
-# Nothing in a DATA phase survives past it: the transport is armed at exactly
+# Nothing in a DATA phase survives past it: the timer is armed at exactly
 # this value, and the handler reserves a slice of it (see
 # ``handler._REPLY_RESERVE_SECONDS``) so it can still answer 451 rather than
 # vanishing mid-transaction.
@@ -297,6 +311,18 @@ PYMTA_SHUTDOWN_TIMEOUT = _env_int("PYMTA_SHUTDOWN_TIMEOUT", 25, minimum=0)
 # the single-source behaviour.
 _SESSIONS_PER_DATA_SLOT = 3
 PYMTA_MAX_SESSIONS_TOTAL = PYMTA_MAX_CONCURRENT_DATA * _SESSIONS_PER_DATA_SLOT
+
+# Most of the session slots, and of the message slots, that one source may
+# hold, as a fraction. A source is an IPv4 address or an IPv6 /64.
+#
+# It decides how many sources it takes to fill the server: ten at 0.1. On the
+# defaults that is 12 sessions and 4 messages in flight per source. A sender
+# over its share is answered 421 at connect, or 451 at DATA, and retries.
+#
+# Lower it to make the server harder to fill. Raise it if a legitimate sender
+# that comes from few addresses is being held back
+# (``pymta_connections_total{result="rejected_per_ip"}``).
+PYMTA_MAX_SHARE_PER_SOURCE = _env_fraction("PYMTA_MAX_SHARE_PER_SOURCE", 0.1)
 
 # Per-session soft-error budget. Mirrors Postfix `smtpd_hard_error_limit`:
 # once a session accumulates this many 4xx/5xx replies (typically over-limit
@@ -432,6 +458,47 @@ PYMTA_BLOCKED_SENDER_DOMAINS = _env_lower_set("PYMTA_BLOCKED_SENDER_DOMAINS")
 # touching the MDA.
 PYMTA_BLOCKED_RECIPIENTS = _env_lower_set("PYMTA_BLOCKED_RECIPIENTS")
 
+# Separates a mailbox name from a tag in a recipient local-part
+# (``user+tag@domain``), as Postfix's ``recipient_delimiter``. Used only so
+# that PYMTA_BLOCKED_RECIPIENTS also matches the tagged forms of an address;
+# which mailbox a tagged address belongs to is the MDA's decision. Empty
+# disables it. Must be the delimiter the MDA uses once it resolves tags.
+PYMTA_RECIPIENT_DELIMITER = os.environ.get("PYMTA_RECIPIENT_DELIMITER", "+").strip()
+if len(PYMTA_RECIPIENT_DELIMITER) > 1 or PYMTA_RECIPIENT_DELIMITER in ("@", "."):
+    raise ValueError(
+        "Environment variable PYMTA_RECIPIENT_DELIMITER must be a single character "
+        f"other than '@' and '.', or empty; got {PYMTA_RECIPIENT_DELIMITER!r}"
+    )
+
+
+def _env_address(name: str) -> str:
+    """Read an optional envelope address, refusing one RCPT would not accept."""
+    value = _env_str(name, "").strip()
+    if not value:
+        return ""
+    try:
+        return validate_envelope_address(
+            value, allow_empty=False, max_local=PYMTA_MAX_LOCAL_PART, max_domain=PYMTA_MAX_DOMAIN
+        )
+    except AddressError as exc:
+        raise ValueError(
+            f"Environment variable {name} is set to {value!r}, which is not a valid "
+            f"recipient address: {exc.smtp_text}"
+        ) from exc
+
+
+# Mailbox that receives ``RCPT TO:<postmaster>``, the bare form with no domain
+# that RFC 5321 §4.5.1 requires a server to accept. The recipient is rewritten
+# to this address and then checked with the MDA like any other. Empty leaves
+# the bare form refused (501), since there is no domain to deliver it to.
+# ``postmaster@<domain>`` is not affected: it is an ordinary address.
+PYMTA_POSTMASTER_ADDRESS = _env_address("PYMTA_POSTMASTER_ADDRESS")
+
+# Refuse a MAIL FROM whose domain is not fully qualified: a single label such
+# as ``root@localhost`` (504), or an address literal such as
+# ``user@[192.0.2.1]`` (501). Neither can be answered through an MX.
+PYMTA_REQUIRE_FQDN_SENDER = _env_bool("PYMTA_REQUIRE_FQDN_SENDER", True)
+
 
 # ---------------------------------------------------------------------------
 # Crisis toggles
@@ -444,86 +511,16 @@ PYMTA_BLOCKED_RECIPIENTS = _env_lower_set("PYMTA_BLOCKED_RECIPIENTS")
 # no signal, no metric, and no way back without a deploy.
 PYMTA_DEFER_ALL = _env_bool("PYMTA_DEFER_ALL", False)
 
-# Take this node out of rotation: answer 421 at connect, before the banner, so
-# senders move to another MX or come back later. Distinct from PYMTA_DEFER_ALL,
-# which keeps talking. Reversible, unlike closing the listener.
-PYMTA_DRAIN = _env_bool("PYMTA_DRAIN", False)
 
-
-# Settings re-read on SIGHUP: everything consulted per connection, per command
-# or per shutdown, which is what makes it safe to swap under a running process.
+# None of the settings is re-read while the process runs: a change is a
+# restart, which the SIGTERM drain makes graceful. A running process cannot be
+# given new environment variables, so a reload from the environment could only
+# ever find the values it started with. SIGHUP re-reads the certificate files
+# and nothing else (``controller.Listener.reload_tls``).
 #
-# Excluded, and why, because "it looked hard" is not a reason:
-#
-#   PYMTA_COMMAND_TIMEOUT, PYMTA_SMTP_*, PYMTA_METRICS_*, PYMTA_TLS_*,
-#   PYMTA_ENABLE_*, PYMTA_MAX_LINE_LENGTH, MDA_API_*, MDA_BREAKER_*
-#       captured when the SMTP kwargs, the listener socket, the TLS context,
-#       the protocol class or the HTTP client are built. Re-reading them would
-#       change this module and not the server, which is worse than not
-#       offering it.
-#
-#   PYMTA_MAX_CONCURRENT_DATA is included because the gate reads it on every
-#   DATA command, which makes shedding memory pressure a SIGHUP rather than a
-#   restart. PYMTA_MAX_SESSIONS_TOTAL follows it, being derived from it.
-#
-#   PYMTA_MAX_INCOMING_EMAIL_SIZE, PYMTA_MAX_RECIPIENTS_PER_ENVELOPE,
-#   PYMTA_MAX_ENVELOPES_PER_SESSION
-#       read live by the handler, but ALSO baked into aiosmtpd's
-#       ``data_size_limit`` and ``command_call_limit`` at construction. Lowering
-#       one would work; raising it would not, because the captured ceiling cuts
-#       in first. A setting that silently only moves in one direction is worse
-#       than one that does not move, so they stay out until the two halves are
-#       unified.
-_RELOADABLE = (
-    "PYMTA_DEFER_ALL",
-    "PYMTA_DRAIN",
-    "PYMTA_MAX_CONCURRENT_DATA",
-    "PYMTA_MAX_SESSIONS_TOTAL",
-    "PYMTA_BLOCKED_NETWORKS",
-    "PYMTA_BLOCKED_SENDER_DOMAINS",
-    "PYMTA_BLOCKED_RECIPIENTS",
-    "PYMTA_MAX_ERRORS_PER_SESSION",
-    "PYMTA_MAX_RCPT_MISSES_PER_SESSION",
-    "PYMTA_DATA_TIMEOUT",
-    "PYMTA_SESSION_TIMEOUT",
-    "PYMTA_SHUTDOWN_TIMEOUT",
-    "PYMTA_LOG_SESSIONS",
-)
-
-
-def reload_runtime_settings() -> dict[str, object]:
-    """Re-read the reloadable settings from the environment. Returns what changed.
-
-    Parsed into locals and validated in full *before* anything is rebound, so a
-    typo introduced under pressure leaves the running configuration untouched
-    rather than half-applied. The caller logs and carries on.
-    """
-    fresh = {
-        "PYMTA_DEFER_ALL": _env_bool("PYMTA_DEFER_ALL", False),
-        "PYMTA_DRAIN": _env_bool("PYMTA_DRAIN", False),
-        "PYMTA_MAX_CONCURRENT_DATA": _env_int("PYMTA_MAX_CONCURRENT_DATA", 40, minimum=0),
-        "PYMTA_BLOCKED_NETWORKS": _env_networks("PYMTA_BLOCKED_NETWORKS"),
-        "PYMTA_BLOCKED_SENDER_DOMAINS": _env_lower_set("PYMTA_BLOCKED_SENDER_DOMAINS"),
-        "PYMTA_BLOCKED_RECIPIENTS": _env_lower_set("PYMTA_BLOCKED_RECIPIENTS"),
-        "PYMTA_MAX_ERRORS_PER_SESSION": _env_int("PYMTA_MAX_ERRORS_PER_SESSION", 50, minimum=1),
-        "PYMTA_MAX_RCPT_MISSES_PER_SESSION": _env_int(
-            "PYMTA_MAX_RCPT_MISSES_PER_SESSION", 10, minimum=1
-        ),
-        "PYMTA_DATA_TIMEOUT": _env_int(
-            "PYMTA_DATA_TIMEOUT", 300, minimum=PYMTA_REPLY_RESERVE_SECONDS + 1
-        ),
-        "PYMTA_SESSION_TIMEOUT": _env_int("PYMTA_SESSION_TIMEOUT", 1800, minimum=0),
-        "PYMTA_SHUTDOWN_TIMEOUT": _env_int("PYMTA_SHUTDOWN_TIMEOUT", 25, minimum=0),
-        "PYMTA_LOG_SESSIONS": _env_bool("PYMTA_LOG_SESSIONS", True),
-    }
-    # Derived, so recomputed rather than read: reloading the message cap without
-    # it would leave the session cap describing the old one.
-    fresh["PYMTA_MAX_SESSIONS_TOTAL"] = (
-        fresh["PYMTA_MAX_CONCURRENT_DATA"] * _SESSIONS_PER_DATA_SLOT
-    )
-    changed = {k: v for k, v in fresh.items() if globals()[k] != v}
-    globals().update(fresh)
-    return changed
+# Future idea: read the crisis toggles above from a mounted file on SIGHUP.
+# The code is ready for it in one respect: the handler, the gate and the
+# protocol read these values from this module at each use.
 
 
 # ---------------------------------------------------------------------------
@@ -605,6 +602,36 @@ if len(_certs) != len(_keys):
 # What ``load_tls_context`` consumes: one (cert, key) pair per certificate.
 PYMTA_TLS_CERT_PAIRS: tuple[tuple[str, str], ...] = tuple(zip(_certs, _keys, strict=True))
 
+# Oldest TLS version accepted on STARTTLS: 1.0, 1.1, 1.2 or 1.3.
+#
+# 1.2 is Python's default. A sender that only speaks 1.0 or 1.1 fails the
+# handshake, and then either retries in clear or gives up, so on an inbound MX
+# an old protocol can be better than none. Going below 1.2 also drops OpenSSL
+# to security level 0 for every handshake on this listener, because the
+# SHA-1 signatures those versions use are refused above it.
+# Refuse mail on a session that has not done STARTTLS: every command but
+# EHLO, STARTTLS, NOOP and QUIT is answered 530 until it has.
+#
+# Off by default, and meant for a listener whose senders are known (a private
+# relay, a partner link). On a public MX it loses the mail of every sender
+# that cannot do TLS, or that fails the handshake and retries in clear. To get
+# encryption from the senders that can, without losing the others, publish
+# MTA-STS or DANE for the domain instead: the sender then enforces it.
+PYMTA_REQUIRE_TLS = _env_bool("PYMTA_REQUIRE_TLS", False)
+if PYMTA_REQUIRE_TLS and not PYMTA_TLS_CERT_PAIRS:
+    raise ValueError(
+        "PYMTA_REQUIRE_TLS is set but no certificate is configured "
+        "(PYMTA_TLS_CERT_FILE / PYMTA_TLS_KEY_FILE): every message would be refused."
+    )
+
+_TLS_VERSIONS = ("1.0", "1.1", "1.2", "1.3")
+PYMTA_TLS_MIN_VERSION = _env_str("PYMTA_TLS_MIN_VERSION", "1.2").strip()
+if PYMTA_TLS_MIN_VERSION not in _TLS_VERSIONS:
+    raise ValueError(
+        f"Environment variable PYMTA_TLS_MIN_VERSION is set to {PYMTA_TLS_MIN_VERSION!r}. "
+        f"Use one of {', '.join(_TLS_VERSIONS)}."
+    )
+
 
 # ---------------------------------------------------------------------------
 # Prometheus metrics HTTP endpoint
@@ -632,17 +659,17 @@ PYMTA_METRICS_API_KEY = _env_str("PYMTA_METRICS_API_KEY", "")
 # Logging
 # ---------------------------------------------------------------------------
 
-# Let the noisy third-party loggers through at PYMTA_LOG_LEVEL instead of their
-# pinned levels (see logfmt._LIBRARY_LEVELS). Debugging aid, and a deliberate
-# one: with this on, aiosmtpd writes every envelope address and the full body of
-# every message into the log. Do not leave it set.
+# Let third-party loggers through at PYMTA_LOG_LEVEL instead of dropping their
+# records (see logfmt.OwnRecordsOnly). Debugging aid, and a deliberate
+# one: with this on, httpx and httpcore trace every MDA request, headers
+# included. Do not leave it set.
 PYMTA_LOG_VERBOSE_LIBRARIES = _env_bool("PYMTA_LOG_VERBOSE_LIBRARIES", False)
 
 # One ``session_closed`` line per admitted connection, at INFO: who connected,
 # what they said, how it ended. The only record of a sender that never reached
-# a message outcome (TLS refused, a reply aiosmtpd gave on its own, a timeout,
-# a hang-up). A peer drives its rate, so it is reloadable: under a connection
-# flood, set it to false and SIGHUP, and the line drops to DEBUG.
+# a message outcome (TLS refused, a command refused for its syntax, a timeout,
+# a hang-up). A peer drives its rate: under a connection flood, set it to
+# false and the line drops to DEBUG.
 PYMTA_LOG_SESSIONS = _env_bool("PYMTA_LOG_SESSIONS", True)
 
 # Checked against the level names rather than passed to a ``getattr`` default:

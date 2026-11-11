@@ -253,9 +253,11 @@ def headers_blocks(
     """Return every header grouped into Received-bounded trust scopes.
 
     Each ``Received`` header marks the END of its block; everything
-    above (earlier) it is in the same trust scope. The trailing
-    Received-less block holds our own MTA prepend. Values inside a
-    block are always lists for uniform downstream indexing.
+    above (earlier) it is in the same trust scope. Block 0 is therefore
+    what our own MTA endpoint prepends (``Return-Path`` and its
+    ``Received``): the sender's headers start at block 1. The trailing
+    Received-less block holds the message's original headers. Values
+    inside a block are always lists for uniform downstream indexing.
 
     Useful for inbound auth (trusted-relay cuts) and spam classifiers
     that want to discriminate per-hop. Computed on demand so the

@@ -12,6 +12,9 @@ from __future__ import annotations
 
 import io
 import logging
+import pathlib
+import re
+import sys
 
 import pytest
 
@@ -126,8 +129,6 @@ def test_exception_stays_on_one_line():
     try:
         raise ValueError("kaboom")
     except ValueError:
-        import sys
-
         line = _render("handler_error", level=logging.ERROR, exc_info=sys.exc_info())
     assert "\n" not in line, "a multi-line record splits one event into many"
     fields = _parse(line)
@@ -166,9 +167,11 @@ PEER_TRIGGERABLE = {
     "command_timeout",
     "connection_blocked",
     "connection_draining",
+    "session_reclaimed",
     "proxy_header_invalid",
     "session_without_peer",
-    "helo_control_chars",
+    "helo_sanitised",
+    "parameters_ignored",
     "bare_newline_normalised",
     "proxy_header",
     "proxy_header_untrusted",
@@ -185,9 +188,9 @@ OPERATOR_TRIGGERABLE = {
     "proxy_trust_configured",
     "proxy_trust_unrestricted",
     "legacy_setting_in_use",
-    "reload_applied",
-    "reload_noop",
-    "reload_rejected",
+    "tls_certificate",
+    "tls_reloaded",
+    "tls_reload_rejected",
     "shutdown_started",
     "shutdown_drained",
     "shutdown_complete",
@@ -201,9 +204,13 @@ OPERATOR_TRIGGERABLE = {
     "mda_breaker_opened",
     "mda_transport_error",
     "mda_timeout",
+    "mda_pool_exhausted",
     "mda_check_no_verdict",
     "mda_body_not_an_object",
     "handler_error",
+    "session_error",
+    "unhandled_error",
+    "fatal_error",
 }
 
 # The one deliberate exception. These name envelope addresses at INFO because
@@ -222,8 +229,9 @@ AUDIT = {"message_delivered", "message_deferred", "message_rejected"}
 # PYMTA_MAX_ERRORS_PER_SESSION (50) or asks for the disconnect, and unknown
 # recipients stop at PYMTA_MAX_RCPT_MISSES_PER_SESSION (10), so a connection
 # buys at most ~50 lines before it is closed. The protocol writes the same
-# event for the refusals aiosmtpd makes without a hook, which spend no error
-# budget, so it stops at PYMTA_MAX_ERRORS_PER_SESSION lines per connection on
+# event for the refusals it makes without a hook. Those spend the same
+# budget, except on DATA, which is answered whatever the budget, so the
+# protocol also stops at PYMTA_MAX_ERRORS_PER_SESSION lines per connection on
 # its own count. That is the same shape as AUDIT (bounded per connection), not
 # the shape of proxy_header_untrusted (one line per TCP connection, unbounded).
 REFUSALS = {"reject"}
@@ -231,7 +239,7 @@ REFUSALS = {"reject"}
 # The third, and the only one a peer can produce once per TCP connection: the
 # per-connection summary, Postfix's ``disconnect from`` line. It is the one
 # record of a sender that never reached a refusal or a message outcome (TLS
-# refused, answered by aiosmtpd itself, timed out, hung up mid-DATA), which is
+# refused, answered by the protocol itself, timed out, hung up mid-DATA), which is
 # precisely the "mail from X never arrived and the log says nothing" case.
 # Only sessions the gate let in and that sent at least one line reach INFO,
 # but nothing caps the connection rate, so its volume is the peer's to choose:
@@ -255,9 +263,6 @@ def _log_sites():
     Read out of the source rather than by calling each site, so a call at the
     wrong level is caught even where no test exercises that path.
     """
-    import pathlib
-    import re
-
     root = pathlib.Path(__file__).resolve().parents[1] / "src" / "pymta"
     # Without this the test passes vacuously if the package ever moves: an empty
     # glob yields no sites, which reads exactly like "every site is correct".
@@ -410,10 +415,10 @@ def _restore(root, before):
 
 
 def test_third_party_records_are_dropped():
-    """aiosmtpd, httpx and httpcore must not reach the log at all.
+    """Loggers that are not ours (httpx, httpcore, asyncio) must not reach the log.
 
-    aiosmtpd logs every envelope address at INFO and every line of every message
-    body at DEBUG, so this filter is what keeps message content out of the log.
+    A library is free to log addresses or message content at any level, so
+    this filter is what keeps them out whatever gets installed.
     """
     stream, root, before = _capture()
     try:

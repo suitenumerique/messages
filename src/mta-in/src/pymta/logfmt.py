@@ -93,6 +93,7 @@ from __future__ import annotations
 
 import datetime as _datetime
 import logging
+import sys
 
 # Attributes LogRecord always carries. Anything else on the record was put
 # there by a caller through ``extra=`` and is emitted as a field.
@@ -120,7 +121,9 @@ def _escape(char: str) -> str:
         return simple
     if char.isprintable():
         return char
-    return f"\\u{ord(char):04x}"
+    # Four digits, or eight past the BMP: five would read back as a
+    # four-digit escape followed by a literal character.
+    return f"\\u{ord(char):04x}" if ord(char) <= 0xFFFF else f"\\U{ord(char):08x}"
 
 
 def quote(value: object) -> str:
@@ -217,12 +220,8 @@ class LogfmtFormatter(logging.Formatter):
 
 # Only our own records reach the handler.
 #
-# The dependencies are not merely noisy. aiosmtpd (``mail.log``) logs every
-# command line at INFO, so one envelope address per RCPT, and the entire message
-# body at DEBUG, one ``DATA readline`` record per line of mail; it logs an
-# unrecognised command at WARNING, which lets a peer pick our log rate. httpcore
-# and httpx trace every MDA request at DEBUG, headers included, at roughly 60
-# lines per message.
+# The dependencies are not merely noisy: httpcore and httpx trace every MDA
+# request at DEBUG, headers included, at roughly 60 lines per message.
 #
 # An allowlist rather than a list of offenders, so a dependency added later is
 # silent without anyone remembering to gag it. The cost is that useful
@@ -249,8 +248,6 @@ def configure(level: str, stream=None, verbose_libraries: bool = False) -> None:
     See :class:`OwnRecordsOnly` for what that lets back in, and why you would
     not leave it on.
     """
-    import sys
-
     handler = logging.StreamHandler(stream or sys.stdout)
     handler.setFormatter(LogfmtFormatter())
     root = logging.getLogger()

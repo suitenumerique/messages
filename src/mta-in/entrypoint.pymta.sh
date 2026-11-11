@@ -1,5 +1,5 @@
 #!/bin/sh
-# Entrypoint for the pure-Python (aiosmtpd) inbound MTA image.
+# Entrypoint for the pure-Python (pymta) inbound MTA image.
 #
 # Two modes:
 #  - EXEC_CMD_ONLY=true: skip starting the server, exec the user command. Used

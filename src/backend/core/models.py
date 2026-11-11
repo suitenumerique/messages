@@ -2384,6 +2384,10 @@ class Message(BaseModel):
     #   "processing": "fail"            force-delivered past the deferral window
     #   "rcpt_to":    "<addr>"          envelope RCPT TO, only when it diverges
     #                                   from the MIME To/Cc (BCC / alias / catch-all)
+    #   "tls":        "none" | "old" | "unknown"
+    #                                   received in clear, over TLS below 1.2, or
+    #                                   through an MTA that did not say (modern
+    #                                   TLS, or not received over SMTP ⇒ absent)
     # Immutable ingest-time facts (ip/helo/hostname, MAIL FROM, widget referer)
     # live in headers in the blob instead — see the ingest paths. Keep values
     # small and bounded; large/regenerated data (e.g. AI summaries) belongs in
@@ -2587,6 +2591,11 @@ class Message(BaseModel):
             # The divergent envelope RCPT TO (alias/BCC/catch-all) recorded by
             # ``_record_divergent_rcpt`` — surfaces the recipient's own alias.
             result["rcpt_to"] = postmark["rcpt_to"]
+        if postmark.get("tls"):
+            # "none" (received in clear), "old" (TLS below 1.2) or "unknown"
+            # (the MTA did not say), for a warning in the UI. Absent for a
+            # message received over modern TLS, or not over SMTP.
+            result["tls"] = postmark["tls"]
         if self._parse_failed:
             # Set by the ``get_parsed_data`` call above. Not a pipeline verdict
             # like the rest, but it rides the same channel because it needs the
@@ -2690,12 +2699,15 @@ class InboundMessage(BaseModel):
         related_name="inbound_messages",
         help_text="Content-addressed blob holding the raw message bytes.",
     )
-    # Structured SMTP / provenance envelope for this delivery — carried as
-    # data, NOT injected into the message bytes, so the blob stays pristine and
-    # shared across recipients. Shape:
+    # Structured SMTP / provenance envelope for this delivery, carried as data
+    # while the message is queued. The per-recipient part (``rcpt_to``) is
+    # never written into the message bytes, so the blob stays shared across
+    # recipients; the per-delivery part is also in the ``Return-Path`` and
+    # ``Received`` headers the MTA endpoint prepends. Shape:
     #   {"origin": "mta"|"internal"|"widget"|"import",
     #    "mail_from": <envelope sender>, "rcpt_to": <envelope recipient>,
-    #    "ip": <client ip>, "helo": <HELO>, "hostname": <client rDNS>}
+    #    "ip": <client ip>, "helo": <HELO>, "hostname": <client rDNS>,
+    #    "tls_version": <e.g. TLSv1.3, "" in clear>, "tls_cipher": <cipher suite>}
     # SMTP fields are present only for ``origin="mta"``. Consumed by the spam
     # pipeline (rspamd envelope) and the autoreply bounce check. ``origin`` is
     # the trust discriminator (see ``is_internal``) and is set EXPLICITLY by
