@@ -12,7 +12,10 @@ or unwrapped form; :func:`strip_brackets` runs unconditionally on entry.
 
 from __future__ import annotations
 
+import contextlib
 import unicodedata
+
+import idna
 
 # Characters that must never appear unquoted in an envelope address. CR, LF,
 # and NUL are the CRLF-injection and frame-confusion vectors. TAB is a header
@@ -55,17 +58,45 @@ def strip_brackets(raw: str) -> str:
     return raw
 
 
+def _dns_labels(domain: str) -> list[str]:
+    """Return ``domain``'s labels in the A-label form DNS length limits apply to.
+
+    An SMTPUTF8 peer may send U-labels (RFC 6531 §3.2), whose UTF-8 length
+    says nothing about what DNS stores: a 40-letter Cyrillic label is 76 UTF-8
+    octets but a 52-octet A-label. RFC 5890 §4.2 binds the 63/255-octet limits
+    to the A-label and lets a valid U-label run to 252 code points. Only lengths are at stake here, never IDNA validity:
+    ``idna.encode`` would also refuse domains pymta has always accepted (an
+    ``_`` in a host name, say), so this maps with UTS 46 non-transitional, as
+    ``jmap_email`` does, and punycodes each label itself. The stdlib
+    ``punycode`` codec is plain RFC 3492, without the IDNA2003 folding of its
+    ``idna`` codec. A domain UTS 46 refuses outright is measured unmapped.
+    """
+    if domain.isascii():
+        return domain.split(".")
+    with contextlib.suppress(idna.IDNAError):
+        domain = idna.uts46_remap(domain, std3_rules=False, transitional=False)
+    return [
+        label if label.isascii() else "xn--" + label.encode("punycode").decode("ascii")
+        for label in domain.split(".")
+    ]
+
+
 def validate_envelope_address(  # noqa: PLR0912
     raw: str,
     *,
     allow_empty: bool,
-    max_local: int,
+    max_local: int | None,
     max_domain: int,
 ) -> str:
     """Validate ``raw`` as an RFC 5321 envelope address.
 
     ``allow_empty`` controls whether the null sender ``<>`` is accepted. It
     must be true for MAIL FROM and false for RCPT TO (RFC 5321 §4.5.5).
+
+    ``max_local=None`` skips the local-part cap. That is for MAIL FROM:
+    §4.5.3.1 asks to avoid these limits where possible, and forwarders' SRS
+    or VERP return paths routinely carry a local-part longer than 64 octets.
+    The address stays bounded by aiosmtpd's MAIL command-line limit.
 
     Returns the cleaned address (lower-cased domain, original local-part) on
     success, raises :class:`AddressError` on failure.
@@ -178,13 +209,14 @@ def validate_envelope_address(  # noqa: PLR0912
         )
 
     # ----- 4. length limits (RFC 5321 §4.5.3.1) -----------------------------
-    if len(local.encode("utf-8")) > max_local:
+    if max_local is not None and len(local.encode("utf-8")) > max_local:
         raise AddressError(
             reason="oversize_local",
             smtp_code=553,
             smtp_text=f"5.1.3 Local part exceeds {max_local} octets",
         )
-    if len(domain.encode("utf-8")) > max_domain:
+    dns_labels = _dns_labels(domain)
+    if len(".".join(dns_labels)) > max_domain:
         raise AddressError(
             reason="oversize_domain",
             smtp_code=553,
@@ -193,8 +225,8 @@ def validate_envelope_address(  # noqa: PLR0912
 
     # ----- 5. domain shape ---------------------------------------------------
     # Allow IDN/UTF-8 in the domain; reject empty labels, leading dot, label
-    # > 63 octets, and bare IP literals (the inbound path expects FQDNs from
-    # legitimate senders).
+    # > 63 octets as an A-label, and bare IP literals (the inbound path expects
+    # FQDNs from legitimate senders).
     if domain.startswith("[") and domain.endswith("]"):
         raise AddressError(
             reason="address_literal",
@@ -207,12 +239,11 @@ def validate_envelope_address(  # noqa: PLR0912
             smtp_code=501,
             smtp_text="5.1.3 Malformed domain",
         )
-    for label in domain.split("."):
-        if not label or len(label.encode("utf-8")) > 63:
-            raise AddressError(
-                reason="bad_address",
-                smtp_code=501,
-                smtp_text="5.1.3 Malformed domain label",
-            )
+    if not all(domain.split(".")) or any(len(label) > 63 for label in dns_labels):
+        raise AddressError(
+            reason="bad_address",
+            smtp_code=501,
+            smtp_text="5.1.3 Malformed domain label",
+        )
 
     return f"{local}@{domain.lower()}"

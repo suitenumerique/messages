@@ -61,7 +61,8 @@ class HardenedSMTP(BaseSMTP):
 
     ``local_part_limit`` is aiosmtpd's own address check and stays at its
     default of 0 (disabled) on purpose: :mod:`pymta.address` enforces the same
-    RFC limit, with a rejection reason and a metric label attached.
+    RFC limit on RCPT, with a rejection reason and a metric label attached,
+    and deliberately not on MAIL FROM, where SRS return paths exceed it.
 
     ``line_length_limit`` is the one we override. It has to be a class attribute
     because ``SMTP.__init__`` reads it while constructing the ``StreamReader``,

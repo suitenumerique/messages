@@ -11,9 +11,12 @@ import pytest
 from pymta.address import AddressError, strip_brackets, validate_envelope_address
 
 
-def _validate(address: str, *, allow_empty: bool = False) -> str:
+def _validate(address: str, *, allow_empty: bool = False, max_local: int | None = 64) -> str:
     return validate_envelope_address(
-        address, allow_empty=allow_empty, max_local=64, max_domain=255
+        address,
+        allow_empty=allow_empty,
+        max_local=max_local,
+        max_domain=255,
     )
 
 
@@ -233,6 +236,13 @@ def test_overlong_local_part_rejected():
     assert exc.value.reason == "oversize_local"
 
 
+def test_overlong_local_part_accepted_without_local_cap():
+    # A forwarder's SRS-wrapped bounce address, longer than the RFC's
+    # 256-octet path too: neither limit applies to MAIL FROM.
+    srs = "SRS0=Ab3d=TT=bounces.mailer.example=" + "b" * 300 + "@forwarder.example"
+    assert _validate(srs, max_local=None) == srs
+
+
 def test_overlong_domain_rejected():
     # 64-char label * 4 + dots = ~260 chars (>255 total domain cap).
     long_domain = ".".join(["a" * 60] * 5)
@@ -246,6 +256,41 @@ def test_overlong_label_rejected():
     with pytest.raises(AddressError) as exc:
         _validate(f"user@{too_long_label}.example")
     assert exc.value.reason == "bad_address"
+
+
+# DNS limits apply to the A-label, not to the UTF-8 an SMTPUTF8 peer sends:
+# each of these labels is over 63 UTF-8 octets but a valid A-label.
+@pytest.mark.parametrize(
+    "label",
+    [
+        "министерство-экономики-и-финансов-россии",  # 76 octets, A-label 52
+        "وزارةالاقتصادوالماليةالعامةللدولة",  # 66 octets, A-label 46
+        "é" * 55,  # 110 octets, A-label 61
+    ],
+)
+def test_idn_label_measured_as_a_label(label):
+    address = f"user@{label}.example"
+    assert _validate(address) == address
+
+
+def test_idn_domain_total_measured_as_a_label():
+    # 443 UTF-8 octets, 247 as A-labels.
+    domain = ".".join(["é" * 55] * 4)
+    assert _validate(f"user@{domain}") == f"user@{domain}"
+
+
+def test_idn_label_over_63_octets_as_a_label_rejected():
+    label = "中华人民共和国国家发展和改革委员会办公厅秘书"  # 66 octets, A-label 65
+    with pytest.raises(AddressError) as exc:
+        _validate(f"user@{label}.example")
+    assert exc.value.reason == "bad_address"
+
+
+@pytest.mark.parametrize("domain", ["faß.de", "mail_relay.example.com"])
+def test_domain_length_check_does_not_apply_idna_validity(domain):
+    # ``ß`` must survive (IDNA2003 would fold it to ``ss``) and ``_``, refused
+    # by IDNA, has always been accepted: only lengths are checked.
+    assert _validate(f"user@{domain}") == f"user@{domain}"
 
 
 # ---------------------------------------------------------------------------

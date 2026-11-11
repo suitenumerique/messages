@@ -920,6 +920,7 @@ source = { editable = "." }
 dependencies = [
     { name = "aiosmtpd" },
     { name = "httpx" },
+    { name = "idna" },
     { name = "prometheus-client" },
     { name = "pyjwt" },
 ]
@@ -946,6 +947,7 @@ requires-dist = [
     { name = "aiosmtpd", specifier = "==1.4.6" },
     { name = "fastapi", marker = "extra == 'dev'", specifier = "==0.143.3" },
     { name = "httpx", specifier = "==0.28.1" },
+    { name = "idna", specifier = "==3.20" },
     { name = "pip-audit", marker = "extra == 'dev'", specifier = "==2.10.1" },
     { name = "prometheus-client", specifier = "==0.26.0" },
     { name = "pyjwt", specifier = "==2.15.1" },

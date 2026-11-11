@@ -30,6 +30,7 @@ dependencies = [
     "PyJWT==2.15.1",
     "aiosmtpd==1.4.6",
     "httpx==0.28.1",
+    "idna==3.20",
     "prometheus-client==0.26.0",
 ]
 
