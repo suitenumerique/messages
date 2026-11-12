@@ -11,8 +11,6 @@ version = "0.10.0"
 authors = [{ "name" = "ANCT", "email" = "suiteterritoriale@anct.gouv.fr" }]
 classifiers = [
     "Development Status :: 5 - Production/Stable",
-    "Framework :: Django",
-    "Framework :: Django :: 5",
     "Intended Audience :: Developers",
     "License :: OSI Approved :: MIT License",
     "Natural Language :: English",
@@ -28,7 +26,6 @@ requires-python = ">=3.14.10,<4.0"
 # Note: after changing this list you must re-run `make deps-lock-mta-in`
 dependencies = [
     "PyJWT==2.15.1",
-    "aiosmtpd==1.4.6",
     "httpx==0.28.1",
     "idna==3.20",
     "prometheus-client==0.26.0",
@@ -55,6 +52,10 @@ dev = [
     "pytest==9.1.1",
     "pytest-cov==7.1.0",
     "pytest-asyncio==1.4.0",
+    "hypothesis==6.170.1",
+    # Tests only: what pymta accepts as an address must be one mailbox to the
+    # backend too. Same version as src/backend.
+    "jmap-email==0.3.0",
     "fastapi==0.143.3",
     "uvicorn==0.54.0",
     "ruff==0.17.1",
@@ -112,6 +113,18 @@ extra-standard-library = ["tomllib"]
 # sync callback context.
 "src/delivery_milter.py" = ["BLE001", "T201"]
 
+# The pymta test run (make test-mta-in-py) fails under 100% of lines and
+# branches. The threshold is on that command, not here: the fuzz run and the
+# Postfix image run the same directory and cover other things.
+[tool.coverage.run]
+source = ["pymta"]
+branch = true
+
+[tool.coverage.report]
+show_missing = true
+skip_covered = true
+exclude_also = ['if __name__ == "__main__":']
+
 [tool.pytest.ini_options]
 addopts = [
     "-v",
@@ -119,6 +132,12 @@ addopts = [
     "term-missing",
     # Allow test files to have the same name in different directories.
     "--import-mode=importlib",
+    # Fuzz tests run on their own: make fuzz-mta-in-py
+    "-m",
+    "not fuzz",
+]
+markers = [
+    "fuzz: marks tests as fuzz tests (run with: pytest -m fuzz)",
 ]
 python_files = [
     "test_*.py",

@@ -183,6 +183,39 @@ def _record_divergent_rcpt(
         postmark["rcpt_to"] = recipient_email
 
 
+# Protocol versions no longer considered safe (RFC 8996 deprecates TLS 1.0 and
+# 1.1). Both spellings OpenSSL uses for 1.0.
+_OLD_TLS_VERSIONS = frozenset({"SSLv2", "SSLv3", "TLSv1", "TLSv1.0", "TLSv1.1"})
+
+
+def _record_transport_security(postmark: dict, envelope: dict) -> None:
+    """Record in ``postmark`` that a message did not arrive over modern TLS.
+
+    ``"tls": "none"`` for a session in clear, ``"tls": "old"`` for TLS below
+    1.2. Nothing in the normal case, which keeps ``postmark`` NULL. The cipher
+    and exact version are in the ``Received`` header for whoever needs them;
+    this is only what a list view or a query needs.
+
+    ``"tls": "unknown"`` when the message came through an MTA that did not
+    say (no ``tls_version`` key: the deprecated Postfix image, or an mta-in
+    older than this field). Not ``"none"``, which would be a claim, and not
+    nothing, which a reader takes for "fine".
+
+    Nothing for the other origins (widget, internal, import): they did not
+    arrive over SMTP, so there is no session to qualify.
+    """
+    if envelope.get("origin") != enums.InboundOrigin.MTA:
+        return
+    if "tls_version" not in envelope:
+        postmark["tls"] = "unknown"
+        return
+    version = envelope["tls_version"]
+    if not version:
+        postmark["tls"] = "none"
+    elif version in _OLD_TLS_VERSIONS:
+        postmark["tls"] = "old"
+
+
 def _create_message_from_inbound(  # pylint: disable=too-many-arguments
     recipient_email: str,
     parsed_email: JmapEmail,

@@ -2,6 +2,7 @@
 
 import base64
 import datetime
+import email.utils
 import hashlib
 import uuid
 
@@ -195,11 +196,14 @@ Content-Disposition: attachment; filename="{attachment_data["filename"]}"
         # de-baked into postmark now), proving the single-blob reuse.
         response = client.get(reverse("messages-eml", kwargs={"id": message_id}))
         assert response.status_code == status.HTTP_200_OK
-        assert response.content == (
+        head, _, rest = response.content.partition(b";\r\n\t")
+        assert head == (
             b"Return-Path: <>\r\n"
-            b"Received: from client.helo (client.hostname [127.1.2.3]);\r\n"
-            + multipart_email_with_attachment
+            b"Received: from client.helo (client.hostname [127.1.2.3])"
         )
+        date, _, stored = rest.partition(b"\r\n")
+        assert email.utils.parsedate_to_datetime(date.decode())
+        assert stored == multipart_email_with_attachment
 
         # Verify message content via API
         assert message_data["sender"]["email"] == "sender@example.com"

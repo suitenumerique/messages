@@ -199,7 +199,8 @@ def call_rspamd(
 
     The SMTP ``envelope`` (MAIL FROM, RCPT TO, connecting IP / HELO / rDNS)
     is forwarded via rspamd's documented scan headers
-    (``From``/``Rcpt``/``IP``/``Helo``/``Hostname``) so envelope-based checks
+    (``From``/``Rcpt``/``IP``/``Helo``/``Hostname``, and
+    ``TLS-Version``/``TLS-Cipher`` when the session was encrypted) so envelope-based checks
     — SPF, DNS RBLs, the Return-Path-vs-From mismatch symbols — score against
     the real peer. Without them rspamd sees an empty envelope and SPF/RBL
     degrade to no-ops.
@@ -226,16 +227,26 @@ def call_rspamd(
     # value would read as a genuinely empty envelope and skew scoring. HELO
     # and hostname are attacker-influenced, so strip CR/LF to prevent header
     # injection into the rspamd request.
+    #
+    # Sent as UTF-8 bytes: an SMTPUTF8 address is UTF-8 on the wire, and a str
+    # header value is encoded as latin-1 by http.client, which raises on
+    # anything outside it. That exception read as an rspamd outage and held
+    # the message for the whole deferral window. ``replace`` because a HELO can
+    # carry bytes that are not UTF-8 at all.
     for header_name, envelope_key in (
         ("From", "mail_from"),
         ("Rcpt", "rcpt_to"),
         ("IP", "ip"),
         ("Helo", "helo"),
         ("Hostname", "hostname"),
+        # Absent for a session in clear: rspamd then knows there was no TLS.
+        ("TLS-Version", "tls_version"),
+        ("TLS-Cipher", "tls_cipher"),
     ):
         value = (envelope or {}).get(envelope_key)
         if value:
-            headers[header_name] = str(value).replace("\r", "").replace("\n", "")
+            cleaned = str(value).replace("\r", "").replace("\n", "")
+            headers[header_name] = cleaned.encode("utf-8", "replace")
 
     try:
         response = requests.post(

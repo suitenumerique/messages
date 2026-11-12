@@ -13,26 +13,17 @@ headers on, so the network isolation carries the whole trust boundary.
 
 from __future__ import annotations
 
+import asyncio
 import importlib
+import inspect
 import logging
 from ipaddress import ip_network
 
 import pytest
 
-from pymta import settings
-from pymta.server import _check_proxy_trust_config
-
-
-def test_proxy_protocol_without_allowlist_starts_with_a_warning(monkeypatch, caplog):
-    monkeypatch.setattr(settings, "PYMTA_ENABLE_PROXY_PROTOCOL", True)
-    monkeypatch.setattr(settings, "PYMTA_TRUSTED_PROXIES", [])
-    with caplog.at_level(logging.WARNING):
-        _check_proxy_trust_config()
-    # Assert on the event name and its fields, not on rendered prose: the
-    # message is now a stable identifier and the detail is structured.
-    record = caplog.records[-1]
-    assert record.message == "proxy_trust_unrestricted"
-    assert "PYMTA_TRUSTED_PROXIES is empty" in record.detail
+from pymta import runtime, server, settings
+from pymta.limits import IPGate
+from pymta.server import _check_proxy_trust_config, _log_unhandled
 
 
 def test_proxy_protocol_with_allowlist_starts_without_warning(monkeypatch, caplog):
@@ -91,6 +82,7 @@ def test_allowlist_is_irrelevant_without_proxy_protocol(monkeypatch, caplog):
 def test_proxy_protocol_prefers_its_own_name(monkeypatch, env, enabled):
     """The prefixed name decides, whatever the Postfix one says."""
     monkeypatch.setenv("ENABLE_PROXY_PROTOCOL", "haproxy")
+    monkeypatch.setenv("PYMTA_TRUSTED_PROXIES", "192.0.2.10")
     monkeypatch.setenv("PYMTA_ENABLE_PROXY_PROTOCOL", env)
     try:
         assert importlib.reload(settings).PYMTA_ENABLE_PROXY_PROTOCOL is enabled
@@ -106,6 +98,7 @@ def test_the_postfix_name_still_works_and_is_reported(monkeypatch):
     which is what turns a switchover into a migration that finishes.
     """
     monkeypatch.setenv("ENABLE_PROXY_PROTOCOL", "haproxy")
+    monkeypatch.setenv("PYMTA_TRUSTED_PROXIES", "192.0.2.10")
     monkeypatch.delenv("PYMTA_ENABLE_PROXY_PROTOCOL", raising=False)
     try:
         reloaded = importlib.reload(settings)
@@ -126,3 +119,84 @@ def test_the_prefixed_name_wins_and_is_not_reported(monkeypatch):
     finally:
         monkeypatch.undo()
         importlib.reload(settings)
+
+
+@pytest.mark.asyncio
+async def test_an_exception_nobody_awaits_reaches_our_log(caplog):
+    """asyncio reports these on its own logger, which our output filters out."""
+
+    def boom():
+        raise RuntimeError("timer bug")
+
+    loop = asyncio.get_running_loop()
+    previous = loop.get_exception_handler()
+    loop.set_exception_handler(_log_unhandled)
+    try:
+        with caplog.at_level(logging.ERROR, logger="pymta.server"):
+            loop.call_soon(boom)
+            await asyncio.sleep(0.05)
+    finally:
+        loop.set_exception_handler(previous)
+
+    (record,) = [r for r in caplog.records if r.name == "pymta.server"]
+    assert record.getMessage() == "unhandled_error"
+    assert record.exc_info[0] is RuntimeError
+    assert "Exception in callback" in record.detail
+
+
+def test_the_server_installs_the_unhandled_exception_logger():
+    assert "set_exception_handler(_log_unhandled)" in inspect.getsource(server._serve)
+
+
+def _events(caplog) -> list[str]:
+    return [r.getMessage() for r in caplog.records if r.name == "pymta.server"]
+
+
+def test_a_successful_tls_reload_is_logged_with_the_new_expiry(monkeypatch, caplog):
+    class _Reloaded:
+        def reload_tls(self):
+            return True
+
+    monkeypatch.setattr(
+        server, "publish_certificate_expiry", lambda: {"/certs/a.crt": 4102444800.0}
+    )
+    with caplog.at_level(logging.INFO, logger="pymta.server"):
+        server._reload_tls(_Reloaded())
+
+    assert _events(caplog) == ["tls_reloaded", "tls_certificate"]
+    certificate = caplog.records[-1]
+    assert certificate.file == "/certs/a.crt"
+    assert certificate.not_after == "2100-01-01T00:00:00Z"
+
+
+def test_a_second_sigterm_does_not_cut_the_drain_short(caplog):
+    runtime._shutting_down = False
+    stop = asyncio.Event()
+    gate = IPGate()
+    try:
+        with caplog.at_level(logging.INFO, logger="pymta.server"):
+            server._on_terminate(server.signal.SIGTERM, stop, gate)
+            assert stop.is_set()
+            stop.clear()
+            server._on_terminate(server.signal.SIGTERM, stop, gate)
+        # The second signal neither restarts the drain nor ends it.
+        assert not stop.is_set()
+        assert _events(caplog) == ["shutdown_started", "shutdown_already_in_progress"]
+    finally:
+        runtime._shutting_down = False
+
+
+def test_a_startup_failure_is_logged_in_our_format_before_the_process_dies(monkeypatch, caplog):
+    async def _fails():
+        raise OSError("address already in use")
+
+    monkeypatch.setattr(server, "_configure_logging", lambda: None)
+    monkeypatch.setattr(server.metrics, "start_metrics_server", lambda *args: None)
+    monkeypatch.setattr(server, "_export_config_limits", lambda: None)
+    monkeypatch.setattr(server, "_serve", _fails)
+    with caplog.at_level(logging.ERROR, logger="pymta.server"), pytest.raises(OSError):
+        server.main()
+
+    (record,) = [r for r in caplog.records if r.name == "pymta.server"]
+    assert record.getMessage() == "fatal_error"
+    assert record.exc_info[0] is OSError

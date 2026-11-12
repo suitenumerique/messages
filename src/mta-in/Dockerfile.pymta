@@ -1,8 +1,6 @@
-# Pure-Python inbound MTA image (aiosmtpd) — counterpart to ./Dockerfile
-# (Postfix + milter). Both images share src/mta-in/pyproject.toml and live in
-# parallel so the two implementations can be tested side-by-side. The Postfix
-# image is the production default for now; this image will gradually replace
-# it once parity is proven.
+# Pure-Python inbound MTA image (pymta) — counterpart to ./Dockerfile
+# (Postfix + milter), which is deprecated. Both images share
+# src/mta-in/pyproject.toml and the test suite.
 #
 # Image layout mirrors src/backend/Dockerfile:
 #   * debian:trixie-slim base (not python:slim — Python comes from uv).
@@ -84,9 +82,9 @@ FROM runtime-base AS runtime-dev
 COPY --from=base-with-deps-dev /venv /venv
 
 # Throwaway self-signed cert so the test suite can exercise STARTTLS. Without
-# one the whole TLS path is untested, including the session rebuild aiosmtpd
-# does on the transport swap, which is where our PROXY-source stash and the
-# non-re-armed session deadline have to keep working.
+# one the whole TLS path is untested, including the switch to the TLS
+# transport, across which the PROXY source and the session deadline have to
+# keep working.
 #
 # Dev image only: no prod stage gets a cert, and /certs sits outside /app so the
 # source bind-mount does not shadow it. World-readable because the container
@@ -114,6 +112,9 @@ FROM base-with-deps AS app-prod
 # here, so shipping them would put a second HTTP client and an unused milter on
 # the process that faces port 25.
 COPY ./src/pymta /app/src/pymta
+# pymta contains code derived from aiosmtpd (Apache-2.0): its licence and
+# notice travel with it.
+COPY ./NOTICE ./LICENSE.aiosmtpd /app/src/
 
 # Compile ahead of time so the runtime never does. PYTHONDONTWRITEBYTECODE is
 # set in the runtime stages (the rootfs is read-only, so writing would fail

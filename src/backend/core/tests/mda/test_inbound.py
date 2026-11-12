@@ -2,21 +2,26 @@
 
 # pylint: disable=too-many-lines
 
+from datetime import timedelta
 from unittest.mock import patch
 
+from django.db.utils import DataError, InterfaceError, OperationalError
 from django.test import override_settings
 from django.utils import timezone
 
 import pytest
 from jmap_email import parse_email
+from kombu.exceptions import OperationalError as BrokerError
 
 from core import enums, factories, models
-from core.mda.inbound import deliver_inbound_message
+from core.mda.inbound import DeliveryUnavailable, deliver_inbound_message
 from core.mda.inbound_create import (
     _create_message_from_inbound,
     _record_divergent_rcpt,
+    _record_transport_security,
     find_thread_for_message,
 )
+from core.mda.inbound_tasks import process_inbound_messages_queue_task
 
 
 class TestRecordDivergentRcpt:
@@ -61,6 +66,44 @@ class TestRecordDivergentRcpt:
         postmark = {}
         _record_divergent_rcpt(postmark, "", self._parsed())
         assert not postmark
+
+
+class TestRecordTransportSecurity:
+    """``postmark["tls"]`` is written only when a message did not arrive over
+    modern TLS."""
+
+    @pytest.mark.parametrize(
+        ("envelope", "expected"),
+        [
+            # In clear: the MTA reports an empty version.
+            ({"origin": "mta", "tls_version": "", "tls_cipher": ""}, {"tls": "none"}),
+            # Encrypted with a deprecated protocol version.
+            (
+                {"origin": "mta", "tls_version": "TLSv1", "tls_cipher": "AES256-SHA"},
+                {"tls": "old"},
+            ),
+            ({"origin": "mta", "tls_version": "TLSv1.0"}, {"tls": "old"}),
+            ({"origin": "mta", "tls_version": "TLSv1.1"}, {"tls": "old"}),
+            ({"origin": "mta", "tls_version": "SSLv3"}, {"tls": "old"}),
+            # The normal case stores nothing.
+            ({"origin": "mta", "tls_version": "TLSv1.2"}, {}),
+            ({"origin": "mta", "tls_version": "TLSv1.3"}, {}),
+            # Through an MTA that did not say: neither a claim nor silence.
+            ({"origin": "mta", "ip": "203.0.113.9"}, {"tls": "unknown"}),
+            # Not SMTP at all: no session to qualify, whatever the keys say.
+            ({"origin": "widget", "ip": "203.0.113.9"}, {}),
+            ({"origin": "widget", "tls_version": ""}, {}),
+            ({"tls_version": "TLSv1"}, {}),
+            ({"origin": "internal"}, {}),
+            ({"origin": "import"}, {}),
+            ({}, {}),
+        ],
+    )
+    def test_marker(self, envelope, expected):
+        """One marker for clear, one for old TLS, nothing otherwise."""
+        postmark = {}
+        _record_transport_security(postmark, envelope)
+        assert postmark == expected
 
 
 @pytest.mark.django_db
@@ -444,8 +487,9 @@ class TestDeliverInboundMessage:
         assert message.postmark["rcpt_to"] == alias
 
     def test_matching_envelope_rcpt_leaves_postmark_null(self, target_mailbox):
-        """When the envelope RCPT is one of the visible To addresses (the happy
-        path), nothing is recorded and ``postmark`` stays NULL."""
+        """When the envelope RCPT is one of the visible To addresses and the
+        session used modern TLS (the happy path), nothing is recorded and
+        ``postmark`` stays NULL."""
         recipient_addr = f"{target_mailbox.local_part}@{target_mailbox.domain.name}"
         raw = (
             b"From: sender@test.com\r\n"
@@ -465,6 +509,7 @@ class TestDeliverInboundMessage:
                 "origin": "mta",
                 "mail_from": "sender@test.com",
                 "rcpt_to": recipient_addr,
+                "tls_version": "TLSv1.3",
             },
             blob=blob,
         )
@@ -1236,6 +1281,32 @@ class TestInboundDedupIdempotency:
         # And no second (parallel) thread was created.
         assert models.Thread.objects.filter(accesses__mailbox=mailbox).count() == 1
 
+    def test_without_a_message_id_a_redelivery_is_a_second_message(self):
+        """Known gap, pinned so that closing it is a visible change.
+
+        Dedup is keyed on the Message-ID. A message that has none is stored
+        again each time the MTA redelivers it, which it does after any 4xx
+        (partial delivery, a timeout, a shutdown mid-delivery). Only the
+        import path falls back to the content hash.
+        """
+        mailbox = factories.MailboxFactory()
+        parsed = self._parsed("unused")
+        parsed["messageId"] = []
+        raw = b"raw mime bytes, no Message-ID"
+
+        for _ in range(2):
+            assert _create_message_from_inbound(
+                recipient_email=str(mailbox),
+                parsed_email=parsed,
+                raw_data=raw,
+                mailbox=mailbox,
+            )
+
+        assert (
+            models.Message.objects.filter(thread__accesses__mailbox=mailbox).count()
+            == 2
+        )
+
 
 @pytest.mark.django_db
 class TestInboundSpamConversation:
@@ -1303,3 +1374,93 @@ class TestInboundSpamConversation:
         assert reply.is_spam is False
         thread.refresh_from_db()
         assert thread.is_spam is True
+
+
+@pytest.mark.django_db
+class TestDeliveryUnavailable:
+    """An outage of ours is told apart from a delivery that failed otherwise."""
+
+    RAW = b"Subject: x\r\nMessage-ID: <outage.1@example.com>\r\n\r\nbody\r\n"
+    PARSED = {"subject": "x", "messageId": ["outage.1@example.com"]}
+
+    @pytest.fixture
+    def recipient(self):
+        """The address of an existing mailbox."""
+        mailbox = factories.MailboxFactory()
+        return f"{mailbox.local_part}@{mailbox.domain.name}"
+
+    @pytest.mark.parametrize(
+        "target, error",
+        [
+            ("core.mda.inbound.check_local_recipient", OperationalError("down")),
+            ("core.mda.inbound.check_local_recipient", InterfaceError("closed")),
+            ("core.models.InboundMessage.objects.create", OperationalError("down")),
+        ],
+    )
+    def test_an_outage_raises_when_asked_to(self, recipient, target, error):
+        """The database failing is reported as an outage."""
+        with patch(target, side_effect=error):
+            with pytest.raises(DeliveryUnavailable):
+                deliver_inbound_message(
+                    recipient, self.PARSED, self.RAW, raise_unavailable=True
+                )
+            # Callers that did not ask keep the boolean.
+            assert deliver_inbound_message(recipient, self.PARSED, self.RAW) is False
+
+    @pytest.mark.parametrize(
+        "target, error",
+        [
+            ("core.mda.inbound.check_local_recipient", ValueError("bug")),
+            ("core.models.InboundMessage.objects.create", DataError("bad value")),
+        ],
+    )
+    def test_another_failure_stays_a_plain_failure(self, recipient, target, error):
+        """An error a message could cause must not read as an outage."""
+        with patch(target, side_effect=error):
+            assert (
+                deliver_inbound_message(
+                    recipient, self.PARSED, self.RAW, raise_unavailable=True
+                )
+                is False
+            )
+
+    def test_an_outage_during_the_duplicate_lookup(self, recipient):
+        """Raised as an outage when asked to, unchanged otherwise."""
+        error = OperationalError("down")
+        with patch("core.models.Message.objects.filter", side_effect=error):
+            with pytest.raises(DeliveryUnavailable) as raised:
+                deliver_inbound_message(
+                    recipient, self.PARSED, self.RAW, raise_unavailable=True
+                )
+            assert raised.value.__cause__ is error
+            with pytest.raises(OperationalError):
+                deliver_inbound_message(recipient, self.PARSED, self.RAW)
+        with patch("core.models.Message.objects.filter", side_effect=DataError("x")):
+            with pytest.raises(DataError):
+                deliver_inbound_message(
+                    recipient, self.PARSED, self.RAW, raise_unavailable=True
+                )
+
+    @pytest.mark.parametrize("error", [BrokerError("no broker"), ValueError("bug")])
+    def test_a_failed_dispatch_is_still_a_delivery(self, recipient, error):
+        """The row is saved, and the sweep dispatches what the view could not."""
+        with patch(
+            "core.mda.inbound.process_inbound_message_task.delay", side_effect=error
+        ):
+            assert (
+                deliver_inbound_message(
+                    recipient, self.PARSED, self.RAW, raise_unavailable=True
+                )
+                is True
+            )
+        row = models.InboundMessage.objects.get()
+        # Old enough, the sweep takes it.
+        models.InboundMessage.objects.filter(pk=row.pk).update(
+            created_at=timezone.now() - timedelta(minutes=6),
+            updated_at=timezone.now() - timedelta(minutes=6),
+        )
+        with patch(
+            "core.mda.inbound_tasks.process_inbound_message_task.delay"
+        ) as dispatch:
+            process_inbound_messages_queue_task()
+        dispatch.assert_called_once_with(str(row.pk))

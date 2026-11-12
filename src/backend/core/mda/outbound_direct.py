@@ -97,7 +97,10 @@ def group_recipients_by_mx(recipients: List[str]) -> Dict[str, Dict[str, Any]]:
         domain = normalize_domain(parts[1])
         if domain not in domain_map:
             domain_map[domain] = {
-                "mx_records": resolve_mx_records(domain),
+                # No lookup for an address literal: see send_message_via_mx.
+                "mx_records": []
+                if domain.startswith("[")
+                else resolve_mx_records(domain),
                 "recipients": set(),
             }
         domain_map[domain]["recipients"].add(email)
@@ -143,6 +146,18 @@ def send_message_via_mx(envelope_from, recipient_emails, mime_data) -> Dict[str,
     domain_groups = group_recipients_by_mx(recipient_emails)
 
     for domain, domain_info in domain_groups.items():
+        if domain.startswith("["):
+            # An address literal (``user@[192.0.2.1]``) is a valid addr-spec
+            # but has no MX to look up, and this path never connects to an
+            # address a recipient names directly. Nothing a retry can change.
+            for email in domain_info["recipients"]:
+                final_statuses[email] = {
+                    "delivered": False,
+                    "error": "Address literals are not supported",
+                    "retry": False,
+                }
+            continue
+
         mx_records = domain_info["mx_records"]
 
         logger.info(

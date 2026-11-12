@@ -202,6 +202,16 @@ class TestGetStmsgHeaders:
         with self._headers([]):
             assert message.get_stmsg_headers() == {"spam": "likely"}
 
+    @pytest.mark.parametrize("marker", ["none", "old", "unknown"])
+    def test_weak_transport_marker_projected(self, marker):
+        """``postmark["tls"]`` surfaces verbatim: received in clear ("none"),
+        over TLS below 1.2 ("old"), or through an MTA that did not say
+        ("unknown")."""
+        message = models.Message()
+        message.postmark = {"tls": marker}
+        with self._headers([]):
+            assert message.get_stmsg_headers() == {"tls": marker}
+
     def test_widget_referer_stays_a_header(self):
         """widget-referer is a permanent header, surfaced from bytes alongside
         the structured postmark auth."""

@@ -358,7 +358,7 @@ lint-front: ## run the frontend linter
 	@$(COMPOSE) run --rm frontend-tools npm run lint
 .PHONY: lint-front
 
-lint-mta-in: ## lint mta-in python sources (Postfix milter implementation)
+lint-mta-in: ## lint mta-in python sources (Postfix milter implementation, deprecated)
 	$(COMPOSE_RUN) --rm -e EXEC_CMD_ONLY=true mta-in-test ruff format .
 	#$(COMPOSE_RUN) --rm -e EXEC_CMD_ONLY=true mta-in-test ruff check . --fix
 	#$(COMPOSE_RUN) --rm -e EXEC_CMD_ONLY=true mta-in-test pylint .
@@ -417,13 +417,25 @@ test-front-amd64: ## run the frontend tests in amd64
 	$(COMPOSE) run --rm frontend-tools-amd64 npm run test -- $${args:-${1}}
 .PHONY: test-front-amd64
 
-test-mta-in: build-python-base ## run the mta-in tests against the Postfix milter implementation
+test-mta-in: build-python-base ## run the mta-in tests against the Postfix milter implementation (deprecated)
 	@$(COMPOSE) run --build --rm mta-in-test
 .PHONY: test-mta-in
 
-test-mta-in-py: build-python-base ## run the mta-in tests against the pure-Python (aiosmtpd) implementation
+test-mta-in-py: build-python-base ## run the mta-in tests against the pure-Python implementation (fails under 100% coverage)
 	@$(COMPOSE) run --build --rm mta-in-py-test
 .PHONY: test-mta-in-py
+
+test-mta-in-py-e2e: build-python-base ## run pymta and the real backend together, over SMTP, on a throwaway database
+	@bin/test-mta-in-py-e2e
+.PHONY: test-mta-in-py-e2e
+
+fuzz-mta-in-py: build-python-base ## run the pymta Hypothesis fuzz suite (about a minute; FUZZ_EXAMPLES=n to scale)
+	@$(COMPOSE) run --build --rm -e EXEC_CMD_ONLY=true -e FUZZ_EXAMPLES mta-in-py-test pytest -q -m fuzz tests/
+.PHONY: fuzz-mta-in-py
+
+fuzz-mta-in-py-intensive: ## run the pymta fuzz suite with 10x more examples (about 10 min)
+	@FUZZ_EXAMPLES=19000 $(MAKE) fuzz-mta-in-py
+.PHONY: fuzz-mta-in-py-intensive
 
 
 test-mpa: build-python-base ## run the mpa tests
