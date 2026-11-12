@@ -321,7 +321,7 @@ class InboundWidgetViewSet(viewsets.GenericViewSet):
             # Check if attachment size exceeds the limit.
             # base64 is ~4/3 the decoded size: reject early without decoding a huge string
             # Django has its own DATA_UPLOAD_MAX_MEMORY_SIZE that will reject large uploads if exceeded.
-            if len(b64_encoded_content) * 3 // 4 > MAX_ATTACHMENT_SIZE:
+            if len(b64_encoded_content) > 4 * ((MAX_ATTACHMENT_SIZE + 2) // 3):
                 return Response(
                     {"detail": "Attachment too large"}, status=status.HTTP_413_REQUEST_ENTITY_TOO_LARGE,
                 )
