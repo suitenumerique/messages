@@ -2,9 +2,9 @@
 
 Two kinds of line come from here:
 
-* ``reject``, at INFO, for a 4xx/5xx the handler did not log itself: a command
-  refused for its syntax or its place, a line that is not a command, a limit
-  of the protocol.
+* ``reject``, at INFO, one per 4xx/5xx: a command refused for its syntax or
+  its place, a line that is not a command, a limit of the protocol, a sender
+  or a recipient the handler refused.
 * ``session_closed``, once per connection: who connected, what they said, how
   it ended. This is Postfix's ``disconnect from`` line, and the only trace of
   a sender whose mail never became a message.
@@ -25,14 +25,16 @@ from .command import split_path, strip_keyword
 # The lines are the protocol's, whichever module writes them.
 logger = logging.getLogger("pymta.smtp_protocol")
 
-# Bounds on what the log quotes back from the peer.
+# Bounds on what the log quotes back from the peer. RFC 5321 section 4.5.3.1.3
+# caps a path at 256 octets, but a refused address was never held to it.
 MAX_LOGGED_REPLY = 200
 MAX_LOGGED_ARG = 256
-# Kept from the end of a clipped sender, so its domain stays searchable.
-_LOGGED_SENDER_TAIL = 128
+# Kept from the end of a clipped address, so its domain stays searchable.
+_LOGGED_ADDRESS_TAIL = 128
+# Recipients named in full; ``recipient_count`` carries the true number.
+_MAX_LOGGED_RECIPIENTS = 10
 # Why we hung up on a peer that had not been refused anything.
 _UNPROMPTED_CLOSES = ("command_timeout", "session_timeout", "reclaimed")
-_MAX_LOGGED_RECIPIENTS = 10
 
 # ``reason`` of a refusal that names none, by reply code.
 _REASONS = {
@@ -47,13 +49,16 @@ _REASONS = {
 }
 
 
-def ip_of(peer) -> str | None:
-    """Address out of a peer tuple, so the field is comparable.
+def address_field(address: str | None) -> str | None:
+    """A peer-supplied address, bounded, for a log field."""
+    return logfmt.clip(address, MAX_LOGGED_ARG, tail=_LOGGED_ADDRESS_TAIL)
 
-    Logging the raw ``('10.0.0.1', 51234)`` would make ``client_ip`` a different
-    string on every connection from the same host, which is useless to group by.
-    """
-    return str(peer[0]) if peer else None
+
+def recipients_fields(recipients: list[str]) -> dict:
+    return {
+        "recipients": logfmt.clip_list(recipients, _MAX_LOGGED_RECIPIENTS),
+        "recipient_count": len(recipients),
+    }
 
 
 def _sender_of(arg: str | None) -> str | None:
@@ -61,7 +66,7 @@ def _sender_of(arg: str | None) -> str | None:
     split = split_path(strip_keyword("FROM:", arg) or "")
     if split is None:
         return logfmt.clip(arg, MAX_LOGGED_ARG)
-    return logfmt.clip(split[0], MAX_LOGGED_ARG, tail=_LOGGED_SENDER_TAIL)
+    return address_field(split[0])
 
 
 def _quotable(line: bytes) -> str:
@@ -70,7 +75,7 @@ def _quotable(line: bytes) -> str:
     if text[:4].upper() == "AUTH":
         return "AUTH [redacted]"
     # The tail too: on a too-long MAIL line that is where the domain is.
-    return logfmt.clip(text, MAX_LOGGED_ARG, tail=_LOGGED_SENDER_TAIL)
+    return address_field(text)
 
 
 class SessionLog:
@@ -144,11 +149,12 @@ class SessionLog:
             },
         )
 
-    def replied(self, text: str, reason: str | None, line: bytes | None) -> None:
+    def replied(self, text: str, reason: str | None, line: bytes | None, handler_reply) -> None:
         """Record a reply. ``text`` is its last line.
 
         ``reason`` names a refusal whose code alone does not. ``line`` is the
         raw line a refusal answers when no command was running.
+        ``handler_reply`` is the handler's ``Reply``, when the reply is one.
         """
         code = int(text[:3])
         self._last_code = code
@@ -165,13 +171,14 @@ class SessionLog:
         else:
             arg = _quotable(line) if line is not None else None
         self._last_error = (self._verb, reply, arg)
-        self._reject(code, reply, arg, reason)
+        if handler_reply is None or not handler_reply.logged:
+            self._reject(code, reply, arg, reason, handler_reply.fields if handler_reply else {})
 
     # ------------------------------------------------------------------ lines
     def _who(self) -> dict:
         return {
             "session_id": self._connection.session_id,
-            "client_ip": self._connection.client_address(),
+            "client_ip": self._connection.session.client_ip,
         }
 
     def _transaction(self) -> tuple[str | None, list[str]]:
@@ -179,29 +186,29 @@ class SessionLog:
         envelope = self._connection.envelope
         if envelope.mail_from is None:
             return None, []
-        sender = logfmt.clip(envelope.mail_from or "<>", MAX_LOGGED_ARG, tail=_LOGGED_SENDER_TAIL)
-        return sender, list(envelope.rcpt_tos)
+        return address_field(envelope.mail_from or "<>"), list(envelope.rcpt_tos)
 
     def open_sender(self) -> str | None:
         """The sender of the transaction now open, as logged."""
         return self._transaction()[0]
 
-    def _reject(self, code: int, reply: str, arg: str | None, reason: str | None) -> None:
-        """One ``reject`` line for a 4xx/5xx the handler did not log itself.
+    def _reject(
+        self, code: int, reply: str, arg: str | None, reason: str | None, extra: dict
+    ) -> None:
+        """One ``reject`` line per 4xx/5xx. ``extra``: the handler's fields.
 
-        ``session_closed`` keeps only the last error and the last sender. On a
-        connection that carries several messages, the refusal of an earlier
-        one would otherwise name neither.
+        The record of why a command never became part of a message.
+        ``session_closed`` keeps only the last error and the last sender, so
+        on a connection that carries several messages the refusal of an
+        earlier one would otherwise name neither.
 
         Not for timeouts or internal errors, which have their own line and
         whose open transaction ``session_closed`` reports. Not before the
         connection is admitted: those are counted, and are what a flood is
-        made of. Capped per session, like the handler's refusals.
+        made of. Capped per session at the error budget.
         """
         connection = self._connection
-        if connection.refusal_logged or connection.close_reason is not None:
-            return
-        if not connection.admitted:
+        if connection.close_reason is not None or not connection.admitted:
             return
         self._reject_lines += 1
         # The line that says why the session was closed is always written.
@@ -229,9 +236,8 @@ class SessionLog:
             "arg": arg,
         }
         if recipients:
-            fields["recipients"] = logfmt.clip_list(recipients, _MAX_LOGGED_RECIPIENTS)
-            fields["recipient_count"] = len(recipients)
-        logger.info("reject", extra=fields)
+            fields.update(recipients_fields(recipients))
+        logger.info("reject", extra={**fields, **extra})
 
     def _commands_field(self) -> str:
         """Postfix's ``disconnect from`` tally: ``ehlo=1 mail=1 rcpt=0/1``.
@@ -289,7 +295,7 @@ class SessionLog:
             "duration_ms": int((time.monotonic() - self._started) * 1000),
         }
         if settings.PYMTA_ENABLE_PROXY_PROTOCOL:
-            fields["wire_peer"] = ip_of(connection.session.peer)
+            fields["wire_peer"] = connection.session.wire_ip
         if self._ignored_parameters:
             fields["ignored_parameters"] = ",".join(sorted(self._ignored_parameters))
         if self._last_error is not None:
@@ -300,8 +306,7 @@ class SessionLog:
         # A transaction left open: these recipients never got their message.
         _, recipients = self._transaction()
         if recipients:
-            fields["recipients"] = logfmt.clip_list(recipients, _MAX_LOGGED_RECIPIENTS)
-            fields["recipient_count"] = len(recipients)
+            fields.update(recipients_fields(recipients))
         # Only where it is the explanation. After a QUIT or our own hang-up a
         # TLS peer routinely resets instead of closing, which is noise.
         if closed_by == "peer_reset":

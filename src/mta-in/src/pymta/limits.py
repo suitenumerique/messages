@@ -1,28 +1,26 @@
-"""Connection-level admission control for the pymta server.
+"""Admission control for the pymta server.
 
-The :class:`IPGate` enforces two things, each on two axes:
+:class:`IPGate` caps two things, each in total and per source:
 
-* **TCP sessions** — a process-wide cap (``PYMTA_MAX_SESSIONS_TOTAL``) against a
-  generic flood, and each source's share of it against a single remote opening
-  thousands of half-idle connections.
-* **DATA phases** — a process-wide cap (``PYMTA_MAX_CONCURRENT_DATA``) and each
-  source's share of that. This is the one that bounds memory: every message
-  is held in RAM, so messages in flight times the size cap is the heap.
+* TCP sessions: ``PYMTA_MAX_SESSIONS_TOTAL`` against a flood, and each
+  source's share of it against one remote opening thousands of idle
+  connections.
+* DATA phases: ``PYMTA_MAX_CONCURRENT_DATA`` and each source's share of it.
+  This one bounds memory: messages are held in RAM, so messages in flight
+  times the size cap is the heap.
 
 A source is an IPv4 address or an IPv6 /64. Its share is at most
 ``PYMTA_MAX_SHARE_PER_SOURCE`` of the slots (0.1 by default, so filling them
 takes ten sources), and less once more sources than that are present: see
 :meth:`IPGate._share`.
 
-A cap of 0 disables the *refusal* on that axis, matching the shipped Postfix
-config (``smtpd_client_event_limit_exceptions = static:all``) and useful in
-dev/test where the whole load comes from one loopback address. Slots are still
-counted when disabled, so the gauges stay honest and acquire/release stay
-symmetric if the limit changes in between; see :meth:`IPGate.acquire_data`.
+A cap of 0 switches the refusals of that kind off, as the shipped Postfix
+config does (``smtpd_client_event_limit_exceptions = static:all``). That suits
+dev and tests, where all the load comes from one loopback address. Slots are
+counted all the same: see :meth:`IPGate.acquire_data`.
 
-The axes are not independent at zero: ``PYMTA_MAX_SESSIONS_TOTAL`` is derived
-as ``PYMTA_MAX_CONCURRENT_DATA * 3``, so a zero DATA cap disables both refusals
-and one host can hold unlimited sessions.
+``PYMTA_MAX_SESSIONS_TOTAL`` defaults to ``PYMTA_MAX_CONCURRENT_DATA * 3``, so
+a zero DATA cap switches both off and one host can hold unlimited sessions.
 """
 
 from __future__ import annotations
@@ -94,17 +92,15 @@ class LogThrottle:
 
 
 class IPGate:
-    """Tracks live SMTP sessions per remote IP and globally.
+    """Counts SMTP sessions and DATA phases, in total and per source.
 
-    Acquisition does not block: if any cap is reached we raise immediately
-    so the caller can close the socket and reply ``421`` instead of holding
-    the connection open and amplifying the attack. The caller may first free
-    a slot by closing an idle session of a source over its share.
+    Nothing here waits: at a cap ``acquire`` raises, and the caller answers
+    ``421`` and closes instead of holding the connection open. The caller may
+    first free a slot by closing an idle session of a source over its share.
 
-    ``acquire`` / ``release`` are called by
-    :class:`pymta.smtp_protocol.SMTPConnection`, once per connection, with the
-    PROXY source when there is one. No lock: everything here runs on the
-    event loop and nothing in it waits.
+    ``acquire`` and ``release`` are called once per connection by
+    :class:`pymta.smtp_protocol.SMTPConnection`, with the PROXY source when
+    there is one. No lock: everything runs on the event loop.
     """
 
     def __init__(
@@ -114,19 +110,23 @@ class IPGate:
         max_data: int | None = None,
         max_share: float | None = None,
     ):
+        # None: the setting is read at each use, so a cap can change under a
+        # running process. A lowered cap only refuses new slots until the
+        # count falls back under it. Tests pass explicit values.
+        self._max_total = max_total
         self._max_data = max_data
         self._max_share = max_share
         self._data_total = 0
         self._data_per_ip: dict[str, int] = {}
-        # None means "read the setting on every acquire", so a cap can be
-        # moved under a running process. Safe because a cap is only
-        # ever compared against a counter; it is not part of the bookkeeping,
-        # so lowering one mid-flight just refuses new sessions until the live
-        # count falls back under it. Tests pass explicit values so they do not
-        # depend on the ambient environment.
-        self._max_total = max_total
         self._per_ip: dict[str, int] = {}
         self._total = 0
+        # The connections holding a session slot. Each adds and removes itself.
+        self.sessions: set = set()
+
+    @property
+    def total(self) -> int:
+        """Session slots taken."""
+        return self._total
 
     def _cap(self, override: float | None, name: str) -> float:
         return getattr(settings, name) if override is None else override
@@ -219,21 +219,17 @@ class IPGate:
     def acquire_data(self, ip: str | None) -> bool:
         """Take a slot for a message about to be held in memory.
 
-        Synchronous and immediate: no slot means 451 rather than a queue. A
-        queue of waiters is the same denial of service the slot limit exists to
-        prevent, rearranged, and the sender retries anyway.
+        No waiting: no slot means 451, and the sender retries. A queue of
+        waiters would be the denial of service the limit is there to prevent.
 
-        Two ceilings because they stop different things. The total is memory:
-        messages in flight times the size cap is the heap. The per-IP one is
-        monopolisation, which the total alone does not prevent, since one host
-        can hold every slot for a whole PYMTA_DATA_TIMEOUT by dribbling bodies.
+        Two limits: the total bounds memory, and the per-source share stops
+        one host from holding every slot for a whole PYMTA_DATA_TIMEOUT by
+        sending its bodies slowly.
 
-        Slots are counted even when the limit is disabled, and only the refusal
-        is conditional. Counting on the same terms in both modes is what keeps
-        acquire and release symmetric: the limit is read at each use, so a
-        phase can begin under one value and end under another, and a
-        release that consulted the *current* limit would either skip a
-        decrement it owed or make one it never earned.
+        Slots are counted even with the limit off; only the refusal depends
+        on it. The limit is read at each use, so it can change between an
+        acquire and its release: a release that looked at it could skip a
+        decrement or make one too many.
         """
         total = self.max_data
         key = ip or "unknown"
@@ -248,17 +244,13 @@ class IPGate:
         return True
 
     def release_data(self, ip: str | None) -> None:
-        """Give back a slot taken by :meth:`acquire_data`.
-
-        Unconditional by design; see the note there on a limit that moved.
-        """
+        """Give back a slot taken by :meth:`acquire_data`, whatever the limit is now."""
         key = ip or "unknown"
         remaining = self._data_per_ip.get(key, 0) - 1
         if remaining > 0:
             self._data_per_ip[key] = remaining
         else:
-            # Popped rather than left at zero: keyed by peer address, so spent
-            # entries would grow the dict without bound under a spray of sources.
+            # Removed at zero: keyed by source, the dict would grow without bound.
             self._data_per_ip.pop(key, None)
         self._data_total = max(0, self._data_total - 1)
         metrics.DATA_PHASES_ACTIVE.dec()

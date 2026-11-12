@@ -104,12 +104,16 @@ async def test_transport_error_returns_temp_fail(caplog):
 
 
 @pytest.mark.asyncio
-async def test_5xx_returns_temp_fail():
+async def test_5xx_returns_temp_fail(caplog):
     client, _ = _new_client()
     client._client = _StubAsyncClient([_resp(503, b'{"detail":"upstream"}')])
-    result = await client.check_recipient("user@example.com")
+    with caplog.at_level(logging.DEBUG, logger="pymta"):
+        result = await client.check_recipient("user@example.com")
     assert result.temp_fail is True
     assert result.status_code == 503
+    assert [(r.getMessage(), r.levelname) for r in caplog.records] == [
+        ("mda_unhealthy", "WARNING")
+    ]
 
 
 async def _deliver(client):
@@ -119,7 +123,6 @@ async def _deliver(client):
         original_recipients=["user@example.com"],
         client_address="192.0.2.1",
         client_port="2525",
-        client_hostname=None,
         client_helo="relay.example.com",
     )
 
@@ -152,7 +155,10 @@ async def test_the_same_statuses_from_something_else_than_the_mda_defer(status, 
     with caplog.at_level(logging.DEBUG, logger="pymta"):
         result = await _deliver(client)
     assert (result.ok, result.temp_fail, result.status_code) == (False, True, status)
-    assert ("mda_unhealthy", "WARNING") in [(r.getMessage(), r.levelname) for r in caplog.records]
+    # Answered, so not an outage: the event that names one is kept for a 5xx.
+    assert [(r.getMessage(), r.levelname) for r in caplog.records] == [
+        ("mda_unexpected_status", "WARNING")
+    ]
 
 
 @pytest.mark.asyncio
@@ -167,6 +173,18 @@ async def test_messages_the_mda_fails_on_do_not_open_the_breaker():
         assert (result.temp_fail, result.status_code) == (True, 500)
     assert client.breaker_is_open() is False
     assert client._client.calls == 5
+
+
+@pytest.mark.asyncio
+async def test_an_outage_the_mda_reports_opens_the_breaker():
+    """Its 503 for a failing database carries no verdict."""
+    client, _ = _new_client(threshold=3)
+    down = _resp(503, b'{"status":"unavailable","detail":"Delivery is temporarily unavailable"}')
+    client._client = _StubAsyncClient([down] * 3)
+    for _ in range(3):
+        result = await _deliver(client)
+        assert (result.temp_fail, result.status_code) == (True, 503)
+    assert client.breaker_is_open() is True
 
 
 @pytest.mark.asyncio
@@ -194,7 +212,6 @@ async def test_deliver_sends_the_envelope_in_the_body():
         original_recipients=recipients,
         client_address="192.0.2.1",
         client_port="2525",
-        client_hostname=None,
         client_helo="relay.example.com",
         session="cafe1234",
         transport={
@@ -218,7 +235,6 @@ async def test_deliver_sends_the_envelope_in_the_body():
         "original_recipients": recipients,
         "client_address": "192.0.2.1",
         "client_port": "2525",
-        "client_hostname": None,
         "client_helo": "relay.example.com",
         "size": str(len(message)),
         "protocol": "ESMTPS",
@@ -497,7 +513,6 @@ async def test_the_session_id_travels_as_a_signed_claim():
         original_recipients=["a@example.com"],
         client_address=None,
         client_port=None,
-        client_hostname=None,
         client_helo=None,
         session="cafe1234",
     )

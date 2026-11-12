@@ -149,10 +149,10 @@ class _SlowToGreet(InboundHandler):
         super().__init__(ScriptedMDA())
         self.release = asyncio.Event()
 
-    async def handle_HELO(self, server, session, envelope, hostname) -> None:
+    async def handle_HELO(self, connection, hostname) -> str:
         if hostname == "slow.example":
             await self.release.wait()
-        await super().handle_HELO(server, session, envelope, hostname)
+        return await super().handle_HELO(connection, hostname)
 
 
 @pytest.mark.asyncio

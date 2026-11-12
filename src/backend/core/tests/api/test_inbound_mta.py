@@ -23,6 +23,7 @@ from core.api.viewsets.inbound.mta import (
     _received_header,
     _split_enveloped_body,
 )
+from core.mda.inbound import DeliveryUnavailable
 
 # The view's trace header carries the time of ingest, so the tests that compare
 # stored bytes exactly run with it replaced by this line. ``TestReceivedHeader``
@@ -336,6 +337,7 @@ class TestMTAInboundEmail:
                     "hostname": "",
                     "rcpt_to": rcpt,
                 },
+                raise_unavailable=True,
             )
 
         first_call_args = mock_deliver.call_args_list[0][0]
@@ -433,7 +435,7 @@ class TestMTAInboundEmail:
 
         assert response.status_code == status.HTTP_200_OK
         first_line = mock_parse.call_args[0][0].split(b"\r\n", 1)[0]
-        assert first_line == b"Return-Path: <" + sender[:253].encode() + b">"
+        assert first_line == b"Return-Path: <" + sender[:254].encode() + b">"
 
     @patch("core.api.viewsets.inbound.mta.deliver_inbound_message")
     @patch("core.api.viewsets.inbound.mta.parse_email")
@@ -586,6 +588,44 @@ class TestMTAInboundEmail:
             b"Return-Path: <>\r\n" + TRACE + sample_email
         )
         assert mock_deliver.call_count == 2  # Called for both
+
+    @pytest.mark.parametrize(
+        "outcomes, expected_status, expected_body_status",
+        [
+            # An outage answers 503 without "status": "error", which is what
+            # the MTA counts toward its circuit breaker.
+            ([DeliveryUnavailable(), DeliveryUnavailable()], 503, "unavailable"),
+            ([False, DeliveryUnavailable()], 503, "unavailable"),
+            ([True, DeliveryUnavailable()], 207, "partial_success"),
+        ],
+    )
+    @patch("core.api.viewsets.inbound.mta.deliver_inbound_message")
+    def test_delivery_failed_by_an_outage(  # pylint: disable=too-many-arguments
+        self,
+        mock_deliver,
+        api_client: APIClient,
+        sample_email,
+        valid_jwt_token,
+        outcomes,
+        expected_status,
+        expected_body_status,
+    ):
+        """A delivery our own outage failed is told apart from the others."""
+        mock_deliver.side_effect = outcomes
+        recipients = ["a@example.com", "b@example.com"]
+        token = valid_jwt_token(sample_email, {"original_recipients": recipients})
+
+        response = api_client.post(
+            "/api/v1.0/inbound/mta/deliver/",
+            data=sample_email,
+            content_type="message/rfc822",
+            HTTP_AUTHORIZATION=f"Bearer {token}",
+        )
+
+        assert response.status_code == expected_status
+        assert response.json()["status"] == expected_body_status
+        assert response.json()["results"]["b@example.com"] == "Unavailable"
+        assert mock_deliver.call_args.kwargs["raise_unavailable"] is True
 
     def test_invalid_content_type(
         self, api_client: APIClient, sample_email, valid_jwt_token
@@ -774,6 +814,7 @@ class TestMTAEnvelopedDelivery:
                     "hostname": "",
                     "rcpt_to": rcpt,
                 },
+                raise_unavailable=True,
             )
 
     @patch("core.api.viewsets.inbound.mta.deliver_inbound_message")

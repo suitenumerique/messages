@@ -1,14 +1,11 @@
 """RFC 5321 envelope-address validation.
 
-The functions in this module are intentionally strict: they reject anything
-the inbound SMTP server should not have to deal with: control characters
-(CRLF injection vector), overlong local-parts or domains, the common
-``user@`` / ``@domain`` truncations, and what is left of a source route the
-command parser did not take off.
+Strict: refuses control characters (CRLF injection), overlong local-parts or
+domains, ``user@`` and ``@domain``, unbalanced quotes or angle brackets, and
+what is left of a source route the command parser did not take off.
 
-They never accept already-unbalanced quoting or angle brackets.
-:func:`validate_envelope_address` accepts either the wrapped (``<user@host>``)
-or unwrapped form; :func:`strip_brackets` runs unconditionally on entry.
+:func:`validate_envelope_address` takes the address with or without its angle
+brackets.
 """
 
 from __future__ import annotations
@@ -19,10 +16,8 @@ import unicodedata
 
 import idna
 
-# Characters that must never appear unquoted in an envelope address. CR, LF,
-# and NUL are the CRLF-injection and frame-confusion vectors. TAB is a header
-# unfolding vector. DEL (0x7f) and bare space have no place in an address
-# received from the wire.
+# Refused in an envelope address: CR, LF and NUL (line injection), TAB (header
+# unfolding), DEL, and space outside a quoted local-part.
 _FORBIDDEN_CHARS = frozenset({"\r", "\n", "\x00", "\t", " ", "\x7f"})
 
 # ``%`` on a recipient is the historical "percent-routing" relay trick
@@ -31,18 +26,17 @@ _FORBIDDEN_CHARS = frozenset({"\r", "\n", "\x00", "\t", " ", "\x7f"})
 # (``bounce-user%40example.org@esp.example``).
 _PERCENT = "%"
 
-# Controls, line/paragraph separators, spaces. Narrower than
-# ``str.isprintable()``, which also rejects format chars (Cf) such as ZWNJ --
-# orthographically required in Persian and legal in an RFC 6531 address.
+# Controls, line and paragraph separators, spaces. Narrower than
+# ``str.isprintable()``, which also refuses format characters (Cf) such as
+# ZWNJ: required in Persian and legal in an RFC 6531 address.
 _FORBIDDEN_CATEGORIES = frozenset({"Cc", "Zl", "Zp", "Zs"})
 
 
 class AddressError(ValueError):
-    """Raised when an envelope address fails validation.
+    """An envelope address that fails validation.
 
-    The ``reason`` attribute carries a short token suitable for a Prometheus
-    metric label and the ``smtp_code`` / ``smtp_text`` tuple gives the exact
-    SMTP reply the caller should send back to the peer.
+    ``reason`` is a short token for logs and metric labels; ``smtp_code`` and
+    ``smtp_text`` are the reply to send.
     """
 
     def __init__(self, reason: str, smtp_text: str, smtp_code: int = 553):
@@ -53,11 +47,7 @@ class AddressError(ValueError):
 
 
 def strip_brackets(raw: str) -> str:
-    """Strip a single pair of surrounding angle brackets.
-
-    Returns the input unchanged if there is no leading ``<``. Does not validate
-    that the address inside is well-formed.
-    """
+    """Remove one pair of surrounding angle brackets, when both are there."""
     if not raw:
         return raw
     if raw.startswith("<") and raw.endswith(">"):
@@ -112,17 +102,18 @@ def _canonical_literal(domain: str) -> str:
 
 
 def _dns_labels(domain: str) -> list[str]:
-    """Return ``domain``'s labels in the A-label form DNS length limits apply to.
+    """``domain``'s labels in the A-label form the DNS length limits apply to.
 
-    An SMTPUTF8 peer may send U-labels (RFC 6531 §3.2), whose UTF-8 length
-    says nothing about what DNS stores: a 40-letter Cyrillic label is 76 UTF-8
-    octets but a 52-octet A-label. RFC 5890 §4.2 binds the 63/255-octet limits
-    to the A-label and lets a valid U-label run to 252 code points. Only lengths are at stake here, never IDNA validity:
-    ``idna.encode`` would also refuse domains pymta has always accepted (an
-    ``_`` in a host name, say), so this maps with UTS 46 non-transitional, as
-    ``jmap_email`` does, and punycodes each label itself. The stdlib
-    ``punycode`` codec is plain RFC 3492, without the IDNA2003 folding of its
-    ``idna`` codec. A domain UTS 46 refuses outright is measured unmapped.
+    An SMTPUTF8 peer may send U-labels (RFC 6531 §3.2), whose UTF-8 length is
+    not what DNS stores: a 40-letter Cyrillic label is 76 UTF-8 octets and a
+    52-octet A-label. RFC 5890 §4.2 puts the 63 and 255 octet limits on the
+    A-label and lets a U-label run to 252 code points.
+
+    Lengths only, not IDNA validity: ``idna.encode`` would refuse domains
+    pymta accepts (an ``_`` in a host name). The domain is mapped with UTS 46
+    non-transitional, as ``jmap_email`` does, and each label encoded with the
+    stdlib ``punycode`` codec (plain RFC 3492, without the IDNA2003 folding
+    of the ``idna`` codec). A domain UTS 46 refuses is measured unmapped.
     """
     if domain.isascii():
         return domain.split(".")
@@ -222,16 +213,12 @@ def validate_envelope_address(  # noqa: PLR0912, PLR0913, PLR0915
 
     # ----- 1c. valid UTF-8 ---------------------------------------------------
     # Command arguments are decoded with ``errors="surrogateescape"``, so a
-    # byte that is not valid UTF-8 survives as a lone surrogate (0xE9 becomes
-    # ``\udce9``). RFC 6531 requires an SMTPUTF8 envelope address to be valid
-    # UTF-8, so this is malformed and permanent.
+    # byte that is not valid UTF-8 arrives as a lone surrogate (0xE9 becomes
+    # ``\udce9``). RFC 6531 requires valid UTF-8: refused for good.
     #
-    # It has to be caught *here* rather than left to the length checks below:
-    # those call ``.encode("utf-8")``, which raises UnicodeEncodeError on a
-    # surrogate. That is not an AddressError, so it escapes the caller's except
-    # clause and surfaces as a 421 internal error, telling the sender to retry
-    # an address that can never be accepted, and logging our own bug metric for
-    # something the peer chose.
+    # Checked here because the length checks below call ``.encode("utf-8")``,
+    # which raises UnicodeEncodeError on a surrogate: not an AddressError, so
+    # it would end as a 421 internal error, telling the sender to retry.
     try:
         address.encode("utf-8")
     except UnicodeEncodeError as exc:

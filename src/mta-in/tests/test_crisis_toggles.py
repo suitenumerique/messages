@@ -19,11 +19,10 @@ from pymta import metrics, runtime, settings
 from pymta import server as server_module
 from pymta.controller import build_smtp_kwargs
 from pymta.limits import IPGate
-from pymta.mda_async import MDAResult
 from pymta.settings import _env_networks, parse_client_ip
 from pymta.smtp_protocol import SMTPConnection
 
-from tests.harness import ScriptedMDA, connected, listening
+from tests.harness import AcceptAll, ScriptedMDA, connected, listening, protocol_factory
 
 
 async def _rcpt(port, recipient: bytes = b"<anyone@example.com>") -> bytes:
@@ -32,16 +31,6 @@ async def _rcpt(port, recipient: bytes = b"<anyone@example.com>") -> bytes:
         await client.cmd(b"EHLO client.test")
         assert (await client.cmd(b"MAIL FROM:<joe@good.example>"))[:3] == b"250"
         return await client.cmd(b"RCPT TO:" + recipient)
-
-
-class _AlwaysYesMDA:
-    """Says every mailbox exists, so a rejection can only come from our side."""
-
-    async def check_recipient(self, addr, session=None):
-        return MDAResult(ok=True, temp_fail=False, payload={addr: True}, status_code=200)
-
-    async def deliver(self, **kwargs):
-        return MDAResult(ok=True, temp_fail=False, payload={"status": "ok"}, status_code=200)
 
 
 # ---------------------------------------------------------------------------
@@ -124,11 +113,11 @@ async def test_unblocked_recipient_passes(monkeypatch):
 # ---------------------------------------------------------------------------
 
 
-async def _listener(loop):
+async def _listener(loop, gate=None):
     kwargs = build_smtp_kwargs(tls_context=None)
-    gate = IPGate(max_total=0)
+    gate = gate or IPGate(max_total=0)
     server = await loop.create_server(
-        lambda: SMTPConnection(_AlwaysYesMDA(), ip_gate=gate, **kwargs), host="127.0.0.1", port=0
+        lambda: SMTPConnection(AcceptAll(), ip_gate=gate, **kwargs), host="127.0.0.1", port=0
     )
     return server, server.sockets[0].getsockname()[1]
 
@@ -213,16 +202,16 @@ async def test_sigterm_waits_for_the_session_then_exits(monkeypatch):
     """
     monkeypatch.setattr(settings, "PYMTA_SHUTDOWN_TIMEOUT", 10)
     loop = asyncio.get_running_loop()
-    srv, port = await _listener(loop)
+    gate = IPGate(max_total=0)
+    srv, port = await _listener(loop, gate)
 
     reader, writer = await asyncio.open_connection("127.0.0.1", port)
     assert (await asyncio.wait_for(reader.readline(), timeout=5)).startswith(b"220")
 
-    live = metrics.active_sessions()
-    assert live >= 1, "the open connection should be counted as a session"
+    assert gate.total == 1, "the open connection should be counted as a session"
 
     runtime.request_shutdown()
-    drain = asyncio.create_task(server_module._drain_and_close(srv))
+    drain = asyncio.create_task(server_module._drain_and_close(srv, gate))
 
     # Still holding the session: the drain must not finish.
     await asyncio.sleep(0.6)
@@ -240,20 +229,27 @@ async def test_sigterm_waits_for_the_session_then_exits(monkeypatch):
     with contextlib.suppress(ConnectionError):
         await writer.wait_closed()
     await asyncio.wait_for(drain, timeout=10)
-    assert metrics.active_sessions() == 0
+    assert gate.total == 0
 
 
 @pytest.mark.asyncio
 async def test_drain_gives_up_at_the_deadline(monkeypatch):
     """A session that never ends must not hold the process open forever."""
     monkeypatch.setattr(settings, "PYMTA_SHUTDOWN_TIMEOUT", 1)
-    monkeypatch.setattr(metrics, "active_sessions", lambda: 2)
+    gate = IPGate(max_total=0)
+    # Two sessions that never end.
+    gate.acquire("192.0.2.1")
+    gate.acquire("192.0.2.2")
     loop = asyncio.get_running_loop()
-    srv, _ = await _listener(loop)
+    srv, _ = await _listener(loop, gate)
 
     runtime.request_shutdown()
     started = asyncio.get_running_loop().time()
-    await asyncio.wait_for(server_module._drain_and_close(srv), timeout=10)
+    try:
+        await asyncio.wait_for(server_module._drain_and_close(srv, gate), timeout=10)
+    finally:
+        gate.release("192.0.2.1")
+        gate.release("192.0.2.2")
     elapsed = asyncio.get_running_loop().time() - started
     assert 1 <= elapsed < 5, elapsed
 
@@ -291,9 +287,7 @@ async def test_blocklist_matches_a_mapped_ipv4_client(monkeypatch):
     """End to end: the blocklist must fire for a dual-stack IPv4 peer."""
     monkeypatch.setenv("T", "198.51.100.0/24")
     monkeypatch.setattr(settings, "PYMTA_BLOCKED_NETWORKS", _env_networks("T"))
-    smtp = SMTPConnection(
-        _AlwaysYesMDA(), ip_gate=IPGate(max_total=0), hostname="mta.test", timeout=120
-    )
+    smtp = protocol_factory(AcceptAll())()
     assert smtp._is_blocked("::ffff:198.51.100.7") is True
     assert smtp._is_blocked("::ffff:203.0.113.7") is False
 

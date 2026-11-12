@@ -338,7 +338,6 @@ def test_any_mda_response_becomes_a_result(status, body, deliver):
             original_recipients=["b@example.com"],
             client_address="192.0.2.1",
             client_port="25",
-            client_hostname=None,
             client_helo="mx.example",
         )
 
@@ -348,5 +347,7 @@ def test_any_mda_response_becomes_a_result(status, body, deliver):
     assert isinstance(result.payload, dict)
     assert result.ok == (status == 200)
     if not result.ok:
-        permanent = deliver and status in (400, 413)
+        # And only with the MDA's own body.
+        verdict = result.payload.get("status") == "error"
+        permanent = deliver and status in (400, 413) and verdict
         assert result.temp_fail == (not permanent)

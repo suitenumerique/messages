@@ -1,9 +1,10 @@
 """What to do with a sender, a recipient and a message: the queue-less flow.
 
 Called by :class:`pymta.smtp_protocol.SMTPConnection` once a command is
-well-formed and in order. Every hook gets the connection (``server``), its
-``session`` and the ``envelope`` of the transaction in progress, and returns
-the SMTP reply.
+well-formed and in order. Every hook gets the connection, which carries the
+``session`` and the ``envelope`` of the transaction in progress. MAIL, RCPT
+and DATA return a :class:`~pymta.smtp_protocol.Reply`; the connection sends
+it, charges a refusal to the error budget and writes its ``reject`` line.
 
 For each SMTP transaction the handler
 
@@ -27,23 +28,21 @@ import asyncio
 import logging
 import time
 
-from . import logfmt, metrics, settings
+from . import metrics, settings
 from .address import AddressError, strip_brackets, validate_envelope_address
 from .mda_async import MDAClient, MDAResult
+from .session_log import address_field, recipients_fields
+from .smtp_protocol import Reply
 
 logger = logging.getLogger(__name__)
 
 
-# Slice of PYMTA_DATA_TIMEOUT the handler holds back from the MDA deliver call
-# so it still has room to push a 451 before the protocol-level deadline closes
-# the transport. Defined in settings beside the timeout it is subtracted from,
-# which refuses to start a configuration where it would consume the whole
-# budget.
+# Slice of PYMTA_DATA_TIMEOUT held back from the MDA deliver call, so there is
+# room to send a 451 before the protocol's deadline closes the transport.
 _REPLY_RESERVE_SECONDS = float(settings.PYMTA_REPLY_RESERVE_SECONDS)
 
-# Control characters that must never appear in an EHLO/HELO hostname or
-# anywhere else we'll log / pass into HTTP claims. CR, LF, NUL are the
-# CRLF-injection vectors; TAB is a header-unfolding vector.
+# Never in an EHLO/HELO name we log or send to the MDA: CR, LF and NUL inject
+# lines, TAB unfolds a header.
 _FORBIDDEN_HOSTNAME_CHARS = frozenset({"\r", "\n", "\x00", "\t"})
 
 
@@ -53,64 +52,33 @@ _FORBIDDEN_HOSTNAME_CHARS = frozenset({"\r", "\n", "\x00", "\t"})
 _STRESS_MAX_RCPT_MISSES = 2
 
 
-def rcpt_miss_budget(server) -> int:
+def rcpt_miss_budget(connection) -> int:
     """Unknown recipients a session may name before it is closed."""
     limit = settings.PYMTA_MAX_RCPT_MISSES_PER_SESSION
-    return min(limit, _STRESS_MAX_RCPT_MISSES) if server.under_stress() else limit
+    return min(limit, _STRESS_MAX_RCPT_MISSES) if connection.under_stress() else limit
 
 
-def _trace(server, session, **fields):
+def _trace(connection, **fields):
     """Fields every per-connection line carries, so lines can be joined up."""
-    return {"session_id": server.session_id, "client_ip": _peer_ip(session), **fields}
+    return {
+        "session_id": connection.session_id,
+        "client_ip": connection.session.client_ip,
+        **fields,
+    }
 
 
-def _wire_ip(session) -> str | None:
-    """The TCP peer's address, which behind a balancer is the balancer."""
-    return str(session.peer[0]) if session.peer else None
-
-
-def _peer_ip(session) -> str | None:
-    """The client's address: the one a PROXY header named, else the TCP peer.
-
-    With PROXY protocol on, the TCP peer is the balancer, and returning it
-    would attribute the mail to our own infrastructure: a plausible-looking
-    but wrong IP in the Received header. A header that names no client
-    therefore gives None; the MDA omits the trace when a part is missing.
-    """
-    if settings.PYMTA_ENABLE_PROXY_PROTOCOL:
-        return session.proxy_data.src_addr if session.proxy_data else None
-    return _wire_ip(session)
-
-
-def _peer_port(session) -> str | None:
-    if settings.PYMTA_ENABLE_PROXY_PROTOCOL:
-        port = session.proxy_data.src_port if session.proxy_data else None
-        return None if port is None else str(port)
-    return str(session.peer[1]) if session.peer else None
-
-
-def _remaining_data_budget(server) -> float:
+def _remaining_data_budget(connection) -> float:
     """Seconds still available for the MDA deliver call.
 
-    ``PYMTA_DATA_TIMEOUT`` is one budget covering the whole DATA phase, and the
-    protocol arms its timer at exactly that value, so the body receive has
-    already spent part of it, and we stop short of the rest. The reserve is
-    what buys the 451 on the timeout path: expiring at the same instant as the
-    protocol's timer would be a race we'd usually lose (its timer was scheduled
-    first, and equal deadlines fire in scheduling order), leaving the peer with
-    a bare disconnect instead of a reason to retry.
+    ``PYMTA_DATA_TIMEOUT`` covers the whole DATA phase and the protocol's
+    timer is armed at it, so the receive has spent part of it. We stop short
+    of the rest by the reserve: expiring together with that timer would
+    usually leave the peer a bare disconnect instead of the 451.
 
-    The budget comes from the protocol, which recorded the value it armed the
-    timer at, rather than from settings, so the deliver call is sized against
-    the deadline that is actually ticking.
-
-    Raises ``TimeoutError`` when the receive already spent the whole budget:
-    issuing the deliver call anyway would overrun the deadline the reserve
-    exists to stay clear of, and the caller already turns that exception into
-    the 451.
+    Raises ``TimeoutError`` when the receive spent it all.
     """
-    spent = time.monotonic() - server.data_phase_started
-    remaining = server.data_phase_budget - spent - _REPLY_RESERVE_SECONDS
+    spent = time.monotonic() - connection.data_phase_started
+    remaining = connection.data_phase_budget - spent - _REPLY_RESERVE_SECONDS
     if remaining <= 0:
         raise TimeoutError("DATA budget spent before the deliver call")
     return remaining
@@ -153,26 +121,7 @@ def _untagged(address: str) -> str:
     return local.split(delimiter, 1)[0] + at + domain
 
 
-def _proxy_header_is_trusted(session) -> bool:
-    """True when the *wire* peer is allowed to speak PROXY protocol to us.
-
-    The protocol reads a PROXY header from whoever sent it. Since the header
-    dictates both the rate-limit key and the ``client_address`` the MDA
-    records, an unfiltered one hands a direct connector a free pass past
-    every per-IP cap and the ability to attribute its mail to any address it
-    names.
-
-    The allowlist is never empty with PROXY protocol on: the settings refuse
-    to load. Trusting every peer takes an explicit ``0.0.0.0/0,::/0``.
-    """
-    wire_ip = settings.parse_client_ip(_wire_ip(session))
-    # None for a peer without an address: a member of no network.
-    return wire_ip is not None and any(
-        wire_ip in network for network in settings.PYMTA_TRUSTED_PROXIES
-    )
-
-
-def _safe_hostname(raw: str, session, server) -> str:
+def _safe_hostname(raw: str, connection) -> str:
     """Return ``raw`` in a form the MDA can use: each offending character as ``?``.
 
     Replaced: CRLF/NUL/TAB, since the MDA writes this into a ``Received``
@@ -191,114 +140,51 @@ def _safe_hostname(raw: str, session, server) -> str:
         metrics.SECURITY_REJECTIONS.labels(reason="bad_helo").inc()
         logger.debug(
             "helo_sanitised",
-            extra=_trace(
-                server,
-                session,
-                helo=logfmt.clip(raw, _MAX_LOGGED_ADDRESS),
-                forwarded=logfmt.clip(clean, _MAX_LOGGED_ADDRESS),
-            ),
+            extra=_trace(connection, helo=address_field(raw), forwarded=address_field(clean)),
         )
     return clean
 
 
-# Recipients named in full up to this many; past it the line would be several
-# kilobytes of one field, and a log with 100-address lines is one nobody reads.
-# recipient_count carries the true number either way.
-_MAX_LOGGED_RECIPIENTS = 10
+def _refusal(reply: str, reason: str, **fields) -> Reply:
+    """A refusal, with what its ``reject`` line says besides the reply.
 
-# RFC 5321 §4.5.3.1.3 caps a forward/reverse path at 256 octets. A refusal can
-# name an address that never passed validation, and MAIL FROM is not held to
-# that cap, so bound what reaches the log. The tail is kept so the domain of a
-# long SRS return path stays searchable.
-_MAX_LOGGED_ADDRESS = 256
-_LOGGED_ADDRESS_TAIL = 128
-
-
-def _recipients_field(rcpts: list[str]) -> str:
-    return logfmt.clip_list(rcpts, _MAX_LOGGED_RECIPIENTS)
-
-
-def _address_field(address) -> str:
-    """A peer-supplied address, bounded, for a log field."""
-    return logfmt.clip(address or "", _MAX_LOGGED_ADDRESS, tail=_LOGGED_ADDRESS_TAIL)
-
-
-def _sender_field(envelope) -> str:
-    """The envelope sender as logged: ``<>`` for bounces.
-
-    Carried on every RCPT refusal so that searching the log for the sending
-    domain finds them. Without it a refusal names only our own mailbox, and
-    "why did mail from X never arrive?" has to be answered by joining lines.
+    The line names the sender and the recipients accepted so far without
+    being told. ``reason`` reuses the label of the metric counting the same
+    refusal, so a spike on a counter and the lines explaining it group by the
+    same word.
     """
-    return _address_field(envelope.mail_from) or "<>"
+    return Reply(reply, reason, fields)
 
 
-def _log_reject(server, session, verb, reason, **extra) -> None:
-    """One line per refused command, at INFO.
+def _message_fields(envelope, size: int) -> dict:
+    """What a line about a whole message names: sender, recipients, size.
 
-    The counterpart to :func:`_log_outcome`: that one records what became of a
-    message, this one records why a command never became part of any. Without
-    it the most common failure of all, an unknown recipient, leaves nothing
-    behind but a counter, and "why did mail from X bounce?" has no answer in
-    the log at all.
-
-    Bounded per connection by ``PYMTA_MAX_ERRORS_PER_SESSION`` (50): every
-    caller either spends a unit of that budget or asks for the disconnect
-    outright, so a peer cannot spin more of these than the budget allows.
-    Unknown recipients stop even sooner, at
-    ``PYMTA_MAX_RCPT_MISSES_PER_SESSION`` (10).
-
-    One ``event=reject`` for every refusal, with the verb and the reason as
-    fields rather than baked into the name, so ``event=reject`` groups them
-    all and ``reason=`` splits them. ``reason`` reuses the metrics label of
-    the same rejection wherever one exists, so a spike on a counter and the
-    lines explaining it group by the same word.
-
-    Names the address, as :func:`_log_outcome` does and as every MTA's reject
-    log does; the same retention consequence applies.
+    Envelope addresses, as every MTA log has them and as tracing a delivery
+    complaint requires. That makes the log a store of personal data, with the
+    retention policy of the mail itself.
     """
-    logger.info("reject", extra=_trace(server, session, verb=verb, reason=reason, **extra))
-    # The protocol writes a ``reject`` line of its own for every 4xx/5xx
-    # that has none. This one has.
-    server.refusal_logged = True
+    return {
+        # ``<>`` for a bounce.
+        "sender": address_field(envelope.mail_from) or "<>",
+        **recipients_fields(envelope.rcpt_tos),
+        "size_bytes": size,
+    }
 
 
-def _refuse(server, session, verb, reason, reply, **extra) -> str:
-    """Spend one unit of the error budget, log the refusal, return the reply."""
-    server.errors += 1
-    _log_reject(server, session, verb, reason, code=int(reply[:3]), **extra)
-    return reply
+def _log_outcome(connection, started: float, outcome: str, size: int, **extra) -> None:
+    """One line per message handed to the MDA, whatever became of it.
 
-
-def _log_outcome(ctx, envelope, outcome, size, **extra) -> None:
-    """One line per message, whatever happened to it.
-
-    ``ctx`` is ``(server, session, started)``.
-
-    This is the audit record: the Postfix ``status=sent`` equivalent, and the
-    only way to answer "what became of the mail from X to Y" from the log. The
-    metrics count outcomes; they cannot tell you about *this* message.
-
-    INFO, and bounded by the message rate rather than by anything a peer can
-    spin: a connection that never delivers never reaches here.
-
-    It names envelope addresses, as every MTA log does and as tracing a
-    delivery complaint requires. That makes the log a store of personal data,
-    so it inherits whatever retention policy the mail itself has.
+    The audit record, Postfix's ``status=sent``: the only way to answer "what
+    became of the mail from X to Y" from the log. INFO, and bounded by the
+    message rate: a connection that never delivers never reaches here.
     """
-    server, session, started = ctx
-    server.refusal_logged = True
     logger.info(
         "message_" + outcome,
         extra=_trace(
-            server,
-            session,
-            sender=_sender_field(envelope),
-            recipients=_recipients_field(envelope.rcpt_tos),
-            recipient_count=len(envelope.rcpt_tos),
-            size_bytes=size,
+            connection,
+            **_message_fields(connection.envelope, size),
             duration_ms=int((time.monotonic() - started) * 1000),
-            helo=session.host_name,
+            helo=connection.session.host_name,
             **extra,
         ),
     )
@@ -311,26 +197,22 @@ class InboundHandler:
         self.mda = mda_client
 
     # ------------------------------------------------------------------ EHLO
-    async def handle_HELO(self, server, session, envelope, hostname) -> None:
-        """Record the name a peer greeted with, EHLO or HELO alike."""
-        session.host_name = _safe_hostname(hostname, session, server)
+    async def handle_HELO(self, connection, hostname: str) -> str:
+        """The name a peer greeted with, EHLO or HELO alike, as it is kept."""
+        return _safe_hostname(hostname, connection)
 
     # ------------------------------------------------------------------ MAIL
-    async def handle_MAIL(self, server, session, envelope, address, mail_options):
+    async def handle_MAIL(self, connection, address: str) -> Reply:
         # Here rather than after the body: the message over the budget would
         # otherwise be uploaded in full before being refused.
-        if server.envelopes >= settings.PYMTA_MAX_ENVELOPES_PER_SESSION:
+        if connection.envelopes >= settings.PYMTA_MAX_ENVELOPES_PER_SESSION:
             metrics.SECURITY_REJECTIONS.labels(reason="max_envelopes_per_session").inc()
             metrics.DISCONNECTS_421.labels(reason="max_envelopes_per_session").inc()
-            server.request_disconnect()
-            return _refuse(
-                server,
-                session,
-                "mail",
-                "max_envelopes_per_session",
+            connection.request_disconnect()
+            return _refusal(
                 "421 4.7.0 Too many messages this session, closing connection",
-                sender=_address_field(address),
-                envelopes=server.envelopes,
+                "max_envelopes_per_session",
+                envelopes=connection.envelopes,
             )
 
         try:
@@ -347,70 +229,44 @@ class InboundHandler:
             )
         except AddressError as err:
             metrics.SECURITY_REJECTIONS.labels(reason=err.reason).inc()
-            return _refuse(
-                server,
-                session,
-                "mail",
-                err.reason,
-                f"{err.smtp_code} {err.smtp_text}",
-                sender=_address_field(address),
-            )
+            return _refusal(f"{err.smtp_code} {err.smtp_text}", err.reason)
 
         if clean and settings.PYMTA_BLOCKED_SENDER_DOMAINS:
             domain = clean.rpartition("@")[2].lower()
             if domain in settings.PYMTA_BLOCKED_SENDER_DOMAINS:
                 metrics.SECURITY_REJECTIONS.labels(reason="blocked_sender_domain").inc()
-                return _refuse(
-                    server,
-                    session,
-                    "mail",
-                    "blocked_sender_domain",
+                return _refusal(
                     "554 5.7.1 Sender domain not accepted",
-                    sender=_address_field(clean),
+                    "blocked_sender_domain",
+                    sender=address_field(clean),
                 )
 
         # "" for the null sender (MAIL FROM:<>): a bounce.
-        envelope.mail_from = clean
-        envelope.mail_options.extend(mail_options)
-        return "250 2.1.0 OK"
+        connection.envelope.mail_from = clean
+        return Reply("250 2.1.0 OK")
 
     # ------------------------------------------------------------------ RCPT
-    async def handle_RCPT(self, server, session, envelope, address, rcpt_options):  # noqa: PLR0911
-        sender = _sender_field(envelope)
+    async def handle_RCPT(self, connection, address: str) -> Reply:  # noqa: PLR0911
+        envelope = connection.envelope
 
-        # Panic switch. Checked before the MDA call so a deferring node costs
-        # nothing upstream: the point is to stop touching the MDA, not to keep
-        # asking it questions while refusing its answers.
+        # Before the MDA call: the switch is there to stop calling the MDA.
         if settings.PYMTA_DEFER_ALL:
             metrics.SECURITY_REJECTIONS.labels(reason="defer_all").inc()
             metrics.RCPT_TOTAL.labels(result="rejected_temp").inc()
-            # Counts against the session's error budget like every other
-            # refusal. Without this a sender could sit on one connection
-            # issuing RCPTs for as long as command_call_limit allowed, which is
-            # exactly the load a deferring node is trying to shed.
-            return _refuse(
-                server,
-                session,
-                "rcpt",
-                "defer_all",
+            return _refusal(
                 "451 4.3.2 Service temporarily unavailable, please retry",
-                sender=sender,
-                recipient=_address_field(address),
+                "defer_all",
+                recipient=address_field(address),
             )
 
         # Per-envelope recipient cap.
         if len(envelope.rcpt_tos) >= settings.PYMTA_MAX_RECIPIENTS_PER_ENVELOPE:
             metrics.SECURITY_REJECTIONS.labels(reason="max_recipients_per_envelope").inc()
             metrics.RCPT_TOTAL.labels(result="rejected_temp").inc()
-            return _refuse(
-                server,
-                session,
-                "rcpt",
-                "max_recipients_per_envelope",
+            return _refusal(
                 "452 4.5.3 Too many recipients",
-                sender=sender,
-                recipient=_address_field(address),
-                recipient_count=len(envelope.rcpt_tos),
+                "max_recipients_per_envelope",
+                recipient=address_field(address),
             )
 
         # RFC 5321 §4.5.1: the bare ``postmaster``, with no domain, must be
@@ -433,21 +289,14 @@ class InboundHandler:
         except AddressError as err:
             metrics.SECURITY_REJECTIONS.labels(reason=err.reason).inc()
             metrics.RCPT_TOTAL.labels(result="rejected_perm").inc()
-            return _refuse(
-                server,
-                session,
-                "rcpt",
-                err.reason,
-                f"{err.smtp_code} {err.smtp_text}",
-                sender=sender,
-                recipient=_address_field(address),
+            return _refusal(
+                f"{err.smtp_code} {err.smtp_text}", err.reason, recipient=address_field(address)
             )
 
-        # Case-insensitive both sides, and deliberately a wider fold than the
-        # MDA's: it ASCII-folds a local part, this also folds the code points
-        # that are not ASCII but lower onto it. The difference can only block
-        # spellings the MDA would refuse anyway, never let one through, so it
-        # stays on the blocking side of the denylist.
+        # Case-insensitive, with a wider fold than the MDA's: it ASCII-folds a
+        # local part, this also folds the non-ASCII code points that lower
+        # onto ASCII. The difference can only block spellings the MDA would
+        # refuse anyway, never let one through.
         #
         # Also matched without its tag, so blocking ``victim@`` covers
         # ``victim+anything@``.
@@ -458,250 +307,142 @@ class InboundHandler:
         ):
             metrics.SECURITY_REJECTIONS.labels(reason="blocked_recipient").inc()
             metrics.RCPT_TOTAL.labels(result="rejected_perm").inc()
-            return _refuse(
-                server,
-                session,
-                "rcpt",
-                "blocked_recipient",
+            return _refusal(
                 "550 5.1.1 Recipient not accepted",
-                sender=sender,
-                recipient=_address_field(clean),
+                "blocked_recipient",
+                recipient=address_field(clean),
             )
 
         if clean in envelope.rcpt_tos:
             # Given twice: accepted, and delivered once.
             metrics.RCPT_TOTAL.labels(result="accepted").inc()
-            return "250 2.1.5 OK"
+            return Reply("250 2.1.5 OK")
 
-        result = await self.mda.check_recipient(clean, session=server.session_id)
+        result = await self.mda.check_recipient(clean, session=connection.session_id)
         if not result.ok:
             # Whatever the status: no failed check is a verdict on the address.
             metrics.RCPT_TOTAL.labels(result="rejected_temp").inc()
-            return _refuse(
-                server,
-                session,
-                "rcpt",
-                "mda_temp_fail",
+            return _refusal(
                 "451 4.3.0 Recipient verification temporarily unavailable",
-                sender=sender,
-                recipient=_address_field(clean),
+                "mda_temp_fail",
+                recipient=address_field(clean),
                 status=result.status_code,
             )
 
-        # Only an explicit true/false for this exact address is a verdict. The
-        # MDA answers with one boolean per address it was asked about, so a
-        # missing key or any other type means the body is not the answer we
-        # asked for: an empty or unparseable body, a proxy's own 200 page, or a
-        # response shape that has drifted. Reading that as "no such mailbox"
-        # would bounce a working address on someone else's bug, so it defers
-        # like every other unusable check response.
+        # Only true or false for this address is a verdict. Anything else (an
+        # empty body, a proxy's own 200 page, a changed response shape)
+        # defers: read as "no such mailbox", it would bounce a working address.
         verdict = result.payload.get(clean)
         if not isinstance(verdict, bool):
             metrics.RCPT_TOTAL.labels(result="rejected_temp").inc()
-            server.errors += 1
-            # Stays a warning rather than becoming a ``_log_reject`` line: it
-            # reports the MDA breaking its contract, not the peer doing
-            # anything wrong, and that deserves the higher level. It is still
-            # this refusal's one line, so it carries the recipient too.
-            server.refusal_logged = True
+            # A warning in place of the ``reject`` line: the MDA broke its
+            # contract, the peer did nothing wrong.
             logger.warning(
                 "mda_check_no_verdict",
                 extra=_trace(
-                    server,
-                    session,
-                    sender=sender,
-                    recipient=_address_field(clean),
+                    connection,
+                    sender=address_field(envelope.mail_from) or "<>",
+                    recipient=address_field(clean),
                     status=result.status_code,
                     verdict_type=type(verdict).__name__,
                 ),
             )
-            return "451 4.3.0 Recipient verification temporarily unavailable"
+            return Reply("451 4.3.0 Recipient verification temporarily unavailable", logged=True)
 
         if not verdict:
             metrics.RCPT_TOTAL.labels(result="rejected_perm").inc()
-            server.rcpt_misses += 1
-            misses = server.rcpt_misses
-            if misses >= rcpt_miss_budget(server):
+            connection.rcpt_misses += 1
+            misses = connection.rcpt_misses
+            if misses >= rcpt_miss_budget(connection):
                 metrics.SECURITY_REJECTIONS.labels(reason="max_rcpt_misses_per_session").inc()
                 metrics.DISCONNECTS_421.labels(reason="max_rcpt_misses_per_session").inc()
-                server.request_disconnect()
-                # One line per refusal: this address is unknown *and* it spent
-                # the session's last miss, so the reason that names the
-                # disconnect is the one worth having.
-                reason, reply = (
-                    "max_rcpt_misses_per_session",
+                connection.request_disconnect()
+                # The address is unknown and it spent the session's last
+                # miss: the reason that names the disconnect is the one kept.
+                reply, reason = (
                     "421 4.7.0 Too many unknown recipients, goodbye",
+                    "max_rcpt_misses_per_session",
                 )
             else:
-                reason, reply = "unknown_recipient", "550 5.1.1 No such recipient"
-            return _refuse(
-                server,
-                session,
-                "rcpt",
-                reason,
-                reply,
-                sender=sender,
-                recipient=_address_field(clean),
-                misses=misses,
-            )
+                reply, reason = "550 5.1.1 No such recipient", "unknown_recipient"
+            return _refusal(reply, reason, recipient=address_field(clean), misses=misses)
 
         envelope.rcpt_tos.append(clean)
-        envelope.rcpt_options.extend(rcpt_options)
         metrics.RCPT_TOTAL.labels(result="accepted").inc()
-        return "250 2.1.5 OK"
+        return Reply("250 2.1.5 OK")
 
     # ------------------------------------------------------------------ DATA
-    async def handle_DATA(self, server, session, envelope):
+    async def handle_DATA(self, connection) -> Reply:
+        session, envelope = connection.session, connection.envelope
         # Counted whatever becomes of it. handle_MAIL is where the budget is
         # applied, before the next message is uploaded.
-        server.envelopes += 1
+        connection.envelopes += 1
         started = time.monotonic()
         # Line endings are CRLF only and the size is within the limit: the
         # protocol saw to both as it read the message.
         content: bytes = envelope.content
 
         # NUL bytes have no place in an RFC 5321 message and break downstream
-        # C parsers. Reject before we pay the cost of the deliver call.
+        # C parsers.
         if b"\x00" in content:
             metrics.SECURITY_REJECTIONS.labels(reason="nul_byte").inc()
             metrics.MESSAGES_TOTAL.labels(result="rejected_perm").inc()
-            return _refuse(
-                server,
-                session,
-                "data",
-                "nul_byte",
+            return _refusal(
                 "554 5.6.0 NUL byte in message body",
-                sender=_sender_field(envelope),
-                recipients=_recipients_field(envelope.rcpt_tos),
-                recipient_count=len(envelope.rcpt_tos),
-                size_bytes=len(content),
+                "nul_byte",
+                **_message_fields(envelope, len(content)),
             )
 
         try:
             # Before building the coroutine: a budget already spent raises
-            # here, and a coroutine created but never awaited would only add a
-            # RuntimeWarning to the log on the way to the same 451.
-            budget = _remaining_data_budget(server)
+            # here, and a coroutine never awaited would add a RuntimeWarning.
+            budget = _remaining_data_budget(connection)
             result: MDAResult = await asyncio.wait_for(
                 self.mda.deliver(
                     message=content,
                     sender=envelope.mail_from,
                     original_recipients=list(envelope.rcpt_tos),
-                    client_address=_peer_ip(session),
-                    client_port=_peer_port(session),
-                    # We do not reverse-DNS ourselves: the MDA inserts its
-                    # own Received header using metadata and can decide what
-                    # to do with the missing hostname.
-                    client_hostname=None,
+                    # None when a PROXY header names no client: the balancer's
+                    # address would attribute the mail to our own
+                    # infrastructure.
+                    client_address=session.client_ip,
+                    client_port=None if session.client_port is None else str(session.client_port),
                     client_helo=session.host_name,
-                    session=server.session_id,
+                    session=connection.session_id,
                     transport=_transport(session, envelope),
                 ),
                 timeout=budget,
             )
         except TimeoutError:
-            # Without its own reason this is indistinguishable from an MDA
-            # defer, and the two call for opposite responses: raise the budget
-            # versus go fix the MDA.
+            # Its own reason: an MDA defer says "fix the MDA", this one says
+            # "raise the budget".
             metrics.SECURITY_REJECTIONS.labels(reason="data_timeout").inc()
             metrics.MESSAGES_TOTAL.labels(result="rejected_temp").inc()
             metrics.MESSAGE_BYTES.observe(len(content))
-            return _refuse(
-                server,
-                session,
-                "data",
-                "data_timeout",
+            return _refusal(
                 "451 4.3.0 Delivery timed out, please retry",
-                sender=_sender_field(envelope),
-                recipients=_recipients_field(envelope.rcpt_tos),
+                "data_timeout",
+                **_message_fields(envelope, len(content)),
                 limit_seconds=settings.PYMTA_DATA_TIMEOUT,
-                size_bytes=len(content),
             )
 
         metrics.MESSAGE_BYTES.observe(len(content))
 
         if result.ok and result.payload.get("status") == "ok":
             metrics.MESSAGES_TOTAL.labels(result="delivered").inc()
-            _log_outcome((server, session, started), envelope, "delivered", len(content))
-            return "250 2.0.0 Message accepted for delivery"
+            _log_outcome(connection, started, "delivered", len(content))
+            return Reply("250 2.0.0 Message accepted for delivery")
 
-        # Anything short of an unambiguous "ok" defers. In particular the MDA
-        # answers 207 when it delivered to some recipients and not others: it
-        # cannot tell us to retry just the stragglers, so the only way they
-        # ever arrive is a retry of the whole envelope. That duplicates for the
-        # recipients already served, which is the right trade against losing the rest,
-        # and the behaviour the Postfix milter has always had (anything but
-        # 200 + status=ok is TEMPFAIL). Permanent rejection is reserved for the
-        # statuses that mean *this message* is unacceptable; see
-        # ``mda_async._PERMANENT_STATUSES``.
+        # Anything but a clear "ok" defers. On a 207 the MDA delivered to some
+        # recipients only: a retry of the whole envelope reaches the rest,
+        # with duplicates for the others. The Postfix milter does the same.
+        # Permanent refusals: see ``mda_async._PERMANENT_STATUSES``.
+        #
+        # ``logged``: the outcome line stands in for the ``reject`` line.
         if result.temp_fail or result.ok:
             metrics.MESSAGES_TOTAL.labels(result="rejected_temp").inc()
-            server.errors += 1
-            _log_outcome(
-                (server, session, started),
-                envelope,
-                "deferred",
-                len(content),
-                status=result.status_code,
-            )
-            return "451 4.3.0 Delivery temporarily unavailable"
+            _log_outcome(connection, started, "deferred", len(content), status=result.status_code)
+            return Reply("451 4.3.0 Delivery temporarily unavailable", logged=True)
         metrics.MESSAGES_TOTAL.labels(result="rejected_perm").inc()
-        server.errors += 1
-        _log_outcome(
-            (server, session, started),
-            envelope,
-            "rejected",
-            len(content),
-            status=result.status_code,
-        )
-        return "554 5.6.0 Message rejected by delivery agent"
-
-    # ------------------------------------------------------------------ PROXY
-    async def handle_PROXY(self, server, session, envelope, proxy_data):
-        """Apply admission control once PROXY-protocol parsing is done.
-
-        Routing the gate through here (rather than at SMTP-connect time)
-        means we count sessions against the real client IP carried in the
-        PROXY header, not against the load-balancer's IP. Without this,
-        every session behind HAProxy would be bucketed under one address
-        and the per-source share would silently turn into a global
-        cap.
-
-        Returning False makes the protocol drop the connection without ever
-        starting the SMTP dialogue.
-        """
-        if not _proxy_header_is_trusted(session):
-            metrics.SECURITY_REJECTIONS.labels(reason="untrusted_proxy").inc()
-            metrics.CONNECTIONS_TOTAL.labels(result="rejected_untrusted_proxy").inc()
-            # DEBUG, not WARNING: any host that can reach port 25 provokes this
-            # once per connection, so a higher level hands the internet control
-            # of our log volume. The two counters above are where the volume
-            # belongs, and pymta_security_rejections_total{reason="untrusted_proxy"}
-            # is what an alert should watch.
-            logger.debug(
-                "proxy_header_untrusted",
-                extra={
-                    "session_id": server.session_id,
-                    "wire_peer": _wire_ip(session),
-                    "claimed_src": proxy_data.src_addr,
-                    "detail": "add to PYMTA_TRUSTED_PROXIES if this is a real balancer",
-                },
-            )
-            return False
-
-        # Ties the session to the origin the header names. Logging the wire
-        # peer alongside also shows a misconfiguration at a glance: the two
-        # being equal means the header is not carrying a real origin.
-        logger.debug(
-            "proxy_header",
-            extra={
-                "session_id": server.session_id,
-                "client_ip": proxy_data.src_addr,
-                "client_port": proxy_data.src_port,
-                "wire_peer": _wire_ip(session),
-                "version": proxy_data.version,
-            },
-        )
-        # A header that names no client (a health check, a UNIX socket) shares
-        # one bucket: it costs the sender capacity rather than winning it any.
-        return await server.admit(proxy_data.src_addr or "unknown")
+        _log_outcome(connection, started, "rejected", len(content), status=result.status_code)
+        return Reply("554 5.6.0 Message rejected by delivery agent", logged=True)

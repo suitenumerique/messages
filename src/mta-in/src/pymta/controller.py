@@ -33,9 +33,8 @@ def build_smtp_kwargs(*, tls_context: ssl.SSLContext | None) -> dict:
         # Off unless PYMTA_REQUIRE_TLS: on a public MX, refusing a sender that
         # does not do STARTTLS loses mail rather than protecting it.
         "require_starttls": settings.PYMTA_REQUIRE_TLS and tls_context is not None,
-        # Times each command may be sent in one session. Numbers come from
-        # "what a sane sender would ever do in one TCP session"; anything
-        # above means the peer is hammering us.
+        # Times each command may be sent in one session, above what a
+        # legitimate sender does.
         "command_call_limit": {
             "EHLO": 4,
             "HELO": 4,
@@ -47,8 +46,8 @@ def build_smtp_kwargs(*, tls_context: ssl.SSLContext | None) -> dict:
             "DATA": settings.PYMTA_MAX_ENVELOPES_PER_SESSION + 2,
             "RSET": 20,
             "QUIT": 1,
-            # Pinned so that raising the "*" bucket cannot let a peer burn TLS
-            # handshakes by repeating STARTTLS within one TCP session.
+            # Its own entry, so raising "*" cannot let a peer repeat TLS
+            # handshakes in one session.
             "STARTTLS": 2,
             "*": 25,
         },
@@ -64,17 +63,15 @@ def load_tls_context() -> ssl.SSLContext | None:
 
     None means STARTTLS is neither offered nor accepted.
 
-    Loading more than one pair is how dual certificates work: OpenSSL holds a
-    slot per key type and, at each handshake, presents the certificate the
-    client said it can verify. Two pairs of the *same* key type is not an
-    error — the later simply takes the slot — so the second of two RSA certs
-    is the one served.
+    Several pairs give dual certificates: OpenSSL holds one per key type and
+    presents, at each handshake, the one the client said it can verify. Of two
+    pairs with the same key type, the later is the one served.
     """
     pairs = settings.PYMTA_TLS_CERT_PAIRS
     if not pairs:
         return None
     ctx = ssl.create_default_context(ssl.Purpose.CLIENT_AUTH)
-    # As an MTA we accept any client identity; we just want our side encrypted.
+    # No client certificate is asked for.
     ctx.check_hostname = False
     ctx.verify_mode = ssl.CERT_NONE
     minimum = _TLS_MINIMUM[settings.PYMTA_TLS_MIN_VERSION]

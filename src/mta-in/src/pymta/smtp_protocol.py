@@ -31,7 +31,6 @@ import re
 import secrets
 import ssl
 import time
-import weakref
 
 from . import logfmt, metrics, runtime, settings
 from .command import (
@@ -43,8 +42,8 @@ from .command import (
     strip_keyword,
 )
 from .limits import IPGate, LogThrottle, TooManyConnections, source_key
-from .proxy_protocol import ProxyHeader, read_proxy_header
-from .session_log import MAX_LOGGED_REPLY, SessionLog, ip_of
+from .proxy_protocol import read_proxy_header
+from .session_log import MAX_LOGGED_REPLY, SessionLog
 from .wire import ConnectionClosed, LineReader, LineTooLong, stored_line
 
 logger = logging.getLogger(__name__)
@@ -53,16 +52,10 @@ logger = logging.getLogger(__name__)
 # this many addresses at a time.
 _cap_log_throttle = LogThrottle(interval=60.0, max_keys=1024)
 
-# Connections currently open: for the shutdown, and to find an idle one whose
-# slot a new source can have.
-_live_connections: weakref.WeakSet[SMTPConnection] = weakref.WeakSet()
-
 # RFC 5321 section 4.5.3.1.4. MAIL gets more after EHLO: see _line_limit.
 _COMMAND_LINE_LIMIT = 512
 # The session is closed on this many lines that are not a command.
 _MAX_UNKNOWN_COMMANDS = 5
-# Times a command may be sent in one session when the listener names no limit.
-_DEFAULT_CALL_LIMIT = 20
 
 # RFC 3207 section 4: all a peer may send in clear when TLS is required.
 _ALLOWED_BEFORE_STARTTLS = frozenset({"NOOP", "EHLO", "STARTTLS", "QUIT"})
@@ -126,13 +119,17 @@ class _TLSFailed(Exception):
 class Session:
     """What is known about the peer. Lasts the connection."""
 
-    peer: tuple | None = None
+    # The TCP peer. With PROXY protocol on, that is the balancer.
+    wire_ip: str | None = None
+    # The client: the TCP peer, or with PROXY protocol on the source a trusted
+    # header named. None while not known, and when the header names none.
+    client_ip: str | None = None
+    client_port: int | None = None
     # Set by EHLO/HELO, forgotten by STARTTLS.
     host_name: str | None = None
     extended_smtp: bool = False
     # ``{"cipher": (name, version, bits)}`` once TLS is up.
     ssl: dict | None = None
-    proxy_data: ProxyHeader | None = None
 
 
 @dataclasses.dataclass
@@ -141,14 +138,24 @@ class Envelope:
 
     # None until MAIL is accepted. The null sender is the empty string.
     mail_from: str | None = None
-    mail_options: list[str] = dataclasses.field(default_factory=list)
     smtp_utf8: bool = False
     rcpt_tos: list[str] = dataclasses.field(default_factory=list)
-    rcpt_options: list[str] = dataclasses.field(default_factory=list)
     content: bytes | None = None
 
 
-def close_idle_sessions() -> None:
+@dataclasses.dataclass(frozen=True)
+class Reply:
+    """What the handler answers MAIL, RCPT or the end of DATA with."""
+
+    text: str
+    # Of a refusal: what its ``reject`` line says besides the reply.
+    reason: str | None = None
+    fields: dict = dataclasses.field(default_factory=dict)
+    # The handler has written this reply's log line itself.
+    logged: bool = False
+
+
+def close_idle_sessions(gate: IPGate) -> None:
     """At the start of a shutdown, release the sessions that are doing nothing.
 
     A sender keeps a connection open between messages. Left alone it holds the
@@ -156,17 +163,17 @@ def close_idle_sessions() -> None:
     Sessions inside a command or a transaction are left to finish, and are
     told to go as soon as they are done.
     """
-    for connection in list(_live_connections):
+    for connection in list(gate.sessions):
         connection.close_if_idle()
 
 
-def log_abandoned_sessions() -> None:
+def log_abandoned_sessions(gate: IPGate) -> None:
     """Write the summary of every session the shutdown deadline is cutting.
 
     The process exits without their ``connection_lost`` ever running, so a
     message in flight at that point would otherwise leave no line.
     """
-    for connection in list(_live_connections):
+    for connection in list(gate.sessions):
         connection.log_abandoned()
 
 
@@ -175,11 +182,7 @@ def _parameter(name: str, value: str | None) -> str:
 
 
 class SMTPConnection(asyncio.Protocol):
-    """One inbound SMTP connection. See the module docstring.
-
-    The handler's hooks are optional. Without one, the command is accepted as
-    it stands, which is what the protocol tests run on.
-    """
+    """One inbound SMTP connection. See the module docstring."""
 
     def __init__(  # noqa: PLR0913
         self,
@@ -187,14 +190,14 @@ class SMTPConnection(asyncio.Protocol):
         *,
         ip_gate: IPGate,
         hostname: str,
-        ident: str = "ESMTP",
-        data_size_limit: int = 0,
-        enable_smtputf8: bool = False,
-        timeout: float = 300,
-        require_starttls: bool = False,
-        command_call_limit: dict[str, int] | None = None,
-        proxy_protocol_timeout: float | None = None,
-        tls_context: ssl.SSLContext | None = None,
+        ident: str,
+        data_size_limit: int,
+        enable_smtputf8: bool,
+        timeout: float,
+        require_starttls: bool,
+        command_call_limit: dict[str, int],
+        proxy_protocol_timeout: float | None,
+        tls_context: ssl.SSLContext | None,
     ):
         self.handler = handler
         self.hostname = hostname
@@ -204,8 +207,10 @@ class SMTPConnection(asyncio.Protocol):
         self.tls_context = tls_context
         self.require_starttls = bool(tls_context and require_starttls)
         self._timeout = timeout
+        # None: PROXY protocol is off.
         self._proxy_timeout = proxy_protocol_timeout
-        self._call_limits = command_call_limit or {}
+        # Times each command may be sent in one session; "*" for the others.
+        self._call_limits = command_call_limit
         self._gate = ip_gate
         self._commands = {
             "HELO": self._helo,
@@ -231,14 +236,11 @@ class SMTPConnection(asyncio.Protocol):
         self.session = Session()
         self.envelope = Envelope()
         self.transport: asyncio.Transport | None = None
-        # What the session has used of its budgets. The handler adds to them;
-        # nothing a peer can do (RSET, EHLO, STARTTLS) takes anything back.
-        self.errors = 0  # 4xx/5xx replies sent
-        self.rcpt_misses = 0  # recipients the MDA does not know
-        self.envelopes = 0  # messages that reached the end of DATA
-        # Set by the handler once it has logged the refusal it is about to
-        # return, so the session log does not add a second line for it.
-        self.refusal_logged = False
+        # What the session has used of its budgets. Nothing a peer can do
+        # (RSET, EHLO, STARTTLS) takes anything back.
+        self.errors = 0  # 4xx/5xx replies sent: counted by _reply
+        self.rcpt_misses = 0  # recipients the MDA does not know: the handler's
+        self.envelopes = 0  # messages that reached the end of DATA: the handler's
         # Monotonic timestamp of the 354 that opened the current DATA phase,
         # and the deadline its timer was armed at. For the handler to size
         # its own deadline. None outside DATA.
@@ -256,8 +258,6 @@ class SMTPConnection(asyncio.Protocol):
         self._log = SessionLog(self)
         # The command now running, if any.
         self._verb: str | None = None
-        # ``errors`` as it stood when that command was dispatched.
-        self._errors_at_dispatch = 0
         # Set once we have decided to hang up: no further command is read.
         self._closing = False
         # Set once the timers are stopped and the summary written.
@@ -268,16 +268,13 @@ class SMTPConnection(asyncio.Protocol):
         self._write_resumed: asyncio.Future | None = None
         # Set by request_disconnect(), consumed by the next reply.
         self._disconnect_after_reply = False
-        # The client as the gate keyed it: PROXY source or TCP peer.
-        self._client_ip: str | None = None
         # The gate key we hold a slot under (see limits.source_key).
         self._slot: str | None = None
         self._slot_taken_at = 0.0
         # When the last command was answered, or the slot taken.
         self._idle_since = 0.0
-        self._idle_timer: asyncio.TimerHandle | None = None
-        # What the idle timer was last armed at, for the timeout's log line.
-        self._idle_timeout: float | None = None
+        # Bounds what the session is doing now: see _arm_timer.
+        self._timer: asyncio.TimerHandle | None = None
         self._session_timer: asyncio.TimerHandle | None = None
         # While a message is being read: see _check_data_rate. Stopped by _data.
         self._rate_timer: asyncio.TimerHandle | None = None
@@ -290,9 +287,12 @@ class SMTPConnection(asyncio.Protocol):
     def connection_made(self, transport) -> None:
         self._loop = asyncio.get_running_loop()
         self.transport = transport
-        self.session.peer = transport.get_extra_info("peername")
+        peer = transport.get_extra_info("peername")
+        if peer:
+            self.session.wire_ip = str(peer[0])
+            if self._proxy_timeout is None:
+                self.session.client_ip, self.session.client_port = str(peer[0]), peer[1]
         self._reader = LineReader(transport, settings.PYMTA_MAX_LINE_LENGTH)
-        _live_connections.add(self)
         self._arm_session_timer()
         self._arm_idle_timer()
         self._task = self._loop.create_task(self._run())
@@ -355,10 +355,10 @@ class SMTPConnection(asyncio.Protocol):
         self._reader.close()
 
     def _stop_timers(self) -> None:
-        for timer in (self._idle_timer, self._session_timer):
+        for timer in (self._timer, self._session_timer):
             if timer is not None:
                 timer.cancel()
-        self._idle_timer = self._session_timer = None
+        self._timer = self._session_timer = None
 
     def _end(self, error) -> None:
         """Stop everything and write the summary. Once, whoever calls first."""
@@ -366,7 +366,6 @@ class SMTPConnection(asyncio.Protocol):
             return
         self._ended = True
         self._stop_reading()
-        _live_connections.discard(self)
         self.resume_writing()
         try:
             self._log.close(error)
@@ -408,7 +407,7 @@ class SMTPConnection(asyncio.Protocol):
             self.close_reason = self.close_reason or "internal_error"
             logger.exception(
                 "session_error",
-                extra={"session_id": self.session_id, "client_ip": self.client_address()},
+                extra={"session_id": self.session_id, "client_ip": self.session.client_ip},
             )
             metrics.SECURITY_REJECTIONS.labels(reason="internal_error").inc()
         finally:
@@ -421,12 +420,38 @@ class SMTPConnection(asyncio.Protocol):
     async def _enter(self) -> bool:
         """Decide whether this connection gets a greeting.
 
-        Without PROXY protocol the TCP peer is the client and is admitted at
-        once. With it, the header is read first and the handler's
-        ``handle_PROXY`` admits the address it names.
+        The client is the TCP peer, or with PROXY protocol on the source the
+        header names. It is then admitted or turned away.
         """
-        if self._proxy_timeout is None:
-            return await self.admit(self._wire_peer_ip())
+        if self._proxy_timeout is not None:
+            if not await self._read_proxy_header():
+                return False
+        elif self.session.client_ip is None:
+            # A peer that resets between accept() and here leaves no address.
+            # Counted, and logged at DEBUG only: it must not be a way to pick
+            # our log rate.
+            metrics.CONNECTIONS_TOTAL.labels(result="no_wire_peer").inc()
+            logger.debug("session_without_peer", extra={"session_id": self.session_id})
+        return await self._admit()
+
+    async def _read_proxy_header(self) -> bool:
+        """Take the client from the PROXY header. False: no session, no reply.
+
+        Only from a peer in ``PYMTA_TRUSTED_PROXIES``: the header decides
+        which source the limits count and which address the MDA records. The
+        allowlist is never empty here (the settings refuse to load).
+
+        Both refusals are logged at DEBUG: any host that reaches the port can
+        provoke one per connection. The counters are what an alert watches.
+        """
+        session = self.session
+        who = {"session_id": self.session_id, "wire_peer": session.wire_ip}
+        wire = settings.parse_client_ip(session.wire_ip)
+        if wire is None or not any(wire in net for net in settings.PYMTA_TRUSTED_PROXIES):
+            metrics.SECURITY_REJECTIONS.labels(reason="untrusted_proxy").inc()
+            metrics.CONNECTIONS_TOTAL.labels(result="rejected_untrusted_proxy").inc()
+            logger.debug("proxy_header_untrusted", extra=who)
+            return False
         try:
             header = await asyncio.wait_for(
                 read_proxy_header(self._reader), timeout=self._proxy_timeout
@@ -437,14 +462,20 @@ class SMTPConnection(asyncio.Protocol):
             # A balancer that stops sending the header takes all inbound
             # mail down, and this is the only trace.
             metrics.CONNECTIONS_TOTAL.labels(result="rejected_invalid_proxy").inc()
-            logger.debug(
-                "proxy_header_invalid",
-                extra={"session_id": self.session_id, "wire_peer": ip_of(self.session.peer)},
-            )
+            logger.debug("proxy_header_invalid", extra=who)
             return False
-        self.session.proxy_data = header
-        hook = getattr(self.handler, "handle_PROXY", None)
-        return hook is not None and await hook(self, self.session, self.envelope, header)
+        session.client_ip, session.client_port = header.src_addr, header.src_port
+        # wire_peer equal to client_ip: the header carries no real origin.
+        logger.debug(
+            "proxy_header",
+            extra={
+                **who,
+                "client_ip": header.src_addr,
+                "client_port": header.src_port,
+                "version": header.version,
+            },
+        )
+        return True
 
     async def _greet(self) -> bool:
         # Two turns of the loop: what the peer sent along with its connection
@@ -465,33 +496,35 @@ class SMTPConnection(asyncio.Protocol):
                 raw = await self._reader.readline()
             except LineTooLong:
                 await self._reader.skip_line()
-                await self._refuse("500 Command line too long", "line_too_long", None)
+                await self._refuse_line("500 Command line too long", "line_too_long", None)
                 continue
             line = raw.rstrip(b"\r\n")
             try:
                 verb, arg = split_command(line, utf8=self.enable_smtputf8)
             except ArgumentNotAscii:
-                await self._refuse("500 Error: strict ASCII mode", "bad_syntax", raw)
+                await self._refuse_line("500 Error: strict ASCII mode", "bad_syntax", raw)
                 continue
             except CommandSyntaxError:
                 # No command word at all: counted with the unrecognised ones.
                 verb, arg = "", None
             if len(line) > self._line_limit(verb):
-                await self._refuse("500 Command line too long", "line_too_long", raw)
+                await self._refuse_line("500 Command line too long", "line_too_long", raw)
                 continue
             if (
                 self.require_starttls
                 and not self.session.ssl
                 and verb not in _ALLOWED_BEFORE_STARTTLS
             ):
-                await self._refuse("530 Must issue a STARTTLS command first", "tls_required", raw)
+                await self._refuse_line(
+                    "530 Must issue a STARTTLS command first", "tls_required", raw
+                )
                 continue
             command = self._commands.get(verb)
             if command is None:
                 unknown_left -= 1
                 if unknown_left < 1:
                     self.request_disconnect()
-                    await self._refuse(
+                    await self._refuse_line(
                         "502 5.5.1 Too many unrecognized commands, goodbye.",
                         "too_many_unknown_commands",
                         raw,
@@ -499,17 +532,17 @@ class SMTPConnection(asyncio.Protocol):
                 elif verb:
                     # Without the verb: a reply that repeats the peer's bytes
                     # is what cross-protocol attacks are built on.
-                    await self._refuse(
+                    await self._refuse_line(
                         "500 5.5.2 Error: command not recognized", "unknown_command", raw
                     )
                 else:
-                    await self._refuse("500 Error: bad syntax", "bad_syntax", raw)
+                    await self._refuse_line("500 Error: bad syntax", "bad_syntax", raw)
                 continue
-            left = calls_left.get(verb, self._call_limit(verb))
+            left = calls_left.get(verb, self._call_limits.get(verb, self._call_limits["*"]))
             if left < 1:
                 metrics.DISCONNECTS_421.labels(reason="too_many_commands").inc()
                 self.request_disconnect()
-                await self._refuse(
+                await self._refuse_line(
                     f"421 4.7.0 {verb} sent too many times", "too_many_commands", raw
                 )
                 continue
@@ -530,23 +563,15 @@ class SMTPConnection(asyncio.Protocol):
         """
         if verb != "MAIL" or not self.session.extended_smtp:
             return _COMMAND_LINE_LIMIT
-        return (
-            _COMMAND_LINE_LIMIT
-            + (26 if self.data_size_limit else 0)
-            + (10 if self.enable_smtputf8 else 0)
-        )
-
-    def _call_limit(self, verb: str) -> int:
-        return self._call_limits.get(verb, self._call_limits.get("*", _DEFAULT_CALL_LIMIT))
+        return _COMMAND_LINE_LIMIT + 26 + (10 if self.enable_smtputf8 else 0)
 
     async def _dispatch(self, verb: str, arg: str | None, command) -> None:
         """Run one recognised command, with the checks every command gets."""
         self._verb = verb
-        self._errors_at_dispatch = self.errors
         self._log.command_started(verb, arg)
-        # The full idle timeout while the command runs: an MDA call can take
-        # longer than the one used under stress.
-        self._arm_idle_timer(self._timeout)
+        # The full timeout while the command runs, whatever the load: an MDA
+        # call can take longer than the idle timeout used under stress.
+        self._arm_timer(self._timeout, self._command_expired)
         failed = True
         try:
             if verb in _LAST_OF_A_GROUP and self._reader.pending():
@@ -568,9 +593,6 @@ class SMTPConnection(asyncio.Protocol):
             self._verb = None
             self._idle_since = time.monotonic()
             self._log.command_finished(failed)
-            # The handler's claim covers this command's reply only. It makes
-            # one on a 250 too (message_delivered).
-            self.refusal_logged = False
             # Idle time counts from the reply, in the state the command left:
             # inside a transaction or not.
             if not self._closing and self.close_reason is None:
@@ -593,7 +615,7 @@ class SMTPConnection(asyncio.Protocol):
             exc_info=error,
             extra={
                 "session_id": self.session_id,
-                "client_ip": self.client_address(),
+                "client_ip": self.session.client_ip,
                 "sender": self._log.open_sender(),
             },
         )
@@ -603,16 +625,23 @@ class SMTPConnection(asyncio.Protocol):
 
     # ------------------------------------------------------------------ replies
     async def _reply(
-        self, *lines: str, reason: str | None = None, refused_line: bytes | None = None
+        self,
+        *lines: str,
+        reason: str | None = None,
+        refused_line: bytes | None = None,
+        handler_reply: Reply | None = None,
     ) -> None:
         """Send one reply, of one line or several, and record it.
 
+        Every 4xx/5xx is charged to the error budget, here and nowhere else.
+
         ``reason`` names a refusal in the log where its code does not.
         ``refused_line`` is what it answers when no command was running.
+        ``handler_reply`` is the handler's, when the reply is one.
         """
         if lines[-1][0] in "45":
-            self._spend_error()
-        self._log.replied(lines[-1], reason, refused_line)
+            self.errors += 1
+        self._log.replied(lines[-1], reason, refused_line, handler_reply)
         encoding = "utf-8" if self.enable_smtputf8 else "ascii"
         self.transport.write(b"".join(line.encode(encoding) + b"\r\n" for line in lines))
         if self._write_resumed is not None:
@@ -622,7 +651,11 @@ class SMTPConnection(asyncio.Protocol):
             self.close_reason = self.close_reason or "server_closed"
             self._close()
 
-    async def _refuse(self, reply: str, reason: str, line: bytes | None) -> None:
+    async def _answer(self, reply: Reply) -> None:
+        """Send what the handler answered."""
+        await self._reply(reply.text, reason=reply.reason, handler_reply=reply)
+
+    async def _refuse_line(self, reply: str, reason: str, line: bytes | None) -> None:
         """Answer a line that was refused before any command ran.
 
         Held to the error budget like any command: a peer that sends nothing
@@ -661,15 +694,6 @@ class SMTPConnection(asyncio.Protocol):
             budget = min(budget, _STRESS_MAX_ERRORS)
         return self.errors >= budget
 
-    def _spend_error(self) -> None:
-        """Charge the error budget for a 4xx/5xx the handler did not charge.
-
-        The handler counts the refusals it makes. Once per command; a line
-        refused before dispatch has no command and always counts.
-        """
-        if self._verb is None or self.errors == self._errors_at_dispatch:
-            self.errors += 1
-
     # ----------------------------------------------------------------- commands
     def in_transaction(self) -> bool:
         """True from an accepted MAIL to the end of DATA, RSET or a new greeting."""
@@ -692,10 +716,7 @@ class SMTPConnection(asyncio.Protocol):
         if not arg:
             await self._reply("501 Syntax: EHLO hostname")
             return
-        lines = [f"250-{self.hostname}"]
-        if self.data_size_limit:
-            lines.append(f"250-SIZE {self.data_size_limit}")
-        lines.append("250-8BITMIME")
+        lines = [f"250-{self.hostname}", f"250-SIZE {self.data_size_limit}", "250-8BITMIME"]
         if self.enable_smtputf8:
             lines.append("250-SMTPUTF8")
         if self.tls_context and not self.session.ssl:
@@ -708,11 +729,7 @@ class SMTPConnection(asyncio.Protocol):
         """Start afresh under ``name``: any open transaction is dropped."""
         self.envelope = Envelope()
         self.session.extended_smtp = extended
-        hook = getattr(self.handler, "handle_HELO", None)
-        if hook is None:
-            self.session.host_name = name
-        else:
-            await hook(self, self.session, self.envelope, name)
+        self.session.host_name = await self.handler.handle_HELO(self, name)
 
     async def _path_and_parameters(self, verb: str, keyword: str, arg: str | None):
         """Parse ``MAIL FROM:`` or ``RCPT TO:``. Returns (address, parameters).
@@ -757,7 +774,6 @@ class SMTPConnection(asyncio.Protocol):
         if self.in_transaction():
             await self._reply("503 Error: nested MAIL command")
             return
-        options = [_parameter(name, value) for name, value in parameters.items()]
         if (parameters.pop("BODY", "7BIT") or "").upper() not in ("7BIT", "8BITMIME"):
             await self._reply("501 Error: BODY can only be one of 7BIT, 8BITMIME")
             return
@@ -773,7 +789,7 @@ class SMTPConnection(asyncio.Protocol):
             if not _SIZE_VALUE.match(size):
                 await self._reply("501 5.5.4 Bad SIZE parameter", reason="bad_size_parameter")
                 return
-            if self.data_size_limit and int(size) > self.data_size_limit:
+            if int(size) > self.data_size_limit:
                 # Refused here, before the message is uploaded.
                 metrics.SECURITY_REJECTIONS.labels(reason="oversize_announced").inc()
                 await self._reply(_SIZE_EXCEEDED, reason="oversize_announced")
@@ -782,13 +798,7 @@ class SMTPConnection(asyncio.Protocol):
             await self._reply("555 MAIL FROM parameters not recognized or not implemented")
             return
         self.envelope.smtp_utf8 = smtp_utf8
-        hook = getattr(self.handler, "handle_MAIL", None)
-        if hook is None:
-            self.envelope.mail_from = address
-            self.envelope.mail_options.extend(options)
-            await self._reply("250 OK")
-        else:
-            await self._reply(await hook(self, self.session, self.envelope, address, options))
+        await self._answer(await self.handler.handle_MAIL(self, address))
 
     async def _rcpt(self, arg: str | None) -> None:
         if await self._needs_helo():
@@ -803,12 +813,7 @@ class SMTPConnection(asyncio.Protocol):
         if parameters:
             await self._reply("555 RCPT TO parameters not recognized or not implemented")
             return
-        hook = getattr(self.handler, "handle_RCPT", None)
-        if hook is None:
-            self.envelope.rcpt_tos.append(address)
-            await self._reply("250 OK")
-        else:
-            await self._reply(await hook(self, self.session, self.envelope, address, []))
+        await self._answer(await self.handler.handle_RCPT(self, address))
 
     async def _rset(self, arg: str | None) -> None:
         if arg:
@@ -866,9 +871,8 @@ class SMTPConnection(asyncio.Protocol):
         except Exception as error:
             # The peer's handshake failed: no certificate it would accept, no
             # common protocol or cipher, or plaintext where TLS was due. Not a
-            # fault of ours. The cause is the one useful fact: a sender that
-            # enforces TLS and rejects our certificate shows up here and
-            # nowhere else, as a session that said STARTTLS and went away.
+            # fault of ours. The cause is kept: this is the only trace of a
+            # sender that enforces TLS and rejects our certificate.
             self._log.tls_error = logfmt.clip(f"{type(error).__name__}: {error}", MAX_LOGGED_REPLY)
             self.close_reason = self.close_reason or "tls_failed"
             raise _TLSFailed from error
@@ -919,7 +923,7 @@ class SMTPConnection(asyncio.Protocol):
         # against the value the timer was armed at.
         self.data_phase_started = time.monotonic()
         self.data_phase_budget = float(settings.PYMTA_DATA_TIMEOUT)
-        self._arm_idle_timer(self.data_phase_budget)
+        self._arm_timer(self.data_phase_budget, self._data_expired)
         try:
             await self._reply("354 End data with <CR><LF>.<CR><LF>")
             self._rate_timer = self._loop.call_later(_STRESS_IDLE_TIMEOUT, self._check_data_rate)
@@ -927,6 +931,13 @@ class SMTPConnection(asyncio.Protocol):
                 content, refusal = await self._read_data()
             finally:
                 self._rate_timer.cancel()
+            if self.close_reason == "data_timeout":
+                # Cut with the end of the message already in the buffer. The
+                # sender is told 421 and will send it again: not delivered now.
+                # One turn of the loop, for the notice to go out and the
+                # connection to close.
+                await asyncio.sleep(0)
+                return
             if refusal is not None:
                 if refusal is _TOO_MUCH_DATA:
                     metrics.SECURITY_REJECTIONS.labels(reason="oversize_message").inc()
@@ -937,10 +948,9 @@ class SMTPConnection(asyncio.Protocol):
                 return
             self.envelope.content = content
             del content
-            hook = getattr(self.handler, "handle_DATA", None)
-            status = "250 OK" if hook is None else await hook(self, self.session, self.envelope)
+            reply = await self.handler.handle_DATA(self)
             self.envelope = Envelope()
-            await self._reply(status)
+            await self._answer(reply)
         except _DataOverflow:
             # Mid-line, with no way to find where the next command starts:
             # say why and hang up.
@@ -993,10 +1003,10 @@ class SMTPConnection(asyncio.Protocol):
             except LineTooLong:
                 refusal = refusal or _LINE_TOO_LONG
                 blocks, block = [], bytearray()
-                room = max(limit - self._data_received, 0) if limit else None
+                room = max(limit - self._data_received, 0)
                 # Up to CRLF, so that what follows is known to follow one.
                 skipped = await self._reader.skip_line(b"\r\n", max_bytes=room)
-                if skipped is None or (limit and skipped > room):
+                if skipped is None or skipped > room:
                     raise _DataOverflow from None
                 self._data_received += skipped
                 after_crlf = True
@@ -1015,7 +1025,7 @@ class SMTPConnection(asyncio.Protocol):
             line, changed = stored_line(line)
             rewritten = rewritten or changed
             self._data_received += len(line)
-            if limit and self._data_received > limit:
+            if self._data_received > limit:
                 refusal = refusal or _TOO_MUCH_DATA
             if refusal is not None:
                 if blocks or block:
@@ -1034,40 +1044,42 @@ class SMTPConnection(asyncio.Protocol):
         return b"".join(blocks), None
 
     # ------------------------------------------------------------------- timers
-    def _arm_idle_timer(self, duration: float | None = None) -> None:
-        """Arm the idle timer, shorter when the server is close to full.
+    def _arm_timer(self, seconds: float, expired) -> None:
+        """Give what the session does next ``seconds``, in place of the last timer.
+
+        One timer, armed for one thing at a time: the wait for a command
+        (``_arm_idle_timer``), a running command (``_dispatch``), or the
+        whole DATA phase (``_data``). ``expired`` is called with ``seconds``.
+        """
+        if self._timer is not None:
+            self._timer.cancel()
+        self._timer = self._loop.call_later(seconds, expired, seconds)
+
+    def _arm_idle_timer(self) -> None:
+        """Time the wait for the next command, shorter when the server is close to full.
 
         Postfix's stress mode: 10 s instead of 300 s between commands, inside a
         transaction too, or a peer would keep its slot by sending MAIL and
-        nothing else. A running command keeps the full timeout whatever the
-        load: ``_dispatch`` arms it.
+        nothing else.
         """
-        if duration is None:
-            duration = self._timeout
-            if self.under_stress():
-                duration = min(_STRESS_IDLE_TIMEOUT, self._timeout)
-        self._idle_timeout = duration
-        if self._idle_timer is not None:
-            self._idle_timer.cancel()
-        self._idle_timer = self._loop.call_later(duration, self._idle_expired)
+        seconds = self._timeout
+        if self.under_stress():
+            seconds = min(seconds, _STRESS_IDLE_TIMEOUT)
+        self._arm_timer(seconds, self._command_expired)
 
     def under_stress(self) -> bool:
         """True while the server is close to its session cap."""
         return self._gate.under_stress()
 
-    def _idle_expired(self) -> None:
-        """Announce the timeout before hanging up.
-
-        A bare TCP close cannot be told from a network fault; Postfix answers
-        421 here too. During DATA the timer is the deadline of the whole
-        phase, not an idle time.
-        """
-        if self.data_phase_started is not None:
-            logger.debug("data_timeout", extra=self._timeout_fields(self._idle_timeout))
-            self._timed_out("data_timeout", "Timeout receiving the message")
-            return
-        logger.debug("command_timeout", extra=self._timeout_fields(self._idle_timeout))
+    def _command_expired(self, limit: float) -> None:
+        """No command came, or the one running did not end, in ``limit`` seconds."""
+        logger.debug("command_timeout", extra=self._timeout_fields(limit))
         self._timed_out("command_timeout", "Idle timeout")
+
+    def _data_expired(self, limit: float) -> None:
+        """The DATA phase, receive and delivery, took more than ``limit`` seconds."""
+        logger.debug("data_timeout", extra=self._timeout_fields(limit))
+        self._timed_out("data_timeout", "Timeout receiving the message")
 
     def _check_data_rate(self) -> None:
         """Cut a message that arrives too slowly while DATA slots are scarce.
@@ -1077,7 +1089,7 @@ class SMTPConnection(asyncio.Protocol):
         """
         elapsed = time.monotonic() - self.data_phase_started
         if self._gate.data_under_stress() and self._data_received < _MIN_DATA_RATE * elapsed:
-            fields = self._timeout_fields(self._idle_timeout)
+            fields = self._timeout_fields(self.data_phase_budget)
             logger.debug("data_timeout", extra={**fields, "received_bytes": self._data_received})
             self._timed_out("data_timeout", "Message received too slowly")
             return
@@ -1107,11 +1119,16 @@ class SMTPConnection(asyncio.Protocol):
     def _timeout_fields(self, limit) -> dict:
         return {
             "session_id": self.session_id,
-            "client_ip": self.client_address(),
+            "client_ip": self.session.client_ip,
             "limit_seconds": limit,
         }
 
     def _timed_out(self, reason: str, notice: str) -> None:
+        """Announce the timeout, then hang up.
+
+        A bare TCP close cannot be told from a network fault; Postfix answers
+        421 here too.
+        """
         self.close_reason = reason
         metrics.SECURITY_REJECTIONS.labels(reason=reason).inc()
         metrics.DISCONNECTS_421.labels(reason=reason).inc()
@@ -1139,9 +1156,9 @@ class SMTPConnection(asyncio.Protocol):
             return False
         return self.admitted and not self._closing and self.close_reason is None
 
-    def stress_began(self, gate: IPGate) -> None:
+    def stress_began(self) -> None:
         """Shorten the wait of a session that was already waiting for a command."""
-        if self._gate is gate and self._awaits_command():
+        if self._awaits_command():
             self._arm_idle_timer()
 
     def close_if_idle(self) -> None:
@@ -1157,48 +1174,23 @@ class SMTPConnection(asyncio.Protocol):
         self._log.close(None)
 
     # --------------------------------------------------------------------- gate
-    def client_address(self) -> str | None:
-        """The client: what the gate keyed on, else the TCP peer.
-
-        The TCP peer is the balancer when PROXY protocol is on, and naming it
-        would attribute the session to our own infrastructure.
-        """
-        if self._client_ip is not None:
-            return self._client_ip
-        if settings.PYMTA_ENABLE_PROXY_PROTOCOL:
-            return None
-        return ip_of(self.session.peer)
-
-    def _wire_peer_ip(self) -> str:
-        if self.session.peer:
-            return str(self.session.peer[0])
-        # All sessions without a wire peer collapse into one bucket, so they
-        # share a single source's slots. Counted rather than logged at WARNING:
-        # a peer that resets the connection between accept() and here can race
-        # peername into None, and that must not be a way to pick our log rate.
-        metrics.CONNECTIONS_TOTAL.labels(result="no_wire_peer").inc()
-        logger.debug("session_without_peer", extra={"session_id": self.session_id})
-        return "unknown"
-
-    def _is_blocked(self, ip: str) -> bool:
+    def _is_blocked(self, ip: str | None) -> bool:
         if not settings.PYMTA_BLOCKED_NETWORKS:
             return False
         addr = settings.parse_client_ip(ip)
         if addr is None:
-            # The "unknown" bucket. Not matchable against a network, so not
-            # blockable; the caps still apply to it.
+            # Not matchable against a network, so not blockable; the caps
+            # still apply to it.
             return False
         return any(addr in net for net in settings.PYMTA_BLOCKED_NETWORKS)
 
-    async def admit(self, ip: str) -> bool:
-        """Let the connection in under ``ip``, or turn it away. Before the greeting.
+    async def _admit(self) -> bool:
+        """Let the client in, or turn it away. Before the greeting.
 
-        ``ip`` is the TCP peer, or the address a PROXY header named (the
-        handler's ``handle_PROXY`` calls this), or ``"unknown"``. Returns True
-        when a session slot was taken; otherwise the peer has been answered
-        and the connection closed.
+        Returns True when a session slot was taken; otherwise the peer has
+        been answered and the connection closed.
         """
-        self._client_ip = ip if ip != "unknown" else None
+        ip = self.session.client_ip
         who = {"session_id": self.session_id, "client_ip": ip}
         if runtime.is_shutting_down():
             # RFC 5321 section 3.1 allows 421 in place of the greeting, and
@@ -1214,8 +1206,9 @@ class SMTPConnection(asyncio.Protocol):
             # RFC 5321 section 3.1 also allows 554 in place of the greeting.
             return await self._turn_away("554 5.7.1 Access denied")
         # What the limits count by: the address for IPv4, the /64 for IPv6.
-        # Logs keep the full address.
-        source = source_key(ip)
+        # Clients without an address (a balancer's health check, a peer that
+        # reset) share one bucket. Logs keep the full address.
+        source = source_key(ip) if ip else "unknown"
         was_under_stress = self._gate.under_stress()
         scope = self._take_slot(source)
         if scope is not None:
@@ -1234,11 +1227,12 @@ class SMTPConnection(asyncio.Protocol):
         self._slot = source
         self._slot_taken_at = self._idle_since = time.monotonic()
         self.admitted = True
+        self._gate.sessions.add(self)
         metrics.CONNECTIONS_TOTAL.labels(result="accepted").inc()
         if not was_under_stress and self._gate.under_stress():
             # The timers armed before this slot was taken are still long.
-            for connection in _live_connections:
-                connection.stress_began(self._gate)
+            for connection in self._gate.sessions:
+                connection.stress_began()
         return True
 
     def _take_slot(self, source: str) -> str | None:
@@ -1262,21 +1256,21 @@ class SMTPConnection(asyncio.Protocol):
         crowding = self._gate.crowding_sources(source)
         ranked = [
             (rank, connection)
-            for connection in _live_connections
-            if (rank := connection.reclaim_rank(self._gate, crowding)) is not None
+            for connection in self._gate.sessions
+            if (rank := connection.reclaim_rank(crowding)) is not None
         ]
         if not ranked:
             return False
         min(ranked, key=lambda pair: pair[0])[1].reclaim()
         return True
 
-    def reclaim_rank(self, gate: IPGate, crowding: list[str]) -> tuple[int, float] | None:
+    def reclaim_rank(self, crowding: list[str]) -> tuple[int, float] | None:
         """Where this session stands among those a slot can be taken from.
 
-        Lowest first. None when its slot is not one of them: another gate,
-        a source that is not in ``crowding``, or a session that is not idle.
+        Lowest first. None when its slot is not one of them: a source that is
+        not in ``crowding``, or a session that is not idle.
         """
-        if self._gate is not gate or self._slot not in crowding or not self._is_idle():
+        if self._slot not in crowding or not self._is_idle():
             return None
         return crowding.index(self._slot), self._idle_since
 
@@ -1287,7 +1281,7 @@ class SMTPConnection(asyncio.Protocol):
         metrics.DISCONNECTS_421.labels(reason="reclaimed").inc()
         logger.debug(
             "session_reclaimed",
-            extra={"session_id": self.session_id, "client_ip": self.client_address()},
+            extra={"session_id": self.session_id, "client_ip": self.session.client_ip},
         )
         self._loop.create_task(self._close_with_notice(_RECLAIMED))
 
@@ -1301,5 +1295,6 @@ class SMTPConnection(asyncio.Protocol):
         if self._slot is None:
             return
         slot, self._slot = self._slot, None
+        self._gate.sessions.discard(self)
         metrics.SESSION_DURATION.observe(time.monotonic() - self._slot_taken_at)
         self._gate.release(slot)

@@ -18,9 +18,10 @@ import pytest
 from pymta import runtime, settings, smtp_protocol
 from pymta.limits import IPGate
 from pymta.mda_async import MDAResult
-from pymta.smtp_protocol import close_idle_sessions
+from pymta.smtp_protocol import Reply, close_idle_sessions
 
 from tests.harness import (
+    AcceptAll,
     ScriptedMDA,
     capture_all,
     connected,
@@ -36,14 +37,10 @@ MAIL = b"MAIL FROM:<alice@sender.example>"
 RCPT = b"RCPT TO:<bob@example.com>"
 
 
-class _NullHandler:
-    pass
-
-
 @contextlib.asynccontextmanager
 async def _capturing(handler=None, **kwargs):
     """A listener that keeps the connections it builds. Yields (port, list)."""
-    build = protocol_factory(handler or _NullHandler(), **kwargs)
+    build = protocol_factory(handler or AcceptAll(), **kwargs)
     connections = []
 
     def factory():
@@ -57,19 +54,19 @@ async def _capturing(handler=None, **kwargs):
         listener.close()
 
 
-class _LongReply:
+class _LongReply(AcceptAll):
     """Answers RCPT with more than the peer's buffers will take unread."""
 
-    async def handle_HELO(self, server, session, envelope, hostname):
-        session.host_name = hostname
+    async def handle_HELO(self, connection, hostname):
         # A send buffer too small for the reply below.
-        server.transport.get_extra_info("socket").setsockopt(
+        connection.transport.get_extra_info("socket").setsockopt(
             socket.SOL_SOCKET, socket.SO_SNDBUF, 4096
         )
+        return hostname
 
-    async def handle_RCPT(self, server, session, envelope, address, options):
+    async def handle_RCPT(self, connection, address):
         # Under asyncio's high-water mark: writing is not paused.
-        return "250 " + "x" * 60000
+        return Reply("250 " + "x" * 60000)
 
 
 @contextlib.asynccontextmanager
@@ -206,7 +203,7 @@ async def test_a_handshake_that_never_starts_ends_at_the_session_deadline(monkey
     monkeypatch.setattr(settings, "PYMTA_SESSION_TIMEOUT", 0.5)
     monkeypatch.setattr(settings, "PYMTA_COMMAND_TIMEOUT", 30)
     gate = IPGate(max_total=4)
-    async with listening(handler=_NullHandler(), gate=gate, tls_context=server_ctx) as port:
+    async with listening(handler=AcceptAll(), gate=gate, tls_context=server_ctx) as port:
         with capture_all(caplog):
             async with connected(port) as client:
                 await client.cmd(EHLO)
@@ -235,7 +232,8 @@ async def test_a_session_busy_at_shutdown_is_told_to_go_when_it_is_done(caplog):
 
     runtime.reset_for_tests()
     try:
-        async with listening(ScriptedMDA(delivers=[slow]), gate=IPGate(max_total=4)) as port:
+        gate = IPGate(max_total=4)
+        async with listening(ScriptedMDA(delivers=[slow]), gate=gate) as port:
             with capture_all(caplog):
                 async with connected(port) as client:
                     for line in (EHLO, MAIL, RCPT):
@@ -245,7 +243,7 @@ async def test_a_session_busy_at_shutdown_is_told_to_go_when_it_is_done(caplog):
                     await asyncio.sleep(0.05)
                     runtime.request_shutdown()
                     # Mid-delivery: left to finish.
-                    close_idle_sessions()
+                    close_idle_sessions(gate)
                     released.set()
                     assert (await client.reply())[:3] == b"250"
                     # Idle now, and not left to hold the drain.

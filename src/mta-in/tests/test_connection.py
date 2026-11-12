@@ -27,15 +27,22 @@ from pymta.logfmt import LogfmtFormatter
 from pymta.mda_async import MDAResult
 from pymta.session_log import SessionLog
 from pymta.settings import _env_networks
-from pymta.smtp_protocol import SMTPConnection, close_idle_sessions, log_abandoned_sessions
+from pymta.smtp_protocol import (
+    Reply,
+    SMTPConnection,
+    close_idle_sessions,
+    log_abandoned_sessions,
+)
 
-from tests.harness import LOOPBACK_PROXIES, ScriptedMDA, connected, listening
+from tests.harness import (
+    LOOPBACK_PROXIES,
+    AcceptAll,
+    ScriptedMDA,
+    connected,
+    listening,
+)
 
 _TIMEOUT_COUNTERS = ("pymta_security_rejections_total", "pymta_disconnects_421_total")
-
-
-class _NullHandler:
-    """Handler with no hooks: the protocol accepts every well-formed command."""
 
 
 # ---------------------------------------------------------------------------
@@ -47,7 +54,7 @@ class _NullHandler:
 async def test_the_reply_that_announces_a_disconnect_goes_out_before_it():
     """Closing eagerly would race the reply off the wire and leave the peer
     with a bare TCP reset instead of a reason. And only that reply closes."""
-    async with listening(handler=_NullHandler()) as port, connected(port) as client:
+    async with listening(handler=AcceptAll()) as port, connected(port) as client:
         for _ in range(4):
             assert await client.cmd(b"BOGUS") == b"500 5.5.2 Error: command not recognized\r\n"
         assert (
@@ -121,10 +128,10 @@ async def test_a_stalled_data_phase_is_cut_at_the_data_timeout(monkeypatch):
 async def test_data_phase_start_is_published_for_the_handler():
     seen: list = []
 
-    class _Recorder:
-        async def handle_DATA(self, server, session, envelope):
+    class _Recorder(AcceptAll):
+        async def handle_DATA(self, server):
             seen.append((server, server.data_phase_started, server.data_phase_budget))
-            return "250 2.0.0 OK"
+            return Reply("250 2.0.0 OK")
 
     async with listening(handler=_Recorder()) as port, connected(port) as client:
         for line in _TRANSACTION:
@@ -148,20 +155,17 @@ async def test_data_phase_start_is_published_for_the_handler():
 # ---------------------------------------------------------------------------
 
 
-async def _listener(loop, **overrides):
+async def _listener(loop, gate=None, **overrides):
     """Start a listener built the way the real server builds one.
 
-    Goes through ``build_smtp_kwargs`` rather than passing ``timeout=`` by hand.
-    Handing the kwarg over directly would test the idle timer and nothing
-    else: delete ``"timeout": settings.PYMTA_COMMAND_TIMEOUT`` from
-    ``build_smtp_kwargs`` and ``SMTPConnection`` falls back to its own 300 s
-    default, which a hand-built listener would never notice. Patch the
-    setting, build the real kwargs, and the wiring is under test too.
+    Goes through ``build_smtp_kwargs`` rather than passing ``timeout=`` by
+    hand: patch the setting, and the wiring is under test too.
     """
     kwargs = build_smtp_kwargs(tls_context=None)
     kwargs.update(overrides)
+    gate = gate or IPGate(max_total=0)
     server = await loop.create_server(
-        lambda: SMTPConnection(_NullHandler(), ip_gate=IPGate(max_total=0), **kwargs),
+        lambda: SMTPConnection(AcceptAll(), ip_gate=gate, **kwargs),
         host="127.0.0.1",
         port=0,
     )
@@ -247,7 +251,7 @@ async def _until_421(client, command: bytes, every: float) -> bytes:
 async def test_a_busy_session_is_closed_at_the_session_deadline(monkeypatch):
     monkeypatch.setattr(settings, "PYMTA_SESSION_TIMEOUT", 0.6)
     monkeypatch.setattr(settings, "PYMTA_COMMAND_TIMEOUT", 30)
-    async with listening(handler=_NullHandler()) as port:
+    async with listening(handler=AcceptAll()) as port:
         started = time.monotonic()
         async with connected(port) as client:
             await client.cmd(b"EHLO mx.sender.example")
@@ -273,7 +277,7 @@ async def test_starttls_does_not_extend_the_session_deadline(monkeypatch):
     monkeypatch.setattr(settings, "PYMTA_SESSION_TIMEOUT", 2)
     monkeypatch.setattr(settings, "PYMTA_COMMAND_TIMEOUT", 30)
 
-    async with listening(handler=_NullHandler(), tls_context=server_ctx) as port:
+    async with listening(handler=AcceptAll(), tls_context=server_ctx) as port:
         started = time.monotonic()
         async with connected(port) as client:
             await client.cmd(b"EHLO mx.sender.example")
@@ -287,7 +291,7 @@ async def test_starttls_does_not_extend_the_session_deadline(monkeypatch):
 @pytest.mark.asyncio
 async def test_session_deadline_disabled_by_zero(monkeypatch):
     monkeypatch.setattr(settings, "PYMTA_SESSION_TIMEOUT", 0)
-    async with listening(handler=_NullHandler()) as port, connected(port) as client:
+    async with listening(handler=AcceptAll()) as port, connected(port) as client:
         await asyncio.sleep(0.3)
         assert await client.cmd(b"NOOP") == b"250 OK\r\n"
 
@@ -304,7 +308,7 @@ async def test_session_deadline_disabled_by_zero(monkeypatch):
 async def test_the_line_length_setting_is_what_bounds_a_message_line(monkeypatch, length, code):
     """PYMTA_MAX_LINE_LENGTH is the limit, to the octet, line ending excluded."""
     monkeypatch.setattr(settings, "PYMTA_MAX_LINE_LENGTH", 2000)
-    async with listening(handler=_NullHandler()) as port, connected(port) as client:
+    async with listening(handler=AcceptAll()) as port, connected(port) as client:
         for line in _TRANSACTION:
             await client.cmd(line)
         reply = await client.data(b"Subject: x\r\n\r\n" + b"a" * length + b"\r\n")
@@ -339,7 +343,7 @@ async def _blocklist_listener(loop, networks: str, monkeypatch):
     kwargs = build_smtp_kwargs(tls_context=None)
     gate = IPGate(max_total=0)
     server = await loop.create_server(
-        lambda: SMTPConnection(_NullHandler(), ip_gate=gate, **kwargs), host="127.0.0.1", port=0
+        lambda: SMTPConnection(AcceptAll(), ip_gate=gate, **kwargs), host="127.0.0.1", port=0
     )
     return server, server.sockets[0].getsockname()[1]
 
@@ -893,7 +897,7 @@ async def test_mail_line_limit_is_not_shared_between_connections():
 
 
 # ---------------------------------------------------------------------------
-# One ``reject`` line per refusal the handler did not log.
+# One ``reject`` line per refusal.
 #
 # ``session_closed`` keeps the last error and the last sender only, and a
 # sending platform reuses one connection for many messages.
@@ -981,10 +985,9 @@ async def test_a_mail_line_refused_for_its_length_is_logged_with_its_domain(capl
 
 @pytest.mark.asyncio
 async def test_a_refusal_the_handler_logged_gets_no_second_line(caplog):
-    class Handler:
-        async def handle_RCPT(self, server, session, envelope, address, rcpt_options):
-            server.refusal_logged = True
-            return "550 5.1.1 No such recipient"
+    class Handler(AcceptAll):
+        async def handle_RCPT(self, connection, address):
+            return Reply("550 5.1.1 No such recipient", logged=True)
 
     loop = asyncio.get_running_loop()
     kwargs = build_smtp_kwargs(tls_context=None)
@@ -1003,43 +1006,27 @@ async def test_a_refusal_the_handler_logged_gets_no_second_line(caplog):
         await server.wait_closed()
 
     assert replies[-3].startswith(b"550"), replies
-    # Only the second RCPT, which the protocol refused: the flag does not stick.
+    # Only the second RCPT, which the protocol refused.
     (reject,) = _rejects(caplog)
     assert reject.code == 555
 
 
 @pytest.mark.asyncio
-async def test_a_delivered_message_does_not_silence_the_next_refusal(caplog):
-    """The handler claims its line on a 250 too, and that claim must not outlive the command."""
+async def test_a_refusal_of_the_handler_gets_one_line_with_its_fields(caplog):
+    class Handler(AcceptAll):
+        async def handle_RCPT(self, connection, address):
+            return Reply("550 5.1.1 No such recipient", "unknown_recipient", {"misses": 1})
 
-    class Handler:
-        async def handle_DATA(self, server, session, envelope):
-            server.refusal_logged = True
-            return "250 2.0.0 Message accepted for delivery"
-
-    loop = asyncio.get_running_loop()
-    kwargs = build_smtp_kwargs(tls_context=None)
-    server = await loop.create_server(
-        lambda: SMTPConnection(Handler(), ip_gate=IPGate(max_total=0), **kwargs),
-        host="127.0.0.1",
-        port=0,
-    )
-    port = server.sockets[0].getsockname()[1]
-    try:
+    async with listening(handler=Handler()) as port:
         with caplog.at_level(logging.INFO):
-            replies = await _dialogue(
-                port,
-                [*_ENVELOPE, b"DATA\r\n", b"Subject: x\r\n\r\nbody\r\n.\r\n", b"FROBNICATE\r\n"],
-            )
+            await _dialogue(port, _ENVELOPE)
             await _session_summaries(caplog)
-    finally:
-        server.close()
-        await server.wait_closed()
 
-    assert replies[-3].startswith(b"250"), replies
     (reject,) = _rejects(caplog)
-    assert reject.code == 500
-    assert reject.arg == "FROBNICATE"
+    assert (reject.verb, reject.code, reject.reason) == ("rcpt", 550, "unknown_recipient")
+    assert reject.reply == "550 5.1.1 No such recipient"
+    assert reject.sender == "alice@sender.example"
+    assert reject.misses == 1
 
 
 @pytest.mark.asyncio
@@ -1069,7 +1056,7 @@ async def test_a_message_deferred_for_lack_of_a_data_slot_is_logged(caplog):
     loop = asyncio.get_running_loop()
     kwargs = build_smtp_kwargs(tls_context=None)
     server = await loop.create_server(
-        lambda: SMTPConnection(_NullHandler(), ip_gate=gate, **kwargs), host="127.0.0.1", port=0
+        lambda: SMTPConnection(AcceptAll(), ip_gate=gate, **kwargs), host="127.0.0.1", port=0
     )
     port = server.sockets[0].getsockname()[1]
     try:
@@ -1106,7 +1093,7 @@ async def test_cap_refusals_reach_info_once_per_address(monkeypatch, caplog, log
     loop = asyncio.get_running_loop()
     kwargs = build_smtp_kwargs(tls_context=None)
     server = await loop.create_server(
-        lambda: SMTPConnection(_NullHandler(), ip_gate=gate, **kwargs), host="127.0.0.1", port=0
+        lambda: SMTPConnection(AcceptAll(), ip_gate=gate, **kwargs), host="127.0.0.1", port=0
     )
     port = server.sockets[0].getsockname()[1]
     holder = await asyncio.open_connection("127.0.0.1", port)
@@ -1138,7 +1125,7 @@ async def test_cap_refusals_reach_info_once_per_address(monkeypatch, caplog, log
 @pytest.mark.asyncio
 async def test_a_refused_auth_line_is_redacted(caplog):
     """The per-verb call limit refuses a line before dispatch, AUTH included."""
-    async with listening(handler=_NullHandler(), command_call_limit={"AUTH": 0}) as port:
+    async with listening(handler=AcceptAll(), command_call_limit={"AUTH": 0, "*": 25}) as port:
         with caplog.at_level(logging.INFO, logger="pymta.smtp_protocol"):
             async with connected(port) as client:
                 reply = await client.cmd(b"auth PLAIN AGFsaWNlAHMzY3JldA==")
@@ -1185,7 +1172,8 @@ async def test_a_completed_session_names_no_pending_recipients(caplog):
 @pytest.mark.asyncio
 async def test_sessions_cut_by_the_shutdown_deadline_are_summarised(caplog):
     loop = asyncio.get_running_loop()
-    server, port, _ = await _listener(loop)
+    gate = IPGate(max_total=0)
+    server, port, _ = await _listener(loop, gate)
     try:
         with caplog.at_level(logging.INFO, logger="pymta.smtp_protocol"):
             reader, writer = await asyncio.open_connection("127.0.0.1", port)
@@ -1195,7 +1183,7 @@ async def test_sessions_cut_by_the_shutdown_deadline_are_summarised(caplog):
                 await writer.drain()
                 while (await asyncio.wait_for(reader.readline(), timeout=5))[3:4] == b"-":
                     pass
-            log_abandoned_sessions()
+            log_abandoned_sessions(gate)
             records = await _session_summaries(caplog, timeout=1)
             writer.close()
             with contextlib.suppress(ConnectionError):
@@ -1214,8 +1202,9 @@ async def test_sessions_cut_by_the_shutdown_deadline_are_summarised(caplog):
 
 
 @pytest.mark.asyncio
-async def test_a_connection_without_a_proxy_header_leaves_a_trace(caplog):
+async def test_a_connection_without_a_proxy_header_leaves_a_trace(monkeypatch, caplog):
     """A balancer that stops sending PROXY takes all mail down, silently."""
+    monkeypatch.setattr(settings, "PYMTA_TRUSTED_PROXIES", LOOPBACK_PROXIES)
 
     def refused():
         value = REGISTRY.get_sample_value(
@@ -1360,7 +1349,8 @@ async def _read_reply(reader) -> bytes:
 @pytest.mark.asyncio
 async def test_shutdown_releases_an_idle_session_with_a_421(shutting_down, caplog):
     loop = asyncio.get_running_loop()
-    server, port, _ = await _listener(loop)
+    gate = IPGate(max_total=0)
+    server, port, _ = await _listener(loop, gate)
     try:
         with caplog.at_level(logging.INFO, logger="pymta.smtp_protocol"):
             reader, writer = await asyncio.open_connection("127.0.0.1", port)
@@ -1370,7 +1360,7 @@ async def test_shutdown_releases_an_idle_session_with_a_421(shutting_down, caplo
             await _read_reply(reader)
 
             shutting_down()
-            close_idle_sessions()
+            close_idle_sessions(gate)
 
             notice = await asyncio.wait_for(reader.readline(), timeout=5)
             rest = await asyncio.wait_for(reader.read(), timeout=5)
@@ -1391,7 +1381,8 @@ async def test_shutdown_releases_an_idle_session_with_a_421(shutting_down, caplo
 async def test_shutdown_lets_an_open_transaction_finish(shutting_down):
     """Cutting it would only make the sender resend the same message."""
     loop = asyncio.get_running_loop()
-    server, port, _ = await _listener(loop)
+    gate = IPGate(max_total=0)
+    server, port, _ = await _listener(loop, gate)
     try:
         reader, writer = await asyncio.open_connection("127.0.0.1", port)
         await reader.readline()
@@ -1401,7 +1392,7 @@ async def test_shutdown_lets_an_open_transaction_finish(shutting_down):
             await _read_reply(reader)
 
         shutting_down()
-        close_idle_sessions()
+        close_idle_sessions(gate)
 
         replies = []
         for line in (
@@ -1545,16 +1536,14 @@ async def test_a_line_refused_before_dispatch_spends_the_error_budget(monkeypatc
 
 
 @pytest.mark.asyncio
-async def test_a_refusal_the_handler_charged_is_not_charged_twice(monkeypatch):
+async def test_every_refusal_is_charged_once_whoever_makes_it(monkeypatch):
     monkeypatch.setattr(settings, "PYMTA_MAX_ERRORS_PER_SESSION", 50)
     protocols = []
 
-    class Handler:
-        async def handle_RCPT(self, server, session, envelope, address, rcpt_options):
-            protocols.append(server)
-            # What handler._refuse does before returning its reply.
-            server.errors += 1
-            return "550 5.1.1 No such recipient"
+    class Handler(AcceptAll):
+        async def handle_RCPT(self, connection, address):
+            protocols.append(connection)
+            return Reply("550 5.1.1 No such recipient", "unknown_recipient")
 
     loop = asyncio.get_running_loop()
     kwargs = build_smtp_kwargs(tls_context=None)
@@ -1570,7 +1559,7 @@ async def test_a_refusal_the_handler_charged_is_not_charged_twice(monkeypatch):
             [
                 *_ENVELOPE,
                 b"RCPT TO:<carol@example.com>\r\n",
-                # Refused before the handler is asked: charged by the protocol.
+                # Refused before the handler is asked.
                 b"RCPT TO:<dave@example.com> XFOO=BAR\r\n",
             ],
         )
@@ -1865,7 +1854,7 @@ async def test_a_connection_refused_by_the_drain_is_logged_at_debug(shutting_dow
     kwargs = build_smtp_kwargs(tls_context=None)
     gate = IPGate(max_total=0)
     server = await loop.create_server(
-        lambda: SMTPConnection(_NullHandler(), ip_gate=gate, **kwargs), host="127.0.0.1", port=0
+        lambda: SMTPConnection(AcceptAll(), ip_gate=gate, **kwargs), host="127.0.0.1", port=0
     )
     port = server.sockets[0].getsockname()[1]
     try:
@@ -1893,8 +1882,8 @@ async def test_a_connection_refused_by_the_drain_is_logged_at_debug(shutting_dow
 
 @pytest.mark.asyncio
 async def test_an_exception_in_a_hook_answers_a_plain_421_and_counts_it(caplog):
-    class Handler:
-        async def handle_RCPT(self, server, session, envelope, address, rcpt_options):
+    class Handler(AcceptAll):
+        async def handle_RCPT(self, connection, address):
             raise RuntimeError("secret-internal-detail")
 
     rejections = _counter("pymta_security_rejections_total", reason="internal_error")
@@ -1965,20 +1954,20 @@ async def test_a_helo_that_is_not_utf8_does_not_cost_the_sender_its_mail(caplog)
 
 @pytest.mark.asyncio
 async def test_an_exception_in_the_gate_is_logged_and_closes_the_connection(monkeypatch, caplog):
-    async def broken(self, ip):
+    async def broken(self):
         raise RuntimeError("gate bug")
 
     loop = asyncio.get_running_loop()
     kwargs = build_smtp_kwargs(tls_context=None)
     gate = IPGate(max_total=0)
     server = await loop.create_server(
-        lambda: SMTPConnection(_NullHandler(), ip_gate=gate, **kwargs), host="127.0.0.1", port=0
+        lambda: SMTPConnection(AcceptAll(), ip_gate=gate, **kwargs), host="127.0.0.1", port=0
     )
     port = server.sockets[0].getsockname()[1]
     try:
         with caplog.at_level(logging.INFO, logger="pymta.smtp_protocol"):
             with monkeypatch.context() as patched:
-                patched.setattr(SMTPConnection, "admit", broken)
+                patched.setattr(SMTPConnection, "_admit", broken)
                 reader, writer = await asyncio.open_connection("127.0.0.1", port)
                 try:
                     # Closed at once, not left open until the idle timeout.
@@ -2005,7 +1994,7 @@ async def test_an_exception_in_the_session_summary_does_not_skip_the_teardown(mo
 
     monkeypatch.setattr(SessionLog, "close", broken)
     gate = IPGate(max_total=4)
-    async with listening(handler=_NullHandler(), gate=gate) as port:
+    async with listening(handler=AcceptAll(), gate=gate) as port:
         with caplog.at_level(logging.INFO, logger="pymta.smtp_protocol"):
             await _dialogue(port, [b"EHLO mx.sender.example\r\n"], quit_=False)
             deadline = asyncio.get_running_loop().time() + 5
@@ -2034,7 +2023,7 @@ async def test_every_command_is_in_the_tally(caplog):
         b"HELP",
         b"STARTTLS",
     ]
-    async with listening(handler=_NullHandler()) as port:
+    async with listening(handler=AcceptAll()) as port:
         with caplog.at_level(logging.INFO, logger="pymta.smtp_protocol"):
             async with connected(port) as client:
                 for command in commands:
@@ -2083,7 +2072,7 @@ async def _stressed_listener(loop, monkeypatch, handler=None, *, stressed=True):
     gate._total = 7 if stressed else 0
     kwargs = build_smtp_kwargs(tls_context=None)
     server = await loop.create_server(
-        lambda: SMTPConnection(handler or _NullHandler(), ip_gate=gate, **kwargs),
+        lambda: SMTPConnection(handler or AcceptAll(), ip_gate=gate, **kwargs),
         host="127.0.0.1",
         port=0,
     )
@@ -2266,13 +2255,12 @@ async def test_without_stress_an_idle_session_keeps_the_full_timeout(monkeypatch
 async def test_under_stress_a_slow_command_of_ours_is_not_an_idle_peer(monkeypatch):
     """The MDA can take longer than the stress timeout to answer a check."""
 
-    class Slow:
+    class Slow(AcceptAll):
         # MAIL: no transaction is open yet when it is dispatched, so this is
         # the command the stress timeout would otherwise cut.
-        async def handle_MAIL(self, server, session, envelope, address, mail_options):
+        async def handle_MAIL(self, connection, address):
             await asyncio.sleep(0.8)
-            envelope.mail_from = address
-            return "250 2.1.0 OK"
+            return await super().handle_MAIL(connection, address)
 
     loop = asyncio.get_running_loop()
     server, port = await _stressed_listener(loop, monkeypatch, Slow())

@@ -25,7 +25,7 @@ import pytest
 from hypothesis import given, settings
 from hypothesis import strategies as st
 
-from pymta import metrics, runtime
+from pymta import runtime
 from pymta import settings as pymta_settings
 from pymta.address import AddressError, validate_envelope_address
 from pymta.controller import build_smtp_kwargs
@@ -35,7 +35,7 @@ from pymta.mda_async import MDAResult
 from pymta.smtp_protocol import SMTPConnection
 
 from tests.fuzzing import fuzz_settings
-from tests.harness import LOOPBACK_PROXIES
+from tests.harness import LOOPBACK_PROXIES, active_sessions
 from tests.test_wire_fuzz import two_step_reference
 
 pytestmark = pytest.mark.fuzz
@@ -327,7 +327,7 @@ async def _session(lines, bodies, mda, cuts=(), gate=None):
                 pass
         # connection_lost and the gate release run a few iterations later.
         for _ in range(200):
-            if metrics.active_sessions() == 0:
+            if active_sessions() == 0:
                 break
             await asyncio.sleep(0.005)
     finally:
@@ -375,7 +375,7 @@ def test_no_session_breaks_the_server_or_escapes_the_log(lines, bodies, checks, 
         assert len(replies) == len(lines) + len(data_replies)
 
     # The slot is back.
-    assert metrics.active_sessions() == 0
+    assert active_sessions() == 0
 
     # Every refusal has its line, and the session its summary.
     refused = [reply for reply in replies if reply[:1] in (b"4", b"5")]
@@ -541,7 +541,7 @@ async def _burst(lines, mda, *, before_greeting):
             except ConnectionError:
                 pass
         for _ in range(200):
-            if metrics.active_sessions() == 0:
+            if active_sessions() == 0:
                 break
             await asyncio.sleep(0.005)
     finally:
@@ -575,7 +575,7 @@ def test_a_session_sent_in_one_burst_delivers_nothing(lines, checks, before_gree
 
     faults = [r for r in records.records if r.getMessage() in _OUR_FAULTS]
     assert not faults, [(r.getMessage(), r.exc_info) for r in faults]
-    assert gate._total == 0 and metrics.active_sessions() == 0
+    assert gate._total == 0 and active_sessions() == 0
     replies = answer.split(b"\r\n")[:-1]
     for reply in replies:
         assert reply[:3].isdigit() and reply[3:4] in (b" ", b"-"), answer
@@ -638,7 +638,7 @@ def test_concurrent_sessions_leave_the_gate_as_they_found_it(sessions, checks, d
     assert gate._total == 0
     assert gate._data_total == 0
     assert not gate._data_per_ip
-    assert metrics.active_sessions() == 0
+    assert active_sessions() == 0
     for delivery in mda.delivered:
         assert delivery["original_recipients"]
         message = delivery["message"]
@@ -719,7 +719,7 @@ async def _proxied_session(header, cuts, mda):
             except ConnectionError:
                 pass
         for _ in range(200):
-            if metrics.active_sessions() == 0:
+            if active_sessions() == 0:
                 break
             await asyncio.sleep(0.005)
     finally:
@@ -759,7 +759,7 @@ def test_any_proxy_header_is_accepted_cleanly_or_refused_cleanly(header, cuts):
 
     faults = [r for r in records.records if r.getMessage() in _OUR_FAULTS]
     assert not faults, [(r.getMessage(), r.exc_info) for r in faults]
-    assert gate._total == 0 and metrics.active_sessions() == 0
+    assert gate._total == 0 and active_sessions() == 0
     if not greeted:
         assert mda.delivered == []
     for delivery in mda.delivered:

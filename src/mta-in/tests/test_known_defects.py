@@ -17,13 +17,13 @@ import tracemalloc
 
 import pytest
 
-from pymta import metrics, settings
+from pymta import settings
 from pymta.controller import build_smtp_kwargs
 from pymta.handler import InboundHandler
 from pymta.limits import IPGate
 from pymta.smtp_protocol import SMTPConnection
 
-from tests.harness import LOOPBACK_PROXIES
+from tests.harness import LOOPBACK_PROXIES, active_sessions
 from tests.test_connection import (
     _BODY,
     _AcceptingMDA,
@@ -1048,7 +1048,7 @@ async def test_a_valid_proxy_header_names_the_client_or_nobody(monkeypatch, head
 )
 async def test_a_bad_proxy_header_gets_no_greeting(monkeypatch, caplog, header):
     mda = _AcceptingMDA()
-    active = metrics.active_sessions()
+    active = active_sessions()
     loop = asyncio.get_running_loop()
     server, port = await _proxied(loop, monkeypatch, mda)
     try:
@@ -1065,7 +1065,7 @@ async def test_a_bad_proxy_header_gets_no_greeting(monkeypatch, caplog, header):
 
     assert not answer.startswith(b"220"), answer
     assert mda.delivered == []
-    assert metrics.active_sessions() == active
+    assert active_sessions() == active
     # A balancer's health check does this all day: nothing above DEBUG.
     assert not [r for r in caplog.records if r.name.startswith("pymta")]
 

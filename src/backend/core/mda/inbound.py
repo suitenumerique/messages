@@ -7,6 +7,7 @@ import logging
 from django.conf import settings
 from django.core.exceptions import ValidationError
 from django.db.utils import Error as DjangoDbError
+from django.db.utils import InterfaceError, OperationalError
 
 from jmap_email import first_msgid
 from jmap_email.types import JmapEmail
@@ -21,6 +22,14 @@ from core.services.importer.labels import (
 from .inbound_create import _create_message_from_inbound
 
 logger = logging.getLogger(__name__)
+
+# The database failing under us, as opposed to an error a message or a
+# recipient can cause.
+_OUTAGE_ERRORS = (OperationalError, InterfaceError)
+
+
+class DeliveryUnavailable(Exception):
+    """A delivery failed on an outage of ours: no verdict on the message."""
 
 
 def check_local_recipient(
@@ -146,7 +155,7 @@ def count_external_recipients(message) -> int:
     return len(recipient_emails) - len(local_emails)
 
 
-def deliver_inbound_message(
+def deliver_inbound_message(  # pylint: disable=too-many-arguments
     recipient_email: str,
     parsed_email: JmapEmail,
     raw_data: bytes,
@@ -157,6 +166,7 @@ def deliver_inbound_message(
     channel: models.Channel | None = None,
     envelope: dict | None = None,
     blob: "models.Blob | None" = None,
+    raise_unavailable: bool = False,
 ) -> bool:  # Return True on success, False on failure
     """Deliver a parsed inbound email message.
 
@@ -177,12 +187,18 @@ def deliver_inbound_message(
     (see ``InboundMessage.envelope``); its ``origin`` key is the explicit
     trust discriminator that drives ``is_internal`` — internal mail skips the
     spam steps while still firing user webhooks.
+
+    With ``raise_unavailable``, a failure caused by a database outage raises
+    ``DeliveryUnavailable`` instead of returning False, for a caller that
+    reports the two differently.
     """
     # --- 1. Find or Create Mailbox --- #
     try:
         mailbox = check_local_recipient(recipient_email, create_if_missing=True)
     except Exception as e:
         logger.exception("Error checking local recipient: %s", e)
+        if raise_unavailable and isinstance(e, _OUTAGE_ERRORS):
+            raise DeliveryUnavailable from e
         return False
 
     if not mailbox:
@@ -260,11 +276,10 @@ def deliver_inbound_message(
             mailbox.id,
             envelope.get("origin"),
         )
-        # Queue the task immediately for processing (no lag)
-        process_inbound_message_task.delay(str(inbound_message.id))
-        return True
     except (DjangoDbError, ValidationError) as e:
         logger.error("Failed to queue inbound message for %s: %s", recipient_email, e)
+        if raise_unavailable and isinstance(e, _OUTAGE_ERRORS):
+            raise DeliveryUnavailable from e
         return False
     except Exception as e:
         logger.exception(
@@ -273,3 +288,16 @@ def deliver_inbound_message(
             e,
         )
         return False
+
+    # Process it now rather than at the next sweep. The row is saved, so a
+    # failure to dispatch (broker down) is not a failed delivery:
+    # ``process_inbound_messages_queue_task`` picks the row up.
+    try:
+        process_inbound_message_task.delay(str(inbound_message.id))
+    except Exception as e:
+        logger.exception(
+            "Could not dispatch inbound message %s, left to the retry sweep: %s",
+            inbound_message.id,
+            e,
+        )
+    return True

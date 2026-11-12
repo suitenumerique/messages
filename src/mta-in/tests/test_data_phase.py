@@ -15,7 +15,15 @@ from pymta import runtime, settings, smtp_protocol
 from pymta.limits import IPGate
 from pymta.mda_async import MDAResult
 
-from tests.harness import LOOPBACK_PROXIES, Client, ScriptedMDA, connected, counter, listening
+from tests.harness import (
+    LOOPBACK_PROXIES,
+    Client,
+    ScriptedMDA,
+    connected,
+    counter,
+    listening,
+    unlimited_gate,
+)
 
 EHLO = b"EHLO mx.sender.example"
 MAIL = b"MAIL FROM:<alice@sender.example>"
@@ -201,6 +209,44 @@ async def test_a_message_that_stops_arriving_is_cut_at_a_later_check(monkeypatch
 
 
 @pytest.mark.asyncio
+async def test_the_rate_is_that_of_the_receiving_not_of_the_delivery(monkeypatch):
+    """A short message whose delivery takes a while has not arrived slowly."""
+    monkeypatch.setattr(smtp_protocol, "_STRESS_IDLE_TIMEOUT", 0.3)
+
+    async def slowly(**_):
+        await asyncio.sleep(0.8)
+        return MDAResult(ok=True, temp_fail=False, payload={"status": "ok"}, status_code=200)
+
+    mda = ScriptedMDA(delivers=[slowly])
+    async with listening(mda, gate=IPGate(max_total=0, max_data=1)) as port:
+        async with connected(port) as client:
+            await _transaction(client)
+            assert (await client.data(b"Subject: x\r\n")).startswith(b"250")
+
+
+@pytest.mark.asyncio
+async def test_a_message_complete_when_its_deadline_fires_is_not_delivered(monkeypatch):
+    """The sender is told 421 and sends it again: delivered now, it would arrive twice."""
+    read = smtp_protocol.SMTPConnection._read_data
+
+    async def read_then_expire(self):
+        result = await read(self)
+        # The deadline, firing while the last lines are read from the buffer.
+        self._data_expired(settings.PYMTA_DATA_TIMEOUT)
+        return result
+
+    monkeypatch.setattr(smtp_protocol.SMTPConnection, "_read_data", read_then_expire)
+    mda = ScriptedMDA()
+    async with listening(mda) as port, connected(port) as client:
+        await _transaction(client)
+        assert await client.data() == (
+            b"421 4.4.2 Timeout receiving the message, closing connection\r\n"
+        )
+        assert await client.closed()
+    assert not mda.delivered
+
+
+@pytest.mark.asyncio
 async def test_with_data_slots_to_spare_a_slow_message_is_left_alone(monkeypatch):
     monkeypatch.setattr(smtp_protocol, "_STRESS_IDLE_TIMEOUT", 0.3)
     gate = IPGate(max_total=0, max_data=10)
@@ -282,14 +328,15 @@ async def test_a_command_sent_too_many_times_is_a_counted_421():
 @pytest.mark.asyncio
 async def test_the_421_of_a_shutdown_is_counted_on_both_paths():
     before = counter("pymta_disconnects_421_total", reason="shutdown")
-    async with listening() as port:
+    gate = unlimited_gate()
+    async with listening(gate=gate) as port:
         async with connected(port) as busy, connected(port) as idle:
             await busy.cmd(EHLO)
             await idle.cmd(EHLO)
             runtime.request_shutdown()
             # One is told when it asks for something new, the other unprompted.
             assert (await busy.cmd(MAIL)).startswith(b"421 4.3.2")
-            smtp_protocol.close_idle_sessions()
+            smtp_protocol.close_idle_sessions(gate)
             assert (await idle.reply()).startswith(b"421 4.3.2")
     assert counter("pymta_disconnects_421_total", reason="shutdown") == before + 2
 

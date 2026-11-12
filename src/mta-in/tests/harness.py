@@ -14,12 +14,11 @@ import logging
 
 from prometheus_client import REGISTRY
 
-from pymta import metrics
 from pymta.controller import build_smtp_kwargs
 from pymta.handler import InboundHandler
 from pymta.limits import IPGate
 from pymta.mda_async import MDAResult
-from pymta.smtp_protocol import SMTPConnection
+from pymta.smtp_protocol import Reply, SMTPConnection
 
 TIMEOUT = 5.0
 
@@ -38,6 +37,27 @@ def protocol_factory(handler, *, gate=None, tls_context=None, **overrides):
     # the test brings its own.
     gate = gate or unlimited_gate()
     return lambda: SMTPConnection(handler, ip_gate=gate, **kwargs)
+
+
+class AcceptAll:
+    """A handler that takes every sender, recipient and message as it comes.
+
+    For the tests of the protocol alone. Subclass it to change one answer.
+    """
+
+    async def handle_HELO(self, connection, hostname):
+        return hostname
+
+    async def handle_MAIL(self, connection, address):
+        connection.envelope.mail_from = address
+        return Reply("250 OK")
+
+    async def handle_RCPT(self, connection, address):
+        connection.envelope.rcpt_tos.append(address)
+        return Reply("250 OK")
+
+    async def handle_DATA(self, connection):
+        return Reply("250 OK")
 
 
 class ScriptedMDA:
@@ -114,8 +134,13 @@ async def listening(mda=None, *, handler=None, gate=None, tls_context=None, **ov
 async def sessions_ended(timeout: float = TIMEOUT) -> None:
     """Wait until no gated session is left, so its counters are settled."""
     deadline = asyncio.get_running_loop().time() + timeout
-    while metrics.active_sessions() > 0 and asyncio.get_running_loop().time() < deadline:
+    while active_sessions() > 0 and asyncio.get_running_loop().time() < deadline:
         await asyncio.sleep(0.005)
+
+
+def active_sessions() -> int:
+    """Session slots held, over every gate of the process."""
+    return int(REGISTRY.get_sample_value("pymta_sessions_active") or 0)
 
 
 class Client:

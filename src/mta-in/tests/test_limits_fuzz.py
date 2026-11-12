@@ -1,7 +1,7 @@
 """Fuzzing the session gate, with slots taken back from sources over their share.
 
 Sessions arrive and leave in any order. An arrival does what
-``SMTPConnection.admit`` does, every session being idle: the worst case for
+``SMTPConnection._admit`` does, every session being idle: the worst case for
 the sources that hold the slots.
 
 Run with: make fuzz-mta-in-py

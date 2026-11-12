@@ -202,6 +202,7 @@ OPERATOR_TRIGGERABLE = {
     "mda_secret_missing",
     "mda_secret_weak",
     "mda_unhealthy",
+    "mda_unexpected_status",
     "mda_recovered",
     "mda_breaker_opened",
     "mda_transport_error",

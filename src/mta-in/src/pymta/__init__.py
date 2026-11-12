@@ -1,10 +1,8 @@
 """
 Pure-Python inbound MTA, on asyncio and the standard library.
 
-Reception-side counterpart to the Postfix+milter implementation that lives in
-``src/mta-in/src/delivery_milter.py``. Both share the same MDA REST contract
-(``inbound/mta/check/`` + ``inbound/mta/deliver/``), and both run as a
-stateless, queue-less SMTP front-end: each SMTP session blocks on the
-synchronous delivery HTTP call and translates the outcome straight back to the
-remote peer.
+Counterpart of the Postfix milter in ``src/mta-in/src/delivery_milter.py``.
+Both use the same MDA REST contract (``inbound/mta/check/`` and
+``inbound/mta/deliver/``) and keep no queue: an SMTP session waits for the
+delivery HTTP call and passes its outcome on to the peer.
 """

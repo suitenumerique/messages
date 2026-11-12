@@ -22,7 +22,11 @@ from rest_framework.permissions import IsAuthenticated
 from rest_framework.response import Response
 
 from core import enums, models
-from core.mda.inbound import check_local_recipients, deliver_inbound_message
+from core.mda.inbound import (
+    DeliveryUnavailable,
+    check_local_recipients,
+    deliver_inbound_message,
+)
 from core.mda.raw_mime import remove_mime_headers
 
 logger = logging.getLogger(__name__)
@@ -392,8 +396,9 @@ class InboundMTAViewSet(viewsets.GenericViewSet):
 
         # Return-Path first, then Received: everything the sender supplied
         # stays below our own trace line.
-        # Cut inside the brackets, so a long sender keeps the closing one.
-        return_path = f"<{sanitize_header(sender)[:253]}>" if sender else "<>"
+        # Cut inside the brackets, so a long sender keeps the closing one:
+        # 256 octets with them (RFC 5321 section 4.5.3.1.3).
+        return_path = f"<{sanitize_header(sender)[:254]}>" if sender else "<>"
         raw_data = (
             f"Return-Path: {return_path}\r\n"
             + _received_header(mta_metadata, timezone.now())
@@ -433,16 +438,17 @@ class InboundMTAViewSet(viewsets.GenericViewSet):
         # Deliver the parsed email to each original recipient
         success_count = 0
         failure_count = 0
+        unavailable = False
         delivery_results = {}
 
         for recipient in mta_metadata["original_recipients"]:
             try:
-                # Call the refactored delivery function which returns True/False
                 delivered = deliver_inbound_message(
                     recipient,
                     parsed_email,
                     raw_data,
                     envelope={**base_envelope, "rcpt_to": recipient},
+                    raise_unavailable=True,
                 )
                 if delivered:
                     success_count += 1
@@ -451,6 +457,10 @@ class InboundMTAViewSet(viewsets.GenericViewSet):
                     # Delivery function failed (and logged the reason)
                     failure_count += 1
                     delivery_results[recipient] = "Failed"
+            except DeliveryUnavailable:
+                unavailable = True
+                failure_count += 1
+                delivery_results[recipient] = "Unavailable"
             except Exception as e:  # pylint: disable=broad-exception-caught
                 logger.error(
                     "Unexpected error during delivery loop for %s: %s",
@@ -463,11 +473,22 @@ class InboundMTAViewSet(viewsets.GenericViewSet):
 
         # Determine overall status based on counts
         if failure_count > 0 and success_count == 0:
-            # If all deliveries failed, return a server error
             logger.error(
                 "All deliveries failed for inbound email. [mta_session=%s]",
                 _mta_session(mta_metadata),
             )
+            if unavailable:
+                # Without "status": "error", so the MTA counts it toward its
+                # circuit breaker. The 500 below it does not: a sender whose
+                # messages fail must not open the breaker for everyone.
+                return Response(
+                    {
+                        "status": "unavailable",
+                        "detail": "Delivery is temporarily unavailable",
+                        "results": delivery_results,
+                    },
+                    status=status.HTTP_503_SERVICE_UNAVAILABLE,
+                )
             return Response(
                 {
                     "status": "error",

@@ -1,8 +1,7 @@
 """Prometheus metrics for the pymta server.
 
-The metrics HTTP endpoint is started from :mod:`pymta.server`. Each metric
-intentionally has a low cardinality (no email addresses, no client IPs in
-labels) to keep the time-series space bounded.
+The metrics HTTP endpoint is started from :mod:`pymta.server`. Labels are
+low-cardinality: no email address, no client IP.
 """
 
 import logging
@@ -12,7 +11,7 @@ import threading
 from secrets import compare_digest
 from wsgiref.simple_server import WSGIRequestHandler, WSGIServer, make_server
 
-from prometheus_client import REGISTRY, Counter, Gauge, Histogram, make_wsgi_app
+from prometheus_client import Counter, Gauge, Histogram, make_wsgi_app
 
 logger = logging.getLogger(__name__)
 
@@ -132,11 +131,13 @@ SECURITY_REJECTIONS = Counter(
     #   session_timeout
     # The size cap is the exception, split by the phase that caught it:
     #   oversize_announced (MAIL FROM SIZE=), oversize_message (the body itself)
-    # The rest are fixed checks, the first five from pymta.address:
+    # The rest are fixed checks. From pymta.address:
     #   source_route, control_char, invalid_encoding, oversize_local,
-    #   oversize_domain, bad_address, address_literal, nul_byte, bad_helo,
-    #   non_fqdn_sender, untrusted_proxy, defer_all, blocked_network,
-    #   blocked_sender_domain, blocked_recipient, internal_error
+    #   oversize_domain, bad_address, address_literal, non_fqdn_sender
+    # Others:
+    #   nul_byte, bad_helo, untrusted_proxy, defer_all, blocked_network,
+    #   blocked_sender_domain, blocked_recipient, protocol_synchronization,
+    #   internal_error
 )
 
 TLS_CERTIFICATE_NOT_AFTER = Gauge(
@@ -160,8 +161,8 @@ MDA_BREAKER_OPEN = Gauge(
 
 UNDER_STRESS = Gauge(
     f"{_METRICS_NAMESPACE}_under_stress",
-    "1 while four fifths of the session slots are taken: sessions outside a "
-    "transaction then get the short idle timeout.",
+    "1 while four fifths of the session slots are taken: sessions waiting for "
+    "a command then get the short idle timeout.",
 )
 
 SESSIONS_ABANDONED = Counter(
@@ -181,9 +182,8 @@ CONFIG_LIMIT = Gauge(
 def export_config_limits(limits: dict[str, int]) -> None:
     """Publish the configured limits as gauges. Called once at startup.
 
-    Takes the values rather than reading ``settings`` so this module stays free
-    of that import, and so the caller decides what counts as a limit worth
-    watching.
+    Takes the values, so this module does not import ``settings`` and the
+    caller picks the limits.
     """
     for name, value in limits.items():
         CONFIG_LIMIT.labels(name=name).set(value)
@@ -192,14 +192,12 @@ def export_config_limits(limits: dict[str, int]) -> None:
 def require_bearer(app, api_key: str):
     """Wrap a WSGI app so it answers 401 without ``Authorization: Bearer <key>``.
 
-    Mirrors ``core.middlewares.PrometheusAuthMiddleware`` on the Django side, so
-    both exposition endpoints in this project are scraped the same way.
+    As ``core.middlewares.PrometheusAuthMiddleware`` does in the backend, so
+    both endpoints are scraped the same way.
 
-    The comparison is on bytes, not str. ``secrets.compare_digest`` raises
-    TypeError when handed a str containing non-ASCII, so comparing the raw
-    header as text would turn a garbage Authorization value into a 500, letting
-    an unauthenticated peer choose our failure mode. WSGI hands us the header
-    latin-1-decoded (PEP 3333), so encoding it back is lossless.
+    Compared as bytes: ``secrets.compare_digest`` raises TypeError on a str
+    with non-ASCII, which would turn a garbage header into a 500. WSGI decodes
+    the header as latin-1 (PEP 3333), so encoding it back loses nothing.
     """
     expected = f"Bearer {api_key}".encode()
 
@@ -213,18 +211,12 @@ def require_bearer(app, api_key: str):
     return wrapped
 
 
-def active_sessions() -> int:
-    """Live session count, read back off the gauge the gate maintains."""
-    return int(REGISTRY.get_sample_value(f"{_METRICS_NAMESPACE}_sessions_active") or 0)
-
-
 class _QuietHandler(WSGIRequestHandler):
-    """Request handler that neither logs to stderr nor waits forever.
+    """Request handler that does not log to stderr and has a socket timeout.
 
-    ``timeout`` is the reason this class exists: without a socket deadline a
-    peer that opens connections and never completes a request keeps the
-    threads ``_MetricsServer`` allows for itself. Ten seconds is far more than a local
-    scrape needs.
+    Without the timeout, a peer that opens connections and never sends a
+    request would keep the threads ``_MetricsServer`` allows. Ten seconds is
+    far more than a scrape needs.
     """
 
     timeout = 10
@@ -233,28 +225,25 @@ class _QuietHandler(WSGIRequestHandler):
         pass
 
     def handle(self):
-        # A timed-out read raises here rather than in handle_one_request; let
-        # the connection go quietly instead of dumping a traceback per probe.
+        # A timed-out read raises here, not in handle_one_request: closed
+        # without a traceback.
         try:
             super().handle()
         except TimeoutError, socket.timeout, ConnectionError:
             self.close_connection = True
 
 
-# Concurrent scrape threads. A Prometheus deployment uses one connection per
-# scrape; anything beyond a handful at once is not a scraper.
+# Concurrent scrape threads. Prometheus uses one connection per scrape.
 _MAX_SCRAPE_THREADS = 8
 
 
 class _MetricsServer(socketserver.ThreadingMixIn, WSGIServer):
-    """Exposition server, bounded in the number of threads it will spawn.
+    """Exposition server with a cap on its threads.
 
-    ``ThreadingMixIn`` has no ceiling, and the thread is started before the WSGI
-    app checks the bearer token, so authentication does not gate it. The handler
-    timeout below bounds how long each thread lives but not how many exist: at N
-    connections a second an attacker holds 10N of them, inside the process that
-    is also serving SMTP. Refusing past the cap keeps a reachable metrics port
-    from being a way to take down mail delivery.
+    ``ThreadingMixIn`` has none, and a thread starts before the WSGI app
+    checks the bearer token. The handler timeout bounds how long a thread
+    lives, not how many there are: at N connections a second, 10N of them, in
+    the process that serves SMTP. Connections past the cap are refused.
     """
 
     daemon_threads = True
@@ -294,12 +283,11 @@ class _MetricsServer(socketserver.ThreadingMixIn, WSGIServer):
 def start_metrics_server(host: str, port: int, api_key: str = "") -> WSGIServer | None:
     """Start the Prometheus exposition HTTP server in a daemon thread.
 
-    Built from ``make_wsgi_app`` rather than ``start_http_server`` because the
-    latter has no hook for authentication.
+    Built on ``make_wsgi_app``: ``start_http_server`` has no hook for
+    authentication.
 
-    Returns the server so a caller can shut it down. Nothing in production does,
-    since it lives as long as the process, but tests need to start one, scrape
-    it over real HTTP and stop it again.
+    Returns the server, which the tests stop; production keeps it for the life
+    of the process.
     """
     if port <= 0:
         logger.info("metrics_disabled")
@@ -321,10 +309,9 @@ def start_metrics_server(host: str, port: int, api_key: str = "") -> WSGIServer 
             },
         )
 
-    # Per-call subclass rather than rebinding the attribute on _MetricsServer:
-    # the family is a class attribute read by the constructor, so setting it on
-    # the shared class would leave it there for every later call. Production
-    # starts one server and would not notice; the tests start several.
+    # A subclass per call: ``address_family`` is a class attribute the
+    # constructor reads, and set on ``_MetricsServer`` it would stay for later
+    # calls (the tests start several servers).
     server_cls = type(
         "_BoundMetricsServer",
         (_MetricsServer,),

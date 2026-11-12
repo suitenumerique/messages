@@ -22,6 +22,7 @@ from ipaddress import ip_network
 import pytest
 
 from pymta import runtime, server, settings
+from pymta.limits import IPGate
 from pymta.server import _check_proxy_trust_config, _log_unhandled
 
 
@@ -171,12 +172,13 @@ def test_a_successful_tls_reload_is_logged_with_the_new_expiry(monkeypatch, capl
 def test_a_second_sigterm_does_not_cut_the_drain_short(caplog):
     runtime.reset_for_tests()
     stop = asyncio.Event()
+    gate = IPGate()
     try:
         with caplog.at_level(logging.INFO, logger="pymta.server"):
-            server._on_terminate(server.signal.SIGTERM, stop)
+            server._on_terminate(server.signal.SIGTERM, stop, gate)
             assert stop.is_set()
             stop.clear()
-            server._on_terminate(server.signal.SIGTERM, stop)
+            server._on_terminate(server.signal.SIGTERM, stop, gate)
         # The second signal neither restarts the drain nor ends it.
         assert not stop.is_set()
         assert _events(caplog) == ["shutdown_started", "shutdown_already_in_progress"]

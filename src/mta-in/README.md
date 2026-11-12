@@ -45,7 +45,7 @@ The table below maps the response to `deliver/`; `check/` has its own table unde
 | `5xx`, timeout, transport error | `451` | Upstream is unhealthy; also counts toward the circuit breaker, except a 5xx with the MDA's own `"status": "error"` body, which is its answer about one message. |
 | `200` with an unrecognised body | `451` | Not proof of delivery. |
 
-Only 5xx and transport failures feed the circuit breaker. A `207` or a `401` is a complete answer from a healthy MDA, and so is a 500 about a message it could not deliver: counted, it would let one sender's messages defer everyone else's.
+Only 5xx and transport failures feed the circuit breaker. A `207` or a `401` is a complete answer from a healthy MDA, and so is a 500 about a message it could not deliver: counted, it would let one sender's messages defer everyone else's. When its database is what failed the delivery, the MDA answers `503` with `"status": "unavailable"` instead, which does count.
 
 `check/` names **no** permanent statuses at all. Every entry above is a verdict on a *message*, and a recipient check carries none: a `400` or `413` there is a fault in the check request we built, so saying `554` would tell the sender a working address is permanently bad. The only permanent reply at RCPT TO comes from a `200` whose body says the mailbox does not exist.
 
@@ -64,7 +64,7 @@ The last two rows are the reason `MDAResult.payload` is normalised to a dict and
 Each MTA → MDA call is an HTTP `POST` carrying:
 
 - **Body**: for `check/`, an `application/json` document `{"addresses": [...]}`. For `deliver/`, one of two forms, which the MDA tells apart by Content-Type:
-  - pymta sends `application/vnd.stmsg.mta-delivery`: the envelope (`sender`, `original_recipients`, `client_address`, `client_port`, `client_hostname`, `client_helo`, `size`, and how the message arrived: `protocol`, `tls_version`, `tls_cipher`, `server_name`) as one line of JSON, a newline, then the full RFC 5322 message.
+  - pymta sends `application/vnd.stmsg.mta-delivery`: the envelope (`sender`, `original_recipients`, `client_address`, `client_port`, `client_helo`, `size`, and how the message arrived: `protocol`, `tls_version`, `tls_cipher`, `server_name`) as one line of JSON, a newline, then the full RFC 5322 message.
   - the Postfix milter sends `message/rfc822`: the message alone, with the same envelope fields as JWT claims. An HTTP header caps that form (gunicorn refuses one over 8190 bytes, which about 100 recipients exceed), which is why pymta moved the envelope into the body.
 - **Authorization**: `Bearer <jwt>` where the JWT is signed HS256 with `env.MDA_API_SECRET` and carries:
   - `exp`: `env.MDA_API_JWT_TTL` seconds from issuance, anchored in UTC. It has to cover the whole request *plus* clock skew against the MDA.
@@ -134,7 +134,7 @@ Its only runtime dependencies are `httpx` (the MDA client), `PyJWT`, `idna` and 
 | `address.py` | Decides whether an envelope address is one we accept |
 | `proxy_protocol.py` | Reads a PROXY v1 or v2 header |
 | `smtp_protocol.py` | The dialogue of one connection: admission, command order, DATA, STARTTLS, timeouts |
-| `session_log.py` | What is logged about a session: the `reject` lines of the protocol and `session_closed` |
+| `session_log.py` | What is logged about a session: the `reject` lines and `session_closed` |
 | `handler.py` | What to do with a sender, a recipient, a message: the MDA calls and the per-session budgets |
 | `mda_async.py` | The MDA client, its signing and its circuit breaker |
 | `limits.py` | Session and DATA slots, per source and in total |
@@ -236,7 +236,7 @@ Grouped as `src/pymta/settings.py` groups them.
 |---|---|---|
 | `PYMTA_COMMAND_TIMEOUT` | `300` | Idle timeout (s) between complete commands; counted from our last reply. 300 is the minimum RFC 5321 §4.5.3.2.7 asks for. Once four fifths of the session slots are taken, a session waiting for a command gets 10 s instead (Postfix's stress value), inside a transaction too and including the sessions that were already waiting, so the ones doing nothing are the first to free their slot; a command that is running always has the full value |
 | `PYMTA_DATA_TIMEOUT` | `300` | Hard DATA-phase deadline (s): 354 → last body byte → MDA deliver → reply. Nothing in a DATA phase outlives it |
-| `PYMTA_SESSION_TIMEOUT` | `1800` (0 = off) | Wall-clock ceiling (s) on one TCP session, armed at connect and never re-armed. A peer that is not reading our replies is dropped without the 421, and any close it does not take is forced after 5 s, so the slot always comes back |
+| `PYMTA_SESSION_TIMEOUT` | `1800` (0 = off) | Wall-clock ceiling (s) on one TCP session, armed at connect and never re-armed. A message being received or delivered when it expires is finished first, so a session can outlast it by up to `PYMTA_DATA_TIMEOUT`. A peer that is not reading our replies is dropped without the 421, and any close it does not take is forced after 5 s, so the slot always comes back |
 | `PYMTA_SHUTDOWN_TIMEOUT` | `25` | Drain deadline on SIGTERM before abandoning in-flight sessions (s). Idle sessions are answered `421` and closed at once; a transaction already open may finish, and its session gets the `421` on the next command that would start new work |
 | `PYMTA_PROXY_PROTOCOL_TIMEOUT` | `5` | Seconds to wait for the PROXY header before dropping the connection |
 
@@ -423,10 +423,10 @@ The log is logfmt, one line per event, and every line about a connection carries
 | Event | One per | Says |
 |---|---|---|
 | `message_delivered` / `message_deferred` / `message_rejected` | message that reached the end of DATA | what the MDA made of it |
-| `reject` | 4xx/5xx reply to a command (`verb=`, `reason=`, `code=`, `sender=`, and `recipient=` or `recipients=` where there is one) | why |
+| `reject` | 4xx/5xx reply to a command (`verb=`, `reason=`, `code=`, `reply=`, `arg=`, `sender=`, and `recipient=` or `recipients=` where there is one) | why |
 | `session_closed` | connection the gate admitted and that sent at least one line | everything else |
 
-`reject` covers the refusals the protocol makes before the handler is asked too. Their `reason=`: `unknown_parameter` (555), `oversize_message` (552 for a body over the size limit), `oversize_announced` (552 for a `SIZE=` over it), `bad_size_parameter` (501), `malformed_address` (553, brackets or quotes that never close), `bad_sequence` (503), `bad_syntax` (501, or a 500 for a line with no command word), `unknown_command` and `line_too_long` (500), `not_implemented` (502), `too_many_commands` (421, a per-verb call limit), `too_many_unknown_commands` (502 ... goodbye), `shutdown` (421 to a command that would start new work during the drain), and `protocol` for any other code. They also carry the reply text in `reply=` and the command argument in `arg=`. A line refused before any verb ran (too long, unknown verb) has `verb=null` and the line itself in `arg=`. Each names the sender of the transaction it belongs to, which matters on a connection that carries several messages. A session gets at most `PYMTA_MAX_ERRORS_PER_SESSION` of these; `errors=` on `session_closed` still counts them all.
+`reject` covers the refusals the protocol makes before the handler is asked too. Their `reason=`: `unknown_parameter` (555), `oversize_message` (552 for a body over the size limit), `oversize_announced` (552 for a `SIZE=` over it), `bad_size_parameter` (501), `malformed_address` (553, brackets or quotes that never close), `bad_sequence` (503), `bad_syntax` (501, or a 500 for a line with no command word), `unknown_command` and `line_too_long` (500), `not_implemented` (502), `too_many_commands` (421, a per-verb call limit), `too_many_unknown_commands` (502 ... goodbye), `shutdown` (421 to a command that would start new work during the drain), and `protocol` for any other code. Every `reject` carries the reply text in `reply=` and the command argument in `arg=`. A line refused before any verb ran (too long, unknown verb) has `verb=null` and the line itself in `arg=`. Each names the sender of the transaction it belongs to, which matters on a connection that carries several messages. A session gets at most `PYMTA_MAX_ERRORS_PER_SESSION` of these; `errors=` on `session_closed` still counts them all.
 
 `session_closed` is Postfix's `disconnect from` line, and the one to search when a sender reports mail that never arrived and nothing else mentions it. Those are the sessions that ended without any refusal: a STARTTLS the sender's side gave up on, a timeout, a hang-up mid-DATA, a shutdown that cut the session.
 
@@ -541,7 +541,7 @@ The defaults are tuned for the dev stack. Five things to set before pymta faces 
 
 **A load balancer without PROXY protocol is not supported.** pymta would see only the balancer's address, so every session would bucket under one IP, and the per-source share would silently become a much lower global cap, and every message would be stamped with the balancer's own IP as the sender's, in `Received` and in the envelope the MDA stores. There is no setting for this topology and no fallback that makes it work.
 
-**With PROXY protocol on, the SMTP port must be reachable by the balancer only** (a network policy, a security group, a private interface). pymta reads the PROXY header before it checks who sent it and before the connection counts against any limit: up to 64 KiB per connection, for `PYMTA_PROXY_PROTOCOL_TIMEOUT` seconds. From the balancer that is a few dozen bytes it wrote itself. From anyone else it is memory outside every session cap, and `PYMTA_TRUSTED_PROXIES` only refuses such a peer once its header has been read.
+**With PROXY protocol on, the SMTP port must be reachable by the balancer only** (a network policy, a security group, a private interface). A peer outside `PYMTA_TRUSTED_PROXIES` is closed at once, before anything it sends is read. A peer inside it has its PROXY header read before the connection counts against any limit: up to 64 KiB per connection, for `PYMTA_PROXY_PROTOCOL_TIMEOUT` seconds. From the balancer that is a few dozen bytes it wrote itself. With `0.0.0.0/0,::/0` it is anyone's, and memory outside every session cap.
 
 pymta refuses to start with PROXY protocol on and `PYMTA_TRUSTED_PROXIES` empty. A deployment that cannot name its balancer at boot sets `0.0.0.0/0,::/0`: **every peer's header is then trusted**, startup logs a `proxy_trust_unrestricted` warning, and the network isolation is the *entire* trust boundary. Name the balancer whenever you can.
 

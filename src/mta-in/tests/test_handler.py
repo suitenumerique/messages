@@ -1104,9 +1104,24 @@ async def test_proxy_header_from_untrusted_peer_is_refused(monkeypatch, caplog):
     # DEBUG: any host that can reach port 25 provokes this once a connection.
     assert refused.levelno == logging.DEBUG
     assert refused.wire_peer == "127.0.0.1"
-    assert str(refused.claimed_src) == "203.0.113.9"
     assert counter("pymta_security_rejections_total", reason="untrusted_proxy") == rejections + 1
     assert counter("pymta_connections_total", result="rejected_untrusted_proxy") == connections + 1
+
+
+@pytest.mark.asyncio
+async def test_an_untrusted_peer_is_closed_before_anything_is_read_from_it(monkeypatch):
+    """Not held for the PROXY timeout: it holds no session slot meanwhile."""
+    _proxy_on(monkeypatch, [ip_network("10.89.0.0/24")])
+    monkeypatch.setattr(settings, "PYMTA_PROXY_PROTOCOL_TIMEOUT", 30)
+    invalid = counter("pymta_connections_total", result="rejected_invalid_proxy")
+    async with listening(gate=unlimited_gate()) as port:
+        client = await Client.connect(port, greeting=False)
+        try:
+            # It has sent nothing.
+            assert await asyncio.wait_for(client.reader.read(), timeout=2) == b""
+        finally:
+            await client.close()
+    assert counter("pymta_connections_total", result="rejected_invalid_proxy") == invalid
 
 
 @pytest.mark.asyncio

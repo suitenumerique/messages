@@ -2,22 +2,26 @@
 
 # pylint: disable=too-many-lines
 
+from datetime import timedelta
 from unittest.mock import patch
 
+from django.db.utils import DataError, InterfaceError, OperationalError
 from django.test import override_settings
 from django.utils import timezone
 
 import pytest
 from jmap_email import parse_email
+from kombu.exceptions import OperationalError as BrokerError
 
 from core import enums, factories, models
-from core.mda.inbound import deliver_inbound_message
+from core.mda.inbound import DeliveryUnavailable, deliver_inbound_message
 from core.mda.inbound_create import (
     _create_message_from_inbound,
     _record_divergent_rcpt,
     _record_transport_security,
     find_thread_for_message,
 )
+from core.mda.inbound_tasks import process_inbound_messages_queue_task
 
 
 class TestRecordDivergentRcpt:
@@ -1370,3 +1374,76 @@ class TestInboundSpamConversation:
         assert reply.is_spam is False
         thread.refresh_from_db()
         assert thread.is_spam is True
+
+
+@pytest.mark.django_db
+class TestDeliveryUnavailable:
+    """An outage of ours is told apart from a delivery that failed otherwise."""
+
+    RAW = b"Subject: x\r\nMessage-ID: <outage.1@example.com>\r\n\r\nbody\r\n"
+    PARSED = {"subject": "x", "messageId": ["outage.1@example.com"]}
+
+    @pytest.fixture
+    def recipient(self):
+        """The address of an existing mailbox."""
+        mailbox = factories.MailboxFactory()
+        return f"{mailbox.local_part}@{mailbox.domain.name}"
+
+    @pytest.mark.parametrize(
+        "target, error",
+        [
+            ("core.mda.inbound.check_local_recipient", OperationalError("down")),
+            ("core.mda.inbound.check_local_recipient", InterfaceError("closed")),
+            ("core.models.InboundMessage.objects.create", OperationalError("down")),
+        ],
+    )
+    def test_an_outage_raises_when_asked_to(self, recipient, target, error):
+        """The database failing is reported as an outage."""
+        with patch(target, side_effect=error):
+            with pytest.raises(DeliveryUnavailable):
+                deliver_inbound_message(
+                    recipient, self.PARSED, self.RAW, raise_unavailable=True
+                )
+            # Callers that did not ask keep the boolean.
+            assert deliver_inbound_message(recipient, self.PARSED, self.RAW) is False
+
+    @pytest.mark.parametrize(
+        "target, error",
+        [
+            ("core.mda.inbound.check_local_recipient", ValueError("bug")),
+            ("core.models.InboundMessage.objects.create", DataError("bad value")),
+        ],
+    )
+    def test_another_failure_stays_a_plain_failure(self, recipient, target, error):
+        """An error a message could cause must not read as an outage."""
+        with patch(target, side_effect=error):
+            assert (
+                deliver_inbound_message(
+                    recipient, self.PARSED, self.RAW, raise_unavailable=True
+                )
+                is False
+            )
+
+    @pytest.mark.parametrize("error", [BrokerError("no broker"), ValueError("bug")])
+    def test_a_failed_dispatch_is_still_a_delivery(self, recipient, error):
+        """The row is saved, and the sweep dispatches what the view could not."""
+        with patch(
+            "core.mda.inbound.process_inbound_message_task.delay", side_effect=error
+        ):
+            assert (
+                deliver_inbound_message(
+                    recipient, self.PARSED, self.RAW, raise_unavailable=True
+                )
+                is True
+            )
+        row = models.InboundMessage.objects.get()
+        # Old enough, the sweep takes it.
+        models.InboundMessage.objects.filter(pk=row.pk).update(
+            created_at=timezone.now() - timedelta(minutes=6),
+            updated_at=timezone.now() - timedelta(minutes=6),
+        )
+        with patch(
+            "core.mda.inbound_tasks.process_inbound_message_task.delay"
+        ) as dispatch:
+            process_inbound_messages_queue_task()
+        dispatch.assert_called_once_with(str(row.pk))

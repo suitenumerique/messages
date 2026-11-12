@@ -28,6 +28,7 @@ from pymta.smtp_protocol import SMTPConnection, close_idle_sessions
 
 from tests.harness import (
     LOOPBACK_PROXIES,
+    AcceptAll,
     Client,
     ScriptedMDA,
     capture_all,
@@ -45,10 +46,6 @@ MAIL = b"MAIL FROM:<alice@sender.example>"
 RCPT = b"RCPT TO:<bob@example.com>"
 
 
-class _NullHandler:
-    pass
-
-
 @pytest.fixture
 def clean_runtime():
     runtime.reset_for_tests()
@@ -59,15 +56,6 @@ def clean_runtime():
 # ---------------------------------------------------------------------------
 # Protocol
 # ---------------------------------------------------------------------------
-
-
-@pytest.mark.asyncio
-async def test_without_a_size_limit_none_is_offered_and_none_applied():
-    async with listening(data_size_limit=0) as port, connected(port) as client:
-        assert b"SIZE" not in await client.cmd(EHLO)
-        assert (await client.cmd(MAIL + b" SIZE=99999999999"))[:3] == b"250"
-        await client.cmd(RCPT)
-        assert (await client.data(b"x" * 1000 + b"\r\n" + b"y" * 60000 + b"\r\n"))[:3] == b"250"
 
 
 @pytest.mark.asyncio
@@ -87,7 +75,7 @@ class _Captured:
     """A listener factory that keeps the connections it builds."""
 
     def __init__(self, handler=None, **kwargs):
-        self._build = protocol_factory(handler or _NullHandler(), **kwargs)
+        self._build = protocol_factory(handler or AcceptAll(), **kwargs)
         self.connections: list[SMTPConnection] = []
 
     def __call__(self) -> SMTPConnection:
@@ -121,9 +109,12 @@ async def test_plaintext_sent_while_the_starttls_reply_waits_is_dropped():
         await client.send(b"STARTTLS\r\n")
         assert (await client.reply()).startswith(b"220")
         await client.send(b"NOOP\r\n")
-        while not connection._reader.pending():
-            await asyncio.sleep(0.01)
-        connection.resume_writing()
+        try:
+            async with asyncio.timeout(5):
+                while not connection._reader.pending():
+                    await asyncio.sleep(0.01)
+        finally:
+            connection.resume_writing()
         await client.writer.start_tls(client_ctx)
         # The first answer inside TLS is to the first command sent inside it.
         assert (await client.cmd(EHLO)).startswith(b"250-")
@@ -180,7 +171,7 @@ class _PeerlessTransport(asyncio.Transport):
 async def test_a_connection_without_a_peer_address_shares_one_bucket(caplog):
     before = counter("pymta_connections_total", result="no_wire_peer")
     gate = IPGate(max_total=4)
-    connection = protocol_factory(_NullHandler(), gate=gate)()
+    connection = protocol_factory(AcceptAll(), gate=gate)()
     transport = _PeerlessTransport()
     with capture_all(caplog):
         connection.connection_made(transport)
@@ -211,13 +202,69 @@ async def test_a_client_no_header_names_cannot_match_the_blocklist(monkeypatch):
 
 
 @pytest.mark.asyncio
+async def test_a_gate_keeps_the_sessions_holding_a_slot_and_no_other():
+    gate = unlimited_gate()
+    async with listening(gate=gate) as port:
+        async with connected(port) as client:
+            await client.cmd(EHLO)
+            assert len(gate.sessions) == gate.total == 1
+    assert not gate.sessions
+    assert gate.total == 0
+
+
+@pytest.mark.asyncio
+async def test_ehlo_offers_the_size_limit():
+    async with listening(data_size_limit=1234) as port, connected(port) as client:
+        assert b"250-SIZE 1234\r\n" in await client.cmd(EHLO)
+
+
+@pytest.mark.asyncio
+async def test_a_command_without_a_limit_of_its_own_gets_the_common_one():
+    async with listening(command_call_limit={"*": 2}) as port, connected(port) as client:
+        await client.cmd(EHLO)
+        for _ in range(2):
+            assert (await client.cmd(b"VRFY bob"))[:3] == b"252"
+        assert await client.cmd(b"VRFY bob") == b"421 4.7.0 VRFY sent too many times\r\n"
+
+
+@pytest.mark.asyncio
+async def test_sigterm_tells_the_idle_sessions_to_go(clean_runtime):
+    gate = unlimited_gate()
+    async with listening(gate=gate) as port, connected(port) as client:
+        await client.cmd(EHLO)
+        server._on_terminate(signal.SIGTERM, asyncio.Event(), gate)
+        assert await client.reply() == b"421 4.3.2 Service not available, try another MX\r\n"
+
+
+@pytest.mark.asyncio
+async def test_a_session_cut_at_the_shutdown_deadline_leaves_its_summary(
+    monkeypatch, caplog, clean_runtime
+):
+    monkeypatch.setattr(settings, "PYMTA_SHUTDOWN_TIMEOUT", 0)
+    gate = unlimited_gate()
+    async with listening(gate=gate) as port, connected(port) as client:
+        # Inside a transaction: the shutdown leaves it to finish.
+        await client.cmd(EHLO)
+        await client.cmd(MAIL)
+        runtime.request_shutdown()
+        # A listener of its own for the drain to close.
+        spare = await asyncio.get_running_loop().create_server(asyncio.Protocol, "127.0.0.1", 0)
+        with caplog.at_level(logging.INFO, logger="pymta"):
+            await server._drain_and_close(spare, gate)
+        (summary,) = [r for r in caplog.records if r.getMessage() == "session_closed"]
+        assert summary.closed_by == "shutdown"
+        assert summary.sender == "alice@sender.example"
+
+
+@pytest.mark.asyncio
 async def test_shutdown_tells_an_idle_session_once(clean_runtime):
-    async with listening(gate=unlimited_gate()) as port, connected(port) as client:
+    gate = unlimited_gate()
+    async with listening(gate=gate) as port, connected(port) as client:
         await client.cmd(EHLO)
         runtime.request_shutdown()
-        close_idle_sessions()
+        close_idle_sessions(gate)
         # Already on its way out: the second sweep leaves it alone.
-        close_idle_sessions()
+        close_idle_sessions(gate)
         assert await client.reply() == b"421 4.3.2 Service not available, try another MX\r\n"
         assert await client.reader.read() == b""
 
@@ -228,11 +275,12 @@ async def test_shutdown_leaves_a_connection_that_was_never_admitted(monkeypatch,
     monkeypatch.setattr(settings, "PYMTA_ENABLE_PROXY_PROTOCOL", True)
     monkeypatch.setattr(settings, "PYMTA_PROXY_PROTOCOL_TIMEOUT", 5)
     monkeypatch.setattr(settings, "PYMTA_TRUSTED_PROXIES", LOOPBACK_PROXIES)
-    async with listening(gate=unlimited_gate()) as port:
+    gate = unlimited_gate()
+    async with listening(gate=gate) as port:
         client = await Client.connect(port, greeting=False)
         try:
             await asyncio.sleep(0.05)
-            close_idle_sessions()
+            close_idle_sessions(gate)
             with pytest.raises(asyncio.TimeoutError):
                 await asyncio.wait_for(client.reader.read(1), timeout=0.2)
         finally:
