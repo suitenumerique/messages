@@ -28,7 +28,7 @@ and this project adheres to
 ### Changed
 
 - Bump keycloak to 26.8.1 and refresh the Alpine 3.24 digest in the Keycloak image
-- Bump Caddy to 2.11.7 in the Keycloak image, the frontend image and the
+- Bump Caddy to 2.11.9 in the Keycloak image, the frontend image and the
   Scalingo post-frontend deploy script
 - Bump @gouvfr-lasuite/ui-components to 1.3.0
 
@@ -39,6 +39,9 @@ and this project adheres to
 
 ### Security
 
+- Caddy 2.11.9 carries go-jose 4.1.6, which closes GHSA-mgcc-cww5-fp2q; the
+  2.11.7 release binary shipped the affected 4.1.5. The FastCGI fixes of
+  2.11.8 and 2.11.9 do not apply: neither proxy runs PHP
 - The Keycloak image removes `emSign ECC Root CA - G3` from the Java trust
   store after the eMudhra intermediate CA compromise of October 2026. The
   Comodo `AAA Certificate Services` root is already absent from the base image
