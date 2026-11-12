@@ -388,6 +388,14 @@ class InboundWidgetViewSet(viewsets.GenericViewSet):
                 {"detail": "Invalid email format"}, status=status.HTTP_400_BAD_REQUEST
             )
 
+        # The composed MIME carries both body parts plus base64-encoded
+        # attachments, so it can exceed the limit even when each input is below it.
+        if len(raw_mime) > settings.MAX_INCOMING_EMAIL_SIZE:
+            return Response(
+                {"detail": "Message too large"},
+                status=status.HTTP_413_REQUEST_ENTITY_TOO_LARGE,
+            )
+        
         delivered = deliver_inbound_message(
             target_email,
             parsed_email,
