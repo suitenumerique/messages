@@ -295,8 +295,10 @@ class InboundWidgetViewSet(viewsets.GenericViewSet):
         #     "disposition": "attachment",
         # }]
 
-        # Get optional attachments, fallback to empty list if no attachments exist.
-        incoming_attachments = data.get("attachments") or []
+        # Missing key or null means no attachments; any other non-list value is rejected.
+        incoming_attachments = data.get("attachments")
+        if incoming_attachments is None:
+            incoming_attachments = []
         # Check that incoming_attachments is a list.
         if not isinstance(incoming_attachments, list):
             return Response(
