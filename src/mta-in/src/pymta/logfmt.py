@@ -74,18 +74,22 @@ shows the individual events.
 
 from __future__ import annotations
 
+import contextlib
 import datetime as _datetime
 import functools
 import logging
 import logging.handlers
 import queue
 import sys
+import threading
 from collections.abc import Callable
 
 from . import metrics
 
 # Lines waiting for the writer thread: see :func:`configure`.
 _QUEUE_SIZE = 10000
+# Seconds the exit waits for the queued lines to be written.
+_STOP_TIMEOUT = 2.0
 
 # Attributes LogRecord always carries. Anything else on the record was put
 # there by a caller through ``extra=`` and is emitted as a field.
@@ -235,13 +239,21 @@ class _QueueHandler(logging.handlers.QueueHandler):
 
 
 def _stop_writer(writer: logging.handlers.QueueListener) -> None:
-    """Write what is queued, then end the thread."""
-    try:
-        writer.stop()
-    except queue.Full:
-        # No room for the stop marker: the stream is not being read, and
-        # waiting for it would hold the exit. The thread is a daemon.
-        pass
+    """Write what is queued, then end the thread. For ``_STOP_TIMEOUT`` at most.
+
+    A stream that is not being read must not hold the exit: the writer is
+    then stuck in a write, or there is no room for its stop marker
+    (``queue.Full``). Both threads are daemons.
+    """
+
+    def stop() -> None:
+        with contextlib.suppress(queue.Full):
+            writer.stop()
+
+    # ``stop`` joins the writer without a timeout, so it is waited for here.
+    stopper = threading.Thread(target=stop, daemon=True)
+    stopper.start()
+    stopper.join(_STOP_TIMEOUT)
 
 
 def configure(
@@ -258,7 +270,7 @@ def configure(
     never waits on a stream that is read slowly: every session would wait
     with it. Up to ``_QUEUE_SIZE`` lines are held for it and the rest are
     dropped and counted. Returns what to call before exiting, to have the
-    queued lines written.
+    queued lines written: see :func:`_stop_writer`.
     """
     handler: logging.Handler = logging.StreamHandler(stream or sys.stdout)
     stop = None

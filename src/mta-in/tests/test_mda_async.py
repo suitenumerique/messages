@@ -833,6 +833,33 @@ async def test_a_check_is_bounded_as_a_whole_and_a_delivery_is_not(caplog):
 
 
 @pytest.mark.asyncio
+async def test_a_call_sent_during_an_outage_that_has_ended_does_not_count_against_the_mda():
+    """Failing after the recovery, it would open the breaker again."""
+    client, clock = _new_client(threshold=1, cooldown=30)
+    old = client._client = _GatedClient()
+    straggler = asyncio.ensure_future(client.check_recipient("a@example.com"))
+    await asyncio.sleep(0.01)
+    client._client = _StubAsyncClient([httpx.TimeoutException("down")])
+    await client.check_recipient("a@example.com")
+    assert client.breaker_is_open() is True
+    clock.advance(31)
+    client._client = _StubAsyncClient([_resp(200, b'{"a@example.com": true}')])
+    assert (await client.check_recipient("a@example.com")).ok is True
+    assert client.breaker_is_open() is False
+
+    old.outcome = httpx.TimeoutException("down")
+    old.release.set()
+    assert (await straggler).temp_fail
+    assert client.breaker_is_open() is False
+    assert client._consecutive_failures == 0
+
+    # A failure of now still counts.
+    client._client = _StubAsyncClient([httpx.TimeoutException("down")])
+    await client.check_recipient("a@example.com")
+    assert client.breaker_is_open() is True
+
+
+@pytest.mark.asyncio
 async def test_a_message_is_handed_to_httpx_in_pieces():
     message = bytes(range(256)) * 1000
     parts = [part async for part in _stream((b"head\n", message))]

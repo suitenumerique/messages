@@ -142,40 +142,44 @@ def test_exception_stays_on_one_line():
     assert "ValueError: kaboom" in fields["error_stack_trace"]
 
 
+@contextlib.contextmanager
+def _root_logger_restored():
+    """``configure`` replaces the root logger's handlers and sets its level."""
+    root = logging.getLogger()
+    handlers, level = list(root.handlers), root.level
+    try:
+        yield root
+    finally:
+        for h in list(root.handlers):
+            root.removeHandler(h)
+        for h in handlers:
+            root.addHandler(h)
+        root.setLevel(level)
+
+
 def test_configure_replaces_handlers_rather_than_adding():
     """Two handlers would print every line twice, in two formats."""
-    root = logging.getLogger()
-    before = list(root.handlers)
-    try:
+    with _root_logger_restored() as root:
         stream = io.StringIO()
         configure("INFO", stream)
         configure("INFO", stream)
         assert len(root.handlers) == 1
         logging.getLogger("pymta.test").info("smtp_listening", extra={"bind": "0.0.0.0:25"})
         assert stream.getvalue().count("event=smtp_listening") == 1
-    finally:
-        for h in list(root.handlers):
-            root.removeHandler(h)
-        for h in before:
-            root.addHandler(h)
 
 
-@contextlib.contextmanager
-def _root_handlers_restored():
+def test_the_root_logger_is_left_as_it_was_found():
     root = logging.getLogger()
-    before = list(root.handlers)
-    try:
-        yield
-    finally:
-        for h in list(root.handlers):
-            root.removeHandler(h)
-        for h in before:
-            root.addHandler(h)
+    handlers, level = list(root.handlers), root.level
+    with _root_logger_restored():
+        configure("CRITICAL", io.StringIO())
+        assert root.level == logging.CRITICAL
+    assert (list(root.handlers), root.level) == (handlers, level)
 
 
 def test_in_a_thread_the_same_lines_are_written_once_it_is_stopped():
     stream = io.StringIO()
-    with _root_handlers_restored():
+    with _root_logger_restored():
         assert configure("INFO", stream) is None
         stop = configure("INFO", stream, in_thread=True)
         log = logging.getLogger("pymta.test")
@@ -212,7 +216,7 @@ def test_a_stream_nobody_reads_costs_lines_and_not_the_caller(monkeypatch):
     monkeypatch.setattr(logfmt, "_QUEUE_SIZE", 1)
     dropped = REGISTRY.get_sample_value("pymta_log_records_dropped_total")
     stream = _Unread()
-    with _root_handlers_restored():
+    with _root_logger_restored():
         stop = configure("INFO", stream, in_thread=True)
         log = logging.getLogger("pymta.test")
         log.info("first")
@@ -230,6 +234,24 @@ def test_a_stream_nobody_reads_costs_lines_and_not_the_caller(monkeypatch):
         stop()
     events = [_parse(line)["event"] for line in stream.getvalue().splitlines()]
     assert events == ["first", "second"]
+
+
+def test_a_write_that_does_not_return_does_not_hold_the_exit(monkeypatch):
+    """With room left in the queue: the stop marker goes in, the writer never reads it."""
+    monkeypatch.setattr(logfmt, "_STOP_TIMEOUT", 0.1)
+    stream = _Unread()
+    with _root_logger_restored():
+        stop = configure("INFO", stream, in_thread=True)
+        logging.getLogger("pymta.test").info("first")
+        assert stream.writing.wait(5)
+        started = time.monotonic()
+        stop()
+        assert time.monotonic() - started < 2
+        stream.release.set()
+        deadline = time.monotonic() + 5
+        while "first" not in stream.getvalue() and time.monotonic() < deadline:
+            time.sleep(0.01)
+    assert "event=first" in stream.getvalue()
 
 
 # ---------------------------------------------------------------------------
@@ -483,17 +505,19 @@ def test_the_classification_lists_have_no_dead_entries():
 
 def _capture(verbose_libraries=False):
     root = logging.getLogger()
-    before = list(root.handlers)
+    before = list(root.handlers), root.level
     stream = io.StringIO()
     configure("DEBUG", stream, verbose_libraries=verbose_libraries)
     return stream, root, before
 
 
 def _restore(root, before):
+    handlers, level = before
     for h in list(root.handlers):
         root.removeHandler(h)
-    for h in before:
+    for h in handlers:
         root.addHandler(h)
+    root.setLevel(level)
 
 
 def test_third_party_records_are_dropped():

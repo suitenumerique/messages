@@ -167,6 +167,8 @@ class MDAClient:
         self._open_until: float | None = None
         # True while the one call let through after a cooldown is in flight.
         self._probing = False
+        # Counts the times an open breaker was closed: see _record_failure.
+        self._generation = 0
         self._client: httpx.AsyncClient | None = None
         self._validate_credentials()
 
@@ -272,11 +274,19 @@ class MDAClient:
             return False
         return self._clock() < self._open_until or self._probing
 
-    def _record_failure(self, probe: bool) -> None:
-        """Count a failed call. ``probe``: it was the one let through after a cooldown."""
+    def _record_failure(self, probe: bool, generation: int) -> None:
+        """Count a failed call.
+
+        ``probe``: it was the one let through after a cooldown.
+        ``generation``: ``_generation`` when the call was let through.
+        """
         if not self._breaker_threshold:
             return
-        if probe and self._open_until is not None:
+        if generation != self._generation:
+            # Sent during an outage that has ended since: says nothing of
+            # the MDA as it is now.
+            return
+        if probe:
             # The probe failed: same outage, another cooldown. Not on the
             # failure of a call that was in flight before the breaker opened.
             self._open_until = self._clock() + self._breaker_cooldown
@@ -296,6 +306,8 @@ class MDAClient:
         if self._consecutive_failures:
             logger.info("mda_recovered", extra={"after_failures": self._consecutive_failures})
         self._consecutive_failures = 0
+        if self._open_until is not None:
+            self._generation += 1
         self._open_until = None
         self._probing = False
 
@@ -322,6 +334,7 @@ class MDAClient:
             return MDAResult.unanswered()
         # Past the check with the flag up, this call is the probe.
         probe = self._probing
+        generation = self._generation
         try:
             result, healthy = await self._send(
                 path, content_type, body, endpoint_label, permanent_statuses, session, deadline
@@ -329,7 +342,7 @@ class MDAClient:
             if healthy:
                 self._record_success()
             elif healthy is not None:
-                self._record_failure(probe)
+                self._record_failure(probe, generation)
             return result
         finally:
             # A probe that ends with no verdict (cancelled by the DATA
