@@ -349,7 +349,7 @@ class InboundWidgetViewSet(viewsets.GenericViewSet):
                 "name": att_name,
                 "type": att_type,
                 "disposition": "attachment",
-                # raw bytes as `Mailbox.create_blob()` method (called by `_process_attachments`) expects.
+                # raw bytes: accepted by compose_email.
                 "content": base64_decoded_content,
             })
 
