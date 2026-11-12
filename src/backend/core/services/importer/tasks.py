@@ -136,6 +136,8 @@ def run_import_task(self, channel_id: str) -> dict[str, Any]:
         )
         return {"status": "FAILURE", "error": "unknown source_type"}
 
+    # Per-message runner logs carry only this task's id: tie it to the import.
+    logger.info("run_import_task: running %s import %s", source_type, channel_id)
     try:
         state = read_state(channel_id)
         try:

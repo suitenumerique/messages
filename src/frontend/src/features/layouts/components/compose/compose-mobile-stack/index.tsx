@@ -33,7 +33,7 @@ export const ComposeMobileStack = ({ windows, onOpenOverview, autoFocus = false 
     // The bar always shows the latest window's title, pile included, so it
     // carries that window's sender avatar too — the same as the desktop tab.
     const getSender = useComposeSender();
-    const senderMailbox = latest ? getSender(latest.mailboxId) : undefined;
+    const senderMailbox = latest ? getSender(latest) : undefined;
 
     const open = () => {
         if (!latest) return;
@@ -92,12 +92,14 @@ export const ComposeMobileStack = ({ windows, onOpenOverview, autoFocus = false 
                         ? t("{{count}} compose window", { count: windows.length })
                         : titleWithSender
                 }
+                aria-busy={latest.isSenderPending || undefined}
                 onClick={open}
             >
                 {senderMailbox ? (
                     <span
                         className="compose-mobile-stack__avatar"
                         data-shared={!senderMailbox.is_identity}
+                        data-pending={!!latest.isSenderPending}
                         aria-hidden="true"
                     >
                         <UserAvatar fullName={MailboxHelper.getLabel(senderMailbox)} size="xsmall" />

@@ -11,9 +11,9 @@ import {
     Input,
     Modal,
     ModalSize,
-    Tooltip,
     useModals,
 } from "@gouvfr-lasuite/ui-components";
+import { Tooltip } from "@/features/ui/components/tooltip";
 import { useTranslation } from "react-i18next";
 import { ReactNode, useEffect, useMemo, useState } from "react";
 import { useQueryClient } from "@tanstack/react-query";
@@ -378,10 +378,7 @@ export const UserDevicesGrid = () => {
     ];
 
     const enableToolbar = canEnableThisDevice ? (
-        <div
-            className="flex-row flex-justify-end"
-            style={{ marginBlock: "var(--c--globals--spacings--sm)" }}
-        >
+        <div className="user-devices-grid__toolbar">
             <Button
                 variant="secondary"
                 size="small"

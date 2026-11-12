@@ -1,6 +1,6 @@
 import { MessageFormMode } from "@/features/forms/components/message-form";
 import { randomUUID } from "@/features/utils/uuid";
-import { enforceSingleExpanded } from "./core";
+import { enforceSingleExpanded, isMaterializedWindow } from "./core";
 import { ComposeWindowDescriptor, ComposeWindowPresentation } from "./types";
 import { COMPOSE_WINDOWS_STORAGE_KEY } from "@/features/config";
 
@@ -26,7 +26,7 @@ type PersistedComposeWindow = {
  */
 export const serializeWindows = (windows: readonly ComposeWindowDescriptor[]): string => {
     const persisted: PersistedComposeWindow[] = windows
-        .filter((window): window is ComposeWindowDescriptor & { draftId: string } => !!window.draftId)
+        .filter(isMaterializedWindow)
         .map((window) => ({
             draftId: window.draftId,
             mailboxId: window.mailboxId,

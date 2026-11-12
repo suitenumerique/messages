@@ -6,15 +6,20 @@
  */
 
 import { randomUUID } from "@/features/utils/uuid";
+import { DeletedDrafts } from "./types";
 
 export const COMPOSE_BROADCAST_CHANNEL = "messages:compose";
 
-export type ComposeBroadcastMessage = {
-    type: "draft-updated" | "draft-sent" | "draft-deleted";
-    draftId: string;
-    threadId?: string;
-    mailboxId: string;
-};
+export type ComposeBroadcastMessage =
+    | {
+        type: "draft-updated" | "draft-sent" | "draft-deleted";
+        draftId: string;
+        threadId?: string;
+        mailboxId: string;
+    }
+    // Carries the deleted ids rather than the posting tab's windows: the
+    // other tabs may hold windows on drafts this one never opened.
+    | ({ type: "drafts-deleted" } & DeletedDrafts);
 
 type ComposeBroadcastEnvelope = ComposeBroadcastMessage & {
     /** Tab that posted the message, see `TAB_ID`. */
@@ -40,7 +45,7 @@ export const subscribeToComposeBroadcast = (
     if (typeof BroadcastChannel === "undefined") return () => {};
     const channel = new BroadcastChannel(COMPOSE_BROADCAST_CHANNEL);
     channel.onmessage = (event: MessageEvent<ComposeBroadcastEnvelope>) => {
-        if (event.data?.type && event.data.draftId && event.data.source !== TAB_ID) {
+        if (event.data?.type && event.data.source !== TAB_ID) {
             onMessage(event.data);
         }
     };

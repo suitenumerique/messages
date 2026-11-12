@@ -1,7 +1,10 @@
-import { ComposeWindowDescriptor, ComposeWindowPresentation } from "./types";
+import { ComposeWindowDescriptor, ComposeWindowPresentation, MaterializedComposeWindow } from "./types";
 
 /** Hard cap on simultaneously tracked windows (expanded + minimized). */
 export const MAX_WINDOWS = 8;
+
+export const isMaterializedWindow = (window: ComposeWindowDescriptor): window is MaterializedComposeWindow =>
+    !!window.draftId;
 
 /**
  * At most one window is expanded (un-minimized) at a time; the array is
@@ -128,4 +131,18 @@ export const openWindowReducer = (windows: ComposeWindowDescriptor[], descriptor
         windowId: descriptor.windowId,
         outcome: "opened",
     };
+};
+
+/**
+ * Drops the windows whose draft no longer exists server-side after it was
+ * deleted or sent from outside of them (drafts list, thread toolbar, other
+ * tab). Unmaterialized windows are kept: they have no draft to lose, even
+ * when they reply on an affected thread.
+ */
+export const closeDeletedDraftWindowsReducer = (
+    windows: ComposeWindowDescriptor[],
+    draftIds: readonly string[],
+): ComposeWindowDescriptor[] => {
+    const next = windows.filter((window) => !(isMaterializedWindow(window) && draftIds.includes(window.draftId)));
+    return next.length === windows.length ? windows : next;
 };

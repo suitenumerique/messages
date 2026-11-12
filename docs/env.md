@@ -21,6 +21,36 @@ The application uses a new environment file structure with `.defaults` and `.loc
 - `mta-in.defaults` - Inbound mail server settings
 - `crowdin.defaults` - Translation service configuration
 
+## Secrets from Files
+
+Variables holding a secret can also be read from a file, which suits Docker/Kubernetes secrets mounted as files. For a variable `NAME`, set `NAME_FILE` to the path of the file instead of setting `NAME` itself.
+
+- `NAME_FILE` takes precedence over `NAME`; the default applies when neither is set.
+- The file content is parsed exactly like the variable would be (comma-separated list, JSON, …). Only a single trailing newline is stripped.
+- A missing or unreadable file makes the service fail at startup.
+- If `DATABASE_URL` is set, it overrides the `DB_*` variables and `DB_PASSWORD_FILE` is ignored.
+- Celery reads `CELERY_BROKER_URL` from the environment before the Django settings: when using `CELERY_BROKER_URL_FILE`, leave `CELERY_BROKER_URL` unset or the workers will ignore the file.
+
+| Area | Variables accepting a `_FILE` suffix |
+|------|--------------------------------------|
+| Django | `DJANGO_SECRET_KEY`, `DJANGO_SERVER_TO_SERVER_API_TOKENS` |
+| Database, cache, broker & search | `DB_PASSWORD`, `REDIS_URL`, `CELERY_BROKER_URL`, `OPENSEARCH_URL` |
+| Object storage | `AWS_S3_ACCESS_KEY_ID`, `AWS_S3_SECRET_ACCESS_KEY`, `STORAGE_MESSAGE_IMPORTS_ACCESS_KEY`, `STORAGE_MESSAGE_IMPORTS_SECRET_KEY`, `STORAGE_MESSAGE_BLOBS_ACCESS_KEY`, `STORAGE_MESSAGE_BLOBS_SECRET_KEY`, `STORAGE_MESSAGE_EXPORTS_ACCESS_KEY`, `STORAGE_MESSAGE_EXPORTS_SECRET_KEY` |
+| Encryption keys | `SALT_KEY`, `MESSAGES_BLOBS_ENCRYPT_KEYS`, `OIDC_STORE_REFRESH_TOKEN_KEY` |
+| Authentication | `OIDC_RP_CLIENT_SECRET`, `KEYCLOAK_CLIENT_SECRET` |
+| Mail | `MTA_OUT_RELAY_PASSWORD`, `MTA_OUT_DIRECT_PROXIES`, `SPAM_CONFIG`, `MESSAGES_SELFCHECK_SECRET`, `MESSAGES_SELFCHECK_WEBHOOK_URL` |
+| Third-party services | `AI_API_KEY`, `CALDAV_DEFAULT_PASSWORD`, `DNS_SCALEWAY_API_TOKEN` |
+| Monitoring & API keys | `PROMETHEUS_API_KEY`, `METRICS_API_KEY` *(deprecated)*, `PROVISIONING_API_KEY` *(deprecated)* |
+| Push notifications | `PUSH_APNS_KEY`, `PUSH_FCM_CREDENTIALS`, `PUSH_VAPID_PRIVATE_KEY`, `PUSH_VAPID_PUBLIC_KEY` |
+
+Example:
+
+```yaml
+environment:
+  DB_PASSWORD_FILE: /run/secrets/db_password
+  SALT_KEY_FILE: /run/secrets/salt_key  # e.g. "new_key,old_key"
+```
+
 ## Core Application Configuration
 
 ### Django Settings
@@ -43,7 +73,7 @@ The application uses a new environment file structure with `.defaults` and `.loc
 #### PostgreSQL (Main Database)
 | Variable | Default | Description | Required |
 |----------|---------|-------------|----------|
-| `DATABASE_URL` | None | Complete database URL (overrides individual DB_* vars) | Optional |
+| `DATABASE_URL` | None | Complete database URL (overrides individual DB_* vars, including `DB_PASSWORD_FILE`) | Optional |
 | `DB_ENGINE` | `django.db.backends.postgresql_psycopg2` | Database engine | Optional |
 | `DB_HOST` | `postgresql` | Database hostname (container name) | Optional |
 | `DB_NAME` | `messages` | Database name | Optional |
@@ -115,11 +145,7 @@ of each implementation (Postfix + milter, and the pure-Python pymta).
 
 | Variable | Default | Description | Required |
 |----------|---------|-------------|----------|
-| `MESSAGES_DKIM_SELECTOR` | `default` | DKIM selector | Optional |
 | `MESSAGES_DKIM_DEFAULT_SELECTOR` | `stmessages` | Default DKIM selector applied to managed domains that don't override it. | Optional |
-| `MESSAGES_DKIM_DOMAINS` | `[]` | List of domains for DKIM signing | Optional |
-| `MESSAGES_DKIM_PRIVATE_KEY_B64` | None | Base64 encoded DKIM private key | Optional |
-| `MESSAGES_DKIM_PRIVATE_KEY_FILE` | None | Path to DKIM private key file | Optional |
 | `MESSAGES_DKIM_VERIFY_OUTGOING` | `False` | Verify the DKIM signature on outgoing messages before sending. | Optional |
 | `MESSAGES_SPF_CHECK_OUTGOING` | `False` | Block outgoing messages when the sending domain's SPF includes are not correctly set up. | Optional |
 
@@ -177,6 +203,20 @@ blob stays in PG.
 | `MESSAGES_BLOBS_COMPRESS` | `zstd:7` | Default compression: `none`, `zstd`, or `zstd:<level>` | Optional |
 | `MESSAGES_BLOBS_ENCRYPT_KEYS` | `{}` | JSON dict mapping `key_id` → entry. Each entry must be `{"algo": "aes-gcm", "secret": "<32+ chars>", "active": <bool>}`. Add `"active": true` to exactly one entry to make it the key new blobs are encrypted with; entries without `active` (or with `active=false`) stay readable for legacy ciphertext. The secret is SHA-256'd to a 32-byte AEAD key, so its strength is whatever entropy the operator supplied — use `openssl rand -base64 32` (or equivalent). Startup emits a warning when a secret is shorter than 32 characters; that floor is a length check only, not an entropy measurement. | Optional |
 | `MESSAGES_BLOBS_VERIFY_HASH` | `False` | When True, `Blob.get_content()` re-hashes plaintext and rejects mismatches. One SHA-256 over the plaintext per read; main value is for `key_id=0` blobs (encrypted blobs are already AAD-bound). | Optional |
+
+### Message Exports Storage
+
+Private bucket receiving offline exports made by management commands, such as
+the spam corpus.
+
+| Variable | Default | Description | Required |
+|----------|---------|-------------|----------|
+| `STORAGE_MESSAGE_EXPORTS_ENDPOINT_URL` | unset | S3 endpoint URL | Optional |
+| `STORAGE_MESSAGE_EXPORTS_BUCKET_NAME` | unset | S3 bucket name; exports refuse to run without it | Optional |
+| `STORAGE_MESSAGE_EXPORTS_ACCESS_KEY` | unset | S3 access key | Optional |
+| `STORAGE_MESSAGE_EXPORTS_SECRET_KEY` | unset | S3 secret key | Optional |
+| `STORAGE_MESSAGE_EXPORTS_REGION_NAME` | unset | S3 region | Optional |
+| `STORAGE_MESSAGE_EXPORTS_AGE_RECIPIENTS` | unset | Comma-separated [age](https://age-encryption.org) public keys (`age1...`) exports are encrypted to; only the matching private keys can read them | Optional |
 
 ### Mobile OTA Bundles
 
@@ -279,6 +319,7 @@ _Those settings are deprecated and will be removed in the future._
 | Variable | Default | Description | Required |
 |----------|---------|-------------|----------|
 | `MOBILE_APP_ID` | `local.suitenumerique.messages` | Store/OS bundle identifier of the native app. The repo ships a neutral placeholder; an organisation publishing to the App Store / Play Store overrides it with its own signed id. Read by `cap sync` (container) **and** the native builds: gradle `applicationId` reads the host/CI env (`make mobile-android-run` exports it for you), while Xcode reads `ios/App/generated.xcconfig`, written by `make mobile-build` from the container env — no export can reach an IDE build. Independent of the auth callback scheme (`MOBILE_AUTH_SCHEME`). | Optional |
+| `MOBILE_IOS_TEAM_ID` | None | Apple Team ID (10 characters, *Membership details* in the Apple developer portal) signing both iOS targets — the app and its Notification Service Extension. Set it in the gitignored `deploy/env/frontend.local`: `make mobile-build` writes it as `DEVELOPMENT_TEAM` into the gitignored `ios/App/generated.xcconfig`, which keeps it out of `project.pbxproj`. Do not pick the team in Xcode's *Signing & Capabilities* instead: that writes it into the project file (rejected by `sso-invariants.test.ts`). Unset, Xcode refuses to sign. | Optional |
 | `MOBILE_APP_NAME` | `ST Messages` | The application name displayed on the device. The repo ships a neutral placeholder; an organisation publishing to the App Store / Play Store overrides it with its own name. Read by `cap sync` (container) **and** the native builds, through the same two channels as `MOBILE_APP_ID`: gradle `resValue app_name` (host/CI env, exported by `make mobile-android-run`) and the iOS `PRODUCT_DISPLAY_NAME` setting in `ios/App/generated.xcconfig` (written by `make mobile-build`). | Optional |
 | `MOBILE_AUTH_SCHEME` | `stmessages` | Deep-link scheme ending the mobile OIDC flow. Give each environment its own value so a staging and a production build can be installed side by side — sharing it makes Android ask the user which app should receive the login callback, mid-flow. Read by Vite for the JS side **and** by the native builds: Android `manifestPlaceholders` reads the host/CI env (`make mobile-android-run` exports it for you), iOS reads the `AUTH_CALLBACK_SCHEME` setting from `ios/App/generated.xcconfig` (written by `make mobile-build`). Must be listed in the backend's `MOBILE_AUTH_CALLBACK_SCHEMES`. Also required on an OTA-publishing PaaS app (`MOBILE_OTA_S3_BUCKET` set): that build produces the bundle devices download, so leaving it to the default there ships a bundle whose login is rejected — the staging hook refuses to publish without it. | Optional |
 | `MOBILE_DEV_SERVER_URL` | `http://localhost:8900` (dev env, `frontend.defaults`) | **Dev only.** URL of the Vite dev server baked as Capacitor `server.url` at `cap sync` (`capacitor.config.ts`): the WebView then loads the app from Vite with hot reload instead of the embedded bundle. To disable (embedded bundle / OTA testing), set it **empty** in `frontend.local` and rerun `make mobile-build`. Must never be set for a release build — a gradle guard fails Android release builds carrying it. See [mobile.md](./mobile.md#hot-reload) | Optional |
@@ -321,9 +362,9 @@ gitignored `src/frontend/android/keystore.properties`, never in
 | `CORS_ALLOWED_ORIGIN_REGEXES` | `[]` | Regex patterns for allowed origins | Optional |
 | `CSRF_TRUSTED_ORIGINS` | `["http://localhost:8900", "http://localhost:8901"]` | Trusted origins for CSRF | Optional |
 | `ALLOWED_HOSTS` | `[]` | Django host/domain allow-list setting (`settings.ALLOWED_HOSTS`). In the Base/Production configurations it is populated from the `DJANGO_ALLOWED_HOSTS` env var (see above); the Development configuration hardcodes `["*"]`. The `bucket_cors` management command also reads it to build S3 CORS origins. | Optional |
-| `SERVER_TO_SERVER_API_TOKENS` | `[]` | API tokens for server-to-server auth | Optional |
+| `DJANGO_SERVER_TO_SERVER_API_TOKENS` | `[]` | Comma-separated API tokens for server-to-server auth | Optional |
 | `SSRF_ALLOWED_HOSTS` | `[]` | Comma-separated list of exact, case-insensitive hostnames that bypass the SSRF private/internal-IP checks (webhook URLs, image proxy, IMAP, CalDAV). Use only for trusted destinations that resolve to a private address from inside the platform network (e.g. app-to-app traffic on an internal overlay). Each entry is a deliberate hole in the SSRF protection — keep the list as narrow as possible. | Optional |
-| `SALT_KEY` | `[]` | Key(s) for Django Fernet-encrypted model fields. Accepts a list for rotation (`["new_key", "old_key"]`); the first is used to encrypt, all are tried to decrypt. | Optional |
+| `SALT_KEY` | `[]` | Key(s) for Django Fernet-encrypted model fields. Accepts a comma-separated list for rotation (`new_key,old_key`); the first is used to encrypt, all are tried to decrypt. | Optional |
 
 ## Monitoring & Observability
 
@@ -475,6 +516,21 @@ Keycloak logs "Keycloak is running inside a container, but is not PID 1"
 at each start. This is expected: a small entrypoint runs Caddy and
 Keycloak together and forwards signals.
 
+### Keycloak Theme (`lst-dsfr`)
+
+The theme reads these variables in the Keycloak container.
+See [identity-provider.md](identity-provider.md) for the theme setup.
+
+| Variable | Default | Description | Required |
+|----------|---------|-------------|----------|
+| `DSFR_THEME_HOME_URL` | `/` | Absolute URL of the service. When unset or `/`, the login pages and the account console link to the account console of the realm. | Optional |
+| `DSFR_THEME_SERVICE_TITLE` | `Messages` | Page title of the account console. | Optional |
+| `DSFR_THEME_BRAND_TOP` | `République<br/>Française` | HTML of the brand block. | Optional |
+| `DSFR_THEME_HIDE_LOGOUT_BUTTON` | `false` | When `true`, `yes`, `y` or `1`, the account console shows no sign-out button and no email in the header. The applications handle the logout. | Optional |
+| `DSFR_THEME_TWO_FACTOR_HELP_URL` | empty | Absolute URL of a help page. When set, the "Double authentification" section of the account console shows a "Help" link that opens a new window. | Optional |
+| `DSFR_THEME_FORGOT_PASSWORD_URL` | empty | Absolute URL of a support page. When set, the login page shows the "Forgot password" link to this URL, even when the realm does not allow the password reset. | Optional |
+| `DSFR_THEME_LAGAUFRE_WIDGET_CONFIG` | empty | JSON object with the keys `api_url` (La Suite API that lists the services) and `path` (URL of the `lagaufre.js` widget script), like `FRONTEND_LAGAUFRE_WIDGET_CONFIG` of the backend. When set, the account console shows the "Other services" button of La Suite numérique in the header. The script runs in the Keycloak origin, so the origin must be trusted. | Optional |
+
 ## Development Tools
 
 ### Crowdin (Translations)
@@ -509,11 +565,12 @@ without redeploying the frontend (the flag is pulled from
 
 | Variable | Default | Description | Required |
 |----------|---------|-------------|----------|
-| `TRASHBIN_CUTOFF_DAYS` | `30` | Days before permanent deletion | Optional |
+| `TRASHBIN_CUTOFF_DAYS` | `0` | Days an item may sit in the trashbin (trashed **or** spam messages) before the nightly `cleanup_trashbin_task` **permanently deletes** it. Age is measured from when the message entered the bin (`trashed_at`), falling back to `created_at` for rows written before that was recorded. Set to `0` to disable automatic deletion entirely. | Optional |
+| `TRASHBIN_ALLOW_EMPTY` | `admin` | Who may manually empty a trashbin folder from the UI, an irreversible bulk delete: `never` (only the nightly sweep deletes), `admin` (mailbox role `ADMIN`), or `editor` (role `EDITOR` and above). Any other value is rejected at startup. | Optional |
 | `INVITATION_VALIDITY_DURATION` | `604800` | Invitation validity (7 days) | Optional |
 | `MESSAGES_MANUAL_RETRY_MAX_AGE`| `604800` | Maximum age in seconds for a message to be eligible for manual retry of failed deliveries (7 days) | Optional |
 | `MESSAGES_INBOUND_DEFERRAL_MAX_AGE` | `172800` | Maximum age in seconds an inbound message is deferred (retried every 5 min) when a processing step keeps failing, before the pipeline delivers it anyway (recorded as `postmark["processing"]`) rather than holding it indefinitely (48 hours) | Optional |
-| `MAX_INCOMING_EMAIL_SIZE` | `10485760` | Maximum size in bytes for incoming email (including attachments and body) (10MB) | Optional |
+| `MAX_INCOMING_EMAIL_SIZE` | `10485760` | Maximum size in bytes for incoming email (including attachments and body) (10MB). Must be kept equal to `PYMTA_MAX_INCOMING_EMAIL_SIZE` on the inbound MTA, which is configured separately: see `src/mta-in/README.md` | Optional |
 | `MAX_OUTGOING_ATTACHMENT_SIZE` | `20971520` | Maximum size in bytes for outgoing email attachments (20MB) | Optional |
 | `MAX_OUTGOING_BODY_SIZE` | `5242880` | Maximum size in bytes for outgoing email body (text + HTML) (5MB) | Optional |
 | `MAX_TEMPLATE_IMAGE_SIZE` | `2097152` | Maximum size in bytes for images embedded in templates and signatures (2MB) | Optional |
@@ -568,6 +625,8 @@ Each gateway is all-or-nothing, and validated at boot: with `PUSH_ENABLED=True`,
 | `PUSH_VAPID_PUBLIC_KEY` | None | Matching VAPID public key (base64url, the uncompressed P-256 point). Served verbatim via `/config` as the browser's `applicationServerKey`; public by definition. Derive it from the private key with `python manage.py derive_vapid_public_key` (add `--verify` to check the pair matches). | Optional |
 | `PUSH_VAPID_SUBJECT` | None | VAPID `sub` claim; must be a `mailto:` or `https:` URI, e.g. `mailto:ops@example.com`. | Optional |
 | `PUSH_MAX_DEVICES_PER_USER` | `20` | Hard ceiling on push devices one user may keep. Registering beyond it prunes the least-recently-used device(s). | Optional |
+| `PUSH_PREVIEWS_ENABLED` | `True` | Show the sender and subject in notifications. The preview is encrypted for the device (never readable by Apple, Google or the browser push service) and only sent within the windows below; `False` keeps every notification generic. See [push-notifications.md](./push-notifications.md) §5.1. | Optional |
+| `PUSH_PREVIEW_MAX_IDLE_DAYS` | `14` | A native app gets previews only if it was opened with a valid session within this many days (a lost phone stops showing them). `0` disables native previews. Browsers get them only while their registering session is alive. | Optional |
 
 ### Throttling
 
@@ -627,6 +686,20 @@ Note: every language listed in `LANGUAGES` must have its translation files in th
 | `DRIVE_BASE_URL` | None | Base URL to access Drive endpoints | Optional |
 | `DRIVE_APP_NAME` | `Drive` | Name of the Drive application used in the frontend | Optional |
 
+The integration needs the following settings on the Drive instance itself:
+
+| Drive variable | Value | Why |
+|----------------|-------|-----|
+| `OIDC_RS_ALLOWED_AUDIENCES` | Must include the OIDC client id of Messages | Messages calls Drive's external API with the user's access token; Drive rejects tokens issued to other audiences. Saving an attachment to Drive fails otherwise. |
+| `SDK_ENABLED` | `True` | Turns on the SDK pages and relay behind the file picker. **Off by default since Drive 0.25: the "Add attachment from Drive" picker does not work otherwise.** |
+| `SDK_CORS_ALLOWED_ORIGINS` | Must include the Messages frontend origin | Lets the web picker read the relay events. |
+
+Files saved to Drive go through Drive's upload screening
+(`RESTRICT_UPLOAD_FILE_TYPE`, `FILE_EXTENSIONS_ALLOWED`,
+`FILE_MIMETYPE_ALLOWED`…) and storage quota: an attachment Drive refuses
+(e.g. `.html` or extension-less files with the default allowlist) cannot
+be saved there.
+
 ### Identity Provider (Keycloak)
 
 Used for provisioning-side operations against Keycloak (e.g. toggling
@@ -676,6 +749,7 @@ Pluggable backend deciding what a user/domain is entitled to.
 | `ENTITLEMENTS_BACKEND` | `core.entitlements.backends.local.LocalEntitlementsBackend` | Dotted path to the entitlements backend class. | Optional |
 | `ENTITLEMENTS_BACKEND_PARAMETERS` | `{}` | JSON parameters passed to the backend. | Optional |
 | `ENTITLEMENTS_CACHE_TIMEOUT` | `300` | Cache TTL (seconds) for entitlement lookups. | Optional |
+| `STORAGE_USAGE_CACHE_TTL` | `60` | Cache TTL (seconds) for the computed storage usage of a mailbox or organization, as read by the quota gauge and the entitlements backends. The computation runs several correlated subqueries (~100 ms on a large mailbox), so it is not recomputed on every sidebar load. Emptying a trashbin and the nightly sweep both invalidate the affected mailboxes immediately; every other change (new mail, sends) shows up within this TTL. Set to `0` to always compute live. The `/metrics` endpoints ignore this and always compute live. | Optional |
 
 ### Message Import
 
@@ -768,7 +842,7 @@ These files are gitignored and allow for local development customizations withou
 For production deployments, ensure:
 
 1. All **Required** variables are properly configured
-2. Secrets are managed through secure secret management systems
+2. Secrets are managed through secure secret management systems — mount them as files with the `_FILE` variants (see [Secrets from Files](#secrets-from-files))
 3. HTTPS is enforced for all external communications
 4. Database connections use SSL/TLS
 5. File storage uses appropriate access controls

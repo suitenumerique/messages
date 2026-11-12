@@ -2,5 +2,11 @@
    localisation (core/services/push/apns.py, APNS_ALERT_LOC_KEY) — jamais
    l'expéditeur ni le sujet — et l'OS affiche la chaîne ci-dessous même quand
    l'app est tuée. À garder aligné avec les entrées new_message_* du
-   strings.xml Android et la bannière de repli du service worker Web Push. */
+   strings.xml Android et la bannière de repli du service worker Web Push.
+   C'est aussi le texte qu'iOS affiche quand le réglage « Afficher les
+   aperçus » masque un aperçu (AppDelegate). */
 "NEW_MESSAGE" = "Nouveau message";
+/* Corps d'une bannière d'aperçu pour un mail sans objet, lu par la Notification
+   Service Extension. Miroir de la clé « No subject » de l'app web et de
+   l'entrée Android new_message_no_subject. */
+"NO_SUBJECT" = "Aucun objet";

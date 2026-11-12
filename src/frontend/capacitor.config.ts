@@ -59,7 +59,7 @@ const devServerUrl = process.env.MOBILE_DEV_SERVER_URL;
 // `cap sync` copies this key verbatim into each platform's synced
 // capacitor.config.json, which is the single file both native builds read —
 // gradle for versionName, scripts/generate-ios-xcconfig.mjs for the xcconfig.
-const appVersion = "0.1.0";
+const appVersion = "0.2.1";
 
 // `appVersion` is ours, not part of Capacitor's schema — the CLI copies unknown
 // top-level keys into the synced config untouched, which is exactly what the
@@ -124,19 +124,25 @@ const config: CapacitorConfig & { appVersion: string } = {
       autoBackdropColor: "dom",
     },
     // While the app is open it surfaces the mail itself, so a foreground push
-    // must not banner or sound (docs/push-notifications.md §6) — only the badge
-    // tracks. iOS only: Android never auto-displays in foreground, and the web
-    // service worker applies the same rule on a focused window (public/sw.js).
-    // Background/killed alerts are rendered by the OS from the content-free
-    // loc-key payload and are unaffected.
+    // must not banner, sound nor raise the badge, which only flags mail that
+    // arrived while the app was away (docs/push-notifications.md §6). iOS
+    // only: Android never auto-displays in foreground, and the web service
+    // worker applies the same rule on a focused window (public/sw.js).
+    // Background/killed alerts are unaffected: the OS renders the loc-key
+    // alert, once the Notification Service Extension has put the decrypted
+    // preview in it, if any (docs/push-notifications.md §5.1).
     PushNotifications: {
-      presentationOptions: ["badge"],
+      presentationOptions: [],
     },
     // OTA live updates driven entirely from JS against an S3-hosted manifest
-    // (see src/features/native/ota.ts). autoUpdate is off so the plugin never
-    // talks to a Capgo server: we only use its native download/set/reload.
+    // (see src/features/native/ota.ts). We only use its native
+    // download/set/reload, so the plugin must never talk to a Capgo server:
+    // autoUpdate off stops the update checks.
     CapacitorUpdater: {
       autoUpdate: false,
+      // The plugin reports every download, install and launch, with a device
+      // id, to plugin.capgo.app unless this is empty.
+      statsUrl: "",
       resetWhenUpdate: true,
       // Verify each OTA bundle against the per-instance signing key (v2, RSA+AES).
       ...(otaPublicKey ? { publicKey: otaPublicKey } : {}),

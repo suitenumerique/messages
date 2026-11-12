@@ -10,9 +10,6 @@ import { hashEndpoint, hasPushOptIn, setPushOptIn } from "@/features/push/shared
 // Repo pattern for the generated client: automock the resource submodule (the
 // index re-exports it, so web-push.ts sees the mock through "@/features/api/gen").
 vi.mock("@/features/api/gen/channels/channels");
-vi.mock("@/features/api/utils", () => ({
-  getApiOrigin: () => "https://api.test",
-}));
 // swUrl stamps the current language into the worker URL; the real instance
 // would drag the http backend into the test environment.
 vi.mock("@/features/i18n/initI18n", () => ({

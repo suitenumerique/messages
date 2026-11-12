@@ -147,6 +147,20 @@ class TestDeployCenterBackend:
             backend.get_user_entitlements("user-sub", "user@example.com")
 
     @responses.activate
+    def test_failure_is_logged_without_the_user_email(self, caplog):
+        """The request URL carries the user email, so the error message and
+        traceback that hold it stay out of the logs."""
+        responses.add(responses.GET, BASE_URL, status=500)
+
+        backend = self._get_backend()
+        with caplog.at_level("WARNING"), pytest.raises(EntitlementsUnavailableError):
+            backend.get_user_entitlements("user-sub", "alice@example.com")
+
+        assert "alice" not in caplog.text
+        assert "user@example.com: HTTPError (HTTP 500)" in caplog.text
+        assert all(record.exc_info is None for record in caplog.records)
+
+    @responses.activate
     def test_connection_timeout_raises(self):
         """Connection timeout raises EntitlementsUnavailableError."""
         responses.add(

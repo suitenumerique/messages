@@ -162,7 +162,7 @@ class Command(BaseCommand):
             raise CommandError(f"Failed to list storage objects: {e}") from e
 
         for obj_name in objects:
-            if self.limit > 0 and checked_count >= self.limit:
+            if 0 < self.limit <= checked_count:
                 break
 
             checked_count += 1

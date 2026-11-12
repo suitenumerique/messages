@@ -1,3 +1,5 @@
+@use "../sender-pending" as *;
+
 .compose-mobile-stack {
     position: relative;
     width: 100%;
@@ -86,6 +88,7 @@
     &__avatar {
         display: flex;
         flex: 0 0 auto;
+        @include sender-pending;
 
         &[data-shared="true"] .c__avatar {
             border-radius: 6px;

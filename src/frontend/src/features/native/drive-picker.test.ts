@@ -1,6 +1,6 @@
 import { Browser } from "@capacitor/browser";
 
-import { openNativeDrivePicker } from "./drive-picker";
+import { DriveSdkDisabledError, openNativeDrivePicker } from "./drive-picker";
 
 vi.mock("@capacitor/browser", () => ({
   Browser: {
@@ -26,8 +26,12 @@ const item = {
   url: "https://drive.test/f/1",
 };
 
-const relayResponse = (event: unknown) =>
-  ({ json: () => Promise.resolve(event) }) as Response;
+const relayResponse = (event: unknown, status = 200) =>
+  ({
+    ok: status >= 200 && status < 300,
+    status,
+    json: () => Promise.resolve(event),
+  }) as Response;
 
 let browserFinished: (() => void) | undefined;
 
@@ -107,6 +111,36 @@ describe("openNativeDrivePicker", () => {
       type: "picked",
       items: [item],
     });
+  });
+
+  it("keeps polling through relay error statuses", async () => {
+    fetchMock
+      .mockResolvedValueOnce(relayResponse({ detail: "Unavailable" }, 503))
+      .mockResolvedValueOnce(
+        relayResponse({ type: "ITEMS_SELECTED", data: { items: [item] } }),
+      );
+
+    const resultPromise = openNativeDrivePicker(CONFIG);
+    await vi.advanceTimersByTimeAsync(500);
+
+    await expect(resultPromise).resolves.toEqual({
+      type: "picked",
+      items: [item],
+    });
+  });
+
+  it("stops polling and closes the browser when Drive has no SDK relay", async () => {
+    fetchMock.mockResolvedValue(relayResponse({ detail: "Not found." }, 404));
+
+    const resultPromise = openNativeDrivePicker(CONFIG);
+    const assertion = expect(resultPromise).rejects.toBeInstanceOf(
+      DriveSdkDisabledError,
+    );
+    await vi.advanceTimersByTimeAsync(2000);
+
+    await assertion;
+    expect(fetchMock).toHaveBeenCalledTimes(1);
+    expect(browser.close).toHaveBeenCalled();
   });
 
   it("resolves cancelled when the user dismisses the browser with no selection", async () => {

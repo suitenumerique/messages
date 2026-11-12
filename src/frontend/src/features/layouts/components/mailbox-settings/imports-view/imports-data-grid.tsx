@@ -322,6 +322,26 @@ export const ImportsDataGrid = ({ mailbox }: ImportsDataGridProps) => {
             }
         }
 
+        // The backend keeps only the first names; the count is the real total.
+        const skippedFolders = row.skipped_folders ?? [];
+        const skippedCount = Math.max(row.skipped_folders_count ?? 0, skippedFolders.length);
+        if (skippedCount > 0) {
+            const unlistedCount = skippedCount - skippedFolders.length;
+            const tooltipLines = [t("Folders that could not be opened and were not imported:"), ...skippedFolders];
+            if (unlistedCount > 0) {
+                tooltipLines.push(t("…and {{count}} more", { count: unlistedCount }));
+            }
+            parts.push(
+                <span
+                    key="skipped-folders"
+                    className="import-status import-status--muted import-status--has-tooltip"
+                    title={tooltipLines.join("\n")}
+                >
+                    {t("{{count}} folders skipped", { count: skippedCount })}
+                </span>,
+            );
+        }
+
         const date = row.finished_at ?? row.started_at ?? row.created_at;
         if (date) {
             parts.push(

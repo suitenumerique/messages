@@ -427,8 +427,7 @@ class AdminMailDomainMailboxViewSet(
 
         try:
             mailbox_password = mailbox.reset_password()
-        # pylint: disable=broad-exception-caught
-        except Exception as e:
+        except Exception as e:  # pylint: disable=broad-exception-caught
             logger.error("Error resetting password for mailbox %s: %s", mailbox, e)
             return Response(
                 {"error": str(e)},

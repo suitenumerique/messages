@@ -10,6 +10,8 @@ from drf_spectacular.utils import OpenApiResponse, extend_schema
 from rest_framework.permissions import AllowAny
 
 from core.ai.utils import is_ai_enabled, is_ai_summary_enabled, is_auto_labels_enabled
+from core.enums import ServiceMessageVariantChoices
+from core.models import SiteConfiguration
 from core.services.identity.keycloak import is_mandatory_totp_enabled
 
 
@@ -25,6 +27,19 @@ def _get_drive_config():
         "preview_url": f"{base_url}{settings.DRIVE_CONFIG.get('preview_url')}",
         "app_name": settings.DRIVE_CONFIG.get("app_name"),
     }
+
+
+def _get_service_message():
+    """Return the service message of the current site, or None when unset."""
+    configuration = SiteConfiguration.objects.filter(site_id=settings.SITE_ID).first()
+    return configuration.get_service_message() if configuration else None
+
+
+TRANSLATIONS_SCHEMA = {
+    "type": "object",
+    "description": "Text per language code (e.g. en-us, fr-fr)",
+    "additionalProperties": {"type": "string"},
+}
 
 
 @dataclass(frozen=True)
@@ -146,6 +161,16 @@ CONFIG_ENTRIES = (
         getter=is_mandatory_totp_enabled,
     ),
     ConfigEntry(
+        "TRASHBIN_CUTOFF_DAYS",
+        {
+            "type": "integer",
+            "description": (
+                "Number of days after which trashed and spam messages are "
+                "permanently and automatically deleted."
+            ),
+        },
+    ),
+    ConfigEntry(
         "MESSAGES_MANUAL_RETRY_MAX_AGE",
         {
             "type": "integer",
@@ -263,6 +288,34 @@ CONFIG_ENTRIES = (
                 "Web Push is not configured."
             ),
         },
+        required=False,
+    ),
+    ConfigEntry(
+        "SERVICE_MESSAGE",
+        {
+            "type": "object",
+            "description": (
+                "Service message displayed in a banner on top of the app, "
+                "configured from the site configuration in the Django admin"
+            ),
+            "properties": {
+                "variant": {
+                    "type": "string",
+                    "enum": ServiceMessageVariantChoices.values,
+                },
+                "message": TRANSLATIONS_SCHEMA,
+                "link": {
+                    "type": "object",
+                    "properties": {
+                        "url": {"type": "string", "format": "uri"},
+                        "label": TRANSLATIONS_SCHEMA,
+                    },
+                    "required": ["url", "label"],
+                },
+            },
+            "required": ["variant", "message"],
+        },
+        getter=_get_service_message,
         required=False,
     ),
 )

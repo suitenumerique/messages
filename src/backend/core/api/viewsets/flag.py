@@ -17,10 +17,33 @@ from rest_framework.views import APIView
 
 from core import models
 from core.services.search.tasks import update_threads_mailbox_flags_task
+from core.services.trashbin import trashbin_timestamp
 
 from .. import permissions
 
 logger = logging.getLogger(__name__)
+
+
+def _flag_update_data(flag, value, current_time):
+    """Return the message fields a trashed/archived/spam toggle writes.
+
+    Bulk ``update()`` calls bypass ``Message.save``, which otherwise keeps the
+    timestamps in lockstep with the flags: they are written here. Spam sets
+    ``trashed_at`` too, the time a message entered the trashbin
+    (``is_trashed OR is_spam``) that the cutoff sweep ages it by.
+    """
+    update_data = {"updated_at": current_time}
+    if flag == "trashed":
+        update_data["is_trashed"] = value
+        update_data["trashed_at"] = trashbin_timestamp(flag, value, current_time)
+    elif flag == "archived":
+        update_data["is_archived"] = value
+        update_data["archived_at"] = current_time if value else None
+    elif flag == "spam":
+        update_data["is_spam"] = value
+        update_data["trashed_at"] = trashbin_timestamp(flag, value, current_time)
+    return update_data
+
 
 # Define allowed flag types
 ALLOWED_FLAGS = ["unread", "starred", "trashed", "archived", "spam"]
@@ -262,19 +285,7 @@ class ChangeFlagView(APIView):
                 )
 
                 if messages_to_update.exists():
-                    batch_update_data = {"updated_at": current_time}
-                    if flag == "trashed":
-                        batch_update_data["is_trashed"] = value
-                        batch_update_data["trashed_at"] = (
-                            current_time if value else None
-                        )
-                    elif flag == "archived":
-                        batch_update_data["is_archived"] = value
-                        batch_update_data["archived_at"] = (
-                            current_time if value else None
-                        )
-                    elif flag == "spam":
-                        batch_update_data["is_spam"] = value
+                    batch_update_data = _flag_update_data(flag, value, current_time)
 
                     messages_to_update.update(**batch_update_data)
 
@@ -309,20 +320,7 @@ class ChangeFlagView(APIView):
                         thread__in=threads_to_process
                     )
 
-                    # Prepare update data for messages within these threads
-                    batch_update_data = {"updated_at": current_time}
-                    if flag == "trashed":
-                        batch_update_data["is_trashed"] = value
-                        batch_update_data["trashed_at"] = (
-                            current_time if value else None
-                        )
-                    elif flag == "archived":
-                        batch_update_data["is_archived"] = value
-                        batch_update_data["archived_at"] = (
-                            current_time if value else None
-                        )
-                    elif flag == "spam":
-                        batch_update_data["is_spam"] = value
+                    batch_update_data = _flag_update_data(flag, value, current_time)
                     # Note: Trashing or Archiving a thread might have other side effects (e.g., updating thread state)
                     # This current logic only updates the is_trashed or is_archived flag on messages within.
                     # If Thread model itself has state, update threads_to_process separately.

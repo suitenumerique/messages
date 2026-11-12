@@ -115,6 +115,87 @@ For now, Messages only supports Keycloak as an `IDENTITY_PROVIDER`.
    The command syncs each mail domain and each mailbox again. It reports
    the number of synced domains and the number of synced mailboxes.
 
+## Keycloak Theme
+
+The `lst-dsfr` theme uses Keycloakify and `@codegouvfr/react-dsfr`. It has
+the look of ProConnect Identité. It covers the login pages and the account
+console. It has no email theme.
+
+To select the theme, open Realm settings, then Themes. Set Login and
+Account to `lst-dsfr`. The dev realm in `src/keycloak/realm.json` keeps the
+built-in themes. In the dev stack, set `KC_SPI_THEME__DEFAULT=lst-dsfr` in
+`deploy/env/keycloak.local` and run `make restart` to select the theme. The
+option also applies to the email theme, which `lst-dsfr` does not have, so
+Keycloak logs a fallback warning when it sends a mail. Run
+`make test-keycloak-theme` to test the theme. A deployment that used
+the old `DSFR` theme must set Login and Account to `lst-dsfr` once after the
+upgrade. Until then, Keycloak logs a missing-theme warning and serves its
+default theme.
+
+The theme source is in `src/keycloak/theme/`. Run `make build-keycloak-theme`
+to build the jar. The image build does the same in the `theme-build` stage and
+copies the jar to `/opt/keycloak/providers/lst-dsfr.jar`.
+
+The account console has two pages. "Informations personnelles" is the first
+page and the landing page. "Compte et connexion" is the second page, at
+`connection-and-account` below the account console URL. The second page lists
+the credentials of the user and starts the Keycloak actions: change the
+password, add or delete a method.
+
+The choice page offers a TOTP application, a passkey, and a physical security
+key as second factor only. The last option shows only when the browser flow has
+the "WebAuthn Authenticator" step enabled, because Keycloak then exposes that
+credential type. The logout button returns to the sign-in page, because the
+`account-console` client accepts only its own URL after a logout.
+`DSFR_THEME_HIDE_LOGOUT_BUTTON=true` hides the sign-out button and the email in
+the header, because the console holds no ProConnect `id_token` and the
+applications handle the logout. The flag also accepts `yes`, `y` and `1`.
+
+The theme reads these variables in the Keycloak container:
+`DSFR_THEME_HOME_URL`, `DSFR_THEME_SERVICE_TITLE`, `DSFR_THEME_BRAND_TOP`,
+`DSFR_THEME_HIDE_LOGOUT_BUTTON`, `DSFR_THEME_TWO_FACTOR_HELP_URL`,
+`DSFR_THEME_FORGOT_PASSWORD_URL` and `DSFR_THEME_LAGAUFRE_WIDGET_CONFIG`.
+`DSFR_THEME_TWO_FACTOR_HELP_URL` adds a "Help" link to the "Double
+authentification" section of the account console. The link opens a new window.
+`DSFR_THEME_FORGOT_PASSWORD_URL` shows the "Forgot password" link on the login
+page, even when the realm does not allow the password reset.
+
+`DSFR_THEME_LAGAUFRE_WIDGET_CONFIG` shows the "Other services" button of La
+Suite numérique in the header of the account console. It takes the same JSON
+value as `FRONTEND_LAGAUFRE_WIDGET_CONFIG` of the backend, with the keys
+`api_url` and `path`. The La Suite API must allow the Keycloak origin in its
+CORS policy. The widget script runs in the Keycloak origin, so both URLs must
+point to an origin that you trust.
+
+`DSFR_THEME_BRAND_TOP` is the HTML of the brand block. The Marianne typeface
+and the State brand block are reserved for French State services. A deployment
+that is not a French State service must change `DSFR_THEME_BRAND_TOP` and must
+replace the fonts in a fork of the theme. See [env.md](env.md). The logo links
+to the account console of the realm when `DSFR_THEME_HOME_URL` is unset or `/`.
+
+Four things track the Keycloak version:
+
+- the Keycloakify version, which generates the base pages;
+- the `keycloak-js` version, which must match the server major version;
+- the script copies in the jar (`login/resources/js/`), which Keycloakify takes from the Keycloak version it targets; diff them against the server version at each bump;
+- the account REST API, which the account console calls.
+
+The checklist is in `src/keycloak/theme/README.md`.
+
+### Passkeys
+
+Passkeys are off by default. To enable them, open Authentication,
+Policies, WebAuthn Passwordless Policy. Turn on "Enable Passkeys" and set
+the mediation to `conditional`. The stock login pages then show the
+conditional UI and the "Sign in with Passkey" button, and the account
+console shows the passkey section under "Signing in".
+
+Keycloak adds the "Condition - credential" step to the browser flow only
+when it creates a new realm. The `messages` realm predates it. To skip the
+second factor after a passkey sign-in, add that condition to the
+"Browser - Conditional 2FA" sub-flow by hand, with the credential type
+`webauthn-passwordless`.
+
 ## The Authentication Provider
 
 The steps above do not set up a user login. Messages needs an

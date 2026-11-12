@@ -1,5 +1,13 @@
 const TOOLBAR_SELECTOR = ".bn-toolbar";
 
+/**
+ * The composer's pieces rendered outside its `.bn-container`: the native fixed
+ * toolbar and BlockNote's popovers (mantine dropdowns: template/signature
+ * selectors, file caption…).
+ */
+export const COMPOSER_PORTALED_PIECES_SELECTOR =
+    '.bn-mobile-formatting-toolbar, [class*="mantine-"][class*="-dropdown"]';
+
 type FocusMove = {
     target: EventTarget | null;
     relatedTarget: EventTarget | null;

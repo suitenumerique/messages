@@ -23,7 +23,7 @@ vi.mock("@/features/providers/compose-windows", () => ({
 }));
 
 vi.mock("../use-compose-sender", () => ({
-    useComposeSender: () => () => ({ email: "alice@example.local" }),
+    useComposeSenderText: () => () => "alice@example.local",
 }));
 
 import { ComposeOverview } from ".";

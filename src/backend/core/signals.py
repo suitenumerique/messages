@@ -131,8 +131,7 @@ def update_thread_stats_on_delivery_status_change(sender, instance, **kwargs):
     # Otherwise update immediately
     try:
         thread.update_stats()
-    # pylint: disable=broad-exception-caught
-    except Exception:
+    except Exception:  # pylint: disable=broad-exception-caught
         logger.exception("Failed to update stats for thread %s", thread.id)
 
 
@@ -290,8 +289,7 @@ def unregister_push_device_on_logout(sender, request, user, **kwargs):
             type=enums.ChannelTypes.PUSH,
             settings__session_hash=session_hash(session_key),
         ).delete()
-    # pylint: disable=broad-exception-caught
-    except Exception:
+    except Exception:  # pylint: disable=broad-exception-caught
         # Never break the logout flow itself; an undeleted channel is only a
         # notification-hygiene issue and the next voluntary logout retries.
         logger.exception("Failed to unregister push channels on logout")

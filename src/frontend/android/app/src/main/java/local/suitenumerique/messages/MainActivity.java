@@ -31,6 +31,9 @@ public class MainActivity extends BridgeActivity {
      */
     @Override
     public void onCreate(Bundle savedInstanceState) {
+        // App-local plugins are not auto-discovered: register before the
+        // bridge is created by super.onCreate.
+        registerPlugin(PushPreviewKeysPlugin.class);
         super.onCreate(savedInstanceState);
 
         WebView webView = bridge.getWebView();

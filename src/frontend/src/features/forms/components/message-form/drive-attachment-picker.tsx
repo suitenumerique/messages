@@ -1,15 +1,17 @@
 import { useCallback, useState } from "react"
-import { Button, ButtonProps, Tooltip } from "@gouvfr-lasuite/ui-components"
+import { Button, ButtonProps } from "@gouvfr-lasuite/ui-components"
+import { Tooltip } from "@/features/ui/components/tooltip"
 import { openPicker, type Item, type PickerResult } from "@gouvfr-lasuite/drive-sdk";
 import { useTranslation } from "react-i18next";
 import { Spinner } from "@gouvfr-lasuite/ui-components";
-import { openNativeDrivePicker } from "@/features/native/drive-picker";
+import { DriveSdkDisabledError, openNativeDrivePicker } from "@/features/native/drive-picker";
 import { isNativePlatform } from "@/features/native/platform";
 import { useConfig } from "@/features/providers/config";
 import { FEATURE_KEYS, useFeatureFlag } from "@/hooks/use-feature";
 import { DriveIcon } from "./drive-icon";
 import { Attachment } from "@/features/api/gen/models/attachment";
 import { handle } from "@/features/utils/errors";
+import { addToast, ToasterItem } from "@/features/ui/components/toaster";
 
 export type DriveFile = { id: string, url: string } & Omit<Attachment, 'sha256' | 'blobId' | 'cid'>;
 
@@ -39,6 +41,7 @@ const serializeToDriveFile = (item: PatchedItem): DriveFile => ({
  * https://github.com/suitenumerique/drive
  */
 export const useDrivePicker = () => {
+    const { t } = useTranslation();
     const [isLoading, setIsLoading] = useState(false);
     const config = useConfig();
     const isDriveDisabled = !useFeatureFlag(FEATURE_KEYS.DRIVE);
@@ -60,6 +63,15 @@ export const useDrivePicker = () => {
                 : await openPicker(pickerConfig);
         } catch (error) {
             handle(new Error("Failed to open picker."), { extra: { error } });
+            if (error instanceof DriveSdkDisabledError) {
+                addToast(
+                    <ToasterItem type="error">
+                        {t("The {{driveAppName}} file picker is not available.", {
+                            driveAppName: config.DRIVE?.app_name,
+                        })}
+                    </ToasterItem>,
+                );
+            }
         } finally {
             setIsLoading(false);
         }
@@ -68,7 +80,7 @@ export const useDrivePicker = () => {
             return (result.items as PatchedItem[]).map(serializeToDriveFile);
         }
         return [];
-    }, [isDriveDisabled]);
+    }, [isDriveDisabled, config.DRIVE, t]);
 
     return {
         isAvailable: !isDriveDisabled,

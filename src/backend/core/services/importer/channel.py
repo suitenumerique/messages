@@ -56,6 +56,10 @@ logger = logging.getLogger(__name__)
 # enough to outlast any real import; eviction only costs a resume-from-start.
 STATE_TTL = 7 * 24 * 3600
 
+# Skipped folder names are remote-controlled: the run state keeps only the
+# first ones, next to their total.
+MAX_REPORTED_SKIPPED_FOLDERS = 20
+
 # Statuses past which a oneshot run no longer changes.
 TERMINAL_STATUSES = frozenset(
     {
@@ -210,6 +214,7 @@ def record_progress(
     folders: dict[str, Any] | None = None,
     total: int | None = None,
     failure_reasons: dict[str, int] | None = None,
+    skipped_folders: list[str] | None = None,
 ) -> None:
     """Persist a progress tick to Redis: running counts plus the resume
     watermark (see the module docstring). The watermark is whichever of
@@ -217,7 +222,10 @@ def record_progress(
     per-folder ``{uidvalidity, last_uid}`` map) the caller passes; only fields
     that are not ``None`` are written, so each runner advances just its own kind
     of bookmark. ``failure_reasons`` is the running ``{category: count}`` tally
-    that explains the failures.
+    that explains the failures; ``skipped_folders`` names the IMAP folders the
+    pass left out: refused at SELECT, with no STATUS evidence that they hold
+    mail. Their total is kept as ``skipped_folders_count``, the names only up to
+    `MAX_REPORTED_SKIPPED_FOLDERS`.
     """
     fields: dict[str, Any] = {"success": success, "failure": failure}
     if cursor is not None:
@@ -228,6 +236,9 @@ def record_progress(
         fields["total"] = total
     if failure_reasons is not None:
         fields["failure_reasons"] = failure_reasons
+    if skipped_folders is not None:
+        fields["skipped_folders"] = skipped_folders[:MAX_REPORTED_SKIPPED_FOLDERS]
+        fields["skipped_folders_count"] = len(skipped_folders)
     write_state(channel_id, **fields)
 
 
@@ -277,10 +288,14 @@ def mark_finished(
             return
 
         now = timezone.now().isoformat()
-        # The runner accumulated the ``{category: count}`` breakdown in Redis as
-        # it ran; fold it into the durable snapshot so it survives Redis eviction
-        # (the list shows it long after the run finished).
-        failure_reasons = read_state(channel.id).get("failure_reasons")
+        # The runner accumulated the ``{category: count}`` breakdown and the
+        # skipped folders in Redis as it ran; fold them into the durable
+        # snapshot so they survive Redis eviction (the list shows them long
+        # after the run finished).
+        live = read_state(channel.id)
+        failure_reasons = live.get("failure_reasons")
+        skipped_folders = live.get("skipped_folders")
+        skipped_folders_count = live.get("skipped_folders_count")
         write_state(
             channel.id,
             status=status,
@@ -299,6 +314,8 @@ def mark_finished(
             total=total,
             finished_at=now,
             failure_reasons=failure_reasons,
+            skipped_folders=skipped_folders,
+            skipped_folders_count=skipped_folders_count,
             # Persist the failure reason durably too: the Redis copy is evicted
             # after STATE_TTL, and a silently-disabled continuous poller must
             # still be able to explain *why* it stopped days later.

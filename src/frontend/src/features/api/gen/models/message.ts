@@ -48,6 +48,7 @@ export type Message = {
   readonly is_unread: boolean;
   readonly is_trashed: boolean;
   readonly is_archived: boolean;
+  readonly is_spam: boolean;
   readonly has_attachments: boolean;
   /** @nullable */
   readonly mime_id: string | null;

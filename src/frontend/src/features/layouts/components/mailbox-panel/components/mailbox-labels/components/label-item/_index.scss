@@ -1,4 +1,5 @@
 @use "sass:math";
+@use "../../../../../../../../styles/utils" as *;
 
 .label-item {
     display: flex;
@@ -14,6 +15,7 @@
     position: relative;
     width: 100%;
     --label-toggle-size: 1.5rem;
+    @include no-touch-link-menu($allow-drag: true);
 }
 
 .label-item__column {
@@ -47,10 +49,20 @@
 }
 
 .label-item--drag-over,
-.label-item:not(.label-item--active):hover,
 .label-item:not(.label-item--active):focus-within,
 .label-item:not(.label-item--active)[data-focus-within="true"]  {
     background-color: var(--c--contextuals--background--semantic--contextual--primary);
+}
+
+@media (any-hover: hover) {
+    .label-item:not(.label-item--active):hover {
+        background-color: var(--c--contextuals--background--semantic--contextual--primary);
+    }
+
+    .label-item:hover .label-item__dropdown-actions {
+        visibility: visible;
+        opacity: 1;
+    }
 }
 
 .label-item--active {
@@ -91,7 +103,6 @@
     }
 }
 
-.label-item:hover .label-item__dropdown-actions,
 .label-item[data-focus-within="true"] .label-item__dropdown-actions {
     visibility: visible;
     opacity: 1;
@@ -103,5 +114,18 @@
 
     & .c__button__icon > span {
         font-size: var(--c--globals--font--sizes--h3);
+    }
+}
+
+/* Touch browsers emulate :hover on the first tap; revealing the actions there
+   makes iOS swallow the click, hence a second tap to select or unfold. As soon
+   as a touch screen is there, even next to a mouse or a trackpad, the actions
+   stay visible instead, so a tap no longer reveals anything. They sit at the
+   row end so the menus line up whether or not a label has an unread counter. */
+@media (any-pointer: coarse) {
+    .label-item__dropdown-actions {
+        visibility: visible;
+        opacity: 1;
+        order: 1;
     }
 }

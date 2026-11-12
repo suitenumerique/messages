@@ -4,7 +4,7 @@
 FROM docker:27-cli AS docker-cli
 
 # Main image
-FROM node:24.18.0-slim@sha256:cb4e8f7c443347358b7875e717c29e27bf9befc8f5a26cf18af3c3dec80e58c5
+FROM node:24.22.1-slim@sha256:1681862882da07ee5476fee047bcf34138833f1df42633bb25bcb0f438d5bf3d
 
 ENV npm_config_cache=/tmp/npm-cache
 ENV PLAYWRIGHT_BROWSERS_PATH=/tmp/playwright-browsers

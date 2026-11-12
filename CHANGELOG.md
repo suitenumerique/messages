@@ -8,13 +8,45 @@ and this project adheres to
 
 ## [Unreleased]
 
-### Fixed
+### Added
 
-- Use the container IP as Host in the backend healthcheck
+- Support passkey sign-in in the `lst-dsfr` Keycloak theme (off by default)
+- Add the `lst-dsfr` login and account theme (Keycloakify, react-dsfr) with
+  the ProConnect look. The dev realm keeps the built-in themes.
+- `make test-keycloak-theme` runs the Playwright specs of the `lst-dsfr` theme
+  against Keycloak alone
+- Enable passkeys in the dev realm
+- Display a service message in a banner on top of the app, configured
+  from the site configuration in the Django admin
+- Warn that an auto-reply is active for the selected mailbox with a banner
+  instead of a header icon
+- Add `DSFR_THEME_HIDE_LOGOUT_BUTTON`, `DSFR_THEME_TWO_FACTOR_HELP_URL` and
+  `DSFR_THEME_FORGOT_PASSWORD_URL` to the `lst-dsfr` theme
+- Add `DSFR_THEME_LAGAUFRE_WIDGET_CONFIG` to show the La Suite services button
+  in the account console header of the `lst-dsfr` theme
 
 ### Changed
 
-- Bump keycloak to 26.8.0 and refresh the Alpine 3.24 digest in the Keycloak image
+- Bump keycloak to 26.8.1 and refresh the Alpine 3.24 digest in the Keycloak image
+- Bump Caddy to 2.11.9 in the Keycloak image, the frontend image and the
+  Scalingo post-frontend deploy script
+- Bump @gouvfr-lasuite/ui-components to 1.3.0
+- Use the container IP as Host in the backend healthcheck
+- 
+### Removed
+
+- The DSFR theme jar `dsfr-2.3.4.jar`. A realm that selected the `DSFR` theme
+  must select `lst-dsfr` once after the upgrade
+
+### Security
+
+- Caddy 2.11.9 carries go-jose 4.1.6, which closes GHSA-mgcc-cww5-fp2q; the
+  2.11.7 release binary shipped the affected 4.1.5. The FastCGI fixes of
+  2.11.8 and 2.11.9 do not apply: neither proxy runs PHP
+- The Keycloak image removes `emSign ECC Root CA - G3` from the Java trust
+  store after the eMudhra intermediate CA compromise of October 2026. The
+  Comodo `AAA Certificate Services` root is already absent from the base image
+
 
 ## [0.10.0] - 2026-09-29
 

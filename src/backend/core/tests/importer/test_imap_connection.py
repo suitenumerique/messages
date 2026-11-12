@@ -14,6 +14,7 @@ from core.services.importer.imap import (
     IMAPConnectionManager,
     IMAPFolderSelectError,
     IMAPSecurityError,
+    TransientImportError,
     _extract_imap_flags_and_content,
     _IPPinnedIMAP4,
     _IPPinnedIMAP4SSL,
@@ -21,10 +22,12 @@ from core.services.importer.imap import (
     _validate_imap_host,
     create_folder_mapping,
     decode_imap_utf7,
+    folder_may_hold_mail,
     select_imap_folder,
     uid_fetch_message,
     uid_search_all,
 )
+from core.services.importer.labels import compute_labels_and_flags
 from core.services.ssrf import SSRFValidationError
 
 
@@ -104,6 +107,86 @@ class TestImapFolderHelpers:
         # Malformed lines degrade to None, never raise.
         assert _parse_imap_folder_info("garbage") is None
 
+    @pytest.mark.parametrize(
+        "folder_info",
+        [
+            '(\\HasChildren \\NoSelect) "/" "Archives"',
+            '(\\NOSELECT) "." Archives',
+            '(\\NonExistent \\HasChildren) "/" "Archives"',
+        ],
+    )
+    def test_parse_folder_info_skips_unselectable_attributes(self, folder_info):
+        """Name attributes are case-insensitive and ``\\NonExistent`` implies
+        ``\\Noselect``: such entries must not reach SELECT."""
+        assert _parse_imap_folder_info(folder_info) is None
+
+    def test_parse_folder_info_ignores_attribute_text_in_name(self):
+        """Only the attribute list is inspected, not the folder name."""
+        assert (
+            _parse_imap_folder_info('(\\HasNoChildren) "/" "Noselect notes"')
+            == "Noselect notes"
+        )
+
+    @pytest.mark.parametrize(
+        ("status_response", "expected"),
+        [
+            (("NO", [b"Mailbox isn't a valid mbox file"]), False),
+            (("OK", [b'"Empty" (MESSAGES 0)']), False),
+            (("OK", [b'"Archives" (MESSAGES 3)']), True),
+            # Only the attribute list counts, not the echoed mailbox name.
+            (("OK", [b'"MESSAGES 0" (MESSAGES 5)']), True),
+            (("OK", [b'"Archives (old)" (MESSAGES 2)']), True),
+        ],
+    )
+    def test_folder_may_hold_mail(self, status_response, expected):
+        conn = MagicMock()
+        conn.status.return_value = status_response
+        assert folder_may_hold_mail(conn, "Archives") is expected
+
+    def test_folder_may_hold_mail_propagates_connection_drop(self):
+        """A dropped connection is not "no mail": swallowing it would let the
+        planning pass skip a folder that does hold mail."""
+        conn = MagicMock()
+        conn.status.side_effect = imaplib.IMAP4.abort("socket error: EOF")
+        with pytest.raises(imaplib.IMAP4.abort):
+            folder_may_hold_mail(conn, "Archives")
+
+    @pytest.mark.parametrize(
+        "refusal",
+        [b"[INUSE] Mailbox is locked", b"[unavailable] Try again later"],
+    )
+    def test_folder_may_hold_mail_temporary_refusal_is_transient(self, refusal):
+        """A temporary STATUS refusal says nothing about the folder's content:
+        reading it as "no mail" would let the planning pass skip it."""
+        conn = MagicMock()
+        conn.status.return_value = ("NO", [refusal])
+        with pytest.raises(TransientImportError, match="Archives"):
+            folder_may_hold_mail(conn, "Archives")
+
+    def test_select_imap_folder_temporary_refusal_is_transient(self):
+        """A temporary SELECT refusal must park the run rather than read as a
+        permanent refusal, without trying the remaining name variations."""
+        conn = MagicMock()
+        conn.select.return_value = ("NO", [b"[INUSE] Mailbox is locked"])
+        with pytest.raises(TransientImportError, match="Archives"):
+            select_imap_folder(conn, "Archives")
+        assert conn.select.call_count == 1
+
+    def test_select_imap_folder_code_in_refusal_text_is_not_transient(self):
+        """Only the leading response code counts: the free text may echo a
+        remote folder name that merely contains a temporary code."""
+        conn = MagicMock()
+        conn.select.return_value = ("NO", [b"Mailbox [INUSE]-archive does not exist"])
+        assert select_imap_folder(conn, "[INUSE]-archive") is False
+
+    def test_folder_may_hold_mail_code_in_refusal_text_is_not_transient(self):
+        conn = MagicMock()
+        conn.status.return_value = (
+            "NO",
+            [b"[CANNOT] Mailbox [UNAVAILABLE] isn't a valid mbox file"],
+        )
+        assert folder_may_hold_mail(conn, "[UNAVAILABLE]") is False
+
     def test_select_imap_folder_tries_quoted_variant(self):
         """The first (bare) SELECT failing must not give up: the quoted
         variant is attempted next and its success is reported."""
@@ -118,12 +201,20 @@ class TestImapFolderHelpers:
         conn.select.return_value = ("NO", [b"nope"])
         assert select_imap_folder(conn, "Ghost") is False
 
-    def test_create_folder_mapping_strips_inbox_prefix_for_orange(self):
-        mapping = create_folder_mapping(
-            ["INBOX/Envoy&AOk-s"], "user@orange.fr", "imap.orange.fr"
-        )
-        # Display name drops the INBOX/ prefix and decodes IMAP-UTF7.
-        assert mapping["INBOX/Envoy&AOk-s"] == "Envoyés"
+    def test_create_folder_mapping_decodes_imap_utf7(self):
+        mapping = create_folder_mapping(["INBOX/Envoy&AOk-s"])
+        assert mapping["INBOX/Envoy&AOk-s"] == "INBOX/Envoyés"
+
+    def test_create_folder_mapping_keeps_homonym_subfolders_apart(self):
+        """Subfolders sharing a name under different parents must not be
+        merged into one label once the INBOX/ prefix is stripped."""
+        folders = ["INBOX/Projet 1/Lu", "INBOX/Projet 2/Lu"]
+        mapping = create_folder_mapping(folders)
+        labels = set()
+        for folder in folders:
+            folder_labels, _ = compute_labels_and_flags({}, [mapping[folder]], [])
+            labels |= folder_labels
+        assert labels == {"Projet 1/Lu", "Projet 2/Lu"}
 
     def test_extract_flags_from_bytes_response_part(self):
         """Some servers send FLAGS as a bare bytes part, not tuple metadata."""

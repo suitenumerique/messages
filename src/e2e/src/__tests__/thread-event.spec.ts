@@ -55,6 +55,40 @@ async function navigateToSharedThread(page: Page, browserName: BrowserName) {
 }
 
 /**
+ * Scroll the thread view to its bottom, as a user would before typing, and
+ * return the IM input.
+ *
+ * The input slides out (inert, but still "visible" to Playwright as it only
+ * fades out) unless the view is scrolled near its bottom. Opening a thread
+ * scrolls to its last message, below which the IMs sent by the previous tests
+ * pile up: past a few of them, the input is out of reach and typing in it is
+ * silently lost.
+ */
+async function revealIMInput(page: Page) {
+  await page
+    .locator(".thread-view")
+    .evaluate((view) => view.scrollTo({ top: view.scrollHeight, behavior: "instant" }));
+  await expect(page.locator(".thread-event-input")).not.toHaveClass(
+    /thread-event-input--hidden/,
+  );
+  return page.getByPlaceholder("Add internal comment...");
+}
+
+/**
+ * Refresh the mailbox from the sidebar and wait for the refresh to settle.
+ *
+ * The refresh reports its outcome in a transient tooltip which, like any
+ * react-aria tooltip, takes the Escape key for itself while shown: it must be
+ * gone before pressing Escape anywhere else, e.g. to close a popover.
+ */
+async function refreshMailbox(page: Page) {
+  await page.getByRole("button", { name: "Refresh" }).click();
+  const feedback = page.locator(".c__tooltip").getByRole("status");
+  await expect(feedback).toBeVisible();
+  await expect(feedback).toBeHidden();
+}
+
+/**
  * Fetch the current user through the API session.
  *
  * Also the source of the CSRF token expected by DRF on unsafe verbs: with
@@ -90,9 +124,7 @@ test.describe("Thread Events (Internal Messages)", () => {
   }) => {
     await navigateToSharedThread(page, browserName);
 
-    await expect(
-      page.getByPlaceholder("Add internal comment..."),
-    ).toBeVisible();
+    await expect(await revealIMInput(page)).toBeVisible();
 
     // Send button should be visible but disabled when input is empty
     const sendButton = page
@@ -128,7 +160,7 @@ test.describe("Thread Events (Internal Messages)", () => {
   }) => {
     await navigateToSharedThread(page, browserName);
 
-    const imInput = page.getByPlaceholder("Add internal comment...");
+    const imInput = await revealIMInput(page);
     await imInput.fill("Hello from E2E test");
 
     await page
@@ -158,7 +190,7 @@ test.describe("Thread Events (Internal Messages)", () => {
   }) => {
     await navigateToSharedThread(page, browserName);
 
-    const imInput = page.getByPlaceholder("Add internal comment...");
+    const imInput = await revealIMInput(page);
     await imInput.fill("Sent with Enter key");
     await imInput.press("Enter");
     await page.waitForLoadState("networkidle");
@@ -175,7 +207,7 @@ test.describe("Thread Events (Internal Messages)", () => {
   }) => {
     await navigateToSharedThread(page, browserName);
 
-    const imInput = page.getByPlaceholder("Add internal comment...");
+    const imInput = await revealIMInput(page);
 
     // Send two quick messages
     await imInput.fill("First quick message");
@@ -198,7 +230,7 @@ test.describe("Thread Events (Internal Messages)", () => {
   }) => {
     await navigateToSharedThread(page, browserName);
 
-    const imInput = page.getByPlaceholder("Add internal comment...");
+    const imInput = await revealIMInput(page);
 
     // Type @ followed by filter text to trigger the mention popover
     await imInput.pressSequentially("@Mailbox");
@@ -244,7 +276,7 @@ test.describe("Thread Events (Internal Messages)", () => {
     await navigateToSharedThread(page, browserName);
 
     // Send a fresh message to edit
-    const imInput = page.getByPlaceholder("Add internal comment...");
+    const imInput = await revealIMInput(page);
     await imInput.fill("Message before edit");
     await imInput.press("Enter");
     await page.waitForLoadState("networkidle");
@@ -317,7 +349,7 @@ test.describe("Thread Events (Internal Messages)", () => {
     await navigateToSharedThread(page, browserName);
 
     // Send a fresh message to edit then cancel
-    const imInput = page.getByPlaceholder("Add internal comment...");
+    const imInput = await revealIMInput(page);
     await imInput.fill("Message to cancel edit");
     await imInput.press("Enter");
     await page.waitForLoadState("networkidle");
@@ -373,7 +405,7 @@ test.describe("Thread Events (Internal Messages)", () => {
     await navigateToSharedThread(page, browserName);
 
     // Send a message specifically for deletion
-    const imInput = page.getByPlaceholder("Add internal comment...");
+    const imInput = await revealIMInput(page);
     await imInput.fill("Message to delete");
     await imInput.press("Enter");
     await page.waitForLoadState("networkidle");
@@ -407,7 +439,7 @@ test.describe("Thread Events (Internal Messages)", () => {
     await navigateToSharedThread(page, browserName);
 
     // Send a message containing a URL
-    const imInput = page.getByPlaceholder("Add internal comment...");
+    const imInput = await revealIMInput(page);
     await imInput.fill("Check https://example.com for details");
     await imInput.press("Enter");
     await page.waitForLoadState("networkidle");
@@ -495,8 +527,7 @@ test.describe("Thread Events (Internal Messages)", () => {
     // MailboxProvider that invalidates both the threads list and the stats
     // queries — the exact chain of cache updates we need for the UI
     // assertions below to pick up the new mention.
-    await page.getByRole("button", { name: "Refresh" }).click();
-    await page.waitForLoadState("networkidle");
+    await refreshMailbox(page);
 
     // Primary UI assertion: the thread entry in the thread list shows the
     // "Unread mention" badge. The thread list is re-fetched on navigation,
@@ -646,8 +677,7 @@ test.describe("Thread Events (Assignations)", () => {
         },
       },
     );
-    await page.getByRole("button", { name: "Refresh" }).click();
-    await page.waitForLoadState("networkidle");
+    await refreshMailbox(page);
 
     // Empty state: trigger advertises the action verb. The aria-label flips
     // to "Assigned to ..." once the widget reads at least one assignee.
@@ -762,8 +792,7 @@ test.describe("Thread Events (Assignations)", () => {
     // new assignment without relying on a full page reload (which would
     // hit the static-export hydration race that bounces shared-mailbox
     // sessions back to the personal mailbox).
-    await page.getByRole("button", { name: "Refresh" }).click();
-    await page.waitForLoadState("networkidle");
+    await refreshMailbox(page);
 
     // The "Assigned to me" sub-folder lives under Inbox. Its visible text
     // includes the leading "person" Material icon ligature, so the

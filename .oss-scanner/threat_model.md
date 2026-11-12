@@ -120,7 +120,9 @@ Most important, report findings here first:
 
 Less important, but still in scope: the rest of `src/backend/`, the
 management commands, `src/mta-in/src/delivery_milter.py`, and
-`src/keycloak/bulk-role-membership/` (a Keycloak SPI in Java).
+`src/keycloak/bulk-role-membership/` (a Keycloak SPI in Java), and
+`src/keycloak/theme/` (TypeScript; it builds a Keycloak theme jar and has no
+runtime server code).
 
 Out of scope as a target, do not report findings here: `src/socks-proxy/` and
 `src/mpa/` hold no parser of ours. They wrap Dante and rspamd; report a bug

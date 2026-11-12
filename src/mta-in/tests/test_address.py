@@ -7,13 +7,17 @@ positive happy paths. Pure-stdlib — no Docker stack needed.
 from __future__ import annotations
 
 import pytest
+from jmap_email import is_valid_addr_spec
 
 from pymta.address import AddressError, strip_brackets, validate_envelope_address
 
 
-def _validate(address: str, *, allow_empty: bool = False) -> str:
+def _validate(address: str, *, allow_empty: bool = False, max_local: int | None = 64) -> str:
     return validate_envelope_address(
-        address, allow_empty=allow_empty, max_local=64, max_domain=255
+        address,
+        allow_empty=allow_empty,
+        max_local=max_local,
+        max_domain=255,
     )
 
 
@@ -173,12 +177,26 @@ def test_source_route_rejected():
 # ---------------------------------------------------------------------------
 
 
-def test_quoted_local_part_rejected():
-    # The space-in-quote form would be caught earlier by the control-char
-    # check; use a tame quoted form so we land on the quoted-local-part rule.
+@pytest.mark.parametrize(
+    "address", ['"we ird"@example.com', '"we(ird"@example.com', '"a..b"@example.com']
+)
+def test_quoted_local_part_rejected(address):
+    """On a recipient, quotes the content needs: no mailbox has such a name."""
     with pytest.raises(AddressError) as exc:
-        _validate('"weird"@example.com')
+        _validate(address)
     assert exc.value.reason == "bad_address"
+    assert exc.value.smtp_code == 553
+
+
+def test_quotes_the_content_does_not_need_are_dropped():
+    """RFC 5321 section 4.1.2: ``"bob"@x`` and ``bob@x`` are the same mailbox."""
+    assert _validate('"weird"@example.com') == "weird@example.com"
+
+
+@pytest.mark.parametrize("local", ["a(b)", "a,b", "a;b", "a:b", "a\\b", "a[b", 'a"b"c'])
+def test_specials_outside_quotes_are_refused(local):
+    with pytest.raises(AddressError) as exc:
+        _validate(f"{local}@example.com")
     assert exc.value.smtp_code == 553
 
 
@@ -233,6 +251,13 @@ def test_overlong_local_part_rejected():
     assert exc.value.reason == "oversize_local"
 
 
+def test_overlong_local_part_accepted_without_local_cap():
+    # A forwarder's SRS-wrapped bounce address, longer than the RFC's
+    # 256-octet path too: neither limit applies to MAIL FROM.
+    srs = "SRS0=Ab3d=TT=bounces.mailer.example=" + "b" * 300 + "@forwarder.example"
+    assert _validate(srs, max_local=None) == srs
+
+
 def test_overlong_domain_rejected():
     # 64-char label * 4 + dots = ~260 chars (>255 total domain cap).
     long_domain = ".".join(["a" * 60] * 5)
@@ -246,6 +271,52 @@ def test_overlong_label_rejected():
     with pytest.raises(AddressError) as exc:
         _validate(f"user@{too_long_label}.example")
     assert exc.value.reason == "bad_address"
+
+
+# DNS limits apply to the A-label, not to the UTF-8 an SMTPUTF8 peer sends:
+# each of these labels is over 63 UTF-8 octets but a valid A-label.
+@pytest.mark.parametrize(
+    "label",
+    [
+        "министерство-экономики-и-финансов-россии",  # 76 octets, A-label 52
+        "وزارةالاقتصادوالماليةالعامةللدولة",  # 66 octets, A-label 46
+        "é" * 55,  # 110 octets, A-label 61
+    ],
+)
+def test_idn_label_measured_as_a_label(label):
+    address = f"user@{label}.example"
+    assert _validate(address) == address
+
+
+def test_idn_domain_total_measured_as_a_label():
+    # 443 UTF-8 octets, 247 as A-labels.
+    domain = ".".join(["é" * 55] * 4)
+    assert _validate(f"user@{domain}") == f"user@{domain}"
+
+
+def test_idn_label_over_63_octets_as_a_label_rejected():
+    label = "中华人民共和国国家发展和改革委员会办公厅秘书"  # 66 octets, A-label 65
+    with pytest.raises(AddressError) as exc:
+        _validate(f"user@{label}.example")
+    assert exc.value.reason == "bad_address"
+
+
+def test_label_left_empty_by_uts46_mapping_rejected():
+    # U+3002 maps to ".", so this is "a..example" once mapped.
+    with pytest.raises(AddressError) as exc:
+        _validate("user@a。.example")
+    assert exc.value.reason == "bad_address"
+
+
+def test_ideographic_full_stop_between_labels_accepted():
+    assert _validate("user@a。example.com") == "user@a。example.com"
+
+
+@pytest.mark.parametrize("domain", ["faß.de", "mail_relay.example.com"])
+def test_domain_length_check_does_not_apply_idna_validity(domain):
+    # ``ß`` must survive (IDNA2003 would fold it to ``ss``) and ``_``, refused
+    # by IDNA, has always been accepted: only lengths are checked.
+    assert _validate(f"user@{domain}") == f"user@{domain}"
 
 
 # ---------------------------------------------------------------------------
@@ -272,3 +343,148 @@ def test_address_literal_rejected_with_dedicated_reason():
 def test_malformed_domain_rejected(domain):
     with pytest.raises(AddressError):
         _validate(f"user@{domain}")
+
+
+@pytest.mark.parametrize(
+    "domain",
+    ["[", "]", "[192.0.2.1", "192.0.2.1]", "exa[mple.com", "a.]b", '"', 'exa"mple.com']
+    + [f"exa{char}mple.com" for char in "!#$&'()*+,/:;=?\\^`{|}~"],
+)
+def test_ascii_outside_a_host_name_is_not_a_domain(domain):
+    """Found by the fuzz suite: the domain's characters were not checked, only
+    its length, its dots and a balanced ``[...]``."""
+    with pytest.raises(AddressError) as exc:
+        _validate(f"user@{domain}")
+    assert exc.value.reason == "bad_address"
+
+
+# ---------------------------------------------------------------------------
+# ``%`` in the local-part: senders only (VERP), never recipients.
+# ---------------------------------------------------------------------------
+
+
+def _validate_sender(address: str, **options) -> str:
+    return validate_envelope_address(
+        address, allow_empty=True, max_local=None, max_domain=255, allow_percent=True, **options
+    )
+
+
+@pytest.mark.parametrize(
+    "address", ["bounce-first.last%40town.example@esp.example", "a%b%c@example.com"]
+)
+def test_percent_is_accepted_in_a_sender_local_part(address):
+    assert _validate_sender(address) == address
+
+
+def test_percent_is_refused_unless_allowed():
+    with pytest.raises(AddressError) as exc:
+        _validate("bounce-first.last%40town.example@esp.example")
+    assert exc.value.reason == "control_char"
+
+
+@pytest.mark.parametrize("address", ["user@exa%mple.com", "user%x@exa%mple.com", "a%b"])
+def test_percent_is_never_accepted_in_the_domain(address):
+    with pytest.raises(AddressError):
+        _validate_sender(address)
+
+
+def test_allowing_percent_allows_nothing_else():
+    for address in ("us er%x@example.com", "user%x\r@example.com", '"a %b"@example.com'):
+        with pytest.raises(AddressError):
+            _validate_sender(address)
+
+
+# ---------------------------------------------------------------------------
+# Single-label domains.
+# ---------------------------------------------------------------------------
+
+
+def test_a_single_label_domain_is_accepted_by_default():
+    assert _validate("root@localhost") == "root@localhost"
+
+
+def test_a_single_label_domain_is_refused_when_a_fqdn_is_required():
+    with pytest.raises(AddressError) as exc:
+        _validate_sender("root@localhost", require_fqdn=True)
+    assert (exc.value.reason, exc.value.smtp_code) == ("non_fqdn_sender", 504)
+
+
+def test_requiring_a_fqdn_leaves_the_null_sender_and_real_domains_alone():
+    assert _validate_sender("", require_fqdn=True) == ""
+    assert _validate_sender("a@example.com", require_fqdn=True) == "a@example.com"
+
+
+# ---------------------------------------------------------------------------
+# Address literals, where the caller allows them.
+# ---------------------------------------------------------------------------
+
+
+@pytest.mark.parametrize(
+    ("address", "clean"),
+    [
+        ("a@[192.0.2.1]", "a@[192.0.2.1]"),
+        ("a@[IPv6:2001:DB8:0:0::1]", "a@[IPv6:2001:db8::1]"),
+        ("a@[ipv6:::1]", "a@[IPv6:::1]"),
+    ],
+)
+def test_an_address_literal_is_normalised(address, clean):
+    assert _validate_sender(address, allow_literal=True) == clean
+    assert _validate_sender(clean, allow_literal=True) == clean
+
+
+@pytest.mark.parametrize(
+    "address",
+    [
+        "a@[192.0.2.999]",
+        "a@[192.0.2]",
+        "a@[IPv6:zz::1]",
+        "a@[2001:db8::1]",
+        "a@[example.com]",
+        "a@[]",
+    ],
+)
+def test_a_malformed_address_literal_is_refused(address):
+    with pytest.raises(AddressError) as exc:
+        _validate_sender(address, allow_literal=True)
+    assert exc.value.reason == "address_literal"
+    assert "Malformed address literal" in exc.value.smtp_text
+
+
+# ---------------------------------------------------------------------------
+# The contract with the backend, which reads addresses with jmap_email: what
+# we accept and forward must be one mailbox to it too. The fuzz suite holds
+# the same property over generated input (test_address_fuzz.py).
+# ---------------------------------------------------------------------------
+
+
+@pytest.mark.parametrize(
+    "address",
+    [
+        "alice@example.com",
+        "Alice.O'Neil+tag@Sub.Example.ORG",
+        "a%b@example.com",
+        "a..b@example.com",
+        ".alice.@example.com",
+        '"alice"@example.com',
+        '"al ice"@example.com',
+        '"a@b"@example.com',
+        '"a\\"b,c;d"@example.com',
+        '"a(b)[c]"@example.com',
+        "alice@[192.0.2.1]",
+        "alice@[IPv6:2001:DB8::1]",
+        "alice@localhost",
+        "élise@exämple.com",
+        "alice@xn--bcher-kva.example",
+    ],
+)
+def test_every_accepted_sender_is_one_mailbox_to_the_backend(address):
+    clean = _validate_sender(address, allow_quoted=True, allow_literal=True)
+    assert is_valid_addr_spec(clean), clean
+
+
+@pytest.mark.parametrize(
+    "address",
+    ["bob@example.com", "Bob+tag@Example.COM", '"bob"@example.com', "bøb@example.com"],
+)
+def test_every_accepted_recipient_is_one_mailbox_to_the_backend(address):
+    assert is_valid_addr_spec(_validate(address))

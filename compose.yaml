@@ -112,11 +112,26 @@ services:
       - objectstorage-data:/data
 
   keycloak:
-    image: quay.io/keycloak/keycloak:26.8.0@sha256:b0f60d489d51c5d113390bdf5461d4c06e6051be026c05549f2e1e10ec352bcc
+    image: quay.io/keycloak/keycloak:26.8.1@sha256:79c623a22abacf3fe6c00a5fb30f5b7843d717b234033b80995891c06116d244
     volumes:
       - ./src/keycloak/realm.json:/opt/keycloak/data/import/realm.json:ro
-      - ./src/keycloak/themes/dsfr-2.3.4.jar:/opt/keycloak/providers/keycloak-theme.jar:ro
       - ./src/keycloak/bulk-role-membership/bulk-role-membership.jar:/opt/keycloak/providers/bulk-role-membership.jar:ro
+      # The theme jar is a build output (make build-keycloak-theme). The
+      # entrypoint copies it when it exists, so a missing jar does not block
+      # the services that depend on Keycloak, such as the backend tests.
+      - ./src/keycloak/theme:/opt/keycloak-theme:ro
+    entrypoint:
+      - bash
+      - -c
+      - |
+        jar=/opt/keycloak-theme/dist_keycloak/keycloak-theme-for-kc-all-other-versions.jar
+        if [ -f "$$jar" ]; then
+          cp "$$jar" /opt/keycloak/providers/lst-dsfr.jar
+        else
+          echo "lst-dsfr theme jar not found, run 'make build-keycloak-theme'"
+        fi
+        exec /opt/keycloak/bin/kc.sh "$$@"
+      - kc.sh
     environment:
       - HOST=http://localhost:8902
       - ADMIN_HOST=http://localhost:8902
@@ -452,7 +467,7 @@ services:
       target: uv
     pull_policy: build
 
-  # ---- Pure-Python (aiosmtpd) inbound MTA --------------------------------
+  # ---- Pure-Python (pymta) inbound MTA -----------------------------------
   # Runs side-by-side with the Postfix-based `mta-in` service on a different
   # host port (8920 vs 8910). Both implementations share the same MDA
   # contract, env vars, and test suite. Toggle which one is the public-facing
@@ -515,7 +530,9 @@ services:
       # advertised and tests/test_smtp_protocol.py can exercise the TLS path.
       - PYMTA_TLS_CERT_FILE=/certs/pymta-test.crt
       - PYMTA_TLS_KEY_FILE=/certs/pymta-test.key
-    command: pytest -vvs tests/
+      # Kept out of the mounted source tree.
+      - COVERAGE_FILE=/tmp/.coverage
+    command: pytest -vvs --cov --cov-fail-under=100 tests/
     volumes:
       - ./src/mta-in:/app
 

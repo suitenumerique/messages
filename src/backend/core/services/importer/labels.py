@@ -3,8 +3,6 @@
 import logging
 import re
 
-from django.utils import timezone
-
 from jmap_email.types import JmapEmail
 
 from core import models
@@ -217,20 +215,19 @@ def handle_duplicate_message(
     import_is_unread = message_flags.pop("is_unread", True)
     import_is_starred = message_flags.pop("_starred", False)
 
-    for flag, value in message_flags.items():
-        if hasattr(existing_message, flag):
-            setattr(existing_message, flag, value)
-    if message_flags:
-        update_fields = list(message_flags.keys())
-        # Timestamps stay in lockstep with the booleans, as the flag endpoint
-        # and the create path set them.
-        if existing_message.is_trashed and existing_message.trashed_at is None:
-            existing_message.trashed_at = timezone.now()
-            update_fields.append("trashed_at")
-        if existing_message.is_archived and existing_message.archived_at is None:
-            existing_message.archived_at = timezone.now()
-            update_fields.append("archived_at")
-        existing_message.save(update_fields=update_fields)
+    # Overlapping archives mostly bring back flags the message already has:
+    # only a real change is worth a write and a thread stats update.
+    changed_flags = {
+        flag: value
+        for flag, value in message_flags.items()
+        if hasattr(existing_message, flag) and getattr(existing_message, flag) != value
+    }
+    for flag, value in changed_flags.items():
+        setattr(existing_message, flag, value)
+    if changed_flags:
+        existing_message.save(update_fields=list(changed_flags))
+        # The folders list threads by their denormalized flags.
+        existing_message.thread.update_stats()
 
     # Update ThreadAccess.starred_at if the duplicate is starred
     if not import_is_unread or import_is_starred:

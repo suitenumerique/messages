@@ -9,18 +9,25 @@ Each field extraction must be individually guarded to maximise data recovery.
 
 import base64
 import hashlib
-import logging
 import re
 import struct
 import uuid
 from collections.abc import Callable, Generator
-from datetime import timezone
+from datetime import datetime, timezone
 from email import message_from_string
 
 from django.conf import settings
 
 import pypff
-from jmap_email import compose_email, is_valid_msg_id, parse_address, parse_addresses
+from celery.utils.log import get_task_logger
+from jmap_email import (
+    ComposeError,
+    compose_email,
+    is_valid_addr_spec,
+    is_valid_msg_id,
+    parse_address,
+    parse_addresses,
+)
 from jmap_email.types import EmailAddress
 
 from core.mda.addresses import address_domain
@@ -29,6 +36,7 @@ from core.services.s3_seekable import BUFFER_NONE, S3SeekableReader
 
 from .channel import ImportCancelled
 from .utils import (
+    FAILURE_OVERSIZED,
     FAILURE_UNPARSEABLE,
     beat,
     bump_reason,
@@ -37,7 +45,10 @@ from .utils import (
     run_plan,
 )
 
-logger = logging.getLogger(__name__)
+# A task logger (like the other importer modules) so each per-message line
+# carries the ``run_import_task`` id, which ``run_import_task`` maps to its
+# import channel when it starts.
+logger = get_task_logger(__name__)
 
 # MAPI property tags — message store
 PR_CONTAINER_CLASS = 0x3613
@@ -552,24 +563,34 @@ def _detect_folder_type_by_name(folder_name: str) -> str:
     return _KNOWN_FOLDER_NAMES.get(folder_name.lower().strip(), FOLDER_TYPE_NORMAL)
 
 
-def _get_message_timestamp(message):
-    """Get a sortable, tz-aware timestamp from a message for chronological order."""
-    dt = None
-    try:
-        dt = message.delivery_time or None
-    except Exception:
-        logger.debug("Failed to read delivery_time")
-    if dt is None:
+# When the message was sent or received: the import plan is ordered on these.
+_SENT_TIME_ATTRS = ("delivery_time", "client_submit_time")
+# The record's own times, a last resort for a ``Date``: they may only date the
+# copy into the archive, but still beat having no date at all. Kept out of the
+# plan ordering — a resumed import restarts at a positional cursor, so the
+# order must not change between versions — and a message lacking a sent time
+# (mostly a draft) is best imported last anyway: its parents already exist.
+_RECORD_TIME_ATTRS = ("creation_time", "modification_time")
+
+
+def _get_message_timestamp(
+    message, attrs: tuple[str, ...] = _SENT_TIME_ATTRS
+) -> datetime | None:
+    """First tz-aware timestamp found among ``attrs``, or ``None``."""
+    for attr in attrs:
         try:
-            dt = message.client_submit_time or None
+            dt = getattr(message, attr)
         except Exception:
-            logger.debug("Failed to read client_submit_time")
-    # pypff can return naive datetimes; assume UTC so a mix of naive and
-    # tz-aware values from one PST stays mutually comparable when we sort
-    # chronologically (a bare compare would raise TypeError).
-    if dt is not None and dt.tzinfo is None:
-        dt = dt.replace(tzinfo=timezone.utc)
-    return dt
+            logger.debug("Failed to read %s", attr)
+            continue
+        if isinstance(dt, datetime):
+            # pypff can return naive datetimes; assume UTC so a mix of naive
+            # and tz-aware values from one PST stays mutually comparable when
+            # we sort chronologically (a bare compare would raise TypeError).
+            if dt.tzinfo is None:
+                dt = dt.replace(tzinfo=timezone.utc)
+            return dt
+    return None
 
 
 def _get_message_flags(message) -> int:
@@ -583,11 +604,80 @@ def _get_flag_status(message) -> int | None:
     return get_mapi_property_integer(message, PR_FLAG_STATUS)
 
 
+# Outlook renders a one-off SMTP recipient as ``Display Name (addr@domain)``,
+# sometimes wrapped in single quotes. RFC 5322 reads a parenthesised part as a
+# comment, so ``parse_address`` hands the whole string back as the address,
+# which the composer then rejects — losing the message.
+# The name ends on a non-space so that only ``\s*`` takes the spaces before
+# ``(``: with a bare ``.*?`` both could, and a long run of spaces would be
+# rescanned from every position (quadratic on a crafted display name).
+_OUTLOOK_DISPLAY_ADDRESS_RE = re.compile(
+    r"^(?P<quote>['\"]?)(?P<name>(?:.*?\S)?)\s*\((?P<email>[^()\s]+)\)(?P=quote)$"
+)
+
+
+def _unquote(value: str) -> str:
+    """Drop one pair of matching quotes Outlook wraps around a display name."""
+    value = value.strip()
+    if len(value) >= 2 and value[0] == value[-1] and value[0] in "'\"":
+        return value[1:-1].strip()
+    return value
+
+
+def _unquote_address(addr: str) -> str | None:
+    """Bare address Outlook wrapped in quotes, or ``None`` if it wasn't.
+
+    Outlook quotes some addresses, sometimes twice and unevenly
+    (``''a@b.fr'``). Such a value still passes as an addr-spec, as quotes are
+    legal characters. A quote *ending* the address proves the wrapping is an
+    artefact — no domain ends with one — so every surrounding quote is then
+    dropped. Without it nothing is touched: a local part may legitimately
+    start with a quote.
+    """
+    addr = addr.strip()
+    if not addr.endswith(("'", '"')):
+        return None
+    bare = addr.strip("'\"")
+    return bare if is_valid_addr_spec(bare) else None
+
+
+def _split_outlook_display(value: str) -> tuple[str, str] | None:
+    """Split Outlook's ``Name (addr)`` form into ``(name, addr)``, or ``None``
+    when ``value`` isn't exactly that shape around a valid address."""
+    match = _OUTLOOK_DISPLAY_ADDRESS_RE.match(value.strip())
+    if match and is_valid_addr_spec(match["email"]):
+        return match["name"].strip(), match["email"]
+    return None
+
+
 def _addr_tuple_to_dict(name: str, addr: str) -> EmailAddress:
     """Bridge the ``(name, email)`` shape returned by
-    :func:`jmap_email.parse_address` to a JMAP ``EmailAddress`` dict.
+    :func:`jmap_email.parse_address` to a JMAP ``EmailAddress`` dict, undoing
+    Outlook's display artefacts.
+
+    ``addr`` is repaired when Outlook wrapped it in quotes (see
+    :func:`_unquote_address`) or wrote it as ``Name (addr)``; ``name`` drops
+    surrounding quotes and the ``(addr)`` suffix.
+    When ``name`` is empty or is the raw string the address was repaired from,
+    it takes the name salvaged from it instead. Anything else is passed through
+    untouched: an address that is still invalid fails the whole message at
+    compose time rather than being dropped or rewritten.
     """
-    return {"name": name, "email": addr}
+    raw_addr = addr
+    salvaged_name = ""
+    unquoted = _unquote_address(addr)
+    if unquoted:
+        addr = unquoted
+    elif not is_valid_addr_spec(addr):
+        split = _split_outlook_display(addr)
+        if split:
+            salvaged_name, addr = split
+    if (not name or name == raw_addr) and addr != raw_addr:
+        name = salvaged_name
+    split = _split_outlook_display(name)
+    if split:
+        name = split[0]
+    return {"name": _unquote(name), "email": addr}
 
 
 def _resolve_smtp_address(item) -> str | None:
@@ -1098,15 +1188,6 @@ def reconstruct_eml(
         if sender_dict:
             jmap_data["from"] = [sender_dict]
 
-        # sentAt
-        try:
-            if message.delivery_time:
-                jmap_data["sentAt"] = message.delivery_time.isoformat()
-            elif message.client_submit_time:
-                jmap_data["sentAt"] = message.client_submit_time.isoformat()
-        except Exception:
-            logger.debug("Failed to read message date")
-
     # Recipients fallback chain (MAPI recipient table → PR_DISPLAY_*).
     # Exchange Online sometimes emits transport headers without To/Cc/Bcc
     # lines, and PST exports often leave the recipient table empty even on
@@ -1132,14 +1213,19 @@ def reconstruct_eml(
         else:
             jmap_data["messageId"] = [_synthesize_message_id(message, recipient_email)]
 
-    # ``sentAt`` fallback: the composer is strict-by-design and rejects
-    # a missing Date header. For archive imports we'd rather log a
-    # warning and surface a sentinel epoch than fail the whole message.
-    # The synthesized date is the Unix epoch so a downstream UI can flag
-    # the "no original date" state explicitly.
+    # ``sentAt`` fallback (no transport headers, or headers without a Date):
+    # the composer is strict-by-design and rejects a missing Date header.
+    # Take the record's own timestamps, and only when it has none log a
+    # warning and use the Unix epoch rather than fail the whole message.
     if "sentAt" not in jmap_data:
-        logger.warning("PST message has no resolvable Date; falling back to epoch")
-        jmap_data["sentAt"] = "1970-01-01T00:00:00+00:00"
+        timestamp = _get_message_timestamp(
+            message, _SENT_TIME_ATTRS + _RECORD_TIME_ATTRS
+        )
+        if timestamp is not None:
+            jmap_data["sentAt"] = timestamp.isoformat()
+        else:
+            logger.warning("PST message has no resolvable Date; falling back to epoch")
+            jmap_data["sentAt"] = "1970-01-01T00:00:00+00:00"
 
     # No sender resolvable: synthesize one using the recipient's domain so
     # compose_email accepts the message. inbound_create.py keeps this value
@@ -1463,17 +1549,23 @@ def _collect_pst_plan(
 
 
 def _reconstruct_plan_item(
-    item, store_email: str | None = None, recipient_email: str | None = None
+    item,
+    store_email: str | None = None,
+    recipient_email: str | None = None,
+    *,
+    reasons: dict[str, int] | None = None,
 ) -> tuple[str, str, int, int | None, bytes | None]:
     """Reconstruct one plan item into ``(folder_type, folder_path, flags,
     flag_status, eml_bytes)``. ``eml_bytes`` is ``None`` when the message cannot
     be read from libpff or reconstruction raised — the caller counts those as
-    failures rather than silently dropping them."""
+    failures rather than silently dropping them. When ``reasons`` is passed,
+    each failure bumps its category (same out-param contract as ``deliver``)."""
     folder_ref, msg_idx, folder_type, folder_path, flags, flag_status = item
     try:
         message = folder_ref.get_sub_message(msg_idx)
     except Exception:
         logger.warning("Failed to read message %d in folder %s", msg_idx, folder_path)
+        bump_reason(reasons, FAILURE_UNPARSEABLE)
         return folder_type, folder_path, flags, flag_status, None
     try:
         eml_bytes = reconstruct_eml(
@@ -1486,6 +1578,19 @@ def _reconstruct_plan_item(
         logger.warning(
             "Skipping message %d in folder %s: %s", msg_idx, folder_path, exc
         )
+        bump_reason(reasons, FAILURE_OVERSIZED)
+        return folder_type, folder_path, flags, flag_status, None
+    except ComposeError as exc:
+        # Also an expected outcome: the composer refuses a malformed value from
+        # the archive (recipient address, Content-ID…). Only the error type is
+        # logged — its message echoes that value, i.e. names and addresses.
+        logger.warning(
+            "Skipping message %d in folder %s: rejected by the composer (%s)",
+            msg_idx,
+            folder_path,
+            type(exc).__name__,
+        )
+        bump_reason(reasons, FAILURE_UNPARSEABLE)
         return folder_type, folder_path, flags, flag_status, None
     except Exception:
         logger.exception(
@@ -1493,6 +1598,7 @@ def _reconstruct_plan_item(
             msg_idx,
             folder_path,
         )
+        bump_reason(reasons, FAILURE_UNPARSEABLE)
         return folder_type, folder_path, flags, flag_status, None
     return folder_type, folder_path, flags, flag_status, eml_bytes
 
@@ -1577,13 +1683,15 @@ def run_pst(channel, state) -> tuple[int, int, int]:
             def deliver_item(item, reasons):
                 folder_type, folder_path, message_flags, flag_status, eml_bytes = (
                     _reconstruct_plan_item(
-                        item, store_email=store_email, recipient_email=str(recipient)
+                        item,
+                        store_email=store_email,
+                        recipient_email=str(recipient),
+                        reasons=reasons,
                     )
                 )
                 if eml_bytes is None:
-                    # Couldn't rebuild a valid .eml from the PST record (corrupt
-                    # or unreadable) — same bucket as a message that won't parse.
-                    bump_reason(reasons, FAILURE_UNPARSEABLE)
+                    # Couldn't rebuild a .eml from the PST record; the failure
+                    # category was already tallied by _reconstruct_plan_item.
                     return False
                 labels, flags, is_sender = _pst_labels_flags(
                     folder_type, folder_path, message_flags, flag_status

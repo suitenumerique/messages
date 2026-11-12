@@ -208,6 +208,7 @@ class MailboxAbilities(models.TextChoices):
         "Can manage mailbox message templates",
     )
     CAN_IMPORT_MESSAGES = "import_messages", "Can import messages"
+    CAN_EMPTY_TRASH = "empty_trash", "Can empty the trashbin (trashed + spam)"
 
 
 class ThreadAbilities(models.TextChoices):
@@ -477,6 +478,15 @@ class MessageTemplateTypeChoices(models.IntegerChoices):
     AUTOREPLY = 3, "autoreply"
 
 
+class ServiceMessageVariantChoices(models.TextChoices):
+    """Visual variants of the service message banner, matching the ui-kit
+    HeaderBanner colors."""
+
+    BRAND = "brand", "Information"
+    WARNING = "warning", "Warning"
+    ERROR = "error", "Error"
+
+
 class PushPlatformChoices(models.TextChoices):
     """Push delivery transports a push channel can target.
 
@@ -549,3 +559,24 @@ class PreviewRefusalCode(StrEnum):
 
     SUSPICIOUS = "suspicious"
     UNSUPPORTED = "unsupported"
+
+
+class TrashbinAllowEmpty(StrEnum):
+    """Accepted values for ``settings.TRASHBIN_ALLOW_EMPTY``.
+
+    Who may manually empty a trashbin folder — an irreversible bulk delete of
+    every trashed (or spam) message in a mailbox. Independent of the nightly
+    cutoff sweep, which always runs.
+
+    Deliberately a plain ``StrEnum`` rather than a ``models.TextChoices``: this
+    is a deployment policy read from settings and never stored on a model
+    field, so it stays out of the ORM entirely. Adding a member here is a code
+    change with no schema impact and generates no migration.
+    """
+
+    #: Nobody; only the nightly cutoff sweep deletes.
+    NEVER = "never"
+    #: Mailbox role ADMIN.
+    ADMIN = "admin"
+    #: Mailbox role EDITOR and above.
+    EDITOR = "editor"

@@ -2,9 +2,10 @@ import { createContext, PropsWithChildren, useContext, useEffect, useMemo, useRe
 import { Mailbox, Message, PaginatedThreadList, Thread, ThreadEvent, ThreadsListParams, useLabelsList, useMailboxesList, useMessagesList, useThreadsEventsList, useThreadsListInfinite, useThreadsRetrieve, getThreadsEventsListQueryKey, getThreadsRetrieveQueryKey } from "../api/gen";
 import { FetchStatus, InfiniteData, QueryStatus, RefetchOptions, useQueryClient } from "@tanstack/react-query";
 import type { threadsListResponse } from "../api/gen/threads/threads";
-import { useLocation, useNavigate, useParams } from "@tanstack/react-router";
+import { useLocation, useNavigate, useParams, useRouter } from "@tanstack/react-router";
 import usePrevious from "@/hooks/use-previous";
 import { useUrlSearchParams } from "@/hooks/use-url-search-params";
+import { getThreadsStatsQueryKey } from "@/hooks/use-threads-stats";
 import { MAILBOX_FOLDERS } from "../layouts/components/mailbox-panel/components/mailbox-list";
 import {
     getMailboxThreadsListQueryKeyPrefix,
@@ -12,12 +13,14 @@ import {
     patchMessagesInCache,
     patchThreadsInCache,
     removeMessagesFromCache,
+    ThreadPins,
     trimTrailingEmptyPages,
     type MessagePatcher,
     type ThreadPatcher,
 } from "./mailbox-cache";
 import { threadsList } from "../api/gen/threads/threads";
 import { APIError } from "../api/api-error";
+import { toastError } from "../api/query-client";
 import { useAuth } from "../auth";
 import MailboxHelper from "@/features/utils/mailbox-helper";
 
@@ -47,6 +50,7 @@ type MailboxContextType = {
     // Lets the thread view unmount synchronously instead of waiting for the async navigation.
     unmountThreadViewNeeded: boolean;
     unselectThread: () => void;
+    unselectThreadIfAmong: (threadIds: readonly Thread['id'][]) => void;
     loadNextThreads: () => Promise<unknown>;
     /** Patch threads in every cached list variant of the current mailbox AND
      *  pin them so they survive the next refetch even when filtered out. */
@@ -88,26 +92,6 @@ type MailboxContextType = {
 }
 
 export const isThreadEvent = (item: TimelineItem | null): item is Extract<TimelineItem, { type: 'event' }> => item?.type === 'event';
-
-/**
- * Canonical query key for the threads stats query.
- *
- * Single source of truth shared by:
- *   - query definition sites (`useThreadsStatsRetrieve` call sites that
- *     pass `queryParams` to scope the cache per filter/label)
- *   - invalidation / optimistic-update sites that target the whole
- *     per-mailbox stats subtree (omit `queryParams` for prefix matching)
- *
- * Keep in sync with the `invalidateThreadsStats` predicate, which relies
- * on `queryParams` being the last entry to filter out `label_slug=*` keys.
- */
-export const getThreadsStatsQueryKey = (
-    mailboxId: string | undefined,
-    queryParams?: string,
-) => {
-    const base = ['threads', 'stats', mailboxId];
-    return queryParams !== undefined ? [...base, queryParams] : base;
-};
 
 /** Minimal subset of URLSearchParams we read from. Accepts both
  *  `URLSearchParams` and Next's `ReadonlyURLSearchParams`. */
@@ -182,6 +166,24 @@ export const THREADS_LIST_STRING_FILTERS = [
     "search",
 ] as const satisfies ReadonlyArray<keyof ThreadsListParams>;
 
+/**
+ * Whether the thread an action was fired from must be left once it applies.
+ * @param firedThreadId - the thread open when the action was fired.
+ * @param openThreadId - the thread open now: the user may have opened another
+ * one while the action was settling.
+ * @param threadIds - the threads acted upon; when omitted, the open thread is
+ * considered one of them.
+ * @returns true if that thread is still open and was acted upon.
+ */
+export const isOpenThreadActedUpon = (
+    firedThreadId: Thread['id'] | undefined,
+    openThreadId: Thread['id'] | undefined,
+    threadIds?: readonly Thread['id'][],
+): boolean =>
+    !!firedThreadId
+    && firedThreadId === openThreadId
+    && (!threadIds || threadIds.includes(firedThreadId));
+
 const MailboxContext = createContext<MailboxContextType>({
     mailboxes: null,
     threads: null,
@@ -193,6 +195,7 @@ const MailboxContext = createContext<MailboxContextType>({
     unmountThreadViewNeeded: false,
     loadNextThreads: async () => {},
     unselectThread: () => {},
+    unselectThreadIfAmong: () => {},
     pinThreads: () => {},
     unpinThreads: () => {},
     patchMessages: () => {},
@@ -249,10 +252,11 @@ const MailboxContext = createContext<MailboxContextType>({
 export const MailboxProvider = ({ children }: PropsWithChildren) => {
     const queryClient = useQueryClient();
     const navigate = useNavigate();
+    const router = useRouter();
     const location = useLocation();
     const routeParams = useParams({ strict: false }) as { mailboxId?: string; threadId?: string };
     const { user } = useAuth();
-    const pinnedThreadIdsRef = useRef(new Set<string>());
+    const threadPinsRef = useRef(new ThreadPins());
     const [unmountThreadViewNeeded, setUnmountThreadViewNeeded] = useState(false);
     const searchParams = useUrlSearchParams();
     const previousSearchParams = usePrevious(searchParams);
@@ -268,8 +272,19 @@ export const MailboxProvider = ({ children }: PropsWithChildren) => {
             // who opted in, so the poll has to keep running for everyone else.
             refetchIntervalInBackground: true,
             refetchOnWindowFocus: true,
+            // The focus refetch often fires before the network is back after
+            // the device wakes up. A failed poll keeps the mailboxes on screen
+            // and the next tick retries it, so its error is only worth a toast
+            // when there is nothing to show yet (see below).
+            meta: { noGlobalError: true },
         },
     });
+
+    useEffect(() => {
+        if (mailboxQuery.isError && mailboxQuery.data === undefined) {
+            toastError(mailboxQuery.error);
+        }
+    }, [mailboxQuery.isError, mailboxQuery.data, mailboxQuery.error]);
 
     const selectedMailbox = useMemo(() => {
         if (!mailboxQuery.data?.data.length) return null;
@@ -323,7 +338,9 @@ export const MailboxProvider = ({ children }: PropsWithChildren) => {
                     if (value !== null) params[key] = value;
                 }
                 try {
-                    return await threadsList(params, { signal });
+                    const response = await threadsList(params, { signal });
+                    threadPinsRef.current.release(response.data.results);
+                    return response;
                 } catch (error) {
                     // Intercept the 404 DRF raises for out-of-range pages. The list
                     // may legitimately shrink between two refetches (e.g. user bulk
@@ -354,7 +371,7 @@ export const MailboxProvider = ({ children }: PropsWithChildren) => {
                 const merged = mergePinnedThreads(
                     oldData as InfiniteData<threadsListResponse> | undefined,
                     newData as InfiniteData<threadsListResponse>,
-                    pinnedThreadIdsRef.current,
+                    threadPinsRef.current.pinnedIds,
                 );
                 return trimTrailingEmptyPages(merged);
             },
@@ -378,6 +395,7 @@ export const MailboxProvider = ({ children }: PropsWithChildren) => {
     }, [threadsQuery.data?.pages]);
 
     const threadIdFromRoute = typeof routeParams.threadId === 'string' ? routeParams.threadId : undefined;
+    const previousThreadIdFromRoute = usePrevious(threadIdFromRoute);
 
     const threadInList = useMemo(() => {
         if (!threadIdFromRoute) return null;
@@ -485,7 +503,7 @@ export const MailboxProvider = ({ children }: PropsWithChildren) => {
     const pinThreads = (threadIds: Thread['id'][], patcher: ThreadPatcher) => {
         if (threadIds.length === 0) return;
         patchThreadsInCache(queryClient, selectedMailbox?.id, threadIds, patcher);
-        threadIds.forEach((id) => pinnedThreadIdsRef.current.add(id));
+        threadPinsRef.current.pin(threadIds);
     };
 
     /**
@@ -493,10 +511,11 @@ export const MailboxProvider = ({ children }: PropsWithChildren) => {
      * authoritative again. Mutations that move a thread out of the current
      * view (archive, spam, trash, draft delete/send) call this BEFORE
      * invalidating, otherwise `mergePinnedThreads` would re-insert the thread
-     * the server just filtered out.
+     * the server just filtered out. Pins requested by mutations settling
+     * afterwards are ignored until the server lists the thread again.
      */
     const unpinThreads = (threadIds: Thread['id'][]) => {
-        threadIds.forEach((id) => pinnedThreadIdsRef.current.delete(id));
+        threadPinsRef.current.unpin(threadIds);
     };
 
     const patchMessages = (threadId: Thread['id'], patcher: MessagePatcher) => {
@@ -560,12 +579,12 @@ export const MailboxProvider = ({ children }: PropsWithChildren) => {
         await queryClient.invalidateQueries({ queryKey: labelsQuery.queryKey });
     }
 
-    /**
-     * Unselect the current thread and navigate to the mailbox page if needed
-     */
-    const unselectThread = () => {
-        const threadId = routeParams.threadId;
-        if (selectedMailbox && threadId && location.pathname.includes(threadId)) {
+    const leaveOpenThread = (threadIds?: readonly Thread['id'][]) => {
+        // Often called once a mutation settles, from a closure of the render
+        // that fired it: the current route must be read live or the user gets
+        // kicked out of the thread they have opened since.
+        const openThreadId = router.getMatchedRoutes(router.latestLocation.pathname).routeParams.threadId;
+        if (selectedMailbox && isOpenThreadActedUpon(routeParams.threadId, openThreadId, threadIds)) {
             // Unmount the thread view now (tearing down its auto-mark-as-read
             // observer before the mutation's cache patch lands), then clear the
             // flag once navigation has settled and `selectedThread` is null on
@@ -575,6 +594,19 @@ export const MailboxProvider = ({ children }: PropsWithChildren) => {
                 .finally(() => setUnmountThreadViewNeeded(false));
         }
     }
+
+    /**
+     * Unselect the current thread and navigate to the mailbox page if needed.
+     * Takes no argument so it can be passed as-is to `onClick`/`onSuccess`.
+     */
+    const unselectThread = () => leaveOpenThread();
+
+    /**
+     * Same as `unselectThread`, but only if the open thread is among the
+     * threads acted upon.
+     * @param threadIds - the threads acted upon.
+     */
+    const unselectThreadIfAmong = (threadIds: readonly Thread['id'][]) => leaveOpenThread(threadIds);
 
     const context = {
         mailboxes: mailboxQuery.data?.data ?? null,
@@ -586,6 +618,7 @@ export const MailboxProvider = ({ children }: PropsWithChildren) => {
         selectedThread,
         unmountThreadViewNeeded,
         unselectThread,
+        unselectThreadIfAmong,
         loadNextThreads: threadsQuery.fetchNextPage,
         pinThreads,
         unpinThreads,
@@ -731,7 +764,7 @@ export const MailboxProvider = ({ children }: PropsWithChildren) => {
     // Clear pinned thread IDs when filters or mailbox change so the next
     // refetch shows the pure server-side list.
     useEffect(() => {
-        pinnedThreadIdsRef.current.clear();
+        threadPinsRef.current.clear();
     }, [selectedMailbox?.id, searchParams.toString()]);
 
     useEffect(() => {
@@ -757,7 +790,12 @@ export const MailboxProvider = ({ children }: PropsWithChildren) => {
             });
         }
 
-        unselectThread();
+        // Changing folder closes the open thread. A navigation that opens a
+        // thread in another folder changes both at once (e.g. a link to a spam
+        // thread from the inbox): that thread must stay open.
+        if (threadIdFromRoute === previousThreadIdFromRoute) {
+            unselectThread();
+        }
     }, [hasSearchParamsChanged])
 
     return <MailboxContext.Provider value={context}>{children}</MailboxContext.Provider>

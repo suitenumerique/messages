@@ -7,7 +7,8 @@
  */
 
 /**
- * The Web Push subscription key pair (``p256dh`` and ``auth``).
+ * The key pair (``p256dh`` and ``auth``) message previews are encrypted for:
+a Web Push subscription's, or the one a native app generated.
  */
 export type WebPushKeysRequest = {
   /** @minLength 1 */

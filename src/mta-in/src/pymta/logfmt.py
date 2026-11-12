@@ -1,23 +1,16 @@
 """logfmt log formatting.
 
-One line per event, ``key=value`` pairs, machine-parseable without a grammar:
+One line per event, ``key=value`` pairs:
 
     ts=2026-08-24T09:41:02.113Z level=info logger=pymta.server event=smtp_listening
     bind=0.0.0.0:25 hostname=mta-in size_limit=10485760
 
-Field names follow Elastic Common Schema where ECS has a name for the thing,
-spelled with underscores instead of dots. logfmt itself standardises nothing but
-the syntax, so the choice is between ECS and OpenTelemetry semantic conventions;
-both are dotted, and Loki rewrites a dot to an underscore when it turns a
-logfmt key into a label, so ``client_ip`` *is* ECS ``client.ip`` by the time it
-is queryable. Writing the underscore ourselves keeps the line and the label
-identical instead of leaving the reader to guess which spelling to search.
+Field names follow Elastic Common Schema where it has one, with underscores
+for its dots: Loki turns a dot into an underscore when a logfmt key becomes a
+label, so writing ``client_ip`` keeps the line and the label identical.
 
-Both conventions insist a network address names whose it is. A bare ``ip`` is
-ambiguous the moment a proxy is involved, which for an inbound MX is always:
-``client_ip`` is the sender, ``wire_peer`` is the load balancer that relayed it.
-OTel says this explicitly, that ``client.address`` should be the address behind
-any intermediary, which is exactly what our PROXY-protocol handling produces.
+An address field says whose address it is, since a proxy is usually involved:
+``client_ip`` is the sender, ``wire_peer`` the load balancer that relayed it.
 
     ours                 ECS
     ts                   @timestamp
@@ -36,56 +29,66 @@ any intermediary, which is exactly what our PROXY-protocol handling produces.
     error_stack_trace    error.stack_trace
     duration_ms          event.duration, which ECS counts in nanoseconds
 
-The four short ones at the top keep their conventional logfmt spellings rather
-than ``log_level`` and friends: they are what every logfmt reader already greps
-for, ``@timestamp`` is not a legal label name anywhere, and a pipeline that
-wants strict ECS renames five keys.
+``ts``, ``level``, ``logger`` and ``event`` keep the usual logfmt spellings:
+readers grep for them, and ``@timestamp`` is not a legal label name. A
+pipeline that wants strict ECS renames five keys.
 
-Every record carries ``event``, a short stable snake_case identifier, and its
-detail as separate fields. ``event`` is what you group and alert on, so it never
-embeds a value that varies: ``event=mda_unhealthy`` finds every occurrence
-whatever the status code or endpoint was.
+Every record has ``event``, a stable snake_case identifier, and its detail as
+separate fields. ``event`` is what is grouped and alerted on, so it holds no
+value that varies: ``event=mda_unhealthy`` finds every occurrence whatever the
+status or the endpoint.
 
-``msg`` is optional prose, written as ``extra={"detail": ...}`` because logging
-reserves the name ``msg`` itself. It is present only where the identifier and
-the fields do not already say it: what to do about it, or why it happened. Most lines do not
-need one and do not carry one. It never repeats a value that is already its own
-field, because a sentence with the status code baked in is a sentence nobody can
-group by, and it drifts the moment someone rewords it.
+``msg`` is optional prose, passed as ``extra={"detail": ...}`` because logging
+reserves ``msg``. Present only where the identifier and the fields do not say
+it: what to do, or why it happened. It repeats no value that has its own
+field.
 
     ts=... level=warning logger=pymta.metrics event=metrics_unauthenticated
     msg="set PYMTA_METRICS_API_KEY or restrict the port" bind=0.0.0.0:9100
 
-That is ECS's split: ``event`` is ``event.action``, ``msg`` is ``message``.
-
-Levels are assigned by *who can cause the line*, not by how alarming it reads:
+Levels follow who can cause the line:
 
 ``error``
-    A fault in this process. Nobody outside can provoke it, so it always
-    deserves attention. Carries a traceback.
+    A fault in this process, which nobody outside can cause. Carries a
+    traceback.
 ``warning``
-    An operational problem an operator should look at: the MDA is unhealthy,
-    the configuration is unsafe, a deadline was missed. Caused by our
-    infrastructure, not by a peer.
+    A problem for an operator: the MDA is unhealthy, the configuration is
+    unsafe, a deadline was missed. Caused by our infrastructure, not a peer.
 ``info``
-    Lifecycle. Startup, shutdown, drain, reload. Low, bounded volume.
+    Lifecycle: startup, shutdown, drain, reload. Low, bounded volume. And the
+    mail audit trail, three exceptions to the rule below: ``message_*`` (one
+    per message), ``reject`` (capped by the per-session error budget) and
+    ``session_closed`` (one per admitted connection that issued a command).
+    Nothing caps the connection rate, so ``PYMTA_LOG_SESSIONS`` can drop the
+    last two to ``debug`` under a flood. Without them "the mail from X never
+    arrived" has no answer in the log.
 ``debug``
-    Anything an unauthenticated peer can trigger at will: bad addresses,
+    Anything an unauthenticated peer can cause at will: bad addresses,
     refused connections, blocked senders, timeouts on their side.
 
-That last rule is a security property, not a style preference. Every one of
-those events is already counted in a Prometheus metric, which is the right
-place for volume. Logging them above ``debug`` hands anyone on the internet a
-way to fill the disk or the log bill of whatever ships these lines, at the cost
-of opening TCP connections. Reach for the metric to see how often something
-happens, and ``PYMTA_LOG_LEVEL=DEBUG`` to see the individual events while you
-are actually looking.
+The last rule is for security: above ``debug``, those lines would let anyone
+fill the disk or the log bill by opening TCP connections. Each is counted in a
+Prometheus metric, which is where to read volumes; ``PYMTA_LOG_LEVEL=DEBUG``
+shows the individual events.
 """
 
 from __future__ import annotations
 
 import datetime as _datetime
+import functools
 import logging
+import logging.handlers
+import queue
+import sys
+import threading
+from collections.abc import Callable
+
+from . import metrics
+
+# Lines waiting for the writer thread: see :func:`configure`.
+_QUEUE_SIZE = 10000
+# Seconds the exit waits for the queued lines to be written.
+_STOP_TIMEOUT = 2.0
 
 # Attributes LogRecord always carries. Anything else on the record was put
 # there by a caller through ``extra=`` and is emitted as a field.
@@ -97,13 +100,13 @@ _STANDARD = frozenset(
 
 _NEEDS_QUOTING = frozenset(' "=\\\n\r\t')
 
-# The escapes worth spelling out, because a reader recognises them. Everything
-# else unprintable goes to \uXXXX; see :func:`quote`.
+# Escapes a reader recognises. Anything else unprintable is written \uXXXX:
+# see :func:`quote`.
 _SIMPLE_ESCAPES = {"\\": "\\\\", '"': '\\"', "\n": "\\n", "\r": "\\r", "\t": "\\t"}
 
-# Callers pass prose as ``extra={"detail": ...}`` and it is emitted as ``msg``.
-# The obvious spellings are not available: ``logging`` reserves both ``msg`` and
-# ``message`` on LogRecord and raises KeyError if ``extra`` tries to set either.
+# Prose is passed as ``extra={"detail": ...}`` and written as ``msg``:
+# ``logging`` reserves ``msg`` and ``message`` on LogRecord and raises KeyError
+# when ``extra`` sets either.
 _PROSE = "detail"
 
 
@@ -113,24 +116,24 @@ def _escape(char: str) -> str:
         return simple
     if char.isprintable():
         return char
-    return f"\\u{ord(char):04x}"
+    # Four digits, or eight past the BMP: five would read back as a
+    # four-digit escape followed by a literal character.
+    return f"\\u{ord(char):04x}" if ord(char) <= 0xFFFF else f"\\U{ord(char):08x}"
 
 
 def quote(value: object) -> str:
     """Render one value as a logfmt token.
 
-    ``None`` and booleans get their lowercase spellings so a consumer can read
-    them back as the types they were, rather than as Python's ``None``/``True``.
+    ``None`` and booleans are written lowercase, so a consumer can read them
+    back as what they were.
 
-    Everything unprintable is escaped, not only CR and LF. logfmt knows just
-    those two, but ``str.splitlines`` also breaks on VT, FF, NEL, U+2028 and
-    U+2029, so a consumer written in Python reads a line break we never emitted
-    and a record we never wrote. Under SMTPUTF8 those characters arrive inside
-    envelope addresses and reach this function through ``sender``, which would
-    make a forged log line cost one MAIL FROM. ESC goes the same way: a value
-    should not be able to repaint the terminal of whoever tails the log.
+    Everything unprintable is escaped, not only CR and LF: ``str.splitlines``
+    also breaks on VT, FF, NEL, U+2028 and U+2029, and under SMTPUTF8 those
+    arrive inside envelope addresses, where one MAIL FROM would forge a log
+    line for a consumer written in Python. ESC too, so a value cannot repaint
+    the terminal of someone tailing the log.
 
-    This is the only place that decides, so a caller never has to sanitise.
+    Callers never have to sanitise a value themselves.
     """
     if value is None:
         return "null"
@@ -146,13 +149,39 @@ def quote(value: object) -> str:
     return text
 
 
-class LogfmtFormatter(logging.Formatter):
-    """Render records as logfmt. Never emits a multi-line record.
+def clip(value: object, limit: int, *, tail: int = 0) -> str | None:
+    """Bound a peer-supplied value before it becomes a log field.
 
-    A traceback is folded into a single escaped ``stack`` field. Newlines in a
-    log line would split one event into many as far as any collector is
-    concerned, which is how a traceback ends up looking like a dozen unparseable
-    records.
+    :func:`quote` makes a value safe but leaves its length, which the peer
+    chooses. The ``...+N`` marker says how many characters were dropped.
+
+    ``tail`` keeps that many characters from the end, out of ``limit``: for an
+    address, the domain stays searchable when the local-part is the long half
+    (an SRS return path).
+    """
+    if value is None:
+        return None
+    text = value if isinstance(value, str) else str(value)
+    if len(text) <= limit:
+        return text
+    dropped = len(text) - limit
+    if tail <= 0:
+        return f"{text[:limit]}...+{dropped}"
+    return f"{text[: limit - tail]}...+{dropped}...{text[-tail:]}"
+
+
+def clip_list(items: list[str], limit: int) -> str:
+    """Comma-join ``items``, naming at most ``limit`` of them."""
+    if len(items) <= limit:
+        return ",".join(items)
+    return f"{','.join(items[:limit])},+{len(items) - limit} more"
+
+
+class LogfmtFormatter(logging.Formatter):
+    """Render records as logfmt, always on one line.
+
+    A traceback goes into one escaped ``error_stack_trace`` field: a collector
+    would read each of its lines as a separate record.
     """
 
     def format(self, record: logging.LogRecord) -> str:
@@ -163,8 +192,7 @@ class LogfmtFormatter(logging.Formatter):
             f"logger={record.name}",
             f"event={quote(record.getMessage())}",
         ]
-        # Prose first among the extras, so it sits beside the identifier it
-        # explains rather than after ten machine fields.
+        # Prose first among the extras, next to the identifier it explains.
         if _PROSE in record.__dict__:
             parts.append(f"msg={quote(record.__dict__[_PROSE])}")
         for key, value in record.__dict__.items():
@@ -179,19 +207,12 @@ class LogfmtFormatter(logging.Formatter):
         return " ".join(parts)
 
 
-# Only our own records reach the handler.
-#
-# The dependencies are not merely noisy. aiosmtpd (``mail.log``) logs every
-# command line at INFO, so one envelope address per RCPT, and the entire message
-# body at DEBUG, one ``DATA readline`` record per line of mail; it logs an
-# unrecognised command at WARNING, which lets a peer pick our log rate. httpcore
-# and httpx trace every MDA request at DEBUG, headers included, at roughly 60
-# lines per message.
-#
-# An allowlist rather than a list of offenders, so a dependency added later is
-# silent without anyone remembering to gag it. The cost is that useful
-# third-party records go too, asyncio's "task exception was never retrieved"
-# being the one worth naming; PYMTA_LOG_VERBOSE_LIBRARIES brings them back.
+# Only our own records reach the handler: httpcore and httpx trace every MDA
+# request at DEBUG, headers included, about 60 lines per message. An
+# allowlist, so a dependency added later is silent too. Useful third-party
+# records go as well; PYMTA_LOG_VERBOSE_LIBRARIES brings them back. What
+# asyncio reports about our own tasks and callbacks is logged by
+# ``server._log_unhandled``.
 _OURS = "pymta"
 
 
@@ -202,20 +223,65 @@ class OwnRecordsOnly(logging.Filter):
         return record.name == _OURS or record.name.startswith(_OURS + ".")
 
 
-def configure(level: str, stream=None, verbose_libraries: bool = False) -> None:
-    """Install the logfmt formatter as the only handler on the root logger.
+class _QueueHandler(logging.handlers.QueueHandler):
+    """Formats a record where it is logged and leaves the write to a thread.
 
-    Replaces existing handlers rather than adding to them: two handlers would
-    print every line twice, once in each format, which defeats the point of
-    committing to a parseable one.
-
-    ``verbose_libraries`` lifts the filter that keeps third-party records out.
-    See :class:`OwnRecordsOnly` for what that lets back in, and why you would
-    not leave it on.
+    ``QueueHandler.prepare`` formats with this handler's formatter, so what
+    is queued is the finished line.
     """
-    import sys
 
-    handler = logging.StreamHandler(stream or sys.stdout)
+    def enqueue(self, record: logging.LogRecord) -> None:
+        try:
+            self.queue.put_nowait(record)
+        except queue.Full:
+            metrics.LOG_RECORDS_DROPPED.inc()
+
+
+class _Writer(logging.handlers.QueueListener):
+    """Waits for room for its stop marker: the base class gives up on a full
+    queue, and the lines in it would not be written."""
+
+    def enqueue_sentinel(self) -> None:
+        self.queue.put(self._sentinel)
+
+
+def _stop_writer(writer: _Writer) -> None:
+    """Write what is queued, then end the thread. For ``_STOP_TIMEOUT`` at most.
+
+    A stream that is not being read must not hold the exit: the writer is
+    then stuck in a write. Both threads are daemons.
+    """
+    # ``stop`` waits for room in the queue, then for the writer, both without
+    # a timeout: it is waited for here.
+    stopper = threading.Thread(target=writer.stop, daemon=True)
+    stopper.start()
+    stopper.join(_STOP_TIMEOUT)
+
+
+def configure(
+    level: str, stream=None, verbose_libraries: bool = False, *, in_thread: bool = False
+) -> Callable[[], None] | None:
+    """Make the logfmt formatter the only handler on the root logger.
+
+    Existing handlers are removed: two would print every line twice.
+
+    ``verbose_libraries`` lets third-party records through: see
+    :class:`OwnRecordsOnly`.
+
+    With ``in_thread`` the lines are written by a thread, so the event loop
+    never waits on a stream that is read slowly: every session would wait
+    with it. Up to ``_QUEUE_SIZE`` lines are held for it and the rest are
+    dropped and counted. Returns what to call before exiting, to have the
+    queued lines written: see :func:`_stop_writer`.
+    """
+    handler: logging.Handler = logging.StreamHandler(stream or sys.stdout)
+    stop = None
+    if in_thread:
+        records: queue.Queue = queue.Queue(_QUEUE_SIZE)
+        writer = _Writer(records, handler)
+        writer.start()
+        stop = functools.partial(_stop_writer, writer)
+        handler = _QueueHandler(records)
     handler.setFormatter(LogfmtFormatter())
     root = logging.getLogger()
     for existing in root.handlers[:]:
@@ -223,7 +289,8 @@ def configure(level: str, stream=None, verbose_libraries: bool = False) -> None:
     root.addHandler(handler)
     root.setLevel(getattr(logging, level))
     if not verbose_libraries:
-        # On the handler, not the root logger: a filter on a logger is not
-        # consulted for records that propagate up from a child, which is
-        # exactly how every dependency's output arrives here.
+        # On the handler: a logger's filter is not applied to records that
+        # propagate up from a child logger, which is how the dependencies'
+        # records arrive.
         handler.addFilter(OwnRecordsOnly())
+    return stop

@@ -155,10 +155,11 @@ services:
       - KEYCLOAK_BASE_URL=http://keycloak:8802
       - DOCKER_HOST=tcp://docker-sock-proxy:2375
       - CI=${CI:-false}
-      - PW_TEST_HTML_REPORT_OPEN=${PW_TEST_HTML_REPORT_OPEN:-false}
+      - PW_TEST_HTML_REPORT_OPEN=${PW_TEST_HTML_REPORT_OPEN:-never}
     volumes:
       - ./src:/app/src
       - ./playwright.config.ts:/app/playwright.config.ts
+      - ./playwright.theme.config.ts:/app/playwright.theme.config.ts
       - ../../deploy/env:/app/deploy/env:ro
     depends_on:
       docker-sock-proxy:

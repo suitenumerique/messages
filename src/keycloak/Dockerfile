@@ -17,12 +17,12 @@ EOR
 FROM alpine:3.24@sha256:294b683cb724975bec92580e1e685676bd4b50bda910ddb8c51d4cabeaec77e6 AS tools-download
 ARG TARGETARCH
 
-ARG CADDY_VERSION=2.11.4
+ARG CADDY_VERSION=2.11.9
 # When upgrading, run
-# for arch in amd64 arm64; do printf "CADDY_SHA256_%s=%s\n" "$(echo $arch | tr a-z A-Z)" "$(wget -qO- "https://github.com/caddyserver/caddy/releases/download/v2.11.4/caddy_2.11.4_linux_${arch}.tar.gz" | sha256sum | cut -d' ' -f1)"; done
+# for arch in amd64 arm64; do printf "CADDY_SHA256_%s=%s\n" "$(echo $arch | tr a-z A-Z)" "$(wget -qO- "https://github.com/caddyserver/caddy/releases/download/v2.11.9/caddy_2.11.9_linux_${arch}.tar.gz" | sha256sum | cut -d' ' -f1)"; done
 # and update checksums accordingly
-ARG CADDY_SHA256_AMD64=527fbf917c39189a1e3b31d34fa955601680b2d5c8055d2a87b8b9588dec7bb9
-ARG CADDY_SHA256_ARM64=52d42ae12b3462097e9868da6dfed3c9648ae12edd3b3638102312af84cb6904
+ARG CADDY_SHA256_AMD64=5b8cb7faf8726a2028ad96a66e54e6e81e8f361bc6175e5d22bbd997cc5177fb
+ARG CADDY_SHA256_ARM64=5e377cff994fc9362a6fcf695c53f226cfca3a3ef85bd3a3687cf252d6310165
 RUN wget -qO /tmp/caddy.tar.gz "https://github.com/caddyserver/caddy/releases/download/v${CADDY_VERSION}/caddy_${CADDY_VERSION}_linux_${TARGETARCH}.tar.gz" \
     && case "${TARGETARCH}" in \
          amd64) echo "${CADDY_SHA256_AMD64}  /tmp/caddy.tar.gz" | sha256sum -c - ;; \
@@ -33,10 +33,32 @@ RUN wget -qO /tmp/caddy.tar.gz "https://github.com/caddyserver/caddy/releases/do
     && mv caddy /usr/bin/caddy \
     && rm /tmp/caddy.tar.gz
 
-FROM quay.io/keycloak/keycloak:26.8.0@sha256:b0f60d489d51c5d113390bdf5461d4c06e6051be026c05549f2e1e10ec352bcc AS builder
+# The theme jar is architecture independent, so the build runs on the native
+# platform of the builder, also in the arm64 CI build.
+FROM --platform=$BUILDPLATFORM node:24.18.0-slim@sha256:cb4e8f7c443347358b7875e717c29e27bf9befc8f5a26cf18af3c3dec80e58c5 AS theme-tools
+RUN apt-get update \
+    && apt-get install -y --no-install-recommends maven ca-certificates \
+    && rm -rf /var/lib/apt/lists/*
+# Keycloakify renames the jar from its cache dir into the project, so that cache
+# must stay on the same filesystem: leave XDG_CACHE_HOME unset (node_modules/.cache).
+# Only the npm cache and the Maven repository live on a separate cache mount.
+RUN mkdir -p /cache && chmod 1777 /cache
+ENV npm_config_cache=/cache/npm
+ENV KEYCLOAKIFY_USE_DEFAULT_MAVEN_REPO=true
+ENV MAVEN_OPTS=-Dmaven.repo.local=/cache/m2
+ENV KEYCLOAKIFY_BUILD_FOR_KEYCLOAK_MAJOR_VERSION=26
+WORKDIR /theme
+
+FROM theme-tools AS theme-build
+COPY theme/package.json theme/package-lock.json theme/.npmrc ./
+RUN --mount=type=cache,target=/cache npm ci
+COPY theme/ ./
+RUN --mount=type=cache,target=/cache npm run build-keycloak-theme
+
+FROM quay.io/keycloak/keycloak:26.8.1@sha256:79c623a22abacf3fe6c00a5fb30f5b7843d717b234033b80995891c06116d244 AS builder
 
 WORKDIR /opt/keycloak
-COPY --chown=keycloak:keycloak --chmod=644 themes/dsfr-2.3.4.jar /opt/keycloak/providers/dsfr.jar
+COPY --from=theme-build --chown=keycloak:keycloak --chmod=644 /theme/dist_keycloak/keycloak-theme-for-kc-all-other-versions.jar /opt/keycloak/providers/lst-dsfr.jar
 COPY --from=scripts --chown=keycloak:keycloak --chmod=644 /custom-scripts.jar /opt/keycloak/providers/custom-scripts.jar
 # Committed JAR. Rebuild via `make build-keycloak` if you edit the Java
 # source under bulk-role-membership/.
@@ -51,12 +73,18 @@ ENV KC_DB=postgres
 
 RUN /opt/keycloak/bin/kc.sh build
 
-FROM quay.io/keycloak/keycloak:26.8.0@sha256:b0f60d489d51c5d113390bdf5461d4c06e6051be026c05549f2e1e10ec352bcc
+FROM quay.io/keycloak/keycloak:26.8.1@sha256:79c623a22abacf3fe6c00a5fb30f5b7843d717b234033b80995891c06116d244
 
 COPY --from=builder /opt/keycloak/ /opt/keycloak/
 COPY --from=tools-download /usr/bin/caddy /usr/bin/caddy
 COPY caddy/Caddyfile /etc/caddy/Caddyfile
 COPY --chmod=755 entrypoint.sh /usr/local/bin/entrypoint.sh
+
+# @TODO: drop once the UBI base ships a ca-certificates without this root,
+# already removed from the Debian and Mozilla trust stores.
+USER root
+RUN keytool -delete -cacerts -storepass changeit -alias emsigneccrootca-g3
+USER 1000
 
 # Same build options as the builder stage, so that a `start` without
 # --optimized keeps them after a re-augmentation.

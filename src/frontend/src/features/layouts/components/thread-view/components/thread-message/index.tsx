@@ -21,7 +21,7 @@ import { ComposeDraftPlaceholder } from "../compose-draft-placeholder";
 import ThreadMessageHeader from "./thread-message-header";
 import ThreadMessageFooter from "./thread-message-footer";
 import { CalendarInvite } from "../calendar-invite";
-import { ThreadMessageProps } from "./types";
+import { SpamReport, ThreadMessageProps } from "./types";
 import { BodyPart } from "./renderers";
 import { DriveFile } from "@/features/forms/components/message-form/drive-attachment-picker";
 
@@ -59,6 +59,11 @@ export const ThreadMessage = forwardRef<HTMLSpanElement, ThreadMessageProps>(
 
         const canSendMessages = useAbility(Abilities.CAN_SEND_MESSAGES, selectedMailbox);
         const canEditThread = useAbility(Abilities.CAN_EDIT_THREAD, selectedThread ?? null);
+        // A spam message moved to the trash no longer makes its thread spam: the
+        // message itself has to be checked, or it would lose its protections.
+        const spamReport: SpamReport | null = message.is_spam
+            ? "message"
+            : selectedThread?.is_spam ? "thread" : null;
         const canUpdateDeliveryStatus = useAbility(Abilities.CAN_MANAGE_THREAD_DELIVERY_STATUSES, [selectedMailbox!, selectedThread!]);
 
         // Derived state
@@ -429,7 +434,7 @@ export const ThreadMessage = forwardRef<HTMLSpanElement, ThreadMessageProps>(
                                     <CalendarInvite
                                         key={attachment.blobId}
                                         attachment={attachment}
-                                        canDownload={!selectedThread?.is_spam}
+                                        canDownload={!spamReport}
                                         mailboxId={selectedMailbox?.id}
                                         mailboxEmail={selectedMailbox?.email}
                                     />
@@ -442,6 +447,7 @@ export const ThreadMessage = forwardRef<HTMLSpanElement, ThreadMessageProps>(
                             attachments={message.attachments}
                             messageId={message.id}
                             isHidden={isFolded || !isMessageReady}
+                            areLinksDisabled={Boolean(spamReport)}
                             onLoad={() => setIsThreadMessageBodyLoaded(true)}
                         />
 
@@ -449,6 +455,7 @@ export const ThreadMessage = forwardRef<HTMLSpanElement, ThreadMessageProps>(
                             message={message}
                             regularAttachments={regularAttachments}
                             driveAttachments={driveAttachments}
+                            spamReport={spamReport}
                             showReplyButton={showReplyButton}
                             hasSeveralRecipients={hasSeveralRecipients}
                             onSetReplyFormMode={requestReplyForm}

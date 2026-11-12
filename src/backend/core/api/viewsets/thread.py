@@ -21,7 +21,8 @@ from rest_framework.response import Response
 
 from core import enums, models
 from core.ai.thread_summarizer import summarize_thread
-from core.services.search import search_threads
+from core.services.search import parse_search_query, search_threads
+from core.services.trashbin import permanently_delete_messages
 
 from .. import permissions, serializers
 
@@ -30,7 +31,6 @@ class ThreadViewSet(
     viewsets.GenericViewSet,
     mixins.ListModelMixin,
     mixins.RetrieveModelMixin,
-    mixins.DestroyModelMixin,
 ):
     """ViewSet for Thread model."""
 
@@ -45,7 +45,7 @@ class ThreadViewSet(
         `refresh_summary` mutates thread state (writes `thread.summary`)
         so it must also gate on full edit rights, not just authentication.
         """
-        if self.action in ("destroy", "split", "refresh_summary", "bulk_delete"):
+        if self.action in ("split", "refresh_summary", "bulk_delete"):
             return [permissions.HasThreadEditAccess()]
         return super().get_permissions()
 
@@ -79,11 +79,7 @@ class ThreadViewSet(
 
         # Base queryset: Threads the user has access to via ThreadAccess
         queryset = models.Thread.objects.filter(
-            Exists(
-                models.ThreadAccess.objects.filter(
-                    mailbox__accesses__user=user, thread=OuterRef("pk")
-                )
-            )
+            Exists(self._thread_access_filter(user, mailbox_id=None))
         ).distinct()
 
         if mailbox_id:
@@ -96,6 +92,11 @@ class ThreadViewSet(
                 raise drf.exceptions.PermissionDenied(
                     "You do not have access to this mailbox."
                 ) from e
+
+        if self._targets_trashbin(self.request.GET):
+            queryset = queryset.filter(
+                Exists(self._thread_access_filter(user, mailbox_id, editor_only=True))
+            )
 
         queryset = self._annotate_thread_permissions(queryset, user, mailbox_id)
 
@@ -158,6 +159,49 @@ class ThreadViewSet(
         order_expression = self._get_order_expression(query_params)
         queryset = queryset.order_by(order_expression, "-created_at")
         return queryset
+
+    @staticmethod
+    def _targets_trashbin(query_params, search_query=""):
+        """Whether the request lists the Trash or Spam folder.
+
+        Trash and spam are message flags shared by every mailbox of a thread,
+        so a thread shared with a mailbox as a viewer lands in its trashbin as
+        soon as an editor bins it. These folders only list threads the mailbox
+        holds as an editor: they are the ones emptying the folder deletes
+        (see ``core.services.trashbin``) and the ones its quota counts (see
+        ``core.services.storage``), so a viewer thread would linger there with
+        no way to remove it.
+        """
+        if any(
+            query_params.get(param) == "1"
+            for param in ("has_trashed", "is_trashed", "is_spam")
+        ):
+            return True
+        if not search_query:
+            return False
+        parsed_query = parse_search_query(search_query)
+        return bool(parsed_query.get("in_trash") or parsed_query.get("in_spam"))
+
+    @staticmethod
+    def _thread_access_filter(user, mailbox_id, editor_only=False):
+        """ThreadAccess rows through which ``user`` reaches ``OuterRef("pk")``.
+
+        Scoped to ``mailbox_id`` when given. ``editor_only`` keeps the threads
+        the mailbox holds as an editor, whatever the user's own mailbox role.
+        Meant to be wrapped in ``Exists``: filtering the thread queryset on
+        ``accesses__role`` instead would add a second join on the accesses,
+        free to match the editor row of another mailbox.
+        """
+        access_filter = models.ThreadAccess.objects.filter(
+            mailbox__accesses__user=user, thread=OuterRef("pk")
+        )
+        if mailbox_id:
+            access_filter = access_filter.filter(mailbox_id=mailbox_id)
+        if editor_only:
+            access_filter = access_filter.filter(
+                role=enums.ThreadAccessRoleChoices.EDITOR
+            )
+        return access_filter
 
     @staticmethod
     def _annotate_thread_permissions(queryset, user, mailbox_id):
@@ -280,12 +324,6 @@ class ThreadViewSet(
 
         # Draft-only threads have messaged_at=NULL, fall back to draft_messaged_at
         return Coalesce("messaged_at", "draft_messaged_at").desc()
-
-    def destroy(self, request, *args, **kwargs):
-        """Delete a thread, requiring EDITOR role on the thread."""
-        thread = self.get_object()
-        thread.delete()
-        return drf.response.Response(status=status.HTTP_204_NO_CONTENT)
 
     @extend_schema(
         tags=["threads"],
@@ -433,9 +471,9 @@ class ThreadViewSet(
         """Retrieve aggregated statistics for threads accessible by the user."""
         # Same defaults as ``list``: a counter must describe exactly the set of
         # threads the folder will show. Keeping spam/trash in here made badges
-        # count threads the list then filtered out — e.g. a thread whose first
-        # message is spam (``Thread.is_spam``) but which still has an active
-        # one (``has_active``). The Spam and Trash folders pass ``is_spam=1`` /
+        # count threads the list then filtered out — e.g. a spam thread
+        # (``Thread.is_spam``) still holding an unflagged received message
+        # (``has_active``). The Spam and Trash folders pass ``is_spam=1`` /
         # ``has_trashed=1`` explicitly, so they keep their own counts.
         queryset = self.get_queryset()
         stats_fields_param = request.query_params.get("stats_fields", "")
@@ -758,12 +796,16 @@ class ThreadViewSet(
                 # With a mailbox_id, also require access through that mailbox,
                 # like the non-search path: a stale index document must not
                 # surface a thread the user only reaches via another mailbox.
-                access_filter = models.ThreadAccess.objects.filter(
-                    mailbox__accesses__user=request.user,
-                    thread=OuterRef("pk"),
+                # The index does not know the thread access roles, so the
+                # trashbin folders drop their viewer threads here; the total
+                # still counts them.
+                access_filter = self._thread_access_filter(
+                    request.user,
+                    mailbox_id,
+                    editor_only=self._targets_trashbin(
+                        request.query_params, search_query
+                    ),
                 )
-                if mailbox_id:
-                    access_filter = access_filter.filter(mailbox_id=mailbox_id)
 
                 threads = models.Thread.objects.filter(
                     id__in=thread_ids,
@@ -1044,8 +1086,12 @@ class ThreadViewSet(
                     "properties": {
                         "success": {"type": "boolean"},
                         "deleted_count": {"type": "integer"},
+                        "deleted_message_ids": {
+                            "type": "array",
+                            "items": {"type": "string", "format": "uuid"},
+                        },
                     },
-                    "required": ["success", "deleted_count"],
+                    "required": ["success", "deleted_count", "deleted_message_ids"],
                 },
                 description="Messages permanently deleted.",
             ),
@@ -1109,31 +1155,25 @@ class ThreadViewSet(
             request.user
         ).values_list("thread_id", flat=True)
 
-        with transaction.atomic():
-            messages_to_delete = models.Message.objects.filter(
-                thread_id__in=accessible_thread_ids,
-                **scope_filter,
-            )
-            if thread_ids:
-                messages_to_delete = messages_to_delete.filter(thread_id__in=thread_ids)
-            if message_ids:
-                messages_to_delete = messages_to_delete.filter(id__in=message_ids)
+        messages_to_delete = models.Message.objects.filter(
+            thread_id__in=accessible_thread_ids,
+            **scope_filter,
+        )
+        if thread_ids:
+            messages_to_delete = messages_to_delete.filter(thread_id__in=thread_ids)
+        if message_ids:
+            messages_to_delete = messages_to_delete.filter(id__in=message_ids)
 
-            affected_thread_ids = set(
-                messages_to_delete.values_list("thread_id", flat=True)
-            )
-            # Count before deletion: the cascade total returned by delete() also
-            # includes related rows (recipients, attachments), not just messages.
-            deleted_count = messages_to_delete.count()
-            messages_to_delete.delete()
+        # Shared with the trashbin cutoff sweep and the "empty trashbin" action:
+        # hard-delete the rows, then drop emptied threads / recompute stats.
+        # The ids let clients tell which targets were actually deleted, as the
+        # per-thread authorization may silently drop some of them.
+        deleted_message_ids = permanently_delete_messages(messages_to_delete)
 
-            # An emptied thread is removed; a thread that still has messages has
-            # its denormalized stats (has_draft, has_trashed, ...) recomputed so
-            # it drops out of the corresponding folder filter.
-            for thread in models.Thread.objects.filter(pk__in=affected_thread_ids):
-                if thread.messages.exists():
-                    thread.update_stats()
-                else:
-                    thread.delete()
-
-        return drf.response.Response({"success": True, "deleted_count": deleted_count})
+        return drf.response.Response(
+            {
+                "success": True,
+                "deleted_count": len(deleted_message_ids),
+                "deleted_message_ids": deleted_message_ids,
+            }
+        )

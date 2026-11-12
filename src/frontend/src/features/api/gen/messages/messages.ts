@@ -1186,7 +1186,11 @@ export function useMessagesRetrieve<
 }
 
 /**
- * Delete a message. Object permission checked by IsAllowedToAccess.
+ * Discard a draft. Object permission checked by IsAllowedToAccess.
+
+Only drafts can be deleted here: any other message must go through the
+trash, so its permanent deletion stays under the trashbin policy
+(``settings.TRASHBIN_ALLOW_EMPTY`` and the cutoff sweep).
  */
 export type messagesDestroyResponse204 = {
   data: void;

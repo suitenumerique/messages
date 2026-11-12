@@ -18,20 +18,9 @@ pytestmark = pytest.mark.django_db
 
 @pytest.fixture(name="coalescer_caplog")
 def fixture_coalescer_caplog(caplog):
-    """Capture log records emitted by the coalescer logger.
-
-    The ``core`` logger sets ``propagate=False`` in ``messages.settings`` so
-    records never reach the root logger that pytest's ``caplog`` listens on.
-    Attaching the caplog handler directly to the coalescer logger restores
-    visibility for the duration of the test.
-    """
-    coalescer_logger = logging.getLogger("core.services.search.coalescer")
+    """Capture log records emitted by the coalescer logger."""
     caplog.set_level(logging.ERROR, logger="core.services.search.coalescer")
-    coalescer_logger.addHandler(caplog.handler)
-    try:
-        yield caplog
-    finally:
-        coalescer_logger.removeHandler(caplog.handler)
+    return caplog
 
 
 class TestUpdateThreadStatsOnDeliveryStatusChange:

@@ -10,12 +10,20 @@ somebody's disk or log bill.
 
 from __future__ import annotations
 
+import contextlib
 import io
 import logging
+import pathlib
+import re
+import sys
+import threading
+import time
 
 import pytest
+from prometheus_client import REGISTRY
 
-from pymta.logfmt import LogfmtFormatter, configure, quote
+from pymta import logfmt
+from pymta.logfmt import LogfmtFormatter, clip, configure, quote
 
 
 def _render(msg: str, level: int = logging.INFO, exc_info=None, **fields) -> str:
@@ -89,6 +97,20 @@ def test_quoting(value, expected):
     assert quote(value) == expected
 
 
+@pytest.mark.parametrize(
+    ("value", "kwargs", "expected"),
+    [
+        (None, {}, None),
+        ("abcdef", {}, "abcdef"),
+        ("abcdefghij", {}, "abcdef...+4"),
+        ("abcdefghij", {"tail": 2}, "abcd...+4...ij"),
+        (1234567890, {}, "123456...+4"),
+    ],
+)
+def test_clip(value, kwargs, expected):
+    assert clip(value, 6, **kwargs) == expected
+
+
 def test_values_with_spaces_survive_a_round_trip():
     line = _render("mda_secret_weak", hint="short HS256 secrets are brute-forceable")
     assert _parse(line)["hint"] == "short HS256 secrets are brute-forceable"
@@ -112,8 +134,6 @@ def test_exception_stays_on_one_line():
     try:
         raise ValueError("kaboom")
     except ValueError:
-        import sys
-
         line = _render("handler_error", level=logging.ERROR, exc_info=sys.exc_info())
     assert "\n" not in line, "a multi-line record splits one event into many"
     fields = _parse(line)
@@ -122,22 +142,134 @@ def test_exception_stays_on_one_line():
     assert "ValueError: kaboom" in fields["error_stack_trace"]
 
 
+@contextlib.contextmanager
+def _root_logger_restored():
+    """``configure`` replaces the root logger's handlers and sets its level."""
+    root = logging.getLogger()
+    handlers, level = list(root.handlers), root.level
+    try:
+        yield root
+    finally:
+        for h in list(root.handlers):
+            root.removeHandler(h)
+        for h in handlers:
+            root.addHandler(h)
+        root.setLevel(level)
+
+
 def test_configure_replaces_handlers_rather_than_adding():
     """Two handlers would print every line twice, in two formats."""
-    root = logging.getLogger()
-    before = list(root.handlers)
-    try:
+    with _root_logger_restored() as root:
         stream = io.StringIO()
         configure("INFO", stream)
         configure("INFO", stream)
         assert len(root.handlers) == 1
         logging.getLogger("pymta.test").info("smtp_listening", extra={"bind": "0.0.0.0:25"})
         assert stream.getvalue().count("event=smtp_listening") == 1
-    finally:
-        for h in list(root.handlers):
-            root.removeHandler(h)
-        for h in before:
-            root.addHandler(h)
+
+
+def test_the_root_logger_is_left_as_it_was_found():
+    root = logging.getLogger()
+    handlers, level = list(root.handlers), root.level
+    with _root_logger_restored():
+        configure("CRITICAL", io.StringIO())
+        assert root.level == logging.CRITICAL
+    assert (list(root.handlers), root.level) == (handlers, level)
+
+
+def test_in_a_thread_the_same_lines_are_written_once_it_is_stopped():
+    stream = io.StringIO()
+    with _root_logger_restored():
+        assert configure("INFO", stream) is None
+        stop = configure("INFO", stream, in_thread=True)
+        log = logging.getLogger("pymta.test")
+        log.info("smtp_listening", extra={"bind": "0.0.0.0:25"})
+        # Filtered where it is logged, like without the thread.
+        logging.getLogger("httpx").info("request")
+        try:
+            raise ValueError("kaboom")
+        except ValueError:
+            log.error("handler_error", exc_info=True)
+        stop()
+    first, second = [_parse(line) for line in stream.getvalue().splitlines()]
+    assert (first["event"], first["bind"]) == ("smtp_listening", "0.0.0.0:25")
+    assert (second["event"], second["error_type"]) == ("handler_error", "ValueError")
+    assert "kaboom" in second["error_stack_trace"]
+
+
+class _Unread(io.StringIO):
+    """A stream whose reader has stopped: a write waits until released."""
+
+    def __init__(self):
+        super().__init__()
+        self.writing = threading.Event()
+        self.release = threading.Event()
+
+    def write(self, text):
+        self.writing.set()
+        self.release.wait(5)
+        return super().write(text)
+
+
+def test_a_stream_nobody_reads_costs_lines_and_not_the_caller(monkeypatch):
+    """Written from the event loop, it would stop every session."""
+    monkeypatch.setattr(logfmt, "_QUEUE_SIZE", 1)
+    monkeypatch.setattr(logfmt, "_STOP_TIMEOUT", 0.1)
+    dropped = REGISTRY.get_sample_value("pymta_log_records_dropped_total")
+    stream = _Unread()
+    with _root_logger_restored():
+        stop = configure("INFO", stream, in_thread=True)
+        log = logging.getLogger("pymta.test")
+        log.info("first")
+        assert stream.writing.wait(5)
+        log.info("second")
+        # No room: dropped, and counted.
+        log.info("third")
+        assert REGISTRY.get_sample_value("pymta_log_records_dropped_total") == dropped + 1
+        # No room for the stop marker either: the exit is not held.
+        started = time.monotonic()
+        stop()
+        assert time.monotonic() - started < 2
+        stream.release.set()
+        deadline = time.monotonic() + 5
+        while "second" not in stream.getvalue() and time.monotonic() < deadline:
+            time.sleep(0.01)
+    events = [_parse(line)["event"] for line in stream.getvalue().splitlines()]
+    assert events == ["first", "second"]
+
+
+def test_a_full_queue_is_written_before_the_exit(monkeypatch):
+    """A slow reader, not a stopped one: the stop marker waits for room."""
+    monkeypatch.setattr(logfmt, "_QUEUE_SIZE", 1)
+    stream = _Unread()
+    with _root_logger_restored():
+        stop = configure("INFO", stream, in_thread=True)
+        log = logging.getLogger("pymta.test")
+        log.info("first")
+        assert stream.writing.wait(5)
+        log.info("second")
+        threading.Timer(0.05, stream.release.set).start()
+        stop()
+        events = [_parse(line)["event"] for line in stream.getvalue().splitlines()]
+    assert events == ["first", "second"]
+
+
+def test_a_write_that_does_not_return_does_not_hold_the_exit(monkeypatch):
+    """With room left in the queue: the stop marker goes in, the writer never reads it."""
+    monkeypatch.setattr(logfmt, "_STOP_TIMEOUT", 0.1)
+    stream = _Unread()
+    with _root_logger_restored():
+        stop = configure("INFO", stream, in_thread=True)
+        logging.getLogger("pymta.test").info("first")
+        assert stream.writing.wait(5)
+        started = time.monotonic()
+        stop()
+        assert time.monotonic() - started < 2
+        stream.release.set()
+        deadline = time.monotonic() + 5
+        while "first" not in stream.getvalue() and time.monotonic() < deadline:
+            time.sleep(0.01)
+    assert "event=first" in stream.getvalue()
 
 
 # ---------------------------------------------------------------------------
@@ -150,11 +282,15 @@ def test_configure_replaces_handlers_rather_than_adding():
 PEER_TRIGGERABLE = {
     "session_timeout",
     "command_timeout",
+    "data_timeout",
+    "mda_refused",
     "connection_blocked",
-    "connection_capped",
-    "data_slots_exhausted",
+    "connection_draining",
+    "session_reclaimed",
+    "proxy_header_invalid",
     "session_without_peer",
-    "helo_control_chars",
+    "helo_sanitised",
+    "parameters_ignored",
     "bare_newline_normalised",
     "proxy_header",
     "proxy_header_untrusted",
@@ -171,9 +307,9 @@ OPERATOR_TRIGGERABLE = {
     "proxy_trust_configured",
     "proxy_trust_unrestricted",
     "legacy_setting_in_use",
-    "reload_applied",
-    "reload_noop",
-    "reload_rejected",
+    "tls_certificate",
+    "tls_reloaded",
+    "tls_reload_rejected",
     "shutdown_started",
     "shutdown_drained",
     "shutdown_complete",
@@ -183,13 +319,18 @@ OPERATOR_TRIGGERABLE = {
     "mda_secret_missing",
     "mda_secret_weak",
     "mda_unhealthy",
+    "mda_unexpected_status",
     "mda_recovered",
     "mda_breaker_opened",
     "mda_transport_error",
     "mda_timeout",
+    "mda_pool_exhausted",
     "mda_check_no_verdict",
     "mda_body_not_an_object",
     "handler_error",
+    "session_error",
+    "unhandled_error",
+    "fatal_error",
 }
 
 # The one deliberate exception. These name envelope addresses at INFO because
@@ -207,10 +348,31 @@ AUDIT = {"message_delivered", "message_deferred", "message_rejected"}
 # cannot run it away — every one of these either spends a unit of
 # PYMTA_MAX_ERRORS_PER_SESSION (50) or asks for the disconnect, and unknown
 # recipients stop at PYMTA_MAX_RCPT_MISSES_PER_SESSION (10), so a connection
-# buys at most ~50 lines before it is closed. That is the same shape as AUDIT
-# (bounded per connection), not the shape of proxy_header_untrusted (one line
-# per TCP connection, unbounded).
+# buys at most ~50 lines before it is closed. The protocol writes the same
+# event for the refusals it makes without a hook. Those spend the same
+# budget, except on DATA, which is answered whatever the budget, so the
+# protocol also stops at PYMTA_MAX_ERRORS_PER_SESSION lines per connection on
+# its own count. That is the same shape as AUDIT (bounded per connection), not
+# the shape of proxy_header_untrusted (one line per TCP connection, unbounded).
+# Bounded per connection is still 50 lines for each one opened, so
+# PYMTA_LOG_SESSIONS drops it to DEBUG too.
 REFUSALS = {"reject"}
+
+# The third, and the only one a peer can produce once per TCP connection: the
+# per-connection summary, Postfix's ``disconnect from`` line. It is the one
+# record of a sender that never reached a refusal or a message outcome (TLS
+# refused, answered by the protocol itself, timed out, hung up mid-DATA), which is
+# precisely the "mail from X never arrived and the log says nothing" case.
+# Only sessions the gate let in and that sent at least one line reach INFO,
+# but nothing caps the connection rate, so its volume is the peer's to choose:
+# PYMTA_LOG_SESSIONS drops it to DEBUG under a flood.
+SESSIONS = {"session_closed"}
+
+# A session cap refusing a connection. Peer-triggerable once per connection, so
+# DEBUG by default, but a legitimate sender held off by a cap is deferred mail
+# with no other trace. INFO through a throttle: one line per address per minute
+# over a bounded number of addresses (``smtp_protocol._cap_log_throttle``).
+THROTTLED = {"connection_capped"}
 
 # Event names the scanner sees as a literal prefix because the suffix is a
 # variable. Maps what appears in the source to what is actually emitted.
@@ -223,9 +385,6 @@ def _log_sites():
     Read out of the source rather than by calling each site, so a call at the
     wrong level is caught even where no test exercises that path.
     """
-    import pathlib
-    import re
-
     root = pathlib.Path(__file__).resolve().parents[1] / "src" / "pymta"
     # Without this the test passes vacuously if the package ever moves: an empty
     # glob yields no sites, which reads exactly like "every site is correct".
@@ -254,7 +413,7 @@ def test_every_event_is_classified():
     Classification is a judgement no test can make, so the test does not try. It
     only refuses to let the judgement go unmade.
     """
-    known = PEER_TRIGGERABLE | OPERATOR_TRIGGERABLE | AUDIT | REFUSALS
+    known = PEER_TRIGGERABLE | OPERATOR_TRIGGERABLE | AUDIT | REFUSALS | SESSIONS | THROTTLED
     unclassified = sorted({event for _, event, _ in _log_sites() if event not in known})
     assert not unclassified, (
         f"unclassified log events: {unclassified}. Add each to PEER_TRIGGERABLE "
@@ -285,6 +444,20 @@ def test_the_classification_lists_do_not_overlap():
     assert not (PEER_TRIGGERABLE & REFUSALS)
     assert not (OPERATOR_TRIGGERABLE & REFUSALS)
     assert not (AUDIT & REFUSALS)
+    others = PEER_TRIGGERABLE | OPERATOR_TRIGGERABLE | AUDIT | REFUSALS
+    assert not (SESSIONS & others)
+    assert not (THROTTLED & (others | SESSIONS))
+
+
+@pytest.mark.parametrize("event", sorted(SESSIONS | THROTTLED | REFUSALS))
+def test_the_switchable_events_have_a_debug_fallback(event):
+    """These must be able to drop to DEBUG.
+
+    The INFO site alone would leave PYMTA_LOG_SESSIONS=false, or a throttle
+    that says no, with nothing to fall back to.
+    """
+    levels = {level for _, name, level in _log_sites() if name == event}
+    assert levels == {"info", "debug"}, levels
 
 
 @pytest.mark.parametrize(
@@ -350,24 +523,26 @@ def test_the_classification_lists_have_no_dead_entries():
 
 def _capture(verbose_libraries=False):
     root = logging.getLogger()
-    before = list(root.handlers)
+    before = list(root.handlers), root.level
     stream = io.StringIO()
     configure("DEBUG", stream, verbose_libraries=verbose_libraries)
     return stream, root, before
 
 
 def _restore(root, before):
+    handlers, level = before
     for h in list(root.handlers):
         root.removeHandler(h)
-    for h in before:
+    for h in handlers:
         root.addHandler(h)
+    root.setLevel(level)
 
 
 def test_third_party_records_are_dropped():
-    """aiosmtpd, httpx and httpcore must not reach the log at all.
+    """Loggers that are not ours (httpx, httpcore, asyncio) must not reach the log.
 
-    aiosmtpd logs every envelope address at INFO and every line of every message
-    body at DEBUG, so this filter is what keeps message content out of the log.
+    A library is free to log addresses or message content at any level, so
+    this filter is what keeps them out whatever gets installed.
     """
     stream, root, before = _capture()
     try:

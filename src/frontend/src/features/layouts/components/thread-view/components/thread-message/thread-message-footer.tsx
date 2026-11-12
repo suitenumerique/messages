@@ -8,6 +8,7 @@ const ThreadMessageFooter = ({
     message,
     regularAttachments,
     driveAttachments,
+    spamReport = null,
     showReplyButton,
     hasSeveralRecipients,
     onSetReplyFormMode,
@@ -26,7 +27,7 @@ const ThreadMessageFooter = ({
                 data-created-at={message.created_at}
             />
             {hasAttachments && (
-                <AttachmentList attachments={[...regularAttachments, ...driveAttachments]} />
+                <AttachmentList attachments={[...regularAttachments, ...driveAttachments]} spamReport={spamReport} />
             )}
             {showReplyButton && (
                 <div className="thread-message__footer-actions">

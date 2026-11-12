@@ -8,13 +8,13 @@ import { Panel, Group, Separator, useDefaultLayout } from "react-resizable-panel
 import { ThreadPanel } from "@/features/layouts/components/thread-panel";
 import { MobileFilterComposeBar } from "@/features/layouts/components/mobile/filter-compose-bar";
 import { ThreadSelectionPlaceholder } from "@/features/layouts/components/thread-selection-placeholder";
+import { TrashbinBanner } from "@/features/layouts/components/trashbin-banner";
 import { useThreadSelection } from "@/features/providers/thread-selection";
 import { useMailboxContext } from "@/features/providers/mailbox";
-import { useUrlSearchParams } from "@/hooks/use-url-search-params";
 import useAbility, { Abilities } from "@/hooks/use-ability";
 import { useCurrentFolderName } from "@/hooks/use-current-folder-name";
 import { useDocumentTitle } from "@/hooks/use-document-title";
-import ViewHelper from "@/features/utils/view-helper";
+import { useCurrentView } from "@/hooks/use-current-view";
 import { useOpenImporter } from "@/features/layouts/components/mailbox-settings/imports-view/use-open-importer";
 
 const Mailbox = () => {
@@ -24,7 +24,7 @@ const Mailbox = () => {
   const folderName = useCurrentFolderName();
   const canImportMessages = useAbility(Abilities.CAN_IMPORT_MESSAGES, selectedMailbox);
   const { selectedThreadIds } = useThreadSelection();
-  const searchParams = useUrlSearchParams();
+  const { isInboxView, isAllMessagesView } = useCurrentView();
   const { isMobile } = useResponsive();
   const showThreadView = !isMobile;
   const emptyMailbox = (selectedMailbox?.count_threads || 0) === 0
@@ -38,9 +38,8 @@ const Mailbox = () => {
 
   const showImportButton = useMemo(() => {
     if (!canImportMessages || !emptyMailbox) return false;
-    if (ViewHelper.isInboxView() || ViewHelper.isAllMessagesView()) return true;
-    return false;
-  }, [canImportMessages, emptyMailbox, searchParams]);
+    return isInboxView || isAllMessagesView;
+  }, [canImportMessages, emptyMailbox, isInboxView, isAllMessagesView]);
 
   if (emptyMailbox) {
     return (
@@ -61,28 +60,31 @@ const Mailbox = () => {
 
   return (
     <>
-      <Group defaultLayout={defaultLayout} onLayoutChange={onLayoutChange} orientation="horizontal" className="threads__container">
-        <Panel id={showThreadView ? "panel-thread-list" : "panel-thread-list-single"} className="thread-list-panel" defaultSize="35%" minSize="20%" maxSize="50%">
-          <ThreadPanel />
-        </Panel>
-        {showThreadView && (
-          <>
-            <Separator className="panel__resize-handle" />
-            <Panel id="panel-thread-view" className="thread-view-panel">
-              {selectedThreadIds.size > 0 ? (
-                <ThreadSelectionPlaceholder />
-              ) : (
-                <div className="thread-view thread-view--empty">
-                  <div>
-                    <img src="/images/svg/read-mail.svg" alt="" width={60} height={60} />
-                    <p>{t('Select a thread')}</p>
+      <div className="threads__layout">
+        <TrashbinBanner />
+        <Group defaultLayout={defaultLayout} onLayoutChange={onLayoutChange} orientation="horizontal" className="threads__container">
+          <Panel id={showThreadView ? "panel-thread-list" : "panel-thread-list-single"} className="thread-list-panel" defaultSize="35%" minSize="20%" maxSize="50%">
+            <ThreadPanel />
+          </Panel>
+          {showThreadView && (
+            <>
+              <Separator className="panel__resize-handle" />
+              <Panel id="panel-thread-view" className="thread-view-panel">
+                {selectedThreadIds.size > 0 ? (
+                  <ThreadSelectionPlaceholder />
+                ) : (
+                  <div className="thread-view thread-view--empty">
+                    <div>
+                      <img src="/images/svg/read-mail.svg" alt="" width={60} height={60} />
+                      <p>{t('Select a thread')}</p>
+                    </div>
                   </div>
-                </div>
-              )}
-            </Panel>
-          </>
-        )}
-      </Group>
+                )}
+              </Panel>
+            </>
+          )}
+        </Group>
+      </div>
       <MobileFilterComposeBar />
     </>
   );

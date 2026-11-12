@@ -171,8 +171,7 @@ class BlobViewSet(ViewSet):
         except models.Mailbox.DoesNotExist as e:
             raise NotFound("Mailbox not found") from e
 
-        # pylint: disable=broad-exception-caught
-        except Exception as e:
+        except Exception as e:  # pylint: disable=broad-exception-caught
             logger.exception("Error uploading file: %s", str(e))
             return Response(
                 {"error": "Error processing file"},
@@ -264,8 +263,7 @@ class BlobViewSet(ViewSet):
             # Let DRF convert ParseError / NotFound / PermissionDenied raised by
             # ``_resolve_blob_source`` into the proper Response.
             raise
-        # pylint: disable=broad-exception-caught
-        except Exception as e:
+        except Exception as e:  # pylint: disable=broad-exception-caught
             logger.exception("Error downloading file: %s", str(e))
             return Response(
                 {"error": "Error downloading file"},
@@ -386,8 +384,7 @@ class BlobViewSet(ViewSet):
             # Let DRF convert ParseError / NotFound / PermissionDenied raised by
             # ``_resolve_blob_source`` into the proper Response.
             raise
-        # pylint: disable=broad-exception-caught
-        except Exception as e:
+        except Exception as e:  # pylint: disable=broad-exception-caught
             logger.exception("Error previewing file: %s", str(e))
             return Response(
                 {"error": "Error previewing file"},

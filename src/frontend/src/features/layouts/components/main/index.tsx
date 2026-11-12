@@ -10,6 +10,7 @@ import { ScrollRestoreProvider } from "@/features/providers/scroll-restore";
 import { AttachmentPreviewProvider } from "@/features/providers/attachment-preview";
 import { useTheme } from "@/features/providers/theme";
 import { useUnreadBadge } from "@/features/providers/use-unread-badge";
+import { useEmptyTrashTasksWatcher, useTrashbinFolderCounts } from "@/features/message/use-empty-trash";
 import { LayoutProvider, useLayoutDragContext } from "@/features/layouts/components/layout-context";
 import { AttachmentPreviewModal } from "@/features/layouts/components/thread-view/components/attachment-preview-modal";
 import { ComposeWindowsProvider } from "@/features/providers/compose-windows";
@@ -17,6 +18,7 @@ import { ComposeWindowsLayer } from "@/features/layouts/components/compose/compo
 import { Link } from "@tanstack/react-router";
 import { useTranslation } from "react-i18next";
 import { useResponsive } from "@gouvfr-lasuite/ui-components";
+import { AutoreplyBanner } from "./top-banners/autoreply-banner";
 
 export const MainLayout = ({ children }: PropsWithChildren) => {
     return (
@@ -25,15 +27,17 @@ export const MainLayout = ({ children }: PropsWithChildren) => {
                 <MailboxProvider>
                     <SentBoxProvider>
                         <ComposeWindowsProvider>
-                            <ModalStoreProvider>
-                                <AttachmentPreviewProvider>
-                                    <LayoutProvider draggable>
+                            {/* Above the modal store: the modals it renders can
+                                close the mobile left panel they were opened from. */}
+                            <LayoutProvider draggable>
+                                <ModalStoreProvider>
+                                    <AttachmentPreviewProvider>
                                         <MainLayoutContent>{children}</MainLayoutContent>
                                         <AttachmentPreviewModal />
                                         <ComposeWindowsLayer />
-                                    </LayoutProvider>
-                                </AttachmentPreviewProvider>
-                            </ModalStoreProvider>
+                                    </AttachmentPreviewProvider>
+                                </ModalStoreProvider>
+                            </LayoutProvider>
                         </ComposeWindowsProvider>
                     </SentBoxProvider>
                 </MailboxProvider>
@@ -55,6 +59,8 @@ const MainLayoutContent = ({ children }: PropsWithChildren<{ simple?: boolean }>
     const headerIconName = isDesktop ? `app-logo-${variant}` : `app-icon-${variant}`;
 
     useUnreadBadge();
+    useEmptyTrashTasksWatcher();
+    useTrashbinFolderCounts();
 
     return (
         <AppLayout
@@ -65,6 +71,7 @@ const MainLayoutContent = ({ children }: PropsWithChildren<{ simple?: boolean }>
             icon={<Link to="/"><img src={`/images/${theme}/${headerIconName}.svg`} alt={t("logo")} height={40} /></Link>}
             hideLeftPanelOnDesktop={hasNoMailbox}
             isDragging={isDragging}
+            topBanner={!hasNoMailbox && <AutoreplyBanner />}
         >
             {hasNoMailbox ? (
                 <NoMailbox />

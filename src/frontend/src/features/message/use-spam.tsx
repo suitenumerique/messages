@@ -7,7 +7,7 @@ import { useMailboxContext } from "../providers/mailbox";
  */
 const useSpam = () => {
     const { t } = useTranslation();
-    const { invalidateMailbox, invalidateThreadsStats, unpinThreads } = useMailboxContext();
+    const { invalidateMailbox, invalidateThreadsStats, unpinThreads, selectedThread } = useMailboxContext();
     const { mark, unmark, status } = useFlag('spam', {
         toastMessages: {
             thread: (updatedCount, submittedCount) => {
@@ -22,7 +22,10 @@ const useSpam = () => {
             },
         },
         onSuccess: (data) => {
-            unpinThreads(data.thread_ids ?? []);
+            // Messages are flagged from the open thread: unpin it too, or the
+            // list would keep its stale copy, still listed in its old folder.
+            const messageThreadIds = data.message_ids?.length && selectedThread ? [selectedThread.id] : [];
+            unpinThreads([...(data.thread_ids ?? []), ...messageThreadIds]);
             invalidateMailbox();
             invalidateThreadsStats();
         },

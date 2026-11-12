@@ -27,6 +27,21 @@ from core.services.attachments import get_attachment_display_name
 
 logger = logging.getLogger(__name__)
 
+DRIVE_ERROR_BODY_MAX_LENGTH = 500
+
+
+def _describe_drive_error(exc):
+    """Return the status and body of the response behind a failed Drive call.
+
+    ``raise_for_status`` only keeps the status and URL in its message, so
+    without this the reason Drive or the object storage gave for refusing
+    the request (validation error, quota, signature mismatch…) is lost.
+    """
+    response = getattr(exc, "response", None)
+    if response is None:
+        return "no response"
+    return f"{response.status_code} {response.text[:DRIVE_ERROR_BODY_MAX_LENGTH]}"
+
 
 class DriveAPIView(APIView):
     """
@@ -94,8 +109,10 @@ class DriveAPIView(APIView):
                 timeout=5,
             )
             response.raise_for_status()
-        except requests.exceptions.RequestException:
-            logger.exception("Failed to search files in Drive")
+        except requests.exceptions.RequestException as exc:
+            logger.exception(
+                "Failed to search files in Drive: %s", _describe_drive_error(exc)
+            )
             return Response(
                 status=status.HTTP_502_BAD_GATEWAY,
                 data={"error": "Failed to search files in Drive"},
@@ -169,8 +186,11 @@ class DriveAPIView(APIView):
             existing_item = self._find_existing_drive_item(
                 attachment, auth_headers, filename
             )
-        except requests.exceptions.RequestException:
-            logger.exception("Failed to search Drive for existing file")
+        except requests.exceptions.RequestException as exc:
+            logger.exception(
+                "Failed to search Drive for existing file: %s",
+                _describe_drive_error(exc),
+            )
             return Response(
                 status=status.HTTP_502_BAD_GATEWAY,
                 data={"error": "Failed to search Drive for existing file"},
@@ -182,8 +202,10 @@ class DriveAPIView(APIView):
         # File doesn't exist, create it
         try:
             return self._create_drive_item(attachment, auth_headers, filename)
-        except requests.exceptions.RequestException:
-            logger.exception("Failed to create file in Drive")
+        except requests.exceptions.RequestException as exc:
+            logger.exception(
+                "Failed to create file in Drive: %s", _describe_drive_error(exc)
+            )
             return Response(
                 status=status.HTTP_502_BAD_GATEWAY,
                 data={"error": "Failed to create file in Drive"},
@@ -207,19 +229,27 @@ class DriveAPIView(APIView):
         )
         search_response.raise_for_status()
 
+        # Drive's ``title`` filter is an accent-insensitive substring match:
+        # "report.pdf" would also match "old report.pdf". Drive stores the
+        # filename we post as the item's title, so compare it exactly.
         for item in search_response.json().get("results", []):
-            if item.get("size") == attachment["size"]:
+            if item.get("title") == filename and item.get("size") == attachment["size"]:
                 return item
 
         return None
 
     def _create_drive_item(self, attachment, headers, filename):
         """Create a new file in Drive and upload its content."""
+        # Drive (>= v0.24) refuses a file creation without ``size``: it
+        # reserves that quota up front and signs it as the Content-Length
+        # of the presigned PUT, so it must be the exact byte count we send
+        # (the parser sets ``size`` to the length of ``content``).
         response = requests.post(
             f"{self.drive_external_api}/items/",
             json={
                 "type": "file",
                 "filename": filename,
+                "size": attachment["size"],
             },
             headers=headers,
             timeout=5,

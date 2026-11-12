@@ -77,7 +77,9 @@ export const signInKeycloakIfNeeded = async ({ page, username, navigateTo = "/" 
     proConnectButton.click();
 
     await page.waitForURL(`${AUTHENTICATION_URL}/realms/messages/protocol/openid-connect/auth**`);
+    // A client-side login theme renders the form late: wait for it before reading it.
     const attemptedUsernameInput = page.locator('input[id="kc-attempted-username"]');
+    await attemptedUsernameInput.or(page.locator('input[name="username"]')).first().waitFor();
     if (await attemptedUsernameInput.isVisible()) {
         if (await attemptedUsernameInput.inputValue() !== email) {
             const restartLoginButton = page.getByRole('button', { name: 'Restart login' });

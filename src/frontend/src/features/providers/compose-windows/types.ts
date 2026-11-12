@@ -21,6 +21,14 @@ export type ComposeWindowDescriptor = {
     draftId?: string;
     threadId?: string;
     parentMessageId?: string;
+    /**
+     * Mailbox currently picked in the form's "From" field, reported by the
+     * form once mounted. Only drives the sender shown on the window surfaces:
+     * `mailboxId` stays the context the window was opened from.
+     */
+    senderId?: string;
+    /** True while the draft is being transferred to `senderId`. Not persisted. */
+    isSenderPending?: boolean;
     /** Last known subject, used as the window title. */
     title?: string;
     /**
@@ -31,6 +39,19 @@ export type ComposeWindowDescriptor = {
     openedOnExistingDraft: boolean;
     /** Incremented by focusWindow so the window can grab focus imperatively. */
     focusTick: number;
+};
+
+/** A window whose draft exists server-side. */
+export type MaterializedComposeWindow = ComposeWindowDescriptor & { draftId: string };
+
+/** Drafts deleted from outside their compose window (drafts list, thread toolbar). */
+export type DeletedDrafts = {
+    /** Only the drafts the backend actually deleted, not every submitted target. */
+    draftIds: readonly string[];
+    /** Threads targeted by the deletion, whose messages must be refreshed. */
+    threadIds: readonly string[];
+    /** Mailbox whose threads list and stats must be refreshed. */
+    mailboxId?: string;
 };
 
 export type OpenComposeWindowInput = {

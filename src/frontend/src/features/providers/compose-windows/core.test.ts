@@ -1,5 +1,6 @@
 import { describe, expect, it } from "vitest";
 import {
+    closeDeletedDraftWindowsReducer,
     enforceSingleExpanded,
     focusWindowReducer,
     MAX_WINDOWS,
@@ -181,5 +182,19 @@ describe("focusWindowReducer", () => {
         const result = focusWindowReducer([window], window.windowId);
         expect(result[0].isMinimized).toBe(false);
         expect(result[0].focusTick).toBe(4);
+    });
+});
+
+describe("closeDeletedDraftWindowsReducer", () => {
+    it("drops only the windows of the deleted drafts", () => {
+        const deleted = makeWindow({ draftId: "draft-1", threadId: "thread-1" });
+        const kept = makeWindow({ draftId: "draft-2", threadId: "thread-1" });
+        expect(closeDeletedDraftWindowsReducer([deleted, kept], ["draft-1"])).toEqual([kept]);
+    });
+
+    it("keeps the windows whose draft is not materialized yet", () => {
+        const pendingReply = makeWindow({ mode: "reply", threadId: "thread-1" });
+        const windows = [pendingReply];
+        expect(closeDeletedDraftWindowsReducer(windows, ["draft-1"])).toBe(windows);
     });
 });

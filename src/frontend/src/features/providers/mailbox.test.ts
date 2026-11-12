@@ -1,6 +1,7 @@
 import { describe, expect, it } from "vitest";
 import type { ThreadsListParams } from "../api/gen";
 import {
+    isOpenThreadActedUpon,
     THREADS_LIST_NUMERIC_FILTERS,
     THREADS_LIST_STRING_FILTERS,
 } from "./mailbox";
@@ -28,5 +29,31 @@ describe("ThreadsListParams filter coverage", () => {
         // file in the test suite and documents intent.
         const _typeCheck: AllThreadsListParamsCovered = true;
         expect(_typeCheck).toBe(true);
+    });
+});
+
+describe("isOpenThreadActedUpon", () => {
+    it("leaves the open thread when the action targets it", () => {
+        expect(isOpenThreadActedUpon("thread-x", "thread-x")).toBe(true);
+    });
+
+    it("leaves the open thread when it is among the threads acted upon", () => {
+        expect(isOpenThreadActedUpon("thread-x", "thread-x", ["thread-y", "thread-x"])).toBe(true);
+    });
+
+    it("keeps the open thread when only other threads are acted upon", () => {
+        expect(isOpenThreadActedUpon("thread-x", "thread-x", ["thread-y", "thread-z"])).toBe(false);
+    });
+
+    it("keeps the thread the user has opened since the action was fired", () => {
+        expect(isOpenThreadActedUpon("thread-x", "thread-y")).toBe(false);
+    });
+
+    it("does not take a thread id that merely contains the fired one for it", () => {
+        expect(isOpenThreadActedUpon("thread-x", "thread-x2")).toBe(false);
+    });
+
+    it("does nothing when no thread was open", () => {
+        expect(isOpenThreadActedUpon(undefined, undefined, ["thread-x"])).toBe(false);
     });
 });

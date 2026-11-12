@@ -18,7 +18,12 @@ from rest_framework.response import Response
 from rest_framework.throttling import UserRateThrottle
 
 from core import models
-from core.enums import ChannelScopeLevel, ChannelTypes, WebhookAuthMethod
+from core.enums import (
+    ChannelScopeLevel,
+    ChannelTypes,
+    PushPlatformChoices,
+    WebhookAuthMethod,
+)
 
 from .. import permissions, serializers
 
@@ -427,10 +432,9 @@ class UserChannelViewSet(ChannelViewSet):
         if not settings.PUSH_ENABLED:
             raise NotFound()
 
-        from core.services.push import (  # pylint: disable=import-outside-toplevel
-            gateway_configured,
-            register_push_device,
-        )
+        # pylint: disable=import-outside-toplevel
+        from core.services.push import gateway_configured, register_push_device
+        from core.services.push.preview import session_expires_at
 
         serializer = serializers.PushDeviceRegistrationSerializer(data=request.data)
         serializer.is_valid(raise_exception=True)
@@ -443,10 +447,18 @@ class UserChannelViewSet(ChannelViewSet):
         # unregisters this device (see the ``user_logged_out`` receiver in
         # ``core.signals``). API-key/token auth paths have no session — the
         # channel is then never logout-bound, matching their lifecycle.
+        # A browser only gets message previews while that session lives: on a
+        # shared computer, an expired session must not leave the previous
+        # user's subjects popping up.
         session = getattr(request, "session", None)
         channel, created = register_push_device(
             user=request.user,
             session_key=getattr(session, "session_key", None),
+            session_expires_at=(
+                session_expires_at(session)
+                if platform == PushPlatformChoices.WEB
+                else None
+            ),
             **serializer.validated_data,
         )
         return Response(

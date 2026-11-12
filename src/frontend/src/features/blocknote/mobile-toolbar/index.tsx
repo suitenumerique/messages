@@ -6,6 +6,7 @@ import { useTranslation } from "react-i18next";
 
 import { DriveFile } from "@/features/forms/components/message-form/drive-attachment-picker";
 import { Drawer } from "@/features/ui/components/drawer";
+import { useKeepCaretAboveToolbar } from "../keep-caret-above-toolbar";
 import { ToolbarSeparator } from "../toolbar-separator";
 import { MobileToolbarButton } from "./buttons";
 import {
@@ -67,6 +68,20 @@ export const MobileToolbar = ({
     const editor = useBlockNoteEditor();
     const focusState = useComposerFocusState(editor);
     const keepEditorFocusOnTap = useKeepEditorFocusOnTap();
+    // The bar comes and goes with the keyboard: the caret guard follows it.
+    const [bar, setBar] = useState<HTMLDivElement | null>(null);
+    useKeepCaretAboveToolbar(bar);
+    const barRef = useCallback(
+        (element: HTMLDivElement | null) => {
+            setBar(element);
+            const releaseFocusGuard = keepEditorFocusOnTap(element);
+            return () => {
+                releaseFocusGuard?.();
+                setBar(null);
+            };
+        },
+        [keepEditorFocusOnTap],
+    );
     const [view, setView] = useState<MobileToolbarView>("toolbar");
     // Child drawers: toolbar extras (template / signature selectors…) open
     // their content as a bottom drawer through MobileToolbarDrawerContext,
@@ -162,7 +177,7 @@ export const MobileToolbar = ({
                 },
             )}
             data-color-scheme="light"
-            ref={keepEditorFocusOnTap}
+            ref={barRef}
         >
             {view === "format" && (
                 <Drawer

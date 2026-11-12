@@ -18,8 +18,42 @@
 		7A11AA0100000000000000A2 /* WebAuthSessionPlugin.swift in Sources */ = {isa = PBXBuildFile; fileRef = 7A11AA0100000000000000A1 /* WebAuthSessionPlugin.swift */; };
 		7A11AA0100000000000000B2 /* MainViewController.swift in Sources */ = {isa = PBXBuildFile; fileRef = 7A11AA0100000000000000B1 /* MainViewController.swift */; };
 		7A11AA0100000000000000E3 /* Localizable.strings in Resources */ = {isa = PBXBuildFile; fileRef = 7A11AA0100000000000000E0 /* Localizable.strings */; };
+		7A11AA020000000000000010 /* PushPreviewCrypto.swift in Sources */ = {isa = PBXBuildFile; fileRef = 7A11AA020000000000000001 /* PushPreviewCrypto.swift */; };
+		7A11AA020000000000000011 /* PushPreviewKeyring.swift in Sources */ = {isa = PBXBuildFile; fileRef = 7A11AA020000000000000002 /* PushPreviewKeyring.swift */; };
+		7A11AA020000000000000012 /* PushPreviewKeysPlugin.swift in Sources */ = {isa = PBXBuildFile; fileRef = 7A11AA020000000000000003 /* PushPreviewKeysPlugin.swift */; };
+		7A11AA020000000000000013 /* PushPreviewCrypto.swift in Sources */ = {isa = PBXBuildFile; fileRef = 7A11AA020000000000000001 /* PushPreviewCrypto.swift */; };
+		7A11AA020000000000000014 /* PushPreviewKeyring.swift in Sources */ = {isa = PBXBuildFile; fileRef = 7A11AA020000000000000002 /* PushPreviewKeyring.swift */; };
+		7A11AA020000000000000015 /* NotificationService.swift in Sources */ = {isa = PBXBuildFile; fileRef = 7A11AA020000000000000004 /* NotificationService.swift */; };
+		7A11AA020000000000000016 /* NotificationService.appex in Embed Foundation Extensions */ = {isa = PBXBuildFile; fileRef = 7A11AA020000000000000007 /* NotificationService.appex */; settings = {ATTRIBUTES = (RemoveHeadersOnCopy, ); }; };
+		7A11AA030000000000000002 /* PrivacyInfo.xcprivacy in Resources */ = {isa = PBXBuildFile; fileRef = 7A11AA030000000000000001 /* PrivacyInfo.xcprivacy */; };
+		7A11AA040000000000000002 /* InfoPlist.strings in Resources */ = {isa = PBXBuildFile; fileRef = 7A11AA040000000000000000 /* InfoPlist.strings */; };
+		7A11AA050000000000000002 /* KeyboardAccessoryPlugin.swift in Sources */ = {isa = PBXBuildFile; fileRef = 7A11AA050000000000000001 /* KeyboardAccessoryPlugin.swift */; };
 		7AC1EEE5306524B300CBCC18 /* SceneDelegate.swift in Sources */ = {isa = PBXBuildFile; fileRef = 7AC1EEE4306524B300CBCC18 /* SceneDelegate.swift */; };
 /* End PBXBuildFile section */
+
+/* Begin PBXContainerItemProxy section */
+		7A11AA020000000000000035 /* PBXContainerItemProxy */ = {
+			isa = PBXContainerItemProxy;
+			containerPortal = 504EC2FC1FED79650016851F /* Project object */;
+			proxyType = 1;
+			remoteGlobalIDString = 7A11AA020000000000000030;
+			remoteInfo = NotificationService;
+		};
+/* End PBXContainerItemProxy section */
+
+/* Begin PBXCopyFilesBuildPhase section */
+		7A11AA020000000000000034 /* Embed Foundation Extensions */ = {
+			isa = PBXCopyFilesBuildPhase;
+			buildActionMask = 2147483647;
+			dstPath = "";
+			dstSubfolderSpec = 13;
+			files = (
+				7A11AA020000000000000016 /* NotificationService.appex in Embed Foundation Extensions */,
+			);
+			name = "Embed Foundation Extensions";
+			runOnlyForDeploymentPostprocessing = 0;
+		};
+/* End PBXCopyFilesBuildPhase section */
 
 /* Begin PBXFileReference section */
 		2FAD9762203C412B000D30F8 /* config.xml */ = {isa = PBXFileReference; lastKnownFileType = text.xml; path = config.xml; sourceTree = "<group>"; };
@@ -37,6 +71,16 @@
 		7A11AA0100000000000000E1 /* en */ = {isa = PBXFileReference; lastKnownFileType = text.plist.strings; name = en; path = en.lproj/Localizable.strings; sourceTree = "<group>"; };
 		7A11AA0100000000000000E2 /* fr */ = {isa = PBXFileReference; lastKnownFileType = text.plist.strings; name = fr; path = fr.lproj/Localizable.strings; sourceTree = "<group>"; };
 		7A11AA0100000000000000F1 /* generated.xcconfig */ = {isa = PBXFileReference; lastKnownFileType = text.xcconfig; path = generated.xcconfig; sourceTree = SOURCE_ROOT; };
+		7A11AA020000000000000001 /* PushPreviewCrypto.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PushPreviewCrypto.swift; sourceTree = "<group>"; };
+		7A11AA020000000000000002 /* PushPreviewKeyring.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PushPreviewKeyring.swift; sourceTree = "<group>"; };
+		7A11AA020000000000000003 /* PushPreviewKeysPlugin.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PushPreviewKeysPlugin.swift; sourceTree = "<group>"; };
+		7A11AA020000000000000004 /* NotificationService.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = NotificationService.swift; sourceTree = "<group>"; };
+		7A11AA020000000000000005 /* Info.plist */ = {isa = PBXFileReference; lastKnownFileType = text.plist.xml; path = Info.plist; sourceTree = "<group>"; };
+		7A11AA020000000000000006 /* NotificationService.entitlements */ = {isa = PBXFileReference; lastKnownFileType = text.plist.entitlements; path = NotificationService.entitlements; sourceTree = "<group>"; };
+		7A11AA020000000000000007 /* NotificationService.appex */ = {isa = PBXFileReference; explicitFileType = "wrapper.app-extension"; includeInIndex = 0; path = NotificationService.appex; sourceTree = BUILT_PRODUCTS_DIR; };
+		7A11AA030000000000000001 /* PrivacyInfo.xcprivacy */ = {isa = PBXFileReference; lastKnownFileType = text.xml; path = PrivacyInfo.xcprivacy; sourceTree = "<group>"; };
+		7A11AA040000000000000001 /* fr */ = {isa = PBXFileReference; lastKnownFileType = text.plist.strings; name = fr; path = fr.lproj/InfoPlist.strings; sourceTree = "<group>"; };
+		7A11AA050000000000000001 /* KeyboardAccessoryPlugin.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = KeyboardAccessoryPlugin.swift; sourceTree = "<group>"; };
 		7AC1EEE4306524B300CBCC18 /* SceneDelegate.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SceneDelegate.swift; sourceTree = "<group>"; };
 		958DCC722DB07C7200EA8C5F /* debug.xcconfig */ = {isa = PBXFileReference; lastKnownFileType = text.xcconfig; name = debug.xcconfig; path = ../debug.xcconfig; sourceTree = SOURCE_ROOT; };
 /* End PBXFileReference section */
@@ -50,6 +94,13 @@
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
+		7A11AA020000000000000032 /* Frameworks */ = {
+			isa = PBXFrameworksBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
 /* End PBXFrameworksBuildPhase section */
 
 /* Begin PBXGroup section */
@@ -59,6 +110,8 @@
 				958DCC722DB07C7200EA8C5F /* debug.xcconfig */,
 				7A11AA0100000000000000F1 /* generated.xcconfig */,
 				504EC3061FED79650016851F /* App */,
+				7A11AA020000000000000020 /* PushPreview */,
+				7A11AA020000000000000021 /* NotificationService */,
 				504EC3051FED79650016851F /* Products */,
 			);
 			sourceTree = "<group>";
@@ -67,6 +120,7 @@
 			isa = PBXGroup;
 			children = (
 				504EC3041FED79650016851F /* App.app */,
+				7A11AA020000000000000007 /* NotificationService.appex */,
 			);
 			name = Products;
 			sourceTree = "<group>";
@@ -80,15 +134,38 @@
 				504EC3071FED79650016851F /* AppDelegate.swift */,
 				7A11AA0100000000000000B1 /* MainViewController.swift */,
 				7A11AA0100000000000000A1 /* WebAuthSessionPlugin.swift */,
+				7A11AA020000000000000003 /* PushPreviewKeysPlugin.swift */,
+				7A11AA050000000000000001 /* KeyboardAccessoryPlugin.swift */,
 				504EC30B1FED79650016851F /* Main.storyboard */,
 				504EC30E1FED79650016851F /* Assets.xcassets */,
 				504EC3101FED79650016851F /* LaunchScreen.storyboard */,
 				7A11AA0100000000000000E0 /* Localizable.strings */,
 				504EC3131FED79650016851F /* Info.plist */,
+				7A11AA040000000000000000 /* InfoPlist.strings */,
+				7A11AA030000000000000001 /* PrivacyInfo.xcprivacy */,
 				2FAD9762203C412B000D30F8 /* config.xml */,
 				50B271D01FEDC1A000F3C39B /* public */,
 			);
 			path = App;
+			sourceTree = "<group>";
+		};
+		7A11AA020000000000000020 /* PushPreview */ = {
+			isa = PBXGroup;
+			children = (
+				7A11AA020000000000000001 /* PushPreviewCrypto.swift */,
+				7A11AA020000000000000002 /* PushPreviewKeyring.swift */,
+			);
+			path = PushPreview;
+			sourceTree = "<group>";
+		};
+		7A11AA020000000000000021 /* NotificationService */ = {
+			isa = PBXGroup;
+			children = (
+				7A11AA020000000000000004 /* NotificationService.swift */,
+				7A11AA020000000000000005 /* Info.plist */,
+				7A11AA020000000000000006 /* NotificationService.entitlements */,
+			);
+			path = NotificationService;
 			sourceTree = "<group>";
 		};
 /* End PBXGroup section */
@@ -101,12 +178,14 @@
 				504EC3001FED79650016851F /* Sources */,
 				504EC3011FED79650016851F /* Frameworks */,
 				504EC3021FED79650016851F /* Resources */,
+				7A11AA020000000000000034 /* Embed Foundation Extensions */,
 				7A11AA0100000000000000C1 /* Strip dev ATS exception */,
 				7A11AA0100000000000000C2 /* Check synced Capacitor identity */,
 			);
 			buildRules = (
 			);
 			dependencies = (
+				7A11AA020000000000000036 /* PBXTargetDependency */,
 			);
 			name = App;
 			packageProductDependencies = (
@@ -116,18 +195,40 @@
 			productReference = 504EC3041FED79650016851F /* App.app */;
 			productType = "com.apple.product-type.application";
 		};
+		7A11AA020000000000000030 /* NotificationService */ = {
+			isa = PBXNativeTarget;
+			buildConfigurationList = 7A11AA020000000000000042 /* Build configuration list for PBXNativeTarget "NotificationService" */;
+			buildPhases = (
+				7A11AA020000000000000031 /* Sources */,
+				7A11AA020000000000000032 /* Frameworks */,
+				7A11AA020000000000000033 /* Resources */,
+			);
+			buildRules = (
+			);
+			dependencies = (
+			);
+			name = NotificationService;
+			productName = NotificationService;
+			productReference = 7A11AA020000000000000007 /* NotificationService.appex */;
+			productType = "com.apple.product-type.app-extension";
+		};
 /* End PBXNativeTarget section */
 
 /* Begin PBXProject section */
 		504EC2FC1FED79650016851F /* Project object */ = {
 			isa = PBXProject;
 			attributes = {
+				BuildIndependentTargetsInParallel = YES;
 				LastSwiftUpdateCheck = 920;
-				LastUpgradeCheck = 920;
+				LastUpgradeCheck = 2720;
 				TargetAttributes = {
 					504EC3031FED79650016851F = {
 						CreatedOnToolsVersion = 9.2;
 						LastSwiftMigration = 1100;
+						ProvisioningStyle = Automatic;
+					};
+					7A11AA020000000000000030 = {
+						CreatedOnToolsVersion = 16.0;
 						ProvisioningStyle = Automatic;
 					};
 				};
@@ -150,6 +251,7 @@
 			projectRoot = "";
 			targets = (
 				504EC3031FED79650016851F /* App */,
+				7A11AA020000000000000030 /* NotificationService */,
 			);
 		};
 /* End PBXProject section */
@@ -165,7 +267,16 @@
 				50379B232058CBB4000EE86E /* capacitor.config.json in Resources */,
 				504EC30D1FED79650016851F /* Main.storyboard in Resources */,
 				7A11AA0100000000000000E3 /* Localizable.strings in Resources */,
+				7A11AA040000000000000002 /* InfoPlist.strings in Resources */,
+				7A11AA030000000000000002 /* PrivacyInfo.xcprivacy in Resources */,
 				2FAD9763203C412B000D30F8 /* config.xml in Resources */,
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
+		7A11AA020000000000000033 /* Resources */ = {
+			isa = PBXResourcesBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
@@ -226,10 +337,32 @@
 				7A11AA0100000000000000B2 /* MainViewController.swift in Sources */,
 				7A11AA0100000000000000A2 /* WebAuthSessionPlugin.swift in Sources */,
 				7AC1EEE5306524B300CBCC18 /* SceneDelegate.swift in Sources */,
+				7A11AA020000000000000010 /* PushPreviewCrypto.swift in Sources */,
+				7A11AA020000000000000011 /* PushPreviewKeyring.swift in Sources */,
+				7A11AA020000000000000012 /* PushPreviewKeysPlugin.swift in Sources */,
+				7A11AA050000000000000002 /* KeyboardAccessoryPlugin.swift in Sources */,
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
+		7A11AA020000000000000031 /* Sources */ = {
+			isa = PBXSourcesBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+				7A11AA020000000000000013 /* PushPreviewCrypto.swift in Sources */,
+				7A11AA020000000000000014 /* PushPreviewKeyring.swift in Sources */,
+				7A11AA020000000000000015 /* NotificationService.swift in Sources */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
 /* End PBXSourcesBuildPhase section */
+
+/* Begin PBXTargetDependency section */
+		7A11AA020000000000000036 /* PBXTargetDependency */ = {
+			isa = PBXTargetDependency;
+			target = 7A11AA020000000000000030 /* NotificationService */;
+			targetProxy = 7A11AA020000000000000035 /* PBXContainerItemProxy */;
+		};
+/* End PBXTargetDependency section */
 
 /* Begin PBXVariantGroup section */
 		504EC30B1FED79650016851F /* Main.storyboard */ = {
@@ -257,6 +390,14 @@
 			name = Localizable.strings;
 			sourceTree = "<group>";
 		};
+		7A11AA040000000000000000 /* InfoPlist.strings */ = {
+			isa = PBXVariantGroup;
+			children = (
+				7A11AA040000000000000001 /* fr */,
+			);
+			name = InfoPlist.strings;
+			sourceTree = "<group>";
+		};
 /* End PBXVariantGroup section */
 
 /* Begin XCBuildConfiguration section */
@@ -265,6 +406,7 @@
 			baseConfigurationReference = 7A11AA0100000000000000F1 /* generated.xcconfig */;
 			buildSettings = {
 				ALWAYS_SEARCH_USER_PATHS = NO;
+				CLANG_ANALYZER_LOCALIZABILITY_NONLOCALIZED = YES;
 				CLANG_ANALYZER_NONNULL = YES;
 				CLANG_ANALYZER_NUMBER_OBJECT_CONVERSION = YES_AGGRESSIVE;
 				CLANG_CXX_LANGUAGE_STANDARD = "gnu++14";
@@ -275,6 +417,7 @@
 				CLANG_WARN_BOOL_CONVERSION = YES;
 				CLANG_WARN_COMMA = YES;
 				CLANG_WARN_CONSTANT_CONVERSION = YES;
+				CLANG_WARN_DEPRECATED_OBJC_IMPLEMENTATIONS = YES;
 				CLANG_WARN_DIRECT_OBJC_ISA_USAGE = YES_ERROR;
 				CLANG_WARN_DOCUMENTATION_COMMENTS = YES;
 				CLANG_WARN_EMPTY_BODY = YES;
@@ -282,8 +425,10 @@
 				CLANG_WARN_INFINITE_RECURSION = YES;
 				CLANG_WARN_INT_CONVERSION = YES;
 				CLANG_WARN_NON_LITERAL_NULL_CONVERSION = YES;
+				CLANG_WARN_OBJC_IMPLICIT_RETAIN_SELF = YES;
 				CLANG_WARN_OBJC_LITERAL_CONVERSION = YES;
 				CLANG_WARN_OBJC_ROOT_CLASS = YES_ERROR;
+				CLANG_WARN_QUOTED_INCLUDE_IN_FRAMEWORK_HEADER = YES;
 				CLANG_WARN_RANGE_LOOP_ANALYSIS = YES;
 				CLANG_WARN_STRICT_PROTOTYPES = YES;
 				CLANG_WARN_SUSPICIOUS_MOVE = YES;
@@ -295,6 +440,7 @@
 				DEBUG_INFORMATION_FORMAT = dwarf;
 				ENABLE_STRICT_OBJC_MSGSEND = YES;
 				ENABLE_TESTABILITY = YES;
+				ENABLE_USER_SCRIPT_SANDBOXING = YES;
 				GCC_C_LANGUAGE_STANDARD = gnu11;
 				GCC_DYNAMIC_NO_PIC = NO;
 				GCC_NO_COMMON_BLOCKS = YES;
@@ -312,7 +458,9 @@
 				IPHONEOS_DEPLOYMENT_TARGET = 15.0;
 				MTL_ENABLE_DEBUG_INFO = YES;
 				ONLY_ACTIVE_ARCH = YES;
+				PUSH_PREVIEW_KEYCHAIN_GROUP = "$(AppIdentifierPrefix)$(MOBILE_APP_ID:default=local.suitenumerique.messages).push-preview";
 				SDKROOT = iphoneos;
+				STRING_CATALOG_GENERATE_SYMBOLS = YES;
 				SWIFT_ACTIVE_COMPILATION_CONDITIONS = DEBUG;
 				SWIFT_OPTIMIZATION_LEVEL = "-Onone";
 			};
@@ -323,6 +471,7 @@
 			baseConfigurationReference = 7A11AA0100000000000000F1 /* generated.xcconfig */;
 			buildSettings = {
 				ALWAYS_SEARCH_USER_PATHS = NO;
+				CLANG_ANALYZER_LOCALIZABILITY_NONLOCALIZED = YES;
 				CLANG_ANALYZER_NONNULL = YES;
 				CLANG_ANALYZER_NUMBER_OBJECT_CONVERSION = YES_AGGRESSIVE;
 				CLANG_CXX_LANGUAGE_STANDARD = "gnu++14";
@@ -333,6 +482,7 @@
 				CLANG_WARN_BOOL_CONVERSION = YES;
 				CLANG_WARN_COMMA = YES;
 				CLANG_WARN_CONSTANT_CONVERSION = YES;
+				CLANG_WARN_DEPRECATED_OBJC_IMPLEMENTATIONS = YES;
 				CLANG_WARN_DIRECT_OBJC_ISA_USAGE = YES_ERROR;
 				CLANG_WARN_DOCUMENTATION_COMMENTS = YES;
 				CLANG_WARN_EMPTY_BODY = YES;
@@ -340,8 +490,10 @@
 				CLANG_WARN_INFINITE_RECURSION = YES;
 				CLANG_WARN_INT_CONVERSION = YES;
 				CLANG_WARN_NON_LITERAL_NULL_CONVERSION = YES;
+				CLANG_WARN_OBJC_IMPLICIT_RETAIN_SELF = YES;
 				CLANG_WARN_OBJC_LITERAL_CONVERSION = YES;
 				CLANG_WARN_OBJC_ROOT_CLASS = YES_ERROR;
+				CLANG_WARN_QUOTED_INCLUDE_IN_FRAMEWORK_HEADER = YES;
 				CLANG_WARN_RANGE_LOOP_ANALYSIS = YES;
 				CLANG_WARN_STRICT_PROTOTYPES = YES;
 				CLANG_WARN_SUSPICIOUS_MOVE = YES;
@@ -353,6 +505,7 @@
 				DEBUG_INFORMATION_FORMAT = "dwarf-with-dsym";
 				ENABLE_NS_ASSERTIONS = NO;
 				ENABLE_STRICT_OBJC_MSGSEND = YES;
+				ENABLE_USER_SCRIPT_SANDBOXING = YES;
 				GCC_C_LANGUAGE_STANDARD = gnu11;
 				GCC_NO_COMMON_BLOCKS = YES;
 				GCC_WARN_64_TO_32_BIT_CONVERSION = YES;
@@ -363,7 +516,9 @@
 				GCC_WARN_UNUSED_VARIABLE = YES;
 				IPHONEOS_DEPLOYMENT_TARGET = 15.0;
 				MTL_ENABLE_DEBUG_INFO = NO;
+				PUSH_PREVIEW_KEYCHAIN_GROUP = "$(AppIdentifierPrefix)$(MOBILE_APP_ID:default=local.suitenumerique.messages).push-preview";
 				SDKROOT = iphoneos;
+				STRING_CATALOG_GENERATE_SYMBOLS = YES;
 				SWIFT_COMPILATION_MODE = wholemodule;
 				SWIFT_OPTIMIZATION_LEVEL = "-O";
 				VALIDATE_PRODUCT = YES;
@@ -379,7 +534,7 @@
 				CODE_SIGN_STYLE = Automatic;
 				CURRENT_PROJECT_VERSION = "$(MOBILE_VERSION_CODE:default=1)";
 				INFOPLIST_FILE = App/Info.plist;
-				IPHONEOS_DEPLOYMENT_TARGET = 15.0;
+				IPHONEOS_DEPLOYMENT_TARGET = "$(RECOMMENDED_IPHONEOS_DEPLOYMENT_TARGET)";
 				LD_RUNPATH_SEARCH_PATHS = (
 					"$(inherited)",
 					"@executable_path/Frameworks",
@@ -390,7 +545,7 @@
 				PRODUCT_NAME = "$(TARGET_NAME)";
 				SWIFT_ACTIVE_COMPILATION_CONDITIONS = DEBUG;
 				SWIFT_VERSION = 5.0;
-				TARGETED_DEVICE_FAMILY = "1,2";
+				TARGETED_DEVICE_FAMILY = 1;
 			};
 			name = Debug;
 		};
@@ -402,7 +557,7 @@
 				CODE_SIGN_STYLE = Automatic;
 				CURRENT_PROJECT_VERSION = "$(MOBILE_VERSION_CODE:default=1)";
 				INFOPLIST_FILE = App/Info.plist;
-				IPHONEOS_DEPLOYMENT_TARGET = 15.0;
+				IPHONEOS_DEPLOYMENT_TARGET = "$(RECOMMENDED_IPHONEOS_DEPLOYMENT_TARGET)";
 				LD_RUNPATH_SEARCH_PATHS = (
 					"$(inherited)",
 					"@executable_path/Frameworks",
@@ -412,7 +567,55 @@
 				PRODUCT_NAME = "$(TARGET_NAME)";
 				SWIFT_ACTIVE_COMPILATION_CONDITIONS = "";
 				SWIFT_VERSION = 5.0;
-				TARGETED_DEVICE_FAMILY = "1,2";
+				TARGETED_DEVICE_FAMILY = 1;
+			};
+			name = Release;
+		};
+		7A11AA020000000000000040 /* Debug */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				APPLICATION_EXTENSION_API_ONLY = YES;
+				CODE_SIGN_ENTITLEMENTS = NotificationService/NotificationService.entitlements;
+				CODE_SIGN_STYLE = Automatic;
+				CURRENT_PROJECT_VERSION = "$(MOBILE_VERSION_CODE:default=1)";
+				INFOPLIST_FILE = NotificationService/Info.plist;
+				IPHONEOS_DEPLOYMENT_TARGET = "$(RECOMMENDED_IPHONEOS_DEPLOYMENT_TARGET)";
+				LD_RUNPATH_SEARCH_PATHS = (
+					"$(inherited)",
+					"@executable_path/Frameworks",
+					"@executable_path/../../Frameworks",
+				);
+				MARKETING_VERSION = "$(MOBILE_VERSION_NAME:default=0.0.0)";
+				PRODUCT_BUNDLE_IDENTIFIER = "$(MOBILE_APP_ID:default=local.suitenumerique.messages).NotificationService";
+				PRODUCT_NAME = "$(TARGET_NAME)";
+				SKIP_INSTALL = YES;
+				SWIFT_ACTIVE_COMPILATION_CONDITIONS = DEBUG;
+				SWIFT_VERSION = 5.0;
+				TARGETED_DEVICE_FAMILY = 1;
+			};
+			name = Debug;
+		};
+		7A11AA020000000000000041 /* Release */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				APPLICATION_EXTENSION_API_ONLY = YES;
+				CODE_SIGN_ENTITLEMENTS = NotificationService/NotificationService.entitlements;
+				CODE_SIGN_STYLE = Automatic;
+				CURRENT_PROJECT_VERSION = "$(MOBILE_VERSION_CODE:default=1)";
+				INFOPLIST_FILE = NotificationService/Info.plist;
+				IPHONEOS_DEPLOYMENT_TARGET = "$(RECOMMENDED_IPHONEOS_DEPLOYMENT_TARGET)";
+				LD_RUNPATH_SEARCH_PATHS = (
+					"$(inherited)",
+					"@executable_path/Frameworks",
+					"@executable_path/../../Frameworks",
+				);
+				MARKETING_VERSION = "$(MOBILE_VERSION_NAME:default=0.0.0)";
+				PRODUCT_BUNDLE_IDENTIFIER = "$(MOBILE_APP_ID:default=local.suitenumerique.messages).NotificationService";
+				PRODUCT_NAME = "$(TARGET_NAME)";
+				SKIP_INSTALL = YES;
+				SWIFT_ACTIVE_COMPILATION_CONDITIONS = "";
+				SWIFT_VERSION = 5.0;
+				TARGETED_DEVICE_FAMILY = 1;
 			};
 			name = Release;
 		};
@@ -433,6 +636,15 @@
 			buildConfigurations = (
 				504EC3171FED79650016851F /* Debug */,
 				504EC3181FED79650016851F /* Release */,
+			);
+			defaultConfigurationIsVisible = 0;
+			defaultConfigurationName = Release;
+		};
+		7A11AA020000000000000042 /* Build configuration list for PBXNativeTarget "NotificationService" */ = {
+			isa = XCConfigurationList;
+			buildConfigurations = (
+				7A11AA020000000000000040 /* Debug */,
+				7A11AA020000000000000041 /* Release */,
 			);
 			defaultConfigurationIsVisible = 0;
 			defaultConfigurationName = Release;

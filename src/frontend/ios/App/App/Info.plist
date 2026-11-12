@@ -40,6 +40,14 @@
 	</array>
 	<key>CFBundleVersion</key>
 	<string>$(CURRENT_PROJECT_VERSION)</string>
+	<!--
+	  Export compliance, answered once here instead of at every App Store
+	  Connect upload. The app only uses the encryption built into iOS: HTTPS,
+	  CryptoKit for the notification previews, Security and CommonCrypto for the
+	  OTA bundles. Implementing an algorithm of our own would make it false.
+	-->
+	<key>ITSAppUsesNonExemptEncryption</key>
+	<false/>
 	<key>LSRequiresIPhoneOS</key>
 	<true/>
 	<!--
@@ -53,9 +61,27 @@
 		<true/>
 	</dict>
 	<!--
-	  Wakes the app for remote notifications so the (future) fetch-to-enrich /
-	  background refresh path can run; the visible loc-key alert itself is
-	  rendered by the OS and does not need it.
+	  iOS kills the app, with no error to catch, when it reaches one of these
+	  resources without its purpose string, and the frameworks reach them on
+	  their own: the file inputs of the WebView offer the camera (and the
+	  microphone for a video), the share sheet offers to save an image. French
+	  versions: fr.lproj/InfoPlist.strings.
+	-->
+	<key>NSCameraUsageDescription</key>
+	<string>The camera lets you take a photo or video and attach it to the message you are writing.</string>
+	<key>NSMicrophoneUsageDescription</key>
+	<string>The microphone records sound when you film a video to attach to a message.</string>
+	<key>NSPhotoLibraryAddUsageDescription</key>
+	<string>Attachments you choose to save from a message are added to your photo library.</string>
+	<!-- Keychain group holding the notification preview keys, shared with the
+	     Notification Service Extension (PUSH_PREVIEW_KEYCHAIN_GROUP build
+	     setting, see PushPreviewKeyring). -->
+	<key>PushPreviewKeychainGroup</key>
+	<string>$(PUSH_PREVIEW_KEYCHAIN_GROUP)</string>
+	<!--
+	  Wakes the app for remote notifications (background refresh). Neither the
+	  visible loc-key alert nor its preview needs it: the OS renders the former
+	  and the Notification Service Extension decrypts the latter.
 	-->
 	<key>UIBackgroundModes</key>
 	<array>
@@ -72,13 +98,6 @@
 	<key>UISupportedInterfaceOrientations</key>
 	<array>
 		<string>UIInterfaceOrientationPortrait</string>
-		<string>UIInterfaceOrientationLandscapeLeft</string>
-		<string>UIInterfaceOrientationLandscapeRight</string>
-	</array>
-	<key>UISupportedInterfaceOrientations~ipad</key>
-	<array>
-		<string>UIInterfaceOrientationPortrait</string>
-		<string>UIInterfaceOrientationPortraitUpsideDown</string>
 		<string>UIInterfaceOrientationLandscapeLeft</string>
 		<string>UIInterfaceOrientationLandscapeRight</string>
 	</array>

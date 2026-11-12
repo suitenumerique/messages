@@ -2,7 +2,7 @@
 // build, alongside `cap sync` (npm run mobile:build). Xcode builds run from the
 // IDE on the host, where an exported shell variable never lands — this file is
 // how the same env that produced capacitor.config.json reaches the iOS build
-// settings (bundle id, display name, auth scheme). Android needs no such file:
+// settings (bundle id, display name, auth scheme, signing team). Android needs no such file:
 // gradle reads the env directly (see android/app/build.gradle and the
 // mobile-android-* Makefile targets).
 //
@@ -54,6 +54,20 @@ const settings = {
   // given MARKETING_VERSION, which the commit count satisfies by construction.
   MOBILE_VERSION_CODE: process.env.MOBILE_VERSION_CODE || "1",
 };
+
+// Signing team of both targets (app + Notification Service Extension), kept
+// out of project.pbxproj: it is per developer / organisation, and picking a
+// team in Xcode's Signing UI would write it there. Unset leaves the choice to
+// Xcode, which then refuses to sign until a team is set.
+const teamId = process.env.MOBILE_IOS_TEAM_ID;
+if (teamId) {
+  if (!/^[A-Z0-9]{10}$/.test(teamId)) {
+    throw new Error(
+      `MOBILE_IOS_TEAM_ID ${JSON.stringify(teamId)} is not an Apple Team ID (10 uppercase letters or digits)`,
+    );
+  }
+  settings.DEVELOPMENT_TEAM = teamId;
+}
 
 // A newline or a "//" would truncate the setting (xcconfig comment/line
 // syntax) and silently ship the placeholder identity instead of failing.

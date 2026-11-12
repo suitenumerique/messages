@@ -28,7 +28,7 @@ function CalendarOptionItem({
                 className="calendar-select__color"
                 style={{ backgroundColor: color }}
             />
-            {name}
+            <span className="calendar-select__name">{name}</span>
         </span>
     );
 }

@@ -240,67 +240,32 @@ def test_list_threads_view_specific_ordering(api_client):
     assert result_ids == [str(thread_a.id), str(thread_b.id)]
 
 
-def test_delete_thread_viewer_should_be_forbidden(api_client):
-    """Test that a user with only VIEWER access cannot delete a thread, but EDITOR can."""
-    user = UserFactory()
-    api_client.force_authenticate(user=user)
-    mailbox = MailboxFactory(users_read=[user])  # VIEWER role
-    thread = ThreadFactory()
-    thread_access = ThreadAccessFactory(
-        mailbox=mailbox,
-        thread=thread,
-        role=enums.ThreadAccessRoleChoices.VIEWER,
-    )
-    MessageFactory(thread=thread)
+def test_delete_thread_route_is_not_exposed(api_client):
+    """A thread editor cannot hard-delete a thread through ``DELETE /threads/<id>/``.
 
-    url = reverse("threads-detail", kwargs={"pk": str(thread.id)})
-    response = api_client.delete(url)
-    assert response.status_code == status.HTTP_403_FORBIDDEN
-    assert Thread.objects.filter(pk=thread.pk).exists()
-
-    # Elevate BOTH ThreadAccess and MailboxAccess to EDITOR — full edit
-    # rights on a thread require both roles.
-    thread_access.role = enums.ThreadAccessRoleChoices.EDITOR
-    thread_access.save()
-    MailboxAccess.objects.filter(user=user, mailbox=mailbox).update(
-        role=enums.MailboxRoleChoices.EDITOR
-    )
-    response = api_client.delete(url)
-    assert response.status_code == status.HTTP_204_NO_CONTENT
-    assert not Thread.objects.filter(pk=thread.pk).exists()
-
-
-def test_delete_thread_viewer_mailbox_with_editor_thread_access_forbidden(api_client):
-    """Previously-missed scenario: VIEWER MailboxAccess + EDITOR ThreadAccess.
-
-    A shared inbox grants EDITOR ThreadAccess to every incoming thread,
-    but a user with only VIEWER MailboxAccess on that inbox must not be
-    able to delete those threads. `HasThreadEditAccess` previously
-    checked only the ThreadAccess role and missed this case.
+    Permanent deletion only goes through ``core.services.trashbin`` (cutoff
+    sweep, ``TRASHBIN_ALLOW_EMPTY``-gated empty action, draft bulk delete), so
+    the route must not exist, even for a trashed thread.
     """
     user = UserFactory()
     api_client.force_authenticate(user=user)
-    mailbox = MailboxFactory(users_read=[user])  # VIEWER mailbox role
+    mailbox = MailboxFactory()
+    MailboxAccessFactory(
+        mailbox=mailbox, user=user, role=enums.MailboxRoleChoices.ADMIN
+    )
     thread = ThreadFactory()
     ThreadAccessFactory(
         mailbox=mailbox,
         thread=thread,
-        role=enums.ThreadAccessRoleChoices.EDITOR,  # Mailbox has edit on thread
+        role=enums.ThreadAccessRoleChoices.EDITOR,
     )
-    MessageFactory(thread=thread)
+    MessageFactory(thread=thread, is_trashed=True)
+    thread.update_stats()
 
     url = reverse("threads-detail", kwargs={"pk": str(thread.id)})
-    response = api_client.delete(url)
-    assert response.status_code == status.HTTP_403_FORBIDDEN
+    response = api_client.delete(f"{url}?mailbox_id={mailbox.id}&has_trashed=1")
+    assert response.status_code == status.HTTP_405_METHOD_NOT_ALLOWED
     assert Thread.objects.filter(pk=thread.pk).exists()
-
-    # Elevating MailboxAccess to EDITOR unblocks the destroy action.
-    MailboxAccess.objects.filter(user=user, mailbox=mailbox).update(
-        role=enums.MailboxRoleChoices.EDITOR
-    )
-    response = api_client.delete(url)
-    assert response.status_code == status.HTTP_204_NO_CONTENT
-    assert not Thread.objects.filter(pk=thread.pk).exists()
 
 
 def test_refresh_summary_viewer_forbidden(api_client):
@@ -2222,3 +2187,138 @@ class TestThreadListQueryCount:
             f"(N+1 regression on prefetch chain?), "
             f"got 1→{queries_1} vs 5→{queries_5}"
         )
+
+
+class TestTrashbinFoldersLeaveOutViewerThreads:
+    """Trash and Spam only list the threads the mailbox holds as an editor.
+
+    Trash and spam are message flags shared by every mailbox of a thread: a
+    thread shared as a viewer lands in the trashbin as soon as an editor bins
+    it, yet the mailbox can neither empty nor restore it.
+    """
+
+    FOLDERS = [
+        pytest.param(
+            {"has_trashed": "1"}, {"has_trashed": True, "is_trashed": True}, id="trash"
+        ),
+        pytest.param({"is_spam": "1"}, {"is_spam": True}, id="spam"),
+    ]
+
+    @staticmethod
+    def _setup(thread_flags, user=None):
+        """A mailbox holding one binned thread as an editor and one as a viewer.
+
+        The user only reads the mailbox: the folders go by the mailbox's thread
+        access role, not by the user's own mailbox role.
+        """
+        user = user or UserFactory()
+        mailbox = MailboxFactory(users_read=[user])
+        threads = {}
+        for name, role in [
+            ("editor", enums.ThreadAccessRoleChoices.EDITOR),
+            ("viewer", enums.ThreadAccessRoleChoices.VIEWER),
+        ]:
+            threads[name] = ThreadFactory(
+                subject=name, has_messages=True, **thread_flags
+            )
+            ThreadAccessFactory(mailbox=mailbox, thread=threads[name], role=role)
+        return user, mailbox, threads
+
+    @pytest.mark.parametrize("folder_params,thread_flags", FOLDERS)
+    def test_list_leaves_out_viewer_threads(
+        self, api_client, folder_params, thread_flags
+    ):
+        """The folder lists the editor thread only."""
+        user, mailbox, threads = self._setup(thread_flags)
+        api_client.force_authenticate(user=user)
+
+        response = api_client.get(
+            API_URL, {"mailbox_id": str(mailbox.id), **folder_params}
+        )
+
+        assert response.status_code == status.HTTP_200_OK
+        assert [t["id"] for t in response.data["results"]] == [
+            str(threads["editor"].id)
+        ]
+
+    @pytest.mark.parametrize("folder_params,thread_flags", FOLDERS)
+    def test_stats_leave_out_viewer_threads(
+        self, api_client, folder_params, thread_flags
+    ):
+        """The folder count matches what the folder lists."""
+        user, mailbox, _ = self._setup(thread_flags)
+        api_client.force_authenticate(user=user)
+
+        response = api_client.get(
+            reverse("threads-stats"),
+            {"mailbox_id": str(mailbox.id), "stats_fields": "all", **folder_params},
+        )
+
+        assert response.status_code == status.HTTP_200_OK
+        assert response.data == {"all": 1}
+
+    @pytest.mark.parametrize("folder_params,thread_flags", FOLDERS)
+    def test_editor_access_through_another_mailbox_does_not_count(
+        self, api_client, folder_params, thread_flags
+    ):
+        """The editor role must be held by the listed mailbox itself."""
+        user, mailbox, threads = self._setup(thread_flags)
+        other_mailbox = MailboxFactory(users_read=[user])
+        ThreadAccessFactory(
+            mailbox=other_mailbox,
+            thread=threads["viewer"],
+            role=enums.ThreadAccessRoleChoices.EDITOR,
+        )
+        api_client.force_authenticate(user=user)
+
+        response = api_client.get(
+            API_URL, {"mailbox_id": str(mailbox.id), **folder_params}
+        )
+
+        assert [t["id"] for t in response.data["results"]] == [
+            str(threads["editor"].id)
+        ]
+
+    def test_other_folders_keep_viewer_threads(self, api_client):
+        """Outside the trashbin, a thread shared as a viewer is still listed."""
+        user, mailbox, threads = self._setup({})
+        api_client.force_authenticate(user=user)
+
+        response = api_client.get(API_URL, {"mailbox_id": str(mailbox.id)})
+
+        assert {t["id"] for t in response.data["results"]} == {
+            str(threads["editor"].id),
+            str(threads["viewer"].id),
+        }
+
+    @override_settings(OPENSEARCH_HOSTS=["http://opensearch:9200"])
+    @pytest.mark.parametrize(
+        "params,expected",
+        [
+            pytest.param({"search": "test"}, {"editor", "viewer"}, id="inbox"),
+            pytest.param(
+                {"search": "test", "has_trashed": "1"}, {"editor"}, id="trash-folder"
+            ),
+            pytest.param(
+                {"search": "test", "is_spam": "1"}, {"editor"}, id="spam-folder"
+            ),
+            pytest.param({"search": "test in:trash"}, {"editor"}, id="in-trash"),
+            pytest.param({"search": "test in:spam"}, {"editor"}, id="in-spam"),
+        ],
+    )
+    def test_search_leaves_out_viewer_threads(self, api_client, params, expected):
+        """The index does not know the roles, the database check drops them."""
+        user, mailbox, threads = self._setup({})
+        api_client.force_authenticate(user=user)
+
+        with mock.patch("core.api.viewsets.thread.search_threads") as mock_search:
+            mock_search.return_value = {
+                "threads": [{"id": str(thread.id)} for thread in threads.values()],
+                "total": 2,
+            }
+            response = api_client.get(
+                API_URL, {"mailbox_id": str(mailbox.id), **params}
+            )
+
+        assert response.status_code == status.HTTP_200_OK
+        assert {t["subject"] for t in response.data["results"]} == expected

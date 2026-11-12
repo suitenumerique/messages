@@ -1,0 +1,582 @@
+"""Tests for the mailbox storage endpoint (Storage settings tab)."""
+# pylint: disable=redefined-outer-name
+
+import os
+from unittest import mock
+
+from django.db import connection
+from django.db.models import QuerySet
+from django.test.utils import CaptureQueriesContext
+from django.urls import reverse
+from django.utils import timezone
+
+import pytest
+from rest_framework.test import APIClient
+
+from core import factories, models
+from core.api.serializers import LargestThreadSerializer
+
+pytestmark = pytest.mark.django_db
+
+
+def _url(mailbox):
+    return reverse("mailboxes-storage", kwargs={"pk": str(mailbox.id)})
+
+
+def test_requires_authentication():
+    """Anonymous users cannot read storage stats."""
+    mailbox = factories.MailboxFactory()
+    response = APIClient().get(_url(mailbox))
+    assert response.status_code == 401
+
+
+def test_requires_mailbox_access():
+    """A user without access to the mailbox gets a 404 (queryset-filtered)."""
+    user = factories.UserFactory()
+    mailbox = factories.MailboxFactory()
+
+    client = APIClient()
+    client.force_login(user)
+    assert client.get(_url(mailbox)).status_code == 404
+
+
+def test_non_admin_member_forbidden():
+    """A member without admin rights cannot read the storage breakdown."""
+    user = factories.UserFactory()
+    mailbox = factories.MailboxFactory()
+    factories.MailboxAccessFactory(
+        mailbox=mailbox, user=user, role=models.MailboxRoleChoices.VIEWER
+    )
+
+    client = APIClient()
+    client.force_login(user)
+    assert client.get(_url(mailbox)).status_code == 403
+
+
+def test_empty_mailbox_returns_zeroes():
+    """A mailbox with no threads reports zero storage and an empty list."""
+    user = factories.UserFactory()
+    mailbox = factories.MailboxFactory()
+    factories.MailboxAccessFactory(
+        mailbox=mailbox, user=user, role=models.MailboxRoleChoices.ADMIN
+    )
+
+    client = APIClient()
+    client.force_login(user)
+    response = client.get(_url(mailbox))
+
+    assert response.status_code == 200
+    assert response.json() == {
+        "total_storage": 0,
+        "trashed_storage": 0,
+        "spam_storage": 0,
+        "message_count": 0,
+        "thread_count": 0,
+        "largest_threads": [],
+    }
+
+
+def test_storage_formula_and_largest_threads(settings):
+    """Total follows the metrics formula; threads are ranked by size."""
+    overhead = settings.METRICS_STORAGE_USED_OVERHEAD_BY_MESSAGE
+
+    user = factories.UserFactory()
+    mailbox = factories.MailboxFactory()
+    factories.MailboxAccessFactory(
+        mailbox=mailbox, user=user, role=models.MailboxRoleChoices.ADMIN
+    )
+    contact = factories.ContactFactory(mailbox=mailbox)
+
+    thread_small = factories.ThreadFactory(subject="small")
+    factories.ThreadAccessFactory(
+        mailbox=mailbox, thread=thread_small, role=models.ThreadAccessRoleChoices.EDITOR
+    )
+    msg_small = factories.MessageFactory(
+        thread=thread_small, sender=contact, raw_mime=b"s" * 100
+    )
+
+    thread_big = factories.ThreadFactory(subject="big", messaged_at=timezone.now())
+    factories.ThreadAccessFactory(
+        mailbox=mailbox, thread=thread_big, role=models.ThreadAccessRoleChoices.EDITOR
+    )
+    # Distinct content so the blobs are not deduplicated by sha256.
+    msg_big1 = factories.MessageFactory(
+        thread=thread_big, sender=contact, raw_mime=b"b" * 5000
+    )
+    msg_big2 = factories.MessageFactory(
+        thread=thread_big, sender=contact, raw_mime=b"c" * 5000
+    )
+    att = factories.AttachmentFactory(mailbox=mailbox, blob_size=500, message=msg_big1)
+
+    client = APIClient()
+    client.force_login(user)
+    response = client.get(_url(mailbox))
+
+    assert response.status_code == 200
+    data = response.json()
+
+    expected_total = (
+        3 * overhead
+        + msg_small.blob.size_compressed
+        + msg_big1.blob.size_compressed
+        + msg_big2.blob.size_compressed
+        + att.blob.size_compressed
+    )
+    assert data["total_storage"] == expected_total
+    assert data["message_count"] == 3
+    assert data["thread_count"] == 2
+
+    # Ranked by size descending: big thread first. Same basis as the
+    # subtotals — message overhead plus MIME and draft blobs.
+    assert [t["subject"] for t in data["largest_threads"]] == ["big", "small"]
+    big = data["largest_threads"][0]
+    assert big["message_count"] == 2
+    assert big["size"] == (
+        2 * overhead + msg_big1.blob.size_compressed + msg_big2.blob.size_compressed
+    )
+    assert big["messaged_at"] is not None
+
+
+def test_trashed_and_spam_storage(settings):
+    """trashed_storage and spam_storage each sum only their own messages."""
+    overhead = settings.METRICS_STORAGE_USED_OVERHEAD_BY_MESSAGE
+
+    user = factories.UserFactory()
+    mailbox = factories.MailboxFactory()
+    factories.MailboxAccessFactory(
+        mailbox=mailbox, user=user, role=models.MailboxRoleChoices.ADMIN
+    )
+    contact = factories.ContactFactory(mailbox=mailbox)
+
+    live_thread = factories.ThreadFactory(subject="live")
+    factories.ThreadAccessFactory(
+        mailbox=mailbox, thread=live_thread, role=models.ThreadAccessRoleChoices.EDITOR
+    )
+    factories.MessageFactory(thread=live_thread, sender=contact, raw_mime=b"live" * 100)
+
+    trashed_thread = factories.ThreadFactory(subject="trashed", is_trashed=True)
+    factories.ThreadAccessFactory(
+        mailbox=mailbox,
+        thread=trashed_thread,
+        role=models.ThreadAccessRoleChoices.EDITOR,
+    )
+    trashed_msg = factories.MessageFactory(
+        thread=trashed_thread, sender=contact, raw_mime=b"trash" * 100, is_trashed=True
+    )
+
+    spam_thread = factories.ThreadFactory(subject="spam", is_spam=True)
+    factories.ThreadAccessFactory(
+        mailbox=mailbox, thread=spam_thread, role=models.ThreadAccessRoleChoices.EDITOR
+    )
+    spam_msg = factories.MessageFactory(
+        thread=spam_thread, sender=contact, raw_mime=b"spam" * 100, is_spam=True
+    )
+
+    client = APIClient()
+    client.force_login(user)
+    response = client.get(_url(mailbox))
+
+    assert response.status_code == 200
+    data = response.json()
+
+    assert data["trashed_storage"] == 1 * overhead + trashed_msg.blob.size_compressed
+    assert data["spam_storage"] == 1 * overhead + spam_msg.blob.size_compressed
+    assert data["trashed_storage"] < data["total_storage"]
+    assert data["spam_storage"] < data["total_storage"]
+
+
+def test_trashed_storage_is_scoped_per_message_not_per_thread(settings):
+    """Only the trashed messages of a partly-trashed thread are counted.
+
+    Thread.is_trashed is true only when *every* message is trashed, so scoping
+    by the thread flag would report 0 here.
+    """
+    overhead = settings.METRICS_STORAGE_USED_OVERHEAD_BY_MESSAGE
+
+    user = factories.UserFactory()
+    mailbox = factories.MailboxFactory()
+    factories.MailboxAccessFactory(
+        mailbox=mailbox, user=user, role=models.MailboxRoleChoices.ADMIN
+    )
+    contact = factories.ContactFactory(mailbox=mailbox)
+
+    # One thread, one trashed message and one live one: the thread's own
+    # is_trashed stays False because not all of its messages are trashed.
+    thread = factories.ThreadFactory(subject="mixed")
+    factories.ThreadAccessFactory(
+        mailbox=mailbox, thread=thread, role=models.ThreadAccessRoleChoices.EDITOR
+    )
+    trashed_msg = factories.MessageFactory(
+        thread=thread, sender=contact, raw_mime=b"trash" * 100, is_trashed=True
+    )
+    factories.MessageFactory(thread=thread, sender=contact, raw_mime=b"live" * 100)
+
+    thread.refresh_from_db()
+    thread.update_stats()
+    thread.refresh_from_db()
+    assert thread.is_trashed is False
+
+    client = APIClient()
+    client.force_login(user)
+    response = client.get(_url(mailbox))
+
+    assert response.status_code == 200
+    data = response.json()
+
+    assert data["trashed_storage"] == 1 * overhead + trashed_msg.blob.size_compressed
+    assert data["spam_storage"] == 0
+
+
+def test_spam_storage_only_counts_spam_messages(settings):
+    """A spam conversation only counts for its flagged messages.
+
+    "Empty spam" keeps the others, so the subtotal must announce the space it
+    really frees — here not the user's own reply.
+    """
+    overhead = settings.METRICS_STORAGE_USED_OVERHEAD_BY_MESSAGE
+
+    user = factories.UserFactory()
+    mailbox = factories.MailboxFactory()
+    factories.MailboxAccessFactory(
+        mailbox=mailbox, user=user, role=models.MailboxRoleChoices.ADMIN
+    )
+    contact = factories.ContactFactory(mailbox=mailbox)
+
+    thread = factories.ThreadFactory(subject="spam")
+    factories.ThreadAccessFactory(
+        mailbox=mailbox, thread=thread, role=models.ThreadAccessRoleChoices.EDITOR
+    )
+    spam_msg = factories.MessageFactory(
+        thread=thread, sender=contact, raw_mime=b"spam" * 100, is_spam=True
+    )
+    factories.MessageFactory(
+        thread=thread, sender=contact, raw_mime=b"reply" * 100, is_sender=True
+    )
+    thread.update_stats()
+
+    client = APIClient()
+    client.force_login(user)
+    response = client.get(_url(mailbox))
+
+    assert response.status_code == 200
+    assert response.json()["spam_storage"] == overhead + spam_msg.blob.size_compressed
+
+
+def test_fully_trashed_spam_thread_counts_as_trash_only(settings):
+    """It sits in the Trash folder only, so "Empty spam" would not free it."""
+    overhead = settings.METRICS_STORAGE_USED_OVERHEAD_BY_MESSAGE
+
+    user = factories.UserFactory()
+    mailbox = factories.MailboxFactory()
+    factories.MailboxAccessFactory(
+        mailbox=mailbox, user=user, role=models.MailboxRoleChoices.ADMIN
+    )
+    contact = factories.ContactFactory(mailbox=mailbox)
+
+    thread = factories.ThreadFactory(subject="spam")
+    factories.ThreadAccessFactory(
+        mailbox=mailbox, thread=thread, role=models.ThreadAccessRoleChoices.EDITOR
+    )
+    message = factories.MessageFactory(
+        thread=thread,
+        sender=contact,
+        raw_mime=b"spam" * 100,
+        is_spam=True,
+        is_trashed=True,
+    )
+    thread.update_stats()
+
+    client = APIClient()
+    client.force_login(user)
+    response = client.get(_url(mailbox))
+
+    assert response.status_code == 200
+    assert response.json()["spam_storage"] == 0
+    assert response.json()["trashed_storage"] == (
+        overhead + message.blob.size_compressed
+    )
+
+
+def test_largest_threads_report_this_mailbox_read_state(settings):
+    """``is_unread`` follows this mailbox's own read cursor on the thread."""
+    user = factories.UserFactory()
+    mailbox = factories.MailboxFactory()
+    factories.MailboxAccessFactory(
+        mailbox=mailbox, user=user, role=models.MailboxRoleChoices.ADMIN
+    )
+    contact = factories.ContactFactory(mailbox=mailbox)
+    now = timezone.now()
+
+    read_thread = factories.ThreadFactory(subject="read", messaged_at=now)
+    factories.ThreadAccessFactory(
+        mailbox=mailbox,
+        thread=read_thread,
+        read_at=now,
+        role=models.ThreadAccessRoleChoices.EDITOR,
+    )
+    factories.MessageFactory(thread=read_thread, sender=contact, raw_mime=b"r" * 100)
+
+    unread_thread = factories.ThreadFactory(subject="unread", messaged_at=now)
+    factories.ThreadAccessFactory(
+        mailbox=mailbox,
+        thread=unread_thread,
+        role=models.ThreadAccessRoleChoices.EDITOR,
+    )
+    # Another mailbox having read it must not count for this one.
+    factories.ThreadAccessFactory(
+        thread=unread_thread, read_at=now, role=models.ThreadAccessRoleChoices.EDITOR
+    )
+    factories.MessageFactory(thread=unread_thread, sender=contact, raw_mime=b"u" * 100)
+
+    client = APIClient()
+    client.force_login(user)
+    response = client.get(_url(mailbox))
+
+    assert response.status_code == 200
+    unread_by_subject = {
+        t["subject"]: t["is_unread"] for t in response.json()["largest_threads"]
+    }
+    assert unread_by_subject == {"read": False, "unread": True}
+
+
+def test_largest_threads_skip_a_thread_unshared_meanwhile():
+    """A thread unshared between the size query and its loading is skipped."""
+    user = factories.UserFactory()
+    mailbox = factories.MailboxFactory()
+    factories.MailboxAccessFactory(
+        mailbox=mailbox, user=user, role=models.MailboxRoleChoices.ADMIN
+    )
+    accesses = {}
+    for subject in ("kept", "unshared"):
+        thread = factories.ThreadFactory(subject=subject)
+        accesses[subject] = factories.ThreadAccessFactory(
+            mailbox=mailbox, thread=thread, role=models.ThreadAccessRoleChoices.EDITOR
+        )
+        factories.MessageFactory(thread=thread)
+
+    in_bulk = QuerySet.in_bulk
+
+    def unshare_then_in_bulk(queryset, *args, **kwargs):
+        models.ThreadAccess.objects.filter(pk=accesses["unshared"].pk).delete()
+        return in_bulk(queryset, *args, **kwargs)
+
+    client = APIClient()
+    client.force_login(user)
+    with mock.patch.object(QuerySet, "in_bulk", unshare_then_in_bulk):
+        response = client.get(_url(mailbox))
+
+    assert response.status_code == 200
+    assert [t["subject"] for t in response.json()["largest_threads"]] == ["kept"]
+
+
+def test_largest_threads_are_capped_at_100(settings):
+    """Only the 100 largest threads are returned, largest first."""
+    user = factories.UserFactory()
+    mailbox = factories.MailboxFactory()
+    factories.MailboxAccessFactory(
+        mailbox=mailbox, user=user, role=models.MailboxRoleChoices.ADMIN
+    )
+    contact = factories.ContactFactory(mailbox=mailbox)
+    for index in range(101):
+        thread = factories.ThreadFactory(subject=f"t{index}")
+        factories.ThreadAccessFactory(
+            mailbox=mailbox, thread=thread, role=models.ThreadAccessRoleChoices.EDITOR
+        )
+        # Random bytes do not compress, so sizes really grow with the index.
+        factories.MessageFactory(
+            thread=thread, sender=contact, raw_mime=os.urandom(200 + index * 20)
+        )
+
+    client = APIClient()
+    client.force_login(user)
+    response = client.get(_url(mailbox))
+
+    assert response.status_code == 200
+    data = response.json()
+    assert data["thread_count"] == 101
+    sizes = [t["size"] for t in data["largest_threads"]]
+    assert len(sizes) == 100
+    assert sizes == sorted(sizes, reverse=True)
+    # The smallest thread is the one cut.
+    assert "t0" not in {t["subject"] for t in data["largest_threads"]}
+
+
+def test_query_count_does_not_grow_with_threads(settings):
+    """The breakdown costs a fixed number of queries, whatever the mailbox size.
+
+    Guards against N+1 regressions, such as a per-thread query issued while
+    building ``largest_threads``. It does not catch correlated subqueries
+    nested inside a single query — those stay one query each.
+    """
+    settings.STORAGE_USAGE_CACHE_TTL = 0
+    user = factories.UserFactory()
+    mailbox = factories.MailboxFactory()
+    factories.MailboxAccessFactory(
+        mailbox=mailbox, user=user, role=models.MailboxRoleChoices.ADMIN
+    )
+    contact = factories.ContactFactory(mailbox=mailbox)
+    client = APIClient()
+    client.force_login(user)
+
+    def _add_threads(count):
+        for _ in range(count):
+            thread = factories.ThreadFactory()
+            factories.ThreadAccessFactory(
+                mailbox=mailbox,
+                thread=thread,
+                role=models.ThreadAccessRoleChoices.EDITOR,
+            )
+            factories.MessageFactory(thread=thread, sender=contact)
+
+    def _queries():
+        with CaptureQueriesContext(connection) as context:
+            assert client.get(_url(mailbox)).status_code == 200
+        return len(context)
+
+    _add_threads(1)
+    with_one_thread = _queries()
+    _add_threads(20)
+
+    assert _queries() == with_one_thread
+
+
+def test_largest_threads_leave_out_the_trashbin(settings):
+    """Trashbin items are not weighed in the largest conversations.
+
+    The subtotals already account for them, and the list offers to move a
+    conversation to the trash: one already there would otherwise stay listed.
+    A partly trashed conversation is listed with its live messages only, and a
+    conversation holding spam not at all (it sits in the Spam folder).
+    """
+    overhead = settings.METRICS_STORAGE_USED_OVERHEAD_BY_MESSAGE
+
+    user = factories.UserFactory()
+    mailbox = factories.MailboxFactory()
+    factories.MailboxAccessFactory(
+        mailbox=mailbox, user=user, role=models.MailboxRoleChoices.ADMIN
+    )
+    contact = factories.ContactFactory(mailbox=mailbox)
+
+    def _thread(subject, *messages_flags):
+        thread = factories.ThreadFactory(subject=subject)
+        factories.ThreadAccessFactory(
+            mailbox=mailbox, thread=thread, role=models.ThreadAccessRoleChoices.EDITOR
+        )
+        messages = [
+            factories.MessageFactory(
+                thread=thread, sender=contact, raw_mime=os.urandom(200), **flags
+            )
+            for flags in messages_flags
+        ]
+        thread.update_stats()
+        return messages
+
+    _thread("trashed", {"is_trashed": True})
+    _thread("spam", {}, {"is_spam": True})
+    live_msg, _ = _thread("partly trashed", {}, {"is_trashed": True})
+    _thread("inbox", {})
+
+    client = APIClient()
+    client.force_login(user)
+    response = client.get(_url(mailbox))
+
+    assert response.status_code == 200
+    threads = {t["subject"]: t for t in response.json()["largest_threads"]}
+    assert set(threads) == {"partly trashed", "inbox"}
+
+    partly_trashed = threads["partly trashed"]
+    assert partly_trashed["message_count"] == 1
+    assert partly_trashed["size"] == overhead + live_msg.blob.size_compressed
+    # The folder flags still let the frontend open it where it is listed.
+    assert partly_trashed["has_active"] is True
+    assert partly_trashed["has_trashed"] is True
+    assert threads["inbox"]["has_active"] is True
+
+
+def test_threads_shared_as_viewer_are_left_out(settings):
+    """A thread shared with the mailbox as a viewer weighs nothing here.
+
+    It is billed to its editors and the mailbox could not free it anyway, so
+    neither the total, the subtotals nor the largest threads count it.
+    """
+    overhead = settings.METRICS_STORAGE_USED_OVERHEAD_BY_MESSAGE
+    user = factories.UserFactory()
+    mailbox = factories.MailboxFactory()
+    factories.MailboxAccessFactory(
+        mailbox=mailbox, user=user, role=models.MailboxRoleChoices.ADMIN
+    )
+    contact = factories.ContactFactory(mailbox=mailbox)
+    messages = {}
+    for subject, role in [
+        ("editor", models.ThreadAccessRoleChoices.EDITOR),
+        ("viewer", models.ThreadAccessRoleChoices.VIEWER),
+    ]:
+        for message_flags in [{}, {"is_trashed": True}, {"is_spam": True}]:
+            thread = factories.ThreadFactory(subject=subject)
+            factories.ThreadAccessFactory(mailbox=mailbox, thread=thread, role=role)
+            messages[(subject, *message_flags)] = factories.MessageFactory(
+                thread=thread,
+                sender=contact,
+                raw_mime=os.urandom(200),
+                **message_flags,
+            )
+            thread.update_stats()
+
+    client = APIClient()
+    client.force_login(user)
+    response = client.get(_url(mailbox))
+
+    assert response.status_code == 200
+    data = response.json()
+    sizes = {
+        key: overhead + message.blob.size_compressed
+        for key, message in messages.items()
+    }
+    assert data["total_storage"] == sum(
+        size for key, size in sizes.items() if key[0] == "editor"
+    )
+    assert data["trashed_storage"] == sizes[("editor", "is_trashed")]
+    assert data["spam_storage"] == sizes[("editor", "is_spam")]
+    assert data["message_count"] == 3
+    assert data["thread_count"] == 3
+    assert [t["subject"] for t in data["largest_threads"]] == ["editor"]
+
+
+def test_largest_threads_report_whether_they_can_be_edited():
+    """The abilities come from the user's edit rights on the thread.
+
+    Only admins reach the endpoint today, and they can edit every thread the
+    mailbox holds as an editor; the abilities keep the list from offering to
+    trash a thread should the endpoint open to other members.
+    """
+    user = factories.UserFactory()
+    mailbox = factories.MailboxFactory()
+    factories.MailboxAccessFactory(
+        mailbox=mailbox, user=user, role=models.MailboxRoleChoices.ADMIN
+    )
+    thread = factories.ThreadFactory()
+    factories.ThreadAccessFactory(
+        mailbox=mailbox, thread=thread, role=models.ThreadAccessRoleChoices.EDITOR
+    )
+    factories.MessageFactory(thread=thread)
+
+    client = APIClient()
+    client.force_login(user)
+    response = client.get(_url(mailbox))
+
+    assert response.status_code == 200
+    assert [t["abilities"] for t in response.json()["largest_threads"]] == [
+        {"edit": True}
+    ]
+
+
+@pytest.mark.parametrize("can_edit", [True, False])
+def test_largest_thread_serializer_abilities(can_edit):
+    """The abilities mirror the ``_can_edit`` annotation."""
+    thread = factories.ThreadFactory()
+    thread.size = 0
+    thread.message_count = 0
+    thread.read_at = None
+    thread._can_edit = can_edit
+
+    assert LargestThreadSerializer(thread).data["abilities"] == {"edit": can_edit}

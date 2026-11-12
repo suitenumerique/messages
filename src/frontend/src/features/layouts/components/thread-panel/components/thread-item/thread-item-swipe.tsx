@@ -1,6 +1,4 @@
-import { useMemo } from "react";
 import { useTranslation } from "react-i18next";
-import { useLocation } from "@tanstack/react-router";
 import clsx from "clsx";
 import { IconType } from "@gouvfr-lasuite/ui-components";
 
@@ -9,7 +7,7 @@ import { ThreadRowActions } from "@/features/message/use-thread-row-actions";
 import useThreadUnread from "@/features/message/use-thread-unread";
 import useAbility, { Abilities } from "@/hooks/use-ability";
 import { useSwipeActions } from "@/hooks/use-swipe-actions";
-import ViewHelper from "@/features/utils/view-helper";
+import { useCurrentView } from "@/hooks/use-current-view";
 import { Archive, Restore, Trash } from "@gouvfr-lasuite/ui-components/icons";
 import { Icon, IconProps } from "@/features/ui/components/icon";
 
@@ -52,27 +50,18 @@ export const ThreadItemSwipe = ({
     const canEditThread = useAbility(Abilities.CAN_EDIT_THREAD, thread);
     const hasUnread = useThreadUnread(thread);
 
-    // Each of these rebuilds the whole folder tree (translated labels
-    // included) and reparses the query string, so left uncached they ran a few
-    // hundred times per render of the list. They only depend on the URL.
-    const searchStr = useLocation({ select: (location) => location.searchStr });
-    const view = useMemo(
-        () => ({
-            isTrashed: ViewHelper.isTrashedView(),
-            isArchived: ViewHelper.isArchivedView(),
-            isDrafts: ViewHelper.isDraftsView(),
-        }),
-        [searchStr]
-    );
+    const { isTrashedView, isArchivedView, isDraftsView } = useCurrentView();
 
     // Same rules as the thread action bar: from the trash the only meaningful
     // transition is restoring, and archiving a spam or a draft thread means
     // nothing.
-    const isTrashContext = view.isTrashed || thread.is_trashed;
-    const isArchivedView = view.isArchived;
+    const isTrashContext = isTrashedView || thread.is_trashed;
+    // Spam is already part of the trashbin: like the thread action bar, it is
+    // permanently deleted (after confirmation) rather than trashed.
+    const isSpamDelete = !isTrashContext && !!thread.is_spam;
     const canArchive =
-        canEditThread && !thread.is_spam && !isTrashContext && !view.isDrafts;
-    const canTrash = canEditThread;
+        canEditThread && !thread.is_spam && !isTrashContext && !isDraftsView;
+    const canTrash = canEditThread && (!isSpamDelete || actions.canDeleteSpam);
     const endWidth = (canArchive ? ACTION_WIDTH : 0) + (canTrash ? ACTION_WIDTH : 0);
 
     const toggleRead = () => actions.toggleRead(thread, hasUnread);
@@ -107,7 +96,7 @@ export const ThreadItemSwipe = ({
     // Drafts have no trash stage: in the drafts view the button hard-deletes
     // the thread's drafts, mirroring the thread action bar and the selection
     // toolbar.
-    const isDraftDelete = view.isDrafts && !isTrashContext;
+    const isDraftDelete = isDraftsView && !isTrashContext;
 
     // The button is 76px wide: it gets the resulting state ("Read" / "Unread"),
     // not the full sentence, which wrapped onto three lines in French. The
@@ -115,12 +104,16 @@ export const ThreadItemSwipe = ({
     const readLabel = hasUnread ? t("Read") : t("Unread");
     const readTitle = hasUnread ? t("Mark as read") : t("Mark as unread");
     const archiveLabel = isArchivedView ? t("Unarchive") : t("Archive");
-    const trashLabel = isTrashContext ? t("Restore") : t("Delete");
-    const trashTitle = isDraftDelete ? t("Delete draft") : trashLabel;
+    const trashLabel = isTrashContext ? t("Restore") : isDraftDelete || isSpamDelete ? t("Delete") : t("Trash");
+    const trashTitle = isTrashContext
+        ? t("Restore")
+        : isDraftDelete ? t("Delete draft") : isSpamDelete ? t("Delete permanently") : t("Move to trash");
     const trashIconProps: IconProps = { icon: isTrashContext ? Restore : Trash };
     const trashAction = isDraftDelete
         ? () => actions.deleteDrafts(thread)
-        : () => actions.setTrashed(thread, !isTrashContext);
+        : isSpamDelete
+          ? () => actions.deleteSpam(thread)
+          : () => actions.setTrashed(thread, !isTrashContext);
     const showPanels = enabled && (isSwiping || openSide !== null);
 
     // The wrapper is rendered even when the gesture is off (desktop, selection

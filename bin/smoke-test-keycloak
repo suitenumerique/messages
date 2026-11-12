@@ -81,6 +81,11 @@ assert_code() {
   echo "ok: $label ($expected)"
 }
 
+docker run --rm --entrypoint ls "$IMAGE" \
+  /opt/keycloak/providers/lst-dsfr.jar >/dev/null \
+  || fail "theme lst-dsfr jar is missing from the image"
+echo "ok: theme lst-dsfr jar is in the image"
+
 # Boot 1: defaults. The admin console and master realm stay open, as
 # the upstream image behaves without a filter.
 start_container

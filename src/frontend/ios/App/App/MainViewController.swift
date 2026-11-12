@@ -20,6 +20,8 @@ class MainViewController: CAPBridgeViewController {
 
     override open func capacitorDidLoad() {
         bridge?.registerPluginInstance(WebAuthSessionPlugin())
+        bridge?.registerPluginInstance(PushPreviewKeysPlugin())
+        bridge?.registerPluginInstance(KeyboardAccessoryPlugin())
         NotificationCenter.default.addObserver(
             self,
             selector: #selector(keyboardWillChangeFrame(_:)),
@@ -47,6 +49,13 @@ class MainViewController: CAPBridgeViewController {
         coordinator.animate(alongsideTransition: nil) { [weak self] _ in
             self?.applyKeyboardOverlap()
         }
+    }
+
+    override func viewDidAppear(_ animated: Bool) {
+        super.viewDidAppear(animated)
+        // Same reset at the end of a full-screen modal's dismissal (in-app
+        // browser of the Drive picker…), once the keyboard is already back.
+        applyKeyboardOverlap()
     }
 
     @objc private func keyboardWillChangeFrame(_ notification: Notification) {

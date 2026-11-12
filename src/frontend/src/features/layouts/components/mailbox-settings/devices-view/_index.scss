@@ -1,0 +1,17 @@
+.user-devices-grid__toolbar {
+    display: flex;
+    justify-content: flex-end;
+    margin-block: var(--c--globals--spacings--sm);
+
+    // Cunningham buttons are `nowrap` with a fixed height: on a narrow
+    // viewport the (long, once translated) label overflows the modal.
+    // Let it wrap and the button grow instead.
+    .c__button {
+        max-width: 100%;
+        height: auto;
+        min-height: var(--c--components--button--small-height);
+        padding-block: var(--c--globals--spacings--3xs);
+        white-space: normal;
+        text-align: center;
+    }
+}

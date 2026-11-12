@@ -11,6 +11,7 @@ import type { ConfigRetrieve200SCHEMACUSTOMATTRIBUTESMAILDOMAIN } from "./config
 import type { ConfigRetrieve200FRONTENDTHEMECONFIG } from "./config_retrieve200_frontendthemeconfi_g";
 import type { ConfigRetrieve200FRONTENDFEEDBACKWIDGETCONFIG } from "./config_retrieve200_frontendfeedbackwidgetconfi_g";
 import type { ConfigRetrieve200FRONTENDLAGAUFREWIDGETCONFIG } from "./config_retrieve200_frontendlagaufrewidgetconfi_g";
+import type { ConfigRetrieve200SERVICEMESSAGE } from "./config_retrieve200_servicemessag_e";
 
 export type ConfigRetrieve200 = {
   readonly ENVIRONMENT: string;
@@ -42,6 +43,8 @@ export type ConfigRetrieve200 = {
   readonly FEATURE_THREAD_SPLIT: boolean;
   readonly FEATURE_THREAD_SNIPPET: boolean;
   readonly FEATURE_MAILDOMAIN_MANAGE_TOTP: boolean;
+  /** Number of days after which trashed and spam messages are permanently and automatically deleted. */
+  readonly TRASHBIN_CUTOFF_DAYS: number;
   /** Maximum age in seconds for a message to be eligible for manual retry of failed deliveries */
   readonly MESSAGES_MANUAL_RETRY_MAX_AGE: number;
   /** Whether silent OIDC login is enabled */
@@ -66,4 +69,6 @@ export type ConfigRetrieve200 = {
   readonly PUSH_ENABLED: boolean;
   /** VAPID public key (base64url) the web client passes as applicationServerKey to subscribe; null when Web Push is not configured. */
   readonly PUSH_VAPID_PUBLIC_KEY?: string;
+  /** Service message displayed in a banner on top of the app, configured from the site configuration in the Django admin */
+  readonly SERVICE_MESSAGE?: ConfigRetrieve200SERVICEMESSAGE;
 };

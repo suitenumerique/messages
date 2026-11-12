@@ -1,5 +1,5 @@
-# Postfix + milter inbound MTA image — counterpart to ./Dockerfile.pymta
-# (pure-Python aiosmtpd). This is the production default for now.
+# Postfix + milter inbound MTA image. DEPRECATED: kept for now, to be removed,
+# and no longer fixed. Use ./Dockerfile.pymta (pure-Python aiosmtpd).
 #
 # Python comes from the shared uv-managed base (deploy/python-uv/Dockerfile:
 # debian-trixie + uv digest-pinned + CPython pinned), NOT the official
@@ -16,6 +16,7 @@ FROM ${PYTHON_UV_IMAGE} AS uv
 # C extension (pulled by the `postfix` extra) during `uv sync`. They stay in
 # this build-only stage and never reach the runtime image.
 RUN <<EOR
+set -e
 apt-get update
 DEBIAN_FRONTEND="noninteractive" apt-get install -y --no-install-recommends \
     build-essential \
@@ -52,6 +53,7 @@ FROM ${PYTHON_UV_IMAGE} AS runtime-base
 # the runtime shared library the compiled pymilter extension links against.
 # (ca-certificates comes from the shared base.)
 RUN <<EOR
+set -e
 apt-get update
 DEBIAN_FRONTEND="noninteractive" apt-get install -y --no-install-recommends \
     postfix \

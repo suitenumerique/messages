@@ -108,8 +108,9 @@
     position: relative;
     pointer-events: none;
 
-    // Enable pointer events for all interactive elements
-    button, a, input, textarea, select, .c__tooltip, [role="button"], [tabindex]:not([tabindex="-1"]) {
+    // Enable pointer events for all interactive elements, and for the metadata
+    // badges, whose tooltip needs them to be hovered.
+    button, a, input, textarea, select, [role="button"], [tabindex]:not([tabindex="-1"]), .thread-message__metadata .badge {
         pointer-events: auto;
     }
 }
@@ -175,6 +176,45 @@
 
 .thread-message__header-rows > div > * {
     margin-block: 0;
+}
+
+// In a narrow thread view the date and the action bar get their own line above
+// the sender, which would otherwise be left too little room beside them. A
+// folded message keeps a single line: it only has the date and the unfold button.
+@container thread-messages (max-width: 35rem) {
+    .thread-message:not(.thread-message--folded) {
+        .thread-message__header-content {
+            display: grid;
+            grid-template-columns: auto minmax(0, 1fr);
+            row-gap: var(--c--globals--spacings--2xs);
+        }
+
+        .thread-message__header-content-info,
+        .thread-message__header-content-info > .thread-message__header-rows:first-child {
+            display: contents;
+        }
+
+        .thread-message__header-content-info > .thread-message__header-rows:first-child > .thread-message__header-column--right {
+            grid-column: 1 / -1;
+            grid-row: 1;
+            justify-content: space-between;
+        }
+
+        .thread-message__header-content > .thread-message__header-content-avatar {
+            grid-column: 1;
+            grid-row: 2;
+        }
+
+        .thread-message__header-content-info > .thread-message__header-rows:first-child > .thread-message__header-column--left {
+            grid-column: 2;
+            grid-row: 2;
+        }
+
+        .thread-message__header-content-info > .thread-message__header-rows:not(:first-child) {
+            grid-column: 2;
+            grid-row: 3;
+        }
+    }
 }
 
 .thread-message__metadata {

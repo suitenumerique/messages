@@ -9,6 +9,7 @@ import {
     patchMessagesInCache,
     patchThreadsInCache,
     removeMessagesFromCache,
+    ThreadPins,
     trimTrailingEmptyPages,
 } from "./mailbox-cache";
 
@@ -56,6 +57,50 @@ const makeInfinite = (
 
 const flatten = (data: InfiniteData<threadsListResponse>): string[] =>
     data.pages.flatMap(p => p.data.results.map(t => t.id));
+
+describe("ThreadPins", () => {
+    it("pins and unpins threads", () => {
+        const pins = new ThreadPins();
+        pins.pin(["a", "b"]);
+        pins.unpin(["a"]);
+        expect([...pins.pinnedIds]).toEqual(["b"]);
+    });
+
+    it("ignores a pin settling after the thread left the view", () => {
+        const pins = new ThreadPins();
+        pins.unpin(["a"]);
+        pins.pin(["a"]);
+        expect(pins.pinnedIds.has("a")).toBe(false);
+    });
+
+    it("pins a thread again once a fetched page lists it", () => {
+        const pins = new ThreadPins();
+        pins.unpin(["a", "b"]);
+        pins.release([makeThread("a")]);
+        pins.pin(["a", "b"]);
+        expect([...pins.pinnedIds]).toEqual(["a"]);
+    });
+
+    it("forgets the evicted threads when cleared", () => {
+        const pins = new ThreadPins();
+        pins.unpin(["a"]);
+        pins.clear();
+        pins.pin(["a"]);
+        expect(pins.pinnedIds.has("a")).toBe(true);
+    });
+
+    it("keeps a deleted thread out of the list when its mark-as-read settles after the deletion", () => {
+        const pins = new ThreadPins();
+        const listed = makeInfinite([makePage([makeThread("deleted"), makeThread("other")])]);
+        // The deletion unpins the thread, then its late mark-as-read pins it.
+        pins.unpin(["deleted"]);
+        pins.pin(["deleted"]);
+        const refetched = makeInfinite([makePage([makeThread("other")])]);
+        pins.release(refetched.pages[0].data.results);
+
+        expect(flatten(mergePinnedThreads(listed, refetched, pins.pinnedIds))).toEqual(["other"]);
+    });
+});
 
 describe("mergePinnedThreads", () => {
     it("returns newData untouched when no pinned IDs are tracked", () => {

@@ -19,9 +19,19 @@ from socket import gethostbyname, gethostname
 import dj_database_url
 import sentry_sdk
 from configurations import Configuration, values
+from lasuite.configuration.values import SecretFileValue
 from sentry_sdk.integrations.django import DjangoIntegration
 
-from core.utils import JSONValue, OptionalBooleanValue, ThrottleRateValue
+from core.enums import TrashbinAllowEmpty
+from core.utils import (
+    JSONValue,
+    OptionalBooleanValue,
+    SecretFileDictValue,
+    SecretFileJSONValue,
+    SecretFileListValue,
+    StrEnumValue,
+    ThrottleRateValue,
+)
 
 logger = logging.getLogger(__name__)
 
@@ -70,7 +80,7 @@ class Base(Configuration):
     ADMIN_URL = values.Value("admin")
 
     # OpenSearch configuration
-    OPENSEARCH_HOSTS = values.ListValue(
+    OPENSEARCH_HOSTS = SecretFileListValue(
         ["http://opensearch:9200"],
         environ_name="OPENSEARCH_URL",
         environ_prefix=None,
@@ -251,7 +261,7 @@ class Base(Configuration):
     # All four must be set for the iOS sender to be live. With PUSH_ENABLED
     # True, post_setup rejects a partially set group at boot; leaving the
     # whole group unset simply keeps the iOS sender off.
-    PUSH_APNS_KEY = values.Value(
+    PUSH_APNS_KEY = SecretFileValue(
         None,
         environ_name="PUSH_APNS_KEY",
         environ_prefix=None,
@@ -282,7 +292,7 @@ class Base(Configuration):
     # No sandbox switch (unlike APNs): FCM has a single endpoint — separate
     # staging from production by pointing at a different Firebase project
     # (its own credentials + project id), not a flag.
-    PUSH_FCM_CREDENTIALS = values.Value(
+    PUSH_FCM_CREDENTIALS = SecretFileValue(
         None,
         environ_name="PUSH_FCM_CREDENTIALS",
         environ_prefix=None,
@@ -309,7 +319,7 @@ class Base(Configuration):
     # the public key (and note that rotating it orphans every existing web
     # subscription — clients must re-subscribe). Run
     # ``derive_vapid_public_key --verify`` to check the configured pair matches.
-    PUSH_VAPID_PRIVATE_KEY = values.Value(
+    PUSH_VAPID_PRIVATE_KEY = SecretFileValue(
         None,
         environ_name="PUSH_VAPID_PRIVATE_KEY",
         environ_prefix=None,
@@ -321,7 +331,7 @@ class Base(Configuration):
     # Required for Web Push: /config serves it verbatim and never derives it (so
     # the web worker need not import the push graph). Obtain it once from the
     # private key with the ``derive_vapid_public_key`` management command.
-    PUSH_VAPID_PUBLIC_KEY = values.Value(
+    PUSH_VAPID_PUBLIC_KEY = SecretFileValue(
         None,
         environ_name="PUSH_VAPID_PUBLIC_KEY",
         environ_prefix=None,
@@ -342,10 +352,22 @@ class Base(Configuration):
         20, environ_name="PUSH_MAX_DEVICES_PER_USER", environ_prefix=None
     )
 
+    # Notification previews (sender + subject), readable only by the device:
+    # end-to-end encrypted for it, never in clear on the push transport. A
+    # browser gets them while its registering session is alive; a native app
+    # while it was opened within PUSH_PREVIEW_MAX_IDLE_DAYS (0 disables native
+    # previews). Devices outside those windows get the generic banner.
+    PUSH_PREVIEWS_ENABLED = values.BooleanValue(
+        True, environ_name="PUSH_PREVIEWS_ENABLED", environ_prefix=None
+    )
+    PUSH_PREVIEW_MAX_IDLE_DAYS = values.IntegerValue(
+        14, environ_name="PUSH_PREVIEW_MAX_IDLE_DAYS", environ_prefix=None
+    )
+
     # Security
     ALLOWED_HOSTS = values.ListValue([])
-    SECRET_KEY = values.Value(None)
-    SERVER_TO_SERVER_API_TOKENS = values.ListValue([])
+    SECRET_KEY = SecretFileValue(None)
+    SERVER_TO_SERVER_API_TOKENS = SecretFileListValue([])
 
     # SSRF allowlist: hostnames that bypass the private/internal-IP checks in
     # ``core.services.ssrf``. Needed for trusted destinations that only resolve
@@ -380,7 +402,7 @@ class Base(Configuration):
                 "messages", environ_name="DB_NAME", environ_prefix=None
             ),
             "USER": values.Value("dbuser", environ_name="DB_USER", environ_prefix=None),
-            "PASSWORD": values.Value(
+            "PASSWORD": SecretFileValue(
                 "dbpass", environ_name="DB_PASSWORD", environ_prefix=None
             ),
             "HOST": values.Value(
@@ -441,11 +463,11 @@ class Base(Configuration):
                     environ_name="STORAGE_MESSAGE_IMPORTS_BUCKET_NAME",
                     environ_prefix=None,
                 ),
-                "access_key": values.Value(
+                "access_key": SecretFileValue(
                     environ_name="STORAGE_MESSAGE_IMPORTS_ACCESS_KEY",
                     environ_prefix=None,
                 ),
-                "secret_key": values.Value(
+                "secret_key": SecretFileValue(
                     environ_name="STORAGE_MESSAGE_IMPORTS_SECRET_KEY",
                     environ_prefix=None,
                 ),
@@ -470,11 +492,11 @@ class Base(Configuration):
                     environ_name="STORAGE_MESSAGE_BLOBS_BUCKET_NAME",
                     environ_prefix=None,
                 ),
-                "access_key": values.Value(
+                "access_key": SecretFileValue(
                     environ_name="STORAGE_MESSAGE_BLOBS_ACCESS_KEY",
                     environ_prefix=None,
                 ),
-                "secret_key": values.Value(
+                "secret_key": SecretFileValue(
                     environ_name="STORAGE_MESSAGE_BLOBS_SECRET_KEY",
                     environ_prefix=None,
                 ),
@@ -484,7 +506,37 @@ class Base(Configuration):
                 ),
             },
         },
+        "message-exports": {
+            "BACKEND": "storages.backends.s3.S3Storage",
+            "OPTIONS": {
+                "endpoint_url": values.Value(
+                    environ_name="STORAGE_MESSAGE_EXPORTS_ENDPOINT_URL",
+                    environ_prefix=None,
+                ),
+                "bucket_name": values.Value(
+                    environ_name="STORAGE_MESSAGE_EXPORTS_BUCKET_NAME",
+                    environ_prefix=None,
+                ),
+                "access_key": SecretFileValue(
+                    environ_name="STORAGE_MESSAGE_EXPORTS_ACCESS_KEY",
+                    environ_prefix=None,
+                ),
+                "secret_key": SecretFileValue(
+                    environ_name="STORAGE_MESSAGE_EXPORTS_SECRET_KEY",
+                    environ_prefix=None,
+                ),
+                "region_name": values.Value(
+                    environ_name="STORAGE_MESSAGE_EXPORTS_REGION_NAME",
+                    environ_prefix=None,
+                ),
+            },
+        },
     }
+    # age public keys (age1...) exports are encrypted to: only the holders of
+    # the private keys can read them back, not the app nor the bucket.
+    STORAGE_MESSAGE_EXPORTS_AGE_RECIPIENTS = values.ListValue(
+        [], environ_name="STORAGE_MESSAGE_EXPORTS_AGE_RECIPIENTS", environ_prefix=None
+    )
     # MDA settings
     # No default on purpose: the MTA-to-MDA channel is authenticated solely by
     # an HS256 JWT signed with this shared secret, so a hardcoded fallback would
@@ -528,7 +580,7 @@ class Base(Configuration):
     CALDAV_DEFAULT_URL = values.Value(
         None, environ_name="CALDAV_DEFAULT_URL", environ_prefix=None
     )
-    CALDAV_DEFAULT_PASSWORD = values.Value(
+    CALDAV_DEFAULT_PASSWORD = SecretFileValue(
         None, environ_name="CALDAV_DEFAULT_PASSWORD", environ_prefix=None
     )
     # Public URL of the default calendar web UI (e.g. a hosted Calendars
@@ -570,7 +622,9 @@ class Base(Configuration):
     #                              failing open or closed; past
     #                              MESSAGES_INBOUND_DEFERRAL_MAX_AGE the seal is
     #                              deemed unresolvable and treated as untrusted.
-    SPAM_CONFIG = values.DictValue({}, environ_name="SPAM_CONFIG", environ_prefix=None)
+    SPAM_CONFIG = SecretFileDictValue(
+        {}, environ_name="SPAM_CONFIG", environ_prefix=None
+    )
 
     # MTA settings
 
@@ -580,7 +634,7 @@ class Base(Configuration):
     )
 
     # SMTP settings for the direct outbound MTA
-    MTA_OUT_DIRECT_PROXIES = values.ListValue(
+    MTA_OUT_DIRECT_PROXIES = SecretFileListValue(
         [], environ_name="MTA_OUT_DIRECT_PROXIES", environ_prefix=None
     )
     MTA_OUT_DIRECT_PORT = values.PositiveIntegerValue(
@@ -594,7 +648,7 @@ class Base(Configuration):
     MTA_OUT_RELAY_USERNAME = values.Value(
         None, environ_name="MTA_OUT_RELAY_USERNAME", environ_prefix=None
     )
-    MTA_OUT_RELAY_PASSWORD = values.Value(
+    MTA_OUT_RELAY_PASSWORD = SecretFileValue(
         None, environ_name="MTA_OUT_RELAY_PASSWORD", environ_prefix=None
     )
 
@@ -629,7 +683,7 @@ class Base(Configuration):
         environ_name="MESSAGES_SELFCHECK_TO",
         environ_prefix=None,
     )
-    MESSAGES_SELFCHECK_SECRET = values.Value(
+    MESSAGES_SELFCHECK_SECRET = SecretFileValue(
         "self-check-secret-for-dev",
         environ_name="MESSAGES_SELFCHECK_SECRET",
         environ_prefix=None,
@@ -645,7 +699,7 @@ class Base(Configuration):
         environ_prefix=None,
     )
 
-    MESSAGES_SELFCHECK_WEBHOOK_URL = values.Value(
+    MESSAGES_SELFCHECK_WEBHOOK_URL = SecretFileValue(
         None,
         environ_name="MESSAGES_SELFCHECK_WEBHOOK_URL",
         environ_prefix=None,
@@ -715,7 +769,7 @@ class Base(Configuration):
     #     mode (decrypt key-1 blobs but encrypt new blobs as key_id=0)
     #   {"1": {"algo": "aes-gcm", "secret": "<...>", "active": true}} —
     #     encryption on, key 1 encrypts new blobs
-    MESSAGES_BLOBS_ENCRYPT_KEYS = JSONValue(
+    MESSAGES_BLOBS_ENCRYPT_KEYS = SecretFileJSONValue(
         {}, environ_name="MESSAGES_BLOBS_ENCRYPT_KEYS", environ_prefix=None
     )
 
@@ -794,8 +848,8 @@ class Base(Configuration):
     )
 
     # Django fernet encrypted fields settings
-    # Can be a list for key rotation: ['new_key', 'old_key']
-    SALT_KEY = values.ListValue([], environ_name="SALT_KEY", environ_prefix=None)
+    # Comma-separated for key rotation: SALT_KEY=new_key,old_key
+    SALT_KEY = SecretFileListValue([], environ_name="SALT_KEY", environ_prefix=None)
 
     # DKIM settings
     MESSAGES_DKIM_DEFAULT_SELECTOR = values.Value(
@@ -843,7 +897,7 @@ class Base(Configuration):
     )
 
     # DNS Provider settings
-    DNS_SCALEWAY_API_TOKEN = values.Value(
+    DNS_SCALEWAY_API_TOKEN = SecretFileValue(
         None, environ_name="DNS_SCALEWAY_API_TOKEN", environ_prefix=None
     )
     DNS_SCALEWAY_PROJECT_ID = values.Value(
@@ -863,10 +917,10 @@ class Base(Configuration):
     AWS_S3_ENDPOINT_URL = values.Value(
         environ_name="AWS_S3_ENDPOINT_URL", environ_prefix=None
     )
-    AWS_S3_ACCESS_KEY_ID = values.Value(
+    AWS_S3_ACCESS_KEY_ID = SecretFileValue(
         environ_name="AWS_S3_ACCESS_KEY_ID", environ_prefix=None
     )
-    AWS_S3_SECRET_ACCESS_KEY = values.Value(
+    AWS_S3_SECRET_ACCESS_KEY = SecretFileValue(
         environ_name="AWS_S3_SECRET_ACCESS_KEY", environ_prefix=None
     )
     AWS_S3_REGION_NAME = values.Value(
@@ -1078,8 +1132,40 @@ class Base(Configuration):
         "REDOC_DIST": "SIDECAR",
     }
 
-    TRASHBIN_CUTOFF_DAYS = values.Value(
-        30, environ_name="TRASHBIN_CUTOFF_DAYS", environ_prefix=None
+    # The "trashbin" is the union of trashed and spam messages
+    # (``is_trashed OR is_spam``); see ``core.services.trashbin``. Items are
+    # permanently deleted from it in two ways: automatically once older than
+    # ``TRASHBIN_CUTOFF_DAYS`` (the ``cleanup_trashbin_task`` sweep), or manually
+    # when a user "empties" a folder — allowed only to the roles named by
+    # ``TRASHBIN_ALLOW_EMPTY``.
+    #
+    # 0 DISABLES automatic deletion entirely: the sweep becomes a no-op and
+    # trashbin items are kept until someone empties the folder by hand. (0 must
+    # not mean "delete everything nightly" — an operator reaching for 0 is
+    # turning the feature off, and the retention banner in the UI is hidden at
+    # 0 on exactly that reading.)
+    TRASHBIN_CUTOFF_DAYS = values.PositiveIntegerValue(
+        0, environ_name="TRASHBIN_CUTOFF_DAYS", environ_prefix=None
+    )
+    # Who may manually empty the trashbin: "never" (only the cutoff sweep
+    # deletes), "admin" (mailbox role ADMIN), or "editor" (role >= EDITOR).
+    # An unrecognised value fails at startup rather than silently meaning
+    # "nobody".
+    TRASHBIN_ALLOW_EMPTY = StrEnumValue(
+        TrashbinAllowEmpty,
+        TrashbinAllowEmpty.ADMIN,
+        environ_name="TRASHBIN_ALLOW_EMPTY",
+        environ_prefix=None,
+    )
+
+    # How long (seconds) a mailbox/organization's computed storage usage is
+    # cached at the service layer (the quota gauge and entitlements). The
+    # computation is ~100ms for a large mailbox, so caching keeps the sidebar
+    # gauge from recomputing on every load. Emptying the trashbin invalidates
+    # the mailbox entry so freed space shows immediately; every other change
+    # (new mail, sends) is reflected within this TTL. 0 disables the cache.
+    STORAGE_USAGE_CACHE_TTL = values.PositiveIntegerValue(
+        60, environ_name="STORAGE_USAGE_CACHE_TTL", environ_prefix=None
     )
 
     AUTH_USER_MODEL = "core.User"
@@ -1127,7 +1213,7 @@ class Base(Configuration):
     )
 
     # Celery
-    CELERY_BROKER_URL = values.Value(
+    CELERY_BROKER_URL = SecretFileValue(
         "redis://redis:6379", environ_name="CELERY_BROKER_URL", environ_prefix=None
     )
     CELERY_RESULT_BACKEND = "django-db"
@@ -1201,7 +1287,7 @@ class Base(Configuration):
     OIDC_RP_CLIENT_ID = values.Value(
         "st_messages", environ_name="OIDC_RP_CLIENT_ID", environ_prefix=None
     )
-    OIDC_RP_CLIENT_SECRET = values.Value(
+    OIDC_RP_CLIENT_SECRET = SecretFileValue(
         None,
         environ_name="OIDC_RP_CLIENT_SECRET",
         environ_prefix=None,
@@ -1311,7 +1397,7 @@ class Base(Configuration):
     )  # Store the encrypted refresh token in the session
 
     # Required for refresh token encryption
-    OIDC_STORE_REFRESH_TOKEN_KEY = values.Value(
+    OIDC_STORE_REFRESH_TOKEN_KEY = SecretFileValue(
         None, environ_name="OIDC_STORE_REFRESH_TOKEN_KEY", environ_prefix=None
     )
 
@@ -1330,7 +1416,7 @@ class Base(Configuration):
     KEYCLOAK_CLIENT_ID = values.Value(
         None, environ_name="KEYCLOAK_CLIENT_ID", environ_prefix=None
     )
-    KEYCLOAK_CLIENT_SECRET = values.Value(
+    KEYCLOAK_CLIENT_SECRET = SecretFileValue(
         None,
         environ_name="KEYCLOAK_CLIENT_SECRET",
         environ_prefix=None,
@@ -1345,18 +1431,18 @@ class Base(Configuration):
         default=False, environ_name="ENABLE_PROMETHEUS", environ_prefix=None
     )
 
-    PROMETHEUS_API_KEY = values.Value(
+    PROMETHEUS_API_KEY = SecretFileValue(
         None, environ_name="PROMETHEUS_API_KEY", environ_prefix=None
     )
 
     # DEPRECATED: ignored since global api_key Channels landed.
     # Kept only so AppConfig.ready() can emit a deprecation warning when
     # either env var is set. Migrate to a global api_key Channel.
-    METRICS_API_KEY = values.Value(
+    METRICS_API_KEY = SecretFileValue(
         None, environ_name="METRICS_API_KEY", environ_prefix=None
     )
 
-    PROVISIONING_API_KEY = values.Value(
+    PROVISIONING_API_KEY = SecretFileValue(
         None, environ_name="PROVISIONING_API_KEY", environ_prefix=None
     )
 
@@ -1367,7 +1453,7 @@ class Base(Configuration):
     )
 
     # AI
-    AI_API_KEY = values.Value(None, environ_name="AI_API_KEY", environ_prefix=None)
+    AI_API_KEY = SecretFileValue(None, environ_name="AI_API_KEY", environ_prefix=None)
     AI_BASE_URL = values.Value(None, environ_name="AI_BASE_URL", environ_prefix=None)
     AI_MODEL = values.Value(None, environ_name="AI_MODEL", environ_prefix=None)
 
@@ -1772,7 +1858,7 @@ class Development(Base):
     CACHES = {
         "default": {
             "BACKEND": "django_redis.cache.RedisCache",
-            "LOCATION": values.Value(
+            "LOCATION": SecretFileValue(
                 "redis://redis:6379",
                 environ_name="REDIS_URL",
                 environ_prefix=None,
@@ -1788,7 +1874,7 @@ class Development(Base):
         },
         "session": {
             "BACKEND": "django_redis.cache.RedisCache",
-            "LOCATION": values.Value(
+            "LOCATION": SecretFileValue(
                 "redis://redis:6379",
                 environ_name="REDIS_URL",
                 environ_prefix=None,
@@ -1963,7 +2049,7 @@ class Production(Base):
     CACHES = {
         "default": {
             "BACKEND": "django_redis.cache.RedisCache",
-            "LOCATION": values.Value(
+            "LOCATION": SecretFileValue(
                 "redis://redis:6379",
                 environ_name="REDIS_URL",
                 environ_prefix=None,

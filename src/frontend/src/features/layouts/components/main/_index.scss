@@ -4,7 +4,7 @@
     place-items: center;
     justify-content: center;
     text-align: center;
-    height: calc(100vh - var(--header-height));
+    height: 100%;
     gap: 1rem;
 
     & > div {

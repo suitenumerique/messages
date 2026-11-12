@@ -75,7 +75,7 @@ def ensure_storage_buckets():
 
     from botocore.exceptions import ClientError
 
-    for storage_name in ("message-imports", "message-blobs"):
+    for storage_name in ("message-imports", "message-blobs", "message-exports"):
         if storage_name not in storages.backends:
             continue
         storage = storages[storage_name]

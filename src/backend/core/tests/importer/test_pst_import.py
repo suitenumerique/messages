@@ -5,13 +5,16 @@
 
 import email
 import email.policy
+import email.utils
 from datetime import datetime, timezone
 from unittest.mock import Mock, patch
 
 import pytest
-from jmap_email import parse_email
+from jmap_email import InvalidAddressError, parse_email
 
 from core.services.importer.pst import (
+    _RECORD_TIME_ATTRS,
+    _SENT_TIME_ATTRS,
     FLAG_STATUS_FOLLOWUP,
     FOLDER_TYPE_DELETED,
     FOLDER_TYPE_OUTBOX,
@@ -53,6 +56,7 @@ from core.services.importer.pst import (
     _extract_sender_from_mapi,
     _get_message_timestamp,
     _parse_display_recipients,
+    _reconstruct_plan_item,
     assert_pst_readable,
     count_pst_messages,
     get_mapi_property,
@@ -78,6 +82,24 @@ def test_get_message_timestamp_normalizes_naive_to_utc():
     assert t_aware.tzinfo is not None
     # The pre-fix bug raised TypeError comparing naive vs aware here.
     assert t_naive < t_aware
+
+
+def test_get_message_timestamp_record_times_only_when_asked():
+    """By default only the sent times count (they order the plan); the record's
+    creation then modification time are used only when explicitly requested.
+    Anything that isn't a datetime is skipped."""
+    created = datetime(2019, 3, 1, tzinfo=timezone.utc)
+    modified = datetime(2019, 4, 1, tzinfo=timezone.utc)
+    all_attrs = _SENT_TIME_ATTRS + _RECORD_TIME_ATTRS
+    record_only = _make_message(creation_time=created, modification_time=modified)
+
+    assert _get_message_timestamp(record_only) is None
+    assert _get_message_timestamp(record_only, all_attrs) == created
+    assert (
+        _get_message_timestamp(_make_message(modification_time=modified), all_attrs)
+        == modified
+    )
+    assert _get_message_timestamp(_make_message(), all_attrs) is None
 
 
 def _make_mapi_entry(entry_type, data=None, data_as_string=None, data_as_integer=None):
@@ -118,13 +140,15 @@ def _make_item_with_properties(properties):
 
 
 def _make_recipient(display_name, email_addr, recip_type=1, addr_type="SMTP"):
-    """Helper to create a mock MAPI recipient."""
+    """Helper to create a mock MAPI recipient (no address property when
+    ``email_addr`` is None)."""
     entries = [
         _make_mapi_entry(PR_DISPLAY_NAME, data_as_string=display_name),
-        _make_mapi_entry(PR_EMAIL_ADDRESS, data_as_string=email_addr),
         _make_mapi_entry(PR_RECIPIENT_TYPE, data_as_integer=recip_type),
         _make_mapi_entry(PR_ADDRTYPE, data_as_string=addr_type),
     ]
+    if email_addr is not None:
+        entries.append(_make_mapi_entry(PR_EMAIL_ADDRESS, data_as_string=email_addr))
     rs = _make_record_set(entries)
     recip = Mock()
     recip.number_of_record_sets = 1
@@ -140,6 +164,8 @@ def _make_message(
     html_body=None,
     delivery_time=None,
     client_submit_time=None,
+    creation_time=None,
+    modification_time=None,
     num_attachments=0,
     attachments=None,
     message_flags=0,
@@ -156,6 +182,8 @@ def _make_message(
     msg.html_body = html_body
     msg.delivery_time = delivery_time
     msg.client_submit_time = client_submit_time
+    msg.creation_time = creation_time
+    msg.modification_time = modification_time
     msg.number_of_attachments = num_attachments
 
     if attachments:
@@ -336,6 +364,41 @@ class TestReconstructEml:
         # The date should contain 2025, not the current year
         assert "2025" in parsed["Date"]
 
+    def test_reconstruct_headers_without_date_use_delivery_time(self):
+        """Transport headers lacking a Date fall back to the MAPI delivery time
+        instead of the epoch."""
+        msg = _make_message(
+            transport_headers="From: sender@example.com\r\nSubject: No date\r\n",
+            delivery_time=datetime(2024, 2, 3, 4, 5, 6, tzinfo=timezone.utc),
+        )
+        parsed = email.message_from_bytes(reconstruct_eml(msg))
+
+        assert email.utils.parsedate_to_datetime(parsed["Date"]) == datetime(
+            2024, 2, 3, 4, 5, 6, tzinfo=timezone.utc
+        )
+
+    def test_reconstruct_without_sent_time_uses_creation_time(self):
+        """A message with no delivery/submit time (e.g. a draft) is dated by the
+        record's creation time instead of the epoch."""
+        msg = _make_message(
+            transport_headers=None,
+            creation_time=datetime(2023, 7, 8, 9, 10, tzinfo=timezone.utc),
+        )
+        parsed = email.message_from_bytes(reconstruct_eml(msg))
+
+        assert email.utils.parsedate_to_datetime(parsed["Date"]) == datetime(
+            2023, 7, 8, 9, 10, tzinfo=timezone.utc
+        )
+
+    def test_reconstruct_without_any_time_falls_back_to_epoch(self):
+        """With no timestamp at all, the epoch keeps the message importable."""
+        msg = _make_message(transport_headers=None)
+        parsed = email.message_from_bytes(reconstruct_eml(msg))
+
+        assert email.utils.parsedate_to_datetime(parsed["Date"]) == datetime(
+            1970, 1, 1, tzinfo=timezone.utc
+        )
+
     def test_reconstruct_without_transport_headers(self):
         """Test EML reconstruction from MAPI properties (no transport_headers)."""
         msg = _make_message(
@@ -470,6 +533,39 @@ class TestReconstructEml:
         assert "bob@example.com" in parsed["Cc"]
         # BCC is typically stripped from headers in MIME, but we set it
         assert "charlie@example.com" in parsed["Bcc"]
+
+    def test_reconstruct_with_outlook_display_form_recipients(self):
+        """Recipients only known through Outlook's ``Name (addr)`` display
+        form compose into a valid header instead of failing the message."""
+        recipients = [
+            _make_recipient("Jean DUPONT (jean.dupont@example.org)", None),
+            _make_recipient("'Marie (marie@example.org)'", None, recip_type=2),
+        ]
+        msg = _make_message(transport_headers=None, recipients=recipients)
+
+        parsed = email.message_from_bytes(reconstruct_eml(msg))
+
+        assert email.utils.getaddresses([parsed["To"]]) == [
+            ("Jean DUPONT", "jean.dupont@example.org")
+        ]
+        assert email.utils.getaddresses([parsed["Cc"]]) == [
+            ("Marie", "marie@example.org")
+        ]
+
+    def test_reconstruct_unquotes_addresses_from_transport_headers(self):
+        """A quoted address in the transport headers is composed bare."""
+        msg = _make_message(
+            transport_headers=(
+                "From: sender@example.com\r\n"
+                "To: 'jean.dupont@example.org'\r\n"
+                "Date: Mon, 26 May 2025 10:00:00 +0000\r\n"
+            ),
+        )
+        parsed = email.message_from_bytes(reconstruct_eml(msg))
+
+        assert email.utils.getaddresses([parsed["To"]]) == [
+            ("", "jean.dupont@example.org")
+        ]
 
     def test_reconstruct_with_ex_recipients(self):
         """Test recipient extraction with Exchange EX address type."""
@@ -924,6 +1020,16 @@ class TestSenderExtraction:
         result = _extract_sender_from_mapi(msg)
         assert result is None
 
+    def test_sender_name_in_outlook_display_form(self):
+        """A sender_name in Outlook's ``Name (addr)`` form is split into its
+        display name and address."""
+        msg = Mock()
+        msg.sender_name = "Jean DUPONT (jean.dupont@example.org)"
+        msg.number_of_record_sets = 0
+
+        result = _extract_sender_from_mapi(msg)
+        assert result == {"name": "Jean DUPONT", "email": "jean.dupont@example.org"}
+
     def test_sent_representing_smtp_used_when_sender_is_x500(self):
         """Shared-mailbox sender: PR_SENDER_* is X.500, SMTP only on
         PR_SENT_REPRESENTING_*. The representing SMTP must win."""
@@ -1049,6 +1155,74 @@ class TestRecipientExtraction:
         assert len(result["to"]) == 1
         assert result["to"][0]["email"] == "jane@corp.com"
 
+    def test_display_name_in_outlook_form_without_address_property(self):
+        """With no address property, the display name is the only source; its
+        Outlook ``Name (addr)`` form is split rather than kept whole as an
+        invalid address."""
+        recipients = [
+            _make_recipient("Jean DUPONT (jean.dupont@example.org)", None),
+            _make_recipient("'Marie (marie@example.org)'", None, recip_type=2),
+        ]
+        msg = Mock()
+        msg.number_of_recipients = 2
+        msg.get_recipient = lambda i: recipients[i]
+
+        result = _extract_recipients_from_mapi(msg)
+        assert result["to"] == [
+            {"name": "Jean DUPONT", "email": "jean.dupont@example.org"}
+        ]
+        assert result["cc"] == [{"name": "Marie", "email": "marie@example.org"}]
+
+    def test_address_property_in_outlook_form_keeps_display_name(self):
+        """An address property in Outlook's form is repaired while the
+        recipient's own display name is kept."""
+        recipients = [
+            _make_recipient("Jean D.", "Jean DUPONT (jean.dupont@example.org)")
+        ]
+        msg = Mock()
+        msg.number_of_recipients = 1
+        msg.get_recipient = lambda i: recipients[i]
+
+        result = _extract_recipients_from_mapi(msg)
+        assert result["to"] == [{"name": "Jean D.", "email": "jean.dupont@example.org"}]
+
+    def test_display_name_artefacts_are_cleaned_when_address_resolves(self):
+        """With a valid address property, Outlook's ``Name (addr)`` form and
+        surrounding quotes are still stripped from the display name."""
+        recipients = [
+            _make_recipient(
+                "Jean DUPONT (jean.dupont@example.org)", "jean.dupont@example.org"
+            ),
+            _make_recipient("'Marie'", "marie@example.org"),
+        ]
+        msg = Mock()
+        msg.number_of_recipients = 2
+        msg.get_recipient = lambda i: recipients[i]
+
+        result = _extract_recipients_from_mapi(msg)
+        assert result["to"] == [
+            {"name": "Jean DUPONT", "email": "jean.dupont@example.org"},
+            {"name": "Marie", "email": "marie@example.org"},
+        ]
+
+    def test_quoted_address_is_unquoted(self):
+        """``'addr'`` passes as a valid addr-spec, its domain ending with a
+        quote; the quotes are dropped from the address and from the display
+        name that was the same raw string."""
+        recipients = [
+            _make_recipient("'jean.dupont@example.org'", None),
+            _make_recipient("Marie", "'marie@example.org'"),
+        ]
+        msg = Mock()
+        msg.number_of_recipients = 2
+        msg.get_recipient = lambda i: recipients[i]
+
+        result = _extract_recipients_from_mapi(msg)
+        assert result["to"] == [
+            {"name": "", "email": "jean.dupont@example.org"},
+            {"name": "Marie", "email": "marie@example.org"},
+        ]
+
 
 # --- Display recipient (PR_DISPLAY_TO/CC/BCC) tests ---
 
@@ -1071,6 +1245,64 @@ class TestDisplayRecipients:
         """RFC-style `Name <email>` is honoured."""
         result = _parse_display_recipients("Alice <alice@example.com>")
         assert result == [{"name": "Alice", "email": "alice@example.com"}]
+
+    def test_parse_outlook_name_with_parenthesised_email(self):
+        """Outlook's ``Name (addr)`` form — optionally single-quoted — is split
+        into name and address; RFC 5322 would read the parentheses as a
+        comment and leave no usable address."""
+        result = _parse_display_recipients(
+            "Jean DUPONT (jean.dupont@example.org); 'Marie (marie@example.org)'"
+        )
+        assert result == [
+            {"name": "Jean DUPONT", "email": "jean.dupont@example.org"},
+            {"name": "Marie", "email": "marie@example.org"},
+        ]
+
+    def test_parse_outlook_name_with_long_blank_run_before_email(self):
+        """Blanks between the name and ``(addr)`` stay out of the name, however
+        many there are: a long run used to make the split quadratic."""
+        result = _parse_display_recipients(
+            "Jean DUPONT" + " \t" * 5_000 + "(jean.dupont@example.org)"
+        )
+        assert result == [{"name": "Jean DUPONT", "email": "jean.dupont@example.org"}]
+
+    def test_parse_rfc_comment_form_is_unchanged(self):
+        """The RFC ``addr (comment)`` form keeps being parsed by the library."""
+        result = _parse_display_recipients("jean.dupont@example.org (Jean DUPONT)")
+        assert result == [{"name": "Jean DUPONT", "email": "jean.dupont@example.org"}]
+
+    def test_parse_keeps_unrepairable_address_raw(self):
+        """A token that is not a clean ``Name (addr)`` pair is left as is, so the
+        composer rejects the message rather than it importing a recipient that
+        was silently dropped or rewritten."""
+        result = _parse_display_recipients("Jean (jean@)")
+        assert result == [{"name": "", "email": "Jean (jean@)"}]
+
+    def test_parse_quoted_address_is_unquoted(self):
+        """Outlook's ``'addr'`` (or ``"addr"``) display token yields the bare
+        address."""
+        result = _parse_display_recipients(
+            "'jean.dupont@example.org'; \"marie@example.org\""
+        )
+        assert result == [
+            {"name": "", "email": "jean.dupont@example.org"},
+            {"name": "", "email": "marie@example.org"},
+        ]
+
+    def test_parse_unevenly_quoted_address_is_unquoted(self):
+        """Outlook may quote an address twice and unevenly; a quote ending the
+        domain proves every surrounding quote is an artefact."""
+        result = _parse_display_recipients("''jean.dupont@example.org'")
+        assert result == [{"name": "", "email": "jean.dupont@example.org"}]
+
+    def test_parse_keeps_apostrophes_not_closing_the_address(self):
+        """Without a quote ending the domain, apostrophes are left alone: they
+        may belong to the local part."""
+        result = _parse_display_recipients("o'neil@example.org; 'jean@example.org")
+        assert result == [
+            {"name": "", "email": "o'neil@example.org"},
+            {"name": "", "email": "'jean@example.org"},
+        ]
 
     def test_parse_drops_name_only_entries(self):
         """Name-only tokens (no '@') are intentionally dropped — creating a
@@ -1224,6 +1456,66 @@ class TestDisplayRecipients:
         assert "header@example.org" in parsed["To"]
         assert "cc@example.org" in parsed["Cc"]
         assert "bcc@example.org" in parsed["Bcc"]
+
+
+# --- Plan item failure tests ---
+
+
+class TestReconstructPlanItemFailures:
+    """A message that can't be rebuilt is tallied under the right reason."""
+
+    @staticmethod
+    def _plan_item(message):
+        folder = _make_folder(messages=[message])
+        return (folder, 0, "normal", "Inbox", 0, None)
+
+    def test_oversized_attachment_counts_as_oversized(self, settings):
+        """An attachment over the size budget is an oversized failure, not an
+        unreadable one."""
+        settings.MAX_INCOMING_EMAIL_SIZE = 64
+        att = _make_attachment(data=b"x" * 100, long_filename="big.bin")
+        msg = _make_message(num_attachments=1, attachments=[att])
+        reasons = {}
+
+        result = _reconstruct_plan_item(self._plan_item(msg), reasons=reasons)
+
+        assert result[4] is None
+        assert reasons == {"oversized": 1}
+
+    def test_composer_rejection_is_logged_without_its_message(self):
+        """A composer rejection counts as unparseable and is logged by error
+        type only: the exception text carries the offending names/addresses."""
+        reasons = {}
+        error = InvalidAddressError(
+            "Invalid addr-spec in 'to': 'Jean (jean@)' is not a single mailbox"
+        )
+        with (
+            patch("core.services.importer.pst.reconstruct_eml", side_effect=error),
+            patch("core.services.importer.pst.logger") as logger,
+        ):
+            result = _reconstruct_plan_item(
+                self._plan_item(_make_message()), reasons=reasons
+            )
+
+        assert result[4] is None
+        assert reasons == {"unparseable": 1}
+        logger.exception.assert_not_called()
+        logged = " ".join(str(arg) for arg in logger.warning.call_args.args)
+        assert "InvalidAddressError" in logged
+        assert "jean@" not in logged
+
+    def test_unreadable_message_counts_as_unparseable(self):
+        """A record libpff can't read is an unparseable failure."""
+        folder = Mock()
+        folder.get_sub_message.side_effect = OSError("corrupt record")
+        reasons = {}
+
+        result = _reconstruct_plan_item(
+            (folder, 0, "normal", "Inbox", 0, None), reasons=reasons
+        )
+
+        assert result[4] is None
+        assert reasons == {"unparseable": 1}
 
 
 # --- MAPI property tests ---
@@ -1658,6 +1950,35 @@ class TestIsSenderMarking:
 
 class TestChronologicalOrdering:
     """Tests for chronological message ordering."""
+
+    def test_message_without_sent_time_stays_last(self):
+        """The record's creation time dates a message but never moves it in the
+        plan: a resumed import restarts at a positional cursor, so the order
+        must stay stable across versions."""
+        dated = _make_message(
+            subject="Dated",
+            transport_headers="From: a@example.com\r\nSubject: Dated\r\n",
+            delivery_time=datetime(2025, 6, 1, tzinfo=timezone.utc),
+        )
+        draft = _make_message(
+            subject="Draft",
+            transport_headers="From: b@example.com\r\nSubject: Draft\r\n",
+            creation_time=datetime(2020, 1, 1, tzinfo=timezone.utc),
+        )
+        folder = _make_folder(name="Inbox", messages=[draft, dated])
+        root = _make_folder(name="Root", subfolders=[folder])
+        pst = Mock()
+        pst.get_root_folder.return_value = root
+        pst.get_message_store.return_value = Mock(number_of_record_sets=0)
+
+        results = list(walk_pst_messages(pst, {}))
+        parsed = [email.message_from_bytes(r[4]) for r in results]
+
+        assert [m["Subject"] for m in parsed] == ["Dated", "Draft"]
+        # ...while still dated from its creation time rather than the epoch.
+        assert email.utils.parsedate_to_datetime(parsed[1]["Date"]) == datetime(
+            2020, 1, 1, tzinfo=timezone.utc
+        )
 
     def test_messages_sorted_oldest_first(self):
         """Test that messages are yielded in chronological order (oldest first)."""

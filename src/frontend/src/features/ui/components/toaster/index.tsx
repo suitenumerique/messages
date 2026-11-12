@@ -4,9 +4,22 @@ import clsx from "clsx";
 import { useMemo } from "react";
 import { useTranslation } from "react-i18next";
 import { Slide, ToastContainer, ToastContentProps, toast } from "react-toastify";
+import { Portal } from "@/features/ui/components/portal";
+
+// A toast can follow an action taken inside a modal (e.g. trashing from the
+// storage settings), so it must stay usable over it. React-modal portals the
+// modal to <body> above everything (`.ReactModalPortal` in globals.scss) and
+// marks `.c__app` aria-hidden while it is open: the container is portaled to
+// <body> too, and stacked above the modal, so its "Undo" can be clicked and
+// read by assistive technologies.
+const Z_INDEX = 1000000;
 
 export const Toaster = () => {
-  return <ToastContainer />;
+  return (
+    <Portal>
+      <ToastContainer style={{ zIndex: Z_INDEX }} />
+    </Portal>
+  );
 };
 
 type ToastAction = {

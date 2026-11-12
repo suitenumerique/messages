@@ -1,0 +1,16 @@
+// A long press on a link summons the browser's own affordances on touch: the
+// iOS link preview, a drag, a text selection. Navigation items are only meant
+// to be tapped, so keep those out of the way. Items the app lets the user drag
+// must keep the native drag, which a long press starts on iPadOS. Applies as
+// soon as a touch screen is there, even next to a mouse or a trackpad.
+@mixin no-touch-link-menu($allow-drag: false) {
+  @media (any-pointer: coarse) {
+    -webkit-touch-callout: none;
+    -webkit-user-select: none;
+    user-select: none;
+
+    @if not $allow-drag {
+      -webkit-user-drag: none;
+    }
+  }
+}

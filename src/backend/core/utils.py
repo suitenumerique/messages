@@ -1,5 +1,6 @@
 """Root utils for the core application."""
 
+import base64
 import json
 import logging
 from contextlib import contextmanager
@@ -10,6 +11,7 @@ from django.core.exceptions import ImproperlyConfigured, ValidationError
 
 import jsonschema
 from configurations import values
+from lasuite.configuration.values import SecretFileValue
 
 logger = logging.getLogger(__name__)
 
@@ -53,6 +55,16 @@ def validate_json_schema(value, schema, *, field):
         jsonschema.validate(value, schema, format_checker=jsonschema.FormatChecker())
     except jsonschema.ValidationError as exception:
         raise ValidationError({field: exception.message}) from exception
+
+
+def b64url_encode(raw: bytes) -> str:
+    """Encode ``raw`` as unpadded base64url."""
+    return base64.urlsafe_b64encode(raw).decode("ascii").rstrip("=")
+
+
+def b64url_decode(value: str) -> bytes:
+    """Decode a base64url value tolerating missing padding."""
+    return base64.urlsafe_b64decode(value + "=" * (-len(value) % 4))
 
 
 class AbstractBatchingDeferrer:
@@ -157,8 +169,7 @@ class ThreadStatsUpdateDeferrer(AbstractBatchingDeferrer):
             for thread in Thread.objects.filter(id__in=chunk_ids):
                 try:
                     thread.update_stats()
-                # pylint: disable=broad-exception-caught
-                except Exception:
+                except Exception:  # pylint: disable=broad-exception-caught
                     logger.exception("Failed to update stats for thread %s", thread.id)
 
 
@@ -203,8 +214,7 @@ class ThreadReindexDeferrer(AbstractBatchingDeferrer):
             chunk = thread_ids[start : start + batch_size]
             try:
                 bulk_reindex_threads_task.delay(chunk)
-            # pylint: disable=broad-exception-caught
-            except Exception:
+            except Exception:  # pylint: disable=broad-exception-caught
                 logger.exception(
                     "Failed to enqueue bulk_reindex_threads_task for %d threads; "
                     "returning them to the pending reindex set for retry",
@@ -235,6 +245,18 @@ class JSONValue(values.Value):
             raise ImproperlyConfigured(f"{name} is not valid JSON") from None
 
 
+class SecretFileListValue(SecretFileValue, values.ListValue):
+    """A ListValue that can also be read from the file named by ``{NAME}_FILE``."""
+
+
+class SecretFileJSONValue(SecretFileValue, JSONValue):
+    """A JSONValue that can also be read from the file named by ``{NAME}_FILE``."""
+
+
+class SecretFileDictValue(SecretFileValue, values.DictValue):
+    """A DictValue that can also be read from the file named by ``{NAME}_FILE``."""
+
+
 class OptionalBooleanValue(values.BooleanValue):
     """
     A BooleanValue that also accepts ``None`` as default, to distinguish a
@@ -254,6 +276,29 @@ class OptionalBooleanValue(values.BooleanValue):
             self.default = None
         else:
             super().__init__(*args, **kwargs)
+
+
+class StrEnumValue(values.Value):
+    """
+    A value restricted to the members of a ``StrEnum``, validated at startup.
+
+    Stores the enum member: an unknown value fails while the settings load,
+    instead of on first use.
+    """
+
+    def __init__(self, enum_class, *args, **kwargs):
+        self.enum_class = enum_class
+        super().__init__(*args, **kwargs)
+
+    def to_python(self, value):
+        """Return the enum member named by ``value``, or fail listing the
+        accepted values."""
+        try:
+            return self.enum_class(value)
+        except ValueError as e:
+            raise ValueError(
+                f"Invalid value {value!r}: expected one of {', '.join(self.enum_class)}"
+            ) from e
 
 
 class ThrottleRateValue(values.Value):

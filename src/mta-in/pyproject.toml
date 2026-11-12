@@ -11,8 +11,6 @@ version = "0.10.0"
 authors = [{ "name" = "ANCT", "email" = "suiteterritoriale@anct.gouv.fr" }]
 classifiers = [
     "Development Status :: 5 - Production/Stable",
-    "Framework :: Django",
-    "Framework :: Django :: 5",
     "Intended Audience :: Developers",
     "License :: OSI Approved :: MIT License",
     "Natural Language :: English",
@@ -23,14 +21,14 @@ description = "A stateless MTA."
 keywords = ["Python", "MTA"]
 license = "MIT"
 readme = "README.md"
-requires-python = ">=3.14.8,<4.0"
+requires-python = ">=3.14.10,<4.0"
 
 # Note: after changing this list you must re-run `make deps-lock-mta-in`
 dependencies = [
-    "PyJWT==2.15.0",
-    "aiosmtpd==1.4.6",
+    "PyJWT==2.15.1",
     "httpx==0.28.1",
-    "prometheus-client==0.25.0",
+    "idna==3.20",
+    "prometheus-client==0.26.0",
 ]
 
 [project.urls]
@@ -54,12 +52,16 @@ dev = [
     "pytest==9.1.1",
     "pytest-cov==7.1.0",
     "pytest-asyncio==1.4.0",
-    "fastapi==0.142.2",
+    "hypothesis==6.170.1",
+    # Tests only: what pymta accepts as an address must be one mailbox to the
+    # backend too. Same version as src/backend.
+    "jmap-email==0.3.0",
+    "fastapi==0.143.3",
     "uvicorn==0.54.0",
-    "ruff==0.9.3",
+    "ruff==0.17.1",
     "pip-audit==2.10.1",
-    "pylint==3.3.4",
-    "types-requests==2.33.0.20260518",
+    "pylint==4.1.3",
+    "types-requests==2.33.0.20261006",
 ]
 
 [tool.uv.build-backend]
@@ -111,6 +113,18 @@ extra-standard-library = ["tomllib"]
 # sync callback context.
 "src/delivery_milter.py" = ["BLE001", "T201"]
 
+# The pymta test run (make test-mta-in-py) fails under 100% of lines and
+# branches. The threshold is on that command, not here: the fuzz run and the
+# Postfix image run the same directory and cover other things.
+[tool.coverage.run]
+source = ["pymta"]
+branch = true
+
+[tool.coverage.report]
+show_missing = true
+skip_covered = true
+exclude_also = ['if __name__ == "__main__":']
+
 [tool.pytest.ini_options]
 addopts = [
     "-v",
@@ -118,6 +132,12 @@ addopts = [
     "term-missing",
     # Allow test files to have the same name in different directories.
     "--import-mode=importlib",
+    # Fuzz tests run on their own: make fuzz-mta-in-py
+    "-m",
+    "not fuzz",
+]
+markers = [
+    "fuzz: marks tests as fuzz tests (run with: pytest -m fuzz)",
 ]
 python_files = [
     "test_*.py",

@@ -55,6 +55,12 @@ STORAGE_MESSAGE_BLOBS_BUCKET_NAME=msg-blobs
 STORAGE_MESSAGE_BLOBS_ACCESS_KEY=st-messages
 STORAGE_MESSAGE_BLOBS_SECRET_KEY=password
 
+# Spam snapshot bucket
+STORAGE_MESSAGE_EXPORTS_ENDPOINT_URL=http://objectstorage:9000
+STORAGE_MESSAGE_EXPORTS_BUCKET_NAME=msg-exports
+STORAGE_MESSAGE_EXPORTS_ACCESS_KEY=st-messages
+STORAGE_MESSAGE_EXPORTS_SECRET_KEY=password
+
 # OIDC
 OIDC_OP_JWKS_ENDPOINT=http://keycloak:8802/realms/messages/protocol/openid-connect/certs
 OIDC_OP_AUTHORIZATION_ENDPOINT=http://localhost:8902/realms/messages/protocol/openid-connect/auth
@@ -142,3 +148,7 @@ FEATURE_THREAD_SNIPPET=True
 # Third-party services
 # Drive - https://github.com/suitenumerique/drive
 DRIVE_BASE_URL=
+
+# Entitlements — no DeployCenter in dev: the local backend shows a 5 GB
+# mailbox quota so the storage gauges are exercised (it defaults to no limit).
+ENTITLEMENTS_BACKEND_PARAMETERS={"mailbox_storage_limit": 5000000000}

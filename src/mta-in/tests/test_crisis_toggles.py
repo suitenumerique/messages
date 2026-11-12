@@ -10,43 +10,27 @@ from __future__ import annotations
 
 import asyncio
 import contextlib
+import inspect
+import ipaddress
 
 import pytest
 
-from pymta import settings
+from pymta import metrics, runtime, settings
+from pymta import server as server_module
 from pymta.controller import build_smtp_kwargs
-from pymta.handler import InboundHandler
 from pymta.limits import IPGate
-from pymta.mda_async import MDAResult
-from pymta.smtp_protocol import HardenedSMTP
+from pymta.settings import _env_networks, canonical_ip, parse_client_ip
+from pymta.smtp_protocol import SMTPConnection
+
+from tests.harness import AcceptAll, ScriptedMDA, connected, listening, protocol_factory
 
 
-class _Envelope:
-    def __init__(self):
-        self.mail_from = None
-        self.rcpt_tos = []
-        self.mail_options = []
-        self.rcpt_options = []
-        self.content = b""
-
-
-class _Session:
-    peer = ("203.0.113.9", 4242)
-    host_name = "client.test"
-
-
-class _AlwaysYesMDA:
-    """Says every mailbox exists, so a rejection can only come from our side."""
-
-    async def check_recipient(self, addr, session=None):
-        return MDAResult(ok=True, temp_fail=False, payload={addr: True}, status_code=200)
-
-    async def deliver(self, **kwargs):
-        return MDAResult(ok=True, temp_fail=False, payload={"status": "ok"}, status_code=200)
-
-
-def _handler():
-    return InboundHandler(_AlwaysYesMDA())
+async def _rcpt(port, recipient: bytes = b"<anyone@example.com>") -> bytes:
+    """The reply to one RCPT in an otherwise ordinary transaction."""
+    async with connected(port) as client:
+        await client.cmd(b"EHLO client.test")
+        assert (await client.cmd(b"MAIL FROM:<joe@good.example>"))[:3] == b"250"
+        return await client.cmd(b"RCPT TO:" + recipient)
 
 
 # ---------------------------------------------------------------------------
@@ -57,8 +41,8 @@ def _handler():
 @pytest.mark.asyncio
 async def test_defer_all_refuses_every_recipient(monkeypatch):
     monkeypatch.setattr(settings, "PYMTA_DEFER_ALL", True)
-    reply = await _handler().handle_RCPT(None, _Session(), _Envelope(), "<anyone@example.com>", [])
-    assert reply.startswith("451"), reply
+    async with listening() as port:
+        assert (await _rcpt(port))[:3] == b"451"
 
 
 @pytest.mark.asyncio
@@ -68,25 +52,19 @@ async def test_defer_all_does_not_consult_the_mda(monkeypatch):
     If the MDA is the thing that is broken, a deferring node that still calls it
     on every RCPT keeps the load on and learns nothing.
     """
-    calls = []
-
-    class _Recording(_AlwaysYesMDA):
-        async def check_recipient(self, addr, session=None):
-            calls.append(addr)
-            return await super().check_recipient(addr)
-
     monkeypatch.setattr(settings, "PYMTA_DEFER_ALL", True)
-    handler = InboundHandler(_Recording())
-    await handler.handle_RCPT(None, _Session(), _Envelope(), "<a@example.com>", [])
-    assert calls == []
+    mda = ScriptedMDA()
+    async with listening(mda) as port:
+        await _rcpt(port)
+    assert mda.checked == []
 
 
 @pytest.mark.asyncio
 async def test_off_by_default_accepts(monkeypatch):
     """The discriminating half: with the toggle off the same call succeeds."""
     monkeypatch.setattr(settings, "PYMTA_DEFER_ALL", False)
-    reply = await _handler().handle_RCPT(None, _Session(), _Envelope(), "<anyone@example.com>", [])
-    assert reply.startswith("250"), reply
+    async with listening() as port:
+        assert (await _rcpt(port))[:3] == b"250"
 
 
 # ---------------------------------------------------------------------------
@@ -97,46 +75,49 @@ async def test_off_by_default_accepts(monkeypatch):
 @pytest.mark.asyncio
 async def test_blocked_sender_domain_is_refused_permanently(monkeypatch):
     monkeypatch.setattr(settings, "PYMTA_BLOCKED_SENDER_DOMAINS", frozenset({"spam.example"}))
-    env = _Envelope()
-    reply = await _handler().handle_MAIL(None, _Session(), env, "<joe@SPAM.example>", [])
-    # Case-insensitive: the forged domain will not match the case you typed.
-    assert reply.startswith("554"), reply
-    assert env.mail_from is None, "sender was stored despite being refused"
+    async with listening() as port, connected(port) as client:
+        await client.cmd(b"EHLO client.test")
+        # Case-insensitive: the forged domain will not match the case you typed.
+        assert (await client.cmd(b"MAIL FROM:<joe@SPAM.example>"))[:3] == b"554"
+        # The sender was not stored: no transaction is open.
+        assert await client.cmd(b"RCPT TO:<a@example.com>") == b"503 Error: need MAIL command\r\n"
 
 
 @pytest.mark.asyncio
 async def test_unblocked_sender_domain_passes(monkeypatch):
     monkeypatch.setattr(settings, "PYMTA_BLOCKED_SENDER_DOMAINS", frozenset({"spam.example"}))
-    reply = await _handler().handle_MAIL(None, _Session(), _Envelope(), "<joe@good.example>", [])
-    assert reply.startswith("250"), reply
+    async with listening() as port:
+        assert (await _rcpt(port))[:3] == b"250"
 
 
 @pytest.mark.asyncio
 async def test_blocked_recipient_is_refused(monkeypatch):
     monkeypatch.setattr(settings, "PYMTA_BLOCKED_RECIPIENTS", frozenset({"victim@example.com"}))
-    env = _Envelope()
-    reply = await _handler().handle_RCPT(None, _Session(), env, "<VICTIM@example.com>", [])
-    assert reply.startswith("550"), reply
-    assert env.rcpt_tos == []
+    async with listening() as port, connected(port) as client:
+        await client.cmd(b"EHLO client.test")
+        await client.cmd(b"MAIL FROM:<joe@good.example>")
+        assert (await client.cmd(b"RCPT TO:<VICTIM@example.com>"))[:3] == b"550"
+        # Not kept as a recipient.
+        assert await client.cmd(b"DATA") == b"503 Error: need RCPT command\r\n"
 
 
 @pytest.mark.asyncio
 async def test_unblocked_recipient_passes(monkeypatch):
     monkeypatch.setattr(settings, "PYMTA_BLOCKED_RECIPIENTS", frozenset({"victim@example.com"}))
-    reply = await _handler().handle_RCPT(None, _Session(), _Envelope(), "<other@example.com>", [])
-    assert reply.startswith("250"), reply
+    async with listening() as port:
+        assert (await _rcpt(port, b"<other@example.com>"))[:3] == b"250"
 
 
 # ---------------------------------------------------------------------------
-# 4. PYMTA_DRAIN, against a real listener
+# 4. Drain on shutdown, against a real listener
 # ---------------------------------------------------------------------------
 
 
-async def _listener(loop):
+async def _listener(loop, gate=None):
     kwargs = build_smtp_kwargs(tls_context=None)
-    gate = IPGate(max_total=0)
+    gate = gate or IPGate(max_total=0)
     server = await loop.create_server(
-        lambda: HardenedSMTP(_AlwaysYesMDA(), ip_gate=gate, **kwargs), host="127.0.0.1", port=0
+        lambda: SMTPConnection(AcceptAll(), ip_gate=gate, **kwargs), host="127.0.0.1", port=0
     )
     return server, server.sockets[0].getsockname()[1]
 
@@ -149,7 +130,7 @@ async def test_drain_answers_421_instead_of_the_banner(monkeypatch):
     defer and moves to the other one rather than queueing. 4.3.2 is RFC 3463's
     "system not accepting network messages".
     """
-    monkeypatch.setattr(settings, "PYMTA_DRAIN", True)
+    runtime.request_shutdown()
     loop = asyncio.get_running_loop()
     server, port = await _listener(loop)
     try:
@@ -168,7 +149,6 @@ async def test_drain_answers_421_instead_of_the_banner(monkeypatch):
 
 @pytest.mark.asyncio
 async def test_not_draining_still_greets(monkeypatch):
-    monkeypatch.setattr(settings, "PYMTA_DRAIN", False)
     loop = asyncio.get_running_loop()
     server, port = await _listener(loop)
     try:
@@ -183,88 +163,14 @@ async def test_not_draining_still_greets(monkeypatch):
 
 
 # ---------------------------------------------------------------------------
-# 5. SIGHUP reload
+# 5. SIGHUP re-reads the certificates and nothing else.
 # ---------------------------------------------------------------------------
 
 
-@pytest.fixture
-def restore_settings():
-    keep = {name: getattr(settings, name) for name in settings._RELOADABLE}
-    yield
-    for name, value in keep.items():
-        setattr(settings, name, value)
-
-
-def test_reload_picks_up_a_changed_toggle(monkeypatch, restore_settings):
-    monkeypatch.setattr(settings, "PYMTA_DEFER_ALL", False)
-    monkeypatch.setenv("PYMTA_DEFER_ALL", "true")
-    changed = settings.reload_runtime_settings()
-    assert changed["PYMTA_DEFER_ALL"] is True
-    assert settings.PYMTA_DEFER_ALL is True
-
-
-def test_reload_reports_only_what_moved(monkeypatch, restore_settings):
-    monkeypatch.delenv("PYMTA_DEFER_ALL", raising=False)
-    monkeypatch.setattr(settings, "PYMTA_DEFER_ALL", False)
-    assert settings.reload_runtime_settings() == {}
-
-
-def test_reload_leaves_everything_alone_when_the_new_value_is_bad(monkeypatch, restore_settings):
-    """A typo at 3am must not be worse than not reloading.
-
-    Values are parsed and validated in full before any of them is rebound, so a
-    single bad entry cannot leave half the configuration swapped.
-    """
-    monkeypatch.setenv("PYMTA_BLOCKED_NETWORKS", "10.0.0.0/8")
-    settings.reload_runtime_settings()
-    good = settings.PYMTA_BLOCKED_NETWORKS
-    assert good
-
-    monkeypatch.setenv("PYMTA_DEFER_ALL", "true")
-    monkeypatch.setenv("PYMTA_BLOCKED_NETWORKS", "10.0.0.0/8,not-a-cidr")
-    with pytest.raises(ValueError):
-        settings.reload_runtime_settings()
-
-    assert settings.PYMTA_BLOCKED_NETWORKS == good
-    assert settings.PYMTA_DEFER_ALL is False, "a later setting was applied despite the failure"
-
-
-def test_reload_logs_names_without_values(monkeypatch, restore_settings, caplog):
-    """The reloadable set includes a blocklist of real addresses.
-
-    Logging what changed must not mean logging who: an operator adding a
-    recipient to PYMTA_BLOCKED_RECIPIENTS would otherwise publish that address
-    to whatever ingests these logs, every time they touched the list.
-    """
-    from pymta import server
-
-    caplog.set_level("INFO")
-    monkeypatch.setattr(settings, "PYMTA_BLOCKED_RECIPIENTS", set())
-    monkeypatch.setenv("PYMTA_BLOCKED_RECIPIENTS", "victim@example.com")
-    server._reload_settings()
-
-    record = next(r for r in caplog.records if r.message == "reload_applied")
-    assert "PYMTA_BLOCKED_RECIPIENTS" in record.changed
-    assert "victim@example.com" not in caplog.text
-    assert "victim" not in record.changed
-
-
-def test_reload_republishes_the_limit_gauges(monkeypatch, restore_settings):
-    """Four of the exported limits are reloadable.
-
-    A gauge still reporting the startup value would have a dashboard plotting
-    usage against a ceiling no longer in force — worst at exactly the moment
-    someone reloaded because they were watching that dashboard.
-    """
-    from pymta import metrics, server
-
-    monkeypatch.setattr(settings, "PYMTA_MAX_CONCURRENT_DATA", 40)
-    monkeypatch.setenv("PYMTA_MAX_CONCURRENT_DATA", "12")
-    server._reload_settings()
-
-    assert metrics.CONFIG_LIMIT.labels(name="max_concurrent_data")._value.get() == 12
-    # The derived one has to follow, or the pair describes two configurations.
-    assert metrics.CONFIG_LIMIT.labels(name="max_sessions_total")._value.get() == 36
+def test_sighup_is_wired_to_the_certificate_reload_only():
+    source = inspect.getsource(server_module._serve)
+    assert "add_signal_handler(signal.SIGHUP, _reload_tls, listener)" in source
+    assert not hasattr(settings, "reload_runtime_settings")
 
 
 # ---------------------------------------------------------------------------
@@ -274,46 +180,17 @@ def test_reload_republishes_the_limit_gauges(monkeypatch, restore_settings):
 
 @pytest.fixture(autouse=True)
 def _clean_runtime():
-    from pymta import runtime
-
-    runtime.reset_for_tests()
+    runtime._shutting_down = False
     yield
-    runtime.reset_for_tests()
+    runtime._shutting_down = False
 
 
-def test_sigterm_starts_draining_without_the_env_var():
-    """One signal is the whole protocol: no PYMTA_DRAIN, no second command."""
-    from pymta import runtime, settings
-
-    assert settings.PYMTA_DRAIN is False
-    assert runtime.is_draining() is False
+def test_sigterm_is_the_only_way_into_the_drain():
+    """One signal is the whole protocol: no setting, no second command."""
+    assert runtime.is_shutting_down() is False
+    assert not hasattr(settings, "PYMTA_DRAIN")
     runtime.request_shutdown()
-    assert runtime.is_draining() is True
     assert runtime.is_shutting_down() is True
-
-
-def test_drain_env_var_does_not_imply_shutdown():
-    """The env var is the "drain but keep running" case, and must stay that."""
-    from pymta import runtime
-
-    with pytest.MonkeyPatch.context() as m:
-        m.setattr(settings, "PYMTA_DRAIN", True)
-        assert runtime.is_draining() is True
-        assert runtime.is_shutting_down() is False
-
-
-def test_shutdown_survives_a_reload_that_clears_the_env_var():
-    """A SIGHUP mid-shutdown must not put the node back in rotation.
-
-    It is about to stop serving, so advertising itself as open would accept
-    mail it cannot deliver.
-    """
-    from pymta import runtime
-
-    runtime.request_shutdown()
-    with pytest.MonkeyPatch.context() as m:
-        m.setattr(settings, "PYMTA_DRAIN", False)
-        assert runtime.is_draining() is True
 
 
 @pytest.mark.asyncio
@@ -323,20 +200,18 @@ async def test_sigterm_waits_for_the_session_then_exits(monkeypatch):
     Drives ``_drain_and_close`` against a real listener with a real session
     open, because the value of this path is entirely in the waiting.
     """
-    from pymta import metrics, runtime, server
-
     monkeypatch.setattr(settings, "PYMTA_SHUTDOWN_TIMEOUT", 10)
     loop = asyncio.get_running_loop()
-    srv, port = await _listener(loop)
+    gate = IPGate(max_total=0)
+    srv, port = await _listener(loop, gate)
 
     reader, writer = await asyncio.open_connection("127.0.0.1", port)
     assert (await asyncio.wait_for(reader.readline(), timeout=5)).startswith(b"220")
 
-    live = metrics.active_sessions()
-    assert live >= 1, "the open connection should be counted as a session"
+    assert gate.total == 1, "the open connection should be counted as a session"
 
     runtime.request_shutdown()
-    drain = asyncio.create_task(server._drain_and_close(srv))
+    drain = asyncio.create_task(server_module._drain_and_close(srv, gate))
 
     # Still holding the session: the drain must not finish.
     await asyncio.sleep(0.6)
@@ -354,41 +229,27 @@ async def test_sigterm_waits_for_the_session_then_exits(monkeypatch):
     with contextlib.suppress(ConnectionError):
         await writer.wait_closed()
     await asyncio.wait_for(drain, timeout=10)
-    assert metrics.active_sessions() == 0
+    assert gate.total == 0
 
 
 @pytest.mark.asyncio
 async def test_drain_gives_up_at_the_deadline(monkeypatch):
     """A session that never ends must not hold the process open forever."""
-    from pymta import metrics, runtime, server
-
     monkeypatch.setattr(settings, "PYMTA_SHUTDOWN_TIMEOUT", 1)
-    monkeypatch.setattr(metrics, "active_sessions", lambda: 2)
+    gate = IPGate(max_total=0)
+    # Two sessions that never end.
+    gate.acquire("192.0.2.1")
+    gate.acquire("192.0.2.2")
     loop = asyncio.get_running_loop()
-    srv, _ = await _listener(loop)
+    srv, _ = await _listener(loop, gate)
 
     runtime.request_shutdown()
     started = asyncio.get_running_loop().time()
-    await asyncio.wait_for(server._drain_and_close(srv), timeout=10)
-    elapsed = asyncio.get_running_loop().time() - started
-    assert 1 <= elapsed < 5, elapsed
-
-
-@pytest.mark.asyncio
-async def test_drain_does_not_read_an_unknown_count_as_drained(monkeypatch):
-    """``active_sessions()`` returns -1 when the gauge cannot be read; treating
-    that as an empty server cuts live sessions. The elapsed time is how the
-    test tells "waited for the deadline" from "left immediately"."""
-    from pymta import metrics, runtime, server
-
-    monkeypatch.setattr(settings, "PYMTA_SHUTDOWN_TIMEOUT", 1)
-    monkeypatch.setattr(metrics, "active_sessions", lambda: -1)
-    loop = asyncio.get_running_loop()
-    srv, _ = await _listener(loop)
-
-    runtime.request_shutdown()
-    started = asyncio.get_running_loop().time()
-    await asyncio.wait_for(server._drain_and_close(srv), timeout=10)
+    try:
+        await asyncio.wait_for(server_module._drain_and_close(srv, gate), timeout=10)
+    finally:
+        gate.release("192.0.2.1")
+        gate.release("192.0.2.2")
     elapsed = asyncio.get_running_loop().time() - started
     assert 1 <= elapsed < 5, elapsed
 
@@ -412,30 +273,35 @@ async def test_drain_does_not_read_an_unknown_count_as_drained(monkeypatch):
     ],
 )
 def test_client_ip_matching_handles_the_mapped_form(raw, cidr, expected):
-    import ipaddress
-
-    from pymta.settings import parse_client_ip
-
     addr = parse_client_ip(raw)
     assert (addr in ipaddress.ip_network(cidr)) is expected
 
 
 @pytest.mark.parametrize("raw", [None, "", "not-an-ip", "unknown"])
 def test_unparseable_client_ip_is_not_a_match(raw):
-    from pymta.settings import parse_client_ip
-
     assert parse_client_ip(raw) is None
+    assert canonical_ip(raw) == raw
+
+
+@pytest.mark.parametrize(
+    ("raw", "kept"),
+    [
+        ("::ffff:198.51.100.7", "198.51.100.7"),
+        ("198.51.100.7", "198.51.100.7"),
+        ("2001:db8::1", "2001:db8::1"),
+    ],
+)
+def test_a_client_address_is_kept_without_its_ipv4_mapping(raw, kept):
+    """What a dual-stack listener reports for an IPv4 peer."""
+    assert canonical_ip(raw) == kept
 
 
 @pytest.mark.asyncio
 async def test_blocklist_matches_a_mapped_ipv4_client(monkeypatch):
     """End to end: the blocklist must fire for a dual-stack IPv4 peer."""
-    from pymta.settings import _env_networks
-    from pymta.smtp_protocol import HardenedSMTP
-
     monkeypatch.setenv("T", "198.51.100.0/24")
     monkeypatch.setattr(settings, "PYMTA_BLOCKED_NETWORKS", _env_networks("T"))
-    smtp = HardenedSMTP(_AlwaysYesMDA(), hostname="mta.test", timeout=120)
+    smtp = protocol_factory(AcceptAll())()
     assert smtp._is_blocked("::ffff:198.51.100.7") is True
     assert smtp._is_blocked("::ffff:203.0.113.7") is False
 
@@ -446,8 +312,6 @@ async def test_blocklist_matches_a_mapped_ipv4_client(monkeypatch):
 
 
 def _gate(max_data):
-    from pymta.limits import IPGate
-
     return IPGate(max_total=0, max_data=max_data)
 
 
@@ -461,14 +325,13 @@ def test_data_slots_are_bounded_globally():
     assert gate.acquire_data("198.51.100.3") is True
 
 
-def test_one_source_cannot_take_every_slot():
-    """A lone source gets a large share, never all of it.
+def test_one_source_cannot_take_more_than_its_share():
+    """A tenth of the slots by default, however alone the source is.
 
-    Half of 8, because the share always keeps one portion spare for a source
-    that has not arrived. Otherwise the first host to show up owns the server
-    until its messages finish.
+    Otherwise the first host to show up owns the server until its messages
+    finish.
     """
-    gate = _gate(8)
+    gate = _gate(40)
     assert [gate.acquire_data("198.51.100.1") for _ in range(5)] == [
         True,
         True,
@@ -480,32 +343,58 @@ def test_one_source_cannot_take_every_slot():
     assert gate.acquire_data("203.0.113.9") is True
 
 
-def test_the_share_shrinks_as_sources_arrive():
-    """Contention, not a constant, decides how much one source may hold."""
-    gate = _gate(20)
-    assert gate.acquire_data("198.51.100.1") is True
-    # Alone: half the slots. With three others present: a fifth.
-    assert gate._fair_share(20, 1) == 10
-    for n in (2, 3, 4):
-        gate.acquire_data(f"198.51.100.{n}")
-    assert gate._fair_share(20, 4) == 4
+def test_the_share_is_a_setting(monkeypatch):
+    gate = _gate(40)
+    monkeypatch.setattr(settings, "PYMTA_MAX_SHARE_PER_SOURCE", 0.25)
+    assert [gate.acquire_data("198.51.100.1") for _ in range(11)] == [True] * 10 + [False]
 
 
-def test_saturating_needs_as_many_hosts_as_slots():
-    """The property a fixed per-source cap cannot give.
+@pytest.mark.parametrize(
+    ("fraction", "slots", "expected"),
+    [
+        (0.1, 120, 12),
+        (0.1, 40, 4),
+        (0.5, 20, 10),
+        (1, 20, 20),
+        # Floating point: 0.29 * 100 is 28.999999999999996.
+        (0.29, 100, 29),
+        # Never less than one, or a small server would admit nobody.
+        (0.1, 4, 1),
+    ],
+)
+def test_the_share_of_a_lone_source(fraction, slots, expected):
+    assert IPGate(max_share=fraction)._share(slots, 0) == expected
 
-    Dividing 20 slots by a constant 5 lets four hosts take everything, and no
-    choice of constant avoids that shape. Sharing by the sources present means
-    each newcomer shrinks everyone's share, so filling the slots takes one host
-    per slot.
+
+def test_the_share_shrinks_once_the_sources_outnumber_it():
+    """With more sources present than the fraction allows for, they share equally."""
+    gate = IPGate(max_share=0.1)
+    assert gate._share(120, 5) == 12
+    assert gate._share(120, 9) == 12
+    assert gate._share(120, 11) == 10
+    assert gate._share(120, 59) == 2
+
+
+def _sources_needed_to_fill(gate, slots: int) -> int:
+    """How many sources, each taking all it may, it takes to hold every slot."""
+    # Bounded, so a gate that stops refusing fails the test instead of hanging it.
+    for sources in range(1, slots + 2):
+        taken = sum(gate.acquire_data(f"198.51.100.{sources}") for _ in range(slots + 1))
+        assert taken <= slots
+        if gate._data_total >= slots:
+            return sources
+    raise AssertionError(f"{slots} slots never filled")
+
+
+@pytest.mark.parametrize(("fraction", "needed"), [(0.1, 11), (0.25, 5), (0.5, 3), (1, 3)])
+def test_how_many_sources_it_takes_to_fill_the_server(fraction, needed):
+    """Measured, not derived: message slots already held are never taken back.
+
+    At least one over the fraction. Never fewer than three, since the equal
+    share among the sources present applies too: 20, then 13, then the 7 left.
     """
-    gate = _gate(20)
-    hosts = 0
-    while gate.acquire_data(f"198.51.100.{hosts}"):
-        hosts += 1
-        if hosts > 100:
-            break
-    assert hosts >= 19, f"only {hosts} hosts were needed to fill 20 slots"
+    gate = IPGate(max_total=0, max_data=40, max_share=fraction)
+    assert _sources_needed_to_fill(gate, 40) == needed
 
 
 def test_zero_disables_the_data_bound():
@@ -515,15 +404,13 @@ def test_zero_disables_the_data_bound():
 
 @pytest.mark.parametrize("before, after", [(0, 4), (4, 0)])
 def test_slots_survive_a_limit_change_mid_phase(before, after):
-    """PYMTA_MAX_CONCURRENT_DATA is reloadable, so a phase can outlive its value.
+    """PYMTA_MAX_CONCURRENT_DATA is read at each use, so a phase can outlive its value.
 
-    Acquire under one limit, SIGHUP, release under another. If release consulted
+    Acquire under one limit, change it, release under another. If release consulted
     the limit in force at the time it ran, turning the bound on would decrement a
     slot never taken and turning it off would strand one forever — the second
     losing capacity permanently, because the leak persists once it is back on.
     """
-    from pymta import metrics
-
     gauge = metrics.DATA_PHASES_ACTIVE
     before_value = gauge._value.get()
     gate = _gate(before)

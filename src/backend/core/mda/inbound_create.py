@@ -183,6 +183,39 @@ def _record_divergent_rcpt(
         postmark["rcpt_to"] = recipient_email
 
 
+# Protocol versions no longer considered safe (RFC 8996 deprecates TLS 1.0 and
+# 1.1). Both spellings OpenSSL uses for 1.0.
+_OLD_TLS_VERSIONS = frozenset({"SSLv2", "SSLv3", "TLSv1", "TLSv1.0", "TLSv1.1"})
+
+
+def _record_transport_security(postmark: dict, envelope: dict) -> None:
+    """Record in ``postmark`` that a message did not arrive over modern TLS.
+
+    ``"tls": "none"`` for a session in clear, ``"tls": "old"`` for TLS below
+    1.2. Nothing in the normal case, which keeps ``postmark`` NULL. The cipher
+    and exact version are in the ``Received`` header for whoever needs them;
+    this is only what a list view or a query needs.
+
+    ``"tls": "unknown"`` when the message came through an MTA that did not
+    say (no ``tls_version`` key: the deprecated Postfix image, or an mta-in
+    older than this field). Not ``"none"``, which would be a claim, and not
+    nothing, which a reader takes for "fine".
+
+    Nothing for the other origins (widget, internal, import): they did not
+    arrive over SMTP, so there is no session to qualify.
+    """
+    if envelope.get("origin") != enums.InboundOrigin.MTA:
+        return
+    if "tls_version" not in envelope:
+        postmark["tls"] = "unknown"
+        return
+    version = envelope["tls_version"]
+    if not version:
+        postmark["tls"] = "none"
+    elif version in _OLD_TLS_VERSIONS:
+        postmark["tls"] = "old"
+
+
 def _create_message_from_inbound(  # pylint: disable=too-many-arguments
     recipient_email: str,
     parsed_email: JmapEmail,
@@ -449,11 +482,7 @@ def _create_message_from_inbound(  # pylint: disable=too-many-arguments
                     is_draft=is_outbound,  # Outbound: draft until prepare_outbound_message finalizes
                     is_sender=is_sender,
                     is_trashed=is_trashed,
-                    # Keep timestamps in lockstep with the booleans, as the
-                    # flag endpoint does.
-                    trashed_at=(timezone.now() if is_trashed else None),
                     is_archived=is_archived,
-                    archived_at=(timezone.now() if is_archived else None),
                     is_spam=is_spam,
                     has_attachments=len(parsed_email.get("attachments", [])) > 0,
                     channel=channel,
@@ -469,16 +498,7 @@ def _create_message_from_inbound(  # pylint: disable=too-many-arguments
                 for flag, value in message_flags.items():
                     if hasattr(message, flag):
                         setattr(message, flag, value)
-                flag_update_fields = ["created_at", *message_flags.keys()]
-                # Keep the timestamps in lockstep with the booleans, as the
-                # create above does.
-                if message.is_trashed and message.trashed_at is None:
-                    message.trashed_at = timezone.now()
-                    flag_update_fields.append("trashed_at")
-                if message.is_archived and message.archived_at is None:
-                    message.archived_at = timezone.now()
-                    flag_update_fields.append("archived_at")
-                message.save(update_fields=flag_update_fields)
+                message.save(update_fields=["created_at", *message_flags.keys()])
                 # Update ThreadAccess for read/starred state
                 access = models.ThreadAccess.objects.filter(
                     thread=thread, mailbox=mailbox

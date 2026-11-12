@@ -41,6 +41,9 @@ export type ImportRun = {
   readonly failure_count: number;
   /** @nullable */
   readonly failure_reasons: ImportRunFailureReasons;
+  /** @nullable */
+  readonly skipped_folders: readonly string[] | null;
+  readonly skipped_folders_count: number;
   readonly progress: number;
   /** @nullable */
   readonly error: string | null;

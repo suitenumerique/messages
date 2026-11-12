@@ -7,7 +7,7 @@ import { useComposeWindows } from "@/features/providers/compose-windows";
 import { ComposeWindowDescriptor } from "@/features/providers/compose-windows/types";
 import { useFocusTrap } from "@/hooks/use-focus-trap";
 import { useRestoreFocus } from "@/hooks/use-restore-focus";
-import { useComposeSender } from "../use-compose-sender";
+import { useComposeSenderText } from "../use-compose-sender";
 import { Edit } from "@gouvfr-lasuite/ui-components/icons";
 import { Icon } from "@/features/ui/components/icon";
 
@@ -35,7 +35,7 @@ export const ComposeOverview = ({ windows, onClose, onRequestCloseWindow }: Comp
     const { focusWindow } = useComposeWindows();
     // Cards have the room a docked tab lacks, so the sender is written out
     // rather than reduced to an avatar.
-    const getSender = useComposeSender();
+    const getSenderText = useComposeSenderText();
     const rootRef = useRef<HTMLDivElement>(null);
 
     // A modal dialog for real: focus moves in on open, Tab cycles inside, and
@@ -65,7 +65,7 @@ export const ComposeOverview = ({ windows, onClose, onRequestCloseWindow }: Comp
             <div className="compose-overview__backdrop" onClick={onClose} aria-hidden="true" />
             <ul className="compose-overview__cards">
                 {windows.map((window, index) => {
-                    const senderEmail = getSender(window.mailboxId)?.email;
+                    const senderText = getSenderText(window);
                     return (
                     <li
                         key={window.windowId}
@@ -86,9 +86,9 @@ export const ComposeOverview = ({ windows, onClose, onRequestCloseWindow }: Comp
                                 <span className="compose-overview__card-title">
                                     {window.title?.trim() || t("New message")}
                                 </span>
-                                {senderEmail && (
+                                {senderText && (
                                     <span className="compose-overview__card-sender">
-                                        {senderEmail}
+                                        {senderText}
                                     </span>
                                 )}
                             </span>

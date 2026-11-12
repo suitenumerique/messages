@@ -1,5 +1,6 @@
 import { useModals } from "@gouvfr-lasuite/ui-components";
 import { useMailboxContext } from "../providers/mailbox";
+import { useComposeWindows } from "../providers/compose-windows";
 import { useTranslation } from "react-i18next";
 import useDelete, { DeleteOptions } from "./use-delete";
 
@@ -10,7 +11,8 @@ import useDelete, { DeleteOptions } from "./use-delete";
 const useDeleteDrafts = () => {
     const { t } = useTranslation();
     const modals = useModals();
-    const { invalidateMailbox, invalidateThreadsStats } = useMailboxContext();
+    const { selectedMailbox, invalidateMailbox, invalidateThreadsStats } = useMailboxContext();
+    const { closeDeletedDraftWindows } = useComposeWindows();
 
     const { remove, status } = useDelete("draft", {
         toastMessage: (deletedCount, submittedCount) => {
@@ -27,9 +29,16 @@ const useDeleteDrafts = () => {
                 defaultValue_one: "The draft has been deleted.",
             });
         },
-        onSuccess: () => {
+        onSuccess: (_deletedCount, { messageIds, threadIds }) => {
             invalidateMailbox();
             invalidateThreadsStats();
+            // A compose window left open on a deleted draft would keep
+            // autosaving it into 404s. Wired here rather than on the per-call
+            // callback, which React Query skips once the caller unmounted
+            // (e.g. leaving the thread on mobile before the response).
+            if (messageIds.length > 0) {
+                closeDeletedDraftWindows({ draftIds: messageIds, threadIds, mailboxId: selectedMailbox?.id });
+            }
         },
     });
 

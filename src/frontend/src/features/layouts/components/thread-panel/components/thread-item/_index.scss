@@ -355,7 +355,7 @@
 }
 
 .thread-item[data-unread="true"] .thread-item__subject {
-    font-weight: 500;
+    font-weight: 700;
 }
 
 .thread-item__message-count {
@@ -377,6 +377,10 @@
     white-space: nowrap;
     overflow: hidden;
     text-overflow: ellipsis;
+}
+
+.thread-item[data-unread="true"] .thread-item__snippet {
+    font-weight: 500;
 }
 
 .thread-item__column--metadata {

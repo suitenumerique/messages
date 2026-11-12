@@ -268,9 +268,9 @@ class TestThreadStatsAssignment:
     def test_stats_has_unassigned_matches_list(self, api_client):
         """The "Unassigned" badge must count exactly what the folder lists.
 
-        A thread whose first message is spam keeps ``has_active=True`` when a
-        later message is not spam, so it stays out of the list but used to be
-        counted by the badge — a counter pointing at an empty folder.
+        A spam thread keeps ``has_active=True`` when one of its messages is
+        not flagged, so it stays out of the list but used to be counted by the
+        badge — a counter pointing at an empty folder.
         """
         user, mailbox, thread = setup_user_with_thread_access()
         api_client.force_authenticate(user=user)

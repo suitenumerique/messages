@@ -1,6 +1,6 @@
 ARG FRONTEND_IMAGE=frontend-build-output
 
-FROM node:24.18.0-slim@sha256:cb4e8f7c443347358b7875e717c29e27bf9befc8f5a26cf18af3c3dec80e58c5 AS frontend-dev-base
+FROM node:24.22.1-slim@sha256:1681862882da07ee5476fee047bcf34138833f1df42633bb25bcb0f438d5bf3d AS frontend-dev-base
 
 ENV npm_config_cache=/tmp/npm-cache
 
@@ -61,12 +61,12 @@ FROM ${FRONTEND_IMAGE} AS frontend-source
 FROM alpine:3.21@sha256:48b0309ca019d89d40f670aa1bc06e426dc0931948452e8491e3d65087abc07d AS tools-download
 ARG TARGETARCH
 
-ARG CADDY_VERSION=2.11.4
+ARG CADDY_VERSION=2.11.9
 # When upgrading, run
-# for arch in amd64 arm64; do printf "CADDY_SHA256_%s=%s\n" "$(echo $arch | tr a-z A-Z)" "$(wget -qO- "https://github.com/caddyserver/caddy/releases/download/v2.11.4/caddy_2.11.4_linux_${arch}.tar.gz" | sha256sum | cut -d' ' -f1)"; done
+# for arch in amd64 arm64; do printf "CADDY_SHA256_%s=%s\n" "$(echo $arch | tr a-z A-Z)" "$(wget -qO- "https://github.com/caddyserver/caddy/releases/download/v2.11.9/caddy_2.11.9_linux_${arch}.tar.gz" | sha256sum | cut -d' ' -f1)"; done
 # and update checksums accordingly
-ARG CADDY_SHA256_AMD64=527fbf917c39189a1e3b31d34fa955601680b2d5c8055d2a87b8b9588dec7bb9
-ARG CADDY_SHA256_ARM64=52d42ae12b3462097e9868da6dfed3c9648ae12edd3b3638102312af84cb6904
+ARG CADDY_SHA256_AMD64=5b8cb7faf8726a2028ad96a66e54e6e81e8f361bc6175e5d22bbd997cc5177fb
+ARG CADDY_SHA256_ARM64=5e377cff994fc9362a6fcf695c53f226cfca3a3ef85bd3a3687cf252d6310165
 RUN wget -qO /tmp/caddy.tar.gz "https://github.com/caddyserver/caddy/releases/download/v${CADDY_VERSION}/caddy_${CADDY_VERSION}_linux_${TARGETARCH}.tar.gz" \
     && case "${TARGETARCH}" in \
          amd64) echo "${CADDY_SHA256_AMD64}  /tmp/caddy.tar.gz" | sha256sum -c - ;; \
@@ -91,7 +91,7 @@ RUN wget -qO /usr/bin/lprobe "https://github.com/fivexl/lprobe/releases/download
        esac \
     && chmod +x /usr/bin/lprobe
 
-FROM gcr.io/distroless/static-debian13:nonroot@sha256:e2e927ec666bae08560abb3c55d0659eceabb657f56b6782ab500a9fc7f555e3 AS runtime-prod
+FROM gcr.io/distroless/static-debian13:nonroot@sha256:516757106de35205efb70b91ba03f6f1298424a0678c603255cf2852a7000087 AS runtime-prod
 
 COPY --from=tools-download /usr/bin/caddy /usr/bin/caddy
 COPY --from=tools-download /usr/bin/lprobe /usr/bin/lprobe

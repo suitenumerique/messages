@@ -194,7 +194,18 @@ Messages uses OpenID Connect (OIDC) for user authentication. This is the only au
 - A mail domain with `oidc_autojoin` gives each user a mailbox at login. This needs no `IDENTITY_PROVIDER`.
 - A mail domain with `identity_sync` pushes each mailbox to Keycloak. See the [identity provider guide](./identity-provider.md)
 
-### 7. Production Deployment
+### 7. Service Message
+
+A service message (maintenance, incident…) can be displayed in a banner on top of every page, logged in or not. Configure it from the Django admin, in the "Service message" section of the site set by `SITE_ID` (`/admin/sites/site/`):
+
+- `Enabled`: displays the banner.
+- `Message`: the text per language code, e.g. `{"en-us": "Maintenance tonight", "fr-fr": "Maintenance ce soir"}`. A user sees the text of their language, otherwise the one of `LANGUAGE_CODE`, otherwise any available one.
+- `Variant`: `brand` (information), `warning` or `error`.
+- `Link URL` / `Link label`: an optional call to action, opened in a new tab.
+
+Users can close the banner; it shows again on the next page load. A change is picked up by users on their next page load.
+
+### 8. Production Deployment
 
 For production deployment, create your own Docker Compose configuration based on `compose.yaml`:
 

@@ -12,6 +12,21 @@
   }
 }
 
+// Banners stack above the header. The topmost one reaches the top edge of the
+// screen, so it takes over the top safe-area inset from the header: its
+// background then spans behind the status bar / Dynamic Island.
+.c__main-layout__banner {
+  flex-shrink: 0;
+
+  .c__header-banner:first-child {
+    padding-top: calc(var(--safe-area-inset-top) + var(--c--globals--spacings--3xs));
+  }
+}
+
+.c__main-layout:has(.c__main-layout__banner .c__header-banner) .c__main-layout__header {
+  --safe-area-inset-top: 0px;
+}
+
 // The header is an in-flow flex item (not fixed): the flex column splits the
 // 100dvh between the header and the content, so when the keyboard shrinks the
 // viewport the content shrinks with it instead of overflowing behind a fixed

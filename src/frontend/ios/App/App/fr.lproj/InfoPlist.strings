@@ -1,0 +1,5 @@
+/* Traductions des textes affichés par iOS lors des demandes d'autorisation.
+   L'anglais de référence est dans Info.plist : à garder aligné. */
+"NSCameraUsageDescription" = "L'appareil photo vous permet de prendre une photo ou une vidéo à joindre au message que vous rédigez.";
+"NSMicrophoneUsageDescription" = "Le micro enregistre le son lorsque vous filmez une vidéo à joindre à un message.";
+"NSPhotoLibraryAddUsageDescription" = "Les pièces jointes que vous choisissez d'enregistrer depuis un message sont ajoutées à votre photothèque.";

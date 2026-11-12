@@ -8,18 +8,17 @@ import { useThreadViewContext } from "@/features/layouts/components/thread-view/
 import { LabelsWidget, LabelsWidgetHandle } from "@/features/layouts/components/labels-widget";
 import { ModalDrawer } from "@/features/ui/components/drawer";
 import useArchive from "@/features/message/use-archive";
-import useTrash from "@/features/message/use-trash";
 import useSpam from "@/features/message/use-spam";
-import useDeleteDrafts from "@/features/message/use-delete-drafts";
+import useThreadRemoveActions from "@/features/message/use-thread-remove-actions";
 import useStarred from "@/features/message/use-starred";
 import useRead from "@/features/message/use-read";
 import useCopyDeepLink from "@/features/message/use-copy-deep-link";
 import useLeaveThread from "@/features/message/use-leave-thread";
 import useAbility, { Abilities } from "@/hooks/use-ability";
-import ViewHelper from "@/features/utils/view-helper";
+import { useCurrentView } from "@/hooks/use-current-view";
 import { isNativePlatform } from "@/features/native/platform";
 import { MobileBottomBar } from "../bottom-bar";
-import { Archive, Link, Restore, Star, StarFilled, TagAdd, Trash, Error as ErrorIcon } from "@gouvfr-lasuite/ui-components/icons";
+import { Archive, Link, Star, StarFilled, TagAdd, Error as ErrorIcon } from "@gouvfr-lasuite/ui-components/icons";
 import { Icon, IconProps } from "@/features/ui/components/icon";
 
 /** Modes offered by the quick-reply CTA (bottom-right of the toolbar). */
@@ -28,7 +27,8 @@ export type QuickReplyMode = "reply" | "reply_all";
 type MobileThreadToolbarProps = {
   thread: Thread;
   isArchived: boolean;
-  isTrashed: boolean;
+  /** Trash view, or a fully trashed thread opened from any other view. */
+  isTrashContext: boolean;
   /**
    * Mode of the quick-reply CTA, derived from the latest message: reply-all
    * when it has several recipients. Null when that message cannot be replied
@@ -54,14 +54,13 @@ type DrawerAction = {
  * sit on the left, the quick-reply CTA on the right. The drawer gathers
  * every available action, including those already surfaced as buttons.
  */
-export const MobileThreadToolbar = ({ thread, isArchived, isTrashed, quickReplyMode, onOpenAccesses }: MobileThreadToolbarProps) => {
+export const MobileThreadToolbar = ({ thread, isArchived, isTrashContext, quickReplyMode, onOpenAccesses }: MobileThreadToolbarProps) => {
   const { t } = useTranslation();
   const { selectedMailbox, unselectThread } = useMailboxContext();
   const { requestReply, isMessageFormFocused } = useThreadViewContext();
   const { markAsArchived, markAsUnarchived } = useArchive();
-  const { markAsTrashed, markAsUntrashed } = useTrash();
   const { markAsSpam, markAsNotSpam } = useSpam();
-  const { deleteDrafts } = useDeleteDrafts();
+  const removeActions = useThreadRemoveActions(thread, isTrashContext);
   const { markAsStarred, markAsUnstarred } = useStarred();
   const { markAsReadAt } = useRead();
   const copyDeepLink = useCopyDeepLink();
@@ -71,47 +70,27 @@ export const MobileThreadToolbar = ({ thread, isArchived, isTrashed, quickReplyM
   const canManageLabels = useAbility(Abilities.CAN_MANAGE_MAILBOX_LABELS, selectedMailbox);
   const labelsWidgetRef = useRef<LabelsWidgetHandle>(null);
   const [isDrawerOpen, setIsDrawerOpen] = useState(false);
-  const isDraftsView = ViewHelper.isDraftsView();
+  const { isDraftsView } = useCurrentView();
 
   // While the composer is focused the BlockNote formatting toolbar takes the
   // spot above the keyboard, so step aside to avoid stacking two bars there.
   if (!isNativePlatform() || isMessageFormFocused) return null;
 
-  const canReply = canSendMessages && canEditThread && !isTrashed && quickReplyMode !== null;
+  const canReply = canSendMessages && canEditThread && !isTrashContext && quickReplyMode !== null;
   // Same rules as the desktop action bar: archiving or reporting spam
   // requires edit rights and is irrelevant from the trash or drafts views;
   // archiving a spam thread makes no sense either.
-  const canArchive = canEditThread && !isTrashed && !thread.is_spam && !isDraftsView;
-  const canReportSpam = canEditThread && !isTrashed && !isDraftsView;
+  const canArchive = canEditThread && !isTrashContext && !thread.is_spam && !isDraftsView;
+  const canReportSpam = canEditThread && !isTrashContext && !isDraftsView;
   // Starring a trashed or spam thread makes no sense (same rule as the
   // subject's star toggle).
-  const canStar = !isTrashed && !thread.is_spam;
+  const canStar = !isTrashContext && !thread.is_spam;
   const isStarred = thread.has_starred;
 
   const handleArchive = () => {
     const mutation = isArchived ? markAsUnarchived : markAsArchived;
     mutation({ threadIds: [thread.id], onSuccess: unselectThread });
   };
-
-  // The left "remove" slot follows the context: deleting the draft from the
-  // drafts view, restoring from the trash, trashing everywhere else.
-  const removeAction = !canEditThread ? null : isDraftsView
-    ? {
-        label: t("Delete draft"),
-        icon: { icon: Trash },
-        onSelect: () => deleteDrafts({ threadIds: [thread.id], onSuccess: unselectThread }),
-      }
-    : isTrashed
-      ? {
-          label: t("Undelete"),
-          icon: { icon:Restore },
-          onSelect: () => markAsUntrashed({ threadIds: [thread.id], onSuccess: unselectThread }),
-        }
-      : {
-          label: t("Move to trash"),
-          icon: { icon: Trash },
-          onSelect: () => markAsTrashed({ threadIds: [thread.id], onSuccess: unselectThread }),
-        };
 
   const hasUnread = thread.has_unread;
   const drawerActionGroups: DrawerAction[][] = [
@@ -137,7 +116,7 @@ export const MobileThreadToolbar = ({ thread, isArchived, isTrashed, quickReplyM
         },
     ] : [],
     [
-      ...(canManageLabels && !isTrashed ? [{
+      ...(canManageLabels && !isTrashContext ? [{
         key: "labels",
         label: t("Manage labels"),
         icon: { icon: TagAdd },
@@ -176,7 +155,7 @@ export const MobileThreadToolbar = ({ thread, isArchived, isTrashed, quickReplyM
       },
     ],
     [
-      ...(removeAction ? [{ key: "remove", ...removeAction }] : []),
+      ...removeActions,
       ...(canArchive ? [{
         key: "archive",
         label: isArchived ? t("Unarchive") : t("Archive"),
@@ -220,15 +199,17 @@ export const MobileThreadToolbar = ({ thread, isArchived, isTrashed, quickReplyM
     <>
       <MobileBottomBar className="mobile-thread-toolbar">
         <div className="mobile-thread-toolbar__group">
-          {removeAction && (
+          {removeActions.map((action) => (
             <Button
+              key={action.key}
               color="neutral"
               variant="tertiary"
-              onClick={removeAction.onSelect}
-              icon={<Icon {...removeAction.icon} />}
-              aria-label={removeAction.label}
+              onClick={action.onSelect}
+              disabled={action.isPending}
+              icon={<Icon {...action.icon} />}
+              aria-label={action.label}
             />
-          )}
+          ))}
           {canArchive && (
             <Button
               color="neutral"

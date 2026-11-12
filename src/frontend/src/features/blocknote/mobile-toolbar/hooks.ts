@@ -6,6 +6,7 @@ import {
 } from "@blocknote/core";
 import { useCallback, useEffect, useState } from "react";
 
+import { COMPOSER_PORTALED_PIECES_SELECTOR } from "../toolbar-focus";
 import { NATIVE_LINK_TAP_EVENT } from "../utils";
 
 /**
@@ -66,13 +67,10 @@ export const useComposerFocusState = (
                 ? (editorEl.closest(".bn-container") ?? editorEl)
                 : null;
             if (container?.contains(node)) return "composer";
-            // The fixed toolbar and BlockNote's popovers (mantine dropdowns:
-            // template/signature selectors, file caption…) portal outside the
-            // editor container; keep the toolbar alive while focus is in any
-            // of them.
+            // Keep the toolbar alive while focus is in a portaled piece.
             const isPortaledToolbarPiece =
                 node instanceof Element &&
-                !!node.closest('.bn-mobile-formatting-toolbar, [class*="mantine-"][class*="-dropdown"]');
+                !!node.closest(COMPOSER_PORTALED_PIECES_SELECTOR);
             return isPortaledToolbarPiece ? "composer" : "outside";
         },
         [editor],

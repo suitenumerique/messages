@@ -22,6 +22,11 @@ NEXT_PUBLIC_SENTRY_ENVIRONMENT=
 MOBILE_APP_ID=local.suitenumerique.messages
 MOBILE_APP_NAME=
 
+## Apple Team ID signing the iOS app and its notification extension. Set it in
+## frontend.local, then `make mobile-build`: it reaches Xcode through the
+## gitignored generated.xcconfig, never through project.pbxproj.
+MOBILE_IOS_TEAM_ID=
+
 ## Mobile hot reload (Capacitor). Baked as the WebView's server.url at
 ## `cap sync` (capacitor.config.ts): the app loads the JS straight from the
 ## Vite dev server — changes apply through HMR, no rebuild/reinstall. The

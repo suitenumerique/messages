@@ -309,8 +309,7 @@ def search_threads(  # pylint: disable=too-many-branches
             "size": size,
         }
 
-    # pylint: disable=broad-exception-caught
-    except Exception as e:
+    except Exception as e:  # pylint: disable=broad-exception-caught
         logger.error("Error searching threads: %s", e)
         return {
             "threads": [],

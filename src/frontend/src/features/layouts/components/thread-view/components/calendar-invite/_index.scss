@@ -1,4 +1,7 @@
 .calendar-invite {
+    // Container (not viewport) query: the thread panel is resizable, so the
+    // card can be narrow on desktop too.
+    container: calendar-invite / inline-size;
     border: 1px solid var(--c--contextuals--border--surface--primary);
     border-radius: 8px;
     background-color: var(--c--contextuals--background--surface--tertiary);
@@ -9,6 +12,7 @@
     &--error,
     &--empty {
         display: flex;
+        flex-wrap: wrap;
         align-items: center;
         gap: var(--c--globals--spacings--sm);
         padding: var(--c--globals--spacings--sm) var(--c--globals--spacings--base);
@@ -47,7 +51,7 @@
 
 .calendar-invite__header {
     display: flex;
-    align-items: center;
+    align-items: flex-start;
     gap: var(--c--globals--spacings--sm);
     margin-bottom: var(--c--globals--spacings--xs);
 }
@@ -90,22 +94,11 @@
 }
 
 .calendar-invite__event-status {
+    // Badge is display:flex (block-level): keep it to its content width.
+    width: fit-content;
+    max-width: 100%;
+    margin-top: var(--c--globals--spacings--3xs);
     text-transform: uppercase;
-
-    &--confirmed {
-        background-color: var(--c--contextuals--background--semantic--success--tertiary);
-        color: var(--c--contextuals--content--semantic--success--primary);
-    }
-
-    &--tentative {
-        background-color: var(--c--contextuals--background--semantic--warning--tertiary);
-        color: var(--c--contextuals--content--semantic--warning--primary);
-    }
-
-    &--cancelled {
-        background-color: var(--c--contextuals--background--semantic--error--tertiary);
-        color: var(--c--contextuals--content--semantic--error--primary);
-    }
 }
 
 .calendar-invite__details {
@@ -254,6 +247,8 @@
 .calendar-invite__connection {
     display: flex;
     flex: 1;
+    // Without it the flex item can't shrink below a long calendar name.
+    min-width: 0;
     align-items: center;
     gap: var(--c--globals--spacings--sm);
     flex-wrap: wrap;
@@ -351,6 +346,7 @@
 
 .calendar-invite__rsvp-buttons {
     display: flex;
+    flex-wrap: wrap;
     gap: var(--c--globals--spacings--xs);
 }
 
@@ -372,7 +368,8 @@
     display: flex;
     align-items: center;
     gap: var(--c--globals--spacings--xs);
-    min-width: 280px;
+    flex: 1 1 280px;
+    min-width: 0;
     max-width: 360px;
 
     .calendar-invite__detail-icon {
@@ -385,6 +382,14 @@
     align-items: center;
     gap: var(--c--globals--spacings--2xs);
     min-width: 0;
+    max-width: 100%;
+    vertical-align: middle;
+}
+
+.calendar-select__name {
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
 }
 
 .calendar-select__color {
@@ -402,6 +407,8 @@
     gap: var(--c--globals--spacings--2xs);
     padding: 0 var(--c--globals--spacings--xs);
     height: 32px;
+    min-width: 0;
+    max-width: 100%;
     border-radius: 4px;
     font-size: var(--c--globals--font--sizes--sm);
     color: var(--c--contextuals--content--semantic--neutral--primary);
@@ -476,5 +483,60 @@
         height: 32px;
         padding-top: 0;
         padding-bottom: 0;
+    }
+}
+
+// Narrow card (mobile, or a thin thread panel): stack what sits side by side
+// and collapse secondary labels to their icon.
+@container calendar-invite (max-width: 30rem) {
+    // Visually hidden but still announced, like Cunningham's `c__offscreen`.
+    .calendar-invite__header-right .calendar-invite__download-label,
+    .calendar-invite__attendee-pill-label {
+        position: absolute;
+        width: 1px;
+        height: 1px;
+        margin: -1px;
+        padding: 0;
+        overflow: hidden;
+        clip: rect(0, 0, 0, 0);
+        white-space: nowrap;
+        border: 0;
+    }
+
+    .calendar-invite__header-right .c__button {
+        padding-inline: var(--c--globals--spacings--2xs);
+    }
+
+    .calendar-invite__conflict-item {
+        flex-wrap: wrap;
+        justify-content: flex-start;
+        row-gap: 0;
+        column-gap: var(--c--globals--spacings--xs);
+    }
+
+    .calendar-invite__conflict-summary {
+        flex-basis: 100%;
+    }
+
+    .calendar-invite__calendar-chooser {
+        flex-basis: 100%;
+        max-width: none;
+    }
+
+    .calendar-invite__connection-actions,
+    .calendar-invite__rsvp-buttons {
+        flex-basis: 100%;
+    }
+
+    // Drop the icons so the three answers fit on one line on a phone; the
+    // selected answer stays visible through the primary variant.
+    .calendar-invite__rsvp-buttons .c__button {
+        flex: 1 1 auto;
+        justify-content: center;
+        padding-inline: var(--c--globals--spacings--xs);
+
+        .c__button__icon {
+            display: none;
+        }
     }
 }
