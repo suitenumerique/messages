@@ -161,6 +161,7 @@ def test_ehlo_advertises_only_the_pinned_extensions(mta_impl):
             assert inside_tls <= _ALLOWED_EHLO_KEYWORDS, inside_tls - _ALLOWED_EHLO_KEYWORDS
             # Never offered: there is no authenticator on port 25.
             assert "AUTH" not in inside_tls
+            assert "STARTTLS" not in inside_tls
             tls.send(b"QUIT\r\n")
 
 

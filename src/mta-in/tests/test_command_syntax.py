@@ -96,7 +96,7 @@ _REFUSALS = [
     (
         [EHLO],
         b"MAIL FROM:<alice @sender.example>",
-        b"501 5.1.7 Address contains forbidden control characters\r\n",
+        b"501 5.1.7 Address contains forbidden characters\r\n",
     ),
 ]
 
@@ -428,8 +428,8 @@ async def test_an_exception_in_a_command_is_a_421_and_says_nothing_of_itself(cap
 
 
 @pytest.mark.asyncio
-async def test_a_check_refused_outright_by_the_mda_is_a_permanent_refusal(caplog):
-    """No status maps to this today; the branch is where one would land."""
+async def test_a_failed_check_defers_whatever_it_says_of_itself(caplog):
+    """No failed check is a verdict on the address, even one marked permanent."""
     refused = MDAResult(ok=False, temp_fail=False, payload={}, status_code=403)
     mda = ScriptedMDA(checks=[refused])
     async with listening(mda) as port:
@@ -437,8 +437,9 @@ async def test_a_check_refused_outright_by_the_mda_is_a_permanent_refusal(caplog
             async with connected(port) as client:
                 await client.cmd(EHLO)
                 await client.cmd(MAIL)
-                assert await client.cmd(RCPT) == b"550 5.1.1 Recipient verification failed\r\n"
+                reply = await client.cmd(RCPT)
             rejects = await records(caplog, "reject")
+    assert reply == b"451 4.3.0 Recipient verification temporarily unavailable\r\n"
     assert [(r.reason, r.status, r.recipient) for r in rejects] == [
-        ("mda_verification_failed", 403, "bob@example.com")
+        ("mda_temp_fail", 403, "bob@example.com")
     ]

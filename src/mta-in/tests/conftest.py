@@ -82,7 +82,9 @@ class MockAPIServer:
             # milter as JWT claims. Present both the same way to the tests.
             if request.headers.get("Content-Type") == ENVELOPED_CONTENT_TYPE:
                 head, _, raw_data = raw_data.partition(b"\n")
-                payload = {**payload, **json.loads(head)}
+                # The session id stays the signed claim, as on the real MDA.
+                claim = {"mta_session": payload.get("mta_session")}
+                payload = {**payload, **json.loads(head), **claim}
 
             request.state.payload = payload
             request.state.raw_body = raw_data

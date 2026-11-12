@@ -10,13 +10,23 @@ cd "$(dirname "$0")/.."
 
 export DOCKER_USER="${DOCKER_USER:-$(id -u):$(id -g)}"
 export DOCKER_UID="${DOCKER_UID:-$(id -u)}"
-compose=(docker compose -p st-messages-mta-e2e)
+
+# Without the host ports the dev stack publishes, so it can run next to it.
+override=$(mktemp)
+cat > "$override" <<'EOF'
+services:
+  postgresql: {ports: !reset []}
+  redis: {ports: !reset []}
+  objectstorage: {ports: !reset []}
+EOF
+compose=(docker compose -p st-messages-mta-e2e -f compose.yaml -f "$override")
 
 cleanup() {
     # `down` leaves the containers started with `run`: remove them by label.
     docker ps -aq --filter label=com.docker.compose.project=st-messages-mta-e2e \
         | xargs -r docker rm -f > /dev/null 2>&1 || true
     "${compose[@]}" down --volumes --remove-orphans > /dev/null 2>&1 || true
+    rm -f "$override"
 }
 trap cleanup EXIT
 

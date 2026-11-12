@@ -217,7 +217,7 @@ def validate_envelope_address(  # noqa: PLR0912, PLR0913, PLR0915
         raise AddressError(
             reason="control_char",
             smtp_code=501,
-            smtp_text="5.1.7 Address contains forbidden control characters",
+            smtp_text="5.1.7 Address contains forbidden characters",
         )
 
     # ----- 1c. valid UTF-8 ---------------------------------------------------
@@ -320,8 +320,8 @@ def validate_envelope_address(  # noqa: PLR0912, PLR0913, PLR0915
 
     # ----- 5. domain shape ---------------------------------------------------
     # Allow IDN/UTF-8 in the domain; reject empty labels, leading dot, label
-    # > 63 octets as an A-label, and bare IP literals (the inbound path expects
-    # FQDNs from legitimate senders).
+    # > 63 octets as an A-label, and an address literal unless
+    # ``allow_literal``.
     if allow_quoted and _needs_quoting(local):
         local = '"' + local.replace("\\", "\\\\").replace('"', '\\"') + '"'
     if domain.startswith("[") and domain.endswith("]"):

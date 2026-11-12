@@ -392,7 +392,8 @@ class InboundMTAViewSet(viewsets.GenericViewSet):
 
         # Return-Path first, then Received: everything the sender supplied
         # stays below our own trace line.
-        return_path = sanitize_header(f"<{sender}>" if sender else "<>")
+        # Cut inside the brackets, so a long sender keeps the closing one.
+        return_path = f"<{sanitize_header(sender)[:253]}>" if sender else "<>"
         raw_data = (
             f"Return-Path: {return_path}\r\n"
             + _received_header(mta_metadata, timezone.now())

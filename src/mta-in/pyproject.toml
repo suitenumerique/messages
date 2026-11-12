@@ -11,8 +11,6 @@ version = "0.10.0"
 authors = [{ "name" = "ANCT", "email" = "suiteterritoriale@anct.gouv.fr" }]
 classifiers = [
     "Development Status :: 5 - Production/Stable",
-    "Framework :: Django",
-    "Framework :: Django :: 5",
     "Intended Audience :: Developers",
     "License :: OSI Approved :: MIT License",
     "Natural Language :: English",

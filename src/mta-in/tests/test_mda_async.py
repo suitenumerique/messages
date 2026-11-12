@@ -11,6 +11,8 @@ import asyncio
 import datetime
 import hashlib
 import json
+import logging
+import sys
 
 import httpx
 import jwt
@@ -89,11 +91,16 @@ async def test_timeout_returns_temp_fail():
 
 
 @pytest.mark.asyncio
-async def test_transport_error_returns_temp_fail():
+async def test_transport_error_returns_temp_fail(caplog):
     client, _ = _new_client()
     client._client = _StubAsyncClient([httpx.ConnectError("no route")])
-    result = await client.check_recipient("user@example.com")
+    with caplog.at_level(logging.DEBUG, logger="pymta"):
+        result = await client.check_recipient("user@example.com")
     assert result.temp_fail is True
+    # The MDA's fault or the network's: a warning, with the traceback.
+    (record,) = caplog.records
+    assert (record.getMessage(), record.levelname) == ("mda_transport_error", "WARNING")
+    assert record.exc_info is not None
 
 
 @pytest.mark.asyncio
@@ -119,15 +126,47 @@ async def _deliver(client):
 
 @pytest.mark.parametrize("status", [400, 413])
 @pytest.mark.asyncio
-async def test_message_rejecting_statuses_are_permanent_on_deliver(status):
+async def test_message_rejecting_statuses_are_permanent_on_deliver(status, caplog):
     # The only statuses that mean "this message is unacceptable, retrying
     # cannot help": unparseable, oversize.
     client, _ = _new_client()
-    client._client = _StubAsyncClient([_resp(status, b'{"detail":"no"}')])
-    result = await _deliver(client)
+    client._client = _StubAsyncClient([_resp(status, b'{"status":"error","detail":"no"}')])
+    with caplog.at_level(logging.DEBUG, logger="pymta"):
+        result = await _deliver(client)
     assert result.ok is False
     assert result.temp_fail is False
     assert result.status_code == status
+    # A sender chooses its messages: the refusal is not a line it can raise.
+    assert [(r.getMessage(), r.levelname) for r in caplog.records] == [("mda_refused", "DEBUG")]
+
+
+@pytest.mark.parametrize("status", [400, 413])
+@pytest.mark.parametrize(
+    "body", [b"<html>413 Request Entity Too Large</html>", b'{"detail":"no"}']
+)
+@pytest.mark.asyncio
+async def test_the_same_statuses_from_something_else_than_the_mda_defer(status, body, caplog):
+    """An ingress in front of the MDA answers 413 too, and knows nothing of the message."""
+    client, _ = _new_client()
+    client._client = _StubAsyncClient([_resp(status, body)])
+    with caplog.at_level(logging.DEBUG, logger="pymta"):
+        result = await _deliver(client)
+    assert (result.ok, result.temp_fail, result.status_code) == (False, True, status)
+    assert ("mda_unhealthy", "WARNING") in [(r.getMessage(), r.levelname) for r in caplog.records]
+
+
+@pytest.mark.asyncio
+async def test_messages_the_mda_fails_on_do_not_open_the_breaker():
+    """Its own 500 about a message is not an outage: one sender could otherwise
+    have everyone else's mail deferred."""
+    client, _ = _new_client(threshold=3)
+    refused = _resp(500, b'{"status":"error","detail":"Failed to deliver"}')
+    client._client = _StubAsyncClient([refused] * 5)
+    for _ in range(5):
+        result = await _deliver(client)
+        assert (result.temp_fail, result.status_code) == (True, 500)
+    assert client.breaker_is_open() is False
+    assert client._client.calls == 5
 
 
 @pytest.mark.asyncio
@@ -532,6 +571,20 @@ async def test_client_does_not_follow_redirects():
     try:
         http = await client.start()
         assert http.follow_redirects is False
+    finally:
+        await client.close()
+
+
+@pytest.mark.parametrize(("sessions", "connections"), [(120, 120), (549, 549), (0, None)])
+@pytest.mark.asyncio
+async def test_the_pool_has_a_connection_for_every_session(monkeypatch, sessions, connections):
+    """A fixed pool smaller than the session cap would have the sessions past
+    it wait for a connection, holding their message, and be deferred."""
+    monkeypatch.setattr(settings, "PYMTA_MAX_SESSIONS_TOTAL", sessions)
+    client = MDAClient(secret="x" * 32)
+    try:
+        http = await client.start()
+        assert http._transport._pool._max_connections == (connections or sys.maxsize)
     finally:
         await client.close()
 

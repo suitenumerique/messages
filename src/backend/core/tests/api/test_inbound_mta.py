@@ -411,6 +411,32 @@ class TestMTAInboundEmail:
 
     @patch("core.api.viewsets.inbound.mta.deliver_inbound_message")
     @patch("core.api.viewsets.inbound.mta.parse_email")
+    def test_return_path_of_a_long_sender_keeps_its_brackets(
+        self, mock_parse, mock_deliver, api_client, valid_jwt_token
+    ):
+        """The MTA accepts senders longer than the header is allowed to be:
+        the address is cut, not the bracket that closes it."""
+        mock_parse.return_value = {"subject": "t"}
+        mock_deliver.return_value = True
+        sender = "bounce+" + "x" * 300 + "@example.com"
+        body = b"From: s@example.com\r\nSubject: t\r\n\r\nbody"
+        token = valid_jwt_token(
+            body, {"original_recipients": ["rcpt@example.com"], "sender": sender}
+        )
+
+        response = api_client.post(
+            "/api/v1.0/inbound/mta/deliver/",
+            data=body,
+            content_type="message/rfc822",
+            HTTP_AUTHORIZATION=f"Bearer {token}",
+        )
+
+        assert response.status_code == status.HTTP_200_OK
+        first_line = mock_parse.call_args[0][0].split(b"\r\n", 1)[0]
+        assert first_line == b"Return-Path: <" + sender[:253].encode() + b">"
+
+    @patch("core.api.viewsets.inbound.mta.deliver_inbound_message")
+    @patch("core.api.viewsets.inbound.mta.parse_email")
     def test_partial_client_metadata_is_no_error(
         self, mock_parse, mock_deliver, api_client, valid_jwt_token
     ):

@@ -18,6 +18,31 @@ class LineTooLong(Exception):
     """No terminator within the limit. Nothing was consumed."""
 
 
+def stored_line(line: bytes) -> tuple[bytes, bool]:
+    """A line of DATA as it is stored. Returns (line, rewritten).
+
+    ``line`` ends in LF. What is stored ends in CRLF, has no bare CR, and has
+    lost one leading dot (RFC 5321 section 4.5.2). ``rewritten`` is True when
+    a bare LF or CR was turned into CRLF.
+
+    One rule for headers and body, as Postfix's ``smtpd_forbid_bare_newline =
+    normalize``. A parser that breaks lines on a bare LF, as Python's
+    ``email`` does, would otherwise read ``Subject: a<LF>X: b`` as two headers
+    where we read one line.
+
+    The dot is removed after a bare LF too: a sender that ends its lines with
+    LF stuffs by its own line boundaries. Not after a bare CR.
+    """
+    crlf = line.endswith(b"\r\n")
+    if crlf and not line.startswith(b".") and line.find(b"\r") == len(line) - 2:
+        return line, False
+    text = line[: -2 if crlf else -1]
+    if text.startswith(b"."):
+        text = text[1:]
+    rewritten = not crlf or b"\r" in text
+    return text.replace(b"\r", b"\r\n") + b"\r\n", rewritten
+
+
 class LineReader:
     """Bytes received and not yet consumed, with back-pressure.
 

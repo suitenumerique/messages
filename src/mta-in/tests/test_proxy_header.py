@@ -16,6 +16,7 @@ import pytest
 from pymta import settings
 
 from tests.harness import (
+    LOOPBACK_PROXIES,
     Client,
     ScriptedMDA,
     capture_all,
@@ -54,7 +55,7 @@ _TLV = b"\x04\x00\x03abc"
 def proxied(monkeypatch):
     monkeypatch.setattr(settings, "PYMTA_ENABLE_PROXY_PROTOCOL", True)
     monkeypatch.setattr(settings, "PYMTA_PROXY_PROTOCOL_TIMEOUT", 1)
-    monkeypatch.setattr(settings, "PYMTA_TRUSTED_PROXIES", [])
+    monkeypatch.setattr(settings, "PYMTA_TRUSTED_PROXIES", LOOPBACK_PROXIES)
 
 
 async def _deliver(client) -> None:

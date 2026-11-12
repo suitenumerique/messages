@@ -20,7 +20,15 @@ from pymta import settings
 from pymta.handler import InboundHandler
 from pymta.limits import IPGate
 
-from tests.harness import ScriptedMDA, capture_all, connected, counter, listening, records
+from tests.harness import (
+    LOOPBACK_PROXIES,
+    ScriptedMDA,
+    capture_all,
+    connected,
+    counter,
+    listening,
+    records,
+)
 
 A, B, C, D = "198.51.100.1", "198.51.100.2", "198.51.100.3", "198.51.100.4"
 RECLAIMED = b"421 4.4.2 Server busy, closing idle connection\r\n"
@@ -30,7 +38,7 @@ CAPPED = b"421 4.7.0 Too many connections, try again later\r\n"
 @pytest.fixture(autouse=True)
 def _sources_by_proxy_header(monkeypatch):
     monkeypatch.setattr(settings, "PYMTA_ENABLE_PROXY_PROTOCOL", True)
-    monkeypatch.setattr(settings, "PYMTA_TRUSTED_PROXIES", [])
+    monkeypatch.setattr(settings, "PYMTA_TRUSTED_PROXIES", LOOPBACK_PROXIES)
 
 
 def _gate(slots: int = 4) -> IPGate:

@@ -39,7 +39,7 @@ def build_smtp_kwargs(*, tls_context: ssl.SSLContext | None) -> dict:
         "command_call_limit": {
             "EHLO": 4,
             "HELO": 4,
-            "NOOP": 5,
+            "NOOP": 20,
             "MAIL": settings.PYMTA_MAX_ENVELOPES_PER_SESSION + 2,
             "RCPT": settings.PYMTA_MAX_RECIPIENTS_PER_ENVELOPE
             * settings.PYMTA_MAX_ENVELOPES_PER_SESSION

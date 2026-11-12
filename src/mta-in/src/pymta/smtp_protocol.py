@@ -45,7 +45,7 @@ from .command import (
 from .limits import IPGate, LogThrottle, TooManyConnections, source_key
 from .proxy_protocol import ProxyHeader, read_proxy_header
 from .session_log import MAX_LOGGED_REPLY, SessionLog, ip_of
-from .wire import ConnectionClosed, LineReader, LineTooLong
+from .wire import ConnectionClosed, LineReader, LineTooLong, stored_line
 
 logger = logging.getLogger(__name__)
 
@@ -59,7 +59,7 @@ _live_connections: weakref.WeakSet[SMTPConnection] = weakref.WeakSet()
 
 # RFC 5321 section 4.5.3.1.4. MAIL gets more after EHLO: see _line_limit.
 _COMMAND_LINE_LIMIT = 512
-# Lines that are not a command a session may send before it is closed.
+# The session is closed on this many lines that are not a command.
 _MAX_UNKNOWN_COMMANDS = 5
 # Times a command may be sent in one session when the listener names no limit.
 _DEFAULT_CALL_LIMIT = 20
@@ -80,10 +80,13 @@ _IGNORED_PARAMETERS = {
 
 # While the server is close to full (see IPGate.under_stress), the sessions
 # that do nothing or collect refusals are the first to give their slot back:
-# a short idle timeout between commands outside a transaction (Postfix's
-# value), and a small error budget.
+# a short idle timeout between commands (Postfix's value), and a small error
+# budget.
 _STRESS_IDLE_TIMEOUT = 10.0
 _STRESS_MAX_ERRORS = 5
+# Bytes per second a message has to arrive at while the DATA slots are close
+# to full (see IPGate.data_under_stress). Postfix's smtpd_min_data_rate.
+_MIN_DATA_RATE = 500
 
 # Commands after which the peer has to wait for the reply even where
 # PIPELINING is offered (RFC 2920 section 3.1): each changes what the next
@@ -92,6 +95,8 @@ _LAST_OF_A_GROUP = frozenset({"EHLO", "HELO", "STARTTLS", "DATA"})
 
 # Message bytes are collected in blocks of this size. See _read_data.
 _DATA_BLOCK = 65536
+# Lines of a message read before the event loop gets a turn.
+_DATA_LINES_PER_TURN = 1024
 
 _SIZE_VALUE = re.compile(r"[0-9]+\Z")
 
@@ -106,7 +111,7 @@ _UNSYNCHRONIZED = "554 5.5.0 Error: SMTP protocol synchronization"
 _SIZE_EXCEEDED = "552 5.3.4 Message size exceeds fixed maximum"
 # (reply, reason) of a message refused once it has been read to its end.
 _LINE_TOO_LONG = ("500 Line too long (see RFC5321 4.5.3.1.6)", "line_too_long")
-_TOO_MUCH_DATA = ("552 Error: Too much mail data", "too_much_data")
+_TOO_MUCH_DATA = (_SIZE_EXCEEDED, "oversize_message")
 
 
 class _DataOverflow(Exception):
@@ -273,8 +278,11 @@ class SMTPConnection(asyncio.Protocol):
         self._idle_timer: asyncio.TimerHandle | None = None
         # What the idle timer was last armed at, for the timeout's log line.
         self._idle_timeout: float | None = None
-        # One-shot, never re-armed.
         self._session_timer: asyncio.TimerHandle | None = None
+        # While a message is being read: see _check_data_rate. Stopped by _data.
+        self._rate_timer: asyncio.TimerHandle | None = None
+        # Octets of the message being read, as stored.
+        self._data_received = 0
         # Armed by _close: aborts a close the peer does not take.
         self._abort_timer: asyncio.TimerHandle | None = None
 
@@ -419,8 +427,12 @@ class SMTPConnection(asyncio.Protocol):
         """
         if self._proxy_timeout is None:
             return await self.admit(self._wire_peer_ip())
-        self._arm_idle_timer(self._proxy_timeout)
-        header = await read_proxy_header(self._reader)
+        try:
+            header = await asyncio.wait_for(
+                read_proxy_header(self._reader), timeout=self._proxy_timeout
+            )
+        except TimeoutError:
+            header = None
         if header is None:
             # A balancer that stops sending the header takes all inbound
             # mail down, and this is the only trace.
@@ -432,10 +444,7 @@ class SMTPConnection(asyncio.Protocol):
             return False
         self.session.proxy_data = header
         hook = getattr(self.handler, "handle_PROXY", None)
-        if hook is None or not await hook(self, self.session, self.envelope, header):
-            return False
-        self._arm_idle_timer()
-        return True
+        return hook is not None and await hook(self, self.session, self.envelope, header)
 
     async def _greet(self) -> bool:
         # Two turns of the loop: what the peer sent along with its connection
@@ -498,6 +507,7 @@ class SMTPConnection(asyncio.Protocol):
                 continue
             left = calls_left.get(verb, self._call_limit(verb))
             if left < 1:
+                metrics.DISCONNECTS_421.labels(reason="too_many_commands").inc()
                 self.request_disconnect()
                 await self._refuse(
                     f"421 4.7.0 {verb} sent too many times", "too_many_commands", raw
@@ -542,6 +552,7 @@ class SMTPConnection(asyncio.Protocol):
             if verb in _LAST_OF_A_GROUP and self._reader.pending():
                 await self._refuse_unsynchronized()
             elif self._leaving(verb):
+                metrics.DISCONNECTS_421.labels(reason="shutdown").inc()
                 self.request_disconnect()
                 await self._reply(_SHUTDOWN, reason="shutdown")
                 self.close_reason = "shutdown"
@@ -911,8 +922,15 @@ class SMTPConnection(asyncio.Protocol):
         self._arm_idle_timer(self.data_phase_budget)
         try:
             await self._reply("354 End data with <CR><LF>.<CR><LF>")
-            content, refusal = await self._read_data()
+            self._rate_timer = self._loop.call_later(_STRESS_IDLE_TIMEOUT, self._check_data_rate)
+            try:
+                content, refusal = await self._read_data()
+            finally:
+                self._rate_timer.cancel()
             if refusal is not None:
+                if refusal is _TOO_MUCH_DATA:
+                    metrics.SECURITY_REJECTIONS.labels(reason="oversize_message").inc()
+                metrics.MESSAGES_TOTAL.labels(result="rejected_perm").inc()
                 # Reset after the reply: its log line names the envelope.
                 await self._reply(refusal[0], reason=refusal[1])
                 self.envelope = Envelope()
@@ -943,6 +961,10 @@ class SMTPConnection(asyncio.Protocol):
         Only ``<CRLF>.<CRLF>`` ends the message, never a bare LF: that is what
         keeps one message from being split in two (SMTP smuggling).
 
+        Lines are read up to LF, bare or not, and kept as ``stored_line``
+        returns them, so the content has CRLF line endings only. The line and
+        size limits apply to that form.
+
         Lines are appended to blocks of ``_DATA_BLOCK`` bytes, not kept as one
         object each, so a body of empty lines costs its size and not thirty
         times that. What is held is the message once, plus one more copy for
@@ -954,36 +976,60 @@ class SMTPConnection(asyncio.Protocol):
         size limit: past it there is no telling where the message ends.
         """
         limit = self.data_size_limit
+        longest = settings.PYMTA_MAX_LINE_LENGTH
         blocks: list[bytearray] = []
         block = bytearray()
-        received = 0
+        self._data_received = 0
+        lines = 0
         refusal = None
+        rewritten = False
+        # Whether the line before ended in CRLF: the dot that ends the
+        # message only counts after one.
+        after_crlf = True
         while True:
             try:
-                line = await self._reader.readline(b"\r\n")
+                # One more than the limit: the CR of a CRLF is in the line.
+                line = await self._reader.readline(b"\n", limit=longest + 1)
             except LineTooLong:
                 refusal = refusal or _LINE_TOO_LONG
                 blocks, block = [], bytearray()
-                room = max(limit - received, 0) if limit else None
+                room = max(limit - self._data_received, 0) if limit else None
+                # Up to CRLF, so that what follows is known to follow one.
                 skipped = await self._reader.skip_line(b"\r\n", max_bytes=room)
                 if skipped is None or (limit and skipped > room):
                     raise _DataOverflow from None
-                received += skipped
+                self._data_received += skipped
+                after_crlf = True
                 continue
-            if line == b".\r\n":
+            crlf = line.endswith(b"\r\n")
+            if after_crlf and line == b".\r\n":
                 break
-            received += len(line)
-            if limit and received > limit and refusal is None:
-                refusal = _TOO_MUCH_DATA
-                blocks, block = [], bytearray()
-            if refusal is None:
-                # RFC 5321 section 4.5.2: one leading dot is transparency.
-                block += line[1:] if line.startswith(b".") else line
-                if len(block) >= _DATA_BLOCK:
-                    blocks.append(block)
-                    block = bytearray()
+            after_crlf = crlf
+            lines += 1
+            if lines % _DATA_LINES_PER_TURN == 0:
+                # A buffer of very short lines is read without waiting: let
+                # the other sessions run.
+                await asyncio.sleep(0)
+            if len(line) - (2 if crlf else 1) > longest:
+                refusal = refusal or _LINE_TOO_LONG
+            line, changed = stored_line(line)
+            rewritten = rewritten or changed
+            self._data_received += len(line)
+            if limit and self._data_received > limit:
+                refusal = refusal or _TOO_MUCH_DATA
+            if refusal is not None:
+                if blocks or block:
+                    blocks, block = [], bytearray()
+                continue
+            block += line
+            if len(block) >= _DATA_BLOCK:
+                blocks.append(block)
+                block = bytearray()
         if refusal is not None:
             return b"", refusal
+        if rewritten:
+            metrics.BARE_NEWLINE_MESSAGES.inc()
+            logger.debug("bare_newline_normalised", extra={"session_id": self.session_id})
         blocks.append(block)
         return b"".join(blocks), None
 
@@ -991,14 +1037,14 @@ class SMTPConnection(asyncio.Protocol):
     def _arm_idle_timer(self, duration: float | None = None) -> None:
         """Arm the idle timer, shorter when the server is close to full.
 
-        Postfix's stress mode: 10 s instead of 300 s between commands, and only
-        for a session that holds no transaction, so that sessions doing nothing
-        are the first to give their slot back. A session inside a transaction,
-        or inside a command, keeps the full timeout whatever the load.
+        Postfix's stress mode: 10 s instead of 300 s between commands, inside a
+        transaction too, or a peer would keep its slot by sending MAIL and
+        nothing else. A running command keeps the full timeout whatever the
+        load: ``_dispatch`` arms it.
         """
         if duration is None:
             duration = self._timeout
-            if self.under_stress() and not self.in_transaction():
+            if self.under_stress():
                 duration = min(_STRESS_IDLE_TIMEOUT, self._timeout)
         self._idle_timeout = duration
         if self._idle_timer is not None:
@@ -1010,13 +1056,32 @@ class SMTPConnection(asyncio.Protocol):
         return self._gate.under_stress()
 
     def _idle_expired(self) -> None:
-        """Announce the idle timeout before hanging up.
+        """Announce the timeout before hanging up.
 
         A bare TCP close cannot be told from a network fault; Postfix answers
-        421 here too.
+        421 here too. During DATA the timer is the deadline of the whole
+        phase, not an idle time.
         """
+        if self.data_phase_started is not None:
+            logger.debug("data_timeout", extra=self._timeout_fields(self._idle_timeout))
+            self._timed_out("data_timeout", "Timeout receiving the message")
+            return
         logger.debug("command_timeout", extra=self._timeout_fields(self._idle_timeout))
         self._timed_out("command_timeout", "Idle timeout")
+
+    def _check_data_rate(self) -> None:
+        """Cut a message that arrives too slowly while DATA slots are scarce.
+
+        Without it a few sources hold every slot for ``PYMTA_DATA_TIMEOUT`` by
+        sending nothing. Postfix does the same under overload.
+        """
+        elapsed = time.monotonic() - self.data_phase_started
+        if self._gate.data_under_stress() and self._data_received < _MIN_DATA_RATE * elapsed:
+            fields = self._timeout_fields(self._idle_timeout)
+            logger.debug("data_timeout", extra={**fields, "received_bytes": self._data_received})
+            self._timed_out("data_timeout", "Message received too slowly")
+            return
+        self._rate_timer = self._loop.call_later(_STRESS_IDLE_TIMEOUT, self._check_data_rate)
 
     def _arm_session_timer(self) -> None:
         """Start the one bound a peer cannot push back by staying busy.
@@ -1030,6 +1095,12 @@ class SMTPConnection(asyncio.Protocol):
             self._session_timer = self._loop.call_later(limit, self._session_expired)
 
     def _session_expired(self) -> None:
+        if self.data_phase_started is not None:
+            # A message is being received or delivered: cutting it would have
+            # the sender resend one that may already be stored. Its own
+            # deadline bounds the wait.
+            self._session_timer = self._loop.call_later(1, self._session_expired)
+            return
         logger.debug("session_timeout", extra=self._timeout_fields(settings.PYMTA_SESSION_TIMEOUT))
         self._timed_out("session_timeout", "Session too long")
 
@@ -1061,14 +1132,23 @@ class SMTPConnection(asyncio.Protocol):
 
     def _is_idle(self) -> bool:
         """True when no command and no transaction is in progress."""
-        if self._verb is not None or self.in_transaction():
+        return self._awaits_command() and not self.in_transaction()
+
+    def _awaits_command(self) -> bool:
+        if self._verb is not None:
             return False
         return self.admitted and not self._closing and self.close_reason is None
+
+    def stress_began(self, gate: IPGate) -> None:
+        """Shorten the wait of a session that was already waiting for a command."""
+        if self._gate is gate and self._awaits_command():
+            self._arm_idle_timer()
 
     def close_if_idle(self) -> None:
         """Hang up, with a 421, if no command and no transaction is in progress."""
         if self._is_idle():
             self.close_reason = "shutdown"
+            metrics.DISCONNECTS_421.labels(reason="shutdown").inc()
             self._loop.create_task(self._close_with_notice(_SHUTDOWN))
 
     def log_abandoned(self) -> None:
@@ -1136,6 +1216,7 @@ class SMTPConnection(asyncio.Protocol):
         # What the limits count by: the address for IPv4, the /64 for IPv6.
         # Logs keep the full address.
         source = source_key(ip)
+        was_under_stress = self._gate.under_stress()
         scope = self._take_slot(source)
         if scope is not None:
             metrics.CONNECTIONS_TOTAL.labels(result=f"rejected_{scope}").inc()
@@ -1154,6 +1235,10 @@ class SMTPConnection(asyncio.Protocol):
         self._slot_taken_at = self._idle_since = time.monotonic()
         self.admitted = True
         metrics.CONNECTIONS_TOTAL.labels(result="accepted").inc()
+        if not was_under_stress and self._gate.under_stress():
+            # The timers armed before this slot was taken are still long.
+            for connection in _live_connections:
+                connection.stress_began(self._gate)
         return True
 
     def _take_slot(self, source: str) -> str | None:

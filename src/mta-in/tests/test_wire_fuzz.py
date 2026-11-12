@@ -16,9 +16,9 @@ from hypothesis import given, settings
 from hypothesis import strategies as st
 
 from pymta.command import CommandSyntaxError, parse_parameters, split_command, split_path
-from pymta.handler import _normalize_line_endings
 from pymta.logfmt import LogfmtFormatter, clip, clip_list, quote
 from pymta.mda_async import MDAClient, MDAResult
+from pymta.wire import stored_line
 
 from tests.fuzzing import fuzz_settings
 
@@ -62,41 +62,57 @@ def _reference(content: bytes) -> bytes:
     return bytes(out)
 
 
+def _wire_lines(body: bytes) -> list[bytes]:
+    """``body`` and its final CRLF as the DATA reader cuts it: at every LF."""
+    return [line + b"\n" for line in (body + b"\r\n").split(b"\n")[:-1]]
+
+
+def _stored(body: bytes) -> tuple[bytes, bool]:
+    kept = [stored_line(line) for line in _wire_lines(body)]
+    return b"".join(line for line, _ in kept), any(rewritten for _, rewritten in kept)
+
+
+def two_step_reference(body: bytes) -> bytes:
+    """The same rules stated in two passes: unstuff at CRLF, then ``_reference``."""
+    lines = (body + b"\r\n").split(b"\r\n")[:-1]
+    return _reference(
+        b"".join((line[1:] if line.startswith(b".") else line) + b"\r\n" for line in lines)
+    )
+
+
 @settings(**fuzz_settings())
-@given(content=_BODY)
-def test_normalised_content_has_no_bare_line_ending(content):
-    normalised, changed = _normalize_line_endings(content)
+@given(body=_BODY)
+def test_stored_lines_have_no_bare_line_ending(body):
+    stored, rewritten = _stored(body)
 
-    pairs = normalised.count(b"\r\n")
-    assert normalised.count(b"\n") == pairs
-    assert normalised.count(b"\r") == pairs
-    assert changed == (normalised != content)
-    if not changed:
-        # A clean message is not copied.
-        assert normalised is content
-    assert normalised == _reference(content)
+    pairs = stored.count(b"\r\n")
+    assert stored.count(b"\n") == pairs
+    assert stored.count(b"\r") == pairs
+    wire = body + b"\r\n"
+    clean = wire.count(b"\n") == wire.count(b"\r\n") == wire.count(b"\r")
+    assert rewritten is not clean
+    assert stored == two_step_reference(body)
 
 
 @settings(**fuzz_settings())
-@given(content=_BODY)
-def test_normalising_twice_changes_nothing(content):
-    once, _ = _normalize_line_endings(content)
-    twice, changed = _normalize_line_endings(once)
-    assert (twice, changed) == (once, False)
+@given(line=st.binary(max_size=30).filter(lambda b: b"\r" not in b and b"\n" not in b))
+def test_a_clean_line_is_not_copied(line):
+    wire = line + b"\r\n"
+    stored, rewritten = stored_line(wire)
+    assert rewritten is False
+    if line.startswith(b"."):
+        assert stored == wire[1:]
+    else:
+        assert stored is wire
 
 
 @settings(**fuzz_settings())
 @given(lines=st.lists(st.binary(max_size=20).filter(lambda b: b"\r" not in b and b"\n" not in b)))
 def test_a_dot_stuffed_lf_message_reads_as_its_author_wrote_it(lines):
-    """What a sender that ends its lines in LF puts on the wire, and what
-    the protocol hands the handler of it, comes out as the original lines
-    with CRLF."""
+    """What a sender that ends its lines in LF puts on the wire is stored as
+    the original lines with CRLF."""
     stuffed = b"\n".join(b"." + line if line.startswith(b".") else line for line in lines)
-    # The protocol unstuffs the first line itself: it follows the CRLF of DATA.
-    if stuffed.startswith(b".."):
-        stuffed = stuffed[1:]
-    normalised, _ = _normalize_line_endings(stuffed)
-    assert normalised == b"\r\n".join(lines)
+    assert _stored(stuffed)[0] == b"\r\n".join(lines) + b"\r\n"
 
 
 # ---------------------------------------------------------------------------

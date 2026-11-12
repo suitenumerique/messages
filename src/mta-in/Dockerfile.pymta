@@ -1,8 +1,6 @@
 # Pure-Python inbound MTA image (pymta) — counterpart to ./Dockerfile
-# (Postfix + milter). Both images share src/mta-in/pyproject.toml and live in
-# parallel so the two implementations can be tested side-by-side. The Postfix
-# image is the production default for now; this image will gradually replace
-# it once parity is proven.
+# (Postfix + milter), which is deprecated. Both images share
+# src/mta-in/pyproject.toml and the test suite.
 #
 # Image layout mirrors src/backend/Dockerfile:
 #   * debian:trixie-slim base (not python:slim — Python comes from uv).

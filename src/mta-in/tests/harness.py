@@ -9,6 +9,7 @@ from __future__ import annotations
 
 import asyncio
 import contextlib
+import ipaddress
 import logging
 
 from prometheus_client import REGISTRY
@@ -21,6 +22,9 @@ from pymta.mda_async import MDAResult
 from pymta.smtp_protocol import SMTPConnection
 
 TIMEOUT = 5.0
+
+# ``PYMTA_TRUSTED_PROXIES`` for the tests that send a PROXY header themselves.
+LOOPBACK_PROXIES = [ipaddress.ip_network("127.0.0.0/8")]
 
 
 def protocol_factory(handler, *, gate=None, tls_context=None, **overrides):

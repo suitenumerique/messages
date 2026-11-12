@@ -5,8 +5,8 @@ Run with ``python -m pymta.server``. Starts:
 * the Prometheus exposition HTTP server (in a daemon thread),
 * the SMTP listener (asyncio),
 
-and exits on SIGINT/SIGTERM with an orderly shutdown that closes the listener
-and waits for in-flight sessions to finish.
+and exits on SIGINT/SIGTERM once the sessions in flight have finished. New
+ones are answered 421 meanwhile: see ``_on_terminate``.
 """
 
 from __future__ import annotations
@@ -48,17 +48,11 @@ def _configure_logging() -> None:
 def _check_proxy_trust_config() -> None:
     """Warn loudly when the PROXY-protocol listener will believe any peer.
 
-    Enabling PROXY protocol is normally the assertion that a balancer sits in
-    front of us, which makes the balancer's address a known fact. Naming it in
-    ``PYMTA_TRUSTED_PROXIES`` is strongly recommended and this warns when it is
-    absent, but it does not block startup: deployments where the balancer's
-    addresses are dynamic or simply unknown at boot still need to run, and
-    there the network isolation has to carry the whole weight instead.
-
-    What the allowlist buys is that the header only decides the per-IP
-    rate-limit key and the ``client_address`` the MDA writes into ``Received``
-    when a known balancer sent it. Without one, any peer that can open a TCP
-    connection to the SMTP port decides both.
+    ``PYMTA_TRUSTED_PROXIES`` cannot be empty (the settings refuse to load),
+    but it can name every address. Deployments that do not know their
+    balancer's addresses at boot run that way, and there the network isolation
+    carries the whole weight: any peer that can open a TCP connection to the
+    SMTP port chooses the source its sessions are counted and recorded under.
 
     There are two supported topologies: PROXY protocol on, behind a balancer;
     or PROXY protocol off, exposed directly. A balancer without PROXY protocol
@@ -67,14 +61,11 @@ def _check_proxy_trust_config() -> None:
     """
     if not settings.PYMTA_ENABLE_PROXY_PROTOCOL:
         return
-    # A zero-prefix network (0.0.0.0/0, ::/0) matches every peer, so it is the
-    # empty allowlist wearing a disguise. Same posture, same warning.
+    # A zero-prefix network (0.0.0.0/0, ::/0) matches every peer.
     catch_all = [net for net in settings.PYMTA_TRUSTED_PROXIES if net.prefixlen == 0]
-    if not settings.PYMTA_TRUSTED_PROXIES or catch_all:
+    if catch_all:
         why = (
-            "PYMTA_TRUSTED_PROXIES is empty"
-            if not settings.PYMTA_TRUSTED_PROXIES
-            else f"PYMTA_TRUSTED_PROXIES contains {', '.join(str(n) for n in catch_all)}, "
+            f"PYMTA_TRUSTED_PROXIES contains {', '.join(str(n) for n in catch_all)}, "
             "which matches every peer"
         )
         logger.warning(
@@ -207,16 +198,11 @@ async def _drain_and_close(server: asyncio.AbstractServer) -> None:
             )
             break
         if time.monotonic() >= deadline:
-            # A negative count is active_sessions()'s "gauge unreadable"
-            # sentinel, not an empty server, and inc() refuses a negative.
-            known = active > 0
-            if known:
-                metrics.SESSIONS_ABANDONED.inc(active)
+            metrics.SESSIONS_ABANDONED.inc(active)
             logger.warning(
                 "shutdown_deadline_exceeded",
                 extra={
-                    "abandoned_sessions": active if known else -1,
-                    "session_count_known": known,
+                    "abandoned_sessions": active,
                     "deadline_seconds": settings.PYMTA_SHUTDOWN_TIMEOUT,
                 },
             )

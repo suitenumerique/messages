@@ -41,7 +41,7 @@ _REASONS = {
     502: "not_implemented",
     503: "bad_sequence",
     530: "tls_required",
-    552: "too_much_data",
+    552: "oversize_message",
     553: "malformed_address",
     555: "unknown_parameter",
 }

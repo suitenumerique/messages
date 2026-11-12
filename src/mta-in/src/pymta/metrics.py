@@ -12,7 +12,7 @@ import threading
 from secrets import compare_digest
 from wsgiref.simple_server import WSGIRequestHandler, WSGIServer, make_server
 
-from prometheus_client import Counter, Gauge, Histogram, make_wsgi_app
+from prometheus_client import REGISTRY, Counter, Gauge, Histogram, make_wsgi_app
 
 logger = logging.getLogger(__name__)
 
@@ -52,7 +52,7 @@ DATA_PHASES_ACTIVE = Gauge(
 
 SESSION_DURATION = Histogram(
     f"{_METRICS_NAMESPACE}_session_duration_seconds",
-    "Wall-clock time from accept to close of an SMTP session.",
+    "Wall-clock time an SMTP session held its slot, from admission to close.",
     buckets=(0.05, 0.1, 0.5, 1, 5, 10, 30, 60, 120, 300, 600),
 )
 
@@ -61,7 +61,7 @@ COMMANDS_TOTAL = Counter(
     "SMTP commands processed, by verb and outcome class (2xx/4xx/5xx).",
     # class: the last reply's class (2xx | 3xx | 4xx | 5xx), or "error" when
     # the command raised (a failed STARTTLS handshake, a connection lost
-    # mid-DATA), or "none" when it ended without a reply.
+    # mid-DATA).
     labelnames=("verb", "class"),
 )
 
@@ -114,8 +114,9 @@ DISCONNECTS_421 = Counter(
     f"{_METRICS_NAMESPACE}_disconnects_421_total",
     "Sessions where pymta replied 421 and closed the TCP connection.",
     labelnames=("reason",),  # gate_global | gate_per_ip | reclaimed | command_timeout |
-    # session_timeout | max_errors_per_session | max_rcpt_misses_per_session |
-    # max_envelopes_per_session | internal_error
+    # data_timeout | session_timeout | max_errors_per_session |
+    # max_rcpt_misses_per_session | max_envelopes_per_session |
+    # too_many_commands | shutdown | internal_error
 )
 
 
@@ -214,19 +215,15 @@ def require_bearer(app, api_key: str):
 
 def active_sessions() -> int:
     """Live session count, read back off the gauge the gate maintains."""
-    try:
-        return int(SESSIONS_ACTIVE._value.get())  # noqa: SLF001
-    except AttributeError, TypeError:  # pragma: no cover - prometheus internals
-        return -1
+    return int(REGISTRY.get_sample_value(f"{_METRICS_NAMESPACE}_sessions_active") or 0)
 
 
 class _QuietHandler(WSGIRequestHandler):
     """Request handler that neither logs to stderr nor waits forever.
 
-    ``timeout`` is the reason this class exists: the exposition server threads
-    one connection at a time with no ceiling, so without a socket deadline a
-    peer that opens connections and never completes a request accumulates
-    threads inside the SMTP process. Ten seconds is far more than a local
+    ``timeout`` is the reason this class exists: without a socket deadline a
+    peer that opens connections and never completes a request keeps the
+    threads ``_MetricsServer`` allows for itself. Ten seconds is far more than a local
     scrape needs.
     """
 

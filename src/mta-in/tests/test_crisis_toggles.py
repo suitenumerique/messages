@@ -258,23 +258,6 @@ async def test_drain_gives_up_at_the_deadline(monkeypatch):
     assert 1 <= elapsed < 5, elapsed
 
 
-@pytest.mark.asyncio
-async def test_drain_does_not_read_an_unknown_count_as_drained(monkeypatch):
-    """``active_sessions()`` returns -1 when the gauge cannot be read; treating
-    that as an empty server cuts live sessions. The elapsed time is how the
-    test tells "waited for the deadline" from "left immediately"."""
-    monkeypatch.setattr(settings, "PYMTA_SHUTDOWN_TIMEOUT", 1)
-    monkeypatch.setattr(metrics, "active_sessions", lambda: -1)
-    loop = asyncio.get_running_loop()
-    srv, _ = await _listener(loop)
-
-    runtime.request_shutdown()
-    started = asyncio.get_running_loop().time()
-    await asyncio.wait_for(server_module._drain_and_close(srv), timeout=10)
-    elapsed = asyncio.get_running_loop().time() - started
-    assert 1 <= elapsed < 5, elapsed
-
-
 # ---------------------------------------------------------------------------
 # 8. IPv4-mapped IPv6, the form a dual-stack listener reports.
 # ---------------------------------------------------------------------------
@@ -386,12 +369,13 @@ def test_the_share_shrinks_once_the_sources_outnumber_it():
 
 def _sources_needed_to_fill(gate, slots: int) -> int:
     """How many sources, each taking all it may, it takes to hold every slot."""
-    sources = 0
-    while gate._data_total < slots:
-        while gate.acquire_data(f"198.51.100.{sources}"):
-            pass
-        sources += 1
-    return sources
+    # Bounded, so a gate that stops refusing fails the test instead of hanging it.
+    for sources in range(1, slots + 2):
+        taken = sum(gate.acquire_data(f"198.51.100.{sources}") for _ in range(slots + 1))
+        assert taken <= slots
+        if gate._data_total >= slots:
+            return sources
+    raise AssertionError(f"{slots} slots never filled")
 
 
 @pytest.mark.parametrize(("fraction", "needed"), [(0.1, 11), (0.25, 5), (0.5, 3), (1, 3)])

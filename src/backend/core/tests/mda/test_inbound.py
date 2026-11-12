@@ -72,20 +72,24 @@ class TestRecordTransportSecurity:
         ("envelope", "expected"),
         [
             # In clear: the MTA reports an empty version.
-            ({"tls_version": "", "tls_cipher": ""}, {"tls": "none"}),
+            ({"origin": "mta", "tls_version": "", "tls_cipher": ""}, {"tls": "none"}),
             # Encrypted with a deprecated protocol version.
-            ({"tls_version": "TLSv1", "tls_cipher": "AES256-SHA"}, {"tls": "old"}),
-            ({"tls_version": "TLSv1.0"}, {"tls": "old"}),
-            ({"tls_version": "TLSv1.1"}, {"tls": "old"}),
-            ({"tls_version": "SSLv3"}, {"tls": "old"}),
+            (
+                {"origin": "mta", "tls_version": "TLSv1", "tls_cipher": "AES256-SHA"},
+                {"tls": "old"},
+            ),
+            ({"origin": "mta", "tls_version": "TLSv1.0"}, {"tls": "old"}),
+            ({"origin": "mta", "tls_version": "TLSv1.1"}, {"tls": "old"}),
+            ({"origin": "mta", "tls_version": "SSLv3"}, {"tls": "old"}),
             # The normal case stores nothing.
-            ({"tls_version": "TLSv1.2"}, {}),
-            ({"tls_version": "TLSv1.3", "tls_cipher": "TLS_AES_256_GCM_SHA384"}, {}),
+            ({"origin": "mta", "tls_version": "TLSv1.2"}, {}),
             ({"origin": "mta", "tls_version": "TLSv1.3"}, {}),
             # Through an MTA that did not say: neither a claim nor silence.
             ({"origin": "mta", "ip": "203.0.113.9"}, {"tls": "unknown"}),
-            # Not SMTP at all: no session to qualify.
+            # Not SMTP at all: no session to qualify, whatever the keys say.
             ({"origin": "widget", "ip": "203.0.113.9"}, {}),
+            ({"origin": "widget", "tls_version": ""}, {}),
+            ({"tls_version": "TLSv1"}, {}),
             ({"origin": "internal"}, {}),
             ({"origin": "import"}, {}),
             ({}, {}),

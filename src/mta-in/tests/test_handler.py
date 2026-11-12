@@ -18,7 +18,7 @@ from ipaddress import ip_network
 import pytest
 
 from pymta import settings
-from pymta.handler import _REPLY_RESERVE_SECONDS, _normalize_line_endings
+from pymta.handler import _REPLY_RESERVE_SECONDS
 from pymta.limits import IPGate
 from pymta.logfmt import LogfmtFormatter
 from pymta.mda_async import MDAResult
@@ -334,21 +334,6 @@ async def test_rcpt_defers_on_every_unsuccessful_check(monkeypatch, result):
     # No check failure is ever a verdict on the mailbox: 400/413/415 included,
     # since there they describe the request we built, not the address.
     await _defers_without_spending_a_miss(monkeypatch, result)
-
-
-@pytest.mark.asyncio
-async def test_a_check_refused_for_good_is_a_permanent_refusal():
-    """The landing spot for a permanent check failure, should the MDA name one."""
-    mda = ScriptedMDA(
-        checks=[MDAResult(ok=False, temp_fail=False, payload={}, status_code=400), "yes"]
-    )
-    async with listening(mda) as port, connected(port) as client:
-        await _mail(client)
-        reply = await client.cmd(b"RCPT TO:<rcpt@example.com>")
-        assert reply.startswith(b"550 5.1.1 Recipient verification failed"), reply
-        await client.cmd(b"RCPT TO:<good@example.com>")
-        await client.data(_BODY)
-    assert mda.delivered[0]["original_recipients"] == ["good@example.com"]
 
 
 @pytest.mark.asyncio
@@ -1202,13 +1187,10 @@ async def test_an_unparseable_proxy_source_does_not_become_a_gate_key(monkeypatc
     assert mda.delivered[0]["client_port"] is None
 
 
-@pytest.mark.parametrize("allowlist", [[], [ip_network("0.0.0.0/0")]])
 @pytest.mark.asyncio
-async def test_empty_allowlist_trusts_every_peer(monkeypatch, allowlist):
-    # "No upstream named" means there is nothing left to filter on, so the
-    # header is taken from anyone -- the same posture 0.0.0.0/0 spells out.
-    # server.py warns loudly at startup; the isolation is the trust boundary.
-    _proxy_on(monkeypatch, allowlist)
+async def test_an_allowlist_of_every_address_trusts_every_peer(monkeypatch):
+    # server.py warns at startup; the isolation is the trust boundary.
+    _proxy_on(monkeypatch, [ip_network("0.0.0.0/0")])
     mda = ScriptedMDA()
     async with (
         listening(mda, gate=unlimited_gate()) as port,
@@ -1293,11 +1275,11 @@ async def test_ehlo_offers_no_auth_and_keeps_a_final_line():
 
 
 @pytest.mark.parametrize(
-    ("received", "stored"),
+    ("sent", "stored"),
     [
-        # Clean CRLF: already unstuffed on receipt, nothing to do.
-        (b"one\r\n.two\r\n", b"one\r\n.two\r\n"),
-        # After a bare LF the sender's stuffing dot is still there.
+        # Clean CRLF: only the stuffing dot goes.
+        (b"one\r\n..two\r\n", b"one\r\n.two\r\n"),
+        # After a bare LF the sender's stuffing dot goes too.
         (b"one\n..two\n...\r\n", b"one\r\n.two\r\n..\r\n"),
         (b"one\n.two\r\n", b"one\r\ntwo\r\n"),
         # A lone dot after a bare LF is not the end of DATA: an empty line.
@@ -1305,21 +1287,9 @@ async def test_ehlo_offers_no_auth_and_keeps_a_final_line():
         (b"one\n.\nthree\r\n", b"one\r\n\r\nthree\r\n"),
         # A dot that does not start a line is content.
         (b"one\na.b\n", b"one\r\na.b\r\n"),
-        # A CRLF line starting with a dot was unstuffed on receipt.
-        (b"one\nx\r\n.two\r\n", b"one\r\nx\r\n.two\r\n"),
+        (b"one\nx\r\n..two\r\n", b"one\r\nx\r\n.two\r\n"),
         # Bare CR is a line ending we normalise, but nobody stuffs after one.
         (b"one\r.two\r\n", b"one\r\n.two\r\n"),
-    ],
-)
-def test_normalize_line_endings(received, stored):
-    content, changed = _normalize_line_endings(received)
-    assert content == stored
-    assert changed is (received != stored)
-
-
-@pytest.mark.parametrize(
-    ("received", "stored"),
-    [
         # One rule everywhere: a bare ending in a header is a line break too,
         # whatever surrounds it. No guess about what the sender meant.
         (
@@ -1336,8 +1306,23 @@ def test_normalize_line_endings(received, stored):
         ),
     ],
 )
-def test_headers_and_body_get_the_same_line_ending_rule(received, stored):
-    assert _normalize_line_endings(received) == (stored, True)
+@pytest.mark.asyncio
+async def test_line_endings_and_dots_as_stored(sent, stored):
+    mda = ScriptedMDA()
+    before = counter("pymta_bare_newline_messages_total")
+    async with listening(mda) as port, connected(port) as client:
+        await client.cmd(b"EHLO mx.sender.example")
+        await client.cmd(b"MAIL FROM:<alice@sender.example>")
+        await client.cmd(b"RCPT TO:<bob@example.com>")
+        assert (await client.cmd(b"DATA")).startswith(b"354")
+        # The terminator needs a CRLF before it: an empty line after a bare LF.
+        ends_in_crlf = sent.endswith(b"\r\n")
+        await client.send(sent + (b"" if ends_in_crlf else b"\r\n") + b".\r\n")
+        assert (await client.reply()).startswith(b"250")
+    assert mda.delivered[0]["message"] == stored + (b"" if ends_in_crlf else b"\r\n")
+    without_crlf = sent.replace(b"\r\n", b"")
+    rewritten = b"\n" in without_crlf or b"\r" in without_crlf
+    assert counter("pymta_bare_newline_messages_total") == before + rewritten
 
 
 @pytest.mark.asyncio

@@ -11,6 +11,8 @@ from __future__ import annotations
 import asyncio
 import contextlib
 import logging
+import os
+import signal
 import socket
 import struct
 
@@ -25,6 +27,7 @@ from pymta.settings import _env_networks
 from pymta.smtp_protocol import SMTPConnection, close_idle_sessions
 
 from tests.harness import (
+    LOOPBACK_PROXIES,
     Client,
     ScriptedMDA,
     capture_all,
@@ -35,6 +38,7 @@ from tests.harness import (
     records,
     unlimited_gate,
 )
+from tests.test_handler import _tls_contexts
 
 EHLO = b"EHLO mx.sender.example"
 MAIL = b"MAIL FROM:<alice@sender.example>"
@@ -99,6 +103,31 @@ async def _capturing(**kwargs):
         yield server_.sockets[0].getsockname()[1], factory.connections
     finally:
         server_.close()
+
+
+@pytest.mark.asyncio
+async def test_plaintext_sent_while_the_starttls_reply_waits_is_dropped():
+    """RFC 3207 section 4.2: nothing received in clear is read as if it had
+    come through TLS. The reply waits when the peer is not reading, and that
+    is when a command can arrive behind STARTTLS without being seen first."""
+    server_ctx, client_ctx = _tls_contexts()
+    async with (
+        _capturing(tls_context=server_ctx) as (port, connections),
+        connected(port) as client,
+    ):
+        await client.cmd(EHLO)
+        (connection,) = connections
+        connection.pause_writing()
+        await client.send(b"STARTTLS\r\n")
+        assert (await client.reply()).startswith(b"220")
+        await client.send(b"NOOP\r\n")
+        while not connection._reader.pending():
+            await asyncio.sleep(0.01)
+        connection.resume_writing()
+        await client.writer.start_tls(client_ctx)
+        # The first answer inside TLS is to the first command sent inside it.
+        assert (await client.cmd(EHLO)).startswith(b"250-")
+        assert await client.cmd(b"RSET") == b"250 OK\r\n"
 
 
 @pytest.mark.asyncio
@@ -170,7 +199,7 @@ async def test_a_connection_without_a_peer_address_shares_one_bucket(caplog):
 @pytest.mark.asyncio
 async def test_a_client_no_header_names_cannot_match_the_blocklist(monkeypatch):
     monkeypatch.setattr(settings, "PYMTA_ENABLE_PROXY_PROTOCOL", True)
-    monkeypatch.setattr(settings, "PYMTA_TRUSTED_PROXIES", [])
+    monkeypatch.setattr(settings, "PYMTA_TRUSTED_PROXIES", LOOPBACK_PROXIES)
     monkeypatch.setenv("T", "0.0.0.0/0,::/0")
     monkeypatch.setattr(settings, "PYMTA_BLOCKED_NETWORKS", _env_networks("T"))
     async with listening(gate=unlimited_gate()) as port:
@@ -198,7 +227,7 @@ async def test_shutdown_leaves_a_connection_that_was_never_admitted(monkeypatch,
     """It has no greeting yet: the PROXY timeout or its header settles it."""
     monkeypatch.setattr(settings, "PYMTA_ENABLE_PROXY_PROTOCOL", True)
     monkeypatch.setattr(settings, "PYMTA_PROXY_PROTOCOL_TIMEOUT", 5)
-    monkeypatch.setattr(settings, "PYMTA_TRUSTED_PROXIES", [])
+    monkeypatch.setattr(settings, "PYMTA_TRUSTED_PROXIES", LOOPBACK_PROXIES)
     async with listening(gate=unlimited_gate()) as port:
         client = await Client.connect(port, greeting=False)
         try:
@@ -379,6 +408,34 @@ async def test_the_server_starts_and_drains_in_process(
     else:
         assert "unlimited" in ceiling.detail
     assert "shutdown_complete" in [r.getMessage() for r in caplog.records]
+
+
+@pytest.mark.asyncio
+async def test_sigterm_itself_starts_the_drain(monkeypatch, caplog, clean_runtime):
+    """Through the handler ``_serve`` registered, not by calling it."""
+    monkeypatch.setattr(settings, "PYMTA_SMTP_BIND_HOST", "127.0.0.1")
+    monkeypatch.setattr(settings, "PYMTA_SMTP_BIND_PORT", _free_port())
+    monkeypatch.setattr(settings, "PYMTA_SHUTDOWN_TIMEOUT", 2)
+    loop = asyncio.get_running_loop()
+    previous = loop.get_exception_handler()
+    # Without a handler of ours the signal would end the test run.
+    unhandled = signal.signal(signal.SIGTERM, lambda *_: None)
+    with caplog.at_level(logging.INFO, logger="pymta.server"):
+        serving = asyncio.ensure_future(server._serve())
+        try:
+            await records(caplog, "memory_ceiling")
+            os.kill(os.getpid(), signal.SIGTERM)
+            await asyncio.wait_for(serving, timeout=5)
+        finally:
+            serving.cancel()
+            for sig in (signal.SIGHUP, signal.SIGINT, signal.SIGTERM):
+                loop.remove_signal_handler(sig)
+            signal.signal(signal.SIGTERM, unhandled)
+            loop.set_exception_handler(previous)
+    assert runtime.is_shutting_down()
+    events = [r.getMessage() for r in caplog.records]
+    assert "shutdown_started" in events
+    assert "shutdown_complete" in events
 
 
 def test_logging_is_configured_from_the_settings(monkeypatch):

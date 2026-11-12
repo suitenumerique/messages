@@ -35,7 +35,8 @@ from pymta.mda_async import MDAResult
 from pymta.smtp_protocol import SMTPConnection
 
 from tests.fuzzing import fuzz_settings
-from tests.test_wire_fuzz import _reference as _line_ending_reference
+from tests.harness import LOOPBACK_PROXIES
+from tests.test_wire_fuzz import two_step_reference
 
 pytestmark = pytest.mark.fuzz
 
@@ -274,6 +275,10 @@ async def _write(writer, data: bytes, cuts) -> None:
             start = point
 
 
+class _RefusedAtTheCap(Exception):
+    """The greeting was the 421 of a full server."""
+
+
 async def _session(lines, bodies, mda, cuts=(), gate=None):
     """Run one connection. Returns (replies, data_replies, hung_up)."""
     loop = asyncio.get_running_loop()
@@ -291,6 +296,8 @@ async def _session(lines, bodies, mda, cuts=(), gate=None):
         reader, writer = await asyncio.open_connection("127.0.0.1", port)
         try:
             greeting = await _read_reply(reader)
+            if greeting is not None and greeting.startswith(b"421 4.7.0 Too many connections"):
+                raise _RefusedAtTheCap
             assert greeting is not None and greeting.startswith(b"220"), greeting
             for line in lines:
                 await _write(writer, line + b"\r\n", cuts)
@@ -459,15 +466,13 @@ _RAW_BODY = _RAW_BODY.filter(lambda body: b"\r\n.\r\n" not in b"\r\n" + body + b
 
 def _expected(body: bytes) -> tuple[bytes, bytes | None]:
     """(reply code, stored bytes) for ``body`` followed by the terminator."""
-    lines = (body + b"\r\n").split(b"\r\n")[:-1]
-    if sum(len(line) + 2 for line in lines) > _SMALL_LIMIT:
-        return b"552", None
-    unstuffed = b"".join((line[1:] if line.startswith(b".") else line) + b"\r\n" for line in lines)
-    stored = _line_ending_reference(unstuffed)
-    if b"\x00" in stored:
-        return b"554", None
+    stored = two_step_reference(body)
+    # The size limit is on what is stored, and applies before the handler
+    # sees the message.
     if len(stored) > _SMALL_LIMIT:
         return b"552", None
+    if b"\x00" in stored:
+        return b"554", None
     return b"250", stored
 
 
@@ -615,8 +620,7 @@ def test_concurrent_sessions_leave_the_gate_as_they_found_it(sessions, checks, d
     async def one(lines, bodies, cuts):
         try:
             return await _session(lines, bodies, mda, cuts, gate)
-        except AssertionError:
-            # No 220: refused at the cap with a 421, which is the point.
+        except _RefusedAtTheCap:
             return None
 
     async def all_of_them():
@@ -740,7 +744,7 @@ def test_any_proxy_header_is_accepted_cleanly_or_refused_cleanly(header, cuts):
     )
     pymta_settings.PYMTA_ENABLE_PROXY_PROTOCOL = True
     pymta_settings.PYMTA_PROXY_PROTOCOL_TIMEOUT = 0.3
-    pymta_settings.PYMTA_TRUSTED_PROXIES = []
+    pymta_settings.PYMTA_TRUSTED_PROXIES = LOOPBACK_PROXIES
     try:
         greeted, gate = asyncio.run(_proxied_session(header, cuts, mda))
     finally:

@@ -165,6 +165,8 @@ def test_configure_replaces_handlers_rather_than_adding():
 PEER_TRIGGERABLE = {
     "session_timeout",
     "command_timeout",
+    "data_timeout",
+    "mda_refused",
     "connection_blocked",
     "connection_draining",
     "session_reclaimed",

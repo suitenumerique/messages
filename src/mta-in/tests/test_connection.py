@@ -29,7 +29,9 @@ from pymta.session_log import SessionLog
 from pymta.settings import _env_networks
 from pymta.smtp_protocol import SMTPConnection, close_idle_sessions, log_abandoned_sessions
 
-from tests.harness import ScriptedMDA, connected, listening
+from tests.harness import LOOPBACK_PROXIES, ScriptedMDA, connected, listening
+
+_TIMEOUT_COUNTERS = ("pymta_security_rejections_total", "pymta_disconnects_421_total")
 
 
 class _NullHandler:
@@ -95,16 +97,24 @@ async def test_a_stalled_data_phase_is_cut_at_the_data_timeout(monkeypatch):
     monkeypatch.setattr(settings, "PYMTA_COMMAND_TIMEOUT", 30)
     monkeypatch.setattr(settings, "PYMTA_DATA_TIMEOUT", 0.3)
     mda = ScriptedMDA()
+    before = [_counter(name, reason="data_timeout") for name in _TIMEOUT_COUNTERS]
+    idle = [_counter(name, reason="command_timeout") for name in _TIMEOUT_COUNTERS]
     async with listening(mda) as port, connected(port) as client:
         for line in _TRANSACTION:
             await client.cmd(line)
         assert (await client.cmd(b"DATA"))[:3] == b"354"
         await client.send(b"Subject: x\r\n")
         started = time.monotonic()
-        assert await client.reply() == b"421 4.4.2 Idle timeout, closing connection\r\n"
+        reply = await client.reply()
+        assert reply == b"421 4.4.2 Timeout receiving the message, closing connection\r\n"
         assert time.monotonic() - started < 2
         assert await client.closed()
     assert not mda.delivered
+    # Counted as what it is, not as an idle session.
+    assert [_counter(name, reason="data_timeout") for name in _TIMEOUT_COUNTERS] == [
+        count + 1 for count in before
+    ]
+    assert [_counter(name, reason="command_timeout") for name in _TIMEOUT_COUNTERS] == idle
 
 
 @pytest.mark.asyncio
@@ -1293,7 +1303,7 @@ async def test_addresses_of_one_ipv6_64_share_a_source(monkeypatch, caplog):
     monkeypatch.setattr(smtp_protocol, "_cap_log_throttle", LogThrottle(interval=60, max_keys=8))
     # The test client only has 127.0.0.1: IPv6 sources come by PROXY header.
     monkeypatch.setattr(settings, "PYMTA_ENABLE_PROXY_PROTOCOL", True)
-    monkeypatch.setattr(settings, "PYMTA_TRUSTED_PROXIES", [])
+    monkeypatch.setattr(settings, "PYMTA_TRUSTED_PROXIES", LOOPBACK_PROXIES)
 
     def header(source: str) -> bytes:
         return f"PROXY TCP6 {source} 2001:db8::1 4321 25\r\n".encode()
@@ -1820,7 +1830,7 @@ async def test_ignored_parameters_are_recorded(caplog):
         ([b"FROBNICATE\r\n"], "none", 500, "unknown_command"),
         ([b"\r\n"], "none", 500, "bad_syntax"),
         ([b"NOOP " + b"x" * 600 + b"\r\n"], "none", 500, "line_too_long"),
-        ([b"NOOP\r\n"] * 6, "none", 421, "too_many_commands"),
+        ([b"NOOP\r\n"] * 21, "none", 421, "too_many_commands"),
         ([b"FROBNICATE\r\n"] * 5, "none", 502, "too_many_unknown_commands"),
     ],
 )
@@ -2167,7 +2177,8 @@ async def test_under_stress_an_idle_session_is_released_early(monkeypatch, caplo
 
 
 @pytest.mark.asyncio
-async def test_under_stress_a_session_inside_a_transaction_keeps_the_full_timeout(monkeypatch):
+async def test_under_stress_a_session_waiting_inside_a_transaction_is_released_too(monkeypatch):
+    """MAIL and then nothing would otherwise keep the slot."""
     loop = asyncio.get_running_loop()
     server, port = await _stressed_listener(loop, monkeypatch)
     try:
@@ -2177,17 +2188,59 @@ async def test_under_stress_a_session_inside_a_transaction_keeps_the_full_timeou
             writer.write(line)
             await writer.drain()
             await _read_reply(reader)
-        # Twice the stress timeout, between two commands of one transaction.
-        await asyncio.sleep(0.8)
-        writer.write(b"RCPT TO:<bob@example.com>\r\n")
-        await writer.drain()
-        reply = await _read_reply(reader)
+        started = time.monotonic()
+        reply = await asyncio.wait_for(_read_reply(reader), timeout=5)
+        elapsed = time.monotonic() - started
         writer.close()
     finally:
         server.close()
         await server.wait_closed()
 
-    assert reply.startswith(b"250"), reply
+    assert reply == b"421 4.4.2 Idle timeout, closing connection\r\n"
+    assert 0.3 < elapsed < 2
+
+
+@pytest.mark.asyncio
+async def test_a_session_idle_before_the_stress_began_is_released_once_it_does(monkeypatch):
+    """Its timer was armed at the full timeout, when there was room."""
+    monkeypatch.setattr(smtp_protocol, "_STRESS_IDLE_TIMEOUT", 0.4)
+    gate = IPGate(max_total=10, max_share=1)
+    async with listening(gate=gate) as port, connected(port) as early:
+        # Six sessions of another source, without the sockets.
+        gate._per_ip["198.51.100.9"] = 6
+        gate._total += 6
+        assert not gate.under_stress()
+        started = time.monotonic()
+        # The eighth of ten slots: four fifths.
+        async with connected(port):
+            assert gate.under_stress()
+            reply = await asyncio.wait_for(early.reply(), timeout=5)
+            elapsed = time.monotonic() - started
+    assert reply == b"421 4.4.2 Idle timeout, closing connection\r\n"
+    assert 0.3 < elapsed < 2
+
+
+@pytest.mark.asyncio
+async def test_a_command_running_when_the_stress_begins_keeps_its_time(monkeypatch):
+    """Only a session waiting for a command is hurried: this one waits for us."""
+    monkeypatch.setattr(smtp_protocol, "_STRESS_IDLE_TIMEOUT", 0.3)
+
+    class _SlowCheck(ScriptedMDA):
+        async def check_recipient(self, address, session=None):
+            await asyncio.sleep(0.8)
+            return await super().check_recipient(address, session)
+
+    gate = IPGate(max_total=10, max_share=1)
+    async with listening(_SlowCheck(), gate=gate) as port, connected(port) as busy:
+        await busy.cmd(b"EHLO mx.sender.example")
+        await busy.cmd(b"MAIL FROM:<alice@sender.example>")
+        await busy.send(b"RCPT TO:<bob@example.com>\r\n")
+        await asyncio.sleep(0.05)
+        gate._per_ip["198.51.100.9"] = 6
+        gate._total += 6
+        async with connected(port):
+            assert gate.under_stress()
+            assert await busy.reply() == b"250 2.1.5 OK\r\n"
 
 
 @pytest.mark.asyncio

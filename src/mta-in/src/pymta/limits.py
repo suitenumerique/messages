@@ -211,6 +211,11 @@ class IPGate:
     def max_data(self) -> int:
         return self._cap(self._max_data, "PYMTA_MAX_CONCURRENT_DATA")
 
+    def data_under_stress(self) -> bool:
+        """True once four fifths of the DATA slots are taken."""
+        cap = self.max_data
+        return bool(cap) and self._data_total * 5 >= cap * 4
+
     def acquire_data(self, ip: str | None) -> bool:
         """Take a slot for a message about to be held in memory.
 

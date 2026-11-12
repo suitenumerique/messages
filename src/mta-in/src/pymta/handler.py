@@ -25,7 +25,6 @@ from __future__ import annotations
 
 import asyncio
 import logging
-import re
 import time
 
 from . import logfmt, metrics, settings
@@ -117,66 +116,6 @@ def _remaining_data_budget(server) -> float:
     return remaining
 
 
-# Any line ending, CRLF first so a well-formed one is consumed whole rather
-# than as a bare CR followed by a bare LF.
-#
-# ``\n\.`` is a bare LF followed by a dot: the LF is bare because a CRLF would
-# have been consumed by the first alternative. Replacing the pair with CRLF
-# drops that dot, which is the dot-stuffing the protocol left in place: it
-# only unstuffs lines that ended in CRLF on the wire.
-_LINE_ENDING_RE = re.compile(rb"\r\n|\n\.|\r|\n")
-
-
-def _normalize_line_endings(content: bytes) -> tuple[bytes, bool]:
-    """Rewrite every bare LF and bare CR to CRLF. Returns (content, changed).
-
-    One rule for the whole message, headers included, as Postfix does. A bare
-    LF inside a header therefore becomes a line break. Turning it into a space
-    there instead was tried and dropped: it cannot be told from the line
-    breaks of a sender that ends every line with LF without guessing, and a
-    guess is something a sender can steer.
-
-    The protocol ends DATA only on ``\\r\\n.\\r\\n``, so a bare LF cannot split
-    one message into two (SMTP smuggling). What it can do is split a line: the
-    protocol reads ``Subject: a<LF>X-Evil: b`` as one line and hands it to us
-    intact, while any parser that also breaks on LF reads two headers.
-    Python's ``email`` package does, and the MDA uses it, so the sender gets
-    to choose a header on the stored message.
-
-    Postfix closes this with ``smtpd_forbid_bare_newline = normalize`` (pinned in
-    etc/main.cf). This is the same defence.
-
-    Normalising rather than rejecting matches Postfix and keeps the mail: a
-    message is not spam for having been assembled by a sloppy mailer. It does
-    rewrite bytes, so a DKIM body hash over the original would break. But a body
-    carrying bare LF has already failed DKIM canonicalisation, which is defined
-    over CRLF, so there is no intact signature left to preserve.
-
-    A line that followed a bare LF also loses one leading dot. A sender that
-    ends its lines with LF dot-stuffs by its own line boundaries, and the
-    protocol undoes the stuffing only at CRLF ones, so those dots would otherwise reach
-    the mailbox doubled. Postfix's ``normalize`` does the same, and the same
-    way: a lone ``.`` after a bare LF is not the end of DATA, it becomes an
-    empty line.
-
-    Both steps are written for memory rather than speed, because this runs on
-    the whole message body while up to PYMTA_MAX_CONCURRENT_DATA other messages
-    are doing the same — that cap, not the session one, because only a session
-    holding a DATA slot ever reaches here:
-
-    * ``count`` walks the buffer without allocating, so a message that is
-      already clean, which is nearly all of them, is returned as the same object
-      and costs nothing.
-    * the rewrite is one regex pass producing one new buffer. Chained
-      ``replace`` calls would read better but allocate an intermediate copy per
-      call, putting three copies of a 10 MiB body in flight at once.
-    """
-    crlf = content.count(b"\r\n")
-    if content.count(b"\n") == crlf and content.count(b"\r") == crlf:
-        return content, False
-    return _LINE_ENDING_RE.sub(b"\r\n", content), True
-
-
 def _transport(session, envelope) -> dict:
     """How this message arrived, for the ``Received`` header the MDA writes.
 
@@ -223,15 +162,9 @@ def _proxy_header_is_trusted(session) -> bool:
     every per-IP cap and the ability to attribute its mail to any address it
     names.
 
-    An *empty* allowlist means "no upstream named", and there is nothing left
-    to filter on: every header is trusted, exactly as if the allowlist were
-    0.0.0.0/0. That is a deliberate escape hatch for deployments whose balancer
-    addresses are not known at boot, and it puts the whole trust boundary on
-    the network isolation; ``server._check_proxy_trust_config`` warns loudly
-    about it at startup. Naming the balancer is the safe configuration.
+    The allowlist is never empty with PROXY protocol on: the settings refuse
+    to load. Trusting every peer takes an explicit ``0.0.0.0/0,::/0``.
     """
-    if not settings.PYMTA_TRUSTED_PROXIES:
-        return True
     wire_ip = settings.parse_client_ip(_wire_ip(session))
     # None for a peer without an address: a member of no network.
     return wire_ip is not None and any(
@@ -535,8 +468,14 @@ class InboundHandler:
                 recipient=_address_field(clean),
             )
 
+        if clean in envelope.rcpt_tos:
+            # Given twice: accepted, and delivered once.
+            metrics.RCPT_TOTAL.labels(result="accepted").inc()
+            return "250 2.1.5 OK"
+
         result = await self.mda.check_recipient(clean, session=server.session_id)
-        if result.temp_fail:
+        if not result.ok:
+            # Whatever the status: no failed check is a verdict on the address.
             metrics.RCPT_TOTAL.labels(result="rejected_temp").inc()
             return _refuse(
                 server,
@@ -544,21 +483,6 @@ class InboundHandler:
                 "rcpt",
                 "mda_temp_fail",
                 "451 4.3.0 Recipient verification temporarily unavailable",
-                sender=sender,
-                recipient=_address_field(clean),
-                status=result.status_code,
-            )
-        # Unreachable while ``check_recipient`` names no permanent statuses:
-        # every non-200 there comes back as a temp_fail above. Kept as the
-        # landing spot if one is ever added.
-        if not result.ok:
-            metrics.RCPT_TOTAL.labels(result="rejected_perm").inc()
-            return _refuse(
-                server,
-                session,
-                "rcpt",
-                "mda_verification_failed",
-                "550 5.1.1 Recipient verification failed",
                 sender=sender,
                 recipient=_address_field(clean),
                 status=result.status_code,
@@ -632,20 +556,9 @@ class InboundHandler:
         # applied, before the next message is uploaded.
         server.envelopes += 1
         started = time.monotonic()
+        # Line endings are CRLF only and the size is within the limit: the
+        # protocol saw to both as it read the message.
         content: bytes = envelope.content
-
-        # Before the size check: normalising can only grow the body (each bare
-        # LF gains a CR), and the cap has to apply to the bytes we actually send.
-        content, normalized = _normalize_line_endings(content)
-        if normalized:
-            metrics.BARE_NEWLINE_MESSAGES.inc()
-            # Drop the pre-normalisation copy now. Otherwise both buffers stay
-            # reachable for the whole deliver call, up to PYMTA_DATA_TIMEOUT,
-            # which would make a rewritten message cost twice the memory of a
-            # clean one for as long as the MDA takes to answer. The protocol
-            # discards this envelope the moment this hook returns.
-            envelope.content = None
-            logger.debug("bare_newline_normalised", extra=_trace(server, session))
 
         # NUL bytes have no place in an RFC 5321 message and break downstream
         # C parsers. Reject before we pay the cost of the deliver call.
@@ -658,24 +571,6 @@ class InboundHandler:
                 "data",
                 "nul_byte",
                 "554 5.6.0 NUL byte in message body",
-                sender=_sender_field(envelope),
-                recipients=_recipients_field(envelope.rcpt_tos),
-                recipient_count=len(envelope.rcpt_tos),
-                size_bytes=len(content),
-            )
-
-        if len(content) > settings.PYMTA_MAX_INCOMING_EMAIL_SIZE:
-            # The protocol refuses a body over the cap as it comes in. This is
-            # for one that was under it on the wire and is over it once every
-            # bare LF has gained its CR.
-            metrics.SECURITY_REJECTIONS.labels(reason="oversize_message").inc()
-            metrics.MESSAGES_TOTAL.labels(result="rejected_perm").inc()
-            return _refuse(
-                server,
-                session,
-                "data",
-                "oversize_message",
-                "552 5.3.4 Message size exceeds fixed maximum",
                 sender=_sender_field(envelope),
                 recipients=_recipients_field(envelope.rcpt_tos),
                 recipient_count=len(envelope.rcpt_tos),

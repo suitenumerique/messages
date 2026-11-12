@@ -25,18 +25,6 @@ from pymta import runtime, server, settings
 from pymta.server import _check_proxy_trust_config, _log_unhandled
 
 
-def test_proxy_protocol_without_allowlist_starts_with_a_warning(monkeypatch, caplog):
-    monkeypatch.setattr(settings, "PYMTA_ENABLE_PROXY_PROTOCOL", True)
-    monkeypatch.setattr(settings, "PYMTA_TRUSTED_PROXIES", [])
-    with caplog.at_level(logging.WARNING):
-        _check_proxy_trust_config()
-    # Assert on the event name and its fields, not on rendered prose: the
-    # message is now a stable identifier and the detail is structured.
-    record = caplog.records[-1]
-    assert record.message == "proxy_trust_unrestricted"
-    assert "PYMTA_TRUSTED_PROXIES is empty" in record.detail
-
-
 def test_proxy_protocol_with_allowlist_starts_without_warning(monkeypatch, caplog):
     monkeypatch.setattr(settings, "PYMTA_ENABLE_PROXY_PROTOCOL", True)
     monkeypatch.setattr(settings, "PYMTA_TRUSTED_PROXIES", [ip_network("10.89.0.0/24")])
@@ -93,6 +81,7 @@ def test_allowlist_is_irrelevant_without_proxy_protocol(monkeypatch, caplog):
 def test_proxy_protocol_prefers_its_own_name(monkeypatch, env, enabled):
     """The prefixed name decides, whatever the Postfix one says."""
     monkeypatch.setenv("ENABLE_PROXY_PROTOCOL", "haproxy")
+    monkeypatch.setenv("PYMTA_TRUSTED_PROXIES", "192.0.2.10")
     monkeypatch.setenv("PYMTA_ENABLE_PROXY_PROTOCOL", env)
     try:
         assert importlib.reload(settings).PYMTA_ENABLE_PROXY_PROTOCOL is enabled
@@ -108,6 +97,7 @@ def test_the_postfix_name_still_works_and_is_reported(monkeypatch):
     which is what turns a switchover into a migration that finishes.
     """
     monkeypatch.setenv("ENABLE_PROXY_PROTOCOL", "haproxy")
+    monkeypatch.setenv("PYMTA_TRUSTED_PROXIES", "192.0.2.10")
     monkeypatch.delenv("PYMTA_ENABLE_PROXY_PROTOCOL", raising=False)
     try:
         reloaded = importlib.reload(settings)

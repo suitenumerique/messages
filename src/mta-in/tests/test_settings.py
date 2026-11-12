@@ -166,7 +166,19 @@ def test_str_treats_blank_as_unset(monkeypatch):
 @pytest.mark.parametrize("raw", ["haproxy", "HAProxy", " haproxy ", "true", "1", "on"])
 def test_proxy_protocol_haproxy_is_an_alias_for_true(monkeypatch, reload_settings, raw):
     monkeypatch.setenv("PYMTA_ENABLE_PROXY_PROTOCOL", raw)
+    monkeypatch.setenv("PYMTA_TRUSTED_PROXIES", "192.0.2.10")
     assert reload_settings().PYMTA_ENABLE_PROXY_PROTOCOL is True
+
+
+def test_proxy_protocol_without_an_allowlist_is_refused(monkeypatch, reload_settings):
+    """An empty allowlist would mean every peer's header is believed."""
+    monkeypatch.setenv("PYMTA_ENABLE_PROXY_PROTOCOL", "true")
+    monkeypatch.delenv("PYMTA_TRUSTED_PROXIES", raising=False)
+    with pytest.raises(ValueError, match="PYMTA_TRUSTED_PROXIES is empty"):
+        reload_settings()
+    # Trusting every peer is still possible, said in so many words.
+    monkeypatch.setenv("PYMTA_TRUSTED_PROXIES", "0.0.0.0/0,::/0")
+    assert len(reload_settings().PYMTA_TRUSTED_PROXIES) == 2
 
 
 @pytest.mark.parametrize("raw", ["", "false", "off", "no", "0"])
@@ -373,6 +385,7 @@ def test_proxy_protocol_prefixed_name_wins_either_way(monkeypatch, reload_settin
     # otherwise pymta could not be run in a topology of its own during a
     # side-by-side migration.
     monkeypatch.setenv("ENABLE_PROXY_PROTOCOL", shared)
+    monkeypatch.setenv("PYMTA_TRUSTED_PROXIES", "192.0.2.10")
     monkeypatch.setenv("PYMTA_ENABLE_PROXY_PROTOCOL", "true" if shared == "false" else "false")
     assert reload_settings().PYMTA_ENABLE_PROXY_PROTOCOL is (shared == "false")
 
@@ -381,6 +394,7 @@ def test_proxy_protocol_prefixed_name_wins_either_way(monkeypatch, reload_settin
 def test_proxy_protocol_prefixed_name_takes_the_same_spellings(monkeypatch, reload_settings, raw):
     monkeypatch.delenv("ENABLE_PROXY_PROTOCOL", raising=False)
     monkeypatch.setenv("PYMTA_ENABLE_PROXY_PROTOCOL", raw)
+    monkeypatch.setenv("PYMTA_TRUSTED_PROXIES", "192.0.2.10")
     assert reload_settings().PYMTA_ENABLE_PROXY_PROTOCOL is True
 
 

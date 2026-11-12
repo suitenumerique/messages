@@ -23,6 +23,7 @@ from pymta.handler import InboundHandler
 from pymta.limits import IPGate
 from pymta.smtp_protocol import SMTPConnection
 
+from tests.harness import LOOPBACK_PROXIES
 from tests.test_connection import (
     _BODY,
     _AcceptingMDA,
@@ -970,7 +971,7 @@ _V2 = b"\r\n\r\n\x00\r\nQUIT\n"
 async def _proxied(loop, monkeypatch, mda):
     monkeypatch.setattr(settings, "PYMTA_ENABLE_PROXY_PROTOCOL", True)
     monkeypatch.setattr(settings, "PYMTA_PROXY_PROTOCOL_TIMEOUT", 1)
-    monkeypatch.setattr(settings, "PYMTA_TRUSTED_PROXIES", [])
+    monkeypatch.setattr(settings, "PYMTA_TRUSTED_PROXIES", LOOPBACK_PROXIES)
     kwargs = build_smtp_kwargs(tls_context=None)
     gate = IPGate(max_total=0)
     server = await loop.create_server(

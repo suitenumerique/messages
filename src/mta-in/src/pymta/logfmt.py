@@ -188,7 +188,7 @@ def clip_list(items: list[str], limit: int) -> str:
 class LogfmtFormatter(logging.Formatter):
     """Render records as logfmt. Never emits a multi-line record.
 
-    A traceback is folded into a single escaped ``stack`` field. Newlines in a
+    A traceback is folded into a single escaped ``error_stack_trace`` field. Newlines in a
     log line would split one event into many as far as any collector is
     concerned, which is how a traceback ends up looking like a dozen unparseable
     records.

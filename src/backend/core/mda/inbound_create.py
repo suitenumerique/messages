@@ -204,9 +204,10 @@ def _record_transport_security(postmark: dict, envelope: dict) -> None:
     Nothing for the other origins (widget, internal, import): they did not
     arrive over SMTP, so there is no session to qualify.
     """
+    if envelope.get("origin") != enums.InboundOrigin.MTA:
+        return
     if "tls_version" not in envelope:
-        if envelope.get("origin") == enums.InboundOrigin.MTA:
-            postmark["tls"] = "unknown"
+        postmark["tls"] = "unknown"
         return
     version = envelope["tls_version"]
     if not version:

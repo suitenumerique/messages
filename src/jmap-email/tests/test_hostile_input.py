@@ -11,6 +11,8 @@ answers 5xx, the MTA defers, and the sender redelivers the same bytes until
 its queue expires.
 """
 
+import signal
+import sys
 import time
 
 import pytest
@@ -131,12 +133,40 @@ PAYLOADS = {
 @pytest.mark.parametrize("name", list(PAYLOADS))
 def test_parsing_ends_with_a_message_or_none(name):
     raw = PAYLOADS[name]
-    started = time.monotonic()
-    parsed = parse_email(raw)
-    elapsed = time.monotonic() - started
 
+    fired = []
+
+    def stalled(*_):
+        fired.append(True)
+        raise TimeoutError(f"still parsing {len(raw)} bytes after {TIME_LIMIT:.0f} s")
+
+    # An alarm, so that a parser that never returns fails here instead of
+    # hanging the run.
+    previous = signal.signal(signal.SIGALRM, stalled)
+    signal.setitimer(signal.ITIMER_REAL, TIME_LIMIT)
+    try:
+        parsed = parse_email(raw)
+    finally:
+        signal.setitimer(signal.ITIMER_REAL, 0)
+        signal.signal(signal.SIGALRM, previous)
+
+    # Also when the parser caught the interruption as one more bad input.
+    assert not fired, f"still parsing {len(raw)} bytes after {TIME_LIMIT:.0f} s"
     assert parsed is None or isinstance(parsed, dict), type(parsed)
-    assert elapsed < TIME_LIMIT, f"{elapsed:.1f} s for {len(raw)} bytes"
+
+
+def test_the_deadline_interrupts_a_parse_that_does_not_end(monkeypatch):
+    """The guard above, checked against a loop in place of the parser."""
+    monkeypatch.setitem(PAYLOADS, "endless", b"x")
+    monkeypatch.setattr(sys.modules[__name__], "TIME_LIMIT", 0.2)
+
+    def never(_raw):
+        while True:
+            time.sleep(0.01)
+
+    monkeypatch.setattr(sys.modules[__name__], "parse_email", never)
+    with pytest.raises(TimeoutError, match="still parsing"):
+        test_parsing_ends_with_a_message_or_none("endless")
 
 
 def test_a_line_break_decoded_from_a_header_cannot_be_written_back_as_one():

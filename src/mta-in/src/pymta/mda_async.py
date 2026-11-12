@@ -50,6 +50,9 @@ _MIN_SECRET_LENGTH = 32
 #   400: the MDA could not parse the message, or the request was malformed.
 #   413: over the MDA's own size limit. Retrying sends the same oversized bytes.
 #
+# And only with the MDA's own body (``"status": "error"``): the same status
+# from a proxy in front of it says nothing about the message.
+#
 # Everything else defers:
 #   415: the MDA does not know our Content-Type, which is an MDA older than
 #         this client during a rollout. Deploying the MDA clears it.
@@ -79,12 +82,39 @@ async def _stream(parts: tuple[bytes, ...]) -> AsyncIterator[bytes]:
         yield part
 
 
+def _json_object(response: httpx.Response, endpoint_label: str) -> dict:
+    """The body as a JSON object, or ``{}`` for anything else.
+
+    Best-effort: some error bodies are HTML. Callers get a total ``.get()``
+    instead of an AttributeError on a list or a None body.
+    """
+    try:
+        payload = response.json() if response.content else {}
+    except ValueError:
+        # JSONDecodeError, and UnicodeDecodeError for a body that is not
+        # UTF-8 (a proxy's latin-1 error page).
+        return {}
+    if isinstance(payload, dict):
+        return payload
+    # Debug: whenever this matters the caller logs the consequence
+    # (mda_check_no_verdict / mda_unhealthy) with the session attached.
+    # Two warnings for one incident is two alerts for one problem.
+    logger.debug(
+        "mda_body_not_an_object",
+        extra={
+            "endpoint": endpoint_label,
+            "status": response.status_code,
+            "body_type": type(payload).__name__,
+        },
+    )
+    return {}
+
+
 @dataclass(frozen=True)
 class MDAResult:
     """Result of an MDA call.
 
-    ``ok`` is true iff the call returned HTTP 200 with a JSON body that the
-    caller can rely on. ``temp_fail`` distinguishes "try again later" (network
+    ``ok`` is true iff the call returned HTTP 200. ``temp_fail`` distinguishes "try again later" (network
     error, timeout, 5xx, and every status the endpoint does not name as
     permanent) from a permanent rejection; only ``deliver`` names any, via
     :data:`_PERMANENT_STATUSES`. ``payload`` is the decoded JSON body when
@@ -186,7 +216,11 @@ class MDAClient:
     async def start(self) -> httpx.AsyncClient:
         """Open the persistent HTTP client. Idempotent."""
         if self._client is None:
-            limits = httpx.Limits(max_keepalive_connections=20, max_connections=100)
+            # A session makes one call at a time. None when sessions are not capped.
+            limits = httpx.Limits(
+                max_keepalive_connections=20,
+                max_connections=settings.PYMTA_MAX_SESSIONS_TOTAL or None,
+            )
             self._client = httpx.AsyncClient(
                 timeout=self.timeout,
                 limits=limits,
@@ -242,7 +276,7 @@ class MDAClient:
     def breaker_is_open(self) -> bool:
         """Whether calls are being short-circuited right now.
 
-        Separate from ``_breaker_open`` because that one resets the counters as
+        Separate from ``_breaker_open`` because that one starts the probe as
         a side effect of noticing the cooldown elapsed, so it cannot answer a
         scrape. This is also why the gauge is computed rather than assigned: set
         imperatively, it would keep reading 1 after a cooldown expired on an
@@ -368,37 +402,18 @@ class MDAClient:
             metrics.MDA_REQUEST_DURATION.labels(endpoint=endpoint_label, result="error").observe(
                 self._clock() - start
             )
-            logger.exception(
-                "mda_transport_error", extra={"endpoint": endpoint_label, "session_id": session}
+            # WARNING: the fault is the MDA's or the network's, not ours.
+            logger.warning(
+                "mda_transport_error",
+                exc_info=True,
+                extra={"endpoint": endpoint_label, "session_id": session},
             )
             self._record_failure()
             return MDAResult(ok=False, temp_fail=True, payload={}, status_code=0)
 
         elapsed = self._clock() - start
 
-        # JSON decode is best-effort; some error bodies may be HTML. Anything
-        # that is not a JSON object collapses to {} so callers get a total
-        # ``.get()`` instead of an AttributeError on a list or None body.
-        try:
-            payload = response.json() if response.content else {}
-        except ValueError:
-            # JSONDecodeError, and UnicodeDecodeError for a body that is not
-            # UTF-8 (a proxy's latin-1 error page).
-            payload = {}
-        if not isinstance(payload, dict):
-            # Debug: whenever this matters the caller logs the consequence
-            # (mda_check_no_verdict / mda_unhealthy) with the session attached.
-            # Two warnings for one incident is two alerts for one problem.
-            logger.debug(
-                "mda_body_not_an_object",
-                extra={
-                    "endpoint": endpoint_label,
-                    "status": response.status_code,
-                    "body_type": type(payload).__name__,
-                },
-            )
-            payload = {}
-
+        payload = _json_object(response, endpoint_label)
         status = response.status_code
         if status == 200:
             metrics.MDA_REQUEST_DURATION.labels(endpoint=endpoint_label, result="ok").observe(
@@ -407,32 +422,39 @@ class MDAClient:
             self._record_success()
             return MDAResult(ok=True, temp_fail=False, payload=payload, status_code=status)
 
+        # The MDA's own answer about this message, as opposed to an error page
+        # from whatever stands in front of it (an ingress answers 413 too).
+        verdict = payload.get("status") == "error"
         # Two independent judgements here, kept separate:
         #
         #  * temp_fail: what we tell the *sender*. Permanent only for the
-        #    statuses that say "this message is bad"; everything else defers.
-        #  * the circuit breaker: a *liveness* signal. Only 5xx (and the
-        #    transport failures above) indicate the MDA is unhealthy. A 207 or
-        #    a 401 is a complete answer from a healthy MDA, so it closes the
-        #    breaker rather than opening it.
-        temp = status not in permanent_statuses
-        unhealthy = status >= 500
-        if unhealthy:
+        #    statuses that say "this message is bad", said by the MDA itself;
+        #    everything else defers.
+        #  * the circuit breaker: a *liveness* signal. Only a 5xx that is not
+        #    a verdict (and the transport failures above) indicates the MDA is
+        #    unhealthy, or one sender's messages could open it for everyone.
+        #    A 207 or a 401 is a complete answer from a healthy MDA, so it
+        #    closes the breaker rather than opening it.
+        temp = not (verdict and status in permanent_statuses)
+        unhealthy = status >= 500 and not verdict
+        if status >= 500:
             result_label = "http_5xx"
         else:
             result_label = "http_defer" if temp else "http_perm"
         metrics.MDA_REQUEST_DURATION.labels(endpoint=endpoint_label, result=result_label).observe(
             elapsed
         )
-        logger.warning(
-            "mda_unhealthy",
-            extra={
-                "endpoint": endpoint_label,
-                "session_id": session,
-                "status": status,
-                "outcome": "defer" if temp else "reject",
-            },
-        )
+        fields = {
+            "endpoint": endpoint_label,
+            "session_id": session,
+            "status": status,
+            "outcome": "defer" if temp else "reject",
+        }
+        if verdict:
+            # A sender chooses its messages: not a line it gets to raise.
+            logger.debug("mda_refused", extra=fields)
+        else:
+            logger.warning("mda_unhealthy", extra=fields)
         if unhealthy:
             self._record_failure()
         else:

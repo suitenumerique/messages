@@ -169,18 +169,21 @@ PYMTA_MAX_INCOMING_EMAIL_SIZE = _env_int(
 #
 # Note the multiplication downstream: controller.py derives the per-verb
 # ``command_call_limit`` for RCPT as (this x PYMTA_MAX_ENVELOPES_PER_SESSION) + 10,
-# which on the defaults is 1010 commands before the session is closed. Raising
+# which on the defaults is 10010 commands before the session is closed. Raising
 # either of these raises that ceiling as their product, and it is the ceiling
 # on how many commands one connection can spend re-arming the idle timer.
 PYMTA_MAX_RECIPIENTS_PER_ENVELOPE = _env_int("PYMTA_MAX_RECIPIENTS_PER_ENVELOPE", 100, minimum=1)
 
-# Envelopes per TCP connection (one envelope = MAIL FROM..DATA cycle).
-PYMTA_MAX_ENVELOPES_PER_SESSION = _env_int("PYMTA_MAX_ENVELOPES_PER_SESSION", 10, minimum=1)
+# Envelopes per TCP connection (one envelope = MAIL FROM..DATA cycle). The
+# next MAIL is answered 421, so a sender that reuses its connections has that
+# message wait for its next queue run: high enough to be rare.
+PYMTA_MAX_ENVELOPES_PER_SESSION = _env_int("PYMTA_MAX_ENVELOPES_PER_SESSION", 100, minimum=1)
 
-# Longest single line accepted in DATA or a command, in octets.
+# Longest single line accepted in DATA or a command, in octets, line ending
+# excluded.
 #
-# RFC 5321 §4.5.3.1.6 says 1001, and a longer line is answered ``500 Line too
-# long``, a permanent rejection. Postfix accepts the same message: its
+# RFC 5321 §4.5.3.1.6 says 998 (1000 with the CRLF), and a longer line is
+# answered ``500 Line too long``, a permanent rejection. Postfix accepts the same message: its
 # ``line_length_limit`` is 2048 and applies to how the cleanup daemon wraps
 # output, not to what smtpd will receive. Long unwrapped HTML and URLs break
 # 998 constantly, so the strict value bounces mail that lands today, and 5xx
@@ -191,7 +194,7 @@ PYMTA_MAX_ENVELOPES_PER_SESSION = _env_int("PYMTA_MAX_ENVELOPES_PER_SESSION", 10
 # peer, so the ceiling is that times PYMTA_MAX_SESSIONS_TOTAL). It does not
 # weaken command validation: a command line is held to 512 octets (548 for
 # MAIL) once it has been read.
-PYMTA_MAX_LINE_LENGTH = _env_int("PYMTA_MAX_LINE_LENGTH", 65536, minimum=1001)
+PYMTA_MAX_LINE_LENGTH = _env_int("PYMTA_MAX_LINE_LENGTH", 65536, minimum=998)
 
 # Messages that may be in memory at once.
 #
@@ -209,9 +212,8 @@ PYMTA_MAX_LINE_LENGTH = _env_int("PYMTA_MAX_LINE_LENGTH", 65536, minimum=1001)
 # moment and freed arenas are not returned promptly, so 40 x 10 MiB is about
 # 880 MiB and wants a container of 1 GiB or more. Drop it to 20 for 512 MiB.
 #
-# It is also the number of distinct hosts it takes to saturate delivery, because
-# the gate shares the slots among the sources present rather than by a fixed
-# per-source cap. More memory buys throughput and that resistance together.
+# The gate shares these slots among the sources present, as it does the
+# session slots: see PYMTA_MAX_SHARE_PER_SOURCE.
 PYMTA_MAX_CONCURRENT_DATA = _env_int("PYMTA_MAX_CONCURRENT_DATA", 40, minimum=0)
 
 # RFC 5321 §4.5.3.1.1/.1.2: local-part ≤ 64 octets, domain ≤ 255 octets.
@@ -242,25 +244,20 @@ PYMTA_MAX_DOMAIN = 255
 # take.
 PYMTA_COMMAND_TIMEOUT = _env_int("PYMTA_COMMAND_TIMEOUT", 300, minimum=1)
 
-# Hard deadline for the DATA phase (seconds): 354 reply → last body byte →
-# MDA deliver call → SMTP reply, as one budget. ``SMTPConnection._data``
-# swaps the command deadline for this one while DATA runs, so a peer that
-# dribbles the body cannot outlive it. Defends against slowloris on the body.
-# Nothing in a DATA phase survives past it: the timer is armed at exactly
-# this value, and the handler reserves a slice of it (see
-# ``handler._REPLY_RESERVE_SECONDS``) so it can still answer 451 rather than
-# vanishing mid-transaction.
-#
-# Sizing: this is a *floor* on how slow a legitimate sender may be. At the
-# 10 MiB default PYMTA_MAX_INCOMING_EMAIL_SIZE, 300 s means ~35 kB/s sustained.
-
-# The slice of that budget the handler holds back, read as
-# ``handler._REPLY_RESERVE_SECONDS``. Not configurable: it is a property of how
-# the two deadlines nest, not something an operator sizes. It bounds the DATA timeout
-# from below, because a budget at or under the reserve leaves the deliver call
+# The slice of the DATA deadline below that the handler holds back, so it can
+# still answer 451 rather than vanishing mid-transaction. Not configurable: it
+# is a property of how the two deadlines nest. It bounds the DATA timeout from
+# below, because a budget at or under the reserve leaves the deliver call
 # nothing at all and would defer every message.
 PYMTA_REPLY_RESERVE_SECONDS = 10
 
+# Hard deadline for the DATA phase (seconds): 354 reply → last body byte →
+# MDA deliver call → SMTP reply, as one budget. ``SMTPConnection._data``
+# swaps the command deadline for this one while DATA runs, so a peer that
+# dribbles the body cannot outlive it.
+#
+# Sizing: this is a *floor* on how slow a legitimate sender may be. At the
+# 10 MiB default PYMTA_MAX_INCOMING_EMAIL_SIZE, 300 s means ~35 kB/s sustained.
 PYMTA_DATA_TIMEOUT = _env_int("PYMTA_DATA_TIMEOUT", 300, minimum=PYMTA_REPLY_RESERVE_SECONDS + 1)
 
 # Wall-clock ceiling on one TCP session (seconds), armed at connect and never
@@ -366,20 +363,6 @@ PYMTA_ENABLE_PROXY_PROTOCOL = _env_proxy_protocol(
 PYMTA_PROXY_PROTOCOL_TIMEOUT = _env_int("PYMTA_PROXY_PROTOCOL_TIMEOUT", 5, minimum=1)
 
 
-# Comma-separated IPs / CIDRs allowed to send a PROXY header, matched against
-# the *wire* peer (the TCP source, i.e. the load balancer). Anything the header
-# claims is only as trustworthy as the peer that sent it: the claimed source IP
-# becomes the key for every per-IP cap and the ``client_address`` the MDA bakes
-# into the Received header. A peer that reaches port 25 directly could
-# otherwise scatter a forged source across the address space (defeating
-# the per-source shares) and attribute its mail to any IP it
-# likes.
-#
-# Strongly recommended whenever PROXY protocol is enabled, because enabling it
-# *is* the claim that a balancer sits in front, so the balancer's address is
-# usually a known fact. Left empty there is nothing to match on and every peer's
-# header is trusted; ``server.py`` warns loudly at startup rather than refusing
-# to run, since some deployments only learn the balancer's addresses later.
 def parse_client_ip(raw: str | None) -> ipaddress.IPv4Address | ipaddress.IPv6Address | None:
     """Parse a client address, unwrapping the IPv4-mapped IPv6 form.
 
@@ -416,7 +399,22 @@ def _env_networks(name: str) -> list[ipaddress.IPv4Network | ipaddress.IPv6Netwo
     return networks
 
 
+# Comma-separated IPs / CIDRs allowed to send a PROXY header, matched against
+# the *wire* peer (the TCP source, i.e. the load balancer). The source the
+# header names becomes the key of every per-source limit and the address the
+# MDA writes into ``Received``, so a peer that could send one directly would
+# choose both.
+#
+# Required with PROXY protocol. A deployment that cannot name its balancer
+# says so with ``0.0.0.0/0,::/0``, and the network isolation is then the whole
+# trust boundary. Either way the SMTP port must be reachable by the balancer
+# only: the header is read before the peer is checked or counted.
 PYMTA_TRUSTED_PROXIES = _env_networks("PYMTA_TRUSTED_PROXIES")
+if PYMTA_ENABLE_PROXY_PROTOCOL and not PYMTA_TRUSTED_PROXIES:
+    raise ValueError(
+        "PYMTA_ENABLE_PROXY_PROTOCOL is set but PYMTA_TRUSTED_PROXIES is empty: name the "
+        "balancer's addresses, or 0.0.0.0/0,::/0 to trust every peer."
+    )
 
 
 # ---------------------------------------------------------------------------
@@ -602,13 +600,6 @@ if len(_certs) != len(_keys):
 # What ``load_tls_context`` consumes: one (cert, key) pair per certificate.
 PYMTA_TLS_CERT_PAIRS: tuple[tuple[str, str], ...] = tuple(zip(_certs, _keys, strict=True))
 
-# Oldest TLS version accepted on STARTTLS: 1.0, 1.1, 1.2 or 1.3.
-#
-# 1.2 is Python's default. A sender that only speaks 1.0 or 1.1 fails the
-# handshake, and then either retries in clear or gives up, so on an inbound MX
-# an old protocol can be better than none. Going below 1.2 also drops OpenSSL
-# to security level 0 for every handshake on this listener, because the
-# SHA-1 signatures those versions use are refused above it.
 # Refuse mail on a session that has not done STARTTLS: every command but
 # EHLO, STARTTLS, NOOP and QUIT is answered 530 until it has.
 #
@@ -624,6 +615,13 @@ if PYMTA_REQUIRE_TLS and not PYMTA_TLS_CERT_PAIRS:
         "(PYMTA_TLS_CERT_FILE / PYMTA_TLS_KEY_FILE): every message would be refused."
     )
 
+# Oldest TLS version accepted on STARTTLS: 1.0, 1.1, 1.2 or 1.3.
+#
+# 1.2 is Python's default. A sender that only speaks 1.0 or 1.1 fails the
+# handshake, and then either retries in clear or gives up, so on an inbound MX
+# an old protocol can be better than none. Going below 1.2 also drops OpenSSL
+# to security level 0 for every handshake on this listener, because the
+# SHA-1 signatures those versions use are refused above it.
 _TLS_VERSIONS = ("1.0", "1.1", "1.2", "1.3")
 PYMTA_TLS_MIN_VERSION = _env_str("PYMTA_TLS_MIN_VERSION", "1.2").strip()
 if PYMTA_TLS_MIN_VERSION not in _TLS_VERSIONS:

@@ -2593,8 +2593,8 @@ class Message(BaseModel):
             result["rcpt_to"] = postmark["rcpt_to"]
         if postmark.get("tls"):
             # "none" (received in clear), "old" (TLS below 1.2) or "unknown"
-            # (the MTA did not say), for a warning in the UI. Absent for a
-            # message received over modern TLS, or not over SMTP.
+            # (the MTA did not say). Absent for a message received over modern
+            # TLS, or not over SMTP. Nothing in the frontend reads it yet.
             result["tls"] = postmark["tls"]
         if self._parse_failed:
             # Set by the ``get_parsed_data`` call above. Not a pipeline verdict
