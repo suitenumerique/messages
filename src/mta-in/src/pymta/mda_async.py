@@ -18,6 +18,7 @@ it to the bytes posted.
 
 from __future__ import annotations
 
+import asyncio
 import datetime
 import hashlib
 import json
@@ -67,9 +68,16 @@ _PERMANENT_STATUSES = frozenset({400, 413})
 ENVELOPED_CONTENT_TYPE = "application/vnd.stmsg.mta-delivery"
 
 
+# A request body is handed to httpx in pieces of this size. Over TLS, what is
+# handed over in one piece is encrypted in one piece: for a whole message,
+# two more copies of it.
+_BODY_CHUNK = 65536
+
+
 async def _stream(parts: tuple[bytes, ...]) -> AsyncIterator[bytes]:
     for part in parts:
-        yield part
+        for start in range(0, len(part), _BODY_CHUNK):
+            yield part[start : start + _BODY_CHUNK]
 
 
 def _json_object(response: httpx.Response, endpoint_label: str) -> dict:
@@ -116,6 +124,11 @@ class MDAResult:
     temp_fail: bool
     payload: dict
     status_code: int
+
+    @classmethod
+    def unanswered(cls) -> MDAResult:
+        """No HTTP response was read: try again later."""
+        return cls(ok=False, temp_fail=True, payload={}, status_code=0)
 
 
 class MDAClient:
@@ -195,11 +208,11 @@ class MDAClient:
     async def start(self) -> httpx.AsyncClient:
         """Open the persistent HTTP client. Idempotent."""
         if self._client is None:
-            # A session makes one call at a time. None when sessions are not capped.
-            limits = httpx.Limits(
-                max_keepalive_connections=20,
-                max_connections=settings.PYMTA_MAX_SESSIONS_TOTAL or None,
-            )
+            # A session makes one call at a time. None when sessions are not
+            # capped. As many are kept alive: fewer, and a busy server opens
+            # a connection per call. Idle ones expire after 5 s.
+            sessions = settings.PYMTA_MAX_SESSIONS_TOTAL or None
+            limits = httpx.Limits(max_keepalive_connections=sessions, max_connections=sessions)
             self._client = httpx.AsyncClient(
                 timeout=self.timeout,
                 limits=limits,
@@ -259,12 +272,13 @@ class MDAClient:
             return False
         return self._clock() < self._open_until or self._probing
 
-    def _record_failure(self) -> None:
+    def _record_failure(self, probe: bool) -> None:
+        """Count a failed call. ``probe``: it was the one let through after a cooldown."""
         if not self._breaker_threshold:
             return
-        if self._probing:
-            # The probe failed: same outage, another cooldown.
-            self._probing = False
+        if probe and self._open_until is not None:
+            # The probe failed: same outage, another cooldown. Not on the
+            # failure of a call that was in flight before the breaker opened.
             self._open_until = self._clock() + self._breaker_cooldown
             return
         self._consecutive_failures += 1
@@ -292,25 +306,31 @@ class MDAClient:
         # Several parts are sent one after the other as a single body.
         body: bytes | tuple[bytes, ...],
         *,
-        metadata: dict,
         endpoint_label: str,
         permanent_statuses: frozenset[int] = frozenset(),
         # Id of the SMTP session this call serves. Logged here, so a failure
         # can be joined to the mail it affected, and sent as the
         # ``mta_session`` claim so the MDA's lines join up too.
         session: str | None = None,
+        # Seconds the whole call may take. None: the caller bounds it.
+        deadline: float | None = None,
     ) -> MDAResult:
         if self._breaker_open():
             metrics.MDA_REQUEST_DURATION.labels(
                 endpoint=endpoint_label, result="breaker_open"
             ).observe(0)
-            return MDAResult(ok=False, temp_fail=True, payload={}, status_code=0)
+            return MDAResult.unanswered()
         # Past the check with the flag up, this call is the probe.
         probe = self._probing
         try:
-            return await self._send(
-                path, content_type, body, metadata, endpoint_label, permanent_statuses, session
+            result, healthy = await self._send(
+                path, content_type, body, endpoint_label, permanent_statuses, session, deadline
             )
+            if healthy:
+                self._record_success()
+            elif healthy is not None:
+                self._record_failure(probe)
+            return result
         finally:
             # A probe that ends with no verdict (cancelled by the DATA
             # deadline, refused by our own pool) gives its turn to the next.
@@ -322,20 +342,24 @@ class MDAClient:
         path: str,
         content_type: str,
         body: bytes | tuple[bytes, ...],
-        metadata: dict,
         endpoint_label: str,
         permanent_statuses: frozenset[int],
         session: str | None,
-    ) -> MDAResult:
+        deadline: float | None,
+    ) -> tuple[MDAResult, bool | None]:
+        """One request. Returns (result, healthy).
+
+        ``healthy`` is what the breaker counts: True for an answer from a
+        live MDA, False for a failure of it, None when the call says nothing
+        about it.
+        """
         client = self._client or await self.start()
 
         url = self.base_url + path.lstrip("/")
         # A claim, not a header: it is signed, so nothing between us and the
         # MDA can change it. Named ``mta_session`` because the MDA has Django
         # sessions of its own.
-        if session:
-            metadata = {**metadata, "mta_session": session}
-        token = self._build_jwt(body, metadata)
+        token = self._build_jwt(body, {"mta_session": session} if session else {})
         headers = {"Content-Type": content_type, "Authorization": f"Bearer {token}"}
         content: bytes | AsyncIterator[bytes] = body if isinstance(body, bytes) else _stream(body)
         if not isinstance(body, bytes):
@@ -344,7 +368,10 @@ class MDAClient:
 
         start = self._clock()
         try:
-            response = await client.post(url, content=content, headers=headers)
+            # httpx's timeout is per phase (connect, each read, each write):
+            # an MDA that drips its answer never meets it.
+            async with asyncio.timeout(deadline):
+                response = await client.post(url, content=content, headers=headers)
         except httpx.PoolTimeout:
             # No free connection in our own pool. Says nothing about the MDA,
             # so it does not feed the breaker.
@@ -354,8 +381,10 @@ class MDAClient:
             logger.warning(
                 "mda_pool_exhausted", extra={"endpoint": endpoint_label, "session_id": session}
             )
-            return MDAResult(ok=False, temp_fail=True, payload={}, status_code=0)
-        except httpx.TimeoutException:
+            return MDAResult.unanswered(), None
+        except httpx.TimeoutException, TimeoutError:
+            # Counted by the breaker, on ``deliver`` too: a timeout is no
+            # verdict on the message, and an MDA that hangs must be shed.
             metrics.MDA_REQUEST_DURATION.labels(endpoint=endpoint_label, result="timeout").observe(
                 self._clock() - start
             )
@@ -368,8 +397,7 @@ class MDAClient:
                     "limit_seconds": self.timeout,
                 },
             )
-            self._record_failure()
-            return MDAResult(ok=False, temp_fail=True, payload={}, status_code=0)
+            return MDAResult.unanswered(), False
         except httpx.HTTPError:
             metrics.MDA_REQUEST_DURATION.labels(endpoint=endpoint_label, result="error").observe(
                 self._clock() - start
@@ -380,8 +408,7 @@ class MDAClient:
                 exc_info=True,
                 extra={"endpoint": endpoint_label, "session_id": session},
             )
-            self._record_failure()
-            return MDAResult(ok=False, temp_fail=True, payload={}, status_code=0)
+            return MDAResult.unanswered(), False
 
         elapsed = self._clock() - start
 
@@ -391,8 +418,7 @@ class MDAClient:
             metrics.MDA_REQUEST_DURATION.labels(endpoint=endpoint_label, result="ok").observe(
                 elapsed
             )
-            self._record_success()
-            return MDAResult(ok=True, temp_fail=False, payload=payload, status_code=status)
+            return MDAResult(ok=True, temp_fail=False, payload=payload, status_code=status), True
 
         # The MDA's own answer about this message, not an error page from
         # something in front of it (an ingress answers 413 too).
@@ -420,18 +446,17 @@ class MDAClient:
             "status": status,
             "outcome": "defer" if temp else "reject",
         }
+        result = MDAResult(ok=False, temp_fail=temp, payload=payload, status_code=status)
         if unhealthy:
             logger.warning("mda_unhealthy", extra=fields)
-            self._record_failure()
-            return MDAResult(ok=False, temp_fail=temp, payload=payload, status_code=status)
+            return result, False
         if verdict:
             # Debug: a sender can cause this line at will.
             logger.debug("mda_refused", extra=fields)
         else:
             # A 207, a 401, an ingress's 413.
             logger.warning("mda_unexpected_status", extra=fields)
-        self._record_success()
-        return MDAResult(ok=False, temp_fail=temp, payload=payload, status_code=status)
+        return result, True
 
     async def check_recipient(self, address: str, session: str | None = None) -> MDAResult:
         """Ask the MDA whether a single recipient mailbox exists."""
@@ -440,9 +465,11 @@ class MDAClient:
             "inbound/mta/check/",
             "application/json",
             body,
-            metadata={},
             endpoint_label="check",
             session=session,
+            # ``deliver`` is bounded by the DATA deadline. Nothing else
+            # bounds a check short of PYMTA_COMMAND_TIMEOUT.
+            deadline=self.timeout,
         )
 
     async def deliver(  # noqa: PLR0913
@@ -482,7 +509,6 @@ class MDAClient:
             "inbound/mta/deliver/",
             ENVELOPED_CONTENT_TYPE,
             (head, message),
-            metadata={},
             endpoint_label="deliver",
             permanent_statuses=_PERMANENT_STATUSES,
             session=session,

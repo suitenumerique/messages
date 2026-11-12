@@ -1780,23 +1780,32 @@ async def test_the_tag_delimiter_is_configurable(monkeypatch, delimiter, blocked
 
 @pytest.mark.asyncio
 @pytest.mark.parametrize(
-    ("helo", "utf8", "tls", "protocol"),
+    ("helo", "utf8", "tls", "ciphers", "protocol"),
     [
         # In clear: no trailing S, and no TLS fields at all.
-        (b"EHLO", False, None, "ESMTP"),
-        (b"HELO", False, None, "SMTP"),
-        (b"EHLO", True, None, "UTF8SMTP"),
+        (b"EHLO", False, None, None, "ESMTP"),
+        (b"HELO", False, None, None, "SMTP"),
+        (b"EHLO", True, None, None, "UTF8SMTP"),
         # Encrypted, and how well.
-        (b"EHLO", False, "TLSv1.3", "ESMTPS"),
-        (b"EHLO", True, "TLSv1.3", "UTF8SMTPS"),
-        (b"EHLO", False, "TLSv1.2", "ESMTPS"),
+        (b"EHLO", False, "TLSv1.3", None, "ESMTPS"),
+        (b"EHLO", True, "TLSv1.3", None, "UTF8SMTPS"),
+        (b"EHLO", False, "TLSv1.2", None, "ESMTPS"),
+        # A suite older than the protocol it is used with: the version
+        # reported is the protocol's.
+        (b"EHLO", False, "TLSv1.2", "AES256-SHA:@SECLEVEL=0", "ESMTPS"),
     ],
 )
-async def test_the_mda_is_told_how_the_message_arrived(monkeypatch, helo, utf8, tls, protocol):
+async def test_the_mda_is_told_how_the_message_arrived(
+    monkeypatch, caplog, *, helo, utf8, tls, ciphers, protocol
+):
     monkeypatch.setattr(settings, "PYMTA_SMTP_HOSTNAME", "mx1.ours.example")
+    caplog.set_level(logging.INFO, logger="pymta")
     server_ctx, client_ctx = _tls_contexts() if tls else (None, None)
     if tls == "TLSv1.2":
         client_ctx.maximum_version = ssl.TLSVersion.TLSv1_2
+    if ciphers:
+        server_ctx.set_ciphers(ciphers)
+        client_ctx.set_ciphers(ciphers)
     cipher = None
     mda = ScriptedMDA()
     async with listening(mda, tls_context=server_ctx) as port, connected(port) as client:
@@ -1805,7 +1814,9 @@ async def test_the_mda_is_told_how_the_message_arrived(monkeypatch, helo, utf8, 
             assert (await client.starttls(client_ctx)).startswith(b"220")
             # The cipher and version as this end of the handshake saw them.
             cipher = client.writer.get_extra_info("cipher")
-            assert cipher[1] == tls
+            assert client.writer.get_extra_info("ssl_object").version() == tls
+            if ciphers:
+                assert cipher[1] != tls
             await client.cmd(helo + b" mx.sender.example")
         sender = b"<sender@example.com>" + (b" SMTPUTF8" if utf8 else b"")
         reply = await _message(client, sender=sender)
@@ -1813,8 +1824,11 @@ async def test_the_mda_is_told_how_the_message_arrived(monkeypatch, helo, utf8, 
     assert reply.startswith(b"250"), reply
     assert mda.delivered[0]["transport"] == {
         "protocol": protocol,
-        "tls_version": cipher[1] if cipher else None,
+        "tls_version": tls,
         "tls_cipher": cipher[0] if cipher else None,
         "server_name": "mx1.ours.example",
     }
     assert mda.delivered[0]["client_helo"] == "mx.sender.example"
+    # The session log reports the same version.
+    (closed,) = await records(caplog, "session_closed")
+    assert getattr(closed, "tls_version", None) == tls

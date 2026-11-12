@@ -76,6 +76,9 @@ _WITH_ADDRESS = [
     (_tcp4("203.0.113.9", 4321), "203.0.113.9", "4321"),
     (_tcp6("2001:db8::9", 4321), "2001:db8::9", "4321"),
     (_tcp6("2001:db8:0:0:0:0:0:9", 1), "2001:db8::9", "1"),
+    # An IPv4 client the balancer names in the IPv4-mapped form.
+    (b"PROXY TCP6 ::ffff:203.0.113.9 2001:db8::1 4321 25\r\n", "203.0.113.9", "4321"),
+    (_tcp6("::ffff:203.0.113.9", 4321), "203.0.113.9", "4321"),
     # TLVs after the addresses are read and ignored.
     (_tcp4("203.0.113.9", 4321, _TLV), "203.0.113.9", "4321"),
 ]

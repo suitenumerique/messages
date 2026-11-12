@@ -10,14 +10,19 @@ somebody's disk or log bill.
 
 from __future__ import annotations
 
+import contextlib
 import io
 import logging
 import pathlib
 import re
 import sys
+import threading
+import time
 
 import pytest
+from prometheus_client import REGISTRY
 
+from pymta import logfmt
 from pymta.logfmt import LogfmtFormatter, clip, configure, quote
 
 
@@ -155,6 +160,78 @@ def test_configure_replaces_handlers_rather_than_adding():
             root.addHandler(h)
 
 
+@contextlib.contextmanager
+def _root_handlers_restored():
+    root = logging.getLogger()
+    before = list(root.handlers)
+    try:
+        yield
+    finally:
+        for h in list(root.handlers):
+            root.removeHandler(h)
+        for h in before:
+            root.addHandler(h)
+
+
+def test_in_a_thread_the_same_lines_are_written_once_it_is_stopped():
+    stream = io.StringIO()
+    with _root_handlers_restored():
+        assert configure("INFO", stream) is None
+        stop = configure("INFO", stream, in_thread=True)
+        log = logging.getLogger("pymta.test")
+        log.info("smtp_listening", extra={"bind": "0.0.0.0:25"})
+        # Filtered where it is logged, like without the thread.
+        logging.getLogger("httpx").info("request")
+        try:
+            raise ValueError("kaboom")
+        except ValueError:
+            log.error("handler_error", exc_info=True)
+        stop()
+    first, second = [_parse(line) for line in stream.getvalue().splitlines()]
+    assert (first["event"], first["bind"]) == ("smtp_listening", "0.0.0.0:25")
+    assert (second["event"], second["error_type"]) == ("handler_error", "ValueError")
+    assert "kaboom" in second["error_stack_trace"]
+
+
+class _Unread(io.StringIO):
+    """A stream whose reader has stopped: a write waits until released."""
+
+    def __init__(self):
+        super().__init__()
+        self.writing = threading.Event()
+        self.release = threading.Event()
+
+    def write(self, text):
+        self.writing.set()
+        self.release.wait(5)
+        return super().write(text)
+
+
+def test_a_stream_nobody_reads_costs_lines_and_not_the_caller(monkeypatch):
+    """Written from the event loop, it would stop every session."""
+    monkeypatch.setattr(logfmt, "_QUEUE_SIZE", 1)
+    dropped = REGISTRY.get_sample_value("pymta_log_records_dropped_total")
+    stream = _Unread()
+    with _root_handlers_restored():
+        stop = configure("INFO", stream, in_thread=True)
+        log = logging.getLogger("pymta.test")
+        log.info("first")
+        assert stream.writing.wait(5)
+        log.info("second")
+        # No room: dropped, and counted.
+        log.info("third")
+        assert REGISTRY.get_sample_value("pymta_log_records_dropped_total") == dropped + 1
+        # No room for the stop marker either: the exit is not held.
+        stop()
+        stream.release.set()
+        deadline = time.monotonic() + 5
+        while "second" not in stream.getvalue() and time.monotonic() < deadline:
+            time.sleep(0.01)
+        stop()
+    events = [_parse(line)["event"] for line in stream.getvalue().splitlines()]
+    assert events == ["first", "second"]
+
+
 # ---------------------------------------------------------------------------
 # The level contract.
 # ---------------------------------------------------------------------------
@@ -237,6 +314,8 @@ AUDIT = {"message_delivered", "message_deferred", "message_rejected"}
 # protocol also stops at PYMTA_MAX_ERRORS_PER_SESSION lines per connection on
 # its own count. That is the same shape as AUDIT (bounded per connection), not
 # the shape of proxy_header_untrusted (one line per TCP connection, unbounded).
+# Bounded per connection is still 50 lines for each one opened, so
+# PYMTA_LOG_SESSIONS drops it to DEBUG too.
 REFUSALS = {"reject"}
 
 # The third, and the only one a peer can produce once per TCP connection: the
@@ -246,7 +325,7 @@ REFUSALS = {"reject"}
 # precisely the "mail from X never arrived and the log says nothing" case.
 # Only sessions the gate let in and that sent at least one line reach INFO,
 # but nothing caps the connection rate, so its volume is the peer's to choose:
-# PYMTA_LOG_SESSIONS (reloadable) drops it to DEBUG under a flood.
+# PYMTA_LOG_SESSIONS drops it to DEBUG under a flood.
 SESSIONS = {"session_closed"}
 
 # A session cap refusing a connection. Peer-triggerable once per connection, so
@@ -330,7 +409,7 @@ def test_the_classification_lists_do_not_overlap():
     assert not (THROTTLED & (others | SESSIONS))
 
 
-@pytest.mark.parametrize("event", sorted(SESSIONS | THROTTLED))
+@pytest.mark.parametrize("event", sorted(SESSIONS | THROTTLED | REFUSALS))
 def test_the_switchable_events_have_a_debug_fallback(event):
     """These must be able to drop to DEBUG.
 

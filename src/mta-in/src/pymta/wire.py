@@ -9,6 +9,10 @@ from __future__ import annotations
 
 import asyncio
 
+_DOT = ord(".")
+# From this size a memoryview costs less than a second copy.
+_VIEW_FROM = 4096
+
 
 class ConnectionClosed(Exception):
     """The peer is gone and the buffer does not hold what was asked for."""
@@ -124,13 +128,13 @@ class LineReader:
         while True:
             end = self._buffer.find(terminator)
             if end >= 0:
-                self._take(end + len(terminator))
+                self._drop(end + len(terminator))
                 return discarded + end + len(terminator)
             # Keep what could be the start of a terminator.
             droppable = len(self._buffer) - (len(terminator) - 1)
             if droppable > 0:
                 discarded += droppable
-                self._take(droppable)
+                self._drop(droppable)
             if max_bytes is not None and discarded > max_bytes:
                 return None
             await self._more()
@@ -140,14 +144,49 @@ class LineReader:
             await self._more()
         return self._take(count)
 
+    def take_plain_lines(self, max_bytes: int) -> tuple[bytes, int]:
+        """Whole lines of DATA off the front of the buffer, many at a time.
+
+        Returns ``(lines, slow)``. ``lines`` holds only lines ``stored_line``
+        would return unchanged and that are not the end of the message: each
+        ends in CRLF, has no other CR or LF and does not start with a dot.
+        At most ``max_bytes`` of them, so none is longer than that.
+
+        Empty when the buffer does not start with such a line. ``slow`` is
+        then how many bytes to read with ``readline`` before asking again:
+        the lines looked at here that have a bare CR or LF among them.
+        Without it a message of such lines would be scanned once per line.
+
+        Never waits.
+        """
+        buffer = self._buffer
+        end = buffer.rfind(b"\n", 0, max_bytes) + 1
+        if not end or buffer[0] == _DOT:
+            return b"", 0
+        dot = buffer.find(b"\n.", 0, end)
+        if dot >= 0:
+            end = dot + 1
+        crlf = buffer.count(b"\r\n", 0, end)
+        if buffer.count(b"\n", 0, end) != crlf or buffer.count(b"\r", 0, end) != crlf:
+            return b"", end
+        return self._take(end), 0
+
     # ---------------------------------------------------------------- internals
     def _take(self, count: int) -> bytes:
-        data = bytes(self._buffer[:count])
+        if count < _VIEW_FROM:
+            data = bytes(self._buffer[:count])
+        else:
+            # One copy, where slicing the bytearray first makes two.
+            with memoryview(self._buffer) as view:
+                data = bytes(view[:count])
+        self._drop(count)
+        return data
+
+    def _drop(self, count: int) -> None:
         del self._buffer[:count]
         if self._paused and len(self._buffer) <= self._limit:
             self._paused = False
             self._transport.resume_reading()
-        return data
 
     async def _more(self) -> None:
         """Wait until ``feed`` or ``close`` is called."""

@@ -84,17 +84,23 @@ def _env_str(name: str, default: str) -> str:
     return raw
 
 
-def _env_token(name: str, default: str) -> str:
+def _env_token(name: str, default: str, *, spaces: bool = False) -> str:
     """Read a setting that goes into an SMTP reply line.
 
     The banner is ``220 {hostname} {ident}``: a CR, LF or NUL would add lines
     to the greeting. The operator sets these, not the peer, but
     ``PYMTA_SMTP_HOSTNAME`` falls back to the shared ``MYHOSTNAME``, which on
     k8s can come from the downward API.
+
+    ASCII only: the greeting comes before any extension is agreed on, and is
+    written as ASCII when SMTPUTF8 is off. ``spaces`` allows them, for the
+    text after the hostname.
     """
     value = _env_str(name, default)
-    if any(c in value for c in ("\r", "\n", "\x00", "\t")):
-        raise ValueError(f"Environment variable {name} must not contain control characters")
+    if not value.isascii() or not value.isprintable():
+        raise ValueError(f"Environment variable {name} must be printable ASCII")
+    if not spaces and " " in value:
+        raise ValueError(f"Environment variable {name} must not contain spaces")
     return value
 
 
@@ -136,7 +142,7 @@ PYMTA_SMTP_BIND_PORT = _env_int("PYMTA_SMTP_BIND_PORT", 25, minimum=1)
 PYMTA_SMTP_HOSTNAME = _env_token(_env_name("PYMTA_SMTP_HOSTNAME", "MYHOSTNAME"), "mta-in")
 
 # After the hostname in the banner. No software name or version, for scanners.
-PYMTA_SMTP_IDENT = _env_token("PYMTA_SMTP_IDENT", "ESMTP")
+PYMTA_SMTP_IDENT = _env_token("PYMTA_SMTP_IDENT", "ESMTP", spaces=True)
 
 
 # ---------------------------------------------------------------------------
@@ -332,6 +338,16 @@ def parse_client_ip(raw: str | None) -> ipaddress.IPv4Address | ipaddress.IPv6Ad
         return None
     # ipv4_mapped exists only on IPv6Address, and is None for a native v6 one.
     return getattr(addr, "ipv4_mapped", None) or addr
+
+
+def canonical_ip(raw: str | None) -> str | None:
+    """A client address as it is kept: IPv4 for the IPv4-mapped IPv6 form.
+
+    Logged and sent to the MDA, which would otherwise record an IPv4 sender
+    as an IPv6 one. Unchanged when it does not parse.
+    """
+    addr = parse_client_ip(raw)
+    return raw if addr is None else str(addr)
 
 
 def _env_networks(name: str) -> list[ipaddress.IPv4Network | ipaddress.IPv6Network]:

@@ -356,7 +356,7 @@ def test_no_session_breaks_the_server_or_escapes_the_log(lines, bodies, checks, 
     finally:
         logger.removeHandler(records)
         logger.setLevel(previous_level)
-        runtime.reset_for_tests()
+        runtime._shutting_down = False
 
     events = [record.getMessage() for record in records.records]
 
@@ -493,9 +493,16 @@ def test_the_message_stored_is_the_message_sent(body, cuts):
         replies, data_replies, hung_up = asyncio.run(_session(lines, [body], mda, cuts))
     finally:
         pymta_settings.PYMTA_MAX_INCOMING_EMAIL_SIZE = previous
-        runtime.reset_for_tests()
+        runtime._shutting_down = False
 
     code, stored = _expected(body)
+    if len(two_step_reference(body)) > 2 * _SMALL_LIMIT:
+        # A refused message is read no further than that: 552, and the
+        # connection is closed, which can come before the reply is read.
+        assert hung_up, replies
+        assert [reply[:3] for reply in data_replies] in ([], [b"552"]), (replies, body)
+        assert mda.delivered == []
+        return
     assert not hung_up, replies
     assert [reply[:3] for reply in data_replies] == [code], (replies, body)
     # Whatever became of the message, the session is where it should be: the
@@ -571,7 +578,7 @@ def test_a_session_sent_in_one_burst_delivers_nothing(lines, checks, before_gree
     finally:
         logger.removeHandler(records)
         logger.setLevel(previous_level)
-        runtime.reset_for_tests()
+        runtime._shutting_down = False
 
     faults = [r for r in records.records if r.getMessage() in _OUR_FAULTS]
     assert not faults, [(r.getMessage(), r.exc_info) for r in faults]
@@ -631,7 +638,7 @@ def test_concurrent_sessions_leave_the_gate_as_they_found_it(sessions, checks, d
     finally:
         logger.removeHandler(records)
         logger.setLevel(previous_level)
-        runtime.reset_for_tests()
+        runtime._shutting_down = False
 
     faults = [r for r in records.records if r.getMessage() in _OUR_FAULTS]
     assert not faults, [(r.getMessage(), r.exc_info) for r in faults]
@@ -755,7 +762,7 @@ def test_any_proxy_header_is_accepted_cleanly_or_refused_cleanly(header, cuts):
         ) = saved
         logger.removeHandler(records)
         logger.setLevel(previous_level)
-        runtime.reset_for_tests()
+        runtime._shutting_down = False
 
     faults = [r for r in records.records if r.getMessage() in _OUR_FAULTS]
     assert not faults, [(r.getMessage(), r.exc_info) for r in faults]

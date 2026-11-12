@@ -110,9 +110,7 @@ class IPGate:
         max_data: int | None = None,
         max_share: float | None = None,
     ):
-        # None: the setting is read at each use, so a cap can change under a
-        # running process. A lowered cap only refuses new slots until the
-        # count falls back under it. Tests pass explicit values.
+        # None: the setting, read at each use. Tests pass explicit values.
         self._max_total = max_total
         self._max_data = max_data
         self._max_share = max_share
@@ -127,9 +125,6 @@ class IPGate:
     def total(self) -> int:
         """Session slots taken."""
         return self._total
-
-    def _cap(self, override: float | None, name: str) -> float:
-        return getattr(settings, name) if override is None else override
 
     def _share(self, total: int, sources: int) -> int:
         """Slots one source may hold out of ``total``, with ``sources`` present.
@@ -148,14 +143,18 @@ class IPGate:
         from them when every slot is taken and a source under its share asks
         for one: see :meth:`crowding_sources`. DATA slots are not taken back.
         """
-        fraction = self._cap(self._max_share, "PYMTA_MAX_SHARE_PER_SOURCE")
+        fraction = self._max_share
+        if fraction is None:
+            fraction = settings.PYMTA_MAX_SHARE_PER_SOURCE
         # The epsilon: 0.29 * 100 is 28.999999999999996 in floating point.
         ceiling = math.floor(total * fraction + 1e-9)
         return max(1, min(ceiling, total // (sources + 1)))
 
     @property
     def max_total(self) -> int:
-        return self._cap(self._max_total, "PYMTA_MAX_SESSIONS_TOTAL")
+        if self._max_total is None:
+            return settings.PYMTA_MAX_SESSIONS_TOTAL
+        return self._max_total
 
     def under_stress(self) -> bool:
         """True once four fifths of the session slots are taken.
@@ -209,7 +208,9 @@ class IPGate:
 
     @property
     def max_data(self) -> int:
-        return self._cap(self._max_data, "PYMTA_MAX_CONCURRENT_DATA")
+        if self._max_data is None:
+            return settings.PYMTA_MAX_CONCURRENT_DATA
+        return self._max_data
 
     def data_under_stress(self) -> bool:
         """True once four fifths of the DATA slots are taken."""
@@ -227,9 +228,7 @@ class IPGate:
         sending its bodies slowly.
 
         Slots are counted even with the limit off; only the refusal depends
-        on it. The limit is read at each use, so it can change between an
-        acquire and its release: a release that looked at it could skip a
-        decrement or make one too many.
+        on it, so a release never has to look at the limit.
         """
         total = self.max_data
         key = ip or "unknown"

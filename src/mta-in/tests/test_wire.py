@@ -222,3 +222,40 @@ async def test_discard_drops_what_was_received_before_tls():
     reader.feed(b"a" * 30)
     # Back-pressure now goes to the new transport.
     assert replacement.paused
+
+
+@pytest.mark.parametrize(
+    ("buffered", "taken", "slow"),
+    [
+        # Whole lines only: an unfinished one stays.
+        (b"a\r\n\r\nb\r\ncc", b"a\r\n\r\nb\r\n", 0),
+        # Up to a line that starts with a dot, stuffed or the end of the message.
+        (b"a\r\n.b\r\nc\r\n", b"a\r\n", 0),
+        (b"a\r\n.\r\n", b"a\r\n", 0),
+        (b".\r\n", b"", 0),
+        (b"..a\r\nb\r\n", b"", 0),
+        # A bare LF or CR among them: none, and how far was looked.
+        (b"a\nb\r\n", b"", 5),
+        (b"a\rb\r\nc\r\n", b"", 8),
+        (b"a\r\n\n", b"", 4),
+        # No more than was asked for, so no line longer than that either.
+        (b"aaaa\r\nbbbb\r\n", b"aaaa\r\n", 0),
+        (b"aaaaaaaaaa\r\n", b"", 0),
+        (b"abc", b"", 0),
+        (b"", b"", 0),
+    ],
+)
+def test_plain_lines_are_taken_together_and_no_other(buffered, taken, slow):
+    reader, _ = _reader(limit=100)
+    reader.feed(buffered)
+    assert reader.take_plain_lines(8) == (taken, slow)
+    assert bytes(reader._buffer) == buffered[len(taken) :]
+
+
+def test_taking_plain_lines_lets_the_peer_send_again():
+    reader, transport = _reader(limit=4096)
+    lines = (b"x" * 62 + b"\r\n") * 200
+    reader.feed(lines)
+    assert transport.paused
+    assert reader.take_plain_lines(len(lines)) == (lines, 0)
+    assert not transport.paused

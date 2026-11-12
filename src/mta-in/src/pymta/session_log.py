@@ -2,12 +2,14 @@
 
 Two kinds of line come from here:
 
-* ``reject``, at INFO, one per 4xx/5xx: a command refused for its syntax or
-  its place, a line that is not a command, a limit of the protocol, a sender
-  or a recipient the handler refused.
+* ``reject``, one per 4xx/5xx: a command refused for its syntax or its place,
+  a line that is not a command, a limit of the protocol, a sender or a
+  recipient the handler refused.
 * ``session_closed``, once per connection: who connected, what they said, how
   it ended. This is Postfix's ``disconnect from`` line, and the only trace of
   a sender whose mail never became a message.
+
+Both at INFO, and at DEBUG with ``PYMTA_LOG_SESSIONS`` off.
 
 :class:`SessionLog` keeps the tally they need. The connection tells it what
 happens (a command starts, a reply goes out, the session ends); it reads the
@@ -237,7 +239,11 @@ class SessionLog:
         }
         if recipients:
             fields.update(recipients_fields(recipients))
-        logger.info("reject", extra={**fields, **extra})
+        # A peer can have the error budget's worth written per connection.
+        if settings.PYMTA_LOG_SESSIONS:
+            logger.info("reject", extra={**fields, **extra})
+        else:
+            logger.debug("reject", extra={**fields, **extra})
 
     def _commands_field(self) -> str:
         """Postfix's ``disconnect from`` tally: ``ehlo=1 mail=1 rcpt=0/1``.
@@ -261,11 +267,10 @@ class SessionLog:
     def _tls_fields(self) -> dict:
         if self.tls_error is not None:
             return {"tls": False, "tls_error": self.tls_error}
-        tls = self._connection.session.ssl
+        tls = self._connection.session.tls
         if tls is None:
             return {"tls": False}
-        name, version, _ = tls["cipher"]
-        return {"tls": True, "tls_cipher": name, "tls_version": version}
+        return {"tls": True, "tls_cipher": tls.cipher, "tls_version": tls.version}
 
     def close(self, error) -> None:
         """Write ``session_closed``. Once, whoever asks first.

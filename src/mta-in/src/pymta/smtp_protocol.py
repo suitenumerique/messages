@@ -95,6 +95,8 @@ _SIZE_VALUE = re.compile(r"[0-9]+\Z")
 
 # Seconds a closed connection gets to take what was written to it.
 _CLOSE_GRACE = 5.0
+# Seconds a STARTTLS handshake gets. Less while the server is close to full.
+_TLS_HANDSHAKE_TIMEOUT = 30.0
 
 _INTERNAL_ERROR = "421 4.3.0 Internal error, please try again later"
 _SHUTDOWN = "421 4.3.2 Service not available, try another MX"
@@ -108,11 +110,60 @@ _TOO_MUCH_DATA = (_SIZE_EXCEEDED, "oversize_message")
 
 
 class _DataOverflow(Exception):
-    """Lines too long to keep have used up the message size limit."""
+    """A message that is refused went on past what is read of one."""
+
+
+class _Body:
+    """A message being received: its bytes, or why it is refused.
+
+    The bytes are appended to blocks of ``_DATA_BLOCK``, not kept as one
+    object per line, so a body of empty lines costs its size and not thirty
+    times that. What is held is the message once, plus one more copy for the
+    moment of the final join.
+    """
+
+    def __init__(self, limit: int):
+        self._limit = limit
+        self._blocks: list[bytearray] = []
+        self._block = bytearray()
+        # Octets as stored, kept or not.
+        self.size = 0
+        # The (reply, reason) the message is to get. Nothing is kept once set.
+        self.refusal: tuple[str, str] | None = None
+
+    def refuse(self, refusal: tuple[str, str]) -> None:
+        """Drop what is held. The first reason given is the one kept."""
+        if self.refusal is None:
+            self.refusal = refusal
+            self._blocks, self._block = [], bytearray()
+
+    def add(self, data: bytes) -> None:
+        self.size += len(data)
+        if self.size > self._limit:
+            self.refuse(_TOO_MUCH_DATA)
+        if self.refusal is not None:
+            return
+        self._block += data
+        if len(self._block) >= _DATA_BLOCK:
+            self._blocks.append(self._block)
+            self._block = bytearray()
+
+    def content(self) -> bytes:
+        return b"".join((*self._blocks, self._block))
 
 
 class _TLSFailed(Exception):
     """The STARTTLS handshake did not complete. The transport is closed."""
+
+
+@dataclasses.dataclass(frozen=True)
+class TLSInfo:
+    """What a STARTTLS handshake negotiated."""
+
+    # ``TLSv1.3``. Not the version in ``SSLObject.cipher()``, which is the
+    # protocol that defined the suite.
+    version: str
+    cipher: str
 
 
 @dataclasses.dataclass
@@ -128,8 +179,8 @@ class Session:
     # Set by EHLO/HELO, forgotten by STARTTLS.
     host_name: str | None = None
     extended_smtp: bool = False
-    # ``{"cipher": (name, version, bits)}`` once TLS is up.
-    ssl: dict | None = None
+    # None in clear.
+    tls: TLSInfo | None = None
 
 
 @dataclasses.dataclass
@@ -205,28 +256,13 @@ class SMTPConnection(asyncio.Protocol):
         self.data_size_limit = data_size_limit
         self.enable_smtputf8 = enable_smtputf8
         self.tls_context = tls_context
-        self.require_starttls = bool(tls_context and require_starttls)
+        self.require_starttls = require_starttls
         self._timeout = timeout
         # None: PROXY protocol is off.
         self._proxy_timeout = proxy_protocol_timeout
         # Times each command may be sent in one session; "*" for the others.
         self._call_limits = command_call_limit
         self._gate = ip_gate
-        self._commands = {
-            "HELO": self._helo,
-            "EHLO": self._ehlo,
-            "MAIL": self._mail,
-            "RCPT": self._rcpt,
-            "DATA": self._data,
-            "RSET": self._rset,
-            "NOOP": self._noop,
-            "QUIT": self._quit,
-            "STARTTLS": self._starttls,
-            "VRFY": self._vrfy,
-            "EXPN": self._expn,
-            "AUTH": self._auth,
-            "HELP": self._help,
-        }
 
         # --- What the handler and the session log read.
         # Correlation id for every line this connection produces. Random
@@ -238,7 +274,7 @@ class SMTPConnection(asyncio.Protocol):
         self.transport: asyncio.Transport | None = None
         # What the session has used of its budgets. Nothing a peer can do
         # (RSET, EHLO, STARTTLS) takes anything back.
-        self.errors = 0  # 4xx/5xx replies sent: counted by _reply
+        self.errors = 0  # 4xx/5xx replies sent (_write_reply), and count_junk
         self.rcpt_misses = 0  # recipients the MDA does not know: the handler's
         self.envelopes = 0  # messages that reached the end of DATA: the handler's
         # Monotonic timestamp of the 354 that opened the current DATA phase,
@@ -289,9 +325,9 @@ class SMTPConnection(asyncio.Protocol):
         self.transport = transport
         peer = transport.get_extra_info("peername")
         if peer:
-            self.session.wire_ip = str(peer[0])
+            self.session.wire_ip = settings.canonical_ip(str(peer[0]))
             if self._proxy_timeout is None:
-                self.session.client_ip, self.session.client_port = str(peer[0]), peer[1]
+                self.session.client_ip, self.session.client_port = self.session.wire_ip, peer[1]
         self._reader = LineReader(transport, settings.PYMTA_MAX_LINE_LENGTH)
         self._arm_session_timer()
         self._arm_idle_timer()
@@ -311,7 +347,7 @@ class SMTPConnection(asyncio.Protocol):
         side closes both.
         """
         self._reader.close()
-        return self.session.ssl is None
+        return self.session.tls is None
 
     def connection_lost(self, error) -> None:
         if self._abort_timer is not None:
@@ -372,8 +408,12 @@ class SMTPConnection(asyncio.Protocol):
         except Exception:
             logger.exception("session_error", extra={"session_id": self.session_id})
 
-    async def _close_with_notice(self, reply: str) -> None:
-        """Say why, then hang up. Without a word where one cannot be said."""
+    def _close_with_notice(self, reply: str) -> None:
+        """Say why, then hang up. Without a word where one cannot be said.
+
+        Not a coroutine: called from timers, and nothing else may run on the
+        session between the decision to close and the close.
+        """
         if self._write_resumed is not None or self._handshaking:
             # The peer is not reading what we send, so the notice would wait
             # behind the rest for ever. Or a TLS handshake has the transport,
@@ -381,7 +421,7 @@ class SMTPConnection(asyncio.Protocol):
             self._abort()
             return
         # Writing to a peer that has just left raises nothing: it is dropped.
-        await self._reply(reply)
+        self._write_reply(reply)
         self._close()
 
     def request_disconnect(self) -> None:
@@ -464,13 +504,14 @@ class SMTPConnection(asyncio.Protocol):
             metrics.CONNECTIONS_TOTAL.labels(result="rejected_invalid_proxy").inc()
             logger.debug("proxy_header_invalid", extra=who)
             return False
-        session.client_ip, session.client_port = header.src_addr, header.src_port
+        session.client_ip = settings.canonical_ip(header.src_addr)
+        session.client_port = header.src_port
         # wire_peer equal to client_ip: the header carries no real origin.
         logger.debug(
             "proxy_header",
             extra={
                 **who,
-                "client_ip": header.src_addr,
+                "client_ip": session.client_ip,
                 "client_port": header.src_port,
                 "version": header.version,
             },
@@ -488,7 +529,7 @@ class SMTPConnection(asyncio.Protocol):
         await self._reply(f"220 {self.hostname} {self.ident}")
         return True
 
-    async def _command_loop(self) -> None:  # noqa: PLR0912
+    async def _command_loop(self) -> None:
         unknown_left = _MAX_UNKNOWN_COMMANDS
         calls_left: dict[str, int] = {}
         while not self._closing:
@@ -498,6 +539,10 @@ class SMTPConnection(asyncio.Protocol):
                 await self._reader.skip_line()
                 await self._refuse_line("500 Command line too long", "line_too_long", None)
                 continue
+            if self._closing:
+                # Received while the session was being closed (a timer, a
+                # reclaim, the shutdown): the peer has its 421, not run.
+                break
             line = raw.rstrip(b"\r\n")
             try:
                 verb, arg = split_command(line, utf8=self.enable_smtputf8)
@@ -512,31 +557,17 @@ class SMTPConnection(asyncio.Protocol):
                 continue
             if (
                 self.require_starttls
-                and not self.session.ssl
+                and not self.session.tls
                 and verb not in _ALLOWED_BEFORE_STARTTLS
             ):
                 await self._refuse_line(
                     "530 Must issue a STARTTLS command first", "tls_required", raw
                 )
                 continue
-            command = self._commands.get(verb)
+            command = self._COMMANDS.get(verb)
             if command is None:
                 unknown_left -= 1
-                if unknown_left < 1:
-                    self.request_disconnect()
-                    await self._refuse_line(
-                        "502 5.5.1 Too many unrecognized commands, goodbye.",
-                        "too_many_unknown_commands",
-                        raw,
-                    )
-                elif verb:
-                    # Without the verb: a reply that repeats the peer's bytes
-                    # is what cross-protocol attacks are built on.
-                    await self._refuse_line(
-                        "500 5.5.2 Error: command not recognized", "unknown_command", raw
-                    )
-                else:
-                    await self._refuse_line("500 Error: bad syntax", "bad_syntax", raw)
+                await self._refuse_unknown(verb, raw, last=unknown_left < 1)
                 continue
             left = calls_left.get(verb, self._call_limits.get(verb, self._call_limits["*"]))
             if left < 1:
@@ -554,6 +585,24 @@ class SMTPConnection(asyncio.Protocol):
             except Exception as error:  # noqa: BLE001
                 # Whatever it is: logged with its traceback, answered 421.
                 await self._internal_error(error)
+
+    async def _refuse_unknown(self, verb: str, raw: bytes, *, last: bool) -> None:
+        """Answer a line that is no command of ours. ``last``: and hang up."""
+        if last:
+            self.request_disconnect()
+            await self._refuse_line(
+                "502 5.5.1 Too many unrecognized commands, goodbye.",
+                "too_many_unknown_commands",
+                raw,
+            )
+        elif verb:
+            # Without the verb: a reply that repeats the peer's bytes is what
+            # cross-protocol attacks are built on.
+            await self._refuse_line(
+                "500 5.5.2 Error: command not recognized", "unknown_command", raw
+            )
+        else:
+            await self._refuse_line("500 Error: bad syntax", "bad_syntax", raw)
 
     def _line_limit(self, verb: str) -> int:
         """Longest command line accepted, line ending excluded.
@@ -587,7 +636,7 @@ class SMTPConnection(asyncio.Protocol):
                 # only delay their message.
                 await self._too_many_errors()
             else:
-                await command(arg)
+                await command(self, arg)
             failed = False
         finally:
             self._verb = None
@@ -633,23 +682,35 @@ class SMTPConnection(asyncio.Protocol):
     ) -> None:
         """Send one reply, of one line or several, and record it.
 
-        Every 4xx/5xx is charged to the error budget, here and nowhere else.
+        Every 4xx/5xx is charged to the error budget, in ``_write_reply``.
 
         ``reason`` names a refusal in the log where its code does not.
         ``refused_line`` is what it answers when no command was running.
         ``handler_reply`` is the handler's, when the reply is one.
         """
-        if lines[-1][0] in "45":
-            self.errors += 1
-        self._log.replied(lines[-1], reason, refused_line, handler_reply)
-        encoding = "utf-8" if self.enable_smtputf8 else "ascii"
-        self.transport.write(b"".join(line.encode(encoding) + b"\r\n" for line in lines))
+        self._write_reply(
+            *lines, reason=reason, refused_line=refused_line, handler_reply=handler_reply
+        )
         if self._write_resumed is not None:
             await self._write_resumed
         if self._disconnect_after_reply:
             self._disconnect_after_reply = False
             self.close_reason = self.close_reason or "server_closed"
             self._close()
+
+    def _write_reply(
+        self,
+        *lines: str,
+        reason: str | None = None,
+        refused_line: bytes | None = None,
+        handler_reply: Reply | None = None,
+    ) -> None:
+        """Record a reply and hand it to the transport, without waiting for it to go."""
+        if lines[-1][0] in "45":
+            self.errors += 1
+        self._log.replied(lines[-1], reason, refused_line, handler_reply)
+        encoding = "utf-8" if self.enable_smtputf8 else "ascii"
+        self.transport.write(b"".join(line.encode(encoding) + b"\r\n" for line in lines))
 
     async def _answer(self, reply: Reply) -> None:
         """Send what the handler answered."""
@@ -694,6 +755,20 @@ class SMTPConnection(asyncio.Protocol):
             budget = min(budget, _STRESS_MAX_ERRORS)
         return self.errors >= budget
 
+    def count_junk(self) -> None:
+        """Charge a command that was answered 2xx and moved no message forward.
+
+        NOOP, VRFY, HELP, a recipient given twice. Only while the server is
+        close to full, where each re-arms the idle timeout and so keeps a
+        slot: as an error, so the fifth is the last. After Postfix's
+        ``smtpd_junk_command_limit``.
+
+        Not RSET, which senders issue between messages: its call limit
+        bounds it.
+        """
+        if self.under_stress():
+            self.errors += 1
+
     # ----------------------------------------------------------------- commands
     def in_transaction(self) -> bool:
         """True from an accepted MAIL to the end of DATA, RSET or a new greeting."""
@@ -719,7 +794,7 @@ class SMTPConnection(asyncio.Protocol):
         lines = [f"250-{self.hostname}", f"250-SIZE {self.data_size_limit}", "250-8BITMIME"]
         if self.enable_smtputf8:
             lines.append("250-SMTPUTF8")
-        if self.tls_context and not self.session.ssl:
+        if self.tls_context and not self.session.tls:
             lines.append("250-STARTTLS")
         lines.append("250 HELP")
         await self._greeted_as(arg, extended=True)
@@ -823,6 +898,7 @@ class SMTPConnection(asyncio.Protocol):
         await self._reply("250 OK")
 
     async def _noop(self, arg: str | None) -> None:
+        self.count_junk()
         await self._reply("250 OK")
 
     async def _quit(self, arg: str | None) -> None:
@@ -834,6 +910,7 @@ class SMTPConnection(asyncio.Protocol):
 
     async def _vrfy(self, arg: str | None) -> None:
         # The same answer for every address, so that none can be probed.
+        self.count_junk()
         await self._reply("252 2.1.5 Cannot VRFY user; try RCPT to verify")
 
     async def _expn(self, arg: str | None) -> None:
@@ -846,11 +923,12 @@ class SMTPConnection(asyncio.Protocol):
 
     async def _help(self, arg: str | None) -> None:
         # No list of commands: it would only describe the server to a scanner.
+        self.count_junk()
         await self._reply("214 2.0.0 See https://www.rfc-editor.org/rfc/rfc5321")
 
     # ----------------------------------------------------------------- STARTTLS
     async def _starttls(self, arg: str | None) -> None:
-        if self.session.ssl:
+        if self.session.tls:
             await self._reply("503 5.5.1 TLS already active")
             return
         if arg:
@@ -865,8 +943,15 @@ class SMTPConnection(asyncio.Protocol):
         self._reader.discard()
         self._handshaking = True
         try:
+            # Stated: asyncio's own are 60 s and 30 s, and the idle timeout
+            # does not run during a command.
             transport = await self._loop.start_tls(
-                self.transport, self, self.tls_context, server_side=True
+                self.transport,
+                self,
+                self.tls_context,
+                server_side=True,
+                ssl_handshake_timeout=min(self._idle_timeout(), _TLS_HANDSHAKE_TIMEOUT),
+                ssl_shutdown_timeout=_CLOSE_GRACE,
             )
         except Exception as error:
             # The peer's handshake failed: no certificate it would accept, no
@@ -888,7 +973,8 @@ class SMTPConnection(asyncio.Protocol):
         # RFC 3207 section 4.2: what was learnt in clear is forgotten.
         self.session.host_name = None
         self.session.extended_smtp = False
-        self.session.ssl = {"cipher": transport.get_extra_info("cipher")}
+        tls = transport.get_extra_info("ssl_object")
+        self.session.tls = TLSInfo(version=tls.version(), cipher=tls.cipher()[0])
         self.envelope = Envelope()
 
     # --------------------------------------------------------------------- DATA
@@ -934,9 +1020,6 @@ class SMTPConnection(asyncio.Protocol):
             if self.close_reason == "data_timeout":
                 # Cut with the end of the message already in the buffer. The
                 # sender is told 421 and will send it again: not delivered now.
-                # One turn of the loop, for the notice to go out and the
-                # connection to close.
-                await asyncio.sleep(0)
                 return
             if refusal is not None:
                 if refusal is _TOO_MUCH_DATA:
@@ -952,8 +1035,8 @@ class SMTPConnection(asyncio.Protocol):
             self.envelope = Envelope()
             await self._answer(reply)
         except _DataOverflow:
-            # Mid-line, with no way to find where the next command starts:
-            # say why and hang up.
+            # The end of the message was not reached, so there is no telling
+            # where the next command starts: say why and hang up.
             metrics.SECURITY_REJECTIONS.labels(reason="oversize_message").inc()
             metrics.MESSAGES_TOTAL.labels(result="rejected_perm").inc()
             self.request_disconnect()
@@ -975,73 +1058,70 @@ class SMTPConnection(asyncio.Protocol):
         returns them, so the content has CRLF line endings only. The line and
         size limits apply to that form.
 
-        Lines are appended to blocks of ``_DATA_BLOCK`` bytes, not kept as one
-        object each, so a body of empty lines costs its size and not thirty
-        times that. What is held is the message once, plus one more copy for
-        the moment of the final join.
-
         A message over the size limit, or with a line over the line limit, is
-        read to its end and then refused, so the session stays usable. Lines
-        too long to keep are skipped, and no more of them is read than the
-        size limit: past it there is no telling where the message ends.
+        read to its end and then refused, so the session stays usable. Up to
+        twice the size limit: a peer that sends more is cut (``_DataOverflow``).
+        Lines too long to keep are skipped, and no more of them is read than
+        the size limit: past it there is no telling where the message ends.
+
+        Lines that are stored unchanged are taken many at a time
+        (``take_plain_lines``). One at a time, a body of empty lines costs
+        thirty times the CPU of one of ordinary lines.
         """
         limit = self.data_size_limit
         longest = settings.PYMTA_MAX_LINE_LENGTH
-        blocks: list[bytearray] = []
-        block = bytearray()
-        self._data_received = 0
+        body = _Body(limit)
         lines = 0
-        refusal = None
         rewritten = False
         # Whether the line before ended in CRLF: the dot that ends the
         # message only counts after one.
         after_crlf = True
+        # Bytes to read line by line before the next take_plain_lines.
+        slow = 0
         while True:
+            self._data_received = body.size
+            if body.size > 2 * limit:
+                raise _DataOverflow
+            if slow <= 0:
+                plain, slow = self._reader.take_plain_lines(longest)
+                if plain:
+                    after_crlf = True
+                    body.add(plain)
+                    continue
             try:
                 # One more than the limit: the CR of a CRLF is in the line.
                 line = await self._reader.readline(b"\n", limit=longest + 1)
             except LineTooLong:
-                refusal = refusal or _LINE_TOO_LONG
-                blocks, block = [], bytearray()
-                room = max(limit - self._data_received, 0)
+                body.refuse(_LINE_TOO_LONG)
+                room = max(limit - body.size, 0)
                 # Up to CRLF, so that what follows is known to follow one.
                 skipped = await self._reader.skip_line(b"\r\n", max_bytes=room)
                 if skipped is None or skipped > room:
                     raise _DataOverflow from None
-                self._data_received += skipped
+                body.size += skipped
                 after_crlf = True
                 continue
             crlf = line.endswith(b"\r\n")
             if after_crlf and line == b".\r\n":
                 break
             after_crlf = crlf
+            slow -= len(line)
             lines += 1
             if lines % _DATA_LINES_PER_TURN == 0:
                 # A buffer of very short lines is read without waiting: let
                 # the other sessions run.
                 await asyncio.sleep(0)
             if len(line) - (2 if crlf else 1) > longest:
-                refusal = refusal or _LINE_TOO_LONG
+                body.refuse(_LINE_TOO_LONG)
             line, changed = stored_line(line)
             rewritten = rewritten or changed
-            self._data_received += len(line)
-            if self._data_received > limit:
-                refusal = refusal or _TOO_MUCH_DATA
-            if refusal is not None:
-                if blocks or block:
-                    blocks, block = [], bytearray()
-                continue
-            block += line
-            if len(block) >= _DATA_BLOCK:
-                blocks.append(block)
-                block = bytearray()
-        if refusal is not None:
-            return b"", refusal
+            body.add(line)
+        if body.refusal is not None:
+            return b"", body.refusal
         if rewritten:
             metrics.BARE_NEWLINE_MESSAGES.inc()
             logger.debug("bare_newline_normalised", extra={"session_id": self.session_id})
-        blocks.append(block)
-        return b"".join(blocks), None
+        return body.content(), None
 
     # ------------------------------------------------------------------- timers
     def _arm_timer(self, seconds: float, expired) -> None:
@@ -1062,10 +1142,12 @@ class SMTPConnection(asyncio.Protocol):
         transaction too, or a peer would keep its slot by sending MAIL and
         nothing else.
         """
-        seconds = self._timeout
+        self._arm_timer(self._idle_timeout(), self._command_expired)
+
+    def _idle_timeout(self) -> float:
         if self.under_stress():
-            seconds = min(seconds, _STRESS_IDLE_TIMEOUT)
-        self._arm_timer(seconds, self._command_expired)
+            return min(self._timeout, _STRESS_IDLE_TIMEOUT)
+        return self._timeout
 
     def under_stress(self) -> bool:
         """True while the server is close to its session cap."""
@@ -1132,9 +1214,7 @@ class SMTPConnection(asyncio.Protocol):
         self.close_reason = reason
         metrics.SECURITY_REJECTIONS.labels(reason=reason).inc()
         metrics.DISCONNECTS_421.labels(reason=reason).inc()
-        # As a task because writing is async and this is a timer callback.
-        # Not retained: the close it performs is what ends the connection.
-        self._loop.create_task(self._close_with_notice(f"421 4.4.2 {notice}, closing connection"))
+        self._close_with_notice(f"421 4.4.2 {notice}, closing connection")
 
     # ----------------------------------------------------------------- shutdown
     def _leaving(self, verb: str) -> bool:
@@ -1166,7 +1246,7 @@ class SMTPConnection(asyncio.Protocol):
         if self._is_idle():
             self.close_reason = "shutdown"
             metrics.DISCONNECTS_421.labels(reason="shutdown").inc()
-            self._loop.create_task(self._close_with_notice(_SHUTDOWN))
+            self._close_with_notice(_SHUTDOWN)
 
     def log_abandoned(self) -> None:
         """Write the summary of a session the shutdown deadline is cutting."""
@@ -1283,7 +1363,7 @@ class SMTPConnection(asyncio.Protocol):
             "session_reclaimed",
             extra={"session_id": self.session_id, "client_ip": self.session.client_ip},
         )
-        self._loop.create_task(self._close_with_notice(_RECLAIMED))
+        self._close_with_notice(_RECLAIMED)
 
     async def _turn_away(self, reply: str) -> bool:
         """Answer a connection that gets no greeting, and close it."""
@@ -1298,3 +1378,19 @@ class SMTPConnection(asyncio.Protocol):
         self._gate.sessions.discard(self)
         metrics.SESSION_DURATION.observe(time.monotonic() - self._slot_taken_at)
         self._gate.release(slot)
+
+    _COMMANDS = {
+        "HELO": _helo,
+        "EHLO": _ehlo,
+        "MAIL": _mail,
+        "RCPT": _rcpt,
+        "DATA": _data,
+        "RSET": _rset,
+        "NOOP": _noop,
+        "QUIT": _quit,
+        "STARTTLS": _starttls,
+        "VRFY": _vrfy,
+        "EXPN": _expn,
+        "AUTH": _auth,
+        "HELP": _help,
+    }

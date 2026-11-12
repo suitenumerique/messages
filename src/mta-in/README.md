@@ -200,7 +200,7 @@ Grouped as `src/pymta/settings.py` groups them.
 |---|---|---|
 | `MDA_API_BASE_URL` | `http://localhost:8000/api/v1.0/` | Base URL of the MDA REST API. A missing trailing slash is added. Warns at startup on `http://` to a non-localhost host |
 | `MDA_API_SECRET` | none — **required** | HS256 shared secret for the MDA bearer token. pymta refuses to start without it, and warns under 32 bytes |
-| `MDA_API_TIMEOUT` | `30` | HTTP timeout (s) for MDA calls |
+| `MDA_API_TIMEOUT` | `30` | Timeout (s) for each phase of an MDA call (connect, each read, each write), and for a recipient check as a whole. A delivery as a whole is bounded by `PYMTA_DATA_TIMEOUT`. A timeout counts toward the breaker on both: it is no verdict on a message, and an MDA that hangs has to be shed |
 | `MDA_API_JWT_TTL` | `MDA_API_TIMEOUT + 90` | Lifetime (s) of the JWT signed for each MDA call. Must cover the request plus clock skew against the MDA |
 | `MDA_BREAKER_THRESHOLD` | `10` (0 = off) | Consecutive MDA failures before short-circuiting to 451. pymta-only; the milter has no breaker and ignores it |
 | `MDA_BREAKER_COOLDOWN` | `30` | Seconds the breaker stays open before probing the MDA again. After it, one call goes through as a probe while the others are still answered 451; its success closes the breaker, its failure starts another cooldown. A timeout waiting for a free connection in pymta's own HTTP pool is not counted as an MDA failure. Must be ≥ 1: a zero would reopen the breaker to the very next call, which neuters it rather than disabling it — use the threshold for that |
@@ -209,9 +209,9 @@ Grouped as `src/pymta/settings.py` groups them.
 
 | Variable | Default | Purpose |
 |---|---|---|
-| `PYMTA_SMTP_BIND_HOST` / `PYMTA_SMTP_BIND_PORT` | `0.0.0.0` / `25` | Where the SMTP listener binds |
-| `PYMTA_SMTP_HOSTNAME` | `mta-in` | What it calls itself: banner and `Received`-header host name |
-| `PYMTA_SMTP_IDENT` | `ESMTP` | Banner text after the hostname; kept version-less on purpose |
+| `PYMTA_SMTP_BIND_HOST` / `PYMTA_SMTP_BIND_PORT` | `0.0.0.0` / `25` | Where the SMTP listener binds. On `::`, an IPv4 client is logged and sent to the MDA as IPv4, not as `::ffff:a.b.c.d` |
+| `PYMTA_SMTP_HOSTNAME` | `mta-in` | What it calls itself: banner and `Received`-header host name. ASCII without spaces, or pymta refuses to start |
+| `PYMTA_SMTP_IDENT` | `ESMTP` | Banner text after the hostname; kept version-less on purpose. Printable ASCII |
 | `PYMTA_ENABLE_SMTPUTF8` | `true` | Advertise SMTPUTF8 in EHLO |
 | `PYMTA_POSTMASTER_ADDRESS` | empty | Mailbox that receives `RCPT TO:<postmaster>`, the bare form RFC 5321 §4.5.1 requires accepting. The recipient is rewritten to this address, then checked with the MDA like any other. Empty: the bare form is refused with `501`. `postmaster@<domain>` is an ordinary address either way |
 | `PYMTA_RECIPIENT_DELIMITER` | `+` | Separates a mailbox name from a tag (`user+tag@domain`). Used only so that an address in `PYMTA_BLOCKED_RECIPIENTS` is also blocked under any tag; which mailbox a tagged address reaches is the MDA's decision. Empty disables it. Keep it equal to the delimiter the MDA resolves |
@@ -225,7 +225,7 @@ Grouped as `src/pymta/settings.py` groups them.
 | `PYMTA_MAX_RECIPIENTS_PER_ENVELOPE` | `100` | RCPT TO cap per envelope |
 | `PYMTA_MAX_ENVELOPES_PER_SESSION` | `100` | Messages per TCP session. The MAIL that would open the next one is answered `421` and the connection closed, before anything is uploaded. A sender that reuses its connections has that message wait for its next queue run, so keep it high enough to be rare |
 | `PYMTA_MAX_ERRORS_PER_SESSION` | `50` | 4xx/5xx replies before forcing 421 + disconnect (Postfix's `smtpd_hard_error_limit`). Counts every such reply, including the ones given to a malformed command before the handler is asked. `DATA` and `QUIT` are still answered past it, so a transaction whose recipients were accepted can finish |
-| `PYMTA_MAX_RCPT_MISSES_PER_SESSION` | `10` | Unknown-mailbox lookups before 421 + disconnect. Under stress (see `PYMTA_COMMAND_TIMEOUT`) it is 2, and the error budget above is 5: the sessions collecting refusals are the first to give their slot back |
+| `PYMTA_MAX_RCPT_MISSES_PER_SESSION` | `10` | Unknown-mailbox lookups before 421 + disconnect. Under stress (see `PYMTA_COMMAND_TIMEOUT`) it is 2, and the error budget above is 5: the sessions collecting refusals are the first to give their slot back. Under stress the budget is also spent by the commands that are answered 2xx and move no message forward (NOOP, VRFY, HELP, a recipient given twice), since each restarts the idle timeout. RSET is not one of them: senders issue it between messages, and it is limited to 20 per session |
 | `PYMTA_MAX_CONCURRENT_DATA` | `40` | Messages held in memory at once. **The bound on memory**, see below. `0` disables far more than the memory bound — see the warning under "The session cap is derived" |
 | `PYMTA_MAX_SHARE_PER_SOURCE` | `0.1` | Most of the session slots, and of the message slots, one source (an IPv4 address or an IPv6 /64) may hold, as a fraction above 0 and up to 1. See "What one source may hold" below |
 | `PYMTA_MAX_LINE_LENGTH` | `65536` | Longest single line accepted, in octets, line ending excluded. The RFC-strict 998 permanently rejects mail Postfix accepts |
@@ -234,7 +234,7 @@ Grouped as `src/pymta/settings.py` groups them.
 
 | Variable | Default | Purpose |
 |---|---|---|
-| `PYMTA_COMMAND_TIMEOUT` | `300` | Idle timeout (s) between complete commands; counted from our last reply. 300 is the minimum RFC 5321 §4.5.3.2.7 asks for. Once four fifths of the session slots are taken, a session waiting for a command gets 10 s instead (Postfix's stress value), inside a transaction too and including the sessions that were already waiting, so the ones doing nothing are the first to free their slot; a command that is running always has the full value |
+| `PYMTA_COMMAND_TIMEOUT` | `300` | Idle timeout (s) between complete commands; counted from our reply to the last command that ran (a line refused before that, such as an unknown verb, does not restart it). 300 is the minimum RFC 5321 §4.5.3.2.7 asks for. Once four fifths of the session slots are taken, a session waiting for a command gets 10 s instead (Postfix's stress value), inside a transaction too and including the sessions that were already waiting, so the ones doing nothing are the first to free their slot; a command that is running always has the full value, except a STARTTLS handshake, which gets 30 s (10 s under stress) |
 | `PYMTA_DATA_TIMEOUT` | `300` | Hard DATA-phase deadline (s): 354 → last body byte → MDA deliver → reply. Nothing in a DATA phase outlives it |
 | `PYMTA_SESSION_TIMEOUT` | `1800` (0 = off) | Wall-clock ceiling (s) on one TCP session, armed at connect and never re-armed. A message being received or delivered when it expires is finished first, so a session can outlast it by up to `PYMTA_DATA_TIMEOUT`. A peer that is not reading our replies is dropped without the 421, and any close it does not take is forced after 5 s, so the slot always comes back |
 | `PYMTA_SHUTDOWN_TIMEOUT` | `25` | Drain deadline on SIGTERM before abandoning in-flight sessions (s). Idle sessions are answered `421` and closed at once; a transaction already open may finish, and its session gets the `421` on the next command that would start new work |
@@ -259,7 +259,7 @@ Grouped as `src/pymta/settings.py` groups them.
 | `PYMTA_METRICS_API_KEY` | empty | Bearer token required to scrape `/metrics`. Empty = unauthenticated, with a `metrics_unauthenticated` warning at startup. Same opt-in semantics as the backend's `PROMETHEUS_API_KEY` |
 | `PYMTA_LOG_LEVEL` | `INFO` | Root log level: `CRITICAL`, `ERROR`, `WARNING`, `INFO` or `DEBUG` |
 | `PYMTA_LOG_VERBOSE_LIBRARIES` | `false` | Let httpx/httpcore/asyncio log too. Debugging only: every MDA request is traced, headers included |
-| `PYMTA_LOG_SESSIONS` | `true` | One `session_closed` line per connection at INFO (see [Tracing a message](#tracing-a-message-that-never-arrived)). `false` drops it to DEBUG, for a connection flood |
+| `PYMTA_LOG_SESSIONS` | `true` | One `session_closed` line per connection at INFO (see [Tracing a message](#tracing-a-message-that-never-arrived)). `false` drops it to DEBUG, and the `reject` lines with it, for a connection flood |
 | `EXEC_CMD` | `false` | Start pymta in the background, then run the container command (used by `make test-mta-in-py`) |
 | `EXEC_CMD_ONLY` | `false` | Skip startup entirely and exec the container command (used by `make lint-mta-in-py`) |
 
@@ -277,7 +277,7 @@ Two more differences between the two commands. `%` is accepted in a MAIL FROM lo
 
 A HELO name with control characters or bytes that are not UTF-8 does not refuse the session: the offending characters are forwarded to the MDA as `?`, and `session_closed` keeps what was sent, escaped, in `helo=`.
 
-Two more limits are fixed in the protocol: a 512-octet command line (§4.5.3.1.4) and 5 lines per session that are not a command (an unknown verb, an empty line, bytes that are not ASCII) before it hangs up. After EHLO the MAIL line gets 548 octets, 26 more for `SIZE=` and 10 for `SMTPUTF8`. The 998-octet line length of §4.5.3.1.6 (1000 with its CRLF) is the one that is configurable: `PYMTA_MAX_LINE_LENGTH` replaces it. A line of a message ends at its LF, bare or not, so a message with LF-only line endings is not one long line. That value is the limit of the receive buffer, so an endless line is refused rather than buffered, and it bounds DATA lines only: commands stay under the separate command-line cap however high it is set. A MAIL or RCPT parameter given twice is a syntax error. STARTTLS is offered and not required unless `PYMTA_REQUIRE_TLS` is set, because refusing a sender that does not offer it loses mail rather than protecting it on a public MX. AUTH is answered `502` outright.
+Two more limits are fixed in the protocol: a command line of 512 octets before its CRLF (§4.5.3.1.4 counts the CRLF in) and 5 lines per session that are not a command (an unknown verb, an empty line, bytes that are not ASCII) before it hangs up. After EHLO the MAIL line gets 548 octets, 26 more for `SIZE=` and 10 for `SMTPUTF8`. The 998-octet line length of §4.5.3.1.6 (1000 with its CRLF) is the one that is configurable: `PYMTA_MAX_LINE_LENGTH` replaces it. A line of a message ends at its LF, bare or not, so a message with LF-only line endings is not one long line. That value is the limit of the receive buffer, so an endless line is refused rather than buffered, and it bounds DATA lines only: commands stay under the separate command-line cap however high it is set. A message over the size limit is read to its end before the `552`, so the session stays usable, up to twice the limit: a peer that sends more gets the `552` and is disconnected. A MAIL or RCPT parameter given twice is a syntax error. STARTTLS is offered and not required unless `PYMTA_REQUIRE_TLS` is set, because refusing a sender that does not offer it loses mail rather than protecting it on a public MX. AUTH is answered `502` outright.
 
 ### Crisis toggles
 
@@ -289,7 +289,7 @@ Five settings exist to be changed while something is going wrong. Changing one i
 | `PYMTA_BLOCKED_NETWORKS` | `554` at connect for these client IPs/CIDRs |
 | `PYMTA_BLOCKED_SENDER_DOMAINS` | `554` at MAIL FROM, matched case-insensitively on the domain |
 | `PYMTA_BLOCKED_RECIPIENTS` | `550` at RCPT TO, full addresses, tagged forms included (`victim@` also blocks `victim+x@`), case-insensitive |
-| `PYMTA_LOG_SESSIONS` | `false` moves the per-connection `session_closed` line from INFO to DEBUG, when a flood of connections is writing the log bill |
+| `PYMTA_LOG_SESSIONS` | `false` moves the per-connection `session_closed` line and the `reject` lines (up to 50 per connection) from INFO to DEBUG, when a flood of connections is writing the log bill. The `message_*` lines stay |
 
 No setting is re-read while the process runs. A running process cannot be given new environment variables, so a reload from the environment could only find the values it started with.
 
@@ -338,7 +338,7 @@ Each limit is set against what Postfix does for the same thing, since the two ru
 
 Two need explaining. Per-IP concurrency is a tightening, not a loosening: the shipping Postfix config turns per-client limits off entirely, so any per-source ceiling at all is stricter than production is today. In pymta a source's ceiling is its share of `PYMTA_MAX_SESSIONS_TOTAL`: `PYMTA_MAX_SHARE_PER_SOURCE` of it (0.1, so 12 of 120), and less once more than ten sources are present. Read the queue-flush note in the checklist below before lowering the total. Global concurrency is 120 sessions against Postfix's 100 processes, which is reasonable for one async process, but it sets the memory ceiling:
 
-> **`PYMTA_MAX_CONCURRENT_DATA` (40) is the bound on memory.** Each message is held in RAM with no spool file, so messages in flight times the size cap is the heap. The session caps do not bound it: a connection costs a few kB until it says DATA.
+> **`PYMTA_MAX_CONCURRENT_DATA` (40) is the bound on memory.** Each message is held in RAM with no spool file, so messages in flight times the size cap is the heap. The session caps do not bound it: until it says DATA a connection costs a few kB, and at most about 400 kB (two line lengths and one read) if it keeps sending without waiting for replies.
 >
 > Size it against the memory you gave the container. A message peaks at about **2.2x** its size — the received blocks are joined into one buffer at the end of DATA, which needs a second copy for that moment, and freed arenas are not returned promptly. So:
 >
@@ -408,11 +408,13 @@ Every configurable limit publishes its value as `pymta_config_limit{name="<setti
 
 `pymta_sessions_abandoned_total` counts sessions cut by the `PYMTA_SHUTDOWN_TIMEOUT` drain deadline — non-zero on every rollout means the deadline is too short for your traffic.
 
+`pymta_log_records_dropped_total` counts log lines that were not written. The log goes to stdout from a thread, so a collector that reads slowly cannot stall the SMTP sessions; up to 10000 lines wait for it, and the rest are dropped.
+
 ### Tracing a message that never arrived
 
 **The rule this log is held to.** A message that does not reach the MDA must be explainable from the log at the default level:
 
-1. Every 4xx or 5xx sent in answer to a command writes one INFO line (`reject`, `message_deferred`, `message_rejected` or `mda_check_no_verdict`) with the `session_id`, the `client_ip`, the sender and the recipients known at that point, and the reason.
+1. Every 4xx or 5xx sent in answer to a command writes one INFO line (`reject`, `message_deferred`, `message_rejected` or `mda_check_no_verdict`) with the `session_id`, the `client_ip`, the sender and the recipients known at that point, and the reason. With `PYMTA_LOG_SESSIONS=false`, `reject` is at DEBUG.
 2. Every admitted connection that sent at least one line writes one `session_closed` line, however it ended.
 3. Every exception of ours writes one ERROR line with its traceback (`handler_error` inside a command, answered `421`; `session_error` outside one; `unhandled_error` anywhere else in the event loop).
 

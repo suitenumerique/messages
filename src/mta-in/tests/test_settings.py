@@ -82,15 +82,24 @@ def test_int_allows_zero_where_it_means_disabled(monkeypatch):
     assert _env_int("PYMTA_TEST_INT", 7, minimum=0) == 0
 
 
-@pytest.mark.parametrize("raw", ["\r\n220 you are welcome here", "a\tb"])
-def test_token_rejects_control_characters(monkeypatch, raw):
+@pytest.mark.parametrize("raw", ["\r\n220 you are welcome here", "a\tb", "mx.exämple"])
+def test_token_rejects_what_a_greeting_cannot_carry(monkeypatch, raw):
     # These land in the "220 {hostname} {ident}" banner; a CR/LF would append
     # attacker-chosen lines to our own greeting, and a TAB folds if the value
     # reaches a Received header. (NUL is also rejected but cannot be tested
-    # through the environment: putenv refuses to store one.)
+    # through the environment: putenv refuses to store one.) A non-ASCII one
+    # cannot be written at all with SMTPUTF8 off.
     monkeypatch.setenv("PYMTA_TEST_TOKEN", raw)
-    with pytest.raises(ValueError, match="control characters"):
-        _env_token("PYMTA_TEST_TOKEN", "mta-in")
+    with pytest.raises(ValueError, match="printable ASCII"):
+        _env_token("PYMTA_TEST_TOKEN", "mta-in", spaces=True)
+
+
+def test_token_takes_spaces_only_where_asked(monkeypatch):
+    monkeypatch.setenv("PYMTA_TEST_TOKEN", "ESMTP ready")
+    assert _env_token("PYMTA_TEST_TOKEN", "x", spaces=True) == "ESMTP ready"
+    # A hostname with a space would give the greeting a second word.
+    with pytest.raises(ValueError, match="spaces"):
+        _env_token("PYMTA_TEST_TOKEN", "x")
 
 
 def test_address_setting_is_read_and_normalised(monkeypatch):
@@ -113,7 +122,7 @@ def test_token_checks_the_default_too(monkeypatch):
     # PYMTA_SMTP_HOSTNAME defaults to $MYHOSTNAME, which on k8s can come from the
     # downward API, so the fallback value needs the same check as the direct one.
     monkeypatch.delenv("PYMTA_TEST_TOKEN", raising=False)
-    with pytest.raises(ValueError, match="control characters"):
+    with pytest.raises(ValueError, match="printable ASCII"):
         _env_token("PYMTA_TEST_TOKEN", "bad\r\nvalue")
 
 

@@ -21,10 +21,5 @@ def request_shutdown() -> None:
     _shutting_down = True
 
 
-def reset_for_tests() -> None:
-    global _shutting_down  # noqa: PLW0603
-    _shutting_down = False
-
-
 def is_shutting_down() -> bool:
     return _shutting_down

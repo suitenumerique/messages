@@ -1424,6 +1424,23 @@ class TestDeliveryUnavailable:
                 is False
             )
 
+    def test_an_outage_during_the_duplicate_lookup(self, recipient):
+        """Raised as an outage when asked to, unchanged otherwise."""
+        error = OperationalError("down")
+        with patch("core.models.Message.objects.filter", side_effect=error):
+            with pytest.raises(DeliveryUnavailable) as raised:
+                deliver_inbound_message(
+                    recipient, self.PARSED, self.RAW, raise_unavailable=True
+                )
+            assert raised.value.__cause__ is error
+            with pytest.raises(OperationalError):
+                deliver_inbound_message(recipient, self.PARSED, self.RAW)
+        with patch("core.models.Message.objects.filter", side_effect=DataError("x")):
+            with pytest.raises(DataError):
+                deliver_inbound_message(
+                    recipient, self.PARSED, self.RAW, raise_unavailable=True
+                )
+
     @pytest.mark.parametrize("error", [BrokerError("no broker"), ValueError("bug")])
     def test_a_failed_dispatch_is_still_a_delivery(self, recipient, error):
         """The row is saved, and the sweep dispatches what the view could not."""

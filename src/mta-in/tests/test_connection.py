@@ -521,7 +521,7 @@ async def test_an_oversize_body_refused_by_the_protocol_is_recorded(caplog):
     try:
         with caplog.at_level(logging.INFO, logger="pymta.smtp_protocol"):
             replies = await _dialogue(
-                port, [*_ENVELOPE, b"DATA\r\n", b"Subject: x\r\n\r\n" + b"y" * 200 + b"\r\n.\r\n"]
+                port, [*_ENVELOPE, b"DATA\r\n", b"Subject: x\r\n\r\n" + b"y" * 100 + b"\r\n.\r\n"]
             )
             (record,) = await _session_summaries(caplog)
     finally:
@@ -637,6 +637,26 @@ async def test_log_sessions_off_drops_the_summary_to_debug(monkeypatch, caplog):
         await server.wait_closed()
 
     assert record.levelno == logging.DEBUG
+
+
+@pytest.mark.parametrize(("log_sessions", "level"), [(True, logging.INFO), (False, logging.DEBUG)])
+@pytest.mark.asyncio
+async def test_log_sessions_off_drops_the_refusals_to_debug(
+    monkeypatch, caplog, log_sessions, level
+):
+    """A peer can have fifty of them written per connection."""
+    monkeypatch.setattr(settings, "PYMTA_LOG_SESSIONS", log_sessions)
+    loop = asyncio.get_running_loop()
+    server, port, _ = await _listener(loop)
+    try:
+        with caplog.at_level(logging.DEBUG, logger="pymta.smtp_protocol"):
+            await _dialogue(port, [b"EHLO mx.sender.example\r\n", b"RCPT TO:<a@b.example>\r\n"])
+            await _session_summaries(caplog)
+    finally:
+        server.close()
+        await server.wait_closed()
+
+    assert [r.levelno for r in caplog.records if r.getMessage() == "reject"] == [level]
 
 
 @pytest.mark.asyncio
@@ -1336,7 +1356,7 @@ def shutting_down(monkeypatch):
     """
     monkeypatch.setattr(settings, "PYMTA_COMMAND_TIMEOUT", 2)
     yield runtime.request_shutdown
-    runtime.reset_for_tests()
+    runtime._shutting_down = False
 
 
 async def _read_reply(reader) -> bytes:

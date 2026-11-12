@@ -230,7 +230,7 @@ async def test_a_session_busy_at_shutdown_is_told_to_go_when_it_is_done(caplog):
         await released.wait()
         return MDAResult(ok=True, temp_fail=False, payload={"status": "ok"}, status_code=200)
 
-    runtime.reset_for_tests()
+    runtime._shutting_down = False
     try:
         gate = IPGate(max_total=4)
         async with listening(ScriptedMDA(delivers=[slow]), gate=gate) as port:
@@ -254,12 +254,12 @@ async def test_a_session_busy_at_shutdown_is_told_to_go_when_it_is_done(caplog):
                 (summary,) = await records(caplog, "session_closed")
         assert summary.closed_by == "shutdown"
     finally:
-        runtime.reset_for_tests()
+        runtime._shutting_down = False
 
 
 @pytest.mark.asyncio
 async def test_a_command_refused_for_the_shutdown_has_its_reject_line(caplog):
-    runtime.reset_for_tests()
+    runtime._shutting_down = False
     try:
         async with listening(gate=IPGate(max_total=4)) as port:
             with capture_all(caplog):
@@ -276,7 +276,7 @@ async def test_a_command_refused_for_the_shutdown_has_its_reject_line(caplog):
         assert reject.sender == "alice@sender.example"
         assert summary.closed_by == "shutdown"
     finally:
-        runtime.reset_for_tests()
+        runtime._shutting_down = False
 
 
 # ---------------------------------------------------------------------------

@@ -14,6 +14,7 @@ import pytest
 from pymta import runtime, settings, smtp_protocol
 from pymta.limits import IPGate
 from pymta.mda_async import MDAResult
+from pymta.wire import LineReader, stored_line
 
 from tests.harness import (
     LOOPBACK_PROXIES,
@@ -39,9 +40,9 @@ async def _transaction(client) -> None:
 
 @pytest.fixture(autouse=True)
 def _clean_runtime():
-    runtime.reset_for_tests()
+    runtime._shutting_down = False
     yield
-    runtime.reset_for_tests()
+    runtime._shutting_down = False
 
 
 # ---------------------------------------------------------------------------
@@ -145,6 +146,71 @@ async def test_the_size_limit_is_on_what_is_stored():
         await _transaction(client)
         assert (await client.data(body)).startswith(b"250")
     assert len(mda.delivered[0]["message"]) == 1000
+
+
+@pytest.mark.asyncio
+async def test_a_refused_message_is_read_to_twice_the_limit_and_no_further():
+    """Past that the peer is cut: reading on costs CPU for nothing."""
+    before = counter("pymta_security_rejections_total", reason="oversize_message")
+    async with listening(data_size_limit=1000) as port, connected(port) as client:
+        await _transaction(client)
+        assert (await client.cmd(b"DATA")).startswith(b"354")
+        # No final dot: the reply comes on the size alone.
+        await client.send((b"x" * 98 + b"\r\n") * 21)
+        assert await client.reply() == OVERSIZE
+        assert await client.closed()
+    assert counter("pymta_security_rejections_total", reason="oversize_message") == before + 1
+
+
+# ---------------------------------------------------------------------------
+# Lines are read many at a time where that changes nothing.
+# ---------------------------------------------------------------------------
+
+
+@pytest.mark.asyncio
+async def test_a_message_reads_the_same_whatever_way_its_lines_are_taken(monkeypatch):
+    """Plain lines in bulk, the others one by one, in every order."""
+    monkeypatch.setattr(settings, "PYMTA_MAX_LINE_LENGTH", 1000)
+    kinds = [
+        b"plain line\r\n",
+        b"\r\n",
+        b"..stuffed\r\n",
+        b"bare lf\n",
+        b"bare\rcr\r\n",
+        b".\n",
+        b"x" * 990 + b"\r\n",
+    ]
+    lines = [kinds[(i * i + i // 7) % len(kinds)] for i in range(4000)]
+    mda = ScriptedMDA()
+    async with listening(mda) as port, connected(port) as client:
+        await _transaction(client)
+        reply = await client.data(b"".join(lines) + b"\r\n")
+    assert reply.startswith(b"250"), reply
+    expected = b"".join(stored_line(line)[0] for line in lines) + b"\r\n"
+    assert mda.delivered[0]["message"] == expected
+
+
+@pytest.mark.asyncio
+async def test_a_body_of_empty_lines_is_not_read_a_line_at_a_time(monkeypatch):
+    """One at a time, they cost thirty times the CPU of ordinary lines."""
+    calls = 0
+    readline = LineReader.readline
+
+    async def counting(self, *args, **kwargs):
+        nonlocal calls
+        calls += 1
+        return await readline(self, *args, **kwargs)
+
+    body = b"\r\n" * 200_000
+    mda = ScriptedMDA()
+    async with listening(mda) as port, connected(port) as client:
+        await _transaction(client)
+        monkeypatch.setattr(LineReader, "readline", counting)
+        reply = await client.data(body)
+    assert reply.startswith(b"250"), reply
+    assert mda.delivered[0]["message"] == body
+    # The last line, and one each time the buffer ran dry.
+    assert calls < 200, calls
 
 
 # ---------------------------------------------------------------------------

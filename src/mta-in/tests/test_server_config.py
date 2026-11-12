@@ -170,7 +170,7 @@ def test_a_successful_tls_reload_is_logged_with_the_new_expiry(monkeypatch, capl
 
 
 def test_a_second_sigterm_does_not_cut_the_drain_short(caplog):
-    runtime.reset_for_tests()
+    runtime._shutting_down = False
     stop = asyncio.Event()
     gate = IPGate()
     try:
@@ -183,7 +183,7 @@ def test_a_second_sigterm_does_not_cut_the_drain_short(caplog):
         assert not stop.is_set()
         assert _events(caplog) == ["shutdown_started", "shutdown_already_in_progress"]
     finally:
-        runtime.reset_for_tests()
+        runtime._shutting_down = False
 
 
 def test_a_startup_failure_is_logged_in_our_format_before_the_process_dies(monkeypatch, caplog):

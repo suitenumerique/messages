@@ -19,7 +19,7 @@ from pymta import metrics, runtime, settings
 from pymta import server as server_module
 from pymta.controller import build_smtp_kwargs
 from pymta.limits import IPGate
-from pymta.settings import _env_networks, parse_client_ip
+from pymta.settings import _env_networks, canonical_ip, parse_client_ip
 from pymta.smtp_protocol import SMTPConnection
 
 from tests.harness import AcceptAll, ScriptedMDA, connected, listening, protocol_factory
@@ -180,9 +180,9 @@ def test_sighup_is_wired_to_the_certificate_reload_only():
 
 @pytest.fixture(autouse=True)
 def _clean_runtime():
-    runtime.reset_for_tests()
+    runtime._shutting_down = False
     yield
-    runtime.reset_for_tests()
+    runtime._shutting_down = False
 
 
 def test_sigterm_is_the_only_way_into_the_drain():
@@ -280,6 +280,20 @@ def test_client_ip_matching_handles_the_mapped_form(raw, cidr, expected):
 @pytest.mark.parametrize("raw", [None, "", "not-an-ip", "unknown"])
 def test_unparseable_client_ip_is_not_a_match(raw):
     assert parse_client_ip(raw) is None
+    assert canonical_ip(raw) == raw
+
+
+@pytest.mark.parametrize(
+    ("raw", "kept"),
+    [
+        ("::ffff:198.51.100.7", "198.51.100.7"),
+        ("198.51.100.7", "198.51.100.7"),
+        ("2001:db8::1", "2001:db8::1"),
+    ],
+)
+def test_a_client_address_is_kept_without_its_ipv4_mapping(raw, kept):
+    """What a dual-stack listener reports for an IPv4 peer."""
+    assert canonical_ip(raw) == kept
 
 
 @pytest.mark.asyncio

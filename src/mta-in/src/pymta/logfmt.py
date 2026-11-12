@@ -60,7 +60,7 @@ Levels follow who can cause the line:
     per message), ``reject`` (capped by the per-session error budget) and
     ``session_closed`` (one per admitted connection that issued a command).
     Nothing caps the connection rate, so ``PYMTA_LOG_SESSIONS`` can drop the
-    last one to ``debug`` under a flood. Without them "the mail from X never
+    last two to ``debug`` under a flood. Without them "the mail from X never
     arrived" has no answer in the log.
 ``debug``
     Anything an unauthenticated peer can cause at will: bad addresses,
@@ -75,8 +75,17 @@ shows the individual events.
 from __future__ import annotations
 
 import datetime as _datetime
+import functools
 import logging
+import logging.handlers
+import queue
 import sys
+from collections.abc import Callable
+
+from . import metrics
+
+# Lines waiting for the writer thread: see :func:`configure`.
+_QUEUE_SIZE = 10000
 
 # Attributes LogRecord always carries. Anything else on the record was put
 # there by a caller through ``extra=`` and is emitted as a field.
@@ -198,8 +207,9 @@ class LogfmtFormatter(logging.Formatter):
 # Only our own records reach the handler: httpcore and httpx trace every MDA
 # request at DEBUG, headers included, about 60 lines per message. An
 # allowlist, so a dependency added later is silent too. Useful third-party
-# records go as well (asyncio's "task exception was never retrieved");
-# PYMTA_LOG_VERBOSE_LIBRARIES brings them back.
+# records go as well; PYMTA_LOG_VERBOSE_LIBRARIES brings them back. What
+# asyncio reports about our own tasks and callbacks is logged by
+# ``server._log_unhandled``.
 _OURS = "pymta"
 
 
@@ -210,15 +220,54 @@ class OwnRecordsOnly(logging.Filter):
         return record.name == _OURS or record.name.startswith(_OURS + ".")
 
 
-def configure(level: str, stream=None, verbose_libraries: bool = False) -> None:
+class _QueueHandler(logging.handlers.QueueHandler):
+    """Formats a record where it is logged and leaves the write to a thread.
+
+    ``QueueHandler.prepare`` formats with this handler's formatter, so what
+    is queued is the finished line.
+    """
+
+    def enqueue(self, record: logging.LogRecord) -> None:
+        try:
+            self.queue.put_nowait(record)
+        except queue.Full:
+            metrics.LOG_RECORDS_DROPPED.inc()
+
+
+def _stop_writer(writer: logging.handlers.QueueListener) -> None:
+    """Write what is queued, then end the thread."""
+    try:
+        writer.stop()
+    except queue.Full:
+        # No room for the stop marker: the stream is not being read, and
+        # waiting for it would hold the exit. The thread is a daemon.
+        pass
+
+
+def configure(
+    level: str, stream=None, verbose_libraries: bool = False, *, in_thread: bool = False
+) -> Callable[[], None] | None:
     """Make the logfmt formatter the only handler on the root logger.
 
     Existing handlers are removed: two would print every line twice.
 
     ``verbose_libraries`` lets third-party records through: see
     :class:`OwnRecordsOnly`.
+
+    With ``in_thread`` the lines are written by a thread, so the event loop
+    never waits on a stream that is read slowly: every session would wait
+    with it. Up to ``_QUEUE_SIZE`` lines are held for it and the rest are
+    dropped and counted. Returns what to call before exiting, to have the
+    queued lines written.
     """
-    handler = logging.StreamHandler(stream or sys.stdout)
+    handler: logging.Handler = logging.StreamHandler(stream or sys.stdout)
+    stop = None
+    if in_thread:
+        records: queue.Queue = queue.Queue(_QUEUE_SIZE)
+        writer = logging.handlers.QueueListener(records, handler)
+        writer.start()
+        stop = functools.partial(_stop_writer, writer)
+        handler = _QueueHandler(records)
     handler.setFormatter(LogfmtFormatter())
     root = logging.getLogger()
     for existing in root.handlers[:]:
@@ -230,3 +279,4 @@ def configure(level: str, stream=None, verbose_libraries: bool = False) -> None:
         # propagate up from a child logger, which is how the dependencies'
         # records arrive.
         handler.addFilter(OwnRecordsOnly())
+    return stop

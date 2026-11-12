@@ -209,9 +209,14 @@ def deliver_inbound_message(  # pylint: disable=too-many-arguments
     mime_id = first_msgid(parsed_email.get("messageId"))
     if mime_id:
         # Check if a message with this MIME ID already exists in this mailbox
-        existing_message = models.Message.objects.filter(
-            mime_id=mime_id, thread__accesses__mailbox=mailbox
-        ).first()
+        try:
+            existing_message = models.Message.objects.filter(
+                mime_id=mime_id, thread__accesses__mailbox=mailbox
+            ).first()
+        except _OUTAGE_ERRORS as e:
+            if raise_unavailable:
+                raise DeliveryUnavailable from e
+            raise
 
         if existing_message:
             if is_import and imap_labels:

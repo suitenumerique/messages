@@ -19,7 +19,13 @@ import jwt
 import pytest
 
 from pymta import settings
-from pymta.mda_async import _MIN_SECRET_LENGTH, ENVELOPED_CONTENT_TYPE, MDAClient
+from pymta.mda_async import (
+    _BODY_CHUNK,
+    _MIN_SECRET_LENGTH,
+    ENVELOPED_CONTENT_TYPE,
+    MDAClient,
+    _stream,
+)
 
 
 class _FakeClock:
@@ -600,6 +606,8 @@ async def test_the_pool_has_a_connection_for_every_session(monkeypatch, sessions
     try:
         http = await client.start()
         assert http._transport._pool._max_connections == (connections or sys.maxsize)
+        # And keeps as many open, or a busy server reconnects for each call.
+        assert http._transport._pool._max_keepalive_connections == (connections or sys.maxsize)
     finally:
         await client.close()
 
@@ -753,3 +761,80 @@ async def test_our_own_pool_running_out_is_not_an_mda_failure():
     assert all(result.temp_fail and not result.ok for result in results)
     assert client.breaker_is_open() is False
     assert client._consecutive_failures == 0
+
+
+@pytest.mark.asyncio
+async def test_a_call_in_flight_since_before_the_outage_is_not_taken_for_the_probe():
+    """Its failure says nothing new: the probe keeps its turn and its cooldown."""
+    client, clock = _new_client(threshold=2, cooldown=30)
+    old = client._client = _GatedClient()
+    straggler = asyncio.ensure_future(client.check_recipient("a@example.com"))
+    await asyncio.sleep(0.01)
+    client._client = _StubAsyncClient([httpx.TimeoutException("down")] * 2)
+    for _ in range(2):
+        await client.check_recipient("a@example.com")
+    clock.advance(31)
+    gated = client._client = _GatedClient()
+    probe = asyncio.ensure_future(client.check_recipient("a@example.com"))
+    await asyncio.sleep(0.01)
+    assert gated.calls == 1
+
+    old.outcome = httpx.TimeoutException("down")
+    old.release.set()
+    assert (await straggler).temp_fail
+    # The probe is still the one call let through.
+    assert (await client.check_recipient("a@example.com")).temp_fail
+    assert gated.calls == 1
+
+    # It ends without a verdict: the next call probes at once, where a
+    # cooldown restarted by the straggler would shed it.
+    probe.cancel()
+    with pytest.raises(asyncio.CancelledError):
+        await probe
+    gated.outcome = _resp(200, b'{"a@example.com": true}')
+    gated.release.set()
+    assert (await client.check_recipient("a@example.com")).ok is True
+    assert gated.calls == 2
+
+
+class _SlowClient:
+    """An HTTP client that answers 200 after ``delay`` seconds."""
+
+    def __init__(self, delay: float):
+        self.delay = delay
+
+    async def post(self, url, content=None, headers=None):
+        await asyncio.sleep(self.delay)
+        return _resp(200, b'{"status": "ok"}')
+
+
+@pytest.mark.asyncio
+async def test_a_check_is_bounded_as_a_whole_and_a_delivery_is_not(caplog):
+    """httpx times each read. An MDA that drips its answer meets none of them."""
+    client = MDAClient(base_url="https://mda.example.invalid/api/", secret="x" * 32, timeout=0.05)
+    client._client = _SlowClient(delay=0.3)
+    with caplog.at_level(logging.WARNING, logger="pymta"):
+        result = await client.check_recipient("a@example.com")
+    assert (result.ok, result.temp_fail, result.status_code) == (False, True, 0)
+    assert [r.getMessage() for r in caplog.records] == ["mda_timeout"]
+    # Counted by the breaker like any other timeout.
+    assert client._consecutive_failures == 1
+
+    # The DATA deadline is what bounds a delivery.
+    delivered = await client.deliver(
+        message=b"x",
+        sender="a@example.com",
+        original_recipients=["b@example.com"],
+        client_address=None,
+        client_port=None,
+        client_helo=None,
+    )
+    assert delivered.ok is True
+
+
+@pytest.mark.asyncio
+async def test_a_message_is_handed_to_httpx_in_pieces():
+    message = bytes(range(256)) * 1000
+    parts = [part async for part in _stream((b"head\n", message))]
+    assert b"".join(parts) == b"head\n" + message
+    assert [len(part) for part in parts] == [5, _BODY_CHUNK, _BODY_CHUNK, _BODY_CHUNK, 59392]

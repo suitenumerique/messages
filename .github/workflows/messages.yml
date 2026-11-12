@@ -216,7 +216,7 @@ jobs:
             base="$BEFORE"
             git fetch --quiet --depth=1 origin "$base" || base=
           fi
-          paths='^(src/mta-in/|deploy/python-uv/|deploy/env/mta-in|\.github/workflows/messages\.yml$)'
+          paths='^(src/mta-in/|deploy/python-uv/|deploy/env/mta-in|\.github/workflows/messages\.yml$|Makefile$)'
           # Without a base to compare with, run.
           if [ -z "$base" ] || ! files=$(git diff --name-only "$base" HEAD); then
             run=true

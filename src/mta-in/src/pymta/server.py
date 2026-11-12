@@ -36,10 +36,12 @@ _DRAIN_POLL_SECONDS = 0.25
 _MEMORY_FACTOR = 2.2
 
 
-def _configure_logging() -> None:
-    logfmt.configure(
+def _configure_logging():
+    """Returns what writes the lines still queued: see ``logfmt.configure``."""
+    return logfmt.configure(
         settings.PYMTA_LOG_LEVEL,
         verbose_libraries=settings.PYMTA_LOG_VERBOSE_LIBRARIES,
+        in_thread=True,
     )
 
 
@@ -242,6 +244,16 @@ async def _serve() -> None:
         metrics.UNDER_STRESS.set_function(lambda: 1.0 if ip_gate.under_stress() else 0.0)
 
         listener = Listener(handler, ip_gate=ip_gate)
+
+        # Before the port opens: a signal's default action is to kill, and
+        # asyncio would report an error on a logger we filter out.
+        stop = asyncio.Event()
+        loop = asyncio.get_running_loop()
+        loop.set_exception_handler(_log_unhandled)
+        loop.add_signal_handler(signal.SIGHUP, _reload_tls, listener)
+        for sig in (signal.SIGINT, signal.SIGTERM):
+            loop.add_signal_handler(sig, _on_terminate, sig, stop, ip_gate)
+
         server = await listener.start(settings.PYMTA_SMTP_BIND_HOST, settings.PYMTA_SMTP_BIND_PORT)
 
         logger.info(
@@ -257,10 +269,10 @@ async def _serve() -> None:
         )
         _log_certificates()
 
-        # Nothing caps memory: each DATA phase is buffered in RAM, so
-        # concurrent DATA phases times the message size is the heap (a session
-        # that has not reached DATA holds no message). ``_MEMORY_FACTOR``
-        # times the bytes in flight is what it takes.
+        # Each DATA phase is buffered in RAM, so concurrent DATA phases times
+        # the message size is the heap (a session that has not reached DATA
+        # holds no message). ``_MEMORY_FACTOR`` times the bytes in flight is
+        # what it takes.
         #
         # Logged, not enforced: the fix is to size the two settings and the
         # container together, which takes seeing the number. Without a DATA
@@ -283,13 +295,6 @@ async def _serve() -> None:
             )
         logger.info("memory_ceiling", extra=ceiling)
 
-        stop = asyncio.Event()
-        loop = asyncio.get_running_loop()
-        loop.set_exception_handler(_log_unhandled)
-        loop.add_signal_handler(signal.SIGHUP, _reload_tls, listener)
-        for sig in (signal.SIGINT, signal.SIGTERM):
-            loop.add_signal_handler(sig, _on_terminate, sig, stop, ip_gate)
-
         try:
             await stop.wait()
         finally:
@@ -299,14 +304,14 @@ async def _serve() -> None:
 
 
 def main() -> None:
-    _configure_logging()
-    metrics.start_metrics_server(
-        settings.PYMTA_METRICS_BIND_HOST,
-        settings.PYMTA_METRICS_BIND_PORT,
-        settings.PYMTA_METRICS_API_KEY,
-    )
-    _export_config_limits()
+    flush_log = _configure_logging()
     try:
+        metrics.start_metrics_server(
+            settings.PYMTA_METRICS_BIND_HOST,
+            settings.PYMTA_METRICS_BIND_PORT,
+            settings.PYMTA_METRICS_API_KEY,
+        )
+        _export_config_limits()
         asyncio.run(_serve())
     except KeyboardInterrupt:
         pass
@@ -314,6 +319,9 @@ def main() -> None:
         # In the log's own format before the process dies with the traceback.
         logger.error("fatal_error", exc_info=True)
         raise
+    finally:
+        if flush_log:
+            flush_log()
 
 
 if __name__ == "__main__":

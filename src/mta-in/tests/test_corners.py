@@ -19,7 +19,7 @@ import struct
 import pytest
 from prometheus_client import REGISTRY
 
-from pymta import controller, logfmt, metrics, runtime, server, settings
+from pymta import controller, logfmt, metrics, runtime, server, settings, smtp_protocol
 from pymta.address import AddressError, validate_envelope_address
 from pymta.limits import IPGate
 from pymta.mda_async import MDAClient
@@ -48,9 +48,9 @@ RCPT = b"RCPT TO:<bob@example.com>"
 
 @pytest.fixture
 def clean_runtime():
-    runtime.reset_for_tests()
+    runtime._shutting_down = False
     yield
-    runtime.reset_for_tests()
+    runtime._shutting_down = False
 
 
 # ---------------------------------------------------------------------------
@@ -494,7 +494,7 @@ def test_logging_is_configured_from_the_settings(monkeypatch):
         logfmt, "configure", lambda level, **options: seen.append((level, options))
     )
     server._configure_logging()
-    assert seen == [("WARNING", {"verbose_libraries": True})]
+    assert seen == [("WARNING", {"verbose_libraries": True, "in_thread": True})]
 
 
 def test_the_limits_in_force_are_exported_as_gauges(monkeypatch):
@@ -540,3 +540,120 @@ async def test_a_reset_by_the_peer_is_summarised_as_one(caplog):
             (summary,) = await records(caplog, "session_closed")
     assert summary.closed_by == "peer_reset"
     assert summary.error_type == "ConnectionResetError"
+
+
+# ---------------------------------------------------------------------------
+# Ways to keep a slot, or the loop, that a session does not get.
+# ---------------------------------------------------------------------------
+
+
+def _full_gate() -> IPGate:
+    """One slot, so one session puts the server under stress."""
+    return IPGate(max_total=1, max_share=1.0)
+
+
+@pytest.mark.asyncio
+async def test_on_a_full_server_commands_that_move_no_message_use_up_the_error_budget():
+    """Each re-arms the idle timeout: unbounded, they keep a slot for the session's length."""
+    gate, mda = _full_gate(), ScriptedMDA()
+    async with listening(mda, gate=gate) as port, connected(port) as client:
+        assert gate.under_stress()
+        for line in (EHLO, MAIL, b"RCPT TO:<bob@example.com>"):
+            assert (await client.cmd(line))[:1] == b"2", line
+        junk = (b"RCPT TO:<bob@example.com>", b"NOOP", b"VRFY bob", b"HELP", b"NOOP")
+        for line in junk:
+            assert (await client.cmd(line))[:1] == b"2", line
+        assert await client.cmd(b"NOOP") == b"421 4.7.0 Too many errors, goodbye\r\n"
+    assert mda.checked == ["bob@example.com"]
+
+
+@pytest.mark.asyncio
+async def test_on_a_full_server_rset_is_not_charged():
+    """Senders issue one between messages."""
+    async with listening(gate=_full_gate()) as port, connected(port) as client:
+        await client.cmd(EHLO)
+        for _ in range(6):
+            assert await client.cmd(b"RSET") == b"250 OK\r\n"
+        assert await client.cmd(b"NOOP") == b"250 OK\r\n"
+
+
+@pytest.mark.asyncio
+async def test_a_command_received_as_the_session_is_closed_is_not_run():
+    gate, mda = unlimited_gate(), ScriptedMDA()
+    async with listening(mda, gate=gate) as port, connected(port) as client:
+        await client.cmd(EHLO)
+        await client.cmd(MAIL)
+        (connection,) = gate.sessions
+        # In the same turn of the loop as the decision to close.
+        connection.data_received(b"RCPT TO:<bob@example.com>\r\n")
+        connection.reclaim()
+        assert await client.reply() == b"421 4.4.2 Server busy, closing idle connection\r\n"
+        assert await client.closed()
+    # Its reply would have gone nowhere, but the MDA would have been asked.
+    assert mda.checked == []
+
+
+@pytest.mark.asyncio
+async def test_a_tls_handshake_that_does_not_come_is_cut(monkeypatch, caplog):
+    """asyncio would wait 60 s for it, with the idle timeout not running."""
+    monkeypatch.setattr(smtp_protocol, "_TLS_HANDSHAKE_TIMEOUT", 0.2)
+    server_ctx, _ = _tls_contexts()
+    async with listening(tls_context=server_ctx) as port:
+        with capture_all(caplog):
+            async with connected(port) as client:
+                await client.cmd(EHLO)
+                assert (await client.cmd(b"STARTTLS")).startswith(b"220")
+                assert await client.closed()
+            (summary,) = await records(caplog, "session_closed")
+    assert summary.closed_by == "tls_failed"
+
+
+@pytest.mark.asyncio
+async def test_a_greeting_name_that_is_not_ascii_is_taken_without_smtputf8(monkeypatch):
+    """Refused, the MAIL after it would be answered 503: a bounce."""
+    monkeypatch.setattr(settings, "PYMTA_ENABLE_SMTPUTF8", False)
+    mda = ScriptedMDA()
+    async with listening(mda) as port, connected(port) as client:
+        assert (await client.cmd("EHLO mx.exämple".encode() + b"\xff"))[:3] == b"250"
+        assert (await client.cmd(MAIL))[:3] == b"250"
+        assert (await client.cmd(b"RCPT TO:<bob@example.com>"))[:3] == b"250"
+        assert (await client.data())[:3] == b"250"
+    assert mda.delivered[0]["client_helo"] == "mx.exämple?"
+
+
+@pytest.mark.asyncio
+async def test_signals_are_handled_before_the_port_opens(monkeypatch, clean_runtime):
+    """Until then SIGHUP kills the process, and SIGTERM skips the drain."""
+    loop = asyncio.get_running_loop()
+    previous = loop.get_exception_handler()
+    seen = {}
+
+    async def start(self, host, port):
+        seen["errors"] = loop.get_exception_handler()
+        seen["signals"] = set(loop._signal_handlers)
+        raise RuntimeError("no port")
+
+    monkeypatch.setattr(server.Listener, "start", start)
+    try:
+        with pytest.raises(RuntimeError, match="no port"):
+            await server._serve()
+    finally:
+        for sig in (signal.SIGHUP, signal.SIGINT, signal.SIGTERM):
+            loop.remove_signal_handler(sig)
+        loop.set_exception_handler(previous)
+    assert seen["errors"] is server._log_unhandled
+    assert seen["signals"] >= {signal.SIGHUP, signal.SIGINT, signal.SIGTERM}
+
+
+def test_the_log_is_flushed_when_the_process_ends(monkeypatch):
+    flushed = []
+
+    async def served():
+        return None
+
+    monkeypatch.setattr(server, "_configure_logging", lambda: lambda: flushed.append(True))
+    monkeypatch.setattr(server.metrics, "start_metrics_server", lambda *args: None)
+    monkeypatch.setattr(server, "_export_config_limits", lambda: None)
+    monkeypatch.setattr(server, "_serve", served)
+    server.main()
+    assert flushed == [True]

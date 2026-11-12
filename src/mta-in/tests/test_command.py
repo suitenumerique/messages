@@ -42,9 +42,16 @@ def test_a_line_without_an_ascii_verb_is_refused(line):
 
 
 def test_without_smtputf8_an_argument_is_ascii_or_refused():
-    assert split_command(b"EHLO mx.example", utf8=False) == ("EHLO", "mx.example")
+    assert split_command(b"MAIL FROM:<a@b.example>", utf8=False) == ("MAIL", "FROM:<a@b.example>")
     with pytest.raises(ArgumentNotAscii):
-        split_command("EHLO mx.exämple".encode(), utf8=False)
+        split_command("MAIL FROM:<a@exämple.com>".encode(), utf8=False)
+
+
+@pytest.mark.parametrize("verb", ["EHLO", "HELO", "ehlo"])
+def test_a_greeting_name_is_never_refused_for_its_bytes(verb):
+    """Refused, the session has no greeting and its MAIL is answered 503."""
+    line = verb.encode() + " mx.exämple".encode() + b"\xff"
+    assert split_command(line, utf8=False) == (verb.upper(), "mx.exämple\udcff")
 
 
 @pytest.mark.parametrize(

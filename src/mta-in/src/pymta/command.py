@@ -22,6 +22,11 @@ def split_command(line: bytes, *, utf8: bool) -> tuple[str, str | None]:
     The verb is upper-cased ASCII. The argument is None when there is none.
     With ``utf8`` it is decoded leniently: a byte that is not UTF-8 becomes a
     lone surrogate, which the address validation refuses with its own reply.
+
+    The name after EHLO or HELO is decoded that way whatever ``utf8`` says.
+    Refused, it would leave the session without a greeting, and the MAIL that
+    follows would be answered 503: a bounce for a sender whose only fault is
+    its name.
     """
     verb_bytes, _, arg_bytes = line.partition(b" ")
     try:
@@ -33,7 +38,7 @@ def split_command(line: bytes, *, utf8: bool) -> tuple[str, str | None]:
     if not arg_bytes:
         return verb, None
     arg_bytes = arg_bytes.strip()
-    if utf8:
+    if utf8 or verb in ("EHLO", "HELO"):
         return verb, arg_bytes.decode("utf-8", "surrogateescape")
     try:
         return verb, arg_bytes.decode("ascii")

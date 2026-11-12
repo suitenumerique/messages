@@ -33,6 +33,11 @@ SCRAPES_REFUSED = Counter(
     "Metrics HTTP connections refused because the scrape thread cap was reached.",
 )
 
+LOG_RECORDS_DROPPED = Counter(
+    f"{_METRICS_NAMESPACE}_log_records_dropped_total",
+    "Log lines dropped because the output stream was not read fast enough.",
+)
+
 SESSIONS_ACTIVE = Gauge(
     f"{_METRICS_NAMESPACE}_sessions_active",
     "Currently active SMTP sessions (post-PROXY, pre-close).",

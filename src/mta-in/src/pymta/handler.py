@@ -95,19 +95,19 @@ def _transport(session, envelope) -> dict:
     RFC 6531 (UTF8SMTP, UTF8SMTPS). The trailing S is what says the session
     was encrypted; the TLS version and cipher say how well.
     """
-    cipher = session.ssl["cipher"] if session.ssl else None
+    tls = session.tls
     if envelope.smtp_utf8:
         protocol = "UTF8SMTP"
     elif session.extended_smtp:
         protocol = "ESMTP"
     else:
         protocol = "SMTP"
-    if session.ssl and protocol != "SMTP":
+    if tls and protocol != "SMTP":
         protocol += "S"
     return {
         "protocol": protocol,
-        "tls_version": cipher[1] if cipher else None,
-        "tls_cipher": cipher[0] if cipher else None,
+        "tls_version": tls.version if tls else None,
+        "tls_cipher": tls.cipher if tls else None,
         "server_name": settings.PYMTA_SMTP_HOSTNAME,
     }
 
@@ -315,6 +315,7 @@ class InboundHandler:
 
         if clean in envelope.rcpt_tos:
             # Given twice: accepted, and delivered once.
+            connection.count_junk()
             metrics.RCPT_TOTAL.labels(result="accepted").inc()
             return Reply("250 2.1.5 OK")
 
