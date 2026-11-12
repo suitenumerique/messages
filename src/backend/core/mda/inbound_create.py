@@ -592,7 +592,7 @@ def _create_message_from_inbound(  # pylint: disable=too-many-arguments
 
     # --- 7. Process Attachments if present --- #
     # if parsed_email.get("attachments"):
-    #     _process_attachments(message, parsed_email["attachments"], mailbox)
+    #    _process_attachments(message, parsed_email["attachments"], mailbox)
 
     # --- 8. Final Updates --- #
     try:
