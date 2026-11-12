@@ -214,6 +214,7 @@ class _Unread(io.StringIO):
 def test_a_stream_nobody_reads_costs_lines_and_not_the_caller(monkeypatch):
     """Written from the event loop, it would stop every session."""
     monkeypatch.setattr(logfmt, "_QUEUE_SIZE", 1)
+    monkeypatch.setattr(logfmt, "_STOP_TIMEOUT", 0.1)
     dropped = REGISTRY.get_sample_value("pymta_log_records_dropped_total")
     stream = _Unread()
     with _root_logger_restored():
@@ -226,13 +227,30 @@ def test_a_stream_nobody_reads_costs_lines_and_not_the_caller(monkeypatch):
         log.info("third")
         assert REGISTRY.get_sample_value("pymta_log_records_dropped_total") == dropped + 1
         # No room for the stop marker either: the exit is not held.
+        started = time.monotonic()
         stop()
+        assert time.monotonic() - started < 2
         stream.release.set()
         deadline = time.monotonic() + 5
         while "second" not in stream.getvalue() and time.monotonic() < deadline:
             time.sleep(0.01)
-        stop()
     events = [_parse(line)["event"] for line in stream.getvalue().splitlines()]
+    assert events == ["first", "second"]
+
+
+def test_a_full_queue_is_written_before_the_exit(monkeypatch):
+    """A slow reader, not a stopped one: the stop marker waits for room."""
+    monkeypatch.setattr(logfmt, "_QUEUE_SIZE", 1)
+    stream = _Unread()
+    with _root_logger_restored():
+        stop = configure("INFO", stream, in_thread=True)
+        log = logging.getLogger("pymta.test")
+        log.info("first")
+        assert stream.writing.wait(5)
+        log.info("second")
+        threading.Timer(0.05, stream.release.set).start()
+        stop()
+        events = [_parse(line)["event"] for line in stream.getvalue().splitlines()]
     assert events == ["first", "second"]
 
 

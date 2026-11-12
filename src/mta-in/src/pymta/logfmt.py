@@ -74,7 +74,6 @@ shows the individual events.
 
 from __future__ import annotations
 
-import contextlib
 import datetime as _datetime
 import functools
 import logging
@@ -238,20 +237,23 @@ class _QueueHandler(logging.handlers.QueueHandler):
             metrics.LOG_RECORDS_DROPPED.inc()
 
 
-def _stop_writer(writer: logging.handlers.QueueListener) -> None:
+class _Writer(logging.handlers.QueueListener):
+    """Waits for room for its stop marker: the base class gives up on a full
+    queue, and the lines in it would not be written."""
+
+    def enqueue_sentinel(self) -> None:
+        self.queue.put(self._sentinel)
+
+
+def _stop_writer(writer: _Writer) -> None:
     """Write what is queued, then end the thread. For ``_STOP_TIMEOUT`` at most.
 
     A stream that is not being read must not hold the exit: the writer is
-    then stuck in a write, or there is no room for its stop marker
-    (``queue.Full``). Both threads are daemons.
+    then stuck in a write. Both threads are daemons.
     """
-
-    def stop() -> None:
-        with contextlib.suppress(queue.Full):
-            writer.stop()
-
-    # ``stop`` joins the writer without a timeout, so it is waited for here.
-    stopper = threading.Thread(target=stop, daemon=True)
+    # ``stop`` waits for room in the queue, then for the writer, both without
+    # a timeout: it is waited for here.
+    stopper = threading.Thread(target=writer.stop, daemon=True)
     stopper.start()
     stopper.join(_STOP_TIMEOUT)
 
@@ -276,7 +278,7 @@ def configure(
     stop = None
     if in_thread:
         records: queue.Queue = queue.Queue(_QUEUE_SIZE)
-        writer = logging.handlers.QueueListener(records, handler)
+        writer = _Writer(records, handler)
         writer.start()
         stop = functools.partial(_stop_writer, writer)
         handler = _QueueHandler(records)

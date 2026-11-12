@@ -161,7 +161,7 @@ class MDAClient:
             breaker_cooldown if breaker_cooldown is not None else settings.MDA_BREAKER_COOLDOWN
         )
         self._clock = clock
-        # Reset by any successful call.
+        # Reset by a successful call, while the breaker is closed or by its probe.
         self._consecutive_failures = 0
         # When the open breaker's cooldown ends, on ``clock``. None when closed.
         self._open_until: float | None = None
@@ -302,7 +302,10 @@ class MDAClient:
                 },
             )
 
-    def _record_success(self) -> None:
+    def _record_success(self, probe: bool) -> None:
+        if self._open_until is not None and not probe:
+            # In flight since before the breaker opened: the probe decides.
+            return
         if self._consecutive_failures:
             logger.info("mda_recovered", extra={"after_failures": self._consecutive_failures})
         self._consecutive_failures = 0
@@ -340,7 +343,7 @@ class MDAClient:
                 path, content_type, body, endpoint_label, permanent_statuses, session, deadline
             )
             if healthy:
-                self._record_success()
+                self._record_success(probe)
             elif healthy is not None:
                 self._record_failure(probe, generation)
             return result

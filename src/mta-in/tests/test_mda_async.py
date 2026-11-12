@@ -797,6 +797,32 @@ async def test_a_call_in_flight_since_before_the_outage_is_not_taken_for_the_pro
     assert gated.calls == 2
 
 
+@pytest.mark.asyncio
+async def test_a_call_in_flight_since_before_the_outage_does_not_close_the_breaker():
+    """Its answer may predate the outage: only the probe closes the breaker."""
+    client, clock = _new_client(threshold=2, cooldown=30)
+    old = client._client = _GatedClient()
+    straggler = asyncio.ensure_future(client.check_recipient("a@example.com"))
+    await asyncio.sleep(0.01)
+    client._client = _StubAsyncClient([httpx.TimeoutException("down")] * 2)
+    for _ in range(2):
+        await client.check_recipient("a@example.com")
+    assert client.breaker_is_open() is True
+
+    old.outcome = _resp(200, b'{"a@example.com": true}')
+    old.release.set()
+    assert (await straggler).ok is True
+    assert client.breaker_is_open() is True
+    assert client._consecutive_failures == 2
+    assert (await client.check_recipient("a@example.com")).temp_fail
+
+    # The probe still closes it.
+    clock.advance(31)
+    client._client = _StubAsyncClient([_resp(200, b'{"a@example.com": true}')])
+    assert (await client.check_recipient("a@example.com")).ok is True
+    assert client.breaker_is_open() is False
+
+
 class _SlowClient:
     """An HTTP client that answers 200 after ``delay`` seconds."""
 
