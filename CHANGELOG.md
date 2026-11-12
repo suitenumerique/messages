@@ -31,6 +31,7 @@ and this project adheres to
 - Bump Caddy to 2.11.9 in the Keycloak image, the frontend image and the
   Scalingo post-frontend deploy script
 - Bump @gouvfr-lasuite/ui-components to 1.3.0
+- Use the container IP as Host in the backend healthcheck
 
 ### Removed
 
