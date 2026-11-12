@@ -32,7 +32,7 @@ and this project adheres to
   Scalingo post-frontend deploy script
 - Bump @gouvfr-lasuite/ui-components to 1.3.0
 - Use the container IP as Host in the backend healthcheck
-- 
+
 ### Removed
 
 - The DSFR theme jar `dsfr-2.3.4.jar`. A realm that selected the `DSFR` theme
