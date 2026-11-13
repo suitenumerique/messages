@@ -124,7 +124,7 @@ async def test_5xx_returns_temp_fail(caplog):
 
 async def _deliver(client):
     return await client.deliver(
-        message=b"From: a@example.com\r\n\r\nbody\r\n",
+        message=(b"From: a@example.com\r\n", b"\r\nbody\r\n"),
         sender="a@example.com",
         original_recipients=["user@example.com"],
         client_address="192.0.2.1",
@@ -209,11 +209,12 @@ async def test_deliver_sends_the_envelope_in_the_body():
     client, _ = _new_client()
     stub = _StubAsyncClient([_resp(200, b'{"status": "ok"}')])
     client._client = stub
-    message = b"From: a@example.com\r\n\r\nline one\nline two\r\n"
+    blocks = (b"From: a@example.com\r\n\r\nline one\n", b"line two\r\n")
+    message = b"".join(blocks)
     recipients = [f"{'r' * 60}{i:03d}@{'d' * 200}.example" for i in range(100)]
 
     await client.deliver(
-        message=message,
+        message=blocks,
         sender="sénder@example.com",
         original_recipients=recipients,
         client_address="192.0.2.1",
@@ -514,7 +515,7 @@ async def test_the_session_id_travels_as_a_signed_claim():
 
     stub.headers.clear()
     await client.deliver(
-        message=b"body",
+        message=(b"body",),
         sender="s@example.com",
         original_recipients=["a@example.com"],
         client_address=None,
@@ -848,7 +849,7 @@ async def test_a_check_is_bounded_as_a_whole_and_a_delivery_is_not(caplog):
 
     # The DATA deadline is what bounds a delivery.
     delivered = await client.deliver(
-        message=b"x",
+        message=(b"x",),
         sender="a@example.com",
         original_recipients=["b@example.com"],
         client_address=None,

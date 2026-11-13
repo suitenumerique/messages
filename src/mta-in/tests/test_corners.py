@@ -452,8 +452,8 @@ async def test_the_server_starts_and_drains_in_process(
     (ceiling,) = [r for r in caplog.records if r.getMessage() == "memory_ceiling"]
     assert ceiling.bounded is bool(concurrent_data)
     if concurrent_data:
-        # 40 messages of 10 MiB in flight, times 2.2.
-        assert (ceiling.in_flight_gib, ceiling.required_gib) == (0.4, 0.9)
+        # 40 messages of 10 MiB in flight, times 1.2.
+        assert (ceiling.in_flight_gib, ceiling.required_gib) == (0.4, 0.5)
     else:
         assert "unlimited" in ceiling.detail
     assert "shutdown_complete" in [r.getMessage() for r in caplog.records]

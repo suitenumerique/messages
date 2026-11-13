@@ -332,7 +332,7 @@ def test_any_mda_response_becomes_a_result(status, body, deliver):
         if not deliver:
             return await client.check_recipient("a@example.com")
         return await client.deliver(
-            message=b"Subject: x\r\n\r\nbody\r\n",
+            message=(b"Subject: x\r\n\r\nbody\r\n",),
             sender="a@example.com",
             original_recipients=["b@example.com"],
             client_address="192.0.2.1",

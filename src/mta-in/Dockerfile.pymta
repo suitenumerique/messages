@@ -71,6 +71,11 @@ USER ${DOCKER_USER}
 ENV PATH="/venv/bin:$PATH"
 ENV VIRTUAL_ENV=/venv
 ENV VIRTUAL_ENV_PROMPT=venv
+# A message is held in blocks of 64 kB. glibc keeps freed blocks of that size
+# on its heap, so the memory a message took stays resident once it is
+# delivered. With this, each block is mapped on its own and returned to the
+# system when freed.
+ENV MALLOC_MMAP_THRESHOLD_=65536
 
 COPY ./entrypoint.pymta.sh /usr/local/bin/entrypoint.sh
 ENTRYPOINT [ "/usr/local/bin/entrypoint.sh" ]
@@ -177,6 +182,8 @@ ENV VIRTUAL_ENV=/venv
 ENV PYTHONUNBUFFERED=1
 ENV PYTHONDONTWRITEBYTECODE=1
 ENV PYTHONPATH="/app/src"
+# As in runtime-base: freed message blocks go back to the system.
+ENV MALLOC_MMAP_THRESHOLD_=65536
 
 # No shell entrypoint — distroless has no /bin/sh. The shell wrapper
 # (entrypoint.pymta.sh) is only for dev-time EXEC_CMD modes.

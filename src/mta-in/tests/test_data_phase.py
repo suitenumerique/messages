@@ -104,8 +104,39 @@ async def test_bare_line_endings_cost_no_more_memory_than_the_message():
     assert reply.startswith(b"250"), reply
     stored = mda.delivered[0]["message"]
     assert stored == (b"\r\n" * 60_001) * 8
-    # The blocks, their join, and the copy the client above still holds.
+    # The blocks, the join ScriptedMDA makes of them, and the copy the client
+    # above still holds.
     assert peak < 5 * len(stored), f"{peak / len(stored):.1f} times the message"
+
+
+class _MeasuringMDA(ScriptedMDA):
+    """Takes the message as the server hands it over, and keeps none of it."""
+
+    async def deliver(self, **kwargs):
+        self.size = sum(map(len, kwargs["message"]))
+        return MDAResult(ok=True, temp_fail=False, payload={"status": "ok"}, status_code=200)
+
+
+@pytest.mark.asyncio
+async def test_a_message_is_in_memory_once():
+    """Its blocks joined into one object at the end of DATA, it was there
+    twice for that moment."""
+    body = (b"x" * 76 + b"\r\n") * 60_000
+    mda = _MeasuringMDA()
+    async with listening(mda) as port, connected(port) as client:
+        await _transaction(client)
+        assert (await client.cmd(b"DATA")).startswith(b"354")
+        tracemalloc.start()
+        try:
+            # Not client.data: the copy of the body it sends would be counted.
+            await client.send(body)
+            reply = await client.cmd(b".")
+            _, peak = tracemalloc.get_traced_memory()
+        finally:
+            tracemalloc.stop()
+    assert reply.startswith(b"250"), reply
+    assert mda.size == len(body)
+    assert peak < 1.25 * len(body), f"{peak / len(body):.2f} times the message"
 
 
 # ---------------------------------------------------------------------------

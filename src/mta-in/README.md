@@ -353,19 +353,23 @@ Two need explaining. Per-IP concurrency is a tightening, not a loosening: the sh
 
 > **`PYMTA_MAX_CONCURRENT_DATA` (40) is the bound on memory.** Each message is held in RAM with no spool file, so messages in flight times the size cap is the heap. The session caps do not bound it: until it says DATA a connection costs a few kB, and at most about 400 kB (two line lengths and one read) if it keeps sending without waiting for replies.
 >
-> Size it against the memory you gave the container. A message peaks at about **2.2x** its size — the received blocks are joined into one buffer at the end of DATA, which needs a second copy for that moment, and freed arenas are not returned promptly. So:
+> Size it against the memory you gave the container. A message takes about **1.2x** its size: it is held once, in blocks of 64 kB, and the rest is what the allocator adds. So:
 >
 > ```text
-> peak RSS  ~=  PYMTA_MAX_CONCURRENT_DATA x PYMTA_MAX_INCOMING_EMAIL_SIZE x 2.2  +  ~64 MiB
+> peak RSS  ~=  PYMTA_MAX_CONCURRENT_DATA x PYMTA_MAX_INCOMING_EMAIL_SIZE x 1.2  +  ~64 MiB
 > ```
 >
 > | memory limit | a reasonable `PYMTA_MAX_CONCURRENT_DATA` at 10 MiB messages |
 > |---|---|
-> | 256 MiB | 8 |
-> | 512 MiB | 20 |
-> | 1 GiB | 40 (the default) |
-> | 2 GiB | 90 |
-> | 4 GiB | 183 |
+> | 256 MiB | 16 |
+> | 512 MiB | 37 |
+> | 1 GiB | 80 |
+> | 2 GiB | 165 |
+> | 4 GiB | 336 |
+>
+> The default of 40 takes about 544 MiB. The number scales with the size cap: at 35 MiB messages, divide the slots by 3.5.
+>
+> The image sets `MALLOC_MMAP_THRESHOLD_=65536`. glibc otherwise keeps freed blocks of that size on its heap, and the process stays at its high-water mark after a burst. With it the factor is about 1.05 and the memory goes back to the system once a message is delivered. Set it yourself when you run pymta outside the image.
 >
 > A message over the limit is refused at the `DATA` command, **before the `354`**, so a refused peer never starts uploading and the refusal costs one reply instead of a buffer. It gets `451`: delayed, not lost.
 >
@@ -396,9 +400,24 @@ Two need explaining. Per-IP concurrency is a tightening, not a loosening: the sh
 >
 > The cost of a low fraction is on a large sender that comes from few addresses: beyond its share it gets 421 at connect or 451 at DATA, and retries. `pymta_connections_total{result="rejected_per_ip"}` shows it; raise the fraction if a sender you want is in there.
 >
-> Note the two ceilings are not the same number: the share bounds what *one host* can hold, the 40 slots bound what *everyone together* can. Memory has to be sized against the 40, not against the share — 40 x 10 MiB x 2.2 is about 944 MiB, so the shipped defaults want a container of 1 GiB or more. Drop `PYMTA_MAX_CONCURRENT_DATA` to 20 for 512 MiB.
+> Note the two ceilings are not the same number: the share bounds what *one host* can hold, the 40 slots bound what *everyone together* can. Memory has to be sized against the 40, not against the share — 40 x 10 MiB x 1.2 plus 64 MiB is about 544 MiB, so the shipped defaults want a container of 640 MiB or more. Drop `PYMTA_MAX_CONCURRENT_DATA` to 20 for 384 MiB.
 >
-> **One oversized message is a floor no concurrency limit lowers.** `PYMTA_MAX_INCOMING_EMAIL_SIZE x 2.2` has to fit on its own, so a 400 MB size cap needs roughly a gigabyte whatever the concurrency is set to.
+> **One oversized message is a floor no concurrency limit lowers.** `PYMTA_MAX_INCOMING_EMAIL_SIZE x 1.2` has to fit on its own, so a 400 MB size cap needs roughly half a gigabyte whatever the concurrency is set to.
+
+### Sizing example: 35 MiB messages
+
+For a host that runs pymta and nothing else of weight, from the image (so with `MALLOC_MMAP_THRESHOLD_` set).
+
+| Setting | 2 GB host | 4 GB host | Why |
+|---|---|---|---|
+| `PYMTA_MAX_INCOMING_EMAIL_SIZE` | `36700160` | `36700160` | 35 MiB. The backend's `MAX_INCOMING_EMAIL_SIZE` must be the same |
+| `PYMTA_MAX_CONCURRENT_DATA` | `30` | `64` | Worst case 1.3 GiB and 2.7 GiB by the formula above; about 1.1 GiB and 2.3 GiB on the image (20 slots measured at 767 MiB) |
+| `PYMTA_MAX_SHARE_PER_SOURCE` | `0.2` | `0.1` (default) | 6 messages in flight per source in both cases, and 18 or 19 sessions. A bulk sender opens several connections from one address |
+| `PYMTA_DATA_TIMEOUT` | `900` | `900` | The default 300 s asks 122 kB/s of a sender for 35 MiB. 900 s asks 41 kB/s, as the default does for 10 MiB |
+| `MDA_API_TIMEOUT` | `60` | `60` | The MDA has to answer a delivery within it. Check it against how long your MDA takes for the largest message (`duration_ms` of `message_delivered`), and keep it under the MDA's own worker timeout |
+| container memory limit | 1536 MiB | 3072 MiB | Above the worst case, under the host: a mistake in the above restarts pymta and leaves the host up |
+
+The session cap follows: 90 and 192. Every slot holding a full-size message at once is the worst case, not the usual one: ordinary traffic keeps the process near its idle size.
 
 ### Watching the limits
 
@@ -594,7 +613,7 @@ Every other timeout is re-armed by peer activity, so a peer that stays marginall
 
 Slot exhaustion on an *inbound* MTA delays mail rather than losing it: once the global cap is hit, new connections get `421` and close, and SMTP senders retry for days. Watch `pymta_sessions_active` and the upper buckets of `pymta_session_duration_seconds`; a healthy inbound MX has sessions measured in seconds.
 
-Also review `PYMTA_DATA_TIMEOUT` against your real size cap; it sets a floor on how slow a legitimate sender may be. At the 10 MiB default, 300 s means a sender has to sustain roughly 35 kB/s.
+Also review `PYMTA_DATA_TIMEOUT` against your real size cap; it sets a floor on how slow a legitimate sender may be. At the 10 MiB default, 300 s means a sender has to sustain roughly 35 kB/s. "Sizing example: 35 MiB messages" above has a full set of values for a larger cap.
 
 ## Address normalisation is a cross-service contract
 

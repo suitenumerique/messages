@@ -91,7 +91,8 @@ _JUNK_VERBS = ("NOOP", "RSET", "VRFY", "HELP")
 # bytes mean.
 _LAST_OF_A_GROUP = frozenset({"EHLO", "HELO", "STARTTLS", "DATA"})
 
-# Message bytes are collected in blocks of this size. See _read_data.
+# Message bytes are held in blocks of this size: see _Body. The image sets
+# MALLOC_MMAP_THRESHOLD_ to the same value (Dockerfile.pymta).
 _DATA_BLOCK = 65536
 # Lines of a message read before the event loop gets a turn.
 _DATA_LINES_PER_TURN = 1024
@@ -123,15 +124,14 @@ class _DataOverflow(Exception):
 class _Body:
     """A message being received: its bytes, or why it is refused.
 
-    The bytes are appended to blocks of ``_DATA_BLOCK``, not kept as one
-    object per line, so a body of empty lines costs its size and not thirty
-    times that. What is held is the message once, plus one more copy for the
-    moment of the final join.
+    Kept in blocks of ``_DATA_BLOCK``. Not one object per line: a body of
+    empty lines would cost thirty times its size. Not joined at the end
+    either: the message would be in memory twice for that moment.
     """
 
     def __init__(self, limit: int):
         self._limit = limit
-        self._blocks: list[bytearray] = []
+        self._blocks: list[bytes] = []
         self._block = bytearray()
         # Octets as stored, kept or not.
         self.size = 0
@@ -152,11 +152,18 @@ class _Body:
             return
         self._block += data
         if len(self._block) >= _DATA_BLOCK:
-            self._blocks.append(self._block)
-            self._block = bytearray()
+            self._close_block()
 
-    def content(self) -> bytes:
-        return b"".join((*self._blocks, self._block))
+    def _close_block(self) -> None:
+        # As bytes: a bytearray that grew keeps up to an eighth more than it holds.
+        self._blocks.append(bytes(self._block))
+        self._block = bytearray()
+
+    def content(self) -> tuple[bytes, ...]:
+        """The message, in order. Ends the body: nothing is added after."""
+        if self._block:
+            self._close_block()
+        return tuple(self._blocks)
 
 
 class _TLSFailed(Exception):
@@ -198,7 +205,8 @@ class Envelope:
     mail_from: str | None = None
     smtp_utf8: bool = False
     rcpt_tos: list[str] = dataclasses.field(default_factory=list)
-    content: bytes | None = None
+    # The message as the blocks it was received in, in order.
+    content: tuple[bytes, ...] | None = None
 
 
 @dataclasses.dataclass(frozen=True)
@@ -1109,10 +1117,11 @@ class SMTPConnection(asyncio.Protocol):
             self.data_phase_budget = None
             self._gate.release_data(self._slot)
 
-    async def _read_data(self) -> tuple[bytes, tuple[str, str] | None]:
+    async def _read_data(self) -> tuple[tuple[bytes, ...], tuple[str, str] | None]:
         """Read a message up to its terminating dot. Returns (content, refusal).
 
-        ``refusal`` is None, or the (reply, reason) the message is to get.
+        ``content`` is the message in blocks, in order. ``refusal`` is None,
+        or the (reply, reason) the message is to get.
 
         Only ``<CRLF>.<CRLF>`` ends the message, never a bare LF: that is what
         keeps one message from being split in two (SMTP smuggling).
@@ -1179,7 +1188,7 @@ class SMTPConnection(asyncio.Protocol):
             rewritten = rewritten or changed
             body.add(line)
         if body.refusal is not None:
-            return b"", body.refusal
+            return (), body.refusal
         if rewritten:
             metrics.BARE_NEWLINE_MESSAGES.inc()
             logger.debug("bare_newline_normalised", extra={"session_id": self.session_id})

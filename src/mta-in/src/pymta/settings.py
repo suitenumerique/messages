@@ -195,9 +195,9 @@ PYMTA_MAX_LINE_LENGTH = _env_int("PYMTA_MAX_LINE_LENGTH", 65536, minimum=998)
 # Messages that may be in memory at once.
 #
 # Each message is held in RAM, so this is what bounds memory: a session costs
-# a few kB until it says DATA. A message peaks at about 2.2 times its size
-# (see ``server._MEMORY_FACTOR``), so 40 x 10 MiB is about 880 MiB and takes a
-# container of 1 GiB or more. Use 20 for 512 MiB.
+# a few kB until it says DATA. A message takes about 1.2 times its size (see
+# ``server._MEMORY_FACTOR``), so 40 x 10 MiB is about 480 MiB and takes a
+# container of 640 MiB or more. Use 20 for 384 MiB.
 #
 # 0 is for dev and tests: PYMTA_MAX_SESSIONS_TOTAL is derived from this, so it
 # also removes the session cap and the per-source shares.

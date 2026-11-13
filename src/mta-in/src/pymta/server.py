@@ -32,9 +32,10 @@ logger = logging.getLogger("pymta.server")
 # How often the drain checks whether the last session has finished.
 _DRAIN_POLL_SECONDS = 0.25
 
-# Peak resident bytes per byte of message in flight: a second copy of the body
-# while the received blocks are joined, and freed arenas not returned promptly.
-_MEMORY_FACTOR = 2.2
+# Resident bytes per byte of message in flight: the message once, and what
+# the allocator adds. About 1.05 with MALLOC_MMAP_THRESHOLD_ set as the image
+# does, 1.2 without.
+_MEMORY_FACTOR = 1.2
 
 
 def _configure_logging():

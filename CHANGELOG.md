@@ -51,6 +51,10 @@ and this project adheres to
   `501`
 - An inbound message whose envelope names one mailbox in two spellings
   (`Bob@` and `bob@`) is delivered to it once
+- pymta: a message in flight takes about 1.2 times its size in memory, down
+  from 2.2. Its blocks are no longer joined into a second copy, and the image
+  sets `MALLOC_MMAP_THRESHOLD_=65536` so that freed blocks go back to the
+  system. Size `PYMTA_MAX_CONCURRENT_DATA` with the new factor
 
 ### Removed
 

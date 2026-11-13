@@ -1629,6 +1629,7 @@ class _AcceptingMDA:
         return MDAResult(ok=True, temp_fail=False, payload={address: True}, status_code=200)
 
     async def deliver(self, **kwargs):
+        kwargs["message"] = b"".join(kwargs["message"])
         self.delivered.append(kwargs)
         return MDAResult(ok=True, temp_fail=False, payload={"status": "ok"}, status_code=200)
 

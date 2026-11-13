@@ -390,17 +390,18 @@ class InboundHandler:
         started = time.monotonic()
         # Line endings are CRLF only and the size is within the limit: the
         # protocol saw to both as it read the message.
-        content: bytes = envelope.content
+        content: tuple[bytes, ...] = envelope.content
+        size = sum(map(len, content))
 
         # NUL bytes have no place in an RFC 5321 message and break downstream
         # C parsers.
-        if b"\x00" in content:
+        if any(b"\x00" in block for block in content):
             metrics.SECURITY_REJECTIONS.labels(reason="nul_byte").inc()
             metrics.MESSAGES_TOTAL.labels(result="rejected_perm").inc()
             return _refusal(
                 "554 5.6.0 NUL byte in message body",
                 "nul_byte",
-                **_message_fields(envelope, len(content)),
+                **_message_fields(envelope, size),
             )
 
         try:
@@ -426,19 +427,19 @@ class InboundHandler:
             # "raise the budget".
             metrics.SECURITY_REJECTIONS.labels(reason="data_timeout").inc()
             metrics.MESSAGES_TOTAL.labels(result="rejected_temp").inc()
-            metrics.MESSAGE_BYTES.observe(len(content))
+            metrics.MESSAGE_BYTES.observe(size)
             return _refusal(
                 "451 4.3.0 Delivery timed out, please retry",
                 "data_timeout",
-                **_message_fields(envelope, len(content)),
+                **_message_fields(envelope, size),
                 limit_seconds=settings.PYMTA_DATA_TIMEOUT,
             )
 
-        metrics.MESSAGE_BYTES.observe(len(content))
+        metrics.MESSAGE_BYTES.observe(size)
 
         if result.ok and result.payload.get("status") == "ok":
             metrics.MESSAGES_TOTAL.labels(result="delivered").inc()
-            _log_outcome(connection, started, "delivered", len(content))
+            _log_outcome(connection, started, "delivered", size)
             return Reply("250 2.0.0 Message accepted for delivery")
 
         # Anything but a clear "ok" defers. On a 207 the MDA delivered to some
@@ -449,8 +450,8 @@ class InboundHandler:
         # ``logged``: the outcome line stands in for the ``reject`` line.
         if result.temp_fail or result.ok:
             metrics.MESSAGES_TOTAL.labels(result="rejected_temp").inc()
-            _log_outcome(connection, started, "deferred", len(content), status=result.status_code)
+            _log_outcome(connection, started, "deferred", size, status=result.status_code)
             return Reply("451 4.3.0 Delivery temporarily unavailable", logged=True)
         metrics.MESSAGES_TOTAL.labels(result="rejected_perm").inc()
-        _log_outcome(connection, started, "rejected", len(content), status=result.status_code)
+        _log_outcome(connection, started, "rejected", size, status=result.status_code)
         return Reply("554 5.6.0 Message rejected by delivery agent", logged=True)
