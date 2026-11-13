@@ -10,6 +10,7 @@ import asyncio
 import socket
 import struct
 import threading
+import time
 
 import pytest
 
@@ -116,6 +117,21 @@ async def test_main_probes_every_address_the_listener_binds(monkeypatch):
         # One of them does not answer: not alive.
         monkeypatch.setattr(settings, "PYMTA_SMTP_BIND_HOSTS", ("127.0.0.1", "127.0.0.2"))
         assert await asyncio.to_thread(healthcheck.main) == 1
+
+
+def test_main_takes_no_longer_with_more_addresses(monkeypatch):
+    """One after the other, three addresses slow to answer outlast the 5 s of
+    the image's HEALTHCHECK, and a server that answers is reported dead."""
+
+    def slow(host, port, *, proxies):
+        time.sleep(0.4)
+        return True
+
+    monkeypatch.setattr(healthcheck, "answers", slow)
+    monkeypatch.setattr(settings, "PYMTA_SMTP_BIND_HOSTS", tuple(f"192.0.2.{n}" for n in range(8)))
+    started = time.monotonic()
+    assert healthcheck.main() == 0
+    assert time.monotonic() - started < 1.2
 
 
 @pytest.mark.asyncio

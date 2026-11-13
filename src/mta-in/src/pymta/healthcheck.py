@@ -19,11 +19,13 @@ from __future__ import annotations
 
 import socket
 import sys
+from concurrent.futures import ThreadPoolExecutor
 
 from . import settings
 
-# Seconds for the connect, and again for the answer. The image's HEALTHCHECK
-# allows 5 s for the whole probe, interpreter start included.
+# Seconds for the connect, and again for the answer. The addresses are probed
+# at the same time, so the probe takes twice this at most whatever their
+# number. The image's HEALTHCHECK allows 5 s, interpreter start included.
 _TIMEOUT = 1.0
 
 # PROXY protocol v2: signature, version 2 + LOCAL, UNSPEC, no address.
@@ -55,10 +57,13 @@ def answers(host: str, port: int, *, proxies: list | None, timeout: float = _TIM
 
 def main() -> int:
     proxies = settings.PYMTA_TRUSTED_PROXIES if settings.PYMTA_ENABLE_PROXY_PROTOCOL else None
-    alive = all(
-        answers(host, settings.PYMTA_SMTP_BIND_PORT, proxies=proxies)
-        for host in settings.PYMTA_SMTP_BIND_HOSTS
-    )
+    hosts = settings.PYMTA_SMTP_BIND_HOSTS
+    with ThreadPoolExecutor(max_workers=len(hosts)) as pool:
+        alive = all(
+            pool.map(
+                lambda host: answers(host, settings.PYMTA_SMTP_BIND_PORT, proxies=proxies), hosts
+            )
+        )
     return 0 if alive else 1
 
 
