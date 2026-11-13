@@ -1,7 +1,7 @@
 """Tests for calendar API views using a real in-process Radicale CalDAV server."""
 # pylint: disable=redefined-outer-name, unused-argument, protected-access, missing-function-docstring, too-many-lines
 
-import base64
+import datetime as _dt
 import hashlib
 import shutil
 import tempfile
@@ -12,7 +12,7 @@ from unittest import mock
 from urllib.parse import quote
 from wsgiref.simple_server import WSGIRequestHandler, make_server
 
-import datetime as _dt
+from django.conf import settings as django_settings
 
 import jwt
 import pytest
@@ -20,7 +20,6 @@ import radicale.app
 import radicale.config
 import requests
 import requests.adapters
-from django.conf import settings as django_settings
 from icalendar import Calendar as ICalendar
 from rest_framework.test import APIClient
 
@@ -2620,15 +2619,19 @@ class TestApplyReply:
     ATTENDEE = "attendee@example.com"
 
     def _seed(self, put_event, uid, seq=0, partstat="NEEDS-ACTION"):
-        ics = _ORGANIZER_EVENT.format(
-            uid=uid, seq=seq, attendee=self.ATTENDEE
-        ).replace("PARTSTAT=NEEDS-ACTION", f"PARTSTAT={partstat}")
+        ics = _ORGANIZER_EVENT.format(uid=uid, seq=seq, attendee=self.ATTENDEE).replace(
+            "PARTSTAT=NEEDS-ACTION", f"PARTSTAT={partstat}"
+        )
         put_event(uid, ics)
 
-    def _reply(self, uid, partstat="ACCEPTED", seq=0, dtstamp="20260102T000000Z",
-               attendee=None):
+    def _reply(
+        self, uid, partstat="ACCEPTED", seq=0, dtstamp="20260102T000000Z", attendee=None
+    ):
         return _REPLY_EVENT.format(
-            uid=uid, seq=seq, dtstamp=dtstamp, partstat=partstat,
+            uid=uid,
+            seq=seq,
+            dtstamp=dtstamp,
+            partstat=partstat,
             attendee=attendee or self.ATTENDEE,
         )
 
@@ -2657,9 +2660,7 @@ class TestApplyReply:
         assert result["applied"] is True
         assert self._fetch_partstat(calendar_url, uid) == "ACCEPTED"
 
-    def test_sets_schedule_agent_client(
-        self, caldav_channel, radicale_with_calendar
-    ):
+    def test_sets_schedule_agent_client(self, caldav_channel, radicale_with_calendar):
         calendar_url, put_event = radicale_with_calendar
         uid = "apply-sa@example.com"
         self._seed(put_event, uid)
@@ -2692,9 +2693,7 @@ class TestApplyReply:
         assert result["reason"] == "attendee-not-on-event"
         assert self._fetch_partstat(calendar_url, uid) == "NEEDS-ACTION"
 
-    def test_no_matching_uid_is_noop(
-        self, caldav_channel, radicale_with_calendar
-    ):
+    def test_no_matching_uid_is_noop(self, caldav_channel, radicale_with_calendar):
         _, put_event = radicale_with_calendar
         self._seed(put_event, "seeded@example.com")
         service = CalDAVService.from_channel(caldav_channel)
@@ -2706,9 +2705,7 @@ class TestApplyReply:
         assert result["applied"] is False
         assert result["reason"] == "no-matching-event"
 
-    def test_stale_sequence_ignored(
-        self, caldav_channel, radicale_with_calendar
-    ):
+    def test_stale_sequence_ignored(self, caldav_channel, radicale_with_calendar):
         calendar_url, put_event = radicale_with_calendar
         uid = "apply-seq@example.com"
         self._seed(put_event, uid, seq=5)
@@ -2722,26 +2719,31 @@ class TestApplyReply:
         assert result["reason"] == "stale-sequence"
         assert self._fetch_partstat(calendar_url, uid) == "NEEDS-ACTION"
 
-    def test_stale_dtstamp_reorder_ignored(
+    def test_replies_apply_in_arrival_order(
         self, caldav_channel, radicale_with_calendar
     ):
+        # Like SabreDAV's iTIP broker: no DTSTAMP bookkeeping, last reply wins.
         calendar_url, put_event = radicale_with_calendar
         uid = "apply-reorder@example.com"
         self._seed(put_event, uid)
         service = CalDAVService.from_channel(caldav_channel)
 
-        assert service.apply_reply(
-            self._reply(uid, "ACCEPTED", dtstamp="20260102T000000Z"),
-            attendee_email=self.ATTENDEE,
-        )["applied"] is True
-        result = service.apply_reply(
-            self._reply(uid, "DECLINED", dtstamp="20260101T000000Z"),
-            attendee_email=self.ATTENDEE,
+        assert (
+            service.apply_reply(
+                self._reply(uid, "ACCEPTED", dtstamp="20260102T000000Z"),
+                attendee_email=self.ATTENDEE,
+            )["applied"]
+            is True
+        )
+        assert (
+            service.apply_reply(
+                self._reply(uid, "DECLINED", dtstamp="20260101T000000Z"),
+                attendee_email=self.ATTENDEE,
+            )["applied"]
+            is True
         )
 
-        assert result["applied"] is False
-        assert result["reason"] == "stale-dtstamp"
-        assert self._fetch_partstat(calendar_url, uid) == "ACCEPTED"
+        assert self._fetch_partstat(calendar_url, uid) == "DECLINED"
 
     def test_crafted_two_attendee_payload_leaves_victim_untouched(
         self, caldav_channel, radicale_with_calendar
@@ -2765,9 +2767,7 @@ class TestApplyReply:
             "END:VEVENT\r\nEND:VCALENDAR\r\n"
         )
 
-        result = service.apply_reply(
-            reply, attendee_email="attacker@corp.example"
-        )
+        result = service.apply_reply(reply, attendee_email="attacker@corp.example")
 
         assert result["applied"] is False
         assert result["reason"] == "attendee-mismatch"
@@ -2806,14 +2806,13 @@ class TestApplyReply:
         assert result["applied"] is False
         assert result["reason"] == "unparseable-reply"
 
-    def test_reply_without_dtstamp_is_unparseable(self, caldav_channel):
-        service = CalDAVService.from_channel(caldav_channel)
+    def test_reply_without_dtstamp_parses(self):
         reply = self._reply("no-dtstamp@example.com").replace(
             "DTSTAMP:20260102T000000Z\n", ""
         )
-        result = service.apply_reply(reply, attendee_email=self.ATTENDEE)
-        assert result["applied"] is False
-        assert result["reason"] == "unparseable-reply"
+        parsed, reason = CalDAVService._parse_reply(reply, self.ATTENDEE)
+        assert reason is None
+        assert parsed["partstat"] == "ACCEPTED"
 
     def test_no_etag_refuses_unconditional_write(self, caldav_channel):
         service = CalDAVService.from_channel(caldav_channel)
@@ -2825,10 +2824,14 @@ class TestApplyReply:
         )
         put_calls = []
 
-        with mock.patch.object(service, "_get_resource", return_value=(None, "")), \
+        with (
+            mock.patch.object(service, "_get_resource", return_value=(None, "")),
             mock.patch.object(
-                service, "_put_resource", side_effect=lambda *a, **k: put_calls.append(1)
-            ):
+                service,
+                "_put_resource",
+                side_effect=lambda *a, **k: put_calls.append(1),
+            ),
+        ):
             result = service._apply_reply_to_resource(
                 "http://x/e.ics", stored, "", reply
             )
@@ -2860,19 +2863,23 @@ class TestApplyReply:
         )
         written = {}
 
-        with mock.patch.object(
-            service, "list_calendars", return_value=[{"id": service.url + "cal/"}]
-        ), mock.patch.object(
-            service,
-            "_calendar_query_detailed",
-            return_value=[
-                (service.url + "cal/attendee.ics", "e1", attendee_copy),
-                (service.url + "cal/organizer.ics", "e2", organizer_copy),
-            ],
-        ), mock.patch.object(
-            service,
-            "_put_resource",
-            side_effect=lambda url, body, etag=None: written.update(url=url),
+        with (
+            mock.patch.object(
+                service, "list_calendars", return_value=[{"id": service.url + "cal/"}]
+            ),
+            mock.patch.object(
+                service,
+                "_calendar_query_detailed",
+                return_value=[
+                    (service.url + "cal/attendee.ics", "e1", attendee_copy),
+                    (service.url + "cal/organizer.ics", "e2", organizer_copy),
+                ],
+            ),
+            mock.patch.object(
+                service,
+                "_put_resource",
+                side_effect=lambda url, body, etag=None: written.update(url=url),
+            ),
         ):
             result = service.apply_reply(
                 self._reply("dup", "ACCEPTED"),
@@ -2960,8 +2967,10 @@ class TestApplyReply:
             if len(puts) == 1:
                 raise CalDAVError("precondition failed", status_code=412)
 
-        with mock.patch.object(service, "_put_resource", side_effect=put_side), \
-            mock.patch.object(service, "_get_resource", return_value=(fresh, "etag-2")):
+        with (
+            mock.patch.object(service, "_put_resource", side_effect=put_side),
+            mock.patch.object(service, "_get_resource", return_value=(fresh, "etag-2")),
+        ):
             result = service._apply_reply_to_resource(
                 "http://x/retry.ics", stored, "etag-1", reply
             )
@@ -2983,8 +2992,10 @@ class TestApplyReply:
         def always_412(url, body, etag=None):
             raise CalDAVError("precondition failed", status_code=412)
 
-        with mock.patch.object(service, "_put_resource", side_effect=always_412), \
-            mock.patch.object(service, "_get_resource", return_value=(fresh, "etag-2")):
+        with (
+            mock.patch.object(service, "_put_resource", side_effect=always_412),
+            mock.patch.object(service, "_get_resource", return_value=(fresh, "etag-2")),
+        ):
             result = service._apply_reply_to_resource(
                 "http://x/retry.ics", stored, "etag-1", reply
             )
@@ -3012,8 +3023,7 @@ def test_enqueue_itip_reply_fans_out_to_mailbox_users(mailbox):
     assert emails == {u1.email, u2.email}
     assert all(c.kwargs["channel_id"] is None for c in delay.call_args_list)
     assert all(
-        c.kwargs["attendee_email"] == "alice@corp.example"
-        for c in delay.call_args_list
+        c.kwargs["attendee_email"] == "alice@corp.example" for c in delay.call_args_list
     )
     assert all(
         c.kwargs["organizer_email"] == str(mailbox) for c in delay.call_args_list
@@ -3044,22 +3054,16 @@ def test_enqueue_itip_reply_fans_out_across_all_caldav_channels(mailbox):
     assert channel_ids == {str(c1.id), str(c2.id)}
 
 
-def test_reply_dtstamp_clamped_to_now():
-    # A far-future reply DTSTAMP must be clamped so it can't brick later updates.
+def test_mark_replied_matches_sabredav():
     cal = ICalendar.from_ical(
-        _ORGANIZER_EVENT.format(uid="clamp", seq=0, attendee="a@b.example")
+        _ORGANIZER_EVENT.format(uid="mark", seq=0, attendee="a@b.example")
     )
-    CalDAVService._record_reply_dtstamp(
-        cal,
-        {"dtstamp": datetime(2099, 1, 1, tzinfo=timezone.utc), "attendee": "a@b.example"},
-    )
-    recorded = CalDAVService._stored_reply_dtstamp(
-        cal.walk("VEVENT")[0], "a@b.example"
-    )
-    assert recorded is not None
-    # Clamped to ~now + skew, not the reply's far-future 2099 value.
-    now = datetime.now(timezone.utc)
-    assert recorded <= now + timedelta(minutes=6)
+    assert CalDAVService._update_partstat(cal, "a@b.example", "ACCEPTED")
+    CalDAVService._mark_replied(cal, "A@B.example")
+    att = cal.walk("VEVENT")[0]["ATTENDEE"]
+    att = att if not isinstance(att, list) else att[0]
+    assert att.params["SCHEDULE-STATUS"] == "2.0"
+    assert "RSVP" not in att.params
 
 
 _INBOUND_REPLY_EML = """\
@@ -3097,9 +3101,9 @@ class TestApplyReplyInboundE2E:
     def _seed(self, put_event, uid, organizer):
         # ORGANIZER must be the recipient mailbox so apply_reply's organizer
         # match (organizer_email = the mailbox) accepts this copy.
-        ics = _ORGANIZER_EVENT.format(
-            uid=uid, seq=0, attendee=self.ATTENDEE
-        ).replace("mailto:organizer@example.com", f"mailto:{organizer}")
+        ics = _ORGANIZER_EVENT.format(uid=uid, seq=0, attendee=self.ATTENDEE).replace(
+            "mailto:organizer@example.com", f"mailto:{organizer}"
+        )
         put_event(uid, ics)
 
     def _deliver(self, recipient, uid, partstat="ACCEPTED", attendee=None):
@@ -3158,9 +3162,9 @@ class TestApplyReplyInboundE2E:
             self._deliver(str(mailbox), uid)
 
         assert self._partstat(calendar_url, uid) == "ACCEPTED"
-        msg = models.Message.objects.filter(
-            thread__accesses__mailbox=mailbox
-        ).latest("created_at")
+        msg = models.Message.objects.filter(thread__accesses__mailbox=mailbox).latest(
+            "created_at"
+        )
         assert msg.get_stmsg_headers().get("itip-reply") == "verified"
 
     def test_no_inbound_auth_configured_does_not_apply(
@@ -3177,9 +3181,9 @@ class TestApplyReplyInboundE2E:
         self._deliver(str(mailbox), uid)
 
         assert self._partstat(calendar_url, uid) == "NEEDS-ACTION"
-        msg = models.Message.objects.filter(
-            thread__accesses__mailbox=mailbox
-        ).latest("created_at")
+        msg = models.Message.objects.filter(thread__accesses__mailbox=mailbox).latest(
+            "created_at"
+        )
         assert msg.get_stmsg_headers().get("itip-reply") is None
 
     def test_unknown_auth_mode_does_not_apply(
@@ -3212,9 +3216,9 @@ class TestApplyReplyInboundE2E:
             self._deliver(str(mailbox), uid)
 
         assert self._partstat(calendar_url, uid) == "NEEDS-ACTION"
-        msg = models.Message.objects.filter(
-            thread__accesses__mailbox=mailbox
-        ).latest("created_at")
+        msg = models.Message.objects.filter(thread__accesses__mailbox=mailbox).latest(
+            "created_at"
+        )
         assert msg.get_stmsg_headers().get("itip-reply") is None
 
     def test_flag_off_does_not_apply(
@@ -3244,7 +3248,7 @@ class TestApplyReplyInboundE2E:
         ):
             self._deliver(str(mailbox), "e2e-nocaldav@example.com")
 
-        msg = models.Message.objects.filter(
-            thread__accesses__mailbox=mailbox
-        ).latest("created_at")
+        msg = models.Message.objects.filter(thread__accesses__mailbox=mailbox).latest(
+            "created_at"
+        )
         assert msg.get_stmsg_headers().get("itip-reply") is None

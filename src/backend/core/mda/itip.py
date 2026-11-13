@@ -147,9 +147,7 @@ def evaluate_inbound_reply(parsed_email, auth_verdict, apply_unverified):
     if not from_addr:
         return None, None, None
     if reply_partstat(ics, from_addr) is None:
-        logger.info(
-            "iTIP REPLY From %r is not an RSVPing attendee; skipping", from_addr
-        )
+        logger.info("iTIP REPLY From is not an RSVPing attendee; skipping")
         return None, None, None
     # Reject recurrence-instance replies at the gate (no flag, no fan-out); the
     # service keeps its own check as defense in depth.

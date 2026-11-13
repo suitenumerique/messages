@@ -711,12 +711,6 @@ class CalDAVService:  # pylint: disable=too-many-instance-attributes
         )
         return True
 
-    _REPLY_DTSTAMP_PARAM = "X-STMSG-REPLY-DTSTAMP"
-
-    # How far a recorded reply DTSTAMP may sit in the future (clock skew) before
-    # it's clamped — stops a far-future DTSTAMP bricking that attendee's updates.
-    _REPLY_DTSTAMP_SKEW = timedelta(minutes=5)
-
     # Max span of the (attacker-controlled) reply time-range REPORT window.
     _MAX_QUERY_SPAN_DAYS = 366
 
@@ -726,7 +720,7 @@ class CalDAVService:  # pylint: disable=too-many-instance-attributes
         ``(None, reason)``.
 
         Reads the PARTSTAT of the ATTENDEE matching ``attendee_email`` (never
-        another line), + UID/time/SEQUENCE/DTSTAMP and whether it's a recurrence
+        another line), + UID/time/SEQUENCE and whether it's a recurrence
         instance. reason is ``unparseable-reply`` (bad ICS or no VEVENT with a
         UID) or ``attendee-mismatch`` (a UID event exists but that attendee has
         no PARTSTAT there).
@@ -773,12 +767,6 @@ class CalDAVService:  # pylint: disable=too-many-instance-attributes
                 return None, "unparseable-reply"
             dtend = comp.get("DTEND")
             seq = comp.get("SEQUENCE")
-            dtstamp = comp.get("DTSTAMP")
-            if dtstamp is None:
-                # DTSTAMP is required in every iTIP component (RFC 5546). Without
-                # it the per-attendee staleness guard can't record anything, so
-                # a same-SEQUENCE redelivery could overwrite a newer PARTSTAT.
-                return None, "unparseable-reply"
             return {
                 "uid": str(uid),
                 "attendee": target,
@@ -786,7 +774,6 @@ class CalDAVService:  # pylint: disable=too-many-instance-attributes
                 "start": dtstart.dt,
                 "end": dtend.dt if dtend is not None else None,
                 "sequence": int(seq) if seq is not None else 0,
-                "dtstamp": dtstamp.dt,
                 "is_recurrence_instance": comp.get("RECURRENCE-ID") is not None,
             }, None
         return None, ("attendee-mismatch" if saw_uid else "unparseable-reply")
@@ -834,9 +821,7 @@ class CalDAVService:  # pylint: disable=too-many-instance-attributes
                 # same-UID copy where it's merely an attendee, keep searching.
                 if organizer_norm and self._event_organizer(stored) != organizer_norm:
                     continue
-                return self._apply_reply_to_resource(
-                    resource_url, stored, etag, reply
-                )
+                return self._apply_reply_to_resource(resource_url, stored, etag, reply)
 
         logger.info("No stored event matches iTIP REPLY UID %s", reply["uid"])
         return {"applied": False, "reason": "no-matching-event"}
@@ -880,11 +865,9 @@ class CalDAVService:  # pylint: disable=too-many-instance-attributes
             stale = self._reply_is_stale(stored, reply)
             if stale:
                 return {"applied": False, "reason": stale}
-            if not self._update_partstat(
-                stored, reply["attendee"], reply["partstat"]
-            ):
+            if not self._update_partstat(stored, reply["attendee"], reply["partstat"]):
                 return {"applied": False, "reason": "attendee-not-on-event"}
-            self._record_reply_dtstamp(stored, reply)
+            self._mark_replied(stored, reply["attendee"])
             self._set_schedule_agent_client(stored)
             body = rebuild_for_storage(stored).to_ical().decode("utf-8")
             try:
@@ -921,8 +904,7 @@ class CalDAVService:  # pylint: disable=too-many-instance-attributes
         """
         start = self._as_utc(reply["start"])
         end = self._as_utc(reply["end"] or reply["start"])
-        if end < start:
-            end = start
+        end = max(end, start)
         max_span = timedelta(days=self._MAX_QUERY_SPAN_DAYS)
         if end - start > max_span:
             end = start + max_span
@@ -940,80 +922,31 @@ class CalDAVService:  # pylint: disable=too-many-instance-attributes
             dt = dt.replace(tzinfo=timezone.utc)
         return dt.astimezone(timezone.utc)
 
-    def _reply_is_stale(self, stored, reply):
-        """Stale-reason string if the REPLY is older than any stored VEVENT
-        (SEQUENCE, then per-attendee DTSTAMP), else None.
-
-        All components are evaluated so a multi-VEVENT object isn't order-
-        dependent. The DTSTAMP guard only protects against replay when the prior
-        state was recorded by this path; a DKIM replay of an old signed reply can
-        still land when the newer state arrived via another channel.
-        """
-        reply_seq = reply["sequence"]
-        reply_stamp = reply["dtstamp"]
+    @staticmethod
+    def _reply_is_stale(stored, reply):
+        """``stale-sequence`` if the REPLY answers an older SEQUENCE of any
+        stored VEVENT, else None. Like SabreDAV, no DTSTAMP bookkeeping."""
         for comp in stored.walk("VEVENT"):
             stored_seq = comp.get("SEQUENCE")
             stored_seq = int(stored_seq) if stored_seq is not None else 0
-            if reply_seq < stored_seq:
+            if reply["sequence"] < stored_seq:
                 return "stale-sequence"
-            if reply_seq == stored_seq:
-                last = self._stored_reply_dtstamp(comp, reply["attendee"])
-                if (
-                    last is not None
-                    and reply_stamp is not None
-                    and self._as_utc(reply_stamp) < self._as_utc(last)
-                ):
-                    return "stale-dtstamp"
         return None
 
-    @classmethod
-    def _stored_reply_dtstamp(cls, comp, attendee_email):
-        """Last-applied REPLY DTSTAMP for ``attendee_email`` on this VEVENT."""
-        attendees = comp.get("ATTENDEE")
-        if attendees is None:
-            return None
-        if not isinstance(attendees, list):
-            attendees = [attendees]
-        email_lower = attendee_email.lower()
-        for att in attendees:
-            addr = str(att).strip().lower()
-            if addr.startswith("mailto:"):
-                addr = addr[len("mailto:") :]
-            if addr != email_lower:
-                continue
-            raw = att.params.get(cls._REPLY_DTSTAMP_PARAM)
-            if not raw:
-                return None
-            try:
-                return datetime.strptime(str(raw), "%Y%m%dT%H%M%SZ").replace(
-                    tzinfo=timezone.utc
-                )
-            except ValueError:
-                return None
-        return None
-
-    @classmethod
-    def _record_reply_dtstamp(cls, stored, reply):
-        """Stamp the REPLY's DTSTAMP onto the attendee for future staleness checks."""
-        if reply["dtstamp"] is None:
-            return
-        # Clamp to now + skew so a far-future DTSTAMP can't permanently mark this
-        # attendee's later replies as stale.
-        ceiling = datetime.now(timezone.utc) + cls._REPLY_DTSTAMP_SKEW
-        stamp = min(cls._as_utc(reply["dtstamp"]), ceiling).strftime("%Y%m%dT%H%M%SZ")
-        email_lower = reply["attendee"].lower()
-        for comp in stored.walk("VEVENT"):
+    @staticmethod
+    def _mark_replied(cal, attendee_email):
+        """SCHEDULE-STATUS=2.0 on the replying attendee, as SabreDAV's iTIP
+        broker does (``_update_partstat`` already drops RSVP)."""
+        target = _attendee_key(attendee_email)
+        for comp in cal.walk("VEVENT"):
             attendees = comp.get("ATTENDEE")
             if attendees is None:
                 continue
             if not isinstance(attendees, list):
                 attendees = [attendees]
             for att in attendees:
-                addr = str(att).strip().lower()
-                if addr.startswith("mailto:"):
-                    addr = addr[len("mailto:") :]
-                if addr == email_lower:
-                    att.params[cls._REPLY_DTSTAMP_PARAM] = stamp
+                if _attendee_key(att) == target:
+                    att.params["SCHEDULE-STATUS"] = "2.0"
 
     @staticmethod
     def _set_schedule_agent_client(cal):

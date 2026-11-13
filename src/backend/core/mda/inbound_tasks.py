@@ -24,13 +24,13 @@ from jmap_email.types import JmapEmail
 
 from core import models
 from core.mda import itip
-from core.mda.inbound_auth import inbound_auth_enabled
 from core.mda.addresses import normalize_address
 from core.mda.dispatch_webhooks import (
     dispatch_recorded_webhooks,
     load_cached_webhook_results,
     persist_cached_webhook_results,
 )
+from core.mda.inbound_auth import inbound_auth_enabled
 from core.mda.inbound_create import (
     _create_message_from_inbound,
     _record_divergent_rcpt,
@@ -331,8 +331,8 @@ def _enqueue_itip_reply(
     )
     if not emails:
         logger.info(
-            "iTIP REPLY for %s: no CalDAV channel and no user identity; skipping",
-            mailbox,
+            "iTIP REPLY for mailbox %s: no CalDAV channel and no user identity; skipping",
+            mailbox.id,
         )
         return
     if len(emails) > _ITIP_FANOUT_CAP:
@@ -340,8 +340,8 @@ def _enqueue_itip_reply(
         # still TODO; this just stops a pathological access count from spraying
         # apply tasks. Legitimate mailboxes are far below the cap.
         logger.warning(
-            "iTIP REPLY for %s: capping fan-out at %d of many users",
-            mailbox,
+            "iTIP REPLY for mailbox %s: capping fan-out at %d of many users",
+            mailbox.id,
             _ITIP_FANOUT_CAP,
         )
         emails = emails[:_ITIP_FANOUT_CAP]
