@@ -85,7 +85,7 @@ Received: from mx.sender.example ([203.0.113.9])
 ```
 
 - `with` says whether the session was encrypted: `ESMTP` in clear, `ESMTPS` over TLS (RFC 3848), `UTF8SMTP` / `UTF8SMTPS` when the sender declared `SMTPUTF8` (RFC 6531).
-- `tls` names the cipher suite (RFC 8314 §4.3). The protocol version has no standard clause and goes in a comment, as Postfix writes it; `(TLSv1)` or `(TLSv1.1)` there is an old handshake, possible only with `PYMTA_TLS_MIN_VERSION` lowered.
+- `tls` names the cipher suite (RFC 8314 §4.3). The protocol version has no standard clause and goes in a comment, as Postfix writes it; `(TLSv1)` or `(TLSv1.1)` there is an old handshake, refused when `PYMTA_TLS_MIN_VERSION` is `1.2` or higher.
 - `id` is the session id of every pymta log line about this message.
 - `by` is `PYMTA_SMTP_HOSTNAME`.
 - There is no `for` clause: one delivery to several recipients is stored once, and a `for` would also show Bcc recipients to each other.
@@ -247,9 +247,10 @@ Grouped as `src/pymta/settings.py` groups them.
 | `PYMTA_ENABLE_PROXY_PROTOCOL` | `false` | Enable PROXY-protocol v1/v2. `haproxy` is an alias for `true` — it is the only protocol postscreen defines and the only one implemented here — so both names take either spelling |
 | `PYMTA_BLOCKED_NETWORKS` | empty | Comma-separated IPs/CIDRs refused at connect time with `554 5.7.1 Access denied`, before the banner. Matched against the **client** address: the PROXY-header source when PROXY protocol is on, the TCP peer otherwise. Nothing to do with `PYMTA_TRUSTED_PROXIES`. Permanent rather than a 421 on purpose, since a deferral invites the retries you are trying to shed; a block covering a legitimate sender therefore bounces their mail, so keep the ranges narrow |
 | `PYMTA_TRUSTED_PROXIES` | empty | Comma-separated IPs/CIDRs allowed to send a PROXY header. Required when PROXY protocol is on: pymta refuses to start without it. `0.0.0.0/0,::/0` trusts every peer, with a warning at startup. Ignored when PROXY protocol is off |
-| `PYMTA_TLS_CERT_FILE` / `PYMTA_TLS_KEY_FILE` | empty | STARTTLS cert + key paths, comma-separated for dual certificates (see below). **Both or neither** — one alone is refused at startup, since it would serve plaintext and simply not advertise STARTTLS. Both empty disables STARTTLS deliberately. A single PEM holding both the key and the chain (the Postfix layout) is given to *both*: `ssl.load_cert_chain` reads each from the same file. The files are read again on SIGHUP, so a renewal needs no restart (see [Certificate renewal](#certificate-renewal)) |
+| `PYMTA_TLS_CERT_FILE` / `PYMTA_TLS_KEY_FILE` | empty | STARTTLS cert + key paths, comma-separated for dual certificates (see below). **Both or neither**: one alone is refused at startup, since it would serve plaintext and simply not advertise STARTTLS. Both empty disables STARTTLS deliberately. A single PEM holding both the key and the chain (the Postfix layout) is given to *both*: `ssl.load_cert_chain` reads each from the same file. That PEM may hold several key + chain groups (see [Dual certificates](#dual-certificates-rsa--ecdsa)). The files are read again on SIGHUP, so a renewal needs no restart (see [Certificate renewal](#certificate-renewal)) |
 | `PYMTA_REQUIRE_TLS` | `false` | Answer `530` to every command but EHLO, STARTTLS, NOOP and QUIT until the session has done STARTTLS. For a listener whose senders are known. On a public MX it refuses every sender that cannot do TLS, or that fails the handshake and retries in clear: publish MTA-STS or DANE for the domain instead, and the senders that support them enforce TLS themselves. Refuses to start without a certificate. Refusals are `reject` lines with `reason=tls_required` |
-| `PYMTA_TLS_MIN_VERSION` | `1.2` | Oldest TLS version accepted: `1.0`, `1.1`, `1.2` or `1.3`. A sender limited to 1.0 or 1.1 fails the handshake at the default and shows up as `tls_error=` on its `session_closed` line; it then retries in clear or gives up. Setting `1.0` or `1.1` also lowers OpenSSL to security level 0 for every handshake on the listener, because those versions sign the handshake with SHA-1 |
+| `PYMTA_TLS_MIN_VERSION` | `1.0` | Oldest TLS version accepted: `1.0`, `1.1`, `1.2` or `1.3`. The default accepts everything, as Gmail and the Postfix image did: on a public MX a refused sender retries in clear or gives up, which is worse than an old protocol. The cost is that a minimum below `1.2` lowers OpenSSL to security level 0 for every handshake on the listener, because those versions sign the handshake with SHA-1. Set `1.2` (or `1.3`) to refuse older senders; they then fail the handshake and show up as `tls_error=` on their `session_closed` line |
+| `PYMTA_TLS_CIPHERS` | empty | OpenSSL cipher list for TLS 1.2 and below; TLS 1.3 suites are not affected. Empty keeps Python's default list, which still includes CBC and SHA-1 suites. `ECDHE+AESGCM:ECDHE+CHACHA20` keeps only forward-secret AEAD suites. A sender that can use none of the listed suites fails with `tls_error=no_shared_cipher` and then retries in clear or gives up, so watch that error for a few days after narrowing the list. An entry OpenSSL does not accept stops the process at startup |
 
 **Metrics, logging, container**
 
@@ -299,7 +300,7 @@ No setting is re-read while the process runs. A running process cannot be given 
 
 SIGHUP does one thing: it reads the certificate and key files again, from the same paths. Connections accepted afterwards get the new certificate; if the files do not load, `tls_reload_rejected` is logged and the previous certificate stays in use. Have whatever renews the certificate send the signal (a cert-manager secret mounted as a volume updates in place like a ConfigMap).
 
-At startup and after each reload, one `tls_certificate` line per file gives `not_after=` and `days_left=`, and `pymta_tls_certificate_not_after_seconds{file=...}` exports the expiry. Alert on `pymta_tls_certificate_not_after_seconds - time() < 14 * 86400`: an expired certificate only shows up otherwise as `closed_by=tls_failed` from the senders that verify it.
+At startup and after each reload, one `tls_certificate` line per certificate gives `not_after=` and `days_left=`, and `pymta_tls_certificate_not_after_seconds{file=...}` exports the expiry. Alert on `pymta_tls_certificate_not_after_seconds - time() < 14 * 86400`: an expired certificate only shows up otherwise as `closed_by=tls_failed` from the senders that verify it.
 
 **Rollouts: SIGTERM is the whole protocol.** One signal, no env var, no orchestration:
 
@@ -445,7 +446,7 @@ event=session_closed session_id=9bf92de8 client_ip=192.0.2.10 helo=mx.sender.exa
 | `last_error_*` | The last 4xx/5xx sent, whoever sent it, with the verb and the argument that drew it. An `AUTH` argument is logged as `[redacted]`: it can carry credentials |
 | `sender` | The MAIL FROM of the last transaction opened, accepted or not. Clipped in the middle past 256 characters, so the domain stays searchable |
 | `recipients`, `recipient_count` | Only when a transaction was still open at the end: the recipients accepted for a message that was never completed |
-| `tls`, `tls_version`, `tls_cipher`, `tls_error` | `tls_error` is set when the STARTTLS handshake failed, with the cause (`SSLError: ... certificate unknown`, `no shared cipher`, ...). A sender enforcing TLS that rejects our certificate looks exactly like this |
+| `tls`, `tls_version`, `tls_cipher`, `tls_error` | `tls_error` is set when the STARTTLS handshake failed, as a stable name for the cause: OpenSSL's reason lower-cased (`no_shared_cipher`, `wrong_version_number`, `unsupported_protocol`, or the alert the sender sent: `tlsv1_alert_unknown_ca`, `sslv3_alert_certificate_unknown`, ...), else the exception class (`timeout_error`, `connection_reset_error`). `no_shared_cipher` means the sender offers no suite usable with the key types we serve: compare with `tls_key_types` at startup. A sender enforcing TLS that rejects our certificate looks like the alert names |
 | `closed_by` | `quit` (answered `221`), `peer_closed`, `peer_reset` (with `error_type`), `server_closed` (we answered 421, or 502 after too many unrecognised commands), `command_timeout`, `data_timeout` (a message not received in time, or too slowly while message slots are scarce), `session_timeout`, `reclaimed` (idle, and its slot given to a source under its share), `tls_failed`, `internal_error`, `shutdown` (answered 421 because the process is stopping, or still open at the `PYMTA_SHUTDOWN_TIMEOUT` deadline) |
 | `wire_peer` | The balancer, when PROXY protocol is on; `client_ip` is then the PROXY source |
 
@@ -527,6 +528,17 @@ PYMTA_TLS_KEY_FILE:  /tls/ecdsa.key,/tls/rsa.key
 OpenSSL keeps one certificate slot per key type and, at each handshake, presents whichever the client said it can verify. So one listener serves the smaller, faster ECDSA certificate to senders that support it and RSA to everything else, without SNI or a second port.
 
 Order does not select the certificate — the client's advertised algorithms do. It only matters between two certificates of the *same* key type, where the later one takes the slot and is the one served; that is a configuration mistake pymta cannot detect, since it never parses the certificates.
+
+The same can be done in one file, given as both variables: each private key starts a group, followed by its certificate and chain. The groups are loaded one by one, since `ssl.load_cert_chain` alone would read only the first key and take the other certificates for chain, leaving the second key type unserved. A certificate before the first key, or a key without a certificate, is refused at startup.
+
+```
+-----BEGIN PRIVATE KEY-----      (ECDSA key)
+-----BEGIN CERTIFICATE-----      (ECDSA leaf, then its chain)
+-----BEGIN PRIVATE KEY-----      (RSA key)
+-----BEGIN CERTIFICATE-----      (RSA leaf, then its chain)
+```
+
+At startup, and after each reload, `tls_key_types served=ecdsa,rsa` says which key types a handshake can complete with, found by trying one TLS 1.2 suite of each. A sender that supports only a type missing there fails with `closed_by=tls_failed` and `tls_error=no_shared_cipher`. Not logged when `PYMTA_TLS_MIN_VERSION=1.3`. Each group of a multi-key file gets its own `tls_certificate` line and `file=` gauge label, written `path[1]`, `path[2]`. The cipher probe tries every TLS 1.2 suite `PYMTA_TLS_CIPHERS` leaves for each key type.
 
 Mismatched list lengths are refused at startup: the pairing is positional, so a cert would otherwise be loaded against another's key and OpenSSL's complaint names neither variable. An empty entry (a stray comma) is refused for the same reason a half-configured pair is — it would quietly become "STARTTLS off".
 

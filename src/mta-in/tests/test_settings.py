@@ -18,6 +18,7 @@ import pytest
 from prometheus_client import REGISTRY
 
 from pymta import controller, server, settings
+from pymta.session_log import tls_failure_code
 from pymta.settings import _env_address, _env_bool, _env_int, _env_str, _env_token
 
 
@@ -375,6 +376,193 @@ def test_both_certificates_are_served_one_per_key_type(monkeypatch, reload_setti
     assert _cert_presented_to(ctx, "ECDHE-RSA-AES128-GCM-SHA256") == der_of(rsa_crt)
 
 
+def _bundle(tmp_path, *pairs):
+    """One PEM holding each (cert, key) pair as key then certificate."""
+    path = tmp_path / "bundle.pem"
+    path.write_text("".join(open(k).read() + open(c).read() for c, k in pairs))
+    return str(path)
+
+
+def _ec_and_rsa(tmp_path):
+    rsa = _self_signed(tmp_path, "rsa", ["-newkey", "rsa:2048"])
+    ec = _self_signed(
+        tmp_path, "ecdsa", ["-newkey", "ec", "-pkeyopt", "ec_paramgen_curve:prime256v1"]
+    )
+    return ec, rsa
+
+
+def test_one_pem_holding_both_key_types_serves_both(monkeypatch, reload_settings, tmp_path):
+    """OpenSSL reads the first key of a file and takes every later certificate
+    for chain, so without splitting the RSA pair is never served and an
+    RSA-only sender fails with no shared cipher."""
+    ec, rsa = _ec_and_rsa(tmp_path)
+    bundle = _bundle(tmp_path, ec, rsa)
+    monkeypatch.setenv("PYMTA_TLS_CERT_FILE", bundle)
+    monkeypatch.setenv("PYMTA_TLS_KEY_FILE", bundle)
+    reload_settings()
+
+    ctx = controller.load_tls_context()
+
+    def der_of(path):
+        with open(path, encoding="ascii") as handle:
+            return ssl.PEM_cert_to_DER_cert(handle.read())
+
+    assert _cert_presented_to(ctx, "ECDHE-ECDSA-AES128-GCM-SHA256") == der_of(ec[0])
+    assert _cert_presented_to(ctx, "ECDHE-RSA-AES128-GCM-SHA256") == der_of(rsa[0])
+    assert controller.served_key_types(ctx) == ["ecdsa", "rsa"]
+
+
+def test_a_single_pair_is_reported_with_the_key_type_it_serves(
+    monkeypatch, reload_settings, tmp_path
+):
+    ec, _ = _ec_and_rsa(tmp_path)
+    monkeypatch.setenv("PYMTA_TLS_CERT_FILE", ec[0])
+    monkeypatch.setenv("PYMTA_TLS_KEY_FILE", ec[1])
+    reload_settings()
+    assert controller.served_key_types(controller.load_tls_context()) == ["ecdsa"]
+
+
+def test_key_types_are_not_probed_when_only_tls13_is_accepted(
+    monkeypatch, reload_settings, tmp_path
+):
+    ec, _ = _ec_and_rsa(tmp_path)
+    monkeypatch.setenv("PYMTA_TLS_CERT_FILE", ec[0])
+    monkeypatch.setenv("PYMTA_TLS_KEY_FILE", ec[1])
+    monkeypatch.setenv("PYMTA_TLS_MIN_VERSION", "1.3")
+    reload_settings()
+    assert controller.served_key_types(controller.load_tls_context()) is None
+
+
+def test_each_group_of_a_bundle_has_its_own_expiry_and_the_key_types_are_logged(
+    monkeypatch, reload_settings, tmp_path, caplog
+):
+    ec, rsa = _ec_and_rsa(tmp_path)
+    bundle = _bundle(tmp_path, ec, rsa)
+    monkeypatch.setenv("PYMTA_TLS_CERT_FILE", bundle)
+    monkeypatch.setenv("PYMTA_TLS_KEY_FILE", bundle)
+    reload_settings()
+
+    with caplog.at_level("INFO", logger="pymta.server"):
+        server._log_certificates(controller.load_tls_context())
+
+    files = [r.file for r in caplog.records if r.getMessage() == "tls_certificate"]
+    assert files == [f"{bundle}[1]", f"{bundle}[2]"]
+    for name in files:
+        assert REGISTRY.get_sample_value(
+            "pymta_tls_certificate_not_after_seconds", {"file": name}
+        ) == pytest.approx(time.time() + 86400, abs=120)
+    (record,) = [r for r in caplog.records if r.getMessage() == "tls_key_types"]
+    assert record.served == "ecdsa,rsa"
+
+
+def test_a_handshake_failure_is_named_by_openssl_s_reason(tmp_path):
+    """An ECDSA-only server and an RSA-only client: the failure a sender
+    without ECDSA support produces, named without the source line."""
+    ec, _ = _ec_and_rsa(tmp_path)
+    server_ctx = ssl.create_default_context(ssl.Purpose.CLIENT_AUTH)
+    server_ctx.load_cert_chain(*ec)
+    client_ctx = ssl.SSLContext(ssl.PROTOCOL_TLS_CLIENT)
+    client_ctx.check_hostname = False
+    client_ctx.verify_mode = ssl.CERT_NONE
+    client_ctx.maximum_version = ssl.TLSVersion.TLSv1_2
+    client_ctx.set_ciphers("ECDHE-RSA-AES128-GCM-SHA256")
+    to_server, to_client = ssl.MemoryBIO(), ssl.MemoryBIO()
+    client = client_ctx.wrap_bio(to_client, to_server)
+    server = server_ctx.wrap_bio(to_server, to_client, server_side=True)
+    with pytest.raises(ssl.SSLWantReadError):
+        client.do_handshake()
+    with pytest.raises(ssl.SSLError) as failure:
+        server.do_handshake()
+
+    assert tls_failure_code(failure.value) == "no_shared_cipher"
+
+
+def test_a_failure_without_a_reason_is_named_by_its_class():
+    assert tls_failure_code(ConnectionResetError()) == "connection_reset_error"
+    assert tls_failure_code(TimeoutError()) == "timeout_error"
+
+
+def test_a_reason_attribute_on_another_exception_is_not_taken_for_openssl_s():
+    class Odd(Exception):
+        reason = "Something Else"
+
+    assert tls_failure_code(Odd()) == "odd"
+
+
+def test_a_bundle_named_through_a_symlink_is_still_split(monkeypatch, reload_settings, tmp_path):
+    ec, rsa = _ec_and_rsa(tmp_path)
+    bundle = _bundle(tmp_path, ec, rsa)
+    link = tmp_path / "link.pem"
+    link.symlink_to(bundle)
+    monkeypatch.setenv("PYMTA_TLS_CERT_FILE", bundle)
+    monkeypatch.setenv("PYMTA_TLS_KEY_FILE", str(link))
+    reload_settings()
+    assert controller.served_key_types(controller.load_tls_context()) == ["ecdsa", "rsa"]
+
+
+def test_the_key_type_probe_uses_the_suites_the_cipher_list_leaves(
+    monkeypatch, reload_settings, tmp_path
+):
+    """Neither probe suite is in this list, yet both certificates are served."""
+    ec, rsa = _ec_and_rsa(tmp_path)
+    bundle = _bundle(tmp_path, ec, rsa)
+    monkeypatch.setenv("PYMTA_TLS_CERT_FILE", bundle)
+    monkeypatch.setenv("PYMTA_TLS_KEY_FILE", bundle)
+    monkeypatch.setenv("PYMTA_TLS_CIPHERS", "ECDHE+CHACHA20")
+    reload_settings()
+    assert controller.served_key_types(controller.load_tls_context()) == ["ecdsa", "rsa"]
+
+
+def test_the_expiry_series_of_a_file_that_changed_shape_are_dropped(
+    monkeypatch, reload_settings, tmp_path
+):
+    ec, rsa = _ec_and_rsa(tmp_path)
+    bundle = _bundle(tmp_path, ec, rsa)
+    monkeypatch.setenv("PYMTA_TLS_CERT_FILE", bundle)
+    monkeypatch.setenv("PYMTA_TLS_KEY_FILE", bundle)
+    reload_settings()
+    controller.publish_certificate_expiry()
+    name = "pymta_tls_certificate_not_after_seconds"
+    assert REGISTRY.get_sample_value(name, {"file": f"{bundle}[2]"}) is not None
+
+    single = _bundle(tmp_path, ec)
+    monkeypatch.setattr(settings, "PYMTA_TLS_CERT_PAIRS", [(single, single)])
+    controller.publish_certificate_expiry()
+
+    assert REGISTRY.get_sample_value(name, {"file": f"{bundle}[2]"}) is None
+    assert REGISTRY.get_sample_value(name, {"file": single}) is not None
+
+
+def test_a_bundle_with_one_key_is_loaded_as_it_is(monkeypatch, reload_settings, tmp_path):
+    """The usual Postfix-style file: key then chain, in one PEM."""
+    ec, _ = _ec_and_rsa(tmp_path)
+    bundle = _bundle(tmp_path, ec)
+    monkeypatch.setenv("PYMTA_TLS_CERT_FILE", bundle)
+    monkeypatch.setenv("PYMTA_TLS_KEY_FILE", bundle)
+    reload_settings()
+    assert controller.served_key_types(controller.load_tls_context()) == ["ecdsa"]
+    assert list(controller.publish_certificate_expiry()) == [bundle]
+
+
+def test_an_unreadable_bundle_has_no_expiry(monkeypatch):
+    monkeypatch.setattr(
+        settings, "PYMTA_TLS_CERT_PAIRS", [("/nonexistent.pem", "/nonexistent.pem")]
+    )
+    assert controller.publish_certificate_expiry() == {"/nonexistent.pem": None}
+
+
+def test_a_handshake_that_never_completes_serves_no_key_type(monkeypatch, tmp_path):
+    ec, _ = _ec_and_rsa(tmp_path)
+    ctx = ssl.create_default_context(ssl.Purpose.CLIENT_AUTH)
+    ctx.load_cert_chain(*ec)
+
+    def never(self):
+        raise ssl.SSLWantReadError
+
+    monkeypatch.setattr(ssl.SSLObject, "do_handshake", never)
+    assert controller.served_key_types(ctx) == []
+
+
 def test_log_level_typo_is_refused(monkeypatch, reload_settings):
     # Otherwise `getattr(logging, "INF0", INFO)` resolves it to INFO and the
     # operator never learns the level they asked for was not applied.
@@ -442,6 +630,32 @@ def test_tls_min_version_typo_is_refused(monkeypatch, reload_settings):
         reload_settings()
 
 
+def test_tls_ciphers_typo_is_refused(monkeypatch, reload_settings):
+    monkeypatch.setenv("PYMTA_TLS_CIPHERS", "NOT-A-SUITE")
+    with pytest.raises(ValueError, match="PYMTA_TLS_CIPHERS"):
+        reload_settings()
+
+
+@pytest.mark.parametrize("minimum", ["1.0", "1.2"])
+def test_tls_ciphers_restrict_what_is_negotiated(monkeypatch, reload_settings, tmp_path, minimum):
+    """A CBC-only client gets no handshake once the list is GCM only, and one
+    still works without the setting."""
+    ec, _ = _ec_and_rsa(tmp_path)
+    monkeypatch.setenv("PYMTA_TLS_CERT_FILE", ec[0])
+    monkeypatch.setenv("PYMTA_TLS_KEY_FILE", ec[1])
+    monkeypatch.setenv("PYMTA_TLS_MIN_VERSION", minimum)
+    reload_settings()
+    open_ctx = controller.load_tls_context()
+    assert _cert_presented_to(open_ctx, "ECDHE-ECDSA-AES128-SHA256")
+
+    monkeypatch.setenv("PYMTA_TLS_CIPHERS", "ECDHE+AESGCM:ECDHE+CHACHA20")
+    reload_settings()
+    narrow_ctx = controller.load_tls_context()
+    assert _cert_presented_to(narrow_ctx, "ECDHE-ECDSA-AES128-GCM-SHA256")
+    with pytest.raises(ssl.SSLError):
+        _cert_presented_to(narrow_ctx, "ECDHE-ECDSA-AES128-SHA256")
+
+
 def _handshake_as_tls10(ctx) -> str | None:
     """The version negotiated with a client that only speaks TLS 1.0, or None."""
     with socket.socket() as server:
@@ -478,9 +692,9 @@ def _handshake_as_tls10(ctx) -> str | None:
 
 
 @pytest.mark.parametrize(
-    ("minimum", "negotiated"), [(None, None), ("1.2", None), ("1.0", "TLSv1")]
+    ("minimum", "negotiated"), [(None, "TLSv1"), ("1.2", None), ("1.0", "TLSv1")]
 )
-def test_tls_10_is_accepted_only_when_asked_for(
+def test_tls_10_is_accepted_by_default_and_refused_from_1_2(
     monkeypatch, reload_settings, tmp_path, minimum, negotiated
 ):
     crt, key = _self_signed(tmp_path, "rsa", ["-newkey", "rsa:2048"])

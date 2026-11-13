@@ -32,7 +32,7 @@ import secrets
 import ssl
 import time
 
-from . import logfmt, metrics, runtime, settings
+from . import metrics, runtime, settings
 from .command import (
     ArgumentNotAscii,
     CommandSyntaxError,
@@ -43,7 +43,7 @@ from .command import (
 )
 from .limits import IPGate, LogThrottle, TooManyConnections, source_key
 from .proxy_protocol import read_proxy_header
-from .session_log import MAX_LOGGED_REPLY, SessionLog
+from .session_log import SessionLog, tls_failure_code
 from .wire import ConnectionClosed, LineReader, LineTooLong, stored_line
 
 logger = logging.getLogger(__name__)
@@ -958,7 +958,7 @@ class SMTPConnection(asyncio.Protocol):
             # common protocol or cipher, or plaintext where TLS was due. Not a
             # fault of ours. The cause is kept: this is the only trace of a
             # sender that enforces TLS and rejects our certificate.
-            self._log.tls_error = logfmt.clip(f"{type(error).__name__}: {error}", MAX_LOGGED_REPLY)
+            self._log.tls_error = tls_failure_code(error)
             self.close_reason = self.close_reason or "tls_failed"
             raise _TLSFailed from error
         finally:

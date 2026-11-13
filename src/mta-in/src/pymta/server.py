@@ -15,10 +15,11 @@ import asyncio
 import contextlib
 import logging
 import signal
+import ssl
 import time
 
 from . import logfmt, metrics, runtime, settings
-from .controller import Listener, publish_certificate_expiry
+from .controller import Listener, publish_certificate_expiry, served_key_types
 from .handler import InboundHandler
 from .limits import IPGate
 from .mda_async import MDAClient
@@ -123,14 +124,27 @@ def _log_unhandled(loop: asyncio.AbstractEventLoop, context: dict) -> None:
     )
 
 
-def _log_certificates() -> None:
-    """One line per STARTTLS certificate with its expiry, and the gauge."""
+def _log_certificates(ctx: ssl.SSLContext | None = None) -> None:
+    """One line per STARTTLS certificate with its expiry, and the gauge.
+
+    With the loaded context, a last line names the key types it can serve.
+    """
     for cert, not_after in publish_certificate_expiry().items():
         fields: dict = {"file": cert}
         if not_after is not None:
             fields["not_after"] = time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime(not_after))
             fields["days_left"] = int((not_after - time.time()) // 86400)
         logger.info("tls_certificate", extra=fields)
+    served = served_key_types(ctx) if ctx is not None else None
+    if served is not None:
+        logger.info(
+            "tls_key_types",
+            extra={
+                "served": ",".join(served) or "none",
+                "detail": "a sender that supports only a key type missing here fails "
+                "the handshake with no shared cipher",
+            },
+        )
 
 
 def _reload_tls(listener: Listener) -> None:
@@ -143,7 +157,7 @@ def _reload_tls(listener: Listener) -> None:
         logger.error("tls_reload_rejected", exc_info=True, extra={"applied": False})
         return
     logger.info("tls_reloaded")
-    _log_certificates()
+    _log_certificates(listener.tls_context)
 
 
 def _on_terminate(sig: signal.Signals, stop: asyncio.Event, gate: IPGate) -> None:
@@ -267,7 +281,7 @@ async def _serve() -> None:
                 "tls_min_version": settings.PYMTA_TLS_MIN_VERSION,
             },
         )
-        _log_certificates()
+        _log_certificates(listener.tls_context)
 
         # Each DATA phase is buffered in RAM, so concurrent DATA phases times
         # the message size is the heap (a session that has not reached DATA

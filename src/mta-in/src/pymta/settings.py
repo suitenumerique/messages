@@ -2,6 +2,7 @@
 
 import ipaddress
 import os
+import ssl
 
 from .address import AddressError, validate_envelope_address
 
@@ -564,18 +565,35 @@ if PYMTA_REQUIRE_TLS and not PYMTA_TLS_CERT_PAIRS:
 
 # Oldest TLS version accepted on STARTTLS: 1.0, 1.1, 1.2 or 1.3.
 #
-# 1.2 is Python's default. A sender that only speaks 1.0 or 1.1 fails the
-# handshake, and then either retries in clear or gives up, so on an inbound MX
-# an old protocol can be better than none. Going below 1.2 also drops OpenSSL
-# to security level 0 for every handshake on this listener, because the
-# SHA-1 signatures those versions use are refused above it.
+# 1.0 by default, as the large mail providers and the Postfix image this
+# replaces do. A sender that only speaks 1.0 or 1.1 and is refused fails the
+# handshake, then either retries in clear or gives up, so on an inbound MX an
+# old protocol is better than none. The cost: a minimum below 1.2 drops
+# OpenSSL to security level 0 for every handshake on this listener, because
+# the SHA-1 signatures those versions use are refused above it. Set 1.2 to
+# refuse them.
 _TLS_VERSIONS = ("1.0", "1.1", "1.2", "1.3")
-PYMTA_TLS_MIN_VERSION = _env_str("PYMTA_TLS_MIN_VERSION", "1.2").strip()
+PYMTA_TLS_MIN_VERSION = _env_str("PYMTA_TLS_MIN_VERSION", "1.0").strip()
 if PYMTA_TLS_MIN_VERSION not in _TLS_VERSIONS:
     raise ValueError(
         f"Environment variable PYMTA_TLS_MIN_VERSION is set to {PYMTA_TLS_MIN_VERSION!r}. "
         f"Use one of {', '.join(_TLS_VERSIONS)}."
     )
+
+# OpenSSL cipher list for TLS 1.2 and below (TLS 1.3 suites are not affected).
+# Empty keeps Python's default list, which accepts what most senders offer,
+# CBC and SHA-1 suites included. A narrower list drops the weak suites and
+# turns away the senders that can use nothing else, who then retry in clear or
+# give up.
+PYMTA_TLS_CIPHERS = _env_str("PYMTA_TLS_CIPHERS", "").strip()
+if PYMTA_TLS_CIPHERS:
+    try:
+        ssl.SSLContext(ssl.PROTOCOL_TLS_SERVER).set_ciphers(PYMTA_TLS_CIPHERS)
+    except ssl.SSLError as exc:
+        raise ValueError(
+            f"Environment variable PYMTA_TLS_CIPHERS is set to {PYMTA_TLS_CIPHERS!r}, "
+            "which OpenSSL does not accept as a cipher list or which matches no suite."
+        ) from exc
 
 
 # ---------------------------------------------------------------------------

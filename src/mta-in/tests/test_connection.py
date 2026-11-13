@@ -601,7 +601,7 @@ async def test_a_failed_starttls_handshake_is_summarised_not_reported_as_a_bug(c
 
     assert record.closed_by == "tls_failed"
     assert record.tls is False
-    assert record.tls_error
+    assert record.tls_error == "wrong_version_number"
     assert record.commands == "ehlo=1 starttls=0/1"
     assert not [r for r in caplog.records if r.getMessage() == "handler_error"]
 
