@@ -2388,6 +2388,8 @@ class Message(BaseModel):
     #                                   received in clear, over TLS below 1.2, or
     #                                   through an MTA that did not say (modern
     #                                   TLS, or not received over SMTP ⇒ absent)
+    #   "itip-reply": "verified" | "unverified"  inbound iTIP REPLY trust-gated
+    #                                   and dispatched (async apply may still no-op)
     # Immutable ingest-time facts (ip/helo/hostname, MAIL FROM, widget referer)
     # live in headers in the blob instead — see the ingest paths. Keep values
     # small and bounded; large/regenerated data (e.g. AI summaries) belongs in
@@ -2601,6 +2603,9 @@ class Message(BaseModel):
             # like the rest, but it rides the same channel because it needs the
             # same banner: every field the UI would render is empty.
             result["unreadable"] = "true"
+        if postmark.get("itip-reply"):
+            # Inbound iTIP REPLY trust-gated + dispatched (async apply may no-op).
+            result["itip-reply"] = postmark["itip-reply"]
         return result
 
     def generate_mime_id(self) -> str:

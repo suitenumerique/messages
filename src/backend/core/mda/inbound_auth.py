@@ -253,6 +253,21 @@ def trusted_arc_sealers(spam_config: dict[str, Any]) -> set[str]:
     }
 
 
+_SUPPORTED_INBOUND_AUTH_MODES = frozenset(
+    {"native", "rspamd", "arc", "authentication-results"}
+)
+
+
+def inbound_auth_enabled(spam_config: dict[str, Any]) -> bool:
+    """Whether inbound auth is configured with a *supported* mode.
+
+    Stricter than ``get_inbound_auth_mode`` truthiness: an unknown value (a
+    typo like ``"nativ"``) makes ``check_inbound_authentication`` return None
+    (= verified), so callers gating on "did auth run" must exclude it.
+    """
+    return get_inbound_auth_mode(spam_config) in _SUPPORTED_INBOUND_AUTH_MODES
+
+
 def check_inbound_authentication(
     raw_data: bytes,
     parsed_email: JmapEmail,
