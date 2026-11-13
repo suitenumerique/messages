@@ -141,19 +141,20 @@ def served_key_types(ctx: ssl.SSLContext) -> list[str] | None:
     """The key types ``ctx`` can complete a handshake with, by trying each.
 
     Tells an operator without shell access which certificates the process
-    holds. Each key type is tried with every TLS 1.2 suite the context allows
-    for it, so a ``PYMTA_TLS_CIPHERS`` that leaves out one suite does not read
-    as a missing certificate. None when the context only speaks TLS 1.3,
+    holds. Each key type is tried with every suite the context allows for it,
+    so a ``PYMTA_TLS_CIPHERS`` that leaves out one suite does not read as a
+    missing certificate. None when the context only speaks TLS 1.3,
     whose suites do not depend on the key type.
     """
     if ctx.minimum_version > ssl.TLSVersion.TLSv1_2:
         return None
     served = []
     for key_type in _KEY_TYPES:
+        # By key type only: a suite's "protocol" is the first version that
+        # defines it (ECDHE-ECDSA-AES256-SHA says TLSv1.0), and it still runs
+        # in TLS 1.2. The client is held to 1.2, so the handshake decides.
         suites = [
-            suite["name"]
-            for suite in ctx.get_ciphers()
-            if suite["auth"] == f"auth-{key_type}" and suite["protocol"] == "TLSv1.2"
+            suite["name"] for suite in ctx.get_ciphers() if suite["auth"] == f"auth-{key_type}"
         ]
         if suites and _handshake_succeeds(ctx, ":".join(suites)):
             served.append(key_type)

@@ -513,6 +513,19 @@ def test_the_key_type_probe_uses_the_suites_the_cipher_list_leaves(
     assert controller.served_key_types(controller.load_tls_context()) == ["ecdsa", "rsa"]
 
 
+def test_the_key_type_probe_finds_suites_that_name_an_older_protocol(
+    monkeypatch, reload_settings, tmp_path
+):
+    """ECDHE-*-AES256-SHA is listed as TLSv1.0 yet runs in TLS 1.2."""
+    ec, rsa = _ec_and_rsa(tmp_path)
+    bundle = _bundle(tmp_path, ec, rsa)
+    monkeypatch.setenv("PYMTA_TLS_CERT_FILE", bundle)
+    monkeypatch.setenv("PYMTA_TLS_KEY_FILE", bundle)
+    monkeypatch.setenv("PYMTA_TLS_CIPHERS", "ECDHE-ECDSA-AES256-SHA:ECDHE-RSA-AES256-SHA")
+    reload_settings()
+    assert controller.served_key_types(controller.load_tls_context()) == ["ecdsa", "rsa"]
+
+
 def test_the_expiry_series_of_a_file_that_changed_shape_are_dropped(
     monkeypatch, reload_settings, tmp_path
 ):

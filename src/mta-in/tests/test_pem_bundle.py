@@ -111,9 +111,15 @@ def test_readable_path_reads_back(monkeypatch, variant):
         assert not os.path.exists(path)
 
 
-def test_the_in_memory_file_is_closed_even_when_the_caller_fails():
+@pytest.mark.parametrize("memfd", [True, False])
+def test_the_file_is_released_even_when_the_caller_fails(monkeypatch, memfd):
+    if not memfd:
+        monkeypatch.delattr(pem_bundle.os, "memfd_create", raising=False)
     with pytest.raises(RuntimeError), pem_bundle.readable_path(KEY) as path:
-        fd = int(path.rsplit("/", 1)[1])
         raise RuntimeError
-    with pytest.raises(OSError):
-        os.fstat(fd)
+    if memfd:
+        assert path.startswith("/proc/self/fd/")
+        with pytest.raises(OSError):
+            os.fstat(int(path.rsplit("/", 1)[1]))
+    else:
+        assert not os.path.exists(path)
