@@ -21,6 +21,7 @@ from prometheus_client import REGISTRY
 
 from pymta import controller, logfmt, metrics, runtime, server, settings, smtp_protocol
 from pymta.address import AddressError, validate_envelope_address
+from pymta.handler import InboundHandler
 from pymta.limits import IPGate
 from pymta.mda_async import MDAClient
 from pymta.settings import _env_networks
@@ -426,7 +427,7 @@ async def test_the_server_starts_and_drains_in_process(
     monkeypatch, caplog, clean_runtime, concurrent_data
 ):
     """The whole of ``_serve``, with and without a bound on concurrent DATA."""
-    monkeypatch.setattr(settings, "PYMTA_SMTP_BIND_HOST", "127.0.0.1")
+    monkeypatch.setattr(settings, "PYMTA_SMTP_BIND_HOSTS", ("127.0.0.1",))
     monkeypatch.setattr(settings, "PYMTA_SMTP_BIND_PORT", _free_port())
     monkeypatch.setattr(settings, "PYMTA_MAX_CONCURRENT_DATA", concurrent_data)
     monkeypatch.setattr(settings, "PYMTA_MAX_INCOMING_EMAIL_SIZE", 10 * 1024**2)
@@ -458,10 +459,53 @@ async def test_the_server_starts_and_drains_in_process(
     assert "shutdown_complete" in [r.getMessage() for r in caplog.records]
 
 
+async def _greeting_from(host: str, port: int) -> bytes:
+    reader, writer = await asyncio.open_connection(host, port)
+    try:
+        return await asyncio.wait_for(reader.readline(), timeout=5)
+    finally:
+        writer.close()
+
+
+def _listener() -> controller.Listener:
+    return controller.Listener(InboundHandler(ScriptedMDA()), ip_gate=unlimited_gate())
+
+
+@pytest.mark.asyncio
+async def test_the_listener_binds_every_address_it_is_given():
+    """Both families take two addresses: see the test below."""
+    port = _free_port()
+    try:
+        listening_on = await _listener().start(("127.0.0.1", "::1"), port)
+    except OSError:
+        pytest.skip("no IPv6 loopback here")
+    try:
+        assert (await _greeting_from("127.0.0.1", port)).startswith(b"220")
+        assert (await _greeting_from("::1", port)).startswith(b"220")
+    finally:
+        listening_on.close()
+
+
+@pytest.mark.asyncio
+async def test_the_ipv6_wildcard_does_not_take_ipv4():
+    """asyncio sets IPV6_V6ONLY: ``::`` alone would refuse every IPv4 sender."""
+    port = _free_port()
+    try:
+        listening_on = await _listener().start(("::",), port)
+    except OSError:
+        pytest.skip("no IPv6 here")
+    try:
+        assert (await _greeting_from("::1", port)).startswith(b"220")
+        with pytest.raises(ConnectionRefusedError):
+            await _greeting_from("127.0.0.1", port)
+    finally:
+        listening_on.close()
+
+
 @pytest.mark.asyncio
 async def test_sigterm_itself_starts_the_drain(monkeypatch, caplog, clean_runtime):
     """Through the handler ``_serve`` registered, not by calling it."""
-    monkeypatch.setattr(settings, "PYMTA_SMTP_BIND_HOST", "127.0.0.1")
+    monkeypatch.setattr(settings, "PYMTA_SMTP_BIND_HOSTS", ("127.0.0.1",))
     monkeypatch.setattr(settings, "PYMTA_SMTP_BIND_PORT", _free_port())
     monkeypatch.setattr(settings, "PYMTA_SHUTDOWN_TIMEOUT", 2)
     loop = asyncio.get_running_loop()

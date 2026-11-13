@@ -2154,8 +2154,8 @@ async def test_under_stress_fewer_unknown_recipients_are_tolerated(
         await server.wait_closed()
 
     codes = [r[:3] for r in replies[3:]]
-    # The miss that spends the budget is the one answered 421.
-    assert codes == [b"550"] * (misses_allowed - 1) + [b"421"], replies
+    # The miss that spends the budget has its 550; the command after it, 421.
+    assert codes == [b"550"] * misses_allowed + [b"421"], replies
     assert closed is True
 
 

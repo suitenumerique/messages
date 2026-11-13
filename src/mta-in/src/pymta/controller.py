@@ -23,6 +23,11 @@ _TLS_MINIMUM = {
 }
 
 
+# Key exchanges of TLS 1.2 and below that a handshake can complete with, as
+# ``SSLContext.get_ciphers`` names them: ECDHE, and static RSA.
+_SERVED_KEY_EXCHANGES = ("kx-ecdhe", "kx-rsa")
+
+
 def build_smtp_kwargs(*, tls_context: ssl.SSLContext | None) -> dict:
     """The :class:`SMTPConnection` options that come from settings."""
     return {
@@ -45,6 +50,8 @@ def build_smtp_kwargs(*, tls_context: ssl.SSLContext | None) -> dict:
             * settings.PYMTA_MAX_ENVELOPES_PER_SESSION
             + 10,
             "DATA": settings.PYMTA_MAX_ENVELOPES_PER_SESSION + 2,
+            # NOOP, RSET, VRFY and HELP are counted between two accepted
+            # messages: see SMTPConnection._forgive_junk.
             "RSET": 20,
             "QUIT": 1,
             # Its own entry, so raising "*" cannot let a peer repeat TLS
@@ -84,6 +91,12 @@ def load_tls_context() -> ssl.SSLContext | None:
     # No client certificate is asked for.
     ctx.check_hostname = False
     ctx.verify_mode = ssl.CERT_NONE
+    # No session tickets. OpenSSL encrypts them with a key it keeps for as
+    # long as the context lives, here until the next SIGHUP or restart. With
+    # that key, a recorded TLS 1.2 session whose ticket was captured can be
+    # decrypted. A sender pays one full handshake per connection instead.
+    ctx.options |= ssl.OP_NO_TICKET
+    ctx.num_tickets = 0
     minimum = _TLS_MINIMUM[settings.PYMTA_TLS_MIN_VERSION]
     ciphers = settings.PYMTA_TLS_CIPHERS
     if minimum < ssl.TLSVersion.TLSv1_2:
@@ -92,6 +105,19 @@ def load_tls_context() -> ssl.SSLContext | None:
         ctx.set_ciphers(f"{ciphers or 'DEFAULT'}:@SECLEVEL=0")
     elif ciphers:
         ctx.set_ciphers(ciphers)
+    if not ciphers:
+        # Both default lists name suites that can never be negotiated here:
+        # DHE (no DH parameters are loaded), PSK and SRP (no such credentials).
+        # Kept to the two key exchanges this server does, so that the list is
+        # what it serves. TLS 1.3 suites are not part of this list. A list the
+        # operator gave is left as written.
+        ctx.set_ciphers(
+            ":".join(
+                suite["name"]
+                for suite in ctx.get_ciphers()
+                if suite["kea"] in _SERVED_KEY_EXCHANGES
+            )
+        )
     with warnings.catch_warnings():
         # Python warns that 1.0 and 1.1 are deprecated; here they were asked for.
         warnings.simplefilter("ignore", DeprecationWarning)
@@ -227,5 +253,8 @@ class Listener:
     def factory(self) -> SMTPConnection:
         return SMTPConnection(self.handler, ip_gate=self._ip_gate, **self._smtp_kwargs)
 
-    async def start(self, host: str, port: int) -> asyncio.Server:
-        return await asyncio.get_running_loop().create_server(self.factory, host=host, port=port)
+    async def start(self, hosts: tuple[str, ...], port: int) -> asyncio.Server:
+        """Listen on each of ``hosts``. One socket per address family and host."""
+        return await asyncio.get_running_loop().create_server(
+            self.factory, host=list(hosts), port=port
+        )

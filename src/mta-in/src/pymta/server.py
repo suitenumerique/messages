@@ -99,6 +99,7 @@ def _export_config_limits() -> None:
             "max_envelopes_per_session": settings.PYMTA_MAX_ENVELOPES_PER_SESSION,
             "max_errors_per_session": settings.PYMTA_MAX_ERRORS_PER_SESSION,
             "max_rcpt_misses_per_session": settings.PYMTA_MAX_RCPT_MISSES_PER_SESSION,
+            "max_rcpt_misses_per_source": settings.PYMTA_MAX_RCPT_MISSES_PER_SOURCE,
             "max_sessions_total": settings.PYMTA_MAX_SESSIONS_TOTAL,
             "max_concurrent_data": settings.PYMTA_MAX_CONCURRENT_DATA,
             "command_timeout": settings.PYMTA_COMMAND_TIMEOUT,
@@ -268,12 +269,15 @@ async def _serve() -> None:
         for sig in (signal.SIGINT, signal.SIGTERM):
             loop.add_signal_handler(sig, _on_terminate, sig, stop, ip_gate)
 
-        server = await listener.start(settings.PYMTA_SMTP_BIND_HOST, settings.PYMTA_SMTP_BIND_PORT)
+        server = await listener.start(
+            settings.PYMTA_SMTP_BIND_HOSTS, settings.PYMTA_SMTP_BIND_PORT
+        )
 
         logger.info(
             "smtp_listening",
             extra={
-                "bind": f"{settings.PYMTA_SMTP_BIND_HOST}:{settings.PYMTA_SMTP_BIND_PORT}",
+                "bind": ",".join(settings.PYMTA_SMTP_BIND_HOSTS),
+                "port": settings.PYMTA_SMTP_BIND_PORT,
                 "hostname": settings.PYMTA_SMTP_HOSTNAME,
                 "proxy_protocol": settings.PYMTA_ENABLE_PROXY_PROTOCOL,
                 "size_limit": settings.PYMTA_MAX_INCOMING_EMAIL_SIZE,

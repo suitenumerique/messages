@@ -136,7 +136,15 @@ MDA_BREAKER_COOLDOWN = _env_int("MDA_BREAKER_COOLDOWN", 30, minimum=1)
 # SMTP listener
 # ---------------------------------------------------------------------------
 
-PYMTA_SMTP_BIND_HOST = _env_str("PYMTA_SMTP_BIND_HOST", "0.0.0.0")  # noqa: S104
+# Addresses the SMTP listener binds, comma-separated. ``::`` is IPv6 only:
+# asyncio sets IPV6_V6ONLY on the socket. ``0.0.0.0,::`` listens on both.
+PYMTA_SMTP_BIND_HOSTS = tuple(
+    host.strip()
+    for host in _env_str("PYMTA_SMTP_BIND_HOST", "0.0.0.0").split(",")  # noqa: S104
+    if host.strip()
+)
+if not PYMTA_SMTP_BIND_HOSTS:
+    raise ValueError("Environment variable PYMTA_SMTP_BIND_HOST names no address")
 PYMTA_SMTP_BIND_PORT = _env_int("PYMTA_SMTP_BIND_PORT", 25, minimum=1)
 
 # Hostname in the banner and in ``Received``, as Postfix's ``myhostname``.
@@ -297,6 +305,20 @@ PYMTA_MAX_ERRORS_PER_SESSION = _env_int("PYMTA_MAX_ERRORS_PER_SESSION", 50, mini
 # above, which counts every 4xx/5xx.
 PYMTA_MAX_RCPT_MISSES_PER_SESSION = _env_int("PYMTA_MAX_RCPT_MISSES_PER_SESSION", 10, minimum=1)
 
+# Unknown recipients one source may name over all its sessions, in any ten
+# minutes (``limits.MISS_WINDOW``). Once spent, the source is answered 421 at
+# connect until its window ends. 0 disables.
+#
+# The session budget above does not slow an address harvest: the peer
+# reconnects and gets ten more answers. This one bounds it to 100 answers per
+# ten minutes and per source, an IPv4 address or an IPv6 /64.
+#
+# Generous on purpose. All the mail of a source over it is deferred for the
+# rest of the window, its mail to existing mailboxes included, and a large
+# provider reaches many recipients from one address. Counted in this process
+# only: N replicas allow N times as many.
+PYMTA_MAX_RCPT_MISSES_PER_SOURCE = _env_int("PYMTA_MAX_RCPT_MISSES_PER_SOURCE", 100, minimum=0)
+
 
 # ---------------------------------------------------------------------------
 # ESMTP feature toggles
@@ -326,10 +348,10 @@ PYMTA_PROXY_PROTOCOL_TIMEOUT = _env_int("PYMTA_PROXY_PROTOCOL_TIMEOUT", 5, minim
 def parse_client_ip(raw: str | None) -> ipaddress.IPv4Address | ipaddress.IPv6Address | None:
     """Parse a client address, unwrapping the IPv4-mapped IPv6 form.
 
-    A dual-stack listener (``PYMTA_SMTP_BIND_HOST=::``) reports an IPv4 peer as
+    A PROXY header of family TCP6 can name an IPv4 client as
     ``::ffff:198.51.100.7``, which ``ipaddress`` does not find in
-    ``198.51.100.0/24``. A blocked /24, or a balancer's IPv4 range in
-    PYMTA_TRUSTED_PROXIES, would never match, without any error.
+    ``198.51.100.0/24``: a blocked /24 would never match, without any error.
+    Our own listener does not produce the form (``::`` is IPv6 only here).
     """
     if not raw:
         return None
@@ -581,10 +603,12 @@ if PYMTA_TLS_MIN_VERSION not in _TLS_VERSIONS:
     )
 
 # OpenSSL cipher list for TLS 1.2 and below (TLS 1.3 suites are not affected).
-# Empty keeps Python's default list, which accepts what most senders offer,
-# CBC and SHA-1 suites included. A narrower list drops the weak suites and
-# turns away the senders that can use nothing else, who then retry in clear or
-# give up.
+# Empty depends on PYMTA_TLS_MIN_VERSION (see ``controller.load_tls_context``):
+# at 1.2 or higher, Python's default list, ECDHE with AEAD or CBC-SHA2 and no
+# SHA-1 MAC; below 1.2, OpenSSL's ``DEFAULT`` at security level 0, which adds
+# CBC-SHA1 and static-RSA suites for the senders that have nothing else.
+# A narrower list turns away the senders that can use none of it, who then
+# retry in clear or give up.
 PYMTA_TLS_CIPHERS = _env_str("PYMTA_TLS_CIPHERS", "").strip()
 if PYMTA_TLS_CIPHERS:
     try:

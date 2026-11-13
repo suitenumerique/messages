@@ -215,6 +215,14 @@ class InboundHandler:
                 envelopes=connection.envelopes,
             )
 
+        # A PROXY header that names no client (v2 LOCAL, v1 UNKNOWN) is a
+        # balancer's health check, which sends no mail. A message taken here
+        # would reach the MDA and the spam filter without a client address.
+        # Deferred, not bounced: it can also be a balancer set up wrongly.
+        if connection.session.client_ip is None:
+            metrics.SECURITY_REJECTIONS.labels(reason="no_client_address").inc()
+            return _refusal("451 4.3.0 Client address unknown, please retry", "no_client_address")
+
         try:
             clean = validate_envelope_address(
                 address,
@@ -352,21 +360,22 @@ class InboundHandler:
 
         if not verdict:
             metrics.RCPT_TOTAL.labels(result="rejected_perm").inc()
-            connection.rcpt_misses += 1
-            misses = connection.rcpt_misses
-            if misses >= rcpt_miss_budget(connection):
+            misses = connection.rcpt_missed()
+            # The last miss of the source, over all its sessions, or of this
+            # session. Either way this address still gets its 550: answered
+            # 421, the sender would ask about it again.
+            if not connection.source_spent() and misses >= rcpt_miss_budget(connection):
                 metrics.SECURITY_REJECTIONS.labels(reason="max_rcpt_misses_per_session").inc()
-                metrics.DISCONNECTS_421.labels(reason="max_rcpt_misses_per_session").inc()
-                connection.request_disconnect()
-                # The address is unknown and it spent the session's last
-                # miss: the reason that names the disconnect is the one kept.
-                reply, reason = (
+                connection.disconnect_at_next_command(
                     "421 4.7.0 Too many unknown recipients, goodbye",
                     "max_rcpt_misses_per_session",
                 )
-            else:
-                reply, reason = "550 5.1.1 No such recipient", "unknown_recipient"
-            return _refusal(reply, reason, recipient=address_field(clean), misses=misses)
+            return _refusal(
+                "550 5.1.1 No such recipient",
+                "unknown_recipient",
+                recipient=address_field(clean),
+                misses=misses,
+            )
 
         envelope.rcpt_tos.append(clean)
         metrics.RCPT_TOTAL.labels(result="accepted").inc()
@@ -403,9 +412,7 @@ class InboundHandler:
                     message=content,
                     sender=envelope.mail_from,
                     original_recipients=list(envelope.rcpt_tos),
-                    # None when a PROXY header names no client: the balancer's
-                    # address would attribute the mail to our own
-                    # infrastructure.
+                    # Never None: handle_MAIL refuses a session without one.
                     client_address=session.client_ip,
                     client_port=None if session.client_port is None else str(session.client_port),
                     client_helo=session.host_name,

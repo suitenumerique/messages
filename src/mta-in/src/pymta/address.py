@@ -26,10 +26,19 @@ _FORBIDDEN_CHARS = frozenset({"\r", "\n", "\x00", "\t", " ", "\x7f"})
 # (``bounce-user%40example.org@esp.example``).
 _PERCENT = "%"
 
-# Controls, line and paragraph separators, spaces. Narrower than
-# ``str.isprintable()``, which also refuses format characters (Cf) such as
-# ZWNJ: required in Persian and legal in an RFC 6531 address.
-_FORBIDDEN_CATEGORIES = frozenset({"Cc", "Zl", "Zp", "Zs"})
+# Controls, line and paragraph separators, spaces, and format characters.
+_FORBIDDEN_CATEGORIES = frozenset({"Cc", "Cf", "Zl", "Zp", "Zs"})
+
+# The two format characters (Cf) that are part of how a word is written:
+# ZERO WIDTH NON-JOINER and ZERO WIDTH JOINER, required in Persian and several
+# Indic scripts. The only ones IDNA2008 (RFC 5892) and PRECIS (RFC 8264) let
+# into an identifier. The rest of Cf is invisible and changes how the address
+# is displayed, not what it is: bidi overrides, BOM, soft hyphen, tags.
+_JOIN_CONTROLS = frozenset({chr(0x200C), chr(0x200D)})
+
+
+def _forbidden(char: str) -> bool:
+    return char not in _JOIN_CONTROLS and unicodedata.category(char) in _FORBIDDEN_CATEGORIES
 
 
 class AddressError(ValueError):
@@ -203,7 +212,7 @@ def validate_envelope_address(  # noqa: PLR0912, PLR0913, PLR0915
     if (
         percent_refused
         or _FORBIDDEN_CHARS & set(scanned)
-        or any(unicodedata.category(ch) in _FORBIDDEN_CATEGORIES for ch in scanned)
+        or any(_forbidden(char) for char in scanned)
     ):
         raise AddressError(
             reason="control_char",

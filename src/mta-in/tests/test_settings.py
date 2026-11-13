@@ -722,6 +722,116 @@ def test_tls_10_is_accepted_by_default_and_refused_from_1_2(
     assert _handshake_as_tls10(controller.load_tls_context()) == negotiated
 
 
+@pytest.mark.parametrize(("minimum", "level"), [("1.0", 0), ("1.2", 2)])
+def test_the_default_cipher_list_names_only_what_can_be_negotiated(
+    monkeypatch, reload_settings, tmp_path, minimum, level
+):
+    """Python's and OpenSSL's defaults also name DHE, PSK and SRP suites.
+
+    None can complete a handshake here: no DH parameters, no such credentials.
+    """
+    crt, key = _self_signed(tmp_path, "rsa", ["-newkey", "rsa:2048"])
+    monkeypatch.setenv("PYMTA_TLS_CERT_FILE", crt)
+    monkeypatch.setenv("PYMTA_TLS_KEY_FILE", key)
+    monkeypatch.setenv("PYMTA_TLS_MIN_VERSION", minimum)
+    monkeypatch.delenv("PYMTA_TLS_CIPHERS", raising=False)
+    reload_settings()
+
+    ctx = controller.load_tls_context()
+    suites = ctx.get_ciphers()
+    old = [suite for suite in suites if suite["protocol"] != "TLSv1.3"]
+    assert {suite["kea"] for suite in old} <= {"kx-ecdhe", "kx-rsa"}
+    assert any(suite["kea"] == "kx-ecdhe" for suite in old)
+    # Static RSA only where old senders are let in.
+    assert any(suite["kea"] == "kx-rsa" for suite in old) is (minimum == "1.0")
+    # Narrowing the list touched neither the security level nor TLS 1.3.
+    assert ctx.security_level == level
+    assert len(suites) > len(old)
+
+
+def test_a_cipher_list_the_operator_gave_is_left_as_written(
+    monkeypatch, reload_settings, tmp_path
+):
+    crt, key = _self_signed(tmp_path, "rsa", ["-newkey", "rsa:2048"])
+    monkeypatch.setenv("PYMTA_TLS_CERT_FILE", crt)
+    monkeypatch.setenv("PYMTA_TLS_KEY_FILE", key)
+    monkeypatch.setenv("PYMTA_TLS_MIN_VERSION", "1.2")
+    monkeypatch.setenv(
+        "PYMTA_TLS_CIPHERS", "DHE-RSA-AES128-GCM-SHA256:ECDHE-RSA-AES128-GCM-SHA256"
+    )
+    reload_settings()
+
+    names = [suite["name"] for suite in controller.load_tls_context().get_ciphers()]
+    assert "DHE-RSA-AES128-GCM-SHA256" in names
+    assert "ECDHE-RSA-AES128-GCM-SHA256" in names
+
+
+def _session_with(ctx, version):
+    """The TLS session a client holds after a handshake with *ctx* at *version*."""
+    with socket.socket() as server:
+        server.bind(("127.0.0.1", 0))
+        server.listen(1)
+
+        def serve():
+            conn, _ = server.accept()
+            with ctx.wrap_socket(conn, server_side=True) as tls:
+                # TLS 1.3 sends its tickets after the handshake: the client
+                # has them once it has read this.
+                tls.sendall(b"x")
+
+        thread = threading.Thread(target=serve, daemon=True)
+        thread.start()
+        client = ssl.SSLContext(ssl.PROTOCOL_TLS_CLIENT)
+        client.check_hostname = False
+        client.verify_mode = ssl.CERT_NONE
+        client.minimum_version = client.maximum_version = version
+        with socket.create_connection(server.getsockname()) as raw:
+            with client.wrap_socket(raw, server_hostname="x.invalid") as tls:
+                assert tls.recv(1) == b"x"
+                session = tls.session
+        thread.join(timeout=5)
+        return session
+
+
+@pytest.mark.parametrize("version", [ssl.TLSVersion.TLSv1_2, ssl.TLSVersion.TLSv1_3])
+def test_no_session_ticket_is_issued(monkeypatch, reload_settings, tmp_path, version):
+    """A ticket is encrypted with a key that lives as long as the context.
+
+    With that key, a recorded TLS 1.2 session whose ticket was captured can be
+    decrypted, so none is handed out.
+    """
+    crt, key = _self_signed(tmp_path, "rsa", ["-newkey", "rsa:2048"])
+    monkeypatch.setenv("PYMTA_TLS_CERT_FILE", crt)
+    monkeypatch.setenv("PYMTA_TLS_KEY_FILE", key)
+    reload_settings()
+
+    session = _session_with(controller.load_tls_context(), version)
+    assert session is None or not session.has_ticket
+
+
+@pytest.mark.parametrize(
+    ("raw", "hosts"),
+    [
+        (None, ("0.0.0.0",)),
+        ("::", ("::",)),
+        ("0.0.0.0, ::", ("0.0.0.0", "::")),
+        ("127.0.0.1,", ("127.0.0.1",)),
+    ],
+)
+def test_the_bind_host_is_one_address_or_several(monkeypatch, reload_settings, raw, hosts):
+    if raw is None:
+        monkeypatch.delenv("PYMTA_SMTP_BIND_HOST", raising=False)
+    else:
+        monkeypatch.setenv("PYMTA_SMTP_BIND_HOST", raw)
+    assert reload_settings().PYMTA_SMTP_BIND_HOSTS == hosts
+
+
+def test_a_bind_host_that_names_no_address_is_refused(monkeypatch, reload_settings):
+    monkeypatch.setenv("PYMTA_SMTP_BIND_HOST", " , ")
+    with pytest.raises(ValueError, match="PYMTA_SMTP_BIND_HOST names no address"):
+        reload_settings()
+
+
 def test_tls_13_can_be_required(monkeypatch, reload_settings, tmp_path):
     crt, key = _self_signed(tmp_path, "rsa", ["-newkey", "rsa:2048"])
     monkeypatch.setenv("PYMTA_TLS_CERT_FILE", crt)

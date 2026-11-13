@@ -23,8 +23,8 @@ CONNECTIONS_TOTAL = Counter(
     f"{_METRICS_NAMESPACE}_connections_total",
     "Total inbound TCP connections, by post-accept outcome.",
     # accepted | rejected_blocked | rejected_drain | rejected_global |
-    # rejected_per_ip | rejected_untrusted_proxy | rejected_invalid_proxy |
-    # no_wire_peer
+    # rejected_per_ip | rejected_rcpt_misses | rejected_untrusted_proxy |
+    # rejected_invalid_proxy | no_wire_peer
     labelnames=("result",),
 )
 
@@ -117,10 +117,10 @@ MDA_REQUEST_DURATION = Histogram(
 DISCONNECTS_421 = Counter(
     f"{_METRICS_NAMESPACE}_disconnects_421_total",
     "Sessions where pymta replied 421 and closed the TCP connection.",
-    labelnames=("reason",),  # gate_global | gate_per_ip | reclaimed | command_timeout |
-    # data_timeout | session_timeout | max_errors_per_session |
-    # max_rcpt_misses_per_session | max_envelopes_per_session |
-    # too_many_commands | shutdown | internal_error
+    labelnames=("reason",),  # gate_global | gate_per_ip | gate_rcpt_misses | reclaimed |
+    # command_timeout | data_timeout | session_timeout | max_errors_per_session |
+    # max_rcpt_misses_per_session | max_rcpt_misses_per_source |
+    # max_envelopes_per_session | too_many_commands | shutdown | internal_error
 )
 
 
@@ -132,8 +132,8 @@ SECURITY_REJECTIONS = Counter(
     # PYMTA_ prefix), so a series lines up with the CONFIG_LIMIT gauge below:
     #   max_concurrent_data, max_recipients_per_envelope,
     #   max_envelopes_per_session, max_errors_per_session,
-    #   max_rcpt_misses_per_session, command_timeout, data_timeout,
-    #   session_timeout
+    #   max_rcpt_misses_per_session, max_rcpt_misses_per_source,
+    #   command_timeout, data_timeout, session_timeout
     # The size cap is the exception, split by the phase that caught it:
     #   oversize_announced (MAIL FROM SIZE=), oversize_message (the body itself)
     # The rest are fixed checks. From pymta.address:
@@ -142,7 +142,7 @@ SECURITY_REJECTIONS = Counter(
     # Others:
     #   nul_byte, bad_helo, untrusted_proxy, defer_all, blocked_network,
     #   blocked_sender_domain, blocked_recipient, protocol_synchronization,
-    #   internal_error
+    #   no_client_address, internal_error
 )
 
 TLS_CERTIFICATE_NOT_AFTER = Gauge(

@@ -44,8 +44,10 @@ jobs:
       build_args: |
         PYTHON_UV_IMAGE=${{ needs.docker-publish-python-uv.outputs.image_ref }}
 
-  # Pure-Python (aiosmtpd) inbound MTA — built from Dockerfile.pymta, published
-  # alongside the Postfix mta-in image while the two run side-by-side.
+  # Pure-Python inbound MTA (pymta), built from Dockerfile.pymta. Published as
+  # the distroless image, the one `make test-mta-in-py-e2e` runs. The
+  # `runtime-prod` target of the same Dockerfile adds a shell and is not
+  # published.
   docker-publish-mta-in-py:
     needs: docker-publish-python-uv
     uses: ./.github/workflows/docker-publish.yml
@@ -59,7 +61,7 @@ jobs:
       image_name: "mta-in-py"
       context: "src/mta-in"
       dockerfile: "src/mta-in/Dockerfile.pymta"
-      target: runtime-prod
+      target: runtime-distroless-prod
       build_args: |
         PYTHON_UV_IMAGE=${{ needs.docker-publish-python-uv.outputs.image_ref }}
 

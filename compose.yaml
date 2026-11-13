@@ -497,6 +497,9 @@ services:
       - ALL
     security_opt:
       - no-new-privileges:true
+    # Above PYMTA_SHUTDOWN_TIMEOUT (25 s): the default 10 s would SIGKILL a
+    # drain still in progress.
+    stop_grace_period: 30s
     depends_on:
       - backend-dev
 

@@ -17,17 +17,11 @@ fi
 start_pymta() {
     python -m pymta.server &
     PYMTA_PID=$!
-    # Wait until the SMTP port accepts connections (max ~15s). Uses stdlib
-    # socket rather than nc so the runtime image doesn't need netcat just
-    # for this probe.
+    # Wait until the SMTP listener answers (max ~15s), with the probe the
+    # image's HEALTHCHECK runs.
     port="${PYMTA_SMTP_BIND_PORT:-25}"
-    # Probe whatever the server was told to bind. 127.0.0.1 is only right for a
-    # wildcard bind; against an explicit address it reports the process dead
-    # while it is serving happily, which on an orchestrator means restarting a
-    # working MTA.
-    probe="import os,socket;h=os.getenv('PYMTA_SMTP_BIND_HOST','').strip() or '127.0.0.1';h='127.0.0.1' if h in ('0.0.0.0','::') else h;socket.create_connection((h,int(os.getenv('PYMTA_SMTP_BIND_PORT','25'))),timeout=1).close()"
     for i in $(seq 1 30); do
-        if python -c "$probe" 2>/dev/null; then
+        if python -m pymta.healthcheck 2>/dev/null; then
             echo "pymta SMTP ready on port $port"
             return 0
         fi
