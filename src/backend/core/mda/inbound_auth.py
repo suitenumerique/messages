@@ -253,7 +253,9 @@ def trusted_arc_sealers(spam_config: dict[str, Any]) -> set[str]:
     }
 
 
-_SUPPORTED_INBOUND_AUTH_MODES = frozenset({"native", "rspamd", "arc", "authentication-results"})
+_SUPPORTED_INBOUND_AUTH_MODES = frozenset(
+    {"native", "rspamd", "arc", "authentication-results"}
+)
 
 
 def inbound_auth_enabled(spam_config: dict[str, Any]) -> bool:
