@@ -412,7 +412,7 @@ For a host that runs pymta and nothing else of weight, from the image (so with `
 |---|---|---|---|
 | `PYMTA_MAX_INCOMING_EMAIL_SIZE` | `36700160` | `36700160` | 35 MiB. The backend's `MAX_INCOMING_EMAIL_SIZE` must be the same |
 | `PYMTA_MAX_CONCURRENT_DATA` | `30` | `64` | Worst case 1.3 GiB and 2.7 GiB by the formula above; about 1.1 GiB and 2.3 GiB on the image (20 slots measured at 767 MiB) |
-| `PYMTA_MAX_SHARE_PER_SOURCE` | `0.1` (default) | `0.1` (default) | 3 and 6 messages in flight per source, 9 and 19 sessions. Nearly every source has one message in flight at a time. Raise it only for a sender you want that shows up under `reason="max_concurrent_data"` |
+| `PYMTA_MAX_SHARE_PER_SOURCE` | `0.1` (default) | `0.1` (default) | At most 3 and 6 messages in flight per source, 9 and 19 sessions, and fewer once ten sources have one in flight. Nearly every source has one at a time. `reason="max_concurrent_data"` counts a source over its share and a server with every slot taken alike. Raising the share helps in the first case only, where `pymta_data_phases_active` is under `PYMTA_MAX_CONCURRENT_DATA` at that moment; at the cap, it is slots that are missing |
 | `PYMTA_DATA_TIMEOUT` | `900` | `900` | The default 300 s asks 122 kB/s of a sender for 35 MiB. 900 s asks 41 kB/s, as the default does for 10 MiB |
 | `MDA_API_TIMEOUT` | `60` | `60` | The MDA has to answer a delivery within it. Check it against how long your MDA takes for the largest message (`duration_ms` of `message_delivered`), and keep it under the MDA's own worker timeout |
 | container memory limit | 1536 MiB | 3072 MiB | Above the worst case, under the host: a mistake in the above restarts pymta and leaves the host up |
