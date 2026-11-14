@@ -1,4 +1,5 @@
 import hashlib
+import json
 import logging
 import os
 import smtplib
@@ -25,6 +26,10 @@ MTA_PORT = int(os.getenv("MTA_PORT", "25"))
 # tests in tests/test_metrics.py become exercisable. The Postfix-based
 # implementation has no Prometheus endpoint, so those tests skip on it.
 MTA_METRICS_URL = os.getenv("MTA_METRICS_URL")
+
+# pymta.mda_async.ENVELOPED_CONTENT_TYPE, spelled out: this file also runs
+# against the Postfix image.
+ENVELOPED_CONTENT_TYPE = "application/vnd.stmsg.mta-delivery"
 
 # Tag tests with the implementation under test, exposed through the
 # `mta_impl` fixture below. Useful for skipping the few tests that assert
@@ -72,6 +77,14 @@ class MockAPIServer:
             h = hashlib.sha256(raw_data).hexdigest()
             if h != payload["body_hash"]:
                 return JSONResponse(status_code=401, content={"detail": "Invalid body hash"})
+
+            # pymta sends the envelope as the first line of the body, the
+            # milter as JWT claims. Present both the same way to the tests.
+            if request.headers.get("Content-Type") == ENVELOPED_CONTENT_TYPE:
+                head, _, raw_data = raw_data.partition(b"\n")
+                # The session id stays the signed claim, as on the real MDA.
+                claim = {"mta_session": payload.get("mta_session")}
+                payload = {**payload, **json.loads(head), **claim}
 
             request.state.payload = payload
             request.state.raw_body = raw_data

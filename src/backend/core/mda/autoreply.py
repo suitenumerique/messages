@@ -89,9 +89,9 @@ def _is_auto_reply_message(
     """
     # A null envelope sender (MAIL FROM ``<>`` or empty) marks a bounce /
     # notification we must never reply to (RFC 3834 §2). We read the
-    # authoritative SMTP envelope rather than a ``Return-Path`` header: the
-    # delivering MTA never writes one on our inbound path, and any header in
-    # the body is sender-forgeable. Only an explicitly-present null value
+    # authoritative SMTP envelope rather than the ``Return-Path`` header the
+    # MTA endpoint writes from it: the envelope is the source, and not every
+    # ingest path writes that header. Only an explicitly-present null value
     # counts — an absent ``mail_from`` key means "no envelope info supplied"
     # (e.g. a caller that doesn't carry one), not "null sender".
     mail_from = (envelope or {}).get("mail_from")

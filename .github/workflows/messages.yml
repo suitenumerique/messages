@@ -175,8 +175,63 @@ jobs:
           persist-credentials: false
       - name: Create env files
         run: make create-env-files
-      - name: Run mta-in pymta (aiosmtpd) tests
+      - name: Run mta-in pymta tests
         run: make test-mta-in-py
+
+  test-mta-in-py-e2e:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - name: Create env files
+        run: make create-env-files
+      - name: Run pymta and the backend end to end
+        run: make test-mta-in-py-e2e
+
+  fuzz-mta-in-py:
+    runs-on: ubuntu-latest
+    env:
+      # `-m fuzz` is excluded from the default selection, so it only ever
+      # runs here. A smoke run on pull requests, the full sweep on main.
+      FUZZ_EXAMPLES: ${{ github.event_name == 'pull_request' && '500' || '2000' }}
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+          # On a pull request: the merge commit and its first parent, the base.
+          fetch-depth: 2
+      # The job always succeeds; the suite runs only when pymta's code, its
+      # dependencies or its image could have changed.
+      - name: Look for changes to pymta, its dependencies or its build
+        id: changes
+        env:
+          BEFORE: ${{ github.event.before }}
+        run: |
+          if [ "$GITHUB_EVENT_NAME" = pull_request ]; then
+            base=HEAD^1
+          else
+            base="$BEFORE"
+            git fetch --quiet --depth=1 origin "$base" || base=
+          fi
+          paths='^(src/mta-in/|deploy/python-uv/|deploy/env/mta-in|\.github/workflows/messages\.yml$|Makefile$)'
+          # Without a base to compare with, run.
+          if [ -z "$base" ] || ! files=$(git diff --name-only "$base" HEAD); then
+            run=true
+          elif printf '%s\n' "$files" | grep -qE "$paths"; then
+            run=true
+          else
+            run=false
+          fi
+          echo "run=$run" >> "$GITHUB_OUTPUT"
+      - name: Create env files
+        if: steps.changes.outputs.run == 'true'
+        run: make create-env-files
+      - name: Run the pymta Hypothesis fuzz suite
+        if: steps.changes.outputs.run == 'true'
+        run: make fuzz-mta-in-py
 
   lint-front:
     runs-on: ubuntu-latest

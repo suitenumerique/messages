@@ -108,8 +108,8 @@ def test_overlong_body_line(mock_api_server, mta_impl):
         pytest.xfail(
             f"KNOWN GAP: {mta_impl} rejects a 2000-octet body line with "
             f"{reply[:60]!r}. Postfix accepts it, so this is a permanent bounce "
-            "for mail that lands today. pymta clears it by overriding aiosmtpd's "
-            "line_length_limit (1001) with PYMTA_MAX_LINE_LENGTH, so reaching "
+            "for mail that lands today. pymta clears it because its line limit "
+            "is PYMTA_MAX_LINE_LENGTH (64 KiB by default), so reaching "
             "this branch means that value was lowered below the line sent here."
         )
 
@@ -209,7 +209,7 @@ def test_bare_lf_in_header_is_not_passed_through(mock_api_server, mta_impl):
 def test_non_utf8_byte_in_rcpt_is_cleanly_rejected(mta_impl):
     """A Latin-1 byte in an address must draw a 5xx, not an internal error.
 
-    With SMTPUTF8 on, aiosmtpd decodes command arguments using
+    With SMTPUTF8 on, the command parser decodes arguments using
     ``errors="surrogateescape"``, so ``0xe9`` becomes the lone surrogate
     ``\\udce9``. Any code that then calls ``.encode("utf-8")`` on it raises
     ``UnicodeEncodeError`` — which is not an ``AddressError``, so it escapes
@@ -248,7 +248,7 @@ def test_long_srs_return_path_is_delivered_intact(mock_api_server, mta_impl):
 
     Past the 64-octet local-part and the 256-octet path the RFC suggests,
     which Postfix never enforced either. The command line carries every MAIL
-    parameter we advertise, so this also proves it stays inside aiosmtpd's
+    parameter we advertise, so this also proves it stays inside the 548-octet
     MAIL command limit and that the MDA receives the sender unaltered.
     """
     mock_api_server.add_mailbox("wire@example.com")
@@ -278,3 +278,157 @@ def test_long_srs_return_path_is_delivered_intact(mock_api_server, mta_impl):
     assert reply.startswith(b"250"), reply
     mock_api_server.wait_for_email()
     assert mock_api_server.received_emails[-1]["metadata"]["sender"] == sender.decode()
+
+
+def _send_one(ehlo: bytes, mail_from: bytes) -> bytes:
+    """One message to wire@example.com. Returns the reply to the end of DATA."""
+    s = _session()
+    try:
+        assert _cmd(s, ehlo).startswith(b"250")
+        reply = _cmd(s, b"MAIL FROM:<" + mail_from + b">\r\n")
+        assert reply.startswith(b"250"), reply
+        assert _cmd(s, b"RCPT TO:<wire@example.com>\r\n").startswith(b"250")
+        assert _cmd(s, b"DATA\r\n").startswith(b"354")
+        return _cmd(s, b"Subject: x\r\nFrom: sender@example.com\r\n\r\nbody\r\n.\r\n")
+    finally:
+        s.close()
+
+
+def test_a_verp_return_path_with_a_percent_is_delivered(mock_api_server):
+    """VERP encodes the recipient into the return path, ``@`` as ``%40``."""
+    mock_api_server.add_mailbox("wire@example.com")
+    sender = b"bounce-first.last%40town.example@esp.example"
+    reply = _send_one(b"EHLO probe.example.com\r\n", sender)
+    assert reply.startswith(b"250"), reply
+    mock_api_server.wait_for_email()
+    assert mock_api_server.received_emails[-1]["metadata"]["sender"] == sender.decode()
+
+
+def test_a_tagged_recipient_reaches_the_mda_unchanged(mock_api_server):
+    """``user+tag@`` is passed as sent, to the check and in the delivery.
+
+    Which mailbox it belongs to is the MDA's decision: the mock only knows the
+    tagged spelling, so a tag stripped anywhere on the way would be a 550.
+    """
+    mock_api_server.add_mailbox("wire+Tag.2@example.com")
+    s = _session()
+    try:
+        assert _cmd(s, b"EHLO probe.example.com\r\n").startswith(b"250")
+        assert _cmd(s, b"MAIL FROM:<sender@example.com>\r\n").startswith(b"250")
+        reply = _cmd(s, b"RCPT TO:<wire+Tag.2@example.com>\r\n")
+        assert reply.startswith(b"250"), reply
+        assert _cmd(s, b"DATA\r\n").startswith(b"354")
+        reply = _cmd(s, b"Subject: x\r\nFrom: sender@example.com\r\n\r\nbody\r\n.\r\n")
+    finally:
+        s.close()
+    assert reply.startswith(b"250"), reply
+    mock_api_server.wait_for_email()
+    metadata = mock_api_server.received_emails[-1]["metadata"]
+    assert metadata["original_recipients"] == ["wire+Tag.2@example.com"]
+
+
+def test_dsn_and_auth_parameters_do_not_bounce_the_message(mock_api_server):
+    """Senders send these whether or not DSN and AUTH are offered."""
+    mock_api_server.add_mailbox("wire@example.com")
+    s = _session()
+    try:
+        assert _cmd(s, b"EHLO probe.example.com\r\n").startswith(b"250")
+        reply = _cmd(s, b"MAIL FROM:<sender@example.com> AUTH=<> RET=HDRS ENVID=QQ314159\r\n")
+        assert reply.startswith(b"250"), reply
+        reply = _cmd(
+            s,
+            b"RCPT TO:<wire@example.com> NOTIFY=SUCCESS,FAILURE ORCPT=rfc822;wire@example.com\r\n",
+        )
+        assert reply.startswith(b"250"), reply
+        assert _cmd(s, b"DATA\r\n").startswith(b"354")
+        reply = _cmd(s, b"Subject: x\r\nFrom: sender@example.com\r\n\r\nbody\r\n.\r\n")
+    finally:
+        s.close()
+    assert reply.startswith(b"250"), reply
+    mock_api_server.wait_for_email()
+    metadata = mock_api_server.received_emails[-1]["metadata"]
+    assert metadata["sender"] == "sender@example.com"
+    assert metadata["original_recipients"] == ["wire@example.com"]
+
+
+def test_a_helo_that_is_not_utf8_does_not_cost_the_sender_its_mail(mock_api_server, mta_impl):
+    """The greeting is the sender's own name for itself; mail does not hang on it.
+
+    pymta only: Postfix answers ``500 5.5.2 Error: bad UTF-8 syntax`` to the
+    EHLO itself.
+    """
+    if mta_impl != "pymta":
+        pytest.skip("Postfix refuses the EHLO command")
+    mock_api_server.add_mailbox("wire@example.com")
+    reply = _send_one(b"EHLO mx\xe9.sender.example\r\n", b"sender@example.com")
+    assert reply.startswith(b"250"), reply
+    mock_api_server.wait_for_email()
+    helo = mock_api_server.received_emails[-1]["metadata"].get("client_helo")
+    assert helo == "mx?.sender.example"
+
+
+# ---------------------------------------------------------------------------
+# 5. Dot-stuffing on lines that end in a bare LF.
+# ---------------------------------------------------------------------------
+
+
+def test_dot_stuffing_is_undone_on_bare_lf_lines(mock_api_server, mta_impl):
+    """A sender that ends lines with LF stuffs by its own line boundaries.
+
+    The protocol only unstuffs lines that ended in CRLF, so without the
+    handler's pass ``..hidden`` would reach the mailbox with both dots. Postfix's
+    ``normalize`` undoes it too, so both implementations store the same bytes.
+    """
+    mock_api_server.add_mailbox("wire@example.com")
+    s = _session()
+    try:
+        body = (
+            b"Subject: dots\nFrom: sender@example.com\nTo: wire@example.com\n\n"
+            b"line one\n..hidden.example\n...\nend"
+        )
+        reply = _deliver(s, b"wire@example.com", body)
+    finally:
+        s.close()
+
+    assert reply.startswith(b"250"), reply
+    mock_api_server.wait_for_email()
+    stored = mock_api_server.received_emails[-1]["raw_email"]
+    logger.info("bare-LF dot-stuffing on %s -> %r", mta_impl, stored[-60:])
+    assert stored.endswith(b"\r\n\r\nline one\r\n.hidden.example\r\n..\r\nend\r\n"), stored
+
+
+# ---------------------------------------------------------------------------
+# 6. An envelope too large for an HTTP header.
+# ---------------------------------------------------------------------------
+
+
+def test_a_hundred_long_recipients_are_delivered(mock_api_server, mta_impl):
+    """About 10 kB of recipient addresses.
+
+    As JWT claims that is an Authorization header gunicorn refuses (8190
+    bytes), which pymta would turn into a 451 on every retry. pymta sends the
+    envelope in the body instead. The milter still uses the header.
+    """
+    if mta_impl == "postfix":
+        pytest.skip("the milter sends the envelope as JWT claims")
+    recipients = [f"{'r' * 56}{i:03d}@example.com" for i in range(100)]
+    for rcpt in recipients:
+        mock_api_server.add_mailbox(rcpt)
+    s = _session()
+    try:
+        assert _cmd(s, b"EHLO probe.example.com\r\n").startswith(b"250")
+        assert _cmd(s, b"MAIL FROM:<sender@example.com>\r\n").startswith(b"250")
+        for rcpt in recipients:
+            assert _cmd(s, b"RCPT TO:<" + rcpt.encode() + b">\r\n").startswith(b"250"), rcpt
+        assert _cmd(s, b"DATA\r\n").startswith(b"354")
+        message = b"Subject: many\r\nFrom: sender@example.com\r\n\r\nbody\r\n"
+        reply = _cmd(s, message + b".\r\n")
+    finally:
+        s.close()
+
+    assert reply.startswith(b"250"), reply
+    mock_api_server.wait_for_email()
+    received = mock_api_server.received_emails[-1]
+    assert received["metadata"]["original_recipients"] == recipients
+    assert received["metadata"]["sender"] == "sender@example.com"
+    assert received["raw_email"] == message

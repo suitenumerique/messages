@@ -5,8 +5,8 @@ Run with ``python -m pymta.server``. Starts:
 * the Prometheus exposition HTTP server (in a daemon thread),
 * the SMTP listener (asyncio),
 
-and exits on SIGINT/SIGTERM with an orderly shutdown that closes the listener
-and waits for in-flight sessions to finish.
+and exits on SIGINT/SIGTERM once the sessions in flight have finished. New
+ones are answered 421 meanwhile: see ``_on_terminate``.
 """
 
 from __future__ import annotations
@@ -18,64 +18,53 @@ import signal
 import time
 
 from . import logfmt, metrics, runtime, settings
-from .controller import HardenedController
+from .controller import Listener, publish_certificate_expiry
 from .handler import InboundHandler
 from .limits import IPGate
 from .mda_async import MDAClient
-from .smtp_protocol import log_abandoned_sessions
+from .smtp_protocol import close_idle_sessions, log_abandoned_sessions
 
-# Named explicitly rather than __name__: this module is the entrypoint, run as
-# `python -m pymta.server`, so __name__ is "__main__" and every line it emits
-# would carry logger=__main__. The field is there to be filtered on.
+# Named, not ``__name__``: run as ``python -m pymta.server``, this module is
+# ``__main__``.
 logger = logging.getLogger("pymta.server")
 
-# How often the drain loop checks whether the last session has finished. Short
-# enough that a quiet node exits promptly, long enough not to spin.
+# How often the drain checks whether the last session has finished.
 _DRAIN_POLL_SECONDS = 0.25
 
-# Peak resident bytes per byte of message in flight. Measured: aiosmtpd needs a
-# second copy of the body while it joins the received lines, and freed arenas
-# are not returned promptly.
+# Peak resident bytes per byte of message in flight: a second copy of the body
+# while the received blocks are joined, and freed arenas not returned promptly.
 _MEMORY_FACTOR = 2.2
 
 
-def _configure_logging() -> None:
-    logfmt.configure(
+def _configure_logging():
+    """Returns what writes the lines still queued: see ``logfmt.configure``."""
+    return logfmt.configure(
         settings.PYMTA_LOG_LEVEL,
         verbose_libraries=settings.PYMTA_LOG_VERBOSE_LIBRARIES,
+        in_thread=True,
     )
 
 
 def _check_proxy_trust_config() -> None:
-    """Warn loudly when the PROXY-protocol listener will believe any peer.
+    """Warn when the PROXY-protocol listener believes any peer.
 
-    Enabling PROXY protocol is normally the assertion that a balancer sits in
-    front of us, which makes the balancer's address a known fact. Naming it in
-    ``PYMTA_TRUSTED_PROXIES`` is strongly recommended and this warns when it is
-    absent, but it does not block startup: deployments where the balancer's
-    addresses are dynamic or simply unknown at boot still need to run, and
-    there the network isolation has to carry the whole weight instead.
+    ``PYMTA_TRUSTED_PROXIES`` cannot be empty (the settings refuse to load),
+    but it can name every address, for a deployment that does not know its
+    balancer's addresses at boot. Network isolation is then the only
+    protection: any peer that can reach the SMTP port chooses the source its
+    sessions are counted and recorded under.
 
-    What the allowlist buys is that the header only decides the per-IP
-    rate-limit key and the ``client_address`` the MDA writes into ``Received``
-    when a known balancer sent it. Without one, any peer that can open a TCP
-    connection to the SMTP port decides both.
-
-    There are two supported topologies: PROXY protocol on, behind a balancer;
-    or PROXY protocol off, exposed directly. A balancer without PROXY protocol
-    is not supported, because pymta would attribute every session to the
-    balancer's own IP.
+    Two topologies are supported: PROXY protocol on, behind a balancer, or
+    off, exposed directly. Behind a balancer without it, every session would
+    be attributed to the balancer's address.
     """
     if not settings.PYMTA_ENABLE_PROXY_PROTOCOL:
         return
-    # A zero-prefix network (0.0.0.0/0, ::/0) matches every peer, so it is the
-    # empty allowlist wearing a disguise. Same posture, same warning.
+    # A zero-prefix network (0.0.0.0/0, ::/0) matches every peer.
     catch_all = [net for net in settings.PYMTA_TRUSTED_PROXIES if net.prefixlen == 0]
-    if not settings.PYMTA_TRUSTED_PROXIES or catch_all:
+    if catch_all:
         why = (
-            "PYMTA_TRUSTED_PROXIES is empty"
-            if not settings.PYMTA_TRUSTED_PROXIES
-            else f"PYMTA_TRUSTED_PROXIES contains {', '.join(str(n) for n in catch_all)}, "
+            f"PYMTA_TRUSTED_PROXIES contains {', '.join(str(n) for n in catch_all)}, "
             "which matches every peer"
         )
         logger.warning(
@@ -97,15 +86,10 @@ def _check_proxy_trust_config() -> None:
 
 
 def _export_config_limits() -> None:
-    """Publish the ceilings currently in force as gauges.
+    """Publish the limits in force as gauges.
 
-    Alongside the counters that report hitting them, so a dashboard plots usage
-    against the limit and an alert fires on approach without the deployment's
-    numbers being duplicated into the alert rule.
-
-    Called at startup and again after an accepted SIGHUP, because four of these
-    are reloadable and a gauge that still reported the startup value would
-    describe a configuration no longer in force.
+    A dashboard can then plot usage against the limit, and an alert rule need
+    not repeat the deployment's numbers.
     """
     metrics.export_config_limits(
         {
@@ -124,45 +108,56 @@ def _export_config_limits() -> None:
     )
 
 
-def _reload_settings() -> None:
-    """Re-read the runtime-reloadable settings on SIGHUP.
+def _log_unhandled(loop: asyncio.AbstractEventLoop, context: dict) -> None:
+    """Log what asyncio would otherwise report on its own logger.
 
-    Only the per-connection and per-command ones; see settings._RELOADABLE for
-    why the rest cannot follow. A bad value leaves the running configuration
-    alone rather than taking the process down: the point of this path is to be
-    usable while something is already going wrong.
+    That logger is filtered out of our output (logfmt.OwnRecordsOnly), so an
+    exception in a timer callback, a signal handler or a task nobody awaits
+    would leave no trace. The process keeps running, as it does by default.
     """
+    error = context.get("exception")
+    logger.error(
+        "unhandled_error",
+        exc_info=(type(error), error, error.__traceback__) if error else None,
+        extra={"detail": str(context.get("message", ""))},
+    )
+
+
+def _log_certificates() -> None:
+    """One line per STARTTLS certificate with its expiry, and the gauge."""
+    for cert, not_after in publish_certificate_expiry().items():
+        fields: dict = {"file": cert}
+        if not_after is not None:
+            fields["not_after"] = time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime(not_after))
+            fields["days_left"] = int((not_after - time.time()) // 86400)
+        logger.info("tls_certificate", extra=fields)
+
+
+def _reload_tls(listener: Listener) -> None:
+    """Read the certificate files again on SIGHUP, so a renewal needs no restart."""
     try:
-        changed = settings.reload_runtime_settings()
-    except ValueError:
-        logger.error("reload_rejected", exc_info=True, extra={"applied": False})
+        if not listener.reload_tls():
+            return
+    except OSError, ValueError:
+        # ssl.SSLError is an OSError. The previous context stays in use.
+        logger.error("tls_reload_rejected", exc_info=True, extra={"applied": False})
         return
-    if changed:
-        # Names only. The reloadable set includes PYMTA_BLOCKED_RECIPIENTS,
-        # whose value is a list of real addresses; serialising it would put
-        # recipient mail addresses in the log every time an operator adjusts a
-        # blocklist. The values that are not sensitive are on the metrics
-        # endpoint, republished just below.
-        logger.info("reload_applied", extra={"changed": ",".join(sorted(changed))})
-        _export_config_limits()
-    else:
-        logger.info("reload_noop")
+    logger.info("tls_reloaded")
+    _log_certificates()
 
 
-def _on_terminate(sig: signal.Signals, stop: asyncio.Event) -> None:
-    """SIGTERM/SIGINT starts the drain. One signal is the whole protocol.
+def _on_terminate(sig: signal.Signals, stop: asyncio.Event, gate: IPGate) -> None:
+    """SIGTERM or SIGINT starts the drain.
 
-    Deliberately not "close the listener and wait": a closed listener refuses
-    the TCP connection, which a sender cannot tell from a network fault, so it
-    keeps the message queued against this host instead of trying the next MX.
-    Staying up and answering 421 is what moves traffic off this node (RFC 5321
-    §3.1 allows a 421 in place of the greeting, and both Postfix and Exim treat
-    it as a per-host defer). See ``_drain_and_close``.
+    The listener stays open: a closed one refuses the TCP connection, which a
+    sender cannot tell from a network fault, so it keeps the message queued
+    for this host instead of trying the next MX. A 421 moves it on (RFC 5321
+    §3.1 allows one in place of the greeting; Postfix and Exim defer per host
+    on it). See ``_drain_and_close``.
     """
     if runtime.is_shutting_down():
-        # Already draining. Impatient operators send a second TERM; honouring it
-        # by exiting immediately would cut exactly the sessions the first signal
-        # promised to protect.
+        # A second signal does not exit at once: that would cut the sessions
+        # the first one let finish.
         logger.info("shutdown_already_in_progress", extra={"signal": sig.name})
         return
     runtime.request_shutdown()
@@ -170,65 +165,55 @@ def _on_terminate(sig: signal.Signals, stop: asyncio.Event) -> None:
         "shutdown_started",
         extra={
             "signal": sig.name,
-            "active_sessions": metrics.active_sessions(),
+            "active_sessions": gate.total,
             "deadline_seconds": settings.PYMTA_SHUTDOWN_TIMEOUT,
         },
     )
+    close_idle_sessions(gate)
     stop.set()
 
 
-async def _drain_and_close(server: asyncio.AbstractServer) -> None:
+async def _drain_and_close(server: asyncio.AbstractServer, gate: IPGate) -> None:
     """Refuse new sessions, wait for the live ones, then stop.
 
-    The listener stays open throughout so arriving senders get the 421 that
-    sends them to another MX. It is closed only at the very end, once nothing
-    is left to serve.
-
-    Returns as soon as the last session finishes, so a rollout costs the time
-    the traffic actually needs rather than a fixed sleep.
+    The listener stays open until the end, so arriving senders get the 421
+    that sends them to another MX. Returns as soon as the last session is
+    over.
     """
     started = time.monotonic()
     deadline = started + settings.PYMTA_SHUTDOWN_TIMEOUT
     while True:
-        active = metrics.active_sessions()
+        active = gate.total
         if active == 0:
             logger.info(
                 "shutdown_drained", extra={"elapsed_seconds": round(time.monotonic() - started, 2)}
             )
             break
         if time.monotonic() >= deadline:
-            # A negative count is active_sessions()'s "gauge unreadable"
-            # sentinel, not an empty server, and inc() refuses a negative.
-            known = active > 0
-            if known:
-                metrics.SESSIONS_ABANDONED.inc(active)
+            metrics.SESSIONS_ABANDONED.inc(active)
             logger.warning(
                 "shutdown_deadline_exceeded",
                 extra={
-                    "abandoned_sessions": active if known else -1,
-                    "session_count_known": known,
+                    "abandoned_sessions": active,
                     "deadline_seconds": settings.PYMTA_SHUTDOWN_TIMEOUT,
                 },
             )
-            log_abandoned_sessions()
+            log_abandoned_sessions(gate)
             break
         await asyncio.sleep(_DRAIN_POLL_SECONDS)
 
     server.close()
     with contextlib.suppress(TimeoutError):
-        # Bounded: every session is either finished or being abandoned, but a
-        # transport wedged in close() must not hold the process open forever.
+        # Bounded: a transport stuck in close() must not hold the process open.
         await asyncio.wait_for(server.wait_closed(), timeout=_DRAIN_POLL_SECONDS * 10)
     logger.info("shutdown_complete")
 
 
 def _check_legacy_names() -> None:
-    """Say which Postfix-image variables are still doing the work.
+    """Warn about each Postfix-image variable still in use.
 
-    They keep working so one env file can drive both images through a
-    switchover, which is the whole point of reading them. Saying so is what
-    stops the switchover from being permanent: silence would leave a
-    deployment on names the recommended implementation does not own.
+    They are read so one env file can drive both images through a switchover.
+    The warning is what gets the deployment onto the pymta names afterwards.
     """
     for legacy, preferred in sorted(settings.LEGACY_IN_USE):
         logger.warning(
@@ -247,28 +232,29 @@ async def _serve() -> None:
     mda_client = MDAClient()
     try:
         await mda_client.start()
-        # Computed at scrape time: the breaker can lapse with no traffic to
-        # notice it, and a gauge that has to be told would stay stuck at 1.
+        # Computed at scrape time: the breaker's cooldown can end with no call
+        # to notice it.
         metrics.MDA_BREAKER_OPEN.set_function(lambda: 1.0 if mda_client.breaker_is_open() else 0.0)
         handler = InboundHandler(mda_client)
         ip_gate = IPGate(
-            # All None: the gate reads each cap from settings on every acquire,
-            # so SIGHUP moves them without a restart.
+            # None: the gate reads each cap from settings on every acquire.
             max_total=None,
         )
+        # Computed at scrape time, like the breaker gauge.
+        metrics.UNDER_STRESS.set_function(lambda: 1.0 if ip_gate.under_stress() else 0.0)
 
-        controller = HardenedController(
-            handler,
-            ip_gate=ip_gate,
-            hostname=settings.PYMTA_SMTP_BIND_HOST,
-            port=settings.PYMTA_SMTP_BIND_PORT,
-            loop=asyncio.get_running_loop(),
-        )
+        listener = Listener(handler, ip_gate=ip_gate)
 
-        # ``begin()`` is sync but only schedules; for a running loop we want to
-        # await ``_create_server`` directly so the loop drives it cleanly.
-        server = await controller._create_server()  # noqa: SLF001
-        controller.server = server
+        # Before the port opens: a signal's default action is to kill, and
+        # asyncio would report an error on a logger we filter out.
+        stop = asyncio.Event()
+        loop = asyncio.get_running_loop()
+        loop.set_exception_handler(_log_unhandled)
+        loop.add_signal_handler(signal.SIGHUP, _reload_tls, listener)
+        for sig in (signal.SIGINT, signal.SIGTERM):
+            loop.add_signal_handler(sig, _on_terminate, sig, stop, ip_gate)
+
+        server = await listener.start(settings.PYMTA_SMTP_BIND_HOST, settings.PYMTA_SMTP_BIND_PORT)
 
         logger.info(
             "smtp_listening",
@@ -278,22 +264,19 @@ async def _serve() -> None:
                 "proxy_protocol": settings.PYMTA_ENABLE_PROXY_PROTOCOL,
                 "size_limit": settings.PYMTA_MAX_INCOMING_EMAIL_SIZE,
                 "starttls": bool(settings.PYMTA_TLS_CERT_FILE),
+                "tls_min_version": settings.PYMTA_TLS_MIN_VERSION,
             },
         )
+        _log_certificates()
 
-        # Memory is the ceiling nothing else enforces: aiosmtpd buffers each
-        # DATA phase in RAM, so concurrency times message size is the heap this
-        # process can be driven to. Budget about 2.2x the bytes in flight: the
-        # join at end-of-DATA needs a second copy of the body, and freed arenas
-        # are not returned promptly, so under concurrency that transient does
-        # not stay transient.
+        # Each DATA phase is buffered in RAM, so concurrent DATA phases times
+        # the message size is the heap (a session that has not reached DATA
+        # holds no message). ``_MEMORY_FACTOR`` times the bytes in flight is
+        # what it takes.
         #
-        # Logged rather than capped because the honest fix is either sizing the
-        # two settings together or bounding concurrent DATA phases, and an
-        # operator cannot make that call without seeing the number.
-        # The DATA gate is the bound when on; a session that has not reached
-        # DATA holds no message. With it off there is no finite ceiling to
-        # report, so say so rather than skipping the line.
+        # Logged, not enforced: the fix is to size the two settings and the
+        # container together, which takes seeing the number. Without a DATA
+        # cap there is no ceiling, and the line says so.
         concurrent = settings.PYMTA_MAX_CONCURRENT_DATA
         ceiling = {
             "max_concurrent_data": concurrent,
@@ -312,39 +295,33 @@ async def _serve() -> None:
             )
         logger.info("memory_ceiling", extra=ceiling)
 
-        stop = asyncio.Event()
-        loop = asyncio.get_running_loop()
-        try:
-            loop.add_signal_handler(signal.SIGHUP, _reload_settings)
-        except NotImplementedError, AttributeError:
-            pass
-        for sig in (signal.SIGINT, signal.SIGTERM):
-            try:
-                loop.add_signal_handler(sig, _on_terminate, sig, stop)
-            except NotImplementedError:
-                # Windows / restricted environments: no signal handler support.
-                pass
-
         try:
             await stop.wait()
         finally:
-            await _drain_and_close(server)
+            await _drain_and_close(server, ip_gate)
     finally:
         await mda_client.close()
 
 
 def main() -> None:
-    _configure_logging()
-    metrics.start_metrics_server(
-        settings.PYMTA_METRICS_BIND_HOST,
-        settings.PYMTA_METRICS_BIND_PORT,
-        settings.PYMTA_METRICS_API_KEY,
-    )
-    _export_config_limits()
+    flush_log = _configure_logging()
     try:
+        metrics.start_metrics_server(
+            settings.PYMTA_METRICS_BIND_HOST,
+            settings.PYMTA_METRICS_BIND_PORT,
+            settings.PYMTA_METRICS_API_KEY,
+        )
+        _export_config_limits()
         asyncio.run(_serve())
     except KeyboardInterrupt:
         pass
+    except Exception:
+        # In the log's own format before the process dies with the traceback.
+        logger.error("fatal_error", exc_info=True)
+        raise
+    finally:
+        if flush_log:
+            flush_log()
 
 
 if __name__ == "__main__":

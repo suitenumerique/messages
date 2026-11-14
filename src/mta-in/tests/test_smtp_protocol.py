@@ -77,7 +77,7 @@ def test_partial_writes():
         assert response.startswith("250")
 
 
-# Pipelining is deliberately NOT advertised in EHLO (see handle_EHLO) and
+# Pipelining is deliberately NOT advertised in EHLO (see SMTPConnection) and
 # command_call_limit enforces strict per-verb counts. A test that pipelines
 # multiple commands at once would assert behaviour we *avoid* — leaving the
 # placeholder skipped would only rot, so we don't keep one.
@@ -106,14 +106,10 @@ def _full_reply(sock) -> bytes:
 
 
 # What we are willing to advertise on inbound port 25, before and after
-# STARTTLS. Pinned rather than merely "AUTH must be absent": aiosmtpd decides
-# what to offer, so a version bump can start advertising something we never
-# reviewed, and only an allow-list notices. A failure here is not necessarily a
-# bug — it is a new keyword to rule on, then add here or to
-# ``handler.handle_EHLO``'s denied set.
-#
-# This is what the runtime ``ehlo_extension_stripped`` line used to guard. CI
-# is the right place for it: the log line could only tell you after it shipped.
+# STARTTLS. Pinned rather than merely "AUTH must be absent": only an allow-list
+# notices a keyword nobody reviewed. A failure here is not necessarily a bug:
+# it is a new keyword to rule on, then add here or take out of the EHLO reply
+# ``SMTPConnection`` builds.
 _ALLOWED_EHLO_KEYWORDS = frozenset(
     {"SIZE", "8BITMIME", "SMTPUTF8", "ENHANCEDSTATUSCODES", "HELP", "STARTTLS"}
 )
@@ -135,11 +131,9 @@ def _ehlo_keywords(reply: bytes) -> set[str]:
 def test_ehlo_advertises_only_the_pinned_extensions(mta_impl):
     """Nothing unreviewed reaches the wire, in either phase of the session.
 
-    The post-STARTTLS half is the one that matters: aiosmtpd's ``smtp_EHLO``
-    yields ``250-AUTH`` whenever the connection is inside TLS, without
-    consulting whether an authenticator exists, so a plaintext-only check
-    cannot see it. That is exactly the gap that let AUTH reach the strip
-    filter unnoticed in every STARTTLS deployment.
+    Both halves are checked because the reply differs inside TLS (STARTTLS is
+    no longer offered), and a keyword offered only there, as AUTH once was,
+    is invisible to a plaintext-only check.
     """
     if mta_impl == "postfix":
         pytest.skip("Postfix advertises its own set; this pins pymta's")
@@ -165,8 +159,9 @@ def test_ehlo_advertises_only_the_pinned_extensions(mta_impl):
             tls.send(b"EHLO example.com\r\n")
             inside_tls = _ehlo_keywords(_full_reply(tls))
             assert inside_tls <= _ALLOWED_EHLO_KEYWORDS, inside_tls - _ALLOWED_EHLO_KEYWORDS
-            # The one we know aiosmtpd offers and we strip.
+            # Never offered: there is no authenticator on port 25.
             assert "AUTH" not in inside_tls
+            assert "STARTTLS" not in inside_tls
             tls.send(b"QUIT\r\n")
 
 
@@ -321,7 +316,7 @@ def test_per_ip_connection_cap(mta_impl):
 
 # The idle-command timeout is not tested here. It is read once at startup, so
 # covering it against the running server would mean idling for the configured
-# 120 s. tests/test_hardened_smtp.py drives the same code path against an
+# 120 s. tests/test_connection.py drives the same code path against an
 # in-process listener with a one-second deadline instead, and also checks that
 # activity re-arms it.
 

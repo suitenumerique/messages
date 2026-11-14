@@ -570,7 +570,7 @@ without redeploying the frontend (the flag is pulled from
 | `INVITATION_VALIDITY_DURATION` | `604800` | Invitation validity (7 days) | Optional |
 | `MESSAGES_MANUAL_RETRY_MAX_AGE`| `604800` | Maximum age in seconds for a message to be eligible for manual retry of failed deliveries (7 days) | Optional |
 | `MESSAGES_INBOUND_DEFERRAL_MAX_AGE` | `172800` | Maximum age in seconds an inbound message is deferred (retried every 5 min) when a processing step keeps failing, before the pipeline delivers it anyway (recorded as `postmark["processing"]`) rather than holding it indefinitely (48 hours) | Optional |
-| `MAX_INCOMING_EMAIL_SIZE` | `10485760` | Maximum size in bytes for incoming email (including attachments and body) (10MB) | Optional |
+| `MAX_INCOMING_EMAIL_SIZE` | `10485760` | Maximum size in bytes for incoming email (including attachments and body) (10MB). Must be kept equal to `PYMTA_MAX_INCOMING_EMAIL_SIZE` on the inbound MTA, which is configured separately: see `src/mta-in/README.md` | Optional |
 | `MAX_OUTGOING_ATTACHMENT_SIZE` | `20971520` | Maximum size in bytes for outgoing email attachments (20MB) | Optional |
 | `MAX_OUTGOING_BODY_SIZE` | `5242880` | Maximum size in bytes for outgoing email body (text + HTML) (5MB) | Optional |
 | `MAX_TEMPLATE_IMAGE_SIZE` | `2097152` | Maximum size in bytes for images embedded in templates and signatures (2MB) | Optional |

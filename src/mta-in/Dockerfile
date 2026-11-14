@@ -1,5 +1,5 @@
-# Postfix + milter inbound MTA image — counterpart to ./Dockerfile.pymta
-# (pure-Python aiosmtpd). This is the production default for now.
+# Postfix + milter inbound MTA image. DEPRECATED: kept for now, to be removed,
+# and no longer fixed. Use ./Dockerfile.pymta (pure-Python aiosmtpd).
 #
 # Python comes from the shared uv-managed base (deploy/python-uv/Dockerfile:
 # debian-trixie + uv digest-pinned + CPython pinned), NOT the official

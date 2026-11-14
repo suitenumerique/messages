@@ -1890,3 +1890,34 @@ class TestOutboundDirectSSRF:
         mock_smtp_send.assert_not_called()
         # And the recipient was not delivered.
         assert statuses["victim@evil.test"]["delivered"] is False
+
+
+class TestOutboundDirectAddressLiteral:
+    """``user@[192.0.2.1]`` is a valid addr-spec, so it can be a contact. It
+    has no MX and is not somewhere this path connects: a permanent failure,
+    not a lookup retried for the whole backoff window."""
+
+    @patch("core.mda.outbound_direct.send_smtp_mail")
+    @patch("core.mda.outbound_direct.resolve_mx_records")
+    def test_address_literal_fails_at_once_without_a_lookup(
+        self, mock_resolve_mx, mock_smtp_send
+    ):
+        """No DNS query, no connection, ``retry`` false."""
+        mock_resolve_mx.return_value = []
+
+        statuses = send_message_via_mx(
+            "sender@example.com",
+            ["user@[192.0.2.1]", "user@[IPv6:2001:db8::1]", "other@nomx.test"],
+            b"Subject: x\r\n\r\nbody\r\n",
+        )
+
+        for literal in ("user@[192.0.2.1]", "user@[IPv6:2001:db8::1]"):
+            assert statuses[literal] == {
+                "delivered": False,
+                "error": "Address literals are not supported",
+                "retry": False,
+            }
+        # A domain whose lookup found nothing is still retried, as before.
+        assert statuses["other@nomx.test"]["retry"] is True
+        mock_resolve_mx.assert_called_once_with("nomx.test")
+        mock_smtp_send.assert_not_called()

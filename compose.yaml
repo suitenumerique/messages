@@ -467,7 +467,7 @@ services:
       target: uv
     pull_policy: build
 
-  # ---- Pure-Python (aiosmtpd) inbound MTA --------------------------------
+  # ---- Pure-Python (pymta) inbound MTA -----------------------------------
   # Runs side-by-side with the Postfix-based `mta-in` service on a different
   # host port (8920 vs 8910). Both implementations share the same MDA
   # contract, env vars, and test suite. Toggle which one is the public-facing
@@ -530,7 +530,9 @@ services:
       # advertised and tests/test_smtp_protocol.py can exercise the TLS path.
       - PYMTA_TLS_CERT_FILE=/certs/pymta-test.crt
       - PYMTA_TLS_KEY_FILE=/certs/pymta-test.key
-    command: pytest -vvs tests/
+      # Kept out of the mounted source tree.
+      - COVERAGE_FILE=/tmp/.coverage
+    command: pytest -vvs --cov --cov-fail-under=100 tests/
     volumes:
       - ./src/mta-in:/app
 

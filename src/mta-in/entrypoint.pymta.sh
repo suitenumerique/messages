@@ -1,7 +1,7 @@
 #!/bin/sh
-# Entrypoint for the pure-Python (aiosmtpd) inbound MTA image.
+# Entrypoint for the pure-Python (pymta) inbound MTA image.
 #
-# Two modes:
+# Three modes:
 #  - EXEC_CMD_ONLY=true: skip starting the server, exec the user command. Used
 #    by ad-hoc tooling like `ruff format .`.
 #  - EXEC_CMD=true: start the server in the background, then exec the user
@@ -48,15 +48,15 @@ cleanup() {
 trap cleanup INT TERM
 
 if [ "${EXEC_CMD:-false}" = "true" ]; then
-    start_pymta
-    status=$?
-    if [ "$status" -ne 0 ]; then
+    # Tested with `if` and `||`: under `set -e` a bare failure would exit
+    # here, before the cleanup.
+    if ! start_pymta; then
         echo "ERROR: pymta failed to start, not executing command" >&2
         cleanup
-        exit "$status"
+        exit 1
     fi
-    "$@"
-    status=$?
+    status=0
+    "$@" || status=$?
     cleanup
     exit $status
 fi

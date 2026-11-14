@@ -1,4 +1,4 @@
-# Defaults for the pure-Python (aiosmtpd) inbound MTA. The Postfix-based
+# Defaults for the pure-Python inbound MTA (pymta). The Postfix-based
 # `mta-in` service does not consume these.
 #
 # Deliberately empty of limits. Anything that merely restates the value already
@@ -12,8 +12,8 @@
 # PROXY protocol stays off: the test suite connects to pymta directly, so the
 # TCP peer IS the client. Behind a load balancer, set
 # PYMTA_ENABLE_PROXY_PROTOCOL=true AND PYMTA_TRUSTED_PROXIES to the balancer's
-# IPs/CIDRs. With PROXY protocol on and no allowlist pymta still starts, but
-# logs a SECURITY warning: every peer's header is then trusted.
+# IPs/CIDRs. With PROXY protocol on and no allowlist pymta refuses to start.
+# The SMTP port must then be reachable by the balancer only.
 #
 # A balancer WITHOUT PROXY protocol is not a supported configuration: every
 # session would bucket under the balancer's IP and every message would be

@@ -32,6 +32,7 @@ from core.mda.dispatch_webhooks import (
 from core.mda.inbound_create import (
     _create_message_from_inbound,
     _record_divergent_rcpt,
+    _record_transport_security,
 )
 from core.mda.inbound_pipeline import (
     DEFERRAL_MAX_AGE,
@@ -450,6 +451,8 @@ def process_inbound_message_task(self, inbound_message_id: str):
             (inbound_message.envelope or {}).get("rcpt_to") or ctx.recipient_email,
             ctx.parsed_email,
         )
+        # Same reasoning for how the message arrived: only the envelope knows.
+        _record_transport_security(ctx.postmark, inbound_message.envelope or {})
 
         with transaction.atomic():
             inbound_msg = _create_message_from_inbound(

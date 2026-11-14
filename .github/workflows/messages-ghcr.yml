@@ -7,6 +7,10 @@ name: Build and publish OCI images
     tags:
       - 'v*'
 
+concurrency:
+  group: ghcr-${{ github.ref }}
+  cancel-in-progress: true
+
 jobs:
 
   # Shared base (debian-trixie + uv + managed CPython), built + pushed once

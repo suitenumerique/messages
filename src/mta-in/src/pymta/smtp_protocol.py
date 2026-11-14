@@ -1,826 +1,1396 @@
-"""Hardened :class:`aiosmtpd.smtp.SMTP` subclass.
+"""The SMTP dialogue of one inbound connection.
 
-aiosmtpd's defaults are reasonable but its surface area still includes a few
-verbs we never want exposed on a public, inbound-only port-25 endpoint:
+One :class:`SMTPConnection` per accepted TCP connection, as an asyncio
+``Protocol``. It owns the protocol: admission, the greeting, reading and
+checking command lines, the order commands may come in, DATA, STARTTLS and
+the timeouts.
 
-* ``AUTH``: never offered (no authenticator wired) but we still reply 502 to
-  reject any attempt explicitly, so a misconfiguration cannot quietly become a
-  relay.
-* ``VRFY``: RFC 5321 §3.5 lets us respond with a canned 252; we do so
-  unconditionally to prevent address enumeration.
-* ``EXPN``: explicit 502.
+What to do with a sender, a recipient or a message is the handler's
+(:mod:`pymta.handler`), called once the command is well-formed and in order.
+What is logged about the session is :mod:`pymta.session_log`'s.
 
-We also fold connection-admission control into :meth:`_handle_client`. The
-gate is checked exactly once per accepted TCP session. When PROXY-protocol is
-enabled, the check is deferred to the ``handle_PROXY`` hook so it sees the
-real client address rather than the load-balancer's IP.
+The command set is what an inbound-only port 25 needs: HELO, EHLO, MAIL, RCPT,
+DATA, RSET, NOOP, QUIT, STARTTLS, and canned answers to VRFY, EXPN, AUTH and
+HELP. PIPELINING and CHUNKING are not offered.
+
+Reading order: the asyncio callbacks, how a connection ends, the session
+(``_run`` and the command loop), replies, the commands, then the timers,
+the shutdown and the gate.
+
+Parts of the command handling are adapted from aiosmtpd's ``smtp.py``
+(Copyright 2014-2021 The aiosmtpd Developers, Apache-2.0, see NOTICE), which
+this server ran on before; the reply texts are kept from it.
 """
 
 from __future__ import annotations
 
-import collections
-import contextlib
-import functools
+import asyncio
+import dataclasses
 import logging
+import re
 import secrets
+import ssl
 import time
-import weakref
-
-from aiosmtpd.smtp import SMTP as BaseSMTP
-from aiosmtpd.smtp import TLSSetupException, syntax
 
 from . import logfmt, metrics, runtime, settings
-from .limits import IPGate, LogThrottle, TooManyConnections
+from .command import (
+    ArgumentNotAscii,
+    CommandSyntaxError,
+    parse_parameters,
+    split_command,
+    split_path,
+    strip_keyword,
+)
+from .limits import IPGate, LogThrottle, TooManyConnections, source_key
+from .proxy_protocol import read_proxy_header
+from .session_log import MAX_LOGGED_REPLY, SessionLog
+from .wire import ConnectionClosed, LineReader, LineTooLong, stored_line
 
 logger = logging.getLogger(__name__)
-
-# Bounds on what the session summary quotes back from the peer. A reply is ours
-# and short; an argument is the peer's, capped by aiosmtpd at 512 octets per
-# command line (548 for MAIL), which is still more than a log line should carry.
-_MAX_LOGGED_REPLY = 200
-_MAX_LOGGED_ARG = 256
-# Kept from the end of a clipped sender, so its domain stays searchable.
-_LOGGED_SENDER_TAIL = 128
-_MAX_LOGGED_RECIPIENTS = 10
 
 # ``connection_capped`` at INFO: one line a minute per address, for at most
 # this many addresses at a time.
 _cap_log_throttle = LogThrottle(interval=60.0, max_keys=1024)
 
-# Connections currently open, for log_abandoned_sessions.
-_live_sessions: weakref.WeakSet[HardenedSMTP] = weakref.WeakSet()
+# RFC 5321 section 4.5.3.1.4. MAIL gets more after EHLO: see _line_limit.
+_COMMAND_LINE_LIMIT = 512
+# The session is closed on this many lines that are not a command.
+_MAX_UNKNOWN_COMMANDS = 5
+
+# RFC 3207 section 4: all a peer may send in clear when TLS is required.
+_ALLOWED_BEFORE_STARTTLS = frozenset({"NOOP", "EHLO", "STARTTLS", "QUIT"})
+
+# MAIL/RCPT parameters accepted and ignored: the DSN ones (RFC 3461) and
+# AUTH= (RFC 4954). The set Postfix accepts on our port 25 configuration.
+# Ignoring them is safe because nothing here acts on them either way: this
+# server never sends a DSN, and never relays, so there is no later hop to pass
+# AUTH= to. REQUIRETLS, BY=, HOLDFOR= and the like ask for a behaviour and keep
+# their 555.
+_IGNORED_PARAMETERS = {
+    "MAIL": frozenset({"AUTH", "RET", "ENVID"}),
+    "RCPT": frozenset({"NOTIFY", "ORCPT"}),
+}
+
+# While the server is close to full (see IPGate.under_stress), the sessions
+# that do nothing or collect refusals are the first to give their slot back:
+# a short idle timeout between commands (Postfix's value), and a small error
+# budget.
+_STRESS_IDLE_TIMEOUT = 10.0
+_STRESS_MAX_ERRORS = 5
+# Bytes per second a message has to arrive at while the DATA slots are close
+# to full (see IPGate.data_under_stress). Postfix's smtpd_min_data_rate.
+_MIN_DATA_RATE = 500
+
+# Commands after which the peer has to wait for the reply even where
+# PIPELINING is offered (RFC 2920 section 3.1): each changes what the next
+# bytes mean.
+_LAST_OF_A_GROUP = frozenset({"EHLO", "HELO", "STARTTLS", "DATA"})
+
+# Message bytes are collected in blocks of this size. See _read_data.
+_DATA_BLOCK = 65536
+# Lines of a message read before the event loop gets a turn.
+_DATA_LINES_PER_TURN = 1024
+
+_SIZE_VALUE = re.compile(r"[0-9]+\Z")
+
+# Seconds a closed connection gets to take what was written to it.
+_CLOSE_GRACE = 5.0
+# Seconds a STARTTLS handshake gets. Less while the server is close to full.
+_TLS_HANDSHAKE_TIMEOUT = 30.0
+
+_INTERNAL_ERROR = "421 4.3.0 Internal error, please try again later"
+_SHUTDOWN = "421 4.3.2 Service not available, try another MX"
+_RECLAIMED = "421 4.4.2 Server busy, closing idle connection"
+_TOO_MANY_ERRORS = "421 4.7.0 Too many errors, goodbye"
+_UNSYNCHRONIZED = "554 5.5.0 Error: SMTP protocol synchronization"
+_SIZE_EXCEEDED = "552 5.3.4 Message size exceeds fixed maximum"
+# (reply, reason) of a message refused once it has been read to its end.
+_LINE_TOO_LONG = ("500 Line too long (see RFC5321 4.5.3.1.6)", "line_too_long")
+_TOO_MUCH_DATA = (_SIZE_EXCEEDED, "oversize_message")
 
 
-def log_abandoned_sessions() -> None:
+class _DataOverflow(Exception):
+    """A message that is refused went on past what is read of one."""
+
+
+class _Body:
+    """A message being received: its bytes, or why it is refused.
+
+    The bytes are appended to blocks of ``_DATA_BLOCK``, not kept as one
+    object per line, so a body of empty lines costs its size and not thirty
+    times that. What is held is the message once, plus one more copy for the
+    moment of the final join.
+    """
+
+    def __init__(self, limit: int):
+        self._limit = limit
+        self._blocks: list[bytearray] = []
+        self._block = bytearray()
+        # Octets as stored, kept or not.
+        self.size = 0
+        # The (reply, reason) the message is to get. Nothing is kept once set.
+        self.refusal: tuple[str, str] | None = None
+
+    def refuse(self, refusal: tuple[str, str]) -> None:
+        """Drop what is held. The first reason given is the one kept."""
+        if self.refusal is None:
+            self.refusal = refusal
+            self._blocks, self._block = [], bytearray()
+
+    def add(self, data: bytes) -> None:
+        self.size += len(data)
+        if self.size > self._limit:
+            self.refuse(_TOO_MUCH_DATA)
+        if self.refusal is not None:
+            return
+        self._block += data
+        if len(self._block) >= _DATA_BLOCK:
+            self._blocks.append(self._block)
+            self._block = bytearray()
+
+    def content(self) -> bytes:
+        return b"".join((*self._blocks, self._block))
+
+
+class _TLSFailed(Exception):
+    """The STARTTLS handshake did not complete. The transport is closed."""
+
+
+@dataclasses.dataclass(frozen=True)
+class TLSInfo:
+    """What a STARTTLS handshake negotiated."""
+
+    # ``TLSv1.3``. Not the version in ``SSLObject.cipher()``, which is the
+    # protocol that defined the suite.
+    version: str
+    cipher: str
+
+
+@dataclasses.dataclass
+class Session:
+    """What is known about the peer. Lasts the connection."""
+
+    # The TCP peer. With PROXY protocol on, that is the balancer.
+    wire_ip: str | None = None
+    # The client: the TCP peer, or with PROXY protocol on the source a trusted
+    # header named. None while not known, and when the header names none.
+    client_ip: str | None = None
+    client_port: int | None = None
+    # Set by EHLO/HELO, forgotten by STARTTLS.
+    host_name: str | None = None
+    extended_smtp: bool = False
+    # None in clear.
+    tls: TLSInfo | None = None
+
+
+@dataclasses.dataclass
+class Envelope:
+    """One mail transaction, from MAIL to the end of DATA or RSET."""
+
+    # None until MAIL is accepted. The null sender is the empty string.
+    mail_from: str | None = None
+    smtp_utf8: bool = False
+    rcpt_tos: list[str] = dataclasses.field(default_factory=list)
+    content: bytes | None = None
+
+
+@dataclasses.dataclass(frozen=True)
+class Reply:
+    """What the handler answers MAIL, RCPT or the end of DATA with."""
+
+    text: str
+    # Of a refusal: what its ``reject`` line says besides the reply.
+    reason: str | None = None
+    fields: dict = dataclasses.field(default_factory=dict)
+    # The handler has written this reply's log line itself.
+    logged: bool = False
+
+
+def close_idle_sessions(gate: IPGate) -> None:
+    """At the start of a shutdown, release the sessions that are doing nothing.
+
+    A sender keeps a connection open between messages. Left alone it holds the
+    drain until ``PYMTA_SHUTDOWN_TIMEOUT`` and is then cut without a word.
+    Sessions inside a command or a transaction are left to finish, and are
+    told to go as soon as they are done.
+    """
+    for connection in list(gate.sessions):
+        connection.close_if_idle()
+
+
+def log_abandoned_sessions(gate: IPGate) -> None:
     """Write the summary of every session the shutdown deadline is cutting.
 
     The process exits without their ``connection_lost`` ever running, so a
     message in flight at that point would otherwise leave no line.
     """
-    for session in list(_live_sessions):
-        session._close_reason = session._close_reason or "shutdown"  # noqa: SLF001
-        session._log_session(None)  # noqa: SLF001
+    for connection in list(gate.sessions):
+        connection.log_abandoned()
 
 
-def _ip_of(peer) -> str | None:
-    """Address out of an aiosmtpd peer tuple, so the field is comparable.
-
-    Logging the raw ``('10.0.0.1', 51234)`` would make ``client_ip`` a different
-    string on every connection from the same host, which is useless to group by.
-    """
-    return str(peer[0]) if peer else None
+def _parameter(name: str, value: str | None) -> str:
+    return name if value is None else f"{name}={value}"
 
 
-class HardenedSMTP(BaseSMTP):
-    """SMTP subclass that locks down VRFY/EXPN/AUTH and applies the IP gate.
+class SMTPConnection(asyncio.Protocol):
+    """One inbound SMTP connection. See the module docstring."""
 
-    Three of aiosmtpd's protections are class attributes rather than constructor
-    arguments, so they are invisible in ``build_smtp_kwargs``. Recorded here
-    because they matter and nothing else in the tree mentions them:
+    def __init__(  # noqa: PLR0913
+        self,
+        handler,
+        *,
+        ip_gate: IPGate,
+        hostname: str,
+        ident: str,
+        data_size_limit: int,
+        enable_smtputf8: bool,
+        timeout: float,
+        require_starttls: bool,
+        command_call_limit: dict[str, int],
+        proxy_protocol_timeout: float | None,
+        tls_context: ssl.SSLContext | None,
+    ):
+        self.handler = handler
+        self.hostname = hostname
+        self.ident = ident
+        self.data_size_limit = data_size_limit
+        self.enable_smtputf8 = enable_smtputf8
+        self.tls_context = tls_context
+        self.require_starttls = require_starttls
+        self._timeout = timeout
+        # None: PROXY protocol is off.
+        self._proxy_timeout = proxy_protocol_timeout
+        # Times each command may be sent in one session; "*" for the others.
+        self._call_limits = command_call_limit
+        self._gate = ip_gate
 
-    * ``line_length_limit`` — RFC 5321 §4.5.3.1.6, aiosmtpd's 1001 replaced by
-      ``PYMTA_MAX_LINE_LENGTH`` below. Enforced as the ``StreamReader`` limit,
-      so an endless line is refused at the transport instead of buffering.
-    * ``command_size_limit = 512`` — RFC 5321 §4.5.3.1.4, per command line.
-      Inherited, and checked after the line is read, so it caps commands
-      independently of how high ``line_length_limit`` goes. MAIL gets 548
-      after EHLO: 26 more for SIZE and 10 for SMTPUTF8. See ``__init__`` and
-      :meth:`smtp_EHLO` for what keeps that number fixed.
-    * ``BOGUS_LIMIT = 5`` (module constant) — unrecognised commands per session
-      before aiosmtpd hangs up. Narrower and stricter than
-      ``PYMTA_MAX_ERRORS_PER_SESSION``, which counts every 4xx/5xx we emit.
-      Inherited.
-
-    ``local_part_limit`` is aiosmtpd's own address check and stays at its
-    default of 0 (disabled) on purpose: :mod:`pymta.address` enforces the same
-    RFC limit on RCPT, with a rejection reason and a metric label attached,
-    and deliberately not on MAIL FROM, where SRS return paths exceed it.
-
-    ``line_length_limit`` is the one we override. It has to be a class attribute
-    because ``SMTP.__init__`` reads it while constructing the ``StreamReader``,
-    before any instance attribute of ours could exist.
-    """
-
-    line_length_limit = settings.PYMTA_MAX_LINE_LENGTH
-
-    def __init__(self, *args, ip_gate: IPGate | None = None, **kwargs):
-        super().__init__(*args, **kwargs)
-        # aiosmtpd keeps this dict on the class: every EHLO from any connection
-        # adds to the shared MAIL limit and every new connection resets it.
-        # Shadowed per instance so one session's limit does not depend on the
-        # others.
-        self.command_size_limits = collections.defaultdict(lambda: self.command_size_limit)
-        # Correlation id for every line this connection produces. Without one,
-        # a log is a pile of independent facts: "mda_check_no_verdict" tells you
-        # something went wrong and nothing about whose mail it was. Minted on
-        # the protocol instance rather than the session so it survives the
-        # STARTTLS rebuild, the same reason the abuse counters live there.
-        #
-        # Random rather than sequential: a counter would leak the server's
-        # total traffic to anyone who connects twice.
+        # --- What the handler and the session log read.
+        # Correlation id for every line this connection produces. Random
+        # rather than sequential: a counter would leak the server's total
+        # traffic to anyone who connects twice.
         self.session_id = secrets.token_hex(4)
-        self._ip_gate: IPGate | None = ip_gate
-        # Track whether we are currently holding a slot in the gate so the
-        # release path runs at most once.
-        self._gate_held_ip: str | None = None
-        self._gate_started: float | None = None
-        # Set by request_disconnect(); consumed by push() once the reply that
-        # announced the disconnect is on the wire.
-        self._disconnect_after_reply = False
+        self.session = Session()
+        self.envelope = Envelope()
+        self.transport: asyncio.Transport | None = None
+        # What the session has used of its budgets. Nothing a peer can do
+        # (RSET, EHLO, STARTTLS) takes anything back.
+        self.errors = 0  # 4xx/5xx replies sent (_write_reply), and count_junk
+        self.rcpt_misses = 0  # recipients the MDA does not know: the handler's
+        self.envelopes = 0  # messages that reached the end of DATA: the handler's
         # Monotonic timestamp of the 354 that opened the current DATA phase,
-        # or None outside DATA. Read by the handler to size its own deadline,
-        # together with the budget the transport was actually armed at.
+        # and the deadline its timer was armed at. For the handler to size
+        # its own deadline. None outside DATA.
         self.data_phase_started: float | None = None
         self.data_phase_budget: float | None = None
-        # One-shot timer for the whole-session deadline. Armed on connect,
-        # never re-armed. See _arm_session_deadline.
-        self._session_deadline_handle = None
+        # Set once the gate has let the connection in, never cleared.
+        self.admitted = False
+        # Why we hung up, when we did: ``command_timeout``, ``shutdown``...
+        self.close_reason: str | None = None
 
-        # Session accounting, reported once by _log_session when the connection
-        # ends. Kept on the protocol instance for the same reason as the
-        # session id: aiosmtpd rebuilds ``session`` on STARTTLS.
-        self._accepted_at = time.monotonic()
-        # The client as the gate keyed it: PROXY source or TCP peer.
-        self._client_ip: str | None = None
-        # verb -> [succeeded, attempted], in order of first use.
-        self._commands: dict[str, list[int]] = {}
-        self._current_verb: str | None = None
-        self._current_arg: str | None = None
-        self._last_code: int | None = None
-        self._error_replies = 0
-        # (verb, reply, argument) of the last 4xx/5xx sent, whoever produced
-        # it, for the session summary.
-        self._last_error: tuple[str | None, str, str | None] | None = None
-        self._sender: str | None = None
-        self._helo: str | None = None
-        self._tls_error: str | None = None
-        self._close_reason: str | None = None
-        self._session_logged = False
-        # A 4xx/5xx went out in answer to something the peer sent, including
-        # lines aiosmtpd refuses before dispatch (unknown verb, line too long).
-        self._peer_refused = False
-        # Set by the handler once it has logged the refusal it is about to
-        # return, so _log_refusal does not add a second line for it.
-        self.refusal_logged = False
-        # Names a refusal of ours whose reply does not go through the handler.
-        self._refusal_reason: str | None = None
-        self._refusal_lines = 0
-        # Last command line read. aiosmtpd refuses some lines before dispatch
-        # (too long, unknown verb, call limit) and keeps nothing of them.
-        self._last_line: bytes | None = None
-        # Set once the gate lets the connection in, never cleared: unlike the
-        # gate's own bookkeeping, it must still be true when the summary runs.
-        self._admitted = False
-        self._smtp_methods = {
-            verb: self._accounted(verb, method) for verb, method in self._smtp_methods.items()
-        }
+        # --- The connection's own state.
+        self._loop: asyncio.AbstractEventLoop | None = None
+        self._reader: LineReader | None = None
+        self._task: asyncio.Task | None = None
+        self._log = SessionLog(self)
+        # The command now running, if any.
+        self._verb: str | None = None
+        # Set once we have decided to hang up: no further command is read.
+        self._closing = False
+        # Set once the timers are stopped and the summary written.
+        self._ended = False
+        # Set while a TLS handshake has the transport.
+        self._handshaking = False
+        # Set while the transport's write buffer is full.
+        self._write_resumed: asyncio.Future | None = None
+        # Set by request_disconnect(), consumed by the next reply.
+        self._disconnect_after_reply = False
+        # The gate key we hold a slot under (see limits.source_key).
+        self._slot: str | None = None
+        self._slot_taken_at = 0.0
+        # When the last command was answered, or the slot taken.
+        self._idle_since = 0.0
+        # Bounds what the session is doing now: see _arm_timer.
+        self._timer: asyncio.TimerHandle | None = None
+        self._session_timer: asyncio.TimerHandle | None = None
+        # While a message is being read: see _check_data_rate. Stopped by _data.
+        self._rate_timer: asyncio.TimerHandle | None = None
+        # Octets of the message being read, as stored.
+        self._data_received = 0
+        # Armed by _close: aborts a close the peer does not take.
+        self._abort_timer: asyncio.TimerHandle | None = None
 
-    # ----------------------------------------------------------- verb lockdown
-    async def smtp_VRFY(self, arg: str) -> None:
-        await self.push("252 2.1.5 Cannot VRFY user; try RCPT to verify")
-
-    async def smtp_EXPN(self, arg: str) -> None:
-        await self.push("502 5.7.0 EXPN disabled")
-
-    async def smtp_AUTH(self, arg: str) -> None:
-        # AUTH is never advertised (no authenticator wired, auth_require_tls
-        # defaults to True), but reply explicitly anyway so a misconfigured
-        # scanner cannot mistake an absent reply for acceptance.
-        await self.push("502 5.7.0 AUTH not supported on inbound port 25")
-
-    @syntax("EHLO hostname")
-    async def smtp_EHLO(self, hostname: str) -> None:
-        # aiosmtpd adds the SIZE and SMTPUTF8 allowances to the MAIL limit on
-        # every EHLO without resetting it, so a repeated EHLO would raise it
-        # each time.
-        self.command_size_limits.clear()
-        await super().smtp_EHLO(hostname)
-
-    async def smtp_HELP(self, arg: str) -> None:
-        # Default aiosmtpd HELP enumerates implemented verbs (mild info leak).
-        await self.push("214 2.0.0 See https://www.rfc-editor.org/rfc/rfc5321")
-
-    # ------------------------------------------------------ session deadline
+    # ------------------------------------------------------ asyncio callbacks
     def connection_made(self, transport) -> None:
-        super().connection_made(transport)
-        _live_sessions.add(self)
-        self._arm_session_deadline()
+        self._loop = asyncio.get_running_loop()
+        self.transport = transport
+        peer = transport.get_extra_info("peername")
+        if peer:
+            self.session.wire_ip = settings.canonical_ip(str(peer[0]))
+            if self._proxy_timeout is None:
+                self.session.client_ip, self.session.client_port = self.session.wire_ip, peer[1]
+        self._reader = LineReader(transport, settings.PYMTA_MAX_LINE_LENGTH)
+        self._arm_session_timer()
+        self._arm_idle_timer()
+        self._task = self._loop.create_task(self._run())
+
+    def data_received(self, data: bytes) -> None:
+        self._reader.feed(data)
+
+    def eof_received(self) -> bool:
+        """The peer has finished sending. What is in progress is still answered.
+
+        A sender may close its side right after the final dot. Dropping the
+        connection there would cancel a delivery it is still waiting to hear
+        about, and it would send the message again.
+
+        The session ends at its next read. Not over TLS, where closing one
+        side closes both.
+        """
+        self._reader.close()
+        return self.session.tls is None
 
     def connection_lost(self, error) -> None:
-        if self._session_deadline_handle is not None:
-            self._session_deadline_handle.cancel()
-            self._session_deadline_handle = None
-        _live_sessions.discard(self)
-        self._log_session(error)
-        super().connection_lost(error)
+        if self._abort_timer is not None:
+            self._abort_timer.cancel()
+        self._end(error)
+        # Whatever the session was doing, an MDA call included.
+        self._task.cancel()
 
-    def _cb_client_connected(self, reader, writer) -> None:
-        super()._cb_client_connected(reader, writer)
-        readuntil = reader.readuntil
+    def pause_writing(self) -> None:
+        if self._write_resumed is None:
+            self._write_resumed = self._loop.create_future()
 
-        async def remember(*args, **kwargs):
-            self._last_line = None
-            line = await readuntil(*args, **kwargs)
-            # Command lines only: inside DATA these are message content.
-            if self._current_verb is None:
-                self._last_line = line
-            return line
+    def resume_writing(self) -> None:
+        if self._write_resumed is not None and not self._write_resumed.done():
+            self._write_resumed.set_result(None)
+        self._write_resumed = None
 
-        reader.readuntil = remember
+    # ------------------------------------------------- how a connection ends
+    def _close(self) -> None:
+        """Hang up: no further command is read, and the timers are stopped.
 
-    def _arm_session_deadline(self) -> None:
-        """Start the one bound a peer cannot push back by staying busy.
-
-        Every other deadline is reset by peer activity: aiosmtpd re-arms its
-        idle timer on each accepted command line, so a peer that sends one
-        command just under ``PYMTA_COMMAND_TIMEOUT`` keeps the session alive
-        for as long as ``command_call_limit`` lets it issue commands, which is
-        many hours on the default budgets.
-
-        Armed once per connection. Not re-armed on the STARTTLS transport swap
-        either: aiosmtpd calls ``connection_made`` a second time there, and
-        resetting the deadline there would give the peer a second full budget.
+        What is already written gets ``_CLOSE_GRACE`` seconds to reach the
+        peer. One that is not reading does not get to keep the connection,
+        and with it a session slot, by leaving our last reply unread.
         """
-        if self._session_deadline_handle is not None:
+        if self.transport.is_closing():
             return
-        limit = settings.PYMTA_SESSION_TIMEOUT
-        if limit <= 0:
+        self._stop_reading()
+        self.transport.close()
+        self._abort_timer = self._loop.call_later(_CLOSE_GRACE, self.transport.abort)
+
+    def _abort(self) -> None:
+        """Drop the connection at once, unsent replies included."""
+        self._stop_reading()
+        self.transport.abort()
+
+    def _stop_reading(self) -> None:
+        self._closing = True
+        self._stop_timers()
+        # Ends the session task wherever it is waiting for input.
+        self._reader.close()
+
+    def _stop_timers(self) -> None:
+        for timer in (self._timer, self._session_timer):
+            if timer is not None:
+                timer.cancel()
+        self._timer = self._session_timer = None
+
+    def _end(self, error) -> None:
+        """Stop everything and write the summary. Once, whoever calls first."""
+        if self._ended:
             return
-        self._session_deadline_handle = self.loop.call_later(limit, self._session_expired)
+        self._ended = True
+        self._stop_reading()
+        self.resume_writing()
+        try:
+            self._log.close(error)
+        except Exception:
+            logger.exception("session_error", extra={"session_id": self.session_id})
 
-    def _session_expired(self) -> None:
-        self._session_deadline_handle = None
-        self._close_reason = "session_timeout"
-        logger.debug(
-            "session_timeout",
-            extra={
-                "session_id": self.session_id,
-                "client_ip": self._client_address(),
-                "limit_seconds": settings.PYMTA_SESSION_TIMEOUT,
-            },
-        )
-        metrics.SECURITY_REJECTIONS.labels(reason="session_timeout").inc()
-        metrics.DISCONNECTS_421.labels(reason="session_timeout").inc()
-        # Announce before hanging up so the sender defers and retries rather
-        # than reading a bare reset as a hard failure. Runs as a task because
-        # push() is async and we are in a timer callback; writing from here is
-        # safe even mid-DATA (StreamWriter.write only appends to a buffer) and
-        # the connection is ending either way.
-        # The task is not retained: nothing awaits it, and the transport close
-        # it performs is what ends the connection.
-        self.loop.create_task(
-            self._close_with_notice("421 4.4.2 Session too long, closing connection")
-        )
+    def _close_with_notice(self, reply: str) -> None:
+        """Say why, then hang up. Without a word where one cannot be said.
 
-    def _timeout_cb(self) -> None:
-        """Announce the idle timeout before hanging up.
-
-        aiosmtpd's own callback closes the transport and says nothing, so the
-        peer gets a bare TCP close and cannot tell a policy timeout from a
-        network fault. Postfix answers 421 here, and so does our session
-        deadline above, so this is the odd one out. Saying it also gives the
-        timeout a metric, which it otherwise had no way to record.
+        Not a coroutine: called from timers, and nothing else may run on the
+        session between the decision to close and the close.
         """
-        self._close_reason = "command_timeout"
-        logger.debug(
-            "command_timeout",
-            extra={
-                "session_id": self.session_id,
-                "client_ip": self._client_address(),
-                "limit_seconds": settings.PYMTA_COMMAND_TIMEOUT,
-            },
-        )
-        metrics.SECURITY_REJECTIONS.labels(reason="command_timeout").inc()
-        metrics.DISCONNECTS_421.labels(reason="command_timeout").inc()
-        self.loop.create_task(
-            self._close_with_notice("421 4.4.2 Idle timeout, closing connection")
-        )
+        if self._write_resumed is not None or self._handshaking:
+            # The peer is not reading what we send, so the notice would wait
+            # behind the rest for ever. Or a TLS handshake has the transport,
+            # and a line in clear would land in the middle of it.
+            self._abort()
+            return
+        # Writing to a peer that has just left raises nothing: it is dropped.
+        self._write_reply(reply)
+        self._close()
 
-    async def _close_with_notice(self, reply: str) -> None:
-        with contextlib.suppress(OSError, ConnectionError):
-            await self.push(reply)
-        if self.transport is not None:
-            self.transport.close()
-
-    # ------------------------------------------------------- forced disconnect
     def request_disconnect(self) -> None:
         """Close the connection once the reply now being sent has gone out.
 
-        aiosmtpd pushes whatever a handler hook returns and then loops back for
-        the next command. A ``421 ... goodbye`` from ``handle_RCPT`` is only a
-        string to it, so without this the session stays open and an enumerator
-        keeps probing until the much coarser per-verb ``command_call_limit``
-        closes it. Closing from :meth:`push` rather than here means the 421 is
-        on the wire before the FIN, so the peer gets a reason.
+        A 421 is a promise to hang up. Closing after the reply rather than
+        here means the peer gets the reason before the FIN.
         """
         self._disconnect_after_reply = True
 
-    async def push(self, status) -> None:
-        self._note_reply(status)
-        await super().push(status)
-        if self._disconnect_after_reply:
-            self._disconnect_after_reply = False
-            self._close_reason = self._close_reason or "server_closed"
-            if self.transport is not None:
-                self.transport.close()
+    # ------------------------------------------------------------ the session
+    async def _run(self) -> None:
+        try:
+            if await self._enter() and await self._greet():
+                await self._command_loop()
+        except ConnectionClosed, ConnectionError, _TLSFailed:
+            # The peer left, or its handshake failed. The summary says which.
+            pass
+        except Exception:
+            # An exception inside a command is answered 421 (_internal_error).
+            # One raised outside any command, in the gate or in the loop
+            # itself, would end this task with nothing in the log.
+            self.close_reason = self.close_reason or "internal_error"
+            logger.exception(
+                "session_error",
+                extra={"session_id": self.session_id, "client_ip": self.session.client_ip},
+            )
+            metrics.SECURITY_REJECTIONS.labels(reason="internal_error").inc()
+        finally:
+            try:
+                self._leave_gate()
+                self._close()
+            finally:
+                self._end(None)
 
-    async def handle_exception(self, error: Exception) -> str:
-        if isinstance(error, TLSSetupException):
-            # The peer's handshake failed: no certificate it would accept, no
-            # common protocol or cipher, or plaintext where TLS was due. Not a
-            # fault of ours, so neither handler_error nor the internal_error
-            # counters, which is where it used to land. aiosmtpd closes the
-            # transport itself on this path and never sends the reply.
-            #
-            # The cause is the one useful fact: a sender that enforces TLS and
-            # rejects our certificate shows up here and nowhere else, as a
-            # session that said STARTTLS and was never heard from again.
-            cause = error.__cause__ or error
-            self._tls_error = logfmt.clip(f"{type(cause).__name__}: {cause}", _MAX_LOGGED_REPLY)
-            self._close_reason = "tls_failed"
-            return "454 4.7.0 TLS not available due to temporary reason"
-        self._close_reason = "internal_error"
+    async def _enter(self) -> bool:
+        """Decide whether this connection gets a greeting.
+
+        The client is the TCP peer, or with PROXY protocol on the source the
+        header names. It is then admitted or turned away.
+        """
+        if self._proxy_timeout is not None:
+            if not await self._read_proxy_header():
+                return False
+        elif self.session.client_ip is None:
+            # A peer that resets between accept() and here leaves no address.
+            # Counted, and logged at DEBUG only: it must not be a way to pick
+            # our log rate.
+            metrics.CONNECTIONS_TOTAL.labels(result="no_wire_peer").inc()
+            logger.debug("session_without_peer", extra={"session_id": self.session_id})
+        return await self._admit()
+
+    async def _read_proxy_header(self) -> bool:
+        """Take the client from the PROXY header. False: no session, no reply.
+
+        Only from a peer in ``PYMTA_TRUSTED_PROXIES``: the header decides
+        which source the limits count and which address the MDA records. The
+        allowlist is never empty here (the settings refuse to load).
+
+        Both refusals are logged at DEBUG: any host that reaches the port can
+        provoke one per connection. The counters are what an alert watches.
+        """
+        session = self.session
+        who = {"session_id": self.session_id, "wire_peer": session.wire_ip}
+        wire = settings.parse_client_ip(session.wire_ip)
+        if wire is None or not any(wire in net for net in settings.PYMTA_TRUSTED_PROXIES):
+            metrics.SECURITY_REJECTIONS.labels(reason="untrusted_proxy").inc()
+            metrics.CONNECTIONS_TOTAL.labels(result="rejected_untrusted_proxy").inc()
+            logger.debug("proxy_header_untrusted", extra=who)
+            return False
+        try:
+            header = await asyncio.wait_for(
+                read_proxy_header(self._reader), timeout=self._proxy_timeout
+            )
+        except TimeoutError:
+            header = None
+        if header is None:
+            # A balancer that stops sending the header takes all inbound
+            # mail down, and this is the only trace.
+            metrics.CONNECTIONS_TOTAL.labels(result="rejected_invalid_proxy").inc()
+            logger.debug("proxy_header_invalid", extra=who)
+            return False
+        session.client_ip = settings.canonical_ip(header.src_addr)
+        session.client_port = header.src_port
+        # wire_peer equal to client_ip: the header carries no real origin.
+        logger.debug(
+            "proxy_header",
+            extra={
+                **who,
+                "client_ip": session.client_ip,
+                "client_port": header.src_port,
+                "version": header.version,
+            },
+        )
+        return True
+
+    async def _greet(self) -> bool:
+        # Two turns of the loop: what the peer sent along with its connection
+        # is in the buffer by then, without a wait that every sender would pay.
+        await asyncio.sleep(0)
+        await asyncio.sleep(0)
+        if self._reader.pending():
+            await self._refuse_unsynchronized()
+            return False
+        await self._reply(f"220 {self.hostname} {self.ident}")
+        return True
+
+    async def _command_loop(self) -> None:
+        unknown_left = _MAX_UNKNOWN_COMMANDS
+        calls_left: dict[str, int] = {}
+        while not self._closing:
+            try:
+                raw = await self._reader.readline()
+            except LineTooLong:
+                await self._reader.skip_line()
+                await self._refuse_line("500 Command line too long", "line_too_long", None)
+                continue
+            if self._closing:
+                # Received while the session was being closed (a timer, a
+                # reclaim, the shutdown): the peer has its 421, not run.
+                break
+            line = raw.rstrip(b"\r\n")
+            try:
+                verb, arg = split_command(line, utf8=self.enable_smtputf8)
+            except ArgumentNotAscii:
+                await self._refuse_line("500 Error: strict ASCII mode", "bad_syntax", raw)
+                continue
+            except CommandSyntaxError:
+                # No command word at all: counted with the unrecognised ones.
+                verb, arg = "", None
+            if len(line) > self._line_limit(verb):
+                await self._refuse_line("500 Command line too long", "line_too_long", raw)
+                continue
+            if (
+                self.require_starttls
+                and not self.session.tls
+                and verb not in _ALLOWED_BEFORE_STARTTLS
+            ):
+                await self._refuse_line(
+                    "530 Must issue a STARTTLS command first", "tls_required", raw
+                )
+                continue
+            command = self._COMMANDS.get(verb)
+            if command is None:
+                unknown_left -= 1
+                await self._refuse_unknown(verb, raw, last=unknown_left < 1)
+                continue
+            left = calls_left.get(verb, self._call_limits.get(verb, self._call_limits["*"]))
+            if left < 1:
+                metrics.DISCONNECTS_421.labels(reason="too_many_commands").inc()
+                self.request_disconnect()
+                await self._refuse_line(
+                    f"421 4.7.0 {verb} sent too many times", "too_many_commands", raw
+                )
+                continue
+            calls_left[verb] = left - 1
+            try:
+                await self._dispatch(verb, arg, command)
+            except ConnectionClosed, ConnectionError, _TLSFailed:
+                raise
+            except Exception as error:  # noqa: BLE001
+                # Whatever it is: logged with its traceback, answered 421.
+                await self._internal_error(error)
+
+    async def _refuse_unknown(self, verb: str, raw: bytes, *, last: bool) -> None:
+        """Answer a line that is no command of ours. ``last``: and hang up."""
+        if last:
+            self.request_disconnect()
+            await self._refuse_line(
+                "502 5.5.1 Too many unrecognized commands, goodbye.",
+                "too_many_unknown_commands",
+                raw,
+            )
+        elif verb:
+            # Without the verb: a reply that repeats the peer's bytes is what
+            # cross-protocol attacks are built on.
+            await self._refuse_line(
+                "500 5.5.2 Error: command not recognized", "unknown_command", raw
+            )
+        else:
+            await self._refuse_line("500 Error: bad syntax", "bad_syntax", raw)
+
+    def _line_limit(self, verb: str) -> int:
+        """Longest command line accepted, line ending excluded.
+
+        MAIL gets 26 octets more for SIZE and 10 for SMTPUTF8 once they have
+        been offered, as their RFCs specify (1870 and 6531).
+        """
+        if verb != "MAIL" or not self.session.extended_smtp:
+            return _COMMAND_LINE_LIMIT
+        return _COMMAND_LINE_LIMIT + 26 + (10 if self.enable_smtputf8 else 0)
+
+    async def _dispatch(self, verb: str, arg: str | None, command) -> None:
+        """Run one recognised command, with the checks every command gets."""
+        self._verb = verb
+        self._log.command_started(verb, arg)
+        # The full timeout while the command runs, whatever the load: an MDA
+        # call can take longer than the idle timeout used under stress.
+        self._arm_timer(self._timeout, self._command_expired)
+        failed = True
+        try:
+            if verb in _LAST_OF_A_GROUP and self._reader.pending():
+                await self._refuse_unsynchronized()
+            elif self._leaving(verb):
+                metrics.DISCONNECTS_421.labels(reason="shutdown").inc()
+                self.request_disconnect()
+                await self._reply(_SHUTDOWN, reason="shutdown")
+                self.close_reason = "shutdown"
+            elif verb not in ("QUIT", "DATA") and self._error_budget_spent():
+                # QUIT is always answered. DATA too: its recipients were
+                # accepted before the budget ran out, and refusing it would
+                # only delay their message.
+                await self._too_many_errors()
+            else:
+                await command(self, arg)
+            failed = False
+        finally:
+            self._verb = None
+            self._idle_since = time.monotonic()
+            self._log.command_finished(failed)
+            # Idle time counts from the reply, in the state the command left:
+            # inside a transaction or not.
+            if not self._closing and self.close_reason is None:
+                self._arm_idle_timer()
+                if runtime.is_shutting_down():
+                    # It was busy when the shutdown began. If it is idle now,
+                    # it is told to go, not left to hold the drain.
+                    self.close_if_idle()
+
+    async def _internal_error(self, error: Exception) -> None:
+        """Answer an exception of ours with a 421 and hang up.
+
+        Carrying on would mean serving a session whose state we no longer
+        trust. Nothing of the exception goes on the wire.
+        """
+        self.close_reason = "internal_error"
+        self.request_disconnect()
         logger.error(
             "handler_error",
             exc_info=error,
             extra={
                 "session_id": self.session_id,
-                "client_ip": self._client_address(),
-                "sender": self._envelope_state()[0],
+                "client_ip": self.session.client_ip,
+                "sender": self._log.open_sender(),
             },
         )
-        # The handler answers 421 ("closing transmission channel"); make that
-        # true. aiosmtpd would otherwise push it and carry on with a session
-        # whose state we no longer trust.
-        status = await super().handle_exception(error)
-        self.request_disconnect()
-        return status
+        metrics.SECURITY_REJECTIONS.labels(reason="internal_error").inc()
+        metrics.DISCONNECTS_421.labels(reason="internal_error").inc()
+        await self._reply(_INTERNAL_ERROR)
 
-    # ------------------------------------------------------ session summary
-    def _accounted(self, verb: str, method):
-        """Wrap one ``smtp_<VERB>`` so its outcome is counted.
+    # ------------------------------------------------------------------ replies
+    async def _reply(
+        self,
+        *lines: str,
+        reason: str | None = None,
+        refused_line: bytes | None = None,
+        handler_reply: Reply | None = None,
+    ) -> None:
+        """Send one reply, of one line or several, and record it.
 
-        aiosmtpd dispatches every recognised command through ``_smtp_methods``,
-        and a good share of them answer without reaching any handler hook. This
-        is the one place every verb passes, whoever ends up replying.
+        Every 4xx/5xx is charged to the error budget, in ``_write_reply``.
 
-        ``functools.wraps`` carries over the ``@syntax`` attributes aiosmtpd
-        reads back off the method.
+        ``reason`` names a refusal in the log where its code does not.
+        ``refused_line`` is what it answers when no command was running.
+        ``handler_reply`` is the handler's, when the reply is one.
         """
-
-        @functools.wraps(method)
-        async def run(arg):
-            self._current_verb, self._current_arg, self._last_code = verb, arg, None
-            self._refusal_reason = None
-            if verb == "AUTH" and arg:
-                # The argument can carry credentials (AUTH PLAIN <base64>), and
-                # we refuse every AUTH, so it would land in last_error_arg.
-                self._current_arg = "[redacted]"
-            elif verb == "MAIL":
-                # Not while a transaction is open: aiosmtpd answers 503 to a
-                # nested MAIL and keeps the first sender.
-                if not getattr(self.envelope, "mail_from", None):
-                    self._sender = self._sender_of(arg)
-            elif verb in ("EHLO", "HELO"):
-                self._helo = logfmt.clip(arg, _MAX_LOGGED_ARG)
-            failed = True
-            try:
-                await method(arg)
-                failed = False
-            finally:
-                # None when _log_session already settled it: the connection
-                # went while this command was still running.
-                if self._current_verb is not None:
-                    self._count_command(verb, failed)
-                self._current_verb = self._current_arg = None
-                # The handler's claim covers this command's reply only. It
-                # makes one on a 250 too (message_delivered).
-                self.refusal_logged = False
-
-        return run
-
-    def _sender_of(self, arg: str | None) -> str | None:
-        """The address a MAIL command names, as the handler's lines spell it.
-
-        Parsed with aiosmtpd's own helpers so it reads the same way the command
-        will, and falls back to the raw argument when it does not parse: that
-        is the case worth seeing, and aiosmtpd is about to refuse it.
-        """
-        path = self._strip_command_keyword("FROM:", arg) if arg else None
-        # None when it does not parse, "" when there is no address at all; the
-        # null sender comes back as "<>".
-        address = self._getaddr(path)[0] if path else None
-        if not address:
-            return logfmt.clip(arg, _MAX_LOGGED_ARG)
-        return logfmt.clip(address, _MAX_LOGGED_ARG, tail=_LOGGED_SENDER_TAIL)
-
-    def _envelope_state(self) -> tuple[str | None, list[str]]:
-        """Sender and accepted recipients of the transaction now open, if any."""
-        envelope = getattr(self, "envelope", None)
-        sender = getattr(envelope, "mail_from", None)
-        if not sender:
-            return None, []
-        return (
-            logfmt.clip(sender, _MAX_LOGGED_ARG, tail=_LOGGED_SENDER_TAIL),
-            list(getattr(envelope, "rcpt_tos", None) or []),
+        self._write_reply(
+            *lines, reason=reason, refused_line=refused_line, handler_reply=handler_reply
         )
+        if self._write_resumed is not None:
+            await self._write_resumed
+        if self._disconnect_after_reply:
+            self._disconnect_after_reply = False
+            self.close_reason = self.close_reason or "server_closed"
+            self._close()
 
-    def _refused_line(self) -> str | None:
-        """The command line a pre-dispatch refusal answered, fit for a log."""
-        if self._last_line is None:
-            return None
-        text = self._last_line.decode("utf-8", "replace").strip()
-        if text[:4].upper() == "AUTH":
-            return "AUTH [redacted]"
-        # The tail too: on a too-long MAIL line that is where the domain is.
-        return logfmt.clip(text, _MAX_LOGGED_ARG, tail=_LOGGED_SENDER_TAIL)
+    def _write_reply(
+        self,
+        *lines: str,
+        reason: str | None = None,
+        refused_line: bytes | None = None,
+        handler_reply: Reply | None = None,
+    ) -> None:
+        """Record a reply and hand it to the transport, without waiting for it to go."""
+        if lines[-1][0] in "45":
+            self.errors += 1
+        self._log.replied(lines[-1], reason, refused_line, handler_reply)
+        encoding = "utf-8" if self.enable_smtputf8 else "ascii"
+        self.transport.write(b"".join(line.encode(encoding) + b"\r\n" for line in lines))
 
-    def _log_refusal(self, code: int, reply: str | None, arg: str | None) -> None:
-        """One ``reject`` line for a 4xx/5xx the handler did not log itself.
+    async def _answer(self, reply: Reply) -> None:
+        """Send what the handler answered."""
+        await self._reply(reply.text, reason=reply.reason, handler_reply=reply)
 
-        aiosmtpd answers a whole class of commands without calling a hook (552
-        too much data, 555 unknown parameter, 553 malformed address, 503 bad
-        sequence, 500 line too long), and ``session_closed`` keeps only the
-        last error and the last sender. On a connection that carries several
-        messages, the refusal of an earlier one would otherwise name neither.
+    async def _refuse_line(self, reply: str, reason: str, line: bytes | None) -> None:
+        """Answer a line that was refused before any command ran.
 
-        Not for timeouts or internal errors, which have their own line and
-        whose open transaction ``session_closed`` reports. Capped per session,
-        like the handler's refusals.
+        Held to the error budget like any command: a peer that sends nothing
+        but lines of this kind would otherwise never meet it.
         """
-        if self.refusal_logged or self._close_reason is not None:
-            return
-        if self._ip_gate is not None and not self._admitted:
-            return
-        self._refusal_lines += 1
-        if self._refusal_lines > settings.PYMTA_MAX_ERRORS_PER_SESSION:
-            return
-        verb = self._current_verb
-        # Still the refused transaction: aiosmtpd resets the envelope only
-        # after it has pushed the reply.
-        sender, recipients = self._envelope_state()
-        if sender is None and verb == "MAIL":
-            sender = self._sender
-        fields = {
-            "session_id": self.session_id,
-            "client_ip": self._client_address(),
-            "verb": verb.lower() if verb else None,
-            "reason": self._refusal_reason or "protocol",
-            "code": code,
-            "reply": reply,
-            "sender": sender,
-            "arg": arg,
-        }
-        if recipients:
-            fields["recipients"] = logfmt.clip_list(recipients, _MAX_LOGGED_RECIPIENTS)
-            fields["recipient_count"] = len(recipients)
-        logger.info("reject", extra=fields)
-
-    def _count_command(self, verb: str, failed: bool) -> None:
-        code = self._last_code
-        if failed:
-            outcome = "error"
-        elif code is None:
-            outcome = "none"
+        if self._error_budget_spent():
+            await self._too_many_errors(line)
         else:
-            outcome = f"{code // 100}xx"
-        metrics.COMMANDS_TOTAL.labels(verb=verb, **{"class": outcome}).inc()
-        counts = self._commands.setdefault(verb, [0, 0])
-        counts[1] += 1
-        # 3xx is not success: a 354 with nothing after it is a DATA phase the
-        # connection did not survive.
-        if outcome == "2xx":
-            counts[0] += 1
+            await self._reply(reply, reason=reason, refused_line=line)
 
-    def _note_reply(self, status) -> None:
-        text = status.decode("utf-8", "replace") if isinstance(status, bytes) else str(status)
-        try:
-            code = int(text[:3])
-        except ValueError:
+    async def _too_many_errors(self, line: bytes | None = None) -> None:
+        metrics.SECURITY_REJECTIONS.labels(reason="max_errors_per_session").inc()
+        metrics.DISCONNECTS_421.labels(reason="max_errors_per_session").inc()
+        self.request_disconnect()
+        await self._reply(_TOO_MANY_ERRORS, reason="max_errors_per_session", refused_line=line)
+
+    async def _refuse_unsynchronized(self) -> None:
+        """Answer a peer that did not wait for our reply, as Postfix does.
+
+        PIPELINING is not offered, and even where it is, EHLO, STARTTLS and
+        DATA must be the last command of a group (RFC 2920). Input already
+        waiting behind one of them, or before the greeting, comes from a script
+        that ignores replies, or from an attempt to smuggle commands past a
+        point where state changes (the plaintext behind STARTTLS, a body sent
+        before the 354).
+        """
+        metrics.SECURITY_REJECTIONS.labels(reason="protocol_synchronization").inc()
+        self.request_disconnect()
+        await self._reply(_UNSYNCHRONIZED, reason="protocol_synchronization")
+
+    # ------------------------------------------------------------- error budget
+    def _error_budget_spent(self) -> bool:
+        """True once the session has collected all the 4xx/5xx it may."""
+        budget = settings.PYMTA_MAX_ERRORS_PER_SESSION
+        if self.under_stress():
+            budget = min(budget, _STRESS_MAX_ERRORS)
+        return self.errors >= budget
+
+    def count_junk(self) -> None:
+        """Charge a command that was answered 2xx and moved no message forward.
+
+        NOOP, VRFY, HELP, a recipient given twice. Only while the server is
+        close to full, where each re-arms the idle timeout and so keeps a
+        slot: as an error, so the fifth is the last. After Postfix's
+        ``smtpd_junk_command_limit``.
+
+        Not RSET, which senders issue between messages: its call limit
+        bounds it.
+        """
+        if self.under_stress():
+            self.errors += 1
+
+    # ----------------------------------------------------------------- commands
+    def in_transaction(self) -> bool:
+        """True from an accepted MAIL to the end of DATA, RSET or a new greeting."""
+        return self.envelope.mail_from is not None
+
+    async def _needs_helo(self) -> bool:
+        if self.session.host_name:
+            return False
+        await self._reply("503 Error: send HELO first")
+        return True
+
+    async def _helo(self, arg: str | None) -> None:
+        if not arg:
+            await self._reply("501 Syntax: HELO hostname")
             return
-        self._last_code = code
-        if code >= 400:
-            self._error_replies += 1
-            # A timeout notice answers nothing the peer sent.
-            if self._close_reason not in ("command_timeout", "session_timeout"):
-                self._peer_refused = True
-            reply = logfmt.clip(text, _MAX_LOGGED_REPLY)
-            if self._current_verb is not None:
-                arg = logfmt.clip(self._current_arg, _MAX_LOGGED_ARG)
-            elif self._close_reason is None:
-                # Refused before dispatch: the line itself is the argument.
-                arg = self._refused_line()
-            else:
-                arg = None
-            self._last_error = (self._current_verb, reply, arg)
-            self._log_refusal(code, reply, arg)
+        await self._greeted_as(arg, extended=False)
+        await self._reply(f"250 {self.hostname}")
 
-    def _client_address(self) -> str | None:
-        """The client: what the gate keyed on, else the TCP peer.
+    async def _ehlo(self, arg: str | None) -> None:
+        if not arg:
+            await self._reply("501 Syntax: EHLO hostname")
+            return
+        lines = [f"250-{self.hostname}", f"250-SIZE {self.data_size_limit}", "250-8BITMIME"]
+        if self.enable_smtputf8:
+            lines.append("250-SMTPUTF8")
+        if self.tls_context and not self.session.tls:
+            lines.append("250-STARTTLS")
+        lines.append("250 HELP")
+        await self._greeted_as(arg, extended=True)
+        await self._reply(*lines)
 
-        The TCP peer is the balancer when PROXY protocol is on, and naming it
-        would attribute the session to our own infrastructure.
+    async def _greeted_as(self, name: str, *, extended: bool) -> None:
+        """Start afresh under ``name``: any open transaction is dropped."""
+        self.envelope = Envelope()
+        self.session.extended_smtp = extended
+        self.session.host_name = await self.handler.handle_HELO(self, name)
+
+    async def _path_and_parameters(self, verb: str, keyword: str, arg: str | None):
+        """Parse ``MAIL FROM:`` or ``RCPT TO:``. Returns (address, parameters).
+
+        None once a refusal has been sent. The parameters we ignore are
+        already taken out of what is returned.
         """
-        if self._client_ip is not None:
-            return self._client_ip
-        if settings.PYMTA_ENABLE_PROXY_PROTOCOL:
+        syntax = f"501 Syntax: {verb} {keyword} <address>"
+        if self.session.extended_smtp:
+            syntax += " [SP <mail-parameters>]"
+        text = strip_keyword(keyword, arg)
+        if not text:
+            await self._reply(syntax)
             return None
-        return _ip_of(getattr(self.session, "peer", None) if self.session else None)
-
-    def _commands_field(self) -> str:
-        """Postfix's ``disconnect from`` tally: ``ehlo=1 mail=1 rcpt=0/1``.
-
-        A bare count when every attempt succeeded, ``succeeded/attempted``
-        otherwise, so the failing verb stands out at a glance.
-        """
-        parts = []
-        for verb, (ok, total) in self._commands.items():
-            parts.append(
-                f"{verb.lower()}={total}" if ok == total else f"{verb.lower()}={ok}/{total}"
+        split = split_path(text)
+        if split is None:
+            await self._reply("553 5.1.3 Error: malformed address")
+            return None
+        address, parameter_text = split
+        parameters = parse_parameters(parameter_text)
+        if parameters is None:
+            await self._reply(syntax)
+            return None
+        ignored = [name for name in parameters if name in _IGNORED_PARAMETERS[verb]]
+        if ignored:
+            self._log.parameters_ignored(
+                verb, [_parameter(name, parameters.pop(name)) for name in ignored]
             )
-        return " ".join(parts)
+        if parameters and not self.session.extended_smtp:
+            # Parameters came with ESMTP: none after HELO.
+            await self._reply(syntax)
+            return None
+        return address, parameters
 
-    def _closed_by(self, error) -> str:
-        if self._close_reason:
-            return self._close_reason
-        # A QUIT that was answered 221, not one refused for its syntax.
-        if self._commands.get("QUIT", (0, 0))[0]:
-            return "quit"
-        # aiosmtpd closes on its own after these two, without a hook: the
-        # per-verb call limit (421) and too many unknown commands (502 ...
-        # goodbye).
-        if self._last_code == 421 or (self._last_error and "goodbye" in self._last_error[1]):
-            return "server_closed"
-        if error is not None:
-            return "peer_reset"
-        return "peer_closed"
-
-    def _tls_fields(self) -> dict:
-        if self._tls_error is not None:
-            return {"tls": False, "tls_error": self._tls_error}
-        info = getattr(self.session, "ssl", None) if self.session else None
-        if not info:
-            return {"tls": False}
-        cipher = info.get("cipher") if isinstance(info, dict) else None
-        fields: dict = {"tls": True}
-        if cipher:
-            fields["tls_cipher"], fields["tls_version"] = cipher[0], cipher[1]
-        return fields
-
-    def _log_session(self, error) -> None:
-        """One line per connection, whatever became of it.
-
-        The message lines (``message_*``) and refusals (``reject``) only exist
-        for a sender that got far enough to be refused by *us*. A sender whose
-        handshake failed, who was answered by aiosmtpd itself, who timed out or
-        simply hung up mid-DATA left nothing at all, which is the "no trace of
-        the mail in the log" case. This is the Postfix ``disconnect from`` line.
-
-        INFO only for a session that was admitted and said something.
-        Connections refused at the gate are counted by
-        ``pymta_connections_total`` and are what a flood is made of; a
-        connection that closes without a single command is a TCP health check.
-        """
-        if self._session_logged:
+    async def _mail(self, arg: str | None) -> None:  # noqa: PLR0911
+        if await self._needs_helo():
             return
-        self._session_logged = True
-        if self._current_verb is not None:
-            # Cut off mid-command, typically mid-DATA: the reply never went out.
-            self._count_command(self._current_verb, failed=True)
-            self._current_verb = None
-        if self._ip_gate is not None and not self._admitted:
+        parsed = await self._path_and_parameters("MAIL", "FROM:", arg)
+        if parsed is None:
             return
-        closed_by = self._closed_by(error)
-        fields = {
-            "session_id": self.session_id,
-            "client_ip": self._client_address(),
-            "helo": self._helo,
-            **self._tls_fields(),
-            "sender": self._sender,
-            "commands": self._commands_field(),
-            "errors": self._error_replies,
-            "closed_by": closed_by,
-            "duration_ms": int((time.monotonic() - self._accepted_at) * 1000),
-        }
-        if settings.PYMTA_ENABLE_PROXY_PROTOCOL:
-            fields["wire_peer"] = _ip_of(getattr(self.session, "peer", None))
-        if self._last_error is not None:
-            verb, reply, arg = self._last_error
-            fields["last_error_verb"] = verb.lower() if verb else None
-            fields["last_error_reply"] = reply
-            fields["last_error_arg"] = arg
-        # A transaction left open: these recipients never got their message.
-        _, recipients = self._envelope_state()
-        if recipients:
-            fields["recipients"] = logfmt.clip_list(recipients, _MAX_LOGGED_RECIPIENTS)
-            fields["recipient_count"] = len(recipients)
-        # Only where it is the explanation. After a QUIT or our own hang-up a
-        # TLS peer routinely resets instead of closing, which is noise.
-        if closed_by == "peer_reset":
-            fields["error_type"] = type(error).__name__
-        talked = bool(self._commands) or self._peer_refused
-        if settings.PYMTA_LOG_SESSIONS and talked:
-            logger.info("session_closed", extra=fields)
-        else:
-            logger.debug("session_closed", extra=fields)
+        address, parameters = parsed
+        if self.in_transaction():
+            await self._reply("503 Error: nested MAIL command")
+            return
+        if (parameters.pop("BODY", "7BIT") or "").upper() not in ("7BIT", "8BITMIME"):
+            await self._reply("501 Error: BODY can only be one of 7BIT, 8BITMIME")
+            return
+        smtp_utf8 = "SMTPUTF8" in parameters
+        if smtp_utf8 and parameters.pop("SMTPUTF8") is not None:
+            await self._reply("501 Error: SMTPUTF8 takes no arguments")
+            return
+        if smtp_utf8 and not self.enable_smtputf8:
+            await self._reply("501 Error: SMTPUTF8 disabled")
+            return
+        if "SIZE" in parameters:
+            size = parameters.pop("SIZE") or ""
+            if not _SIZE_VALUE.match(size):
+                await self._reply("501 5.5.4 Bad SIZE parameter", reason="bad_size_parameter")
+                return
+            if int(size) > self.data_size_limit:
+                # Refused here, before the message is uploaded.
+                metrics.SECURITY_REJECTIONS.labels(reason="oversize_announced").inc()
+                await self._reply(_SIZE_EXCEEDED, reason="oversize_announced")
+                return
+        if parameters:
+            await self._reply("555 MAIL FROM parameters not recognized or not implemented")
+            return
+        self.envelope.smtp_utf8 = smtp_utf8
+        await self._answer(await self.handler.handle_MAIL(self, address))
 
-    # ------------------------------------------------------------ DATA budget
-    @syntax("DATA")
-    async def smtp_DATA(self, arg: str) -> None:
-        """Run the DATA phase under a single total deadline.
+    async def _rcpt(self, arg: str | None) -> None:
+        if await self._needs_helo():
+            return
+        if not self.in_transaction():
+            await self._reply("503 Error: need MAIL command")
+            return
+        parsed = await self._path_and_parameters("RCPT", "TO:", arg)
+        if parsed is None:
+            return
+        address, parameters = parsed
+        if parameters:
+            await self._reply("555 RCPT TO parameters not recognized or not implemented")
+            return
+        await self._answer(await self.handler.handle_RCPT(self, address))
 
-        aiosmtpd arms its idle timer when a command line is dispatched and does
-        not re-arm it while the handler runs, so the whole of DATA (body
-        receive *and* the MDA deliver call) is charged to one
-        ``PYMTA_COMMAND_TIMEOUT``. That conflates two very different budgets:
-        120 s is right for "peer went quiet at the command prompt" and too
-        tight for a 10 MB body plus a slow MDA, which would be torn down
-        mid-handler with no reply at all.
+    async def _rset(self, arg: str | None) -> None:
+        if arg:
+            await self._reply("501 Syntax: RSET")
+            return
+        self.envelope = Envelope()
+        await self._reply("250 OK")
 
-        Swap in the DATA budget for the duration. The transport is armed at
-        exactly ``PYMTA_DATA_TIMEOUT``, so nothing in a DATA phase outlives it;
-        the handler takes its reply reserve out of the same budget so it can
-        answer 451 first.
+    async def _noop(self, arg: str | None) -> None:
+        self.count_junk()
+        await self._reply("250 OK")
+
+    async def _quit(self, arg: str | None) -> None:
+        if arg:
+            await self._reply("501 Syntax: QUIT")
+            return
+        await self._reply("221 Bye")
+        self._close()
+
+    async def _vrfy(self, arg: str | None) -> None:
+        # The same answer for every address, so that none can be probed.
+        self.count_junk()
+        await self._reply("252 2.1.5 Cannot VRFY user; try RCPT to verify")
+
+    async def _expn(self, arg: str | None) -> None:
+        await self._reply("502 5.7.0 EXPN disabled")
+
+    async def _auth(self, arg: str | None) -> None:
+        # Never offered. Answered anyway, so that a scanner cannot take
+        # silence for acceptance.
+        await self._reply("502 5.7.0 AUTH not supported on inbound port 25")
+
+    async def _help(self, arg: str | None) -> None:
+        # No list of commands: it would only describe the server to a scanner.
+        self.count_junk()
+        await self._reply("214 2.0.0 See https://www.rfc-editor.org/rfc/rfc5321")
+
+    # ----------------------------------------------------------------- STARTTLS
+    async def _starttls(self, arg: str | None) -> None:
+        if self.session.tls:
+            await self._reply("503 5.5.1 TLS already active")
+            return
+        if arg:
+            await self._reply("501 Syntax: STARTTLS")
+            return
+        if not self.tls_context:
+            await self._reply("454 TLS not available")
+            return
+        await self._reply("220 Ready to start TLS")
+        # No await between this line and the handshake taking the transport
+        # over: nothing received in clear can end up read as if encrypted.
+        self._reader.discard()
+        self._handshaking = True
+        try:
+            # Stated: asyncio's own are 60 s and 30 s, and the idle timeout
+            # does not run during a command.
+            transport = await self._loop.start_tls(
+                self.transport,
+                self,
+                self.tls_context,
+                server_side=True,
+                ssl_handshake_timeout=min(self._idle_timeout(), _TLS_HANDSHAKE_TIMEOUT),
+                ssl_shutdown_timeout=_CLOSE_GRACE,
+            )
+        except Exception as error:
+            # The peer's handshake failed: no certificate it would accept, no
+            # common protocol or cipher, or plaintext where TLS was due. Not a
+            # fault of ours. The cause is kept: this is the only trace of a
+            # sender that enforces TLS and rejects our certificate.
+            self._log.tls_error = logfmt.clip(f"{type(error).__name__}: {error}", MAX_LOGGED_REPLY)
+            self.close_reason = self.close_reason or "tls_failed"
+            raise _TLSFailed from error
+        finally:
+            self._handshaking = False
+        if transport is None:
+            # asyncio's answer when the connection went during the handshake
+            # without an error of its own: one of our timers closed it.
+            self.close_reason = self.close_reason or "tls_failed"
+            raise _TLSFailed
+        self.transport = transport
+        self._reader.replace_transport(transport)
+        # RFC 3207 section 4.2: what was learnt in clear is forgotten.
+        self.session.host_name = None
+        self.session.extended_smtp = False
+        tls = transport.get_extra_info("ssl_object")
+        self.session.tls = TLSInfo(version=tls.version(), cipher=tls.cipher()[0])
+        self.envelope = Envelope()
+
+    # --------------------------------------------------------------------- DATA
+    async def _data(self, arg: str | None) -> None:
+        """Receive one message and hand it to the handler.
+
+        The whole phase, body receive and MDA call, runs under one deadline of
+        ``PYMTA_DATA_TIMEOUT`` in place of the idle timeout. The handler takes
+        its reply reserve out of the same budget so it can answer 451 first.
         """
-        # Before the 354, so a refused peer never starts uploading and the
-        # bytes are never allocated. Held until the handler returns, because the
-        # body stays in memory for the whole MDA deliver call, not just while it
-        # is being received.
-        if self._ip_gate is not None and not self._ip_gate.acquire_data(self._gate_held_ip):
+        if await self._needs_helo():
+            return
+        if not self.envelope.rcpt_tos:
+            await self._reply("503 Error: need RCPT command")
+            return
+        if arg:
+            await self._reply("501 Syntax: DATA")
+            return
+
+        # Before the 354, so a refused peer never starts uploading. Held until
+        # the handler returns: the body stays in memory for the whole MDA
+        # call, not just while it is being received.
+        if not self._gate.acquire_data(self._slot):
             metrics.SECURITY_REJECTIONS.labels(reason="max_concurrent_data").inc()
             metrics.MESSAGES_TOTAL.labels(result="rejected_temp").inc()
-            # A message with a sender and recipients is being deferred: logged
-            # as a ``reject`` line by _log_refusal, under this reason.
-            self._refusal_reason = "max_concurrent_data"
-            await self.push("451 4.3.1 Insufficient resources, please retry")
+            await self._reply(
+                "451 4.3.1 Insufficient resources, please retry", reason="max_concurrent_data"
+            )
             return
 
-        # Read once and kept for the phase. PYMTA_DATA_TIMEOUT is reloadable, so
-        # a SIGHUP between here and the deliver call would otherwise have the
-        # handler size its budget against a value the transport was never armed
-        # at: raise the setting mid-phase and it computes a budget longer than
-        # the deadline already ticking, spending the reply reserve that exists
-        # to answer 451 before the transport tears the session down.
+        # Read once and kept for the phase, so the handler sizes its budget
+        # against the value the timer was armed at.
         self.data_phase_started = time.monotonic()
         self.data_phase_budget = float(settings.PYMTA_DATA_TIMEOUT)
-        self._reset_timeout(self.data_phase_budget)
+        self._arm_timer(self.data_phase_budget, self._data_expired)
         try:
-            await super().smtp_DATA(arg)
+            await self._reply("354 End data with <CR><LF>.<CR><LF>")
+            self._rate_timer = self._loop.call_later(_STRESS_IDLE_TIMEOUT, self._check_data_rate)
+            try:
+                content, refusal = await self._read_data()
+            finally:
+                self._rate_timer.cancel()
+            if self.close_reason == "data_timeout":
+                # Cut with the end of the message already in the buffer. The
+                # sender is told 421 and will send it again: not delivered now.
+                return
+            if refusal is not None:
+                if refusal is _TOO_MUCH_DATA:
+                    metrics.SECURITY_REJECTIONS.labels(reason="oversize_message").inc()
+                metrics.MESSAGES_TOTAL.labels(result="rejected_perm").inc()
+                # Reset after the reply: its log line names the envelope.
+                await self._reply(refusal[0], reason=refusal[1])
+                self.envelope = Envelope()
+                return
+            self.envelope.content = content
+            del content
+            reply = await self.handler.handle_DATA(self)
+            self.envelope = Envelope()
+            await self._answer(reply)
+        except _DataOverflow:
+            # The end of the message was not reached, so there is no telling
+            # where the next command starts: say why and hang up.
+            metrics.SECURITY_REJECTIONS.labels(reason="oversize_message").inc()
+            metrics.MESSAGES_TOTAL.labels(result="rejected_perm").inc()
+            self.request_disconnect()
+            await self._reply(_SIZE_EXCEEDED, reason="oversize_message")
         finally:
             self.data_phase_started = None
             self.data_phase_budget = None
-            if self._ip_gate is not None:
-                self._ip_gate.release_data(self._gate_held_ip)
-            if self.transport is not None:
-                self._reset_timeout()
+            self._gate.release_data(self._slot)
 
-    # ------------------------------------------------------------ gate wiring
-    async def _handle_client(self) -> None:
-        """Wrap aiosmtpd's per-connection dialogue with admission control.
+    async def _read_data(self) -> tuple[bytes, tuple[str, str] | None]:
+        """Read a message up to its terminating dot. Returns (content, refusal).
 
-        Two paths:
+        ``refusal`` is None, or the (reply, reason) the message is to get.
 
-        * **No PROXY protocol**: the immediate TCP peer is the real client,
-          so we gate before the SMTP dialogue starts.
-        * **PROXY protocol enabled**: the gate is deferred to
-          :meth:`acquire_gate_post_proxy`, called from the handler's
-          ``handle_PROXY`` hook once the real client IP has been parsed off
-          the PROXY header.
+        Only ``<CRLF>.<CRLF>`` ends the message, never a bare LF: that is what
+        keeps one message from being split in two (SMTP smuggling).
+
+        Lines are read up to LF, bare or not, and kept as ``stored_line``
+        returns them, so the content has CRLF line endings only. The line and
+        size limits apply to that form.
+
+        A message over the size limit, or with a line over the line limit, is
+        read to its end and then refused, so the session stays usable. Up to
+        twice the size limit: a peer that sends more is cut (``_DataOverflow``).
+        Lines too long to keep are skipped, and no more of them is read than
+        the size limit: past it there is no telling where the message ends.
+
+        Lines that are stored unchanged are taken many at a time
+        (``take_plain_lines``). One at a time, a body of empty lines costs
+        thirty times the CPU of one of ordinary lines.
         """
-        if self._ip_gate is not None and self._proxy_timeout is None:
-            if not await self._acquire_gate(self._wire_peer_ip()):
-                return
-        try:
-            await super()._handle_client()
-            if (
-                self._proxy_timeout is not None
-                and self._close_reason is None
-                and not getattr(self.session, "proxy_data", None)
-            ):
-                # aiosmtpd hangs up on a missing or malformed PROXY header
-                # without a hook. A balancer that stops sending it takes all
-                # inbound mail down, and this is the only trace.
-                metrics.CONNECTIONS_TOTAL.labels(result="rejected_invalid_proxy").inc()
-                logger.debug(
-                    "proxy_header_invalid",
-                    extra={
-                        "session_id": self.session_id,
-                        "wire_peer": _ip_of(getattr(self.session, "peer", None)),
-                    },
-                )
-        finally:
-            await self._release_gate()
+        limit = self.data_size_limit
+        longest = settings.PYMTA_MAX_LINE_LENGTH
+        body = _Body(limit)
+        lines = 0
+        rewritten = False
+        # Whether the line before ended in CRLF: the dot that ends the
+        # message only counts after one.
+        after_crlf = True
+        # Bytes to read line by line before the next take_plain_lines.
+        slow = 0
+        while True:
+            self._data_received = body.size
+            if body.size > 2 * limit:
+                raise _DataOverflow
+            if slow <= 0:
+                plain, slow = self._reader.take_plain_lines(longest)
+                if plain:
+                    after_crlf = True
+                    body.add(plain)
+                    continue
+            try:
+                # One more than the limit: the CR of a CRLF is in the line.
+                line = await self._reader.readline(b"\n", limit=longest + 1)
+            except LineTooLong:
+                body.refuse(_LINE_TOO_LONG)
+                room = max(limit - body.size, 0)
+                # Up to CRLF, so that what follows is known to follow one.
+                skipped = await self._reader.skip_line(b"\r\n", max_bytes=room)
+                if skipped is None or skipped > room:
+                    raise _DataOverflow from None
+                body.size += skipped
+                after_crlf = True
+                continue
+            crlf = line.endswith(b"\r\n")
+            if after_crlf and line == b".\r\n":
+                break
+            after_crlf = crlf
+            slow -= len(line)
+            lines += 1
+            if lines % _DATA_LINES_PER_TURN == 0:
+                # A buffer of very short lines is read without waiting: let
+                # the other sessions run.
+                await asyncio.sleep(0)
+            if len(line) - (2 if crlf else 1) > longest:
+                body.refuse(_LINE_TOO_LONG)
+            line, changed = stored_line(line)
+            rewritten = rewritten or changed
+            body.add(line)
+        if body.refusal is not None:
+            return b"", body.refusal
+        if rewritten:
+            metrics.BARE_NEWLINE_MESSAGES.inc()
+            logger.debug("bare_newline_normalised", extra={"session_id": self.session_id})
+        return body.content(), None
 
-    async def acquire_gate_post_proxy(self, real_ip: str) -> bool:
-        """Acquire the gate using the IP parsed from a PROXY-protocol header.
+    # ------------------------------------------------------------------- timers
+    def _arm_timer(self, seconds: float, expired) -> None:
+        """Give what the session does next ``seconds``, in place of the last timer.
 
-        Called from :meth:`pymta.handler.InboundHandler.handle_PROXY`. Returns
-        ``True`` on success; on refusal sends 421 and closes the socket.
+        One timer, armed for one thing at a time: the wait for a command
+        (``_arm_idle_timer``), a running command (``_dispatch``), or the
+        whole DATA phase (``_data``). ``expired`` is called with ``seconds``.
         """
-        if self._ip_gate is None:
-            return True
-        return await self._acquire_gate(real_ip)
+        if self._timer is not None:
+            self._timer.cancel()
+        self._timer = self._loop.call_later(seconds, expired, seconds)
 
-    def _is_blocked(self, ip: str) -> bool:
+    def _arm_idle_timer(self) -> None:
+        """Time the wait for the next command, shorter when the server is close to full.
+
+        Postfix's stress mode: 10 s instead of 300 s between commands, inside a
+        transaction too, or a peer would keep its slot by sending MAIL and
+        nothing else.
+        """
+        self._arm_timer(self._idle_timeout(), self._command_expired)
+
+    def _idle_timeout(self) -> float:
+        if self.under_stress():
+            return min(self._timeout, _STRESS_IDLE_TIMEOUT)
+        return self._timeout
+
+    def under_stress(self) -> bool:
+        """True while the server is close to its session cap."""
+        return self._gate.under_stress()
+
+    def _command_expired(self, limit: float) -> None:
+        """No command came, or the one running did not end, in ``limit`` seconds."""
+        logger.debug("command_timeout", extra=self._timeout_fields(limit))
+        self._timed_out("command_timeout", "Idle timeout")
+
+    def _data_expired(self, limit: float) -> None:
+        """The DATA phase, receive and delivery, took more than ``limit`` seconds."""
+        logger.debug("data_timeout", extra=self._timeout_fields(limit))
+        self._timed_out("data_timeout", "Timeout receiving the message")
+
+    def _check_data_rate(self) -> None:
+        """Cut a message that arrives too slowly while DATA slots are scarce.
+
+        Without it a few sources hold every slot for ``PYMTA_DATA_TIMEOUT`` by
+        sending nothing. Postfix does the same under overload.
+        """
+        elapsed = time.monotonic() - self.data_phase_started
+        if self._gate.data_under_stress() and self._data_received < _MIN_DATA_RATE * elapsed:
+            fields = self._timeout_fields(self.data_phase_budget)
+            logger.debug("data_timeout", extra={**fields, "received_bytes": self._data_received})
+            self._timed_out("data_timeout", "Message received too slowly")
+            return
+        self._rate_timer = self._loop.call_later(_STRESS_IDLE_TIMEOUT, self._check_data_rate)
+
+    def _arm_session_timer(self) -> None:
+        """Start the one bound a peer cannot push back by staying busy.
+
+        The idle timer is re-armed by every command, so a peer that sends one
+        just under ``PYMTA_COMMAND_TIMEOUT`` could otherwise stay for as long
+        as the call limits let it issue commands. Armed once per connection.
+        """
+        limit = settings.PYMTA_SESSION_TIMEOUT
+        if limit > 0:
+            self._session_timer = self._loop.call_later(limit, self._session_expired)
+
+    def _session_expired(self) -> None:
+        if self.data_phase_started is not None:
+            # A message is being received or delivered: cutting it would have
+            # the sender resend one that may already be stored. Its own
+            # deadline bounds the wait.
+            self._session_timer = self._loop.call_later(1, self._session_expired)
+            return
+        logger.debug("session_timeout", extra=self._timeout_fields(settings.PYMTA_SESSION_TIMEOUT))
+        self._timed_out("session_timeout", "Session too long")
+
+    def _timeout_fields(self, limit) -> dict:
+        return {
+            "session_id": self.session_id,
+            "client_ip": self.session.client_ip,
+            "limit_seconds": limit,
+        }
+
+    def _timed_out(self, reason: str, notice: str) -> None:
+        """Announce the timeout, then hang up.
+
+        A bare TCP close cannot be told from a network fault; Postfix answers
+        421 here too.
+        """
+        self.close_reason = reason
+        metrics.SECURITY_REJECTIONS.labels(reason=reason).inc()
+        metrics.DISCONNECTS_421.labels(reason=reason).inc()
+        self._close_with_notice(f"421 4.4.2 {notice}, closing connection")
+
+    # ----------------------------------------------------------------- shutdown
+    def _leaving(self, verb: str) -> bool:
+        """True when a shutdown is under way and this command starts new work.
+
+        A transaction already open is allowed to finish (RCPT, DATA): cutting
+        it would only make the sender resend it. Anything else is answered 421,
+        so the sender moves to another MX now instead of holding this node's
+        drain until the deadline.
+        """
+        return runtime.is_shutting_down() and verb != "QUIT" and not self.in_transaction()
+
+    def _is_idle(self) -> bool:
+        """True when no command and no transaction is in progress."""
+        return self._awaits_command() and not self.in_transaction()
+
+    def _awaits_command(self) -> bool:
+        if self._verb is not None:
+            return False
+        return self.admitted and not self._closing and self.close_reason is None
+
+    def stress_began(self) -> None:
+        """Shorten the wait of a session that was already waiting for a command."""
+        if self._awaits_command():
+            self._arm_idle_timer()
+
+    def close_if_idle(self) -> None:
+        """Hang up, with a 421, if no command and no transaction is in progress."""
+        if self._is_idle():
+            self.close_reason = "shutdown"
+            metrics.DISCONNECTS_421.labels(reason="shutdown").inc()
+            self._close_with_notice(_SHUTDOWN)
+
+    def log_abandoned(self) -> None:
+        """Write the summary of a session the shutdown deadline is cutting."""
+        self.close_reason = self.close_reason or "shutdown"
+        self._log.close(None)
+
+    # --------------------------------------------------------------------- gate
+    def _is_blocked(self, ip: str | None) -> bool:
         if not settings.PYMTA_BLOCKED_NETWORKS:
             return False
         addr = settings.parse_client_ip(ip)
         if addr is None:
-            # The "unknown" bucket, or a PROXY header claiming something
-            # unparseable. Not matchable against a network, so not blockable;
-            # the caps still apply to it.
+            # Not matchable against a network, so not blockable; the caps
+            # still apply to it.
             return False
         return any(addr in net for net in settings.PYMTA_BLOCKED_NETWORKS)
 
-    async def _acquire_gate(self, ip: str) -> bool:
-        assert self._ip_gate is not None  # noqa: S101 (narrowing only; checked above)
-        # Before the caps and before the greeting: a blocked peer should cost us
-        # one reply and a close. Sits here rather than in _handle_client so both
-        # topologies get it from one place, with the address already resolved
-        # (the PROXY source when that is enabled, the TCP peer when it is not).
-        self._client_ip = ip if ip != "unknown" else None
-        if runtime.is_draining():
-            # Out of rotation, either because PYMTA_DRAIN says so or because a
-            # SIGTERM started the shutdown. RFC 5321 §3.1 allows answering
-            # with 421 instead of 220, and §5.1 has the sender move to the next
-            # MX in preference order; Postfix and Exim both treat it as a
-            # per-host defer, not a per-domain one. 4.3.2 is RFC 3463's "system
-            # not accepting network messages", which is precisely this.
+    async def _admit(self) -> bool:
+        """Let the client in, or turn it away. Before the greeting.
+
+        Returns True when a session slot was taken; otherwise the peer has
+        been answered and the connection closed.
+        """
+        ip = self.session.client_ip
+        who = {"session_id": self.session_id, "client_ip": ip}
+        if runtime.is_shutting_down():
+            # RFC 5321 section 3.1 allows 421 in place of the greeting, and
+            # the sender then moves to the next MX. 4.3.2 is RFC 3463's
+            # "system not accepting network messages".
             metrics.CONNECTIONS_TOTAL.labels(result="rejected_drain").inc()
-            logger.debug(
-                "connection_draining", extra={"session_id": self.session_id, "client_ip": ip}
-            )
-            with contextlib.suppress(OSError, ConnectionError):
-                await self.push("421 4.3.2 Service not available, try another MX")
-                if self._writer is not None:
-                    await self._writer.drain()
-            if self.transport is not None:
-                self.transport.close()
-            return False
+            logger.debug("connection_draining", extra=who)
+            return await self._turn_away(_SHUTDOWN)
         if self._is_blocked(ip):
             metrics.CONNECTIONS_TOTAL.labels(result="rejected_blocked").inc()
             metrics.SECURITY_REJECTIONS.labels(reason="blocked_network").inc()
-            logger.debug(
-                "connection_blocked", extra={"session_id": self.session_id, "client_ip": ip}
-            )
-            with contextlib.suppress(OSError, ConnectionError):
-                # RFC 5321 §3.1 lets a server answer a connection with 554
-                # instead of a 220 greeting. No banner, no dialogue.
-                await self.push("554 5.7.1 Access denied")
-                if self._writer is not None:
-                    await self._writer.drain()
-            if self.transport is not None:
-                self.transport.close()
-            return False
-        try:
-            await self._ip_gate._try_acquire(ip)  # noqa: SLF001
-        except TooManyConnections as exc:
-            metrics.CONNECTIONS_TOTAL.labels(result=f"rejected_{exc.scope}").inc()
-            metrics.DISCONNECTS_421.labels(reason=f"gate_{exc.scope}").inc()
+            logger.debug("connection_blocked", extra=who)
+            # RFC 5321 section 3.1 also allows 554 in place of the greeting.
+            return await self._turn_away("554 5.7.1 Access denied")
+        # What the limits count by: the address for IPv4, the /64 for IPv6.
+        # Clients without an address (a balancer's health check, a peer that
+        # reset) share one bucket. Logs keep the full address.
+        source = source_key(ip) if ip else "unknown"
+        was_under_stress = self._gate.under_stress()
+        scope = self._take_slot(source)
+        if scope is not None:
+            metrics.CONNECTIONS_TOTAL.labels(result=f"rejected_{scope}").inc()
+            metrics.DISCONNECTS_421.labels(reason=f"gate_{scope}").inc()
             # A sender held off by a cap is deferred mail, so it gets a line at
             # INFO, but a source sitting at its cap is refused on every
             # connection: one line per address per minute, the rest at DEBUG.
-            fields = {"session_id": self.session_id, "client_ip": ip, "scope": exc.scope}
-            suppressed = _cap_log_throttle.allow(ip) if settings.PYMTA_LOG_SESSIONS else None
+            fields = {**who, "scope": scope}
+            suppressed = _cap_log_throttle.allow(source) if settings.PYMTA_LOG_SESSIONS else None
             if suppressed is None:
                 logger.debug("connection_capped", extra=fields)
             else:
                 logger.info("connection_capped", extra={**fields, "suppressed": suppressed})
-            with contextlib.suppress(OSError, ConnectionError):
-                await self.push("421 4.7.0 Too many connections, try again later")
-                # Best-effort drain so the 421 actually makes it out before the
-                # RST closes the socket.
-                if self._writer is not None:
-                    await self._writer.drain()
-            if self.transport is not None:
-                self.transport.close()
-            return False
-        self._gate_held_ip = ip
-        self._gate_started = time.monotonic()
-        self._admitted = True
+            return await self._turn_away("421 4.7.0 Too many connections, try again later")
+        self._slot = source
+        self._slot_taken_at = self._idle_since = time.monotonic()
+        self.admitted = True
+        self._gate.sessions.add(self)
         metrics.CONNECTIONS_TOTAL.labels(result="accepted").inc()
+        if not was_under_stress and self._gate.under_stress():
+            # The timers armed before this slot was taken are still long.
+            for connection in self._gate.sessions:
+                connection.stress_began()
         return True
 
-    async def _release_gate(self) -> None:
-        if self._gate_held_ip is None or self._ip_gate is None:
-            return
-        ip, self._gate_held_ip = self._gate_held_ip, None
-        if self._gate_started is not None:
-            metrics.SESSION_DURATION.observe(time.monotonic() - self._gate_started)
-            self._gate_started = None
-        # _handle_client's finally runs in the event loop, so awaiting the
-        # release is safe and avoids the fire-and-forget bookkeeping leak we
-        # would have with create_task during shutdown.
-        await self._ip_gate._release(ip)  # noqa: SLF001
+    def _take_slot(self, source: str) -> str | None:
+        """Take a session slot. Returns the cap that refused, None when taken."""
+        try:
+            self._gate.acquire(source)
+        except TooManyConnections as refused:
+            if refused.scope != "global" or not self._reclaim_slot_for(source):
+                return refused.scope
+            self._gate.acquire(source)
+        return None
 
-    def _wire_peer_ip(self) -> str:
-        peer = getattr(self.session, "peer", None) if self.session else None
-        if peer:
-            return str(peer[0])
-        # All sessions without a wire peer collapse into one bucket, so they
-        # share a single source's slots. Counted rather than logged at WARNING:
-        # a peer that resets the connection between accept() and here can race
-        # peername into None, and that must not be a way to pick our log rate.
-        metrics.CONNECTIONS_TOTAL.labels(result="no_wire_peer").inc()
-        logger.debug("session_without_peer", extra={"session_id": self.session_id})
-        return "unknown"
+    def _reclaim_slot_for(self, source: str) -> bool:
+        """Free a slot for ``source`` when every one is taken. True if one was.
+
+        Taken from a source that holds more than its share, the largest
+        first, by closing the session of its that has been idle the longest.
+        A session inside a command or a transaction is never closed for this,
+        so a server full of busy sessions still refuses.
+        """
+        crowding = self._gate.crowding_sources(source)
+        ranked = [
+            (rank, connection)
+            for connection in self._gate.sessions
+            if (rank := connection.reclaim_rank(crowding)) is not None
+        ]
+        if not ranked:
+            return False
+        min(ranked, key=lambda pair: pair[0])[1].reclaim()
+        return True
+
+    def reclaim_rank(self, crowding: list[str]) -> tuple[int, float] | None:
+        """Where this session stands among those a slot can be taken from.
+
+        Lowest first. None when its slot is not one of them: a source that is
+        not in ``crowding``, or a session that is not idle.
+        """
+        if self._slot not in crowding or not self._is_idle():
+            return None
+        return crowding.index(self._slot), self._idle_since
+
+    def reclaim(self) -> None:
+        """Give the slot back now, and hang up with a 421."""
+        self.close_reason = "reclaimed"
+        self._leave_gate()
+        metrics.DISCONNECTS_421.labels(reason="reclaimed").inc()
+        logger.debug(
+            "session_reclaimed",
+            extra={"session_id": self.session_id, "client_ip": self.session.client_ip},
+        )
+        self._close_with_notice(_RECLAIMED)
+
+    async def _turn_away(self, reply: str) -> bool:
+        """Answer a connection that gets no greeting, and close it."""
+        await self._reply(reply)
+        self._close()
+        return False
+
+    def _leave_gate(self) -> None:
+        if self._slot is None:
+            return
+        slot, self._slot = self._slot, None
+        self._gate.sessions.discard(self)
+        metrics.SESSION_DURATION.observe(time.monotonic() - self._slot_taken_at)
+        self._gate.release(slot)
+
+    _COMMANDS = {
+        "HELO": _helo,
+        "EHLO": _ehlo,
+        "MAIL": _mail,
+        "RCPT": _rcpt,
+        "DATA": _data,
+        "RSET": _rset,
+        "NOOP": _noop,
+        "QUIT": _quit,
+        "STARTTLS": _starttls,
+        "VRFY": _vrfy,
+        "EXPN": _expn,
+        "AUTH": _auth,
+        "HELP": _help,
+    }
