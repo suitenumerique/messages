@@ -21,12 +21,15 @@ services:
 EOF
 compose=(docker compose -p st-messages-mta-e2e -f compose.yaml -f "$override")
 
+# A throwaway certificate: the published image ships none.
+certs=$(mktemp -d)
+
 cleanup() {
     # `down` leaves the containers started with `run`: remove them by label.
     docker ps -aq --filter label=com.docker.compose.project=st-messages-mta-e2e \
         | xargs -r docker rm -f > /dev/null 2>&1 || true
     "${compose[@]}" down --volumes --remove-orphans > /dev/null 2>&1 || true
-    rm -f "$override"
+    rm -rf "$override" "$certs"
 }
 trap cleanup EXIT
 
@@ -39,22 +42,30 @@ trap cleanup EXIT
     -e OPENSEARCH_INDEX_THREADS=False \
     backend-dev > /dev/null
 
-# pymta from the working tree, with the dev image's self-signed certificate.
+# pymta as it is published: the distroless image, built from the working tree,
+# read-only and without capabilities as compose.yaml runs it.
 # TLS 1.0 is allowed so the test can check an old handshake is reported.
-"${compose[@]}" run -d --no-deps --use-aliases \
-    -e EXEC_CMD_ONLY=true \
+openssl req -x509 -newkey rsa:2048 -nodes -days 2 -subj "/CN=mta-in.test" \
+    -keyout "$certs/tls.key" -out "$certs/tls.crt" 2> /dev/null
+# Readable by the container's user, whichever it is.
+chmod 755 "$certs"
+chmod 644 "$certs/tls.key" "$certs/tls.crt"
+"${compose[@]}" run -d --build --no-deps --use-aliases \
+    -v "$certs:/certs:ro" \
     -e MDA_API_BASE_URL=http://backend-dev:8000/api/v1.0/ \
     -e MDA_API_TIMEOUT=30 \
+    -e PYMTA_TLS_CERT_FILE=/certs/tls.crt \
+    -e PYMTA_TLS_KEY_FILE=/certs/tls.key \
     -e PYMTA_TLS_MIN_VERSION=1.0 \
     -e PYMTA_METRICS_BIND_PORT=0 \
-    mta-in-py-test python -m pymta.server > /dev/null
+    mta-in-py > /dev/null
 
 "${compose[@]}" run --rm --no-deps \
-    -e MTA_E2E_HOST=mta-in-py-test \
+    -e MTA_E2E_HOST=mta-in-py \
     -e OPENSEARCH_INDEX_THREADS=False \
     backend-dev \
     sh -c 'for i in $(seq 1 60); do python -c "
 import socket, sys
-for host, port in ((\"backend-dev\", 8000), (\"mta-in-py-test\", 25)):
+for host, port in ((\"backend-dev\", 8000), (\"mta-in-py\", 25)):
     socket.create_connection((host, port), timeout=1).close()
 " 2>/dev/null && break; sleep 1; done; exec pytest -p no:cacheprovider core/tests/mda/test_mta_in_py_e2e.py "$@"' sh "$@"

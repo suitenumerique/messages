@@ -104,8 +104,39 @@ async def test_bare_line_endings_cost_no_more_memory_than_the_message():
     assert reply.startswith(b"250"), reply
     stored = mda.delivered[0]["message"]
     assert stored == (b"\r\n" * 60_001) * 8
-    # The blocks, their join, and the copy the client above still holds.
+    # The blocks, the join ScriptedMDA makes of them, and the copy the client
+    # above still holds.
     assert peak < 5 * len(stored), f"{peak / len(stored):.1f} times the message"
+
+
+class _MeasuringMDA(ScriptedMDA):
+    """Takes the message as the server hands it over, and keeps none of it."""
+
+    async def deliver(self, **kwargs):
+        self.size = sum(map(len, kwargs["message"]))
+        return MDAResult(ok=True, temp_fail=False, payload={"status": "ok"}, status_code=200)
+
+
+@pytest.mark.asyncio
+async def test_a_message_is_in_memory_once():
+    """Its blocks joined into one object at the end of DATA, it was there
+    twice for that moment."""
+    body = (b"x" * 76 + b"\r\n") * 60_000
+    mda = _MeasuringMDA()
+    async with listening(mda) as port, connected(port) as client:
+        await _transaction(client)
+        assert (await client.cmd(b"DATA")).startswith(b"354")
+        tracemalloc.start()
+        try:
+            # Not client.data: the copy of the body it sends would be counted.
+            await client.send(body)
+            reply = await client.cmd(b".")
+            _, peak = tracemalloc.get_traced_memory()
+        finally:
+            tracemalloc.stop()
+    assert reply.startswith(b"250"), reply
+    assert mda.size == len(body)
+    assert peak < 1.25 * len(body), f"{peak / len(body):.2f} times the message"
 
 
 # ---------------------------------------------------------------------------
@@ -252,12 +283,30 @@ async def test_a_message_that_keeps_arriving_is_not_cut(monkeypatch):
         async with connected(port) as client:
             await _transaction(client)
             assert (await client.cmd(b"DATA")).startswith(b"354")
-            # Two checks pass: 500 octets a second is 300 by the second one.
-            await client.send(b"x" * 400 + b"\r\n")
-            await asyncio.sleep(0.7)
+            # 500 octets a second is 150 per check: three checks pass.
+            for _ in range(7):
+                await client.send(b"x" * 198 + b"\r\n")
+                await asyncio.sleep(0.15)
             await client.send(b".\r\n")
             assert (await client.reply()).startswith(b"250")
     assert len(mda.delivered) == 1
+
+
+@pytest.mark.asyncio
+async def test_a_long_line_on_its_way_counts_as_arriving(monkeypatch):
+    """Octets received, not lines completed: one line may take several checks."""
+    monkeypatch.setattr(smtp_protocol, "_STRESS_IDLE_TIMEOUT", 0.3)
+    mda = ScriptedMDA()
+    async with listening(mda, gate=IPGate(max_total=0, max_data=1)) as port:
+        async with connected(port) as client:
+            await _transaction(client)
+            assert (await client.cmd(b"DATA")).startswith(b"354")
+            for _ in range(7):
+                await client.send(b"x" * 100)
+                await asyncio.sleep(0.15)
+            await client.send(b"\r\n.\r\n")
+            assert (await client.reply()).startswith(b"250")
+    assert mda.delivered[0]["message"] == b"x" * 700 + b"\r\n"
 
 
 @pytest.mark.asyncio
@@ -267,11 +316,33 @@ async def test_a_message_that_stops_arriving_is_cut_at_a_later_check(monkeypatch
         async with connected(port) as client:
             await _transaction(client)
             assert (await client.cmd(b"DATA")).startswith(b"354")
-            # Enough for the checks at 0.3 s and 0.6 s, not for the one at 0.9 s.
+            # Enough for the check at 0.3 s, and nothing for the one at 0.6 s.
             await client.send(b"x" * 400 + b"\r\n")
             started = time.monotonic()
             assert await client.reply() == TOO_SLOW
-            assert 0.7 < time.monotonic() - started < 3
+            assert 0.4 < time.monotonic() - started < 3
+
+
+@pytest.mark.asyncio
+async def test_what_was_sent_early_buys_no_time_later(monkeypatch):
+    """A burst and then silence: cut at the next check, not when the average runs out.
+
+    Measured since the 354, 100 kB at 500 octets a second would hold a slot
+    for 200 s, the whole of ``PYMTA_DATA_TIMEOUT``.
+    """
+    monkeypatch.setattr(smtp_protocol, "_STRESS_IDLE_TIMEOUT", 0.3)
+    before = _timeout_counters()
+    gate = IPGate(max_total=0, max_data=1)
+    async with listening(gate=gate) as port, connected(port) as client:
+        await _transaction(client)
+        assert (await client.cmd(b"DATA")).startswith(b"354")
+        await client.send((b"x" * 98 + b"\r\n") * 1000)
+        started = time.monotonic()
+        assert await client.reply() == TOO_SLOW
+        assert time.monotonic() - started < 2
+        assert await client.closed()
+    assert _timeout_counters() == [count + 1 for count in before]
+    assert gate._data_total == 0
 
 
 @pytest.mark.asyncio
@@ -373,6 +444,44 @@ async def test_a_recipient_given_twice_is_checked_and_delivered_once():
         assert (await client.data()).startswith(b"250")
     assert mda.checked == ["bob@example.com", "carol@example.com"]
     assert mda.delivered[0]["original_recipients"] == ["bob@example.com", "carol@example.com"]
+
+
+# ---------------------------------------------------------------------------
+# RSET or NOOP between the messages of one connection.
+#
+# Postfix, Exchange and Sendmail send RSET before each message on a reused
+# connection. Counted over the session, the 21st message met the RSET limit
+# long before PYMTA_MAX_ENVELOPES_PER_SESSION.
+# ---------------------------------------------------------------------------
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("between", [b"RSET", b"NOOP"])
+async def test_an_accepted_message_starts_the_junk_command_counts_again(between):
+    mda = ScriptedMDA()
+    async with listening(mda) as port, connected(port) as client:
+        assert (await client.cmd(EHLO))[:1] == b"2"
+        for _ in range(45):
+            assert await client.cmd(between) == b"250 OK\r\n"
+            assert (await client.cmd(MAIL))[:1] == b"2"
+            assert (await client.cmd(RCPT))[:1] == b"2"
+            assert (await client.data()).startswith(b"250")
+    assert len(mda.delivered) == 45
+
+
+@pytest.mark.asyncio
+async def test_a_message_that_was_not_accepted_does_not(monkeypatch):
+    """Only mail that went through earns it, or a refused message would be a way to idle."""
+    monkeypatch.setattr(settings, "PYMTA_MAX_ERRORS_PER_SESSION", 1000)
+    mda = ScriptedMDA(delivers=["temp"] * 25)
+    async with listening(mda) as port, connected(port) as client:
+        assert (await client.cmd(EHLO))[:1] == b"2"
+        for _ in range(20):
+            assert await client.cmd(b"RSET") == b"250 OK\r\n"
+            assert (await client.cmd(MAIL))[:1] == b"2"
+            assert (await client.cmd(RCPT))[:1] == b"2"
+            assert (await client.data()).startswith(b"451")
+        assert await client.cmd(b"RSET") == b"421 4.7.0 RSET sent too many times\r\n"
 
 
 # ---------------------------------------------------------------------------

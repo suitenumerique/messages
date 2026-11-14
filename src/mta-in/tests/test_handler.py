@@ -17,7 +17,7 @@ from ipaddress import ip_network
 
 import pytest
 
-from pymta import settings
+from pymta import limits, settings
 from pymta.handler import _REPLY_RESERVE_SECONDS
 from pymta.limits import IPGate
 from pymta.logfmt import LogfmtFormatter
@@ -209,22 +209,148 @@ async def test_max_envelopes_closes_the_session(monkeypatch):
 
 
 @pytest.mark.asyncio
-async def test_rcpt_miss_counter_triggers_421_at_limit(monkeypatch, caplog):
+async def test_rcpt_miss_counter_triggers_421_after_the_limit(monkeypatch, caplog):
     # Tight limit so we don't have to do many round-trips.
     monkeypatch.setattr(settings, "PYMTA_MAX_RCPT_MISSES_PER_SESSION", 3)
     mda = ScriptedMDA(checks=["no", "no", "no"])
     with _info(caplog):
         async with listening(mda) as port, connected(port) as client:
             await _mail(client)
-            # First two misses get the normal 550.
-            for i in range(2):
+            # Every miss gets its own 550, the one that spends the budget
+            # included: answered 421, the sender would ask about it again.
+            for i in range(3):
                 reply = await client.cmd(b"RCPT TO:<miss%d@example.com>" % i)
                 assert reply.startswith(b"550 5.1.1 No such recipient"), reply
-            # Third miss hits the per-session cap and forces 421.
-            reply = await client.cmd(b"RCPT TO:<miss3@example.com>")
+            # The command after it is the one answered 421, unasked of the MDA.
+            reply = await client.cmd(b"RCPT TO:<known@example.com>")
             assert reply.startswith(b"421 4.7.0 Too many unknown recipients"), reply
             assert await client.closed()
-    assert [r.misses for r in await records(caplog, "reject", count=3)] == [1, 2, 3]
+    rejects = await records(caplog, "reject", count=4)
+    assert [r.misses for r in rejects[:3]] == [1, 2, 3]
+    assert [r.reason for r in rejects] == ["unknown_recipient"] * 3 + [
+        "max_rcpt_misses_per_session"
+    ]
+    assert len(mda.checked) == 3
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("last", [b"DATA", b"QUIT"])
+async def test_a_spent_miss_budget_does_not_refuse_data_or_quit(monkeypatch, last):
+    """The recipients accepted before the last miss still get their message."""
+    monkeypatch.setattr(settings, "PYMTA_MAX_RCPT_MISSES_PER_SESSION", 1)
+    mda = ScriptedMDA(checks=["yes", "no"])
+    async with listening(mda) as port, connected(port) as client:
+        await _mail(client)
+        assert (await client.cmd(b"RCPT TO:<hit@example.com>")).startswith(b"250")
+        assert (await client.cmd(b"RCPT TO:<miss@example.com>")).startswith(b"550")
+        if last == b"QUIT":
+            assert await client.cmd(b"QUIT") == b"221 Bye\r\n"
+            return
+        assert (await client.data()).startswith(b"250")
+        # The session is still over: the next transaction is not opened.
+        reply = await client.cmd(b"MAIL FROM:<sender@example.com>")
+        assert reply.startswith(b"421 4.7.0 Too many unknown recipients"), reply
+        assert await client.closed()
+    assert mda.delivered[0]["original_recipients"] == ["hit@example.com"]
+
+
+# ---------------------------------------------------------------------------
+# Unknown recipients are also counted per source, across its sessions: a peer
+# that reconnects for ten more answers is what an address harvest looks like.
+# ---------------------------------------------------------------------------
+
+_FROM_YOUR_ADDRESS = (
+    b"421 4.7.0 Too many unknown recipients from your address, try again later\r\n"
+)
+
+
+async def _misses(client, count: int) -> list[bytes]:
+    return [await client.cmd(b"RCPT TO:<miss%d@example.com>" % i) for i in range(count)]
+
+
+@pytest.mark.asyncio
+async def test_a_source_that_spent_its_misses_is_refused_at_connect(monkeypatch, caplog):
+    monkeypatch.setattr(settings, "PYMTA_MAX_RCPT_MISSES_PER_SESSION", 2)
+    gate = IPGate(max_total=0, max_misses=3)
+    mda = ScriptedMDA(checks=["no"] * 3)
+    refused = counter("pymta_connections_total", result="rejected_rcpt_misses")
+    disconnects = counter("pymta_disconnects_421_total", reason="gate_rcpt_misses")
+    rejections = counter("pymta_security_rejections_total", reason="max_rcpt_misses_per_source")
+    with _info(caplog):
+        async with listening(mda, gate=gate) as port:
+            # Two misses: the session's budget, not yet the source's.
+            async with connected(port) as first:
+                await _mail(first)
+                assert [r[:3] for r in await _misses(first, 2)] == [b"550", b"550"]
+                assert (await first.cmd(b"NOOP")).startswith(
+                    b"421 4.7.0 Too many unknown recipients, goodbye"
+                )
+            # It reconnects, and the third is the source's last.
+            async with connected(port) as second:
+                assert second.greeting.startswith(b"220")
+                await _mail(second)
+                assert [r[:3] for r in await _misses(second, 1)] == [b"550"]
+                assert await second.cmd(b"RCPT TO:<known@example.com>") == _FROM_YOUR_ADDRESS
+                assert await second.closed()
+            async with connected(port) as third:
+                assert third.greeting == _FROM_YOUR_ADDRESS
+                assert await third.closed()
+        (capped,) = await records(caplog, "connection_capped")
+    assert len(mda.checked) == 3
+    assert (capped.scope, capped.client_ip) == ("rcpt_misses", "127.0.0.1")
+    assert counter("pymta_connections_total", result="rejected_rcpt_misses") == refused + 1
+    assert counter("pymta_disconnects_421_total", reason="gate_rcpt_misses") == disconnects + 1
+    # Once for the session that spent it, once for the connection refused.
+    assert (
+        counter("pymta_security_rejections_total", reason="max_rcpt_misses_per_source")
+        == rejections + 2
+    )
+
+
+@pytest.mark.asyncio
+async def test_a_spent_source_is_let_in_again_when_its_window_ends(monkeypatch):
+    monkeypatch.setattr(limits, "MISS_WINDOW", 0.3)
+    gate = IPGate(max_total=0, max_misses=1)
+    mda = ScriptedMDA(checks=["no"])
+    async with listening(mda, gate=gate) as port:
+        async with connected(port) as client:
+            await _mail(client)
+            await _misses(client, 1)
+        async with connected(port) as client:
+            assert client.greeting == _FROM_YOUR_ADDRESS
+        await asyncio.sleep(0.35)
+        async with connected(port) as client:
+            assert client.greeting.startswith(b"220")
+            assert (await _mail(client)).startswith(b"250")
+
+
+@pytest.mark.asyncio
+async def test_the_misses_of_one_source_do_not_refuse_another(monkeypatch):
+    _proxy_on(monkeypatch, [_LOOPBACK])
+    gate = IPGate(max_total=0, max_misses=1)
+    mda = ScriptedMDA(checks=["no"])
+    other = b"PROXY TCP4 198.51.100.7 192.0.2.1 52000 25\r\n"
+    async with listening(mda, gate=gate) as port:
+        async with connected(port, preface=_PROXY_V1) as client:
+            await _mail(client)
+            await _misses(client, 1)
+        async with connected(port, preface=_PROXY_V1) as client:
+            assert client.greeting == _FROM_YOUR_ADDRESS
+        async with connected(port, preface=other) as client:
+            assert client.greeting.startswith(b"220")
+
+
+@pytest.mark.asyncio
+async def test_an_existing_recipient_does_not_count_against_the_source():
+    gate = IPGate(max_total=0, max_misses=1)
+    mda = ScriptedMDA(checks=["yes"] * 5)
+    async with listening(mda, gate=gate) as port:
+        async with connected(port) as client:
+            await _mail(client)
+            for i in range(5):
+                assert (await client.cmd(b"RCPT TO:<hit%d@example.com>" % i)).startswith(b"250")
+        async with connected(port) as client:
+            assert client.greeting.startswith(b"220")
 
 
 # ---------------------------------------------------------------------------
@@ -348,6 +474,8 @@ async def test_rcpt_explicit_false_is_still_a_permanent_miss(monkeypatch):
         reply = await client.cmd(b"RCPT TO:<rcpt@example.com>")
         assert reply.startswith(b"550"), reply
         reply = await client.cmd(b"RCPT TO:<rcpt2@example.com>")
+        assert reply.startswith(b"550"), reply
+        reply = await client.cmd(b"RCPT TO:<rcpt3@example.com>")
         assert reply.startswith(b"421"), reply
 
 
@@ -975,8 +1103,8 @@ async def test_malformed_recipient_logs_the_address_it_refused(caplog):
 
 
 @pytest.mark.asyncio
-async def test_a_refusal_is_logged_once_not_once_per_gate(monkeypatch, caplog):
-    """The miss cutoff replaces the unknown-recipient line, it does not add to it."""
+async def test_the_last_miss_and_the_cutoff_are_one_line_each(monkeypatch, caplog):
+    """The miss is logged as a miss; the 421 after it names the cutoff."""
     monkeypatch.setattr(settings, "PYMTA_MAX_RCPT_MISSES_PER_SESSION", 1)
     mda = ScriptedMDA(checks=["no"])
     rejections = counter("pymta_security_rejections_total", reason="max_rcpt_misses_per_session")
@@ -985,11 +1113,20 @@ async def test_a_refusal_is_logged_once_not_once_per_gate(monkeypatch, caplog):
         async with listening(mda) as port, connected(port) as client:
             await _mail(client)
             reply = await client.cmd(b"RCPT TO:<miss@example.com>")
+            assert reply.startswith(b"550")
+            # The budget is spent, the connection not closed yet.
+            assert (
+                counter("pymta_security_rejections_total", reason="max_rcpt_misses_per_session")
+                == rejections + 1
+            )
+            assert (
+                counter("pymta_disconnects_421_total", reason="max_rcpt_misses_per_session")
+                == disconnects
+            )
+            assert (await client.cmd(b"NOOP")).startswith(b"421")
 
-    assert reply.startswith(b"421")
-    rejects = await records(caplog, "reject")
-    assert len(rejects) == 1, [r.reason for r in rejects]
-    assert rejects[0].reason == "max_rcpt_misses_per_session"
+    rejects = await records(caplog, "reject", count=2)
+    assert [r.reason for r in rejects] == ["unknown_recipient", "max_rcpt_misses_per_session"]
     assert (
         counter("pymta_security_rejections_total", reason="max_rcpt_misses_per_session")
         == rejections + 1
@@ -1013,6 +1150,8 @@ async def test_rcpt_miss_cutoff_closes_the_connection(monkeypatch):
     async with listening(mda) as port, connected(port) as client:
         await _mail(client)
         reply = await client.cmd(b"RCPT TO:<miss@example.com>")
+        assert reply.startswith(b"550")
+        reply = await client.cmd(b"RCPT TO:<other@example.com>")
         assert reply.startswith(b"421")
         assert await client.closed()
 
@@ -1056,10 +1195,12 @@ async def test_rcpt_miss_budget_survives_starttls(monkeypatch, caplog):
 
             assert (await client.starttls(client_ctx)).startswith(b"220")
             await _mail(client)
-            # The budget must not have been reset.
+            # The budget must not have been reset: this miss is the last.
             reply = await client.cmd(b"RCPT TO:<miss3@example.com>")
+            assert reply.startswith(b"550"), reply
+            reply = await client.cmd(b"RCPT TO:<miss4@example.com>")
             assert reply.startswith(b"421"), reply
-    assert (await records(caplog, "reject", count=3))[-1].misses == 3
+    assert (await records(caplog, "reject", count=3))[2].misses == 3
 
 
 @pytest.mark.asyncio
@@ -1192,14 +1333,12 @@ async def test_an_unparseable_proxy_source_does_not_become_a_gate_key(monkeypatc
         # A different claim, the same bucket: refused as the same source.
         async with connected(port, preface=_proxy_v2_unix(claimed + b"-2")) as second:
             assert second.greeting.startswith(b"421 4.7.0 Too many connections")
-        await client.cmd(b"EHLO mx.sender.example")
-        assert (await _message(client)).startswith(b"250")
-
-    # And it must not be recorded as the client address either: it would reach
-    # the MDA and the Received header as a plausible-looking origin.
-    assert mda.delivered[0]["client_address"] is None
-    # Nor the port that rode in on the same rejected header.
-    assert mda.delivered[0]["client_port"] is None
+        # And it must not be recorded as the client address either: it would
+        # reach the MDA and the Received header as a plausible-looking origin.
+        # The session has no client, so its MAIL is deferred.
+        reply = await _mail(client)
+        assert reply.startswith(b"451 4.3.0 Client address unknown"), reply
+    assert not mda.delivered
 
 
 @pytest.mark.asyncio
@@ -1226,25 +1365,28 @@ async def test_an_allowlist_of_every_address_trusts_every_peer(monkeypatch):
 
 @pytest.mark.asyncio
 @pytest.mark.parametrize("header", [_PROXY_V2_LOCAL, b"PROXY UNKNOWN\r\n"])
-async def test_no_proxy_source_reports_no_client_address(monkeypatch, caplog, header):
+async def test_no_proxy_source_means_no_client_and_no_mail(monkeypatch, caplog, header):
     # A PROXY v2 LOCAL command (health check) carries no source. Falling back
     # to the wire peer would stamp the balancer's own IP into Received as if
-    # it were the sender.
+    # it were the sender. Without a client address there is no transaction:
+    # deferred, since it can also be a balancer set up wrongly.
     _proxy_on(monkeypatch, [_LOOPBACK])
     mda = ScriptedMDA()
+    before = counter("pymta_security_rejections_total", reason="no_client_address")
     with _info(caplog):
         async with (
             listening(mda, gate=unlimited_gate()) as port,
             connected(port, preface=header) as client,
         ):
-            await client.cmd(b"EHLO client.test")
-            reply = await _message(client)
+            reply = await _mail(client)
+            assert await _no_transaction_open(client)
 
-    assert reply.startswith(b"250"), reply
-    assert mda.delivered[0]["client_address"] is None
-    assert mda.delivered[0]["client_port"] is None
-    (delivered,) = await records(caplog, "message_delivered")
-    assert delivered.client_ip is None
+    assert reply == b"451 4.3.0 Client address unknown, please retry\r\n"
+    assert not mda.checked
+    assert not mda.delivered
+    refused = (await records(caplog, "reject", count=2))[0]
+    assert (refused.reason, refused.client_ip) == ("no_client_address", None)
+    assert counter("pymta_security_rejections_total", reason="no_client_address") == before + 1
 
 
 @pytest.mark.asyncio

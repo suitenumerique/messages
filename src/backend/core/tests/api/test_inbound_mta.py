@@ -375,6 +375,43 @@ class TestMTAInboundEmail:
         assert len({r.blob_id for r in rows}) == 1  # one shared blob
         assert {r.envelope["rcpt_to"] for r in rows} == set(recipients)
 
+    @patch("core.mda.inbound.process_inbound_message_task.delay")
+    def test_one_mailbox_named_in_two_spellings_gets_one_delivery(
+        self, _mock_delay, api_client, valid_jwt_token
+    ):
+        """``Bob@`` and ``bob@`` are one mailbox, so one delivery.
+
+        The MTA compares recipients as sent and forwards both. The message
+        here has no Message-ID: nothing later would recognise the second
+        delivery as a duplicate.
+        """
+        mailbox = factories.MailboxFactory(local_part="bob")
+        other = factories.MailboxFactory()
+        domain = mailbox.domain.name
+        recipients = [
+            f"bob@{domain}",
+            f"Bob@{domain.upper()}",
+            f"{other.local_part}@{other.domain.name}",
+            f"BOB@{domain}",
+        ]
+        raw = b"From: sender@example.com\r\nSubject: no message id\r\n\r\nbody"
+        token = valid_jwt_token(raw, {"original_recipients": recipients})
+
+        response = api_client.post(
+            "/api/v1.0/inbound/mta/deliver/",
+            data=raw,
+            content_type="message/rfc822",
+            HTTP_AUTHORIZATION=f"Bearer {token}",
+        )
+
+        assert response.status_code == status.HTTP_200_OK
+        assert response.json() == {"status": "ok", "delivered": 2}
+        rows = models.InboundMessage.objects.all()
+        # In the spelling given first.
+        assert sorted(r.envelope["rcpt_to"] for r in rows) == sorted(
+            [recipients[0], recipients[2]]
+        )
+
     @patch("core.api.viewsets.inbound.mta.deliver_inbound_message")
     @patch("core.api.viewsets.inbound.mta.parse_email")
     def test_forged_return_path_stripped_and_rewritten(

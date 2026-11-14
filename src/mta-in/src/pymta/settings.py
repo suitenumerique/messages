@@ -2,6 +2,7 @@
 
 import ipaddress
 import os
+import ssl
 
 from .address import AddressError, validate_envelope_address
 
@@ -135,7 +136,15 @@ MDA_BREAKER_COOLDOWN = _env_int("MDA_BREAKER_COOLDOWN", 30, minimum=1)
 # SMTP listener
 # ---------------------------------------------------------------------------
 
-PYMTA_SMTP_BIND_HOST = _env_str("PYMTA_SMTP_BIND_HOST", "0.0.0.0")  # noqa: S104
+# Addresses the SMTP listener binds, comma-separated. ``::`` is IPv6 only:
+# asyncio sets IPV6_V6ONLY on the socket. ``0.0.0.0,::`` listens on both.
+PYMTA_SMTP_BIND_HOSTS = tuple(
+    host.strip()
+    for host in _env_str("PYMTA_SMTP_BIND_HOST", "0.0.0.0").split(",")  # noqa: S104
+    if host.strip()
+)
+if not PYMTA_SMTP_BIND_HOSTS:
+    raise ValueError("Environment variable PYMTA_SMTP_BIND_HOST names no address")
 PYMTA_SMTP_BIND_PORT = _env_int("PYMTA_SMTP_BIND_PORT", 25, minimum=1)
 
 # Hostname in the banner and in ``Received``, as Postfix's ``myhostname``.
@@ -186,9 +195,9 @@ PYMTA_MAX_LINE_LENGTH = _env_int("PYMTA_MAX_LINE_LENGTH", 65536, minimum=998)
 # Messages that may be in memory at once.
 #
 # Each message is held in RAM, so this is what bounds memory: a session costs
-# a few kB until it says DATA. A message peaks at about 2.2 times its size
-# (see ``server._MEMORY_FACTOR``), so 40 x 10 MiB is about 880 MiB and takes a
-# container of 1 GiB or more. Use 20 for 512 MiB.
+# a few kB until it says DATA. A message takes about 1.2 times its size (see
+# ``server._MEMORY_FACTOR``), so 40 x 10 MiB is about 480 MiB and takes a
+# container of 640 MiB or more. Use 20 for 384 MiB.
 #
 # 0 is for dev and tests: PYMTA_MAX_SESSIONS_TOTAL is derived from this, so it
 # also removes the session cap and the per-source shares.
@@ -296,6 +305,20 @@ PYMTA_MAX_ERRORS_PER_SESSION = _env_int("PYMTA_MAX_ERRORS_PER_SESSION", 50, mini
 # above, which counts every 4xx/5xx.
 PYMTA_MAX_RCPT_MISSES_PER_SESSION = _env_int("PYMTA_MAX_RCPT_MISSES_PER_SESSION", 10, minimum=1)
 
+# Unknown recipients one source may name over all its sessions, in any ten
+# minutes (``limits.MISS_WINDOW``). Once spent, the source is answered 421 at
+# connect until its window ends. 0 disables.
+#
+# The session budget above does not slow an address harvest: the peer
+# reconnects and gets ten more answers. This one bounds it to 100 answers per
+# ten minutes and per source, an IPv4 address or an IPv6 /64.
+#
+# Generous on purpose. All the mail of a source over it is deferred for the
+# rest of the window, its mail to existing mailboxes included, and a large
+# provider reaches many recipients from one address. Counted in this process
+# only: N replicas allow N times as many.
+PYMTA_MAX_RCPT_MISSES_PER_SOURCE = _env_int("PYMTA_MAX_RCPT_MISSES_PER_SOURCE", 100, minimum=0)
+
 
 # ---------------------------------------------------------------------------
 # ESMTP feature toggles
@@ -325,10 +348,10 @@ PYMTA_PROXY_PROTOCOL_TIMEOUT = _env_int("PYMTA_PROXY_PROTOCOL_TIMEOUT", 5, minim
 def parse_client_ip(raw: str | None) -> ipaddress.IPv4Address | ipaddress.IPv6Address | None:
     """Parse a client address, unwrapping the IPv4-mapped IPv6 form.
 
-    A dual-stack listener (``PYMTA_SMTP_BIND_HOST=::``) reports an IPv4 peer as
+    A PROXY header of family TCP6 can name an IPv4 client as
     ``::ffff:198.51.100.7``, which ``ipaddress`` does not find in
-    ``198.51.100.0/24``. A blocked /24, or a balancer's IPv4 range in
-    PYMTA_TRUSTED_PROXIES, would never match, without any error.
+    ``198.51.100.0/24``: a blocked /24 would never match, without any error.
+    Our own listener does not produce the form (``::`` is IPv6 only here).
     """
     if not raw:
         return None
@@ -564,18 +587,37 @@ if PYMTA_REQUIRE_TLS and not PYMTA_TLS_CERT_PAIRS:
 
 # Oldest TLS version accepted on STARTTLS: 1.0, 1.1, 1.2 or 1.3.
 #
-# 1.2 is Python's default. A sender that only speaks 1.0 or 1.1 fails the
-# handshake, and then either retries in clear or gives up, so on an inbound MX
-# an old protocol can be better than none. Going below 1.2 also drops OpenSSL
-# to security level 0 for every handshake on this listener, because the
-# SHA-1 signatures those versions use are refused above it.
+# 1.0 by default, as the large mail providers and the Postfix image this
+# replaces do. A sender that only speaks 1.0 or 1.1 and is refused fails the
+# handshake, then either retries in clear or gives up, so on an inbound MX an
+# old protocol is better than none. The cost: a minimum below 1.2 drops
+# OpenSSL to security level 0 for every handshake on this listener, because
+# the SHA-1 signatures those versions use are refused above it. Set 1.2 to
+# refuse them.
 _TLS_VERSIONS = ("1.0", "1.1", "1.2", "1.3")
-PYMTA_TLS_MIN_VERSION = _env_str("PYMTA_TLS_MIN_VERSION", "1.2").strip()
+PYMTA_TLS_MIN_VERSION = _env_str("PYMTA_TLS_MIN_VERSION", "1.0").strip()
 if PYMTA_TLS_MIN_VERSION not in _TLS_VERSIONS:
     raise ValueError(
         f"Environment variable PYMTA_TLS_MIN_VERSION is set to {PYMTA_TLS_MIN_VERSION!r}. "
         f"Use one of {', '.join(_TLS_VERSIONS)}."
     )
+
+# OpenSSL cipher list for TLS 1.2 and below (TLS 1.3 suites are not affected).
+# Empty depends on PYMTA_TLS_MIN_VERSION (see ``controller.load_tls_context``):
+# at 1.2 or higher, Python's default list, ECDHE with AEAD or CBC-SHA2 and no
+# SHA-1 MAC; below 1.2, OpenSSL's ``DEFAULT`` at security level 0, which adds
+# CBC-SHA1 and static-RSA suites for the senders that have nothing else.
+# A narrower list turns away the senders that can use none of it, who then
+# retry in clear or give up.
+PYMTA_TLS_CIPHERS = _env_str("PYMTA_TLS_CIPHERS", "").strip()
+if PYMTA_TLS_CIPHERS:
+    try:
+        ssl.SSLContext(ssl.PROTOCOL_TLS_SERVER).set_ciphers(PYMTA_TLS_CIPHERS)
+    except ssl.SSLError as exc:
+        raise ValueError(
+            f"Environment variable PYMTA_TLS_CIPHERS is set to {PYMTA_TLS_CIPHERS!r}, "
+            "which OpenSSL does not accept as a cipher list or which matches no suite."
+        ) from exc
 
 
 # ---------------------------------------------------------------------------

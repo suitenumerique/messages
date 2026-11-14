@@ -216,6 +216,7 @@ class _ScriptedMDA:
         return MDAResult(ok=True, temp_fail=False, payload=payload, status_code=200)
 
     async def deliver(self, **kwargs):
+        kwargs["message"] = b"".join(kwargs["message"])
         self.delivered.append(kwargs)
         answer = self.delivers.pop(0) if self.delivers else "ok"
         if answer == "ok":

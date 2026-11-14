@@ -19,6 +19,8 @@ rest off the connection.
 from __future__ import annotations
 
 import logging
+import re
+import ssl
 import time
 
 from . import logfmt, metrics, settings
@@ -49,6 +51,19 @@ _REASONS = {
     553: "malformed_address",
     555: "unknown_parameter",
 }
+
+
+def tls_failure_code(error: BaseException) -> str:
+    """A stable snake_case name for why a STARTTLS handshake failed.
+
+    OpenSSL's reason, lower-cased, when it gave one (``no_shared_cipher``,
+    ``wrong_version_number``, or the alert the peer sent, such as
+    ``tlsv1_alert_unknown_ca``). Otherwise the exception's class name. Free of
+    the source line and of any text the peer chose, so it groups and alerts.
+    """
+    if isinstance(error, ssl.SSLError) and error.reason:
+        return error.reason.lower()
+    return re.sub(r"(?<!^)(?=[A-Z])", "_", type(error).__name__).lower()
 
 
 def address_field(address: str | None) -> str | None:

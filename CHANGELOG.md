@@ -32,6 +32,29 @@ and this project adheres to
   Scalingo post-frontend deploy script
 - Bump @gouvfr-lasuite/ui-components to 1.3.0
 - Use the container IP as Host in the backend healthcheck
+- The published `mta-in-py` image is now the distroless build
+  (`runtime-distroless-prod`): no shell, and no `EXEC_CMD` / `EXEC_CMD_ONLY`
+  modes. Build the `runtime-prod` target of `Dockerfile.pymta` for an image
+  with a shell
+- pymta: `PYMTA_SMTP_BIND_HOST` takes several addresses, comma-separated.
+  `::` is IPv6 only: use `0.0.0.0,::` for both families
+- pymta: the image's healthcheck is `python -m pymta.healthcheck`, which waits
+  for the server to answer instead of only connecting
+- pymta: the RSET, NOOP, VRFY and HELP limits are counted between two accepted
+  messages, not over the session. A sender that issues RSET before each
+  message was cut at the 21st
+- pymta: the unknown recipient that spends `PYMTA_MAX_RCPT_MISSES_PER_SESSION`
+  is answered `550`, and the command after it `421`
+- pymta: a session whose PROXY header names no client (v2 `LOCAL`, v1
+  `UNKNOWN`) has its `MAIL` answered `451`
+- pymta: an ESMTP parameter with a hyphen in its name is answered `555`, not
+  `501`
+- An inbound message whose envelope names one mailbox in two spellings
+  (`Bob@` and `bob@`) is delivered to it once
+- pymta: a message in flight takes about 1.2 times its size in memory, down
+  from 2.2. Its blocks are no longer joined into a second copy, and the image
+  sets `MALLOC_MMAP_THRESHOLD_=65536` so that freed blocks go back to the
+  system. Size `PYMTA_MAX_CONCURRENT_DATA` with the new factor
 
 ### Removed
 
@@ -46,6 +69,18 @@ and this project adheres to
 - The Keycloak image removes `emSign ECC Root CA - G3` from the Java trust
   store after the eMudhra intermediate CA compromise of October 2026. The
   Comodo `AAA Certificate Services` root is already absent from the base image
+- pymta issues no TLS session tickets: their key lived as long as the process,
+  and with it a recorded TLS 1.2 session could be decrypted
+- pymta: while message slots are scarce, the minimum data rate is measured
+  over each 10 s. A peer that sent 150 kB at once could then hold its slot,
+  silent, for the whole `PYMTA_DATA_TIMEOUT`
+- pymta: `PYMTA_MAX_RCPT_MISSES_PER_SOURCE` (100 per ten minutes, 0 = off)
+  bounds how many unknown recipients one source may probe across its
+  sessions. Over it, the source is answered `421` at connect until its ten
+  minutes end
+- pymta refuses Unicode format characters in envelope addresses (bidi
+  overrides, zero-width space, BOM, soft hyphen), which only change how an
+  address is displayed. The zero-width joiner and non-joiner stay accepted
 
 
 ## [0.10.0] - 2026-09-29

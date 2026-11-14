@@ -988,9 +988,6 @@ async def _proxied(loop, monkeypatch, mda):
     [
         (b"PROXY TCP4 203.0.113.9 192.0.2.1 4321 25\r\n", "203.0.113.9"),
         (b"PROXY TCP6 2001:db8::9 2001:db8::1 4321 25\r\n", "2001:db8::9"),
-        # No address given: the sender is unknown, not the balancer.
-        (b"PROXY UNKNOWN\r\n", None),
-        (_V2 + b"\x20\x00\x00\x00", None),
         (
             _V2
             + b"\x21\x11\x00\x0c"
@@ -1000,7 +997,7 @@ async def _proxied(loop, monkeypatch, mda):
         ),
     ],
 )
-async def test_a_valid_proxy_header_names_the_client_or_nobody(monkeypatch, header, client_ip):
+async def test_a_valid_proxy_header_names_the_client(monkeypatch, header, client_ip):
     mda = _AcceptingMDA()
     loop = asyncio.get_running_loop()
     server, port = await _proxied(loop, monkeypatch, mda)
@@ -1024,6 +1021,30 @@ async def test_a_valid_proxy_header_names_the_client_or_nobody(monkeypatch, head
 
     (delivery,) = mda.delivered
     assert delivery["client_address"] == client_ip
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("header", [b"PROXY UNKNOWN\r\n", _V2 + b"\x20\x00\x00\x00"])
+async def test_a_proxy_header_that_names_nobody_opens_no_transaction(monkeypatch, header):
+    """No address given: the sender is unknown, not the balancer, and sends no mail."""
+    mda = _AcceptingMDA()
+    loop = asyncio.get_running_loop()
+    server, port = await _proxied(loop, monkeypatch, mda)
+    try:
+        reader, writer = await asyncio.open_connection("127.0.0.1", port)
+        for byte in header:
+            writer.write(bytes([byte]))
+            await writer.drain()
+        assert (await _read_reply(reader)).startswith(b"220")
+        await _command(reader, writer, b"EHLO mx.sender.example\r\n")
+        reply = await _command(reader, writer, b"MAIL FROM:<alice@sender.example>\r\n")
+        assert reply.startswith(b"451 4.3.0 Client address unknown"), reply
+        reply = await _command(reader, writer, b"RCPT TO:<bob@example.com>\r\n")
+        assert reply.startswith(b"503"), reply
+    finally:
+        await _close(server, writer)
+
+    assert mda.delivered == []
 
 
 @pytest.mark.asyncio

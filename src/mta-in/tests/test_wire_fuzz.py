@@ -276,9 +276,8 @@ def test_the_command_parser_is_total(text):
             assert text.startswith(path) and " " not in path.partition('"')[0]
     parameters = parse_parameters(text)
     if parameters is not None:
-        assert all(
-            name.isascii() and name.isalnum() and name == name.upper() for name in parameters
-        )
+        # esmtp-keyword, upper-cased: a letter or digit, then those or hyphens.
+        assert all(re.fullmatch(r"[A-Z0-9][A-Z0-9-]*", name) for name in parameters)
         assert all(value is None or value for value in parameters.values())
     for utf8 in (True, False):
         try:
@@ -333,7 +332,7 @@ def test_any_mda_response_becomes_a_result(status, body, deliver):
         if not deliver:
             return await client.check_recipient("a@example.com")
         return await client.deliver(
-            message=b"Subject: x\r\n\r\nbody\r\n",
+            message=(b"Subject: x\r\n\r\nbody\r\n",),
             sender="a@example.com",
             original_recipients=["b@example.com"],
             client_address="192.0.2.1",

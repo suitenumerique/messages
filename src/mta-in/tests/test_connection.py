@@ -601,7 +601,7 @@ async def test_a_failed_starttls_handshake_is_summarised_not_reported_as_a_bug(c
 
     assert record.closed_by == "tls_failed"
     assert record.tls is False
-    assert record.tls_error
+    assert record.tls_error == "wrong_version_number"
     assert record.commands == "ehlo=1 starttls=0/1"
     assert not [r for r in caplog.records if r.getMessage() == "handler_error"]
 
@@ -1629,6 +1629,7 @@ class _AcceptingMDA:
         return MDAResult(ok=True, temp_fail=False, payload={address: True}, status_code=200)
 
     async def deliver(self, **kwargs):
+        kwargs["message"] = b"".join(kwargs["message"])
         self.delivered.append(kwargs)
         return MDAResult(ok=True, temp_fail=False, payload={"status": "ok"}, status_code=200)
 
@@ -2154,8 +2155,8 @@ async def test_under_stress_fewer_unknown_recipients_are_tolerated(
         await server.wait_closed()
 
     codes = [r[:3] for r in replies[3:]]
-    # The miss that spends the budget is the one answered 421.
-    assert codes == [b"550"] * (misses_allowed - 1) + [b"421"], replies
+    # The miss that spends the budget has its 550; the command after it, 421.
+    assert codes == [b"550"] * misses_allowed + [b"421"], replies
     assert closed is True
 
 

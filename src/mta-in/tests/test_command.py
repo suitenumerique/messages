@@ -138,6 +138,8 @@ def test_a_path_that_never_closes_is_refused(text):
         (" AUTH=<>", {"AUTH": "<>"}),
         (" A=b=c", {"A": "b=c"}),
         ("\tSIZE=1\r", {"SIZE": "1"}),
+        # A keyword may hold hyphens after its first character.
+        (" mt-priority=3 X-FOO", {"MT-PRIORITY": "3", "X-FOO": None}),
     ],
 )
 def test_parse_parameters(text, expected):
@@ -146,7 +148,18 @@ def test_parse_parameters(text, expected):
 
 @pytest.mark.parametrize(
     "text",
-    [" SIZE=", " =1", " =", " X-FOO=1", " SIZE=1 ²=1", " é", " SIZE=1 SIZE=2", " size=x SIZE=2"],
+    [
+        " SIZE=",
+        " =1",
+        " =",
+        " -FOO=1",
+        " SIZE=1 ²=1",
+        " é",
+        " SIZE=1 SIZE=2",
+        " size=x SIZE=2",
+        # U+017F LATIN SMALL LETTER LONG S upper-cases to "S": not the keyword SIZE.
+        " " + chr(0x17F) + "IZE=1",
+    ],
 )
 def test_a_malformed_parameter_is_refused(text):
     assert parse_parameters(text) is None

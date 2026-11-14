@@ -491,7 +491,7 @@ class MDAClient:
     async def deliver(  # noqa: PLR0913
         self,
         *,
-        message: bytes,
+        message: tuple[bytes, ...],
         sender: str,
         original_recipients: list[str],
         client_address: str | None,
@@ -501,6 +501,8 @@ class MDAClient:
         transport: dict | None = None,
     ) -> MDAResult:
         """Post the message to the MDA and wait for its delivery.
+
+        ``message`` is the message in pieces, sent one after the other.
 
         The envelope is one line of JSON ahead of the message, not JWT claims:
         100 recipients do not fit in an HTTP header (8190 bytes on gunicorn).
@@ -515,16 +517,16 @@ class MDAClient:
             "client_address": client_address,
             "client_port": client_port,
             "client_helo": client_helo,
-            "size": str(len(message)),
+            "size": str(sum(map(len, message))),
             **(transport or {}),
         }
         # json.dumps escapes newlines, so the first LF of the body is the
-        # separator. Two parts, so the message is not copied into a joined body.
+        # separator. In parts, so the message is not copied into a joined body.
         head = json.dumps(envelope, separators=(",", ":")).encode("ascii") + b"\n"
         return await self._post(
             "inbound/mta/deliver/",
             ENVELOPED_CONTENT_TYPE,
-            (head, message),
+            (head, *message),
             endpoint_label="deliver",
             permanent_statuses=_PERMANENT_STATUSES,
             session=session,
