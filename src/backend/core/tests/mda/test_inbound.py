@@ -1,7 +1,7 @@
 """Tests for the core.mda.inbound module."""
 
 # pylint: disable=too-many-lines
-
+import datetime
 from unittest.mock import patch
 
 from django.test import override_settings
@@ -320,7 +320,6 @@ class TestFindThread:
         }
         found_thread = find_thread_for_message(parsed_new_email, self.mailbox)
         assert found_thread is None
-
 
 @pytest.mark.django_db
 class TestDeliverInboundMessage:
@@ -1083,6 +1082,35 @@ class TestDeliverInboundMessage:
             f"Expected no error logs for recipient creation, but got: {error_calls}"
         )
 
+    def test_deliver_message_with_extreme_timezone_offset(
+            self, target_mailbox, raw_email_data
+        ):
+        """Normalize extreme timezone offsets to UTC before saving."""
+        recipient_addr = f"{target_mailbox.local_part}@{target_mailbox.domain.name}"
+
+        parsed_email = {
+            "from": [{"email": "sender@example.com", "name": "Sender"}],
+            "to": [{"email": recipient_addr, "name": "Recipient"}],
+            "subject": "Extreme Timezone Offset Test",
+            "sentAt": "2026-11-09T18:30:11+16:00",
+            "textBody": [{"content": "Body content"}],
+            "html": "",
+            "messageId": ["<extreme-tz-test@example.com>"],
+        }
+
+        success = deliver_inbound_message(
+            recipient_addr,
+            parsed_email,
+            raw_email_data,
+            is_import=True,
+        )
+        assert success is True
+        message = models.Message.objects.first()
+        assert message is not None
+        assert message.sent_at.tzinfo == datetime.timezone.utc
+        assert message.sent_at == datetime.datetime(
+            2026, 11, 9, 2, 30, 11, tzinfo=datetime.UTC
+        )
 
 @pytest.mark.django_db
 class TestInboundAutoreplyIntegration:

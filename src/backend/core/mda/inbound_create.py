@@ -2,10 +2,12 @@
 
 # pylint: disable=broad-exception-caught
 
+import datetime
 import hashlib
 import logging
 import re
 import uuid
+
 from contextlib import contextmanager, nullcontext
 
 from django.core.exceptions import ValidationError
@@ -414,6 +416,8 @@ def _create_message_from_inbound(  # pylint: disable=too-many-arguments
 
             is_sender = is_outbound or (is_import and is_import_sender)
             sent_at = sent_at_to_datetime(parsed_email.get("sentAt"))
+            if sent_at:
+                sent_at = sent_at.astimezone(datetime.UTC)
 
             # The Blob INSERT and the Message INSERT must commit together
             # so the GC sweep never sees the Blob row without its
