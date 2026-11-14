@@ -10,13 +10,48 @@ from django.utils import timezone
 from celery.utils.log import get_task_logger
 
 from core import models
-from core.enums import MessageDeliveryStatusChoices
+from core.enums import MessageDeliveryStatusChoices, is_delivered
 from core.mda.outbound import send_message
 from core.mda.selfcheck import run_selfcheck
 
 from messages.celery_app import app as celery_app
 
 logger = get_task_logger(__name__)
+
+
+def aggregate_delivery_status(message) -> dict:
+    """Summarize a send from its per-recipient delivery statuses.
+
+    ``completed``  everyone delivered, apart from recipients cancelled
+    ``partial``    at least one delivered and at least one failed
+    ``pending``    some still in flight, and not both delivered and failed
+    ``cancelled``  nothing in flight or delivered, nothing failed
+    ``failed``     nothing in flight or delivered, at least one failed
+    """
+    counts = {"delivered": 0, "failed": 0, "cancelled": 0, "pending": 0}
+    for status in message.recipients.values_list("delivery_status", flat=True):
+        if is_delivered(status):
+            counts["delivered"] += 1
+        elif status == MessageDeliveryStatusChoices.FAILED:
+            counts["failed"] += 1
+        elif status == MessageDeliveryStatusChoices.CANCELLED:
+            counts["cancelled"] += 1
+        else:
+            # RETRY or NULL: not resolved either way yet.
+            counts["pending"] += 1
+
+    delivered, failed = counts["delivered"], counts["failed"]
+    if counts["pending"] == 0:
+        if delivered == 0 and (failed or counts["cancelled"]):
+            status = "failed" if failed else "cancelled"
+        else:
+            status = "partial" if failed else "completed"
+    else:
+        # Still in flight. "partial" only once something actually failed: a
+        # greylisting MX leaves the recipient in RETRY for mail that lands
+        # minutes later on the normal ladder.
+        status = "partial" if delivered and failed else "pending"
+    return {"status": status, "counts": counts}
 
 
 @celery_app.task(bind=True)
@@ -39,15 +74,11 @@ def send_message_task(self, message_id, force_mta_out=False, must_archive=False)
 
         send_message(message, force_mta_out)
 
-        # Update task state with progress information
-        self.update_state(
-            state="SUCCESS",
-            meta={
-                "status": "completed",  # TODO fetch recipients statuses
-                "message_id": str(message_id),
-                "success": True,
-            },
-        )
+        # Reported in the return value, not via ``update_state``: on a normal
+        # return Celery's ``store_result`` overwrites any meta stored earlier.
+        # Under its own key, not ``status``: the client polls ``status``
+        # against SUCCESS/FAILURE to know when to stop.
+        delivery = aggregate_delivery_status(message)
 
         # If requested, archive the whole thread after sending
         if must_archive:
@@ -66,9 +97,13 @@ def send_message_task(self, message_id, force_mta_out=False, must_archive=False)
                     e,
                 )
 
+        # A wholly cancelled send delivered nothing, so it is not a success,
+        # but not a fault either: ``delivery_status`` tells the two apart.
         return {
             "message_id": str(message_id),
-            "success": True,
+            "success": delivery["status"] not in ("failed", "cancelled"),
+            "delivery_status": delivery["status"],
+            "recipients": delivery["counts"],
         }
     # pylint: disable=broad-exception-caught
     except Exception as e:

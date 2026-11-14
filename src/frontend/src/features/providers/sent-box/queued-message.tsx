@@ -16,6 +16,74 @@ const QUEUED_MESSAGE_POLL_INTERVAL = 1000;
 const QUEUED_MESSAGE_CLOSE_DELAY = 2000;
 const QUEUED_MESSAGE_TIMEOUT = 30000;
 
+/**
+ * Per-recipient outcome of the send, aggregated by the backend task.
+ *
+ * The Celery state only says the task did not raise: a send that reached
+ * nobody still lands on SUCCESS. What actually happened travels in the result.
+ */
+export type SendTaskResult = {
+    delivery_status?: "completed" | "partial" | "pending" | "failed" | "cancelled";
+};
+
+type DeliveryToast = {
+    type: "info" | "warning" | "error";
+    icon: string;
+    message: string;
+    /** The chime means "it's gone": only a fully delivered send earns it. */
+    chime: boolean;
+};
+
+/**
+ * Toast for a completed task, given its aggregated delivery status.
+ *
+ * An unknown or absent status keeps the optimistic toast: a worker that
+ * predates the field can still hand back a result after a deploy. The
+ * message's own banner in the thread lists affected recipients.
+ */
+export const getDeliveryToast = (
+    result: SendTaskResult | null,
+    t: (key: string) => string,
+): DeliveryToast => {
+    switch (result?.delivery_status) {
+        case "partial":
+            return {
+                type: "warning",
+                icon: "warning",
+                message: t("Message sent, but not to every recipient."),
+                chime: false,
+            };
+        case "pending":
+            return {
+                type: "warning",
+                icon: "schedule_send",
+                message: t("Message sent. Delivery is still in progress."),
+                chime: false,
+            };
+        case "failed":
+            return {
+                type: "error",
+                icon: "error",
+                message: t("The message could not be delivered to any recipient."),
+                chime: false,
+            };
+        case "cancelled":
+            return {
+                type: "warning",
+                icon: "cancel",
+                message: t("Sending was cancelled."),
+                chime: false,
+            };
+        default:
+            return {
+                type: "info",
+                icon: "check_circle",
+                message: t("Message sent successfully"),
+                chime: true,
+            };
+    }
+};
+
 export const QueueMessage = ({ taskId, onSettled }: QueueMessageProps) => {
     const { t } = useTranslation();
     const [retryCount, setRetryCount] = useState(0);
@@ -69,16 +137,24 @@ export const QueueMessage = ({ taskId, onSettled }: QueueMessageProps) => {
         const status = taskQuery.data!.data.status;
 
         if (status === StatusEnum.SUCCESS) {
+            const delivery = getDeliveryToast(
+                taskQuery.data!.data.result as SendTaskResult | null,
+                t,
+            );
             toast.update(toastId, {
                 render: (
-                    <ToasterItem type="info">
-                        <Icon name="check_circle" />
-                        <span>{t('Message sent successfully')}</span>
+                    <ToasterItem type={delivery.type}>
+                        <Icon name={delivery.icon} />
+                        <span>{delivery.message}</span>
                     </ToasterItem>
                 ),
-                autoClose: QUEUED_MESSAGE_CLOSE_DELAY,
+                autoClose: delivery.chime
+                    ? QUEUED_MESSAGE_CLOSE_DELAY
+                    : QUEUED_MESSAGE_CLOSE_DELAY * 2,
             });
-            soundbox.play(0.07);
+            if (delivery.chime) {
+                soundbox.play(0.07);
+            }
             onSettled?.();
         } else if (status === StatusEnum.FAILURE) {
             toast.update(toastId, {

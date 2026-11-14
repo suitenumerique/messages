@@ -580,3 +580,19 @@ class TrashbinAllowEmpty(StrEnum):
     ADMIN = "admin"
     #: Mailbox role EDITOR and above.
     EDITOR = "editor"
+
+
+class ThreadingSenderAuth(StrEnum):
+    """Accepted values for ``settings.MESSAGES_THREADING_MIN_SENDER_AUTH``.
+
+    The weakest sender-auth verdict (``postmark["auth"]``) with which an
+    inbound message may join an existing thread. Members are ordered weakest
+    first; see ``core.mda.inbound_create.sender_may_thread``.
+    """
+
+    #: Any message, even one marked forged.
+    FORGED = "forged"
+    #: Unverified senders too, but not forged ones.
+    UNVERIFIED = "unverified"
+    #: Only verified senders (or ``inbound_auth`` disabled, which cannot tell).
+    VERIFIED = "verified"

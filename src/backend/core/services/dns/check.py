@@ -3,262 +3,65 @@ DNS checking functionality for mail domains.
 """
 
 import collections
-import ipaddress
 import logging
-import re
+import time
 from typing import Dict, List, Optional, Tuple
 
 from django.core.cache import cache
 
-import dns.resolver
 from sentry_sdk import capture_exception
 
 from core.models import MailDomain
+from core.services.dns.records import (
+    DMARC_ALIGNMENT_STRICTNESS,
+    DMARC_POLICY_STRICTNESS,
+    SPF_ALL_STRICTNESS,
+    SPF_IMPLICIT_ALL,
+    dmarc_alignment,
+    dmarc_policy,
+    dmarc_subdomain_policy,
+    dmarc_syntax_is_valid,
+    is_dmarc_record,
+    is_spf_record,
+    normalize_txt_value,
+    parse_dkim_tags,
+    parse_dmarc_tags,
+    parse_spf_terms,
+    spf_delegated_domains,
+    spf_syntax_is_valid,
+)
+from core.services.dns.resolver import (
+    DNSSECError,
+    InvalidNameError,
+    NoAnswerError,
+    NXDOMAINError,
+    ResolutionTimeoutError,
+    ResolverError,
+    ServfailError,
+    resolve_answer,
+)
 
 logger = logging.getLogger(__name__)
 
 SPF_CHECK_CACHE_KEY_PREFIX = "dns:spf_check:"
 SPF_CHECK_CACHE_TIMEOUT = 600  # 10 minutes
 
+# Ceiling on a whole domain check, which DNS_RESOLVER_MAX_RESOLUTION_TIME does
+# not give: that one bounds a single name, and a check resolves the expected
+# records plus up to ten SPF includes in sequence, so the worst case multiplies
+# out past gunicorn's 90s request timeout on the synchronous check-dns
+# endpoint. Records the budget does not reach report "error", the same
+# not-definitive status a timeout gets, so it is never cached and never reads
+# as a verdict on the domain's DNS.
+#
+# Not configurable on purpose. A check that runs this long has already failed
+# at its job — nobody waits 30s for a page, and the send path re-checks per
+# message — so there is no deployment that wants a higher value, only one that
+# wants to know its DNS is this slow.
+DNS_CHECK_TOTAL_TIMEOUT = 30.0
+
 # DKIM tags whose values are base64: internal whitespace is not significant.
 DKIM_BASE64_TAGS = frozenset({"p", "b", "bh"})
-DKIM_VERSION = "DKIM1"
-DKIM_DEFAULT_KEY_TYPE = "rsa"
-# RFC 6376 3.2 spells tag-name as ALPHA *ALNUMPUNC. Only the leading ALPHA is
-# enforced, matching dkimpy: vendor tags such as "x-foo" are used in the wild
-# and verify fine, so rejecting them would report working records as broken.
-DKIM_TAG_NAME_RE = re.compile(r"[a-zA-Z]")
-
-SPF_VERSION = "v=spf1"
-# RFC 7208 4.5: a record starts with a version section of exactly "v=spf1",
-# terminated by a space or the end of the record, so "v=spf10" is not one.
-# Per Section 12, ABNF literals are case-insensitive: "V=sPf1" is. Only a
-# space terminates it: RFC 7208 4.6.1 separates terms with SP alone, and a
-# record broken by another control character is one receivers reject too.
-# Records are US-ASCII (3.1) and receivers compare bytes, so the folding has
-# to stay ASCII as well: Unicode maps U+017F onto "s" and U+212A onto "k".
-SPF_VERSION_RE = re.compile(rf"{SPF_VERSION}( |$)", re.IGNORECASE | re.ASCII)
-# RFC 7208 4.6.1: directive = [ qualifier ] mechanism.
-SPF_QUALIFIERS = "+-?~"
-# RFC 7208 4.6.1: a term name ends at the first ":", "=" or "/".
-SPF_TERM_NAME_RE = re.compile(r"[^:=/]*")
-# RFC 7208 5: the complete set of mechanisms. SPF has no extension point for
-# new ones, so a term that is neither one of these nor a "name=value"
-# modifier is a syntax error.
-SPF_MECHANISMS = frozenset({"all", "include", "a", "mx", "ptr", "ip4", "ip6", "exists"})
-# RFC 7208 12: "include", "exists", "ip4" and "ip6" spell a mandatory ":"
-# argument, "all" takes none, and "a", "mx" and "ptr" take an optional one.
-SPF_MECHANISMS_NEEDING_ARGUMENT = frozenset({"include", "exists", "ip4", "ip6"})
-# The only two modifiers RFC 7208 defines: each may appear at most once (6),
-# and each takes a domain-spec, which is never empty (6.1 and 6.2). Any other
-# modifier must be ignored, however often it appears and even if it is empty.
-SPF_DEFINED_MODIFIERS = ("redirect", "exp")
-# RFC 7208 12: name = ALPHA *( ALPHA / DIGIT / "-" / "_" / "." ), where ALPHA
-# is ASCII, so the folding is held to ASCII as it is for the version above.
-SPF_MODIFIER_NAME_RE = re.compile(r"[a-z][a-z0-9_.-]*", re.IGNORECASE | re.ASCII)
-# RFC 7208 12: ip4-cidr-length is 0-32 and ip6-cidr-length 0-128.
-SPF_MAX_CIDR_LENGTH = {"ip4": 32, "ip6": 128}
-# Ordered from most permissive to strictest (RFC 7208 4.6.2).
-SPF_ALL_STRICTNESS = {"+all": 0, "?all": 1, "~all": 2, "-all": 3}
-SPF_ALL_MECHANISMS = frozenset(SPF_ALL_STRICTNESS)
-# RFC 7208 4.7: a record with no "all" ends in an implicit "?all".
-SPF_IMPLICIT_ALL = "?all"
-
-
-def normalize_txt_value(value: str) -> str:
-    """
-    Normalize a TXT record value.
-
-    Only a lone trailing semicolon is dropped, so that it does not defeat
-    exact comparison. A repeated one is kept: it makes a DKIM tag-list
-    invalid (RFC 6376 3.2) and must not normalize into a valid record.
-    """
-    return re.sub(r"(?<!;);$", "", re.sub(r"\s*\;\s*", ";", value.strip('"')))
-
-
-def parse_dkim_tags(value: str) -> Optional[Dict[str, str]]:
-    """Parse a DKIM key record into a dict of tag=value pairs.
-
-    Per RFC 6376 3.2, tags are separated by semicolons and folding whitespace
-    is allowed on both sides of the "=". Every tag-spec must be a named
-    tag=value pair, and a duplicate tag name invalidates the whole tag-list.
-    Per 3.6.1, v= is optional and defaults to DKIM1, but MUST be first and
-    equal to DKIM1 when present.
-    Returns None if the record is not a valid DKIM key record.
-    """
-    specs = value.split(";")
-    # A single trailing semicolon is allowed; any other empty tag-spec
-    # (leading, interior, or a second trailing one) makes the record invalid.
-    if len(specs) > 1 and not specs[-1].strip():
-        specs.pop()
-    tags = {}
-    for spec in specs:
-        part = spec.strip()
-        if "=" not in part:
-            return None
-        key, val = part.split("=", 1)
-        key = key.strip()
-        if not DKIM_TAG_NAME_RE.match(key) or key in tags:
-            return None
-        tags[key] = val.strip()
-    if "v" in tags:
-        if tags["v"] != DKIM_VERSION or specs[0].split("=", 1)[0].strip() != "v":
-            return None
-    else:
-        tags["v"] = DKIM_VERSION
-    # RFC 6376 3.6.1: k= is optional and defaults to rsa. Records omitting it
-    # are common, so applying the default keeps them from reading as a
-    # mismatch against the k= we publish.
-    tags.setdefault("k", DKIM_DEFAULT_KEY_TYPE)
-    return tags
-
-
-def is_spf_record(value: str) -> bool:
-    """Whether a TXT value is an SPF record, per the RFC 7208 4.5 rules."""
-    return SPF_VERSION_RE.match(value) is not None
-
-
-def _parse_spf_term(term: str) -> Tuple[str, str, str]:
-    """Split an SPF term into (qualifier, name, argument).
-
-    A directive is an optional "+"/"-"/"?"/"~" qualifier followed by a
-    mechanism, while a modifier is a bare "name=value" and takes no qualifier
-    (RFC 7208 4.6.1). Names are case-insensitive, and so are the domains they
-    carry; an argument holding a macro keeps its case, since "%{s}" and "%{S}"
-    do not expand the same way. The argument keeps its separator.
-    """
-    qualifier = ""
-    if term and term[0] in SPF_QUALIFIERS:
-        qualifier, term = term[0], term[1:]
-    name = SPF_TERM_NAME_RE.match(term).group()
-    argument = term[len(name) :]
-    if "%" not in argument:
-        argument = argument.lower()
-    return qualifier, name.lower(), argument
-
-
-def _canonical_spf_term(term: str) -> str:
-    """Canonical form of an SPF term, so that case and an implicit "+" (which
-    is what an omitted qualifier means) do not make equivalent terms differ."""
-    qualifier, name, argument = _parse_spf_term(term)
-    if argument.startswith("="):  # a modifier, which takes no qualifier
-        return f"{name}{argument}"
-    return f"{qualifier or '+'}{name}{argument}"
-
-
-def parse_spf_terms(value: str) -> Optional[Tuple[str, set]]:
-    """Parse an SPF record into its qualified "all" and set of other terms.
-
-    Returns (all_mechanism, other_terms) where all_mechanism is the canonical
-    "-all", "~all", "+all" or "?all" (a bare "all" means "+all"), or None when
-    the record has no "all" at all. Only the first one counts: "all" always
-    matches, so anything after it is never tested (RFC 7208 5.1). Terms are
-    canonicalized, so ordering, letter case and implicit qualifiers do not
-    matter.
-    Returns None if not a valid SPF record.
-    """
-    if not is_spf_record(value):
-        return None
-    all_mechanism = None
-    other_terms = set()
-    for term in value[len(SPF_VERSION) :].split():
-        canonical = _canonical_spf_term(term)
-        if canonical in SPF_ALL_MECHANISMS:
-            if all_mechanism is None:
-                all_mechanism = canonical
-        # Mechanisms after the first "all" are never tested (RFC 7208 5.1).
-        # Modifiers are not mechanisms and still apply (4.6.3): a canonical
-        # mechanism always carries its qualifier, a modifier never does.
-        elif all_mechanism is None or canonical[0] not in SPF_QUALIFIERS:
-            other_terms.add(canonical)
-    return (all_mechanism, other_terms)
-
-
-def _cidr_length_is_valid(length: str, maximum: int) -> bool:
-    """Whether a CIDR length is spelled as RFC 7208 12 requires.
-
-    Either "0" or a digit string that does not start with one, within the
-    maximum for its address family. Anything else left by the split — a
-    second "/", an empty string — is not a length at all.
-    """
-    if not length.isdigit() or (length.startswith("0") and length != "0"):
-        return False
-    return int(length) <= maximum
-
-
-def _ip_network_is_valid(name: str, argument: str) -> bool:
-    """Whether an "ip4:" or "ip6:" argument is an address and CIDR length.
-
-    Splitting on "/" is only unambiguous here: an ip-network is a literal, so
-    unlike the domain-spec of "a" or "mx" it cannot carry a macro with a "/"
-    of its own. RFC 7208 12 allows a single length, never the dual "//" form.
-    """
-    literal, separator, cidr_length = argument[1:].partition("/")
-    if separator and not _cidr_length_is_valid(cidr_length, SPF_MAX_CIDR_LENGTH[name]):
-        return False
-    try:
-        address = ipaddress.ip_address(literal)
-    except ValueError:
-        return False
-    return (address.version == 4) == (name == "ip4")
-
-
-def _dual_cidr_is_valid(argument: str) -> bool:
-    """Whether an "a" or "mx" argument that is only a dual-cidr-length is in
-    range: [ ip4-cidr-length ] [ "/" ip6-cidr-length ] (RFC 7208 12).
-
-    Unambiguous exactly because no domain-spec precedes it here; once one
-    does, it may carry a macro holding a "/" of its own.
-    """
-    ip4_part, has_ip6, ip6_length = argument.partition("//")
-    if has_ip6 and not _cidr_length_is_valid(ip6_length, SPF_MAX_CIDR_LENGTH["ip6"]):
-        return False
-    return not ip4_part or _cidr_length_is_valid(
-        ip4_part[1:], SPF_MAX_CIDR_LENGTH["ip4"]
-    )
-
-
-def spf_syntax_is_valid(value: str) -> bool:
-    """Whether an SPF record's terms are well formed.
-
-    A syntax error anywhere makes receivers return permerror for the whole
-    record (RFC 7208 4.6), so the delegation it describes never takes effect.
-    Term names, the presence of their arguments and the ip4/ip6 literals are
-    checked. A domain-spec is not: it may hold macros that expand at
-    evaluation time, and rejecting one wrongly would report a working record
-    as broken. That leaves the CIDR lengths of "a" and "mx" unchecked too,
-    since their domain-spec can contain the "/" they would be split on.
-    """
-    if not is_spf_record(value):
-        return False
-    modifiers = collections.Counter()
-    for term in value[len(SPF_VERSION) :].split():
-        qualifier, name, argument = _parse_spf_term(term)
-        if argument.startswith("="):
-            # A modifier is a bare "name=value" (4.6.1): a qualifier belongs
-            # to a directive, so a qualified one is neither. Unrecognized
-            # modifiers must still be ignored whatever they say (6), so only
-            # their name, and the domain-spec of the two defined ones, matter.
-            if qualifier or not SPF_MODIFIER_NAME_RE.fullmatch(name):
-                return False
-            if name in SPF_DEFINED_MODIFIERS and argument == "=":
-                return False
-            modifiers[name] += 1
-            continue
-        if name not in SPF_MECHANISMS:
-            return False
-        if name in SPF_MECHANISMS_NEEDING_ARGUMENT and not argument.startswith(":"):
-            return False
-        if name == "all" and argument:
-            return False
-        if argument == ":":
-            return False
-        if name in SPF_MAX_CIDR_LENGTH and not _ip_network_is_valid(name, argument):
-            return False
-        if name in ("a", "mx") and argument.startswith("/"):
-            if not _dual_cidr_is_valid(argument):
-                return False
-    return all(modifiers[name] <= 1 for name in SPF_DEFINED_MODIFIERS)
 
 
 def _dkim_tag_equal(tag: str, expected: str, found: str) -> bool:
@@ -295,14 +98,78 @@ def _check_dkim_semantic(
     return None
 
 
-def _check_spf(expected_value: str, found_values: List[str]) -> Dict[str, any]:
+def _check_dmarc_semantic(
+    expected_value: str, found_values: List[str]
+) -> Optional[Dict[str, any]]:
+    """Semantic comparison for DMARC records, as DKIM and SPF already get.
+
+    Compared exactly, a DMARC record is judged on its spelling: adding the
+    ``rua=`` every deployment guide asks for, reordering tags, or publishing
+    the stronger ``sp=reject`` all read as "incorrect" while being correct or
+    better. Only three things actually matter:
+
+    - the policy is at least as strict as the one we asked for,
+    - the alignment modes are at least as strict (absent means relaxed, per
+      RFC 7489 6.3, so an omitted ``adkim`` is weaker than the ``adkim=s`` we
+      publish),
+    - any other tag we expect is present with the same value.
+
+    Extra tags in the published record are fine — reporting addresses and
+    subdomain policies are additions, not deviations. A weaker policy or
+    alignment reads as "insecure" rather than "incorrect": the record works,
+    it just protects less than we asked, which is the same distinction SPF's
+    "all" handling draws.
+
+    Assumes the found records already passed ``dmarc_syntax_is_valid``:
+    ``_check_txt_security`` runs first for every TXT check and rejects a
+    malformed one as "incorrect" before anything here grades it.
+    """
+    if not dmarc_syntax_is_valid(expected_value):
+        return None
+    for found_value in found_values:
+        if not is_dmarc_record(found_value):
+            continue
+        weaker = (
+            not _dmarc_policy_is_acceptable(
+                dmarc_policy(expected_value), dmarc_policy(found_value)
+            )
+            or not _dmarc_policy_is_acceptable(
+                dmarc_subdomain_policy(expected_value),
+                dmarc_subdomain_policy(found_value),
+            )
+        ) or any(
+            DMARC_ALIGNMENT_STRICTNESS[dmarc_alignment(found_value, tag)]
+            < DMARC_ALIGNMENT_STRICTNESS[dmarc_alignment(expected_value, tag)]
+            for tag in ("adkim", "aspf")
+        )
+        if weaker:
+            return {"status": "insecure", "found": found_values}
+
+        expected_tags = parse_dmarc_tags(expected_value) or {}
+        found_tags = parse_dmarc_tags(found_value) or {}
+        # "p", "sp" and the alignment tags were judged on strength above, so
+        # comparing them again here would reject a record for being stronger.
+        graded = {"p", "sp", "adkim", "aspf"}
+        if any(
+            found_tags.get(name) != value
+            for name, value in expected_tags.items()
+            if name not in graded
+        ):
+            return {"status": "incorrect", "found": found_values}
+        return {"status": "correct", "found": found_values}
+    return None
+
+
+def _check_spf(
+    expected_value: str, found_values: List[str], deadline: Optional[float] = None
+) -> Dict[str, any]:
     """SPF check: verify expected includes resolve, fall back to terms comparison."""
     expected = parse_spf_terms(expected_value)
     if not expected:
         return {"status": "incorrect", "found": found_values}
 
     expected_all, expected_terms = expected
-    expected_includes = set(_extract_include_domains(expected_value))
+    expected_includes = set(spf_delegated_domains(expected_value))
 
     # Check there's at least one valid SPF record in found values
     found_spf_values = [v for v in found_values if is_spf_record(v)]
@@ -319,7 +186,9 @@ def _check_spf(expected_value: str, found_values: List[str]) -> Dict[str, any]:
     # If there are expected includes, check they resolve via BFS.
     # This is the primary signal: includes being set up is what matters.
     if expected_includes:
-        resolved, visited, transient, error = _resolve_spf_includes(found_spf_values)
+        resolved, visited, transient, error = _resolve_spf_includes(
+            found_spf_values, deadline=deadline
+        )
         if not expected_includes <= resolved:
             # A problem met while walking the chain only matters when it is
             # what kept our own include out of reach: a third party
@@ -334,7 +203,20 @@ def _check_spf(expected_value: str, found_values: List[str]) -> Dict[str, any]:
                     "found": found_values,
                 }
             if error and error.startswith("duplicate:"):
-                return {"status": "duplicate", "found": found_values}
+                # Name the domain that actually publishes two records. The
+                # customer's own duplicates were caught before the walk began,
+                # so the one found here is somewhere along the chain, while
+                # ``found`` below holds their apex TXT — a single, correct SPF
+                # record. A bare "duplicate" against that would send the
+                # operator to fix a record that is not the problem.
+                return {
+                    "status": "duplicate",
+                    "error": (
+                        f"{error.removeprefix('duplicate:')} publishes multiple "
+                        f"SPF records, so the chain stops there"
+                    ),
+                    "found": found_values,
+                }
             return {"status": "incorrect", "found": found_values}
         # Includes resolve — check if "all" mechanism is acceptable
         if _found_all_matches(expected_all, found_spf_values):
@@ -382,36 +264,11 @@ def _found_all_matches(expected_all: str, found_values: List[str]) -> bool:
     return False
 
 
-def _extract_include_domains(spf_value: str) -> List[str]:
-    """Extract the domains an SPF record delegates to, preserving order.
-
-    Both the "include:" mechanism and the "redirect=" modifier hand the
-    decision over to another domain's record (RFC 7208 5.2 and 6.1), so a
-    domain reached either way counts. An "all" mechanism ends that though:
-    it always matches, so an include listed after it is never tested (5.1),
-    and a redirect is inoperative when an "all" appears anywhere at all in
-    the record (5.1 and 6.1), wherever the two sit relative to each other.
-    """
-    includes = []
-    redirects = []
-    has_all = False
-    for term in spf_value.split():
-        qualifier, name, argument = _parse_spf_term(term)
-        if name == "all" and not argument:
-            has_all = True
-        elif name == "include" and argument.startswith(":") and not has_all:
-            includes.append(argument[1:])
-        elif name == "redirect" and not qualifier and argument.startswith("="):
-            redirects.append(argument[1:])
-    # A redirect is only reached once every mechanism failed to match, so it
-    # comes last. A macro only expands at evaluation time, so it names no
-    # domain we could look up here.
-    domains = includes if has_all else includes + redirects
-    return [domain for domain in domains if domain and "%" not in domain]
-
-
 def _resolve_spf_includes(
-    found_values: List[str], max_lookups: int = 10, max_void_lookups: int = 2
+    found_values: List[str],
+    max_lookups: int = 10,
+    max_void_lookups: int = 2,
+    deadline: Optional[float] = None,
 ) -> Tuple[set, set, set, Optional[str]]:
     """BFS through SPF include chains, return all domains with valid SPF records.
 
@@ -421,17 +278,25 @@ def _resolve_spf_includes(
     a record from turning us into a DNS amplifier aimed at whatever names it
     lists, which need not even exist (RFC 7208 11.1).
 
+    ``deadline`` is a ``time.monotonic()`` value bounding the walk in wall
+    clock, which the lookup caps do not: ten includes each allowed a full
+    ``DNS_RESOLVER_MAX_RESOLUTION_TIME`` is minutes, and this runs inside a
+    synchronous request. A domain left unwalked when it expires goes into
+    ``transient`` — we did not learn what it publishes, which is exactly what
+    that set means.
+
     Returns:
         (resolved_domains, visited_domains, transient_failures, error) where
         visited_domains are the ones we got to look up, transient_failures the
         ones whose lookup failed in a way that may well succeed next time, and
         error is None on success, or a string describing the first problem met
-        ("limit_reached", "void_limit_reached", "duplicate:domain.com").
+        ("limit_reached", "void_limit_reached", "deadline_exceeded",
+        "duplicate:domain.com").
     """
     queue = collections.deque()
     for found_value in found_values:
         if is_spf_record(found_value):
-            queue.extend(_extract_include_domains(found_value))
+            queue.extend(spf_delegated_domains(found_value))
 
     visited = set()
     resolved = set()
@@ -445,6 +310,15 @@ def _resolve_spf_includes(
     while queue:
         if lookup_count >= max_lookups:
             return resolved, visited, transient, error or "limit_reached"
+        if deadline is not None and time.monotonic() >= deadline:
+            # Everything still queued is unexplored, not absent: mark it so the
+            # caller reports "error" rather than a verdict on the customer.
+            transient.update(queue)
+            logger.warning(
+                "SPF chain walk hit its deadline with %d domain(s) unexplored",
+                len(queue),
+            )
+            return resolved, visited, transient, error or "deadline_exceeded"
 
         include_domain = queue.popleft()
         if include_domain in visited:
@@ -453,13 +327,15 @@ def _resolve_spf_includes(
         lookup_count += 1
 
         try:
-            answers = dns.resolver.resolve(include_domain, "TXT")
             spf_records = [
                 value
-                for value in (_txt_record_value(rr) for rr in answers.rrset)
+                for value in (
+                    normalize_txt_value(v)
+                    for v in resolve_answer(include_domain, "TXT").text_values()
+                )
                 if is_spf_record(value)
             ]
-        except (dns.resolver.NXDOMAIN, dns.resolver.NoAnswer):
+        except (NXDOMAINError, NoAnswerError):
             # An include pointing at a name that publishes nothing is a
             # settled answer, not a failure to look it up — but it is a "void
             # lookup", and a run of them is the amplification RFC 7208 4.6.4
@@ -470,15 +346,36 @@ def _resolve_spf_includes(
             if void_count > max_void_lookups:
                 return resolved, visited, transient, error or "void_limit_reached"
             continue
-        except (dns.resolver.Timeout, dns.resolver.NoNameservers):
-            logger.debug("DNS resolution failed for %s, may retry", include_domain)
+        except InvalidNameError:
+            # Settled, and not even a lookup: no query goes out for a name that
+            # cannot be formed, so it is not a void lookup either. Kept out of
+            # ``transient``, which would make the check permanently
+            # non-definitive: ``check_spf_status`` never caches an "error", so
+            # every outbound message would re-walk the chain over a name that
+            # can never resolve. ``arc_dns_txt`` draws the same line.
+            logger.debug("Unformable include name %s", include_domain)
+            continue
+        except ResolverError as exc:
+            # Timeout, SERVFAIL, a bogus DNSSEC chain: we did not learn what
+            # this include publishes, which is not the same as learning it
+            # publishes nothing. Left unexplored so the caller reports an
+            # error instead of blaming the found record.
+            logger.debug(
+                "DNS resolution failed for %s (%s), may retry", include_domain, exc
+            )
             transient.add(include_domain)
             continue
         except Exception as exc:  # pylint: disable=broad-exception-caught
+            # Our own bug, not an answer from DNS. Marked transient for the
+            # same reason: leaving it out of both sets makes the domain read
+            # as looked-up-and-settled, so the caller returns a definitive
+            # "incorrect" that gets cached for ten minutes and marks every
+            # external recipient for retry — over a fault of ours.
             logger.warning(
                 "Unexpected error resolving %s: %s", include_domain, exc, exc_info=True
             )
             capture_exception(exc)
+            transient.add(include_domain)
             continue
 
         if len(spf_records) > 1:
@@ -505,38 +402,32 @@ def _resolve_spf_includes(
             continue
 
         resolved.add(include_domain)
-        for child_domain in _extract_include_domains(spf_records[0]):
+        for child_domain in spf_delegated_domains(spf_records[0]):
             if child_domain not in visited:
                 queue.append(child_domain)
 
     return resolved, visited, transient, error
 
 
-def _txt_record_value(rr) -> str:
-    """Normalized value of a single TXT resource record.
-
-    RFC 7208 3.3 and RFC 6376 3.6.2: the strings of one record are
-    concatenated with no separator, which is how a value over the 255-octet
-    limit on a character-string is published. Separate TXT records arrive as
-    separate resource records, so several strings here always belong to the
-    same record. SPF records are US-ASCII (RFC 7208 3.1), but an unrelated
-    TXT record may hold anything, and that is no reason to fail the check.
-    """
-    return normalize_txt_value(b"".join(rr.strings).decode(errors="replace"))
-
-
 def _resolve_dns_values(record_type, query_name):
     """Resolve DNS and return found values and normalized expected value flag."""
     if record_type.upper() == "MX":
-        answers = dns.resolver.resolve(query_name, "MX")
-        return [f"{answer.preference} {answer.exchange}" for answer in answers]
+        answer = resolve_answer(query_name, "MX")
+        return [f"{rr.preference} {rr.exchange}" for rr in answer.rrset]
 
     if record_type.upper() == "TXT":
-        answers = dns.resolver.resolve(query_name, "TXT")
-        return [_txt_record_value(rr) for rr in answers.rrset]
+        # One value per record, with each record's character-strings joined
+        # and no separator, per RFC 6376 §3.6.2.2 (DKIM) and RFC 7208 §3.3
+        # (SPF). Querying authoritative servers directly, an RR's several
+        # strings are always one value: only a local stub resolver such as
+        # systemd-resolved merges distinct TXT records into one RR.
+        return [
+            normalize_txt_value(v)
+            for v in resolve_answer(query_name, "TXT").text_values()
+        ]
 
-    answers = dns.resolver.resolve(query_name, record_type)
-    return [answer.to_text() for answer in answers]
+    answer = resolve_answer(query_name, record_type)
+    return [rr.to_text() for rr in answer.rrset]
 
 
 def _check_txt_security(expected_value, found_values):
@@ -548,21 +439,47 @@ def _check_txt_security(expected_value, found_values):
         if len([v for v in found_values if is_spf_record(v)]) > 1:
             return {"status": "duplicate", "found": found_values}
 
-    # DMARC duplicate and insecure checks
-    if expected_value.startswith("v=DMARC1"):
-        dmarc_records = [v for v in found_values if v.startswith("v=DMARC1")]
+    # DMARC duplicate and insecure checks. Both sides go through the RFC 7489
+    # tag parser rather than a substring search: "p=none" also occurs inside
+    # "sp=none", which governs subdomains only, so a substring match reads a
+    # strict domain policy as insecure and — on the expected side — switches
+    # the whole check off whenever the operator configures an "sp".
+    if is_dmarc_record(expected_value):
+        dmarc_records = [v for v in found_values if is_dmarc_record(v)]
         if len(dmarc_records) > 1:
             return {"status": "duplicate", "found": found_values}
-        if "p=none" not in expected_value:
-            for dmarc in dmarc_records:
-                if "p=none" in dmarc:
-                    return {"status": "insecure", "found": found_values}
+        # Syntax before strength. A record receivers cannot parse is ignored
+        # outright (RFC 7489 6.6.3), so it protects nothing — reporting it as
+        # "insecure" would read as "works, but weaker than we asked" and send
+        # the operator looking at their policy instead of their typo.
+        for dmarc in dmarc_records:
+            if not dmarc_syntax_is_valid(dmarc):
+                return {"status": "incorrect", "found": found_values}
+        expected_policy = dmarc_policy(expected_value)
+        for dmarc in dmarc_records:
+            if not _dmarc_policy_is_acceptable(expected_policy, dmarc_policy(dmarc)):
+                return {"status": "insecure", "found": found_values}
 
     return None
 
 
+def _dmarc_policy_is_acceptable(expected_policy: str, found_policy: str) -> bool:
+    """Whether a found DMARC policy is at least as strict as expected.
+
+    The same shape as :func:`_all_is_acceptable` for SPF: a domain that went
+    further than we asked (we expect "quarantine", they publish "reject") is
+    correct, not a mismatch.
+    """
+    return (
+        DMARC_POLICY_STRICTNESS[found_policy]
+        >= DMARC_POLICY_STRICTNESS[expected_policy]
+    )
+
+
 def check_single_record(
-    maildomain: MailDomain, expected_record: Dict[str, any]
+    maildomain: MailDomain,
+    expected_record: Dict[str, any],
+    deadline: Optional[float] = None,
 ) -> Dict[str, any]:
     """
     Check a single DNS record for a mail domain.
@@ -570,6 +487,10 @@ def check_single_record(
     Args:
         maildomain: The MailDomain instance
         expected_record: The expected record to check
+        deadline: ``time.monotonic()`` value bounding the whole check. Past it
+            the record is reported as "error" without a lookup, which is the
+            same not-definitive status a timeout gets — never cached, never a
+            verdict on the customer's DNS.
 
     Returns:
         Check result dictionary with status and details
@@ -580,6 +501,12 @@ def check_single_record(
 
     # Build the query name
     query_name = f"{target}.{maildomain.name}" if target else maildomain.name
+
+    if deadline is not None and time.monotonic() >= deadline:
+        return {
+            "status": "error",
+            "error": "DNS check budget exhausted before this record was checked",
+        }
 
     try:
         found_values = _resolve_dns_values(record_type, query_name)
@@ -595,7 +522,7 @@ def check_single_record(
         # SPF: always use semantic check (handles exact match, reordering,
         # ~all acceptance, and recursive include verification)
         if record_type.upper() == "TXT" and is_spf_record(expected_value):
-            return _check_spf(expected_value, found_values)
+            return _check_spf(expected_value, found_values, deadline=deadline)
 
         # Exact match (non-SPF)
         if expected_value in found_values:
@@ -607,19 +534,51 @@ def check_single_record(
             if result:
                 return result
 
+        # Semantic fallback for DMARC, so a record is judged on what it asks
+        # receivers to do rather than on matching our spelling of it.
+        if record_type.upper() == "TXT" and is_dmarc_record(expected_value):
+            result = _check_dmarc_semantic(expected_value, found_values)
+            if result:
+                return result
+
         return {"status": "incorrect", "found": found_values}
 
-    except dns.resolver.NXDOMAIN:
+    except NXDOMAINError:
         return {"status": "missing", "error": "Domain not found"}
-    except dns.resolver.NoAnswer:
+    except NoAnswerError:
         return {"status": "missing", "error": "No records found"}
-    except dns.resolver.NoNameservers:
-        return {"status": "missing", "error": "No nameservers found"}
-    except dns.resolver.Timeout:
+    except ServfailError:
+        # "error", not "missing": a SERVFAIL says the lookup did not complete,
+        # not that the record is absent. ``check_spf_status`` caches anything
+        # other than "error" for 10 minutes, and a definitive-looking negative
+        # there marks every external recipient for retry — so one bad answer
+        # from an authoritative server would park the domain's outbound mail.
+        # ``_resolve_spf_includes`` classifies the same failure as transient.
+        return {"status": "error", "error": "DNS query failed (SERVFAIL)"}
+    except ResolutionTimeoutError:
         return {"status": "error", "error": "DNS query timeout"}
-    except dns.resolver.YXDOMAIN:
-        return {"status": "error", "error": "Domain name too long"}
+    except InvalidNameError:
+        return {"status": "error", "error": "Invalid domain name"}
+    except DNSSECError as e:
+        # "error", not "missing": the record may well be published, but the
+        # zone's signatures do not verify, so we cannot report on what is in
+        # it. Telling the operator their record is absent would send them
+        # editing DNS instead of looking at their DNSSEC.
+        return {"status": "error", "error": f"DNSSEC validation failed: {e}"}
+    except ResolverError as e:
+        return {"status": "error", "error": f"DNS query failed: {e}"}
     except Exception as e:  # pylint: disable=broad-exception-caught
+        # Every DNS failure we know how to read is handled above, so reaching
+        # here means a bug rather than a bad zone. Reported, not just folded
+        # into a status string the operator reads as "DNS is flaky".
+        logger.warning(
+            "Unexpected error checking %s for %s: %s",
+            record_type,
+            query_name,
+            e,
+            exc_info=True,
+        )
+        capture_exception(e)
         return {"status": "error", "error": f"DNS query failed: {str(e)}"}
 
 
@@ -662,8 +621,12 @@ def _check_spf_status_uncached(maildomain: MailDomain) -> Tuple[bool, bool]:
     if not spf_records:
         return True, True
 
+    # Bounded here too: this runs on the send path, where an unbounded chain
+    # walk holds a worker instead of a request, and the result is cached for
+    # ten minutes so it is not worth minutes to compute.
+    deadline = time.monotonic() + DNS_CHECK_TOTAL_TIMEOUT
     for expected_record in spf_records:
-        result = check_single_record(maildomain, expected_record)
+        result = check_single_record(maildomain, expected_record, deadline=deadline)
         status = result.get("status")
         if status not in ("correct", "insecure"):
             is_transient = status == "error"
@@ -695,9 +658,17 @@ def check_dns_records(maildomain: MailDomain) -> List[Dict[str, any]]:
         record["value"] for record in expected_records if record["type"].upper() == "MX"
     }
 
+    # One budget for the whole check, shared by every record: each resolution
+    # is bounded on its own, but this endpoint is synchronous and their sum is
+    # not. Records the budget does not reach report "error", which reads as
+    # "could not check" rather than "your DNS is wrong".
+    deadline = time.monotonic() + DNS_CHECK_TOTAL_TIMEOUT
+
     for expected_record in expected_records:
         result_record = expected_record.copy()
-        result_record["_check"] = check_single_record(maildomain, expected_record)
+        result_record["_check"] = check_single_record(
+            maildomain, expected_record, deadline=deadline
+        )
 
         # For MX records that are correct, check for extra (conflicting) MX entries
         if (

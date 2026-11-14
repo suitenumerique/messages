@@ -58,12 +58,18 @@ dependencies = [
     "nested-multipart-parser==1.6.0",
     "openai==2.54.0",
     "psycopg[binary]==3.3.6",
+    # Version is the bundled PSL snapshot date: bump it like any other
+    # dependency. Ships the list and never fetches it at runtime.
+    "publicsuffixlist==1.1.2.20261029",
+    # dkimpy verifies ed25519-sha256 (RFC 8463) DKIM signatures only with it.
+    "PyNaCl==1.6.2",
     "PyJWT==2.15.1",
     "pyrage==1.4.0",
     "PySocks==1.7.1",
     "python-keycloak==5.12.0",
     "python-magic==0.4.27",
     "pyzstd==0.20.0",
+    "recursive-resolver==0.2.0",
     "redis==6.4.0",
     "requests==2.34.2",
     "sentry-sdk[django]==2.72.0",
@@ -152,10 +158,14 @@ select = [
 [tool.ruff.lint.isort]
 section-order = ["future","standard-library","django","third-party","messages","first-party","local-folder"]
 sections = { messages=["core"], django=["django"] }
-known-third-party = ["dns"]
+known-third-party = ["dns", "recursive_resolver"]
 extra-standard-library = ["tomllib"]
 
 [tool.ruff.lint.flake8-tidy-imports.banned-api]
+# Every DNS lookup goes through core.services.dns.resolver, which picks the
+# backend (DNS_RESOLVER_BACKEND) and re-exports the answer and error types.
+"dns.resolver".msg = "Use `core.services.dns.resolver`, not dnspython's stub resolver."
+"recursive_resolver".msg = "Import from `core.services.dns.resolver`, which re-exports the answer and error types."
 # jmap-email's public API is the top-level `jmap_email` package; the
 # TypedDict shapes live in `jmap_email.types`. Everything else is private
 # implementation — reaching into it couples us to internal layout.
@@ -169,6 +179,7 @@ extra-standard-library = ["tomllib"]
 
 [tool.ruff.lint.per-file-ignores]
 "**/tests/*" = ["S", "SLF"]
+"core/services/dns/resolver.py" = ["TID251"]
 
 [tool.pytest.ini_options]
 addopts = [

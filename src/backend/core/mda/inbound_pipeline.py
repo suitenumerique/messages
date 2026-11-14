@@ -210,10 +210,16 @@ def _make_arc_step(spam_config: Dict[str, Any]) -> Step:
     """Hold (RETRY) a message whose *trusted* ARC seal we couldn't verify.
 
     Only a populated ``trusted_arc_sealers`` allowlist is an enforcement
-    posture: there, a DNS lookup that didn't complete (timeout / SERVFAIL /
-    NXDOMAIN / empty) for a message *claiming* one of our trusted sealers is
-    indeterminate, not forged — so we hold it for retry rather than fail open
-    (deliver it unverified) or fail closed (drop it).
+    posture: there, a DNS lookup that didn't complete (a timeout or SERVFAIL)
+    for a message *claiming* one of our trusted sealers is indeterminate, not
+    forged — so we hold it for retry rather than fail open (deliver it
+    unverified) or fail closed (drop it).
+
+    A *settled* answer is not held: NXDOMAIN, NODATA, a name that cannot be
+    formed, and a selector publishing no key record all come back from
+    ``arc_dns_txt`` as "no key", so the chain fails into a definite
+    ``untrusted`` verdict straight away. Only the outstanding-lookup case
+    reaches the hold below.
 
     Once the hold exceeds ``DEFERRAL_MAX_AGE`` we stop giving the message the
     benefit of the doubt: a seal claiming one of our sealers whose key never
@@ -388,14 +394,45 @@ def _make_inbound_auth_step(spam_config: Dict[str, Any]) -> Step:
     is reused untouched; ``get_stmsg_headers`` surfaces it downstream.
     """
 
-    def inbound_auth(ctx: InboundContext) -> Decision:
-        if ctx.rspamd_result is None and get_inbound_auth_mode(spam_config) == "rspamd":
+    mode = get_inbound_auth_mode(spam_config)
+    shadow_mode = get_inbound_auth_mode(spam_config, key="inbound_auth_shadow")
+    if shadow_mode == mode:
+        shadow_mode = ""
+
+    def _verdict(ctx: InboundContext, auth_mode: str) -> Optional[str]:
+        if ctx.rspamd_result is None and auth_mode == "rspamd":
             _, _, ctx.rspamd_result = spam.call_rspamd(
                 ctx.raw_data, spam_config, envelope=ctx.inbound_message.envelope
             )
-        verdict = check_inbound_authentication(
-            ctx.raw_data, ctx.parsed_email, spam_config, ctx.rspamd_result, ctx.arc
+        return check_inbound_authentication(
+            ctx.raw_data,
+            ctx.parsed_email,
+            spam_config,
+            ctx.rspamd_result,
+            ctx.arc,
+            envelope=ctx.inbound_message.envelope,
+            mode=auth_mode,
         )
+
+    def inbound_auth(ctx: InboundContext) -> Decision:
+        verdict = _verdict(ctx, mode)
+        if shadow_mode:
+            # Evaluated and logged only, to compare backends on real traffic
+            # before switching. Never surfaced, never allowed to break delivery.
+            try:
+                shadow = _verdict(ctx, shadow_mode)
+            except Exception:
+                logger.exception("Shadow inbound auth (%s) errored", shadow_mode)
+            else:
+                logger.info(
+                    "Inbound auth shadow: message=%s %s=%s %s=%s%s",
+                    ctx.inbound_message.id,
+                    mode or "disabled",
+                    verdict or "verified",
+                    shadow_mode,
+                    shadow or "verified",
+                    "" if shadow == verdict else " MISMATCH",
+                )
         if not verdict:
             # Widget submissions arrive over an unauthenticated web form, so
             # they carry the "none" baseline even when DKIM/DMARC verification

@@ -82,7 +82,7 @@ class TestE2EMessageOutboundFlow:
     # the outbound SSRF guard (assert_public_ip) rejects. Bypass it here so the
     # direct path can deliver to the local catcher.
     @patch("core.mda.outbound_direct.assert_public_ip")
-    @patch("core.mda.outbound_direct.dns.resolver.resolve")
+    @patch("core.mda.outbound_direct.resolve_answer")
     def test_draft_send_receive_verify_direct(
         self,
         mock_resolve,
@@ -96,7 +96,7 @@ class TestE2EMessageOutboundFlow:
         mailcatcher_ip = socket.gethostbyname("mailcatcher")
 
         def resolve_return_value(domain, record_type, **kwargs):
-            return {
+            values = {
                 ("external-test.com", "MX"): [
                     MagicMock(preference=10, exchange="mx1.external-test.com"),
                 ],
@@ -104,6 +104,7 @@ class TestE2EMessageOutboundFlow:
                     mailcatcher_ip,
                 ],
             }[(domain, record_type)]
+            return MagicMock(rrset=values, records=values)
 
         mock_resolve.side_effect = resolve_return_value
 
