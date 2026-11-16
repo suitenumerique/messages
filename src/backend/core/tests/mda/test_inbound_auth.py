@@ -1280,7 +1280,7 @@ class TestNativeEndToEnd:
         cache.clear()
 
     def _deliver(self, zone):
-        def _resolve(name, rdtype="A"):
+        def _resolve(name, rdtype, _remaining):
             key = (name.rstrip(".").lower(), rdtype)
             if key not in zone:
                 raise NXDOMAINError(name, rdtype)
@@ -1292,7 +1292,7 @@ class TestNativeEndToEnd:
         inbound_message.save(update_fields=["envelope"])
         with (
             override_settings(SPAM_CONFIG={"inbound_auth": "native"}),
-            patch("core.services.dns.resolver.resolve_answer", side_effect=_resolve),
+            patch("core.services.dns.resolver._resolve", side_effect=_resolve),
             patch(
                 "core.mda.inbound_tasks._create_message_from_inbound",
                 return_value=True,

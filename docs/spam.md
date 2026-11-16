@@ -213,8 +213,8 @@ resolver selected by `DNS_RESOLVER_BACKEND` (see [env.md](./env.md#dns-resolutio
   (`origin == "mta"`), and **skipped when `trusted_relays` > 0**: the SMTP peer is
   then the upstream gateway, not the sender. The `exp` modifier is never
   fetched. Limits are enforced as `permerror` (30 DNS-querying terms like
-  rspamd, where RFC 7208 says 10; 2 void lookups, MX exchanges included; 10 MX
-  hosts). SPF stops starting lookups after 20 s (`temperror`);
+  rspamd, where RFC 7208 says 10, so a record rspamd passes is not called
+  forged after switching; 2 void lookups, MX exchanges included; 10 MX hosts). SPF stops starting lookups after 20 s (`temperror`);
   the whole native evaluation (DKIM, SPF, DMARC, ARC) stops starting lookups
   after `DNS_RESOLVER_INBOUND_AUTH_BUDGET` (30 s), so a slow nameserver holds a
   worker for at most that plus one `DNS_RESOLVER_MAX_RESOLUTION_TIME`.

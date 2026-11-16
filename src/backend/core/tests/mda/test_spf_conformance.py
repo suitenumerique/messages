@@ -117,6 +117,7 @@ def _cases():
 @pytest.mark.parametrize(("zone", "test"), _cases())
 def test_rfc7208_conformance(zone, test, monkeypatch):
     """Each scenario yields one of the results the suite accepts."""
+    # The suite tests the RFC's limit; production allows 30 (see spf.py).
     monkeypatch.setattr(spf, "MAX_DNS_TERMS", 10)
     result = spf.evaluate_spf(
         test["host"],

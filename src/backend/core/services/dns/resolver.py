@@ -250,7 +250,11 @@ def resolve_answer(qname: str, rdtype: str = "A") -> Answer:
 
     For PTR, ``qname`` may be an IP address; it is reversed for you.
     """
-    remaining = _remaining()
+    return _resolve(qname, rdtype, _remaining())
+
+
+def _resolve(qname: str, rdtype: str, remaining: float | None) -> Answer:
+    """:func:`resolve_answer` within ``remaining`` seconds of budget."""
     if remaining is not None and remaining <= 0:
         raise ResolutionTimeoutError(str(qname), str(rdtype))
     if settings.DNS_RESOLVER_BACKEND == BACKEND_RECURSIVE:
@@ -351,9 +355,11 @@ def resolve_answer_cached(qname: str, rdtype: str = "A") -> Answer:
             # An entry written by another version, or corrupted: a miss.
             logger.warning("Ignoring unreadable DNS cache entry: %s", exc)
 
+    # Read once: the lookup's lifetime and the timeout's cacheability must
+    # agree on whether the budget cut it short.
     remaining = _remaining()
     try:
-        answer = resolve_answer(qname, rdtype)
+        answer = _resolve(qname, rdtype, remaining)
     except NXDOMAINError:
         _cache_set(key, (_CACHED_NXDOMAIN, None), _negative_ttl())
         raise

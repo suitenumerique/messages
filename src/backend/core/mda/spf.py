@@ -53,8 +53,10 @@ PERMERROR = "permerror"
 
 _QUALIFIER_RESULTS = {"+": PASS, "-": FAIL, "~": SOFTFAIL, "?": NEUTRAL}
 
-# 4.6.4 says 10. Many large senders publish more, so like rspamd
-# (SPF_MAX_DNS_REQUESTS) we allow 30. The DNS budget still bounds the cost.
+# 4.6.4 says 10. rspamd, which native mode replaces, allows 30
+# (SPF_MAX_DNS_REQUESTS). At 10, a domain whose record goes over 10 and that
+# rspamd passes would get permerror, a DMARC fail, so its mail without an
+# aligned DKIM signature would show as forged. The DNS budget bounds the cost.
 MAX_DNS_TERMS = 30
 MAX_VOID_LOOKUPS = 2
 MAX_MX_RECORDS = 10

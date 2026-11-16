@@ -300,7 +300,7 @@ def test_budget_does_not_outlive_its_block():
 
 def test_cached_answer_is_reused():
     """A second lookup within the TTL does not query DNS again."""
-    with patch.object(dns_resolver, "resolve_answer") as mock_resolve:
+    with patch.object(dns_resolver, "_resolve") as mock_resolve:
         mock_resolve.return_value = txt_answer("v=spf1 -all", "x" * 300)
         first = dns_resolver.resolve_answer_cached("example.com", "TXT")
         second = dns_resolver.resolve_answer_cached("EXAMPLE.com.", "TXT")
@@ -312,7 +312,7 @@ def test_cached_answer_is_reused():
 
 def test_cached_mx_round_trips():
     """Rdata with embedded names survives the cache."""
-    with patch.object(dns_resolver, "resolve_answer") as mock_resolve:
+    with patch.object(dns_resolver, "_resolve") as mock_resolve:
         mock_resolve.return_value = mx_answer((10, "mx.example.com."))
         dns_resolver.resolve_answer_cached("example.com", "MX")
         again = dns_resolver.resolve_answer_cached("example.com", "MX")
@@ -327,7 +327,7 @@ def test_cached_mx_round_trips():
 )
 def test_cached_negative_answer_is_reused(error):
     """NXDOMAIN and NODATA are settled, so they are cached too."""
-    with patch.object(dns_resolver, "resolve_answer", side_effect=error) as mock:
+    with patch.object(dns_resolver, "_resolve", side_effect=error) as mock:
         for _ in range(2):
             with pytest.raises(type(error)):
                 dns_resolver.resolve_answer_cached("example.com", "TXT")
@@ -341,7 +341,7 @@ def test_cached_negative_answer_is_reused(error):
 def test_failures_are_cached_briefly(error):
     """RFC 9520 3.2: a slow nameserver must not cost a timeout per message."""
     with (
-        patch.object(dns_resolver, "resolve_answer", side_effect=error) as mock,
+        patch.object(dns_resolver, "_resolve", side_effect=error) as mock,
         patch.object(dns_resolver, "_cache_set", wraps=dns_resolver._cache_set) as put,
     ):
         for _ in range(2):
@@ -354,26 +354,37 @@ def test_failures_are_cached_briefly(error):
 @override_settings(DNS_RESOLVER_CACHE_FAILURE_TTL=0)
 def test_failure_cache_can_be_disabled():
     error = ServfailError("example.com", "TXT")
-    with patch.object(dns_resolver, "resolve_answer", side_effect=error) as mock:
+    with patch.object(dns_resolver, "_resolve", side_effect=error) as mock:
         for _ in range(2):
             with pytest.raises(ServfailError):
                 dns_resolver.resolve_answer_cached("example.com", "TXT")
     assert mock.call_count == 2
 
 
-def test_timeout_cut_short_by_the_budget_is_not_cached():
-    """It says nothing about the nameserver, only about this message."""
+@override_settings(DNS_RESOLVER_MAX_RESOLUTION_TIME=10)
+@pytest.mark.parametrize(("budget", "cached"), [(9.5, False), (10.5, True)])
+def test_timeout_is_cached_only_with_a_full_budget(budget, cached):
+    """Cut short by the budget, it says nothing about the nameserver.
+
+    The lookup must get the same remaining budget the decision is made on:
+    with the clock moving 1 s between two reads, they would disagree.
+    """
     error = ResolutionTimeoutError("example.com", "TXT")
-    with patch.object(dns_resolver, "resolve_answer", side_effect=error) as mock:
+    clock = iter(range(1000, 2000))
+    with (
+        patch.object(dns_resolver.time, "monotonic", side_effect=lambda: next(clock)),
+        patch.object(dns_resolver, "_resolve", side_effect=error) as mock,
+    ):
         for _ in range(2):
-            with dns_resolver.dns_budget(1), pytest.raises(ResolutionTimeoutError):
+            with dns_resolver.dns_budget(budget + 1), pytest.raises(error.__class__):
                 dns_resolver.resolve_answer_cached("example.com", "TXT")
-    assert mock.call_count == 2
+    assert mock.call_args_list[0].args[2] == budget
+    assert mock.call_count == (1 if cached else 2)
 
 
 def test_other_errors_are_not_cached():
     error = DNSSECError("bogus", "example.com", "TXT")
-    with patch.object(dns_resolver, "resolve_answer", side_effect=error) as mock:
+    with patch.object(dns_resolver, "_resolve", side_effect=error) as mock:
         for _ in range(2):
             with pytest.raises(DNSSECError):
                 dns_resolver.resolve_answer_cached("example.com", "TXT")
@@ -382,7 +393,7 @@ def test_other_errors_are_not_cached():
 
 @override_settings(DNS_RESOLVER_CACHE_MAX_TTL=0)
 def test_cache_can_be_disabled():
-    with patch.object(dns_resolver, "resolve_answer") as mock_resolve:
+    with patch.object(dns_resolver, "_resolve") as mock_resolve:
         mock_resolve.return_value = txt_answer("v=spf1 -all")
         dns_resolver.resolve_answer_cached("example.com", "TXT")
         dns_resolver.resolve_answer_cached("example.com", "TXT")
@@ -391,7 +402,7 @@ def test_cache_can_be_disabled():
 
 def test_cache_is_keyed_by_backend():
     """Switching backend must not serve answers the other one produced."""
-    with patch.object(dns_resolver, "resolve_answer") as mock_resolve:
+    with patch.object(dns_resolver, "_resolve") as mock_resolve:
         mock_resolve.return_value = txt_answer("v=spf1 -all")
         dns_resolver.resolve_answer_cached("example.com", "TXT")
         with override_settings(DNS_RESOLVER_BACKEND="recursive"):
@@ -403,7 +414,7 @@ def test_cache_is_keyed_by_backend():
     "entry", [("answer", ("x",)), ("answer", None), "garbage", ("bogus", 1)]
 )
 def test_unreadable_cache_entry_is_a_miss(entry):
-    with patch.object(dns_resolver, "resolve_answer") as mock_resolve:
+    with patch.object(dns_resolver, "_resolve") as mock_resolve:
         mock_resolve.return_value = txt_answer("v=spf1 -all")
         cache.set(dns_resolver._cache_key("example.com", "TXT"), entry, 60)
         answer = dns_resolver.resolve_answer_cached("example.com", "TXT")
@@ -413,7 +424,7 @@ def test_unreadable_cache_entry_is_a_miss(entry):
 
 def test_cache_outage_degrades_to_uncached_lookup():
     with (
-        patch.object(dns_resolver, "resolve_answer") as mock_resolve,
+        patch.object(dns_resolver, "_resolve") as mock_resolve,
         patch.object(dns_resolver.cache, "get", side_effect=ConnectionError),
         patch.object(dns_resolver.cache, "set", side_effect=ConnectionError),
     ):
