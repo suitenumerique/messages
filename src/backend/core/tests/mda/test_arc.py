@@ -7,8 +7,16 @@ import base64
 from unittest.mock import patch
 
 import dkim
+import pytest
 
-from core.mda import arc
+from core.mda import arc, signing
+from core.services.dns.resolver import (
+    InvalidNameError,
+    NoAnswerError,
+    NXDOMAINError,
+    ResolutionTimeoutError,
+    ServfailError,
+)
 
 
 class TestSealerTrusted:
@@ -56,17 +64,35 @@ class TestArcResult:
         assert out["dnsfail"] is False
         assert out["trusted"] is False
 
+    RESULT = {
+        "ams-domain": b"relay.example",
+        "as-domain": b"relay.example",
+        "aar-value": b"i=2; mx; dkim=pass",
+    }
+
     def test_trusted_seal_exposes_aar(self):
-        results = [{"ams-domain": b"relay.example", "aar-value": b"i=2; mx; dkim=pass"}]
-        with self._outer("relay.example"), self._verify(arc.CV_Pass, results):
+        with self._outer("relay.example"), self._verify(arc.CV_Pass, [self.RESULT]):
             out = arc.arc_result(b"raw", {"relay.example"})
         assert out["trusted"] is True
         assert out["sealer"] == "relay.example"
         assert out["aar"] == "i=2; mx; dkim=pass"
 
+    @pytest.mark.parametrize(
+        "ams, seal",
+        [(b"relay.example", b"attacker.test"), (b"attacker.test", b"relay.example")],
+    )
+    def test_seal_and_ams_from_different_domains_untrusted(self, ams, seal):
+        """Only the seal covers the AAR: a trusted AMS under another seal
+        vouches for an AAR the trusted sealer never wrote."""
+        results = [{**self.RESULT, "ams-domain": ams, "as-domain": seal}]
+        with self._outer("relay.example"), self._verify(arc.CV_Pass, results):
+            out = arc.arc_result(b"raw", {"relay.example"})
+        assert out["trusted"] is False
+        assert out["aar"] is None
+
     def test_cv_fail_untrusted(self):
         # Outermost sealer IS listed, so we verify — but the chain fails.
-        results = [{"ams-domain": b"relay.example", "aar-value": b"i=2; mx; dkim=pass"}]
+        results = [self.RESULT]
         with self._outer("relay.example"), self._verify(b"fail", results):
             out = arc.arc_result(b"raw", {"relay.example"})
         assert out["trusted"] is False
@@ -116,7 +142,13 @@ class TestArcFastPath:
 
     def test_at_cap_still_verifies(self):
         # Exactly at the cap is still verified.
-        results = [{"ams-domain": b"relay.example", "aar-value": b"x"}]
+        results = [
+            {
+                "ams-domain": b"relay.example",
+                "as-domain": b"relay.example",
+                "aar-value": b"x",
+            }
+        ]
         with (
             patch("core.mda.arc._outermost_sealer", return_value=("relay.example", 20)),
             patch(
@@ -217,6 +249,14 @@ class TestOutermostSealer:
         sealer, max_i = arc._outermost_sealer(b"\x00\xff not a real message")
         assert max_i == 0
 
+    def test_seal_by_another_domain_has_no_sealer(self):
+        raw = base64.b64decode(_SEALED_B64).replace(
+            b"cv=none; a=rsa-sha256; d=relay.example",
+            b"cv=none; a=rsa-sha256; d=attacker.test",
+            1,
+        )
+        assert arc._outermost_sealer(raw) == (None, 1)
+
 
 class TestArcResultRealCrypto:
     """Exercise the real dkimpy chain verification (stub DNS, no network)."""
@@ -230,6 +270,20 @@ class TestArcResultRealCrypto:
         assert out["sealer"] == "relay.example"
         assert "dkim=pass" in str(out["aar"])
 
+    @pytest.mark.parametrize(
+        "header",
+        [b"ARC-Seal:", b"ARC-Message-Signature:", b"ARC-Authentication-Results:"],
+    )
+    def test_oversized_arc_header_is_refused_unverified(self, header):
+        """dkimpy's tag regexes are quadratic in whitespace runs."""
+        padding = b" " * signing.MAX_SIGNATURE_HEADER_BYTES
+        raw = self.SEALED.replace(header, header + padding, 1)
+        with patch("core.mda.arc.arc_verify") as verify:
+            out = arc.arc_result(raw, {"relay.example"})
+        assert out["trusted"] is False
+        assert out["dnsfail"] is False
+        verify.assert_not_called()
+
     def test_untrusted_sealer_real_verify(self):
         with patch("core.mda.arc.arc_verify", _verify_with_stub_dns):
             out = arc.arc_result(self.SEALED, {"other.example"})
@@ -238,34 +292,154 @@ class TestArcResultRealCrypto:
         assert out["aar"] is None
 
     def test_dns_lookup_raises_is_dnsfail(self):
-        # Real arc_verify runs, but the key lookup blows up (timeout/SERVFAIL/
-        # NXDOMAIN all land here): indeterminate, not forged -> dnsfail.
+        # Real arc_verify runs, but the key lookup did not complete (a timeout
+        # or SERVFAIL reaches arc_dns_txt's caller as a raise): indeterminate,
+        # not forged -> dnsfail. NXDOMAIN does NOT land here; arc_dns_txt
+        # catches it and returns None, which the test below covers.
         def _boom(name, timeout=5):
             raise Exception("dns down")
 
-        with patch("core.mda.arc.get_txt", _boom):
+        with patch("core.mda.arc.arc_dns_txt", _boom):
             out = arc.arc_result(self.SEALED, {"relay.example"})
         assert out["trusted"] is False
         assert out["dnsfail"] is True
 
-    def test_dns_lookup_empty_is_dnsfail(self):
-        # An empty/absent key record is treated the same way — we can't tell a
-        # genuinely-retired selector from a fresh-publish negative cache.
+    def test_settled_absent_key_is_not_dnsfail(self):
+        # A sealer that publishes no key is a settled answer: the seal can
+        # never validate, so this is a definite untrusted verdict now, not a
+        # hold that reaches the same place after the whole deferral window.
         def _empty(name, timeout=5):
-            return ""
+            return None
 
-        with patch("core.mda.arc.get_txt", _empty):
+        with patch("core.mda.arc.arc_dns_txt", _empty):
             out = arc.arc_result(self.SEALED, {"relay.example"})
         assert out["trusted"] is False
-        assert out["dnsfail"] is True
+        assert out["dnsfail"] is False
 
     def test_bad_signature_with_dns_ok_is_not_dnsfail(self):
         # DNS resolves fine but the seal doesn't validate against a DIFFERENT
         # key: a definite failure, must NOT be masked as dnsfail.
+        #
+        # Returns bytes, as arc_dns_txt does. A str stub never reaches the
+        # crypto: dkimpy's parse_tag_value does `tag_list.split(b';')` and
+        # raises TypeError, which arc_result's broad except swallows into the
+        # same trusted=False/dnsfail=False asserted here — green, while
+        # exercising the error path instead of verification.
         def _wrong_key(name, timeout=5):
-            return "v=DKIM1; k=rsa; p=" + _MISMATCHED_PUBKEY_P
+            return b"v=DKIM1; k=rsa; p=" + _MISMATCHED_PUBKEY_P.encode()
 
-        with patch("core.mda.arc.get_txt", _wrong_key):
+        with patch("core.mda.arc.arc_dns_txt", _wrong_key):
             out = arc.arc_result(self.SEALED, {"relay.example"})
         assert out["trusted"] is False
         assert out["dnsfail"] is False
+
+
+class TestArcDnsLookupBudget:
+    """The cap that actually bounds a forged chain's DNS cost.
+
+    ``_MAX_ARC_INSTANCES`` bounds instances, but ``ARC.verify`` looks up both
+    the AMS and the AS key per instance, and only the outermost ``d=`` is
+    checked against the allowlist — so the inner ones are attacker-chosen
+    names that may point at deliberately slow authoritative servers.
+    """
+
+    SEALED = base64.b64decode(_SEALED_B64)
+
+    def test_lookups_are_capped_per_message(self):
+        """The cap bites before the chain is done with it.
+
+        Pinned to 1 rather than asserting against the real cap: this fixture
+        is a single-instance chain that wants two lookups (the AMS key and the
+        AS key), so it never approaches 8 and the assertion would hold with
+        the cap removed entirely.
+        """
+        calls = []
+
+        def _counting(name, timeout=5):
+            calls.append(name)
+            return _PUBKEY_TXT.encode()
+
+        with (
+            patch("core.mda.arc._MAX_ARC_DNS_LOOKUPS", 1),
+            patch("core.mda.arc.arc_dns_txt", _counting),
+        ):
+            out = arc.arc_result(self.SEALED, {"relay.example"})
+
+        assert len(calls) == 1
+        assert out["trusted"] is False
+        assert out["dnsfail"] is False
+
+    def test_exhausted_budget_settles_untrusted_rather_than_holding(self):
+        """A refused lookup must not read as "we could not reach DNS".
+
+        dnsfail would hold the message and re-run the same lookups on every
+        retry, making the cap amplify the very cost it exists to bound.
+        """
+
+        def _never_called(name, timeout=5):
+            raise AssertionError("budget should have refused this lookup")
+
+        with (
+            patch("core.mda.arc._MAX_ARC_DNS_LOOKUPS", 0),
+            patch("core.mda.arc.arc_dns_txt", _never_called),
+        ):
+            out = arc.arc_result(self.SEALED, {"relay.example"})
+
+        assert out["trusted"] is False
+        assert out["dnsfail"] is False
+
+
+class TestArcDnsTxt:
+    """The dnsfunc handed to dkimpy: which TXT value is the key, and which
+    failures are settled rather than indeterminate."""
+
+    KEY = _PUBKEY_TXT
+    TOKEN = "google-site-verification=Ab1Cd2Ef3"
+
+    @staticmethod
+    def _values(*values):
+        return patch("core.mda.arc.resolve_txt_values", return_value=list(values))
+
+    def test_picks_the_key_past_an_unrelated_token(self):
+        # The token sorts first, as an unspecified TXT ordering may well put
+        # it. Taking values[0] returned the token and failed a working sealer.
+        with self._values(self.TOKEN, self.KEY):
+            assert arc.arc_dns_txt("s._domainkey.relay.example") == self.KEY.encode()
+
+    def test_no_key_record_among_the_values_is_settled(self):
+        with self._values(self.TOKEN, "v=spf1 -all"):
+            assert arc.arc_dns_txt("s._domainkey.relay.example") is None
+
+    def test_record_without_p_is_not_a_key(self):
+        # parse_dkim_tags accepts any tag=value string, so "p" is what
+        # separates a key record from a bystander.
+        with self._values("v=DKIM1; k=rsa"):
+            assert arc.arc_dns_txt("s._domainkey.relay.example") is None
+
+    @pytest.mark.parametrize("settled", [NXDOMAINError, NoAnswerError])
+    def test_settled_negative_returns_none(self, settled):
+        error = settled("arcsel._domainkey.relay.example", "TXT")
+        with patch("core.mda.arc.resolve_txt_values", side_effect=error):
+            assert arc.arc_dns_txt("arcsel._domainkey.relay.example") is None
+
+    def test_unformable_name_is_settled_not_indeterminate(self):
+        # The name is built from the signature's own s= and d=, so a forged
+        # chain can make it unformable. That can never resolve, so raising
+        # here would hold the message for the whole deferral window.
+        error = InvalidNameError("." * 300, "TXT")
+        with patch("core.mda.arc.resolve_txt_values", side_effect=error):
+            assert arc.arc_dns_txt("." * 300) is None
+
+    def test_non_ascii_name_is_settled(self):
+        with patch("core.mda.arc.resolve_txt_values") as resolve:
+            assert arc.arc_dns_txt("sél._domainkey.relay.example".encode()) is None
+        resolve.assert_not_called()
+
+    @pytest.mark.parametrize("transient", [ResolutionTimeoutError, ServfailError])
+    def test_transient_failure_propagates(self, transient):
+        # Must NOT be swallowed into None: arc_result reads the raise as the
+        # only signal that the answer is indeterminate rather than absent.
+        error = transient("arcsel._domainkey.relay.example", "TXT")
+        with patch("core.mda.arc.resolve_txt_values", side_effect=error):
+            with pytest.raises(transient):
+                arc.arc_dns_txt("arcsel._domainkey.relay.example")

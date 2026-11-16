@@ -12,6 +12,14 @@ from rest_framework.test import APIClient
 from core import enums, factories
 
 
+@pytest.fixture(autouse=True)
+def _deterministic_clock(monotonic_now):
+    """Order and read/unread assertions here compare ``auto_now_add`` stamps.
+
+    Module-wide, so a new test cannot quietly opt out.
+    """
+
+
 @pytest.mark.django_db
 @pytest.mark.parametrize(
     "mailbox_role, thread_role",

@@ -6,7 +6,9 @@ This document provides a comprehensive overview of all environment variables use
 
 ### Environment Files Structure
 
-The application uses a new environment file structure with `.defaults` and `.local` files:
+All environment files live in `deploy/env/`. Each service is given its
+`.defaults` then its `.local`, in that order, so a variable set in `.local`
+overrides the same variable in `.defaults`:
 
 - `*.defaults` - Committed default configurations
 - `*.local` - Gitignored local overrides (created by `make bootstrap`)
@@ -14,12 +16,16 @@ The application uses a new environment file structure with `.defaults` and `.loc
 #### Available Environment Files
 
 - `backend.defaults` - Main Django application settings
-- `common.defaults` - Shared settings across services
 - `frontend.defaults` - Frontend configuration
 - `postgresql.defaults` - PostgreSQL database configuration
 - `keycloak.defaults` - Keycloak configuration
-- `mta-in.defaults` - Inbound mail server settings
+- `mta-in.defaults` - Inbound mail server settings (Postfix)
+- `mta-in-py.defaults` - Inbound mail server settings (pymta)
+- `socks-proxy.defaults` - SOCKS proxy used for outbound delivery
 - `crowdin.defaults` - Translation service configuration
+
+`*.e2e` files also exist for a few services; they are only read by the
+end-to-end test stack.
 
 ## Secrets from Files
 
@@ -39,7 +45,7 @@ Variables holding a secret can also be read from a file, which suits Docker/Kube
 | Encryption keys | `SALT_KEY`, `MESSAGES_BLOBS_ENCRYPT_KEYS`, `OIDC_STORE_REFRESH_TOKEN_KEY` |
 | Authentication | `OIDC_RP_CLIENT_SECRET`, `KEYCLOAK_CLIENT_SECRET` |
 | Mail | `MTA_OUT_RELAY_PASSWORD`, `MTA_OUT_DIRECT_PROXIES`, `SPAM_CONFIG`, `MESSAGES_SELFCHECK_SECRET`, `MESSAGES_SELFCHECK_WEBHOOK_URL` |
-| Third-party services | `AI_API_KEY`, `CALDAV_DEFAULT_PASSWORD`, `DNS_SCALEWAY_API_TOKEN` |
+| Third-party services | `AI_API_KEY`, `CALDAV_DEFAULT_PASSWORD` |
 | Monitoring & API keys | `PROMETHEUS_API_KEY`, `METRICS_API_KEY` *(deprecated)*, `PROVISIONING_API_KEY` *(deprecated)* |
 | Push notifications | `PUSH_APNS_KEY`, `PUSH_FCM_CREDENTIALS`, `PUSH_VAPID_PRIVATE_KEY`, `PUSH_VAPID_PUBLIC_KEY` |
 
@@ -131,7 +137,8 @@ of each implementation (Postfix + milter, and the pure-Python pymta).
 | `MTA_OUT_RELAY_PASSWORD` | `pass` | Outbound SMTP password for relay mode | Optional |
 | `MTA_OUT_DIRECT_PROXIES` | `[]` | List of SOCKS proxy URLs (randomly chosen when non-empty; used in direct mode) | Optional |
 | `MTA_OUT_DIRECT_PORT` | `25` | TCP port for direct mode on remote MX servers | Optional |
-| `MTA_OUT_SMTP_TLS_SECURITY_LEVEL` | `may` | SMTP TLS security level: `none`, `may` (opportunistic, no cert check, matches Postfix), or `secure` (mandatory TLS + CA chain + hostname check). Applied to both direct and relay modes — set to `secure` when running against a controlled relay with a valid cert. | Optional |
+| `MTA_OUT_SMTP_TLS_SECURITY_LEVEL` | `may` | SMTP TLS security level on the **direct-MX** path: `none`, `may` (opportunistic, no cert check, matches Postfix), or `secure` (mandatory TLS + CA chain + hostname check). Neither DANE nor MTA-STS is implemented, so there is no way to learn that a destination promised TLS: `may` is the only workable default here, and STARTTLS stripping on this path remains possible. | Optional |
+| `MTA_OUT_RELAY_TLS_SECURITY_LEVEL` | `may` | Same levels, on the **relay** path (global and per-domain relays). Set it to `secure` if your relay presents a valid certificate: SMTP AUTH credentials travel inside the tunnel. Defaults to `may` because relays speaking plaintext on port 25 are common. While unset, the relay keeps the value of `MTA_OUT_SMTP_TLS_SECURITY_LEVEL` (which used to govern both legs), with a deprecation warning when they differ; set it explicitly. | Optional |
 | `MDA_API_SECRET` | `my-shared-secret-mda` | Shared secret for MDA API | Required |
 | `MDA_API_BASE_URL` | `http://backend-dev:8000/api/v1.0/` | Base URL for MDA API | Dev |
 
@@ -146,7 +153,8 @@ of each implementation (Postfix + milter, and the pure-Python pymta).
 | Variable | Default | Description | Required |
 |----------|---------|-------------|----------|
 | `MESSAGES_DKIM_DEFAULT_SELECTOR` | `stmessages` | Default DKIM selector applied to managed domains that don't override it. | Optional |
-| `MESSAGES_DKIM_VERIFY_OUTGOING` | `False` | Verify the DKIM signature on outgoing messages before sending. | Optional |
+| `MESSAGES_DKIM_VERIFY_OUTGOING` | `False` | Require outgoing mail to authenticate. **Signature:** re-verify the DKIM signature against public DNS before sending. **Alignment:** refuse (HTTP 400) a message whose `From` domain is not the domain its signature is minted with, since it fails DMARC at every enforcing receiver. Messages composed through the API always align (their `From` is set to the sending mailbox), so in practice this refuses a raw MIME submission with a `From` on another domain. Off: a misaligned send is logged and still sent. Independently of this setting, a domain with an active DKIM key that fails to sign is always refused (HTTP 400), never sent unsigned. | Optional |
+| `MESSAGES_DKIM_VERIFY_OUTGOING_REQUIRE_DNSSEC` | `False` | Sub-option of `MESSAGES_DKIM_VERIFY_OUTGOING`, inert without it: refuse our own DKIM key when its lookup is not DNSSEC-secure. Requires `DNS_RESOLVER_BACKEND=recursive` (startup error otherwise), the only backend that validates DNSSEC. Inbound verification never requires DNSSEC. | Optional |
 | `MESSAGES_SPF_CHECK_OUTGOING` | `False` | Block outgoing messages when the sending domain's SPF includes are not correctly set up. | Optional |
 
 ## Storage Configuration
@@ -566,6 +574,7 @@ without redeploying the frontend (the flag is pulled from
 | Variable | Default | Description | Required |
 |----------|---------|-------------|----------|
 | `TRASHBIN_CUTOFF_DAYS` | `0` | Days an item may sit in the trashbin (trashed **or** spam messages) before the nightly `cleanup_trashbin_task` **permanently deletes** it. Age is measured from when the message entered the bin (`trashed_at`), falling back to `created_at` for rows written before that was recorded. Set to `0` to disable automatic deletion entirely. | Optional |
+| `MESSAGES_THREADING_MIN_SENDER_AUTH` | `unverified` | Weakest sender-auth verdict (`postmark["auth"]`, see [spam.md](spam.md#sender-authentication-dkim--dmarc)) with which an inbound message may join an existing thread: `forged` (any message), `unverified` (all but forged), or `verified` (only verified senders). Threading trusts sender-chosen headers (`In-Reply-To`, `References`), so a forged `From` could otherwise plant a message in a real conversation. With `inbound_auth` disabled every message counts as verified. Imports are never gated. Any other value is rejected at startup. | Optional |
 | `TRASHBIN_ALLOW_EMPTY` | `admin` | Who may manually empty a trashbin folder from the UI, an irreversible bulk delete: `never` (only the nightly sweep deletes), `admin` (mailbox role `ADMIN`), or `editor` (role `EDITOR` and above). Any other value is rejected at startup. | Optional |
 | `INVITATION_VALIDITY_DURATION` | `604800` | Invitation validity (7 days) | Optional |
 | `MESSAGES_MANUAL_RETRY_MAX_AGE`| `604800` | Maximum age in seconds for a message to be eligible for manual retry of failed deliveries (7 days) | Optional |
@@ -718,19 +727,30 @@ See [identity-provider.md](identity-provider.md) for the full setup guide.
 | `KEYCLOAK_GROUP_PATH_PREFIX` | None | Prefix for Keycloak group paths mapped to mail domains. | Optional |
 | `KEYCLOAK_TOTP_ROLE_ID` | None | Realm role id assigned in Keycloak when "Mandatory 2FA" is enabled for a mailbox (see `FEATURE_MAILDOMAIN_MANAGE_TOTP`). | Optional |
 
-### Domain DNS Provisioning
+### Domain DNS Records
 
-Hosting of MX/SPF/DKIM records for managed mail domains, optionally
-automated through a DNS provider.
+The MX/SPF/DKIM/DMARC records managed mail domains must publish. Messages
+checks them but never writes them.
 
 | Variable | Default | Description | Required |
 |----------|---------|-------------|----------|
 | `MESSAGES_TECHNICAL_DOMAIN` | `localhost` | Technical domain that MX/SPF/DKIM records point at. | Optional |
 | `MESSAGES_DNS_RECORDS` | MX/SPF/DKIM template | JSON template of expected DNS records, with `{technical_domain}` placeholders. | Optional |
-| `DNS_DEFAULT_PROVIDER` | None | DNS provider used to auto-create records (e.g. `scaleway`). Unset = manual DNS. | Optional |
-| `DNS_SCALEWAY_API_TOKEN` | None | Scaleway API token (when `DNS_DEFAULT_PROVIDER=scaleway`). | Optional |
-| `DNS_SCALEWAY_PROJECT_ID` | None | Scaleway project id. | Optional |
-| `DNS_SCALEWAY_TTL` | `3600` | TTL (seconds) for records created via Scaleway. | Optional |
+
+### DNS Resolution
+
+Every lookup (MX routing, DKIM/ARC keys, SPF, DMARC, the DNS check) goes
+through one resolver.
+
+| Variable | Default | Description | Required |
+|----------|---------|-------------|----------|
+| `DNS_RESOLVER_BACKEND` | `system` | `system`: dnspython stub resolver using `/etc/resolv.conf` (answers are never treated as DNSSEC-validated). `recursive`: resolve from the root servers and validate DNSSEC locally; needs outbound UDP/TCP 53 over IPv4 to arbitrary nameservers. | Optional |
+| `DNS_RESOLVER_TIMEOUT` | `5.0` | Seconds per query to one nameserver. | Optional |
+| `DNS_RESOLVER_MAX_RESOLUTION_TIME` | `15.0` | Seconds budget for one whole lookup, retries included. | Optional |
+| `DNS_RESOLVER_CACHE_MAX_TTL` | `300` | Upper bound (seconds) on how long an answer about a third-party sender (SPF, DMARC) is cached in Redis. `0` disables that cache. Lookups about your own domains are never cached. | Optional |
+| `DNS_RESOLVER_CACHE_NEGATIVE_TTL` | `60` | Seconds an NXDOMAIN/NODATA answer is cached, capped by `DNS_RESOLVER_CACHE_MAX_TTL`. | Optional |
+| `DNS_RESOLVER_CACHE_FAILURE_TTL` | `30` | Seconds a SERVFAIL or timed-out lookup is cached (RFC 9520), capped by `DNS_RESOLVER_CACHE_MAX_TTL`, so a slow nameserver does not cost a full timeout on every message. `0` disables it. | Optional |
+| `DNS_RESOLVER_INBOUND_AUTH_BUDGET` | `30.0` | Seconds within which native inbound auth may start DNS lookups for one message (DKIM keys, SPF, DMARC, ARC). The names are sender-chosen, so this bounds how long a deliberately slow nameserver can hold an inbound worker: at most this plus one `DNS_RESOLVER_MAX_RESOLUTION_TIME`. A lookup refused past it counts as not completed, so the message is unverified, never forged. | Optional |
 
 ### Calendar (CalDAV)
 

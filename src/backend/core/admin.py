@@ -24,7 +24,6 @@ from django.utils.text import slugify
 from core.mda.addresses import normalize_address
 from core.mda.outbound_tasks import retry_messages_task
 from core.services import thread_events as thread_events_service
-from core.services.dns.provisioning import provision_domain_dns
 from core.services.exporter.tasks import export_mailbox_task
 from core.services.throttle import get_throttle_status
 
@@ -329,7 +328,6 @@ class MailDomainAdmin(admin.ModelAdmin):
     search_fields = ("name",)
     autocomplete_fields = ("alias_of",)
     readonly_fields = ("throttle_status_display",)
-    change_form_template = "admin/core/maildomain/change_form.html"
 
     @admin.display(description="Throttle Status (External Recipients)")
     def throttle_status_display(self, obj):
@@ -346,54 +344,6 @@ class MailDomainAdmin(admin.ModelAdmin):
             info["period"],
             info["reset_in_human"],
         )
-
-    def get_urls(self):
-        urls = super().get_urls()
-        custom_urls = [
-            path(
-                "<path:object_id>/dns-provision/",
-                self.admin_site.admin_view(self.dns_provision_view),
-                name="core_maildomain_dns_provision",
-            ),
-        ]
-        return custom_urls + urls
-
-    def dns_provision_view(self, request, object_id):
-        """View for provisioning DNS records for a mail domain."""
-        if request.method != "POST":
-            return HttpResponseNotAllowed(["POST"])
-
-        maildomain = self.get_object(request, object_id)
-
-        if maildomain is None:
-            messages.error(request, "Mail domain not found.")
-            return redirect("..")
-
-        # Run DNS provisioning
-        results = provision_domain_dns(maildomain)
-
-        if results["success"]:
-            provider_used = results.get("provider", "unknown")
-            changes = results.get("changes", [])
-            if changes:
-                changes_text = ", ".join(changes)
-                messages.success(
-                    request,
-                    f"DNS provisioning successful via {provider_used}: {changes_text}",
-                )
-            else:
-                messages.success(
-                    request,
-                    f"DNS provisioning successful via {provider_used} (no changes needed).",
-                )
-        else:
-            error_msg = results.get("error", "Unknown error")
-            messages.error(
-                request,
-                f"DNS provisioning failed: {error_msg}",
-            )
-
-        return redirect("..")
 
 
 class MailboxAccessInline(admin.TabularInline):

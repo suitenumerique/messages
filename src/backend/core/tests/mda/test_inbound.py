@@ -2,6 +2,7 @@
 
 # pylint: disable=too-many-lines
 
+import time
 from datetime import timedelta
 from unittest.mock import patch
 
@@ -16,12 +17,109 @@ from kombu.exceptions import OperationalError as BrokerError
 from core import enums, factories, models
 from core.mda.inbound import DeliveryUnavailable, deliver_inbound_message
 from core.mda.inbound_create import (
+    _SUBJECT_NOISE_RE,
+    _canonicalize_subject,
     _create_message_from_inbound,
     _record_divergent_rcpt,
     _record_transport_security,
     find_thread_for_message,
+    sender_may_thread,
 )
 from core.mda.inbound_tasks import process_inbound_messages_queue_task
+
+
+class TestCanonicalizeSubject:
+    """What two messages must share to be considered the same topic."""
+
+    @pytest.mark.parametrize(
+        "subject",
+        [
+            "Q3 invoice",
+            "Re: Q3 invoice",
+            "RE:Q3 invoice",  # mobile clients omit the space
+            "Re: Re: Fwd: Q3 invoice",
+            "AW: Q3 invoice",  # German
+            "SV: Q3 invoice",  # Danish / Norwegian / Swedish
+            "Antw: Q3 invoice",  # Dutch, four letters
+            "Doorst: Q3 invoice",  # Dutch forward, six
+            "Odp: Q3 invoice",  # Polish
+            "YNT: Q3 invoice",  # Turkish
+            "Rép : Q3 invoice",  # French, accented, spaced colon
+            "Re[2]: Q3 invoice",  # Lotus / older Outlook
+            "Re [2] : Q3 invoice",
+            "[dev] Q3 invoice",  # RFC 8621 names [List-Tag]
+            "Re: [dev] Q3 invoice",
+            "[dev] Re: Q3 invoice",
+            "Q3   invoice",  # RFC 8621 compares ignoring white space
+            "  Q3 invoice  ",
+        ],
+    )
+    def test_all_spellings_of_one_topic_agree(self, subject):
+        assert _canonicalize_subject(subject) == _canonicalize_subject("Q3 invoice")
+
+    def test_case_is_folded_including_accents(self):
+        """A subject is prose, not an identity: Unicode folding is wanted."""
+        assert _canonicalize_subject("RÉUNION") == _canonicalize_subject("réunion")
+
+    @pytest.mark.parametrize("other", ["Q4 invoice", "Q3 invoices", "invoice Q3", ""])
+    def test_different_topics_stay_apart(self, other):
+        assert _canonicalize_subject(other) != _canonicalize_subject("Q3 invoice")
+
+    @pytest.mark.parametrize(
+        "all_noise", ["Re:", "Re: Re:", "[dev]", "Fwd:", "AW:", "Re: [dev]"]
+    )
+    def test_never_strips_to_nothing(self, all_noise):
+        """RFC 5256 2.1: otherwise every all-prefix subject equals every other,
+        and equals a message with no subject at all."""
+        assert _canonicalize_subject(all_noise) != ""
+
+    def test_all_noise_subjects_stay_distinct(self):
+        canonical = {_canonicalize_subject(s) for s in ("Re:", "[dev]", "Fwd:", "AW:")}
+        assert len(canonical) == 4
+
+    def test_pathological_subject_is_cheap(self):
+        """A sender-built subject of thousands of prefixes stays linear."""
+        start = time.monotonic()
+        _canonicalize_subject("a:" * 50_000 + "x")
+        assert time.monotonic() - start < 0.5
+
+    def test_noise_pattern_does_not_backtrack_on_spaces(self):
+        """A prefix word, then a long run of spaces and no colon."""
+        start = time.monotonic()
+        assert _SUBJECT_NOISE_RE.match("antw" + " " * 60_000) is None
+        assert time.monotonic() - start < 0.5
+
+    @pytest.mark.parametrize("absent", [None, "", "   "])
+    def test_an_absent_subject_is_empty_and_matches_only_another(self, absent):
+        assert _canonicalize_subject(absent) == ""
+        assert _canonicalize_subject(absent) != _canonicalize_subject("Re:")
+
+
+class TestSenderMayThread:
+    """``MESSAGES_THREADING_MIN_SENDER_AUTH`` against ``postmark["auth"]``."""
+
+    @pytest.mark.parametrize(
+        ("minimum", "verdict", "allowed"),
+        [
+            ("forged", "fail", True),
+            ("forged", "none", True),
+            ("forged", None, True),
+            ("unverified", "fail", False),
+            ("unverified", "none", True),
+            ("unverified", None, True),
+            ("verified", "fail", False),
+            ("verified", "none", False),
+            ("verified", None, True),
+        ],
+    )
+    def test_threshold(self, settings, minimum, verdict, allowed):
+        settings.MESSAGES_THREADING_MIN_SENDER_AUTH = minimum
+        assert sender_may_thread(verdict) is allowed
+
+    def test_default_refuses_only_forged(self):
+        """The shipped default: unverified mail (most unsigned mail) threads."""
+        assert sender_may_thread("none") is True
+        assert sender_may_thread("fail") is False
 
 
 class TestRecordDivergentRcpt:
@@ -364,6 +462,39 @@ class TestFindThread:
         found_thread = find_thread_for_message(parsed_new_email, self.mailbox)
         assert found_thread is None
 
+    @pytest.mark.parametrize(
+        ("minimum", "verdict", "threads"),
+        [
+            ("unverified", "fail", False),
+            ("unverified", "none", True),
+            ("verified", "none", False),
+            ("forged", "fail", True),
+        ],
+    )
+    def test_sender_auth_threshold(self, settings, minimum, verdict, threads):
+        """Below the threshold, sender-chosen headers place nothing."""
+        settings.MESSAGES_THREADING_MIN_SENDER_AUTH = minimum
+        parent_mime_id = "q3.thread@example.com"
+        thread = factories.ThreadFactory(subject="Q3 invoice")
+        factories.ThreadAccessFactory(
+            mailbox=self.mailbox,
+            thread=thread,
+            role=enums.ThreadAccessRoleChoices.EDITOR,
+        )
+        factories.MessageFactory(
+            thread=thread, mime_id=parent_mime_id, subject="Q3 invoice"
+        )
+        reply = {
+            "subject": "Re: Q3 invoice",
+            "inReplyTo": [parent_mime_id],
+            "from": [{"email": "colleague@example.com"}],
+        }
+
+        # Same message threads normally when the sender is not in doubt.
+        assert find_thread_for_message(reply, self.mailbox) == thread
+        found = find_thread_for_message(reply, self.mailbox, sender_auth=verdict)
+        assert found == (thread if threads else None)
+
 
 @pytest.mark.django_db
 class TestDeliverInboundMessage:
@@ -420,12 +551,31 @@ class TestDeliverInboundMessage:
         )
 
         assert success is True
-        mock_find_thread.assert_called_once_with(sample_parsed_email, target_mailbox)
+        mock_find_thread.assert_called_once_with(
+            sample_parsed_email, target_mailbox, sender_auth=None
+        )
 
         assert models.Thread.objects.count() == 1
         assert models.Message.objects.count() == 1
         # Sender + Recipient contacts created associated with the target mailbox
         assert models.Contact.objects.count() == 2
+
+    @patch("core.mda.inbound_create.find_thread_for_message")
+    def test_sender_auth_verdict_reaches_threading(
+        self, mock_find_thread, target_mailbox, sample_parsed_email, raw_email_data
+    ):
+        """The pipeline's ``postmark["auth"]`` gates thread lookup."""
+        mock_find_thread.return_value = None
+        _create_message_from_inbound(
+            recipient_email=str(target_mailbox),
+            parsed_email=sample_parsed_email,
+            raw_data=raw_email_data,
+            mailbox=target_mailbox,
+            postmark={"auth": "fail"},
+        )
+        mock_find_thread.assert_called_once_with(
+            sample_parsed_email, target_mailbox, sender_auth="fail"
+        )
 
         thread = models.Thread.objects.first()
         access = thread.accesses.first()
@@ -552,7 +702,9 @@ class TestDeliverInboundMessage:
         )
 
         assert success is True
-        mock_find_thread.assert_called_once_with(sample_parsed_email, target_mailbox)
+        mock_find_thread.assert_called_once_with(
+            sample_parsed_email, target_mailbox, sender_auth=None
+        )
         assert models.Thread.objects.count() == 1  # No new thread
         assert models.Message.objects.count() == 1
         message = models.Message.objects.first()

@@ -24,8 +24,61 @@ and this project adheres to
   `DSFR_THEME_FORGOT_PASSWORD_URL` to the `lst-dsfr` theme
 - Add `DSFR_THEME_LAGAUFRE_WIDGET_CONFIG` to show the La Suite services button
   in the account console header of the `lst-dsfr` theme
+- `inbound_auth: "native"` now evaluates SPF (RFC 7208) and DMARC (RFC 7489)
+  locally, so it can flag forged mail without rspamd. SPF allows 30 DNS
+  lookups like rspamd, instead of the RFC's 10. A trusted ARC sealer's
+  `dmarc=pass` overrides the forgery verdict for forwarded mail
+- `SPAM_CONFIG["inbound_auth_shadow"]` evaluates a second sender-auth backend
+  and logs its verdict next to the primary one, to compare them on real traffic
+- `DNS_RESOLVER_BACKEND` selects the system stub resolver (default) or a
+  recursive, DNSSEC-validating resolver for every DNS lookup.
+  `DNS_RESOLVER_CACHE_MAX_TTL`, `DNS_RESOLVER_CACHE_NEGATIVE_TTL` and
+  `DNS_RESOLVER_CACHE_FAILURE_TTL` (SERVFAIL and timeouts, 30 s) bound the
+  Redis cache used for SPF, DMARC and inbound DKIM key lookups
+- `MESSAGES_THREADING_MIN_SENDER_AUTH` (default `unverified`): an inbound
+  message marked forged no longer joins an existing thread
+- `MTA_OUT_RELAY_TLS_SECURITY_LEVEL` sets the TLS level of the relay leg
+  apart from the direct-MX one
+- `MESSAGES_DKIM_VERIFY_OUTGOING_REQUIRE_DNSSEC` refuses our own DKIM key when
+  its lookup is not DNSSEC-secure (needs `DNS_RESOLVER_BACKEND=recursive`)
+- The send toast says when a message reached only some recipients, is still
+  being delivered, failed for everyone or was cancelled
+- `DNS_RESOLVER_INBOUND_AUTH_BUDGET` bounds the DNS time native inbound auth
+  spends on one message
+- Verify ed25519 DKIM signatures (RFC 8463), with PyNaCl
 
 ### Changed
+
+- With `MESSAGES_DKIM_VERIFY_OUTGOING`, refuse a raw MIME submission whose
+  `From` domain is not the signing domain. A composed message is sent from
+  the mailbox chosen at send time, so its `From` always aligns
+- Subjects are compared ignoring any short reply/forward prefix, list tags and
+  whitespace when threading, and an all-prefix subject no longer matches
+  every other one
+- `sent_at` is stamped on the first send attempt only, so retries no longer
+  move a message in its thread
+- The relay leg follows `MTA_OUT_SMTP_TLS_SECURITY_LEVEL` only until
+  `MTA_OUT_RELAY_TLS_SECURITY_LEVEL` is set (deprecated, a startup warning
+  says so)
+
+- Refuse to send (HTTP 400) when a domain has an active DKIM key that fails to
+  sign, instead of sending unsigned
+- Native DKIM alignment follows the sender's published `adkim` mode (relaxed
+  by default) instead of always requiring an exact domain match
+- Verify every DKIM signature of an inbound message (up to 5), not only the
+  topmost one
+- The DNS check reads SPF/DKIM/DMARC records with RFC-conformant parsing
+- In `rspamd`, `arc` and `authentication-results` modes, a DKIM pass verifies
+  the sender only when its signing domain aligns with `From`, and a failing
+  extra signature no longer cancels it
+- A DMARC lookup failure or a broken DMARC record shows the message as
+  unverified, in every mode: `DMARC_DNSFAIL` and `DMARC_BAD_POLICY` (rspamd),
+  `dmarc=temperror` and `dmarc=permerror` (arc, authentication-results; they
+  read as forged before), and a failed `_dmarc` lookup in native mode (an
+  aligned DKIM signature verified before)
+- Inbound DKIM key lookups go through the shared DNS cache
+- The DNS check reports a DMARC record with a lower `pct` or `t=y` as
+  insecure, and an SPF record with a tab between terms as incorrect
 
 - Bump keycloak to 26.8.1 and refresh the Alpine 3.24 digest in the Keycloak image
 - Bump Caddy to 2.11.9 in the Keycloak image, the frontend image and the
@@ -37,15 +90,42 @@ and this project adheres to
 
 - The DSFR theme jar `dsfr-2.3.4.jar`. A realm that selected the `DSFR` theme
   must select `lst-dsfr` once after the upgrade
+- Automated DNS provisioning (`dns_provision` command, the admin "Provision DNS
+  records" button and the Scaleway provider). `DNS_DEFAULT_PROVIDER` and
+  `DNS_SCALEWAY_*` now only log a warning. Messages checks DNS, it no longer
+  writes it
 
 ### Security
 
 - Caddy 2.11.9 carries go-jose 4.1.6, which closes GHSA-mgcc-cww5-fp2q; the
   2.11.7 release binary shipped the affected 4.1.5. The FastCGI fixes of
   2.11.8 and 2.11.9 do not apply: neither proxy runs PHP
+- Bump recursive-resolver to 0.3.0 (DNSSEC validation bypasses) and dnspython
+  to 2.9.2 (CVE-2026-114605, CVE-2026-128089)
 - The Keycloak image removes `emSign ECC Root CA - G3` from the Java trust
   store after the eMudhra intermediate CA compromise of October 2026. The
   Comodo `AAA Certificate Services` root is already absent from the base image
+- A message composed in a mailbox the user can only edit, then sent from
+  another mailbox of the same domain, now goes out from the sending mailbox
+  instead of keeping the draft's From
+- Native DKIM verification ignores signatures whose `h=` does not sign
+  `From`, that carry `l=` or use `rsa-sha1`, and refuses oversized keys
+- A message with several `From` header fields is never shown as verified: the
+  UI showed the first one while a DKIM signature could cover another
+- DKIM-Signature and ARC headers over 8 KB, or with more than 200 `h=`
+  entries, are refused before dkimpy checks them: its regexes are quadratic
+  and one header could hold a worker for minutes
+- A forged message can no longer escape the "forged" verdict with junk DKIM
+  signatures: a selector that cannot form a DNS name is a `fail`, and
+  From-domain signatures past the cap of 5 are `permerror`, both instead of
+  `temperror`. An aligned SPF `permerror` is a DMARC fail, not undecided
+  (RFC 7489 6.6.2): the void-lookup limit depends on the client IP
+- ARC trust is decided on the outermost `ARC-Seal` `d=`, which must equal the
+  `ARC-Message-Signature` `d=`. A valid AMS from a trusted sealer under
+  someone else's seal no longer lets a rewritten `ARC-Authentication-Results`
+  cancel the forged verdict
+- `Authentication-Results` comments are scrubbed with nesting and escaped
+  parentheses, so text after an inner comment is no longer read as a result
 
 
 ## [0.10.0] - 2026-09-29

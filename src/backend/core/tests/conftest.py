@@ -2,16 +2,58 @@
 
 # pylint: disable=import-outside-toplevel
 
+import itertools
 import os
+from datetime import timedelta
 from unittest import mock
 
 from django.db.models import F
+from django.utils import timezone
 
 import pytest
 
 USER = "user"
 TEAM = "team"
 VIA = [USER, TEAM]
+
+
+@pytest.fixture
+def monotonic_now(monkeypatch):
+    """Give every row created in this test a distinct, increasing timestamp.
+
+    ``created_at`` is ``auto_now_add``, stamped with ``timezone.now()`` at
+    insert, and a wall clock may step backwards (a guest clock being
+    disciplined), handing a later row an earlier stamp and rotating anything
+    ordered by it. Starts from the real ``now`` and advances 1 ms per call.
+    """
+    base = timezone.now()
+    counter = itertools.count()
+    monkeypatch.setattr(
+        timezone,
+        "now",
+        lambda: base + timedelta(milliseconds=next(counter)),
+    )
+
+
+@pytest.fixture(autouse=True)
+def _no_real_dns():
+    """Fail every unmocked DNS lookup at once instead of hitting the network.
+
+    Inbound auth now looks up DMARC and SPF for each message, so a test that
+    does not care about DNS would otherwise wait out real timeouts. SERVFAIL
+    is an unsettled answer, which every caller already treats as "unknown".
+    Tests mocking a call site, or ``get_system_resolver``, are unaffected.
+    """
+    from core.services.dns.resolver import RecursiveResolver, ServfailError
+
+    def _fail(self, qname, rdtype="A", *args, **kwargs):
+        raise ServfailError(str(qname), str(rdtype))
+
+    with (
+        mock.patch("dns.resolver.Resolver.resolve", _fail),
+        mock.patch.object(RecursiveResolver, "resolve_answer", _fail),
+    ):
+        yield
 
 
 @pytest.fixture

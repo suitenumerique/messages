@@ -8,6 +8,7 @@ import re
 import uuid
 from contextlib import contextmanager, nullcontext
 
+from django.conf import settings
 from django.core.exceptions import ValidationError
 from django.db import connection, transaction
 from django.db.utils import Error as DjangoDbError
@@ -30,6 +31,7 @@ from core.ai.utils import (
     is_auto_labels_enabled,
 )
 from core.mda.addresses import address_local_part, normalize_address
+from core.mda.inbound_auth import VERDICT_FORGED, VERDICT_UNVERIFIED
 from core.services.importer.labels import (
     compute_labels_and_flags,
 )
@@ -76,17 +78,74 @@ def inbound_mailbox_lock(mailbox_id: uuid.UUID):
         yield
 
 
+# Leading noise a client adds to a subject without changing the topic: a
+# reply/forward prefix, or a mailing list's ``[tag]``. RFC 8621 3 asks for
+# both to be stripped before comparing, "ignoring white space".
+#
+# Prefixes are matched by shape, not from a list of words: every locale has
+# its own (AW, SV, VS, RIF, RES, Odp, YNT, TR, WG, ENC...). Outlook ignores
+# any prefix of three letters or fewer ending in a colon; that covers almost
+# all of them, and the few longer ones in use are listed. Numbered forms
+# ("Re[2]:") come from Lotus and older Outlook.
+#
+# Over-stripping is cheap: threading also needs a shared Message-ID, so a
+# subject that happens to start with "Bug:" can at worst join a thread it
+# already claims to belong to. Under-stripping splits a real thread.
+_SUBJECT_NOISE_RE = re.compile(
+    r"^\s*(?:"
+    r"\[[^\]]{1,40}\]"  # [List-Tag]
+    r"|(?:antwort|doorst|antw|[^\W\d_]{1,3})"  # prefix word, longest first
+    # Optional "[2]" counter, then the colon. One "\s*" on each side of the
+    # counter, never two in a row: those would backtrack quadratically.
+    r"\s*(?:\[\d+\]\s*)?:"
+    r")\s*",
+    re.IGNORECASE,
+)
+# Real subjects carry a handful of prefixes; past this, the rest stays.
+_MAX_SUBJECT_NOISE_PASSES = 10
+
+
 def _canonicalize_subject(subject: str | None) -> str:
-    """Strip leading ``Re:`` / ``Fwd:`` (and i18n variants) for thread match."""
-    # ``\s*`` after the colon, not ``\s+``: mobile clients regularly send
-    # "Re:subject" with no space, and a prefix left in place makes two
-    # messages of the same conversation compare as different subjects.
-    return re.sub(
-        r"^((re|fwd|fw|rep|tr|rép)\s*:\s*)+",
-        "",
-        (subject or "").lower(),
-        flags=re.IGNORECASE,
-    ).strip()
+    """Reduce a subject to the topic two messages must share to be threaded.
+
+    Case is folded with ``str.lower()``: a subject is prose, not an identity,
+    so "RÉUNION" and "réunion" are one topic. Internal whitespace collapses.
+
+    Never strips to nothing (RFC 5256 2.1 keeps the last non-empty form):
+    otherwise every all-noise subject ("Re:", "[dev]") would equal every
+    other, and equal a message with no subject at all.
+    """
+    # Repeated because prefixes and list tags interleave: "Re: [dev] Fwd: x".
+    # Bounded: each pass rescans the subject, and a sender-built subject of
+    # thousands of "a:" would otherwise cost seconds of CPU per message.
+    stripped = " ".join((subject or "").lower().split())
+    for _ in range(_MAX_SUBJECT_NOISE_PASSES):
+        shorter = " ".join(_SUBJECT_NOISE_RE.sub("", stripped).split())
+        if not shorter or shorter == stripped:
+            break
+        stripped = shorter
+    return stripped
+
+
+# ``postmark["auth"]`` verdict -> level. An absent verdict is verified (or
+# ``inbound_auth`` disabled, which cannot tell).
+_VERDICT_LEVEL = {
+    VERDICT_FORGED: enums.ThreadingSenderAuth.FORGED,
+    VERDICT_UNVERIFIED: enums.ThreadingSenderAuth.UNVERIFIED,
+}
+_LEVEL_RANK = {level: rank for rank, level in enumerate(enums.ThreadingSenderAuth)}
+
+
+def sender_may_thread(sender_auth: str | None) -> bool:
+    """Whether a message with this ``postmark["auth"]`` may join a thread.
+
+    Threading places a message by headers the sender chose (a Message-ID is
+    no secret), so it is only as trustworthy as the From.
+    ``MESSAGES_THREADING_MIN_SENDER_AUTH`` sets the weakest level allowed.
+    """
+    level = _VERDICT_LEVEL.get(sender_auth, enums.ThreadingSenderAuth.VERIFIED)
+    minimum = settings.MESSAGES_THREADING_MIN_SENDER_AUTH
+    return _LEVEL_RANK[level] >= _LEVEL_RANK[minimum]
 
 
 def _parent_messages(mime_ids: list[str], mailbox: models.Mailbox):
@@ -102,9 +161,16 @@ def _parent_messages(mime_ids: list[str], mailbox: models.Mailbox):
 
 
 def find_thread_for_message(
-    parsed_email: JmapEmail, mailbox: models.Mailbox
+    parsed_email: JmapEmail,
+    mailbox: models.Mailbox,
+    sender_auth: str | None = None,
 ) -> models.Thread | None:
     """Attempt to find the existing thread an incoming message belongs to.
+
+    ``sender_auth`` is the ``postmark["auth"]`` verdict: a message below
+    ``MESSAGES_THREADING_MIN_SENDER_AUTH`` always starts a new thread
+    (``sender_may_thread``), because the headers below are sender-chosen.
+    Importers pass nothing, which counts as verified.
 
     Two levels of evidence, strongest first:
 
@@ -121,6 +187,13 @@ def find_thread_for_message(
     imported and then kept in sync over SMTP must be threaded by one rule,
     otherwise the same conversation splits differently on each path.
     """
+    if not sender_may_thread(sender_auth):
+        logger.info(
+            "Not threading a message whose sender auth is %s: starting a new thread",
+            sender_auth,
+        )
+        return None
+
     in_reply_to = first_msgid(parsed_email.get("inReplyTo"))
     references = [
         ref for ref in (parsed_email.get("references") or []) if ref != in_reply_to
@@ -306,7 +379,9 @@ def _create_message_from_inbound(  # pylint: disable=too-many-arguments
 
         # --- 3. Find or Create Thread --- #
         try:
-            thread = find_thread_for_message(parsed_email, mailbox)
+            thread = find_thread_for_message(
+                parsed_email, mailbox, sender_auth=(postmark or {}).get("auth")
+            )
             if not thread:
                 thread = _create_thread(parsed_email, mailbox)
 

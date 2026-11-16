@@ -22,7 +22,7 @@ from configurations import Configuration, values
 from lasuite.configuration.values import SecretFileValue
 from sentry_sdk.integrations.django import DjangoIntegration
 
-from core.enums import TrashbinAllowEmpty
+from core.enums import ThreadingSenderAuth, TrashbinAllowEmpty
 from core.utils import (
     JSONValue,
     OptionalBooleanValue,
@@ -652,18 +652,29 @@ class Base(Configuration):
         None, environ_name="MTA_OUT_RELAY_PASSWORD", environ_prefix=None
     )
 
-    # SMTP TLS policy for both direct (MX) and relay paths. Subset of
+    # SMTP TLS policy on the direct (MX) path. Subset of
     # https://www.postfix.org/postconf.5.html#smtp_tls_security_level :
     #   - "none"  : never attempt STARTTLS.
     #   - "may"   : opportunistic TLS, no cert verification (Postfix-aligned).
     #               Suitable default for direct MX delivery, where many public
     #               MXes serve mismatched or self-signed certs.
     #   - "secure": mandatory TLS + CA chain + hostname check; defers on
-    #               failure. Use this when running against a controlled relay
-    #               with a valid cert (SMTP AUTH credentials are sent inside
-    #               the TLS tunnel, so an unverified peer is a MITM risk).
+    #               failure.
+    # Neither DANE (RFC 7672) nor MTA-STS (RFC 8461) is implemented, so on the
+    # direct path there is no way to learn that a destination promised TLS:
+    # "may" is the only workable default, and STARTTLS stripping remains
+    # possible there.
     MTA_OUT_SMTP_TLS_SECURITY_LEVEL = values.Value(
         "may", environ_name="MTA_OUT_SMTP_TLS_SECURITY_LEVEL", environ_prefix=None
+    )
+    # Same levels, on the relay path (global and per-domain relays). The relay
+    # is a host the operator chose, and SMTP AUTH credentials travel inside
+    # the tunnel, so "secure" is the right target once it presents a valid
+    # certificate. Ships as "may" because relays speaking plaintext on port 25
+    # are common, and "secure" would defer every outbound message there.
+    # While unset it keeps MTA_OUT_SMTP_TLS_SECURITY_LEVEL (see __init__).
+    MTA_OUT_RELAY_TLS_SECURITY_LEVEL = values.Value(
+        "may", environ_name="MTA_OUT_RELAY_TLS_SECURITY_LEVEL", environ_prefix=None
     )
 
     MESSAGES_ACCEPT_ALL_EMAILS = values.BooleanValue(
@@ -851,15 +862,65 @@ class Base(Configuration):
     # Comma-separated for key rotation: SALT_KEY=new_key,old_key
     SALT_KEY = SecretFileListValue([], environ_name="SALT_KEY", environ_prefix=None)
 
+    # DNS resolution (core.services.dns.resolver).
+    # "system": dnspython stub resolver, using /etc/resolv.conf. DNSSEC is
+    #   never reported as validated: the upstream AD bit is not trusted.
+    # "recursive": walk the delegation chain from the root and validate
+    #   DNSSEC locally. Needs outbound UDP/TCP 53 over IPv4 to arbitrary
+    #   authoritative nameservers.
+    DNS_RESOLVER_BACKEND = values.Value(
+        "system", environ_name="DNS_RESOLVER_BACKEND", environ_prefix=None
+    )
+    # Per query to one nameserver.
+    DNS_RESOLVER_TIMEOUT = values.FloatValue(
+        5.0, environ_name="DNS_RESOLVER_TIMEOUT", environ_prefix=None
+    )
+    # Budget for one whole lookup, retries and (recursive) the walk included.
+    DNS_RESOLVER_MAX_RESOLUTION_TIME = values.FloatValue(
+        15.0,
+        environ_name="DNS_RESOLVER_MAX_RESOLUTION_TIME",
+        environ_prefix=None,
+    )
+    # Shared cache for lookups made about third-party senders (SPF, DMARC).
+    # Positive answers live for their TTL capped at MAX_TTL, NXDOMAIN/NODATA
+    # for NEGATIVE_TTL. MAX_TTL=0 disables the cache.
+    DNS_RESOLVER_CACHE_MAX_TTL = values.IntegerValue(
+        300, environ_name="DNS_RESOLVER_CACHE_MAX_TTL", environ_prefix=None
+    )
+    DNS_RESOLVER_CACHE_NEGATIVE_TTL = values.IntegerValue(
+        60, environ_name="DNS_RESOLVER_CACHE_NEGATIVE_TTL", environ_prefix=None
+    )
+    DNS_RESOLVER_CACHE_FAILURE_TTL = values.IntegerValue(
+        30, environ_name="DNS_RESOLVER_CACHE_FAILURE_TTL", environ_prefix=None
+    )
+    # Seconds within which native inbound auth (DKIM, SPF, DMARC, ARC) may
+    # start lookups for one message. The names come from the sender, so a
+    # slow nameserver must not hold an inbound worker for minutes. A lookup
+    # refused past it reads as "did not complete": unverified, never forged.
+    DNS_RESOLVER_INBOUND_AUTH_BUDGET = values.FloatValue(
+        30.0, environ_name="DNS_RESOLVER_INBOUND_AUTH_BUDGET", environ_prefix=None
+    )
+
     # DKIM settings
     MESSAGES_DKIM_DEFAULT_SELECTOR = values.Value(
         "stmessages", environ_name="MESSAGES_DKIM_DEFAULT_SELECTOR", environ_prefix=None
     )
 
-    # DKIM verification settings
+    # Require outgoing mail to authenticate: re-verify our own DKIM signature
+    # against public DNS before sending, and refuse a raw MIME submission
+    # whose From domain is not the domain the signature is minted with.
     MESSAGES_DKIM_VERIFY_OUTGOING = values.BooleanValue(
         default=False,
         environ_name="MESSAGES_DKIM_VERIFY_OUTGOING",
+        environ_prefix=None,
+    )
+    # Sub-option of the above, inert without it: refuse our own DKIM key when
+    # its lookup is not DNSSEC-secure. Requires DNS_RESOLVER_BACKEND
+    # "recursive", the only backend that validates DNSSEC (checked at
+    # startup). Inbound verification never requires it.
+    MESSAGES_DKIM_VERIFY_OUTGOING_REQUIRE_DNSSEC = values.BooleanValue(
+        default=False,
+        environ_name="MESSAGES_DKIM_VERIFY_OUTGOING_REQUIRE_DNSSEC",
         environ_prefix=None,
     )
 
@@ -894,20 +955,6 @@ class Base(Configuration):
         '{"target":"_dmarc","type":"txt","value":"v=DMARC1; p=reject; adkim=s; aspf=s;"}]',
         environ_name="MESSAGES_DNS_RECORDS",
         environ_prefix=None,
-    )
-
-    # DNS Provider settings
-    DNS_SCALEWAY_API_TOKEN = SecretFileValue(
-        None, environ_name="DNS_SCALEWAY_API_TOKEN", environ_prefix=None
-    )
-    DNS_SCALEWAY_PROJECT_ID = values.Value(
-        None, environ_name="DNS_SCALEWAY_PROJECT_ID", environ_prefix=None
-    )
-    DNS_SCALEWAY_TTL = values.PositiveIntegerValue(
-        3600, environ_name="DNS_SCALEWAY_TTL", environ_prefix=None
-    )
-    DNS_DEFAULT_PROVIDER = values.Value(
-        None, environ_name="DNS_DEFAULT_PROVIDER", environ_prefix=None
     )
 
     # Media
@@ -1158,6 +1205,17 @@ class Base(Configuration):
         environ_prefix=None,
     )
 
+    # Weakest sender-auth verdict with which an inbound message may join an
+    # existing thread: "forged" (any), "unverified" (not forged), "verified".
+    # Threading trusts sender-chosen headers, so a forged From could
+    # otherwise plant a message inside a real conversation.
+    MESSAGES_THREADING_MIN_SENDER_AUTH = StrEnumValue(
+        ThreadingSenderAuth,
+        ThreadingSenderAuth.UNVERIFIED,
+        environ_name="MESSAGES_THREADING_MIN_SENDER_AUTH",
+        environ_prefix=None,
+    )
+
     # How long (seconds) a mailbox/organization's computed storage usage is
     # cached at the service layer (the quota gauge and entitlements). The
     # computation is ~100ms for a large mailbox, so caching keeps the sidebar
@@ -1217,6 +1275,10 @@ class Base(Configuration):
         "redis://redis:6379", environ_name="CELERY_BROKER_URL", environ_prefix=None
     )
     CELERY_RESULT_BACKEND = "django-db"
+    # Eager tasks must store their result too: Celery skips it under
+    # ``task_always_eager`` unless this is set, and the task-status endpoint
+    # would then report PENDING forever. A real worker always stores it.
+    CELERY_TASK_STORE_EAGER_RESULT = True
     CELERY_CACHE_BACKEND = "django-cache"
     CELERY_BROKER_TRANSPORT_OPTIONS = values.DictValue({})
     CELERY_RESULT_EXTENDED = True
@@ -1661,9 +1723,76 @@ class Base(Configuration):
                     removed_var,
                 )
 
-        if self.MTA_OUT_SMTP_TLS_SECURITY_LEVEL not in {"none", "may", "secure"}:
+        for removed_var in (
+            "DNS_DEFAULT_PROVIDER",
+            "DNS_SCALEWAY_API_TOKEN",
+            "DNS_SCALEWAY_PROJECT_ID",
+            "DNS_SCALEWAY_TTL",
+        ):
+            if os.environ.get(removed_var):
+                logger.warning(
+                    "[REMOVED] %s is set but no longer used: automated DNS "
+                    "provisioning has been removed. Publish the records shown "
+                    "by the DNS check yourself. Please unset this variable.",
+                    removed_var,
+                )
+
+        # The relay level was split out of MTA_OUT_SMTP_TLS_SECURITY_LEVEL,
+        # which used to govern both legs. Until the new one is set, the relay
+        # keeps the old value: dropping a hardened relay to "may" on upgrade
+        # would send SMTP AUTH credentials over unverified TLS.
+        smtp_level_env = os.environ.get("MTA_OUT_SMTP_TLS_SECURITY_LEVEL")
+        if os.environ.get("MTA_OUT_RELAY_TLS_SECURITY_LEVEL") is None and (
+            smtp_level_env
+        ):
+            if smtp_level_env != self.MTA_OUT_RELAY_TLS_SECURITY_LEVEL:
+                logger.warning(
+                    "[DEPRECATED] MTA_OUT_RELAY_TLS_SECURITY_LEVEL is unset, so "
+                    "the relay leg keeps MTA_OUT_SMTP_TLS_SECURITY_LEVEL=%r. Set "
+                    "MTA_OUT_RELAY_TLS_SECURITY_LEVEL explicitly: the relay will "
+                    "stop following the direct-MX setting in a future release.",
+                    smtp_level_env,
+                )
+            self.MTA_OUT_RELAY_TLS_SECURITY_LEVEL = smtp_level_env
+
+        # Anything not exactly "secure" falls back to unverified TLS, so a typo
+        # must not pass silently.
+        for setting_name, level in (
+            ("MTA_OUT_SMTP_TLS_SECURITY_LEVEL", self.MTA_OUT_SMTP_TLS_SECURITY_LEVEL),
+            ("MTA_OUT_RELAY_TLS_SECURITY_LEVEL", self.MTA_OUT_RELAY_TLS_SECURITY_LEVEL),
+        ):
+            if level not in {"none", "may", "secure"}:
+                raise ValueError(f"Invalid {setting_name}: {level}")
+
+        if self.DNS_RESOLVER_BACKEND not in {"system", "recursive"}:
             raise ValueError(
-                f"Invalid MTA_OUT_SMTP_TLS_SECURITY_LEVEL: {self.MTA_OUT_SMTP_TLS_SECURITY_LEVEL}"
+                f"Invalid DNS_RESOLVER_BACKEND: {self.DNS_RESOLVER_BACKEND} "
+                "(expected 'system' or 'recursive')"
+            )
+        # A zero or negative timeout times every lookup out.
+        for name, value in (
+            ("DNS_RESOLVER_TIMEOUT", self.DNS_RESOLVER_TIMEOUT),
+            ("DNS_RESOLVER_MAX_RESOLUTION_TIME", self.DNS_RESOLVER_MAX_RESOLUTION_TIME),
+            ("DNS_RESOLVER_INBOUND_AUTH_BUDGET", self.DNS_RESOLVER_INBOUND_AUTH_BUDGET),
+        ):
+            if value <= 0:
+                raise ValueError(f"{name} must be positive, got {value}")
+        for name, value in (
+            ("DNS_RESOLVER_CACHE_MAX_TTL", self.DNS_RESOLVER_CACHE_MAX_TTL),
+            ("DNS_RESOLVER_CACHE_NEGATIVE_TTL", self.DNS_RESOLVER_CACHE_NEGATIVE_TTL),
+            ("DNS_RESOLVER_CACHE_FAILURE_TTL", self.DNS_RESOLVER_CACHE_FAILURE_TTL),
+        ):
+            if value < 0:
+                raise ValueError(f"{name} must not be negative, got {value}")
+        if (
+            self.MESSAGES_DKIM_VERIFY_OUTGOING_REQUIRE_DNSSEC
+            and self.DNS_RESOLVER_BACKEND != "recursive"
+        ):
+            # The system backend never reports a validated answer, so every
+            # outgoing DKIM self-check would fail and all mail would retry.
+            raise ValueError(
+                "MESSAGES_DKIM_VERIFY_OUTGOING_REQUIRE_DNSSEC needs "
+                "DNS_RESOLVER_BACKEND='recursive'"
             )
 
         # Deprecated fields mapping
