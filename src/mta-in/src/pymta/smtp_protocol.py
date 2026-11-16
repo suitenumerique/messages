@@ -205,6 +205,8 @@ class Envelope:
     mail_from: str | None = None
     smtp_utf8: bool = False
     rcpt_tos: list[str] = dataclasses.field(default_factory=list)
+    # The handler's own: where each accepted recipient is delivered.
+    rcpt_routes: dict = dataclasses.field(default_factory=dict)
     # The message as the blocks it was received in, in order.
     content: tuple[bytes, ...] | None = None
 

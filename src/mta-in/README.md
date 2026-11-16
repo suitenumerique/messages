@@ -139,6 +139,7 @@ Its only runtime dependencies are `httpx` (the MDA client), `PyJWT`, `idna` and 
 | `session_log.py` | What is logged about a session: the `reject` lines and `session_closed` |
 | `handler.py` | What to do with a sender, a recipient, a message: the MDA calls and the per-session budgets |
 | `mda_async.py` | The MDA client, its signing and its circuit breaker |
+| `tenants.py` | Which MDA a recipient goes to, when several Messages instances share this MTA |
 | `limits.py` | Session and DATA slots, per source and in total |
 | `controller.py`, `server.py` | The listener, its TLS context, startup and shutdown |
 | `healthcheck.py` | The liveness probe the image runs |
@@ -206,6 +207,8 @@ Grouped as `src/pymta/settings.py` groups them.
 | `MDA_API_TIMEOUT` | `30` | Timeout (s) for each phase of an MDA call (connect, each read, each write), and for a recipient check as a whole. A delivery as a whole is bounded by `PYMTA_DATA_TIMEOUT`. A timeout counts toward the breaker on both: it is no verdict on a message, and an MDA that hangs has to be shed |
 | `MDA_API_JWT_TTL` | `MDA_API_TIMEOUT + 90` | Lifetime (s) of the JWT signed for each MDA call. Must cover the request plus clock skew against the MDA |
 | `MDA_BREAKER_THRESHOLD` | `10` (0 = off) | Consecutive MDA failures before short-circuiting to 451. pymta-only; the milter has no breaker and ignores it |
+| `PYMTA_TENANTS_FILE` | unset | Path of a JSON file routing recipients to several MDAs by domain: see [Several Messages instances behind one MTA](#several-messages-instances-behind-one-mta). Set, `MDA_API_BASE_URL` and `MDA_API_SECRET` are not used. pymta only |
+| `PYMTA_TENANTS_RELOAD_INTERVAL` | `30` | Seconds between two checks of whether the tenants file changed |
 | `MDA_BREAKER_COOLDOWN` | `30` | Seconds the breaker stays open before probing the MDA again. After it, one call goes through as a probe while the others are still answered 451; its success closes the breaker, its failure starts another cooldown. A timeout waiting for a free connection in pymta's own HTTP pool is not counted as an MDA failure. Must be ≥ 1: a zero would reopen the breaker to the very next call, which neuters it rather than disabling it — use the threshold for that |
 
 **SMTP listener and identity**
@@ -573,6 +576,35 @@ The same can be done in one file, given as both variables: each private key star
 At startup, and after each reload, `tls_key_types served=ecdsa,rsa` says which key types a handshake can complete with, found by trying one TLS 1.2 suite of each. A sender that supports only a type missing there fails with `closed_by=tls_failed` and `tls_error=no_shared_cipher`. Not logged when `PYMTA_TLS_MIN_VERSION=1.3`. Each group of a multi-key file gets its own `tls_certificate` line and `file=` gauge label, written `path[1]`, `path[2]`. The cipher probe tries every TLS 1.2 suite `PYMTA_TLS_CIPHERS` leaves for each key type.
 
 Mismatched list lengths are refused at startup: the pairing is positional, so a cert would otherwise be loaded against another's key and OpenSSL's complaint names neither variable. An empty entry (a stray comma) is refused for the same reason a half-configured pair is — it would quietly become "STARTTLS off".
+
+### Several Messages instances behind one MTA
+
+One pymta can receive mail for several Messages instances (tenants), each with its own MDA and its own mail domains. Point `PYMTA_TENANTS_FILE` at a JSON object with one entry per tenant:
+
+```json
+{
+  "customer-a": {
+    "base_url": "http://backend.customer-a.svc:8000/api/v1.0/",
+    "secret": "<customer-a's MDA_API_SECRET>",
+    "domains": ["customer-a.example", "lists.customer-a.example"]
+  },
+  "customer-b": {
+    "base_url": "http://backend.customer-b.svc:8000/api/v1.0/",
+    "secret": "<customer-b's MDA_API_SECRET>",
+    "domains": ["customer-b.example"]
+  }
+}
+```
+
+- **Routing.** A recipient is checked with, and delivered to, the tenant that lists its domain. Domains are compared in lower case and A-labels, so `bücher.example` and `xn--bcher-kva.example` are the same. A domain no tenant lists is answered like an unknown mailbox (`550 5.1.1`, reason `unknown_domain`) and spends the same miss budget. The file decides, not the instance: a domain added in an instance's UI receives no mail until it is listed here.
+- **Isolation.** Each tenant has its own secret, so no instance can sign calls to another, and its own circuit breaker, so one instance down does not defer the mail of the others. `pymta_mda_breaker_open` reads 1 while any of them is open.
+- **One message, several tenants.** The message is delivered once to each tenant, concurrently and within the same `PYMTA_DATA_TIMEOUT`. Each copy names only that tenant's recipients, so no instance learns who else received the message on another instance. The sender gets `250` once every tenant has the message, and `554` only if every tenant refused it for good. Anything else gets `451`, and the sender's retry reaches again the tenants that already had the message, the copy is identified by its `Message-ID` and dropped, as a `207` from a single MDA does. (see *Redelivery and duplicates*).
+- **Reloading.** The file is checked every `PYMTA_TENANTS_RELOAD_INTERVAL` seconds and read again when it changed, which suits a Kubernetes Secret mounted as a volume. Mount it as a directory, not with `subPath`: Kubernetes never updates a `subPath` mount, so the change would wait for a restart. A tenant whose URL and secret are unchanged keeps its connections and its breaker. The client of a tenant removed or changed may still serve a session in flight, so it is released at the next restart only: watch `process_open_fds`. A file that no longer parses, or names one domain under two tenants, is logged as `tenants_reload_failed` and the previous mapping stays in force. At startup, the same mistakes stop the process.
+- **Shared limits.** The DATA and session caps (`PYMTA_MAX_CONCURRENT_DATA`, and `PYMTA_MAX_SESSIONS_TOTAL` derived from it) and their per-source shares are global, not per tenant: size them, and the memory, for the summed traffic. One tenant's spike uses capacity the others need.
+- **DNS.** The MX of every tenant domain points at this pymta. Each instance shows, checks and can provision the records it expects from `MESSAGES_DNS_RECORDS`, whose MX entries default to `mx1.{MESSAGES_TECHNICAL_DOMAIN}` and `mx2.{MESSAGES_TECHNICAL_DOMAIN}`: make them name the shared MTA, or the instance flags correct setups and provisions wrong ones.
+- **Postmaster.** The bare `postmaster` recipient goes to `PYMTA_POSTMASTER_ADDRESS`, so that address's domain must belong to one of the tenants.
+
+The file holds every tenant's secret: mount it from a Secret readable by pymta alone. Without `PYMTA_TENANTS_FILE`, every recipient goes to `MDA_API_BASE_URL` as before. The Postfix image has no equivalent.
 
 ## Production checklist
 

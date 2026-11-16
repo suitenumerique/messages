@@ -131,6 +131,14 @@ MDA_API_JWT_TTL = _env_int("MDA_API_JWT_TTL", MDA_API_TIMEOUT + 90, minimum=1)
 MDA_BREAKER_THRESHOLD = _env_int("MDA_BREAKER_THRESHOLD", 10, minimum=0)
 MDA_BREAKER_COOLDOWN = _env_int("MDA_BREAKER_COOLDOWN", 30, minimum=1)
 
+# One MTA in front of several Messages instances: a JSON file mapping each
+# instance to its MDA URL, its secret and the mail domains it serves (see
+# pymta.tenants). Unset: every recipient goes to MDA_API_BASE_URL with
+# MDA_API_SECRET, and those two are ignored when it is set.
+PYMTA_TENANTS_FILE = _env_str("PYMTA_TENANTS_FILE", "")
+# Seconds between two looks at whether the tenants file changed.
+PYMTA_TENANTS_RELOAD_INTERVAL = _env_int("PYMTA_TENANTS_RELOAD_INTERVAL", 30, minimum=1)
+
 
 # ---------------------------------------------------------------------------
 # SMTP listener
