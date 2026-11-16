@@ -749,6 +749,7 @@ through one resolver.
 | `DNS_RESOLVER_MAX_RESOLUTION_TIME` | `15.0` | Seconds budget for one whole lookup, retries included. | Optional |
 | `DNS_RESOLVER_CACHE_MAX_TTL` | `300` | Upper bound (seconds) on how long an answer about a third-party sender (SPF, DMARC) is cached in Redis. `0` disables that cache. Lookups about your own domains are never cached. | Optional |
 | `DNS_RESOLVER_CACHE_NEGATIVE_TTL` | `60` | Seconds an NXDOMAIN/NODATA answer is cached, capped by `DNS_RESOLVER_CACHE_MAX_TTL`. | Optional |
+| `DNS_RESOLVER_CACHE_FAILURE_TTL` | `30` | Seconds a SERVFAIL or timed-out lookup is cached (RFC 9520), capped by `DNS_RESOLVER_CACHE_MAX_TTL`, so a slow nameserver does not cost a full timeout on every message. `0` disables it. | Optional |
 | `DNS_RESOLVER_INBOUND_AUTH_BUDGET` | `30.0` | Seconds within which native inbound auth may start DNS lookups for one message (DKIM keys, SPF, DMARC, ARC). The names are sender-chosen, so this bounds how long a deliberately slow nameserver can hold an inbound worker: at most this plus one `DNS_RESOLVER_MAX_RESOLUTION_TIME`. A lookup refused past it counts as not completed, so the message is unverified, never forged. | Optional |
 
 ### Calendar (CalDAV)

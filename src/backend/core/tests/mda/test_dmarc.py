@@ -17,7 +17,7 @@ from core.mda.dmarc import (
     identifiers_aligned,
 )
 from core.mda.signing import DKIMSignatureResult
-from core.mda.spf import SPFResult
+from core.mda.spf import SPFCheck, SPFResult
 from core.services.dns.resolver import (
     DNSSECValidationError,
     InvalidNameError,
@@ -211,6 +211,7 @@ class TestPolicyTags:
             ("v=DMARC1; p=reject; pct=abc", "reject"),
             ("v=DMARC1; p=reject; t=y", "quarantine"),
             ("v=DMARC1; p=reject; t=n", "reject"),
+            ("v=DMARC1; p=reject; sp=bogus", "none"),
         ],
     )
     def test_disposition_for_the_domain_itself(self, record, expected):
@@ -222,7 +223,12 @@ class TestPolicyTags:
             ("v=DMARC1; p=reject", "reject"),
             ("v=DMARC1; p=reject; sp=none", "none"),
             ("v=DMARC1; p=none; sp=reject", "reject"),
-            ("v=DMARC1; p=reject; sp=bogus", "reject"),
+            # RFC 9989 4.10: an invalid p, sp or np voids the record.
+            ("v=DMARC1; p=reject; sp=bogus", "none"),
+            ("v=DMARC1; p=reject; np=bogus", "none"),
+            ("v=DMARC1; sp=reject", "none"),
+            ("v=DMARC1; p=bogus; sp=reject", "none"),
+            ("v=DMARC1; p=reject; np=reject", "reject"),
         ],
     )
     def test_disposition_for_a_subdomain(self, record, expected):
@@ -255,20 +261,25 @@ class TestEvaluate:
 
     def _evaluate(self, record, dkim=(), spf=SPF_FAIL, from_domain="example.com"):
         answers = {"_dmarc.example.com": [record]} if record else {}
+        check = SPFCheck(spf.domain, lambda: spf) if spf else None
         with patch("core.mda.dmarc.dmarc_txt_values", _lookup(answers)):
-            return evaluate_dmarc(from_domain, list(dkim), spf)
+            return evaluate_dmarc(from_domain, list(dkim), check)
 
     def test_spf_not_evaluated_is_undecided(self):
         """It could have passed DMARC on its own: never a decided fail."""
         assert self._evaluate(NO_ADKIM, spf=None).result == DMARC_TEMPERROR
 
-    @pytest.mark.parametrize("result", ["temperror", "permerror"])
-    def test_aligned_spf_error_is_undecided(self, result):
-        spf = SPFResult(result, "example.com", "mailfrom")
+    def test_aligned_spf_temperror_is_undecided(self):
+        spf = SPFResult("temperror", "example.com", "mailfrom")
         assert self._evaluate(NO_ADKIM, spf=spf).result == DMARC_TEMPERROR
 
+    def test_aligned_spf_permerror_is_a_failure(self):
+        """RFC 7489 6.6.2: only a temporary error leaves DMARC undecided."""
+        spf = SPFResult("permerror", "example.com", "mailfrom")
+        assert self._evaluate(NO_ADKIM, spf=spf).result == DMARC_FAIL
+
     def test_unaligned_spf_error_does_not_save_a_failure(self):
-        spf = SPFResult("permerror", "esp.example.net", "mailfrom")
+        spf = SPFResult("temperror", "esp.example.net", "mailfrom")
         assert self._evaluate(NO_ADKIM, spf=spf).result == DMARC_FAIL
 
     def test_no_policy(self):

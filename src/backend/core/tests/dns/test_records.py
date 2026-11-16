@@ -358,6 +358,17 @@ class TestSpfSyntaxIsValid:
             " include:x.example.com redirect=y.example.com exp=z.example.com -all"
         )
 
+    @pytest.mark.parametrize(
+        "record",
+        ["v=spf1 ip4:192.0.2.1\t-all", "v=spf1 a\tunknown=x -all", "v=spf1 a\n-all"],
+    )
+    def test_non_space_separator_is_invalid(self, record):
+        """Only SP separates terms (RFC 7208 4.6.1)."""
+        assert not spf_syntax_is_valid(record)
+
+    def test_repeated_spaces_are_valid(self):
+        assert spf_syntax_is_valid("v=spf1  a   -all ")
+
     def test_unknown_mechanism(self):
         """An unknown bare term is a syntax error (RFC 7208 4.6)."""
         assert not spf_syntax_is_valid("v=spf1 include:x.example.com gibberish -all")

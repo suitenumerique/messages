@@ -5,6 +5,7 @@ Tests for DNS checking functionality.
 
 import json
 import time
+from types import SimpleNamespace
 from unittest.mock import MagicMock, patch
 
 from django.core.cache import cache
@@ -744,6 +745,11 @@ class TestDNSChecking:  # pylint: disable=too-many-public-methods
             # less than the "adkim=s;aspf=s" we publish: weaker, not broken.
             ("v=DMARC1;p=reject", "insecure"),
             ("v=DMARC1;p=none;adkim=s;aspf=s", "insecure"),
+            # Applied to no message (pct=0) or only tested (t=y).
+            ("v=DMARC1;p=reject;adkim=s;aspf=s;pct=0", "insecure"),
+            ("v=DMARC1;p=reject;adkim=s;aspf=s;pct=50", "insecure"),
+            ("v=DMARC1;p=reject;adkim=s;aspf=s;t=y", "insecure"),
+            ("v=DMARC1;p=reject;adkim=s;aspf=s;pct=100", "correct"),
             # Unparseable: receivers ignore the record (RFC 7489 6.6.3), so it
             # enforces nothing at all — "incorrect", not merely weaker.
             ("v=DMARC1;p=reject;adkim=s;aspf=s;!!!", "incorrect"),
@@ -1792,6 +1798,32 @@ class TestSPFValidRecordsAreNotFlagged:
         # error rather than blaming the customer's record.
         assert transient == {"a.example", "b.example"}
         assert visited == set()
+
+    def test_budget_running_out_after_progress_keeps_what_was_walked(self):
+        """Walked domains stay resolved; the rest are unexplored and unqueried."""
+        clock = [0.0]
+
+        def resolve_side_effect(name, _record_type):
+            clock[0] = 100.0  # This lookup used up the budget.
+            return _txt_answer("v=spf1 -all")
+
+        with (
+            patch("core.services.dns.check.resolve_answer") as mock_resolve,
+            patch(
+                "core.services.dns.check.time",
+                SimpleNamespace(monotonic=lambda: clock[0]),
+            ),
+        ):
+            mock_resolve.side_effect = resolve_side_effect
+            resolved, visited, transient, error = _resolve_spf_includes(
+                ["v=spf1 include:a.example include:b.example -all"], deadline=10.0
+            )
+
+        assert error == "deadline_exceeded"
+        assert resolved == {"a.example"}
+        assert visited == {"a.example"}
+        assert transient == {"b.example"}
+        mock_resolve.assert_called_once_with("a.example", "TXT")
 
     def test_transient_dns_failure_in_chain_is_reported_as_an_error(
         self, maildomain_factory

@@ -86,10 +86,17 @@ class DMARCPolicy:
     def policy(self) -> str:
         """The requested policy, before ``pct`` / ``t`` sampling.
 
-        A missing or invalid ``p`` requests nothing (6.6.3 would only apply
-        ``none`` anyway), and an invalid ``sp`` falls back to ``p``.
+        A missing or invalid ``p``, or an invalid ``sp`` or ``np``, makes the
+        whole record ``none`` (RFC 9989 4.10 / RFC 7489 6.6.3: act as
+        ``p=none``, or apply no DMARC, which reads the same here).
         """
-        p = self._enumerated("p", DMARC_POLICY_STRICTNESS, POLICY_NONE)
+        p = self._enumerated("p", DMARC_POLICY_STRICTNESS, None)
+        if p is None or any(
+            tag in self.tags
+            and self._enumerated(tag, DMARC_POLICY_STRICTNESS, None) is None
+            for tag in ("sp", "np")
+        ):
+            return POLICY_NONE
         if self.is_subdomain_policy:
             return self._enumerated("sp", DMARC_POLICY_STRICTNESS, p)
         return p
@@ -211,21 +218,27 @@ class DMARCResult:
     disposition: Optional[str] = None
     dkim_domain: Optional[str] = None
     spf_aligned: bool = False
+    spf_result: Optional[spf.SPFResult] = None
     reason: str = ""
 
 
 def evaluate_dmarc(
     from_domain: str,
     dkim_results: Iterable[DKIMSignatureResult],
-    spf_result: Optional[spf.SPFResult],
+    spf_check: Optional[spf.SPFCheck],
 ) -> DMARCResult:
     """RFC 7489 4.2: pass if an aligned DKIM signature or SPF identity passes.
 
     ``temperror`` ("undecided") rather than ``fail`` when the outcome hinged
     on something we could not establish: an aligned signature whose key we
-    could not fetch, an aligned SPF identity that errored (``temperror`` or
-    ``permerror``), SPF not evaluated at all (``spf_result`` is ``None``), or
+    could not fetch, an aligned SPF ``temperror``, SPF not evaluated at all
+    (``spf_check`` is ``None``), or
     the policy lookup itself. Only a decided failure may read as forgery.
+
+    SPF costs up to 30 sender-chosen lookups, so it only runs when it can
+    change the verdict (an enforced policy, no aligned DKIM signature that
+    passed or is undecided, a MAIL FROM or HELO domain aligned with From).
+    Otherwise it counts as not passing, and ``spf_result`` stays ``None``.
     """
     try:
         policy = discover_policy(from_domain)
@@ -246,31 +259,39 @@ def evaluate_dmarc(
         if signature.result == DKIM_TEMPERROR:
             undecided = True
 
-    if spf_result is None:
-        # SPF was not evaluated (no SMTP peer, or a trusted relay in front):
-        # a message may pass DMARC on SPF alone, so failing it here would
-        # call SPF-only senders forged.
-        undecided = True
-    elif spf_result.domain and identifiers_aligned(
-        spf_result.domain, from_domain, policy.aspf
-    ):
-        if spf_result.result == spf.PASS:
-            return DMARCResult(DMARC_PASS, policy=policy, spf_aligned=True)
-        # permerror too: the RFC limits (10 lookups, 2 voids) are stricter
-        # than many published records, and a broken record is the
-        # publisher's misconfiguration, not a forgery an attacker can cause.
-        if spf_result.result in (spf.TEMPERROR, spf.PERMERROR):
+    spf_result = None
+    # Undecided or p=none is no forgery whatever SPF says, and a pass on SPF
+    # alone is still unverified.
+    if not undecided and policy.disposition != POLICY_NONE:
+        if spf_check is None:
+            # SPF was not evaluated (no SMTP peer, or a trusted relay in
+            # front): a message may pass DMARC on SPF alone, so failing it
+            # here would call SPF-only senders forged.
             undecided = True
+        elif spf_check.domain and identifiers_aligned(
+            spf_check.domain, from_domain, policy.aspf
+        ):
+            spf_result = spf_check.run()
+            if spf_result.result == spf.PASS:
+                return DMARCResult(
+                    DMARC_PASS, policy=policy, spf_aligned=True, spf_result=spf_result
+                )
+            # Not permerror (RFC 7489 6.6.2, rspamd): the void limit depends
+            # on the client IP, so a forger could choose to hit it.
+            if spf_result.result == spf.TEMPERROR:
+                undecided = True
 
     if undecided:
         return DMARCResult(
             DMARC_TEMPERROR,
             policy=policy,
+            spf_result=spf_result,
             reason="an aligned identifier could not be checked",
         )
     return DMARCResult(
         DMARC_FAIL,
         policy=policy,
         disposition=policy.disposition,
+        spf_result=spf_result,
         reason="no aligned identifier passed",
     )

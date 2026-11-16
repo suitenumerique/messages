@@ -238,6 +238,10 @@ def spf_syntax_is_valid(value: str) -> bool:
     """
     if not is_spf_record(value):
         return False
+    # Terms are separated by SP only (4.6.1); evaluators split on it, so a
+    # tab glues two terms into one malformed term.
+    if any(char.isspace() and char != " " for char in value):
+        return False
     modifiers = collections.Counter()
     for term in value[len(SPF_VERSION) :].split():
         qualifier, name, argument = _parse_spf_term(term)

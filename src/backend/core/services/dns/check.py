@@ -142,14 +142,17 @@ def _check_dmarc_semantic(
             < DMARC_ALIGNMENT_STRICTNESS[dmarc_alignment(expected_value, tag)]
             for tag in ("adkim", "aspf")
         )
+        expected_tags = parse_dmarc_tags(expected_value) or {}
+        found_tags = parse_dmarc_tags(found_value) or {}
+        weaker = weaker or _dmarc_enforced_share(found_tags) < _dmarc_enforced_share(
+            expected_tags
+        )
         if weaker:
             return {"status": "insecure", "found": found_values}
 
-        expected_tags = parse_dmarc_tags(expected_value) or {}
-        found_tags = parse_dmarc_tags(found_value) or {}
-        # "p", "sp" and the alignment tags were judged on strength above, so
-        # comparing them again here would reject a record for being stronger.
-        graded = {"p", "sp", "adkim", "aspf"}
+        # These were judged on strength above, so comparing them again here
+        # would reject a record for being stronger.
+        graded = {"p", "sp", "adkim", "aspf", "pct", "t"}
         if any(
             found_tags.get(name) != value
             for name, value in expected_tags.items()
@@ -474,6 +477,19 @@ def _dmarc_policy_is_acceptable(expected_policy: str, found_policy: str) -> bool
         DMARC_POLICY_STRICTNESS[found_policy]
         >= DMARC_POLICY_STRICTNESS[expected_policy]
     )
+
+
+def _dmarc_enforced_share(tags: dict) -> int:
+    """Percentage of failing mail the policy applies to (100 when omitted).
+
+    ``t=y`` (RFC 9989 testing mode) applies the policy to none of it.
+    """
+    if tags.get("t", "").strip().lower() == "y":
+        return 0
+    try:
+        return max(0, min(100, int(tags.get("pct", "100").strip())))
+    except ValueError:
+        return 100
 
 
 def check_single_record(

@@ -58,6 +58,7 @@ def test_unknown_dns_resolver_backend_fails_at_startup(backend):
         ("DNS_RESOLVER_INBOUND_AUTH_BUDGET", 0.0),
         ("DNS_RESOLVER_CACHE_MAX_TTL", -1),
         ("DNS_RESOLVER_CACHE_NEGATIVE_TTL", -5),
+        ("DNS_RESOLVER_CACHE_FAILURE_TTL", -5),
     ],
 )
 def test_dns_resolver_bounds_are_validated(name, value):

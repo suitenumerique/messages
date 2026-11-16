@@ -95,7 +95,9 @@ _SUBJECT_NOISE_RE = re.compile(
     r"^\s*(?:"
     r"\[[^\]]{1,40}\]"  # [List-Tag]
     r"|(?:antwort|doorst|antw|[^\W\d_]{1,3})"  # prefix word, longest first
-    r"\s*(?:\[\d+\])?\s*:"  # optional "[2]" counter, then the colon
+    # Optional "[2]" counter, then the colon. One "\s*" on each side of the
+    # counter, never two in a row: those would backtrack quadratically.
+    r"\s*(?:\[\d+\]\s*)?:"
     r")\s*",
     re.IGNORECASE,
 )

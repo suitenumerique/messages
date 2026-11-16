@@ -17,12 +17,14 @@ from core.services.dns.records import parse_dkim_tags
 from core.services.dns.resolver import (
     Answer,
     DNSSECError,
+    InvalidNameError,
     NoAnswerError,
     NXDOMAINError,
     ResolutionTimeoutError,
     ResolverError,
     ServfailError,
     resolve_answer,
+    resolve_answer_cached,
 )
 
 logger = logging.getLogger(__name__)
@@ -38,14 +40,31 @@ DKIM_PERMERROR = "permerror"
 MAX_DKIM_SIGNATURES = 5
 # Base64 length of the largest public key accepted (8192-bit RSA fits).
 MAX_DKIM_KEY_B64 = 1500
+# dkimpy's tag regexes are quadratic in whitespace runs, and its header
+# selection in h= entries times message headers. Real signatures are ~1 KB
+# with a few dozen h= entries. rspamd allows 1000 entries, too slow in Python.
+MAX_SIGNATURE_HEADER_BYTES = 8192
+MAX_SIGNED_HEADERS = 200
 
 
-def dkim_dns_txt(fqdn: str) -> Answer:
+def signature_too_costly(header_value: bytes, tags: dict | None) -> str | None:
+    """Why a DKIM-Signature or ARC header is refused unverified, if it is."""
+    if len(header_value) > MAX_SIGNATURE_HEADER_BYTES:
+        return "header too large"
+    if tags and tags.get(b"h", b"").count(b":") >= MAX_SIGNED_HEADERS:
+        return "too many h= entries"
+    return None
+
+
+def dkim_dns_txt(fqdn: str, cached: bool = False) -> Answer:
     """Look up a DKIM key record.
 
     The single seam tests patch, so they intercept one named function instead
-    of reaching into the resolver.
+    of reaching into the resolver. ``cached`` goes through the shared cache,
+    for third-party keys at inbound volume.
     """
+    if cached:
+        return resolve_answer_cached(fqdn, "TXT")
     return resolve_answer(fqdn, "TXT")
 
 
@@ -67,18 +86,28 @@ class DKIMKeyLookupIncomplete(Exception):
     """
 
 
-def dkim_key_record(name, require_dnssec: bool = False) -> bytes | None:
+def dkim_key_record(
+    name, require_dnssec: bool = False, cached: bool = False
+) -> bytes | None:
     """The DKIM key record at ``name``, in dkimpy's ``dnsfunc`` shape.
 
     Returns ``None`` for a settled answer holding no usable key. Raises
     :class:`DKIMKeyLookupIncomplete` when the lookup did not complete.
     """
-    fqdn = name.decode("ascii") if isinstance(name, bytes) else name
+    try:
+        fqdn = name.decode("ascii") if isinstance(name, bytes) else name
+    except UnicodeDecodeError:
+        logger.warning("Refusing non-ASCII DKIM key name %r", name)
+        return None
     fqdn = fqdn.rstrip(".")
     try:
-        answer = dkim_dns_txt(fqdn)
+        answer = dkim_dns_txt(fqdn, cached=cached)
     except (NXDOMAINError, NoAnswerError):
         logger.warning("No DKIM key record published at %s", fqdn)
+        return None
+    except InvalidNameError as exc:
+        # Built from the signature's own s= and d=: settled, not undecided.
+        logger.warning("Invalid DKIM key name %s: %s", fqdn, exc)
         return None
     except DNSSECError:
         # Bogus signatures on the selector's zone. Whatever key is in there,
@@ -328,12 +357,15 @@ def _unacceptable_signature(tags: dict) -> str | None:
       signing From mandatory; dkimpy only enforces it when signing).
     - ``l=``: only a prefix of the body is signed, so anything can be
       appended below it (RFC 6376 8.2). Rarely used by legitimate senders.
+    - ``a=rsa-sha1``: RFC 8301 3.1 forbids treating it as valid.
     """
     signed = [h.strip().lower() for h in tags.get(b"h", b"").split(b":") if h.strip()]
     if b"from" not in signed:
         return "h= does not sign From"
     if b"l" in tags:
         return "l= body length limit not accepted"
+    if tags.get(b"a", b"").strip().lower() == b"rsa-sha1":
+        return "rsa-sha1 not accepted"
     return None
 
 
@@ -349,12 +381,14 @@ def verify_dkim_signatures(
     the topmost signature alone. Signatures whose ``d=`` shares
     ``prefer_domain``'s organizational domain (the From domain) are verified
     first, so relay or list signatures added on top cannot push the author's
-    out of the cap.
+    out of the cap. Preferred signatures past the cap are reported
+    ``permerror`` without being checked.
 
     Results per RFC 8601 2.7.1: ``pass``, ``fail`` (signature or key does not
     verify, including no key published), ``temperror`` (key lookup did not
-    complete) and ``permerror`` (signature header unusable, or unacceptable:
-    see ``_unacceptable_signature``). An empty list means unsigned.
+    complete) and ``permerror`` (signature header unusable, too costly to
+    check, or unacceptable: see ``_unacceptable_signature``). An empty list
+    means unsigned.
     """
     try:
         dkim_obj = DKIM(raw_mime_message)
@@ -366,21 +400,22 @@ def verify_dkim_signatures(
         value for name, value in dkim_obj.headers if name.lower() == b"dkim-signature"
     ]
     parsed = [_signature_tags(value) for value in signatures]
-    order = list(range(len(signatures)))
-    if prefer_domain:
-        preferred = organizational_domain(prefer_domain)
+    preferred = organizational_domain(prefer_domain) if prefer_domain else None
 
-        def _not_preferred(idx):
-            domain = _signature_domain(parsed[idx])
-            return not domain or organizational_domain(domain) != preferred
+    def _is_preferred(idx):
+        domain = _signature_domain(parsed[idx])
+        return bool(preferred and domain and organizational_domain(domain) == preferred)
 
-        order.sort(key=_not_preferred)
+    # Stable: without a preference the header order is kept.
+    order = sorted(range(len(signatures)), key=lambda idx: not _is_preferred(idx))
 
     results: list[DKIMSignatureResult] = []
     for idx in order[:max_signatures]:
         tags = parsed[idx]
         domain = _signature_domain(tags)
-        reason = "tag list does not parse" if tags is None else None
+        reason = signature_too_costly(signatures[idx], tags)
+        if not reason and tags is None:
+            reason = "tag list does not parse"
         reason = reason or _unacceptable_signature(tags)
         if reason:
             # Decided without any key lookup.
@@ -415,8 +450,15 @@ def verify_dkim_signatures(
             len(signatures),
             max_signatures,
         )
+        # Not temperror: junk signatures claiming the From domain would then
+        # turn a DMARC fail into undecided. No real sender signs this often.
+        results.extend(
+            DKIMSignatureResult(_signature_domain(parsed[idx]), DKIM_PERMERROR)
+            for idx in order[max_signatures:]
+            if _is_preferred(idx)
+        )
     return results
 
 
 def _dkimpy_dnsfunc(name, **kwargs):  # pylint: disable=unused-argument
-    return dkim_key_record(name)
+    return dkim_key_record(name, cached=True)

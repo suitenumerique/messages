@@ -12,12 +12,13 @@ from core.mda import signing
 from core.mda.signing import generate_dkim_key, sign_message_dkim, verify_message_dkim
 from core.models import DKIMKey, Mailbox, MailDomain
 from core.services.dns.resolver import (
+    InvalidNameError,
     NoAnswerError,
     NXDOMAINError,
     ResolutionTimeoutError,
     ServfailError,
 )
-from core.tests.dns_answers import txt_answer
+from core.tests.dns_answers import txt_answer, txt_answer_chunked
 
 
 @pytest.mark.django_db
@@ -116,10 +117,11 @@ def test_verify_message_dkim_returns_signing_domain():
     signature_header_bytes = sign_message_dkim(raw_message, mail_domain)
     full_message_signed = signature_header_bytes + b"\r\n" + raw_message
 
-    # A real 2048-bit key does not fit in one 255-octet character-string, so
-    # this fixture is chunked exactly as an authoritative server must serve it
-    # — the reassembly is the part that has to be right.
-    answer = txt_answer(f"v=DKIM1; k=rsa; p={public_key_str}")
+    # A 2048-bit key does not fit in one 255-octet character-string, so the
+    # record is split mid-key as a server may serve it; reassembly must join
+    # the chunks with no separator.
+    record = f"v=DKIM1; k=rsa; p={public_key_str}"
+    answer = txt_answer_chunked([record[:100], record[100:]])
     with patch("core.mda.signing.dkim_dns_txt", return_value=answer):
         assert verify_message_dkim(full_message_signed) == "example.com"
 
@@ -540,7 +542,7 @@ def _sign(message, domain, private_key, selector="s1"):
 def _key_dns(keys_by_name):
     """``dkim_dns_txt`` stand-in: {fqdn: public key | exception}."""
 
-    def _lookup(fqdn):
+    def _lookup(fqdn, **_):
         value = keys_by_name.get(fqdn, NXDOMAINError(fqdn, "TXT"))
         if isinstance(value, Exception):
             raise value
@@ -661,11 +663,45 @@ def test_verify_dkim_signatures_prefers_the_from_domain(_keys):
         message = _sign(message, f"relay{index}.example.net", private)
     with patch(
         "core.mda.signing.dkim_dns_txt",
-        side_effect=lambda fqdn: txt_answer(f"v=DKIM1; k=rsa; p={public}"),
+        side_effect=lambda fqdn, **_: txt_answer(f"v=DKIM1; k=rsa; p={public}"),
     ):
         results = signing.verify_dkim_signatures(message, prefer_domain="example.com")
     assert results[0] == signing.DKIMSignatureResult("example.com", "pass")
     assert len(results) == signing.MAX_DKIM_SIGNATURES
+
+
+def test_verify_dkim_signatures_refuses_rsa_sha1(_keys):
+    """RFC 8301 3.1: rsa-sha1 must not be considered valid."""
+    (private, public), _ = _keys
+    header = dkim_sign(
+        message=_MESSAGE,
+        selector=b"s1",
+        domain=b"example.com",
+        privkey=private.encode(),
+        signature_algorithm=b"rsa-sha1",
+        include_headers=[b"From", b"To", b"Subject"],
+    )
+    dns = _key_dns({"s1._domainkey.example.com": public})
+    with patch("core.mda.signing.dkim_dns_txt", side_effect=dns):
+        results = signing.verify_dkim_signatures(header + _MESSAGE)
+    assert results == [signing.DKIMSignatureResult("example.com", "permerror")]
+
+
+def test_inbound_key_lookups_use_the_shared_cache(_keys):
+    """Inbound keys are third-party and repeat across messages."""
+    (private, public), _ = _keys
+    message = _sign(_MESSAGE, "example.com", private)
+    with (
+        patch(
+            "core.mda.signing.resolve_answer_cached",
+            return_value=txt_answer(f"v=DKIM1; k=rsa; p={public}"),
+        ) as cached,
+        patch("core.mda.signing.resolve_answer") as uncached,
+    ):
+        results = signing.verify_dkim_signatures(message)
+    assert results == [signing.DKIMSignatureResult("example.com", "pass")]
+    cached.assert_called_once_with("s1._domainkey.example.com", "TXT")
+    uncached.assert_not_called()
 
 
 def test_oversized_key_is_refused():
@@ -699,6 +735,80 @@ def test_verify_dkim_signatures_ed25519():
     assert results == [signing.DKIMSignatureResult("example.com", "pass")]
 
 
+def test_preferred_signatures_past_the_cap_are_permerror(_keys):
+    """Junk From-domain signatures must not make a forgery undecided."""
+    (private, public), _ = _keys
+    message = _sign(_MESSAGE, "example.com", private)
+    for index in range(signing.MAX_DKIM_SIGNATURES):
+        # Claims the From domain but does not sign From: permerror.
+        junk = _sign(_MESSAGE, "example.com", private, selector=f"j{index}")
+        junk_header = re.sub(rb"h=[^;]*;", b"h=to;", junk.split(b"\r\nFrom:")[0])
+        message = junk_header + b"\r\n" + message
+    with patch(
+        "core.mda.signing.dkim_dns_txt",
+        side_effect=lambda fqdn, **_: txt_answer(f"v=DKIM1; k=rsa; p={public}"),
+    ):
+        results = signing.verify_dkim_signatures(message, prefer_domain="example.com")
+    expected = ["permerror"] * (signing.MAX_DKIM_SIGNATURES + 1)
+    assert [r.result for r in results] == expected
+
+
+def test_oversized_signature_header_is_refused_unchecked(_keys):
+    """dkimpy's tag regexes are quadratic in whitespace runs."""
+    (private, _), _ = _keys
+    padding = b" " * signing.MAX_SIGNATURE_HEADER_BYTES
+    message = re.sub(
+        rb";(\s*)b=",
+        b";" + padding + rb"\1b=",
+        _sign(_MESSAGE, "example.com", private),
+        count=1,
+    )
+    assert len(message) > signing.MAX_SIGNATURE_HEADER_BYTES
+    with patch("core.mda.signing.DKIM.verify") as verify:
+        results = signing.verify_dkim_signatures(message)
+    assert results == [signing.DKIMSignatureResult("example.com", "permerror")]
+    verify.assert_not_called()
+
+
+def test_too_many_signed_headers_is_refused_unchecked(_keys):
+    """dkimpy's header selection is quadratic in h= entries."""
+    (private, _), _ = _keys
+    names = b":".join(b"x%d" % i for i in range(signing.MAX_SIGNED_HEADERS))
+    message = re.sub(
+        rb"h=[^;]*;",
+        b"h=from:" + names + b";",
+        _sign(_MESSAGE, "example.com", private),
+        count=1,
+    )
+    with patch("core.mda.signing.DKIM.verify") as verify:
+        results = signing.verify_dkim_signatures(message)
+    assert results == [signing.DKIMSignatureResult("example.com", "permerror")]
+    verify.assert_not_called()
+
+
+def test_invalid_key_name_is_settled(_keys):
+    """The name comes from the sender's s= and d=: not a lookup to retry."""
+    (private, _), _ = _keys
+    message = _sign(_MESSAGE, "example.com", private, selector="a" * 64)
+    error = InvalidNameError("x", "a label exceeds 63 octets")
+    with patch("core.mda.signing.dkim_dns_txt", side_effect=error):
+        results = signing.verify_dkim_signatures(message)
+    assert results == [signing.DKIMSignatureResult("example.com", "fail")]
+
+
+def test_non_ascii_key_name_is_settled(_keys):
+    (private, _), _ = _keys
+    message = _sign(_MESSAGE, "example.com", private).replace(b"s=s1", "s=sél".encode())
+    with (
+        patch("core.mda.signing.dkim_dns_txt") as dns,
+        patch("core.mda.signing.capture_exception") as capture,
+    ):
+        results = signing.verify_dkim_signatures(message)
+    assert results == [signing.DKIMSignatureResult("example.com", "fail")]
+    dns.assert_not_called()
+    capture.assert_not_called()
+
+
 def test_verify_dkim_signatures_caps_the_number_verified(_keys):
     """Each signature costs a key lookup whose name the sender picks."""
     (private, public), _ = _keys
@@ -707,7 +817,7 @@ def test_verify_dkim_signatures_caps_the_number_verified(_keys):
         message = _sign(message, f"d{index}.example.com", private)
     with patch(
         "core.mda.signing.dkim_dns_txt",
-        side_effect=lambda fqdn: txt_answer(f"v=DKIM1; k=rsa; p={public}"),
+        side_effect=lambda fqdn, **_: txt_answer(f"v=DKIM1; k=rsa; p={public}"),
     ) as dns:
         results = signing.verify_dkim_signatures(message)
     assert len(results) == signing.MAX_DKIM_SIGNATURES

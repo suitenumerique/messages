@@ -14,13 +14,16 @@ from django.core.cache import cache
 from django.test import override_settings
 
 import dns.exception
+import dns.message
 import dns.name
+import dns.rdataclass
 import dns.rdatatype
 import dns.resolver
 import pytest
 
 from core.services.dns import resolver as dns_resolver
 from core.services.dns.resolver import (
+    DNSSECError,
     InvalidNameError,
     NoAnswerError,
     NXDOMAINError,
@@ -48,7 +51,11 @@ def _fresh_resolvers():
 
 def _dnspython_answer(answer):
     """The shape ``dns.resolver.Resolver.resolve`` returns, from a test Answer."""
-    return SimpleNamespace(rrset=answer.rrset, canonical_name=answer.canonical_name)
+    return SimpleNamespace(
+        rrset=answer.rrset,
+        canonical_name=answer.canonical_name,
+        chaining_result=SimpleNamespace(minimum_ttl=answer.rrset.ttl),
+    )
 
 
 # --- Recursive backend -----------------------------------------------------
@@ -154,9 +161,31 @@ def test_system_answer_is_never_reported_secure():
         )
         answer = dns_resolver.resolve_answer("example.com", "TXT")
 
-    assert answer.dnssec is ValidationState.INSECURE
+    assert answer.dnssec is ValidationState.DISABLED
     assert answer.secure is False
     assert answer.ttl == 300
+    assert answer.text_values() == ["v=spf1 -all"]
+
+
+def test_system_answer_ttl_is_the_cname_chain_minimum():
+    """A short-lived alias must not be cached for its target's TTL."""
+    response = dns.message.from_text(
+        "id 1\nopcode QUERY\nrcode NOERROR\nflags QR RD RA\n"
+        ";QUESTION\nalias.example.com. IN TXT\n"
+        ";ANSWER\nalias.example.com. 5 IN CNAME target.example.com.\n"
+        'target.example.com. 3600 IN TXT "v=spf1 -all"\n'
+    )
+    result = dns.resolver.Answer(
+        dns.name.from_text("alias.example.com"),
+        dns.rdatatype.TXT,
+        dns.rdataclass.IN,
+        response,
+    )
+    with patch.object(dns_resolver, "get_system_resolver") as mock_system:
+        mock_system.return_value.resolve.return_value = result
+        answer = dns_resolver.resolve_answer("alias.example.com", "TXT")
+
+    assert answer.ttl == 5
     assert answer.text_values() == ["v=spf1 -all"]
 
 
@@ -309,11 +338,44 @@ def test_cached_negative_answer_is_reused(error):
     "error",
     [ServfailError("example.com", "TXT"), ResolutionTimeoutError("example.com", "TXT")],
 )
-def test_unsettled_errors_are_not_cached(error):
-    """A lookup that did not complete must be retried, not remembered."""
-    with patch.object(dns_resolver, "resolve_answer", side_effect=error) as mock:
+def test_failures_are_cached_briefly(error):
+    """RFC 9520 3.2: a slow nameserver must not cost a timeout per message."""
+    with (
+        patch.object(dns_resolver, "resolve_answer", side_effect=error) as mock,
+        patch.object(dns_resolver, "_cache_set", wraps=dns_resolver._cache_set) as put,
+    ):
         for _ in range(2):
             with pytest.raises(type(error)):
+                dns_resolver.resolve_answer_cached("example.com", "TXT")
+    assert mock.call_count == 1
+    assert put.call_args.args[2] == 30
+
+
+@override_settings(DNS_RESOLVER_CACHE_FAILURE_TTL=0)
+def test_failure_cache_can_be_disabled():
+    error = ServfailError("example.com", "TXT")
+    with patch.object(dns_resolver, "resolve_answer", side_effect=error) as mock:
+        for _ in range(2):
+            with pytest.raises(ServfailError):
+                dns_resolver.resolve_answer_cached("example.com", "TXT")
+    assert mock.call_count == 2
+
+
+def test_timeout_cut_short_by_the_budget_is_not_cached():
+    """It says nothing about the nameserver, only about this message."""
+    error = ResolutionTimeoutError("example.com", "TXT")
+    with patch.object(dns_resolver, "resolve_answer", side_effect=error) as mock:
+        for _ in range(2):
+            with dns_resolver.dns_budget(1), pytest.raises(ResolutionTimeoutError):
+                dns_resolver.resolve_answer_cached("example.com", "TXT")
+    assert mock.call_count == 2
+
+
+def test_other_errors_are_not_cached():
+    error = DNSSECError("bogus", "example.com", "TXT")
+    with patch.object(dns_resolver, "resolve_answer", side_effect=error) as mock:
+        for _ in range(2):
+            with pytest.raises(DNSSECError):
                 dns_resolver.resolve_answer_cached("example.com", "TXT")
     assert mock.call_count == 2
 

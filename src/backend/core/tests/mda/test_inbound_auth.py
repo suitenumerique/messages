@@ -45,6 +45,14 @@ MTA_ENVELOPE = {
     "rcpt_to": "rcpt@example.com",
 }
 
+# The From of RAW_EMAIL, as parse_email shapes it.
+PARSED = {
+    "from": [{"name": None, "email": "sender@example.com"}],
+    "headers": [{"name": "From", "value": "sender@example.com"}],
+}
+# rspamd's R_DKIM_ALLOW for a valid signature by the From domain.
+DKIM_ALLOW = {"score": 0.1, "options": ["example.com:s=sel"]}
+
 
 def _queue_inbound(mailbox, content=RAW_EMAIL):
     """Create a queued InboundMessage backed by a blob (blob-at-ingest)."""
@@ -183,6 +191,18 @@ class TestNativeDkimAlignment(_NativeBase):
         }
         assert self.verdict(parsed) == VERDICT_UNVERIFIED
 
+    def test_several_from_fields_unverified(self):
+        """The parser shows the first From, DKIM signs the last one."""
+        self.dkim = [_sig("example.com")]
+        parsed = {
+            "from": [{"email": "ceo@example.com"}],
+            "headers": [
+                {"name": "From", "value": "ceo@example.com"},
+                {"name": "From", "value": "newsletter@example.com"},
+            ],
+        }
+        assert self.verdict(parsed) == VERDICT_UNVERIFIED
+
     def test_several_from_addresses_on_one_domain_still_verify(self):
         self.dkim = [_sig("example.com")]
         parsed = {"from": [{"email": "a@example.com"}, {"email": "b@Example.com"}]}
@@ -306,11 +326,12 @@ class TestNativeDmarc(_NativeBase):
         self.dmarc = {"_dmarc.example.com": ServfailError("_dmarc.example.com", "TXT")}
         assert self.verdict() == VERDICT_UNVERIFIED
 
-    def test_dmarc_lookup_failure_keeps_an_aligned_signature_verified(self):
-        """A resolver blip must not downgrade every subdomain-signed sender."""
-        self.dkim = [_sig("mail.example.com")]
+    @pytest.mark.parametrize("signer", ["example.com", "mail.example.com"])
+    def test_dmarc_lookup_failure_leaves_a_signed_message_unverified(self, signer):
+        """Without the record, ``adkim`` is unknown."""
+        self.dkim = [_sig(signer)]
         self.dmarc = {"_dmarc.example.com": ServfailError("_dmarc.example.com", "TXT")}
-        assert self.verdict() is None
+        assert self.verdict() == VERDICT_UNVERIFIED
 
     def test_aligned_key_lookup_failure_is_never_forged(self):
         self.dkim = [_sig("example.com", "temperror")]
@@ -350,7 +371,10 @@ class TestNativeRobustness(_NativeBase):
 class TestNativeSpf(_NativeBase):
     """SPF from the SMTP envelope feeds DMARC."""
 
+    REJECT = {"_dmarc.example.com": "v=DMARC1; p=reject"}
+
     def test_spf_is_evaluated_from_the_envelope(self):
+        self.dmarc = self.REJECT
         self.verdict(envelope=self.MTA_ENVELOPE)
         self.mock_spf.assert_called_once_with(
             "192.0.2.1", "bounce@example.com", "mx.example.com"
@@ -358,17 +382,62 @@ class TestNativeSpf(_NativeBase):
 
     @pytest.mark.parametrize("origin", ["widget", "internal", "import", None])
     def test_spf_is_skipped_without_an_smtp_peer(self, origin):
+        self.dmarc = self.REJECT
         self.verdict(envelope={**self.MTA_ENVELOPE, "origin": origin})
         self.mock_spf.assert_not_called()
 
     def test_spf_is_skipped_without_a_client_ip(self):
+        self.dmarc = self.REJECT
         self.verdict(envelope={**self.MTA_ENVELOPE, "ip": ""})
         self.mock_spf.assert_not_called()
 
     def test_spf_is_skipped_behind_a_trusted_relay(self):
         """The peer is then the gateway, not the sender."""
+        self.dmarc = self.REJECT
         config = {**self.CONFIG, "trusted_relays": 1}
         self.verdict(config=config, envelope=self.MTA_ENVELOPE)
+        self.mock_spf.assert_not_called()
+
+    @pytest.mark.parametrize(
+        ("record", "dkim", "mail_from", "expected"),
+        [
+            # No policy: DKIM alone decides.
+            (None, [], "bounce@example.com", VERDICT_UNVERIFIED),
+            # p=none never makes a forgery.
+            ("v=DMARC1; p=none", [], "bounce@example.com", VERDICT_UNVERIFIED),
+            # Sampled out: quarantine applies as none.
+            (
+                "v=DMARC1; p=quarantine; t=y",
+                [],
+                "bounce@example.com",
+                VERDICT_UNVERIFIED,
+            ),
+            # An aligned signature already passed DMARC.
+            ("v=DMARC1; p=reject", [_sig("example.com")], "bounce@example.com", None),
+            # Undecided whatever SPF says.
+            (
+                "v=DMARC1; p=reject",
+                [_sig("example.com", "temperror")],
+                "bounce@example.com",
+                VERDICT_UNVERIFIED,
+            ),
+            # An unaligned identity cannot pass DMARC.
+            ("v=DMARC1; p=reject", [], "bounce@esp.example.net", VERDICT_FORGED),
+            (
+                "v=DMARC1; p=reject; aspf=s",
+                [],
+                "bounce@mail.example.com",
+                VERDICT_FORGED,
+            ),
+        ],
+    )
+    def test_spf_is_skipped_when_it_cannot_change_the_verdict(
+        self, record, dkim, mail_from, expected
+    ):
+        self.dmarc = {"_dmarc.example.com": record} if record else {}
+        self.dkim = dkim
+        envelope = {**self.MTA_ENVELOPE, "mail_from": mail_from}
+        assert self.verdict(envelope=envelope) == expected
         self.mock_spf.assert_not_called()
 
     def test_aligned_spf_pass_satisfies_reject(self):
@@ -377,19 +446,18 @@ class TestNativeSpf(_NativeBase):
         The same final rule as the other backends: without an aligned DKIM
         signature the message stays "unverified".
         """
+        self.dmarc = self.REJECT
         self.spf = SPFResult("pass", "bounces.example.com", "mailfrom")
-        self.dmarc = {"_dmarc.example.com": "v=DMARC1; p=reject"}
-        assert self.verdict(envelope=self.MTA_ENVELOPE) == VERDICT_UNVERIFIED
+        envelope = {**self.MTA_ENVELOPE, "mail_from": "bounce@bounces.example.com"}
+        assert self.verdict(envelope=envelope) == VERDICT_UNVERIFIED
+        self.mock_spf.assert_called_once()
 
-    def test_strict_aspf_rejects_a_subdomain_identity(self):
-        self.spf = SPFResult("pass", "bounces.example.com", "mailfrom")
-        self.dmarc = {"_dmarc.example.com": "v=DMARC1; p=reject; aspf=s"}
-        assert self.verdict(envelope=self.MTA_ENVELOPE) == VERDICT_FORGED
-
-    def test_unaligned_spf_pass_does_not_count(self):
-        self.spf = SPFResult("pass", "esp.example.net", "mailfrom")
-        self.dmarc = {"_dmarc.example.com": "v=DMARC1; p=reject"}
-        assert self.verdict(envelope=self.MTA_ENVELOPE) == VERDICT_FORGED
+    def test_helo_identity_for_a_null_sender(self):
+        self.dmarc = self.REJECT
+        self.spf = SPFResult("pass", "mx.example.com", "helo")
+        envelope = {**self.MTA_ENVELOPE, "mail_from": ""}
+        assert self.verdict(envelope=envelope) == VERDICT_UNVERIFIED
+        self.mock_spf.assert_called_once()
 
     @pytest.mark.parametrize("result", ["fail", "softfail", "neutral", "none"])
     def test_non_passing_spf_does_not_count(self, result):
@@ -402,11 +470,11 @@ class TestNativeSpf(_NativeBase):
         self.dmarc = {"_dmarc.example.com": "v=DMARC1; p=reject"}
         assert self.verdict(envelope=self.MTA_ENVELOPE) == VERDICT_UNVERIFIED
 
-    def test_aligned_spf_permerror_is_never_forged(self):
-        """RFC limits are stricter than many real records: undecided, not forged."""
+    def test_aligned_spf_permerror_does_not_save_a_forgery(self):
+        """RFC 7489 6.6.2: only a temporary error leaves DMARC undecided."""
         self.spf = SPFResult("permerror", "example.com", "mailfrom")
         self.dmarc = {"_dmarc.example.com": "v=DMARC1; p=reject"}
-        assert self.verdict(envelope=self.MTA_ENVELOPE) == VERDICT_UNVERIFIED
+        assert self.verdict(envelope=self.MTA_ENVELOPE) == VERDICT_FORGED
 
     @pytest.mark.parametrize(
         "case",
@@ -491,30 +559,30 @@ class TestCheckInboundAuthenticationRspamd:
 
     def test_dkim_pass_no_dmarc(self):
         config = {"inbound_auth": "rspamd"}
-        rspamd = {"symbols": {"R_DKIM_ALLOW": {"score": 0.1}}}
-        assert check_inbound_authentication(RAW_EMAIL, {}, config, rspamd) is None
+        rspamd = {"symbols": {"R_DKIM_ALLOW": DKIM_ALLOW}}
+        assert check_inbound_authentication(RAW_EMAIL, PARSED, config, rspamd) is None
 
     def test_dkim_pass_dmarc_pass(self):
         config = {"inbound_auth": "rspamd"}
         rspamd = {
             "symbols": {
-                "R_DKIM_ALLOW": {"score": 0.1},
+                "R_DKIM_ALLOW": DKIM_ALLOW,
                 "DMARC_POLICY_ALLOW": {"score": 0.1},
             }
         }
-        assert check_inbound_authentication(RAW_EMAIL, {}, config, rspamd) is None
+        assert check_inbound_authentication(RAW_EMAIL, PARSED, config, rspamd) is None
 
     def test_dkim_pass_dmarc_fail_forged(self):
         """DMARC fail on a message that otherwise has DKIM -> 'fail' (forgery)."""
         config = {"inbound_auth": "rspamd"}
         rspamd = {
             "symbols": {
-                "R_DKIM_ALLOW": {"score": 0.1},
+                "R_DKIM_ALLOW": DKIM_ALLOW,
                 "DMARC_POLICY_REJECT": {"score": 5},
             }
         }
         assert (
-            check_inbound_authentication(RAW_EMAIL, {}, config, rspamd)
+            check_inbound_authentication(RAW_EMAIL, PARSED, config, rspamd)
             == VERDICT_FORGED
         )
 
@@ -523,12 +591,12 @@ class TestCheckInboundAuthenticationRspamd:
         config = {"inbound_auth": "rspamd"}
         rspamd = {
             "symbols": {
-                "R_DKIM_ALLOW": {"score": 0.1},
+                "R_DKIM_ALLOW": DKIM_ALLOW,
                 "DMARC_POLICY_QUARANTINE": {"score": 2},
             }
         }
         assert (
-            check_inbound_authentication(RAW_EMAIL, {}, config, rspamd)
+            check_inbound_authentication(RAW_EMAIL, PARSED, config, rspamd)
             == VERDICT_FORGED
         )
 
@@ -537,17 +605,17 @@ class TestCheckInboundAuthenticationRspamd:
         config = {"inbound_auth": "rspamd"}
         rspamd = {
             "symbols": {
-                "R_DKIM_ALLOW": {"score": 0.1},
+                "R_DKIM_ALLOW": DKIM_ALLOW,
                 "DMARC_NA": {"score": 0},
             }
         }
-        assert check_inbound_authentication(RAW_EMAIL, {}, config, rspamd) is None
+        assert check_inbound_authentication(RAW_EMAIL, PARSED, config, rspamd) is None
 
     def test_dkim_fail(self):
         config = {"inbound_auth": "rspamd"}
         rspamd = {"symbols": {"R_DKIM_REJECT": {"score": 5}}}
         assert (
-            check_inbound_authentication(RAW_EMAIL, {}, config, rspamd)
+            check_inbound_authentication(RAW_EMAIL, PARSED, config, rspamd)
             == VERDICT_UNVERIFIED
         )
 
@@ -556,21 +624,99 @@ class TestCheckInboundAuthenticationRspamd:
         config = {"inbound_auth": "rspamd"}
         rspamd = {"symbols": {"DKIM_NA": {"score": 0}}}
         assert (
-            check_inbound_authentication(RAW_EMAIL, {}, config, rspamd)
+            check_inbound_authentication(RAW_EMAIL, PARSED, config, rspamd)
             == VERDICT_UNVERIFIED
         )
 
-    def test_dkim_fail_dominates_pass(self):
-        """Two DKIM symbols in one response: fail wins -> 'none'."""
+    def test_aligned_pass_beside_a_failing_signature_verifies(self):
+        """A list breaking an extra signature must not hide the author's."""
         config = {"inbound_auth": "rspamd"}
         rspamd = {
             "symbols": {
-                "R_DKIM_ALLOW": {"score": 0.1},
-                "R_DKIM_REJECT": {"score": 5},
+                "R_DKIM_ALLOW": DKIM_ALLOW,
+                "R_DKIM_REJECT": {"score": 5, "options": ["list.example.net:s=x"]},
+            }
+        }
+        assert check_inbound_authentication(RAW_EMAIL, PARSED, config, rspamd) is None
+
+    @pytest.mark.parametrize(
+        "allow",
+        [
+            {"score": 0.1, "options": ["attacker.test:s=sel"]},
+            {"score": 0.1},
+            {"score": 0.1, "options": "example.com:s=sel"},
+        ],
+    )
+    def test_unaligned_or_unknown_signer_unverified(self, allow):
+        """A valid signature by another domain proves nothing about From."""
+        config = {"inbound_auth": "rspamd"}
+        rspamd = {"symbols": {"R_DKIM_ALLOW": allow}}
+        assert (
+            check_inbound_authentication(RAW_EMAIL, PARSED, config, rspamd)
+            == VERDICT_UNVERIFIED
+        )
+
+    def test_any_aligned_option_counts(self):
+        config = {"inbound_auth": "rspamd"}
+        allow = {"score": 0.1, "options": ["esp.example.net:s=a", "example.com:s=b"]}
+        rspamd = {"symbols": {"R_DKIM_ALLOW": allow}}
+        assert check_inbound_authentication(RAW_EMAIL, PARSED, config, rspamd) is None
+
+    @pytest.mark.parametrize(
+        "symbols",
+        [
+            {"DMARC_BAD_POLICY": {"score": 0.5}},
+            {"DMARC_DNSFAIL": {"score": 0}},
+            {"DMARC_DNSFAIL": {"score": 0}, "DMARC_POLICY_ALLOW": {"score": -0.5}},
+        ],
+        ids=["bad-policy", "dnsfail", "dnsfail-beside-allow"],
+    )
+    def test_undecided_dmarc_is_unverified_not_forged(self, symbols):
+        config = {"inbound_auth": "rspamd"}
+        rspamd = {"symbols": {"R_DKIM_ALLOW": DKIM_ALLOW, **symbols}}
+        assert (
+            check_inbound_authentication(RAW_EMAIL, PARSED, config, rspamd)
+            == VERDICT_UNVERIFIED
+        )
+
+    def test_dmarc_reject_beats_dnsfail(self):
+        config = {"inbound_auth": "rspamd"}
+        rspamd = {
+            "symbols": {
+                "DMARC_DNSFAIL": {"score": 0},
+                "DMARC_POLICY_REJECT": {"score": 5},
             }
         }
         assert (
-            check_inbound_authentication(RAW_EMAIL, {}, config, rspamd)
+            check_inbound_authentication(RAW_EMAIL, PARSED, config, rspamd)
+            == VERDICT_FORGED
+        )
+
+    @pytest.mark.parametrize(
+        "parsed",
+        [
+            {
+                "from": [
+                    {"email": "sender@example.com"},
+                    {"email": "ceo@victim.test"},
+                ]
+            },
+            {
+                "from": [{"email": "sender@example.com"}],
+                "headers": [
+                    {"name": "From", "value": "sender@example.com"},
+                    {"name": "from", "value": "other@example.com"},
+                ],
+            },
+            {},
+        ],
+        ids=["several-domains", "several-fields", "no-from"],
+    )
+    def test_no_single_from_unverified(self, parsed):
+        config = {"inbound_auth": "rspamd"}
+        rspamd = {"symbols": {"R_DKIM_ALLOW": DKIM_ALLOW}}
+        assert (
+            check_inbound_authentication(RAW_EMAIL, parsed, config, rspamd)
             == VERDICT_UNVERIFIED
         )
 
@@ -584,7 +730,7 @@ class TestCheckInboundAuthenticationRspamd:
             }
         }
         assert (
-            check_inbound_authentication(RAW_EMAIL, {}, config, rspamd)
+            check_inbound_authentication(RAW_EMAIL, PARSED, config, rspamd)
             == VERDICT_FORGED
         )
 
@@ -619,33 +765,89 @@ class TestCheckInboundAuthenticationResults:
         in ``ar_values`` produces a block whose Received is the only
         header (no Authentication-Results).
         """
-        headers: list[dict] = []
+        headers: list[dict] = list(PARSED["headers"])
         for i in range(trust_blocks):
             if i < len(ar_values) and ar_values[i] is not None:
                 for value in ar_values[i]:
                     headers.append({"name": "Authentication-Results", "value": value})
             headers.append({"name": "Received", "value": f"from hop{i}"})
-        return {"headers": headers}
+        return {"from": PARSED["from"], "headers": headers}
 
     def test_dkim_pass_no_dmarc(self):
         config = {"inbound_auth": "authentication-results", "trusted_relays": 1}
-        parsed = self._parsed([["mx.example.net; dkim=pass"]])
+        parsed = self._parsed([["mx.example.net; dkim=pass header.d=example.com"]])
         assert check_inbound_authentication(b"", parsed, config) is None
 
     def test_dkim_pass_dmarc_pass(self):
         config = {"inbound_auth": "authentication-results", "trusted_relays": 1}
-        parsed = self._parsed([["mx.example.net; dkim=pass; dmarc=pass"]])
+        parsed = self._parsed(
+            [["mx.example.net; dkim=pass header.d=example.com; dmarc=pass"]]
+        )
         assert check_inbound_authentication(b"", parsed, config) is None
+
+    @pytest.mark.parametrize(
+        "ar",
+        [
+            "mx; dkim=pass header.d=attacker.test",
+            "mx; dkim=pass",
+            "mx; dkim=pass header.d=attacker.test; spf=pass header.d=example.com",
+            "mx; dkim=pass header.d=example.com header.d=attacker.test",
+            "mx; dkim=pass dmarc=pass header.d=example.com",
+        ],
+        ids=["other-domain", "no-signer", "other-resinfo", "mixed", "two-methods"],
+    )
+    def test_dkim_pass_not_aligned_unverified(self, ar):
+        """Only a header.d / header.i aligned with From counts, per result."""
+        config = {"inbound_auth": "authentication-results", "trusted_relays": 1}
+        assert (
+            check_inbound_authentication(b"", self._parsed([[ar]]), config)
+            == VERDICT_UNVERIFIED
+        )
+
+    @pytest.mark.parametrize(
+        "ar",
+        [
+            "mx; dkim=pass header.i=@example.com",
+            "mx; dkim=pass header.d=mail.example.com",
+            "mx; dkim=fail header.d=list.example.net; dkim=pass header.d=example.com",
+        ],
+        ids=["header-i", "relaxed", "beside-a-failure"],
+    )
+    def test_dkim_pass_aligned_verifies(self, ar):
+        config = {"inbound_auth": "authentication-results", "trusted_relays": 1}
+        assert check_inbound_authentication(b"", self._parsed([[ar]]), config) is None
+
+    def test_several_from_fields_unverified(self):
+        config = {"inbound_auth": "authentication-results", "trusted_relays": 1}
+        parsed = self._parsed([["mx; dkim=pass header.d=example.com"]])
+        parsed["headers"].insert(0, {"name": "From", "value": "ceo@example.com"})
+        assert check_inbound_authentication(b"", parsed, config) == VERDICT_UNVERIFIED
 
     def test_dkim_pass_dmarc_fail_forged(self):
         config = {"inbound_auth": "authentication-results", "trusted_relays": 1}
         parsed = self._parsed([["mx.example.net; dkim=pass; dmarc=fail"]])
         assert check_inbound_authentication(b"", parsed, config) == VERDICT_FORGED
 
+    @pytest.mark.parametrize(
+        "dmarc",
+        ["dmarc=temperror", "dmarc=permerror", "dmarc=pass; dmarc=temperror"],
+    )
+    def test_dmarc_error_is_unverified_not_forged(self, dmarc):
+        config = {"inbound_auth": "authentication-results", "trusted_relays": 1}
+        parsed = self._parsed([[f"mx; dkim=pass header.d=example.com; {dmarc}"]])
+        assert check_inbound_authentication(b"", parsed, config) == VERDICT_UNVERIFIED
+
+    def test_dmarc_fail_beats_dmarc_error(self):
+        config = {"inbound_auth": "authentication-results", "trusted_relays": 1}
+        parsed = self._parsed([["mx; dmarc=temperror; dmarc=fail"]])
+        assert check_inbound_authentication(b"", parsed, config) == VERDICT_FORGED
+
     def test_dkim_pass_dmarc_none(self):
         """dmarc=none -> no policy -> don't require DMARC pass."""
         config = {"inbound_auth": "authentication-results", "trusted_relays": 1}
-        parsed = self._parsed([["mx.example.net; dkim=pass; dmarc=none"]])
+        parsed = self._parsed(
+            [["mx.example.net; dkim=pass header.d=example.com; dmarc=none"]]
+        )
         assert check_inbound_authentication(b"", parsed, config) is None
 
     def test_dkim_fail(self):
@@ -699,11 +901,15 @@ class TestCheckInboundAuthenticationResults:
         """
         config = {"inbound_auth": "authentication-results", "trusted_relays": 1}
         parsed = {
+            "from": PARSED["from"],
             "headers": [
                 {"name": "Received", "value": "from our-mta"},
-                {"name": "Authentication-Results", "value": "mx; dkim=pass"},
+                {
+                    "name": "Authentication-Results",
+                    "value": "mx; dkim=pass header.d=example.com",
+                },
                 {"name": "Received", "value": "from upstream"},
-            ]
+            ],
         }
         assert check_inbound_authentication(b"", parsed, config) is None
 
@@ -717,28 +923,38 @@ class TestCheckInboundAuthenticationResults:
         """
         config = {"inbound_auth": "authentication-results"}
         parsed = {
+            "from": PARSED["from"],
             "headers": [
                 {"name": "Received", "value": "from our-mta"},
-                {"name": "Authentication-Results", "value": "mx; dkim=pass"},
+                {
+                    "name": "Authentication-Results",
+                    "value": "mx; dkim=pass header.d=example.com",
+                },
                 {"name": "Received", "value": "from upstream"},
-            ]
+            ],
         }
         assert check_inbound_authentication(b"", parsed, config) == VERDICT_UNVERIFIED
 
-    def test_dkim_fail_dominates_pass_across_values(self):
-        """Multiple AR values in one block: fail wins -> 'none'."""
+    def test_aligned_pass_wins_across_values(self):
+        """Multiple AR values in one block: an aligned pass still counts."""
         config = {"inbound_auth": "authentication-results", "trusted_relays": 1}
-        parsed = self._parsed([["mx1; dkim=pass", "mx2; dkim=fail"]])
-        assert check_inbound_authentication(b"", parsed, config) == VERDICT_UNVERIFIED
+        parsed = self._parsed(
+            [["mx1; dkim=pass header.d=example.com", "mx2; dkim=fail"]]
+        )
+        assert check_inbound_authentication(b"", parsed, config) is None
 
     def test_single_string_ar_value(self):
         """AR header may be a bare string (single occurrence) rather than list."""
         config = {"inbound_auth": "authentication-results", "trusted_relays": 1}
         parsed = {
+            "from": PARSED["from"],
             "headers": [
-                {"name": "Authentication-Results", "value": "mx; dkim=pass"},
+                {
+                    "name": "Authentication-Results",
+                    "value": "mx; dkim=pass header.d=example.com",
+                },
                 {"name": "Received", "value": "from hop0"},
-            ]
+            ],
         }
         assert check_inbound_authentication(b"", parsed, config) is None
 
@@ -758,10 +974,24 @@ class TestCheckInboundAuthArcMode:
         arc = {
             "trusted": True,
             "sealer": "relay.example",
-            "aar": "i=2; mx; dkim=pass; dmarc=pass",
+            "aar": "i=2; mx; dkim=pass header.d=example.com; dmarc=pass",
             "dnsfail": False,
         }
-        assert check_inbound_authentication(b"raw", {}, self.CONFIG, arc=arc) is None
+        assert (
+            check_inbound_authentication(b"raw", PARSED, self.CONFIG, arc=arc) is None
+        )
+
+    def test_trusted_seal_unaligned_dkim_unverified(self):
+        arc = {
+            "trusted": True,
+            "sealer": "relay.example",
+            "aar": "i=2; mx; dkim=pass header.d=attacker.test",
+            "dnsfail": False,
+        }
+        assert (
+            check_inbound_authentication(b"raw", PARSED, self.CONFIG, arc=arc)
+            == VERDICT_UNVERIFIED
+        )
 
     def test_trusted_seal_dmarc_fail_forged(self):
         arc = {
@@ -773,6 +1003,19 @@ class TestCheckInboundAuthArcMode:
         assert (
             check_inbound_authentication(b"raw", {}, self.CONFIG, arc=arc)
             == VERDICT_FORGED
+        )
+
+    @pytest.mark.parametrize("result", ["temperror", "permerror"])
+    def test_trusted_seal_dmarc_error_unverified(self, result):
+        arc = {
+            "trusted": True,
+            "sealer": "relay.example",
+            "aar": f"i=2; mx; dkim=pass header.d=example.com; dmarc={result}",
+            "dnsfail": False,
+        }
+        assert (
+            check_inbound_authentication(b"raw", PARSED, self.CONFIG, arc=arc)
+            == VERDICT_UNVERIFIED
         )
 
     def test_untrusted_ignores_forged_header(self):
@@ -796,10 +1039,10 @@ class TestCheckInboundAuthArcMode:
         mock_arc.return_value = {
             "trusted": True,
             "sealer": "relay.example",
-            "aar": "i=1; mx; dkim=pass",
+            "aar": "i=1; mx; dkim=pass header.d=example.com",
             "dnsfail": False,
         }
-        assert check_inbound_authentication(b"raw", {}, self.CONFIG) is None
+        assert check_inbound_authentication(b"raw", PARSED, self.CONFIG) is None
         mock_arc.assert_called_once()
 
 
@@ -812,10 +1055,11 @@ class TestCheckInboundAuthenticationResultsScrubbing:
     @staticmethod
     def _parsed(ar_value):
         return {
+            "from": PARSED["from"],
             "headers": [
                 {"name": "Authentication-Results", "value": ar_value},
                 {"name": "Received", "value": "from hop0"},
-            ]
+            ],
         }
 
     # --- Comments (parens) ---------------------------------------------
@@ -837,7 +1081,9 @@ class TestCheckInboundAuthenticationResultsScrubbing:
 
     def test_comment_dmarc_fail_does_not_force_forged(self):
         """`(dmarc=fail)` inside a comment shouldn't escalate to 'fail'."""
-        parsed = self._parsed("mx; dkim=pass (note: dmarc=fail in some other domain)")
+        parsed = self._parsed(
+            "mx; dkim=pass header.d=example.com (note: dmarc=fail elsewhere)"
+        )
         assert check_inbound_authentication(b"", parsed, self.CONFIG) is None
 
     def test_nested_comments_scrubbed(self):
@@ -848,9 +1094,25 @@ class TestCheckInboundAuthenticationResultsScrubbing:
             check_inbound_authentication(b"", parsed, self.CONFIG) == VERDICT_UNVERIFIED
         )
 
+    @pytest.mark.parametrize(
+        "ar",
+        [
+            "mx; spf=pass (outer (inner) dkim=pass header.d=example.com )",
+            "mx; spf=pass (a \\) dkim=pass header.d=example.com )",
+        ],
+        ids=["after-inner-comment", "escaped-paren"],
+    )
+    def test_token_still_inside_a_comment_is_ignored(self, ar):
+        assert (
+            check_inbound_authentication(b"", self._parsed(ar), self.CONFIG)
+            == VERDICT_UNVERIFIED
+        )
+
     def test_real_token_after_comment_still_matched(self):
         """A genuine token following a comment must still be parsed."""
-        parsed = self._parsed("mx (received from upstream); dkim=pass")
+        parsed = self._parsed(
+            "mx (received from upstream); dkim=pass header.d=example.com"
+        )
         assert check_inbound_authentication(b"", parsed, self.CONFIG) is None
 
     # --- Quoted strings ------------------------------------------------
@@ -872,7 +1134,9 @@ class TestCheckInboundAuthenticationResultsScrubbing:
 
     def test_real_token_after_quoted_string_still_matched(self):
         """A real token after a quoted reason is still seen."""
-        parsed = self._parsed('mx; spf=fail smtp.mailfrom="weird value"; dkim=pass')
+        parsed = self._parsed(
+            'mx; spf=fail smtp.mailfrom="weird value"; dkim=pass header.d=example.com'
+        )
         assert check_inbound_authentication(b"", parsed, self.CONFIG) is None
 
     # --- Mixed ---------------------------------------------------------
@@ -891,7 +1155,9 @@ class TestCheckInboundAuthenticationResultsScrubbing:
         still seen as a verified token; the comment swallows the rest of the
         string but that has no other tokens to lose.
         """
-        parsed = self._parsed("mx; dkim=pass (unterminated comment")
+        parsed = self._parsed(
+            "mx; dkim=pass header.d=example.com (unterminated comment"
+        )
         assert check_inbound_authentication(b"", parsed, self.CONFIG) is None
 
     def test_unterminated_comment_swallows_real_token(self):
@@ -902,7 +1168,7 @@ class TestCheckInboundAuthenticationResultsScrubbing:
         )
 
     def test_unterminated_quote_does_not_explode(self):
-        parsed = self._parsed('mx; dkim=pass "unterminated')
+        parsed = self._parsed('mx; dkim=pass header.d=example.com "unterminated')
         # Real dkim=pass token comes BEFORE the unterminated quote.
         assert check_inbound_authentication(b"", parsed, self.CONFIG) is None
 
@@ -931,13 +1197,13 @@ class TestCheckInboundAuthenticationResultsScrubbing:
 
     def test_label_with_real_token_after_separator(self):
         """A spurious label first, then a real bare `dkim=`."""
-        parsed = self._parsed("mx; x-dkim=fail; dkim=pass")
+        parsed = self._parsed("mx; x-dkim=fail; dkim=pass header.d=example.com")
         # x-dkim=fail must not pollute; real dkim=pass wins → verified.
         assert check_inbound_authentication(b"", parsed, self.CONFIG) is None
 
     def test_real_token_at_start_of_value(self):
         """No leading separator — start-of-string still matches."""
-        parsed = self._parsed("dkim=pass")
+        parsed = self._parsed("dkim=pass header.d=example.com")
         assert check_inbound_authentication(b"", parsed, self.CONFIG) is None
 
     def test_realworld_multiline_ar_header_all_pass(self):
@@ -1255,7 +1521,7 @@ class TestProcessInboundMessageAuthIntegration:
             "score": 1.0,
             "required_score": 15.0,
             "symbols": {
-                "R_DKIM_ALLOW": {"score": 0.1},
+                "R_DKIM_ALLOW": DKIM_ALLOW,
                 "DMARC_POLICY_REJECT": {"score": 5},
             },
         }
@@ -1290,7 +1556,7 @@ class TestProcessInboundMessageAuthIntegration:
             "action": "no action",
             "score": 1.0,
             "required_score": 15.0,
-            "symbols": {"R_DKIM_ALLOW": {"score": 0.1}},
+            "symbols": {"R_DKIM_ALLOW": DKIM_ALLOW},
         }
         mock_response.raise_for_status = Mock()
         mock_post.return_value = mock_response

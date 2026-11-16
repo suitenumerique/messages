@@ -890,6 +890,9 @@ class Base(Configuration):
     DNS_RESOLVER_CACHE_NEGATIVE_TTL = values.IntegerValue(
         60, environ_name="DNS_RESOLVER_CACHE_NEGATIVE_TTL", environ_prefix=None
     )
+    DNS_RESOLVER_CACHE_FAILURE_TTL = values.IntegerValue(
+        30, environ_name="DNS_RESOLVER_CACHE_FAILURE_TTL", environ_prefix=None
+    )
     # Seconds within which native inbound auth (DKIM, SPF, DMARC, ARC) may
     # start lookups for one message. The names come from the sender, so a
     # slow nameserver must not hold an inbound worker for minutes. A lookup
@@ -1777,6 +1780,7 @@ class Base(Configuration):
         for name, value in (
             ("DNS_RESOLVER_CACHE_MAX_TTL", self.DNS_RESOLVER_CACHE_MAX_TTL),
             ("DNS_RESOLVER_CACHE_NEGATIVE_TTL", self.DNS_RESOLVER_CACHE_NEGATIVE_TTL),
+            ("DNS_RESOLVER_CACHE_FAILURE_TTL", self.DNS_RESOLVER_CACHE_FAILURE_TTL),
         ):
             if value < 0:
                 raise ValueError(f"{name} must not be negative, got {value}")

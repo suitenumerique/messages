@@ -141,7 +141,7 @@ The backend is selected by `SPAM_CONFIG["inbound_auth"]`:
 - **`native`** — full local DKIM + SPF + DMARC evaluation, no rspamd needed.
   See [Native mode](#native-mode-dkim--spf--dmarc).
 - **`rspamd`** — read DKIM/DMARC **symbols** from the rspamd `/checkv2` result
-  (reusing the spam-step scan). Verdict precedence: `fail` > `pass` > `none`.
+  (reusing the spam-step scan).
 - **`arc`** — read `dkim=`/`dmarc=` from the `ARC-Authentication-Results` that a
   **trusted sealer** cryptographically sealed (RFC 8617). Plaintext headers are
   never read; an unsealed or untrusted-sealed message is `none`. See
@@ -153,14 +153,30 @@ The backend is selected by `SPAM_CONFIG["inbound_auth"]`:
 
 ### rspamd symbol → outcome (mode `rspamd`)
 
-| Check | Symbols → `pass`        | Symbols → `fail`                                                             | Symbols → `none`          |
-|-------|-------------------------|------------------------------------------------------------------------------|---------------------------|
-| DKIM  | `R_DKIM_ALLOW`          | `R_DKIM_REJECT`, `R_DKIM_PERMFAIL`, `R_DKIM_TEMPFAIL`, `DKIM_INVALID`         | `R_DKIM_NA`, `DKIM_NA`    |
-| DMARC | `DMARC_POLICY_ALLOW`    | `DMARC_POLICY_REJECT`, `DMARC_POLICY_QUARANTINE`, `DMARC_BAD_POLICY`          | `DMARC_NA`                |
+| Check | Symbols → `pass`        | Symbols → `fail`                                                             | Symbols → `undecided` | Symbols → `none`          |
+|-------|-------------------------|------------------------------------------------------------------------------|-----------------------|---------------------------|
+| DKIM  | `R_DKIM_ALLOW`, aligned | `R_DKIM_REJECT`, `R_DKIM_PERMFAIL`, `R_DKIM_TEMPFAIL`, `DKIM_INVALID`         |                       | `R_DKIM_NA`, `DKIM_NA`, unaligned `R_DKIM_ALLOW` |
+| DMARC | `DMARC_POLICY_ALLOW`    | `DMARC_POLICY_REJECT`, `DMARC_POLICY_QUARANTINE`                              | `DMARC_DNSFAIL`, `DMARC_BAD_POLICY` | `DMARC_NA` |
+
+In `arc` and `authentication-results` modes, `dmarc=temperror` and
+`dmarc=permerror` are `undecided`.
+
+DMARC: `fail` wins over `undecided`, which wins over `pass`, which wins over
+`none`. DKIM is `pass` when one
+valid signature **aligns** with the `From:` domain (relaxed: same
+organizational domain), whatever other signatures say: a mailing list breaking
+an extra signature must not hide the author's. The signing domain is read from
+the `R_DKIM_ALLOW` options in `rspamd` mode, and from the `header.d` (or
+`header.i`) of the same `dkim=pass` result in `arc` and
+`authentication-results` modes; a pass with no signing domain is not aligned.
 
 Final rule (every backend): a DMARC `fail` yields **forged** (`auth = "fail"`);
-otherwise if DKIM is not `pass`, **unverified** (`auth = "none"`); otherwise
-verified.
+otherwise if DMARC is `undecided` or DKIM is not an aligned `pass`,
+**unverified** (`auth = "none"`); otherwise verified. A DMARC lookup that
+failed, or a broken record, is not a forgery, but it does not tell us the
+`adkim` the domain asks for. A message with several `From:` domains, or several `From:`
+header fields, is never verified: the UI shows the first `From:` field, while a
+DKIM signature covers the last one.
 
 > **SPF is not surfaced as a standalone verdict.** It feeds DMARC (natively in
 > `native` mode, inside rspamd in `rspamd` mode). The user-facing auth verdict
@@ -173,26 +189,39 @@ resolver selected by `DNS_RESOLVER_BACKEND` (see [env.md](./env.md#dns-resolutio
 
 - **DKIM** — up to 5 `DKIM-Signature`s are verified per message, those whose
   `d=` shares the From domain's organizational domain first (so relay or list
-  signatures added on top cannot push the author's out). Each yields `pass` /
+  signatures added on top cannot push the author's out; From-domain signatures
+  past the cap are reported `permerror` unchecked, so junk signatures cannot
+  make a forgery undecided). Each yields `pass` /
   `fail` / `temperror` (key lookup did not complete) / `permerror`. RSA and
   ed25519 (RFC 8463) are supported. A signature is `permerror` without any key
   lookup when its header does not parse, when `h=` does not sign `From` (it
-  could be replayed under any From), or when it carries `l=` (only a body
-  prefix is signed). Keys above 8192-bit RSA size are refused. The DKIM
-  outcome is `pass` only for a passing signature whose `d=` **aligns** with
+  could be replayed under any From), when it carries `l=` (only a body
+  prefix is signed), when it uses `rsa-sha1` (RFC 8301), or when it is too
+  costly for dkimpy to check: a header over 8 KB or more than 200 `h=`
+  entries (rspamd allows 1000, too slow in Python). A selector that cannot
+  form a DNS name (non-ASCII, label over 63 octets) is `fail`, not
+  `temperror`. Keys above
+  8192-bit RSA size are refused, and key lookups go through the shared DNS
+  cache. The DKIM outcome is `pass` only for a passing signature whose `d=`
+  **aligns** with
   the `From:` domain, in the `adkim` mode the From domain's DMARC record asks
   for (relaxed by default: same organizational domain, per the Public Suffix
-  List). A `From:` with several distinct domains is never verified (RFC 7489
-  6.6.1).
+  List). A `From:` with several distinct domains, or several `From:` fields,
+  is never verified (RFC 7489 6.6.1).
 - **SPF** — RFC 7208 `check_host()` on the SMTP envelope: client IP, MAIL FROM
   (or HELO for a null sender). Evaluated only for mail our MTA received
   (`origin == "mta"`), and **skipped when `trusted_relays` > 0**: the SMTP peer is
   then the upstream gateway, not the sender. The `exp` modifier is never
-  fetched. Limits are enforced as `permerror` (10 DNS-querying terms, 2 void
-  lookups, 10 MX hosts). SPF stops starting lookups after 20 s (`temperror`);
+  fetched. Limits are enforced as `permerror` (30 DNS-querying terms like
+  rspamd, where RFC 7208 says 10; 2 void lookups, MX exchanges included; 10 MX
+  hosts). SPF stops starting lookups after 20 s (`temperror`);
   the whole native evaluation (DKIM, SPF, DMARC, ARC) stops starting lookups
   after `DNS_RESOLVER_INBOUND_AUTH_BUDGET` (30 s), so a slow nameserver holds a
   worker for at most that plus one `DNS_RESOLVER_MAX_RESOLUTION_TIME`.
+  SPF only runs when it can change the verdict: the From domain enforces
+  quarantine or reject, no aligned DKIM signature passed or is `temperror`, and
+  the MAIL FROM (or HELO) domain aligns with From. Otherwise it is skipped and
+  shows as `spf=None` in the `Native auth:` log line.
 - **DMARC** — RFC 7489: policy discovered at `_dmarc.<From domain>`, then at
   its organizational domain (where `sp` applies). Passes on an aligned passing
   DKIM signature **or** an aligned SPF `pass` (`aspf`).
@@ -201,8 +230,8 @@ resolver selected by `DNS_RESOLVER_BACKEND` (see [env.md](./env.md#dns-resolutio
 |---|---|
 | aligned DKIM or SPF pass | `pass` |
 | fail, requested policy `quarantine` / `reject` | `fail` → **forged** |
-| fail, requested policy `none` (or no valid `p`) | `none` |
-| undecided: the policy lookup, or an aligned signature's key lookup, did not complete; aligned SPF is `temperror` or `permerror`; SPF was not evaluated (no SMTP peer, or `trusted_relays` > 0) | `none` (never forged on something we could not establish) |
+| fail, requested policy `none` (or an invalid or missing `p`, or an invalid `sp` / `np`: RFC 9989 4.10) | `none` |
+| undecided: the policy lookup, or an aligned signature's key lookup, did not complete; aligned SPF is `temperror` (a `permerror` is not temporary, RFC 7489 6.6.2, as in rspamd); SPF was not evaluated (no SMTP peer, or `trusted_relays` > 0) | `undecided` → **unverified** (never forged on something we could not establish) |
 | no DMARC record, or more than one | — (DKIM alone decides) |
 
 The requested policy is deterministic: `pct` below 100 and RFC 9989's `t=y` are
@@ -228,10 +257,13 @@ is then `none` (unverified) rather than forged. The sealed
 `header.from` must be our From domain. ARC is only verified for messages that
 would otherwise be marked forged.
 
-**DNS volume.** SPF and DMARC answers are about third-party senders, so they
-are cached in Redis for their TTL, capped by `DNS_RESOLVER_CACHE_MAX_TTL`
-(default 300 s); NXDOMAIN/NODATA for `DNS_RESOLVER_CACHE_NEGATIVE_TTL` (60 s).
-Lookups that did not complete are never cached. DKIM key lookups are not cached.
+**DNS volume.** SPF, DMARC and inbound DKIM key answers are about third-party
+senders, so they are cached in Redis for their TTL, capped by
+`DNS_RESOLVER_CACHE_MAX_TTL` (default 300 s); NXDOMAIN/NODATA for
+`DNS_RESOLVER_CACHE_NEGATIVE_TTL` (60 s); SERVFAIL and timeouts for
+`DNS_RESOLVER_CACHE_FAILURE_TTL` (30 s, RFC 9520), except a timeout cut short
+by `DNS_RESOLVER_INBOUND_AUTH_BUDGET`. The outbound check of our own DKIM key
+is not cached.
 
 ### Shadow evaluation
 
@@ -258,7 +290,11 @@ off one allowlist, `trusted_arc_sealers`:
   match). **Fail closed:** `[]` (or absent) trusts *nothing* — anyone can
   produce a valid ARC seal, so you must list the sealers you trust. Trust is
   granted only when the chain is `cv=pass` **and** the outermost sealer is on
-  the allowlist.
+  the allowlist. The sealer is the outermost `ARC-Seal` `d=`, and the
+  `ARC-Message-Signature` of that instance must carry the same `d=`: only the
+  seal covers the `ARC-Authentication-Results`, so a trusted AMS under
+  someone else's seal vouches for nothing (as in rspamd). ARC headers over
+  8 KB are refused unverified.
 
 The result is a **binary verdict** (`core/mda/arc.py`):
 

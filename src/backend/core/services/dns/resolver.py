@@ -40,20 +40,9 @@ import dns.name
 import dns.rdata
 import dns.rdataclass
 import dns.rdatatype
-import dns.rdtypes.ANY.NSEC3
 import dns.resolver  # noqa: PLW0406 (dnspython's, not this module)
 import dns.reversename
 import dns.rrset
-
-# recursive-resolver 0.2.0 imports ``b32_normal_to_hex``, which dnspython 2.9
-# dropped for ``base64.b32hexencode``. Same table as dnspython 2.8. Remove once
-# recursive-resolver ships the fix.
-if not hasattr(dns.rdtypes.ANY.NSEC3, "b32_normal_to_hex"):
-    dns.rdtypes.ANY.NSEC3.b32_normal_to_hex = bytes.maketrans(
-        b"ABCDEFGHIJKLMNOPQRSTUVWXYZ234567", b"0123456789ABCDEFGHIJKLMNOPQRSTUV"
-    )
-
-# pylint: disable=wrong-import-position
 from recursive_resolver import (
     Answer,
     CNAMELoopError,
@@ -212,14 +201,14 @@ def _system_resolve_answer(
         raise InvalidNameError(qname, "DNAME substitution overflows") from exc
     except dns.exception.DNSException as exc:
         raise ResolverError(f"{type(exc).__name__}: {exc}", qname, rdtype) from exc
-    rrset = result.rrset
     return Answer(
         qname=name,
         canonical_name=result.canonical_name,
         rdtype=rdtype_int,
-        rrset=rrset,
-        ttl=rrset.ttl,
-        dnssec=ValidationState.INSECURE,
+        rrset=result.rrset,
+        # The answer is only valid while every CNAME leading to it is.
+        ttl=result.chaining_result.minimum_ttl,
+        dnssec=ValidationState.DISABLED,
     )
 
 
@@ -279,11 +268,14 @@ def resolve_txt_values(qname: str) -> list[str]:
     return resolve_answer(qname, "TXT").text_values()
 
 
-# Cached outcomes. Only settled answers are stored: a lookup that did not
-# complete must be retried, not remembered.
+# Cached outcomes. A lookup that did not complete is only kept for
+# ``DNS_RESOLVER_CACHE_FAILURE_TTL`` (RFC 9520 3.2), so a slow nameserver does
+# not cost a full timeout on every message.
 _CACHED_ANSWER = "answer"
 _CACHED_NXDOMAIN = "nxdomain"
 _CACHED_NODATA = "nodata"
+_CACHED_SERVFAIL = "servfail"
+_CACHED_TIMEOUT = "timeout"
 
 
 def _cache_key(qname: str, rdtype: str) -> str:
@@ -298,6 +290,10 @@ def _answer_from_cache(entry, qname: str, rdtype: str) -> Answer:
         raise NXDOMAINError(qname, rdtype)
     if kind == _CACHED_NODATA:
         raise NoAnswerError(qname, rdtype)
+    if kind == _CACHED_SERVFAIL:
+        raise ServfailError(qname, rdtype)
+    if kind == _CACHED_TIMEOUT:
+        raise ResolutionTimeoutError(qname, rdtype)
     owner, canonical, ttl, dnssec, rdatas = payload
     rdtype_int = dns.rdatatype.from_text(rdtype)
     wires = [bytes.fromhex(rdata) for rdata in rdatas]
@@ -324,9 +320,11 @@ def resolve_answer_cached(qname: str, rdtype: str = "A") -> Answer:
 
     Positive answers are kept for their TTL, capped at
     ``DNS_RESOLVER_CACHE_MAX_TTL``. NXDOMAIN and NODATA are kept for
-    ``DNS_RESOLVER_CACHE_NEGATIVE_TTL``. Anything else (timeout, SERVFAIL,
-    DNSSEC failure) raises and is not stored. A cache outage degrades to an
-    uncached lookup.
+    ``DNS_RESOLVER_CACHE_NEGATIVE_TTL``, SERVFAIL and timeouts for
+    ``DNS_RESOLVER_CACHE_FAILURE_TTL``, except a timeout cut short by
+    :func:`dns_budget`: that says nothing about the nameserver. Anything else
+    (DNSSEC failure, other errors) is not stored. A cache outage degrades to
+    an uncached lookup.
     """
     rdtype = rdtype.strip().upper()
     key = _cache_key(qname, rdtype)
@@ -341,13 +339,19 @@ def resolve_answer_cached(qname: str, rdtype: str = "A") -> Answer:
     if entry is not None:
         try:
             return _answer_from_cache(entry, qname, rdtype)
-        except (NXDOMAINError, NoAnswerError):
+        except (
+            NXDOMAINError,
+            NoAnswerError,
+            ServfailError,
+            ResolutionTimeoutError,
+        ):
             raise
         # pylint: disable-next=broad-exception-caught
         except Exception as exc:
             # An entry written by another version, or corrupted: a miss.
             logger.warning("Ignoring unreadable DNS cache entry: %s", exc)
 
+    remaining = _remaining()
     try:
         answer = resolve_answer(qname, rdtype)
     except NXDOMAINError:
@@ -355,6 +359,13 @@ def resolve_answer_cached(qname: str, rdtype: str = "A") -> Answer:
         raise
     except NoAnswerError:
         _cache_set(key, (_CACHED_NODATA, None), _negative_ttl())
+        raise
+    except ServfailError:
+        _cache_set(key, (_CACHED_SERVFAIL, None), _failure_ttl())
+        raise
+    except ResolutionTimeoutError:
+        if remaining is None or remaining >= settings.DNS_RESOLVER_MAX_RESOLUTION_TIME:
+            _cache_set(key, (_CACHED_TIMEOUT, None), _failure_ttl())
         raise
 
     ttl = min(answer.ttl, max_ttl)
@@ -373,6 +384,12 @@ def resolve_answer_cached(qname: str, rdtype: str = "A") -> Answer:
 def _negative_ttl() -> int:
     return min(
         settings.DNS_RESOLVER_CACHE_NEGATIVE_TTL, settings.DNS_RESOLVER_CACHE_MAX_TTL
+    )
+
+
+def _failure_ttl() -> int:
+    return min(
+        settings.DNS_RESOLVER_CACHE_FAILURE_TTL, settings.DNS_RESOLVER_CACHE_MAX_TTL
     )
 
 

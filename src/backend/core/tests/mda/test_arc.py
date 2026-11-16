@@ -9,7 +9,7 @@ from unittest.mock import patch
 import dkim
 import pytest
 
-from core.mda import arc
+from core.mda import arc, signing
 from core.services.dns.resolver import (
     InvalidNameError,
     NoAnswerError,
@@ -64,17 +64,35 @@ class TestArcResult:
         assert out["dnsfail"] is False
         assert out["trusted"] is False
 
+    RESULT = {
+        "ams-domain": b"relay.example",
+        "as-domain": b"relay.example",
+        "aar-value": b"i=2; mx; dkim=pass",
+    }
+
     def test_trusted_seal_exposes_aar(self):
-        results = [{"ams-domain": b"relay.example", "aar-value": b"i=2; mx; dkim=pass"}]
-        with self._outer("relay.example"), self._verify(arc.CV_Pass, results):
+        with self._outer("relay.example"), self._verify(arc.CV_Pass, [self.RESULT]):
             out = arc.arc_result(b"raw", {"relay.example"})
         assert out["trusted"] is True
         assert out["sealer"] == "relay.example"
         assert out["aar"] == "i=2; mx; dkim=pass"
 
+    @pytest.mark.parametrize(
+        "ams, seal",
+        [(b"relay.example", b"attacker.test"), (b"attacker.test", b"relay.example")],
+    )
+    def test_seal_and_ams_from_different_domains_untrusted(self, ams, seal):
+        """Only the seal covers the AAR: a trusted AMS under another seal
+        vouches for an AAR the trusted sealer never wrote."""
+        results = [{**self.RESULT, "ams-domain": ams, "as-domain": seal}]
+        with self._outer("relay.example"), self._verify(arc.CV_Pass, results):
+            out = arc.arc_result(b"raw", {"relay.example"})
+        assert out["trusted"] is False
+        assert out["aar"] is None
+
     def test_cv_fail_untrusted(self):
         # Outermost sealer IS listed, so we verify — but the chain fails.
-        results = [{"ams-domain": b"relay.example", "aar-value": b"i=2; mx; dkim=pass"}]
+        results = [self.RESULT]
         with self._outer("relay.example"), self._verify(b"fail", results):
             out = arc.arc_result(b"raw", {"relay.example"})
         assert out["trusted"] is False
@@ -124,7 +142,13 @@ class TestArcFastPath:
 
     def test_at_cap_still_verifies(self):
         # Exactly at the cap is still verified.
-        results = [{"ams-domain": b"relay.example", "aar-value": b"x"}]
+        results = [
+            {
+                "ams-domain": b"relay.example",
+                "as-domain": b"relay.example",
+                "aar-value": b"x",
+            }
+        ]
         with (
             patch("core.mda.arc._outermost_sealer", return_value=("relay.example", 20)),
             patch(
@@ -225,6 +249,14 @@ class TestOutermostSealer:
         sealer, max_i = arc._outermost_sealer(b"\x00\xff not a real message")
         assert max_i == 0
 
+    def test_seal_by_another_domain_has_no_sealer(self):
+        raw = base64.b64decode(_SEALED_B64).replace(
+            b"cv=none; a=rsa-sha256; d=relay.example",
+            b"cv=none; a=rsa-sha256; d=attacker.test",
+            1,
+        )
+        assert arc._outermost_sealer(raw) == (None, 1)
+
 
 class TestArcResultRealCrypto:
     """Exercise the real dkimpy chain verification (stub DNS, no network)."""
@@ -237,6 +269,20 @@ class TestArcResultRealCrypto:
         assert out["trusted"] is True
         assert out["sealer"] == "relay.example"
         assert "dkim=pass" in str(out["aar"])
+
+    @pytest.mark.parametrize(
+        "header",
+        [b"ARC-Seal:", b"ARC-Message-Signature:", b"ARC-Authentication-Results:"],
+    )
+    def test_oversized_arc_header_is_refused_unverified(self, header):
+        """dkimpy's tag regexes are quadratic in whitespace runs."""
+        padding = b" " * signing.MAX_SIGNATURE_HEADER_BYTES
+        raw = self.SEALED.replace(header, header + padding, 1)
+        with patch("core.mda.arc.arc_verify") as verify:
+            out = arc.arc_result(raw, {"relay.example"})
+        assert out["trusted"] is False
+        assert out["dnsfail"] is False
+        verify.assert_not_called()
 
     def test_untrusted_sealer_real_verify(self):
         with patch("core.mda.arc.arc_verify", _verify_with_stub_dns):
@@ -383,6 +429,11 @@ class TestArcDnsTxt:
         error = InvalidNameError("." * 300, "TXT")
         with patch("core.mda.arc.resolve_txt_values", side_effect=error):
             assert arc.arc_dns_txt("." * 300) is None
+
+    def test_non_ascii_name_is_settled(self):
+        with patch("core.mda.arc.resolve_txt_values") as resolve:
+            assert arc.arc_dns_txt("sél._domainkey.relay.example".encode()) is None
+        resolve.assert_not_called()
 
     @pytest.mark.parametrize("transient", [ResolutionTimeoutError, ServfailError])
     def test_transient_failure_propagates(self, transient):

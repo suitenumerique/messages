@@ -22,6 +22,7 @@ from dkim import ARC, CV_Pass, arc_verify
 from dkim.util import parse_tag_value
 
 from core.mda.addresses import ascii_lower
+from core.mda.signing import signature_too_costly
 from core.services.dns.records import parse_dkim_tags
 from core.services.dns.resolver import (
     InvalidNameError,
@@ -51,10 +52,10 @@ def arc_dns_txt(name, timeout=5):  # pylint: disable=unused-argument
     which is how the caller tells a sealer that has no key from a resolver it
     could not reach.
 
-    ``InvalidNameError`` counts as settled because the name is built from the
-    signature's own ``s=`` and ``d=``: a forged chain naming a trusted sealer
-    with a malformed selector would otherwise be held for the whole deferral
-    window on a name that can never resolve.
+    ``InvalidNameError`` and a non-ASCII name count as settled because the
+    name is built from the signature's own ``s=`` and ``d=``: a forged chain
+    naming a trusted sealer with a malformed selector would otherwise be held
+    for the whole deferral window on a name that can never resolve.
 
     Only values that parse as a DKIM key record carrying ``p=`` count, as on
     the DKIM verify path (RFC 8617 4.1.1 reuses RFC 6376 key records). A
@@ -66,10 +67,10 @@ def arc_dns_txt(name, timeout=5):  # pylint: disable=unused-argument
     so an extra key is their config oddity and refusing it would hold every
     message from them.
     """
-    fqdn = name.decode("ascii") if isinstance(name, bytes) else name
     try:
+        fqdn = name.decode("ascii") if isinstance(name, bytes) else name
         values = resolve_txt_values(fqdn.rstrip("."))
-    except (NXDOMAINError, NoAnswerError, InvalidNameError):
+    except (NXDOMAINError, NoAnswerError, InvalidNameError, UnicodeDecodeError):
         return None
     key_records = [
         v for v in values if (tags := parse_dkim_tags(v)) is not None and "p" in tags
@@ -125,8 +126,13 @@ def _outermost_sealer(raw_data: bytes) -> Tuple[Optional[str], int]:
     """Cheaply (no crypto, no DNS) find the outermost ARC sealer.
 
     Returns ``(sealer_domain, max_instance)`` where ``sealer_domain`` is the
-    ``d=`` of the ``ARC-Message-Signature`` at the highest instance, and
-    ``max_instance`` is ``0`` when the message carries no (parseable) ARC chain.
+    ``d=`` of the ``ARC-Seal`` at the highest instance (``None`` unless the
+    ``ARC-Message-Signature`` there has the same ``d=``), and ``max_instance``
+    is ``0`` when the message carries no (parseable) ARC chain.
+
+    The seal, not the AMS: only the seal covers the
+    ``ARC-Authentication-Results`` we act on, so a valid AMS from a trusted
+    sealer under someone else's seal vouches for nothing.
 
     Uses dkimpy's own header sorting so the sealer we gate on is exactly the one
     ``arc_verify`` would treat as outermost — no second parser to diverge from.
@@ -141,15 +147,48 @@ def _outermost_sealer(raw_data: bytes) -> Tuple[Optional[str], int]:
         return None, 0
     if max_instance == 0:
         return None, 0
-    for instance, (name, value) in arc_headers:
-        if instance == max_instance and name.lower() == b"arc-message-signature":
+    domains = {}
+    for instance, (raw_name, value) in arc_headers:
+        name = raw_name.lower()
+        if instance == max_instance and name in (b"arc-seal", b"arc-message-signature"):
             try:
-                domain = parse_tag_value(value).get(b"d")
+                domains[name] = _normalize_domain(parse_tag_value(value).get(b"d"))
             except Exception as exc:  # pylint: disable=broad-exception-caught
-                logger.debug("ARC-Message-Signature tag parse failed: %s", exc)
+                logger.debug("ARC %s tag parse failed: %s", name, exc)
                 return None, max_instance
-            return _normalize_domain(domain), max_instance
-    return None, max_instance
+    seal_domain = domains.get(b"arc-seal")
+    if seal_domain != domains.get(b"arc-message-signature"):
+        return None, max_instance
+    return seal_domain, max_instance
+
+
+_ARC_HEADERS = {
+    b"arc-seal",
+    b"arc-message-signature",
+    b"arc-authentication-results",
+}
+
+
+def _arc_headers_too_costly(raw_data: bytes) -> Optional[str]:
+    """Why the ARC headers are refused before dkimpy sees them, if they are."""
+    try:
+        headers = ARC(raw_data).headers
+    except Exception:  # pylint: disable=broad-exception-caught
+        return None  # arc_verify fails on it too.
+    for raw_name, value in headers:
+        name = raw_name.lower()
+        if name not in _ARC_HEADERS:
+            continue
+        tags = None
+        if name == b"arc-message-signature":
+            try:
+                tags = parse_tag_value(value)
+            except Exception:  # pylint: disable=broad-exception-caught
+                tags = None
+        reason = signature_too_costly(value, tags)
+        if reason:
+            return f"{name.decode()}: {reason}"
+    return None
 
 
 def arc_result(raw_data: bytes, trusted_sealers: Set[str]) -> Dict[str, Any]:
@@ -161,8 +200,9 @@ def arc_result(raw_data: bytes, trusted_sealers: Set[str]) -> Dict[str, Any]:
 
     Returns a dict:
       - ``trusted``: ``cv=pass`` AND sealed by an allowlisted sealer.
-      - ``sealer``:  the outermost ARC-Message-Signature ``d=`` (``None`` if no
-        chain). Used to scope the retry-on-DNS-failure hold.
+      - ``sealer``:  the outermost ARC-Seal ``d=`` (``None`` if no chain, or
+        if the AMS there has another ``d=``). Used to scope the
+        retry-on-DNS-failure hold.
       - ``aar``:     the outermost ARC-Authentication-Results value, but ONLY
         when ``trusted``; ``None`` otherwise.
       - ``dnsfail``: internal — a key lookup for a *claimed-trusted* sealer did
@@ -194,6 +234,11 @@ def arc_result(raw_data: bytes, trusted_sealers: Set[str]) -> Dict[str, Any]:
     if not _sealer_trusted(sealer, trusted_sealers):
         # The outermost sealer is not one we trust, so the chain's validity is
         # irrelevant — untrusted without spending any crypto/DNS on it.
+        return result
+
+    reason = _arc_headers_too_costly(raw_data)
+    if reason:
+        logger.info("ARC chain refused unverified: %s", reason)
         return result
 
     # --- The outermost sealer could be trusted: verify the chain (crypto+DNS).
@@ -236,11 +281,16 @@ def arc_result(raw_data: bytes, trusted_sealers: Set[str]) -> Dict[str, Any]:
         result["dnsfail"] = dns_incomplete
         return result
 
-    # Prefer dkimpy's own parsed domain for the trust decision (authoritative).
+    # dkimpy's own parsed domains decide trust (authoritative), with the same
+    # rule as the cheap gate: the seal's d=, equal to the AMS d=.
     outer = results[0]
-    verified_sealer = _normalize_domain(outer.get("ams-domain"))
-    if verified_sealer:
-        result["sealer"] = verified_sealer
+    seal_domain = _normalize_domain(outer.get("as-domain"))
+    if seal_domain != _normalize_domain(outer.get("ams-domain")):
+        logger.info("ARC: outermost seal and AMS d= differ, untrusted")
+        result["sealer"] = None
+        return result
+    if seal_domain:
+        result["sealer"] = seal_domain
 
     if cv == CV_Pass:
         if _sealer_trusted(result["sealer"], trusted_sealers):

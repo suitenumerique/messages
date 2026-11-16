@@ -12,6 +12,7 @@ semantics below follow the reference driver (pyspf ``test/testspf.py``):
 - a CNAME is followed one level.
 
 ``explanation`` is not checked: we never fetch ``exp`` (see the module).
+The suite expects the RFC's 10-term lookup limit, so it runs with that.
 """
 
 import ipaddress
@@ -114,8 +115,9 @@ def _cases():
 
 
 @pytest.mark.parametrize(("zone", "test"), _cases())
-def test_rfc7208_conformance(zone, test):
+def test_rfc7208_conformance(zone, test, monkeypatch):
     """Each scenario yields one of the results the suite accepts."""
+    monkeypatch.setattr(spf, "MAX_DNS_TERMS", 10)
     result = spf.evaluate_spf(
         test["host"],
         test.get("mailfrom") or "",

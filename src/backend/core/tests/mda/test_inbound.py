@@ -17,6 +17,7 @@ from kombu.exceptions import OperationalError as BrokerError
 from core import enums, factories, models
 from core.mda.inbound import DeliveryUnavailable, deliver_inbound_message
 from core.mda.inbound_create import (
+    _SUBJECT_NOISE_RE,
     _canonicalize_subject,
     _create_message_from_inbound,
     _record_divergent_rcpt,
@@ -45,6 +46,7 @@ class TestCanonicalizeSubject:
             "YNT: Q3 invoice",  # Turkish
             "Rép : Q3 invoice",  # French, accented, spaced colon
             "Re[2]: Q3 invoice",  # Lotus / older Outlook
+            "Re [2] : Q3 invoice",
             "[dev] Q3 invoice",  # RFC 8621 names [List-Tag]
             "Re: [dev] Q3 invoice",
             "[dev] Re: Q3 invoice",
@@ -79,6 +81,12 @@ class TestCanonicalizeSubject:
         """A sender-built subject of thousands of prefixes stays linear."""
         start = time.monotonic()
         _canonicalize_subject("a:" * 50_000 + "x")
+        assert time.monotonic() - start < 0.5
+
+    def test_noise_pattern_does_not_backtrack_on_spaces(self):
+        """A prefix word, then a long run of spaces and no colon."""
+        start = time.monotonic()
+        assert _SUBJECT_NOISE_RE.match("antw" + " " * 60_000) is None
         assert time.monotonic() - start < 0.5
 
     @pytest.mark.parametrize("absent", [None, "", "   "])

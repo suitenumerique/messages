@@ -1,5 +1,6 @@
 """Unit tests for ``core.mda.spf`` beyond the RFC 7208 conformance suite."""
 
+from types import SimpleNamespace
 from unittest.mock import patch
 
 import pytest
@@ -245,6 +246,45 @@ def test_deadline_is_temperror():
     assert "time limit" in reason
 
 
+def test_deadline_during_ptr_validation_is_temperror():
+    """Stopping validation early must not let "-all" return a definite fail."""
+    clock = [0.0]
+
+    class SlowPtrLookup(FakeLookup):
+        def ptr(self, ip):
+            clock[0] = 1000.0
+            return super().ptr(ip)
+
+    lookup = SlowPtrLookup(
+        {
+            ("example.com", "TXT"): ["v=spf1 ptr -all"],
+            ("192.0.2.1", "PTR"): ["host.example.com"],
+            ("host.example.com", "A"): ["192.0.2.1"],
+        }
+    )
+    with patch.object(spf, "time", SimpleNamespace(monotonic=lambda: clock[0])):
+        result, _ = spf.check_host(
+            "192.0.2.1", "example.com", "a@example.com", lookup=lookup
+        )
+    assert result == "temperror"
+
+
+def test_empty_mx_address_answer_counts_as_void():
+    """4.6.4: the third void lookup is a permerror, MX exchanges included."""
+    lookup = FakeLookup(
+        {
+            ("example.com", "TXT"): [
+                "v=spf1 a:v1.example.com a:v2.example.com mx:m.example.com -all"
+            ],
+            ("m.example.com", "MX"): ["mx1.example.com"],
+        }
+    )
+    result, _ = spf.check_host(
+        "192.0.2.1", "example.com", "a@example.com", lookup=lookup
+    )
+    assert result == "permerror"
+
+
 def test_include_loop_hits_the_lookup_limit():
     lookup = FakeLookup({("example.com", "TXT"): ["v=spf1 include:example.com -all"]})
     result, _ = spf.check_host(
@@ -252,6 +292,19 @@ def test_include_loop_hits_the_lookup_limit():
     )
     assert result == "permerror"
     assert len(lookup.queries) == spf.MAX_DNS_TERMS + 1
+
+
+def test_more_than_ten_lookups_are_allowed():
+    """Past the RFC's 10, up to MAX_DNS_TERMS (30) still evaluates."""
+    records = {("example.com", "TXT"): ["v=spf1 include:i0.example.com -all"]}
+    for i in range(20):
+        records[(f"i{i}.example.com", "TXT")] = [f"v=spf1 include:i{i + 1}.example.com"]
+    records[("i20.example.com", "TXT")] = ["v=spf1 ip4:192.0.2.1"]
+    lookup = FakeLookup(records)
+    result, _ = spf.check_host(
+        "192.0.2.1", "example.com", "a@example.com", lookup=lookup
+    )
+    assert result == "pass"
 
 
 def test_ptr_keeps_only_the_first_ten_names():

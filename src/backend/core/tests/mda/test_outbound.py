@@ -6,11 +6,13 @@ import re
 import socket
 import threading
 import time
+from datetime import timedelta
 from unittest.mock import MagicMock, call, patch
 
 from django.conf import settings
 from django.core.cache import cache
 from django.test import TransactionTestCase, override_settings
+from django.utils import timezone
 
 import pytest
 import rest_framework as drf
@@ -295,9 +297,16 @@ class TestSendOutboundMessage:
             email: {"delivered": True, "error": None} for email in recipients
         }
 
-        outbound.send_message(draft_message)
+        # Past every recipient's retry_at, so the retry actually sends.
+        later = timezone.now() + timedelta(hours=1)
+        with patch("django.utils.timezone.now", return_value=later):
+            outbound.send_message(draft_message)
         draft_message.refresh_from_db()
 
+        assert mock_smtp_send.call_count == 2
+        assert set(
+            draft_message.recipients.values_list("delivery_status", flat=True)
+        ) == {enums.MessageDeliveryStatusChoices.SENT_EXTERNAL}
         assert draft_message.sent_at == first_attempt
 
     @patch("core.mda.outbound_direct.resolve_answer")
@@ -1359,7 +1368,7 @@ class TestSendMessageDKIMVerification:
         )
 
         # Mock DNS to return the DKIM public key
-        def mock_dns_resolve_func(query_name):
+        def mock_dns_resolve_func(query_name, **_):
             expected_fqdn = f"testselector._domainkey.{mailbox_sender.domain.name}"
             if query_name == expected_fqdn:
                 return txt_answer(f"v=DKIM1; k=rsa; p={dkim_key.public_key}")

@@ -10,8 +10,8 @@ Every lookup goes through :class:`SPFLookup`, which wraps the shared resolver
 substitute their own.
 
 Limits (4.6.4) are the anti-amplification caps and are enforced as
-``permerror``: 10 DNS-querying terms across the whole evaluation, 2 void
-lookups, 10 address lookups per ``mx``. ``ptr`` silently keeps its first 10
+``permerror``: 30 DNS-querying terms across the whole evaluation (see
+``MAX_DNS_TERMS``), 2 void lookups, 10 address lookups per ``mx``. ``ptr`` silently keeps its first 10
 names. An overall deadline turns a slow chain into ``temperror``.
 """
 
@@ -53,7 +53,9 @@ PERMERROR = "permerror"
 
 _QUALIFIER_RESULTS = {"+": PASS, "-": FAIL, "~": SOFTFAIL, "?": NEUTRAL}
 
-MAX_DNS_TERMS = 10
+# 4.6.4 says 10. Many large senders publish more, so like rspamd
+# (SPF_MAX_DNS_REQUESTS) we allow 30. The DNS budget still bounds the cost.
+MAX_DNS_TERMS = 30
 MAX_VOID_LOOKUPS = 2
 MAX_MX_RECORDS = 10
 MAX_PTR_RECORDS = 10
@@ -372,7 +374,7 @@ class _Evaluation:  # pylint: disable=too-many-instance-attributes
             raise SPFTempError("evaluation time limit exceeded")
 
     def count_term(self):
-        """Count one DNS-querying term (4.6.4: at most 10 per evaluation)."""
+        """Count one DNS-querying term (at most ``MAX_DNS_TERMS``)."""
         self.dns_terms += 1
         if self.dns_terms > MAX_DNS_TERMS:
             raise SPFPermError("too many DNS lookups")
@@ -455,8 +457,8 @@ class _Evaluation:  # pylint: disable=too-many-instance-attributes
             return []
         validated = []
         for name in names[:MAX_PTR_RECORDS]:
-            if time.monotonic() > self.deadline:
-                break
+            # Raises: stopping early would let a later "-all" decide.
+            self._check_deadline()
             try:
                 addresses = self.lookup.addresses(name, self.ip.version)
             except SPFTempError:
@@ -517,6 +519,7 @@ class _Evaluation:  # pylint: disable=too-many-instance-attributes
             for exchange in exchanges:
                 self._check_deadline()
                 addresses = self.lookup.addresses(exchange, self.ip.version)
+                self.note_void(addresses)
                 if self._in_network(addresses, term.cidr4, term.cidr6):
                     return True
             return False
@@ -626,25 +629,37 @@ def evaluate_spf(
     lookup: Optional[SPFLookup] = None,
 ) -> SPFResult:
     """SPF for the MAIL FROM identity, or HELO for a null sender (2.4)."""
+    identity, domain = spf_identity(mail_from, helo)
+    if not domain:
+        reason = "no HELO identity" if identity == "helo" else "MAIL FROM has no domain"
+        return SPFResult(NONE, None, identity, reason)
+    sender = f"postmaster@{domain}" if identity == "helo" else mail_from.strip()
+    result, reason = check_host(ip, domain, sender, helo=helo, lookup=lookup)
+    return SPFResult(result, domain, identity, reason)
+
+
+def spf_identity(mail_from: str, helo: str) -> tuple[str, Optional[str]]:
+    """The identity SPF checks and its domain, as ``SPFResult`` reports them.
+
+    MAIL FROM, or the HELO name for a null sender (2.4). "@example.com" (no
+    local part) still names a domain, checked as postmaster (4.3).
+    """
     mail_from = (mail_from or "").strip()
     if mail_from in ("", "<>"):
-        helo = (helo or "").strip().rstrip(".")
-        if not helo:
-            return SPFResult(NONE, None, "helo", "no HELO identity")
-        result, reason = check_host(
-            ip, helo, f"postmaster@{helo}", helo=helo, lookup=lookup
+        identity, name = "helo", helo or ""
+    else:
+        identity = "mailfrom"
+        name = address_domain(mail_from) or (
+            mail_from[1:] if mail_from.startswith("@") else ""
         )
-        return SPFResult(result, normalize_domain(helo), "helo", reason)
-
-    # The domain alone settles the identity: "@example.com" (no local part)
-    # is still checked, as postmaster (4.3).
-    domain = address_domain(mail_from) or (
-        mail_from[1:] if mail_from.startswith("@") else ""
-    )
     # A-label, as the From domain is: an SMTPUTF8 sender may give a U-label,
     # and the two must compare equal for alignment.
-    domain = normalize_domain(domain).rstrip(".")
-    if not domain:
-        return SPFResult(NONE, None, "mailfrom", "MAIL FROM has no domain")
-    result, reason = check_host(ip, domain, mail_from, helo=helo, lookup=lookup)
-    return SPFResult(result, domain, "mailfrom", reason)
+    return identity, normalize_domain(name).rstrip(".") or None
+
+
+@dataclasses.dataclass(frozen=True)
+class SPFCheck:
+    """An SPF check DMARC runs only when its result can matter."""
+
+    domain: Optional[str]
+    run: Callable[[], SPFResult]
