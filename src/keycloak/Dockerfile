@@ -1,4 +1,4 @@
-FROM alpine:3.24@sha256:294b683cb724975bec92580e1e685676bd4b50bda910ddb8c51d4cabeaec77e6 AS scripts
+FROM alpine:3.24@sha256:f59abe656b692d901e184be3445e084786602108599d2a51d229c0f5a48c71bf AS scripts
 
 ARG SCRIPT_GROUP_ATTRIBUTE_WHITELIST
 
@@ -14,7 +14,7 @@ fi
 zip -r /custom-scripts.jar META-INF *.js
 EOR
 
-FROM alpine:3.24@sha256:294b683cb724975bec92580e1e685676bd4b50bda910ddb8c51d4cabeaec77e6 AS tools-download
+FROM alpine:3.24@sha256:f59abe656b692d901e184be3445e084786602108599d2a51d229c0f5a48c71bf AS tools-download
 ARG TARGETARCH
 
 ARG CADDY_VERSION=2.11.9
@@ -35,7 +35,7 @@ RUN wget -qO /tmp/caddy.tar.gz "https://github.com/caddyserver/caddy/releases/do
 
 # The theme jar is architecture independent, so the build runs on the native
 # platform of the builder, also in the arm64 CI build.
-FROM --platform=$BUILDPLATFORM node:24.18.0-slim@sha256:cb4e8f7c443347358b7875e717c29e27bf9befc8f5a26cf18af3c3dec80e58c5 AS theme-tools
+FROM --platform=$BUILDPLATFORM node:24.22.3-slim@sha256:dc26ae92c9fb15cf6b1d63e20f0944b2efe0f115b20e00be48fb23fceb061c54 AS theme-tools
 RUN apt-get update \
     && apt-get install -y --no-install-recommends maven ca-certificates \
     && rm -rf /var/lib/apt/lists/*
@@ -55,7 +55,7 @@ RUN --mount=type=cache,target=/cache npm ci
 COPY theme/ ./
 RUN --mount=type=cache,target=/cache npm run build-keycloak-theme
 
-FROM quay.io/keycloak/keycloak:26.8.1@sha256:79c623a22abacf3fe6c00a5fb30f5b7843d717b234033b80995891c06116d244 AS builder
+FROM quay.io/keycloak/keycloak:26.8.2@sha256:c68e286cacd87b942ac1939a0a1481461109d6acd3a57dc496969a319a76bbf0 AS builder
 
 WORKDIR /opt/keycloak
 COPY --from=theme-build --chown=keycloak:keycloak --chmod=644 /theme/dist_keycloak/keycloak-theme-for-kc-all-other-versions.jar /opt/keycloak/providers/lst-dsfr.jar
@@ -73,18 +73,12 @@ ENV KC_DB=postgres
 
 RUN /opt/keycloak/bin/kc.sh build
 
-FROM quay.io/keycloak/keycloak:26.8.1@sha256:79c623a22abacf3fe6c00a5fb30f5b7843d717b234033b80995891c06116d244
+FROM quay.io/keycloak/keycloak:26.8.2@sha256:c68e286cacd87b942ac1939a0a1481461109d6acd3a57dc496969a319a76bbf0
 
 COPY --from=builder /opt/keycloak/ /opt/keycloak/
 COPY --from=tools-download /usr/bin/caddy /usr/bin/caddy
 COPY caddy/Caddyfile /etc/caddy/Caddyfile
 COPY --chmod=755 entrypoint.sh /usr/local/bin/entrypoint.sh
-
-# @TODO: drop once the UBI base ships a ca-certificates without this root,
-# already removed from the Debian and Mozilla trust stores.
-USER root
-RUN keytool -delete -cacerts -storepass changeit -alias emsigneccrootca-g3
-USER 1000
 
 # Same build options as the builder stage, so that a `start` without
 # --optimized keeps them after a re-augmentation.

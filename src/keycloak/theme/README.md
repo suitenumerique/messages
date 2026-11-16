@@ -2,7 +2,7 @@
 
 ## What the theme is
 
-`lst-dsfr` is a Keycloak theme. It uses Keycloakify 11.16.3 and `@codegouvfr/react-dsfr` 1.36.0.
+`lst-dsfr` is a Keycloak theme. It uses Keycloakify 11.16.4 and `@codegouvfr/react-dsfr` 1.36.0.
 
 - It has the look of ProConnect Identité.
 - It has a login theme and a Single-Page account theme.
