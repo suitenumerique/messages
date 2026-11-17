@@ -357,7 +357,13 @@ class MailboxUsageMetricsApiView(IsGlobalChannelMixin, APIView):
             for mailbox in queryset:
                 email = f"{mailbox.local_part}@{mailbox.domain.name}"
                 result = {
-                    "account": {"type": "mailbox", "email": email},
+                    # The id ties the metric to the mailbox's DeployCenter
+                    # account, as in the entitlements push.
+                    "account": {
+                        "type": "mailbox",
+                        "id": str(mailbox.id),
+                        "email": email,
+                    },
                     "metrics": {"storage_used": mailbox.storage_used},
                 }
                 if account_id_key:

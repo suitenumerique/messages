@@ -598,8 +598,11 @@ class TestMailboxUsageMetrics:
 
         assert data["count"] == 1
         assert data["results"][0]["org_id"] == "111"
-        assert data["results"][0]["account"]["email"] == "alice@a.com"
-        assert data["results"][0]["account"]["type"] == "mailbox"
+        assert data["results"][0]["account"] == {
+            "type": "mailbox",
+            "id": str(mailbox_a.id),
+            "email": "alice@a.com",
+        }
         assert data["results"][0]["metrics"]["storage_used"] == 1 * overhead
 
     @pytest.mark.django_db

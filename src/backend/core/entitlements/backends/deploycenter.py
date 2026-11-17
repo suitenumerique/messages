@@ -170,7 +170,14 @@ class DeployCenterEntitlementsBackend(EntitlementsBackend):
         compute live.
         """
         mailbox_entry = {
-            "account": {"type": "mailbox", "email": str(mailbox)},
+            # DeployCenter ties a metric to an account only through its id:
+            # without one, the mailbox usage is stored against no account and
+            # reads back as null.
+            "account": {
+                "type": "mailbox",
+                "id": str(mailbox.id),
+                "email": str(mailbox),
+            },
             "metrics": {"storage_used": get_mailbox_storage_used(mailbox)},
         }
         if org_value is None:

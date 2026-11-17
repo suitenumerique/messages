@@ -183,6 +183,13 @@ class TestDeployCenterMailboxEntitlements:
         body = json.loads(request.body)
         types = {item["account"]["type"] for item in body["usage_metrics"]}
         assert types == {"mailbox", "organization"}
+        # Without an id, DeployCenter ties the usage to no account and answers
+        # metrics.account as null.
+        assert body["usage_metrics"][0]["account"] == {
+            "type": "mailbox",
+            "id": str(mailbox.id),
+            "email": "alice@example.com",
+        }
 
     @responses.activate
     def test_no_organization_when_domain_has_no_claim(self):
