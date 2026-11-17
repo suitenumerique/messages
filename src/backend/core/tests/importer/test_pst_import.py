@@ -399,6 +399,25 @@ class TestReconstructEml:
             2024, 2, 3, 4, 5, 6, tzinfo=timezone.utc
         )
 
+    @pytest.mark.parametrize(
+        ("date_header", "expected"),
+        [
+            ("2025-05-26T10:00:00+02:00", "Mon, 26 May 2025 10:00:00 +0200"),
+            ("2025-05-26T10:00:00Z", "Mon, 26 May 2025 10:00:00 +0000"),
+            ("2025-05-26T10:00:00", "Mon, 26 May 2025 10:00:00 +0000"),
+        ],
+    )
+    def test_reconstruct_accepts_iso_date(self, date_header, expected):
+        """An ISO 8601 Date (written by some exporters) is kept, not replaced by
+        the MAPI fallback."""
+        msg = _make_message(
+            transport_headers=f"From: sender@example.com\r\nDate: {date_header}\r\n",
+            delivery_time=datetime(2024, 2, 3, 4, 5, 6, tzinfo=timezone.utc),
+        )
+        parsed = email.message_from_bytes(reconstruct_eml(msg))
+
+        assert parsed["Date"] == expected
+
     def test_reconstruct_keeps_extreme_offset(self):
         """A Date with an offset past PostgreSQL's range is kept as written;
         inbound_create converts it to UTC."""

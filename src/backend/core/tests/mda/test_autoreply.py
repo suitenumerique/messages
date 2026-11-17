@@ -355,6 +355,42 @@ class TestIsActiveAutoreply:
         autoreply_template.refresh_from_db()
         assert autoreply_template.is_active_autoreply() is True
 
+    @pytest.mark.parametrize(
+        ("now", "expected"),
+        [
+            # 02:15 the second time (CET): after the first 02:30 (CEST).
+            (datetime(2026, 10, 25, 1, 15, tzinfo=ZoneInfo("UTC")), True),
+            (datetime(2026, 10, 25, 9, 0, tzinfo=ZoneInfo("UTC")), True),
+            # 02:15 the first time (CEST): before the start.
+            (datetime(2026, 10, 25, 0, 15, tzinfo=ZoneInfo("UTC")), False),
+            (datetime(2026, 10, 25, 11, 1, tzinfo=ZoneInfo("UTC")), False),
+        ],
+    )
+    def test_date_range_repeated_hour(self, autoreply_template, now, expected):
+        """Naive bounds in the hour repeated when DST ends (Europe/Paris,
+        2026-10-25 02:00-03:00) are compared as instants, not wall clocks."""
+        autoreply_template.metadata = {
+            "schedule_type": "date_range",
+            "start_at": "2026-10-25T02:30:00",
+            "end_at": "2026-10-25T12:00:00",
+            "timezone": "Europe/Paris",
+        }
+        autoreply_template.save()
+        assert autoreply_template.is_active_autoreply(now=now) is expected
+
+    def test_date_range_overflowing_bound_inactive(self, autoreply_template):
+        """A bound past datetime's range in UTC makes the range inactive
+        instead of raising on every inbound message."""
+        models.MessageTemplate.objects.filter(pk=autoreply_template.pk).update(
+            metadata={
+                "schedule_type": "date_range",
+                "start_at": "2026-01-01T00:00:00Z",
+                "end_at": "9999-12-31T23:59:59-05:00",
+            }
+        )
+        autoreply_template.refresh_from_db()
+        assert autoreply_template.is_active_autoreply() is False
+
     def test_date_range_out_of_range(self, autoreply_template):
         """Date range in the future is not active."""
         now = timezone.now()

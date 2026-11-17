@@ -28,6 +28,7 @@ from jmap_email import (
     parse_address,
     parse_addresses,
     parse_date,
+    sent_at_to_datetime,
 )
 from jmap_email.types import EmailAddress
 
@@ -1158,10 +1159,11 @@ def reconstruct_eml(
         if subject:
             jmap_data["subject"] = subject
 
-        # sentAt. A Date the composer cannot parse would make it reject the
-        # whole message: leave it unset so the MAPI fallback below applies.
-        date_str = parsed_headers.get("Date")
-        sent_at = parse_date(str(date_str)) if date_str else None
+        # sentAt: RFC 5322, or ISO 8601 as some exporters write it. A Date the
+        # composer cannot parse would make it reject the whole message: leave
+        # it unset so the MAPI fallback below applies.
+        date_str = str(parsed_headers.get("Date") or "")
+        sent_at = parse_date(date_str) or sent_at_to_datetime(date_str)
         if sent_at is not None:
             jmap_data["sentAt"] = sent_at.isoformat()
 

@@ -11,6 +11,7 @@ import secrets
 import uuid
 from datetime import datetime as dt
 from datetime import time, timedelta
+from datetime import timezone as dt_timezone
 from functools import cached_property
 from logging import getLogger
 from typing import Any, Dict, List, Optional
@@ -3466,6 +3467,22 @@ def _autoreply_tz(metadata: dict) -> ZoneInfo:
         return ZoneInfo("UTC")
 
 
+def _autoreply_range_utc(start_at, end_at, tz: ZoneInfo) -> tuple[dt, dt]:
+    """Parse a date_range autoreply's bounds as UTC instants.
+
+    Naive bounds are read in ``tz``. Compared in UTC: two datetimes sharing a
+    ZoneInfo compare by wall clock, ignoring ``fold``, which is wrong in the
+    hour repeated when DST ends. Raises ValueError, TypeError or OverflowError.
+    """
+    bounds = []
+    for value in (start_at, end_at):
+        parsed = dt.fromisoformat(value)
+        if parsed.tzinfo is None:
+            parsed = parsed.replace(tzinfo=tz)
+        bounds.append(parsed.astimezone(dt_timezone.utc))
+    return bounds[0], bounds[1]
+
+
 class MessageTemplate(BaseModel):
     """Message template model to store reusable message templates and signatures."""
 
@@ -3706,21 +3723,15 @@ class MessageTemplate(BaseModel):
                     }
                 )
             try:
-                start = dt.fromisoformat(start_at)
-                end = dt.fromisoformat(end_at)
-            except (ValueError, TypeError) as exc:
+                start, end = _autoreply_range_utc(
+                    start_at, end_at, _autoreply_tz(metadata)
+                )
+            except (ValueError, TypeError, OverflowError) as exc:
                 raise ValidationError(
                     {
                         "metadata": "start_at and end_at must be valid ISO datetime strings."
                     }
                 ) from exc
-            # Same reading as is_active_autoreply: comparing a naive value
-            # with an aware one raises TypeError.
-            tz = _autoreply_tz(metadata)
-            if start.tzinfo is None:
-                start = start.replace(tzinfo=tz)
-            if end.tzinfo is None:
-                end = end.replace(tzinfo=tz)
             if start >= end:
                 raise ValidationError({"metadata": "start_at must be before end_at."})
         if schedule_type == "recurring_weekly":
@@ -3802,16 +3813,10 @@ class MessageTemplate(BaseModel):
             if not start_at or not end_at:
                 return False
             try:
-                start = dt.fromisoformat(start_at)
-                end = dt.fromisoformat(end_at)
-            except (ValueError, TypeError):
+                start, end = _autoreply_range_utc(start_at, end_at, tz)
+            except (ValueError, TypeError, OverflowError):
                 return False
-            # Make timezone-aware if naive
-            if start.tzinfo is None:
-                start = start.replace(tzinfo=tz)
-            if end.tzinfo is None:
-                end = end.replace(tzinfo=tz)
-            return start <= local_now <= end
+            return start <= now.astimezone(dt_timezone.utc) <= end
 
         if schedule_type == "recurring_weekly":
             intervals = metadata.get("intervals", [])

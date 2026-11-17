@@ -302,6 +302,12 @@ class TestAutoreplyMetadataValidation:
                 status.HTTP_400_BAD_REQUEST,
             ),
             ("2026-03-01T08:30:00Z", "2026-03-01T10:00:00", status.HTTP_201_CREATED),
+            # Overflows datetime once in UTC.
+            (
+                "2026-03-01T00:00:00Z",
+                "9999-12-31T23:59:59-05:00",
+                status.HTTP_400_BAD_REQUEST,
+            ),
             # Offsets past PostgreSQL's range, as plain JSON strings.
             (
                 "2026-03-01T00:00:00+23:59",
