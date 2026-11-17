@@ -743,15 +743,26 @@ class TestPrepareOutboundMessageSignature:
         )
 
     @pytest.mark.parametrize("is_forward", [False, True])
+    @pytest.mark.parametrize(
+        ("date_header", "expected"),
+        [
+            # The Date: is what we stored: quoted with the sender's offset.
+            ("Mon, 09 Nov 2026 20:30:11 +0200", "Mon, 09 Nov 2026 20:30:11 +0200"),
+            ("Tue, 10 Nov 2026 10:29:11 +1559", "Tue, 10 Nov 2026 10:29:11 +1559"),
+            # Forged (clamped on delivery) or unreadable: the stored value.
+            ("Fri, 01 Jan 2099 00:00:00 -2359", "Mon, 09 Nov 2026 18:30:11 +0000"),
+            ("not a date", "Mon, 09 Nov 2026 18:30:11 +0000"),
+        ],
+    )
     def test_prepare_outbound_message_quotes_stored_date(
-        self, user, mailbox_sender, mailbox_access, is_forward
+        self, user, mailbox_sender, mailbox_access, is_forward, date_header, expected
     ):
-        """The quote header shows the parent's stored ``sent_at`` (in range,
-        clamped to delivery), not the ``Date:`` the sender put in the blob."""
+        """The quote header never shows a ``Date:`` that differs from the
+        parent's stored ``sent_at`` (in range, clamped to delivery)."""
         raw = (
             b"From: Bob <bob@example.com>\r\n"
             b"To: someone@example.com\r\n"
-            b"Date: Fri, 01 Jan 2099 00:00:00 -2359\r\n"
+            b"Date: " + date_header.encode() + b"\r\n"
             b"Subject: Original Subject\r\n"
             b"Message-ID: <forged.date@example.com>\r\n\r\nOriginal body"
         )
@@ -777,8 +788,9 @@ class TestPrepareOutboundMessageSignature:
         )
         message.refresh_from_db()
         content = message.blob.get_content().decode().replace("=\r\n", "")
-        assert "Mon, 09 Nov 2026 18:30:11 +0000" in content
+        assert expected in content
         assert "2099" not in content
+        assert "not a date" not in content
 
     @override_settings(SCHEMA_CUSTOM_ATTRIBUTES_USER=SCHEMA_CUSTOM_ATTRIBUTES)
     def test_prepare_outbound_message_with_inactive_signature(

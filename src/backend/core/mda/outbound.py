@@ -1,6 +1,7 @@
 """Handles outbound email delivery logic: composing and sending messages."""
 # pylint: disable=broad-exception-caught, too-many-lines
 
+import datetime
 import json
 import logging
 from typing import Any, Optional
@@ -18,6 +19,7 @@ from jmap_email import (
     find_header,
     first_address_email,
     parse_email,
+    sent_at_to_datetime,
 )
 
 from core import models
@@ -136,6 +138,18 @@ def build_xmailer_value() -> str:
     return settings.MDA_HEADER_XMAILER
 
 
+def _quote_sent_at(claimed, stored: datetime.datetime) -> datetime.datetime:
+    """The date to show in the quote header of a reply to a message.
+
+    The sender's own ``Date:`` when it is the instant we stored, which keeps
+    their offset as mail clients show it. Otherwise the stored ``sent_at``,
+    which is in range and not after delivery: a forged future or unreadable
+    ``Date:`` is not quoted.
+    """
+    parsed = sent_at_to_datetime(claimed)
+    return parsed if parsed is not None and parsed == stored else stored
+
+
 def compose_and_sign_mime(
     message: models.Message,
     mailbox: models.Mailbox,
@@ -172,9 +186,12 @@ def compose_and_sign_mime(
     if message.parent:
         parent_parsed = message.parent.get_parsed_data()
         if parent_parsed and message.parent.sent_at:
-            # The stored date, not the blob's Date: header: it is in range and
-            # clamped to delivery time (a forged future Date is not quoted).
-            parent_parsed = {**parent_parsed, "sentAt": message.parent.sent_at}
+            parent_parsed = {
+                **parent_parsed,
+                "sentAt": _quote_sent_at(
+                    parent_parsed.get("sentAt"), message.parent.sent_at
+                ),
+            }
         if parent_parsed:
             if is_forward_subject(message.subject):
                 nested_data = make_forward(

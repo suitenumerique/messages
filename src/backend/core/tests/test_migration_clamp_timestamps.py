@@ -109,6 +109,8 @@ def test_future_dates_clamped():
     thread.refresh_from_db()
     assert before <= thread.messaged_at <= after
     assert before <= thread.active_messaged_at <= after
+    # Picked up by ``search_reindex --from-date``.
+    assert before <= thread.updated_at <= after
     access.refresh_from_db()
     assert before <= access.read_at <= after
     assert before <= access.starred_at <= after
@@ -125,7 +127,7 @@ def test_valid_dates_untouched():
         read_at=past, starred_at=None
     )
     models.Thread.objects.filter(pk=thread.pk).update(
-        messaged_at=past, draft_messaged_at=None
+        messaged_at=past, draft_messaged_at=None, updated_at=past
     )
 
     migration.clamp_timestamps(apps, None)
@@ -139,3 +141,28 @@ def test_valid_dates_untouched():
     thread.refresh_from_db()
     assert thread.messaged_at == past
     assert thread.draft_messaged_at is None
+    assert thread.updated_at == past
+
+
+@pytest.mark.parametrize(
+    ("model_name", "field"),
+    [("message", "sent_at"), ("threadaccess", "read_at"), ("thread", "messaged_at")],
+)
+def test_unreadable_row_marks_its_thread_for_reindex(model_name, field):
+    """Each kind of fixed row bumps its thread, even when unreadable."""
+    thread, access, message = _thread_with_message()
+    other_thread, _, _ = _thread_with_message()
+    past = datetime(2020, 5, 1, 12, tzinfo=UTC)
+    models.Thread.objects.filter(pk__in=[thread.pk, other_thread.pk]).update(
+        updated_at=past
+    )
+    obj = {"message": message, "thread": thread, "threadaccess": access}[model_name]
+    _set_raw(type(obj), obj.pk, field, YEAR_10000)
+
+    before = timezone.now()
+    migration.clamp_timestamps(apps, None)
+
+    thread.refresh_from_db()
+    other_thread.refresh_from_db()
+    assert thread.updated_at >= before
+    assert other_thread.updated_at == past

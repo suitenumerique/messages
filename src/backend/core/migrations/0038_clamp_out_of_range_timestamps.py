@@ -11,20 +11,22 @@ given (issue #855):
   read of the row fail. Imports and the flag API could write these.
 
 Future values become the migration time and values before year 1 become
-year 1, with ``sent_at`` brought back to the message's ``created_at``. The
-updates run in SQL without loading rows, so the unreadable ones are fixed
-too. Clamping the thread dates matches recomputing them: each one is the
-latest ``created_at`` of some messages, and the max of clamped values is the
-clamped max.
+year 1, with a future ``sent_at`` brought back to the message's
+``created_at``. The updates run in SQL without loading rows, so the
+unreadable ones are fixed too. Clamping the thread dates matches recomputing
+them: each one is the latest ``created_at`` of some of its messages, and the
+max of clamped values is the clamped max.
 
-The search index keeps the old ``sent_at`` of the messages changed here
-until they are reindexed; it does not sort on it.
+The search index sorts messages on ``created_at`` and indexes ``sent_at`` and
+the read/starred state, so it keeps the old values of what changes here. The
+threads concerned get ``updated_at`` set to the migration time, for
+``search_reindex --all --from-date`` to pick them up.
 """
 
 import datetime
 
 from django.db import migrations
-from django.db.models import F, Value
+from django.db.models import F, Q, Value
 from django.db.models.functions import Least
 from django.utils import timezone
 
@@ -40,6 +42,13 @@ THREAD_DATES = [
 ]
 
 
+def _out_of_range(fields, now):
+    query = Q()
+    for field in fields:
+        query |= Q(**{f"{field}__gt": now}) | Q(**{f"{field}__lt": EARLIEST})
+    return query
+
+
 def _clamp(model, field, now):
     model.objects.filter(**{f"{field}__gt": now}).update(**{field: now})
     model.objects.filter(**{f"{field}__lt": EARLIEST}).update(**{field: EARLIEST})
@@ -52,6 +61,25 @@ def clamp_timestamps(apps, schema_editor):
     ThreadAccess = apps.get_model("core", "ThreadAccess")
     now = timezone.now()
 
+    # Collected first, reading ids only: the timestamps may be unreadable.
+    thread_ids = (
+        set(
+            Message.objects.filter(
+                _out_of_range(["created_at", "sent_at"], now)
+            ).values_list("thread_id", flat=True)
+        )
+        | set(
+            Thread.objects.filter(_out_of_range(THREAD_DATES, now)).values_list(
+                "id", flat=True
+            )
+        )
+        | set(
+            ThreadAccess.objects.filter(
+                _out_of_range(["read_at", "starred_at"], now)
+            ).values_list("thread_id", flat=True)
+        )
+    )
+
     _clamp(Message, "created_at", now)
     Message.objects.filter(sent_at__gt=now).update(
         sent_at=Least(F("created_at"), Value(now))
@@ -61,6 +89,8 @@ def clamp_timestamps(apps, schema_editor):
         _clamp(Thread, field, now)
     for field in ("read_at", "starred_at"):
         _clamp(ThreadAccess, field, now)
+
+    Thread.objects.filter(id__in=thread_ids).update(updated_at=now)
 
 
 class Migration(migrations.Migration):

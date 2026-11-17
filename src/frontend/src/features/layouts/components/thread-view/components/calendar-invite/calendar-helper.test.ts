@@ -1,6 +1,7 @@
 import { convertIcsCalendar, IcsEvent, IcsRecurrenceRule } from "ts-ics";
 
 import {
+    collapseRecurringEvents,
     formatEventDateRange,
     formatRecurrenceRule,
     getEventEnd,
@@ -93,6 +94,17 @@ describe("invalid invite dates", () => {
         );
         expect(event.recurrenceRule).toBeDefined();
         expect(() => formatRecurrenceRule(event.recurrenceRule!, t, "en-US")).not.toThrow();
+    });
+
+    it("collapseRecurringEvents prefers a valid start over an invalid one, in either order", () => {
+        const valid = parseVevent(
+            "RECURRENCE-ID:20250622T100000Z\r\nDTSTART:20250622T100000Z\r\nDTEND:20250622T110000Z",
+        );
+        const invalid = parseVevent(
+            "RECURRENCE-ID:20250615T100000Z\r\nDTSTART:garbage\r\nDTEND:20250615T110000Z",
+        );
+        expect(collapseRecurringEvents([invalid, valid])).toEqual([valid]);
+        expect(collapseRecurringEvents([valid, invalid])).toEqual([valid]);
     });
 
     it("keeps a far-future but valid date", () => {

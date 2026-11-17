@@ -61,8 +61,8 @@ function pickSeriesRepresentative(a: IcsEvent, b: IcsEvent): IcsEvent {
     const aIsMaster = !a.recurrenceId;
     const bIsMaster = !b.recurrenceId;
     if (aIsMaster !== bIsMaster) return aIsMaster ? a : b;
-    const aStart = a.start?.date?.getTime() ?? Infinity;
-    const bStart = b.start?.date?.getTime() ?? Infinity;
+    const aStart = getEventStart(a)?.getTime() ?? Infinity;
+    const bStart = getEventStart(b)?.getTime() ?? Infinity;
     return aStart <= bStart ? a : b;
 }
 

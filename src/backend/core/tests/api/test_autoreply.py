@@ -275,7 +275,7 @@ class TestAutoreplyMetadataValidation:
         response = client.post(list_url, payload, format="json")
         assert response.status_code == status.HTTP_400_BAD_REQUEST
 
-    @pytest.mark.parametrize("tz", [123, "", False, ["Europe/Paris"], "../etc"])
+    @pytest.mark.parametrize("tz", [123, False, 0, ["Europe/Paris"], "../etc"])
     def test_invalid_timezone_type(self, user, mailbox, list_url, tz):
         """Reject a timezone that is not a valid zone name, instead of a 500
         here or a crash when an inbound message checks the schedule."""
@@ -290,6 +290,21 @@ class TestAutoreplyMetadataValidation:
         payload = _autoreply_payload(timezone=tz)
         response = client.post(list_url, payload, format="json")
         assert response.status_code == status.HTTP_400_BAD_REQUEST
+
+    @pytest.mark.parametrize("tz", [None, ""])
+    def test_empty_timezone_accepted(self, user, mailbox, list_url, tz):
+        """A null or empty timezone means UTC, as before."""
+        factories.MailboxAccessFactory(
+            mailbox=mailbox,
+            user=user,
+            role=enums.MailboxRoleChoices.ADMIN,
+        )
+        client = APIClient()
+        client.force_login(user)
+
+        payload = _autoreply_payload(timezone=tz)
+        response = client.post(list_url, payload, format="json")
+        assert response.status_code == status.HTTP_201_CREATED
 
     @pytest.mark.parametrize(
         ("start_at", "end_at", "expected"),

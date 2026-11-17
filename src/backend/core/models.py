@@ -3775,8 +3775,10 @@ class MessageTemplate(BaseModel):
                             {"metadata": f"'{time_key}' must be a valid HH:MM string."}
                         ) from error
         # Validate timezone if provided
+        # Absent, null or "": UTC (see _autoreply_tz). Anything else must be
+        # a zone name.
         tz_name = metadata.get("timezone")
-        if tz_name is not None:
+        if tz_name not in (None, ""):
             try:
                 ZoneInfo(tz_name)
             except (KeyError, ValueError, TypeError) as exc:

@@ -68,6 +68,33 @@ and this project adheres to
 - The DSFR theme jar `dsfr-2.3.4.jar`. A realm that selected the `DSFR` theme
   must select `lst-dsfr` once after the upgrade
 
+### Fixed
+
+- An inbound or imported message whose date has an offset beyond ±15:59, or
+  is outside the years 1-9999 once in UTC, is delivered instead of being
+  retried until abandoned #855
+- A message date in the future is stored as the delivery time (as the import
+  time for imports), so it no longer pins a thread at the top of the list or
+  keeps later messages marked as read. Reply quotes show the stored date
+- The `read_at` and `starred_at` of the flag API are refused when out of range
+  and clamped to now. A year-10000 value made the thread fail to load for
+  every mailbox sharing it
+- A calendar invite with an invalid date no longer breaks the message view;
+  an invite that still fails to render is shown as a plain attachment
+- The PST import keeps a message whose `Date:` cannot be parsed, dated by the
+  MAPI timestamps
+- Autoreply date ranges are compared as instants, which was wrong in the hour
+  repeated when DST ends, and a naive bound no longer fails validation. A
+  stored invalid `timezone` falls back to UTC
+- The calendar conflicts API answers `400` to an out-of-range or non-string
+  `start` / `end`
+- An API key whose `expires_at` cannot be read is refused as expired instead
+  of never expiring, and `expires_at` is validated on write
+- Migration `0038` clamps the dates already stored to the range above
+
+  _⚠️ Run `search_reindex --all --from-date <upgrade date>` after the
+  upgrade: the threads it changes are marked as updated._
+
 ### Security
 
 - Keycloak 26.8.2 fixes more than 30 CVEs, among them CVE-2026-117691 (SAML
