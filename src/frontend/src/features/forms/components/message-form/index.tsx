@@ -10,7 +10,7 @@ import { zodResolver } from "@hookform/resolvers/zod";
 import { Attachment, DraftMessageRequestRequest, draftCreateResponse200, Mailbox, Message, sendCreateResponse200, Thread, useDraftCreate, useDraftUpdate2, useMessagesDestroy, useSendCreate, ThreadAccessRoleChoices } from "@/features/api/gen";
 import { MessageComposer, MessageComposerHandle, QuoteType } from "@/features/forms/components/message-composer";
 import { useMailboxContext } from "@/features/providers/mailbox";
-import MailHelper, { UNICODE_EMAIL_REGEX } from "@/features/utils/mail-helper";
+import MailHelper, { SUBJECT_MAX_LENGTH, UNICODE_EMAIL_REGEX } from "@/features/utils/mail-helper";
 import { RhfInput, RhfSelect } from "../react-hook-form";
 import { addToast, ToasterItem } from "@/features/ui/components/toaster";
 import { toast } from "react-toastify";
@@ -1232,6 +1232,7 @@ export const MessageForm = forwardRef<MessageFormHandle, MessageFormProps>(({
                         name="subject"
                         label={t("Subject")}
                         variant="inline"
+                        maxLength={SUBJECT_MAX_LENGTH}
                         text={form.formState.errors.subject && form.formState.errors.subject.message}
                         disabled={!canWriteMessages}
                         fullWidth

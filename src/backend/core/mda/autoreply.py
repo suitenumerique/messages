@@ -19,6 +19,7 @@ from core.enums import (
 from core.mda.addresses import normalize_address
 from core.mda.outbound import compose_and_sign_mime
 from core.mda.replies import reply_subject
+from core.mda.utils import truncate_subject
 from core.services.throttle import ThrottleLimitExceeded, ThrottleManager
 
 logger = logging.getLogger(__name__)
@@ -215,7 +216,10 @@ def _create_reply_record_from_template(
     )
 
     # 2. Build subject with Re: prefix
-    subject = reply_subject(inbound_message.subject or "")[:255]
+    subject = truncate_subject(
+        reply_subject(inbound_message.subject or ""),
+        models.Message._meta.get_field("subject").max_length,  # noqa: SLF001
+    )
 
     # 3. Resolve signature: forced domain/mailbox signature takes priority
     #    over the one attached to the template

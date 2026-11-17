@@ -44,6 +44,7 @@ _MSGID_TOKEN_RE = re.compile(r"<[^<>]*>")
 __all__ = [
     "compute_reply_threading",
     "forward_subject",
+    "is_forward_subject",
     "make_forward",
     "make_reply",
     "reply_subject",
@@ -55,16 +56,48 @@ __all__ = [
 # ────────────────────────────────────────────────────────────────────
 
 
+# Prefixes recognised as already marking a reply or a forward, to decide
+# whether to add one. Matching is case-insensitive and tolerates whitespace
+# before the colon (RFC 5256 §2.1 base subject), as Outlook in French writes
+# "RE :" and "TR :". Mirrored by ``MailHelper`` in the frontend: keep both
+# lists in sync.
+#
+# Deliberately narrower than the noise thread matching strips
+# (``_canonicalize_subject``): a false positive there costs little, as a
+# shared Message-ID is required too, while here it drops a "Re:" the
+# subject needed ("Bug: x"), or mistakes a Danish forward ("VS:") for a reply.
+REPLY_PREFIXES = ("re", "rep", "rép")
+FORWARD_PREFIXES = ("fwd", "fw", "tr")
+
+
+def _subject_prefix_pattern(prefixes: tuple[str, ...]) -> str:
+    """Regex fragment matching one of ``prefixes`` followed by a colon."""
+    return rf"(?:{'|'.join(prefixes)})\s*:"
+
+
+_REPLY_PREFIX_RE = re.compile(
+    rf"^{_subject_prefix_pattern(REPLY_PREFIXES)}", re.IGNORECASE
+)
+_FORWARD_PREFIX_RE = re.compile(
+    rf"^{_subject_prefix_pattern(FORWARD_PREFIXES)}", re.IGNORECASE
+)
+
+
 def reply_subject(subject: str) -> str:
-    """Add ``Re: `` prefix to a subject, avoiding duplication."""
-    if subject.lower().startswith("re:"):
+    """Add ``Re: `` prefix to a subject, avoiding duplication (RFC 5322 §3.6.5)."""
+    if _REPLY_PREFIX_RE.match(subject):
         return subject
     return f"Re: {subject}"
 
 
+def is_forward_subject(subject: str | None) -> bool:
+    """Whether ``subject`` starts with a forward prefix (``Fwd:``, ``FW:``, ``TR :``…)."""
+    return bool(_FORWARD_PREFIX_RE.match(subject or ""))
+
+
 def forward_subject(subject: str) -> str:
     """Add ``Fwd: `` prefix to a subject, avoiding duplication."""
-    if subject.lower().startswith("fwd:"):
+    if is_forward_subject(subject):
         return subject
     return f"Fwd: {subject}"
 

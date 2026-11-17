@@ -1,6 +1,6 @@
 """Messages-side helpers built on top of :mod:`jmap_email`.
 
-Three groups of helpers live here:
+The helpers living here:
 
 - :func:`gmail_labels` and :func:`headers_blocks` — Messages-specific
   computations against the JMAP ``headers`` list. Neither belongs in
@@ -12,6 +12,8 @@ Three groups of helpers live here:
   (HTML + markdown strip, truncate to SNIPPET_MAX_CHARS after cleaning)
   lives in :func:`jmap_email.preview_text`; this wrapper only resolves
   which body source to feed it.
+- :func:`truncate_subject` — caps a subject to its column, marking the
+  cut with :data:`SUBJECT_ELLIPSIS`.
 - :func:`current_sent_at` — single source of truth for the
   ``sentAt`` ISO-8601 string outbound paths stamp on the JMAP dict
   they hand to :func:`jmap_email.compose_email`.
@@ -77,6 +79,7 @@ __all__ = [
     "ARCHIVE_COMPOSE_OPTIONS",
     "COMPOSE_OPTIONS",
     "SNIPPET_MAX_CHARS",
+    "SUBJECT_ELLIPSIS",
     "compose_options_for",
     "current_sent_at",
     "generate_mime_id",
@@ -84,6 +87,7 @@ __all__ = [
     "header_value",
     "headers_blocks",
     "message_snippet",
+    "truncate_subject",
 ]
 
 
@@ -151,6 +155,27 @@ def message_snippet(parsed_email: JmapEmail) -> str:
         if html_body:
             candidate = body_part_text(parsed, html_body[0])
     return preview_text(candidate, max_chars=SNIPPET_MAX_CHARS)
+
+
+# ────────────────────────────────────────────────────────────────────
+# Subject truncation
+# ────────────────────────────────────────────────────────────────────
+
+# Marks a subject cut to fit its column. Mirrored by ``MailHelper`` in the
+# frontend, which applies the same truncation when it prefixes a subject.
+SUBJECT_ELLIPSIS = "..."
+
+
+def truncate_subject(subject: str, max_length: int) -> str:
+    """Cap ``subject`` to ``max_length`` characters, ending it with ``...`` when cut.
+
+    Prefixing a reply or a forward lengthens the subject, which may then no
+    longer fit; the ellipsis tells the reader the end is missing.
+    """
+    if len(subject) <= max_length:
+        return subject
+    kept = subject[: max_length - len(SUBJECT_ELLIPSIS)]
+    return f"{kept.rstrip()}{SUBJECT_ELLIPSIS}"
 
 
 # ────────────────────────────────────────────────────────────────────
