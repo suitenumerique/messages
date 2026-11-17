@@ -18,14 +18,16 @@ mail, runs these steps in order:
    See [ARC relay-trust](#arc-relay-trust).
 3. **Hardcoded rules** — deterministic `header_match` rules **and** `arc_verdict`
    relay-trust rules from config.
-4. **rspamd** — native `/checkv2` scan.
-5. **Inbound authentication** — DKIM/DMARC verdict (SPF indirectly).
-6. **After-spam webhooks** (`message.delivering`, then `message.delivered`).
+4. **Inbound authentication** — DKIM/DMARC verdict (SPF indirectly).
+5. **Sender trust** — whether the mailbox already wrote to the authenticated
+   sender. See [Trusted senders](#trusted-senders).
+6. **rspamd** — native `/checkv2` scan; a trusted sender is kept out of Junk.
+7. **After-spam webhooks** (`message.delivering`, then `message.delivered`).
 
 Each step returns a `Decision` (`CONTINUE` / `RETRY` / `DROP`) and may set the
 spam verdict. The verdict is a tri-state `ctx.is_spam`: `None` (undecided) until
-a step decides it; **the last decisive step wins**, and the hardcoded-rules and
-rspamd steps are skipped entirely once a verdict already exists. This lets a
+a step decides it; **the last decisive step wins**, and the hardcoded-rules,
+sender-trust and rspamd steps are skipped entirely once a verdict already exists. This lets a
 before-spam webhook, an internal-origin short-circuit, or a header rule pre-empt
 rspamd.
 
@@ -78,9 +80,9 @@ the verdict is left to other steps. If rspamd is configured but **errors or is
 unreachable**, the message is **held for `RETRY` (fail-closed, never
 fail-open)** rather than delivered unchecked — see deferral below.
 
-DKIM/DMARC symbols from the same `/checkv2` response are reused by the inbound
-authentication step (below) when it runs in `rspamd` mode, so a message is only
-scanned once.
+When the inbound authentication step runs in `rspamd` mode, it fetches the
+`/checkv2` response first (for its DKIM/DMARC symbols) and the rspamd step
+reuses it, so a message is only scanned once.
 
 ## Configuration: global and per-domain
 
@@ -385,6 +387,39 @@ Webhook channels are scoped **global / maildomain / mailbox** and must have
 a rspamd outage that forces a `RETRY` doesn't re-invoke an already-successful
 before-spam webhook.
 
+## Trusted senders
+
+A sender the recipient mailbox has already written to is a known correspondent,
+and their mail is never sent to Junk.
+
+The sender trust step looks the From address up in a pluggable backend
+(`SENDER_TRUST_BACKEND`, see [env.md](./env.md)). The From address is chosen by
+the sender, so the lookup only runs when it is authenticated: inbound
+authentication must be enabled for the domain and must have recorded no verdict
+(neither `none` nor `fail`). A domain without `inbound_auth` therefore has no
+trusted senders. The lookup is also skipped when the verdict is already decided
+(internal mail, a hardcoded rule, a before-spam webhook) or when the message
+has no single From address.
+
+Being trusted is a **floor against Junk, not a bypass**: rspamd still scans the
+message (it also hosts the antivirus, and a correspondent's account can be
+compromised). Only its `quarantine` / `reject` actions change: instead of Junk,
+the message lands in the inbox with `postmark["spam"] = "likely"` and its
+"likely spam" banner. `discard`, the deferrals and the flag actions apply as
+usual.
+
+Backends:
+
+- **`LocalSenderTrustBackend`** (default) — trusted when the mailbox has sent at
+  least one message (not a draft) with the sender in To, Cc or Bcc, imported
+  history included. Receiving mail from someone is not enough.
+- **`NullSenderTrustBackend`** — trusts nobody, which turns the feature off.
+
+A backend that cannot answer (e.g. a remote contacts service is down) never
+holds the message: the sender is treated as unknown and the normal spam check
+decides. A new backend subclasses
+`core.mda.sender_trust.backends.base.SenderTrustBackend`.
+
 ## What happens to a spam message
 
 Once `is_spam = True`:
@@ -446,7 +481,7 @@ and a `gpp_bad` icon for forged senders.
 | Banner            | Source signal | Produced by |
 |-------------------|---------------|-------------|
 | Forged / Unverified sender | `postmark["auth"]` = `fail` / `none` | Inbound-auth step (DKIM/DMARC) — for mode `rspamd`, from the symbol table above |
-| Suspected spam    | `postmark["spam"]` = `possible` / `likely` | rspamd **action** `add header` → possible, `rewrite subject` → likely |
+| Suspected spam    | `postmark["spam"]` = `possible` / `likely` | rspamd **action** `add header` → possible, `rewrite subject` → likely; `quarantine` / `reject` from a [trusted sender](#trusted-senders) → likely |
 | Processing failed | `postmark["processing"]` = `fail` | Deferral-window expiry force-delivery (any persistently failing step) |
 
 Note the two-tier design: rspamd's mid-confidence actions (`add header`,
@@ -480,6 +515,9 @@ spam of its thread, the thread leaves Junk.
 - **Per-mailbox** spam configuration (currently global → maildomain only).
 - **SPF** as a standalone user-visible verdict (today it only feeds rspamd
   scoring; the surfaced auth verdict is DKIM + DMARC).
+- **Sender trust from the contacts application**, as a remote
+  `SenderTrustBackend`; reporting a trusted sender's message as spam does not
+  revoke the trust yet.
 
 ## Implementation map
 
@@ -488,6 +526,7 @@ spam of its thread, the thread leaves Junk.
 | Pipeline assembly, rspamd action mapping, deferral constants | `core/mda/inbound_pipeline.py` |
 | rspamd `/checkv2` client, hardcoded header rules | `core/mda/spam.py` |
 | DKIM/DMARC verdict, rspamd symbol table, AR parsing | `core/mda/inbound_auth.py` |
+| Sender trust backends and factory | `core/mda/sender_trust/` |
 | Task wrapper, internal/selfcheck short-circuit, force-delivery | `core/mda/inbound_tasks.py` |
 | Webhook dispatch, phases, `is_spam` override, result cache | `core/mda/dispatch_webhooks.py` |
 | `SPAM_CONFIG` resolution (`get_spam_config`) | `core/models.py` (`MailDomain`) |

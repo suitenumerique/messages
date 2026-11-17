@@ -751,6 +751,17 @@ Pluggable backend deciding what a user/domain is entitled to.
 | `ENTITLEMENTS_CACHE_TIMEOUT` | `300` | Cache TTL (seconds) for entitlement lookups. | Optional |
 | `STORAGE_USAGE_CACHE_TTL` | `60` | Cache TTL (seconds) for the computed storage usage of a mailbox or organization, as read by the quota gauge and the entitlements backends. The computation runs several correlated subqueries (~100 ms on a large mailbox), so it is not recomputed on every sidebar load. Emptying a trashbin and the nightly sweep both invalidate the affected mailboxes immediately; every other change (new mail, sends) shows up within this TTL. Set to `0` to always compute live. The `/metrics` endpoints ignore this and always compute live. | Optional |
 
+### Sender Trust
+
+Pluggable backend telling the inbound pipeline whether a mailbox already knows a
+sender. A trusted sender's mail is kept out of Junk (see
+[spam.md](./spam.md#trusted-senders)).
+
+| Variable | Default | Description | Required |
+|----------|---------|-------------|----------|
+| `SENDER_TRUST_BACKEND` | `core.mda.sender_trust.backends.local.LocalSenderTrustBackend` | Dotted path to the sender trust backend class. `core.mda.sender_trust.backends.null.NullSenderTrustBackend` trusts nobody (feature off). | Optional |
+| `SENDER_TRUST_BACKEND_PARAMETERS` | `{}` | JSON parameters passed to the backend. | Optional |
+
 ### Message Import
 
 Tuning for the resumable message importer (EML / MBOX / PST files and IMAP;

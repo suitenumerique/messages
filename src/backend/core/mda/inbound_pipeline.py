@@ -7,8 +7,9 @@ the context — set ``is_spam``, add ``labels``, cache ``rspamd_result``,
 record an auth verdict in ``postmark``, etc.
 
 ``build_inbound_pipeline`` assembles the ordered step list for a message —
-before-spam user webhooks, the hardcoded-rules and rspamd spam checks, the
-inbound-auth (DKIM/DMARC) step, then after-spam user webhooks.
+before-spam user webhooks, the hardcoded-rules check, the inbound-auth
+(DKIM/DMARC) step, the sender-trust lookup, the rspamd check, then
+after-spam user webhooks.
 ``run_inbound_pipeline`` iterates that list and aborts on the first step
 that returns a non-``CONTINUE`` ``Decision`` (``DROP`` / ``RETRY``); the
 caller turns that decision into a task-level return value.
@@ -32,6 +33,7 @@ from django.conf import settings
 from django.db.models import Q
 from django.utils import timezone
 
+from jmap_email import first_address_email
 from jmap_email.types import JmapEmail
 
 from core import enums, models
@@ -43,6 +45,8 @@ from core.mda.inbound_auth import (
     get_inbound_auth_mode,
     trusted_arc_sealers,
 )
+from core.mda.sender_trust.backends.base import SenderTrust
+from core.mda.sender_trust.factory import get_sender_trust_backend
 from core.services.thread_events import assign_users
 
 logger = logging.getLogger(__name__)
@@ -130,9 +134,15 @@ class InboundContext:  # pylint: disable=too-many-instance-attributes
     mark_archived: bool = False
     skip_autoreply: bool = False
 
-    # Populated by ``rspamd_step`` so ``inbound_auth_step`` can reuse
-    # the symbols (DKIM/DMARC verdicts) without a second HTTP call.
+    # Raw rspamd ``/checkv2`` result, fetched at most once per message: by
+    # ``inbound_auth`` (auth mode "rspamd", for the DKIM/DMARC symbols) or by
+    # the ``rspamd`` step, which reuses it rather than calling rspamd again.
     rspamd_result: Optional[Dict[str, Any]] = None
+
+    # Answer of the ``SENDER_TRUST_BACKEND`` for the authenticated From, set by
+    # the ``sender_trust`` step. ``None`` when the lookup did not run (verdict
+    # already decided, unauthenticated sender) or failed.
+    sender_trust: Optional[SenderTrust] = None
 
     # ARC relay-trust result, computed at most once by ``ensure_arc`` and
     # shared by the arc step (RETRY-on-dnsfail), the ``arc`` spam rules, and
@@ -293,10 +303,10 @@ def _make_hardcoded_rules_step(spam_config: Dict[str, Any]) -> Step:
 def _make_rspamd_step(spam_config: Dict[str, Any]) -> Step:
     """Rspamd as a step.
 
-    Maps the rspamd action onto a pipeline decision. Always caches the full
-    ``rspamd_result`` dict on the context — ``inbound_auth_step`` reuses the
-    symbols (DKIM/DMARC) without a second HTTP call. The full action set
-    (https://docs.rspamd.com/configuration/metrics/):
+    Maps the rspamd action onto a pipeline decision. Reuses
+    ``ctx.rspamd_result`` when ``inbound_auth`` already fetched it (auth mode
+    "rspamd"), so rspamd is called at most once per message. The full action
+    set (https://docs.rspamd.com/configuration/metrics/):
 
     * ``no action`` → deliver (is_spam=False).
     * ``add header`` / ``rewrite subject`` → deliver to the inbox with a
@@ -312,6 +322,13 @@ def _make_rspamd_step(spam_config: Dict[str, Any]) -> Step:
     * ``discard`` → rspamd asks us to accept-and-silently-drop (blackhole, no
       bounce). Honour it as DROP — the message is consumed, nothing created.
 
+    A sender the mailbox trusts (``ctx.sender_trust``) is never sent to Junk:
+    ``quarantine`` / ``reject`` are downgraded to an inbox delivery flagged
+    ``postmark["spam"] = "likely"``. Only the Junk verdict is lifted — the
+    other actions (``discard``, the deferrals, the flags) still apply, since
+    rspamd also hosts the antivirus and a known correspondent's account can be
+    compromised.
+
     An rspamd *error* never fails open: we don't deliver mail that couldn't be
     spam-checked. The step RETRYs, so the message is held; if the outage lasts
     past ``DEFERRAL_MAX_AGE`` it is force-delivered flagged rather than
@@ -321,27 +338,28 @@ def _make_rspamd_step(spam_config: Dict[str, Any]) -> Step:
 
     def rspamd(ctx: InboundContext) -> Decision:
         if ctx.is_spam is not None:
-            # Spam verdict already decided — but we still might want
-            # rspamd's symbols for inbound_auth. The auth step has its
-            # own fallback so we can cheaply skip rspamd entirely here.
             return Decision.CONTINUE
-        action, err, result = spam.call_rspamd(
-            ctx.raw_data, spam_config, envelope=ctx.inbound_message.envelope
-        )
-        if err:
-            # Don't fail open — hold for retry rather than deliver
-            # unchecked. A sustained outage is bounded by the deferral
-            # window (the message is then delivered flagged).
-            logger.warning(
-                "rspamd error on inbound message %s: %s (holding for retry)",
-                ctx.inbound_message.id,
-                err,
+        if ctx.rspamd_result is not None:
+            action = ctx.rspamd_result.get("action", "")
+        else:
+            action, err, result = spam.call_rspamd(
+                ctx.raw_data, spam_config, envelope=ctx.inbound_message.envelope
             )
-            return Decision.RETRY
-        ctx.rspamd_result = result
-        if action is None:
-            # rspamd not configured — no opinion, leave the verdict undecided.
-            return Decision.CONTINUE
+            if err:
+                # Don't fail open — hold for retry rather than deliver
+                # unchecked. A sustained outage is bounded by the deferral
+                # window (the message is then delivered flagged).
+                logger.warning(
+                    "rspamd error on inbound message %s: %s (holding for retry)",
+                    ctx.inbound_message.id,
+                    err,
+                )
+                return Decision.RETRY
+            ctx.rspamd_result = result
+            if action is None:
+                # rspamd not configured — no opinion, leave the verdict
+                # undecided.
+                return Decision.CONTINUE
 
         # --- The single source of truth for rspamd action → outcome. ---
         if action in ("greylist", "soft reject"):
@@ -372,7 +390,17 @@ def _make_rspamd_step(spam_config: Dict[str, Any]) -> Step:
         # Junk only for the high-confidence isolate actions; everything else
         # (no action, the flagged-but-delivered actions above, unknown) is
         # delivered to the inbox.
-        ctx.is_spam = action in ("quarantine", "reject")
+        is_spam = action in ("quarantine", "reject")
+        if is_spam and ctx.sender_trust == SenderTrust.TRUSTED:
+            logger.info(
+                "rspamd '%s' on inbound message %s from a trusted sender — "
+                "delivering to the inbox flagged",
+                action,
+                ctx.inbound_message.id,
+            )
+            ctx.postmark["spam"] = "likely"
+            is_spam = False
+        ctx.is_spam = is_spam
         return Decision.CONTINUE
 
     rspamd.name = "rspamd"
@@ -382,17 +410,24 @@ def _make_rspamd_step(spam_config: Dict[str, Any]) -> Step:
 def _make_inbound_auth_step(spam_config: Dict[str, Any]) -> Step:
     """DKIM / DMARC verdict via ``check_inbound_authentication``.
 
-    Reuses ``ctx.rspamd_result`` if populated; otherwise calls rspamd
-    itself when ``auth_mode='rspamd'``. On a verdict, records it in
-    ``ctx.postmark["auth"]`` (structured, off the bytes) so the ingest blob
-    is reused untouched; ``get_stmsg_headers`` surfaces it downstream.
+    Runs before the ``rspamd`` step, so the ``sender_trust`` step in between
+    can rely on the verdict. With ``auth_mode='rspamd'`` it fetches the rspamd
+    result itself and caches it on the context for the ``rspamd`` step. On a
+    verdict, records it in ``ctx.postmark["auth"]`` (structured, off the
+    bytes) so the ingest blob is reused untouched; ``get_stmsg_headers``
+    surfaces it downstream.
     """
+    mode = get_inbound_auth_mode(spam_config)
 
     def inbound_auth(ctx: InboundContext) -> Decision:
-        if ctx.rspamd_result is None and get_inbound_auth_mode(spam_config) == "rspamd":
+        if ctx.rspamd_result is None and mode == "rspamd":
             _, _, ctx.rspamd_result = spam.call_rspamd(
                 ctx.raw_data, spam_config, envelope=ctx.inbound_message.envelope
             )
+        if mode == "arc" and not _is_widget(ctx):
+            # Share the ARC result with the arc step and rules instead of
+            # letting the auth check recompute it.
+            ensure_arc(ctx, spam_config)
         verdict = check_inbound_authentication(
             ctx.raw_data, ctx.parsed_email, spam_config, ctx.rspamd_result, ctx.arc
         )
@@ -414,6 +449,51 @@ def _make_inbound_auth_step(spam_config: Dict[str, Any]) -> Step:
     return inbound_auth
 
 
+def _make_sender_trust_step(spam_config: Dict[str, Any]) -> Step:
+    """Ask the ``SENDER_TRUST_BACKEND`` whether the mailbox knows the sender.
+
+    Only records ``ctx.sender_trust``; the ``rspamd`` step acts on it. The From
+    address is sender-chosen, so the lookup only runs for an authenticated
+    one: ``inbound_auth`` must be enabled (a disabled check records no
+    verdict, exactly like a verified sender) and must have recorded no
+    ``"none"`` / ``"fail"`` verdict. A verdict already decided upstream
+    (internal mail, an admin rule, a before-spam webhook) is left alone and
+    costs no lookup.
+
+    A backend failure never holds or drops the message: the sender is treated
+    as unknown and the normal spam check decides.
+    """
+    auth_enabled = bool(get_inbound_auth_mode(spam_config))
+
+    def sender_trust(ctx: InboundContext) -> Decision:
+        if ctx.is_spam is not None or not auth_enabled or "auth" in ctx.postmark:
+            return Decision.CONTINUE
+        from_addresses = ctx.parsed_email.get("from") or []
+        # Several From addresses leave no single identity to trust.
+        if len(from_addresses) != 1:
+            return Decision.CONTINUE
+        sender_email = normalize_address(first_address_email(from_addresses))
+        if not sender_email:
+            return Decision.CONTINUE
+        try:
+            ctx.sender_trust = get_sender_trust_backend().get_sender_trust(
+                ctx.mailbox, sender_email
+            )
+        except Exception as exc:
+            # Log the exception type only: a backend error message can embed
+            # the sender address.
+            logger.warning(
+                "Sender trust lookup failed on inbound message %s (%s) — "
+                "treating the sender as unknown",
+                ctx.inbound_message.id,
+                type(exc).__name__,
+            )
+        return Decision.CONTINUE
+
+    sender_trust.name = "sender_trust"
+    return sender_trust
+
+
 # ---------------------------------------------------------------------------
 # Pipeline construction + runner.
 # ---------------------------------------------------------------------------
@@ -427,10 +507,12 @@ def build_inbound_pipeline(ctx: InboundContext) -> List[Step]:
       2. ``arc`` — holds (RETRY) a message whose *trusted* ARC seal couldn't
          be verified due to a DNS failure (only when an allowlist is set).
       3. ``hardcoded_rules`` — header-match and ``arc`` trust rules per config.
-      4. ``rspamd`` — fills the gap if nothing decided spam yet, and
-         caches symbols for the next step.
-      5. ``inbound_auth`` — DKIM / DMARC verdict, may mutate parsed_email.
-      6. After-spam user webhooks — see the verdict, may override it,
+      4. ``inbound_auth`` — DKIM / DMARC verdict, recorded in the postmark.
+      5. ``sender_trust`` — looks the authenticated From up in the sender
+         trust backend.
+      6. ``rspamd`` — fills the gap if nothing decided spam yet; a trusted
+         sender is kept out of Junk.
+      7. After-spam user webhooks — see the verdict, may override it,
          may add labels, may DROP/RETRY.
     """
     # Imported here to avoid the inbound_pipeline ↔ dispatch_webhooks
@@ -474,8 +556,9 @@ def build_inbound_pipeline(ctx: InboundContext) -> List[Step]:
         *webhook_steps_for_mailbox(ctx.mailbox, phase="before_spam", channels=channels),
         _make_arc_step(ctx.spam_config),
         _make_hardcoded_rules_step(ctx.spam_config),
-        _make_rspamd_step(ctx.spam_config),
         _make_inbound_auth_step(ctx.spam_config),
+        _make_sender_trust_step(ctx.spam_config),
+        _make_rspamd_step(ctx.spam_config),
         *webhook_steps_for_mailbox(ctx.mailbox, phase="after_spam", channels=channels),
     ]
 
