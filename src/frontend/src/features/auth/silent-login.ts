@@ -21,7 +21,14 @@ const silentLogin = () => {
 export const canAttemptSilentLogin = () => {
   const lastRetryDate = localStorage.getItem(SILENT_LOGIN_RETRY_KEY);
   if (!lastRetryDate) return true;
-  return Date.now() > Number(lastRetryDate);
+  const nextRetry = Number(lastRetryDate);
+  const now = Date.now();
+  // Unreadable, or further ahead than one interval: the device clock was
+  // set back since. Waiting for it would disable silent login meanwhile.
+  if (!Number.isFinite(nextRetry) || nextRetry - now > SILENT_LOGIN_RETRY_INTERVAL) {
+    return true;
+  }
+  return now > nextRetry;
 };
 
 /**

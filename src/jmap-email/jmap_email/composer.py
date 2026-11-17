@@ -486,7 +486,8 @@ def _ensure_angle_brackets(value: str) -> str:
 
 
 def _normalize_date(date) -> datetime.datetime:
-    """Coerce a JMAP ``sentAt`` (str | datetime | int | float) to a tz-aware datetime.
+    """Coerce a JMAP ``sentAt`` (str | datetime | int | float) to a tz-aware
+    datetime the ``Date:`` header can carry.
 
     Strict by design: ``None`` raises ``ComposeError`` and an unparseable
     value also raises ``ComposeError``. RFC 5322 §3.6.1 makes ``Date`` a
@@ -494,7 +495,24 @@ def _normalize_date(date) -> datetime.datetime:
     ship messages with a fabricated send time that drifts arbitrarily from
     the intended one. Callers who genuinely want "now" can pass
     ``datetime.now(timezone.utc)`` explicitly.
+
+    RFC 5322 has no form for an offset with seconds: such a date is
+    converted to UTC. A year below 100 raises: its four digits read back as
+    a two-digit year (``0050`` is 2050).
     """
+    value = _coerce_date(date)
+    if value.utcoffset().total_seconds() % 60:
+        try:
+            value = value.astimezone(datetime.timezone.utc)
+        except (OverflowError, ValueError) as e:
+            raise InvalidDateError(f"'sentAt' out of range in UTC: {date!r}") from e
+    if value.year < 100:
+        raise InvalidDateError(f"'sentAt' year before 100: {date!r}")
+    return value
+
+
+def _coerce_date(date) -> datetime.datetime:
+    """``_normalize_date`` before the wire checks."""
     if date is None:
         raise InvalidDateError(
             "'sentAt' is required by RFC 5322 §3.6.1; pass a datetime or ISO string"

@@ -11,15 +11,18 @@ given:
   read of the row fail. Any inbound ``Date:``, imports and the flag API could
   write these.
 
-Future values become the migration time and values before year 1 become
-year 1, with a future ``sent_at`` brought back to the message's (clamped)
-``created_at``. The updates run in SQL without loading rows, so the
-unreadable ones are fixed too. Clamping the thread dates matches recomputing
-them: each one is the latest ``created_at`` of some of its messages, and the
-max of clamped values is the clamped max.
+Values more than an hour in the future become the migration time and values
+before year 1 become year 1, with a future ``sent_at`` brought back to the
+message's (clamped) ``created_at``. The hour leaves alone the rows stored
+while this runs, or by a host whose clock is a little ahead; a value within
+it is in the past soon after. The updates run in SQL without loading rows,
+so the unreadable ones are fixed too. Clamping the thread dates matches
+recomputing them: each one is the latest ``created_at`` of some of its
+messages, and the max of clamped values is the clamped max.
 
-None of these columns is indexed: each table is scanned twice, once to
-collect the threads concerned and once by a single ``UPDATE``.
+The message and thread access dates are not indexed: those two tables are
+scanned twice, once to collect the threads concerned and once by a single
+``UPDATE``. The thread dates are.
 
 The search index sorts messages on ``created_at`` and indexes ``sent_at`` and
 the read/starred state, so it keeps the old values of what changes here. The
@@ -35,6 +38,7 @@ from django.db.models.functions import Greatest, Least
 from django.utils import timezone
 
 EARLIEST = datetime.datetime(1, 1, 1, tzinfo=datetime.UTC)
+FUTURE_MARGIN = datetime.timedelta(hours=1)
 
 THREAD_DATES = [
     "messaged_at",
@@ -46,21 +50,22 @@ THREAD_DATES = [
 ]
 
 
-def _out_of_range(fields, now):
+def _out_of_range(fields, latest):
     query = Q()
     for field in fields:
-        query |= Q(**{f"{field}__gt": now}) | Q(**{f"{field}__lt": EARLIEST})
+        query |= Q(**{f"{field}__gt": latest}) | Q(**{f"{field}__lt": EARLIEST})
     return query
 
 
-def _clamped(field, now, *, future=None):
-    """``field`` clamped to [EARLIEST, now], NULL left as is.
+def _clamped(field, latest, now, *, future=None):
+    """``field`` past ``latest`` set to ``now`` (or ``future``), before
+    EARLIEST set to EARLIEST, NULL left as is.
 
     A ``CASE`` rather than ``GREATEST(LEAST(...))``: PostgreSQL's
     ``GREATEST`` and ``LEAST`` ignore NULL, which would turn NULL into now.
     """
     return Case(
-        When(**{f"{field}__gt": now}, then=Value(now) if future is None else future),
+        When(**{f"{field}__gt": latest}, then=Value(now) if future is None else future),
         When(**{f"{field}__lt": EARLIEST}, then=Value(EARLIEST)),
         default=F(field),
         output_field=DateTimeField(),
@@ -73,11 +78,12 @@ def clamp_timestamps(apps, schema_editor):
     Thread = apps.get_model("core", "Thread")
     ThreadAccess = apps.get_model("core", "ThreadAccess")
     now = timezone.now()
+    latest = now + FUTURE_MARGIN
 
-    messages = Message.objects.filter(_out_of_range(["created_at", "sent_at"], now))
-    threads = Thread.objects.filter(_out_of_range(THREAD_DATES, now))
+    messages = Message.objects.filter(_out_of_range(["created_at", "sent_at"], latest))
+    threads = Thread.objects.filter(_out_of_range(THREAD_DATES, latest))
     accesses = ThreadAccess.objects.filter(
-        _out_of_range(["read_at", "starred_at"], now)
+        _out_of_range(["read_at", "starred_at"], latest)
     )
 
     # Collected first, reading ids only: the timestamps may be unreadable.
@@ -92,9 +98,10 @@ def clamp_timestamps(apps, schema_editor):
     # SET expressions read the row as it was: ``created_at`` here is the
     # unclamped value, clamped again for ``sent_at``.
     messages.update(
-        created_at=_clamped("created_at", now),
+        created_at=_clamped("created_at", latest, now),
         sent_at=_clamped(
             "sent_at",
+            latest,
             now,
             future=Greatest(
                 Least(F("created_at"), Value(now)),
@@ -103,9 +110,10 @@ def clamp_timestamps(apps, schema_editor):
             ),
         ),
     )
-    threads.update(**{field: _clamped(field, now) for field in THREAD_DATES})
+    threads.update(**{field: _clamped(field, latest, now) for field in THREAD_DATES})
     accesses.update(
-        read_at=_clamped("read_at", now), starred_at=_clamped("starred_at", now)
+        read_at=_clamped("read_at", latest, now),
+        starred_at=_clamped("starred_at", latest, now),
     )
     Thread.objects.filter(id__in=thread_ids).update(updated_at=now)
 

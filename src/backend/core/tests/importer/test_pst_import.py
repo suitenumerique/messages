@@ -384,6 +384,8 @@ class TestReconstructEml:
             "Fri, 01 Jan 2099 00:00:00 +0000",
             "Fri, 31 Dec 9999 23:59:59 -0500",
             "9999-12-31T23:59:59-05:00",
+            # Before year 100: no RFC 5322 form that reads back.
+            "0050-01-01T00:00:00+00:00",
             "Mon, 26 May 2025 10:00:00 +2400",
             "Mon, 26 May 2025 25:00:00 +0000",
             "lundi 26 mai 2025",

@@ -25,6 +25,14 @@ describe("readAtNow", () => {
         );
     });
 
+    it("keeps the microseconds of the newest message", () => {
+        vi.useFakeTimers();
+        vi.setSystemTime(new Date("2026-11-17T12:05:00.123Z"));
+        // Same millisecond as the device clock: the message must still be read.
+        expect(readAtNow(["2026-11-17T12:05:00.123456Z"])).toBe("2026-11-17T12:05:00.123456Z");
+        expect(readAtNow(["2026-11-17T12:10:00.000001Z"])).toBe("2026-11-17T12:10:00.000001Z");
+    });
+
     it("ignores dates it cannot read", () => {
         vi.useFakeTimers();
         vi.setSystemTime(new Date("2026-11-17T12:00:00Z"));

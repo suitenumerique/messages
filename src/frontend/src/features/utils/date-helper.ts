@@ -18,6 +18,8 @@ export class DateHelper {
    */
   public static formatDate(dateString: string, lng: string = 'en', showTime: boolean = true): string {
     const date = new Date(dateString);
+    // date-fns throws on an invalid date, during render.
+    if (!isValid(date)) return '';
     const locale = lng.length > 2 ? lng.split('-')[0] : lng;
     const dateLocale = locales[locale as keyof typeof locales];
 
@@ -128,6 +130,7 @@ export class DateHelper {
    */
   public static formatEventTimestamp(dateString: string, lng: string = 'en'): string {
     const date = new Date(dateString);
+    if (!isValid(date)) return '';
     const locale = lng.length > 2 ? lng.split('-')[0] : lng;
     const dateLocale = locales[locale as keyof typeof locales];
     const time = format(date, 'HH:mm', { locale: dateLocale });

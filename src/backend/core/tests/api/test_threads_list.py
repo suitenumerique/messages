@@ -1820,11 +1820,13 @@ class TestThreadListAPI:
             accessed_at=timezone.now() - timedelta(minutes=61)
         )
 
+        before = timezone.now()
         api_client.get(url, {"mailbox_id": str(mailbox.id)})
         access_datetime1 = MailboxAccess.objects.get(
             user=user, mailbox=mailbox
         ).accessed_at
-        assert (timezone.now() - access_datetime1) < timedelta(seconds=1)
+        # Updated by this request (not "within a second": a busy run is slower).
+        assert before <= access_datetime1 <= timezone.now()
 
     def test_list_for_other_user_should_update_mailbox_access_accessed_at(
         self, api_client, url

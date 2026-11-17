@@ -318,6 +318,36 @@ def test_split_thread_multi_message(api_client):
         assert msg.thread_id == new_thread.id
 
 
+def test_split_thread_messages_sharing_a_date(api_client):
+    """Imported messages often share a ``created_at`` (``Date:`` is to the
+    second): the cut follows the (created_at, id) order, so the first
+    message never moves and the old thread is never left empty."""
+    user = UserFactory()
+    api_client.force_authenticate(user=user)
+    mailbox = MailboxFactory()
+    thread = ThreadFactory()
+    contact = ContactFactory(mailbox=mailbox)
+    same = timezone.now() - timedelta(days=1)
+    messages = sorted(
+        (MessageFactory(thread=thread, sender=contact) for _ in range(3)),
+        key=lambda m: m.id,
+    )
+    for msg in messages:
+        type(msg).objects.filter(pk=msg.pk).update(created_at=same)
+    _setup_editor_access(user, mailbox, thread)
+
+    response = api_client.post(
+        _get_split_url(thread.id), {"message_id": str(messages[1].id)}
+    )
+    assert response.status_code == status.HTTP_201_CREATED
+    new_thread_id = response.data["id"]
+
+    for msg in messages:
+        msg.refresh_from_db()
+    assert messages[0].thread_id == thread.id
+    assert [m.thread_id for m in messages[1:]] == [uuid.UUID(new_thread_id)] * 2
+
+
 def test_split_thread_accesses_copied(api_client):
     """All ThreadAccess entries are copied to the new thread."""
     user = UserFactory()

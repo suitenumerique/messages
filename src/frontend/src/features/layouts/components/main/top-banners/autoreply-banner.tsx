@@ -30,6 +30,9 @@ export const AutoreplyBanner = () => {
       query: {
         enabled: !!selectedMailbox?.id,
         staleTime: Infinity,
+        // ``is_active_autoreply`` is computed when fetched: refetch so the
+        // banner follows a schedule that starts or ends while the app is open.
+        refetchInterval: 5 * 60 * 1000,
       },
     },
   );

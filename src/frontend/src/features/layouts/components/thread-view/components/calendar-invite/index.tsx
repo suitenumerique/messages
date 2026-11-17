@@ -24,6 +24,7 @@ import { useTaskStatus } from "@/hooks/use-task-status";
 import {
     getEventEnd,
     getEventStart,
+    isDateOnlyEvent,
     TextHelper,
     formatEventDateRange,
     formatRecurrenceRule,
@@ -481,6 +482,7 @@ const EventCard = ({
                                 eventStart,
                                 eventEnd,
                                 language,
+                                isDateOnlyEvent(event),
                             )}
                         </span>
                     </div>

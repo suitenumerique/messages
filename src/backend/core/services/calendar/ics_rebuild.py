@@ -10,7 +10,7 @@ properties before PUTing to the CalDAV server.
 
 import copy
 import re
-from datetime import datetime, timezone
+from datetime import date, datetime, timezone
 
 from icalendar import Calendar as ICalendar
 from icalendar import Event as ICalEvent
@@ -104,9 +104,15 @@ _SAFE_URL_RE = re.compile(r"^https?://", re.IGNORECASE)
 
 # RRULE frequencies that produce ruinous expansion if unbounded.
 # Thunderbird hard-froze on a SECONDLY-frequency invite without
-# COUNT/UNTIL (Mozilla bug 1770984). Reject these unless explicitly
-# bounded.
+# COUNT/UNTIL (Mozilla bug 1770984). Reject these unless bounded by a
+# small COUNT.
 _RRULE_FREQ_REQUIRES_BOUND = frozenset({"SECONDLY", "MINUTELY"})
+_SUBHOURLY_MAX_COUNT = 1000
+
+# Date properties RFC 5545 allows once per VEVENT.
+_SINGLE_DATES = frozenset(
+    {"DTSTAMP", "CREATED", "LAST-MODIFIED", "DTSTART", "DTEND", "RECURRENCE-ID"}
+)
 
 
 def rebuild_for_storage(cal):
@@ -201,6 +207,9 @@ def _rebuild_event(src):
             continue
         value = src[key]
         for item in value if isinstance(value, list) else [value]:
+            if upper in _SINGLE_DATES and upper in fresh:
+                # RFC 5545 allows one: a second would make readers fail.
+                continue
             cleaned = _clean_property_value(upper, item)
             if cleaned is None:
                 continue
@@ -210,20 +219,56 @@ def _rebuild_event(src):
             # don't want add() to re-encode and lose the params.
             fresh.add(key, cleaned, encode=0)
 
-    if "UID" not in fresh:
+    # Without a readable DTSTART the event cannot be shown or scheduled.
+    if "UID" not in fresh or "DTSTART" not in fresh:
         return None
+    stamp = fresh.get("DTSTAMP")
+    if stamp is not None and not isinstance(stamp.dt, datetime):
+        # RFC 5545 §3.8.7.2: a DTSTAMP is a UTC date-time.
+        del fresh["DTSTAMP"]
     if "DTSTAMP" not in fresh:
         # Prefer iTIP versioning info already present on the event
         # (LAST-MODIFIED → CREATED) over server-now. Setting DTSTAMP
         # to "now" effectively claims this event was authored this
         # second, which breaks iTIP sequencing if the organizer ever
         # sends an update; the original timestamps preserve order.
-        fallback = fresh.get("LAST-MODIFIED") or fresh.get("CREATED")
-        if fallback is not None and hasattr(fallback, "dt"):
-            fresh.add("DTSTAMP", fallback.dt)
-        else:
-            fresh.add("DTSTAMP", datetime.now(tz=timezone.utc))
+        fresh.add(
+            "DTSTAMP",
+            _utc_stamp(fresh.get("LAST-MODIFIED"))
+            or _utc_stamp(fresh.get("CREATED"))
+            or datetime.now(tz=timezone.utc),
+        )
     return fresh
+
+
+def _utc_stamp(prop):
+    """``prop``'s date-time in UTC, or None if absent or only a date."""
+    value = getattr(prop, "dt", None)
+    if not isinstance(value, datetime):
+        return None
+    if value.tzinfo is None:
+        return value.replace(tzinfo=timezone.utc)
+    try:
+        return value.astimezone(timezone.utc)
+    except (OverflowError, ValueError):
+        return None
+
+
+def _readable_dates(prop, value):
+    """Whether every date of ``value`` can be read.
+
+    icalendar raises on access for an unparseable value (``garbage``, year
+    0). A single date property must hold one date or date-time; RDATE and
+    EXDATE hold a list, where RDATE may also hold periods.
+    """
+    try:
+        if prop in _SINGLE_DATES:
+            return isinstance(value.dt, date)
+        return all(
+            isinstance(item.dt, (date, tuple)) for item in getattr(value, "dts", [])
+        )
+    except Exception:  # pylint: disable=broad-exception-caught
+        return False
 
 
 def _clean_property_value(prop, value):
@@ -231,15 +276,22 @@ def _clean_property_value(prop, value):
     if prop == "URL":
         if not _SAFE_URL_RE.match(str(value)):
             return None
+    elif prop in _SINGLE_DATES or prop in ("RDATE", "EXDATE"):
+        if not _readable_dates(prop, value):
+            return None
     elif prop == "RRULE":
         # icalendar represents RRULE as a vRecur (dict-like) where
-        # each entry is a list (``{"FREQ": ["SECONDLY"]}``).
+        # each entry is a list (``{"FREQ": ["SECONDLY"]}``). A broken
+        # rule raises on access.
         try:
             freq = (value.get("FREQ") or [""])[0]
-        except (AttributeError, TypeError):
+            count = (value.get("COUNT") or [None])[0]
+        except Exception:  # pylint: disable=broad-exception-caught
             return None
         if str(freq).upper() in _RRULE_FREQ_REQUIRES_BOUND:
-            if not (value.get("COUNT") or value.get("UNTIL")):
+            # UNTIL bounds nothing (it can be year 9999): only a small
+            # COUNT keeps the expansion small.
+            if not isinstance(count, int) or not 0 < count <= _SUBHOURLY_MAX_COUNT:
                 return None
     return value
 

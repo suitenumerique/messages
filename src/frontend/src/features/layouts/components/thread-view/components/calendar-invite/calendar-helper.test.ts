@@ -2,6 +2,7 @@ import { convertIcsCalendar, IcsEvent, IcsRecurrenceRule } from "ts-ics";
 
 import {
     collapseRecurringEvents,
+    isDateOnlyEvent,
     formatEventDateRange,
     formatRecurrenceRule,
     getEventEnd,
@@ -105,6 +106,44 @@ describe("invalid invite dates", () => {
         );
         expect(collapseRecurringEvents([invalid, valid])).toEqual([valid]);
         expect(collapseRecurringEvents([valid, invalid])).toEqual([valid]);
+    });
+
+    describe("all-day events west of UTC", () => {
+        const originalTz = process.env.TZ;
+        beforeAll(() => {
+            process.env.TZ = "America/New_York";
+        });
+        afterAll(() => {
+            // Assigning undefined would store the string "undefined".
+            if (originalTz === undefined) delete process.env.TZ;
+            else process.env.TZ = originalTz;
+        });
+
+        it("shows the event's own days, not the day before", () => {
+            const event = parseVevent("DTSTART;VALUE=DATE:20260601\r\nDTEND;VALUE=DATE:20260603");
+            // Sanity: the test does run west of UTC.
+            expect(new Date("2026-06-01T00:00:00Z").getDate()).toBe(31);
+            expect(isDateOnlyEvent(event)).toBe(true);
+            expect(
+                formatEventDateRange(getEventStart(event)!, getEventEnd(event), "en-US", isDateOnlyEvent(event)),
+            ).toBe("Monday, June 1, 2026 – Tuesday, June 2, 2026");
+        });
+
+        it("shows a single all-day day, with or without DTEND", () => {
+            for (const lines of ["DTSTART;VALUE=DATE:20260601\r\nDTEND;VALUE=DATE:20260602", "DTSTART;VALUE=DATE:20260601"]) {
+                const event = parseVevent(lines);
+                expect(
+                    formatEventDateRange(getEventStart(event)!, getEventEnd(event), "en-US", isDateOnlyEvent(event)),
+                ).toBe("Monday, June 1, 2026");
+            }
+        });
+
+        it("keeps a midnight-to-midnight meeting a timed event", () => {
+            const event = parseVevent("DTSTART:20260601T000000Z\r\nDTEND:20260602T000000Z");
+            expect(isDateOnlyEvent(event)).toBe(false);
+            const text = formatEventDateRange(getEventStart(event)!, getEventEnd(event), "en-US", isDateOnlyEvent(event));
+            expect(text).toContain("8:00");
+        });
     });
 
     it("keeps a far-future but valid date", () => {

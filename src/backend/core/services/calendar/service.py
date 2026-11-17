@@ -9,7 +9,7 @@ library's dependency surface.
 import logging
 import re
 import uuid
-from datetime import datetime, timezone
+from datetime import date, datetime, timezone
 from urllib.parse import quote, unquote, urljoin, urlparse
 
 from django.conf import settings as django_settings
@@ -72,6 +72,26 @@ def _format_utc(dt):
     if dt.tzinfo is None:
         raise ValueError("Naive datetime; pass a timezone-aware datetime.")
     return dt.astimezone(timezone.utc).strftime("%Y%m%dT%H%M%SZ")
+
+
+_UNUSABLE = object()
+
+
+def _event_date(component, name):
+    """The date or datetime of ``component``'s ``name`` property.
+
+    None when absent. ``_UNUSABLE`` when it cannot be read: repeated (a list),
+    unparseable (icalendar raises on access), or not a single date or
+    datetime (``VALUE=PERIOD``).
+    """
+    prop = component.get(name)
+    if prop is None:
+        return None
+    try:
+        value = prop.dt
+    except Exception:  # pylint: disable=broad-exception-caught
+        return _UNUSABLE
+    return value if isinstance(value, date) else _UNUSABLE
 
 
 class CalDAVError(Exception):
@@ -539,8 +559,13 @@ class CalDAVService:  # pylint: disable=too-many-instance-attributes
             logger.warning("Could not parse conflicting event", exc_info=True)
             return None
         for comp in cal.walk("VEVENT"):
-            dtstart = comp.get("DTSTART")
-            dtend = comp.get("DTEND")
+            start = _event_date(comp, "DTSTART")
+            end = _event_date(comp, "DTEND")
+            if _UNUSABLE in (start, end):
+                # Unreadable, repeated or of the wrong type: one such event
+                # in a calendar must not fail every conflict check.
+                logger.warning("Skipping conflicting event with an unusable date")
+                continue
             uid = comp.get("UID")
             # All-day events carry a ``date`` (not ``datetime``) — surface
             # the distinction so the UI can format without TZ conversion.
@@ -548,17 +573,12 @@ class CalDAVService:  # pylint: disable=too-many-instance-attributes
             # converts to local time; for users west of UTC the date can
             # display as the day *before*. The ``all_day`` flag lets the
             # client opt into a date-only formatter for those.
-            all_day = bool(
-                dtstart
-                and hasattr(dtstart, "dt")
-                and not isinstance(dtstart.dt, datetime)
-            )
             return {
                 "uid": str(uid) if uid else None,
                 "summary": str(comp.get("SUMMARY") or "Untitled event"),
-                "start": dtstart.dt.isoformat() if dtstart else None,
-                "end": dtend.dt.isoformat() if dtend else None,
-                "all_day": all_day,
+                "start": start.isoformat() if start else None,
+                "end": end.isoformat() if end else None,
+                "all_day": bool(start) and not isinstance(start, datetime),
                 "calendar_name": calendar_name,
             }
         return None

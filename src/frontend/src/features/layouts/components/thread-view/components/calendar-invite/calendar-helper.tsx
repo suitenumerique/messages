@@ -105,16 +105,26 @@ export function isAllDayEvent(start: Date, end?: Date): boolean {
 }
 
 /**
- * Format a date range for display, handling all-day events and same-day events
+ * Whether the event's start is a calendar day (``VALUE=DATE``), not a time.
+ */
+export function isDateOnlyEvent(event: IcsEvent | undefined): boolean {
+    return event?.start?.type === "DATE";
+}
+
+/**
+ * Format a date range for display, handling all-day events and same-day events.
+ * ``allDay`` comes from the event's ``VALUE=DATE`` when known; otherwise
+ * midnight boundaries are taken for one.
  */
 export function formatEventDateRange(
     start: Date,
     end: Date | undefined,
     language: string,
+    allDay?: boolean,
 ): string {
     if (!validDate(start)) return "";
     end = validDate(end);
-    const allDay = isAllDayEvent(start, end);
+    allDay = allDay ?? isAllDayEvent(start, end);
 
     const dateFormatter = new Intl.DateTimeFormat(language, {
         weekday: "long",
@@ -124,14 +134,26 @@ export function formatEventDateRange(
     });
 
     if (allDay) {
-        const startDate = dateFormatter.format(start);
+        // ts-ics gives a VALUE=DATE day as UTC midnight: read in local time,
+        // it is the day before anywhere west of UTC.
+        const utcMidnight = start.getUTCHours() === 0 && start.getUTCMinutes() === 0;
+        const dayFormatter = utcMidnight
+            ? new Intl.DateTimeFormat(language, {
+                  weekday: "long",
+                  year: "numeric",
+                  month: "long",
+                  day: "numeric",
+                  timeZone: "UTC",
+              })
+            : dateFormatter;
+        const startDate = dayFormatter.format(start);
         if (!end) return startDate;
         // All-day events: end date is exclusive in ICS (next day at midnight)
-        const adjustedEnd = new Date(end.getTime() - 86400000);
-        if (start.toDateString() === adjustedEnd.toDateString()) {
+        const lastDay = dayFormatter.format(new Date(end.getTime() - 86400000));
+        if (end.getTime() - start.getTime() <= 86400000 || lastDay === startDate) {
             return startDate; // Single all-day event
         }
-        return `${startDate} – ${dateFormatter.format(adjustedEnd)}`;
+        return `${startDate} – ${lastDay}`;
     }
 
     const timeFormatter = new Intl.DateTimeFormat(language, {

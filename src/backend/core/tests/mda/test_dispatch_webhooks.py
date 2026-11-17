@@ -44,6 +44,7 @@ from core.mda.inbound_pipeline import (
     DEFERRAL_MAX_AGE,
     Decision,
     InboundContext,
+    apply_thread_access_flags,
 )
 from core.mda.inbound_tasks import (
     process_inbound_message_task,
@@ -3053,6 +3054,38 @@ class TestPipelineWebhookFlagActions:
         access = models.ThreadAccess.objects.get(thread=message.thread, mailbox=mailbox)
         assert access.starred_at is not None
         assert access.read_at is not None
+
+    def test_mark_read_on_a_thread_read_before(self):
+        """A thread read days ago is read again up to the new message."""
+        access = factories.ThreadAccessFactory()
+        message = factories.MessageFactory(thread=access.thread)
+        old = dj_timezone.now() - timedelta(days=3)
+        starred = dj_timezone.now() - timedelta(days=2)
+        models.ThreadAccess.objects.filter(pk=access.pk).update(
+            read_at=old, starred_at=starred
+        )
+
+        apply_thread_access_flags(
+            access.thread, access.mailbox, mark_starred=True, mark_read=True
+        )
+
+        access.refresh_from_db()
+        assert access.read_at >= message.created_at
+        # Already starred: the date it was starred is kept.
+        assert access.starred_at == starred
+
+    def test_mark_read_never_moves_read_at_back(self):
+        """A pointer already past now (clock skew) is left as is."""
+        access = factories.ThreadAccessFactory()
+        later = dj_timezone.now() + timedelta(seconds=30)
+        models.ThreadAccess.objects.filter(pk=access.pk).update(read_at=later)
+
+        apply_thread_access_flags(
+            access.thread, access.mailbox, mark_starred=False, mark_read=True
+        )
+
+        access.refresh_from_db()
+        assert access.read_at == later
 
     def test_mark_trashed_and_archived_set_message_fields(self):
         mailbox = factories.MailboxFactory()

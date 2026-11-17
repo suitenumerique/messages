@@ -338,7 +338,7 @@ class TestIsActiveAutoreply:
         autoreply_template.save()
         assert autoreply_template.is_active_autoreply() is True
 
-    @pytest.mark.parametrize("tz", [None, 123, "", ["UTC"], "Invalid/Zone"])
+    @pytest.mark.parametrize("tz", [None, 123, "", ["UTC"], "Invalid/Zone", "a" * 300])
     def test_date_range_stored_invalid_timezone(self, autoreply_template, tz):
         """A timezone that slipped past validation (older rows, direct writes)
         falls back to UTC instead of raising on every inbound message."""
@@ -455,24 +455,50 @@ class TestIsActiveAutoreply:
 
     def test_recurring_weekly_with_time_window(self, autoreply_template):
         """Test same-day interval with time window covering now."""
-        tz = ZoneInfo("UTC")
-        now = timezone.now().astimezone(tz)
-        start_time = (now - timedelta(hours=1)).strftime("%H:%M")
-        end_time = (now + timedelta(hours=1)).strftime("%H:%M")
+        # A fixed time: an hour either side of the real one crosses midnight
+        # between 23:00 and 01:00.
+        now = datetime(2026, 3, 4, 15, 0, tzinfo=ZoneInfo("UTC"))  # Wednesday
         autoreply_template.metadata = {
             "schedule_type": "recurring_weekly",
             "intervals": [
                 {
-                    "start_day": now.isoweekday(),
-                    "start_time": start_time,
-                    "end_day": now.isoweekday(),
-                    "end_time": end_time,
+                    "start_day": 3,
+                    "start_time": "14:00",
+                    "end_day": 3,
+                    "end_time": "16:00",
                 }
             ],
             "timezone": "UTC",
         }
         autoreply_template.save()
-        assert autoreply_template.is_active_autoreply() is True
+        assert autoreply_template.is_active_autoreply(now=now) is True
+
+    @pytest.mark.parametrize(
+        ("now", "expected"),
+        [
+            (datetime(2026, 3, 2, 23, 30, tzinfo=ZoneInfo("UTC")), True),  # Mon
+            (datetime(2026, 3, 4, 15, 0, tzinfo=ZoneInfo("UTC")), False),  # Wed
+        ],
+    )
+    def test_recurring_weekly_stored_end_at_24(self, autoreply_template, now, expected):
+        """An interval stored with "24:00" (refused now) ends with the day,
+        instead of wrapping into a span across the whole week."""
+        models.MessageTemplate.objects.filter(pk=autoreply_template.pk).update(
+            metadata={
+                "schedule_type": "recurring_weekly",
+                "intervals": [
+                    {
+                        "start_day": 1,
+                        "start_time": "09:00",
+                        "end_day": 1,
+                        "end_time": "24:00",
+                    }
+                ],
+                "timezone": "UTC",
+            }
+        )
+        autoreply_template.refresh_from_db()
+        assert autoreply_template.is_active_autoreply(now=now) is expected
 
     def test_recurring_weekly_overnight_range(self, autoreply_template):
         """Test cross-week interval (Fri 18:00 → Mon 08:00)."""

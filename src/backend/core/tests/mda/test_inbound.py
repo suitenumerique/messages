@@ -1446,6 +1446,29 @@ class TestDeliverExtremeSentAt:
         assert message.created_at == message.sent_at
         assert message.thread.messaged_at == message.sent_at
 
+    def test_import_starred_at_is_the_latest_starred_message(self, recipient_addr):
+        """Like a re-import, two starred messages of a thread leave
+        ``starred_at`` at the later one, whatever their import order."""
+        later = (
+            b"From: sender@test.com\r\n"
+            b"To: " + recipient_addr.encode() + b"\r\n"
+            b"Date: Tue, 10 Nov 2026 10:00:00 +0000\r\n"
+            b"Subject: Re: Extreme date\r\n"
+            b"Message-ID: <extreme.date.later@example.com>\r\n"
+            b"In-Reply-To: <extreme.date@example.com>\r\n\r\nlater"
+        )
+        earlier = self._raw(recipient_addr, "Mon, 09 Nov 2026 18:30:11 +0000")
+        for raw in (earlier, later):
+            assert deliver_inbound_message(
+                recipient_addr,
+                parse_email(raw),
+                raw,
+                is_import=True,
+                imap_labels=["Starred"],
+            )
+        access = self._reload().thread.accesses.get()
+        assert access.starred_at == _utc(2026, 11, 10, 10, 0, 0)
+
     def test_import_in_future_does_not_hide_new_mail(self, recipient_addr):
         """A read message imported with a future date must not set ``read_at``
         or the thread dates in the future, which would show later mail in

@@ -239,6 +239,16 @@ describe("useEmptyTrashTasksWatcher", () => {
         expect(useTaskStatus).not.toHaveBeenCalledWith("task-1");
     });
 
+    it("drops a task started in the future (device clock set back since)", async () => {
+        // A margin: the time read back is later than the time stored.
+        storeTask(Date.now() + EMPTY_TRASH_TASK_MAX_AGE_MS + 60_000);
+
+        await render();
+
+        expect(isRunning()).toBe(false);
+        expect(localStorage.getItem(STORAGE_KEY)).toBeNull();
+    });
+
     it("gives up on a task that never finishes and refreshes the folder", async () => {
         storeTask(Date.now() - EMPTY_TRASH_TASK_MAX_AGE_MS + 20);
         taskState = "PENDING";

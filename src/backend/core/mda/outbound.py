@@ -48,18 +48,18 @@ from core.utils import ThreadStatsUpdateDeferrer
 logger = logging.getLogger(__name__)
 
 RETRY_INTERVALS = [
-    timezone.timedelta(minutes=15),
-    timezone.timedelta(minutes=30),
-    timezone.timedelta(minutes=45),
-    timezone.timedelta(minutes=60),
-    timezone.timedelta(hours=2),
-    timezone.timedelta(hours=4),
-    timezone.timedelta(hours=8),
-    timezone.timedelta(hours=12),
-    timezone.timedelta(hours=18),
-    timezone.timedelta(hours=24),
-    timezone.timedelta(hours=36),
-    timezone.timedelta(hours=48),
+    datetime.timedelta(minutes=15),
+    datetime.timedelta(minutes=30),
+    datetime.timedelta(minutes=45),
+    datetime.timedelta(minutes=60),
+    datetime.timedelta(hours=2),
+    datetime.timedelta(hours=4),
+    datetime.timedelta(hours=8),
+    datetime.timedelta(hours=12),
+    datetime.timedelta(hours=18),
+    datetime.timedelta(hours=24),
+    datetime.timedelta(hours=36),
+    datetime.timedelta(hours=48),
 ]
 
 
@@ -637,8 +637,11 @@ def send_message(message: models.Message, force_mta_out: bool = False):
             if first_address_email(parsed_email.get("from")) != message.sender.email:
                 raise ValueError("Mailbox email does not match the raw message sender")
 
-            message.sent_at = timezone.now()
-            message.save(update_fields=["sent_at"])
+            # The first attempt only: a retry must not move the date shown
+            # as sent, nor restart the manual retry age limit.
+            if message.sent_at is None:
+                message.sent_at = timezone.now()
+                message.save(update_fields=["sent_at"])
 
             # Include all recipients in the envelope that have not been delivered yet, including BCC
             envelope_to = {

@@ -577,7 +577,12 @@ def _create_message_from_inbound(  # pylint: disable=too-many-arguments
                     ):
                         access.read_at = message.created_at
                         update_fields.append("read_at")
-                    if import_is_starred and access.starred_at is None:
+                    # The latest starred message, as a re-import of a
+                    # duplicate does (core.services.importer.labels).
+                    if import_is_starred and (
+                        access.starred_at is None
+                        or message.created_at > access.starred_at
+                    ):
                         access.starred_at = message.created_at
                         update_fields.append("starred_at")
                     if update_fields:

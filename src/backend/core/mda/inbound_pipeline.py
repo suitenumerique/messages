@@ -621,10 +621,10 @@ def apply_thread_access_flags(
 ) -> None:
     """Apply per-mailbox flag toggles to the destination ThreadAccess.
 
-    ``mark_starred`` sets ``starred_at`` to now; ``mark_read`` sets
-    ``read_at`` to now. Both are idempotent — re-applying doesn't
-    unstar / unread — and both are no-ops when the corresponding bool
-    is False. The ``ThreadAccess`` row may not exist if the destination
+    ``mark_starred`` sets ``starred_at`` to now when unset; ``mark_read``
+    moves ``read_at`` forward to now, so the message just delivered is
+    read even in a thread read before. Neither ever unstars or unreads,
+    and both are no-ops when the corresponding bool is False. The ``ThreadAccess`` row may not exist if the destination
     mailbox doesn't have one yet (rare: brand-new thread, race with
     deletion); in that case we log and skip rather than fail delivery.
     """
@@ -644,7 +644,7 @@ def apply_thread_access_flags(
     if mark_starred and access.starred_at is None:
         access.starred_at = now
         update_fields.append("starred_at")
-    if mark_read and access.read_at is None:
+    if mark_read and (access.read_at is None or access.read_at < now):
         access.read_at = now
         update_fields.append("read_at")
     if update_fields:

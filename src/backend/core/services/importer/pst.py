@@ -1087,10 +1087,11 @@ def _synthesize_message_id(message, recipient_email: str | None) -> str:
 def _archive_date(value: datetime | None) -> datetime | None:
     """``value`` if usable as the Date of an archived message, else None.
 
-    None when out of range once in UTC or in the future: the MAPI timestamps
-    are better than the import time the inbound step would use. An offset
-    with seconds (``+05:30:15``, ISO only) has no RFC 5322 form: such a
-    date is returned in UTC.
+    None when out of range once in UTC, in the future, or before year 100
+    (the composer refuses those, which would drop the message): the MAPI
+    timestamps are better than the import time the inbound step would use.
+    An offset with seconds (``+05:30:15``, ISO only) has no RFC 5322 form:
+    such a date is returned in UTC.
     """
     if value is None:
         return None
@@ -1100,7 +1101,7 @@ def _archive_date(value: datetime | None) -> datetime | None:
         utc = value.astimezone(timezone.utc)
     except (OverflowError, ValueError):
         return None
-    if utc > datetime.now(timezone.utc):
+    if utc > datetime.now(timezone.utc) or utc.year < 100 or value.year < 100:
         return None
     return value if value.utcoffset().total_seconds() % 60 == 0 else utc
 

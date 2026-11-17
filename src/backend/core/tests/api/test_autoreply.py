@@ -237,7 +237,19 @@ class TestAutoreplyMetadataValidation:
         response = client.post(list_url, payload, format="json")
         assert response.status_code == status.HTTP_400_BAD_REQUEST
 
-    def test_recurring_weekly_invalid_time_values(self, user, mailbox, list_url):
+    @pytest.mark.parametrize(
+        ("start_time", "end_time"),
+        [
+            ("invalid", "08:00"),
+            # Python reads "24:00" as 00:00.
+            ("09:00", "24:00"),
+            ("24:00", "08:00"),
+            ("09:60", "10:00"),
+        ],
+    )
+    def test_recurring_weekly_invalid_time_values(
+        self, user, mailbox, list_url, start_time, end_time
+    ):
         """Reject intervals with invalid time strings."""
         factories.MailboxAccessFactory(
             mailbox=mailbox,
@@ -252,9 +264,9 @@ class TestAutoreplyMetadataValidation:
             intervals=[
                 {
                     "start_day": 1,
-                    "start_time": "invalid",
+                    "start_time": start_time,
                     "end_day": 5,
-                    "end_time": "08:00",
+                    "end_time": end_time,
                 }
             ],
         )
@@ -275,7 +287,19 @@ class TestAutoreplyMetadataValidation:
         response = client.post(list_url, payload, format="json")
         assert response.status_code == status.HTTP_400_BAD_REQUEST
 
-    @pytest.mark.parametrize("tz", [123, False, 0, ["Europe/Paris"], "../etc"])
+    @pytest.mark.parametrize(
+        "tz",
+        [
+            123,
+            False,
+            0,
+            ["Europe/Paris"],
+            "../etc",
+            "a" * 300,
+            "posixrules",
+            "Europe/Paris\x00",
+        ],
+    )
     def test_invalid_timezone_type(self, user, mailbox, list_url, tz):
         """Reject a timezone that is not a valid zone name, instead of a 500
         here or a crash when an inbound message checks the schedule."""

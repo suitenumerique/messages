@@ -36,10 +36,17 @@ const deriveThreadHasUnread = (messagedAt: string | null | undefined, readAt: st
  * by the server.
  */
 export const readAtNow = (messagedAts: readonly (string | null | undefined)[]): string => {
-    const times = messagedAts
-        .map((value) => (value ? new Date(value).getTime() : NaN))
-        .filter((time) => !Number.isNaN(time));
-    return new Date(Math.max(Date.now(), ...times)).toISOString();
+    const now = Date.now();
+    let latest: { value: string; time: number } | undefined;
+    for (const value of messagedAts) {
+        const time = value ? new Date(value).getTime() : NaN;
+        if (!Number.isNaN(time) && (!latest || time > latest.time)) {
+            latest = { value: value!, time };
+        }
+    }
+    // The server's string, not a Date: it has microseconds, which a Date
+    // would truncate to a pointer just before the message.
+    return latest && latest.time >= now ? latest.value : new Date(now).toISOString();
 };
 
 /**

@@ -184,6 +184,28 @@ def test_future_sent_at_of_a_year_0_message():
     assert message.sent_at == migration.EARLIEST
 
 
+def test_dates_within_the_margin_left_alone():
+    """A row stored while the migration runs, or by a host whose clock is a
+    little ahead, is not clamped."""
+    thread, access, message = _thread_with_message()
+    soon = timezone.now() + timedelta(minutes=5)
+    past = datetime(2020, 5, 1, 12, tzinfo=UTC)
+    models.Message.objects.filter(pk=message.pk).update(created_at=soon, sent_at=soon)
+    models.Thread.objects.filter(pk=thread.pk).update(messaged_at=soon, updated_at=past)
+    models.ThreadAccess.objects.filter(pk=access.pk).update(read_at=soon)
+
+    migration.clamp_timestamps(apps, None)
+
+    message.refresh_from_db()
+    assert message.created_at == soon
+    assert message.sent_at == soon
+    thread.refresh_from_db()
+    assert thread.messaged_at == soon
+    assert thread.updated_at == past
+    access.refresh_from_db()
+    assert access.read_at == soon
+
+
 def test_nothing_to_fix_touches_nothing():
     """With every date in range, no thread is marked for reindex."""
     thread, _, _ = _thread_with_message()

@@ -17,6 +17,7 @@ import { Banner } from "@/features/ui/components/banner";
 import { addToast, ToasterItem } from "@/features/ui/components/toaster";
 import i18n from "@/features/i18n/initI18n";
 import { handle } from "@/features/utils/errors";
+import { DateHelper } from "@/features/utils/date-helper";
 import { useConfirmBeforeClose } from "@/features/hooks/use-confirm-before-close";
 import { extractSignatureId } from "../utils";
 import { TemplateComposer } from "../modal-compose-template/template-composer";
@@ -160,7 +161,8 @@ const WEEKDAY_OPTIONS = [
     { label: i18n.t("Sunday"), value: "7" },
 ];
 
-const TIMEZONE_OPTIONS = Intl.supportedValuesOf("timeZone").map((tz) => ({
+// The backend's default; some engines (V8) leave it out of the list.
+const TIMEZONE_OPTIONS = Array.from(new Set(["UTC", ...Intl.supportedValuesOf("timeZone")])).map((tz) => ({
     label: tz.replace(/_/g, " "),
     value: tz,
 }));
@@ -185,7 +187,8 @@ const autoreplyComposerSchema = () => z.object({
         if (!data.end_at) {
             ctx.addIssue({ code: z.ZodIssueCode.custom, message: i18n.t("End date is required"), path: ["end_at"] });
         }
-        if (data.start_at && data.end_at && data.start_at >= data.end_at) {
+        // As dates: "…T10:00:00" and "…T10:00" are the same time.
+        if (data.start_at && data.end_at && new Date(data.start_at) >= new Date(data.end_at)) {
             ctx.addIssue({ code: z.ZodIssueCode.custom, message: i18n.t("Start date must be before end date"), path: ["start_at"] });
         }
     }
@@ -214,6 +217,15 @@ const AutoreplyComposeForm = ({ mailboxId, defaultValue, onSuccess, onDirtyChang
 
     const intervals = metadata?.intervals as Array<Record<string, unknown>> | undefined;
     const interval0 = intervals?.[0];
+    // A stored template without a zone runs in UTC on the backend: showing
+    // it in the browser's zone would shift it on the next save.
+    const timeZone = defaultValue
+        ? DateHelper.resolveTimeZone(metadata?.timezone)
+        : Intl.DateTimeFormat().resolvedOptions().timeZone;
+    // The datetime-local inputs take a wall-clock time: one with an offset
+    // is shown in the template's zone.
+    const toInput = (value: unknown) =>
+        typeof value === "string" ? DateHelper.toWallClock(value, timeZone) ?? "" : "";
 
     const form = useForm<AutoreplyComposerFormData>({
         resolver: zodResolver(autoreplyComposerSchema()),
@@ -222,13 +234,13 @@ const AutoreplyComposeForm = ({ mailboxId, defaultValue, onSuccess, onDirtyChang
             is_active: defaultValue?.is_active ?? true,
             rawBody: defaultValue?.raw_body ?? undefined,
             schedule_type: (metadata?.schedule_type as "always" | "date_range" | "recurring_weekly") ?? "always",
-            start_at: (metadata?.start_at as string) ?? "",
-            end_at: (metadata?.end_at as string) ?? "",
+            start_at: toInput(metadata?.start_at),
+            end_at: toInput(metadata?.end_at),
             interval_start_day: interval0?.start_day != null ? String(interval0.start_day) : "",
             interval_start_time: (interval0?.start_time as string) ?? "",
             interval_end_day: interval0?.end_day != null ? String(interval0.end_day) : "",
             interval_end_time: (interval0?.end_time as string) ?? "",
-            timezone: (metadata?.timezone as string) ?? Intl.DateTimeFormat().resolvedOptions().timeZone,
+            timezone: timeZone,
         }
     });
     const { mutateAsync: createAutoreply, isPending } = useMailboxesMessageTemplatesCreate();

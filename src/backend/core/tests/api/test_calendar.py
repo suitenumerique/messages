@@ -1561,6 +1561,87 @@ class TestRebuildForStorage:
         out = self._rebuild(ics)
         assert "RRULE" in out.walk("VEVENT")[0]
 
+    @pytest.mark.parametrize(
+        "rrule",
+        [
+            "FREQ=SECONDLY;COUNT=2147483647",
+            "FREQ=MINUTELY;UNTIL=99991231T235959Z",
+            "FREQ=SECONDLY;COUNT=0",
+        ],
+    )
+    def test_rejects_huge_subhourly_rrule(self, rrule):
+        """A huge COUNT or a far UNTIL bounds nothing: dropped."""
+        ics = (
+            "BEGIN:VCALENDAR\r\nVERSION:2.0\r\nPRODID:-//x//EN\r\n"
+            "BEGIN:VEVENT\r\nUID:u\r\nDTSTAMP:20260101T000000Z\r\n"
+            "DTSTART:20260601T100000Z\r\nDTEND:20260601T110000Z\r\n"
+            f"RRULE:{rrule}\r\n"
+            "END:VEVENT\r\nEND:VCALENDAR\r\n"
+        )
+        out = self._rebuild(ics)
+        assert "RRULE" not in out.walk("VEVENT")[0]
+
+    def test_keeps_daily_rrule_with_far_until(self):
+        """Only sub-hourly rules are limited."""
+        ics = (
+            "BEGIN:VCALENDAR\r\nVERSION:2.0\r\nPRODID:-//x//EN\r\n"
+            "BEGIN:VEVENT\r\nUID:u\r\nDTSTAMP:20260101T000000Z\r\n"
+            "DTSTART:20260601T100000Z\r\nDTEND:20260601T110000Z\r\n"
+            "RRULE:FREQ=DAILY;UNTIL=20271231T000000Z\r\n"
+            "END:VEVENT\r\nEND:VCALENDAR\r\n"
+        )
+        out = self._rebuild(ics)
+        assert "RRULE" in out.walk("VEVENT")[0]
+
+    @pytest.mark.parametrize(
+        "dates",
+        [
+            "DTSTART:garbage\r\nDTEND:20260601T110000Z",
+            "DTSTART:00000101T000000Z\r\nDTEND:20260601T110000Z",
+            "DTEND:20260601T110000Z",
+        ],
+    )
+    def test_drops_event_without_readable_dtstart(self, dates):
+        """No readable DTSTART: the event cannot be stored usefully."""
+        ics = (
+            "BEGIN:VCALENDAR\r\nVERSION:2.0\r\nPRODID:-//x//EN\r\n"
+            "BEGIN:VEVENT\r\nUID:u\r\nDTSTAMP:20260101T000000Z\r\n"
+            f"{dates}\r\nEND:VEVENT\r\nEND:VCALENDAR\r\n"
+        )
+        assert len(self._rebuild(ics).walk("VEVENT")) == 0
+
+    def test_drops_unreadable_and_repeated_dates(self):
+        """An unreadable DTEND/EXDATE/DTSTAMP is dropped, a second DTSTART
+        is ignored, and the output reads back."""
+        ics = (
+            "BEGIN:VCALENDAR\r\nVERSION:2.0\r\nPRODID:-//x//EN\r\n"
+            "BEGIN:VEVENT\r\nUID:u\r\nDTSTAMP:garbage\r\n"
+            "DTSTART:20260601T100000Z\r\nDTSTART:20260602T100000Z\r\n"
+            "DTEND:99999999T999999Z\r\nEXDATE:garbage\r\n"
+            "END:VEVENT\r\nEND:VCALENDAR\r\n"
+        )
+        event = self._rebuild(ics).walk("VEVENT")[0]
+        assert event["DTSTART"].dt == datetime(2026, 6, 1, 10, tzinfo=timezone.utc)
+        assert "DTEND" not in event
+        assert "EXDATE" not in event
+        assert isinstance(event["DTSTAMP"].dt, datetime)
+        reparsed = ICalendar.from_ical(self._rebuild(ics).to_ical())
+        assert isinstance(reparsed.walk("VEVENT")[0]["DTSTART"].dt, datetime)
+
+    def test_dtstamp_fallback_is_a_utc_datetime(self):
+        """A date-only LAST-MODIFIED cannot be a DTSTAMP (RFC 5545
+        §3.8.7.2): CREATED is used, in UTC."""
+        ics = (
+            "BEGIN:VCALENDAR\r\nVERSION:2.0\r\nPRODID:-//x//EN\r\n"
+            "BEGIN:VEVENT\r\nUID:u\r\nDTSTART:20260601T100000Z\r\n"
+            "LAST-MODIFIED;VALUE=DATE:20260101\r\n"
+            "CREATED:20260501T000000Z\r\n"
+            "END:VEVENT\r\nEND:VCALENDAR\r\n"
+        )
+        stamp = self._rebuild(ics).walk("VEVENT")[0]["DTSTAMP"].dt
+        assert stamp == datetime(2026, 5, 1, 0, tzinfo=timezone.utc)
+        assert stamp.utcoffset().total_seconds() == 0
+
     def test_preserves_referenced_vtimezone(self):
         """VTIMEZONE blocks whose TZID is referenced by a kept event's
         DTSTART/DTEND must survive — otherwise non-UTC events render at
@@ -2434,6 +2515,75 @@ class TestCheckConflictsPerIdentity:
             attendee_email="user@example.com",
         )
         assert result["existing_partstats"] == {"user@example.com": "TENTATIVE"}
+
+    @pytest.mark.parametrize(
+        "dates",
+        [
+            "DTSTART:garbage\r\nDTEND:20260601T110000Z",
+            "DTSTART:00000101T000000Z\r\nDTEND:20260601T110000Z",
+            "DTSTART:20260601T100000Z\r\nDTSTART:20260601T103000Z\r\n"
+            "DTEND:20260601T110000Z",
+            "DTSTART:20260601T100000Z\r\nDTEND;VALUE=PERIOD:20260601T100000Z/PT1H",
+        ],
+    )
+    def test_event_with_unusable_date_is_skipped(self, dates):
+        """A stored event whose date cannot be read is left out, and the
+        other conflicts are still returned."""
+        broken = (
+            "BEGIN:VCALENDAR\r\nVERSION:2.0\r\nPRODID:-//Test//Test//EN\r\n"
+            "BEGIN:VEVENT\r\nUID:broken@example.com\r\n"
+            f"{dates}\r\nSUMMARY:Broken\r\nEND:VEVENT\r\nEND:VCALENDAR\r\n"
+        )
+        valid = self._ics("valid@example.com", "20260601T100000Z", "20260601T110000Z")
+        service = self._service(
+            [{"id": "cal", "name": "Cal", "owner_email": None}],
+            {"cal": [broken, valid]},
+        )
+        result = service.check_conflicts(
+            start=datetime(2026, 6, 1, 10, tzinfo=timezone.utc),
+            end=datetime(2026, 6, 1, 11, tzinfo=timezone.utc),
+            attendee_email="user@example.com",
+        )
+        assert [c["summary"] for c in result["conflicts"]] == ["Shared invite"]
+
+    def test_event_without_end_and_all_day_event(self):
+        """No DTEND is fine, and an all-day event is flagged as such."""
+        no_end = (
+            "BEGIN:VCALENDAR\r\nVERSION:2.0\r\nPRODID:-//Test//Test//EN\r\n"
+            "BEGIN:VEVENT\r\nUID:a@example.com\r\nDTSTART:20260601T100000Z\r\n"
+            "SUMMARY:No end\r\nEND:VEVENT\r\nEND:VCALENDAR\r\n"
+        )
+        all_day = (
+            "BEGIN:VCALENDAR\r\nVERSION:2.0\r\nPRODID:-//Test//Test//EN\r\n"
+            "BEGIN:VEVENT\r\nUID:b@example.com\r\nDTSTART;VALUE=DATE:20260601\r\n"
+            "DTEND;VALUE=DATE:20260602\r\nSUMMARY:All day\r\n"
+            "END:VEVENT\r\nEND:VCALENDAR\r\n"
+        )
+        service = self._service(
+            [{"id": "cal", "name": "Cal", "owner_email": None}],
+            {"cal": [no_end, all_day]},
+        )
+        result = service.check_conflicts(
+            start=datetime(2026, 6, 1, 10, tzinfo=timezone.utc),
+            end=datetime(2026, 6, 1, 11, tzinfo=timezone.utc),
+            attendee_email="user@example.com",
+        )
+        assert result["conflicts"] == [
+            {
+                "summary": "No end",
+                "start": "2026-06-01T10:00:00+00:00",
+                "end": None,
+                "all_day": False,
+                "calendar_name": "Cal",
+            },
+            {
+                "summary": "All day",
+                "start": "2026-06-01",
+                "end": "2026-06-02",
+                "all_day": True,
+                "calendar_name": "Cal",
+            },
+        ]
 
 
 # ---------------------------------------------------------------------------

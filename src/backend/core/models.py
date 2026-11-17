@@ -15,7 +15,7 @@ from datetime import timezone as dt_timezone
 from functools import cached_property
 from logging import getLogger
 from typing import Any, Dict, List, Optional
-from zoneinfo import ZoneInfo
+from zoneinfo import ZoneInfo, available_timezones
 
 from django.conf import settings
 from django.contrib.auth import models as auth_models
@@ -3463,7 +3463,7 @@ def _autoreply_tz(metadata: dict) -> ZoneInfo:
     """The autoreply's timezone, UTC when absent or invalid."""
     try:
         return ZoneInfo(metadata.get("timezone") or "UTC")
-    except (KeyError, ValueError, TypeError):
+    except (KeyError, ValueError, TypeError, OSError):
         return ZoneInfo("UTC")
 
 
@@ -3742,7 +3742,9 @@ class MessageTemplate(BaseModel):
                         "metadata": "recurring_weekly schedule requires 'intervals' as a list."
                     }
                 )
-            time_re = re.compile(r"^\d{2}:\d{2}$")
+            # Hours 00-23: Python reads "24:00" as 00:00, which would turn
+            # "09:00 → 24:00" into a span across the whole week.
+            time_re = re.compile(r"^([01]\d|2[0-3]):[0-5]\d$")
             for interval in intervals:
                 if not isinstance(interval, dict):
                     raise ValidationError(
@@ -3778,13 +3780,13 @@ class MessageTemplate(BaseModel):
         # Absent, null or "": UTC (see _autoreply_tz). Anything else must be
         # a zone name.
         tz_name = metadata.get("timezone")
-        if tz_name not in (None, ""):
-            try:
-                ZoneInfo(tz_name)
-            except (KeyError, ValueError, TypeError) as exc:
-                raise ValidationError(
-                    {"metadata": f"Invalid timezone: {tz_name}"}
-                ) from exc
+        # A name from the system's time zone list: ZoneInfo also opens other
+        # files of the zoneinfo directory ("posixrules"), and raises OSError
+        # on a name too long for a path.
+        if tz_name not in (None, "") and (
+            not isinstance(tz_name, str) or tz_name not in available_timezones()
+        ):
+            raise ValidationError({"metadata": f"Invalid timezone: {tz_name}"})
 
     def is_active_autoreply(self, now=None):
         """Check if this template is an active autoreply based on schedule.
@@ -3829,7 +3831,13 @@ class MessageTemplate(BaseModel):
             for interval in intervals:
                 try:
                     st = time.fromisoformat(interval["start_time"])
-                    et = time.fromisoformat(interval["end_time"])
+                    # Stored before validation refused it: "24:00" means the
+                    # end of the day, not 00:00.
+                    et = (
+                        time.max
+                        if interval["end_time"] == "24:00"
+                        else time.fromisoformat(interval["end_time"])
+                    )
                     sd = interval["start_day"]
                     ed = interval["end_day"]
                 except (KeyError, ValueError, TypeError):

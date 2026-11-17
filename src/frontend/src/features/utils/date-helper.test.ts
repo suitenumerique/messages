@@ -2,7 +2,7 @@ import { DateHelper } from './date-helper';
 import { beforeEach, afterEach, describe, it, expect, vi } from 'vitest';
 
 describe('DateHelper', () => {
-  // Mock current date to 2024-03-15
+  // Mock current date to 2025-04-17
   beforeEach(() => {
     vi.useFakeTimers();
     vi.setSystemTime(new Date('2025-04-17T16:00:00'));
@@ -13,6 +13,14 @@ describe('DateHelper', () => {
   });
 
   describe('formatDate', () => {
+    it.each(['', 'garbage', undefined as unknown as string])(
+      'returns an empty string for an invalid date (%s) instead of throwing',
+      (value) => {
+        expect(DateHelper.formatDate(value, 'en')).toBe('');
+        expect(DateHelper.formatEventTimestamp(value, 'en')).toBe('');
+      },
+    );
+
     it('should format time when date is today', () => {
       const todayDate = '2025-04-17T17:30:00';
       expect(DateHelper.formatDate(todayDate, 'fr')).toBe('17:30');

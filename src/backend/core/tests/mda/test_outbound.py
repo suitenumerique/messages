@@ -627,6 +627,23 @@ class TestSendMessageRedisLock(TransactionTestCase):
             self.message.refresh_from_db()
             assert self.message.sent_at is not None
 
+    def test_retry_keeps_first_sent_at(self):
+        """A later attempt does not move ``sent_at``: it is the date shown as
+        sent and the start of the manual retry age limit."""
+        cache.clear()
+        with patch("core.mda.outbound.send_outbound_message") as mock_send_outbound:
+            mock_send_outbound.return_value = {
+                "to@example.com": {"delivered": False, "error": "try later"}
+            }
+            outbound.send_message(self.message, force_mta_out=True)
+            self.message.refresh_from_db()
+            first = self.message.sent_at
+            assert first is not None
+
+            outbound.send_message(self.message, force_mta_out=True)
+            self.message.refresh_from_db()
+            assert self.message.sent_at == first
+
 
 @pytest.mark.django_db
 class TestPrepareOutboundMessageSignature:

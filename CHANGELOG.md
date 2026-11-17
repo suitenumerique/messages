@@ -84,7 +84,27 @@ and this project adheres to
 - "Mark as read" no longer leaves the latest mail unread when the device clock
   is behind the server's
 - A calendar invite with an invalid date no longer breaks the message view;
-  an invite that still fails to render is shown as a plain attachment
+  an invite that still fails to render is shown as a plain attachment.
+  All-day invites show their own days west of UTC, not the day before
+- The calendar conflicts check skips a stored event whose date cannot be
+  read instead of failing, and an invite added to the calendar drops dates
+  that cannot be read, repeated DTSTART and huge sub-hourly recurrences
+- A webhook's `mark_read` now marks the new message read in a thread read
+  before
+- A delivery retry keeps the message's first `sent_at`: the manual retry age
+  limit no longer restarts at each attempt
+- Splitting a thread whose messages share a date (imports) cuts in display
+  order and never moves the first message
+- Autoreply weekly intervals refuse `24:00`, which read as `00:00` and made
+  the interval cover the whole week; a stored one ends with the day
+- `compose_email` writes a sub-minute offset in UTC instead of an empty
+  `Date:`, and refuses a year before 100, which read back as a two-digit year
+- `backfill_postmark` and `backfill_thread_snippets` read a bare `--before`
+  date as midnight UTC and report an impossible date as an error
+- Startup check `core.E006` refuses duration settings over 100 years (e.g.
+  `TRASHBIN_CUTOFF_DAYS=999999`), which made the task using them fail
+- Silent login and the "empty trash" progress no longer stay stuck when the
+  device clock was set back
 - The PST import keeps a message whose `Date:` cannot be parsed, dated by the
   MAPI timestamps, which also replace a `Date:` in the future
 - Autoreply date ranges are compared as instants, which was wrong in the hour

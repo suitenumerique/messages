@@ -101,9 +101,10 @@ def _due_for_retry_q(now) -> Q:
     are disjoint and a row matches exactly one. A band is satisfied when the
     row's last attempt (``updated_at``) is at least that band's interval old.
 
-    A freshly-queued row has ``updated_at == created_at``, so the first band
-    also supplies the "don't touch it for 5 minutes" grace the immediate
-    ``.delay()`` dispatch needs to do its work unraced.
+    A freshly-queued row has ``updated_at`` within microseconds of
+    ``created_at``, so the first band also supplies the "don't touch it for 5
+    minutes" grace the immediate ``.delay()`` dispatch needs to do its work
+    unraced.
     """
     due = Q()
     for index, (min_age, interval) in enumerate(_RETRY_BACKOFF):
@@ -768,7 +769,7 @@ def process_inbound_messages_queue_task(
 # the purge sweep reclaims it: long enough for an operator to act on the
 # Sentry alert (inspect / replay from the admin), short enough that a stream
 # of poison mail can't grow the transient queue table without bound.
-_ABANDONED_RETENTION = timezone.timedelta(days=7)
+_ABANDONED_RETENTION = timedelta(days=7)
 
 
 @celery_app.task(bind=True)
