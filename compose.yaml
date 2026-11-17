@@ -112,7 +112,7 @@ services:
       - objectstorage-data:/data
 
   keycloak:
-    image: quay.io/keycloak/keycloak:26.8.1@sha256:79c623a22abacf3fe6c00a5fb30f5b7843d717b234033b80995891c06116d244
+    image: quay.io/keycloak/keycloak:26.8.2@sha256:c68e286cacd87b942ac1939a0a1481461109d6acd3a57dc496969a319a76bbf0
     volumes:
       - ./src/keycloak/realm.json:/opt/keycloak/data/import/realm.json:ro
       - ./src/keycloak/bulk-role-membership/bulk-role-membership.jar:/opt/keycloak/providers/bulk-role-membership.jar:ro

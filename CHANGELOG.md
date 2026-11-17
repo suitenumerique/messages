@@ -27,9 +27,16 @@ and this project adheres to
 
 ### Changed
 
-- Bump keycloak to 26.8.1 and refresh the Alpine 3.24 digest in the Keycloak image
+- Bump keycloak to 26.8.2 and refresh the Alpine 3.24 digest in the Keycloak
+  image
+- Keycloak 26.8.2 rejects Admin REST API tokens without the `kc-admin-api`
+  client scope: add it as a default scope to the service account client. The
+  dev realm adds it to `rest-api`; an existing dev database needs a reset
 - Bump Caddy to 2.11.9 in the Keycloak image, the frontend image and the
   Scalingo post-frontend deploy script
+- Bump Node to 24.22.3, ESLint to 10, TypeScript to 6 and the other npm
+  dependencies in the Keycloak theme
+- Bump the Maven dependencies of the bulk-role-membership Keycloak extension
 - Bump @gouvfr-lasuite/ui-components to 1.3.0
 - Use the container IP as Host in the backend healthcheck
 
@@ -40,6 +47,9 @@ and this project adheres to
 
 ### Security
 
+- Keycloak 26.8.2 fixes more than 30 CVEs, among them CVE-2026-117691 (SAML
+  redirect binding signature bypass) and CVE-2026-107889 (stored XSS on the
+  login page)
 - Caddy 2.11.9 carries go-jose 4.1.6, which closes GHSA-mgcc-cww5-fp2q; the
   2.11.7 release binary shipped the affected 4.1.5. The FastCGI fixes of
   2.11.8 and 2.11.9 do not apply: neither proxy runs PHP

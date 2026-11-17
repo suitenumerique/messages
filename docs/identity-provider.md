@@ -94,6 +94,9 @@ For now, Messages only supports Keycloak as an `IDENTITY_PROVIDER`.
 5. **Assign the realm-management roles.** On the user in the "Service
    account roles" tab, assign the client roles `query-users`,
    `manage-users`, `view-users` and `view-realm`.
+   From Keycloak 26.8.2, also add the `kc-admin-api` client scope to the
+   client as a default scope, in the "Client scopes" tab. Without this
+   scope, the Admin REST API rejects the token with a `401` status.
 
 6. **Set the provisioning variables.** Set `IDENTITY_PROVIDER` to
    `keycloak`. Set `KEYCLOAK_URL`, `KEYCLOAK_REALM` and
