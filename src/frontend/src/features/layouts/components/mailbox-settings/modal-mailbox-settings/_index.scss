@@ -85,6 +85,38 @@
     }
   }
 
+  &__calendars {
+    display: grid;
+    grid-template-columns: 1fr auto auto;
+    gap: var(--c--globals--spacings--xs) var(--c--globals--spacings--base);
+    align-items: center;
+  }
+
+  &__calendar-row {
+    display: contents;
+  }
+
+  &__calendars-head,
+  &__calendar-linked {
+    font-size: var(--c--globals--font--sizes--sm);
+    color: var(--c--contextuals--content--semantic--neutral--secondary);
+  }
+
+  &__calendar-name {
+    display: flex;
+    align-items: center;
+    gap: var(--c--globals--spacings--2xs);
+    min-width: 0;
+  }
+
+  &__calendar-color {
+    flex: none;
+    width: 10px;
+    height: 10px;
+    border-radius: 50%;
+    background-color: var(--c--contextuals--content--semantic--neutral--secondary);
+  }
+
   // Plain, borderless members list (no card chrome): each ShareMemberItem row
   // stacks with light vertical spacing, matching the access-sharing mockup.
   &__accesses-list {

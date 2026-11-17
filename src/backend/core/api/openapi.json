@@ -2795,6 +2795,107 @@
                 }
             }
         },
+        "/api/v1.0/mailboxes/{mailbox_id}/calendar/settings/": {
+            "get": {
+                "operationId": "mailboxes_calendar_settings_retrieve",
+                "description": "List every calendar with the user's settings applied.",
+                "parameters": [
+                    {
+                        "in": "path",
+                        "name": "mailbox_id",
+                        "schema": {
+                            "type": "string",
+                            "format": "uuid"
+                        },
+                        "required": true
+                    }
+                ],
+                "tags": [
+                    "calendar"
+                ],
+                "security": [
+                    {
+                        "cookieAuth": []
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "$ref": "#/components/schemas/CalendarSettingsResponse"
+                                }
+                            }
+                        },
+                        "description": ""
+                    },
+                    "502": {
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "type": "object",
+                                    "properties": {
+                                        "detail": {
+                                            "type": "string"
+                                        }
+                                    }
+                                }
+                            }
+                        },
+                        "description": "CalDAV server error while listing calendars."
+                    }
+                }
+            },
+            "patch": {
+                "operationId": "mailboxes_calendar_settings_partial_update",
+                "description": "Update some of the calendar settings.",
+                "parameters": [
+                    {
+                        "in": "path",
+                        "name": "mailbox_id",
+                        "schema": {
+                            "type": "string",
+                            "format": "uuid"
+                        },
+                        "required": true
+                    }
+                ],
+                "tags": [
+                    "calendar"
+                ],
+                "requestBody": {
+                    "content": {
+                        "application/json": {
+                            "schema": {
+                                "$ref": "#/components/schemas/PatchedCalendarSettingsRequest"
+                            }
+                        },
+                        "multipart/form-data": {
+                            "schema": {
+                                "$ref": "#/components/schemas/PatchedCalendarSettingsRequest"
+                            }
+                        }
+                    }
+                },
+                "security": [
+                    {
+                        "cookieAuth": []
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "$ref": "#/components/schemas/CalendarSettings"
+                                }
+                            }
+                        },
+                        "description": ""
+                    }
+                }
+            }
+        },
         "/api/v1.0/mailboxes/{mailbox_id}/channels/": {
             "get": {
                 "operationId": "mailboxes_channels_list",
@@ -7887,6 +7988,11 @@
                             "additionalProperties": {}
                         }
                     },
+                    "default_calendar_id": {
+                        "type": "string",
+                        "nullable": true,
+                        "description": "Calendar new events go to by default."
+                    },
                     "web_url": {
                         "type": "string",
                         "nullable": true,
@@ -7940,6 +8046,56 @@
                 },
                 "required": [
                     "task_id"
+                ]
+            },
+            "CalendarSettings": {
+                "type": "object",
+                "description": "A user's calendar choices for a mailbox; null resets to the default.",
+                "properties": {
+                    "conflict_calendar_ids": {
+                        "type": "array",
+                        "items": {
+                            "type": "string",
+                            "maxLength": 2048
+                        },
+                        "nullable": true,
+                        "maxItems": 500
+                    },
+                    "available_calendar_ids": {
+                        "type": "array",
+                        "items": {
+                            "type": "string",
+                            "maxLength": 2048
+                        },
+                        "nullable": true,
+                        "maxItems": 500
+                    },
+                    "default_calendar_id": {
+                        "type": "string",
+                        "nullable": true,
+                        "maxLength": 2048
+                    }
+                }
+            },
+            "CalendarSettingsResponse": {
+                "type": "object",
+                "properties": {
+                    "calendars": {
+                        "type": "array",
+                        "items": {
+                            "type": "object",
+                            "additionalProperties": {}
+                        },
+                        "description": "Every calendar, with booleans ``writable``, ``linked``, ``available`` and ``check_conflicts``."
+                    },
+                    "default_calendar_id": {
+                        "type": "string",
+                        "nullable": true
+                    }
+                },
+                "required": [
+                    "calendars",
+                    "default_calendar_id"
                 ]
             },
             "ChangeFlagRequestRequest": {
@@ -10595,6 +10751,38 @@
                     "mimetype",
                     "size"
                 ]
+            },
+            "PatchedCalendarSettingsRequest": {
+                "type": "object",
+                "description": "A user's calendar choices for a mailbox; null resets to the default.",
+                "properties": {
+                    "conflict_calendar_ids": {
+                        "type": "array",
+                        "items": {
+                            "type": "string",
+                            "minLength": 1,
+                            "maxLength": 2048
+                        },
+                        "nullable": true,
+                        "maxItems": 500
+                    },
+                    "available_calendar_ids": {
+                        "type": "array",
+                        "items": {
+                            "type": "string",
+                            "minLength": 1,
+                            "maxLength": 2048
+                        },
+                        "nullable": true,
+                        "maxItems": 500
+                    },
+                    "default_calendar_id": {
+                        "type": "string",
+                        "nullable": true,
+                        "minLength": 1,
+                        "maxLength": 2048
+                    }
+                }
             },
             "PatchedChannelRequest": {
                 "type": "object",

@@ -671,6 +671,7 @@ const fetchIcsContent = async (url: string): Promise<string> => {
 type CalendarsApiResponse = {
     data: {
         calendars: CalendarInfo[];
+        default_calendar_id?: string | null;
         web_url?: string | null;
         configured?: boolean;
     };
@@ -803,16 +804,16 @@ export const CalendarInvite = ({
         [attendeeEmails, mailboxEmail],
     );
 
-    // Default to the first calendar that actually represents an attendee
-    // on this invite — so opening a mailbox-addressed invite while
-    // sitting on your personal mailbox auto-selects the mailbox calendar.
-    // Falls back to ``calendars[0]`` when no calendar matches (the user
-    // can still "Add to calendar"; RSVP buttons stay hidden).
+    // The mailbox's default calendar when it speaks for an attendee, else the
+    // first calendar that does (RSVP needs one), else the default.
+    const preferredCalendarId = calendarsResponse?.data?.default_calendar_id ?? null;
     const defaultCalendarId = useMemo(() => {
         if (calendars.length === 0) return null;
+        const preferred = calendars.find((c) => c.id === preferredCalendarId);
+        if (preferred && calendarMatchesAttendee(preferred)) return preferred.id;
         const match = calendars.find(calendarMatchesAttendee);
-        return (match ?? calendars[0]).id;
-    }, [calendars, calendarMatchesAttendee]);
+        return (match ?? preferred ?? calendars[0]).id;
+    }, [calendars, calendarMatchesAttendee, preferredCalendarId]);
     // Ignore ``selectedCalendarId`` when it no longer matches any calendar
     // in the current list — otherwise a stale id (mailbox switch, calendar
     // deleted server-side) would flow into the RSVP/add-to-calendar POST

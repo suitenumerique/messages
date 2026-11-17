@@ -29,6 +29,8 @@ import type {
   CalendarListResponse,
   CalendarRsvpRequestRequest,
   CalendarRsvpResponse,
+  CalendarSettings,
+  CalendarSettingsResponse,
   MailboxesCalendarAddCreate400,
   MailboxesCalendarAddCreate503,
   MailboxesCalendarCalendarsRetrieve403,
@@ -37,6 +39,8 @@ import type {
   MailboxesCalendarConflictsCreate502,
   MailboxesCalendarRsvpCreate400,
   MailboxesCalendarRsvpCreate503,
+  MailboxesCalendarSettingsRetrieve502,
+  PatchedCalendarSettingsRequest,
 } from ".././models";
 
 import { fetchAPI } from "../../fetch-api";
@@ -655,6 +659,320 @@ export const useMailboxesCalendarRsvpCreate = <
 > => {
   const mutationOptions =
     getMailboxesCalendarRsvpCreateMutationOptions(options);
+
+  return useMutation(mutationOptions, queryClient);
+};
+/**
+ * List every calendar with the user's settings applied.
+ */
+export type mailboxesCalendarSettingsRetrieveResponse200 = {
+  data: CalendarSettingsResponse;
+  status: 200;
+};
+
+export type mailboxesCalendarSettingsRetrieveResponse502 = {
+  data: MailboxesCalendarSettingsRetrieve502;
+  status: 502;
+};
+
+export type mailboxesCalendarSettingsRetrieveResponseSuccess =
+  mailboxesCalendarSettingsRetrieveResponse200 & {
+    headers: Headers;
+  };
+export type mailboxesCalendarSettingsRetrieveResponseError =
+  mailboxesCalendarSettingsRetrieveResponse502 & {
+    headers: Headers;
+  };
+
+export type mailboxesCalendarSettingsRetrieveResponse =
+  | mailboxesCalendarSettingsRetrieveResponseSuccess
+  | mailboxesCalendarSettingsRetrieveResponseError;
+
+export const getMailboxesCalendarSettingsRetrieveUrl = (mailboxId: string) => {
+  return `/api/v1.0/mailboxes/${mailboxId}/calendar/settings/`;
+};
+
+export const mailboxesCalendarSettingsRetrieve = async (
+  mailboxId: string,
+  options?: RequestInit,
+): Promise<mailboxesCalendarSettingsRetrieveResponse> => {
+  return fetchAPI<mailboxesCalendarSettingsRetrieveResponse>(
+    getMailboxesCalendarSettingsRetrieveUrl(mailboxId),
+    {
+      ...options,
+      method: "GET",
+    },
+  );
+};
+
+export const getMailboxesCalendarSettingsRetrieveQueryKey = (
+  mailboxId?: string,
+) => {
+  return [`/api/v1.0/mailboxes/${mailboxId}/calendar/settings/`] as const;
+};
+
+export const getMailboxesCalendarSettingsRetrieveQueryOptions = <
+  TData = Awaited<ReturnType<typeof mailboxesCalendarSettingsRetrieve>>,
+  TError = ErrorType<MailboxesCalendarSettingsRetrieve502>,
+>(
+  mailboxId: string,
+  options?: {
+    query?: Partial<
+      UseQueryOptions<
+        Awaited<ReturnType<typeof mailboxesCalendarSettingsRetrieve>>,
+        TError,
+        TData
+      >
+    >;
+    request?: SecondParameter<typeof fetchAPI>;
+  },
+) => {
+  const { query: queryOptions, request: requestOptions } = options ?? {};
+
+  const queryKey =
+    queryOptions?.queryKey ??
+    getMailboxesCalendarSettingsRetrieveQueryKey(mailboxId);
+
+  const queryFn: QueryFunction<
+    Awaited<ReturnType<typeof mailboxesCalendarSettingsRetrieve>>
+  > = ({ signal }) =>
+    mailboxesCalendarSettingsRetrieve(mailboxId, { signal, ...requestOptions });
+
+  return {
+    queryKey,
+    queryFn,
+    enabled: !!mailboxId,
+    ...queryOptions,
+  } as UseQueryOptions<
+    Awaited<ReturnType<typeof mailboxesCalendarSettingsRetrieve>>,
+    TError,
+    TData
+  > & { queryKey: DataTag<QueryKey, TData, TError> };
+};
+
+export type MailboxesCalendarSettingsRetrieveQueryResult = NonNullable<
+  Awaited<ReturnType<typeof mailboxesCalendarSettingsRetrieve>>
+>;
+export type MailboxesCalendarSettingsRetrieveQueryError =
+  ErrorType<MailboxesCalendarSettingsRetrieve502>;
+
+export function useMailboxesCalendarSettingsRetrieve<
+  TData = Awaited<ReturnType<typeof mailboxesCalendarSettingsRetrieve>>,
+  TError = ErrorType<MailboxesCalendarSettingsRetrieve502>,
+>(
+  mailboxId: string,
+  options: {
+    query: Partial<
+      UseQueryOptions<
+        Awaited<ReturnType<typeof mailboxesCalendarSettingsRetrieve>>,
+        TError,
+        TData
+      >
+    > &
+      Pick<
+        DefinedInitialDataOptions<
+          Awaited<ReturnType<typeof mailboxesCalendarSettingsRetrieve>>,
+          TError,
+          Awaited<ReturnType<typeof mailboxesCalendarSettingsRetrieve>>
+        >,
+        "initialData"
+      >;
+    request?: SecondParameter<typeof fetchAPI>;
+  },
+  queryClient?: QueryClient,
+): DefinedUseQueryResult<TData, TError> & {
+  queryKey: DataTag<QueryKey, TData, TError>;
+};
+export function useMailboxesCalendarSettingsRetrieve<
+  TData = Awaited<ReturnType<typeof mailboxesCalendarSettingsRetrieve>>,
+  TError = ErrorType<MailboxesCalendarSettingsRetrieve502>,
+>(
+  mailboxId: string,
+  options?: {
+    query?: Partial<
+      UseQueryOptions<
+        Awaited<ReturnType<typeof mailboxesCalendarSettingsRetrieve>>,
+        TError,
+        TData
+      >
+    > &
+      Pick<
+        UndefinedInitialDataOptions<
+          Awaited<ReturnType<typeof mailboxesCalendarSettingsRetrieve>>,
+          TError,
+          Awaited<ReturnType<typeof mailboxesCalendarSettingsRetrieve>>
+        >,
+        "initialData"
+      >;
+    request?: SecondParameter<typeof fetchAPI>;
+  },
+  queryClient?: QueryClient,
+): UseQueryResult<TData, TError> & {
+  queryKey: DataTag<QueryKey, TData, TError>;
+};
+export function useMailboxesCalendarSettingsRetrieve<
+  TData = Awaited<ReturnType<typeof mailboxesCalendarSettingsRetrieve>>,
+  TError = ErrorType<MailboxesCalendarSettingsRetrieve502>,
+>(
+  mailboxId: string,
+  options?: {
+    query?: Partial<
+      UseQueryOptions<
+        Awaited<ReturnType<typeof mailboxesCalendarSettingsRetrieve>>,
+        TError,
+        TData
+      >
+    >;
+    request?: SecondParameter<typeof fetchAPI>;
+  },
+  queryClient?: QueryClient,
+): UseQueryResult<TData, TError> & {
+  queryKey: DataTag<QueryKey, TData, TError>;
+};
+
+export function useMailboxesCalendarSettingsRetrieve<
+  TData = Awaited<ReturnType<typeof mailboxesCalendarSettingsRetrieve>>,
+  TError = ErrorType<MailboxesCalendarSettingsRetrieve502>,
+>(
+  mailboxId: string,
+  options?: {
+    query?: Partial<
+      UseQueryOptions<
+        Awaited<ReturnType<typeof mailboxesCalendarSettingsRetrieve>>,
+        TError,
+        TData
+      >
+    >;
+    request?: SecondParameter<typeof fetchAPI>;
+  },
+  queryClient?: QueryClient,
+): UseQueryResult<TData, TError> & {
+  queryKey: DataTag<QueryKey, TData, TError>;
+} {
+  const queryOptions = getMailboxesCalendarSettingsRetrieveQueryOptions(
+    mailboxId,
+    options,
+  );
+
+  const query = useQuery(queryOptions, queryClient) as UseQueryResult<
+    TData,
+    TError
+  > & { queryKey: DataTag<QueryKey, TData, TError> };
+
+  query.queryKey = queryOptions.queryKey;
+
+  return query;
+}
+
+/**
+ * Update some of the calendar settings.
+ */
+export type mailboxesCalendarSettingsPartialUpdateResponse200 = {
+  data: CalendarSettings;
+  status: 200;
+};
+
+export type mailboxesCalendarSettingsPartialUpdateResponseSuccess =
+  mailboxesCalendarSettingsPartialUpdateResponse200 & {
+    headers: Headers;
+  };
+export type mailboxesCalendarSettingsPartialUpdateResponse =
+  mailboxesCalendarSettingsPartialUpdateResponseSuccess;
+
+export const getMailboxesCalendarSettingsPartialUpdateUrl = (
+  mailboxId: string,
+) => {
+  return `/api/v1.0/mailboxes/${mailboxId}/calendar/settings/`;
+};
+
+export const mailboxesCalendarSettingsPartialUpdate = async (
+  mailboxId: string,
+  patchedCalendarSettingsRequest: PatchedCalendarSettingsRequest,
+  options?: RequestInit,
+): Promise<mailboxesCalendarSettingsPartialUpdateResponse> => {
+  return fetchAPI<mailboxesCalendarSettingsPartialUpdateResponse>(
+    getMailboxesCalendarSettingsPartialUpdateUrl(mailboxId),
+    {
+      ...options,
+      method: "PATCH",
+      headers: { "Content-Type": "application/json", ...options?.headers },
+      body: JSON.stringify(patchedCalendarSettingsRequest),
+    },
+  );
+};
+
+export const getMailboxesCalendarSettingsPartialUpdateMutationOptions = <
+  TError = ErrorType<unknown>,
+  TContext = unknown,
+>(options?: {
+  mutation?: UseMutationOptions<
+    Awaited<ReturnType<typeof mailboxesCalendarSettingsPartialUpdate>>,
+    TError,
+    { mailboxId: string; data: PatchedCalendarSettingsRequest },
+    TContext
+  >;
+  request?: SecondParameter<typeof fetchAPI>;
+}): UseMutationOptions<
+  Awaited<ReturnType<typeof mailboxesCalendarSettingsPartialUpdate>>,
+  TError,
+  { mailboxId: string; data: PatchedCalendarSettingsRequest },
+  TContext
+> => {
+  const mutationKey = ["mailboxesCalendarSettingsPartialUpdate"];
+  const { mutation: mutationOptions, request: requestOptions } = options
+    ? options.mutation &&
+      "mutationKey" in options.mutation &&
+      options.mutation.mutationKey
+      ? options
+      : { ...options, mutation: { ...options.mutation, mutationKey } }
+    : { mutation: { mutationKey }, request: undefined };
+
+  const mutationFn: MutationFunction<
+    Awaited<ReturnType<typeof mailboxesCalendarSettingsPartialUpdate>>,
+    { mailboxId: string; data: PatchedCalendarSettingsRequest }
+  > = (props) => {
+    const { mailboxId, data } = props ?? {};
+
+    return mailboxesCalendarSettingsPartialUpdate(
+      mailboxId,
+      data,
+      requestOptions,
+    );
+  };
+
+  return { mutationFn, ...mutationOptions };
+};
+
+export type MailboxesCalendarSettingsPartialUpdateMutationResult = NonNullable<
+  Awaited<ReturnType<typeof mailboxesCalendarSettingsPartialUpdate>>
+>;
+export type MailboxesCalendarSettingsPartialUpdateMutationBody =
+  PatchedCalendarSettingsRequest;
+export type MailboxesCalendarSettingsPartialUpdateMutationError =
+  ErrorType<unknown>;
+
+export const useMailboxesCalendarSettingsPartialUpdate = <
+  TError = ErrorType<unknown>,
+  TContext = unknown,
+>(
+  options?: {
+    mutation?: UseMutationOptions<
+      Awaited<ReturnType<typeof mailboxesCalendarSettingsPartialUpdate>>,
+      TError,
+      { mailboxId: string; data: PatchedCalendarSettingsRequest },
+      TContext
+    >;
+    request?: SecondParameter<typeof fetchAPI>;
+  },
+  queryClient?: QueryClient,
+): UseMutationResult<
+  Awaited<ReturnType<typeof mailboxesCalendarSettingsPartialUpdate>>,
+  TError,
+  { mailboxId: string; data: PatchedCalendarSettingsRequest },
+  TContext
+> => {
+  const mutationOptions =
+    getMailboxesCalendarSettingsPartialUpdateMutationOptions(options);
 
   return useMutation(mutationOptions, queryClient);
 };

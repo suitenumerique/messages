@@ -27,6 +27,7 @@ import { MailboxSettingsAutorepliesTab } from "./autoreplies-tab";
 import { MailboxSettingsIntegrationsTab } from "./integrations-tab";
 import { MailboxSettingsImportsTab, ImportsTabView } from "./imports-tab";
 import { MailboxSettingsStorageTab } from "./storage-tab";
+import { MailboxSettingsCalendarTab, useCalendarSettings } from "./calendar-tab";
 import { ImportNewTitle } from "../imports-view/import-new-title";
 
 export type SettingsTabId =
@@ -37,7 +38,8 @@ export type SettingsTabId =
   | "autoreplies"
   | "integrations"
   | "imports"
-  | "storage";
+  | "storage"
+  | "calendar";
 
 type ModalMailboxSettingsProps = {
   isOpen: boolean;
@@ -154,6 +156,9 @@ export const ModalMailboxSettings = ({
   // (and the integrations feature flag). Single source of truth: it drives both
   // the rendered `tabs` below and the active-tab synchronisation on mailbox
   // switch, so the two can never drift apart.
+  const { data: calendarSettings } = useCalendarSettings(settingsMailbox?.id);
+  const hasCalendars = (calendarSettings?.data.calendars.length ?? 0) > 0;
+
   const availableTabIds = useMemo<SettingsTabId[]>(() => {
     if (!settingsMailbox) {
       return [];
@@ -166,6 +171,9 @@ export const ModalMailboxSettings = ({
     }
     if (manage_message_templates) {
       ids.push("message-templates", "autoreplies", "signatures");
+    }
+    if (hasCalendars) {
+      ids.push("calendar");
     }
     // Imports are gated by their own ability (is_admin && FEATURE_IMPORT_MESSAGES),
     // shown before Integrations.
@@ -183,7 +191,7 @@ export const ModalMailboxSettings = ({
       ids.push("storage");
     }
     return ids;
-  }, [settingsMailbox, isIntegrationsEnabled]);
+  }, [settingsMailbox, isIntegrationsEnabled, hasCalendars]);
 
   // When the user drops their own admin rights from inside the modal (e.g. they
   // demote or remove their own admin access), the mailbox leaves the eligible
@@ -306,6 +314,21 @@ export const ModalMailboxSettings = ({
             }</p>,
             content: (
               <MailboxSettingsSignaturesTab
+                key={settingsMailbox.id}
+                mailbox={settingsMailbox}
+              />
+            ),
+          },
+        ]
+      : []),
+    ...(availableTabIds.includes("calendar")
+      ? [
+          {
+            id: "calendar",
+            label: t("Calendar"),
+            title: t("Calendar"),
+            content: (
+              <MailboxSettingsCalendarTab
                 key={settingsMailbox.id}
                 mailbox={settingsMailbox}
               />

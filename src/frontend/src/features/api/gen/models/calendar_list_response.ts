@@ -10,6 +10,11 @@ import type { CalendarListResponseCalendarsItem } from "./calendar_list_response
 export type CalendarListResponse = {
   calendars: CalendarListResponseCalendarsItem[];
   /**
+   * Calendar new events go to by default.
+   * @nullable
+   */
+  default_calendar_id?: string | null;
+  /**
    * Public URL of the calendar web UI, if configured.
    * @nullable
    */

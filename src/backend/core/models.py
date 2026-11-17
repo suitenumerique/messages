@@ -1189,6 +1189,10 @@ class MailboxAccess(BaseModel):
         "accessed at", null=True, blank=True, db_index=True
     )
 
+    # Per-user calendar choices: conflict_calendar_ids, available_calendar_ids,
+    # default_calendar_id. A missing key means the default behaviour.
+    calendar_settings = models.JSONField("calendar settings", default=dict, blank=True)
+
     class Meta:
         db_table = "messages_mailboxaccess"
         verbose_name = "mailbox access"

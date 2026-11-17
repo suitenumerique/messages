@@ -10,6 +10,7 @@ and this project adheres to
 
 ### Added
 
+- Choose per mailbox which calendars invitations use and check for conflicts
 - Support passkey sign-in in the `lst-dsfr` Keycloak theme (off by default)
 - Add the `lst-dsfr` login and account theme (Keycloakify, react-dsfr) with
   the ProConnect look. The dev realm keeps the built-in themes.

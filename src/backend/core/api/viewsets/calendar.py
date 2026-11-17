@@ -21,6 +21,7 @@ from rest_framework.views import APIView
 
 from core import enums, models
 from core.api.permissions import HasAccessToMailbox, HasWriteAccessToMailbox
+from core.mda.addresses import ascii_lower
 from core.services.calendar.service import CalDAVError, CalDAVService
 from core.services.calendar.tasks import calendar_add_event_task, calendar_rsvp_task
 from core.utils import register_task_owner
@@ -83,6 +84,56 @@ class CalDAVChannelMixin:
         if not service:
             raise NotFound("No CalDAV calendar is configured for this mailbox.")
         return service
+
+    @cached_property
+    def calendar_settings(self):
+        """The requesting user's calendar settings for this mailbox."""
+        return models.MailboxAccess.objects.get(
+            mailbox=self.mailbox, user=self.request.user
+        ).calendar_settings
+
+    def counts_for_conflicts(self, service, calendars):
+        """Predicate: is a calendar checked for invite conflicts.
+
+        Default: the calendars linked to this mailbox, else the main calendar,
+        else every calendar owned by the user or mailbox.
+        """
+        selected = self.calendar_settings.get("conflict_calendar_ids")
+        if selected is not None:
+            return lambda cal: cal["id"] in selected
+        if linked := {cal["id"] for cal in calendars if self.is_linked(cal)}:
+            return lambda cal: cal["id"] in linked
+        if main := service.main_calendar_id:
+            return lambda cal: cal["id"] == main
+        own = {ascii_lower(service.username), ascii_lower(str(self.mailbox))}
+        return lambda cal: (
+            not cal.get("owner_email") or ascii_lower(cal["owner_email"]) in own
+        )
+
+    def is_linked(self, calendar):
+        """Whether ``calendar`` is linked to this mailbox's address."""
+        return calendar.get("owner_type") == "MAILBOX" and ascii_lower(
+            calendar.get("owner_email") or ""
+        ) == ascii_lower(str(self.mailbox))
+
+    def is_available(self, calendar):
+        """Whether events can be saved to ``calendar`` from this mailbox."""
+        selected = self.calendar_settings.get("available_calendar_ids")
+        return calendar["writable"] and (selected is None or calendar["id"] in selected)
+
+    def default_calendar_id(self, service, calendars):
+        """Where new events go: the user's choice, else the calendar linked to
+        this mailbox, else the main calendar."""
+        available = [cal for cal in calendars if self.is_available(cal)]
+        ids = {cal["id"] for cal in available}
+        chosen = self.calendar_settings.get("default_calendar_id")
+        if chosen in ids:
+            return chosen
+        linked = [cal["id"] for cal in available if self.is_linked(cal)]
+        if linked:
+            return linked[0]
+        main = service.main_calendar_id
+        return main if main in ids else None
 
 
 @extend_schema(tags=["calendar"])
@@ -351,11 +402,16 @@ class CalendarConflictsView(CalDAVChannelMixin, APIView):
         service = self.require_caldav_service()
 
         try:
+            calendars = service.list_calendars()
+            counts = self.counts_for_conflicts(service, calendars)
             result = service.check_conflicts(
                 start=start,
                 end=end,
                 exclude_uid=exclude_uid,
                 attendee_email=str(self.mailbox),
+                calendars=[
+                    {**cal, "check_conflicts": counts(cal)} for cal in calendars
+                ],
             )
         except CalDAVError as e:
             # Upstream CalDAV failure (network, 4xx/5xx from server,
@@ -389,6 +445,11 @@ class CalendarListView(CalDAVChannelMixin, APIView):
                 fields={
                     "calendars": drf_serializers.ListField(
                         child=drf_serializers.DictField()
+                    ),
+                    "default_calendar_id": drf_serializers.CharField(
+                        required=False,
+                        allow_null=True,
+                        help_text="Calendar new events go to by default.",
                     ),
                     "web_url": drf_serializers.CharField(
                         allow_null=True,
@@ -428,10 +489,11 @@ class CalendarListView(CalDAVChannelMixin, APIView):
             )
 
         try:
-            # Only list calendars the user can write to — the UI uses this
-            # to pick a destination for RSVP/add-event, and read-only
-            # calendars would fail at PUT time.
-            calendars = service.list_calendars(writable_only=True)
+            # Destinations for RSVP/add-event: writable calendars the user
+            # made available for this mailbox.
+            calendars = [
+                cal for cal in service.list_calendars() if self.is_available(cal)
+            ]
         except CalDAVError as e:
             # 403 on the *instance-level* path means "we authenticated the
             # service credential but this OIDC identity is not yet a
@@ -484,6 +546,117 @@ class CalendarListView(CalDAVChannelMixin, APIView):
         # Anything else is unexpected — let Django return 500.
 
         return Response(
-            {"calendars": calendars, "web_url": web_url, "configured": True},
+            {
+                "calendars": calendars,
+                "default_calendar_id": self.default_calendar_id(service, calendars),
+                "web_url": web_url,
+                "configured": True,
+            },
             status=status.HTTP_200_OK,
         )
+
+
+class CalendarSettingsSerializer(drf_serializers.Serializer):  # pylint: disable=abstract-method
+    """A user's calendar choices for a mailbox; null resets to the default."""
+
+    conflict_calendar_ids = drf_serializers.ListField(
+        child=drf_serializers.CharField(max_length=2048),
+        allow_null=True,
+        max_length=500,
+        required=False,
+    )
+    available_calendar_ids = drf_serializers.ListField(
+        child=drf_serializers.CharField(max_length=2048),
+        allow_null=True,
+        max_length=500,
+        required=False,
+    )
+    default_calendar_id = drf_serializers.CharField(
+        max_length=2048, allow_null=True, required=False
+    )
+
+
+@extend_schema(tags=["calendar"])
+class CalendarSettingsView(CalDAVChannelMixin, APIView):
+    """Read and update the requesting user's calendar settings for a mailbox."""
+
+    permission_classes = [HasAccessToMailbox]
+
+    @extend_schema(
+        responses={
+            200: inline_serializer(
+                name="CalendarSettingsResponse",
+                fields={
+                    "calendars": drf_serializers.ListField(
+                        child=drf_serializers.DictField(),
+                        help_text=(
+                            "Every calendar, with booleans ``writable``, ``linked``, "
+                            "``available`` and ``check_conflicts``."
+                        ),
+                    ),
+                    "default_calendar_id": drf_serializers.CharField(allow_null=True),
+                },
+            ),
+            502: OpenApiResponse(
+                response=_ERROR_SCHEMA,
+                description="CalDAV server error while listing calendars.",
+            ),
+        },
+    )
+    def get(self, request, mailbox_id):  # pylint: disable=unused-argument
+        """List every calendar with the user's settings applied."""
+        service = self.get_caldav_service()
+        if not service:
+            return Response(
+                {"calendars": [], "default_calendar_id": None},
+                status=status.HTTP_200_OK,
+            )
+
+        try:
+            calendars = service.list_calendars()
+        except CalDAVError as e:
+            logger.warning(
+                "CalDAV upstream failed during list_calendars "
+                "(channel=%s, HTTP status=%s).",
+                self.caldav_channel.id if self.caldav_channel else None,
+                e.status_code,
+            )
+            return Response(
+                {"detail": "CalDAV server returned an error while listing calendars."},
+                status=status.HTTP_502_BAD_GATEWAY,
+            )
+
+        counts = self.counts_for_conflicts(service, calendars)
+        return Response(
+            {
+                "calendars": [
+                    {
+                        **cal,
+                        "available": self.is_available(cal),
+                        "check_conflicts": counts(cal),
+                        "linked": self.is_linked(cal),
+                    }
+                    for cal in calendars
+                ],
+                "default_calendar_id": self.default_calendar_id(service, calendars),
+            },
+            status=status.HTTP_200_OK,
+        )
+
+    @extend_schema(
+        request=CalendarSettingsSerializer,
+        responses={200: CalendarSettingsSerializer},
+    )
+    def patch(self, request, mailbox_id):  # pylint: disable=unused-argument
+        """Update some of the calendar settings."""
+        serializer = CalendarSettingsSerializer(data=request.data)
+        serializer.is_valid(raise_exception=True)
+        access = models.MailboxAccess.objects.get(
+            mailbox=self.mailbox, user=request.user
+        )
+        access.calendar_settings = {
+            **access.calendar_settings,
+            **serializer.validated_data,
+        }
+        access.save(update_fields=["calendar_settings", "updated_at"])
+        return Response(access.calendar_settings, status=status.HTTP_200_OK)

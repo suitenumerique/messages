@@ -11,6 +11,7 @@ from core.api.viewsets.calendar import (
     CalendarConflictsView,
     CalendarListView,
     CalendarRsvpView,
+    CalendarSettingsView,
 )
 from core.api.viewsets.channel import ChannelViewSet, UserChannelViewSet
 from core.api.viewsets.config import ConfigView
@@ -227,6 +228,11 @@ urlpatterns = [
                     "mailboxes/<uuid:mailbox_id>/calendar/calendars/",
                     CalendarListView.as_view(),
                     name="calendar-list",
+                ),
+                path(
+                    "mailboxes/<uuid:mailbox_id>/calendar/settings/",
+                    CalendarSettingsView.as_view(),
+                    name="calendar-settings",
                 ),
                 path(
                     "maildomains/<uuid:maildomain_pk>/",

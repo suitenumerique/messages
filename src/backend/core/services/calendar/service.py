@@ -98,6 +98,7 @@ class CalDAVService:  # pylint: disable=too-many-instance-attributes
         self.ssrf_protect = ssrf_protect
         self._session = None
         self._home_set = None
+        self._main_calendar_id = None
         # Resolved-and-pinned destination, populated lazily on session
         # creation when ``ssrf_protect`` is True.
         self._ssrf_adapter = None
@@ -251,16 +252,26 @@ class CalDAVService:  # pylint: disable=too-many-instance-attributes
         body = (
             '<?xml version="1.0"?>'
             '<d:propfind xmlns:d="DAV:" xmlns:c="urn:ietf:params:xml:ns:caldav">'
-            "<d:prop><c:calendar-home-set/></d:prop>"
+            "<d:prop><c:calendar-home-set/><c:schedule-default-calendar-URL/></d:prop>"
             "</d:propfind>"
         )
         root = ET.fromstring(self._propfind(principal_url, body, depth="0").text)
+        main_href = root.findtext(
+            f".//{_q(CALDAV_NS, 'schedule-default-calendar-URL')}/{_q(DAV_NS, 'href')}"
+        )
+        if main_href:
+            self._main_calendar_id = urljoin(self.url, main_href.strip())
         home_href = root.findtext(
             f".//{_q(CALDAV_NS, 'calendar-home-set')}/{_q(DAV_NS, 'href')}"
         )
         if not home_href:
             return principal_url
         return urljoin(self.url, home_href.strip())
+
+    @property
+    def main_calendar_id(self):
+        """The account's main calendar (RFC 6638 schedule-default-calendar-URL)."""
+        return self._main_calendar_id if self.home_set else None
 
     def list_calendars(self, writable_only=False):
         """List all calendars with a single PROPFIND depth=1 (no N+1).
@@ -315,6 +326,7 @@ class CalDAVService:  # pylint: disable=too-many-instance-attributes
                     "order": order,
                     "owner_email": owner_email,
                     "owner_type": owner_type,
+                    "writable": self._response_is_writable(response),
                 }
             )
         # Honour the user's manual ordering from the Calendars UI (Apple's
@@ -419,7 +431,9 @@ class CalDAVService:  # pylint: disable=too-many-instance-attributes
                     return True
         return False
 
-    def check_conflicts(self, start, end, exclude_uid=None, attendee_email=None):
+    def check_conflicts(
+        self, start, end, exclude_uid=None, attendee_email=None, calendars=None
+    ):
         """Find conflicts and the existing PARTSTAT per identity for the UID.
 
         Returns ``{"conflicts": [...], "existing_partstats": {identity: str}}``.
@@ -427,6 +441,11 @@ class CalDAVService:  # pylint: disable=too-many-instance-attributes
         Events whose UID matches ``exclude_uid`` are NOT returned as
         conflicts (a prior import of the same invite should not flag the
         event as conflicting with itself).
+
+        ``calendars`` defaults to every calendar; those flagged
+        ``check_conflicts: False`` report no conflicts but are still
+        searched for the prior copy of ``exclude_uid``,
+        so a stored RSVP is found wherever it lives.
 
         A mailbox can act through several attendee-owned calendars (the
         suitenumerique/calendars CalDAV server exposes each calendar's
@@ -440,7 +459,7 @@ class CalDAVService:  # pylint: disable=too-many-instance-attributes
         """
         conflicts = []
         existing_partstats = {}
-        for cal in self.list_calendars():
+        for cal in self.list_calendars() if calendars is None else calendars:
             try:
                 events = self._calendar_query(cal["id"], start, end)
             except CalDAVError:
@@ -458,6 +477,7 @@ class CalDAVService:  # pylint: disable=too-many-instance-attributes
             owner_lc = (
                 ascii_lower(cal.get("owner_email") or attendee_email or "") or None
             )
+            cal_counts = cal.get("check_conflicts", True)
             for ics_text in events:
                 summary = self._summarize_event(ics_text, cal["name"])
                 if summary is None:
@@ -469,6 +489,8 @@ class CalDAVService:  # pylint: disable=too-many-instance-attributes
                         owner_partstat = self._extract_partstat(ics_text, owner_lc)
                         if owner_partstat is not None:
                             existing_partstats[owner_lc] = owner_partstat
+                    continue
+                if not cal_counts:
                     continue
                 # UIDs are used only for the self-exclusion filter above —
                 # they can carry internal routing info (incident IDs, etc.)
