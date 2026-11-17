@@ -7,8 +7,9 @@
 #   * uv pinned by SHA256 digest for supply chain integrity.
 #   * uv-managed python-build-standalone (most C deps statically linked).
 #   * `python-runtime` stage strips pip/idle/tkinter/headers.
-#   * `runtime-prod` (slim) and `runtime-distroless-prod` (cc-debian13:nonroot)
-#     both available; the distroless variant is the security target.
+#   * `runtime-distroless-prod` (cc-debian13:nonroot) is the image CI
+#     publishes and tests. `runtime-prod` (slim) is the same server with a
+#     shell, for those who need one; build it yourself.
 #
 # Shared base image (deploy/python-uv/Dockerfile): debian-trixie + apt upgrade +
 # ca-certificates + uv (digest-pinned) + uv-managed CPython at /opt/python.
@@ -70,6 +71,11 @@ USER ${DOCKER_USER}
 ENV PATH="/venv/bin:$PATH"
 ENV VIRTUAL_ENV=/venv
 ENV VIRTUAL_ENV_PROMPT=venv
+# A message is held in blocks of 64 kB. glibc keeps freed blocks of that size
+# on its heap, so the memory a message took stays resident once it is
+# delivered. With this, each block is mapped on its own and returned to the
+# system when freed.
+ENV MALLOC_MMAP_THRESHOLD_=65536
 
 COPY ./entrypoint.pymta.sh /usr/local/bin/entrypoint.sh
 ENTRYPOINT [ "/usr/local/bin/entrypoint.sh" ]
@@ -150,10 +156,10 @@ ENV PYTHONPATH="/app/src"
 
 CMD ["python", "-m", "pymta.server"]
 
-# Liveness probe: TCP-connect the SMTP listener. Uses stdlib socket — works in
-# both slim and distroless variants without curl/nc.
-HEALTHCHECK --interval=30s --timeout=2s --start-period=15s \
-    CMD ["python", "-c", "import os,socket;h=os.getenv('PYMTA_SMTP_BIND_HOST','').strip() or '127.0.0.1';h='127.0.0.1' if h in ('0.0.0.0','::') else h;socket.create_connection((h,int(os.getenv('PYMTA_SMTP_BIND_PORT','25'))),timeout=1).close()"]
+# Liveness probe: connects to the SMTP listener and waits for it to answer
+# (see pymta/healthcheck.py). Python only, so it runs in the distroless image.
+HEALTHCHECK --interval=30s --timeout=5s --start-period=15s \
+    CMD ["python", "-m", "pymta.healthcheck"]
 
 
 # ---- Distroless production runtime ----
@@ -176,10 +182,12 @@ ENV VIRTUAL_ENV=/venv
 ENV PYTHONUNBUFFERED=1
 ENV PYTHONDONTWRITEBYTECODE=1
 ENV PYTHONPATH="/app/src"
+# As in runtime-base: freed message blocks go back to the system.
+ENV MALLOC_MMAP_THRESHOLD_=65536
 
 # No shell entrypoint — distroless has no /bin/sh. The shell wrapper
 # (entrypoint.pymta.sh) is only for dev-time EXEC_CMD modes.
 CMD ["python", "-m", "pymta.server"]
 
-HEALTHCHECK --interval=30s --timeout=2s --start-period=15s \
-    CMD ["python", "-c", "import os,socket;h=os.getenv('PYMTA_SMTP_BIND_HOST','').strip() or '127.0.0.1';h='127.0.0.1' if h in ('0.0.0.0','::') else h;socket.create_connection((h,int(os.getenv('PYMTA_SMTP_BIND_PORT','25'))),timeout=1).close()"]
+HEALTHCHECK --interval=30s --timeout=5s --start-period=15s \
+    CMD ["python", "-m", "pymta.healthcheck"]

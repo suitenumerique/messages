@@ -91,6 +91,60 @@ class LogThrottle:
         return int(entry[1]) if entry else 0
 
 
+# Seconds over which PYMTA_MAX_RCPT_MISSES_PER_SOURCE is counted.
+MISS_WINDOW = 600.0
+
+
+class MissBudget:
+    """Unknown recipients each source has named, over all its sessions.
+
+    A source that names ``PYMTA_MAX_RCPT_MISSES_PER_SOURCE`` of them within
+    ``MISS_WINDOW`` seconds of its first is refused at connect until that
+    window ends. What a session may collect is bounded by its own budget, but
+    a peer that reconnects gets a new session: this is what bounds an address
+    harvest over time.
+
+    ``max_sources`` bounds the memory. With that many sources inside their
+    window, a new one is not counted: a peer with that many addresses is not
+    held by a per-source limit anyway.
+    """
+
+    def __init__(self, limit: int | None = None, *, max_sources: int = 65536):
+        # None: the setting, read at each use. Tests pass explicit values.
+        self._limit = limit
+        self._max_sources = max_sources
+        # source -> [end of its window, misses in it]
+        self._seen: dict[str, list[float]] = {}
+
+    @property
+    def limit(self) -> int:
+        if self._limit is None:
+            return settings.PYMTA_MAX_RCPT_MISSES_PER_SOURCE
+        return self._limit
+
+    def record(self, source: str, now: float | None = None) -> None:
+        """Count one unknown recipient named by ``source``."""
+        now = time.monotonic() if now is None else now
+        entry = self._seen.get(source)
+        if entry is not None and now < entry[0]:
+            entry[1] += 1
+            return
+        if entry is None and len(self._seen) >= self._max_sources:
+            self._seen = {key: value for key, value in self._seen.items() if now < value[0]}
+            if len(self._seen) >= self._max_sources:
+                return
+        self._seen[source] = [now + MISS_WINDOW, 1]
+
+    def spent(self, source: str, now: float | None = None) -> bool:
+        """True while ``source`` is to be refused."""
+        limit = self.limit
+        entry = self._seen.get(source)
+        if not limit or entry is None:
+            return False
+        now = time.monotonic() if now is None else now
+        return now < entry[0] and entry[1] >= limit
+
+
 class IPGate:
     """Counts SMTP sessions and DATA phases, in total and per source.
 
@@ -109,11 +163,14 @@ class IPGate:
         max_total: int | None = None,
         max_data: int | None = None,
         max_share: float | None = None,
+        max_misses: int | None = None,
     ):
         # None: the setting, read at each use. Tests pass explicit values.
         self._max_total = max_total
         self._max_data = max_data
         self._max_share = max_share
+        # Unknown recipients per source, across sessions.
+        self.misses = MissBudget(max_misses)
         self._data_total = 0
         self._data_per_ip: dict[str, int] = {}
         self._per_ip: dict[str, int] = {}

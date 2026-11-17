@@ -92,6 +92,8 @@ class ScriptedMDA:
         return MDAResult(ok=True, temp_fail=False, payload=payload, status_code=200)
 
     async def deliver(self, **kwargs):
+        # The server hands the message over in blocks: joined for the tests to read.
+        kwargs["message"] = b"".join(kwargs["message"])
         self.delivered.append(kwargs)
         answer = self.delivers.pop(0) if self.delivers else "ok"
         if isinstance(answer, MDAResult):

@@ -308,6 +308,7 @@ OPERATOR_TRIGGERABLE = {
     "proxy_trust_unrestricted",
     "legacy_setting_in_use",
     "tls_certificate",
+    "tls_key_types",
     "tls_reloaded",
     "tls_reload_rejected",
     "shutdown_started",

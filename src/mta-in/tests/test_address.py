@@ -161,6 +161,37 @@ def test_zero_width_format_characters_are_accepted(address):
     assert _validate(address)
 
 
+@pytest.mark.parametrize(
+    "code_point",
+    [
+        0x202E,  # RIGHT-TO-LEFT OVERRIDE: "user<RLO>moc.elpmaxe@" reads backwards
+        0x202A,  # LEFT-TO-RIGHT EMBEDDING
+        0x2066,  # LEFT-TO-RIGHT ISOLATE
+        0x2069,  # POP DIRECTIONAL ISOLATE
+        0x200E,  # LEFT-TO-RIGHT MARK
+        0x200F,  # RIGHT-TO-LEFT MARK
+        0x061C,  # ARABIC LETTER MARK
+        0x200B,  # ZERO WIDTH SPACE
+        0x2060,  # WORD JOINER
+        0xFEFF,  # BOM
+        0x00AD,  # SOFT HYPHEN
+        0xE0041,  # TAG LATIN CAPITAL LETTER A
+        0x0600,  # ARABIC NUMBER SIGN: Cf, though visible
+    ],
+)
+@pytest.mark.parametrize("template", ["us{}er@example.com", "user@exam{}ple.com"])
+def test_every_other_format_character_is_refused(code_point, template):
+    """Invisible, and of no use in an address but to make it display as another.
+
+    Only the two join controls are let in, as in IDNA2008 and PRECIS.
+    Written as code points: the characters themselves would hide in this file.
+    """
+    with pytest.raises(AddressError) as exc:
+        _validate(template.format(chr(code_point)))
+    assert exc.value.reason == "control_char"
+    assert exc.value.smtp_code == 501
+
+
 # ---------------------------------------------------------------------------
 # Source routes (RFC 5321 §4.1.1.3)
 # ---------------------------------------------------------------------------

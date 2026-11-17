@@ -22,6 +22,7 @@ from rest_framework.permissions import IsAuthenticated
 from rest_framework.response import Response
 
 from core import enums, models
+from core.mda.addresses import normalize_address
 from core.mda.inbound import (
     DeliveryUnavailable,
     check_local_recipients,
@@ -435,13 +436,20 @@ class InboundMTAViewSet(viewsets.GenericViewSet):
             base_envelope["tls_version"] = _trace_token(mta_metadata, "tls_version")
             base_envelope["tls_cipher"] = _trace_token(mta_metadata, "tls_cipher")
 
-        # Deliver the parsed email to each original recipient
+        # Deliver the parsed email to each original recipient. Two spellings of
+        # one address (``Bob@`` and ``bob@``) resolve to one mailbox, which
+        # gets one delivery: without a Message-ID the second would not be
+        # recognised as a duplicate. Keyed as the mailbox lookup folds them;
+        # the first spelling is the one kept.
         success_count = 0
         failure_count = 0
         unavailable = False
         delivery_results = {}
-
+        recipients = {}
         for recipient in mta_metadata["original_recipients"]:
+            recipients.setdefault(normalize_address(recipient), recipient)
+
+        for recipient in recipients.values():
             try:
                 delivered = deliver_inbound_message(
                     recipient,

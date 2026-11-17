@@ -9,7 +9,15 @@ from __future__ import annotations
 
 import pytest
 
-from pymta.limits import IPGate, LogThrottle, TooManyConnections, source_key
+from pymta import settings
+from pymta.limits import (
+    MISS_WINDOW,
+    IPGate,
+    LogThrottle,
+    MissBudget,
+    TooManyConnections,
+    source_key,
+)
 
 # ---------------------------------------------------------------------------
 # source_key: what the per-source limits count by.
@@ -64,6 +72,72 @@ def test_throttle_makes_room_by_dropping_expired_keys():
     assert throttle.allow("192.0.2.2", now=30) == 0
     assert throttle.allow("192.0.2.3", now=70) == 0
     assert set(throttle._seen) == {"192.0.2.2", "192.0.2.3"}
+
+
+# ---------------------------------------------------------------------------
+# MissBudget: unknown recipients per source, over all its sessions.
+# ---------------------------------------------------------------------------
+
+
+def test_a_source_is_spent_at_its_limit_of_misses_and_not_before():
+    budget = MissBudget(3)
+    assert not budget.spent("192.0.2.1", now=0)
+    budget.record("192.0.2.1", now=0)
+    budget.record("192.0.2.1", now=10)
+    assert not budget.spent("192.0.2.1", now=10)
+    budget.record("192.0.2.1", now=20)
+    assert budget.spent("192.0.2.1", now=20)
+    # Another source has its own count.
+    budget.record("192.0.2.2", now=20)
+    assert not budget.spent("192.0.2.2", now=20)
+
+
+def test_the_window_runs_from_the_first_miss_and_then_starts_again():
+    budget = MissBudget(2)
+    budget.record("192.0.2.1", now=0)
+    budget.record("192.0.2.1", now=MISS_WINDOW - 1)
+    assert budget.spent("192.0.2.1", now=MISS_WINDOW - 1)
+    # The second miss did not push the end of the window back.
+    assert not budget.spent("192.0.2.1", now=MISS_WINDOW)
+    # A miss after it is the first of a new window.
+    budget.record("192.0.2.1", now=MISS_WINDOW + 1)
+    assert not budget.spent("192.0.2.1", now=MISS_WINDOW + 1)
+    budget.record("192.0.2.1", now=MISS_WINDOW + 2)
+    assert budget.spent("192.0.2.1", now=MISS_WINDOW + 2)
+
+
+def test_a_limit_of_zero_never_refuses():
+    budget = MissBudget(0)
+    for _ in range(5):
+        budget.record("192.0.2.1", now=0)
+    assert not budget.spent("192.0.2.1", now=0)
+
+
+def test_the_limit_is_the_setting_read_at_each_use(monkeypatch):
+    budget = MissBudget()
+    monkeypatch.setattr(settings, "PYMTA_MAX_RCPT_MISSES_PER_SOURCE", 2)
+    budget.record("192.0.2.1")
+    budget.record("192.0.2.1")
+    assert budget.spent("192.0.2.1")
+    monkeypatch.setattr(settings, "PYMTA_MAX_RCPT_MISSES_PER_SOURCE", 3)
+    assert not budget.spent("192.0.2.1")
+
+
+def test_the_table_of_sources_is_bounded():
+    budget = MissBudget(1, max_sources=2)
+    budget.record("192.0.2.1", now=0)
+    budget.record("192.0.2.2", now=100)
+    # Full of sources inside their window: a new one is not counted.
+    budget.record("192.0.2.3", now=200)
+    assert not budget.spent("192.0.2.3", now=200)
+    assert set(budget._seen) == {"192.0.2.1", "192.0.2.2"}
+    # One whose window has ended makes room.
+    budget.record("192.0.2.3", now=MISS_WINDOW + 1)
+    assert budget.spent("192.0.2.3", now=MISS_WINDOW + 1)
+    assert set(budget._seen) == {"192.0.2.2", "192.0.2.3"}
+    # A source already in a full table is still counted.
+    budget.record("192.0.2.2", now=MISS_WINDOW + 2)
+    assert budget._seen["192.0.2.2"][1] == 2
 
 
 # ---------------------------------------------------------------------------

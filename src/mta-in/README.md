@@ -52,7 +52,7 @@ Only 5xx and transport failures feed the circuit breaker. A `207` or a `401` is 
 | MDA `check/` response | SMTP reply | Why |
 |---|---|---|
 | `200` + `{"<addr>": true}` | `250` | Mailbox exists. |
-| `200` + `{"<addr>": false}` | `550` (`421` at the miss cutoff) | The MDA says there is no such mailbox. The only permanent rejection on this path. |
+| `200` + `{"<addr>": false}` | `550` | The MDA says there is no such mailbox. The only permanent rejection on this path. |
 | `200` naming the address with anything but a bool | `451` | Not an answer about this mailbox. |
 | `200` not naming the address at all | `451` | Empty body, unparseable body, a proxy's own 200 page, or a drifted response shape. |
 | any non-200, timeout, transport error, open breaker | `451` | Nothing here is a verdict on the mailbox. |
@@ -85,7 +85,7 @@ Received: from mx.sender.example ([203.0.113.9])
 ```
 
 - `with` says whether the session was encrypted: `ESMTP` in clear, `ESMTPS` over TLS (RFC 3848), `UTF8SMTP` / `UTF8SMTPS` when the sender declared `SMTPUTF8` (RFC 6531).
-- `tls` names the cipher suite (RFC 8314 §4.3). The protocol version has no standard clause and goes in a comment, as Postfix writes it; `(TLSv1)` or `(TLSv1.1)` there is an old handshake, possible only with `PYMTA_TLS_MIN_VERSION` lowered.
+- `tls` names the cipher suite (RFC 8314 §4.3). The protocol version has no standard clause and goes in a comment, as Postfix writes it; `(TLSv1)` or `(TLSv1.1)` there is an old handshake, refused when `PYMTA_TLS_MIN_VERSION` is `1.2` or higher.
 - `id` is the session id of every pymta log line about this message.
 - `by` is `PYMTA_SMTP_HOSTNAME`.
 - There is no `for` clause: one delivery to several recipients is stored once, and a `for` would also show Bcc recipients to each other.
@@ -103,6 +103,8 @@ One writer, in the MDA, for three reasons: the header and `Return-Path` stay in 
 The case for pymta is smaller attack surface and better operability: no Postfix binary, no `libmilter` C glue, no on-disk queue, a distroless image that runs with a read-only root filesystem and no writable mount at all, Prometheus metrics, and per-IP admission control the Postfix config disables. It is also simply easier to change, which is why the security fixes in this directory landed there first.
 
 Two things pymta does that Postfix does not, worth knowing before switching: it enforces a per-IP concurrent session cap (the shipped Postfix config turns per-client limits off entirely), and it holds each message in memory rather than spooling to disk, so concurrency times message size is a real memory ceiling. Both are covered below.
+
+`Dockerfile.pymta` has two production targets. `runtime-distroless-prod` is the one CI publishes as `mta-in-py` and the one `make test-mta-in-py-e2e` runs: no shell, no package manager. `runtime-prod` is the same server on Debian slim, for those who need a shell in the container; build it yourself.
 
 Switching production from one to the other only requires re-pointing the inbound public IP to the other container: the MDA back-end is unchanged, and pymta reads the Postfix image's variable names as fallbacks so an existing env file keeps working (see [Naming](#naming)).
 
@@ -139,6 +141,7 @@ Its only runtime dependencies are `httpx` (the MDA client), `PyJWT`, `idna` and 
 | `mda_async.py` | The MDA client, its signing and its circuit breaker |
 | `limits.py` | Session and DATA slots, per source and in total |
 | `controller.py`, `server.py` | The listener, its TLS context, startup and shutdown |
+| `healthcheck.py` | The liveness probe the image runs |
 
 Tests reach the server through a real socket (`tests/harness.py`), so they do not depend on how it is built.
 
@@ -209,7 +212,7 @@ Grouped as `src/pymta/settings.py` groups them.
 
 | Variable | Default | Purpose |
 |---|---|---|
-| `PYMTA_SMTP_BIND_HOST` / `PYMTA_SMTP_BIND_PORT` | `0.0.0.0` / `25` | Where the SMTP listener binds. On `::`, an IPv4 client is logged and sent to the MDA as IPv4, not as `::ffff:a.b.c.d` |
+| `PYMTA_SMTP_BIND_HOST` / `PYMTA_SMTP_BIND_PORT` | `0.0.0.0` / `25` | Where the SMTP listener binds. The host is one address or several, comma-separated. **`::` is IPv6 only**, it does not also take IPv4: use `0.0.0.0,::` to listen on both |
 | `PYMTA_SMTP_HOSTNAME` | `mta-in` | What it calls itself: banner and `Received`-header host name. ASCII without spaces, or pymta refuses to start |
 | `PYMTA_SMTP_IDENT` | `ESMTP` | Banner text after the hostname; kept version-less on purpose. Printable ASCII |
 | `PYMTA_ENABLE_SMTPUTF8` | `true` | Advertise SMTPUTF8 in EHLO |
@@ -225,7 +228,8 @@ Grouped as `src/pymta/settings.py` groups them.
 | `PYMTA_MAX_RECIPIENTS_PER_ENVELOPE` | `100` | RCPT TO cap per envelope |
 | `PYMTA_MAX_ENVELOPES_PER_SESSION` | `100` | Messages per TCP session. The MAIL that would open the next one is answered `421` and the connection closed, before anything is uploaded. A sender that reuses its connections has that message wait for its next queue run, so keep it high enough to be rare |
 | `PYMTA_MAX_ERRORS_PER_SESSION` | `50` | 4xx/5xx replies before forcing 421 + disconnect (Postfix's `smtpd_hard_error_limit`). Counts every such reply, including the ones given to a malformed command before the handler is asked. `DATA` and `QUIT` are still answered past it, so a transaction whose recipients were accepted can finish |
-| `PYMTA_MAX_RCPT_MISSES_PER_SESSION` | `10` | Unknown-mailbox lookups before 421 + disconnect. Under stress (see `PYMTA_COMMAND_TIMEOUT`) it is 2, and the error budget above is 5: the sessions collecting refusals are the first to give their slot back. Under stress the budget is also spent by the commands that are answered 2xx and move no message forward (NOOP, VRFY, HELP, a recipient given twice), since each restarts the idle timeout. RSET is not one of them: senders issue it between messages, and it is limited to 20 per session |
+| `PYMTA_MAX_RCPT_MISSES_PER_SESSION` | `10` | Unknown-mailbox lookups before 421 + disconnect. The last one is still answered `550`, so the sender has its answer for that address; the command after it gets the `421` (`DATA` and `QUIT` excepted, as above). Under stress (see `PYMTA_COMMAND_TIMEOUT`) it is 2, and the error budget above is 5: the sessions collecting refusals are the first to give their slot back. Under stress the budget is also spent by the commands that are answered 2xx and move no message forward (NOOP, VRFY, HELP, a recipient given twice), since each restarts the idle timeout. RSET is not one of them: senders issue it between messages, and it is limited to 20 between two accepted messages. NOOP (20), VRFY and HELP (25) are counted the same way: each accepted message starts their counts again, as Postfix does with its junk command count |
+| `PYMTA_MAX_RCPT_MISSES_PER_SOURCE` | `100` (0 = off) | Unknown-mailbox lookups one source (an IPv4 address or an IPv6 /64) may make over all its sessions, in the ten minutes that start at its first. Once spent, the session that spent it is closed at its next command and the source is answered `421 4.7.0 Too many unknown recipients from your address` at connect until those ten minutes end. The session budget above does not slow an address harvest, since the peer reconnects for ten more answers: this bounds it to 100 answers per ten minutes and per source. **All** the mail of a source over it is deferred meanwhile, to existing mailboxes too, so the default is generous: a large provider reaches many recipients from one address. Raise it if a sender you want shows up in `pymta_connections_total{result="rejected_rcpt_misses"}`. Counted in each process on its own (N replicas allow N times as many) and forgotten on restart |
 | `PYMTA_MAX_CONCURRENT_DATA` | `40` | Messages held in memory at once. **The bound on memory**, see below. `0` disables far more than the memory bound — see the warning under "The session cap is derived" |
 | `PYMTA_MAX_SHARE_PER_SOURCE` | `0.1` | Most of the session slots, and of the message slots, one source (an IPv4 address or an IPv6 /64) may hold, as a fraction above 0 and up to 1. See "What one source may hold" below |
 | `PYMTA_MAX_LINE_LENGTH` | `65536` | Longest single line accepted, in octets, line ending excluded. The RFC-strict 998 permanently rejects mail Postfix accepts |
@@ -247,9 +251,12 @@ Grouped as `src/pymta/settings.py` groups them.
 | `PYMTA_ENABLE_PROXY_PROTOCOL` | `false` | Enable PROXY-protocol v1/v2. `haproxy` is an alias for `true` — it is the only protocol postscreen defines and the only one implemented here — so both names take either spelling |
 | `PYMTA_BLOCKED_NETWORKS` | empty | Comma-separated IPs/CIDRs refused at connect time with `554 5.7.1 Access denied`, before the banner. Matched against the **client** address: the PROXY-header source when PROXY protocol is on, the TCP peer otherwise. Nothing to do with `PYMTA_TRUSTED_PROXIES`. Permanent rather than a 421 on purpose, since a deferral invites the retries you are trying to shed; a block covering a legitimate sender therefore bounces their mail, so keep the ranges narrow |
 | `PYMTA_TRUSTED_PROXIES` | empty | Comma-separated IPs/CIDRs allowed to send a PROXY header. Required when PROXY protocol is on: pymta refuses to start without it. `0.0.0.0/0,::/0` trusts every peer, with a warning at startup. Ignored when PROXY protocol is off |
-| `PYMTA_TLS_CERT_FILE` / `PYMTA_TLS_KEY_FILE` | empty | STARTTLS cert + key paths, comma-separated for dual certificates (see below). **Both or neither** — one alone is refused at startup, since it would serve plaintext and simply not advertise STARTTLS. Both empty disables STARTTLS deliberately. A single PEM holding both the key and the chain (the Postfix layout) is given to *both*: `ssl.load_cert_chain` reads each from the same file. The files are read again on SIGHUP, so a renewal needs no restart (see [Certificate renewal](#certificate-renewal)) |
+| `PYMTA_TLS_CERT_FILE` / `PYMTA_TLS_KEY_FILE` | empty | STARTTLS cert + key paths, comma-separated for dual certificates (see below). **Both or neither**: one alone is refused at startup, since it would serve plaintext and simply not advertise STARTTLS. Both empty disables STARTTLS deliberately. A single PEM holding both the key and the chain (the Postfix layout) is given to *both*: `ssl.load_cert_chain` reads each from the same file. That PEM may hold several key + chain groups (see [Dual certificates](#dual-certificates-rsa--ecdsa)). The files are read again on SIGHUP, so a renewal needs no restart (see [Certificate renewal](#certificate-renewal)) |
 | `PYMTA_REQUIRE_TLS` | `false` | Answer `530` to every command but EHLO, STARTTLS, NOOP and QUIT until the session has done STARTTLS. For a listener whose senders are known. On a public MX it refuses every sender that cannot do TLS, or that fails the handshake and retries in clear: publish MTA-STS or DANE for the domain instead, and the senders that support them enforce TLS themselves. Refuses to start without a certificate. Refusals are `reject` lines with `reason=tls_required` |
-| `PYMTA_TLS_MIN_VERSION` | `1.2` | Oldest TLS version accepted: `1.0`, `1.1`, `1.2` or `1.3`. A sender limited to 1.0 or 1.1 fails the handshake at the default and shows up as `tls_error=` on its `session_closed` line; it then retries in clear or gives up. Setting `1.0` or `1.1` also lowers OpenSSL to security level 0 for every handshake on the listener, because those versions sign the handshake with SHA-1 |
+| `PYMTA_TLS_MIN_VERSION` | `1.0` | Oldest TLS version accepted: `1.0`, `1.1`, `1.2` or `1.3`. The default accepts everything, as Gmail and the Postfix image did: on a public MX a refused sender retries in clear or gives up, which is worse than an old protocol. The cost is that a minimum below `1.2` lowers OpenSSL to security level 0 for every handshake on the listener, because those versions sign the handshake with SHA-1. Set `1.2` (or `1.3`) to refuse older senders; they then fail the handshake and show up as `tls_error=` on their `session_closed` line |
+| `PYMTA_TLS_CIPHERS` | empty | OpenSSL cipher list for TLS 1.2 and below; TLS 1.3 suites are not affected. Empty depends on `PYMTA_TLS_MIN_VERSION`. At `1.2` or higher it is the ECDHE part of Python's default list: AES-GCM, ChaCha20 or AES-CBC with SHA-2 (10 suites for TLS 1.2, no SHA-1 MAC). Below `1.2` it is the ECDHE and static-RSA part of OpenSSL's `DEFAULT` at security level 0 (20 suites for TLS 1.2 and below on the current image, AES-CBC with SHA-1 among them), which is what lets TLS 1.0 and 1.1 senders in. Both defaults also name DHE, PSK and SRP suites, which are taken out: no DH parameters and no such credentials are loaded, so they could never be negotiated. A sender that offers DHE alone fails with `no_shared_cipher`. A list you give is used in place of either, and below `1.2` `:@SECLEVEL=0` is appended to it. `ECDHE+AESGCM:ECDHE+CHACHA20` keeps only forward-secret AEAD suites. A sender that can use none of the listed suites fails with `tls_error=no_shared_cipher` and then retries in clear or gives up, so watch that error for a few days after narrowing the list. An entry OpenSSL does not accept stops the process at startup |
+
+No TLS session tickets are issued, in any version. OpenSSL encrypts them with a key it keeps for as long as the TLS context lives, and with that key a recorded TLS 1.2 session can be decrypted. A sender pays a full handshake on each connection.
 
 **Metrics, logging, container**
 
@@ -263,11 +270,13 @@ Grouped as `src/pymta/settings.py` groups them.
 | `EXEC_CMD` | `false` | Start pymta in the background, then run the container command (used by `make test-mta-in-py`) |
 | `EXEC_CMD_ONLY` | `false` | Skip startup entirely and exec the container command (used by `make lint-mta-in-py`) |
 
+`EXEC_CMD` and `EXEC_CMD_ONLY` are read by the entrypoint script of the dev and `runtime-prod` images. The distroless image has no shell and no such script: it runs the server and nothing else.
+
 Every value is checked at startup and a bad one stops the process rather than being quietly ignored: booleans take `1/true/yes/on` or `0/false/no/off` and nothing else, integers must parse and clear their minimum (those marked `0 = off` accept zero, the rest reject it), `PYMTA_LOG_LEVEL` must name a real level, and `PYMTA_TRUSTED_PROXIES` must parse as IPs/CIDRs. Reading a typo as its opposite is how a security toggle ends up off in production, so nothing here has a silent fallback.
 
 The address length caps are **not** configurable. They are the RFC 5321 §4.5.3.1 constants: 64 octets for the local-part and 255 for the domain (63 per label). Domain lengths are measured on the A-label (punycode) form DNS stores, not on the UTF-8 an SMTPUTF8 peer sends, and no IDNA validity rule is enforced on top. The local-part cap applies to RCPT only, where raising it would only widen the gap between what pymta accepts and what the MDA can store. MAIL FROM gets no local-part cap and no 256-octet path cap either: §4.5.3.1 asks to avoid these limits where possible, Postfix enforced neither, and a forwarder's SRS-wrapped return path (`SRS0=hash=tt=domain=user@forwarder`) routinely carries a local-part longer than 64 octets. Refusing it would bounce legitimately forwarded mail. The MAIL command-line limit (below) is what bounds it.
 
-Two more differences between the two commands. `%` is accepted in a MAIL FROM local-part, where VERP return paths use it (`bounce-user%40example.org@esp.example`), and refused on RCPT TO, where it is the old percent-routing relay form. A sender domain with a single label (`root@localhost`) is refused unless `PYMTA_REQUIRE_FQDN_SENDER=false`; a recipient domain is whatever the MDA knows. MAIL FROM also accepts a quoted local-part (`"a b"@example.org`, with the spaces, `@` and dot placements only valid in quotes). An address literal as sender domain (`user@[192.0.2.1]`, `user@[IPv6:2001:db8::1]`) is valid in RFC 5321 but is not a fully-qualified domain, and nothing can answer it through an MX: it is refused like a single-label domain, and accepted only with `PYMTA_REQUIRE_FQDN_SENDER=false`. The sender is forwarded in one canonical spelling, quoted when its content needs it and only then, whatever the peer wrote: `"alice"@x` becomes `alice@x`, and `a..b@x`, which some senders do write, becomes `"a..b"@x`. Outside quotes a local-part is atoms and dots: a space, a tab, a backslash or an RFC 5322 comment (`alice(home)@x`) is refused. RCPT TO accepts none of the quoted forms, except quotes the content does not need (`"bob"@x` is `bob@x`): a recipient names a mailbox of ours and none has such a name. A source route (`<@a,@b:user@c>`) is accepted and ignored, as RFC 5321 §4.1.1.3 asks. The angle brackets are optional, but one that is opened has to be closed. A domain's ASCII characters are limited to letters, digits, `-`, `_` and `.`. Each refusal is a `reject` line with `verb=mail` or `verb=rcpt` and its `reason=`.
+Two more differences between the two commands. `%` is accepted in a MAIL FROM local-part, where VERP return paths use it (`bounce-user%40example.org@esp.example`), and refused on RCPT TO, where it is the old percent-routing relay form. A sender domain with a single label (`root@localhost`) is refused unless `PYMTA_REQUIRE_FQDN_SENDER=false`; a recipient domain is whatever the MDA knows. MAIL FROM also accepts a quoted local-part (`"a b"@example.org`, with the spaces, `@` and dot placements only valid in quotes). An address literal as sender domain (`user@[192.0.2.1]`, `user@[IPv6:2001:db8::1]`) is valid in RFC 5321 but is not a fully-qualified domain, and nothing can answer it through an MX: it is refused like a single-label domain, and accepted only with `PYMTA_REQUIRE_FQDN_SENDER=false`. The sender is forwarded in one canonical spelling, quoted when its content needs it and only then, whatever the peer wrote: `"alice"@x` becomes `alice@x`, and `a..b@x`, which some senders do write, becomes `"a..b"@x`. Outside quotes a local-part is atoms and dots: a space, a tab, a backslash or an RFC 5322 comment (`alice(home)@x`) is refused. RCPT TO accepts none of the quoted forms, except quotes the content does not need (`"bob"@x` is `bob@x`): a recipient names a mailbox of ours and none has such a name. A source route (`<@a,@b:user@c>`) is accepted and ignored, as RFC 5321 §4.1.1.3 asks. The angle brackets are optional, but one that is opened has to be closed. A domain's ASCII characters are limited to letters, digits, `-`, `_` and `.`. Under SMTPUTF8, controls, line separators, spaces other than U+0020 and Unicode format characters are refused in either part with `501 5.1.7` (`reason=control_char`): bidi overrides, zero-width space, BOM, soft hyphen and the like are invisible and only change how an address is displayed. The two exceptions are the zero-width joiner and non-joiner (U+200D, U+200C), which Persian and several Indic scripts need to spell a word, and which are the only ones IDNA2008 and PRECIS admit. Each refusal is a `reject` line with `verb=mail` or `verb=rcpt` and its `reason=`.
 
 **Line endings.** No bare LF or CR is forwarded: each becomes CRLF, in headers and body alike, as Postfix's `smtpd_forbid_bare_newline = normalize` does, and a dot that followed a bare LF is unstuffed. One rule, no guess about what the sender meant. A bare LF inside a header therefore becomes a line break (`Subject: a<LF>X: b` is stored as two headers); what is guaranteed is that the MDA, rspamd and every later reader see the same lines. The rewrite is done line by line as the message is read, and `PYMTA_MAX_LINE_LENGTH` and `PYMTA_MAX_INCOMING_EMAIL_SIZE` apply to the result.
 
@@ -299,7 +308,7 @@ No setting is re-read while the process runs. A running process cannot be given 
 
 SIGHUP does one thing: it reads the certificate and key files again, from the same paths. Connections accepted afterwards get the new certificate; if the files do not load, `tls_reload_rejected` is logged and the previous certificate stays in use. Have whatever renews the certificate send the signal (a cert-manager secret mounted as a volume updates in place like a ConfigMap).
 
-At startup and after each reload, one `tls_certificate` line per file gives `not_after=` and `days_left=`, and `pymta_tls_certificate_not_after_seconds{file=...}` exports the expiry. Alert on `pymta_tls_certificate_not_after_seconds - time() < 14 * 86400`: an expired certificate only shows up otherwise as `closed_by=tls_failed` from the senders that verify it.
+At startup and after each reload, one `tls_certificate` line per certificate gives `not_after=` and `days_left=`, and `pymta_tls_certificate_not_after_seconds{file=...}` exports the expiry. Alert on `pymta_tls_certificate_not_after_seconds - time() < 14 * 86400`: an expired certificate only shows up otherwise as `closed_by=tls_failed` from the senders that verify it.
 
 **Rollouts: SIGTERM is the whole protocol.** One signal, no env var, no orchestration:
 
@@ -314,7 +323,11 @@ So `docker stop`, a Kubernetes rolling update, or `systemctl restart` already do
   ansible.builtin.command: docker stop --timeout 30 pymta
 ```
 
-Set the stop timeout above `PYMTA_SHUTDOWN_TIMEOUT` (default 25 s) so the runtime does not SIGKILL a process that is still draining politely.
+Set the stop timeout above `PYMTA_SHUTDOWN_TIMEOUT` (default 25 s) so the runtime does not SIGKILL a process that is still draining politely. Docker's default is 10 s (`stop_grace_period` in compose); the Kubernetes default, `terminationGracePeriodSeconds: 30`, is enough.
+
+**Liveness.** `python -m pymta.healthcheck` exits 0 when the listener answers a new connection: a greeting, a refusal or a close. It is the image's `HEALTHCHECK`, and the command for a Kubernetes `exec` probe. A plain TCP probe is completed by the kernel and passes while the process is hung. With PROXY protocol on, a probe coming from an address in `PYMTA_TRUSTED_PROXIES` sends a v2 `LOCAL` header first, as a balancer's own health check does, and is greeted; from any other address it sends nothing and takes the immediate close as the answer.
+
+**Port 25 without root.** The image runs as uid 65532 with no capabilities. Docker lets such a process bind port 25. On Kubernetes it depends on the container runtime's settings: where the bind is refused, set the pod's `net.ipv4.ip_unprivileged_port_start` sysctl to 25 or lower, or set `PYMTA_SMTP_BIND_PORT` to a port above 1024 and map 25 to it in the Service.
 
 The listener deliberately stays **open** while draining. Closing it refuses the TCP connection, which a sender cannot tell from a network fault, so it keeps the message queued against this host. Answering `421` is what moves traffic to your other MX: RFC 5321 §3.1 permits a `421` in place of the `220` greeting, and Postfix and Exim both treat it as a *per-host* defer, trying the next MX in preference order immediately. Better than a TCP refusal, and far better than DNS changes, which wait on TTLs.
 
@@ -340,19 +353,23 @@ Two need explaining. Per-IP concurrency is a tightening, not a loosening: the sh
 
 > **`PYMTA_MAX_CONCURRENT_DATA` (40) is the bound on memory.** Each message is held in RAM with no spool file, so messages in flight times the size cap is the heap. The session caps do not bound it: until it says DATA a connection costs a few kB, and at most about 400 kB (two line lengths and one read) if it keeps sending without waiting for replies.
 >
-> Size it against the memory you gave the container. A message peaks at about **2.2x** its size — the received blocks are joined into one buffer at the end of DATA, which needs a second copy for that moment, and freed arenas are not returned promptly. So:
+> Size it against the memory you gave the container. A message takes about **1.2x** its size: it is held once, in blocks of 64 kB, and the rest is what the allocator adds. So:
 >
 > ```text
-> peak RSS  ~=  PYMTA_MAX_CONCURRENT_DATA x PYMTA_MAX_INCOMING_EMAIL_SIZE x 2.2  +  ~64 MiB
+> peak RSS  ~=  PYMTA_MAX_CONCURRENT_DATA x PYMTA_MAX_INCOMING_EMAIL_SIZE x 1.2  +  ~64 MiB
 > ```
 >
 > | memory limit | a reasonable `PYMTA_MAX_CONCURRENT_DATA` at 10 MiB messages |
 > |---|---|
-> | 256 MiB | 8 |
-> | 512 MiB | 20 |
-> | 1 GiB | 40 (the default) |
-> | 2 GiB | 90 |
-> | 4 GiB | 183 |
+> | 256 MiB | 16 |
+> | 512 MiB | 37 |
+> | 1 GiB | 80 |
+> | 2 GiB | 165 |
+> | 4 GiB | 336 |
+>
+> The default of 40 takes about 544 MiB. The number scales with the size cap: at 35 MiB messages, divide the slots by 3.5.
+>
+> The image sets `MALLOC_MMAP_THRESHOLD_=65536`. glibc otherwise keeps freed blocks of that size on its heap, and the process stays at its high-water mark after a burst. With it the factor is about 1.05 and the memory goes back to the system once a message is delivered. Set it yourself when you run pymta outside the image.
 >
 > A message over the limit is refused at the `DATA` command, **before the `354`**, so a refused peer never starts uploading and the refusal costs one reply instead of a buffer. It gets `451`: delayed, not lost.
 >
@@ -377,15 +394,30 @@ Two need explaining. Per-IP concurrency is a tightening, not a loosening: the sh
 >
 > The fraction decides how many sources it takes to fill the server: at least one over it, so ten at the default of 0.1 (eleven in practice). The equal share takes over once more sources than that are present.
 >
-> The share is checked when a slot is asked for, so sources that arrived first can hold more than a share that has shrunk since. When every session slot is taken and a source under its share connects, a slot is taken back from the source that holds the most over its share: its session idle the longest is answered `421 4.4.2 Server busy, closing idle connection` and closed, and the newcomer is greeted (`pymta_disconnects_421_total{reason="reclaimed"}`, `closed_by=reclaimed`). Only a session with no command and no transaction in progress is closed for this, so a sender loses a connection it was not using and never a message. If there is none, the newcomer is answered 421. Message slots are never taken back; instead, once four fifths of them are taken, a message has to arrive at 500 octets a second or more (Postfix's `smtpd_min_data_rate`), checked every 10 s, or its session is answered `421 4.4.2 Message received too slowly` (`reason="data_timeout"`).
+> The share is checked when a slot is asked for, so sources that arrived first can hold more than a share that has shrunk since. When every session slot is taken and a source under its share connects, a slot is taken back from the source that holds the most over its share: its session idle the longest is answered `421 4.4.2 Server busy, closing idle connection` and closed, and the newcomer is greeted (`pymta_disconnects_421_total{reason="reclaimed"}`, `closed_by=reclaimed`). Only a session with no command and no transaction in progress is closed for this, so a sender loses a connection it was not using and never a message. If there is none, the newcomer is answered 421. Message slots are never taken back; instead, once four fifths of them are taken, a message has to arrive at 500 octets a second or more (Postfix's `smtpd_min_data_rate`), measured over each 10 s on its own so that what was sent early buys no time later, or its session is answered `421 4.4.2 Message received too slowly` (`reason="data_timeout"`).
 >
 > Sessions that hold a slot and wait for a command more than 10 s are also closed while the server is above four fifths full, whether or not they have a transaction open, and no session lasts longer than `PYMTA_SESSION_TIMEOUT` (a message being received or delivered at that moment is finished first).
 >
 > The cost of a low fraction is on a large sender that comes from few addresses: beyond its share it gets 421 at connect or 451 at DATA, and retries. `pymta_connections_total{result="rejected_per_ip"}` shows it; raise the fraction if a sender you want is in there.
 >
-> Note the two ceilings are not the same number: the share bounds what *one host* can hold, the 40 slots bound what *everyone together* can. Memory has to be sized against the 40, not against the share — 40 x 10 MiB x 2.2 is about 944 MiB, so the shipped defaults want a container of 1 GiB or more. Drop `PYMTA_MAX_CONCURRENT_DATA` to 20 for 512 MiB.
+> Note the two ceilings are not the same number: the share bounds what *one host* can hold, the 40 slots bound what *everyone together* can. Memory has to be sized against the 40, not against the share — 40 x 10 MiB x 1.2 plus 64 MiB is about 544 MiB, so the shipped defaults want a container of 640 MiB or more. Drop `PYMTA_MAX_CONCURRENT_DATA` to 20 for 384 MiB.
 >
-> **One oversized message is a floor no concurrency limit lowers.** `PYMTA_MAX_INCOMING_EMAIL_SIZE x 2.2` has to fit on its own, so a 400 MB size cap needs roughly a gigabyte whatever the concurrency is set to.
+> **One oversized message is a floor no concurrency limit lowers.** `PYMTA_MAX_INCOMING_EMAIL_SIZE x 1.2` has to fit on its own, so a 400 MB size cap needs roughly half a gigabyte whatever the concurrency is set to.
+
+### Sizing example: 35 MiB messages
+
+For a host that runs pymta and nothing else of weight, from the image (so with `MALLOC_MMAP_THRESHOLD_` set).
+
+| Setting | 2 GB host | 4 GB host | Why |
+|---|---|---|---|
+| `PYMTA_MAX_INCOMING_EMAIL_SIZE` | `36700160` | `36700160` | 35 MiB. The backend's `MAX_INCOMING_EMAIL_SIZE` must be the same |
+| `PYMTA_MAX_CONCURRENT_DATA` | `30` | `64` | Worst case 1.3 GiB and 2.7 GiB by the formula above; about 1.1 GiB and 2.3 GiB on the image (20 slots measured at 767 MiB) |
+| `PYMTA_MAX_SHARE_PER_SOURCE` | `0.1` (default) | `0.1` (default) | At most 3 and 6 messages in flight per source, 9 and 19 sessions, and fewer once ten sources have one in flight. Nearly every source has one at a time. `reason="max_concurrent_data"` counts a source over its share and a server with every slot taken alike. Raising the share helps in the first case only, where `pymta_data_phases_active` is under `PYMTA_MAX_CONCURRENT_DATA` at that moment; at the cap, it is slots that are missing |
+| `PYMTA_DATA_TIMEOUT` | `900` | `900` | The default 300 s asks 122 kB/s of a sender for 35 MiB. 900 s asks 41 kB/s, as the default does for 10 MiB |
+| `MDA_API_TIMEOUT` | `60` | `60` | The MDA has to answer a delivery within it. Check it against how long your MDA takes for the largest message (`duration_ms` of `message_delivered`), and keep it under the MDA's own worker timeout |
+| container memory limit | 1536 MiB | 3072 MiB | Above the worst case, under the host: a mistake in the above restarts pymta and leaves the host up |
+
+The session cap follows: 90 and 192. Every slot holding a full-size message at once is the worst case, not the usual one: ordinary traffic keeps the process near its idle size.
 
 ### Watching the limits
 
@@ -398,6 +430,7 @@ Every configurable limit publishes its value as `pymta_config_limit{name="<setti
 | `PYMTA_MAX_ENVELOPES_PER_SESSION` | ✓ | `reason="max_envelopes_per_session"` |
 | `PYMTA_MAX_ERRORS_PER_SESSION` | ✓ | same reason, plus `pymta_disconnects_421_total` |
 | `PYMTA_MAX_RCPT_MISSES_PER_SESSION` | ✓ | same reason, plus `pymta_disconnects_421_total` |
+| `PYMTA_MAX_RCPT_MISSES_PER_SOURCE` | ✓ | same reason, plus `pymta_connections_total{result="rejected_rcpt_misses"}` for each connection refused while the source is over it, and a `connection_capped` line with `scope=rcpt_misses` |
 | `PYMTA_MAX_SESSIONS_TOTAL` (derived) and the per-source share | ✓ | `pymta_connections_total{result="rejected_global\|rejected_per_ip"}`; `pymta_disconnects_421_total{reason="reclaimed"}` for the idle sessions closed to let a new source in |
 | `PYMTA_MAX_CONCURRENT_DATA` and its per-source share | ✓ | `pymta_data_phases_active`, and `reason="max_concurrent_data"` |
 | `PYMTA_SESSION_TIMEOUT` | ✓ | `reason="session_timeout"` |
@@ -445,7 +478,7 @@ event=session_closed session_id=9bf92de8 client_ip=192.0.2.10 helo=mx.sender.exa
 | `last_error_*` | The last 4xx/5xx sent, whoever sent it, with the verb and the argument that drew it. An `AUTH` argument is logged as `[redacted]`: it can carry credentials |
 | `sender` | The MAIL FROM of the last transaction opened, accepted or not. Clipped in the middle past 256 characters, so the domain stays searchable |
 | `recipients`, `recipient_count` | Only when a transaction was still open at the end: the recipients accepted for a message that was never completed |
-| `tls`, `tls_version`, `tls_cipher`, `tls_error` | `tls_error` is set when the STARTTLS handshake failed, with the cause (`SSLError: ... certificate unknown`, `no shared cipher`, ...). A sender enforcing TLS that rejects our certificate looks exactly like this |
+| `tls`, `tls_version`, `tls_cipher`, `tls_error` | `tls_error` is set when the STARTTLS handshake failed, as a stable name for the cause: OpenSSL's reason lower-cased (`no_shared_cipher`, `wrong_version_number`, `unsupported_protocol`, or the alert the sender sent: `tlsv1_alert_unknown_ca`, `sslv3_alert_certificate_unknown`, ...), else the exception class (`timeout_error`, `connection_reset_error`). `no_shared_cipher` means the sender offers no suite usable with the key types we serve: compare with `tls_key_types` at startup. A sender enforcing TLS that rejects our certificate looks like the alert names |
 | `closed_by` | `quit` (answered `221`), `peer_closed`, `peer_reset` (with `error_type`), `server_closed` (we answered 421, or 502 after too many unrecognised commands), `command_timeout`, `data_timeout` (a message not received in time, or too slowly while message slots are scarce), `session_timeout`, `reclaimed` (idle, and its slot given to a source under its share), `tls_failed`, `internal_error`, `shutdown` (answered 421 because the process is stopping, or still open at the `PYMTA_SHUTDOWN_TIMEOUT` deadline) |
 | `wire_peer` | The balancer, when PROXY protocol is on; `client_ip` is then the PROXY source |
 
@@ -528,6 +561,17 @@ OpenSSL keeps one certificate slot per key type and, at each handshake, presents
 
 Order does not select the certificate — the client's advertised algorithms do. It only matters between two certificates of the *same* key type, where the later one takes the slot and is the one served; that is a configuration mistake pymta cannot detect, since it never parses the certificates.
 
+The same can be done in one file, given as both variables: each private key starts a group, followed by its certificate and chain. The groups are loaded one by one, since `ssl.load_cert_chain` alone would read only the first key and take the other certificates for chain, leaving the second key type unserved. A certificate before the first key, or a key without a certificate, is refused at startup.
+
+```
+-----BEGIN PRIVATE KEY-----      (ECDSA key)
+-----BEGIN CERTIFICATE-----      (ECDSA leaf, then its chain)
+-----BEGIN PRIVATE KEY-----      (RSA key)
+-----BEGIN CERTIFICATE-----      (RSA leaf, then its chain)
+```
+
+At startup, and after each reload, `tls_key_types served=ecdsa,rsa` says which key types a handshake can complete with, found by trying one TLS 1.2 suite of each. A sender that supports only a type missing there fails with `closed_by=tls_failed` and `tls_error=no_shared_cipher`. Not logged when `PYMTA_TLS_MIN_VERSION=1.3`. Each group of a multi-key file gets its own `tls_certificate` line and `file=` gauge label, written `path[1]`, `path[2]`. The cipher probe tries every TLS 1.2 suite `PYMTA_TLS_CIPHERS` leaves for each key type.
+
 Mismatched list lengths are refused at startup: the pairing is positional, so a cert would otherwise be loaded against another's key and OpenSSL's complaint names neither variable. An empty entry (a stray comma) is refused for the same reason a half-configured pair is — it would quietly become "STARTTLS off".
 
 ## Production checklist
@@ -547,7 +591,7 @@ The defaults are tuned for the dev stack. Five things to set before pymta faces 
 
 pymta refuses to start with PROXY protocol on and `PYMTA_TRUSTED_PROXIES` empty. A deployment that cannot name its balancer at boot sets `0.0.0.0/0,::/0`: **every peer's header is then trusted**, startup logs a `proxy_trust_unrestricted` warning, and the network isolation is the *entire* trust boundary. Name the balancer whenever you can.
 
-The one thing pymta does enforce: with PROXY protocol on it never falls back to the TCP peer for `client_address`, so a header-less connection (a v2 `LOCAL` health check) reports no client rather than naming the balancer.
+The one thing pymta does enforce: with PROXY protocol on it never falls back to the TCP peer for `client_address`, so a connection whose header names no client (a v2 `LOCAL` health check, a v1 `UNKNOWN`) has none rather than the balancer's. Such a session is greeted, and its `MAIL` is answered `451 4.3.0 Client address unknown` (`reason=no_client_address`): a health check sends no mail, and a message without a client address would reach the spam filter with nothing to judge its source by.
 
 Network isolation has to come from the deployment. A PROXY header is trusted on the word of the peer that sent it, and it sets both the key for every per-IP cap and the `client_address` the MDA writes into `Received`. A peer that can open a TCP connection to port 25 directly (a container port published on a node, a second interface, a foothold on an internal network) can otherwise spread a forged source across the address space until only the global cap applies, and attribute its mail to any IP it names. Enforce the isolation in the NetworkPolicy or firewall as well as in the allowlist.
 
@@ -569,7 +613,7 @@ Every other timeout is re-armed by peer activity, so a peer that stays marginall
 
 Slot exhaustion on an *inbound* MTA delays mail rather than losing it: once the global cap is hit, new connections get `421` and close, and SMTP senders retry for days. Watch `pymta_sessions_active` and the upper buckets of `pymta_session_duration_seconds`; a healthy inbound MX has sessions measured in seconds.
 
-Also review `PYMTA_DATA_TIMEOUT` against your real size cap; it sets a floor on how slow a legitimate sender may be. At the 10 MiB default, 300 s means a sender has to sustain roughly 35 kB/s.
+Also review `PYMTA_DATA_TIMEOUT` against your real size cap; it sets a floor on how slow a legitimate sender may be. At the 10 MiB default, 300 s means a sender has to sustain roughly 35 kB/s. "Sizing example: 35 MiB messages" above has a full set of values for a larger cap.
 
 ## Address normalisation is a cross-service contract
 

@@ -215,6 +215,14 @@ class InboundHandler:
                 envelopes=connection.envelopes,
             )
 
+        # A PROXY header that names no client (v2 LOCAL, v1 UNKNOWN) is a
+        # balancer's health check, which sends no mail. A message taken here
+        # would reach the MDA and the spam filter without a client address.
+        # Deferred, not bounced: it can also be a balancer set up wrongly.
+        if connection.session.client_ip is None:
+            metrics.SECURITY_REJECTIONS.labels(reason="no_client_address").inc()
+            return _refusal("451 4.3.0 Client address unknown, please retry", "no_client_address")
+
         try:
             clean = validate_envelope_address(
                 address,
@@ -352,21 +360,22 @@ class InboundHandler:
 
         if not verdict:
             metrics.RCPT_TOTAL.labels(result="rejected_perm").inc()
-            connection.rcpt_misses += 1
-            misses = connection.rcpt_misses
-            if misses >= rcpt_miss_budget(connection):
+            misses = connection.rcpt_missed()
+            # The last miss of the source, over all its sessions, or of this
+            # session. Either way this address still gets its 550: answered
+            # 421, the sender would ask about it again.
+            if not connection.source_spent() and misses >= rcpt_miss_budget(connection):
                 metrics.SECURITY_REJECTIONS.labels(reason="max_rcpt_misses_per_session").inc()
-                metrics.DISCONNECTS_421.labels(reason="max_rcpt_misses_per_session").inc()
-                connection.request_disconnect()
-                # The address is unknown and it spent the session's last
-                # miss: the reason that names the disconnect is the one kept.
-                reply, reason = (
+                connection.disconnect_at_next_command(
                     "421 4.7.0 Too many unknown recipients, goodbye",
                     "max_rcpt_misses_per_session",
                 )
-            else:
-                reply, reason = "550 5.1.1 No such recipient", "unknown_recipient"
-            return _refusal(reply, reason, recipient=address_field(clean), misses=misses)
+            return _refusal(
+                "550 5.1.1 No such recipient",
+                "unknown_recipient",
+                recipient=address_field(clean),
+                misses=misses,
+            )
 
         envelope.rcpt_tos.append(clean)
         metrics.RCPT_TOTAL.labels(result="accepted").inc()
@@ -381,17 +390,18 @@ class InboundHandler:
         started = time.monotonic()
         # Line endings are CRLF only and the size is within the limit: the
         # protocol saw to both as it read the message.
-        content: bytes = envelope.content
+        content: tuple[bytes, ...] = envelope.content
+        size = sum(map(len, content))
 
         # NUL bytes have no place in an RFC 5321 message and break downstream
         # C parsers.
-        if b"\x00" in content:
+        if any(b"\x00" in block for block in content):
             metrics.SECURITY_REJECTIONS.labels(reason="nul_byte").inc()
             metrics.MESSAGES_TOTAL.labels(result="rejected_perm").inc()
             return _refusal(
                 "554 5.6.0 NUL byte in message body",
                 "nul_byte",
-                **_message_fields(envelope, len(content)),
+                **_message_fields(envelope, size),
             )
 
         try:
@@ -403,9 +413,7 @@ class InboundHandler:
                     message=content,
                     sender=envelope.mail_from,
                     original_recipients=list(envelope.rcpt_tos),
-                    # None when a PROXY header names no client: the balancer's
-                    # address would attribute the mail to our own
-                    # infrastructure.
+                    # Never None: handle_MAIL refuses a session without one.
                     client_address=session.client_ip,
                     client_port=None if session.client_port is None else str(session.client_port),
                     client_helo=session.host_name,
@@ -419,19 +427,19 @@ class InboundHandler:
             # "raise the budget".
             metrics.SECURITY_REJECTIONS.labels(reason="data_timeout").inc()
             metrics.MESSAGES_TOTAL.labels(result="rejected_temp").inc()
-            metrics.MESSAGE_BYTES.observe(len(content))
+            metrics.MESSAGE_BYTES.observe(size)
             return _refusal(
                 "451 4.3.0 Delivery timed out, please retry",
                 "data_timeout",
-                **_message_fields(envelope, len(content)),
+                **_message_fields(envelope, size),
                 limit_seconds=settings.PYMTA_DATA_TIMEOUT,
             )
 
-        metrics.MESSAGE_BYTES.observe(len(content))
+        metrics.MESSAGE_BYTES.observe(size)
 
         if result.ok and result.payload.get("status") == "ok":
             metrics.MESSAGES_TOTAL.labels(result="delivered").inc()
-            _log_outcome(connection, started, "delivered", len(content))
+            _log_outcome(connection, started, "delivered", size)
             return Reply("250 2.0.0 Message accepted for delivery")
 
         # Anything but a clear "ok" defers. On a 207 the MDA delivered to some
@@ -442,8 +450,8 @@ class InboundHandler:
         # ``logged``: the outcome line stands in for the ``reject`` line.
         if result.temp_fail or result.ok:
             metrics.MESSAGES_TOTAL.labels(result="rejected_temp").inc()
-            _log_outcome(connection, started, "deferred", len(content), status=result.status_code)
+            _log_outcome(connection, started, "deferred", size, status=result.status_code)
             return Reply("451 4.3.0 Delivery temporarily unavailable", logged=True)
         metrics.MESSAGES_TOTAL.labels(result="rejected_perm").inc()
-        _log_outcome(connection, started, "rejected", len(content), status=result.status_code)
+        _log_outcome(connection, started, "rejected", size, status=result.status_code)
         return Reply("554 5.6.0 Message rejected by delivery agent", logged=True)

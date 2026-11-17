@@ -116,17 +116,25 @@ _WITHOUT_ADDRESS = [
 
 @pytest.mark.asyncio
 @pytest.mark.parametrize("header", _WITHOUT_ADDRESS)
-async def test_a_header_without_an_address_names_no_client(proxied, header):
-    """Not the balancer's address either: the MDA is told nothing."""
+async def test_a_header_without_an_address_is_greeted_and_sends_no_mail(proxied, header, caplog):
+    """No client, not the balancer's address either, and so no transaction."""
     mda = ScriptedMDA()
-    async with (
-        listening(mda, gate=unlimited_gate()) as listener,
-        connected(listener, preface=header) as client,
-    ):
-        assert client.greeting[:3] == b"220"
-        await _deliver(client)
-    assert mda.delivered[0]["client_address"] is None
-    assert mda.delivered[0]["client_port"] is None
+    async with listening(mda, gate=unlimited_gate()) as listener:
+        with capture_all(caplog):
+            async with connected(listener, preface=header) as client:
+                # A health check gets its greeting.
+                assert client.greeting[:3] == b"220"
+                assert (await client.cmd(b"EHLO mx.sender.example"))[:3] == b"250"
+                assert await client.cmd(b"MAIL FROM:<alice@sender.example>") == (
+                    b"451 4.3.0 Client address unknown, please retry\r\n"
+                )
+                assert (await client.cmd(b"RCPT TO:<bob@example.com>"))[:3] == b"503"
+            closed = await records(caplog, "session_closed")
+            rejects = await records(caplog, "reject", count=2)
+    assert not mda.checked
+    assert not mda.delivered
+    assert closed[0].client_ip is None
+    assert rejects[0].reason == "no_client_address"
 
 
 _INVALID = [

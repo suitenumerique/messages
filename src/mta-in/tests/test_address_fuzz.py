@@ -96,6 +96,10 @@ def test_validation_returns_an_address_or_raises_address_error(address, options)
     # Storable and loggable.
     clean.encode("utf-8")
     assert not any(unicodedata.category(char) in _UNSAFE_CATEGORIES for char in clean)
+    # Of the format characters, the two join controls only.
+    assert not any(
+        unicodedata.category(char) == "Cf" and ord(char) not in (0x200C, 0x200D) for char in clean
+    )
     assert not set(clean) & set('<>" \x7f')
 
     local, at, domain = clean.rpartition("@")

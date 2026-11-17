@@ -7,6 +7,12 @@ accept is :mod:`pymta.address`'s job, and what to do with a command is
 
 from __future__ import annotations
 
+import re
+
+# esmtp-keyword, RFC 5321 section 4.1.2. Matched as sent: upper-casing first
+# would turn some non-ASCII letters into ASCII ones.
+_KEYWORD = re.compile(r"[A-Za-z0-9][A-Za-z0-9-]*\Z")
+
 
 class CommandSyntaxError(Exception):
     """A command line that does not parse."""
@@ -115,8 +121,10 @@ def parse_parameters(text: str) -> dict[str, str | None] | None:
     parameters: dict[str, str | None] = {}
     for item in text.split():
         name, equals, value = item.partition("=")
+        if not _KEYWORD.match(name):
+            return None
         name = name.upper()
-        if not (name.isascii() and name.isalnum()) or (equals and not value) or name in parameters:
+        if (equals and not value) or name in parameters:
             return None
         parameters[name] = value if equals else None
     return parameters

@@ -154,6 +154,8 @@ def _events(caplog) -> list[str]:
 
 def test_a_successful_tls_reload_is_logged_with_the_new_expiry(monkeypatch, caplog):
     class _Reloaded:
+        tls_context = None
+
         def reload_tls(self):
             return True
 

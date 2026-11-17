@@ -15,10 +15,11 @@ import asyncio
 import contextlib
 import logging
 import signal
+import ssl
 import time
 
 from . import logfmt, metrics, runtime, settings
-from .controller import Listener, publish_certificate_expiry
+from .controller import Listener, publish_certificate_expiry, served_key_types
 from .handler import InboundHandler
 from .limits import IPGate
 from .mda_async import MDAClient
@@ -31,9 +32,10 @@ logger = logging.getLogger("pymta.server")
 # How often the drain checks whether the last session has finished.
 _DRAIN_POLL_SECONDS = 0.25
 
-# Peak resident bytes per byte of message in flight: a second copy of the body
-# while the received blocks are joined, and freed arenas not returned promptly.
-_MEMORY_FACTOR = 2.2
+# Resident bytes per byte of message in flight: the message once, and what
+# the allocator adds. About 1.05 with MALLOC_MMAP_THRESHOLD_ set as the image
+# does, 1.2 without.
+_MEMORY_FACTOR = 1.2
 
 
 def _configure_logging():
@@ -98,6 +100,7 @@ def _export_config_limits() -> None:
             "max_envelopes_per_session": settings.PYMTA_MAX_ENVELOPES_PER_SESSION,
             "max_errors_per_session": settings.PYMTA_MAX_ERRORS_PER_SESSION,
             "max_rcpt_misses_per_session": settings.PYMTA_MAX_RCPT_MISSES_PER_SESSION,
+            "max_rcpt_misses_per_source": settings.PYMTA_MAX_RCPT_MISSES_PER_SOURCE,
             "max_sessions_total": settings.PYMTA_MAX_SESSIONS_TOTAL,
             "max_concurrent_data": settings.PYMTA_MAX_CONCURRENT_DATA,
             "command_timeout": settings.PYMTA_COMMAND_TIMEOUT,
@@ -123,14 +126,27 @@ def _log_unhandled(loop: asyncio.AbstractEventLoop, context: dict) -> None:
     )
 
 
-def _log_certificates() -> None:
-    """One line per STARTTLS certificate with its expiry, and the gauge."""
+def _log_certificates(ctx: ssl.SSLContext | None = None) -> None:
+    """One line per STARTTLS certificate with its expiry, and the gauge.
+
+    With the loaded context, a last line names the key types it can serve.
+    """
     for cert, not_after in publish_certificate_expiry().items():
         fields: dict = {"file": cert}
         if not_after is not None:
             fields["not_after"] = time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime(not_after))
             fields["days_left"] = int((not_after - time.time()) // 86400)
         logger.info("tls_certificate", extra=fields)
+    served = served_key_types(ctx) if ctx is not None else None
+    if served is not None:
+        logger.info(
+            "tls_key_types",
+            extra={
+                "served": ",".join(served) or "none",
+                "detail": "a sender that supports only a key type missing here fails "
+                "the handshake with no shared cipher",
+            },
+        )
 
 
 def _reload_tls(listener: Listener) -> None:
@@ -143,7 +159,7 @@ def _reload_tls(listener: Listener) -> None:
         logger.error("tls_reload_rejected", exc_info=True, extra={"applied": False})
         return
     logger.info("tls_reloaded")
-    _log_certificates()
+    _log_certificates(listener.tls_context)
 
 
 def _on_terminate(sig: signal.Signals, stop: asyncio.Event, gate: IPGate) -> None:
@@ -254,12 +270,15 @@ async def _serve() -> None:
         for sig in (signal.SIGINT, signal.SIGTERM):
             loop.add_signal_handler(sig, _on_terminate, sig, stop, ip_gate)
 
-        server = await listener.start(settings.PYMTA_SMTP_BIND_HOST, settings.PYMTA_SMTP_BIND_PORT)
+        server = await listener.start(
+            settings.PYMTA_SMTP_BIND_HOSTS, settings.PYMTA_SMTP_BIND_PORT
+        )
 
         logger.info(
             "smtp_listening",
             extra={
-                "bind": f"{settings.PYMTA_SMTP_BIND_HOST}:{settings.PYMTA_SMTP_BIND_PORT}",
+                "bind": ",".join(settings.PYMTA_SMTP_BIND_HOSTS),
+                "port": settings.PYMTA_SMTP_BIND_PORT,
                 "hostname": settings.PYMTA_SMTP_HOSTNAME,
                 "proxy_protocol": settings.PYMTA_ENABLE_PROXY_PROTOCOL,
                 "size_limit": settings.PYMTA_MAX_INCOMING_EMAIL_SIZE,
@@ -267,7 +286,7 @@ async def _serve() -> None:
                 "tls_min_version": settings.PYMTA_TLS_MIN_VERSION,
             },
         )
-        _log_certificates()
+        _log_certificates(listener.tls_context)
 
         # Each DATA phase is buffered in RAM, so concurrent DATA phases times
         # the message size is the heap (a session that has not reached DATA

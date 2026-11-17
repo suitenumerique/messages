@@ -57,10 +57,17 @@ _REFUSALS = [
     ([EHLO], MAIL + b" SIZE=abc", b"501 5.5.4 Bad SIZE parameter\r\n"),
     ([EHLO], MAIL + b" SIZE", b"501 5.5.4 Bad SIZE parameter\r\n"),
     ([EHLO], MAIL + b" SIZE=1 SIZE=2", _MAIL_SYNTAX + _EXTENDED + b"\r\n"),
-    ([EHLO], MAIL + b" X-FOO=1", _MAIL_SYNTAX + _EXTENDED + b"\r\n"),
+    ([EHLO], MAIL + b" -FOO=1", _MAIL_SYNTAX + _EXTENDED + b"\r\n"),
     (
         [EHLO],
         MAIL + b" XFOO=1",
+        b"555 MAIL FROM parameters not recognized or not implemented\r\n",
+    ),
+    # A hyphen is part of a keyword (RFC 5321 section 4.1.2): well-formed,
+    # and not one we know.
+    (
+        [EHLO],
+        MAIL + b" MT-PRIORITY=3",
         b"555 MAIL FROM parameters not recognized or not implemented\r\n",
     ),
     (
