@@ -30,6 +30,29 @@ const deriveThreadHasUnread = (messagedAt: string | null | undefined, readAt: st
 };
 
 /**
+ * The read pointer for "mark as read now": the later of this device's clock
+ * and the newest message of the threads. A clock running behind the server's
+ * would otherwise leave the latest mail unread; one running ahead is clamped
+ * by the server.
+ */
+export const readAtNow = (messagedAts: readonly (string | null | undefined)[]): string => {
+    const times = messagedAts
+        .map((value) => (value ? new Date(value).getTime() : NaN))
+        .filter((time) => !Number.isNaN(time));
+    return new Date(Math.max(Date.now(), ...times)).toISOString();
+};
+
+/**
+ * The read pointer that leaves a message created at ``createdAt``, and all
+ * later ones, unread: 1 ms before it. Null (all unread) for a message of the
+ * first millisecond of year 1, which nothing can precede on the server.
+ */
+export const readAtBefore = (createdAt: string): string | null => {
+    const before = new Date(new Date(createdAt).getTime() - 1);
+    return before.getUTCFullYear() < 1 ? null : before.toISOString();
+};
+
+/**
  * Hook to mark threads as read up to a given timestamp.
  *
  * - readAt = ISO timestamp → messages created before that are read

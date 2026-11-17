@@ -376,6 +376,38 @@ def test_api_flag_timestamp_future_clamped(api_client, flag_access, field, value
     assert before <= getattr(flag_access, field) <= timezone.now()
 
 
+def test_api_flag_read_at_up_to_a_message_ahead_of_this_clock(api_client, flag_access):
+    """The worker that stored the last message may run a little ahead of this
+    host: reading up to it still marks it read, and no further."""
+    ahead = timezone.now() + timedelta(seconds=30)
+    models.Thread.objects.filter(pk=flag_access.thread_id).update(messaged_at=ahead)
+
+    response = _post_flag_timestamp(
+        api_client, flag_access, "read_at", ahead.isoformat()
+    )
+    assert response.status_code == status.HTTP_200_OK
+    flag_access.refresh_from_db()
+    assert flag_access.read_at == ahead
+
+    later = (ahead + timedelta(days=1)).isoformat()
+    response = _post_flag_timestamp(api_client, flag_access, "read_at", later)
+    assert response.status_code == status.HTTP_200_OK
+    flag_access.refresh_from_db()
+    assert flag_access.read_at == ahead
+
+
+def test_api_flag_read_at_on_thread_without_messages(api_client, flag_access):
+    """A thread with no ``messaged_at`` is bounded by now alone."""
+    models.Thread.objects.filter(pk=flag_access.thread_id).update(messaged_at=None)
+    before = timezone.now()
+    response = _post_flag_timestamp(
+        api_client, flag_access, "read_at", "2099-01-01T00:00:00Z"
+    )
+    assert response.status_code == status.HTTP_200_OK
+    flag_access.refresh_from_db()
+    assert before <= flag_access.read_at <= timezone.now()
+
+
 def test_api_flag_unread_per_mailbox_isolation(api_client):
     """Marking as read in one mailbox does not affect another mailbox's read state."""
     user1 = UserFactory()

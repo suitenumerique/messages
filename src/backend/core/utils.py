@@ -69,16 +69,13 @@ def b64url_decode(value: str) -> bytes:
     return base64.urlsafe_b64decode(value + "=" * (-len(value) % 4))
 
 
-def parse_utc_datetime(
-    value, *, naive_tz: datetime.tzinfo = datetime.UTC
-) -> datetime.datetime | None:
+def parse_utc_datetime(value) -> datetime.datetime | None:
     """Parse an ISO 8601 string we did not produce into a UTC datetime.
 
     None when ``value`` is not a string, does not parse, names a date that
     does not exist (``2024-02-30``), or falls outside the years 1-9999 once
     in UTC. That last case matters: PostgreSQL would store year 0 or 10000,
-    then every read of the row fails. A value without offset is read in
-    ``naive_tz``.
+    then every read of the row fails. A value without offset is read as UTC.
     """
     if not isinstance(value, str):
         return None
@@ -89,7 +86,7 @@ def parse_utc_datetime(
     if parsed is None:
         return None
     if parsed.utcoffset() is None:
-        parsed = parsed.replace(tzinfo=naive_tz)
+        parsed = parsed.replace(tzinfo=datetime.UTC)
     try:
         return parsed.astimezone(datetime.UTC)
     except (OverflowError, ValueError):

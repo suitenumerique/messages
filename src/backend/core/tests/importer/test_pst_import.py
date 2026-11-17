@@ -380,6 +380,10 @@ class TestReconstructEml:
     @pytest.mark.parametrize(
         "date_header",
         [
+            # Parses, but in the future or outside the years 1-9999 in UTC.
+            "Fri, 01 Jan 2099 00:00:00 +0000",
+            "Fri, 31 Dec 9999 23:59:59 -0500",
+            "9999-12-31T23:59:59-05:00",
             "Mon, 26 May 2025 10:00:00 +2400",
             "Mon, 26 May 2025 25:00:00 +0000",
             "lundi 26 mai 2025",
@@ -405,6 +409,8 @@ class TestReconstructEml:
             ("2025-05-26T10:00:00+02:00", "Mon, 26 May 2025 10:00:00 +0200"),
             ("2025-05-26T10:00:00Z", "Mon, 26 May 2025 10:00:00 +0000"),
             ("2025-05-26T10:00:00", "Mon, 26 May 2025 10:00:00 +0000"),
+            # An offset with seconds has no RFC 5322 form: written in UTC.
+            ("2025-05-26T10:00:00+05:30:15", "Mon, 26 May 2025 04:29:45 +0000"),
         ],
     )
     def test_reconstruct_accepts_iso_date(self, date_header, expected):

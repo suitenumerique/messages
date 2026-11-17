@@ -65,6 +65,20 @@ describe('DateHelper', () => {
     });
   });
 
+  describe('resolveTimeZone', () => {
+    it('keeps a known time zone', () => {
+      expect(DateHelper.resolveTimeZone('Europe/Paris')).toBe('Europe/Paris');
+      expect(DateHelper.resolveTimeZone('UTC')).toBe('UTC');
+    });
+
+    it.each([undefined, null, '', 0, false, ['Europe/Paris'], 'Mars/Olympus'])(
+      'falls back to UTC for %s, as the backend does',
+      (value) => {
+        expect(DateHelper.resolveTimeZone(value)).toBe('UTC');
+      },
+    );
+  });
+
   describe('toWallClock', () => {
     it('keeps a date-time without offset as is', () => {
       expect(DateHelper.toWallClock('2026-10-20T18:00', 'Europe/Paris')).toBe('2026-10-20T18:00');

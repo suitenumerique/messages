@@ -60,6 +60,21 @@ export class DateHelper {
   }
 
   /**
+   * The IANA time zone `value` names, or UTC when it is not a non-empty
+   * string or this browser does not know it. Mirrors how the backend reads
+   * an auto-reply's time zone.
+   */
+  public static resolveTimeZone(value: unknown): string {
+    if (typeof value !== 'string' || !value) return 'UTC';
+    try {
+      new Intl.DateTimeFormat('en-US', { timeZone: value });
+      return value;
+    } catch {
+      return 'UTC';
+    }
+  }
+
+  /**
    * Express an ISO date-time as a wall-clock time (`YYYY-MM-DDTHH:mm:ss`) in
    * the given time zone. A date-time without offset already is a wall-clock
    * time and is returned unchanged; one with an offset is an instant, which

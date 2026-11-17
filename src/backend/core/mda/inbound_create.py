@@ -15,9 +15,11 @@ from django.db.utils import Error as DjangoDbError
 from django.utils import timezone
 
 from jmap_email import (
+    find_headers,
     first_address_email,
     first_address_name,
     first_msgid,
+    parse_date,
     sent_at_to_datetime,
 )
 from jmap_email.types import JmapEmail
@@ -217,29 +219,66 @@ def _record_transport_security(postmark: dict, envelope: dict) -> None:
         postmark["tls"] = "old"
 
 
-def _sent_at_utc(sent_at, now: datetime.datetime) -> datetime.datetime | None:
+def _sent_at_utc(sent_at) -> datetime.datetime | None:
     """Parse a JMAP ``sentAt`` into a UTC datetime, or None.
 
     Python accepts offsets up to ±23:59 but PostgreSQL rejects anything past
     ±15:59, so the sender's offset is dropped. The instant is unchanged.
     None when the instant falls outside the years 1-9999 once in UTC
-    (e.g. ``9999-12-31T23:59:59-16:00``): callers fall back to the
-    delivery time, as for a missing ``Date:``.
-
-    A date after ``now`` is clamped to ``now``: a message cannot have been sent
-    after we stored it, and imports copy this value into ``created_at``,
-    which orders threads and sets ``read_at``. The raw ``Date:`` stays in
-    the blob.
+    (e.g. ``9999-12-31T23:59:59-16:00``).
     """
     parsed = sent_at_to_datetime(sent_at)
     if parsed is None:
         return None
     try:
-        parsed = parsed.astimezone(datetime.UTC)
+        return parsed.astimezone(datetime.UTC)
     except (OverflowError, ValueError):
         logger.warning("Ignoring out-of-range sentAt %r", sent_at)
         return None
-    return min(parsed, now)
+
+
+def _received_at_utc(parsed_email: JmapEmail) -> datetime.datetime | None:
+    """The date of the topmost ``Received:`` header in UTC, or None.
+
+    That hop is the one that reached the recipient's own server, which
+    stamped it: trusted more than the sender's ``Date:``.
+    """
+    received = find_headers(parsed_email, "Received")
+    if not received or ";" not in received[0]:
+        return None
+    parsed = parse_date(received[0].rsplit(";", 1)[1].strip())
+    if parsed is None:
+        return None
+    if parsed.tzinfo is None:
+        parsed = parsed.replace(tzinfo=datetime.UTC)
+    try:
+        return parsed.astimezone(datetime.UTC)
+    except (OverflowError, ValueError):
+        return None
+
+
+def _message_date(
+    parsed_email: JmapEmail, now: datetime.datetime, *, is_import: bool
+) -> datetime.datetime:
+    """The UTC ``sent_at`` to store for a message, never after ``now``.
+
+    The ``Date:`` when usable and not in the future: a message cannot have
+    been sent after we stored it, and imports copy this value into
+    ``created_at``, which orders threads and sets ``read_at``. Otherwise the
+    delivery time, ``now``. An import is not being delivered now: it falls
+    back on the date its own server received it (topmost ``Received:``)
+    first, so that a forged or broken ``Date:`` in an archive does not make
+    the message the newest of the mailbox. The raw ``Date:`` stays in the
+    blob.
+    """
+    claimed = _sent_at_utc(parsed_email.get("sentAt"))
+    if claimed is not None and claimed <= now:
+        return claimed
+    if is_import:
+        received = _received_at_utc(parsed_email)
+        if received is not None and received <= now:
+            return received
+    return now
 
 
 def _create_message_from_inbound(  # pylint: disable=too-many-arguments
@@ -472,8 +511,7 @@ def _create_message_from_inbound(  # pylint: disable=too-many-arguments
                 subject = subject[:255]
 
             is_sender = is_outbound or (is_import and is_import_sender)
-            now = timezone.now()
-            sent_at = _sent_at_utc(parsed_email.get("sentAt"), now) or now
+            sent_at = _message_date(parsed_email, timezone.now(), is_import=is_import)
 
             # The Blob INSERT and the Message INSERT must commit together
             # so the GC sweep never sees the Blob row without its

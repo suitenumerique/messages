@@ -11,7 +11,7 @@ import useArchive from "@/features/message/use-archive";
 import useSpam from "@/features/message/use-spam";
 import useThreadRemoveActions from "@/features/message/use-thread-remove-actions";
 import useStarred from "@/features/message/use-starred";
-import useRead from "@/features/message/use-read";
+import useRead, { readAtNow } from "@/features/message/use-read";
 import useCopyDeepLink from "@/features/message/use-copy-deep-link";
 import useLeaveThread from "@/features/message/use-leave-thread";
 import useAbility, { Abilities } from "@/hooks/use-ability";
@@ -137,7 +137,7 @@ export const MobileThreadToolbar = ({ thread, isArchived, isTrashContext, quickR
         icon: { name: hasUnread ? "mail-open" : "mail-unread" },
         onSelect: () => {
           if (hasUnread) {
-            markAsReadAt({ threadIds: [thread.id], readAt: new Date().toISOString() });
+            markAsReadAt({ threadIds: [thread.id], readAt: readAtNow([thread.messaged_at]) });
           } else {
             // Leave the thread first so the auto-read observer of the open
             // view doesn't immediately mark it as read again (same order as

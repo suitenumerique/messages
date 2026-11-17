@@ -144,6 +144,58 @@ def test_valid_dates_untouched():
     assert thread.updated_at == past
 
 
+def test_null_dates_of_a_fixed_row_stay_null():
+    """A row fixed for one date keeps its NULL dates NULL (``GREATEST`` and
+    ``LEAST`` would have made them now in PostgreSQL)."""
+    thread, access, message = _thread_with_message()
+    future = timezone.now() + timedelta(days=20)
+    models.Thread.objects.filter(pk=thread.pk).update(
+        messaged_at=future, draft_messaged_at=None, trashed_messaged_at=None
+    )
+    models.ThreadAccess.objects.filter(pk=access.pk).update(
+        read_at=future, starred_at=None
+    )
+    models.Message.objects.filter(pk=message.pk).update(created_at=future)
+    models.Message.objects.filter(pk=message.pk).update(sent_at=None)
+
+    migration.clamp_timestamps(apps, None)
+
+    thread.refresh_from_db()
+    assert thread.draft_messaged_at is None
+    assert thread.trashed_messaged_at is None
+    access.refresh_from_db()
+    assert access.starred_at is None
+    message.refresh_from_db()
+    assert message.sent_at is None
+
+
+def test_future_sent_at_of_a_year_0_message():
+    """A future ``sent_at`` goes back to ``created_at`` clamped too."""
+    _, _, message = _thread_with_message()
+    _set_raw(models.Message, message.pk, "created_at", YEAR_0)
+    models.Message.objects.filter(pk=message.pk).update(
+        sent_at=timezone.now() + timedelta(days=1)
+    )
+
+    migration.clamp_timestamps(apps, None)
+
+    message = models.Message.objects.get(pk=message.pk)
+    assert message.created_at == migration.EARLIEST
+    assert message.sent_at == migration.EARLIEST
+
+
+def test_nothing_to_fix_touches_nothing():
+    """With every date in range, no thread is marked for reindex."""
+    thread, _, _ = _thread_with_message()
+    past = datetime(2020, 5, 1, 12, tzinfo=UTC)
+    models.Thread.objects.filter(pk=thread.pk).update(updated_at=past)
+
+    migration.clamp_timestamps(apps, None)
+
+    thread.refresh_from_db()
+    assert thread.updated_at == past
+
+
 @pytest.mark.parametrize(
     ("model_name", "field"),
     [("message", "sent_at"), ("threadaccess", "read_at"), ("thread", "messaged_at")],

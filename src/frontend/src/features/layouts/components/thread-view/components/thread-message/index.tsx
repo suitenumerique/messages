@@ -20,9 +20,7 @@ import MessageReplyForm from "../message-reply-form";
 import { ComposeDraftPlaceholder } from "../compose-draft-placeholder";
 import ThreadMessageHeader from "./thread-message-header";
 import ThreadMessageFooter from "./thread-message-footer";
-import { CalendarInvite } from "../calendar-invite";
-import ErrorBoundary from "@/features/errors/error-boundary";
-import { AttachmentList } from "../thread-attachment-list";
+import { CalendarInviteCard } from "./calendar-invite-card";
 import { SpamReport, ThreadMessageProps } from "./types";
 import { BodyPart } from "./renderers";
 import { DriveFile } from "@/features/forms/components/message-form/drive-attachment-picker";
@@ -433,21 +431,13 @@ export const ThreadMessage = forwardRef<HTMLSpanElement, ThreadMessageProps>(
                         {hasCalendarInvites && !isFolded && isMessageReady && (
                             <div className="thread-message__calendar-invites">
                                 {calendarAttachments.map((attachment) => (
-                                    // The invite is sender-controlled: if it still
-                                    // breaks rendering, show the file as a plain
-                                    // attachment (the footer leaves calendar files
-                                    // out) rather than losing the whole view.
-                                    <ErrorBoundary
+                                    <CalendarInviteCard
                                         key={attachment.blobId}
-                                        fallback={<AttachmentList attachments={[attachment]} spamReport={spamReport} />}
-                                    >
-                                        <CalendarInvite
-                                            attachment={attachment}
-                                            canDownload={!spamReport}
-                                            mailboxId={selectedMailbox?.id}
-                                            mailboxEmail={selectedMailbox?.email}
-                                        />
-                                    </ErrorBoundary>
+                                        attachment={attachment}
+                                        spamReport={spamReport}
+                                        mailboxId={selectedMailbox?.id}
+                                        mailboxEmail={selectedMailbox?.email}
+                                    />
                                 ))}
                             </div>
                         )}

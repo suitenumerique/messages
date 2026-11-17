@@ -9,7 +9,7 @@ import { isNativePlatform } from "@/features/native/platform";
 import { useNativeDownload } from "@/features/native/use-native-download";
 import { useMailboxContext } from "@/features/providers/mailbox";
 import usePrint from "@/features/message/use-print";
-import useRead from "@/features/message/use-read";
+import useRead, { readAtBefore } from "@/features/message/use-read";
 import useSpam from "@/features/message/use-spam";
 import useSplitThread from "@/features/message/use-split-thread";
 import useTrash from "@/features/message/use-trash";
@@ -72,7 +72,7 @@ const ThreadMessageActions = ({
             // down its auto-mark-as-read observer before this mutation's cache
             // patch lands — otherwise the observer would re-read the messages we
             // just flagged unread.
-            const readAt = new Date(new Date(message.created_at!).getTime() - 1).toISOString();
+            const readAt = readAtBefore(message.created_at!);
             unselectThread();
             markAsReadAt({ threadIds: [selectedThread.id], readAt });
         } else {

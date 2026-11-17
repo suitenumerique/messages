@@ -177,6 +177,21 @@ def _parse_quote_date(value: str) -> datetime | None:
         return None
 
 
+def _format_quote_date(value: datetime) -> str | None:
+    """RFC 5322 form of ``value`` for the quote header, or None.
+
+    An offset with seconds (``+05:30:15``, ISO only) has no RFC 5322 form:
+    such a date is shown in UTC. None if that falls out of range.
+    """
+    value = _attach_utc_if_naive(value)
+    if value.utcoffset().total_seconds() % 60:
+        try:
+            value = value.astimezone(timezone.utc)
+        except (OverflowError, ValueError):
+            return None
+    return format_datetime(value)
+
+
 def _embed_original_message(
     original_message: JmapEmail,
     new_text: str = "",
@@ -210,18 +225,13 @@ def _embed_original_message(
     # ``Message`` model where ``sent_at`` is already a ``datetime``.
     orig_date = original_message.get("sentAt") or ""
 
-    date_str = ""
     if isinstance(orig_date, datetime):
-        date_str = format_datetime(_attach_utc_if_naive(orig_date))
+        parsed_dt = orig_date
     elif isinstance(orig_date, str) and orig_date:
         parsed_dt = _parse_quote_date(orig_date)
-        date_str = (
-            format_datetime(_attach_utc_if_naive(parsed_dt))
-            if parsed_dt
-            else "an unknown date"
-        )
     else:
-        date_str = "an unknown date"
+        parsed_dt = None
+    date_str = (parsed_dt and _format_quote_date(parsed_dt)) or "an unknown date"
 
     header_text = ""
     if is_forward:

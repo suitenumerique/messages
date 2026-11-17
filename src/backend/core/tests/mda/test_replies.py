@@ -186,6 +186,9 @@ class TestMakeReply:
             ("9999-12-31T23:59:59-05:00", "Fri, 31 Dec 9999 23:59:59 -0500"),
             # RFC 2822 still accepted.
             ("Thu, 01 Jan 2026 11:00:00 +0200", "Thu, 01 Jan 2026 11:00:00 +0200"),
+            # An offset with seconds has no RFC 5322 form: shown in UTC.
+            ("2026-01-01T11:00:00+05:30:15", "Thu, 01 Jan 2026 05:29:45 +0000"),
+            ("0001-01-01T00:00:00+00:00:01", "an unknown date"),
             # Unusable: a placeholder, not the raw value.
             ("not a date\r\nInjected: x", "an unknown date"),
             ("Thu, 01 Jan 99999 11:00:00 +0000", "an unknown date"),

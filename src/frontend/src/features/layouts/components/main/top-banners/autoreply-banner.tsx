@@ -42,7 +42,7 @@ export const AutoreplyBanner = () => {
   const metadata = activeAutoreply.metadata;
   // end_at is shown as a wall-clock time in the auto-reply time zone, which
   // the backend defaults to UTC: name that zone when it is not the user's one.
-  const timeZone = typeof metadata?.timezone === "string" ? metadata.timezone : "UTC";
+  const timeZone = DateHelper.resolveTimeZone(metadata?.timezone);
   const endAtWallClock = metadata?.schedule_type === "date_range" && typeof metadata.end_at === "string"
     ? DateHelper.toWallClock(metadata.end_at, timeZone)
     : undefined;

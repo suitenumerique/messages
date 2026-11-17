@@ -82,9 +82,10 @@ class ChannelApiKeyAuthentication(BaseAuthentication):
             raise AuthenticationFailed("Invalid channel or API key.")
 
         expires_at_raw = (channel.settings or {}).get("expires_at")
-        if expires_at_raw:
-            # An unreadable expiry counts as expired: failing open would make
-            # a typo a key that never expires.
+        # Absent, null or "": no expiry. Anything else unreadable (a typo,
+        # 0, false) counts as expired: failing open would make it a key that
+        # never expires.
+        if expires_at_raw not in (None, ""):
             expires_at = parse_utc_datetime(expires_at_raw)
             if expires_at is None or expires_at < timezone.now():
                 raise AuthenticationFailed("API key has expired.")

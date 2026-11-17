@@ -2721,10 +2721,10 @@ class ChannelSerializer(CreateOnlyFieldsMixin, serializers.ModelSerializer):
         if not value:
             return value
 
-        # Read by ChannelApiKeyAuthentication, which treats an unreadable
-        # value as expired.
+        # Read by ChannelApiKeyAuthentication: absent, null or "" for no
+        # expiry, anything else unreadable counts as expired.
         expires_at = value.get("expires_at")
-        if expires_at and parse_utc_datetime(expires_at) is None:
+        if expires_at not in (None, "") and parse_utc_datetime(expires_at) is None:
             raise serializers.ValidationError(
                 {"expires_at": "Must be a valid ISO 8601 datetime."}
             )

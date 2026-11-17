@@ -1,7 +1,6 @@
 """Tests for ``core.utils``."""
 
 from datetime import UTC, datetime, timedelta
-from zoneinfo import ZoneInfo
 
 import pytest
 from jmap_email import compose_email
@@ -60,12 +59,6 @@ class TestParseUtcDatetime:
     def test_unusable(self, value):
         """Out-of-range, invalid or non-string values give None."""
         assert parse_utc_datetime(value) is None
-
-    def test_naive_tz(self):
-        """A value without offset is read in ``naive_tz``."""
-        assert parse_utc_datetime(
-            "2026-01-01T12:00:00", naive_tz=ZoneInfo("Europe/Paris")
-        ) == datetime(2026, 1, 1, 11, tzinfo=UTC)
 
 
 class TestCurrentSentAt:

@@ -601,6 +601,11 @@ class TestChannelReservedSettingsKeys:
             "2030-01-01T00:00:00+24:00",
             12345,
             ["2030-01-01T00:00:00Z"],
+            # Falsy, but not "no expiry".
+            0,
+            False,
+            [],
+            {},
         ],
     )
     def test_invalid_expires_at_rejected(self, api_client, mailbox, expires_at):

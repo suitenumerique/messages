@@ -18,6 +18,7 @@ from core import enums, factories, models
 from core.mda.inbound import DeliveryUnavailable, deliver_inbound_message
 from core.mda.inbound_create import (
     _create_message_from_inbound,
+    _message_date,
     _record_divergent_rcpt,
     _record_transport_security,
     _sent_at_utc,
@@ -1135,14 +1136,9 @@ def _utc(*args):
     return datetime.datetime(*args, tzinfo=datetime.UTC)
 
 
-# As ``now``, so that no value is clamped.
-_LATEST = _utc(9999, 12, 31, 23, 59, 59, 999999)
-
-
 class TestSentAtUtc:
     """``_sent_at_utc`` turns any ``sentAt`` into a UTC datetime PostgreSQL
-    accepts and Python can read back, no later than ``now``, or None
-    (issue #855)."""
+    accepts and Python can read back, or None."""
 
     @pytest.mark.parametrize(
         ("sent_at", "expected"),
@@ -1171,46 +1167,9 @@ class TestSentAtUtc:
     )
     def test_normalized_to_utc(self, sent_at, expected):
         """The instant is kept and the offset is UTC."""
-        result = _sent_at_utc(sent_at, _LATEST)
+        result = _sent_at_utc(sent_at)
         assert result == expected
         assert result.utcoffset() == timedelta(0)
-
-    @pytest.mark.parametrize(
-        "sent_at",
-        [
-            "2026-11-17T12:00:00.000001+00:00",
-            "2026-11-17T12:00:01+00:00",
-            "2026-11-18T12:00:00+00:00",
-            "2099-01-01T00:00:00+00:00",
-            "9999-12-31T23:59:59+05:00",
-            "9999-12-31T23:59:59.999999+00:00",
-            # Before ``now`` in local time, after it in UTC.
-            "2026-11-17T11:00:00-16:00",
-        ],
-    )
-    def test_future_clamped_to_now(self, sent_at):
-        """A date after ``now`` gives ``now``."""
-        now = _utc(2026, 11, 17, 12, 0, 0)
-        result = _sent_at_utc(sent_at, now)
-        assert result == now
-        assert result.utcoffset() == timedelta(0)
-
-    @pytest.mark.parametrize(
-        ("sent_at", "expected"),
-        [
-            ("2026-11-17T12:00:00+00:00", _utc(2026, 11, 17, 12, 0, 0)),
-            (
-                "2026-11-17T11:59:59.999999+00:00",
-                _utc(2026, 11, 17, 11, 59, 59, 999999),
-            ),
-            # After ``now`` in local time, before it in UTC.
-            ("2026-11-17T13:00:00+16:00", _utc(2026, 11, 16, 21, 0, 0)),
-            ("0001-01-01T00:00:00+00:00", _utc(1, 1, 1, 0, 0, 0)),
-        ],
-    )
-    def test_not_after_now_kept(self, sent_at, expected):
-        """``now`` itself and anything before it are kept."""
-        assert _sent_at_utc(sent_at, _utc(2026, 11, 17, 12, 0, 0)) == expected
 
     @pytest.mark.parametrize(
         "sent_at",
@@ -1230,27 +1189,126 @@ class TestSentAtUtc:
     )
     def test_unusable_returns_none(self, sent_at):
         """Out-of-range or invalid values give None instead of raising."""
-        assert _sent_at_utc(sent_at, _LATEST) is None
+        assert _sent_at_utc(sent_at) is None
 
     def test_datetime_instance(self):
-        """A datetime (not a string) is converted and clamped the same way."""
+        """A datetime (not a string) is converted the same way."""
         value = datetime.datetime(
             2026, 11, 9, 18, 30, 11, tzinfo=datetime.timezone(timedelta(hours=16))
         )
-        assert _sent_at_utc(value, _LATEST) == _utc(2026, 11, 9, 2, 30, 11)
-        now = _utc(2026, 11, 9, 0, 0, 0)
-        assert _sent_at_utc(value, now) == now
+        assert _sent_at_utc(value) == _utc(2026, 11, 9, 2, 30, 11)
         overflow = datetime.datetime.max.replace(
             tzinfo=datetime.timezone(timedelta(hours=-16))
         )
-        assert _sent_at_utc(overflow, _LATEST) is None
+        assert _sent_at_utc(overflow) is None
+
+
+_NOW = _utc(2026, 11, 17, 12, 0, 0)
+_RECEIVED = (
+    "from mx.example.com (mx.example.com [192.0.2.1])\r\n"
+    "\tby mail.example.org with ESMTPS id abc\r\n"
+    "\tfor <user@example.org>; {}"
+)
+
+
+def _email(sent_at, *received):
+    headers = [{"name": "Received", "value": _RECEIVED.format(r)} for r in received]
+    return {"sentAt": sent_at, "headers": headers}
+
+
+class TestMessageDate:
+    """``_message_date`` is the ``sent_at`` stored: the ``Date:`` when usable
+    and not in the future, else for an import its server's reception date,
+    else ``now``."""
+
+    @pytest.mark.parametrize("is_import", [False, True])
+    @pytest.mark.parametrize(
+        ("sent_at", "expected"),
+        [
+            ("2026-11-17T12:00:00+00:00", _NOW),
+            (
+                "2026-11-17T11:59:59.999999+00:00",
+                _utc(2026, 11, 17, 11, 59, 59, 999999),
+            ),
+            # After ``now`` in local time, before it in UTC.
+            ("2026-11-17T13:00:00+16:00", _utc(2026, 11, 16, 21, 0, 0)),
+            ("0001-01-01T00:00:00+00:00", _utc(1, 1, 1, 0, 0, 0)),
+        ],
+    )
+    def test_date_kept(self, sent_at, expected, is_import):
+        """``now`` itself and anything before it are kept, even with a
+        ``Received:`` that says otherwise."""
+        parsed = _email(sent_at, "Mon, 09 Nov 2026 18:30:11 +0000")
+        assert _message_date(parsed, _NOW, is_import=is_import) == expected
+
+    @pytest.mark.parametrize(
+        "sent_at",
+        [
+            "2026-11-17T12:00:00.000001+00:00",
+            "2026-11-18T12:00:00+00:00",
+            "2099-01-01T00:00:00+00:00",
+            "9999-12-31T23:59:59.999999+00:00",
+            # Before ``now`` in local time, after it in UTC.
+            "2026-11-17T11:00:00-16:00",
+            # Unusable.
+            "9999-12-31T23:59:59-05:00",
+            "not a date",
+            None,
+        ],
+    )
+    def test_delivery_uses_now(self, sent_at):
+        """A delivery with a future or unusable date is dated now, whatever
+        its ``Received:`` (which a sender could write too)."""
+        parsed = _email(sent_at, "Mon, 09 Nov 2026 18:30:11 +0000")
+        result = _message_date(parsed, _NOW, is_import=False)
+        assert result == _NOW
+        assert result.utcoffset() == timedelta(0)
+
+    @pytest.mark.parametrize(
+        "sent_at",
+        ["2099-01-01T00:00:00+00:00", "9999-12-31T23:59:59-05:00", "garbage", None],
+    )
+    def test_import_uses_topmost_received(self, sent_at):
+        """An import with a future or unusable date is dated by the topmost
+        ``Received:``, the hop that reached the recipient's own server."""
+        parsed = _email(
+            sent_at,
+            "Mon, 09 Nov 2026 18:30:11 +0100 (CET)",
+            "Mon, 09 Nov 2026 17:00:00 +0000",
+        )
+        assert _message_date(parsed, _NOW, is_import=True) == _utc(
+            2026, 11, 9, 17, 30, 11
+        )
+
+    @pytest.mark.parametrize(
+        "received",
+        [
+            # In the future, out of range, unparseable, without a date.
+            ["Fri, 01 Jan 2099 00:00:00 +0000"],
+            ["Fri, 31 Dec 9999 23:59:59 -0500"],
+            ["not a date"],
+            [],
+        ],
+    )
+    def test_import_without_usable_received_uses_now(self, received):
+        """No usable ``Received:`` either: the import time."""
+        parsed = _email("2099-01-01T00:00:00+00:00", *received)
+        assert _message_date(parsed, _NOW, is_import=True) == _NOW
+
+    def test_received_without_date(self):
+        """A ``Received:`` with no ``;`` part has no date."""
+        parsed = {
+            "sentAt": None,
+            "headers": [{"name": "Received", "value": "from somewhere"}],
+        }
+        assert _message_date(parsed, _NOW, is_import=True) == _NOW
 
 
 @pytest.mark.django_db
 class TestDeliverExtremeSentAt:
     """End to end: a message whose ``Date:`` or ``sentAt`` is at the edge of
     what Python or PostgreSQL accept is delivered, not left in the queue, and
-    can be read back from the database (issue #855)."""
+    can be read back from the database."""
 
     @pytest.fixture
     def recipient_addr(self):
@@ -1363,6 +1421,30 @@ class TestDeliverExtremeSentAt:
         else:
             assert message.sent_at == expected
         assert message.created_at == message.sent_at
+
+    @pytest.mark.parametrize(
+        "date_header",
+        ["Fri, 01 Jan 2099 00:00:00 +0000", "Fri, 31 Dec 9999 23:59:59 -0500"],
+    )
+    def test_import_with_bad_date_uses_received(self, recipient_addr, date_header):
+        """An archived message with a forged or broken ``Date:`` is dated by
+        its server's reception, not the import time that would make it the
+        newest of the mailbox."""
+        raw = (
+            b"Received: from mx.example.com (mx.example.com [192.0.2.1])\r\n"
+            b"\tby mail.example.org with ESMTPS id abc\r\n"
+            b"\tfor <" + recipient_addr.encode() + b">;"
+            b" Mon, 09 Nov 2026 18:30:11 +0100 (CET)\r\n"
+            b"Received: from sender.example.com by mx.example.com;"
+            b" Fri, 01 Jan 2099 00:00:00 +0000\r\n"
+        ) + self._raw(recipient_addr, date_header)
+        assert deliver_inbound_message(
+            recipient_addr, parse_email(raw), raw, is_import=True
+        )
+        message = self._reload()
+        assert message.sent_at == _utc(2026, 11, 9, 17, 30, 11)
+        assert message.created_at == message.sent_at
+        assert message.thread.messaged_at == message.sent_at
 
     def test_import_in_future_does_not_hide_new_mail(self, recipient_addr):
         """A read message imported with a future date must not set ``read_at``

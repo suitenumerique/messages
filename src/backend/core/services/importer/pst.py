@@ -1084,6 +1084,27 @@ def _synthesize_message_id(message, recipient_email: str | None) -> str:
     return f"pst-synth-{digest}@{domain}"
 
 
+def _archive_date(value: datetime | None) -> datetime | None:
+    """``value`` if usable as the Date of an archived message, else None.
+
+    None when out of range once in UTC or in the future: the MAPI timestamps
+    are better than the import time the inbound step would use. An offset
+    with seconds (``+05:30:15``, ISO only) has no RFC 5322 form: such a
+    date is returned in UTC.
+    """
+    if value is None:
+        return None
+    if value.tzinfo is None:
+        value = value.replace(tzinfo=timezone.utc)
+    try:
+        utc = value.astimezone(timezone.utc)
+    except (OverflowError, ValueError):
+        return None
+    if utc > datetime.now(timezone.utc):
+        return None
+    return value if value.utcoffset().total_seconds() % 60 == 0 else utc
+
+
 def reconstruct_eml(
     message,
     store_email: str | None = None,
@@ -1159,11 +1180,9 @@ def reconstruct_eml(
         if subject:
             jmap_data["subject"] = subject
 
-        # sentAt: RFC 5322, or ISO 8601 as some exporters write it. A Date the
-        # composer cannot parse would make it reject the whole message: leave
-        # it unset so the MAPI fallback below applies.
+        # sentAt: RFC 5322, or ISO 8601 as some exporters write it.
         date_str = str(parsed_headers.get("Date") or "")
-        sent_at = parse_date(date_str) or sent_at_to_datetime(date_str)
+        sent_at = _archive_date(parse_date(date_str) or sent_at_to_datetime(date_str))
         if sent_at is not None:
             jmap_data["sentAt"] = sent_at.isoformat()
 

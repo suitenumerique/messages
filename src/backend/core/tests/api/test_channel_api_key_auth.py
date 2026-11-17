@@ -72,6 +72,11 @@ class TestChannelApiKeyAuth:
             "9999-12-31T23:59:59-05:00",
             12345,
             ["2099-01-01T00:00:00Z"],
+            # Falsy, but not "no expiry".
+            0,
+            False,
+            [],
+            {},
         ],
     )
     def test_unreadable_expiry_returns_401(self, client, expires_at):
@@ -84,6 +89,18 @@ class TestChannelApiKeyAuth:
             HTTP_X_API_KEY=plaintext,
         )
         assert response.status_code == 401
+
+    @pytest.mark.parametrize("expires_at", [None, ""])
+    def test_no_expiry(self, client, expires_at):
+        """Null or empty means no expiry, as before."""
+        channel, plaintext = _make_channel(extra_settings={"expires_at": expires_at})
+        response = client.post(
+            SUBMIT_URL,
+            HTTP_X_CHANNEL_ID=str(channel.id),
+            HTTP_X_API_KEY=plaintext,
+        )
+        assert response.status_code != 401
+        assert response.status_code < 500
 
     def test_naive_future_expiry_is_utc(self, client):
         """A naive ``expires_at`` is read as UTC instead of raising on the
