@@ -287,6 +287,95 @@ def test_api_flag_read_at_rejects_invalid_datetime(api_client):
     assert "read_at" in response.data["detail"]
 
 
+@pytest.fixture
+def flag_access(api_client):
+    """A thread access the authenticated viewer can flag."""
+    user = UserFactory()
+    api_client.force_authenticate(user=user)
+    mailbox = MailboxFactory(users_read=[user])
+    thread = ThreadFactory(messaged_at=timezone.now())
+    access = ThreadAccessFactory(
+        mailbox=mailbox, thread=thread, role=enums.ThreadAccessRoleChoices.EDITOR
+    )
+    MessageFactory(thread=thread)
+    return access
+
+
+def _post_flag_timestamp(api_client, access, field, value):
+    data = {
+        "flag": "unread" if field == "read_at" else "starred",
+        "value": field == "starred_at",
+        "thread_ids": [str(access.thread_id)],
+        "mailbox_id": str(access.mailbox_id),
+        field: value,
+    }
+    return api_client.post(API_URL, data=data, format="json")
+
+
+@pytest.mark.parametrize("field", ["read_at", "starred_at"])
+@pytest.mark.parametrize(
+    "value",
+    [
+        # Year 10000 / year 0 once in UTC: PostgreSQL would store them and
+        # every later read of the row would fail.
+        "9999-12-31T23:59:59-05:00",
+        "0001-01-01T00:00:00+05:00",
+        # Offset PostgreSQL rejects, past what Python accepts.
+        "2026-01-01T00:00:00+24:00",
+        # Parses but does not exist.
+        "2024-02-30T00:00:00Z",
+        "0000-12-31T23:59:59Z",
+        "",
+        123,
+        ["2026-01-01T00:00:00Z"],
+    ],
+)
+def test_api_flag_timestamp_rejects_unusable(api_client, flag_access, field, value):
+    """Unusable timestamps give a 400 and leave the access readable."""
+    response = _post_flag_timestamp(api_client, flag_access, field, value)
+    assert response.status_code == status.HTTP_400_BAD_REQUEST
+    assert field in response.data["detail"]
+    flag_access.refresh_from_db()
+    assert getattr(flag_access, field) is None
+
+
+@pytest.mark.parametrize("field", ["read_at", "starred_at"])
+@pytest.mark.parametrize(
+    ("value", "expected"),
+    [
+        # Past PostgreSQL's ±15:59: stored as the same instant in UTC.
+        ("2026-01-01T12:00:00+23:59", "2025-12-31T12:01:00+00:00"),
+        ("2026-01-01T12:00:00-16:00", "2026-01-02T04:00:00+00:00"),
+        # No offset: UTC.
+        ("2026-01-01T12:00:00", "2026-01-01T12:00:00+00:00"),
+        ("0001-01-01T00:00:00Z", "0001-01-01T00:00:00+00:00"),
+    ],
+)
+def test_api_flag_timestamp_normalized(api_client, flag_access, field, value, expected):
+    """Valid timestamps are stored in UTC."""
+    response = _post_flag_timestamp(api_client, flag_access, field, value)
+    assert response.status_code == status.HTTP_200_OK
+    flag_access.refresh_from_db()
+    assert getattr(flag_access, field).isoformat() == expected
+
+
+@pytest.mark.parametrize("field", ["read_at", "starred_at"])
+@pytest.mark.parametrize(
+    "value",
+    ["9999-12-31T23:59:59+05:00", "2099-01-01T00:00:00Z", "future"],
+)
+def test_api_flag_timestamp_future_clamped(api_client, flag_access, field, value):
+    """A future timestamp is stored as now, so later mail is not shown as
+    read for the whole mailbox."""
+    if value == "future":
+        value = (timezone.now() + timedelta(minutes=10)).isoformat()
+    before = timezone.now()
+    response = _post_flag_timestamp(api_client, flag_access, field, value)
+    assert response.status_code == status.HTTP_200_OK
+    flag_access.refresh_from_db()
+    assert before <= getattr(flag_access, field) <= timezone.now()
+
+
 def test_api_flag_unread_per_mailbox_isolation(api_client):
     """Marking as read in one mailbox does not affect another mailbox's read state."""
     user1 = UserFactory()

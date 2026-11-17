@@ -338,6 +338,23 @@ class TestIsActiveAutoreply:
         autoreply_template.save()
         assert autoreply_template.is_active_autoreply() is True
 
+    @pytest.mark.parametrize("tz", [None, 123, "", ["UTC"], "Invalid/Zone"])
+    def test_date_range_stored_invalid_timezone(self, autoreply_template, tz):
+        """A timezone that slipped past validation (older rows, direct writes)
+        falls back to UTC instead of raising on every inbound message."""
+        now = timezone.now()
+        # update() skips the validation save() runs.
+        models.MessageTemplate.objects.filter(pk=autoreply_template.pk).update(
+            metadata={
+                "schedule_type": "date_range",
+                "start_at": (now - timedelta(days=1)).replace(tzinfo=None).isoformat(),
+                "end_at": (now + timedelta(days=1)).isoformat(),
+                "timezone": tz,
+            }
+        )
+        autoreply_template.refresh_from_db()
+        assert autoreply_template.is_active_autoreply() is True
+
     def test_date_range_out_of_range(self, autoreply_template):
         """Date range in the future is not active."""
         now = timezone.now()

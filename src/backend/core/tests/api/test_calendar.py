@@ -548,6 +548,37 @@ END:VCALENDAR""",
         )
         assert resp.status_code == 400
 
+    @pytest.mark.parametrize(
+        ("start", "end"),
+        [
+            # Year 10000 / year 0 once in UTC.
+            ("2026-06-01T10:00:00Z", "9999-12-31T23:59:59-05:00"),
+            ("0001-01-01T00:00:00+05:00", "2026-06-01T11:00:00Z"),
+            # Not strings.
+            (1780000000, 1780003600),
+            (["2026-06-01T10:00:00Z"], "2026-06-01T11:00:00Z"),
+            ({"a": 1}, "2026-06-01T11:00:00Z"),
+        ],
+    )
+    def test_check_conflicts_unusable_datetime_is_400(
+        self,
+        api_client,
+        mailbox,
+        caldav_channel,
+        user_with_mailbox,
+        start,
+        end,
+    ):
+        """Out-of-range or non-string bounds are a client-input error (400),
+        not a 500."""
+        api_client.force_authenticate(user=user_with_mailbox)
+        resp = api_client.post(
+            f"/api/v1.0/mailboxes/{mailbox.id}/calendar/conflicts/",
+            {"start": start, "end": end},
+            format="json",
+        )
+        assert resp.status_code == 400
+
     def test_check_conflicts_inverted_range_is_400(
         self,
         api_client,

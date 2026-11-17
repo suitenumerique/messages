@@ -7,7 +7,6 @@ import hashlib
 import logging
 import re
 import uuid
-
 from contextlib import contextmanager, nullcontext
 
 from django.core.exceptions import ValidationError
@@ -216,6 +215,31 @@ def _record_transport_security(postmark: dict, envelope: dict) -> None:
         postmark["tls"] = "none"
     elif version in _OLD_TLS_VERSIONS:
         postmark["tls"] = "old"
+
+
+def _sent_at_utc(sent_at, now: datetime.datetime) -> datetime.datetime | None:
+    """Parse a JMAP ``sentAt`` into a UTC datetime, or None.
+
+    Python accepts offsets up to ±23:59 but PostgreSQL rejects anything past
+    ±15:59, so the sender's offset is dropped. The instant is unchanged.
+    None when the instant falls outside the years 1-9999 once in UTC
+    (e.g. ``9999-12-31T23:59:59-16:00``): callers fall back to the
+    delivery time, as for a missing ``Date:``.
+
+    A date after ``now`` is clamped to ``now``: a message cannot have been sent
+    after we stored it, and imports copy this value into ``created_at``,
+    which orders threads and sets ``read_at``. The raw ``Date:`` stays in
+    the blob.
+    """
+    parsed = sent_at_to_datetime(sent_at)
+    if parsed is None:
+        return None
+    try:
+        parsed = parsed.astimezone(datetime.UTC)
+    except (OverflowError, ValueError):
+        logger.warning("Ignoring out-of-range sentAt %r", sent_at)
+        return None
+    return min(parsed, now)
 
 
 def _create_message_from_inbound(  # pylint: disable=too-many-arguments
@@ -448,9 +472,8 @@ def _create_message_from_inbound(  # pylint: disable=too-many-arguments
                 subject = subject[:255]
 
             is_sender = is_outbound or (is_import and is_import_sender)
-            sent_at = sent_at_to_datetime(parsed_email.get("sentAt"))
-            if sent_at:
-                sent_at = sent_at.astimezone(datetime.UTC)
+            now = timezone.now()
+            sent_at = _sent_at_utc(parsed_email.get("sentAt"), now) or now
 
             # The Blob INSERT and the Message INSERT must commit together
             # so the GC sweep never sees the Blob row without its
@@ -482,7 +505,7 @@ def _create_message_from_inbound(  # pylint: disable=too-many-arguments
                     blob=blob,
                     mime_id=first_msgid(parsed_email.get("messageId")) or None,
                     parent=parent_message,
-                    sent_at=(None if is_outbound else (sent_at or timezone.now())),
+                    sent_at=None if is_outbound else sent_at,
                     is_draft=is_outbound,  # Outbound: draft until prepare_outbound_message finalizes
                     is_sender=is_sender,
                     is_trashed=is_trashed,
@@ -494,7 +517,7 @@ def _create_message_from_inbound(  # pylint: disable=too-many-arguments
             if is_import:
                 # We need to set the created_at field to the date of the message
                 # because the inbound message is not created at the same time as the message is received
-                message.created_at = sent_at or timezone.now()
+                message.created_at = sent_at
                 # Extract flags handled via ThreadAccess (not Message fields)
                 import_is_unread = message_flags.pop("is_unread", True)
                 import_is_starred = message_flags.pop("_starred", False)

@@ -1,6 +1,7 @@
 """Root utils for the core application."""
 
 import base64
+import datetime
 import json
 import logging
 from contextlib import contextmanager
@@ -8,6 +9,7 @@ from contextvars import ContextVar
 
 from django.core.cache import cache
 from django.core.exceptions import ImproperlyConfigured, ValidationError
+from django.utils.dateparse import parse_datetime
 
 import jsonschema
 from configurations import values
@@ -65,6 +67,33 @@ def b64url_encode(raw: bytes) -> str:
 def b64url_decode(value: str) -> bytes:
     """Decode a base64url value tolerating missing padding."""
     return base64.urlsafe_b64decode(value + "=" * (-len(value) % 4))
+
+
+def parse_utc_datetime(
+    value, *, naive_tz: datetime.tzinfo = datetime.UTC
+) -> datetime.datetime | None:
+    """Parse an ISO 8601 string we did not produce into a UTC datetime.
+
+    None when ``value`` is not a string, does not parse, names a date that
+    does not exist (``2024-02-30``), or falls outside the years 1-9999 once
+    in UTC. That last case matters: PostgreSQL would store year 0 or 10000,
+    then every read of the row fails. A value without offset is read in
+    ``naive_tz``.
+    """
+    if not isinstance(value, str):
+        return None
+    try:
+        parsed = parse_datetime(value)
+    except ValueError:
+        return None
+    if parsed is None:
+        return None
+    if parsed.utcoffset() is None:
+        parsed = parsed.replace(tzinfo=naive_tz)
+    try:
+        return parsed.astimezone(datetime.UTC)
+    except (OverflowError, ValueError):
+        return None
 
 
 class AbstractBatchingDeferrer:

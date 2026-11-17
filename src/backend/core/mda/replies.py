@@ -161,6 +161,22 @@ def _attach_utc_if_naive(dt: datetime) -> datetime:
     return dt
 
 
+def _parse_quote_date(value: str) -> datetime | None:
+    """Parse the original ``sentAt`` for the quote header, or None.
+
+    ``sentAt`` is ISO 8601 (JMAP); RFC 2822 is accepted too. The sender's
+    offset is kept, as mail clients do in quote headers.
+    """
+    try:
+        return datetime.fromisoformat(value)
+    except ValueError:
+        pass
+    try:
+        return parsedate_to_datetime(value)
+    except (ValueError, TypeError, IndexError, OverflowError):
+        return None
+
+
 def _embed_original_message(
     original_message: JmapEmail,
     new_text: str = "",
@@ -198,14 +214,12 @@ def _embed_original_message(
     if isinstance(orig_date, datetime):
         date_str = format_datetime(_attach_utc_if_naive(orig_date))
     elif isinstance(orig_date, str) and orig_date:
-        try:
-            parsed_dt = parsedate_to_datetime(orig_date)
-        except (ValueError, TypeError, IndexError):
-            parsed_dt = None
-        if parsed_dt:
-            date_str = format_datetime(parsed_dt)
-        else:
-            date_str = orig_date
+        parsed_dt = _parse_quote_date(orig_date)
+        date_str = (
+            format_datetime(_attach_utc_if_naive(parsed_dt))
+            if parsed_dt
+            else "an unknown date"
+        )
     else:
         date_str = "an unknown date"
 

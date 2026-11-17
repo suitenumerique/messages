@@ -3458,6 +3458,14 @@ class DKIMKey(BaseModel):
         return f"v=DKIM1; k={algorithm_enum.label}; p={self.public_key}"
 
 
+def _autoreply_tz(metadata: dict) -> ZoneInfo:
+    """The autoreply's timezone, UTC when absent or invalid."""
+    try:
+        return ZoneInfo(metadata.get("timezone") or "UTC")
+    except (KeyError, ValueError, TypeError):
+        return ZoneInfo("UTC")
+
+
 class MessageTemplate(BaseModel):
     """Message template model to store reusable message templates and signatures."""
 
@@ -3706,6 +3714,13 @@ class MessageTemplate(BaseModel):
                         "metadata": "start_at and end_at must be valid ISO datetime strings."
                     }
                 ) from exc
+            # Same reading as is_active_autoreply: comparing a naive value
+            # with an aware one raises TypeError.
+            tz = _autoreply_tz(metadata)
+            if start.tzinfo is None:
+                start = start.replace(tzinfo=tz)
+            if end.tzinfo is None:
+                end = end.replace(tzinfo=tz)
             if start >= end:
                 raise ValidationError({"metadata": "start_at must be before end_at."})
         if schedule_type == "recurring_weekly":
@@ -3750,10 +3765,10 @@ class MessageTemplate(BaseModel):
                         ) from error
         # Validate timezone if provided
         tz_name = metadata.get("timezone")
-        if tz_name:
+        if tz_name is not None:
             try:
                 ZoneInfo(tz_name)
-            except (KeyError, ValueError) as exc:
+            except (KeyError, ValueError, TypeError) as exc:
                 raise ValidationError(
                     {"metadata": f"Invalid timezone: {tz_name}"}
                 ) from exc
@@ -3775,11 +3790,7 @@ class MessageTemplate(BaseModel):
         if schedule_type == "always":
             return True
 
-        tz_name = metadata.get("timezone", "UTC")
-        try:
-            tz = ZoneInfo(tz_name)
-        except (KeyError, ValueError):
-            tz = ZoneInfo("UTC")
+        tz = _autoreply_tz(metadata)
 
         if now is None:
             now = timezone.now()

@@ -377,6 +377,41 @@ class TestReconstructEml:
             2024, 2, 3, 4, 5, 6, tzinfo=timezone.utc
         )
 
+    @pytest.mark.parametrize(
+        "date_header",
+        [
+            "Mon, 26 May 2025 10:00:00 +2400",
+            "Mon, 26 May 2025 25:00:00 +0000",
+            "lundi 26 mai 2025",
+            "Fri, 31 Dec 99999 23:59:59 +0000",
+        ],
+    )
+    def test_reconstruct_unparseable_date_uses_delivery_time(self, date_header):
+        """An unparseable Date in the transport headers falls back to the MAPI
+        delivery time instead of failing the whole message."""
+        msg = _make_message(
+            transport_headers=f"From: sender@example.com\r\nDate: {date_header}\r\n",
+            delivery_time=datetime(2024, 2, 3, 4, 5, 6, tzinfo=timezone.utc),
+        )
+        parsed = email.message_from_bytes(reconstruct_eml(msg))
+
+        assert email.utils.parsedate_to_datetime(parsed["Date"]) == datetime(
+            2024, 2, 3, 4, 5, 6, tzinfo=timezone.utc
+        )
+
+    def test_reconstruct_keeps_extreme_offset(self):
+        """A Date with an offset past PostgreSQL's range is kept as written;
+        inbound_create converts it to UTC."""
+        msg = _make_message(
+            transport_headers=(
+                "From: sender@example.com\r\nDate: Mon, 26 May 2025 10:00:00 +1600\r\n"
+            ),
+            delivery_time=datetime(2024, 2, 3, 4, 5, 6, tzinfo=timezone.utc),
+        )
+        parsed = email.message_from_bytes(reconstruct_eml(msg))
+
+        assert parsed["Date"] == "Mon, 26 May 2025 10:00:00 +1600"
+
     def test_reconstruct_without_sent_time_uses_creation_time(self):
         """A message with no delivery/submit time (e.g. a draft) is dated by the
         record's creation time instead of the epoch."""

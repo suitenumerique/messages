@@ -591,6 +591,33 @@ class TestChannelReservedSettingsKeys:
         assert "api_key_hashes" in channel.encrypted_settings
         assert "api_key_hashes" not in channel.settings
 
+    @override_settings(FEATURE_MAILBOX_ADMIN_CHANNELS=["api_key"])
+    @pytest.mark.parametrize(
+        "expires_at",
+        [
+            "not a date",
+            "2024-02-30T00:00:00Z",
+            "9999-12-31T23:59:59-05:00",
+            "2030-01-01T00:00:00+24:00",
+            12345,
+            ["2030-01-01T00:00:00Z"],
+        ],
+    )
+    def test_invalid_expires_at_rejected(self, api_client, mailbox, expires_at):
+        """An ``expires_at`` the authentication cannot read is refused."""
+        url = reverse("mailbox-channels-list", kwargs={"mailbox_id": mailbox.id})
+        response = api_client.post(
+            url,
+            data={
+                "name": "Bad expires_at",
+                "type": "api_key",
+                "settings": {"scopes": ["messages:send"], "expires_at": expires_at},
+            },
+            format="json",
+        )
+        assert response.status_code == status.HTTP_400_BAD_REQUEST
+        assert not models.Channel.objects.filter(name="Bad expires_at").exists()
+
 
 @pytest.mark.django_db
 class TestWebhookChannelSettings:

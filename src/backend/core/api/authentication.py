@@ -16,13 +16,13 @@ from django.contrib.auth.models import AnonymousUser
 from django.core.exceptions import ValidationError as DjangoValidationError
 from django.db.models import Q
 from django.utils import timezone
-from django.utils.dateparse import parse_datetime
 
 from rest_framework.authentication import BaseAuthentication
 from rest_framework.exceptions import AuthenticationFailed
 
 from core import models
 from core.enums import ChannelScopeLevel, ChannelTypes
+from core.utils import parse_utc_datetime
 
 
 class ChannelApiKeyAuthentication(BaseAuthentication):
@@ -83,8 +83,10 @@ class ChannelApiKeyAuthentication(BaseAuthentication):
 
         expires_at_raw = (channel.settings or {}).get("expires_at")
         if expires_at_raw:
-            expires_at = parse_datetime(expires_at_raw)
-            if expires_at is not None and expires_at < timezone.now():
+            # An unreadable expiry counts as expired: failing open would make
+            # a typo a key that never expires.
+            expires_at = parse_utc_datetime(expires_at_raw)
+            if expires_at is None or expires_at < timezone.now():
                 raise AuthenticationFailed("API key has expired.")
 
         # Throttled update of last_used_at for monitoring (5 min window).

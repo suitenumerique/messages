@@ -64,6 +64,42 @@ class TestChannelApiKeyAuth:
         )
         assert response.status_code == 401
 
+    @pytest.mark.parametrize(
+        "expires_at",
+        [
+            "not a date",
+            "2024-02-30T00:00:00Z",
+            "9999-12-31T23:59:59-05:00",
+            12345,
+            ["2099-01-01T00:00:00Z"],
+        ],
+    )
+    def test_unreadable_expiry_returns_401(self, client, expires_at):
+        """A stored ``expires_at`` that cannot be read counts as expired
+        (401), instead of a 500 or a key that never expires."""
+        channel, plaintext = _make_channel(extra_settings={"expires_at": expires_at})
+        response = client.post(
+            SUBMIT_URL,
+            HTTP_X_CHANNEL_ID=str(channel.id),
+            HTTP_X_API_KEY=plaintext,
+        )
+        assert response.status_code == 401
+
+    def test_naive_future_expiry_is_utc(self, client):
+        """A naive ``expires_at`` is read as UTC instead of raising on the
+        comparison with an aware now."""
+        future = (timezone.now() + timedelta(days=1)).replace(tzinfo=None)
+        channel, plaintext = _make_channel(
+            extra_settings={"expires_at": future.isoformat()}
+        )
+        response = client.post(
+            SUBMIT_URL,
+            HTTP_X_CHANNEL_ID=str(channel.id),
+            HTTP_X_API_KEY=plaintext,
+        )
+        assert response.status_code != 401
+        assert response.status_code < 500
+
     def test_non_api_key_channel_cannot_authenticate(self, client):
         """A widget/mta channel with a hash in encrypted_settings must not
         authenticate the api_key path — the authentication class filters by

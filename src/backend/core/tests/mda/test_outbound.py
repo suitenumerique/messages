@@ -5,6 +5,7 @@ import re
 import socket
 import threading
 import time
+from datetime import datetime, timezone
 from unittest.mock import MagicMock, call, patch
 
 from django.conf import settings
@@ -740,6 +741,44 @@ class TestPrepareOutboundMessageSignature:
         assert (
             "Best regards,\r\nJohn Doe\r\nSoftware Engineer\r\nEngineering" in content
         )
+
+    @pytest.mark.parametrize("is_forward", [False, True])
+    def test_prepare_outbound_message_quotes_stored_date(
+        self, user, mailbox_sender, mailbox_access, is_forward
+    ):
+        """The quote header shows the parent's stored ``sent_at`` (in range,
+        clamped to delivery), not the ``Date:`` the sender put in the blob."""
+        raw = (
+            b"From: Bob <bob@example.com>\r\n"
+            b"To: someone@example.com\r\n"
+            b"Date: Fri, 01 Jan 2099 00:00:00 -2359\r\n"
+            b"Subject: Original Subject\r\n"
+            b"Message-ID: <forged.date@example.com>\r\n\r\nOriginal body"
+        )
+        parent_message = factories.MessageFactory(
+            thread=factories.ThreadFactory(),
+            sender=factories.ContactFactory(mailbox=mailbox_sender),
+            subject="Original Subject",
+            blob=models.Blob.objects.create_blob(
+                content=raw, content_type="message/rfc822"
+            ),
+            sent_at=datetime(2026, 11, 9, 18, 30, 11, tzinfo=timezone.utc),
+        )
+        message = factories.MessageFactory(
+            thread=parent_message.thread,
+            sender=parent_message.sender,
+            subject=("Fwd: " if is_forward else "Re: ") + "Original Subject",
+            parent=parent_message,
+            is_draft=True,
+        )
+
+        outbound.prepare_outbound_message(
+            mailbox_sender, message, "My reply", "<p>My reply</p>", user
+        )
+        message.refresh_from_db()
+        content = message.blob.get_content().decode().replace("=\r\n", "")
+        assert "Mon, 09 Nov 2026 18:30:11 +0000" in content
+        assert "2099" not in content
 
     @override_settings(SCHEMA_CUSTOM_ATTRIBUTES_USER=SCHEMA_CUSTOM_ATTRIBUTES)
     def test_prepare_outbound_message_with_inactive_signature(

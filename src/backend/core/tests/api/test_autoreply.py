@@ -275,6 +275,62 @@ class TestAutoreplyMetadataValidation:
         response = client.post(list_url, payload, format="json")
         assert response.status_code == status.HTTP_400_BAD_REQUEST
 
+    @pytest.mark.parametrize("tz", [123, "", False, ["Europe/Paris"], "../etc"])
+    def test_invalid_timezone_type(self, user, mailbox, list_url, tz):
+        """Reject a timezone that is not a valid zone name, instead of a 500
+        here or a crash when an inbound message checks the schedule."""
+        factories.MailboxAccessFactory(
+            mailbox=mailbox,
+            user=user,
+            role=enums.MailboxRoleChoices.ADMIN,
+        )
+        client = APIClient()
+        client.force_login(user)
+
+        payload = _autoreply_payload(timezone=tz)
+        response = client.post(list_url, payload, format="json")
+        assert response.status_code == status.HTTP_400_BAD_REQUEST
+
+    @pytest.mark.parametrize(
+        ("start_at", "end_at", "expected"),
+        [
+            # Naive values are read in the autoreply's timezone (Paris, +01:00).
+            ("2026-03-01T10:00:00", "2026-03-01T09:30:00Z", status.HTTP_201_CREATED),
+            (
+                "2026-03-01T10:00:00",
+                "2026-03-01T08:30:00Z",
+                status.HTTP_400_BAD_REQUEST,
+            ),
+            ("2026-03-01T08:30:00Z", "2026-03-01T10:00:00", status.HTTP_201_CREATED),
+            # Offsets past PostgreSQL's range, as plain JSON strings.
+            (
+                "2026-03-01T00:00:00+23:59",
+                "2026-03-01T00:00:00-23:59",
+                status.HTTP_201_CREATED,
+            ),
+        ],
+    )
+    def test_date_range_mixed_naive_and_aware(
+        self, user, mailbox, list_url, start_at, end_at, expected
+    ):
+        """A naive and an aware bound are compared without a TypeError."""
+        factories.MailboxAccessFactory(
+            mailbox=mailbox,
+            user=user,
+            role=enums.MailboxRoleChoices.ADMIN,
+        )
+        client = APIClient()
+        client.force_login(user)
+
+        payload = _autoreply_payload(
+            schedule_type="date_range",
+            start_at=start_at,
+            end_at=end_at,
+            timezone="Europe/Paris",
+        )
+        response = client.post(list_url, payload, format="json")
+        assert response.status_code == expected
+
 
 # ---------------------------------------------------------------------------
 # Autoreply type constraints

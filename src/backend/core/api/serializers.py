@@ -31,6 +31,7 @@ from core.services.identity import keycloak as keycloak_service
 from core.services.importer.channel import merged_state
 from core.services.ssrf import SSRFValidationError, validate_hostname
 from core.services.trashbin import TRASHBIN_SCOPES
+from core.utils import parse_utc_datetime
 
 logger = getLogger(__name__)
 
@@ -2719,6 +2720,14 @@ class ChannelSerializer(CreateOnlyFieldsMixin, serializers.ModelSerializer):
         """Validate settings, including tags if present."""
         if not value:
             return value
+
+        # Read by ChannelApiKeyAuthentication, which treats an unreadable
+        # value as expired.
+        expires_at = value.get("expires_at")
+        if expires_at and parse_utc_datetime(expires_at) is None:
+            raise serializers.ValidationError(
+                {"expires_at": "Must be a valid ISO 8601 datetime."}
+            )
 
         tags = value.get("tags", [])
         if not tags:

@@ -171,6 +171,10 @@ def compose_and_sign_mime(
     # 2. Embed reply/forward quote
     if message.parent:
         parent_parsed = message.parent.get_parsed_data()
+        if parent_parsed and message.parent.sent_at:
+            # The stored date, not the blob's Date: header: it is in range and
+            # clamped to delivery time (a forged future Date is not quoted).
+            parent_parsed = {**parent_parsed, "sentAt": message.parent.sent_at}
         if parent_parsed:
             if is_forward_subject(message.subject):
                 nested_data = make_forward(

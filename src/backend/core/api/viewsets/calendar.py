@@ -2,6 +2,7 @@
 
 import logging
 from datetime import datetime
+from datetime import timezone as dt_timezone
 
 from django.conf import settings
 from django.shortcuts import get_object_or_404
@@ -323,10 +324,8 @@ class CalendarConflictsView(CalDAVChannelMixin, APIView):
             )
 
         try:
-            if isinstance(start, str):
-                start = datetime.fromisoformat(start)
-            if isinstance(end, str):
-                end = datetime.fromisoformat(end)
+            start = datetime.fromisoformat(start)
+            end = datetime.fromisoformat(end)
         except (ValueError, TypeError):
             return Response(
                 {"detail": "start and end must be valid ISO 8601 datetimes."},
@@ -339,6 +338,16 @@ class CalendarConflictsView(CalDAVChannelMixin, APIView):
         if start.tzinfo is None or end.tzinfo is None:
             return Response(
                 {"detail": "start and end must include timezone info."},
+                status=status.HTTP_400_BAD_REQUEST,
+            )
+
+        # Out of datetime's range once in UTC (e.g. 9999-12-31T23:59:59-05:00).
+        try:
+            start = start.astimezone(dt_timezone.utc)
+            end = end.astimezone(dt_timezone.utc)
+        except (OverflowError, ValueError):
+            return Response(
+                {"detail": "start and end must be valid ISO 8601 datetimes."},
                 status=status.HTTP_400_BAD_REQUEST,
             )
 

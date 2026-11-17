@@ -2,8 +2,8 @@
 
 # pylint: disable=too-many-lines
 import datetime
-
 from datetime import timedelta
+from email.utils import format_datetime
 from unittest.mock import patch
 
 from django.db.utils import DataError, InterfaceError, OperationalError
@@ -20,6 +20,7 @@ from core.mda.inbound_create import (
     _create_message_from_inbound,
     _record_divergent_rcpt,
     _record_transport_security,
+    _sent_at_utc,
     find_thread_for_message,
 )
 from core.mda.inbound_tasks import process_inbound_messages_queue_task
@@ -364,6 +365,7 @@ class TestFindThread:
         }
         found_thread = find_thread_for_message(parsed_new_email, self.mailbox)
         assert found_thread is None
+
 
 @pytest.mark.django_db
 class TestDeliverInboundMessage:
@@ -1128,35 +1130,275 @@ class TestDeliverInboundMessage:
             f"Expected no error logs for recipient creation, but got: {error_calls}"
         )
 
-    def test_deliver_message_with_extreme_timezone_offset(
-            self, target_mailbox, raw_email_data
-        ):
-        """Normalize extreme timezone offsets to UTC before saving."""
-        recipient_addr = f"{target_mailbox.local_part}@{target_mailbox.domain.name}"
 
-        parsed_email = {
-            "from": [{"email": "sender@example.com", "name": "Sender"}],
-            "to": [{"email": recipient_addr, "name": "Recipient"}],
-            "subject": "Extreme Timezone Offset Test",
-            "sentAt": "2026-11-09T18:30:11+16:00",
-            "textBody": [{"content": "Body content"}],
-            "html": "",
-            "messageId": ["<extreme-tz-test@example.com>"],
-        }
+def _utc(*args):
+    return datetime.datetime(*args, tzinfo=datetime.UTC)
 
-        success = deliver_inbound_message(
+
+# As ``now``, so that no value is clamped.
+_LATEST = _utc(9999, 12, 31, 23, 59, 59, 999999)
+
+
+class TestSentAtUtc:
+    """``_sent_at_utc`` turns any ``sentAt`` into a UTC datetime PostgreSQL
+    accepts and Python can read back, no later than ``now``, or None
+    (issue #855)."""
+
+    @pytest.mark.parametrize(
+        ("sent_at", "expected"),
+        [
+            ("2026-11-09T18:30:11+00:00", _utc(2026, 11, 9, 18, 30, 11)),
+            ("2026-11-09T18:30:11Z", _utc(2026, 11, 9, 18, 30, 11)),
+            ("2026-11-09T18:30:11+02:00", _utc(2026, 11, 9, 16, 30, 11)),
+            # Past PostgreSQL's ±15:59 but accepted by Python.
+            ("2026-11-09T18:30:11+16:00", _utc(2026, 11, 9, 2, 30, 11)),
+            ("2026-11-09T18:30:11-16:00", _utc(2026, 11, 10, 10, 30, 11)),
+            ("2026-11-09T18:30:11+23:59", _utc(2026, 11, 8, 18, 31, 11)),
+            ("2026-11-09T18:30:11-23:59", _utc(2026, 11, 10, 18, 29, 11)),
+            # Sub-minute offset.
+            ("2026-11-09T18:30:11+05:30:15", _utc(2026, 11, 9, 12, 59, 56)),
+            # No offset: assumed UTC.
+            ("2026-11-09T18:30:11", _utc(2026, 11, 9, 18, 30, 11)),
+            # Edges of the calendar that stay in range once in UTC.
+            ("0001-01-01T00:00:00-05:00", _utc(1, 1, 1, 5, 0, 0)),
+            ("9999-12-31T23:59:59+05:00", _utc(9999, 12, 31, 18, 59, 59)),
+            ("0001-01-01T00:00:00+00:00", _utc(1, 1, 1, 0, 0, 0)),
+            (
+                "9999-12-31T23:59:59.999999+00:00",
+                _utc(9999, 12, 31, 23, 59, 59, 999999),
+            ),
+        ],
+    )
+    def test_normalized_to_utc(self, sent_at, expected):
+        """The instant is kept and the offset is UTC."""
+        result = _sent_at_utc(sent_at, _LATEST)
+        assert result == expected
+        assert result.utcoffset() == timedelta(0)
+
+    @pytest.mark.parametrize(
+        "sent_at",
+        [
+            "2026-11-17T12:00:00.000001+00:00",
+            "2026-11-17T12:00:01+00:00",
+            "2026-11-18T12:00:00+00:00",
+            "2099-01-01T00:00:00+00:00",
+            "9999-12-31T23:59:59+05:00",
+            "9999-12-31T23:59:59.999999+00:00",
+            # Before ``now`` in local time, after it in UTC.
+            "2026-11-17T11:00:00-16:00",
+        ],
+    )
+    def test_future_clamped_to_now(self, sent_at):
+        """A date after ``now`` gives ``now``."""
+        now = _utc(2026, 11, 17, 12, 0, 0)
+        result = _sent_at_utc(sent_at, now)
+        assert result == now
+        assert result.utcoffset() == timedelta(0)
+
+    @pytest.mark.parametrize(
+        ("sent_at", "expected"),
+        [
+            ("2026-11-17T12:00:00+00:00", _utc(2026, 11, 17, 12, 0, 0)),
+            (
+                "2026-11-17T11:59:59.999999+00:00",
+                _utc(2026, 11, 17, 11, 59, 59, 999999),
+            ),
+            # After ``now`` in local time, before it in UTC.
+            ("2026-11-17T13:00:00+16:00", _utc(2026, 11, 16, 21, 0, 0)),
+            ("0001-01-01T00:00:00+00:00", _utc(1, 1, 1, 0, 0, 0)),
+        ],
+    )
+    def test_not_after_now_kept(self, sent_at, expected):
+        """``now`` itself and anything before it are kept."""
+        assert _sent_at_utc(sent_at, _utc(2026, 11, 17, 12, 0, 0)) == expected
+
+    @pytest.mark.parametrize(
+        "sent_at",
+        [
+            # Out of datetime's range once in UTC.
+            "9999-12-31T23:59:59-16:00",
+            "9999-12-31T23:59:59-00:01",
+            "0001-01-01T00:00:00+16:00",
+            "0001-01-01T00:00:00+00:01",
+            # Unparseable or absent.
+            "2026-11-09T18:30:11+24:00",
+            "not a date",
+            "",
+            None,
+            12345,
+        ],
+    )
+    def test_unusable_returns_none(self, sent_at):
+        """Out-of-range or invalid values give None instead of raising."""
+        assert _sent_at_utc(sent_at, _LATEST) is None
+
+    def test_datetime_instance(self):
+        """A datetime (not a string) is converted and clamped the same way."""
+        value = datetime.datetime(
+            2026, 11, 9, 18, 30, 11, tzinfo=datetime.timezone(timedelta(hours=16))
+        )
+        assert _sent_at_utc(value, _LATEST) == _utc(2026, 11, 9, 2, 30, 11)
+        now = _utc(2026, 11, 9, 0, 0, 0)
+        assert _sent_at_utc(value, now) == now
+        overflow = datetime.datetime.max.replace(
+            tzinfo=datetime.timezone(timedelta(hours=-16))
+        )
+        assert _sent_at_utc(overflow, _LATEST) is None
+
+
+@pytest.mark.django_db
+class TestDeliverExtremeSentAt:
+    """End to end: a message whose ``Date:`` or ``sentAt`` is at the edge of
+    what Python or PostgreSQL accept is delivered, not left in the queue, and
+    can be read back from the database (issue #855)."""
+
+    @pytest.fixture
+    def recipient_addr(self):
+        """Address of a freshly created mailbox."""
+        domain = factories.MailDomainFactory(name="deliver.test")
+        mailbox = factories.MailboxFactory(local_part="recipient", domain=domain)
+        return f"{mailbox.local_part}@{domain.name}"
+
+    @staticmethod
+    def _raw(recipient_addr, date_header):
+        return (
+            b"From: sender@test.com\r\n"
+            b"To: " + recipient_addr.encode() + b"\r\n"
+            b"Date: " + date_header.encode() + b"\r\n"
+            b"Subject: Extreme date\r\n"
+            b"Message-ID: <extreme.date@example.com>\r\n\r\nbody"
+        )
+
+    @staticmethod
+    def _reload():
+        # A fresh query: values Python cannot represent fail here, not on save.
+        return models.Message.objects.get(mime_id="extreme.date@example.com")
+
+    @pytest.mark.parametrize(
+        ("date_header", "expected"),
+        [
+            ("Mon, 09 Nov 2026 18:30:11 +1600", _utc(2026, 11, 9, 2, 30, 11)),
+            ("Mon, 09 Nov 2026 18:30:11 -1600", _utc(2026, 11, 10, 10, 30, 11)),
+            ("Mon, 09 Nov 2026 18:30:11 +2359", _utc(2026, 11, 8, 18, 31, 11)),
+            ("Mon, 09 Nov 2026 18:30:11 -2359", _utc(2026, 11, 10, 18, 29, 11)),
+        ],
+    )
+    def test_date_header_extreme_offset(self, recipient_addr, date_header, expected):
+        """An offset PostgreSQL rejects is stored as the same instant in UTC."""
+        raw = self._raw(recipient_addr, date_header)
+        assert deliver_inbound_message(recipient_addr, parse_email(raw), raw) is True
+        assert self._reload().sent_at == expected
+
+    @pytest.mark.parametrize(
+        "date_header",
+        [
+            # Overflows datetime once in UTC. With -0500 PostgreSQL would
+            # store year 10000, which Python cannot read back.
+            "Fri, 31 Dec 9999 23:59:59 -1600",
+            "Fri, 31 Dec 9999 23:59:59 -0500",
+            # Rejected by the parser.
+            "Mon, 09 Nov 2026 18:30:11 +9999",
+        ],
+    )
+    def test_date_header_unusable_falls_back_to_now(self, recipient_addr, date_header):
+        """Like a missing ``Date:``, the delivery time is used."""
+        raw = self._raw(recipient_addr, date_header)
+        before = timezone.now()
+        assert deliver_inbound_message(recipient_addr, parse_email(raw), raw) is True
+        message = self._reload()
+        assert before <= message.sent_at <= timezone.now()
+        assert message.sent_at <= message.created_at
+
+    @pytest.mark.parametrize(
+        "ahead",
+        [timedelta(minutes=5), timedelta(days=20), timedelta(days=365 * 50)],
+    )
+    def test_date_header_in_future_clamped(self, recipient_addr, ahead):
+        """A future ``Date:`` is stored as the delivery time."""
+        date_header = format_datetime(timezone.now() + ahead)
+        raw = self._raw(recipient_addr, date_header)
+        before = timezone.now()
+        assert deliver_inbound_message(recipient_addr, parse_email(raw), raw) is True
+        message = self._reload()
+        assert before <= message.sent_at <= timezone.now()
+        assert message.sent_at <= message.created_at
+        # The claimed date is still in the stored message.
+        assert date_header.encode() in message.blob.get_content()
+
+    def test_date_header_in_past_kept(self, recipient_addr):
+        """A past ``Date:`` is stored as is (to the second, as sent)."""
+        sent = (timezone.now() - timedelta(days=3)).replace(microsecond=0)
+        raw = self._raw(recipient_addr, format_datetime(sent))
+        assert deliver_inbound_message(recipient_addr, parse_email(raw), raw) is True
+        assert self._reload().sent_at == sent
+
+    @pytest.mark.parametrize(
+        ("sent_at", "expected"),
+        [
+            ("2026-11-09T18:30:11+16:00", _utc(2026, 11, 9, 2, 30, 11)),
+            ("0001-01-01T00:00:00-05:00", _utc(1, 1, 1, 5, 0, 0)),
+            # In the future: clamped.
+            ("9999-12-31T23:59:59+05:00", None),
+            ("2099-01-01T00:00:00+00:00", None),
+            # Year 0 in UTC: PostgreSQL would store it, Python could not
+            # read it back.
+            ("0001-01-01T00:00:00+05:00", None),
+            # Year 10000 in UTC.
+            ("9999-12-31T23:59:59-05:00", None),
+        ],
+    )
+    def test_import_sent_at(self, recipient_addr, sent_at, expected):
+        """Imports pass ``sentAt`` as is and also set ``created_at`` from it.
+        None means the import time."""
+        raw = self._raw(recipient_addr, "Mon, 09 Nov 2026 18:30:11 +0000")
+        parsed = parse_email(raw)
+        parsed["sentAt"] = sent_at
+        before = timezone.now()
+        assert (
+            deliver_inbound_message(recipient_addr, parsed, raw, is_import=True) is True
+        )
+        message = self._reload()
+        if expected is None:
+            assert before <= message.sent_at <= timezone.now()
+        else:
+            assert message.sent_at == expected
+        assert message.created_at == message.sent_at
+
+    def test_import_in_future_does_not_hide_new_mail(self, recipient_addr):
+        """A read message imported with a future date must not set ``read_at``
+        or the thread dates in the future, which would show later mail in
+        the thread as read and pin the thread at the top."""
+        raw = self._raw(recipient_addr, "Fri, 01 Jan 2099 00:00:00 +0000")
+        assert deliver_inbound_message(
             recipient_addr,
-            parsed_email,
-            raw_email_data,
+            parse_email(raw),
+            raw,
             is_import=True,
+            imap_flags=["\\Seen"],
         )
-        assert success is True
-        message = models.Message.objects.first()
-        assert message is not None
-        assert message.sent_at.tzinfo == datetime.timezone.utc
-        assert message.sent_at == datetime.datetime(
-            2026, 11, 9, 2, 30, 11, tzinfo=datetime.UTC
+        message = self._reload()
+        thread = message.thread
+        access = thread.accesses.get()
+        now = timezone.now()
+        assert access.read_at is not None
+        assert access.read_at <= now
+        assert thread.messaged_at <= now
+
+        reply = (
+            b"From: sender@test.com\r\n"
+            b"To: " + recipient_addr.encode() + b"\r\n"
+            b"Subject: Re: Extreme date\r\n"
+            b"Message-ID: <extreme.date.reply@example.com>\r\n"
+            b"In-Reply-To: <extreme.date@example.com>\r\n\r\nreply"
         )
+        assert deliver_inbound_message(recipient_addr, parse_email(reply), reply)
+        reply_message = models.Message.objects.get(
+            mime_id="extreme.date.reply@example.com"
+        )
+        assert reply_message.thread_id == thread.id
+        access.refresh_from_db()
+        assert reply_message.created_at > access.read_at
+
 
 @pytest.mark.django_db
 class TestInboundAutoreplyIntegration:

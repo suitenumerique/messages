@@ -20,13 +20,34 @@ export function durationToMs(d: IcsDuration): number {
 }
 
 /**
- * Compute the end Date from an event that may use end or duration
+ * ``date`` if it is a usable Date, else undefined.
+ *
+ * ts-ics returns ``Invalid Date`` for an unparseable DTSTART/DTEND/UNTIL
+ * instead of throwing, and an invite is sender-controlled.
+ * ``toISOString`` and ``Intl.DateTimeFormat.format`` throw a RangeError
+ * on an invalid Date, which would take down the whole message view.
+ */
+export function validDate(date: Date | undefined | null): Date | undefined {
+    return date instanceof Date && !Number.isNaN(date.getTime()) ? date : undefined;
+}
+
+/**
+ * The event's start Date, or undefined if missing or invalid
+ */
+export function getEventStart(event: IcsEvent | undefined): Date | undefined {
+    return validDate(event?.start?.date);
+}
+
+/**
+ * Compute the end Date from an event that may use end or duration.
+ * Undefined if missing or invalid (e.g. a DURATION past the Date range).
  */
 export function getEventEnd(event: IcsEvent | undefined): Date | undefined {
     if (!event) return undefined;
-    if (event.end) return event.end.date;
-    if (event.duration && event.start) {
-        return new Date(event.start.date.getTime() + durationToMs(event.duration));
+    if (event.end) return validDate(event.end.date);
+    const start = getEventStart(event);
+    if (event.duration && start) {
+        return validDate(new Date(start.getTime() + durationToMs(event.duration)));
     }
     return undefined;
 }
@@ -91,6 +112,8 @@ export function formatEventDateRange(
     end: Date | undefined,
     language: string,
 ): string {
+    if (!validDate(start)) return "";
+    end = validDate(end);
     const allDay = isAllDayEvent(start, end);
 
     const dateFormatter = new Intl.DateTimeFormat(language, {
@@ -162,13 +185,14 @@ export function formatRecurrenceRule(
         }
     }
 
+    const until = validDate(rule.until?.date);
     if (rule.count) {
         text += ` · ${t("{{count}} occurrences", { count: rule.count })}`;
-    } else if (rule.until) {
+    } else if (until) {
         const dateFormatter = new Intl.DateTimeFormat(language, {
             dateStyle: "long",
         });
-        text += ` · ${t("until {{date}}", { date: dateFormatter.format(rule.until.date) })}`;
+        text += ` · ${t("until {{date}}", { date: dateFormatter.format(until) })}`;
     }
 
     return text;

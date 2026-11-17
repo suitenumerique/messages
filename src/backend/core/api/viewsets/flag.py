@@ -4,7 +4,6 @@ import logging
 
 from django.db import transaction
 from django.utils import timezone
-from django.utils.dateparse import parse_datetime
 
 import rest_framework as drf
 from drf_spectacular.utils import (
@@ -18,10 +17,24 @@ from rest_framework.views import APIView
 from core import models
 from core.services.search.tasks import update_threads_mailbox_flags_task
 from core.services.trashbin import trashbin_timestamp
+from core.utils import parse_utc_datetime
 
 from .. import permissions
 
 logger = logging.getLogger(__name__)
+
+
+def _parse_access_timestamp(value):
+    """Parse a client ``read_at`` / ``starred_at``, or None if unusable.
+
+    Clamped to now: a client clock running ahead (or a crafted value)
+    would otherwise keep later messages read. The row is shared by every
+    user of the mailbox.
+    """
+    parsed = parse_utc_datetime(value)
+    if parsed is None:
+        return None
+    return min(parsed, timezone.now())
 
 
 def _flag_update_data(flag, value, current_time):
@@ -377,11 +390,13 @@ class ChangeFlagView(APIView):
         read_at = request.data.get("read_at")
 
         # read_at must be None or a valid datetime string
-        if read_at is not None and parse_datetime(str(read_at)) is None:
-            return drf.response.Response(
-                {"detail": "read_at must be a valid ISO 8601 datetime."},
-                status=drf.status.HTTP_400_BAD_REQUEST,
-            )
+        if read_at is not None:
+            read_at = _parse_access_timestamp(read_at)
+            if read_at is None:
+                return drf.response.Response(
+                    {"detail": "read_at must be a valid ISO 8601 datetime."},
+                    status=drf.status.HTTP_400_BAD_REQUEST,
+                )
 
         thread_qs = models.Thread.objects.filter(
             id__in=thread_ids,
@@ -428,7 +443,7 @@ class ChangeFlagView(APIView):
         if value:
             # Use provided timestamp or default to now
             if starred_at is not None:
-                parsed = parse_datetime(str(starred_at))
+                parsed = _parse_access_timestamp(starred_at)
                 if parsed is None:
                     return drf.response.Response(
                         {"detail": "starred_at must be a valid ISO 8601 datetime."},

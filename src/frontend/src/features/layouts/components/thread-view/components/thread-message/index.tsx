@@ -21,6 +21,7 @@ import { ComposeDraftPlaceholder } from "../compose-draft-placeholder";
 import ThreadMessageHeader from "./thread-message-header";
 import ThreadMessageFooter from "./thread-message-footer";
 import { CalendarInvite } from "../calendar-invite";
+import ErrorBoundary from "@/features/errors/error-boundary";
 import { SpamReport, ThreadMessageProps } from "./types";
 import { BodyPart } from "./renderers";
 import { DriveFile } from "@/features/forms/components/message-form/drive-attachment-picker";
@@ -431,13 +432,17 @@ export const ThreadMessage = forwardRef<HTMLSpanElement, ThreadMessageProps>(
                         {hasCalendarInvites && !isFolded && isMessageReady && (
                             <div className="thread-message__calendar-invites">
                                 {calendarAttachments.map((attachment) => (
-                                    <CalendarInvite
-                                        key={attachment.blobId}
-                                        attachment={attachment}
-                                        canDownload={!spamReport}
-                                        mailboxId={selectedMailbox?.id}
-                                        mailboxEmail={selectedMailbox?.email}
-                                    />
+                                    // The invite is sender-controlled: if it still
+                                    // breaks rendering, drop the card (the file stays
+                                    // in the attachments) rather than the whole view.
+                                    <ErrorBoundary key={attachment.blobId} fallback={<></>}>
+                                        <CalendarInvite
+                                            attachment={attachment}
+                                            canDownload={!spamReport}
+                                            mailboxId={selectedMailbox?.id}
+                                            mailboxEmail={selectedMailbox?.email}
+                                        />
+                                    </ErrorBoundary>
                                 ))}
                             </div>
                         )}

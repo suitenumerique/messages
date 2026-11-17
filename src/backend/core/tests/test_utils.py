@@ -1,7 +1,9 @@
 """Tests for ``core.utils``."""
 
-from datetime import datetime
+from datetime import UTC, datetime, timedelta
+from zoneinfo import ZoneInfo
 
+import pytest
 from jmap_email import compose_email
 
 from core.mda.utils import SNIPPET_MAX_CHARS, current_sent_at, message_snippet
@@ -9,7 +11,61 @@ from core.utils import (
     SecretFileDictValue,
     SecretFileJSONValue,
     SecretFileListValue,
+    parse_utc_datetime,
 )
+
+
+class TestParseUtcDatetime:
+    """``parse_utc_datetime`` returns a UTC datetime PostgreSQL stores and
+    Python reads back, or None."""
+
+    @pytest.mark.parametrize(
+        ("value", "expected"),
+        [
+            ("2026-01-01T12:00:00Z", datetime(2026, 1, 1, 12, tzinfo=UTC)),
+            ("2026-01-01T12:00:00+02:00", datetime(2026, 1, 1, 10, tzinfo=UTC)),
+            ("2026-01-01T12:00:00+23:59", datetime(2025, 12, 31, 12, 1, tzinfo=UTC)),
+            ("2026-01-01T12:00:00-23:59", datetime(2026, 1, 2, 11, 59, tzinfo=UTC)),
+            ("2026-01-01T12:00:00", datetime(2026, 1, 1, 12, tzinfo=UTC)),
+            ("0001-01-01T00:00:00Z", datetime(1, 1, 1, tzinfo=UTC)),
+            (
+                "9999-12-31T23:59:59.999999Z",
+                datetime(9999, 12, 31, 23, 59, 59, 999999, tzinfo=UTC),
+            ),
+        ],
+    )
+    def test_valid(self, value, expected):
+        """Valid values come back in UTC."""
+        result = parse_utc_datetime(value)
+        assert result == expected
+        assert result.utcoffset() == timedelta(0)
+
+    @pytest.mark.parametrize(
+        "value",
+        [
+            "9999-12-31T23:59:59-05:00",
+            "0001-01-01T00:00:00+05:00",
+            "2026-01-01T12:00:00+24:00",
+            "2026-01-01T12:00:00+99:00",
+            "2024-02-30T00:00:00Z",
+            "0000-12-31T23:59:59Z",
+            "not a date",
+            "",
+            None,
+            123,
+            ["2026-01-01T12:00:00Z"],
+            datetime(2026, 1, 1, tzinfo=UTC),
+        ],
+    )
+    def test_unusable(self, value):
+        """Out-of-range, invalid or non-string values give None."""
+        assert parse_utc_datetime(value) is None
+
+    def test_naive_tz(self):
+        """A value without offset is read in ``naive_tz``."""
+        assert parse_utc_datetime(
+            "2026-01-01T12:00:00", naive_tz=ZoneInfo("Europe/Paris")
+        ) == datetime(2026, 1, 1, 11, tzinfo=UTC)
 
 
 class TestCurrentSentAt:
