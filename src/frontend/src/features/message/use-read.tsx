@@ -37,16 +37,28 @@ const deriveThreadHasUnread = (messagedAt: string | null | undefined, readAt: st
  */
 export const readAtNow = (messagedAts: readonly (string | null | undefined)[]): string => {
     const now = Date.now();
-    let latest: { value: string; time: number } | undefined;
+    let latest: { value: string; time: number; extra: number } | undefined;
     for (const value of messagedAts) {
         const time = value ? new Date(value).getTime() : NaN;
-        if (!Number.isNaN(time) && (!latest || time > latest.time)) {
-            latest = { value: value!, time };
+        if (Number.isNaN(time)) continue;
+        const extra = subMillisecond(value!);
+        if (!latest || time > latest.time || (time === latest.time && extra > latest.extra)) {
+            latest = { value: value!, time, extra };
         }
     }
     // The server's string, not a Date: it has microseconds, which a Date
-    // would truncate to a pointer just before the message.
+    // would truncate to a pointer just before the message. A message in the
+    // device's current millisecond is at or after it.
     return latest && latest.time >= now ? latest.value : new Date(now).toISOString();
+};
+
+/**
+ * The fraction of ``value`` below the millisecond (the digits a Date drops),
+ * as a number comparable between values: "…00.123456Z" gives 0.456.
+ */
+const subMillisecond = (value: string): number => {
+    const fraction = /T[\d:]+\.(\d+)/.exec(value)?.[1] ?? "";
+    return fraction.length > 3 ? Number(`0.${fraction.slice(3)}`) : 0;
 };
 
 /**

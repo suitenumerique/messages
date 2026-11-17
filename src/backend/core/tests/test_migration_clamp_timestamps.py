@@ -116,6 +116,45 @@ def test_future_dates_clamped():
     assert before <= access.starred_at <= after
 
 
+def _is_unread(message, access):
+    message.refresh_from_db()
+    access.refresh_from_db()
+    return access.read_at is None or message.created_at > access.read_at
+
+
+def test_unread_future_message_stays_unread():
+    """An import read up to a message dated 2099, with one dated 2100 unread:
+    once both collapse to now, the unread one is still after the pointer."""
+    thread, access, read_msg = _thread_with_message()
+    unread_msg = factories.MessageFactory(thread=thread)
+    in_2099 = datetime(2099, 1, 1, tzinfo=UTC)
+    models.Message.objects.filter(pk=read_msg.pk).update(created_at=in_2099)
+    models.Message.objects.filter(pk=unread_msg.pk).update(
+        created_at=datetime(2100, 1, 1, tzinfo=UTC)
+    )
+    models.ThreadAccess.objects.filter(pk=access.pk).update(read_at=in_2099)
+    assert _is_unread(unread_msg, access)
+
+    migration.clamp_timestamps(apps, None)
+
+    assert _is_unread(unread_msg, access)
+    access.refresh_from_db()
+    assert access.read_at <= timezone.now()
+
+
+def test_read_future_message_stays_read():
+    """Without an unread message past the pointer, the thread stays read."""
+    _, access, message = _thread_with_message()
+    in_2099 = datetime(2099, 1, 1, tzinfo=UTC)
+    models.Message.objects.filter(pk=message.pk).update(created_at=in_2099)
+    models.ThreadAccess.objects.filter(pk=access.pk).update(read_at=in_2099)
+    assert not _is_unread(message, access)
+
+    migration.clamp_timestamps(apps, None)
+
+    assert not _is_unread(message, access)
+
+
 def test_valid_dates_untouched():
     """Past dates, year 1 and NULLs are left as they are."""
     thread, access, message = _thread_with_message()

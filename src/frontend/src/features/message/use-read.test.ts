@@ -33,6 +33,24 @@ describe("readAtNow", () => {
         expect(readAtNow(["2026-11-17T12:10:00.000001Z"])).toBe("2026-11-17T12:10:00.000001Z");
     });
 
+    it("keeps the microseconds of a message after a device clock behind", () => {
+        vi.useFakeTimers();
+        vi.setSystemTime(new Date("2026-11-17T12:00:00Z"));
+        expect(readAtNow(["2026-11-17T12:05:00.123456Z"])).toBe("2026-11-17T12:05:00.123456Z");
+    });
+
+    it("orders messages of the same millisecond by their microseconds", () => {
+        vi.useFakeTimers();
+        vi.setSystemTime(new Date("2026-11-17T12:00:00Z"));
+        const messages = ["2026-11-17T12:05:00.123999Z", "2026-11-17T12:05:00.123456Z"];
+        expect(readAtNow(messages)).toBe("2026-11-17T12:05:00.123999Z");
+        expect(readAtNow([...messages].reverse())).toBe("2026-11-17T12:05:00.123999Z");
+        // Fewer or no sub-millisecond digits.
+        expect(readAtNow(["2026-11-17T12:05:00.1235Z", "2026-11-17T12:05:00.123Z"])).toBe(
+            "2026-11-17T12:05:00.1235Z",
+        );
+    });
+
     it("ignores dates it cannot read", () => {
         vi.useFakeTimers();
         vi.setSystemTime(new Date("2026-11-17T12:00:00Z"));

@@ -501,7 +501,8 @@ def _normalize_date(date) -> datetime.datetime:
     a two-digit year (``0050`` is 2050).
     """
     value = _coerce_date(date)
-    if value.utcoffset().total_seconds() % 60:
+    offset = value.utcoffset()
+    if offset is not None and offset.total_seconds() % 60:
         try:
             value = value.astimezone(datetime.timezone.utc)
         except (OverflowError, ValueError) as e:
