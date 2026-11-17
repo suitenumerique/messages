@@ -51,6 +51,7 @@ def _write_to(
         contact=factories.ContactFactory(mailbox=mailbox, email=email),
         type=recipient_type,
     )
+    return message
 
 
 @pytest.mark.django_db
@@ -105,6 +106,33 @@ class TestLocalSenderTrustBackend:
 
         trust = LocalSenderTrustBackend().get_sender_trust(mailbox, SENDER)
 
+        assert trust == SenderTrust.UNKNOWN
+
+    def test_unknown_when_reply_flagged_as_spam(self):
+        """Flagging the conversation as spam flags the reply too."""
+        mailbox = factories.MailboxFactory()
+        reply = _write_to(mailbox, SENDER)
+        reply.is_spam = True
+        reply.save()
+
+        trust = LocalSenderTrustBackend().get_sender_trust(mailbox, SENDER)
+
+        assert trust == SenderTrust.UNKNOWN
+
+    def test_unknown_when_reply_sits_in_a_spam_conversation(self):
+        """Only the received message was flagged: the reply answered spam."""
+        mailbox = factories.MailboxFactory()
+        reply = _write_to(mailbox, SENDER)
+        factories.MessageFactory(
+            thread=reply.thread,
+            sender=factories.ContactFactory(mailbox=mailbox, email=SENDER),
+            is_spam=True,
+        )
+        reply.thread.update_stats()
+
+        trust = LocalSenderTrustBackend().get_sender_trust(mailbox, SENDER)
+
+        assert reply.thread.is_spam is True
         assert trust == SenderTrust.UNKNOWN
 
     def test_contact_casing_is_ignored(self):

@@ -412,7 +412,10 @@ Backends:
 
 - **`LocalSenderTrustBackend`** (default) — trusted when the mailbox has sent at
   least one message (not a draft) with the sender in To, Cc or Bcc, imported
-  history included. Receiving mail from someone is not enough.
+  history included. Receiving mail from someone is not enough. A sent message
+  flagged as spam, or sitting in a conversation that still holds spam (an
+  "unsubscribe" reply, an answer to a phishing mail), does not count, so
+  reporting the conversation as spam withdraws the trust.
 - **`NullSenderTrustBackend`** — trusts nobody, which turns the feature off.
 
 A backend that cannot answer (e.g. a remote contacts service is down) never
@@ -516,8 +519,13 @@ spam of its thread, the thread leaves Junk.
 - **SPF** as a standalone user-visible verdict (today it only feeds rspamd
   scoring; the surfaced auth verdict is DKIM + DMARC).
 - **Sender trust from the contacts application**, as a remote
-  `SenderTrustBackend`; reporting a trusted sender's message as spam does not
-  revoke the trust yet.
+  `SenderTrustBackend`. The local backend only withdraws trust while the
+  reported spam is still around: once the trashbin purges it, a reply that was
+  not itself flagged counts again. Lasting revocation needs a stored "blocked"
+  state.
+- **Auto-replies give trust**: a vacation reply is a sent message, so an
+  undetected spam answered by it makes its sender trusted. Messages carry no
+  auto-reply marker yet to exclude them.
 
 ## Implementation map
 

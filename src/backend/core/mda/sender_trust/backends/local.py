@@ -21,6 +21,11 @@ class LocalSenderTrustBackend(SenderTrustBackend):
 
     Recipient contacts belong to the mailbox that sent the message, so
     ``contact__mailbox`` scopes the lookup to what this mailbox sent.
+
+    Writing back to a spammer (an "unsubscribe" or "stop" reply, an answer
+    to a phishing mail) is no relationship: a sent message flagged as spam,
+    or sitting in a conversation that still holds spam, is ignored. Flagging
+    the conversation as spam therefore withdraws the trust it gave.
     """
 
     def get_sender_trust(self, mailbox: Mailbox, sender_email: str) -> SenderTrust:
@@ -30,5 +35,7 @@ class LocalSenderTrustBackend(SenderTrustBackend):
             contact__email__iexact=sender_email,
             message__is_sender=True,
             message__is_draft=False,
+            message__is_spam=False,
+            message__thread__is_spam=False,
         ).exists()
         return SenderTrust.TRUSTED if has_written_to else SenderTrust.UNKNOWN
