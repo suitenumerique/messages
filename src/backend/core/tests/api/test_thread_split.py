@@ -504,6 +504,41 @@ def test_split_thread_parent_references_fixed(api_client):
     assert msg3.parent_id == msg2.id
 
 
+def test_split_thread_kept_message_with_moved_parent(api_client):
+    """Out of order dates (imports): a kept message whose parent moves loses
+    the link too; links within each side stay."""
+    user = UserFactory()
+    api_client.force_authenticate(user=user)
+    mailbox = MailboxFactory()
+    thread = ThreadFactory()
+    contact = ContactFactory(mailbox=mailbox)
+    now = timezone.now()
+
+    first = MessageFactory(thread=thread, sender=contact)
+    later_parent = MessageFactory(thread=thread, sender=contact)
+    early_reply = MessageFactory(thread=thread, sender=contact, parent=later_parent)
+    kept_reply = MessageFactory(thread=thread, sender=contact, parent=first)
+    for msg, offset in (
+        (first, timedelta(0)),
+        (later_parent, timedelta(minutes=2)),
+        (early_reply, timedelta(minutes=1)),
+        (kept_reply, timedelta(seconds=30)),
+    ):
+        type(msg).objects.filter(pk=msg.pk).update(created_at=now + offset)
+    _setup_editor_access(user, mailbox, thread)
+
+    response = api_client.post(
+        _get_split_url(thread.id), {"message_id": str(later_parent.id)}
+    )
+    assert response.status_code == status.HTTP_201_CREATED
+
+    early_reply.refresh_from_db()
+    assert early_reply.thread_id == thread.id
+    assert early_reply.parent is None
+    kept_reply.refresh_from_db()
+    assert kept_reply.parent_id == first.id
+
+
 def test_split_thread_stats_snippet_updated(api_client):
     """Both old and new threads have their stats and snippet updated after split."""
     user = UserFactory()

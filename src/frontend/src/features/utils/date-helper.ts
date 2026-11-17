@@ -77,6 +77,38 @@ export class DateHelper {
   }
 
   /**
+   * The instant (ms since the epoch) of a wall-clock time
+   * (`YYYY-MM-DDTHH:mm[:ss]`) in `timeZone`, read as the backend reads a naive
+   * autoreply bound (Python zoneinfo, `fold=0`): in a repeated hour, the
+   * first occurrence; in a skipped hour, with the offset from before the
+   * change. NaN if the time or the zone is invalid.
+   */
+  public static fromWallClock(wallClock: string, timeZone: string): number {
+    const match = /^(\d{4})-(\d{2})-(\d{2})T(\d{2}):(\d{2})(?::(\d{2}))?$/.exec(wallClock);
+    if (!match) return NaN;
+    const [year, month, day, hour, minute, second] = match.slice(1).map((part) => Number(part ?? 0));
+    const asUtc = Date.UTC(year, month - 1, day, hour, minute, second);
+    if (Number.isNaN(asUtc)) return NaN;
+    const offsetAt = (instant: number): number => {
+      const date = new Date(instant);
+      if (!isValid(date)) return NaN;
+      const wall = DateHelper.toWallClock(date.toISOString(), timeZone);
+      if (!wall) return NaN;
+      return Date.parse(`${wall}Z`) - instant;
+    };
+    // At most one change within a day: the offsets either side of it.
+    const before = offsetAt(asUtc - 86400000);
+    const after = offsetAt(asUtc + 86400000);
+    if (Number.isNaN(before) || Number.isNaN(after)) return NaN;
+    const candidates = [asUtc - before, asUtc - after].filter(
+      (instant) => instant + offsetAt(instant) === asUtc,
+    );
+    // Two: a repeated hour, the first occurrence. None: a skipped hour, the
+    // offset from before the change.
+    return candidates.length ? Math.min(...candidates) : asUtc - before;
+  }
+
+  /**
    * Express an ISO date-time as a wall-clock time (`YYYY-MM-DDTHH:mm:ss`) in
    * the given time zone. A date-time without offset already is a wall-clock
    * time and is returned unchanged; one with an offset is an instant, which

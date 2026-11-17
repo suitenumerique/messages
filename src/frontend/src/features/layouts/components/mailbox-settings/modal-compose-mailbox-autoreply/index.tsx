@@ -21,6 +21,7 @@ import { DateHelper } from "@/features/utils/date-helper";
 import { useConfirmBeforeClose } from "@/features/hooks/use-confirm-before-close";
 import { extractSignatureId } from "../utils";
 import { TemplateComposer } from "../modal-compose-template/template-composer";
+import { AutoreplyScheduleOrigin, buildAutoreplyMetadata, startsBeforeEnd } from "./autoreply-schedule";
 
 type ModalComposeMailboxAutoreplyProps = {
     isOpen: boolean;
@@ -187,8 +188,12 @@ const autoreplyComposerSchema = () => z.object({
         if (!data.end_at) {
             ctx.addIssue({ code: z.ZodIssueCode.custom, message: i18n.t("End date is required"), path: ["end_at"] });
         }
-        // As dates: "…T10:00:00" and "…T10:00" are the same time.
-        if (data.start_at && data.end_at && new Date(data.start_at) >= new Date(data.end_at)) {
+        // As instants in the chosen zone, as the backend compares them.
+        if (
+            data.start_at
+            && data.end_at
+            && !startsBeforeEnd(data.start_at, data.end_at, DateHelper.resolveTimeZone(data.timezone))
+        ) {
             ctx.addIssue({ code: z.ZodIssueCode.custom, message: i18n.t("Start date must be before end date"), path: ["start_at"] });
         }
     }
@@ -226,6 +231,12 @@ const AutoreplyComposeForm = ({ mailboxId, defaultValue, onSuccess, onDirtyChang
     // is shown in the template's zone.
     const toInput = (value: unknown) =>
         typeof value === "string" ? DateHelper.toWallClock(value, timeZone) ?? "" : "";
+    const origin: AutoreplyScheduleOrigin = {
+        metadata,
+        timeZone,
+        startInput: toInput(metadata?.start_at),
+        endInput: toInput(metadata?.end_at),
+    };
 
     const form = useForm<AutoreplyComposerFormData>({
         resolver: zodResolver(autoreplyComposerSchema()),
@@ -234,8 +245,8 @@ const AutoreplyComposeForm = ({ mailboxId, defaultValue, onSuccess, onDirtyChang
             is_active: defaultValue?.is_active ?? true,
             rawBody: defaultValue?.raw_body ?? undefined,
             schedule_type: (metadata?.schedule_type as "always" | "date_range" | "recurring_weekly") ?? "always",
-            start_at: toInput(metadata?.start_at),
-            end_at: toInput(metadata?.end_at),
+            start_at: origin.startInput,
+            end_at: origin.endInput,
             interval_start_day: interval0?.start_day != null ? String(interval0.start_day) : "",
             interval_start_time: (interval0?.start_time as string) ?? "",
             interval_end_day: interval0?.end_day != null ? String(interval0.end_day) : "",
@@ -253,29 +264,6 @@ const AutoreplyComposeForm = ({ mailboxId, defaultValue, onSuccess, onDirtyChang
         onDirtyChange?.(form.formState.isDirty);
     }, [form.formState.isDirty, onDirtyChange]);
 
-    const buildMetadata = (data: AutoreplyComposerFormData): Record<string, unknown> => {
-        const meta: Record<string, unknown> = {
-            schedule_type: data.schedule_type,
-        };
-        if (data.schedule_type === "date_range") {
-            meta.start_at = data.start_at;
-            meta.end_at = data.end_at;
-            if (data.timezone) meta.timezone = data.timezone;
-        }
-        if (data.schedule_type === "recurring_weekly") {
-            meta.intervals = [
-                {
-                    start_day: Number(data.interval_start_day),
-                    start_time: data.interval_start_time,
-                    end_day: Number(data.interval_end_day),
-                    end_time: data.interval_end_time,
-                },
-            ];
-            if (data.timezone) meta.timezone = data.timezone;
-        }
-        return meta;
-    };
-
     const onSubmit = async (data: AutoreplyComposerFormData): Promise<void> => {
         if (!composerRef.current) return;
         const { htmlBody, textBody } = await composerRef.current.exportContent();
@@ -292,7 +280,7 @@ const AutoreplyComposeForm = ({ mailboxId, defaultValue, onSuccess, onDirtyChang
                 html_body: htmlBody,
                 text_body: textBody,
                 raw_body: data.rawBody,
-                metadata: buildMetadata(data),
+                metadata: buildAutoreplyMetadata(data, defaultValue ? origin : undefined),
                 signature_id: signatureId,
             };
             if (defaultValue?.id) {

@@ -219,8 +219,12 @@ def _rebuild_event(src):
             # don't want add() to re-encode and lose the params.
             fresh.add(key, cleaned, encode=0)
 
-    # Without a readable DTSTART the event cannot be shown or scheduled.
+    # Without a readable DTSTART the event cannot be shown or scheduled. An
+    # exception whose RECURRENCE-ID was dropped would turn into a second
+    # master event of the series: dropped too.
     if "UID" not in fresh or "DTSTART" not in fresh:
+        return None
+    if src.get("RECURRENCE-ID") is not None and "RECURRENCE-ID" not in fresh:
         return None
     stamp = fresh.get("DTSTAMP")
     if stamp is not None and not isinstance(stamp.dt, datetime):

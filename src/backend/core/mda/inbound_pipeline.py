@@ -624,14 +624,16 @@ def apply_thread_access_flags(
     ``mark_starred`` sets ``starred_at`` to now when unset; ``mark_read``
     moves ``read_at`` forward to now, so the message just delivered is
     read even in a thread read before. Neither ever unstars or unreads,
-    and both are no-ops when the corresponding bool is False. The ``ThreadAccess`` row may not exist if the destination
-    mailbox doesn't have one yet (rare: brand-new thread, race with
-    deletion); in that case we log and skip rather than fail delivery.
+    and both are no-ops when the corresponding bool is False. Each is a
+    conditional UPDATE, so concurrent deliveries cannot move a value back.
+    The ``ThreadAccess`` row may not exist if the destination mailbox
+    doesn't have one yet (rare: brand-new thread, race with deletion); in
+    that case we log and skip rather than fail delivery.
     """
     if not (mark_starred or mark_read):
         return
-    access = models.ThreadAccess.objects.filter(thread=thread, mailbox=mailbox).first()
-    if access is None:
+    accesses = models.ThreadAccess.objects.filter(thread=thread, mailbox=mailbox)
+    if not accesses.exists():
         logger.warning(
             "ThreadAccess missing for thread %s / mailbox %s — "
             "skip mark_starred/mark_read",
@@ -639,16 +641,13 @@ def apply_thread_access_flags(
             mailbox.id,
         )
         return
-    update_fields: List[str] = []
     now = timezone.now()
-    if mark_starred and access.starred_at is None:
-        access.starred_at = now
-        update_fields.append("starred_at")
-    if mark_read and (access.read_at is None or access.read_at < now):
-        access.read_at = now
-        update_fields.append("read_at")
-    if update_fields:
-        access.save(update_fields=update_fields)
+    if mark_starred:
+        accesses.filter(starred_at__isnull=True).update(starred_at=now)
+    if mark_read:
+        accesses.filter(Q(read_at__isnull=True) | Q(read_at__lt=now)).update(
+            read_at=now
+        )
 
 
 def _channels_by_id(channel_ids: List[Any]) -> Dict[Any, models.Channel]:

@@ -1243,8 +1243,16 @@ def reconstruct_eml(
     # Take the record's own timestamps, and only when it has none log a
     # warning and use the Unix epoch rather than fail the whole message.
     if "sentAt" not in jmap_data:
-        timestamp = _get_message_timestamp(
-            message, _SENT_TIME_ATTRS + _RECORD_TIME_ATTRS
+        # The first timestamp that passes the same checks as a Date: a
+        # crafted PST can carry a future or out-of-range one.
+        timestamp = next(
+            (
+                usable
+                for attr in _SENT_TIME_ATTRS + _RECORD_TIME_ATTRS
+                if (usable := _archive_date(_get_message_timestamp(message, (attr,))))
+                is not None
+            ),
+            None,
         )
         if timestamp is not None:
             jmap_data["sentAt"] = timestamp.isoformat()

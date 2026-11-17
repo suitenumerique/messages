@@ -1024,9 +1024,12 @@ class ThreadViewSet(
             # Move messages
             messages_to_move.update(thread=new_thread)
 
-            # Fix cross-thread parent references
+            # Fix cross-thread parent references, both ways: with dates that
+            # tie (imports) or out of order, a kept message can have its parent
+            # among the moved ones.
             models.Message.objects.filter(
-                thread=new_thread, parent__thread=old_thread
+                Q(thread=new_thread, parent__thread=old_thread)
+                | Q(thread=old_thread, parent__thread=new_thread)
             ).update(parent=None)
 
             # Move ThreadEvents that belong chronologically to the new thread.

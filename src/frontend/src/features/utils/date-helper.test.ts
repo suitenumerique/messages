@@ -73,6 +73,26 @@ describe('DateHelper', () => {
     });
   });
 
+  describe('fromWallClock', () => {
+    // Python: datetime(..., tzinfo=ZoneInfo("Europe/Paris")).astimezone(UTC)
+    it.each([
+      ['2026-06-01T10:00', 'Europe/Paris', '2026-06-01T08:00:00.000Z'],
+      ['2026-06-01T10:00:30', 'UTC', '2026-06-01T10:00:30.000Z'],
+      // Repeated hour (fold=0): the first 02:30 (CEST).
+      ['2026-10-25T02:30', 'Europe/Paris', '2026-10-25T00:30:00.000Z'],
+      // Skipped hour (fold=0): offset from before the change (CET).
+      ['2026-03-29T02:30', 'Europe/Paris', '2026-03-29T01:30:00.000Z'],
+      ['2026-03-08T02:30', 'America/New_York', '2026-03-08T07:30:00.000Z'],
+    ])('reads %s in %s like the backend', (wall, tz, expected) => {
+      expect(new Date(DateHelper.fromWallClock(wall, tz)).toISOString()).toBe(expected);
+    });
+
+    it('is NaN for an invalid time or zone', () => {
+      expect(DateHelper.fromWallClock('garbage', 'UTC')).toBeNaN();
+      expect(DateHelper.fromWallClock('2026-06-01T10:00', 'Mars/Olympus')).toBeNaN();
+    });
+  });
+
   describe('resolveTimeZone', () => {
     it('keeps a known time zone', () => {
       expect(DateHelper.resolveTimeZone('Europe/Paris')).toBe('Europe/Paris');

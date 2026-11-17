@@ -1,4 +1,4 @@
-"""Tests for migration 0038 (clamp stored timestamps to [year 1, now]).
+"""Tests for migration 0038 (clamp stored timestamps to [year 1, now + 1h]).
 
 Bad rows are written with raw SQL: year 0 and year 10000 cannot be built in
 Python, and reading such a row back raises, which is the bug being repaired.
@@ -44,6 +44,12 @@ def _thread_with_message():
     return thread, access, message
 
 
+def _is_bound(value, before, after):
+    """Whether ``value`` is the clamp bound, the migration time + 1h."""
+    margin = migration.FUTURE_MARGIN
+    return before + margin <= value <= after + margin
+
+
 @pytest.mark.parametrize("literal", [YEAR_10000, YEAR_0])
 @pytest.mark.parametrize(
     ("model_name", "field"),
@@ -72,13 +78,17 @@ def test_unreadable_rows_become_readable(model_name, field, literal):
         assert value == migration.EARLIEST
     elif field == "sent_at":
         assert value == obj.created_at
+    elif field == "read_at":
+        # 1 µs before the bound: the thread's message dated now counts as
+        # unread past the year-10000 pointer.
+        assert _is_bound(value, before - migration.ONE_MICROSECOND, timezone.now())
     else:
-        assert before <= value <= timezone.now()
+        assert _is_bound(value, before, timezone.now())
 
 
 def test_future_dates_clamped():
-    """Future dates (forged Date:, imports, client clocks) become now; sent_at
-    goes back to the delivery time."""
+    """Future dates (forged Date:, imports, client clocks) become the bound;
+    sent_at goes back to the delivery time."""
     thread, access, message = _thread_with_message()
     delivered = timezone.now() - timedelta(days=2)
     future = timezone.now() + timedelta(days=20)
@@ -104,16 +114,42 @@ def test_future_dates_clamped():
     assert message.created_at == delivered
     assert message.sent_at == delivered
     imported.refresh_from_db()
-    assert before <= imported.created_at <= after
+    assert _is_bound(imported.created_at, before, after)
     assert imported.sent_at == imported.created_at
     thread.refresh_from_db()
-    assert before <= thread.messaged_at <= after
-    assert before <= thread.active_messaged_at <= after
+    assert _is_bound(thread.messaged_at, before, after)
+    assert _is_bound(thread.active_messaged_at, before, after)
     # Picked up by ``search_reindex --from-date``.
     assert before <= thread.updated_at <= after
     access.refresh_from_db()
-    assert before <= access.read_at <= after
-    assert before <= access.starred_at <= after
+    assert _is_bound(access.read_at, before, after)
+    assert _is_bound(access.starred_at, before, after)
+    # The imported message, read at the same date, is still read.
+    assert imported.created_at <= access.read_at
+
+
+def test_thread_date_stays_the_latest_message():
+    """A thread with a message kept within the margin and one clamped: its
+    date is still the latest of them (the clamp keeps the order)."""
+    thread, _, kept = _thread_with_message()
+    clamped = factories.MessageFactory(thread=thread)
+    soon = timezone.now() + timedelta(minutes=30)
+    models.Message.objects.filter(pk=kept.pk).update(created_at=soon)
+    models.Message.objects.filter(pk=clamped.pk).update(
+        created_at=datetime(2099, 1, 1, tzinfo=UTC)
+    )
+    models.Thread.objects.filter(pk=thread.pk).update(
+        messaged_at=datetime(2099, 1, 1, tzinfo=UTC)
+    )
+
+    migration.clamp_timestamps(apps, None)
+
+    kept.refresh_from_db()
+    clamped.refresh_from_db()
+    thread.refresh_from_db()
+    assert kept.created_at == soon
+    assert clamped.created_at > kept.created_at
+    assert thread.messaged_at == max(kept.created_at, clamped.created_at)
 
 
 def _is_unread(message, access):
@@ -124,7 +160,7 @@ def _is_unread(message, access):
 
 def test_unread_future_message_stays_unread():
     """An import read up to a message dated 2099, with one dated 2100 unread:
-    once both collapse to now, the unread one is still after the pointer."""
+    once both meet at the bound, the unread one is still after the pointer."""
     thread, access, read_msg = _thread_with_message()
     unread_msg = factories.MessageFactory(thread=thread)
     in_2099 = datetime(2099, 1, 1, tzinfo=UTC)
@@ -139,7 +175,7 @@ def test_unread_future_message_stays_unread():
 
     assert _is_unread(unread_msg, access)
     access.refresh_from_db()
-    assert access.read_at <= timezone.now()
+    assert access.read_at <= timezone.now() + migration.FUTURE_MARGIN
 
 
 def test_read_future_message_stays_read():

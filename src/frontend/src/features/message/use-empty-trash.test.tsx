@@ -250,14 +250,16 @@ describe("useEmptyTrashTasksWatcher", () => {
     });
 
     it("gives up on a task that never finishes and refreshes the folder", async () => {
-        storeTask(Date.now() - EMPTY_TRASH_TASK_MAX_AGE_MS + 20);
+        // Half a second left, not 20 ms: a busy run renders slower than that,
+        // and the task would already be expired when read.
+        storeTask(Date.now() - EMPTY_TRASH_TASK_MAX_AGE_MS + 500);
         taskState = "PENDING";
 
         await render();
         expect(isRunning()).toBe(true);
 
         await act(async () => {
-            await new Promise((resolve) => setTimeout(resolve, 50));
+            await new Promise((resolve) => setTimeout(resolve, 600));
         });
 
         expect(isRunning()).toBe(false);

@@ -1610,6 +1610,28 @@ class TestRebuildForStorage:
         )
         assert len(self._rebuild(ics).walk("VEVENT")) == 0
 
+    def test_drops_exception_with_unreadable_recurrence_id(self):
+        """Without its RECURRENCE-ID an exception would become a second
+        master of the series: the exception is dropped, the master kept."""
+        ics = (
+            "BEGIN:VCALENDAR\r\nVERSION:2.0\r\nPRODID:-//x//EN\r\n"
+            "BEGIN:VEVENT\r\nUID:u\r\nDTSTAMP:20260101T000000Z\r\n"
+            "DTSTART:20260601T100000Z\r\nRRULE:FREQ=WEEKLY;COUNT=3\r\n"
+            "END:VEVENT\r\n"
+            "BEGIN:VEVENT\r\nUID:u\r\nDTSTAMP:20260101T000000Z\r\n"
+            "RECURRENCE-ID:garbage\r\nDTSTART:20260608T120000Z\r\n"
+            "END:VEVENT\r\n"
+            "BEGIN:VEVENT\r\nUID:u\r\nDTSTAMP:20260101T000000Z\r\n"
+            "RECURRENCE-ID:20260615T100000Z\r\nDTSTART:20260615T140000Z\r\n"
+            "END:VEVENT\r\nEND:VCALENDAR\r\n"
+        )
+        events = self._rebuild(ics).walk("VEVENT")
+        assert len(events) == 2
+        assert "RECURRENCE-ID" not in events[0]
+        assert events[1]["RECURRENCE-ID"].dt == datetime(
+            2026, 6, 15, 10, tzinfo=timezone.utc
+        )
+
     def test_drops_unreadable_and_repeated_dates(self):
         """An unreadable DTEND/EXDATE/DTSTAMP is dropped, a second DTSTART
         is ignored, and the output reads back."""

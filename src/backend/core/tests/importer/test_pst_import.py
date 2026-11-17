@@ -439,6 +439,26 @@ class TestReconstructEml:
 
         assert parsed["Date"] == "Mon, 26 May 2025 10:00:00 +1600"
 
+    def test_reconstruct_skips_a_future_mapi_time(self):
+        """A future delivery time (crafted PST) is passed over for the next
+        usable timestamp; with none usable, the epoch."""
+        future = datetime(2099, 1, 1, tzinfo=timezone.utc)
+        msg = _make_message(
+            transport_headers=None,
+            delivery_time=future,
+            client_submit_time=datetime(2024, 2, 3, 4, 5, 6, tzinfo=timezone.utc),
+        )
+        parsed = email.message_from_bytes(reconstruct_eml(msg))
+        assert email.utils.parsedate_to_datetime(parsed["Date"]) == datetime(
+            2024, 2, 3, 4, 5, 6, tzinfo=timezone.utc
+        )
+
+        msg = _make_message(transport_headers=None, delivery_time=future)
+        parsed = email.message_from_bytes(reconstruct_eml(msg))
+        assert email.utils.parsedate_to_datetime(parsed["Date"]) == datetime(
+            1970, 1, 1, tzinfo=timezone.utc
+        )
+
     def test_reconstruct_without_sent_time_uses_creation_time(self):
         """A message with no delivery/submit time (e.g. a draft) is dated by the
         record's creation time instead of the epoch."""
